@@ -2949,6 +2949,8 @@ const tr: Record<string, string> = {
   'This page was read from its scanned image with OCR (Tesseract) on this computer. Letters, numbers and equations may be misread; check them against the PDF page.': 'Bu sayfa taranmış görüntüsünden bu bilgisayarda OCR (Tesseract) ile okundu. Harfler, sayılar ve denklemler yanlış okunmuş olabilir; PDF sayfasıyla karşılaştırın.',
   'Show this page in the PDF': 'Bu sayfayı PDF’te göster',
   'OCR number': 'OCR sayısı',
+  'Check number': 'Sayıyı kontrol et',
+  'A number in this value does not appear in any of its quotes. It may be a count or a conversion the model made, or a misread; open the evidence and check it.': 'Bu değerdeki bir sayı alıntıların hiçbirinde geçmiyor. Modelin yaptığı bir sayım ya da birim çevirisi olabilir, yanlış okuma da olabilir; kanıtı açıp kontrol edin.',
   'Available when the current run ends': 'Süren çalışma bitince kullanılabilir',
   'This value states a number or equation read only from OCR text of a scanned page. It was not checked against the page; open the evidence and compare it with the PDF.': 'Bu değer, yalnız taranmış bir sayfanın OCR metninden okunan bir sayı ya da denklem içeriyor. Sayfayla karşılaştırılmadı; kanıtı açıp PDF ile karşılaştırın.',
   'OCR (Tesseract)': 'OCR (Tesseract)',

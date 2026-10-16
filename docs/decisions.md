@@ -4,6 +4,12 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D54 — A table value whose number none of its quotes state is flagged
+Status: accepted · Date: 2026-10-16 · Writer: Claude
+Context: An audit of the evidence table found that a cell's quotes are located in their passages but nothing compares the value with them: a value of 3 dB that quotes a sentence saying 2 dB is accepted and goes into the report.
+Decision: A value written by the model or the system whose numbers (a number value's number and its as-stated text, or numbers in a text value) appear in none of its located quotes gets the `number_not_in_quote` flag. The table shows "Check number" with a note in the cell panel, and the Excel export lists the warning. The value checked is the one the cell shows: its current value, or the waiting proposal when there is none (as with the OCR flag). Numbers are compared exactly as decimals (`1,000` is a thousand, `0,5` a half, `2.0` is `2`; `.5` and `1e-6` are read). A value a person typed is not flagged; a model proposal a person accepted keeps the flag, since its quotes did not change.
+Limits: A flag, not a rejection: counts and unit conversions the model derived are flagged too. Signs are not read, so `3` matches a quoted `-3` and a sign error is missed (a range `2-5` stays two numbers). A waiting proposal is not checked while a current value exists. Words for numbers ("three"), percent versus fraction powers written as `10^{-6}` or superscripts, and thousands grouped by spaces are not matched. Text without numbers is not checked; whether a quote supports a non-numeric value is still unchecked. The report does not yet read the flag.
+
 ## D53 — A follow-up reads the evidence-table columns its question is about
 Status: accepted · Date: 2026-10-16 · Writer: Claude
 Context: D50 sent a follow-up the first 60 evidence-table values in table order. On the owner's DBR/VBF research (4 tables, about 8 columns and 31 works each, about 990 values) that was the first table's first seven or eight works, so most packet-delivery and energy results never reached the model, and the table's passages were cut at the priority limit in table order.

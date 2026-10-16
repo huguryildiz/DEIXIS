@@ -858,7 +858,7 @@ export type CellRevision = {
   run_id: string | null; created_at: string; model: { connection: string | null; resolved_model: string | null } | null; evidence: CellEvidence[]
   decision?: 'accepted' | 'dismissed' | 'pending' | 'superseded'  // model proposals in a cell's history
 }
-export type CellFlag = 'stale_column' | 'pdf_removed' | 'pdf_replaced' | 'text_superseded' | 'proposal_before_edit' | 'proposal_invalid' | 'ocr_numbers_unchecked' | 'newer_text'
+export type CellFlag = 'stale_column' | 'pdf_removed' | 'pdf_replaced' | 'text_superseded' | 'proposal_before_edit' | 'proposal_invalid' | 'ocr_numbers_unchecked' | 'number_not_in_quote' | 'newer_text'
 export type CellSummary = {
   cell_id: string | null; column_id: string; source_version_id: string; version: number
   current: CellRevision | null; pending_proposal: CellRevision | null; flags: CellFlag[]

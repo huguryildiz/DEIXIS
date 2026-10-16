@@ -31,6 +31,7 @@ WARNINGS = (
     ("pdf_removed", "A PDF this value cites was removed from the source. The cited passages still open as text; the PDF view is off."),
     ("pdf_replaced", "This value cites a PDF that was later replaced. Its evidence still opens the previous file; a recheck reads the current file."),
     ("ocr_numbers_unchecked", "This value states a number or equation read only from OCR text of a scanned page. It was not checked against the page; open the evidence and compare it with the PDF."),
+    ("number_not_in_quote", "A number in this value does not appear in any of its quotes. It may be a count or a conversion the model made, or a misread; open the evidence and check it."),
     ("text_superseded", "This value cites an earlier text extraction of the PDF. Its evidence still opens that text; a recheck reads the current extraction."),
 )
 INFO_WIDTHS = (12.0, 50.0, 40.0, 30.0, 6.0, 18.0, 14.0)

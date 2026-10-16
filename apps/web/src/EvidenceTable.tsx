@@ -663,6 +663,7 @@ function CellButton({ column, row, summary, live, position, focusable, onFocus, 
     ...(['pdf_removed', 'pdf_replaced', 'text_superseded'] as const).map(flag => flags.includes(flag) && { tone: 'attention', label: t(evidenceStatusLabels[flag]) }),
     flags.includes('newer_text') && { tone: 'attention', label: t('New PDF text') },
     flags.includes('ocr_numbers_unchecked') && { tone: 'attention', label: t('OCR number') },
+    flags.includes('number_not_in_quote') && { tone: 'attention', label: t('Check number') },
   ].filter((m): m is { tone: string; label: string } => Boolean(m))
   const value = current && hasValue(current)
   // Under a value: who wrote it and what was read; a value without a linked passage says so in amber (mockup `noev`).
@@ -897,6 +898,7 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
         {flags.includes('pdf_removed') && flag(t('A PDF this value cites was removed from the source. The cited passages still open as text; the PDF view is off.'))}
         {flags.includes('pdf_replaced') && flag(t('This value cites a PDF that was later replaced. Its evidence still opens the previous file; a recheck reads the current file.'))}
         {flags.includes('ocr_numbers_unchecked') && current && flag(t('This value states a number or equation read only from OCR text of a scanned page. It was not checked against the page; open the evidence and compare it with the PDF.'))}
+        {flags.includes('number_not_in_quote') && current && flag(t('A number in this value does not appear in any of its quotes. It may be a count or a conversion the model made, or a misread; open the evidence and check it.'))}
         {flags.includes('text_superseded') && flag(t('This value cites an earlier text extraction of the PDF. Its evidence still opens that text; a recheck reads the current extraction.'))}
         {flags.includes('newer_text') && flag(t('PDF text for this source was added after this value was made. A recheck reads it; the result waits as a proposal.'))}
 
@@ -914,6 +916,7 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
           </div>
           {flags.includes('proposal_before_edit') && flag(t('Requested before the cell last changed. Compare it with the current value before using it.'))}
           {flags.includes('ocr_numbers_unchecked') && !current && flag(t('This value states a number or equation read only from OCR text of a scanned page. It was not checked against the page; open the evidence and compare it with the PDF.'))}
+          {flags.includes('number_not_in_quote') && !current && flag(t('A number in this value does not appear in any of its quotes. It may be a count or a conversion the model made, or a misread; open the evidence and check it.'))}
           {flags.includes('proposal_invalid') && flag(t('This proposal failed validation after one repair. It is kept for the record and cannot be used.'), true)}
           {pending.note && <p className="evidence-note"><span>{t('Model note')}</span>{pending.note}</p>}
           {pending.evidence.length > 0 && <EvidenceList items={pending.evidence} onShow={showEvidence} />}

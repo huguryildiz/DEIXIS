@@ -893,11 +893,15 @@ class TableStore:
                                          " JOIN cell_revisions r ON r.id = ? WHERE c.id = ?", (current["id"], cell["id"])).fetchone()[0]:
             flags.append("newer_text")
         from deixis.domain.contracts import value_has_number_or_math  # contracts imports this module
+        from deixis.domain.numbers import unquoted_numbers
 
         shown = current_view or (self._revision_view(pending) if pending else None)
         if shown and shown["state"] == "value" and value_has_number_or_math(shown["value"]) and shown["evidence"] \
                 and all(e["text_source"] == "ocr" for e in shown["evidence"]):
             flags.append("ocr_numbers_unchecked")  # the value is read only from OCR text of scanned pages (D51)
+        if shown and shown["state"] == "value" and (shown["author"] != "human" or shown["kind"] == "accept_proposal") and shown["evidence"] \
+                and unquoted_numbers(shown["value"], [e["anchor_text"] for e in shown["evidence"]]):
+            flags.append("number_not_in_quote")  # a number in the value is in none of its quotes (D54)
         if pending and pending["cell_version_at_request"] is not None and pending["cell_version_at_request"] < cell["version"]:
             flags.append("proposal_before_edit")
         if pending and pending["output_status"] != "structurally_valid":

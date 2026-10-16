@@ -91,6 +91,8 @@ TR: dict[str, str] = {
         "Bu değer sonradan değiştirilen bir PDF’ye dayanıyor. Kanıtı önceki dosyayı açmaya devam eder; yeniden inceleme güncel dosyayı okur.",
     "This value states a number or equation read only from OCR text of a scanned page. It was not checked against the page; open the evidence and compare it with the PDF.":
         "Bu değer, yalnız taranmış bir sayfanın OCR metninden okunan bir sayı ya da denklem içeriyor. Sayfayla karşılaştırılmadı; kanıtı açıp PDF ile karşılaştırın.",
+    "A number in this value does not appear in any of its quotes. It may be a count or a conversion the model made, or a misread; open the evidence and check it.":
+        "Bu değerdeki bir sayı alıntıların hiçbirinde geçmiyor. Modelin yaptığı bir sayım ya da birim çevirisi olabilir, yanlış okuma da olabilir; kanıtı açıp kontrol edin.",
     "This value cites an earlier text extraction of the PDF. Its evidence still opens that text; a recheck reads the current extraction.":
         "Bu değer PDF’nin önceki bir metin çıkarımına dayanıyor. Kanıtı o metni açmaya devam eder; yeniden inceleme güncel çıkarımı okur.",
 }

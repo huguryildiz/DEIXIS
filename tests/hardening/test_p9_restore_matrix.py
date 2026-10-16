@@ -312,7 +312,8 @@ def add_versions(path: Path, *versions: int) -> None:
 
 
 def folder_names(folder: Path) -> list[str]:
-    return sorted(p.name for p in folder.iterdir())
+    """The folder's entries; the empty folder lock a start takes before it opens the library (`library.lock`, E1) is not library data."""
+    return sorted(p.name for p in folder.iterdir() if p.name != "library.lock")
 
 
 def file_facts(folder: Path, names=("library.sqlite", "library.sqlite-wal", "library.sqlite-shm")) -> dict:

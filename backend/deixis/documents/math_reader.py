@@ -43,6 +43,8 @@ from pathlib import Path
 
 import pymupdf
 
+from deixis import library_lock
+
 MARKER_PACKAGE = "marker-pdf==1.10.2"
 PYTHON_VERSION = "3.12"
 RUNNER = Path(__file__).with_name("marker_runner.py")
@@ -177,8 +179,8 @@ def install_runtime(paths: RuntimePaths) -> None:
     if uv is None:
         raise MathReaderUnavailable("uv is not installed; see https://docs.astral.sh/uv/")
     paths.root.mkdir(parents=True, exist_ok=True)
-    subprocess.run([uv, "venv", "--python", PYTHON_VERSION, str(paths.env)], check=True)
-    subprocess.run([uv, "pip", "install", "--python", str(paths.python), MARKER_PACKAGE], check=True)
+    subprocess.run([uv, "venv", "--python", PYTHON_VERSION, str(paths.env)], check=True, pass_fds=library_lock.child_fds())
+    subprocess.run([uv, "pip", "install", "--python", str(paths.python), MARKER_PACKAGE], check=True, pass_fds=library_lock.child_fds())
 
 
 def remove_runtime(paths: RuntimePaths) -> None:
@@ -296,6 +298,7 @@ class MathReader:
         self.process = await asyncio.create_subprocess_exec(
             str(self.paths.python), str(RUNNER), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL, env=env, limit=64 * 1024 * 1024,
+            pass_fds=library_lock.child_fds(),  # keeps the data folder busy while it runs (E1)
         )
         try:
             ready = json.loads(await asyncio.wait_for(self.process.stdout.readline(), READY_TIMEOUT_SECONDS))

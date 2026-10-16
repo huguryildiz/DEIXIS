@@ -89,6 +89,16 @@ def no_real_platform_data_dir(monkeypatch, tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
+def no_held_folder_locks():
+    """A `serve` or command line run inside a test takes its data folder's shared lock for the process (E1); it is
+    let go after the test so no descriptor outlives it."""
+    from deixis import library_lock
+
+    yield
+    library_lock.release_all()
+
+
+@pytest.fixture(autouse=True)
 def no_registered_builtin_model(monkeypatch):
     """The built-in model's integrity is registered module-wide by an app; with nothing saved, a ready model is the
     default (D7), so one test's app never leaks it into another test."""

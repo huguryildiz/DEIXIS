@@ -28,6 +28,7 @@ from typing import Any
 
 import httpx
 
+from deixis import library_lock
 from deixis.documents import local_embedding
 from deixis.documents.local_embedding import BuiltinPaths, Integrity, LocalEmbedder, LocalEmbeddingError
 
@@ -291,7 +292,7 @@ class EmbeddingService:
     async def _command(self, argv: list[str]) -> None:
         self._proc = proc = await asyncio.create_subprocess_exec(
             *argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=self._uv_env(),
-            pass_fds=(self._install_fd,))  # the install lock outlives DEIXIS for as long as uv runs
+            pass_fds=(self._install_fd, *library_lock.child_fds()))  # the install and folder locks outlive DEIXIS for as long as uv runs
         assert proc.stdout is not None
         async for chunk in proc.stdout:
             self._output(chunk.decode("utf-8", "replace"))

@@ -44,12 +44,18 @@ def register_data_location_routes(app, settings: Settings) -> None:
 
     async def view(request: Request) -> dict[str, Any]:
         outside = data_location.set_outside_app()
-        pointer = None if outside else data_location.pointer_path()
+        try:
+            pointer = None if outside else data_location.pointer_path()
+        except data_location.PointerDamaged:  # damaged while running; the next start stops and names it (E23)
+            pointer = None
         pending = pointer if pointer is not None and pointer != current else None
         sizes = await asyncio.to_thread(data_location.usage, current)
         return {"path": str(current), "is_default": current == config.platform_data_dir(), "set_outside_app": outside,
                 "pending_path": str(pending) if pending else None,
                 "pending_has_library": bool(pending and (pending / "library.sqlite").exists()),
+                # The move this start postponed because another process held a folder (E1): {path, busy}, else None.
+                "move_postponed": postponed if (postponed := getattr(request.app.state, "move_postponed", None))
+                and pending and postponed["path"] == str(pending) else None,
                 **sizes, "running_runs": running_runs(request), "last_backup": request.app.state.store.setting(LAST_BACKUP_SETTING),
                 "cache_bytes": await asyncio.to_thread(data_location.cache_size, current)}
 
@@ -80,11 +86,11 @@ def register_data_location_routes(app, settings: Settings) -> None:
         resolved_target, resolved_current = target.resolve(), current.resolve()
         if _inside(resolved_target, resolved_current) or _inside(resolved_current, resolved_target):
             raise HTTPException(422, "Choose a folder that is neither inside the current location nor contains it.")
-        if problem := data_location.data_dir_problem(target):
+        if problem := await asyncio.to_thread(data_location.target_problem, target, current):
             raise HTTPException(422, f"That folder {problem}.")
         has_library = (target / "library.sqlite").exists()
         if body.check:
-            return {"path": str(target), "has_library": has_library}
+            return {"path": str(target), "has_library": has_library, "sync_service": data_location.sync_service(target)}
         data_location.write_pointer(target, current)
         return await view(request)
 

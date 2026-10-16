@@ -30,8 +30,9 @@ def invoke(lib, monkeypatch, dry=False):
 
 
 def file_state(folder):
+    """Every file and its digest; the empty folder lock every command takes at its start (`library.lock`, E1) is not library data."""
     return {str(p.relative_to(folder)): (p.is_dir(), None if p.is_dir() else hashlib.sha256(p.read_bytes()).hexdigest())
-            for p in folder.rglob("*")}
+            for p in folder.rglob("*") if p.name != "library.lock"}
 
 
 def test_cli_retry_promotes_one_failed_asset_and_prints_stored_result(tmp_path, monkeypatch, capsys):

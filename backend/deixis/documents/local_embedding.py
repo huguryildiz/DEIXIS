@@ -38,6 +38,8 @@ from typing import Any, Callable
 
 import httpx
 
+from deixis import library_lock
+
 REPOSITORY = "Qdrant/bge-small-en-v1.5-onnx-Q"
 REVISION = "aa8f8b060edb00e03bfdd08813a2949946c8ba55"
 MODEL_NAME = "bge-small-en-v1.5"
@@ -445,7 +447,7 @@ class LocalEmbedder:
         try:
             self.process = await asyncio.create_subprocess_exec(
                 *self._argv(), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL, env=self.paths.runner_env(), pass_fds=(fd,), limit=64 * 1024 * 1024)
+                stderr=asyncio.subprocess.DEVNULL, env=self.paths.runner_env(), pass_fds=(fd, *library_lock.child_fds()), limit=64 * 1024 * 1024)
         except OSError as exc:
             raise LocalEmbeddingError("builtin_unavailable", f"the runner did not start: {exc}") from exc
         finally:

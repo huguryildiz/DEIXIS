@@ -21,7 +21,7 @@ export function DataLocationCard({ dark }: { dark: boolean }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [typed, setTyped] = useState<string | null>(null)  // the path field, when this system has no folder chooser
-  const [confirm, setConfirm] = useState<{ path: string; hasLibrary: boolean } | null>(null)
+  const [confirm, setConfirm] = useState<{ path: string; hasLibrary: boolean; sync: string | null } | null>(null)
   useEffect(() => {
     let live = true
     dataLocationApi.get().then(v => { if (live) setView(v) }, (e: Error) => { if (live) setError(e.message) })
@@ -34,7 +34,7 @@ export function DataLocationCard({ dark }: { dark: boolean }) {
 
   const check = (path: string) => {
     setBusy(true); setError('')
-    dataLocationApi.check(path).then(r => { setTyped(null); setConfirm({ path: r.path, hasLibrary: r.has_library }) })
+    dataLocationApi.check(path).then(r => { setTyped(null); setConfirm({ path: r.path, hasLibrary: r.has_library, sync: r.sync_service }) })
       .catch((e: Error) => setError(e.message)).finally(() => setBusy(false))
   }
   const choose = () => {
@@ -91,7 +91,9 @@ export function DataLocationCard({ dark }: { dark: boolean }) {
         {parts.map(p => <li key={p.key} data-part={p.key}><span className="dl-dot" aria-hidden />{t(p.label)}<span className="tnum">{size(p.bytes)}</span></li>)}
       </ul>
       {view.free_bytes !== null && <p className="dl-free">{t('Available on disk')}<span className="tnum">{size(view.free_bytes)}</span></p>}
-      {view.pending_path && <Notice tone="attention">{t('Restart DEIXIS to use {path}.', { path: view.pending_path })}{' '}
+      {view.pending_path && <Notice tone="attention">{view.move_postponed
+        ? t('The library was not moved to {path}: another DEIXIS, a tool install or an equation reading was using {busy}. Close it, then restart DEIXIS to finish the move.', view.move_postponed)
+        : t('Restart DEIXIS to use {path}.', { path: view.pending_path })}{' '}
         <button type="button" className="link" disabled={busy} onClick={() => save(view.path)}>{t('Keep current location')}</button></Notice>}
       {blocked && <p className="dl-reason">{blocked}</p>}
     </>}
@@ -124,6 +126,8 @@ export function DataLocationCard({ dark }: { dark: boolean }) {
       description={confirm?.hasLibrary ? t('That folder already has a DEIXIS library. DEIXIS will open it next time and leave the current one where it is.')
         : t('DEIXIS will move your library to {path} the next time it starts.', { path: confirm?.path ?? '' })}
       context={confirm?.path} confirmLabel={t('Change location')} cancelLabel={t('Cancel')} busy={busy}
-      onConfirm={() => confirm && save(confirm.path)} onOpenChange={open => { if (!open) setConfirm(null) }} />
+      onConfirm={() => confirm && save(confirm.path)} onOpenChange={open => { if (!open) setConfirm(null) }}>
+      {confirm?.sync && <Notice tone="attention">{t('{service} syncs this folder. DEIXIS can keep its library here, but syncing may copy the library while it is being written. This warning is no guarantee of safety, and the library must never be open on two computers at once.', { service: confirm.sync })}</Notice>}
+    </ConfirmDialog>
   </div>
 }

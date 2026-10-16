@@ -4885,6 +4885,8 @@ const tr: Record<string, string> = {
   'Change where DEIXIS keeps its library?': 'DEIXIS’in kitaplığını tuttuğu yer değişsin mi?',
   'That folder already has a DEIXIS library. DEIXIS will open it next time and leave the current one where it is.': 'Bu klasörde zaten bir DEIXIS kitaplığı var. DEIXIS bir sonraki açılışta onu açacak ve geçerli kitaplığı olduğu yerde bırakacak.',
   'DEIXIS will move your library to {path} the next time it starts.': 'DEIXIS bir sonraki açılışta kitaplığınızı {path} konumuna taşıyacak.',
+  'The library was not moved to {path}: another DEIXIS, a tool install or an equation reading was using {busy}. Close it, then restart DEIXIS to finish the move.': 'Kitaplık {path} konumuna taşınmadı: {busy} klasörünü başka bir DEIXIS, bir araç kurulumu ya da bir denklem okuması kullanıyordu. Onu kapatın, ardından taşımayı bitirmek için DEIXIS’i yeniden başlatın.',
+  '{service} syncs this folder. DEIXIS can keep its library here, but syncing may copy the library while it is being written. This warning is no guarantee of safety, and the library must never be open on two computers at once.': 'Bu klasörü {service} eşitliyor. DEIXIS kitaplığını burada tutabilir, ancak eşitleme kitaplığı yazılırken kopyalayabilir. Bu uyarı bir güvenlik garantisi değildir ve kitaplık hiçbir zaman iki bilgisayarda aynı anda açık olmamalıdır.',
   'Appearance': 'Görünüm',
   'Theme': 'Tema',
   'System follows the light or dark setting of this computer.': 'Sistem, bu bilgisayarın açık ya da koyu ayarını izler.',

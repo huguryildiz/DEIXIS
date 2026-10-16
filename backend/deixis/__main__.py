@@ -18,9 +18,10 @@ from uuid import uuid4
 
 import uvicorn
 
+from deixis import library_lock
 from deixis.api.app import create_app
 from deixis.config import Settings, load_settings
-from deixis.data_location import apply_pending_move, data_dir_problem
+from deixis.data_location import PointerDamaged, Postponed, apply_pending_move, data_dir_problem, read_pointer
 from deixis.storage import backup, db
 from deixis.storage.db import SchemaCheckUnreadable, UnknownSchemaError, check_schema_known
 
@@ -80,15 +81,31 @@ def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...]) ->
         print(f"Port {settings.port} is in use. DEIXIS may already be running at {url} — "
               "open it, stop the other process, or set DEIXIS_PORT.", file=sys.stderr)
         return 2
-    # A location chosen in Settings (D32) is moved into before anything opens the library; a second DEIXIS on this
-    # port was refused above, so no running process holds the old folder.
-    if (message := apply_pending_move(settings.data_dir)) is not None:
+    # A location chosen in Settings (D32) is moved into before anything opens the library, under both folders'
+    # exclusive locks (E1). A DEIXIS on another port, or a child it started, holds its folder's shared lock: the move
+    # is then postponed and this DEIXIS opens the old folder, saying why in Settings.
+    postponed = None
+    if isinstance(message := apply_pending_move(settings.data_dir), Postponed):
+        postponed = message
+        print(postponed.message(), file=sys.stderr)
+        settings = dataclasses.replace(settings, data_dir=postponed.old)
+    elif message is not None:
         print(message, file=sys.stderr)
         return 2
     if problem := data_dir_problem(settings.data_dir):
         print(f"Cannot use the data directory {settings.data_dir}: it {problem}. "
               "Set DEIXIS_DATA_DIR to a folder you can write to.", file=sys.stderr)
         return 2
+    # The folder's shared lock is held from here, before the library is opened, until this process ends.
+    if not library_lock.hold_shared(settings.data_dir):
+        print(f"Another DEIXIS is moving the library in {settings.data_dir}. Start DEIXIS again when it has finished.", file=sys.stderr)
+        return 2
+    if postponed is not None:
+        pointer = read_pointer()
+        if not pointer or pointer.get("move_from") != str(postponed.old) or pointer.get("phase"):
+            library_lock.release(settings.data_dir)  # another DEIXIS moved the library meanwhile
+            print(f"Another DEIXIS has just moved the library to {postponed.new}. Start DEIXIS again.", file=sys.stderr)
+            return 2
     if (message := schema_problem(settings.db_path)) is not None:
         print(message, file=sys.stderr)
         return 2
@@ -101,8 +118,11 @@ def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...]) ->
     if not settings.web_dist.exists():
         print("UI build not found (apps/web/dist). The API will run; build the UI with `npm run build` in apps/web.")
     # Open event streams would otherwise hold graceful shutdown (and the port) until the browser disconnects.
-    server = uvicorn.Server(uvicorn.Config(create_app(settings, extra_hosts=dev_hosts), host=settings.host,
-                                           port=settings.port, log_level="info", timeout_graceful_shutdown=3))
+    app = create_app(settings, extra_hosts=dev_hosts)
+    if postponed is not None:
+        app.state.move_postponed = {"path": str(postponed.new), "busy": str(postponed.busy)}
+    server = uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port, log_level="info",
+                                           timeout_graceful_shutdown=3))
 
     def open_when_ready() -> None:
         for _ in range(100):
@@ -375,7 +395,18 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "reextract" and bool(args.retry) != bool(args.expected_extraction):
         parser.error("--retry and --expected-extraction must be supplied together")
-    settings = load_settings()
+    try:
+        settings = load_settings()
+    except PointerDamaged as exc:  # E23: never an empty default library in place of the one the pointer named
+        print(str(exc), file=sys.stderr)
+        return 2
+    if args.command != "serve":
+        try:  # every process that opens the library holds its folder's shared lock (E1); `serve` takes it after a move
+            if not library_lock.hold_shared(settings.data_dir):
+                print(f"Another DEIXIS is moving the library in {settings.data_dir}. Try again when it has finished.", file=sys.stderr)
+                return 2
+        except OSError:
+            pass  # no lock file can be made in this folder; the command reports its own error about it
     if args.command == "recovery-files":
         return recovery_files(settings, args.delete)
     if args.command == "equations":

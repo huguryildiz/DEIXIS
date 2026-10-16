@@ -36,6 +36,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from deixis import library_lock
 from deixis.documents import arxiv_source, equation_regions, math_reader, mathpix, pdf
 from deixis.storage.db import new_id, now, transaction
 from deixis.workflow import file_restore, recovery, text_retry
@@ -1103,7 +1104,8 @@ class EquationService:
                 for index, argv in enumerate(steps):
                     job["step"] = index + 1
                     self._install_proc = proc = await asyncio.create_subprocess_exec(
-                        *argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env)
+                        *argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
+                        pass_fds=library_lock.child_fds())  # keeps the data folder busy while it runs (E1)
                     assert proc.stdout is not None
                     async for chunk in proc.stdout:
                         output.extend(chunk)

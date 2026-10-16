@@ -76,3 +76,36 @@ def test_algorithm_boxes_are_listed_with_their_kind(tmp_path):
         listed = client.get(f"/api/researches/{rid}/assets/{aid}/figures").json()["figures"]
         assert [(f["label"], f["kind"]) for f in listed] == [("algorithm-2", "algorithm")]
         assert client.get(f"/api/researches/{rid}/assets/{aid}/figures/algorithm-2.png").status_code == 200
+
+
+def huge_figure_pdf() -> bytes:
+    doc = pymupdf.open()
+    page = doc.new_page(width=5000, height=5000)
+    page.draw_rect(pymupdf.Rect(100, 100, 4900, 4700), color=(0, 0, 1), fill=(0.8, 0.8, 1))
+    page.insert_text((100, 4740), "Figure 1. SYNTHETIC box drawn across a 5000 pt page.", fontsize=10)
+    return doc.tobytes()
+
+
+def test_a_figure_on_a_huge_page_is_rendered_within_the_pixel_budget(tmp_path):
+    path = tmp_path / "huge.pdf"
+    path.write_bytes(huge_figure_pdf())
+    found = figures.find_figures(path)
+    assert [f["label"] for f in found] == ["1"]
+    picture = pymupdf.Pixmap(figures.render_figure(path, 1, found[0]["bbox"]))
+    assert picture.width * picture.height <= 4_000_000  # at 160 dpi it would be about 120 million pixels
+
+
+def test_a_figure_read_stopped_at_its_memory_limit_answers_like_an_unreadable_pdf(tmp_path, monkeypatch):
+    from deixis.documents import pdf_child
+
+    with TestClient(app_for(tmp_path)) as raw:
+        client = session(raw)
+        rid = create(client, source_scope="attached")
+        uploaded = client.post(f"/api/researches/{rid}/uploads", files={"file": ("fig.pdf", figure_pdf(), "application/pdf")})
+        aid = uploaded.json()["sources"][0]["access"]["assets"][0]["id"]
+        assert [f["label"] for f in client.get(f"/api/researches/{rid}/assets/{aid}/figures").json()["figures"]] == ["1"]
+        monkeypatch.setattr(pdf_child, "MAX_MEMORY_BYTES", 1024 * 1024)  # far below what a Python child starts with
+        assert client.get(f"/api/researches/{rid}/assets/{aid}/figures/1.png").status_code == 404
+        uploaded = client.post(f"/api/researches/{rid}/uploads", files={"file": ("alg.pdf", algorithm_pdf(), "application/pdf")})
+        other = next(a["id"] for s in uploaded.json()["sources"] for a in s["access"]["assets"] if a["id"] != aid)
+        assert client.get(f"/api/researches/{rid}/assets/{other}/figures").json()["figures"] == []

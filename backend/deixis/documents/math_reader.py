@@ -43,6 +43,7 @@ import pymupdf
 
 from deixis import library_lock
 from deixis.child_env import UV_TLS, child_env
+from deixis.documents import pdf_child
 from deixis.tool_paths import find_tool
 
 MARKER_PACKAGE = "marker-pdf==1.10.2"
@@ -190,7 +191,11 @@ def remove_runtime(paths: RuntimePaths) -> None:
 
 
 def math_pages(path: Path) -> list[int]:
-    """0-based indices of pages set with enough mathematics to be worth reading with Marker."""
+    """0-based indices of pages set with enough mathematics to be worth reading with Marker (in a bounded child)."""
+    return pdf_child.run("math_pages", str(path))
+
+
+def _math_pages(path: str) -> list[int]:
     found = []
     with pymupdf.open(path, filetype="pdf") as doc:
         for index, page in enumerate(doc):
@@ -207,7 +212,11 @@ def math_pages(path: Path) -> list[int]:
 
 
 def table_pages(path: Path) -> list[int]:
-    """0-based indices of pages with a table caption in their text layer."""
+    """0-based indices of pages with a table caption in their text layer (in a bounded child)."""
+    return pdf_child.run("table_pages", str(path))
+
+
+def _table_pages(path: str) -> list[int]:
     with pymupdf.open(path, filetype="pdf") as doc:
         return [index for index, page in enumerate(doc) if TABLE_CAPTION.search(page.get_text())]
 

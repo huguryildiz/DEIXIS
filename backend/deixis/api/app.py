@@ -36,7 +36,7 @@ from deixis.documents import figures
 from deixis.documents.identity import MATCH_TEXT_CHARS
 from deixis.documents import local_embedding, math_reader
 from deixis.documents import ocr
-from deixis.documents import pdf
+from deixis.documents import pdf, pdf_child
 from deixis.documents import tool_updates
 from deixis.documents import equation_regions, mathpix
 from deixis.documents import upload_record
@@ -2588,7 +2588,10 @@ def create_app(
         figure = next((f for f in found if f["label"] == label), None)
         if figure is None:
             raise HTTPException(404, "Figure not found")
-        png = await asyncio.to_thread(figures.render_figure, path, figure["page"], figure["bbox"])
+        try:
+            png = await asyncio.to_thread(figures.render_figure, path, figure["page"], figure["bbox"])
+        except pdf_child.ChildFailed:  # past its time or memory limit, or unreadable: answered as for a PDF without figures
+            raise HTTPException(404, "Figure not found") from None
         return Response(png, media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
 
     @app.delete("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}")

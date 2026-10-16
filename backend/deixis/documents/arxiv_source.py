@@ -137,7 +137,14 @@ def url_key(retrieved_from: str | None) -> str | None:
 
 
 def stamp_key(path: Path) -> str | None:
-    """The version arXiv stamps along the margin of page 1 or 2 (a rotated line, so read from the plain page text)."""
+    """The version arXiv stamps along the margin of page 1 or 2 (a rotated line, so read from the plain page text), read
+    in a bounded child (`pdf_child`)."""
+    from deixis.documents import pdf_child
+
+    return pdf_child.run("stamp_key", str(path))
+
+
+def _stamp_key(path: str) -> str | None:
     import pymupdf
 
     with pymupdf.open(path, filetype="pdf") as doc:

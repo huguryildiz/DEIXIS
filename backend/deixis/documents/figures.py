@@ -9,14 +9,20 @@ pages, or a caption worded differently is not found.
 An algorithm box is found the same way, from an "Algorithm 5 Title" caption set between two rules (the algorithm and
 algorithm2e ruled style); its region runs from the rule above the caption to the next rule below the one under it. Its
 picture carries the symbols (accents, primes, subscripts) that the text layer and Marker read as loose characters.
+
+Finding and rendering run in a bounded child process (`pdf_child`), not in the server. A picture is rendered at 160 dpi,
+lowered so it holds at most `MAX_PIXELS` pixels: a figure drawn across a 5000 pt page took 655 MB at 160 dpi.
 """
 
 from __future__ import annotations
 
+import math
 import re
 from pathlib import Path
 
 import pymupdf
+
+from deixis.documents import pdf_child
 
 ALGORITHM = re.compile(r"^Algorithm\s+(\d{1,3})\b")
 RULE_GAP = 6  # the largest distance, in points, between an algorithm caption and the rules around it
@@ -25,6 +31,7 @@ MIN_AREA = 900  # square points; smaller graphics are rules, bullets or logos
 GAP = 60  # the largest distance, in points, between a caption and its graphics
 REACH = 16  # small type this close to the graphics belongs to the figure
 MAX_PAGES = 400
+MAX_PIXELS = 4_000_000  # as the equation crops (`equation_regions.MAX_PIXELS`); a letter page at 160 dpi has 2.4 million
 # Text lines only: without this, get_text("dict") encodes every picture on the page as a PNG it never uses.
 DICT_FLAGS = pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES
 
@@ -66,6 +73,10 @@ def _grow(page: pymupdf.Page, region: pymupdf.Rect, captions: list[pymupdf.Rect]
 
 def find_figures(path: Path) -> list[dict]:
     """[{"page": 1-based, "label": "3", "bbox": [x0, y0, x1, y1]}] in page order; one entry per figure label."""
+    return pdf_child.run("find_figures", str(path))
+
+
+def _find_figures(path: str) -> list[dict]:
     found, seen = [], set()
     with pymupdf.open(path, filetype="pdf") as doc:
         for index in range(min(doc.page_count, MAX_PAGES)):
@@ -114,6 +125,10 @@ def find_figures(path: Path) -> list[dict]:
 
 def find_algorithms(path: Path) -> list[dict]:
     """[{"page": 1-based, "label": "algorithm-5", "bbox": [...]}] for each ruled algorithm box, in page order."""
+    return pdf_child.run("find_algorithms", str(path))
+
+
+def _find_algorithms(path: str) -> list[dict]:
     found, seen = [], set()
     with pymupdf.open(path, filetype="pdf") as doc:
         for index in range(min(doc.page_count, MAX_PAGES)):
@@ -145,6 +160,26 @@ def find_algorithms(path: Path) -> list[dict]:
 
 
 def render_figure(path: Path, page: int, bbox: list[float], dpi: int = 160) -> bytes:
+    return pdf_child.run("render_figure", str(path), page, list(bbox), dpi)
+
+
+def _render_figure(path: str, page: int, bbox: list[float], dpi: int) -> bytes:
     with pymupdf.open(path, filetype="pdf") as doc:
         clip = pymupdf.Rect(bbox) + (-4, -4, 4, 4)
-        return doc[page - 1].get_pixmap(clip=clip & doc[page - 1].rect, dpi=dpi).tobytes("png")
+        clip &= doc[page - 1].rect
+        return doc[page - 1].get_pixmap(clip=clip, dpi=_figure_dpi(clip, dpi)).tobytes("png")
+
+
+def _pixels(clip: pymupdf.Rect, dpi: int) -> int:
+    box = (clip * pymupdf.Matrix(dpi / 72, dpi / 72)).irect  # the pixmap MuPDF makes for this clip
+    return box.width * box.height
+
+
+def _figure_dpi(clip: pymupdf.Rect, dpi: int) -> int:
+    """`dpi`, lowered until the picture of `clip` has at most MAX_PIXELS pixels; ValueError when even 1 dpi has more."""
+    dpi = max(1, min(dpi, int(math.sqrt(MAX_PIXELS / max(1e-6, clip.width * clip.height)) * 72)))
+    while dpi > 1 and _pixels(clip, dpi) > MAX_PIXELS:  # MuPDF rounds the pixmap outward to whole pixels
+        dpi -= 1
+    if _pixels(clip, dpi) > MAX_PIXELS:
+        raise ValueError("figure too large to render")
+    return dpi

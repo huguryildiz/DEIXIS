@@ -31,7 +31,7 @@ from typing import Any
 
 import pymupdf
 
-from deixis.documents import arxiv_source, inline_math, math_reader, pdf
+from deixis.documents import arxiv_source, inline_math, math_reader, pdf, pdf_child
 
 GAP_LINES = 1.5
 MAX_REGION_LINES = 12
@@ -220,7 +220,12 @@ def render_crop(path: Path, recipe: dict[str, Any]) -> bytes:
 
 def detect(path: Path, skip_pages: set[int] | frozenset = frozenset(), render: bool = True) -> list[dict[str, Any]]:
     """Every numbered display equation found, with its crop or the reason it has none. `render=False` only counts
-    (the Settings estimate)."""
+    (the Settings estimate). It runs in a bounded child (`pdf_child`)."""
+    return pdf_child.run("detect", str(path), sorted(skip_pages), render)
+
+
+def _detect(path: str, skip_pages: list[int], render: bool) -> list[dict[str, Any]]:
+    skip_pages = set(skip_pages)
     found: list[dict[str, Any]] = []
     with pymupdf.open(path, filetype="pdf") as doc:
         layouts = []

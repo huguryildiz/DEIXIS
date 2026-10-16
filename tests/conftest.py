@@ -1,5 +1,15 @@
 import os
+import sys
+import tempfile
 from pathlib import Path
+
+# With PYTHONDONTWRITEBYTECODE set (it keeps __pycache__ out of a synced folder) every worker and every Python process a
+# test starts compiled the whole package and re-wrote every test module's asserts: about 16 s of CPU each instead of 4.
+# Compiled files go to a folder outside the repository instead; workers and child processes inherit the setting.
+if os.environ.pop("PYTHONDONTWRITEBYTECODE", None):
+    os.environ.setdefault("PYTHONPYCACHEPREFIX", str(Path(tempfile.gettempdir()) / "deixis-pycache"))
+    sys.pycache_prefix = os.environ["PYTHONPYCACHEPREFIX"]
+    sys.dont_write_bytecode = False
 
 # Processes a test starts (CLI runs, helper scripts) inherit this and see no keychain, so they never read the developer's
 # keys or move `.env` keys into the real keychain (D19). In this process `memory_keychain` sets its own backend.
@@ -29,6 +39,27 @@ class MemoryKeyring(KeyringBackend):
     def delete_password(self, service, username):
         if self.items.pop((service, username), None) is None:
             raise PasswordDeleteError(username)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def shared_route_adapters():
+    """Most API tests build their own app, and FastAPI builds a pydantic TypeAdapter for every parameter and response of
+    its ~240 routes each time: about half of `create_app`'s 0.14 s of CPU. The request and response models live at module
+    level, so a parameter of the same type and options in the next app gets the adapter already built."""
+    from fastapi._compat import v2
+
+    real, built = v2.TypeAdapter, {}
+
+    def adapter(type_, *, config=None):
+        key = (repr(type_), repr(config))
+        if key not in built:
+            built[key] = real(type_, config=config)
+        return built[key]
+
+    patch = pytest.MonkeyPatch()
+    patch.setattr(v2, "TypeAdapter", adapter)
+    yield
+    patch.undo()
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -174,10 +205,11 @@ SLOW_TESTS = Path(__file__).with_name("slow_tests.txt")
 def pytest_collection_modifyitems(config, items):
     """Process tests (tests/process) are wall-clock and start real servers: they run only when -m names `process`.
 
-    Tests listed in slow_tests.txt (0.5 s or more each, about 960 of them) are marked `slow` and left out of a run that
-    names no `-m` and no path, so the default run stays near a minute and a half. Naming a file or test, or any `-m`
-    expression, runs them too; run everything before a push with `pytest -m "slow or not slow"`. To regenerate the list,
-    run that with `--durations=0 --durations-min=0.3`, sum call + setup + teardown per test id, keep those at 0.5 s or more."""
+    Tests listed in slow_tests.txt (0.2 s or more each, about 2,000 of them) are marked `slow` and left out of a run that
+    names no `-m` and no path, so the default run stays within a minute or two on four workers. Naming a file or test, or
+    any `-m` expression, runs them too; run everything before a push with `pytest -m "slow or not slow"`. To regenerate
+    the list, run that with `--durations=0 --durations-min=0.02`, sum call + setup + teardown per test id, keep those at
+    0.2 s or more."""
     marker = config.getoption("-m") or ""
     slow = set(line for line in SLOW_TESTS.read_text().splitlines() if line and not line.startswith("#"))
     for item in items:

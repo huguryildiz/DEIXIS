@@ -34,10 +34,10 @@ packages = ["backend/deixis"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Six workers (pytest-xdist): every test builds its own library under tmp_path, so the suite parallelises cleanly.
-# Measured 2026-10-05 on a 10-core Apple Silicon machine under load from other work: the default run (slow tests left
-# out, see tests/conftest.py) took 81 s with 6 workers and with 10; 6 used 15% less CPU and 20% less memory.
-addopts = "-n 6"
+# Four workers (pytest-xdist): every test builds its own library under tmp_path, so the suite parallelises cleanly.
+# Four keeps the default run (slow tests left out, see tests/conftest.py) within a minute or two while leaving most
+# cores and memory to other work; the full run before a push can pass `-n 6` or more.
+addopts = "-n 4"
 # Each run writes several GB under tmp_path; keep only the directories of failed tests.
 tmp_path_retention_policy = "failed"
 # Explicit path: in synced Documents folders the venv's .pth files can receive the

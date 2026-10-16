@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass
+from functools import lru_cache
 
 TITLE_MERGE = 0.85  # SW6.3: title trigram Jaccard an automatic merge needs
 ABSTRACT_MERGE = 0.8  # SW6.3, SW6.6
@@ -45,6 +46,8 @@ _WORD = re.compile(r"[^\W_]+")
 _NOTICE_TAIL = re.compile(r"^\s*(?::|-|–|—|to\b|$)")
 
 
+# The pure text functions below are cached: linking and the abstract stage ask them about the same titles many times.
+@lru_cache(maxsize=65536)
 def normalize_text(text: str | None) -> str:
     """Accent-free, markup-free, lower-case words joined by single spaces.
 
@@ -55,6 +58,7 @@ def normalize_text(text: str | None) -> str:
     return " ".join(_WORD.findall(_MARKUP.sub(" ", folded)))
 
 
+@lru_cache(maxsize=65536)
 def trigrams(text: str) -> frozenset[str]:
     """Character trigrams of an already normalised string, unpadded; a text under three characters has none."""
     return frozenset(text[i:i + 3] for i in range(len(text) - 2))
@@ -72,6 +76,7 @@ def _jaccard(a: frozenset[str], b: frozenset[str]) -> float:
     return len(a & b) / len(a | b) if a and b else 0.0
 
 
+@lru_cache(maxsize=65536)
 def notice_type(title: str | None) -> str | None:
     """`correction`, `withdrawal` or `retraction` when the title opens by naming another paper, else None.
 
@@ -89,9 +94,13 @@ def notice_type(title: str | None) -> str | None:
 
 def record_kind(record: dict) -> str:
     """preprint | published | artifact | notice | unknown, from the DOI prefix and the title prefix (SW6.2)."""
-    doi, title = record.get("doi") or "", normalize_text(record.get("title"))
-    label = record.get("version_label") or ""
-    if notice_type(record.get("title")):
+    return _record_kind(record.get("doi") or "", record.get("title"), record.get("version_label") or "")
+
+
+@lru_cache(maxsize=65536)
+def _record_kind(doi: str, raw_title: str | None, label: str) -> str:
+    title = normalize_text(raw_title)
+    if notice_type(raw_title):
         return "notice"
     if doi.startswith(ARTIFACT_DOI_PREFIXES) or title.startswith(ARTIFACT_TITLE_PREFIXES):
         return "artifact"

@@ -12,7 +12,7 @@ from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.storage import db
 from deixis.workflow.review.store import ReviewStore
-from tests.fakes import FakeAdapter, valid_response
+from tests.support.fakes import FakeAdapter, valid_response
 from tests.app.test_api_flow import session
 
 

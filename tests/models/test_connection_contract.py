@@ -15,7 +15,7 @@ from test_settings_connections import paths, remote  # noqa: F401  (fixture)
 ROOT = Path(__file__).resolve().parents[2]
 SCHEMA = json.loads((ROOT / "contracts/research/step-input.schema.json").read_text())
 STEP_INPUTS = json.loads((ROOT / "tests/fixtures/research/step-inputs.json").read_text())
-TEST_ONLY = {"fake"}  # tests/fakes.py::FakeAdapter
+TEST_ONLY = {"fake"}  # tests/support/fakes.py::FakeAdapter
 
 
 def contract_connections():

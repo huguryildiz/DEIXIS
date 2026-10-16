@@ -185,7 +185,7 @@ def test_each_evidence_reason_is_bound_to_its_target_with_stub_reader(review_lib
 def asset_evidence(lib):
     from deixis.documents.pdf import Extraction, PageText
     from deixis.documents.pdf import chunk_page as chunks
-    from tests.helpers import make_pdf
+    from tests.support.helpers import make_pdf
     data = make_pdf(["SYNTHETIC pdf evidence."])
     sha = hashlib.sha256(data).hexdigest()
     asset = lib["store"].add_asset_with_pages(lib["source_id"], sha, len(data), "SYNTHETIC.pdf", "user_upload", None, "SYNTHETIC.pdf",

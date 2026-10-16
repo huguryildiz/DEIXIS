@@ -149,7 +149,7 @@ def test_watch_route_interface_is_registered(tmp_path, method, path, body):
     from fastapi.testclient import TestClient
     from deixis.api.app import create_app
     from deixis.config import Settings
-    from tests.fakes import FakeAdapter
+    from tests.support.fakes import FakeAdapter
     from tests.app.test_api_flow import session
     app = create_app(Settings(data_dir=tmp_path / "route-library"), adapters={"fake": FakeAdapter()},
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(lambda request: pytest.fail("No provider call"))),

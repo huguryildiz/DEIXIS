@@ -9,7 +9,7 @@ import { backPanel, openPanel, reportPanel, showAnswer, sourcePanel } from './pa
 // Case O: the arXiv source route (slice 22, D104). With DEIXIS_ARXIV_SOURCE=auto and Marker not installed, a PDF that
 // is an arXiv version gets the numbered display equations of the authors' LaTeX source of that version placed into
 // its page text, matched to the page by their numbers. This checks application behavior with a SYNTHETIC record, a
-// SYNTHETIC PDF and a SYNTHETIC source archive (tests/arxiv_helpers.py) and a fake fetch, not real arXiv access or
+// SYNTHETIC PDF and a SYNTHETIC source archive (tests/support/arxiv_helpers.py) and a fake fetch, not real arXiv access or
 // matching quality on real papers.
 //
 // Its own fixture server with DEIXIS_FIXTURE_ARXIV_SOURCE=fake: Settings(arxiv_source="auto"), Marker not installed

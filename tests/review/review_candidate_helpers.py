@@ -13,7 +13,7 @@ from deixis.workflow.review.snapshot import build_snapshot
 from tests.review.review_helpers import report_with_sections, review_lib
 from tests.candidates.test_candidate_store import provider_record
 from deixis.documents.pdf import Extraction, PageText, chunk_page
-from tests.helpers import make_pdf
+from tests.support.helpers import make_pdf
 
 
 def add_version(lib, **changes):
@@ -122,7 +122,7 @@ def candidate_context_fixture(value):
 
 
 def candidate_response(si):
-    from tests.fakes import valid_response
+    from tests.support.fakes import valid_response
     out = json.loads(valid_response(si))
     context = si["review_input"]["candidate_context"]
     cells = [c for m in context["matrix"] for c in m["cells"] if c["quotes"]]

@@ -8,7 +8,7 @@ from dataclasses import replace
 import pytest
 
 from deixis.documents import acquisition, pdf
-from tests.helpers import make_pdf
+from tests.support.helpers import make_pdf
 from tests.reextract.reextract_r2a_helpers import api_library, child_lock, head, url
 from tests.reextract.reextract_r2b_helpers import source
 from tests.reextract.test_reextract_r2b_writers import call_writer, configure

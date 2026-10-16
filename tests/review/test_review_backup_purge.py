@@ -41,7 +41,7 @@ def cleanup(paths, settings):
 
 def test_backup_roundtrip_preserves_four_tables_old_pdf_and_both_payload_routes(review_lib, tmp_path):
     from deixis.documents.pdf import Extraction, PageText, chunk_page
-    from tests.helpers import make_pdf
+    from tests.support.helpers import make_pdf
     lib = review_lib; settings = Settings(data_dir=tmp_path); settings.papers_dir.mkdir(); settings.payloads_dir.mkdir()
     asset, _, data, sha = asset_evidence(lib)
     (settings.papers_dir / "SYNTHETIC.pdf").write_bytes(data)

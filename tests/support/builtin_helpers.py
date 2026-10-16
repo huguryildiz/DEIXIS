@@ -9,7 +9,7 @@ from pathlib import Path
 
 from deixis.documents import local_embedding
 
-FAKE_RUNNER = Path(__file__).parent / "documents" / "fake_embedding_runner.py"
+FAKE_RUNNER = Path(__file__).parent.parent / "documents" / "fake_embedding_runner.py"
 FILE_BODIES = {f.name: f"SYNTHETIC {f.name} ".encode() * (3 + i) for i, f in enumerate(local_embedding.MODEL_FILES)}
 
 

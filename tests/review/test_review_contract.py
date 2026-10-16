@@ -8,7 +8,7 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from deixis.domain import contracts
-from tests.fakes import valid_response
+from tests.support.fakes import valid_response
 from tests.review.review_helpers import si, output, finding
 
 

@@ -19,7 +19,7 @@ Python 3.12, native arm64. Runtime data lives in `DEIXIS_DATA_DIR` (default `~/L
 
 - `workflow/`: runs and steps. Discovery is the fast path (`fast_path.py`, `fast_search.py`, `fast_chain.py`, `fast_read.py`); answers in `fast_answer.py`. Each step is a row keyed by `operation_key`, so a succeeded step is never re-run.
 - `models/` + `flow._model_step`: a model call gets a stored `StepInput` and a strict schema; no tools, no silent model fallback, bounded repair.
-- `contracts/research/*.schema.json` + `domain/contracts.py`: step I/O and semantic checks. A schema change also updates `tests/fixtures/research/*` and `tests/fakes.py::valid_response`.
+- `contracts/research/*.schema.json` + `domain/contracts.py`: step I/O and semantic checks. A schema change also updates `tests/fixtures/research/*` and `tests/support/fakes.py::valid_response`.
 - `methods/deixis-research/`: instructions loaded into model steps; editing them changes `skill_package_hash`.
 - `providers/registry.py`: scholarly sources. `storage/migrations/`: one new numbered file per schema change; never edit an applied one.
 - UI: read [.impeccable.md](.impeccable.md) first. Mockup v24 (`.local/design/elicit-style-mockup/`) is the visual spec; declared differences live in `apps/web/e2e/parity/exceptions.ts`.

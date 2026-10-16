@@ -12,7 +12,7 @@ import pytest
 from deixis.documents import pdf, pdf_files
 from deixis.storage import db
 from deixis.workflow import file_restore, text_retry
-from tests.helpers import make_pdf
+from tests.support.helpers import make_pdf
 from tests.reextract.reextract_r2a_helpers import api_library, body, counts, head, seed, store_library, url
 from tests.reextract.reextract_r2b_helpers import tear
 from tests.reextract.reextract_r2c_helpers import events, forbid_calls, startup

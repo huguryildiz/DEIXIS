@@ -284,7 +284,7 @@ def test_a_dead_install_s_ready_check_blocks_recovery_until_its_runner_ends(setu
     paths = setup["paths"]
     monkeypatch.setenv("FAKE_RUNNER", "slow_ready:30")
     script = tmp_path / "installer.py"
-    script.write_text(DEAD_INSTALLER.format(paths=[str(p) for p in (os.path.dirname(os.path.dirname(__file__)), "backend", ".")],
+    script.write_text(DEAD_INSTALLER.format(paths=[str(p) for p in (os.path.dirname(os.path.dirname(__file__)), os.path.join(os.path.dirname(os.path.dirname(__file__)), "support"), "backend", ".")],
                                             data=str(tmp_path / "data")))
     installer = subprocess.Popen([sys.executable, str(script)], stdout=subprocess.PIPE, text=True,
                                  cwd=os.path.dirname(os.path.dirname(os.path.dirname(__file__))))

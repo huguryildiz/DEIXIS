@@ -16,7 +16,7 @@ from deixis.config import Settings
 from deixis.providers import common, registry
 from deixis.storage import db
 from deixis.workflow.watch.store import WatchStore
-from tests.fakes import FakeAdapter
+from tests.support.fakes import FakeAdapter
 from tests.app.test_api_flow import session
 
 

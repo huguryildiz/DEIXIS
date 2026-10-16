@@ -12,7 +12,7 @@ from deixis.storage import db
 from deixis.workflow import flow as flow_module
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow.report.store import ReportStore
-from tests.fakes import FakeAdapter
+from tests.support.fakes import FakeAdapter
 from tests.review.review_helpers import report_with_sections, review_lib, stored_review, snapshot, review_run, step_payload, all_rows
 from tests.review.review_run_helpers import review_api, body
 

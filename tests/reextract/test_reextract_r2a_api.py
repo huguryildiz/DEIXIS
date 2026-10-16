@@ -497,7 +497,7 @@ def test_storage_classifier_keeps_unclassified_sqlite_errors_as_code_errors_guar
 
 
 def test_shared_file_assets_exclude_each_other_but_other_hash_proceeds(tmp_path, monkeypatch):
-    from tests.helpers import make_pdf
+    from tests.support.helpers import make_pdf
     with api_library(tmp_path) as lib:
         shared = seed(lib.store, lib.settings, version="older-v1", data=lib.data)
         separate = seed(lib.store, lib.settings, data=make_pdf(["SYNTHETIC distinct file."]))

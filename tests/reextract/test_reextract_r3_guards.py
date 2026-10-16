@@ -14,7 +14,7 @@ from deixis.workflow.review.snapshot import build_snapshot
 from deixis.workflow.review.stale import stale_reasons
 from deixis.workflow.tables import TableStore
 from deixis.workflow.views import research_view
-from tests.helpers import make_pdf
+from tests.support.helpers import make_pdf
 from tests.reextract.reextract_r2a_helpers import child_lock, head, seed, store_library
 from tests.reextract.reextract_r2b_helpers import tear, write
 from tests.reextract.reextract_r2c_helpers import child

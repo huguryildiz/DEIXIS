@@ -16,7 +16,7 @@ from deixis.config import Settings
 from deixis.documents import pdf
 from deixis.storage import db
 from deixis.workflow.store import Store
-from tests.helpers import make_pdf
+from tests.support.helpers import make_pdf
 
 
 PUBLIC_RETRY_FIELDS = {"operation_id", "asset_id", "lifecycle", "outcome", "reason", "decision_code",

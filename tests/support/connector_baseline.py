@@ -1,6 +1,6 @@
 """SYNTHETIC replay freeze on 1fb1743. Regenerate explicitly, never from a test.
 
-PYTHONPATH=backend:. .venv/bin/python tests/connector_baseline.py --write
+PYTHONPATH=backend:. .venv/bin/python tests/support/connector_baseline.py --write
 """
 
 import argparse
@@ -18,7 +18,7 @@ from deixis.domain import canonical
 from deixis.providers import arxiv, common, openalex, pacing, query_compiler, query_rules, registry, semantic_scholar
 from deixis.providers import contract, facade
 
-FIXTURES = Path(__file__).parent / "fixtures" / "connectors"
+FIXTURES = Path(__file__).parent.parent / "fixtures" / "connectors"
 BASELINE = FIXTURES / "baseline.json"
 SYNTHETIC_KEY = "SYNTHETIC-B1-SECRET-DO-NOT-STORE"
 QUERY = "synthetic query"

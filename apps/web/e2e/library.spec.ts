@@ -47,7 +47,7 @@ type Entry = { work_id: string; title: string; authors: string[]; year: number |
 type Library = { entries: Entry[]; researches: Research[] }
 type View = { research: { id: string; title: string }; scope: { source_scope: string }; runs: { kind: string; status: string }[]; sources: { source_version_id: string; selection: { state: string } }[] }
 
-// The same tiny PDF tests/helpers.py::make_pdf writes: one page of Helvetica text.
+// The same tiny PDF tests/support/helpers.py::make_pdf writes: one page of Helvetica text.
 function makePdf(text: string): Buffer {
   const objects = ['<< /Type /Catalog /Pages 2 0 R >>', '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
     '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>']

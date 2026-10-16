@@ -55,7 +55,7 @@ synthetic fixtures (D201).
    adapters and fixtures together. Unknown searchable sources route as
    `no_route`, so explicitly decide their SW admission and request cost.
 4. Add native SYNTHETIC response files under `tests/fixtures/connectors/responses/`
-   and replay scripts in `tests/connector_baseline.py`. Every registered
+   and replay scripts in `tests/support/connector_baseline.py`. Every registered
    provider/endpoint must have all required shapes; coverage fails for an
    unrepresented synthetic registration. Run `tests/test_connector_boundary.py`
    and the relevant integration tests with mocked HTTP, fake credentials,
@@ -145,7 +145,7 @@ continues.
 Explicit regeneration command from the repository root:
 
 ```sh
-PYTHONPATH=backend:. UV_CACHE_DIR=/tmp/deixis-uv-cache .venv/bin/python tests/connector_baseline.py --write
+PYTHONPATH=backend:. UV_CACHE_DIR=/tmp/deixis-uv-cache .venv/bin/python tests/support/connector_baseline.py --write
 ```
 
 Tests read the freeze; they do not regenerate it. The frozen descriptors pin

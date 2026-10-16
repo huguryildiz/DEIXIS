@@ -476,7 +476,7 @@ def _tree(folder: Path) -> dict[str, tuple[int, str]]:
 def build_synthetic_library(base: Path) -> dict[str, int]:
     """SYNTHETIC library through the in-process app with the test-only FakeAdapter: two researches that share sources, an
     upload, a removed membership, a trashed research. Returns the SQL counts the library has when it is built."""
-    sys.path[:0] = [str(REPO / "tests"), str(REPO)]
+    sys.path[:0] = [str(REPO / "tests"), str(REPO / "tests" / "support"), str(REPO)]
     from fastapi.testclient import TestClient
     from helpers import make_pdf
     from test_api_flow import app_for, create, session, wait_run

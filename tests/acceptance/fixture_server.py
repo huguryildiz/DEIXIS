@@ -67,7 +67,7 @@ download, show the steps, check, choose and remove the model with no network, no
 
 `DEIXIS_FIXTURE_ARXIV_SOURCE=fake` (case O, slice 22, D104) starts the server with `Settings(arxiv_source="auto")` and
 monkeypatches `deixis.documents.fetch.fetch_file`, before `create_app`, to an async fake that calls the rate gate's
-`before()`/`after()` and returns a SYNTHETIC arXiv source archive (`tests/arxiv_helpers.py`) instead of a network
+`before()`/`after()` and returns a SYNTHETIC arXiv source archive (`tests/support/arxiv_helpers.py`) instead of a network
 request; Marker is not installed in the fixture's temp data directory, so the arXiv source route reads the one arXiv
 record this mode adds. Its PDF (`arxiv_pdf()`, `make_arxiv_pdf()` plus the record's DOI) has the letters-only text of
 two display equations that the fixture's source archive's LaTeX matches and places.
@@ -110,7 +110,7 @@ from textwrap import fill
 from typing import Any
 
 REPO = Path(__file__).resolve().parents[2]
-sys.path[:0] = [str(REPO / "tests"), str(REPO / "backend")]
+sys.path[:0] = [str(REPO / "tests"), str(REPO / "tests" / "support"), str(REPO / "backend")]
 
 import httpx  # noqa: E402
 import keyring  # noqa: E402

@@ -74,6 +74,8 @@ Every model step is sent with no tools, a fixed JSON schema and an allowlist of 
 
 ## Quickstart
 
+DEIXIS is still in active development. For now it runs from this repository; an installable app for macOS, Windows and Linux is planned.
+
 **Supported:** macOS on Apple Silicon with a native arm64 Python 3.12 from [uv](https://docs.astral.sh/uv/), Node 22.12 or newer within major version 22 with npm 10, and Google Chrome for the browser tests. Intel Macs, Linux, Windows and other Node versions are untested.
 
 ```sh

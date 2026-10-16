@@ -48,6 +48,7 @@ MAX_CONTEXT_CLAIMS = 12  # claim texts kept from the latest answer and from each
 MAX_TABLE_VALUES = 120  # evidence-table values the model reads as context (D50, D53)
 MAX_TABLE_COLUMNS = 3  # the table columns, by name across tables, most related to the follow-up (D53)
 MAX_VALUE_CHARS = 400  # one value's text as the model reads it
+MAX_PRIORITY_SHARE = 0.5  # of the passage limit: the answer's and the table's passages that go first (D50, D64)
 MAX_MORE_QUERIES = 3  # search phrases one follow-up may ask the library with (D50)
 MORE_KEY = "followup_answer:more"
 MORE_SELECTION_KEY = "followup:more_passages"
@@ -244,7 +245,7 @@ def _table_values(store: Any, research_id: str) -> list[dict[str, Any]]:
     passage), in table, row and column order: a trashed table, a removed row or column and a cell without a value
     give nothing."""
     return [dict(r) for r in store.conn.execute(
-        "SELECT t.id AS table_id, c.id AS cell_id, c.source_version_id, v.title, v.year, cr.name AS column_name, cr.options_json, r.value_json,"
+        "SELECT t.id AS table_id, c.id AS cell_id, c.source_version_id, v.work_id, v.title, v.year, cr.name AS column_name, cr.options_json, r.value_json,"
         " l.passage_id FROM evidence_cells c"
         " JOIN evidence_tables t ON t.id = c.table_id AND t.research_id = ? AND t.trashed_at IS NULL"
         " JOIN table_columns col ON col.id = c.column_id AND col.removed_at IS NULL"
@@ -317,6 +318,37 @@ def table_choice(rows: list[dict[str, Any]], rank_of: dict[str, int]) -> dict[st
                     key=lambda cid: (-cells[cid]["score"], position[cells[cid]["column"]]))[:MAX_TABLE_VALUES]
     passages = list(dict.fromkeys(pid for cid in chosen for pid in cells[cid]["passages"]))
     return {"columns": columns, "cell_ids": chosen, "passage_ids": passages}
+
+
+def work_passages(rows: list[dict[str, Any]], cell_ids: list[str], held: set[str], covered: set[str]) -> list[str]:
+    """One passage per work among the chosen table values (D64): the first held passage of the work's best-scoring
+    value that has one, works in the order their best value comes in `cell_ids`. A work is the work, not the version,
+    and a work in `covered` (one the answer's passages already give) gives none."""
+    cited: dict[str, list[str]] = {}
+    work_of: dict[str, str] = {}
+    for row in rows:
+        work_of[row["cell_id"]] = row["work_id"]
+        if row["passage_id"] in held:
+            cited.setdefault(row["cell_id"], []).append(row["passage_id"])
+    covered, out = set(covered), []
+    for cid in cell_ids:
+        if work_of.get(cid) not in covered and cited.get(cid):
+            covered.add(work_of[cid])
+            out.append(cited[cid][0])
+    return out
+
+
+def priority_passages(answer_ids: list[str], rows: list[dict[str, Any]], choice: dict[str, Any], held: set[str],
+                      work_of_passage: dict[str, str], limit: int) -> list[str]:
+    """The passages that go first in a follow-up's selection (D50, D53, D64): the latest answer's (up to a quarter of
+    the limit), then one per work among the chosen table values for the works those do not already give, then the
+    chosen values' other passages; together at most MAX_PRIORITY_SHARE of the limit. The rest of the limit is left
+    to the follow-up's own ranking."""
+    answer = list(dict.fromkeys(answer_ids))[:limit // 4]
+    covered = {work_of_passage[pid] for pid in answer if pid in work_of_passage}
+    per_work = work_passages(rows, choice["cell_ids"], held, covered)
+    rest = [pid for pid in choice["passage_ids"] if pid in held]
+    return list(dict.fromkeys(answer + per_work + rest))[:int(limit * MAX_PRIORITY_SHARE)]
 
 
 def _column_key(name: str) -> str:
@@ -417,20 +449,25 @@ async def _selection(flow: Any, run: dict[str, Any], scope: dict[str, Any], ques
     # The passages no ranking matched, breadth-first: each source's first passage (its abstract when it has one),
     # then each source's second, and so on. A question in another language than the passages matches no word, and
     # the model, not the word match, says whether the passages answer it.
-    # The passages the latest answer cites, then those of the table values this follow-up reads (D53), go first, up
-    # to half the limit (D50). A table value may cite a passage of the reserve; it is read in this round too.
-    held = {pid for part in (sources, frozen_pool.get("reserve", {})) for pid_list in part.values() for pid in pid_list}
+    # The passages the latest answer cites, then those of the table values this follow-up reads (D53), one per work
+    # first (D64), go first (`priority_passages`). A table value may cite a passage of the reserve; it is read in this
+    # round too.
+    holder = {pid: svid for part in (sources, frozen_pool.get("reserve", {})) for svid, pid_list in part.items()
+              for pid in pid_list}
+    held = set(holder)
+    work_of_version = {r[0]: r[1] for r in store.conn.execute(
+        f"SELECT id, work_id FROM source_versions WHERE id IN ({', '.join('?' * len(set(holder.values())))})",
+        tuple(set(holder.values())))} if holder else {}
     rows = _table_values(store, run["research_id"])
     table = table_choice(rows, {pid: i for i, pid in enumerate(ranked_ids)})
-    priority = list(dict.fromkeys(frozen_pool.get("priority", [])[:limit // 4]
-                                  + [pid for pid in table["passage_ids"] if pid in held]))[:limit // 2]
+    priority = priority_passages(frozen_pool.get("priority", []), rows, table, held,
+                                 {pid: work_of_version[svid] for pid, svid in holder.items()}, limit)
     ranked_ids = priority + ranked_ids
     seen, fill = set(ranked_ids), []
     for depth in range(max((len(v) for v in sources.values()), default=0)):
         fill += [sources[svid][depth] for svid in svids if depth < len(sources[svid]) and sources[svid][depth] not in seen]
     per_source = max(MAX_PASSAGES_PER_SOURCE, limit // max(1, len(svids)))
-    owner = {pid: svid for part in (sources, frozen_pool.get("reserve", {})) for svid, pid_list in part.items()
-             for pid in pid_list}
+    owner = holder
     taken: dict[str, int] = {}
     chosen: list[str] = []
     for pid in ranked_ids + fill:

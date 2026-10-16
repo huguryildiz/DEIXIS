@@ -981,6 +981,91 @@ def test_the_columns_most_related_to_the_follow_up_give_their_values_across_tabl
     assert len(followup.table_choice(many, {f"q{n}": n for n in range(200)})["cell_ids"]) == followup.MAX_TABLE_VALUES
 
 
+def work_rows(spec):
+    """SYNTHETIC `_table_values` rows: (cell id, work id, passage id) per cited passage."""
+    return [{"cell_id": c, "work_id": w, "source_version_id": f"sv_{c}", "passage_id": pid} for c, w, pid in spec]
+
+
+def test_each_work_of_the_chosen_values_gives_one_passage_first():
+    """D64: one held passage per work, from the work's best value in the chosen order. Two versions of one work are
+    one work; a passage not held, or a work already covered, gives none."""
+    rows = work_rows([("c1", "w1", "p1a"), ("c1", "w1", "p1b"), ("c2", "w2", "p_gone"), ("c3", "w1", "p1c"),
+                      ("c4", "w3", None), ("c5", "w2", "p2"), ("c6", "w4", "p4")])
+    held = {"p1a", "p1b", "p1c", "p2", "p4"}
+    assert followup.work_passages(rows, ["c3", "c1", "c2", "c4", "c5", "c6"], held, set()) == ["p1c", "p2", "p4"]
+    assert followup.work_passages(rows, ["c3", "c1", "c2", "c4", "c5", "c6"], held, {"w2"}) == ["p1c", "p4"]
+    assert followup.work_passages(rows, [], held, set()) == []
+
+
+def test_priority_passages_skip_the_answers_works_and_leave_half_the_limit_to_the_ranking():
+    """D64: the answer's passages first; a work they already give adds no table passage of its own; one per other
+    work, then the chosen values' other passages; at most half the limit, so the follow-up's own ranking keeps the
+    other half. A reserve passage counts as held."""
+    rows = work_rows([(f"c{n}", f"w{n}", f"t{n}") for n in range(10)] + [("c0", "w0", "t0b")])
+    choice = {"cell_ids": [f"c{n}" for n in range(10)], "passage_ids": ["t0", "t0b"] + [f"t{n}" for n in range(1, 10)]}
+    held = {f"t{n}" for n in range(10)} | {"t0b", "a0"}  # t9 stands for a reserve passage
+    work_of = {"a0": "w0"} | {f"t{n}": f"w{n}" for n in range(10)} | {"t0b": "w0"}
+    priority = followup.priority_passages(["a0"], rows, choice, held, work_of, 12)
+    assert priority == ["a0", "t1", "t2", "t3", "t4", "t5"] and len(priority) == 12 // 2
+    # Nothing from the answer: every work gives one, then the cap.
+    assert followup.priority_passages([], rows, choice, held, work_of, 40) == [
+        "t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "t0b"]
+
+
+def test_the_selection_puts_one_passage_per_work_first_and_ranks_the_rest(tmp_path, monkeypatch):
+    """D64 through `_selection`: the answer's passage first; its work adds no table passage; a reserve work, then one
+    version of a work held in two versions, then the next work, up to half the limit; the question's own ranking fills
+    the other half. SYNTHETIC records; the table rows are given directly."""
+    from types import SimpleNamespace
+    from deixis.storage import db
+    from deixis.storage.db import new_id, now, transaction
+    from deixis.workflow.store import Store
+    conn = db.connect(tmp_path / "library.sqlite")
+    db.migrate(conn)
+    store = Store(conn)
+    rid = store.create_research("SYNTHETIC routing question", "attached", "quick", [], "fake", "fake-model", None)
+    works, text = {}, {}
+    for n in range(6):
+        sv = store.create_upload_source(f"SYNTHETIC work {n}")
+        works[n] = [sv]
+    second = new_id("srv")
+    with transaction(conn):
+        conn.execute("INSERT INTO source_versions (id, work_id, title, origin, version_label, created_at)"
+                     " VALUES (?, ?, 'SYNTHETIC work 0', 'provider', 'submittedVersion', ?)",
+                     (second, store.source(works[0][0])["work_id"], now()))
+        works[0].append(second)
+        for n, svs in works.items():
+            for sv in svs:
+                body = (f"SYNTHETIC work {n} routing summary.", f"SYNTHETIC work {n} second page.")[:2 if n == 1 else 1] if n != 5 else (
+                    "SYNTHETIC holding time is computed from depth.", "SYNTHETIC holding time shrinks with depth.")
+                text[sv] = [store._insert_passage(sv, None, "abstract", None, None, "provider", None, None, t) for t in body]
+    for svs in works.values():
+        for sv in svs:
+            store.add_to_corpus(rid, sv, "user_upload", selection_state="included", selection_origin="user")
+    work = {n: store.source(svs[0])["work_id"] for n, svs in works.items()}
+    p = {n: text[works[n][0]][0] for n in works}
+    value = {"title": "SYNTHETIC work", "year": 2020, "options_json": None, "value_json": json.dumps({"text": "depth-based"}),
+             "column_name": "Routing family"}
+    cites = p | {1: text[works[1][0]][1]}  # the answer cites work 1's first passage, its table value the second
+    rows = [value | {"cell_id": f"c{n}", "work_id": work[n], "source_version_id": works[n][0], "passage_id": cites[n]}
+            for n in (4, 0, 1, 2, 3)]
+    rows.insert(2, value | {"cell_id": "c0b", "work_id": work[0], "source_version_id": second,
+                            "passage_id": text[second][0]})
+    monkeypatch.setattr(followup, "_table_values", lambda store, rid: rows)
+    sources = {sv: text[sv] for n, svs in works.items() if n != 4 for sv in svs}
+    frozen = {"sources": sources, "reserve": {works[4][0]: text[works[4][0]]}, "priority": [p[1]],
+              "basis": "included_works", "answer_run_id": None}
+    run = store.create_run(rid, "followup_answer", {"max_followup_passages": 8}, None)
+
+    async def no_semantic(*args, **kwargs):
+        return None
+    flow = SimpleNamespace(store=store, _semantic_ranking=no_semantic)
+    selected = asyncio.run(followup._selection(flow, store.run(run["id"]), store.scope(rid), "holding time", frozen))
+    chosen = selected["passage_ids"]
+    assert chosen[:4] == [p[1], p[4], p[0], p[2]] and selected["from_priority"] == 4
+    assert text[second][0] not in chosen[:4] and cites[1] not in chosen[:4] and set(text[works[5][0]]) <= set(chosen) and len(chosen) == 8
+
+
 def test_a_follow_up_reads_the_table_values_its_question_is_about(tmp_path):
     """D53 end to end: the table has two columns; the follow-up's ranking reaches the page one column's value cites,
     so that column's value is sent as context and its page goes first. SYNTHETIC records and the fake adapter."""

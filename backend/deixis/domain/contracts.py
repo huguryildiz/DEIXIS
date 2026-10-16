@@ -2808,7 +2808,7 @@ def with_citation_handles(step_input: dict[str, Any]) -> dict[str, Any]:
         target["source_id"] = handles.get(target["source_id"], target["source_id"])
         for column in target["columns"]:
             column["column_id"] = handles[column["column_id"]]
-        for item in target.get("earlier_issues") or []:  # a retry names its columns as the model sees them (D65)
+        for item in target.get("earlier_issues") or []:  # a retry names its columns as the model sees them (D68)
             item["column_id"] = handles.get(item["column_id"], item["column_id"])
     if target := shown.get("adjudication_target"):
         target["source_id"] = handles.get(target["source_id"], target["source_id"])
@@ -3172,7 +3172,7 @@ def claim_assessment_evidence(step_input: dict[str, Any], item: dict[str, Any]) 
             "passage_id": None if abstract else passage["passage_id"], "quote": anchor.text}
 
 
-# Problems of one cell answer that leave the other answers of the same cell extraction output usable (D65).
+# Problems of one cell answer that leave the other answers of the same cell extraction output usable (D68).
 # Anything else (a schema error, an envelope mismatch, an unknown or twice-answered column) fails the whole output.
 CELL_SALVAGE_HINTS = {
     "anchor_not_in_passage": "A quote was not found word for word in the passage it cites. Copy the words exactly from"

@@ -559,7 +559,7 @@ export const GEOMETRY_EXCEPTIONS: GeometryException[] = [
     pairs: ['watch.acts', 'rvpanel.acts', 'rvdlg.buttons', 'sched.buttons'], axes: ['y'],
     note: 'Check now / Schedule… / Turn off, a finding\'s Accept / Dismiss / Defer and the dialog footers follow the stored content above them. x, width and height are compared.' },
   // S15a: the [parity] table's cells are not all filled, so a one-line notice about them stands above the toolbar
-  // (D65: it no longer stops the report; the mockup's table is full and has no such line).
+  // (D68: it no longer stops the report; the mockup's table is full and has no such line).
   { id: 'table-toolbar-reason', rule: '§0 rule 1 (the reason comes from the stored table summary) and AGENTS.md (a disabled action says why)', pairs: ['table.toolbar', 'table.wrap'], axes: ['y'],
     note: 'The toolbar and the grid sit under the one-line notice ("N of M cells have no verified answer …"). x, width and height of every button, and x and width of the grid, are compared.' },
   { id: 'table-grid-rows', rule: '§0 rule 1 (a grid has as many rows as the data has, each as tall as its values)', pairs: ['table.wrap'], axes: ['height'],

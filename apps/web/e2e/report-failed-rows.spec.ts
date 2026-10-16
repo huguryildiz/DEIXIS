@@ -7,7 +7,7 @@ import { nextPort } from './ports'
 import { openPanel, showAnswer } from './panels'
 
 // Synthetic records and one fixed extraction failure; this tests that failed cells do not stop a report and that the
-// report says what it rests on (D65), not model quality.
+// report says what it rests on (D68), not model quality.
 const REPO = path.resolve(process.cwd(), '..', '..')
 const OUT = path.resolve(process.env.DEIXIS_ACCEPTANCE_DIR ?? 'test-results/acceptance')
 const PORT = nextPort() // P17 has its own server and library.

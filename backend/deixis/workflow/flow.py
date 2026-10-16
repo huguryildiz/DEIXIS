@@ -4309,7 +4309,7 @@ class ResearchFlow:
 
     def _save_salvaged(self, run: dict[str, Any], job: _FillJob, result: dict[str, Any]) -> None:
         """Store a salvaged cell extraction: the answers that passed, the retry's answers that pass, and every column
-        still failing as not verified (a value without linked evidence) or, without a value, as before (D65).
+        still failing as not verified (a value without linked evidence) or, without a value, as before (D68).
 
         What was kept, asked again and dropped is recorded once in a `cell_salvage` step, the way an answer's salvage
         records its dropped citations. Cells are saved before that step closes and saving is idempotent per StepInput,

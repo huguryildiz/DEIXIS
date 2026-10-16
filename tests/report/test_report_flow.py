@@ -682,7 +682,7 @@ def test_assembly_catches_viii_text_drift(tmp_path):
 
 
 def test_report_run_fails_when_the_evidence_table_has_no_included_row(tmp_path):
-    # Empty cells do not stop a report (D65); a table none of whose rows is an included source does.
+    # Empty cells do not stop a report (D68); a table none of whose rows is an included source does.
     flow, store, reports, _, run, scope, report_id = report_flow(tmp_path, fill=False)
     store.conn.execute("UPDATE selections SET state = 'excluded' WHERE research_id = ?", (run["research_id"],))
 

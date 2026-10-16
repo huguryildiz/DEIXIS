@@ -1,4 +1,4 @@
-"""Reports over tables with failed or empty cells (D65), and the older failed-row snapshots they still read.
+"""Reports over tables with failed or empty cells (D68), and the older failed-row snapshots they still read.
 
 Synthetic records and fake adapters only: these tests show what the report run, its snapshot, views and exports do with
 such cells; they say nothing about model quality.""" 
@@ -116,7 +116,7 @@ def snapshot(state):
 
 
 def legacy_snapshot(state, failed, reason="anchor_not_in_passage", save=True):
-    """Save a snapshot as the failed-row rule saved it before D65: the failed rows listed with their missing
+    """Save a snapshot as the failed-row rule saved it before D68: the failed rows listed with their missing
     columns, their cells left out, row counts, and no basis."""
     _, store, reports, _, run, _, report = state
     rid, table = run["research_id"], run["target"]["table_id"]

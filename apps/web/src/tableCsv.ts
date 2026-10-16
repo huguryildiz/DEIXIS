@@ -63,7 +63,7 @@ export function downloadTableCsv(table: TableView, sources: Source[]) {
 
 // Why a report cannot be written from this table now, or '' when it can. The table panel's "Write a manuscript draft"
 // and the evidence report’s "Write a new version" read the same rule from the table's stored `report_ready`. Empty or
-// unverified cells never stop a report (D65): `unfinished` counts them for a plain notice, and the report's own
+// unverified cells never stop a report (D68): `unfinished` counts them for a plain notice, and the report's own
 // basis note says what each source was read from.
 export function reportGate(view: ResearchView, summary: TableSummary | undefined, columns: number) {
   const ready = summary?.report_ready

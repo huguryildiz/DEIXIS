@@ -61,7 +61,7 @@ def reading_counts(store: Store, research_id: str, included: list[str]) -> dict[
 
 def reading_basis(store: Store, rows: list[dict[str, Any]], cells: list[dict[str, Any]],
                   columns: list[dict[str, Any]]) -> dict[str, Any]:
-    """What the report's table rests on, for the basis note at the top of the report (D65).
+    """What the report's table rests on, for the basis note at the top of the report (D68).
 
     A row read from PDF text has a cell made from selected PDF passages; any other row was read from its abstract or,
     without one, from its metadata. A cell could not be verified when it holds no finished answer (empty, or a failed

@@ -55,7 +55,7 @@ def _fill(lib):
 
 def test_report_ready_needs_a_column_and_an_included_row_and_lists_unfinished_cells(lib):
     store, _, tables, research_id, source_id, _, table_id, column_id = lib
-    # An empty cell does not stop a report (D65); it is listed for the table's counts.
+    # An empty cell does not stop a report (D68); it is listed for the table's counts.
     assert report_ready(store, research_id, table_id) == {
         "ready": True, "missing": [{"source_version_id": source_id, "column_id": column_id}], "rows": 1}
     _fill(lib)

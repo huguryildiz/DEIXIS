@@ -246,7 +246,7 @@ def test_development_columns_are_ordinary_columns_to_the_report(lib):
     add(lib)
     role_columns = [c for c in columns(lib) if c["lineage_role"]]
     readiness = report_ready(lib.store, lib.rid, lib.tid)
-    assert readiness["ready"]  # empty cells no longer stop a report (D65); they are listed as unfinished
+    assert readiness["ready"]  # empty cells no longer stop a report (D68); they are listed as unfinished
     assert readiness["missing"] == [{"source_version_id": sid, "column_id": c["id"]} for c in role_columns]
     snapshot = build_snapshot(lib.store, lib.rid, lib.tid)
     assert [c["column_id"] for c in snapshot["columns"]] == [c["id"] for c in columns(lib)]

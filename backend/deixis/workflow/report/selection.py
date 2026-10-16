@@ -44,7 +44,7 @@ def _query(plan: dict[str, Any]) -> str:
 
 
 def usable_cells(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
-    """The snapshot cells a report section may cite or count (D65). A source without text ('inaccessible') and a value
+    """The snapshot cells a report section may cite or count (D68). A source without text ('inaccessible') and a value
     without linked evidence ('not_verified') stay in Table I and the basis note, but are neither evidence nor a count."""
     return [cell for cell in snapshot.get("cells", [])
             if cell["state"] != "inaccessible" and not (cell["state"] == "not_verified" and not cell.get("evidence"))]

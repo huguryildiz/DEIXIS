@@ -1,4 +1,4 @@
-"""Per-cell salvage of a cell extraction output (D65), with SYNTHETIC records and the FakeAdapter only.
+"""Per-cell salvage of a cell extraction output (D68), with SYNTHETIC records and the FakeAdapter only.
 
 A passing test shows how failed answers are kept, retried and stored; it says nothing about how well a model fills cells.
 """

@@ -1092,7 +1092,7 @@ class TableStore:
 def report_ready(store: Store, research_id: str, table_id: str) -> dict[str, Any]:
     """Whether a report can be written from this table: it needs a column and an included source among its rows.
 
-    Empty, failed and unverified cells do not stop a report (D65): the report writes from what the table holds, uses
+    Empty, failed and unverified cells do not stop a report (D68): the report writes from what the table holds, uses
     a source without values from its abstract or metadata, and its basis note says which sources those are. `missing`
     lists the cells of included rows that hold no finished answer, for the counts the table shows.
     """

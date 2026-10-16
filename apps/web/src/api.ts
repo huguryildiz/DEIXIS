@@ -930,7 +930,7 @@ export type ReportDetail = ReportSummary & { language: string; updated_at: strin
   passage_freshness: PassageFreshness
   missing_rows: { counts: { included: number; completed: number; failed: number; cells_missing: number; cells_total: number }
     failed_rows: { source_version_id: string; source_key: string | null; title: string; reason: string; missing_columns: { column_id: string; name: string; reason: string }[] }[] } | null
-  // What the table was read from, frozen with the snapshot (D65); null for a report saved before it.
+  // What the table was read from, frozen with the snapshot (D68); null for a report saved before it.
   basis: ReportBasis | null
   // `stale`: every cited cell or row that differs from the snapshot, including changes a section marked as seen.
   evidence_changes: { any: boolean; changed_cells: number; removed_sources: number; added_sources: number; revised_columns: number; not_checked: string[]

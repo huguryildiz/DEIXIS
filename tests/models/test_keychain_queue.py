@@ -7,6 +7,7 @@ Service keychain behaves when locked or asked for a password.
 
 import asyncio
 import json
+import types
 import os
 import stat
 import threading
@@ -73,6 +74,16 @@ class RefusingKeyring(KeyringBackend):
 
     def delete_password(self, service, username):
         raise PasswordDeleteError("locked")
+
+
+@pytest.fixture(autouse=True)
+def no_redetection(monkeypatch):
+    """A keychain found unreachable is looked for again with keyring made to detect anew, which would pick the developer's
+    real keychain; here that step only counts, and the next lookup comes at once."""
+    calls = []
+    monkeypatch.setattr(keyring.core, "init_backend", lambda limit=None: calls.append("init_backend"))
+    monkeypatch.setattr(credentials, "RETRY_AFTER", 0.0)
+    return calls
 
 
 @pytest.fixture(autouse=True)
@@ -458,3 +469,176 @@ def test_a_key_file_that_is_repaired_is_read_before_the_next_change(no_keychain,
         assert c.get("/api/credentials").json()["keychain"]["file_error"] is False
     finally:
         c.__exit__(None, None, None)
+
+
+# ---- E5: what a failed Secret Service connection means (keyring 25.7.0 wraps it in RuntimeError) -------------------------
+class FakeStorageError(Exception):
+    pass
+
+
+class FakeConnection:
+    def close(self):
+        pass
+
+
+def fake_secretstorage(monkeypatch, dbus_init=lambda: FakeConnection(), available=lambda connection: True):
+    """The real keyring Secret Service backend, with the `secretstorage` module it imports replaced at that level."""
+    from keyring.backends import SecretService
+
+    module = types.SimpleNamespace(__name__="secretstorage", __version_tuple__=(3, 5, 0), dbus_init=dbus_init,
+                                   check_service_availability=available)
+    monkeypatch.setattr(SecretService, "secretstorage", module, raising=False)
+    monkeypatch.setattr(SecretService, "exceptions", types.SimpleNamespace(SecretStorageException=FakeStorageError), raising=False)
+
+
+def raises(error, cause=None):
+    def raiser(*args):
+        if cause is not None:
+            raise error from cause
+        raise error
+    return raiser
+
+
+def no_session_bus():
+    raise FakeStorageError("Environment variable DBUS_SESSION_BUS_ADDRESS is unset") from KeyError("DBUS_SESSION_BUS_ADDRESS")
+
+
+def refused_connection():
+    raise FakeStorageError("[Errno 61] Connection refused") from ConnectionRefusedError(61, "Connection refused")
+
+
+@pytest.mark.parametrize("dbus_init, available, bus_address", [
+    (no_session_bus, None, "unix:path=/run/user/1000/bus"),  # no address in the environment of the process: no desktop session
+    (refused_connection, None, None),  # no session bus address at all
+    (lambda: FakeConnection(), lambda connection: False, "unix:path=/run/user/1000/bus"),  # neither running nor activatable
+])
+def test_a_secret_service_that_is_not_there_means_the_session_store(monkeypatch, client, dbus_init, available, bus_address):
+    fake_secretstorage(monkeypatch, dbus_init, available or (lambda connection: True))
+    monkeypatch.delenv("DBUS_SESSION_BUS_ADDRESS", raising=False)
+    if bus_address and dbus_init is not no_session_bus:
+        monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", bus_address)
+    keyring.set_keyring(fail.Keyring())
+    credentials._found_cache = None
+    assert not credentials.keychain_failed()
+    saved = client.put(f"/api/credentials/{KEY}", json={"value": V1})
+    assert saved.status_code == 200 and saved.json()["key"]["source"] == "session" and credentials._session == {KEY: V1}
+
+
+def check_raises_timeout(connection):
+    raise FakeStorageError("timed out waiting for the Secret Service") from TimeoutError()
+
+
+@pytest.mark.parametrize("dbus_init, available", [
+    (refused_connection, lambda connection: True),  # the bus address is set and the connection fails
+    (lambda: FakeConnection(), check_raises_timeout),  # connected, and the service errors while it is asked
+])
+def test_a_secret_service_that_is_there_and_errors_is_not_replaced_by_the_session_store(monkeypatch, client, dbus_init, available):
+    fake_secretstorage(monkeypatch, dbus_init, available)
+    monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus")
+    keyring.set_keyring(fail.Keyring())
+    credentials._found_cache = None
+    assert credentials.keychain_failed()
+    refused = client.put(f"/api/credentials/{KEY}", json={"value": V1})
+    assert refused.status_code == 503 and refused.json()["code"] == "keychain_not_responding"
+    assert credentials._session == {} and not os.environ.get(KEY)
+
+
+def test_a_keychain_found_unreachable_is_looked_for_again_and_a_service_that_recovers_is_used(monkeypatch, client, no_redetection):
+    service_up = []
+    fake_secretstorage(monkeypatch, lambda: FakeConnection() if service_up else refused_connection())
+    monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus")
+    keyring.set_keyring(fail.Keyring())  # keyring's choice when it first looked, and it keeps that choice
+    credentials._found_cache = None
+    resets = []
+    monkeypatch.setattr(keyring.backend.get_all_keyring, "reset", lambda: resets.append(1), raising=False)
+    monkeypatch.setattr(credentials, "RETRY_AFTER", 60.0)
+    assert client.put(f"/api/credentials/{KEY}", json={"value": V1}).status_code == 503
+    assert no_redetection == []  # the first look needs no fresh detection
+    credentials._failed_at -= 61  # the wait is over
+    working = GateKeyring()
+
+    def detect_anew(limit=None):
+        no_redetection.append("init_backend")
+        keyring.set_keyring(working)  # what keyring finds once the service answers
+
+    monkeypatch.setattr(keyring.core, "init_backend", detect_anew)
+    service_up.append(1)
+    saved = client.put(f"/api/credentials/{KEY}", json={"value": V1})
+    assert saved.status_code == 200 and saved.json()["key"]["source"] == "keychain" and working.items[("DEIXIS", KEY)] == V1
+    assert no_redetection == ["init_backend"] and resets == [1] and credentials._session == {}
+
+
+def test_a_keychain_found_unreachable_is_looked_for_again_only_every_so_often(monkeypatch, client, no_redetection):
+    monkeypatch.setattr(credentials, "RETRY_AFTER", 60.0)
+    monkeypatch.setattr(keyring.core, "init_backend", lambda limit=None: no_redetection.append("init_backend"))
+    fake_secretstorage(monkeypatch, refused_connection)
+    monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus")
+    keyring.set_keyring(fail.Keyring())
+    credentials._found_cache = None
+    for _ in range(3):
+        assert client.put(f"/api/credentials/{KEY}", json={"value": V1}).status_code == 503
+    assert no_redetection == []  # inside the wait: no new look
+    credentials._failed_at -= 61
+    assert client.put(f"/api/credentials/{KEY}", json={"value": V1}).status_code == 503
+    assert no_redetection == ["init_backend"]
+
+
+# ---- E5: a keychain found after the start read none of its keys ---------------------------------------------------------
+def test_a_keychain_found_after_the_start_has_its_saved_keys_read(gate, fast, monkeypatch, tmp_path):
+    gate.items[("DEIXIS", KEY)] = V1
+    release = threading.Event()
+    real = keyring.get_keyring
+
+    def hang():
+        release.wait(5)
+        return real()
+
+    monkeypatch.setattr(keyring, "get_keyring", hang)
+    credentials._found_cache = None
+    credentials.load_into_environment()  # the start: discovery timed out
+    c = make_client(tmp_path)
+    try:
+        assert entry(c)["keychain_unavailable"] is True and not entry(c)["configured"]
+        release.set()
+        monkeypatch.setattr(keyring, "get_keyring", real)  # the keychain answers from now on
+        assert wait_until(lambda: credentials._worker.running_since is None)
+        shown = entry(c)  # the next request finds it and reads the keys, as the start does
+        assert shown["configured"] and shown["source"] == "keychain" and shown["keychain_unavailable"] is False
+        assert os.environ[KEY] == V1 and credentials._keys_pending is False
+    finally:
+        c.__exit__(None, None, None)
+
+
+def test_a_keychain_found_after_the_start_has_its_keys_read_outside_the_api_too(gate, fast, monkeypatch):
+    gate.items[("DEIXIS", KEY)] = V1
+    release = threading.Event()
+    real = keyring.get_keyring
+
+    def hang():
+        release.wait(5)
+        return real()
+
+    monkeypatch.setattr(keyring, "get_keyring", hang)
+    credentials._found_cache = None
+    credentials.load_into_environment()
+    assert not os.environ.get(KEY) and credentials._keys_pending
+    release.set()
+    monkeypatch.setattr(keyring, "get_keyring", real)
+    assert wait_until(lambda: credentials._worker.running_since is None)
+    assert credentials.keychain_name() is not None and os.environ[KEY] == V1 and KEY not in credentials._unavailable
+
+
+# ---- D29: a shell key is replaced only where a keychain holds the replacement -------------------------------------------
+def test_a_shell_key_cannot_be_replaced_without_a_system_keychain(no_keychain, client, monkeypatch):
+    monkeypatch.setenv(KEY, "shell-source-key-value")
+    refused = client.put(f"/api/credentials/{KEY}", json={"value": V1})
+    assert refused.status_code == 409 and refused.json()["code"] == "shell_key_stays"
+    assert os.environ[KEY] == "shell-source-key-value" and credentials._session == {} and entry(client)["source"] == "environment"
+    other = client.put("/api/credentials/S2_API_KEY", json={"value": "s2-source-good-key"})
+    assert other.status_code == 200 and other.json()["key"]["source"] == "session"  # a key that is not from the shell still can
+
+
+def test_a_shell_key_is_replaced_when_a_system_keychain_holds_the_replacement(client, monkeypatch):
+    monkeypatch.setenv(KEY, "shell-source-key-value")
+    replaced = client.put(f"/api/credentials/{KEY}", json={"value": V1})
+    assert replaced.status_code == 200 and replaced.json()["key"]["source"] == "keychain" and os.environ[KEY] == V1

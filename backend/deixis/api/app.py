@@ -1377,6 +1377,10 @@ def create_app(
         return JSONResponse(status_code=409, content={"code": "keychain_busy", "detail":
             "The previous change to this key has not finished. Wait for the system keychain to answer."})
 
+    @app.exception_handler(credentials.ShellKeyStays)
+    async def shell_key_stays(request: Request, exc: credentials.ShellKeyStays) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"code": "shell_key_stays", "detail": str(exc)})
+
     @app.exception_handler(credentials.FileStoreDamaged)
     async def file_store_damaged(request: Request, exc: credentials.FileStoreDamaged) -> JSONResponse:
         return JSONResponse(status_code=409, content={"code": "file_store_damaged", "detail":
@@ -1437,6 +1441,7 @@ def create_app(
     async def save_mathpix_pair(body: MathpixPair, request: Request) -> Any:
         """Test the pair against Mathpix's usage API, then store it as one keychain item; a refused pair is not stored. A
         pair that only failed to reach Mathpix is stored, untested."""
+        await credentials.check_save(mathpix.ENV)
         result = await mathpix.test_pair(request.app.state.http, body.app_id, body.app_key)
         if result["status"] == "rejected":
             return JSONResponse(status_code=422, content={"code": "credential_test_failed", "service": "mathpix",
@@ -1479,6 +1484,7 @@ def create_app(
             raise HTTPException(422, "A zotero.org library ID is a number")
         if env != "ZOTERO_LIBRARY_ID" and len(body.value) < 8:
             raise HTTPException(422, "A key has at least 8 characters")
+        await credentials.check_save(env)
         result = await credentials.test(request.app.state.http, env, body.value) if key.testable else None
         # Only a refusal (400/401/403) keeps a key out. One that could not be checked (no network, timeout, 5xx, 429, an API
         # without a model list) is saved as "saved, not verified" (E6, E12).

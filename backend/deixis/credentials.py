@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import contextlib
 import json
 import os
 import queue
@@ -48,6 +49,7 @@ from deixis.domain.limits import service_error_kind, http_limit, retry_at
 SERVICE = "DEIXIS"
 KEYCHAIN_TIMEOUT = 10.0  # seconds a keychain call may take before the app says the keychain is not responding (E5)
 STARTUP_TIMEOUT = 20.0  # seconds the whole start-up read of saved keys may take
+RETRY_AFTER = 5.0  # seconds before a keychain found unreachable is looked for again
 FILE_STORE = "keys-unencrypted.json"  # the opted-in file store in the data folder (A6)
 OPENAI_API_URL = "https://api.openai.com/v1"
 DEEPSEEK_API_URL = "https://api.deepseek.com"
@@ -100,6 +102,8 @@ _session: dict[str, str] = {}  # keys kept in memory when no keychain backend ex
 _data_dir: Path | None = None  # where the file store lives
 _settling: dict[str, asyncio.Task[None]] = {}  # keys whose last keychain call timed out and is still unfinished (E5)
 _found_cache: "_Found | None" = None  # what the last backend discovery found; a discovery that failed is not kept
+_failed_at: float | None = None  # when the last discovery found the keychain unreachable; the next one looks again, at most every RETRY_AFTER
+_keys_pending = False  # start-up could not reach the keychain, so no saved key was read; they are read when it is found
 
 
 class KeySourceConflict(Exception):
@@ -108,6 +112,10 @@ class KeySourceConflict(Exception):
 
 class KeychainNotResponding(Exception):
     """The keychain did not answer in time; whether the change was made is not known yet."""
+
+
+class ShellKeyStays(Exception):
+    """The key is set in the shell and there is no system keychain to hold a replacement (D29)."""
 
 
 class KeychainBusy(Exception):
@@ -224,13 +232,36 @@ def _display_name(backend: Any) -> str:
         type(backend).__module__.rsplit(".", 1)[-1], getattr(backend, "name", None) or type(backend).__name__)
 
 
-def _probe() -> _Found:
+def _service_errored(exc: RuntimeError) -> bool:
+    """keyring raises RuntimeError from a backend's priority for 'not here' and, in 25.7.0, also wraps a failed connection
+    in it (SecretService: `Unable to initialize SecretService` from a SecretStorageException; libsecret: `Can't open a
+    session`; KWallet: from a DBusException). A bare RuntimeError (SecretStorage or python-dbus not installed, version too
+    old, 'neither running nor activatable') says the module or the service is not there. One with a cause says the connection
+    was tried and failed, unless the cause is the missing session bus address (a KeyError for DBUS_SESSION_BUS_ADDRESS, or
+    that variable unset): no desktop session, so no keychain. Limit: with the address set but nothing behind it the keychain
+    is taken to exist and be broken."""
+    cause, depth = exc.__cause__, 0
+    if cause is None:
+        return False
+    while cause is not None and depth < 10:
+        if isinstance(cause, KeyError):
+            return False
+        cause, depth = cause.__cause__, depth + 1
+    return bool(os.environ.get("DBUS_SESSION_BUS_ADDRESS"))
+
+
+def _probe(again: bool = False) -> _Found:
     """Find the keychain; runs on the worker, because discovery and a backend's priority can talk to a desktop service.
     keyring turns any error of a backend it probes into 'not viable' and falls back to `fail.Keyring`, which looks the same
-    as having no backend. So when it fell back, each registered backend is asked again: a priority that raises anything but
-    keyring's own RuntimeError ('not available on this machine'), or a backend that is viable but cannot be built, means a
-    keychain exists and is broken. Limit: an error while a backend plugin is loaded is only logged by keyring and is not seen
-    here; a backend whose own priority raises RuntimeError for a broken service counts as absent."""
+    as having no backend, and it remembers that choice for the life of the process. So `again` (the last look found the
+    keychain unreachable) makes it forget and detect anew. When it fell back, each registered backend is asked again: a
+    priority that raises anything but a RuntimeError that says the service is not there (`_service_errored`), or a backend
+    that is viable but cannot be built, means a keychain exists and is broken. Limit: an error while a backend plugin is
+    loaded is only logged by keyring and is not seen here."""
+    if again:
+        with contextlib.suppress(KeyError):
+            keyring.backend.get_all_keyring.reset()
+        keyring.core.init_backend()
     backend = keyring.get_keyring()
     if backend.priority > 0:
         return _Found(backend, _display_name(backend), False)
@@ -240,7 +271,9 @@ def _probe() -> _Found:
                 continue
             try:
                 viable = cls.priority > 0
-            except RuntimeError:
+            except RuntimeError as exc:
+                if _service_errored(exc):
+                    return _Found(backend, None, True)
                 continue
             except Exception:  # noqa: BLE001
                 return _Found(backend, None, True)
@@ -265,37 +298,64 @@ def _in_event_loop() -> bool:
     return True
 
 
+def _retry_wait() -> bool:
+    """The keychain was found unreachable a moment ago: not looked for again yet."""
+    return _failed_at is not None and time.monotonic() - _failed_at < RETRY_AFTER
+
+
+def _remember(found: _Found | None) -> bool:
+    """Keep what a discovery found. A keychain found unreachable (or no answer at all) is looked for again after RETRY_AFTER,
+    and keyring is made to detect anew, so a service that comes back is picked up. True when a working keychain or none was
+    found, False when it is unreachable."""
+    global _found_cache, _failed_at
+    if found is None or found.failed:
+        _failed_at = time.monotonic()
+        return False
+    _found_cache, _failed_at = found, None
+    return True
+
+
 def _found() -> _Found:
     """The keychain, from what the last discovery found. Never waits on the event loop: from the API the routes discover
     first (`probe_async`), and a keychain not found yet counts as unreachable."""
-    global _found_cache
+    global _keys_pending
     if _current(_found_cache) or (_in_event_loop() and _found_cache is not None):
         return _found_cache  # type: ignore[return-value]
-    if _in_event_loop():
+    if _in_event_loop() or _retry_wait():
         return _UNREACHABLE
     try:
-        found = _call_sync(_probe)
+        found: _Found | None = _call_sync(_probe, _failed_at is not None)
     except (KeyringError, OSError, ValueError, KeychainNotResponding):
-        return _UNREACHABLE
-    if not found.failed:  # a broken keychain is asked again next time
-        _found_cache = found
-    return found
+        found = None
+    if not _remember(found):
+        return found or _UNREACHABLE
+    if _keys_pending:  # start-up could not reach it: read the saved keys now
+        _keys_pending = False
+        load_into_environment()
+    return found  # type: ignore[return-value]
 
 
 async def probe_async() -> None:
-    """Discover the keychain for the API: on the worker, with the time limit; a late or failed answer is not kept."""
-    global _found_cache
-    if _current(_found_cache) or _worker.stuck():
+    """Discover the keychain for the API: on the worker, with the time limit; a late or failed answer is not kept. A keychain
+    found after start-up could not reach it has its saved keys read now."""
+    global _keys_pending
+    if _current(_found_cache) or _worker.stuck() or _retry_wait():
         return
-    future = _worker.submit(_probe)
+    future = _worker.submit(_probe, _failed_at is not None)
     wrapped = asyncio.wrap_future(future)
     wrapped.add_done_callback(lambda f: f.cancelled() or f.exception())  # a late failure is read here, not left unretrieved
     done, _ = await asyncio.wait({wrapped}, timeout=KEYCHAIN_TIMEOUT)
     if not done:
         future.cancel()
+        _remember(None)
         return
-    if wrapped.exception() is None and not wrapped.result().failed:
-        _found_cache = wrapped.result()
+    found = wrapped.result() if wrapped.exception() is None else None
+    if _remember(found) and _keys_pending:
+        _keys_pending = False
+        if found.name is not None:  # type: ignore[union-attr]
+            await _load_keys_async()
+        else:
+            load_into_environment()
 
 
 def keychain_name() -> str | None:
@@ -533,17 +593,50 @@ def _stored_value_ok(key: ManagedKey, value: str) -> bool:
                                            for k in ("app_id", "app_key", "revision")))
 
 
+def _apply_read(env: str, read: concurrent.futures.Future[Any]) -> None:
+    try:
+        value = read.result(timeout=0)
+    except Exception as exc:  # noqa: BLE001 - a locked or unreachable keychain, in whatever way the backend reports it
+        _note_unread(env, exc)
+        return
+    if value:
+        _adopt(env, value)
+
+
+def _unloaded_keys() -> list[str]:
+    _broken.clear()
+    _unavailable.clear()
+    return [env for env in MANAGED_KEYS if env not in _from_dotenv and env not in _from_keychain]
+
+
+async def _load_keys_async() -> None:
+    """The start-up read of the keychain's keys, for the API: queued on the worker and awaited against one deadline."""
+    reads = {env: _worker.submit(_keychain_get, env) for env in _unloaded_keys()}
+    wrapped = [asyncio.wrap_future(read) for read in reads.values()]
+    for w in wrapped:
+        w.add_done_callback(lambda f: f.cancelled() or f.exception())
+    if wrapped:
+        await asyncio.wait(wrapped, timeout=STARTUP_TIMEOUT)
+    for env, read in reads.items():
+        if read.done():
+            _apply_read(env, read)
+        else:
+            read.cancel()
+            _unavailable.add(env)
+
+
 def load_into_environment() -> None:
     """Fill key variables from the keychain (or, with none, the session store and the file the person chose), over a shell
     value but not over `.env`; called after .env is read. An item that cannot be read or is not a valid key is skipped, never
     put into the environment, and shown as broken (E2). A keychain that does not answer in time leaves the keys it holds
-    unread and shown as unavailable; the app starts without them (E5)."""
-    _broken.clear()
-    _unavailable.clear()
-    todo = [env for env in MANAGED_KEYS if env not in _from_dotenv and env not in _from_keychain]
+    unread and shown as unavailable; the app starts without them, and reads them when the keychain is found later (E5)."""
+    global _keys_pending
+    _keys_pending = False
+    todo = _unloaded_keys()
     found = _found()
     if found.failed:  # a keychain that cannot be reached: its keys are unread, not known to be gone
         _unavailable.update(todo)
+        _keys_pending = True
         return
     if found.name is None:
         _load_file_store()
@@ -555,16 +648,12 @@ def load_into_environment() -> None:
     deadline = time.monotonic() + STARTUP_TIMEOUT
     for env, read in reads.items():
         try:
-            value = read.result(timeout=max(0.0, deadline - time.monotonic()))
+            read.exception(timeout=max(0.0, deadline - time.monotonic()))
         except concurrent.futures.TimeoutError:
             read.cancel()
             _unavailable.add(env)
             continue
-        except Exception as exc:  # noqa: BLE001 - a locked or unreachable keychain, in whatever way the backend reports it
-            _note_unread(env, exc)
-            continue
-        if value:
-            _adopt(env, value)
+        _apply_read(env, read)
 
 
 def status(env: str) -> dict[str, Any]:
@@ -584,11 +673,26 @@ def status(env: str) -> dict[str, Any]:
             "keychain_pending": env in _settling}
 
 
+def _refuse_shell_key(env: str) -> None:
+    """D29: a key from the shell is replaced from Settings only when a system keychain holds the replacement; with none, it
+    stays as it is rather than moving to the session store."""
+    found = _found()
+    if status(env)["source"] == "environment" and found.name is None and not found.failed:
+        raise ShellKeyStays(f"{env} is set in the shell and there is no system keychain; change it there")
+
+
+async def check_save(env: str) -> None:
+    """Before a route spends a request on a key: whether it may be saved at all."""
+    await probe_async()
+    _refuse_shell_key(env)
+
+
 def _prepare_save(env: str, value: str) -> str | None:
     if not MANAGED_KEYS[env].pair and not key_verification.is_valid_key(value):
         raise ValueError("not a valid key")  # the routes refuse these first; this keeps one out of the environment for good
     if env in _settling:
         raise KeychainBusy()
+    _refuse_shell_key(env)
     return status(env)["source"]
 
 

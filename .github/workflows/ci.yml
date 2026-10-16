@@ -1,6 +1,6 @@
 # Runs the quick test suite and the web build on every push to main. Informational only: no branch rule requires it,
 # so a red run never blocks a push. macOS arm64, the only platform the app supports.
-name: tests
+name: ci
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: tests-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

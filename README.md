@@ -149,7 +149,7 @@ Before an answer is published, code checks the cited source IDs, reading depth, 
 
 ## Background
 
-DEIXIS grew out of the earlier Quaestio design work. The method references carried over from it (scoping reviews, snowballing, research-gap frameworks, Chain of Ideas and related AI research systems) were in this README until October 2026; they are in Git history at [`README.md` @ `ebe8ddda`](https://github.com/huguryildiz/DEIXIS/blob/ebe8ddda/README.md#historical-method-and-reference-record). The development lines feature adapts the chain-building idea from Chain of Ideas ([Li et al., 2024](https://arxiv.org/abs/2410.13185)).
+The development lines feature takes its idea of a development relation between papers from Chain of Ideas ([Li et al., 2024](https://arxiv.org/abs/2410.13185)): the model decides, from a passage of the later paper, whether it builds on an earlier one. DEIXIS does not run the Chain of Ideas agent or generate new ideas. The older method references (scoping reviews, snowballing, research-gap frameworks and related AI research systems) are in Git history at [`README.md` @ `ebe8ddda`](https://github.com/huguryildiz/DEIXIS/blob/ebe8ddda/README.md#historical-method-and-reference-record).
 
 ## License
 

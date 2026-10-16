@@ -20,7 +20,9 @@ re-extracted (D45). From `layout-v3` the text drawn inside a vector plot (tick v
 the "(a)"/"(b)" panel marks) is dropped: a short small-type block that lies on or just around a cluster of drawings with sloped
 lines or curves. Rules and grids made only of straight horizontal and vertical lines (tables) do not count, and a caption
 ("Fig. 4. …", "Table II …") or a section heading is never dropped. From `layout-v5` (D48) a line at least 30% U+FFFD (a symbol
-font without a Unicode map) is replaced by `UNREADABLE`; neighbouring marks become one.
+font without a Unicode map) is replaced by `UNREADABLE`; neighbouring marks become one. From `layout-v6` a block in the
+top or bottom 8% of the page whose text, digits masked, recurs on at least 3 pages and 40% of them (a journal's running
+header or footer such as "J. Mar. Sci. Eng. 2023, 11, 1567 17 of 23") is dropped whatever its type size.
 
 A page left without text is named: an image page (a scan, which `ocr.py` can read on request, D51) or a blank page.
 
@@ -57,7 +59,7 @@ from deixis.documents import child_guard, inline_math
 from deixis.documents.child_guard import _libproc, _resident_bytes  # re-export existing readers
 
 log = logging.getLogger("deixis.pdf")
-EXTRACTION_VERSION = f"pymupdf-{pymupdf.__version__}-layout-v5"  # v5: unreadable symbol lines marked
+EXTRACTION_VERSION = f"pymupdf-{pymupdf.__version__}-layout-v6"  # v6: repeated header/footer lines dropped
 # MuPDF's default text flags without TEXT_PRESERVE_LIGATURES, so "ﬁ" is extracted as "fi".
 TEXT_FLAGS = pymupdf.TEXT_PRESERVE_WHITESPACE | pymupdf.TEXT_MEDIABOX_CLIP
 MAX_PAGES = 400
@@ -79,6 +81,11 @@ DOWNLOAD_NOTICE = re.compile(
 )
 SMALL_TYPE = 0.87  # blocks below this share of the body size are small type (IEEE: 8 pt notes, 9 pt abstract, 10 pt body)
 TOP_MARGIN = 0.07  # share of the page height where running heads sit
+# layout-v6: a block in the top or bottom band whose text, digits masked, recurs on many pages is a running header or
+# footer ("J. Mar. Sci. Eng. 2023, 11, 1567 17 of 23"), whatever its type size. Alternating left/right heads recur on
+# about half the pages, hence the share.
+EDGE_BAND = 0.08  # share of the page height at the top and at the bottom
+REPEAT_PAGES, REPEAT_SHARE = 3, 0.4  # pages a band text must recur on, at least this many and this share of the pages
 # A numbered section heading ("I. INTRODUCTION", "3.2 Results", "A. Model") or an unnumbered standard one.
 HEADING = re.compile(r"(?:(?:[IVXL]+|\d+(?:\.\d+)*|[A-H])\.?\s+[A-Z][^.]{1,76}|Abstract|References|Acknowledge?ments?|Appendix)")
 PLOT_STROKES = 10  # sloped lines or curves a drawing cluster needs to count as a plot (a table's rules have none)
@@ -168,6 +175,24 @@ def _mark_plot_labels(page: pymupdf.Page, blocks: list[dict]) -> None:
             block["plot_label"] = True
 
 
+def _edge_key(block: dict) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"\d+", "#", " ".join(block["lines"]))).strip().lower()
+
+
+def _mark_repeated_edges(layouts: list[tuple]) -> None:
+    """Flag the blocks in a page's top or bottom band whose digit-masked text recurs across pages (layout-v6)."""
+    pages: dict[str, set[int]] = {}
+    for index, _, height, blocks in layouts:
+        for block in blocks:
+            if block["bbox"][3] < height * EDGE_BAND or block["bbox"][1] > height * (1 - EDGE_BAND):
+                pages.setdefault(_edge_key(block), set()).add(index)
+    repeated = {key for key, seen in pages.items() if len(seen) >= max(REPEAT_PAGES, REPEAT_SHARE * len(layouts))}
+    for _, _, height, blocks in layouts:
+        for block in blocks:
+            if (block["bbox"][3] < height * EDGE_BAND or block["bbox"][1] > height * (1 - EDGE_BAND)) and _edge_key(block) in repeated:
+                block["repeated_edge"] = True
+
+
 def _body_size(layouts: list[tuple]) -> float:
     """The type size that carries most characters in the document, rounded to a quarter point."""
     sizes: dict[float, int] = {}
@@ -228,7 +253,7 @@ def _block_kind(block: dict, height: float, body_size: float) -> str:
         return "plot_label"
     if re.fullmatch(r"\d{1,4}", compact):
         return "page_number"
-    if small and block["bbox"][3] < height * TOP_MARGIN:
+    if block.get("repeated_edge") or (small and block["bbox"][3] < height * TOP_MARGIN):
         return "running_head"
     if len(block["lines"]) <= 2 and len(compact) <= 80 and HEADING.fullmatch(compact):
         return "heading"
@@ -312,6 +337,7 @@ def _extract_in_process(path: str, max_chars: int, placements: list[dict] | None
                 continue
             seen += sum(block["chars"] for block in blocks)
             layouts.append((index, label, page.rect.height, blocks))
+        _mark_repeated_edges(layouts)
         body_size = _body_size(layouts)
         pages, chars = [], 0
         by_page: dict[int, list[dict]] = {}

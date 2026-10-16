@@ -4,6 +4,12 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D74 — Running headers and footers repeated across pages leave the PDF text
+Status: accepted · Date: 2026-10-16 · Writer: Claude
+Context: The owner saw "J. Mar. Sci. Eng. 2023, 11, 1567 17 of 23" as a passage of an MDPI paper. layout-v5 dropped only small-type blocks in the top 7% of the page, so a body-size header or any footer stayed in the page text, in passages and in what the model reads.
+Decision: `layout-v6` in `documents/pdf.py`. A block in the top or bottom 8% of the page whose text, lowercased with digits masked, recurs on at least 3 pages and at least 40% of the document's pages is a running head, whatever its type size (40% lets alternating left/right heads through). It is dropped like the old running head and refused as an equation placement region. Older passages keep their extraction version until the asset is re-extracted; no answer is rewritten.
+Limits: Checked on the 35 PDFs in the owner's library: every dropped text was a journal, author or volume head, a page footer or the IEEE download notice; no body text was caught. A head that MuPDF merges with a neighbouring line on one page stays on that page. PDFs under 3 pages, OCR pages and Marker pages are not covered.
+
 ## D73 — PRISMA-S, the Method box and Watch read the requests the fast plan sent
 Status: accepted · Date: 2026-10-16 · Writer: Claude
 Context: After the clean start, PRISMA-S, the Method box and Watch still read `compiled_queries` from the frozen protocol. On the fast path that list holds queries the plan dropped and leaves out the semantic, seed and Semantic Scholar bulk requests, which are stored under their own step keys, not `search:<index>`. The planned-query list could therefore name queries that were never meant to be sent and miss requests that were.

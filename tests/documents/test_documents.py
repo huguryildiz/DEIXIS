@@ -34,7 +34,7 @@ def test_extraction_drops_the_ieee_xplore_download_notice(tmp_path):
     text = pdf.extract_pdf(path).pages[0].text
     assert "Authorized licensed" not in text and "Restrictions apply" not in text and "IEEE Xplore" not in text
     assert "body line one about packet sizes." in text and "body line two about relays." in text
-    assert pdf.EXTRACTION_VERSION.endswith("-layout-v5")
+    assert pdf.EXTRACTION_VERSION.endswith("-layout-v6")
 
     one_line = ("ends here.\nAuthorized licensed use limited to: SYNTHETIC University. Downloaded on September 15,2026 at 19:45:08 UTC"
                 " from IEEE Xplore.  Restrictions apply. \nNext")
@@ -67,6 +67,32 @@ def test_layout_extraction_moves_small_type_after_the_body_and_drops_page_furnit
     assert paragraphs[-1].startswith("A. Author is with the Department")  # the note follows the body text
     assert "and ends in the second column." in " ".join(paragraphs[1:-1])
     assert "arXiv:2601" not in text and "SYNTHETIC JOURNAL" not in text and "7" not in text.split()
+
+
+def test_layout_extraction_drops_headers_and_footers_repeated_across_pages(tmp_path):
+    import pymupdf
+
+    doc = pymupdf.open()
+    for n in range(1, 6):
+        page = doc.new_page(width=612, height=792)
+        page.insert_text((72, 40), f"J. Synthetic Eng. 2023, 11, 1567 {n} of 5", fontsize=10)  # body-size running head
+        page.insert_text((72, 300), f"SYNTHETIC body text on page {n} about acoustic links.", fontsize=10)
+        page.insert_text((72, 770), f"Synthetic Footer Journal, page {n}", fontsize=10)
+    doc[0].insert_text((72, 735), "A one-off line at the bottom of the first page.", fontsize=10)
+    path = tmp_path / "repeated.pdf"
+    doc.save(path)
+
+    pages = pdf.extract_pdf(path).pages
+    for n, page in enumerate(pages, start=1):
+        assert "Synthetic Eng" not in page.text and "Footer Journal" not in page.text
+        assert f"body text on page {n} about acoustic links." in page.text
+    assert "A one-off line at the bottom" in pages[0].text  # not repeated, so kept
+
+    two = pymupdf.open()
+    for n in range(1, 3):
+        two.new_page(width=612, height=792).insert_text((72, 40), f"J. Synthetic Eng. {n} of 2", fontsize=10)
+    two.save(tmp_path / "two.pdf")
+    assert "J. Synthetic Eng." in pdf.extract_pdf(tmp_path / "two.pdf").pages[0].text  # too few pages to call it repeated
 
 
 def test_layout_extraction_drops_the_text_drawn_inside_a_plot_and_keeps_tables(tmp_path):

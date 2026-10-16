@@ -34,7 +34,7 @@
     "glossary": {
       "type": "array",
       "maxItems": 40,
-      "description": "Sourced term definitions, distinct from D44's search concept vocabulary. Index terms are chosen only from the D44 list, never from here.",
+      "description": "Sourced term definitions, each from one allowlisted passage. Index terms later name only concepts these terms or the body summaries already use.",
       "items": {
         "type": "object",
         "additionalProperties": false,

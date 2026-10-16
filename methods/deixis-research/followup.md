@@ -38,9 +38,9 @@ the answer would be useful in the report.
 When `conversation.more_queries_allowed` is true and the passages do not answer
 the question fully, put up to three short search phrases in `more_queries`: the
 words a passage that answers the missing part would contain, in the language of
-the passages. The application then ranks every passage this research holds with
-them and asks you once more with the new passages; it does not search for new
-works. Still return a complete answer from the passages you have. Leave
+the passages. The application then ranks the passages of this research's
+included works with them and, only if that changes the selected passages, asks
+you once more with them; it does not search for new works. Still return a complete answer from the passages you have. Leave
 `more_queries` empty when the outcome is `answered` or when
 `more_queries_allowed` is false.
 

@@ -1,6 +1,6 @@
 ---
 name: deixis-research
-description: Method instructions loaded by the DEIXIS application for its single research agent. Covers passage-linked answers, review of an answer's claims against cited passages, and evidence table cells and column suggestions. Not a globally installed skill; the application supplies each step's input records and output schema.
+description: Method instructions loaded by the DEIXIS application for its single research agent. Covers search planning, screening, full-text reading, passage-linked answers and follow-ups, answer and owner reviews, evidence tables, reports, development lines and candidate checks. Not a globally installed skill; the application supplies each step's input records and output schema.
 ---
 
 # DEIXIS research method
@@ -30,76 +30,37 @@ from that input.
 
 ## Choose the work
 
-Read the section of [source-grounded answer](references/source-grounded-answer.md)
-that matches `task_type`:
+Read the method file for your `task_type`. The application loads it with this
+one; `report_section` also gets the source-grounded answer file.
 
-| `task_type` | Section |
-|---|---|
-| `grounded_answer` | Grounded answer |
-| `report_plan` | [Report](references/report.md) — Report plan |
-| `report_section` | [Report](references/report.md) — Section instructions |
-| `report_review` | [Report](references/report.md) — Report review |
-| `owner_review` | [Owner review](references/review.md) |
+| `task_type` | Method file | Your job |
+|---|---|---|
+| `grounded_answer` | [source-grounded answer](references/source-grounded-answer.md) | Answer the question from the supplied passages. |
+| `followup_answer` | [follow-up answer](followup.md) | Answer a follow-up question from passages of this research the application chose; no search is started. |
+| `answer_review` | [answer review](references/answer-review.md) | Review claims another step wrote; do not answer the question yourself. |
+| `report_plan`, `report_section`, `report_review` | [report](references/report.md) | Write or review one part of a fixed-skeleton report. |
+| `owner_review` | [owner review](references/review.md) | Assess a stored copy as an additional model assessment; empty findings are valid and suggestions never change the original text. |
+| `research_title` | [research title](references/research-title.md) | Name the research before an answer exists. |
+| `vocabulary_labels` | [vocabulary labels](references/vocabulary-labels.md) | Sort the phrases the application extracted into concept blocks; propose none of your own. |
+| `criterion_proposal` | [criterion proposal](references/criterion-proposal.md) | State from the question alone what an included paper must contain, and the words its authors would write. |
+| `search_query` | [search query](references/search-query.md) | Choose the terms of the two keyword blocks, with backups; the application counts them and writes the query. |
+| `abstract_screening` | [abstract screening](references/abstract-screening.md) | Say whether each record's abstract is worth reading in full; decide no inclusion. |
+| `fulltext_adjudication` | [full-text reading](references/fulltext-adjudication.md) | For each part of one inclusion criterion, say whether the shown passages state that the paper contains it; decide no inclusion. |
+| `cell_extraction`, `table_columns` | [evidence table](references/evidence-table.md) | Answer evidence-table columns for one source, or suggest columns; do not answer the question. |
+| `lineage_links` | [development lines](references/synthesis.md) | Decide a development relation for each supplied candidate pair; this is not an idea-chain synthesis. |
+| `claim_decomposition`, `kill_search_query`, `claim_assessment` | [candidate checks](references/candidate-check.md) | Work only on a candidate record the application opened. |
 
-For `followup_answer`, read [follow-up answer](followup.md) instead: you answer
-a follow-up question from the passages of this research the application chose
-for it, and you start no search.
-
-For `answer_review`, read [answer review](references/answer-review.md) instead:
-you review claims another step wrote and do not answer the question yourself.
-
-For `owner_review`, read [owner review](references/review.md): assess the stored
-copy supplied by the application. This is an additional model assessment.
-Return findings only when the supplied material warrants them; empty findings
-are valid. Suggestions never change the original text.
-
-For `vocabulary_labels`, read
-[vocabulary labels](references/vocabulary-labels.md): you sort a phrase list the
-application extracted from the question into concept blocks, and propose no
-phrases of your own.
-
-For `abstract_screening`, read
-[abstract screening](references/abstract-screening.md): you say whether each
-given record's abstract is worth reading in full, and you decide no inclusion.
-
-For `fulltext_adjudication`, read
-[full-text reading](references/fulltext-adjudication.md): for each part of one
-inclusion criterion, you say whether the passages you were shown state that the
-paper itself contains it. You decide no inclusion.
-
-For `criterion_proposal`, read
-[criterion proposal](references/criterion-proposal.md): you state, from the
-question alone, what a paper must contain to be included, and name the words an
-author of such a paper would write.
-
-For `search_query`, read
-[search query](references/search-query.md): you choose the terms of the two
-blocks the keyword search is built from, with backups; the application counts
-them and writes the query.
-
-For `cell_extraction` and `table_columns`, read
-[evidence table](references/evidence-table.md): you answer evidence table
-columns for one source, or suggest columns, and do not answer the question.
-
-For `lineage_links`, read [development lines](references/synthesis.md): make a
-per-pair development-relation decision for each supplied candidate. This task
-is not an idea-chain synthesis. The following availability limits continue to
-apply to `grounded_answer` and the report tasks.
-
-For `claim_decomposition`, `kill_search_query` and `claim_assessment`, read
-[candidate checks](references/candidate-check.md): work only on a candidate
-record the application opened. Claim-specific kill-search is available only
-through these three tasks. The availability limits that follow continue to
-apply to `grounded_answer`, `answer_review` and the report tasks. Free candidate
-development and experiment design or execution remain unavailable everywhere.
+Claim-specific kill-search is available only through the three candidate tasks.
+Free candidate development and experiment design or execution remain
+unavailable everywhere.
 
 For `grounded_answer`, `answer_review` and the report tasks, this version supports only source-grounded
 question answering and, for a report run, the fixed report skeleton described in [report.md](references/report.md).
 In those tasks, literature synthesis across idea chains, candidate research-question development,
 claim-specific kill-search, and experiment design or execution are **not available**; claim-specific
 kill-search runs only through the three candidate tasks above. If the question asks for them outside a report's VI and VII sections, answer what the supplied
-sources support, set `capability_notice` to say which requested part is not supported here, and do not
-simulate the unsupported workflow. That includes proposing research gaps, directions or candidate questions
+sources support and do not simulate the unsupported workflow. In a `grounded_answer`, set `capability_notice`
+to say which requested part is not supported here; a report section records it as `insufficient_evidence`. That includes proposing research gaps, directions or candidate questions
 in a `grounded_answer`: do not offer them as claims, not even as `analyst_inference`; name them in
 `unanswered_aspects` instead. A report's VI (Candidate Unanswered Aspects) and VII (Future Directions)
 sections are the one place this version writes gap and future-direction material, under report.md's rules and
@@ -124,5 +85,6 @@ performed. Do not start candidate development or novelty assessment for an ordin
   say what remains unanswered.
 
 Write the answer in the question's language unless the StepInput says otherwise.
-Ask a clarification question only when an ambiguity would materially change the
-answer; otherwise start the work and state the interpretation you used.
+You cannot ask the user a question in a step. When an ambiguity would materially
+change the result, state the interpretation you used in a field the output schema
+provides for limits or notes.

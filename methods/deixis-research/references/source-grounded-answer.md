@@ -157,10 +157,8 @@ missing part in `unanswered_aspects`.
    retracted, and never as support for a claim on its own.
 11. Put parts of the question the passages do not answer in `unanswered_aspects`.
    An empty claim list with a clear statement of what is missing is a valid answer.
-12. A structured report of what the supplied passages state is supported. If the
-   question requests an unsupported mode (synthesis chains that derive new
-   findings across sources, candidate questions, kill-search, experiments), set
-   `capability_notice` and add an `unsupported_request` limitation; still answer
+12. When the question asks for a mode SKILL.md marks as not available, set
+   `capability_notice`, add an `unsupported_request` limitation and still answer
    the supported part.
 13. Word every text field as set out in Phrasing below.
 

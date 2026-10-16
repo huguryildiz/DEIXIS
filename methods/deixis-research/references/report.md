@@ -14,8 +14,9 @@ given to you as rows and cited cells, and you discuss it — you do not restate 
 ## Shared rules for every report step
 
 - Everything in "Authority and data boundaries" and "Evidence rules" in [SKILL.md](../SKILL.md) applies unchanged.
-  Follow [source-grounded answer, rules 2, 5–7 and 9](source-grounded-answer.md#grounded-answer) for reading
-  depth, source support, exact contiguous anchors, LaTeX and `text_source` handling.
+  A `report_section` step also receives [source-grounded answer](source-grounded-answer.md#grounded-answer);
+  follow its rules 2, 5–7 and 9 for reading depth, source support, exact contiguous anchors, LaTeX and
+  `text_source` handling. The plan and review steps do not receive that file.
 - Write in the question's language (`question.language_hint`, or the question's own script if absent).
 - A claim's `claim_key` is a label you assign once per call, matching `^[A-Za-z_]+\.[0-9]{1,3}$` (for example
   `IV.3`). Reuse the section identifier as the prefix.
@@ -130,10 +131,10 @@ that section, in fixed-skeleton order, and do not invent a section this report d
   Every gap text ends with the sentence
   that it is a candidate and no kill-search was run; never use "gap", "open problem", "novel" or "first" (or
   their Turkish equivalents) anywhere, including implicitly restating them in other words.
-- **VII (Future Directions):** every claim has a non-empty `gap_refs` pointing at a VI gap, OR cites a cell of
-  the evidence table's "proposed future work" column (if the plan's axes include one). A future-work claim
-  drawn from a source's own stated proposal is `source_stated`, cites that cell or passage, and is written as
-  the source's own proposal, not the report's. An `analyst_inference` future-work claim must trace to a VI
+- **VII (Future Directions):** every claim has a non-empty `gap_refs` pointing at an accepted VI gap, OR
+  anchors to a cell of the plan's `future_work_column_id` column. A future-work claim drawn from a source's own
+  stated proposal is `source_stated`, anchors to that cell (a passage may add support), and is written as the
+  source's own proposal, not the report's. An `analyst_inference` future-work claim must trace to a VI
   `gap_id`.
 - **VIII (Limitations and Threats to Validity):** the application writes the numeric core (search/PDF/model
   counts) before your call; write only the prose sentences the application asks for (recall measurement
@@ -143,8 +144,8 @@ that section, in fixed-skeleton order, and do not invent a section this report d
 - **I (Introduction), IX (Conclusion), abstract, index_terms:** every claim has non-empty `body_refs` pointing
   at claim_keys of III-VIII already written; you receive only their one-line code-written summaries (claim_key,
   first sentence, support type, weakest reading depth), never their full text. Do not write a claim here that
-  is not traceable to a body claim; do not generalize beyond what the summaries say. `index_terms` are chosen
-  only from the given D44 concept vocabulary list; do not add a term that is not in that list.
+  is not traceable to a body claim; do not generalize beyond what the summaries say. `index_terms` name only
+  concepts that the body summaries or the plan's glossary already use; add no term that appears in neither.
 
 ## Report review (`report_review`)
 

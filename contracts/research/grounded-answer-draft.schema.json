@@ -27,7 +27,7 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 180,
-      "description": "Concise title in the answer language. Aim for 15–20 words and never exceed 20 words."
+      "description": "Concise title in the answer language. Aim for 12–15 words and never exceed 15 words."
     },
     "answer_language": { "$ref": "common.schema.json#/$defs/language_tag" },
     "claims": {

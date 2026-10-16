@@ -492,9 +492,11 @@ class LocalTools:
                         job["status"] = "succeeded"
             if job["status"] == "running":
                 job.update(status="failed", output="Ollama ended the download without reporting success.")
-        except (httpx.HTTPError, ValueError, TypeError) as exc:
+        except Exception as exc:  # noqa: BLE001 - any failure ends the job, so the slot is never left taken (E17)
             job.update(status="failed", output=f"{type(exc).__name__}: {exc}"[-OUTPUT_TAIL_CHARS:])
         finally:
+            if job["status"] == "running":  # cancelled while DEIXIS closes
+                job.update(status="failed", output=job["output"] or "Stopped.")
             job["finished_at"] = now()
             self._cache = None
 
@@ -623,15 +625,19 @@ class LocalTools:
             while job["status"] == "running":
                 await asyncio.sleep(LMSTUDIO_POLL_SECONDS)
                 state = (await self._client.get(url, timeout=10)).json()
-                job.update(step=str(state.get("status", "")), completed=int(state.get("downloaded_bytes") or 0),
-                           total=int(state.get("total_size_bytes") or job["total"]))
+                if not isinstance(state, dict):
+                    raise ValueError(f"LM Studio answered unexpectedly: {str(state)[:200]}")
+                job.update(step=str(state.get("status", "")), completed=_bytes(state.get("downloaded_bytes")),
+                           total=_bytes(state.get("total_size_bytes")) or job["total"])
                 if state.get("status") == "completed":
                     job["status"] = "succeeded"
                 elif state.get("status") == "failed":
                     job.update(status="failed", output=str(state)[:OUTPUT_TAIL_CHARS])
-        except (httpx.HTTPError, ValueError, TypeError) as exc:
+        except Exception as exc:  # noqa: BLE001 - any failure ends the job, so the slot is never left taken (E17)
             job.update(status="failed", output=f"{type(exc).__name__}: {exc}"[-OUTPUT_TAIL_CHARS:])
         finally:
+            if job["status"] == "running":  # cancelled while DEIXIS closes
+                job.update(status="failed", output=job["output"] or "Stopped.")
             job["finished_at"] = now()
             self._cache = None
 

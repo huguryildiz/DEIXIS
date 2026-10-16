@@ -152,9 +152,54 @@ def test_a_slow_success_with_the_same_key_does_not_cover_a_newer_refusal(name, m
         server.status = 401  # the key is refused; a newer check says so
         assert (await adapter.health(refresh=True))["ready"] is False
         server.gate.set()
-        assert (await slow)["ready"] is True  # the slow check still answers its caller
+        assert (await slow)["ready"] is False  # its caller gets the newer answer too (see the next test)
         before = server.requests
         assert (await adapter.health())["ready"] is False  # but the cache keeps the newer answer
         assert server.requests == before
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("name", CASES)
+def test_a_check_that_lost_the_race_returns_the_newer_answer_to_its_caller(name, monkeypatch):
+    adapter, server, env = build(name, monkeypatch)
+
+    async def scenario():
+        server.gate = asyncio.Event()
+        slow = asyncio.create_task(adapter.health(refresh=True))  # says ready, held inside its request
+        while server.requests == 0:
+            await asyncio.sleep(0)
+        server.status = 401
+        newer = await adapter.health(refresh=True)
+        assert newer["ready"] is False
+        server.gate.set()
+        assert await slow is newer  # not the stale "ready": a concurrent research must see the newest answer
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("name", CASES)
+def test_key_changed_forgets_the_cached_answer_and_stops_a_check_under_way_from_writing(name, monkeypatch):
+    adapter, server, env = build(name, monkeypatch)
+
+    async def scenario():
+        server.status = 429
+        assert (await adapter.health())["ready"] is False  # cached for the key
+        server.status = 200
+        adapter.key_changed("SOME_OTHER_KEY")
+        assert (await adapter.health())["ready"] is False  # another key's change leaves it alone
+        adapter.key_changed(env)  # the same key saved again
+        assert (await adapter.health())["ready"] is True
+        server.gate, server.gated_once = asyncio.Event(), False
+        asked = server.requests
+        slow = asyncio.create_task(adapter.health(refresh=True))
+        while server.requests == asked:
+            await asyncio.sleep(0)
+        adapter.key_changed(env)
+        server.gate.set()
+        await slow
+        before = server.requests
+        await adapter.health()
+        assert server.requests == before + 1  # the check under way wrote nothing
 
     asyncio.run(scenario())

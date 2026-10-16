@@ -554,3 +554,16 @@ def test_key_state_belongs_to_the_value():
     key_verification.set_state("first-value-123", "rejected")
     assert key_verification.settle("first-value-123", "verified") == "rejected"  # a list answer never lifts a refusal
     assert key_verification.settle("second-value-12", "verified") == "verified"
+
+
+def test_saving_the_same_key_again_drops_a_cached_failure_of_the_connection(client, memory_keychain, wire, monkeypatch):
+    monkeypatch.delenv("ZAI_API_KEY", raising=False)
+    wire.answer = lambda request: httpx.Response(200, json={"data": [{"id": "glm-5.1"}]})
+    assert client.put("/api/credentials/ZAI_API_KEY", json={"value": "glm-key-0123456789"}).status_code == 200
+    assert client.get("/api/connections/glm?refresh=true").json()["ready"] is True
+    wire.answer = lambda request: httpx.Response(429)
+    assert client.get("/api/connections/glm?refresh=true").json()["ready"] is False  # a failure is cached for a minute
+    wire.answer = lambda request: httpx.Response(200, json={"data": [{"id": "glm-5.1"}]})
+    assert client.get("/api/connections/glm").json()["ready"] is False
+    assert client.put("/api/credentials/ZAI_API_KEY", json={"value": "glm-key-0123456789"}).status_code == 200  # the same key
+    assert client.get("/api/connections/glm").json()["ready"] is True  # read again, not served from the old failure

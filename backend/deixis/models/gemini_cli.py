@@ -228,6 +228,8 @@ class GeminiCliAdapter:
         status = await self._check()
         if check == self._checks:  # a check that started later owns the cache: only the newest may write it, whatever it found (E7)
             self._health = (time.monotonic(), status)
+        elif self._health:
+            return self._health[1]  # a newer check owns the answer: the caller gets that one, not this stale one
         return status
 
     async def _check(self) -> dict[str, Any]:

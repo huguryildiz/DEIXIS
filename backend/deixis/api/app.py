@@ -1390,6 +1390,12 @@ def create_app(
     async def file_store_unavailable(request: Request, exc: credentials.FileStoreUnavailable) -> JSONResponse:
         return JSONResponse(status_code=409, content={"code": "file_store_unavailable", "detail": str(exc)})
 
+    def key_changed(request: Request, env: str) -> None:
+        """A key was saved or deleted: the connections that use it forget their cached health (E7)."""
+        for adapter in request.app.state.adapters.values():
+            if (forget := getattr(adapter, "key_changed", None)) is not None:
+                forget(env)
+
     def managed_key(env: str) -> credentials.ManagedKey:
         if env not in credentials.MANAGED_KEYS:
             raise HTTPException(404, f"{env} is not a key DEIXIS manages")
@@ -1503,10 +1509,11 @@ def create_app(
             raise HTTPException(503, f"The key could not be written ({type(exc).__name__})") from exc
         if result:
             key_verification.set_state(body.value, result["verification"])
+        key_changed(request, env)
         return {"key": credentials.status(env), "test": result}
 
     @app.delete("/api/credentials/{env}")
-    async def delete_credential(env: str) -> dict[str, Any]:
+    async def delete_credential(env: str, request: Request) -> dict[str, Any]:
         managed_key(env)
         try:
             await credentials.delete_async(env)
@@ -1516,6 +1523,7 @@ def create_app(
             raise HTTPException(503, f"The keychain did not remove the key ({type(exc).__name__})") from exc
         except OSError as exc:
             raise HTTPException(503, f"The key could not be written ({type(exc).__name__})") from exc
+        key_changed(request, env)
         return {"key": credentials.status(env)}
 
     @app.post("/api/credentials/{env}/test")

@@ -308,3 +308,33 @@ def test_a_download_that_cannot_start_a_task_gives_the_slot_back(monkeypatch):
         assert local._lms_pull is None
         return await local.lm_studio_pull("qwen/qwen3.5-9b")
     assert asyncio.run(scenario())["status"] == "succeeded"
+
+
+def test_a_null_progress_answer_from_lm_studio_ends_the_job_and_frees_the_slot(monkeypatch):
+    monkeypatch.setattr(local_tools, "LMSTUDIO_POLL_SECONDS", 0)
+    replies = iter([httpx.Response(200, json={"job_id": "j1", "total_size_bytes": 10}), httpx.Response(200, content=b"null"),
+                    httpx.Response(200, json={"status": "already_downloaded"})])
+    local = LocalTools(httpx.AsyncClient(transport=httpx.MockTransport(lambda request: next(replies))))
+
+    async def running(refresh=False):
+        return {"tools": [{"id": "lm_studio", "running": True}]}
+    monkeypatch.setattr(local, "snapshot", running)
+
+    async def scenario():
+        job = await local.lm_studio_pull("qwen/qwen3.5-9b")
+        await local._lms_task
+        assert job["status"] == "failed" and "unexpectedly" in job["output"] and job["finished_at"]
+        return await local.lm_studio_pull("qwen/qwen3.5-9b")  # not "already being downloaded"
+    assert asyncio.run(scenario())["status"] == "succeeded"
+
+
+def test_a_stream_line_that_is_not_an_object_ends_the_ollama_job(monkeypatch):
+    local, _ = downloader(monkeypatch)
+    local._client = httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b'null\n')))
+
+    async def scenario():
+        job = await local.pull_model("qwen3:8b")
+        await local._pull_task
+        return job
+    job = asyncio.run(scenario())
+    assert job["status"] == "failed" and job["finished_at"]

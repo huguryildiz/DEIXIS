@@ -72,7 +72,15 @@ class AnthropicAdapter:
         status = await self._check(key)
         if check == self._checks and key_verification.fingerprint(api_key() or "") == mine:
             self._health = (time.monotonic(), status, mine)
+        elif self._health and self._health[2] == mine:
+            return self._health[1]  # a newer check owns the answer: the caller gets that one, not this stale one
         return status
+
+    def key_changed(self, env: str) -> None:
+        """A key was saved or deleted: the cached answer goes and any check under way may no longer write it (E7)."""
+        if env == KEY_ENV:
+            self._health = None
+            self._checks += 1
 
     async def _check(self, key: str | None) -> dict[str, Any]:
         status: dict[str, Any] = {"connection": self.connection, "ready": False, "key_configured": bool(key),

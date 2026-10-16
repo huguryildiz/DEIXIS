@@ -189,7 +189,8 @@ function keyHome(keychain: Keychain) {
 function keychainError(e: Error): string {
   if (!(e instanceof ApiError)) return e.message
   return e.code === 'keychain_not_responding' ? t('The system keychain is not responding, so the change may not have been made. DEIXIS shows the real state when it answers.')
-    : e.code === 'keychain_busy' ? t('The previous change to this key has not finished. Wait for the system keychain to answer.') : e.message
+    : e.code === 'keychain_busy' ? t('The previous change to this key has not finished. Wait for the system keychain to answer.')
+    : e.code === 'file_store_damaged' ? t('The key file in your data folder cannot be read, so DEIXIS left it as it is and changes no key until it is fixed or removed.') : e.message
 }
 
 // With no system keychain a key lives in memory for this run; the person can choose an unencrypted file instead (A6).
@@ -200,7 +201,7 @@ function KeyStore({ keychain, onChanged }: { keychain: Keychain; onChanged: () =
   const file = keychain.mode === 'file'
   function choose(enabled: boolean) {
     setBusy(true); setError('')
-    api.setFileStore(enabled).then(() => onChanged()).catch((e: Error) => setError(e.message)).finally(() => setBusy(false))
+    api.setFileStore(enabled).then(() => onChanged()).catch((e: Error) => setError(keychainError(e))).finally(() => setBusy(false))
   }
   return <>
     <Notice tone="attention">
@@ -208,6 +209,7 @@ function KeyStore({ keychain, onChanged }: { keychain: Keychain; onChanged: () =
         : t('We’re using this key for this session; to keep it, install the system keychain: GNOME → gnome-keyring, KDE → KWallet.')}</p>
       <div className="acts"><button type="button" className="ghost" disabled={busy} onClick={() => choose(!file)}>{t(file ? 'Stop storing keys in a file' : 'Store keys in a file instead (unencrypted)')}</button></div>
     </Notice>
+    {keychain.file_error && <Notice tone="error"><p>{t('The key file in your data folder cannot be read, so DEIXIS left it as it is and changes no key until it is fixed or removed.')}</p></Notice>}
     {error && <Notice tone="error"><p>{error}</p></Notice>}
   </>
 }
@@ -228,6 +230,8 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
   const id = `key-${env}`
   // A key saved here replaces one from the shell; removing it brings the shell key back.
   const fromShell = entry.source === 'environment'
+  // D29: with no system keychain a shell key keeps its note and cannot be replaced, though other keys can be kept for the session.
+  if (fromShell && !keychain.available) return <p className="foot-note">{t('This key comes from the terminal that started DEIXIS; change or remove it there.')}</p>
   const inDotenv = entry.source === 'dotenv'
   const home = keyHome(keychain)
   const where = inDotenv ? '' : fromShell ? t('from the terminal that started DEIXIS') : home.where

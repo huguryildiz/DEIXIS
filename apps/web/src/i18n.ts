@@ -2413,6 +2413,7 @@ const tr: Record<string, string> = {
   'Store keys in a file instead (unencrypted)': 'Anahtarları bunun yerine bir dosyada sakla (şifrelenmemiş)',
   'Stop storing keys in a file': 'Anahtarları dosyada saklamayı bırak',
   'The system keychain is not responding, so the change may not have been made. DEIXIS shows the real state when it answers.': 'Sistem anahtarlığı yanıt vermiyor, bu yüzden değişiklik yapılmamış olabilir. DEIXIS, anahtarlık yanıt verince gerçek durumu gösterir.',
+  'The key file in your data folder cannot be read, so DEIXIS left it as it is and changes no key until it is fixed or removed.': 'Veri klasörünüzdeki anahtar dosyası okunamıyor. DEIXIS dosyaya dokunmadı ve dosya düzeltilene ya da silinene kadar hiçbir anahtarı değiştirmez.',
   'The previous change to this key has not finished. Wait for the system keychain to answer.': 'Bu anahtardaki önceki değişiklik bitmedi. Sistem anahtarlığının yanıt vermesini bekleyin.',
   'The system keychain has not answered the last change to this key yet. The key shows its real state once it does; reopen Settings in a moment.': 'Sistem anahtarlığı bu anahtardaki son değişikliğe henüz yanıt vermedi. Yanıt verince anahtar gerçek durumunu gösterir; birazdan Ayarlar’ı yeniden açın.',
   'The system keychain has not answered the last change to this key pair yet. The pair shows its real state once it does; reopen Settings in a moment.': 'Sistem anahtarlığı bu anahtar çiftindeki son değişikliğe henüz yanıt vermedi. Yanıt verince çift gerçek durumunu gösterir; birazdan Ayarlar’ı yeniden açın.',

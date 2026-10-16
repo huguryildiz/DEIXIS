@@ -5,6 +5,7 @@ handles a keychain that does not answer or does not exist; they say nothing abou
 Service keychain behaves when locked or asked for a password.
 """
 
+import asyncio
 import json
 import os
 import stat
@@ -17,6 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 from keyring.backend import KeyringBackend
 from keyring.backends import fail
+from keyring.compat import properties
 from keyring.errors import PasswordDeleteError, PasswordSetError
 
 from deixis import credentials
@@ -188,16 +190,179 @@ def test_a_delete_that_finishes_late_removes_the_key_from_the_app(gate, fast, cl
     assert not entry(client)["configured"] and not os.environ.get(KEY) and gate.items == {}
 
 
-def test_every_keychain_call_runs_on_one_thread_in_turn(gate):
-    seen = []
+def test_every_keychain_call_runs_on_one_thread_in_turn(gate, client):
+    """Finding the backend, asking its priority, and reading, writing and deleting a key: all on the one worker thread."""
+    seen = {}
 
-    def get_password(service, username, _real=gate.get_password):
-        seen.append(threading.current_thread().name)
-        return None
+    def note(call):
+        seen.setdefault(call, set()).add(threading.current_thread().name)
 
-    gate.get_password = get_password
+    class Recording(GateKeyring):
+        @properties.classproperty
+        def priority(cls):
+            note("priority")
+            return 1
+
+        def get_password(self, service, username):
+            note("get")
+            return super().get_password(service, username)
+
+        def set_password(self, service, username, password):
+            note("set")
+            super().set_password(service, username, password)
+
+        def delete_password(self, service, username):
+            note("delete")
+            super().delete_password(service, username)
+
+    real_get_keyring = keyring.get_keyring
+
+    def get_keyring():
+        note("get_keyring")
+        return real_get_keyring()
+
+    try:
+        keyring.set_keyring(Recording())
+        keyring.get_keyring = get_keyring
+        credentials._found_cache = None
+        credentials.load_into_environment()  # start-up: discovery, priority, one read per key
+        credentials.save(KEY, V1)
+        credentials.delete(KEY)
+        assert client.put(f"/api/credentials/{KEY}", json={"value": V2}).status_code == 200  # the API: same queue
+        assert client.delete(f"/api/credentials/{KEY}").status_code == 200
+        credentials._found_cache = None
+        assert client.get("/api/credentials").status_code == 200  # discovery again, from the API
+    finally:
+        keyring.get_keyring = real_get_keyring
+        KeyringBackend._classes.discard(Recording)
+    assert seen.keys() == {"get_keyring", "priority", "get", "set", "delete"}
+    assert all(names == {"keychain"} for names in seen.values()), seen
+
+
+def test_a_discovery_that_never_returns_does_not_block_the_event_loop_or_the_start(fast, monkeypatch, tmp_path):
+    release = threading.Event()
+
+    def hang():
+        release.wait(5)
+        return fail.Keyring()
+
+    monkeypatch.setattr(keyring, "get_keyring", hang)
+    credentials._found_cache = None
+    try:
+        began = time.monotonic()
+        credentials.load_into_environment()  # no event loop: gives up at the limit
+        assert time.monotonic() - began < 2
+        assert credentials.keychain_failed() and all(env in credentials._unavailable for env in credentials.MANAGED_KEYS)
+
+        monkeypatch.setattr(credentials, "_worker", credentials._Worker())  # a worker not yet stuck: the loop has to wait for the limit
+
+        async def inside_the_loop():
+            lags = []
+
+            async def ticker():
+                while True:
+                    before = time.monotonic()
+                    await asyncio.sleep(0.005)
+                    lags.append(time.monotonic() - before)
+
+            task = asyncio.get_running_loop().create_task(ticker())
+            await credentials.probe_async()
+            credentials.keychain_name(), credentials.store_kind(), credentials.status(KEY)
+            with pytest.raises(credentials.KeychainNotResponding):
+                await credentials.save_async(KEY, V1)
+            await asyncio.sleep(0.05)
+            task.cancel()
+            return max(lags)
+
+        assert asyncio.run(inside_the_loop()) < 0.15  # the limit is 0.3 s; the loop never waited for it
+        c = make_client(tmp_path)  # the app starts and answers
+        try:
+            began = time.monotonic()
+            assert c.get("/api/credentials").status_code == 200 and c.get("/api/mathpix").status_code == 200
+            assert time.monotonic() - began < 1
+            refused = c.put(f"/api/credentials/{KEY}", json={"value": V1})
+            assert refused.status_code == 503 and refused.json()["code"] == "keychain_not_responding"
+        finally:
+            c.__exit__(None, None, None)
+        assert credentials._session == {} and not os.environ.get(KEY)
+    finally:
+        release.set()
+
+
+class BrokenService(KeyringBackend):
+    """A backend that is installed, but the desktop service behind it errors while keyring asks for its priority."""
+
+    @properties.classproperty
+    def priority(cls):
+        raise OSError("could not connect to the secret service")
+
+    def get_password(self, service, username):
+        raise NotImplementedError
+
+    set_password = delete_password = get_password
+
+
+class UnbuildableService(KeyringBackend):
+    """A backend that reports itself usable but cannot be built (keyring skips a TypeError from the constructor)."""
+
+    priority = 5
+
+    def __init__(self):
+        raise TypeError("cannot build")
+
+    def get_password(self, service, username):
+        raise NotImplementedError
+
+    set_password = delete_password = get_password
+
+
+@pytest.fixture(autouse=True)
+def only_while_a_test_uses_them():
+    """Backends register themselves in keyring's list of classes; the broken ones are there only for the tests that ask."""
+    for cls in (BrokenService, UnbuildableService):
+        KeyringBackend._classes.discard(cls)
+    yield
+    for cls in (BrokenService, UnbuildableService):
+        KeyringBackend._classes.discard(cls)
+
+
+@pytest.mark.parametrize("broken", [BrokenService, UnbuildableService])
+def test_a_keychain_that_errors_is_not_replaced_by_the_session_store(broken, client):
+    KeyringBackend._classes.add(broken)
+    keyring.set_keyring(fail.Keyring())  # what keyring picks after it dropped the broken backend
+    credentials._found_cache = None
+    assert credentials.keychain_failed() and credentials.keychain_name() is None
+    refused = client.put(f"/api/credentials/{KEY}", json={"value": V1})
+    assert refused.status_code == 503 and refused.json()["code"] == "keychain_not_responding"
+    assert credentials._session == {} and not os.environ.get(KEY) and V1 not in refused.text
+    assert client.delete(f"/api/credentials/{KEY}").status_code == 503
+    assert client.put("/api/credentials/file-store", json={"enabled": True}).status_code == 503
+    assert client.get("/api/credentials").json()["keychain"]["available"] is False
     credentials.load_into_environment()
-    assert set(seen) == {"keychain"} and len(seen) == len([e for e in credentials.MANAGED_KEYS])
+    assert entry(client)["keychain_unavailable"] is True  # shown as not answering, not as having no keys
+
+
+def test_no_installed_backend_still_means_the_session_store(client):
+    """keyring's own 'not available on this machine' (RuntimeError) and a missing backend are not an error."""
+
+    class Absent(KeyringBackend):
+        @properties.classproperty
+        def priority(cls):
+            raise RuntimeError("no secret service on this machine")
+
+        def get_password(self, service, username):
+            raise NotImplementedError
+
+        set_password = delete_password = get_password
+
+    try:
+        keyring.set_keyring(fail.Keyring())
+        credentials._found_cache = None
+        assert not credentials.keychain_failed()
+        saved = client.put(f"/api/credentials/{KEY}", json={"value": V1})
+        assert saved.status_code == 200 and credentials._session == {KEY: V1}
+    finally:
+        KeyringBackend._classes.discard(Absent)
 
 
 # ---- A6: no keychain backend -------------------------------------------------------------------------------------------
@@ -208,7 +373,7 @@ def no_keychain():
 
 def test_without_a_keychain_a_key_lasts_for_the_session_and_is_gone_after_a_restart(no_keychain, client):
     listed = client.get("/api/credentials").json()["keychain"]
-    assert listed == {"available": False, "name": None, "mode": "session"}
+    assert listed == {"available": False, "name": None, "mode": "session", "file_error": False}
     saved = client.put(f"/api/credentials/{KEY}", json={"value": V1})  # was a 503 "No system keychain is available"
     assert saved.status_code == 200 and saved.json()["key"]["source"] == "session" and os.environ[KEY] == V1
     assert entry(client)["configured"] and V1 not in client.get("/api/credentials").text
@@ -255,5 +420,41 @@ def test_the_mathpix_pair_is_kept_for_the_session_without_a_keychain(no_keychain
         assert saved.status_code == 200 and saved.json()["mathpix"]["pair"]["configured"] is True
         assert mathpix.ENV in credentials._session
         assert c.delete("/api/credentials/mathpix").status_code == 200 and credentials._session == {}
+    finally:
+        c.__exit__(None, None, None)
+
+
+# ---- A6: a key file that cannot be read is left as it is ---------------------------------------------------------------
+@pytest.mark.parametrize("content", [b"{not json", b'{"keys": ["a list"]}', b"\xff\xfe binary", b"{}"])
+def test_a_key_file_that_cannot_be_read_is_never_rewritten(no_keychain, tmp_path, content):
+    data = tmp_path / "data"
+    data.mkdir()
+    path = data / credentials.FILE_STORE
+    path.write_bytes(content)
+    c = make_client(tmp_path)
+    try:
+        credentials.load_into_environment()  # the start-up read skips it
+        assert c.get("/api/credentials").json()["keychain"]["file_error"] is True
+        for refused in (c.put(f"/api/credentials/{KEY}", json={"value": V1}), c.delete(f"/api/credentials/{KEY}"),
+                        c.put("/api/credentials/file-store", json={"enabled": False}), c.put("/api/credentials/file-store", json={"enabled": True})):
+            assert refused.status_code == 409 and refused.json()["code"] == "file_store_damaged"
+        assert path.read_bytes() == content and credentials._session == {} and not os.environ.get(KEY)
+        assert not list(data.glob(".keys.*"))  # no temporary file left behind
+    finally:
+        c.__exit__(None, None, None)
+
+
+def test_a_key_file_that_is_repaired_is_read_before_the_next_change(no_keychain, tmp_path):
+    data = tmp_path / "data"
+    data.mkdir()
+    path = data / credentials.FILE_STORE
+    path.write_text("{broken")
+    c = make_client(tmp_path)
+    try:
+        assert c.put(f"/api/credentials/{KEY}", json={"value": V1}).status_code == 409
+        path.write_text(json.dumps({"keys": {"S2_API_KEY": "s2-source-good-key"}}))  # the person fixed it
+        assert c.put(f"/api/credentials/{KEY}", json={"value": V1}).status_code == 200
+        assert json.loads(path.read_text())["keys"] == {"S2_API_KEY": "s2-source-good-key", KEY: V1}  # the earlier key is kept
+        assert c.get("/api/credentials").json()["keychain"]["file_error"] is False
     finally:
         c.__exit__(None, None, None)

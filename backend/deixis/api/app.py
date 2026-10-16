@@ -813,6 +813,7 @@ def create_app(
         settings = settings.bound_to(store.setting)  # the contact email set in Settings is read before the env var (F15)
         app.state.settings = settings
         credentials.set_data_dir(settings.data_dir)
+        await credentials.probe_async()  # find the keychain on its worker with the time limit, not on the event loop (E5)
         http = http_client or httpx.AsyncClient(headers={"User-Agent": fetch_module.user_agent(settings.contact_email)})
         # Requests to servers on this computer (Ollama and LM Studio embeddings, the local tool checks, Zotero's local
         # API) go through a client that ignores HTTP_PROXY/ALL_PROXY and follows no redirect (D34).
@@ -1376,6 +1377,11 @@ def create_app(
         return JSONResponse(status_code=409, content={"code": "keychain_busy", "detail":
             "The previous change to this key has not finished. Wait for the system keychain to answer."})
 
+    @app.exception_handler(credentials.FileStoreDamaged)
+    async def file_store_damaged(request: Request, exc: credentials.FileStoreDamaged) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"code": "file_store_damaged", "detail":
+            "The key file in your data folder cannot be read, so DEIXIS left it as it is and changes no key until it is fixed or removed."})
+
     @app.exception_handler(credentials.FileStoreUnavailable)
     async def file_store_unavailable(request: Request, exc: credentials.FileStoreUnavailable) -> JSONResponse:
         return JSONResponse(status_code=409, content={"code": "file_store_unavailable", "detail": str(exc)})
@@ -1389,14 +1395,18 @@ def create_app(
 
     @app.get("/api/credentials")
     async def list_credentials() -> dict[str, Any]:
+        await credentials.probe_async()
         name = credentials.keychain_name()
         # `mode` says where a saved key lives: the system keychain, the unencrypted file the person chose, or this run's memory (A6).
-        return {"keychain": {"available": name is not None, "name": name, "mode": credentials.store_kind()},
+        # `file_error`: that file exists and cannot be read, so no key is changed until it is fixed.
+        return {"keychain": {"available": name is not None, "name": name, "mode": credentials.store_kind(),
+                             "file_error": credentials.file_store_damaged()},
                 "keys": [credentials.status(env) for env, key in credentials.MANAGED_KEYS.items() if not key.pair]}
 
     @app.put("/api/credentials/file-store")
     async def put_file_store(body: FileStoreChoice, request: Request) -> dict[str, Any]:
         """Without a system keychain: keep the keys in an unencrypted file in the data folder (0600), or stop (A6)."""
+        await credentials.probe_async()
         try:
             credentials.set_file_store(body.enabled, request.app.state.settings.data_dir)
         except OSError as exc:

@@ -143,6 +143,7 @@ def memory_keychain(monkeypatch):
     monkeypatch.setattr(credentials, "_settling", {})
     monkeypatch.setattr(credentials, "_data_dir", None)
     monkeypatch.setattr(credentials, "_worker", credentials._Worker())  # a keychain call a test leaves stuck belongs to that test
+    monkeypatch.setattr(credentials, "_found_cache", None)
     monkeypatch.setattr(key_verification, "_state", {})
     monkeypatch.setattr(credentials, "dotenv_path", None)
     yield backend

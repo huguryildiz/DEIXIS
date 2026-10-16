@@ -733,7 +733,8 @@ export type ModelHealth = {
 }
 export type Connections = { models: Record<string, ModelHealth>; codex_home?: string; codex_login_command?: string; providers: { id: string; implemented: boolean; access_mode: string | null; key_broken?: boolean; supplementary?: boolean; role?: string; note: string }[] }
 // `available`: a system keychain exists. `mode`: where a saved key lives (E5, A6): that keychain, the unencrypted file the person chose, or this run's memory.
-export type Keychain = { available: boolean; name: string | null; mode: 'keychain' | 'file' | 'session' }
+// `file_error`: the key file exists and cannot be read; it is left alone and no key changes until it is fixed.
+export type Keychain = { available: boolean; name: string | null; mode: 'keychain' | 'file' | 'session'; file_error?: boolean }
 export type KeyEntry = { env: string; group: 'model' | 'source'; service: string; configured: boolean; source: 'keychain' | 'file' | 'session' | 'dotenv' | 'environment' | null; testable: boolean; shell_fallback?: boolean; last4?: string | null
   // 'pending' is "saved, not verified"; null when no check ran in this session. `broken`: the saved item could not be read and was skipped (E2, E6).
   verification?: 'verified' | 'pending' | 'rejected' | null; broken?: boolean

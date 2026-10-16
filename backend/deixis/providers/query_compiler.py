@@ -1,4 +1,4 @@
-"""Provider queries compiled from an sw vocabulary's concept blocks (SW2.7, D90).
+"""Provider queries compiled from the vocabulary's concept blocks, the code query of the fast path (SW2.7, D90).
 
 This module writes every query string: OR inside a block, AND between blocks. Every query passes
 `query_rules.query_issues` and the 300-character limit before it is returned; terms are trimmed from the end of the
@@ -12,7 +12,7 @@ from typing import Any
 
 from deixis.providers.registry import CONNECTORS, resolve_query_syntax, search_providers
 
-BLOCKS_VERSION = "deixis.query_compiler.v4.blocks"  # the sw workflow's code vocabulary, compiled block by block
+BLOCKS_VERSION = "deixis.query_compiler.v4.blocks"  # the fast path's code vocabulary, compiled block by block
 BLOCK_ORDER = ("setting", "task")  # the two blocks that gate a search; the query keeps them in this order
 MAX_QUERY_CHARS = 300
 PLAIN_PROVIDERS = tuple(pid for pid, connector in CONNECTORS.items()
@@ -78,7 +78,7 @@ def compile_block_queries(vocabulary: dict[str, Any], enabled_providers: list[st
 
     Only terms of the setting and task blocks are read. Claim words, exclusion words and outcome terms are not in
     `terms`, so no query can hold one. Each returned dictionary names the provider, the query text and its rationale,
-    plus the terms a provider's limits left out. A connector whose sw queries go to
+    plus the terms a provider's limits left out. A connector whose queries go to
     another endpoint (Semantic Scholar's bulk search, D93) gets a query in that endpoint's syntax, which names the
     endpoint and its sort.
     """

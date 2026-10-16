@@ -5,6 +5,7 @@ Fixture records are SYNTHETIC: these tests show workflow behavior, not model qua
 
 import json
 import sqlite3
+import warnings
 
 import pytest
 
@@ -42,9 +43,10 @@ def test_a_frozen_protocol_record_can_be_neither_changed_nor_removed(tmp_path):
         store.conn.execute("DELETE FROM protocol_records")
 
 
-def test_an_obsolete_search_workflow_setting_warns_without_selecting_it(monkeypatch):
+def test_an_obsolete_search_workflow_setting_is_ignored_without_a_warning(monkeypatch):
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", "bogus")
-    with pytest.warns(UserWarning, match="DEIXIS_SEARCH_WORKFLOW is ignored"):
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
         assert not hasattr(load_settings(), "search_workflow")
 
 

@@ -27,7 +27,7 @@ from deixis.providers.query_rules import QuerySyntax
 
 @dataclass(frozen=True)
 class Endpoint:
-    """Another endpoint of a connector that an sw query can name (D93), and how a read of it pages."""
+    """Another endpoint of a connector that a search query can name (D93), and how a read of it pages."""
 
     paging: str
     max_results: int
@@ -89,7 +89,7 @@ class Connector:
     # institutional network (D91); CORE and SerpApi were taken out of the search (D93). A query a run already stored
     # is still read: `searchable` alone decides that, so a resumed run searches the queries its protocol names.
     sw_searchable: bool = True
-    # How an sw query reads its pages (slice 04c): a provider-issued `cursor`, a record `offset`, or one page only.
+    # How a search query reads its pages (slice 04c): a provider-issued `cursor`, a record `offset`, or one page only.
     paging: str = "offset"
     max_reachable: int | None = None  # the deepest record the provider serves, when that is below the read limit
     page_gap: float = 0.0  # seconds to wait between two pages of the same query
@@ -100,7 +100,7 @@ class Connector:
     # The host name a search request goes to, taken from the URL the module sends it to. Two connectors that share one
     # are read one request at a time between them (D89): bioRxiv is searched through OpenAlex.
     host: str = ""
-    # What a new sw query compiled for this connector names besides its text: Semantic Scholar's bulk endpoint and its
+    # What a new query compiled for this connector names besides its text: Semantic Scholar's bulk endpoint and its
     # sort (D93). The query carries it, so a resumed run reads the endpoint its stored query names, and a query stored
     # before D93, which names none, is read as it was (`reading`).
     sw_query: dict[str, Any] = field(default_factory=dict)
@@ -151,7 +151,7 @@ CONNECTORS = {c.provider_id: c for c in (
                                 options=(OptionDescriptor("sort", "str", None),
                                          OptionDescriptor("publication_date", "bool", None)))},
               display_name="OpenAlex", query_syntax=QuerySyntax(boolean_checks=True)),
-    # Semantic Scholar's relevance search serves `offset + limit` up to 1,000 and refuses a deeper page. An sw query
+    # Semantic Scholar's relevance search serves `offset + limit` up to 1,000 and refuses a deeper page. A search query
     # goes to the bulk endpoint instead: up to 1,000 papers a call, continued by a token (D93).
     Connector("semantic_scholar", semantic_scholar.search, semantic_scholar.MAX_RESULTS, "S2_API_KEY", max_reachable=1000,
               host=_host(semantic_scholar.SEARCH_URL), adapter_revision=2,

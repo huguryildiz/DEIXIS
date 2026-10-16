@@ -19,7 +19,4 @@ apps/web/playwright-report/
 # Local instruction and planning files.
 /.claude/
 /TODO.md
-/AGENTS.md
-/.impeccable.md
-/CLAUDE.md
 .vscode/

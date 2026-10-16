@@ -9,7 +9,7 @@ import pytest
 
 import fast_search_helpers
 
-from deixis.models.errors import limit_kind
+from deixis.domain.limits import limit_kind
 from deixis.providers import common
 from deixis.providers.registry import CONNECTORS
 from deixis.storage import db

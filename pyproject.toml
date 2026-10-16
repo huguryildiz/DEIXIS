@@ -42,4 +42,4 @@ addopts = "-n 6"
 tmp_path_retention_policy = "failed"
 # Explicit path: in synced Documents folders the venv's .pth files can receive the
 # macOS hidden flag, which Python's site module skips.
-pythonpath = ["backend", ".", "tests", "tests/app", "tests/candidates", "tests/citation_map", "tests/contracts", "tests/discovery", "tests/documents", "tests/hardening", "tests/lineage", "tests/measurement", "tests/models", "tests/providers", "tests/reextract", "tests/report", "tests/review", "tests/storage", "tests/watch"]
+pythonpath = ["backend", ".", "tests", "tests/app", "tests/candidates", "tests/citation_map", "tests/contracts", "tests/discovery", "tests/documents", "tests/hardening", "tests/lineage", "tests/measurement", "tests/models", "tests/process", "tests/providers", "tests/reextract", "tests/report", "tests/review", "tests/storage", "tests/watch"]

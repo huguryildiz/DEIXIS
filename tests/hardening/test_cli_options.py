@@ -6,6 +6,7 @@ it would build the app, which they forbid.
 """
 
 import os
+import warnings
 
 import pytest
 
@@ -49,7 +50,7 @@ def test_without_a_port_the_environment_decides(monkeypatch, tmp_path):
 
 
 @pytest.mark.parametrize("command", ["serve", "backup", "restore"])
-def test_obsolete_workflow_env_warns_once_and_does_not_block_commands(monkeypatch, tmp_path, command):
+def test_obsolete_workflow_env_is_ignored_without_a_warning_and_does_not_block_commands(monkeypatch, tmp_path, command):
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", "legacy")
     monkeypatch.setenv("DEIXIS_DATA_DIR", str(tmp_path / "data"))
     called = []
@@ -57,9 +58,10 @@ def test_obsolete_workflow_env_warns_once_and_does_not_block_commands(monkeypatc
     monkeypatch.setattr(cli.backup, "create_backup", lambda *args: called.append("backup") or tmp_path / "backup")
     monkeypatch.setattr(cli.backup, "restore_backup", lambda *args: called.append("restore") or {"researches": 0, "files": 0})
     args = ["serve", "--no-browser"] if command == "serve" else [command, str(tmp_path / "backup")]
-    with pytest.warns(UserWarning, match="DEIXIS_SEARCH_WORKFLOW is ignored") as caught:
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
         assert cli.main(args) == 0
-    assert len(caught) == 1 and called == [command]
+    assert called == [command]
 
 
 def listing(path):

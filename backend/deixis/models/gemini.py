@@ -27,6 +27,8 @@ KEY_ENV = "GEMINI_API_KEY"
 EXCLUDED_MODEL_WORDS = ("image", "tts", "audio", "live", "embedding", "robotics", "computer-use", "omni", "latest", "aqa",
                         "gemma", "banana", "transcribe", "customtools")
 THINKING_LEVELS = ("low", "medium", "high")
+# Text and its documented metadata; every other part key (functionCall, executableCode, an unknown one) is a tool item.
+TEXT_PART_KEYS = frozenset({"text", "thought", "thoughtSignature", "partMetadata"})
 # The Gemini API answers 400 INVALID_ARGUMENT for array size bounds in a response schema (probed 2026-09-15);
 # DEIXIS validation still applies them to the output.
 UNSUPPORTED_SCHEMA_KEYS = frozenset({"minItems", "maxItems"})
@@ -155,10 +157,15 @@ class GeminiAdapter:
             return ModelStepResult("failed", error=f"HTTP {response.status_code}: API request failed", **http_limit(response))
         data = response.json()
         candidate = (data.get("candidates") or [{}])[0]
-        text = "".join(p.get("text", "") for p in (candidate.get("content") or {}).get("parts", []) if not p.get("thought"))
+        parts = [p for p in (candidate.get("content") or {}).get("parts") or [] if isinstance(p, dict)]
+        text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
+        # Any part that is not text or thinking (a functionCall, executableCode, ...) is a tool item, whatever else came.
+        tools = sorted({key for p in parts for key in p if key not in TEXT_PART_KEYS})
         finish = candidate.get("finishReason")
         common: dict[str, Any] = {"resolved_model": data.get("modelVersion"), "external_thread_id": data.get("responseId"),
-                                  "token_usage": data.get("usageMetadata")}
+                                  "token_usage": data.get("usageMetadata"), "tool_item_types": tools}
+        if tools:
+            return ModelStepResult("isolation_violation", raw_text=text or None, error="Gemini API returned a tool part", **common)
         if finish != "STOP" or not text:
             blocked = (data.get("promptFeedback") or {}).get("blockReason")
             return ModelStepResult("failed", raw_text=text or None,

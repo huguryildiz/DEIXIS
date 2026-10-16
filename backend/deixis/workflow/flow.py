@@ -482,12 +482,14 @@ class ResearchFlow:
                     followup.after_turn(self.store, run)
                 return
             # Nothing is left to pause once the last step's result has been applied. A person's file this run held
-            # and did not read is `unread` from the same write (`Store.update_run`, slice 18b).
-            self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
-            if run["kind"] == "answer" and self.deps.settings.study_table == "auto":
-                report_pipeline.after_answer(self.store, run)  # the study table follows a valid answer, once per answer
-            elif run["kind"] in ("table_columns", "table_fill"):
-                report_pipeline.continue_after(self.store, run)  # the study table's chain; other runs pass
+            # and did not read is `unread` from the same write (`Store.update_run`, slice 18b). The next run of the study
+            # table's chain is queued in that write too: a crash in between would leave the chain stopped for good.
+            with transaction(self.store.conn):
+                self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
+                if run["kind"] == "answer" and self.deps.settings.study_table == "auto":
+                    report_pipeline.after_answer(self.store, run)  # the study table follows a valid answer, once per answer
+                elif run["kind"] in ("table_columns", "table_fill"):
+                    report_pipeline.continue_after(self.store, run)  # the study table's chain; other runs pass
 
     # ---- run control ---------------------------------------------------------------
     def _checkpoint(self, run_id: str, scope_revision: int | None = None) -> None:
@@ -2372,8 +2374,9 @@ class ResearchFlow:
         if not output.get("invalid"):
             output, key, inference_cap = await self._cap_inference(run, scope, output, key)
         step = self.store.step(run_id, key, "model:grounded_answer")
-        if fast_path.enforces(run["budget"], "answer"):
-            self._checkpoint(run_id, run["scope_revision"])
+        # Every answer, not only the fast path's: an answer to an earlier question revision is never published. No await
+        # follows before `save_answer`, so nothing can revise the question in between.
+        self._checkpoint(run_id, run["scope_revision"])
         # The revision recorded with the StepInput the output came from; a resumed run may reuse an earlier output.
         step_selection = self.store.step_input_selection_revision(output["step_input_id"])
         if output.get("invalid"):

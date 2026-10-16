@@ -285,3 +285,50 @@ def test_view_says_the_study_table_is_coming_while_the_answer_runs(tmp_path):
             assert client.get(f"/api/researches/{research_id}").json()["study_table_pending"] == expected
             assert client.post(f"/api/researches/{research_id}/tables", json={"title": "SYNTHETIC table"}).status_code == 201
             assert client.get(f"/api/researches/{research_id}").json()["study_table_pending"] is None
+
+
+
+def _crash_continuation(tmp_path, monkeypatch, after_successor):
+    """Run the chain with the continuation failing (before or after it queued the next run); the column run's rows."""
+    from deixis.workflow import report_pipeline
+    real, crashed = report_pipeline.continue_after, []
+
+    def crash(store, run):
+        if after_successor:
+            real(store, run)
+            assert store.conn.execute("SELECT COUNT(*) FROM runs WHERE kind = 'table_fill'").fetchone()[0] == 1
+        crashed.append(run["id"])
+        raise RuntimeError("injected crash in the continuation")
+
+    monkeypatch.setattr(report_pipeline, "continue_after", crash)
+    with TestClient(app_for(tmp_path, PipelineAdapter())) as raw:
+        client = session(raw)
+        store = raw.app.state.store
+        research_id = create(client, source_scope="attached", effort="quick")
+        upload_and_include(client, research_id)
+        client.post(f"/api/researches/{research_id}/study-table")
+        run_id = store.conn.execute("SELECT id FROM runs WHERE kind = 'table_columns'").fetchone()[0]
+        deadline = time.time() + 40
+        while store.run(run_id)["status"] in ("queued", "running") and time.time() < deadline:
+            time.sleep(0.1)
+        run = store.run(run_id)
+        completed = store.conn.execute("SELECT COUNT(*) FROM events WHERE run_id = ? AND type = 'run_completed'",
+                                       (run_id,)).fetchone()[0]
+        return crashed, run, completed, kinds(store)
+
+
+def test_a_crash_while_queueing_the_next_run_leaves_the_run_unfinished(tmp_path, monkeypatch):
+    """Audit F1: the run's completion and the chain's next run are one write, so a failure in between undoes both."""
+    crashed, run, completed, run_kinds = _crash_continuation(tmp_path, monkeypatch, after_successor=False)
+    assert crashed == [run["id"]]
+    assert (run["status"], run["pause_reason"]) == ("failed", "internal_error")
+    assert "injected crash in the continuation" in run["error"]["error"]
+    assert completed == 0 and run_kinds == ["table_columns"]
+
+
+def test_a_crash_after_the_next_run_was_queued_undoes_it_with_the_completion(tmp_path, monkeypatch):
+    """Sol r1: the successor the continuation wrote is rolled back with the completion, not left half-applied."""
+    crashed, run, completed, run_kinds = _crash_continuation(tmp_path, monkeypatch, after_successor=True)
+    assert crashed == [run["id"]]
+    assert (run["status"], run["pause_reason"]) == ("failed", "internal_error")
+    assert completed == 0 and run_kinds == ["table_columns"]

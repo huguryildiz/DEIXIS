@@ -99,3 +99,19 @@ def test_health_tries_again_once_after_a_transport_error(monkeypatch):
 
     status = asyncio.run(adapter(handler).health(refresh=True))
     assert status["ready"] is True and len(calls) == 2
+
+
+def test_a_tool_part_beside_the_answer_is_an_isolation_violation(monkeypatch):
+    """Audit F3: a functionCall part next to valid text and STOP is never accepted as the answer."""
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    parts = [{"text": '{"claims": []}', "thoughtSignature": "sig"}, {"functionCall": {"name": "search", "args": {}}}]
+    result = asyncio.run(adapter(lambda r: answer(parts)).run_step("b", "d", "m", {}, "gemini-3.8-flash"))
+    assert (result.status, result.tool_item_types, result.raw_text) == ("isolation_violation", ["functionCall"], '{"claims": []}')
+
+
+def test_documented_text_metadata_is_not_a_tool_part(monkeypatch):
+    """Sol r1: `partMetadata` next to the text is part of a text answer, not tool use."""
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    parts = [{"text": '{"claims": []}', "partMetadata": {}, "thoughtSignature": "sig"}]
+    result = asyncio.run(adapter(lambda r: answer(parts)).run_step("b", "d", "m", {}, "gemini-3.8-flash"))
+    assert (result.status, result.tool_item_types) == ("completed", [])

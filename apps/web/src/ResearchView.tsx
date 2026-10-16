@@ -56,6 +56,7 @@ import { FollowupComposer, type FollowupFill } from './research/FollowupComposer
 import { AddToChat } from './research/AddToChat'
 import { FollowupTurnView } from './research/FollowupTurns'
 import { followupClaim, followupClaimId, followupGroupClaims, useFollowupTurns } from './research/followupData'
+import { createViewReads } from './research/viewReads'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 // Rechecks a person starts from the table; short enough to start and end between two reads of the research.
@@ -158,15 +159,27 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // Escape on the Research actions menu gives focus back to its button; choosing a row hands it to the panel that opens.
   const rowChosen = useRef(false)
 
+  // Reads overlap (an event's reload and the one after an action): an answer a later read has overtaken is not shown, so
+  // an older view never replaces a newer one, and a later read that fails falls back to it (`viewReads`).
+  const [reads] = useState(() => createViewReads<ResearchView>())
   const load = useCallback(async () => {
-    try {
-      const next = await api.research(id)
+    const ticket = reads.start(id)
+    const show = (next: ResearchView) => {
       setView(next)
       setError('')
       if (firstEvent.current === null) firstEvent.current = next.last_event_id
-      return true
-    } catch (e) { setError(errorText(e)); return false }  // whether the view was read, for callers that report it
-  }, [id])
+    }
+    try {
+      const next = reads.answered(id, ticket, await api.research(id))
+      if (next) show(next)
+      return true  // whether the view was read, for callers that report it
+    } catch (e) {
+      const { view: kept, showError } = reads.failed(id, ticket)
+      if (kept) show(kept)
+      if (showError) setError(errorText(e))
+      return false
+    }
+  }, [id, reads])
   useEffect(() => { void load() }, [load])
   // Tables of this research, for the Evidence count and the table cards; refreshed on every recorded event (a table created, edited, trashed or restored).
   const [tables, setTables] = useState<TableSummary[] | null>(null)

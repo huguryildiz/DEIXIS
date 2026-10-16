@@ -93,7 +93,8 @@ async def check_public_url(url: str) -> str:
     for text in addresses:
         address = ipaddress.ip_address(text)
         if (
-            address.is_private
+            not address.is_global  # also the shared-address range 100.64.0.0/10, which is neither private nor public
+            or address.is_private
             or address.is_loopback
             or address.is_link_local
             or address.is_multicast

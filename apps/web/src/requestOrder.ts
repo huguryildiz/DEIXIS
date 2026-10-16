@@ -15,10 +15,14 @@ export function createRequestOrder() {
       return n
     },
     release(n: number): void { released.add(n) },
+    // Whether an answer to `n` may still be shown now: no later request was applied or is pending. Applies nothing.
+    current(id: string, n: number): boolean {
+      if ((applied[id] ?? 0) > n) return false
+      return !issued.some(x => x.n > n && !released.has(x.n) && (x.id === id || x.id === undefined))
+    },
     // True once, for the answer that may be shown; false for an answer a later request has overtaken.
     settle(id: string, n: number): boolean {
-      if ((applied[id] ?? 0) > n) return false
-      if (issued.some(x => x.n > n && !released.has(x.n) && (x.id === id || x.id === undefined))) return false
+      if (!this.current(id, n)) return false
       applied[id] = n
       return true
     },

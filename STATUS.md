@@ -70,6 +70,10 @@ Most of this was tested with fake models and synthetic data only; "Not measured"
 - The P9 upgrade check's 15 teardown errors are fixed (385b4511), and the arXiv source-archive test that used to fail now passes.
 - Answers no longer overuse "It has been reported that…": the phrasebank is gone, and a live check on 16 Oct found no formula openings (D43).
 
+### Code audit (16 Oct)
+
+- GPT Astra (high) audited the code read-only and found five defects; all five are fixed, each with a test that fails without the fix, and Sol reviewed them in two rounds. A table run's completion and the next run of its chain are now one write, so a crash between them cannot stop the chain. Every answer, not only the fast path's, checks the question revision just before it is published. A Gemini answer with a tool part (a function call) is refused as an isolation violation. A PDF link whose host resolves to any non-public address (for example 100.64.0.0/10) is refused. Overlapping reloads of a research page never show an older view, and a failed newer reload falls back to the older one it held. Full pytest 15,763 passed; the browser test for the reloads passed, the full Playwright suite was not run.
+
 ## Latest live check (16 Oct)
 
 One run per mode with gpt-5.6-luna on the DBR/VBF question, on a library copy.
@@ -79,6 +83,10 @@ One run per mode with gpt-5.6-luna on the DBR/VBF question, on a library copy.
 - Answers cited only 3 of 23 and 4 of 70 works in their input.
 
 ## Open work
+
+### Claude code audit (16 Oct, not fixed yet)
+
+- A second read-only audit by Claude (four areas Astra did not cover) found 15 defects, none fixed yet; the table with file, line and failure scenario is in `.local/audit-2026-10-16/claude-audit.md`. The most serious: a PDF link sent gzip twice over can take gigabytes of the server's memory before the size limit applies; figure rendering runs on untrusted PDFs inside the server with no size limit; one unexpected error in the late full-text step stops the worker, so no queued run starts until a restart; a failed D68 retry can drop the first call's cell value; follow-ups still read works the late full-text read excluded.
 
 ### Left over from the clean start
 

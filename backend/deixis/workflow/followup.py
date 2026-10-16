@@ -39,12 +39,17 @@ POOL_KEY = "followup:pool"
 SEMANTIC_KEY = "followup_semantic"
 SELECTION_KEY = "followup:passages"
 CONVERSATION_KEY = "followup:conversation"
-CALLS = 2  # the call and its one schema repair; the turn's own budget, apart from the research's runs
+CALLS = 4  # two rounds (D50), each a call and its one schema repair; the turn's own budget, apart from the research's runs
 MAX_QUESTION_CHARS = 2000
 PUBLISHED = ("answered", "partly_answered", "not_answered")
 MAX_TERMS = 40
 MAX_EARLIER_TURNS = 3  # the published turns before this one that the model reads as conversation context
 MAX_CONTEXT_CLAIMS = 12  # claim texts kept from the latest answer and from each earlier turn
+MAX_TABLE_VALUES = 60  # evidence-table values the model reads as context (D50)
+MAX_MORE_QUERIES = 3  # search phrases one follow-up may ask the library with (D50)
+MORE_KEY = "followup_answer:more"
+MORE_SELECTION_KEY = "followup:more_passages"
+MORE_SEMANTIC_KEY = "followup_more_semantic"
 # Why a follow-up stops unpublished when what its pool was frozen from changed (the run fails; the person asks again).
 SELECTION_CHANGED = "followup_selection_changed"
 SOURCES_CHANGED = "followup_sources_changed"
@@ -188,12 +193,64 @@ def pool(store: Any, research_id: str, scope_revision: int, flow: Any = None) ->
                 kept = [pid for pid in read if pid not in sources.get(svid, [])]
                 if kept:
                     sources.setdefault(svid, []).extend(kept)
-        return base | {"basis": "answer_input", "answer_run_id": frozen["run_id"], "sources": sources}
+        return _with_reserve(store, research_id, current, base | {
+            "basis": "answer_input", "answer_run_id": frozen["run_id"], "sources": sources})
+    return _with_reserve(store, research_id, current, base | {
+        "basis": "included_works", "answer_run_id": None, "sources": _included(store, research_id, current)})
+
+
+def _included(store: Any, research_id: str, current: dict[str, list[str]]) -> dict[str, list[str]]:
+    """Each included work's current passages from the version an answer reads (D48), in the research's order."""
+    sources: dict[str, list[str]] = {}
     for head in store.included_works(research_id):
         svid = store.answer_version(research_id, head)
         if svid is not None and current.get(svid):
             sources[svid] = list(current[svid])
-    return base | {"basis": "included_works", "answer_run_id": None, "sources": sources}
+    return sources
+
+
+def _with_reserve(store: Any, research_id: str, current: dict[str, list[str]], frozen: dict[str, Any]) -> dict[str, Any]:
+    """The pool with its reserve and its priority passages (D50). The reserve is the rest of the library this research
+    holds: every included work's current passages the pool does not already give, which a second round reads when
+    the model asks for more. Priority passages are the ones the research's latest answer and its evidence table's
+    current values cite; they go first in the selection, so the follow-up starts from what the answer and the table
+    stand on."""
+    given = {pid for ids in frozen["sources"].values() for pid in ids}
+    reserve = {}
+    for svid, ids in _included(store, research_id, current).items():
+        rest = [pid for pid in ids if pid not in given]
+        if rest:
+            reserve[svid] = rest
+    if not frozen["sources"] and reserve:
+        # The answer's evidence left the research (excluded since, say) while other included works hold text: those
+        # are the pool, not a reason to answer that there is nothing to read.
+        frozen, reserve = frozen | {"sources": reserve}, {}
+    held = given | {pid for ids in reserve.values() for pid in ids} | {
+        pid for ids in frozen["sources"].values() for pid in ids}
+    cited = [r[0] for r in store.conn.execute(
+        "SELECT l.passage_id FROM evidence_links l JOIN claims c ON c.id = l.claim_id WHERE c.answer_id ="
+        " (SELECT id FROM answers WHERE research_id = ? AND status = 'structurally_valid'"
+        "  ORDER BY created_at DESC, rowid DESC LIMIT 1) ORDER BY c.ordinal, l.rowid", (research_id,))]
+    cited += [row["passage_id"] for row in _table_values(store, research_id) if row["passage_id"]]
+    return frozen | {"reserve": reserve, "priority": [pid for pid in dict.fromkeys(cited) if pid in held]}
+
+
+def _table_values(store: Any, research_id: str) -> list[dict[str, Any]]:
+    """The current values of this research's evidence tables, one row per value and cited passage (or one with no
+    passage), in table, row and column order: a trashed table, a removed row or column and a cell without a value
+    give nothing."""
+    return [dict(r) for r in store.conn.execute(
+        "SELECT t.id AS table_id, c.id AS cell_id, c.source_version_id, v.title, v.year, cr.name AS column_name, cr.options_json, r.value_json,"
+        " l.passage_id FROM evidence_cells c"
+        " JOIN evidence_tables t ON t.id = c.table_id AND t.research_id = ? AND t.trashed_at IS NULL"
+        " JOIN table_columns col ON col.id = c.column_id AND col.removed_at IS NULL"
+        " JOIN column_revisions cr ON cr.column_id = col.id AND cr.revision = col.current_revision"
+        " JOIN table_rows tr ON tr.table_id = c.table_id AND tr.source_version_id = c.source_version_id"
+        "  AND tr.removed_at IS NULL"
+        " JOIN cell_revisions r ON r.id = c.current_revision_id AND r.state = 'value'"
+        " JOIN source_versions v ON v.id = c.source_version_id"
+        " LEFT JOIN cell_evidence_links l ON l.cell_revision_id = r.id"
+        " ORDER BY t.created_at, tr.created_at, col.position, l.rowid", (research_id,))]
 
 
 def changed(store: Any, research_id: str, frozen_pool: dict[str, Any]) -> str | None:
@@ -204,9 +261,10 @@ def changed(store: Any, research_id: str, frozen_pool: dict[str, Any]) -> str | 
             or small_batch.user_signature(store, research_id) != frozen_pool["user_signature"]):
         return SELECTION_CHANGED
     current = _current(store, research_id)
-    for svid, ids in frozen_pool["sources"].items():
-        if not set(ids) <= set(current.get(svid, [])):
-            return SOURCES_CHANGED
+    for part in ("sources", "reserve"):
+        for svid, ids in frozen_pool.get(part, {}).items():
+            if not set(ids) <= set(current.get(svid, [])):
+                return SOURCES_CHANGED
     return None
 
 
@@ -249,7 +307,25 @@ def conversation(store: Any, research_id: str, question: str, turn: dict[str, An
         draft = json.loads(row["draft_json"] or "{}")
         claims = [c["text"] for c in draft.get("claims", []) if isinstance(c, dict) and isinstance(c.get("text"), str)]
         earlier.append({"question": row["question"], "answer": claims[:MAX_CONTEXT_CLAIMS]})
-    return {"research_question": question, "latest_answer": latest, "earlier_turns": earlier}
+    values: dict[str, dict[str, str]] = {}
+    for row in _table_values(store, research_id):
+        key = row["cell_id"]  # one value per cell: a row per cited passage, tables with the same column names apart
+        if key not in values and len(values) < MAX_TABLE_VALUES:
+            work = f"{row['title']} ({row['year']})" if row["year"] else row["title"]
+            values[key] = {"work": work, "column": row["column_name"],
+                           "value": _value_text(json.loads(row["value_json"]), row["options_json"])}
+    return {"research_question": question, "latest_answer": latest, "earlier_turns": earlier,
+            "evidence_table": list(values.values())}
+
+
+def _value_text(value: Any, options_json: str | None) -> str:
+    """One evidence-table value as the table shows it: option labels, a number as stated, yes or no, or the text."""
+    if "option_ids" in value:
+        labels = {o["id"]: o["label"] for o in json.loads(options_json or "[]")}
+        return ", ".join(labels.get(i, i) for i in value["option_ids"])
+    if "number" in value:
+        return value.get("as_stated") or " ".join(str(v) for v in (value["number"], value.get("unit")) if v is not None)
+    return value.get("answer") or value.get("text") or json.dumps(value, ensure_ascii=False)
 
 
 async def _selection(flow: Any, run: dict[str, Any], scope: dict[str, Any], question: str,
@@ -289,11 +365,15 @@ async def _selection(flow: Any, run: dict[str, Any], scope: dict[str, Any], ques
     # The passages no ranking matched, breadth-first: each source's first passage (its abstract when it has one),
     # then each source's second, and so on. A question in another language than the passages matches no word, and
     # the model, not the word match, says whether the passages answer it.
+    # The passages the latest answer and the evidence table cite go first, up to half the limit (D50).
+    # A table value may cite a passage of the reserve; it is read in this round too.
+    ranked_ids = frozen_pool.get("priority", [])[:limit // 2] + ranked_ids
     seen, fill = set(ranked_ids), []
     for depth in range(max((len(v) for v in sources.values()), default=0)):
         fill += [sources[svid][depth] for svid in svids if depth < len(sources[svid]) and sources[svid][depth] not in seen]
     per_source = max(MAX_PASSAGES_PER_SOURCE, limit // max(1, len(svids)))
-    owner = {pid: svid for svid, pid_list in sources.items() for pid in pid_list}
+    owner = {pid: svid for part in (sources, frozen_pool.get("reserve", {})) for svid, pid_list in part.items()
+             for pid in pid_list}
     taken: dict[str, int] = {}
     chosen: list[str] = []
     for pid in ranked_ids + fill:
@@ -308,8 +388,58 @@ async def _selection(flow: Any, run: dict[str, Any], scope: dict[str, Any], ques
               "pool_size": len(ids), "pool_sources": len(svids), "terms": words, "lexical_matches": len(lexical),
               "semantic_matches": len(semantic), "semantic_step": semantic_step["status"] if semantic_step else None,
               "limit": limit, "per_source": per_source, "passage_ids": chosen,
-              "from_ranking": from_ranking, "from_fill": len(chosen) - from_ranking}
+              "from_ranking": from_ranking, "from_fill": len(chosen) - from_ranking,
+              "from_priority": len(set(chosen) & set(frozen_pool.get("priority", [])))}
     return _code_step(flow, run, SELECTION_KEY, "code:followup_passages", lambda: output)
+
+
+async def _call(flow: Any, run: dict[str, Any], scope: dict[str, Any], key: str, passages: list[dict[str, Any]],
+                context: dict[str, Any], frozen_pool: dict[str, Any], budget_short: str = "pause") -> dict[str, Any]:
+    """One round's model call over these passages, with the conversation as context. The send gate runs right before
+    each call is built and sent, the repair's included. The second round skips (returns invalid) rather than pausing
+    when transport retries spent the turn's calls, so the first round's valid answer is published."""
+    from deixis.workflow.flow import step_model
+    source_ids = list(dict.fromkeys(p["source_version_id"] for p in passages))
+
+    def step_input(step_id: str) -> dict[str, Any]:
+        return flow._step_input(run, scope, step_id, TASK, [], source_ids, passages, [], step_model(scope, TASK)) | {
+            "conversation": context}
+    return await flow._model_step(run, scope, key, TASK, source_ids=source_ids, passage_rows=passages,
+                                  send_gate=lambda: _guard(flow, run, frozen_pool), step_input_builder=step_input,
+                                  budget_short=budget_short)
+
+
+async def _more_selection(flow: Any, run: dict[str, Any], scope: dict[str, Any], queries: list[str],
+                          first: dict[str, Any], frozen_pool: dict[str, Any]) -> dict[str, Any]:
+    """The second round's passages (D50): the model's phrases rank the pool and its reserve (lexical and semantic,
+    fused by RRF); up to half the limit of passages the first round did not send take the place of the first round's
+    last ones. A phrase that matches nothing new leaves the first round's passages as they were."""
+    saved = flow.store.existing_step(run["id"], MORE_SELECTION_KEY)
+    if saved and saved["status"] == "succeeded":
+        return saved["output"]
+    from deixis.workflow.flow import _reference_list, fuse_rankings
+    store, limit = flow.store, run["budget"]["max_followup_passages"]
+    held: dict[str, list[str]] = {}
+    for part in ("sources", "reserve"):
+        for svid, ids in frozen_pool.get(part, {}).items():
+            held.setdefault(svid, []).extend(ids)
+    svids = list(dict.fromkeys(held))
+    ids = {pid for pid_list in held.values() for pid in pid_list}
+    sent = set(first["passage_ids"])
+    words = list(dict.fromkeys(t for q in queries for t in terms(q)))[:MAX_TERMS]
+    fts = " OR ".join(f'"{t}"' for t in words)
+    everything = sum(len(store.passages_for(svid)) for svid in svids)
+    lexical = [p for p in store.search_passages(svids, fts, max(everything, 1)) if p["id"] in ids] if words else []
+    semantic = await flow._semantic_ranking(run, scope, svids, query_text="\n".join(queries), key=MORE_SEMANTIC_KEY,
+                                            query_origin="followup", only=ids)
+    semantic = [p for p in semantic or [] if p["id"] in ids]
+    ranked = fuse_rankings(lexical, semantic) if semantic else lexical
+    ranked = sorted(ranked, key=lambda p: _reference_list(p["text"]))
+    new = [p["id"] for p in ranked if p["id"] not in sent][:limit // 2]
+    kept = first["passage_ids"][:max(0, limit - len(new))]
+    output = {"queries": queries, "terms": words, "lexical_matches": len(lexical), "semantic_matches": len(semantic),
+              "new_passages": len(new), "limit": limit, "passage_ids": kept + new}
+    return _code_step(flow, run, MORE_SELECTION_KEY, "code:followup_more_passages", lambda: output)
 
 
 async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
@@ -333,22 +463,28 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
         return
     selected = await _selection(flow, run, scope, turn["question"], frozen_pool)
     flow._checkpoint(run_id, run["scope_revision"])
-    passages = [store.passage(pid) for pid in selected["passage_ids"]]
-    source_ids = list(dict.fromkeys(p["source_version_id"] for p in passages))
     context = _code_step(flow, run, CONVERSATION_KEY, "code:followup_conversation",
                          lambda: conversation(store, run["research_id"], scope["question"], turn))
-
-    def step_input(step_id: str) -> dict[str, Any]:
-        from deixis.workflow.flow import step_model
-        return flow._step_input(run, scope, step_id, TASK, [], source_ids, passages, [], step_model(scope, TASK)) | {
-            "conversation": context}
-    # The send gate runs right before each call is built and sent, the repair's included.
-    output = await flow._model_step(run, scope, TASK, TASK, source_ids=source_ids, passage_rows=passages,
-                                    send_gate=lambda: _guard(flow, run, frozen_pool), step_input_builder=step_input)
+    passages = [store.passage(pid) for pid in selected["passage_ids"]]
+    key, output = TASK, await _call(flow, run, scope, TASK, passages, context | {"more_queries_allowed": True}, frozen_pool)
+    queries = [] if output.get("invalid") else [q for q in output["result"].get("more_queries", []) if q.strip()]
+    if queries and output["result"]["outcome"] != "answered":
+        # The model asked the library for more (D50): its phrases rank everything this research holds, and a second
+        # call answers from the first round's passages with the new ones. No search runs and no provider is asked.
+        flow._checkpoint(run_id, run["scope_revision"])
+        more = await _more_selection(flow, run, scope, queries[:MAX_MORE_QUERIES], selected, frozen_pool)
+        if more["passage_ids"] != selected["passage_ids"]:
+            more_passages = [store.passage(pid) for pid in more["passage_ids"]]
+            second = await _call(flow, run, scope, MORE_KEY, more_passages,
+                                 context | {"more_queries_allowed": False}, frozen_pool, budget_short="skip")
+            # A second round that ends invalid leaves the first round's valid answer to be published.
+            if not second.get("invalid"):
+                key, output, passages = MORE_KEY, second, more_passages
     # No await from this check to the publication: a pause, cancel or newer question revision stops it unpublished,
     # and `publish` checks the frozen pool again inside its transaction.
     flow._checkpoint(run_id, run["scope_revision"])
-    step = store.existing_step(run_id, TASK)
+    considered = sum(len(v) for part in ("sources", "reserve") for v in frozen_pool.get(part, {}).values())
+    step = store.existing_step(run_id, key)
     if output.get("invalid"):
         try:
             draft = json.loads(output.get("raw_output") or "")
@@ -456,13 +592,20 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
     # The turn's live steps (UI parity S22b) from its stored step rows: how many passages the stored selection sends
     # (the call's allowlist, never an estimate) once that step has succeeded, and the state of the answer's model step.
     steps = {r["operation_key"]: r for r in store.conn.execute(
-        "SELECT operation_key, status, output_json FROM run_steps WHERE run_id = ? AND operation_key IN (?, ?)",
-        (row["run_id"], SELECTION_KEY, TASK))}
+        "SELECT operation_key, status, error_code, output_json FROM run_steps WHERE run_id = ? AND operation_key IN (?, ?, ?, ?)",
+        (row["run_id"], SELECTION_KEY, TASK, MORE_SELECTION_KEY, MORE_KEY))}
     selection = steps.get(SELECTION_KEY)
     chosen = (json.loads(selection["output_json"]) if selection is not None and selection["status"] == "succeeded"
               and selection["output_json"] else None)
+    more = steps.get(MORE_SELECTION_KEY)
+    more = json.loads(more["output_json"]) if more is not None and more["status"] == "succeeded" and more["output_json"] else None
+    # The second round (D50): how many passages the model's own phrases brought in, and the state of its call.
     progress = {"passages_selected": len(chosen["passage_ids"]) if chosen else None,
-                "answer_step": steps[TASK]["status"] if TASK in steps else None}
+                "answer_step": steps[TASK]["status"] if TASK in steps else None,
+                "more_passages": more["new_passages"] if more else None,
+                "more_step": steps[MORE_KEY]["status"] if MORE_KEY in steps else None,
+                # A second round that failed validation was read; one the spent budget skipped was never sent.
+                "more_error": steps[MORE_KEY]["error_code"] if MORE_KEY in steps else None}
     if answer is not None:
         # The validation warnings stored with the answer (math, several sources), as the answer view's `validation`.
         answer["warnings"] = (validation or {}).get("warnings", [])

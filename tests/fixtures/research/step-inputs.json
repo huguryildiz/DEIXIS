@@ -267,7 +267,7 @@
    "followup.md"
   ],
   "output_schema_versions": [
-   "deixis.followup_answer.v1"
+   "deixis.followup_answer.v2"
   ],
   "question": {
    "text": "SYNTHETIC follow-up: which binary variables do the release scheduling models use?",
@@ -397,7 +397,15 @@
    "latest_answer": [
     "SYNTHETIC. A binary variable per time slot decides the release."
    ],
-   "earlier_turns": []
+   "earlier_turns": [],
+   "evidence_table": [
+    {
+     "work": "SYNTHETIC release paper (2020)",
+     "column": "Decision variable",
+     "value": "binary per time slot"
+    }
+   ],
+   "more_queries_allowed": true
   }
  },
  "C_report_plan": {

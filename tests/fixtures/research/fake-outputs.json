@@ -3452,7 +3452,7 @@
    "expect_ok": true,
    "expect_codes": [],
    "output": {
-    "schema_version": "deixis.followup_answer.v1",
+    "schema_version": "deixis.followup_answer.v2",
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -3475,7 +3475,8 @@
       "quote": "SYNTHETIC. We formulate release-time scheduling as a mixed-integer linear program with binary release variables and an inter-symbol interference constraint."
      }
     ],
-    "unanswered_aspects": []
+    "unanswered_aspects": [],
+    "more_queries": []
    }
   },
   {
@@ -3484,7 +3485,7 @@
    "expect_ok": true,
    "expect_codes": [],
    "output": {
-    "schema_version": "deixis.followup_answer.v1",
+    "schema_version": "deixis.followup_answer.v2",
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -3509,7 +3510,8 @@
     ],
     "unanswered_aspects": [
      "None of the given passages reports how the binary variables are indexed over time."
-    ]
+    ],
+    "more_queries": []
    }
   },
   {
@@ -3518,7 +3520,7 @@
    "expect_ok": true,
    "expect_codes": [],
    "output": {
-    "schema_version": "deixis.followup_answer.v1",
+    "schema_version": "deixis.followup_answer.v2",
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -3528,7 +3530,8 @@
     "citation_anchors": [],
     "unanswered_aspects": [
      "None of the given passages answers this follow-up question."
-    ]
+    ],
+    "more_queries": []
    }
   },
   {
@@ -3539,7 +3542,7 @@
     "followup_answer_without_claims"
    ],
    "output": {
-    "schema_version": "deixis.followup_answer.v1",
+    "schema_version": "deixis.followup_answer.v2",
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -3547,7 +3550,8 @@
     "outcome": "answered",
     "claims": [],
     "citation_anchors": [],
-    "unanswered_aspects": []
+    "unanswered_aspects": [],
+    "more_queries": []
    }
   },
   {
@@ -3558,7 +3562,7 @@
     "followup_unanswered_without_aspect"
    ],
    "output": {
-    "schema_version": "deixis.followup_answer.v1",
+    "schema_version": "deixis.followup_answer.v2",
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -3581,7 +3585,8 @@
       "quote": "SYNTHETIC. We formulate release-time scheduling as a mixed-integer linear program with binary release variables and an inter-symbol interference constraint."
      }
     ],
-    "unanswered_aspects": []
+    "unanswered_aspects": [],
+    "more_queries": []
    }
   },
   {
@@ -3592,7 +3597,7 @@
     "unknown_passage_id"
    ],
    "output": {
-    "schema_version": "deixis.followup_answer.v1",
+    "schema_version": "deixis.followup_answer.v2",
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -3609,7 +3614,8 @@
      }
     ],
     "citation_anchors": [],
-    "unanswered_aspects": []
+    "unanswered_aspects": [],
+    "more_queries": []
    }
   },
   {
@@ -3620,7 +3626,7 @@
     "locator_in_claim_text"
    ],
    "output": {
-    "schema_version": "deixis.followup_answer.v1",
+    "schema_version": "deixis.followup_answer.v2",
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -3643,7 +3649,8 @@
       "quote": "SYNTHETIC. We formulate release-time scheduling as a mixed-integer linear program with binary release variables and an inter-symbol interference constraint."
      }
     ],
-    "unanswered_aspects": []
+    "unanswered_aspects": [],
+    "more_queries": []
    }
   },
   {
@@ -3654,7 +3661,7 @@
     "anchor_not_in_passage"
    ],
    "output": {
-    "schema_version": "deixis.followup_answer.v1",
+    "schema_version": "deixis.followup_answer.v2",
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -3677,7 +3684,8 @@
       "quote": "The release variables are continuous and unbounded in this model."
      }
     ],
-    "unanswered_aspects": []
+    "unanswered_aspects": [],
+    "more_queries": []
    }
   },
   {
@@ -3688,7 +3696,7 @@
     "missing_citation_anchor"
    ],
    "output": {
-    "schema_version": "deixis.followup_answer.v1",
+    "schema_version": "deixis.followup_answer.v2",
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -3705,7 +3713,8 @@
      }
     ],
     "citation_anchors": [],
-    "unanswered_aspects": []
+    "unanswered_aspects": [],
+    "more_queries": []
    }
   },
   {
@@ -3716,7 +3725,7 @@
     "source_stated_several_sources"
    ],
    "output": {
-    "schema_version": "deixis.followup_answer.v1",
+    "schema_version": "deixis.followup_answer.v2",
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -3745,7 +3754,8 @@
       "quote": "SYNTHETIC. We study how relay bacteria share a limited nutrient supply among forwarding tasks."
      }
     ],
-    "unanswered_aspects": []
+    "unanswered_aspects": [],
+    "more_queries": []
    }
   },
   {
@@ -3756,7 +3766,7 @@
     "envelope_mismatch"
    ],
    "output": {
-    "schema_version": "deixis.followup_answer.v1",
+    "schema_version": "deixis.followup_answer.v2",
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 2,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -3779,7 +3789,8 @@
       "quote": "SYNTHETIC. We formulate release-time scheduling as a mixed-integer linear program with binary release variables and an inter-symbol interference constraint."
      }
     ],
-    "unanswered_aspects": []
+    "unanswered_aspects": [],
+    "more_queries": []
    }
   }
  ]

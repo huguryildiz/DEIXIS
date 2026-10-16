@@ -41,6 +41,17 @@ function steps(turn: FollowupTurn) {
     return lines
   }
   lines.push({ state: 'done', icon: BookOpen, text: t(given === 1 ? 'Looked in the {n} passage from this research' : 'Looked in the {n} passages from this research', { n: given }) })
+  // The second round (D50): the model asked the library for more and these passages came in.
+  const more = turn.progress.more_passages
+  if (more) {
+    // Read only once the second call came back; a selection alone is not a reading.
+    lines.push(turn.progress.more_step === 'succeeded'
+      ? { state: 'done', icon: Search, text: t(more === 1 ? 'Searched this research again and read {n} more passage' : 'Searched this research again and read {n} more passages', { n: more }) }
+      : live ? { state: 'running', icon: Search, text: t('Searching this research again') }
+        : turn.progress.more_error === 'invalid_model_output'
+          ? { state: 'attention', icon: Search, text: t('Searched this research again; that answer failed validation') }
+          : { state: 'attention', icon: Search, text: t('Searched this research again; the new passages were not read') })
+  }
   if (PUBLISHED.has(turn.status)) lines.push({ state: 'done', icon: PencilLine, text: t('Wrote a short answer') })
   else if (turn.status === 'unverified_draft') lines.push({ state: 'attention', icon: PencilLine, text: t('The short answer failed validation') })
   else if (live) lines.push({ state: 'running', icon: PencilLine, text: t('Writing a short answer') })

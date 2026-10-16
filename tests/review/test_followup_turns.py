@@ -80,7 +80,9 @@ def test_a_follow_up_is_answered_from_the_passages_sent_and_cites_located_anchor
         assert payload["allowlist"]["passage_ids"] == sent and payload["allowlist"]["source_ids"] == [svid]
         assert turn["passages_given"] == len(sent) and turn["passages_considered"] >= len(sent)
         # The live steps read the stored step rows: the selection's count is the call's allowlist (UI parity S22b).
-        assert turn["progress"] == {"passages_selected": len(sent), "answer_step": "succeeded"}
+        assert turn["progress"] == {"passages_selected": len(sent), "answer_step": "succeeded",
+                                    "more_passages": None, "more_step": None,
+                                    "more_error": None}
         selection = app.state.store.existing_step(turn["run"]["id"], followup.SELECTION_KEY)["output"]
         assert selection["passage_ids"] == sent and selection["basis"] == "included_works"
         # The page naming the binary variable ranks first: the lexical ranking matched the turn's words.
@@ -132,7 +134,7 @@ def test_an_invented_locator_or_unlocatable_anchor_fails_closed(tmp_path):
         session(client)
         rid, _ = research(client)
         turn = answered(client, rid)
-        assert len(adapter.calls) == followup.CALLS  # the call and its one repair, then it stops
+        assert len(adapter.calls) == 2  # the call and its one repair, then it stops; no second round follows
         assert turn["status"] == "unverified_draft" and turn["answer"] is None
         assert {i["code"] for i in turn["issues"]} == {"locator_in_claim_text", "anchor_not_in_passage"}
         assert app.state.store.conn.execute("SELECT COUNT(*) FROM followup_turn_links").fetchone()[0] == 0
@@ -186,7 +188,9 @@ def test_a_research_without_passages_answers_no_passages_without_a_model_call(tm
         turn = answered(client, rid)
         assert turn["status"] == "no_passages" and turn["run"]["status"] == "completed"
         assert adapter.calls == [] and turn["passages_considered"] == 0 and turn["answer"] is None
-        assert turn["progress"] == {"passages_selected": None, "answer_step": None}
+        assert turn["progress"] == {"passages_selected": None, "answer_step": None,
+                                    "more_passages": None, "more_step": None,
+                                    "more_error": None}
 
 
 def test_no_search_or_provider_request_is_started(tmp_path):
@@ -236,7 +240,9 @@ def test_pause_during_the_call_publishes_on_resume_without_a_second_call(tmp_pat
         assert paused["status"] == "pending" and paused["passages_given"] is None
         # While unpublished the turn's steps still say what is stored: the selection and the finished call.
         sent = step_inputs(app, run["id"])[0]["passages"]
-        assert paused["progress"] == {"passages_selected": len(sent), "answer_step": "succeeded"}
+        assert paused["progress"] == {"passages_selected": len(sent), "answer_step": "succeeded",
+                                    "more_passages": None, "more_step": None,
+                                    "more_error": None}
         assert client.post(f"/api/runs/{run['id']}/resume").status_code == 200
         wait_run(client, rid, run["id"])
         turn = client.get(f"/api/researches/{rid}/followup-turns/{turn['id']}").json()
@@ -271,8 +277,9 @@ def test_the_turn_has_its_own_budget_and_the_one_active_run_rule(tmp_path):
         rid, _ = research(client)
         turn = answered(client, rid)
         run = app.state.store.run(turn["run"]["id"])
-        # The call and its one repair: the turn's own two calls, whatever the research's other runs used.
-        assert run["budget"]["max_model_calls"] == followup.CALLS == run["usage"]["model_calls"]
+        # The turn's own four calls (two rounds), whatever the research's other runs used; an invalid first round
+        # spends its call and its one repair and asks no second round.
+        assert run["budget"]["max_model_calls"] == followup.CALLS == 4 and run["usage"]["model_calls"] == 2
         assert turn["status"] == "unverified_draft" and turn["answer"] is None
         assert {i["code"] for i in turn["issues"]} == {"followup_answer_without_claims"}
         assert refused and "still active" in refused[0]  # one active run per research
@@ -639,7 +646,7 @@ def test_spent_calls_after_a_transport_error_close_the_stored_invalid_output_as_
 
     adapter = FakeAdapter(lambda si: json.dumps(json.loads(valid_response(si)) | {"claims": [], "citation_anchors": []}),
                           fail=lambda si: ModelStepResult("failed", error="SYNTHETIC connection reset")
-                          if len(adapter.calls) == 1 else None)
+                          if len(adapter.calls) <= 3 else None)
     app = app_for(tmp_path, adapter)
     with TestClient(app) as client:
         session(client)
@@ -647,14 +654,15 @@ def test_spent_calls_after_a_transport_error_close_the_stored_invalid_output_as_
         turn = ask(client, rid).json()
         _, run = wait_run(client, rid, turn["run"]["id"])
         assert run["status"] == "paused" and app.state.store.run(run["id"])["usage"]["model_calls"] == 1
-        client.post(f"/api/runs/{run['id']}/resume")
-        _, run = wait_run(client, rid, run["id"])
+        while run["status"] == "paused":  # three transport errors spend three of the turn's four calls
+            client.post(f"/api/runs/{run['id']}/resume")
+            _, run = wait_run(client, rid, run["id"])
         turn = client.get(f"/api/researches/{rid}/followup-turns/{turn['id']}").json()
         # The second call came back invalid and no call is left for its repair: the turn closes as that draft
         # instead of pausing again with budget_exhausted.
         assert (run["status"], run["pause_reason"]) == ("completed", None), run
         assert turn["status"] == "unverified_draft" and turn["answer"] is None and turn["issues"]
-        assert len(adapter.calls) == 2 and app.state.store.run(run["id"])["usage"]["model_calls"] == 2
+        assert len(adapter.calls) == 4 and app.state.store.run(run["id"])["usage"]["model_calls"] == 4
 
 
 def test_follow_up_citations_carry_the_answer_views_evidence_marks_and_warnings(tmp_path):
@@ -748,7 +756,8 @@ def test_a_follow_up_is_read_with_the_research_question_and_the_earlier_turns(tm
         # The first turn saw no earlier turn, and its own conversation step is stored for a resume.
         (first_payload,) = step_inputs(app, first["run"]["id"])
         assert first_payload["conversation"]["earlier_turns"] == []
-        assert app.state.store.existing_step(second["run"]["id"], followup.CONVERSATION_KEY)["output"] == context
+        stored = app.state.store.existing_step(second["run"]["id"], followup.CONVERSATION_KEY)["output"]
+        assert context == stored | {"more_queries_allowed": True}
 
 
 def test_the_conversation_carries_the_latest_answers_claims_as_text_only(tmp_path):
@@ -762,7 +771,8 @@ def test_the_conversation_carries_the_latest_answers_claims_as_text_only(tmp_pat
         " AND a.status = 'structurally_valid' ORDER BY c.ordinal", (lib.rid,))]
     assert texts
     context = followup.conversation(lib.store, lib.rid, "SYNTHETIC research question", {"id": "none", "created_at": "9999"})
-    assert context == {"research_question": "SYNTHETIC research question", "latest_answer": texts, "earlier_turns": []}
+    assert context == {"research_question": "SYNTHETIC research question", "latest_answer": texts, "earlier_turns": [],
+                       "evidence_table": []}
 
 
 def test_a_step_input_for_another_task_may_not_carry_a_conversation():
@@ -810,3 +820,135 @@ def test_a_full_text_read_after_the_answer_joins_the_follow_up_pool(tmp_path):
     assert pages <= set(followup.pool(lib.store, lib.rid, 1, lib.flow)["sources"][pdf])
     user(lib, pdf, "excluded")
     assert pdf not in followup.pool(lib.store, lib.rid, 1, lib.flow)["sources"]
+
+
+def test_the_evidence_tables_values_are_context_and_their_passages_come_first(tmp_path):
+    """D50: a follow-up starts from what the research established. The evidence table's current value is sent as
+    context (work, column, value as the table shows it), and the passage it cites is a priority passage of the pool."""
+    from test_evidence_tables import make_lib, model_output
+    lib = make_lib(tmp_path)
+    model_output(lib)
+    context = followup.conversation(lib.store, lib.rid, "How large are packets?", {"id": "none", "created_at": "9999"})
+    assert context["evidence_table"] == [{"work": "Packet size study", "column": "Packet size", "value": "128 bytes"}]
+    frozen = followup.pool(lib.store, lib.rid, 1)
+    assert frozen["priority"] == [lib.abstracts[lib.published]]
+    # A trashed table gives nothing.
+    lib.conn.execute("UPDATE evidence_tables SET trashed_at = '2026-10-16' WHERE id = ?", (lib.tid,))
+    assert followup.conversation(lib.store, lib.rid, "Q", {"id": "none", "created_at": "9999"})["evidence_table"] == []
+    assert followup.pool(lib.store, lib.rid, 1)["priority"] == []
+
+
+def test_the_model_may_ask_the_library_once_more_and_the_second_round_answers(tmp_path):
+    """D50: the first round finds the passages short and names search phrases; the library is ranked with them, a
+    page the first round did not send comes in, and the second round's answer is published. No provider is asked."""
+    many = [f"SYNTHETIC page {n}. Release slot number {n} is reported without a variable." for n in range(59)]
+    many.append("SYNTHETIC page 59. The acoustic modem sends at a baud rate of nine thousand six hundred.")
+    rounds = []
+
+    def respond(si):
+        rounds.append(si["conversation"]["more_queries_allowed"])
+        draft = json.loads(valid_response(si))
+        if si["conversation"]["more_queries_allowed"]:
+            draft |= {"outcome": "partly_answered", "unanswered_aspects": ["the modem's baud rate"],
+                      "more_queries": ["acoustic modem baud rate"]}
+        else:
+            page = next(p for p in si["passages"] if "baud rate" in p["text"])
+            draft["claims"][0]["passage_ids"] = [page["passage_id"]]
+            draft["citation_anchors"][0] |= {"passage_id": page["passage_id"], "quote": " ".join(page["text"].split())}
+        return json.dumps(draft)
+
+    app = app_for(tmp_path, FakeAdapter(respond))
+    with TestClient(app) as client:
+        session(client)
+        rid, (svid,) = research(client, (("long.pdf", many),))
+        turn = answered(client, rid)
+        assert rounds == [True, False] and turn["status"] == "answered"
+        first, second = step_inputs(app, turn["run"]["id"])
+        assert not any("baud rate" in p["text"] for p in first["passages"])
+        assert any("baud rate" in p["text"] for p in second["passages"])
+        limit = app.state.store.run(turn["run"]["id"])["budget"]["max_followup_passages"]
+        assert len(second["passages"]) <= limit
+        (claim,) = turn["answer"]["claims"]
+        assert "baud rate" in claim["citations"][0]["anchor_text"]
+        assert turn["progress"]["more_step"] == "succeeded" and turn["progress"]["more_passages"] >= 1
+        more = app.state.store.existing_step(turn["run"]["id"], followup.MORE_SELECTION_KEY)["output"]
+        assert more["queries"] == ["acoustic modem baud rate"] and more["lexical_matches"] >= 1
+        assert app.state.store.run(turn["run"]["id"])["usage"]["model_calls"] == 2
+
+
+def test_an_answered_first_round_or_an_invalid_second_round_publishes_the_first(tmp_path):
+    """D50: phrases with an `answered` outcome start no second round, and a second round that ends invalid leaves the
+    first round's valid answer published."""
+    many = [f"SYNTHETIC page {n}. Release slot number {n} is reported without a variable." for n in range(59)]
+    many.append("SYNTHETIC page 59. The acoustic modem sends at a baud rate of nine thousand six hundred.")
+
+    def respond(si):
+        draft = json.loads(valid_response(si))
+        if si["conversation"]["more_queries_allowed"]:
+            return json.dumps(draft | {"outcome": "partly_answered", "unanswered_aspects": ["the baud rate"],
+                                       "more_queries": ["acoustic modem baud rate"]})
+        return json.dumps(draft | {"claims": [], "citation_anchors": []})  # invalid: an answer without claims
+
+    app = app_for(tmp_path, FakeAdapter(respond))
+    with TestClient(app) as client:
+        session(client)
+        rid, _ = research(client, (("long.pdf", many),))
+        turn = answered(client, rid)
+        assert turn["status"] == "partly_answered" and turn["answer"]["claims"]
+        assert turn["progress"]["more_step"] == "failed" and turn["progress"]["more_error"] == "invalid_model_output"
+        assert len(step_inputs(app, turn["run"]["id"])) == 3  # the first call, the second and its one repair
+
+    answered_anyway = FakeAdapter(lambda si: json.dumps(json.loads(valid_response(si)) | {"more_queries": ["anything"]}))
+    app = app_for(tmp_path / "b", answered_anyway)
+    with TestClient(app) as client:
+        session(client)
+        rid, _ = research(client, (("long.pdf", many),))
+        turn = answered(client, rid)
+        assert turn["status"] == "answered" and len(answered_anyway.calls) == 1
+        assert turn["progress"]["more_step"] is None
+
+
+def test_spent_calls_before_the_second_round_publish_the_first_rounds_answer(tmp_path):
+    """D50: three transport errors spend three of the turn's four calls; the first round's valid answer asks for more,
+    the second round is not reached, and the first answer is published instead of the run pausing for good."""
+    from deixis.models.adapter import ModelStepResult
+    many = [f"SYNTHETIC page {n}. Release slot number {n} is reported without a variable." for n in range(59)]
+    many.append("SYNTHETIC page 59. The acoustic modem sends at a baud rate of nine thousand six hundred.")
+    adapter = FakeAdapter(lambda si: json.dumps(json.loads(valid_response(si)) | {
+                              "outcome": "partly_answered", "unanswered_aspects": ["the baud rate"],
+                              "more_queries": ["acoustic modem baud rate"]}),
+                          fail=lambda si: ModelStepResult("failed", error="SYNTHETIC connection reset")
+                          if len(adapter.calls) <= 3 else None)
+    app = app_for(tmp_path, adapter)
+    with TestClient(app) as client:
+        session(client)
+        rid, _ = research(client, (("long.pdf", many),))
+        turn = ask(client, rid).json()
+        _, run = wait_run(client, rid, turn["run"]["id"])
+        while run["status"] == "paused":
+            client.post(f"/api/runs/{run['id']}/resume")
+            _, run = wait_run(client, rid, run["id"])
+        turn = client.get(f"/api/researches/{rid}/followup-turns/{turn['id']}").json()
+        assert run["status"] == "completed" and turn["status"] == "partly_answered" and turn["answer"]["claims"]
+        assert len(adapter.calls) == 4 and turn["progress"]["more_step"] == "failed"
+        assert turn["progress"]["more_error"] == "budget_exhausted"
+
+
+def test_two_tables_with_the_same_column_name_keep_both_values(tmp_path):
+    from test_evidence_tables import PACKET_SIZE, make_lib, model_output
+    lib = make_lib(tmp_path)
+    model_output(lib)
+    lib.tid = lib.tables.create_table(lib.rid, "Packets again", None, None, None)
+    lib.cid = lib.tables.add_column(lib.rid, lib.tid, PACKET_SIZE, 1, None)
+    model_output(lib, value={"number": 64, "unit": "byte", "as_stated": "64 bytes"}, anchors=("Packets of 128 bytes",))
+    values = followup.conversation(lib.store, lib.rid, "Q", {"id": "none", "created_at": "9999"})["evidence_table"]
+    assert [v["value"] for v in values] == ["128 bytes", "64 bytes"]
+
+
+def test_an_empty_pool_with_a_reserve_reads_the_reserve(tmp_path, monkeypatch):
+    """D50: the answer's evidence left the research while other included works hold text; those are the pool."""
+    from test_evidence_tables import make_lib
+    lib = make_lib(tmp_path)
+    monkeypatch.setattr(followup, "_included", lambda store, rid, current: {"svA": ["p1", "p2"]})
+    frozen = followup._with_reserve(lib.store, lib.rid, {}, {"sources": {}, "basis": "answer_input"})
+    assert frozen["sources"] == {"svA": ["p1", "p2"]} and frozen["reserve"] == {}

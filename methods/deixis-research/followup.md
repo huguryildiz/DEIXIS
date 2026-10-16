@@ -18,6 +18,21 @@ conversation is context, not evidence: never cite it, never repeat one of its
 claims unless a supplied passage states it, and do not say the research
 question is missing.
 
+Start from what the research already established. `latest_answer` is its
+report and `evidence_table` holds its evidence table's values (one work, one
+column, one value); the passages they cite come first in this StepInput. Build
+the answer on them, check each point against a supplied passage, and cite the
+passage, never the report or the table.
+
+When `conversation.more_queries_allowed` is true and the passages do not answer
+the question fully, put up to three short search phrases in `more_queries`: the
+words a passage that answers the missing part would contain, in the language of
+the passages. The application then ranks every passage this research holds with
+them and asks you once more with the new passages; it does not search for new
+works. Still return a complete answer from the passages you have. Leave
+`more_queries` empty when the outcome is `answered` or when
+`more_queries_allowed` is false.
+
 1. Read all passages. Note each passage's `reading_depth` and locator kind
    (`abstract`, `pdf_page`). An abstract supports only what it states.
 2. Decide `outcome`:

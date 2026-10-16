@@ -54,7 +54,7 @@ SCHEMA_FILES = {
 SCHEMA_VERSIONS = {
     "OwnerReview": "deixis.owner_review.v1",
     "GroundedAnswerDraft": "deixis.grounded_answer_draft.v3",
-    "FollowupAnswer": "deixis.followup_answer.v1",
+    "FollowupAnswer": "deixis.followup_answer.v2",
     "AnswerReview": "deixis.answer_review.v1",
     "EvidenceCellDraft": "deixis.evidence_cell_draft.v1",
     "TableColumnProposal": "deixis.table_column_proposal.v1",

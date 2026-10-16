@@ -14,10 +14,11 @@
     "outcome",
     "claims",
     "citation_anchors",
-    "unanswered_aspects"
+    "unanswered_aspects",
+    "more_queries"
   ],
   "properties": {
-    "schema_version": { "type": "string", "const": "deixis.followup_answer.v1" },
+    "schema_version": { "type": "string", "const": "deixis.followup_answer.v2" },
     "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
     "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
     "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
@@ -68,6 +69,12 @@
     "unanswered_aspects": {
       "type": "array",
       "maxItems": 5,
+      "items": { "$ref": "common.schema.json#/$defs/short_text" }
+    },
+    "more_queries": {
+      "type": "array",
+      "maxItems": 3,
+      "description": "Only when conversation.more_queries_allowed is true and the outcome is not answered: up to three short search phrases for passages this research holds but did not send. The application ranks its library with them and asks once more. It starts no search for new works. Empty otherwise.",
       "items": { "$ref": "common.schema.json#/$defs/short_text" }
     }
   }

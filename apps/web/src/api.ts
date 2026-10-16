@@ -1805,7 +1805,7 @@ export type FollowupTurn = {
   passages_given: number | null  // passages sent to the model (its allowlist)
   // The turn's live steps from its stored step rows (S22b): how many passages the stored selection sends (the call's
   // allowlist) once chosen, and the state of the answer's model step; null before each exists.
-  progress: { passages_selected: number | null; answer_step: string | null }
+  progress: { passages_selected: number | null; answer_step: string | null; more_passages: number | null; more_step: string | null; more_error: string | null }
   run: { id: string; status: RunStatus; stage: string; pause_reason: string | null; error: unknown }
   answer: {
     answer_language: string; outcome: 'answered' | 'partly_answered' | 'not_answered'

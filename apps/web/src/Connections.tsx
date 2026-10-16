@@ -235,6 +235,7 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
         autoComplete={plain ? 'off' : 'new-password'} data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"
         placeholder={entry.configured ? `${entry.last4 ? `••••••••${entry.last4}` : '••••••••••••'} ${where}`.trim() : t(plain ? 'Type your user ID' : 'Paste your key')} onChange={e => { setValue(e.target.value); setFormError('') }} />
     </label>
+    {entry.keychain_unavailable && <Notice tone="attention"><p>{t('The system keychain did not answer, so your saved key was not used this time. It may be fine: restart DEIXIS once the keychain is unlocked.')}</p></Notice>}
     {entry.broken && <Notice tone="attention"><p>{t('This saved key is broken and was not used. Enter it again.')}</p></Notice>}
     {entry.configured && entry.verification === 'pending' && <p className="foot-note"><Info aria-hidden />{t('Saved, not verified: no request has shown that this key works yet.')}</p>}
     {entry.configured && entry.verification === 'rejected' && <Notice tone="attention"><p>{t('{service} did not accept this key. Enter it again.', { service })}</p></Notice>}
@@ -483,6 +484,7 @@ function MathpixDetails({ mathpix, keychain, dark, onChanged }: { mathpix: Mathp
     <ToolTraits items={[[<Cloud key="c" />, 'Runs on Mathpix’s servers'], [<KeyRound key="k" />, 'Needs your own Mathpix key pair']]} />
     <Notice tone="attention"><p>{t('DEIXIS does not send the PDF or its extracted text. For each numbered equation it sends an image of the area it takes to be the equation; that area can hold nearby content.')} <a href={MATHPIX_PRIVACY_URL} target="_blank" rel="noopener noreferrer">{t('Mathpix privacy policy')}</a></p></Notice>
     {mathpix.marker_present && <p className="local-tool-note">{t('Marker is installed, so Marker reads the equations and Mathpix sends nothing.')}</p>}
+    {mathpix.pair.keychain_unavailable && <Notice tone="attention"><p>{t('The system keychain did not answer, so your saved key pair was not used this time. It may be fine: restart DEIXIS once the keychain is unlocked.')}</p></Notice>}
     {mathpix.pair.unreadable && <Notice tone="attention"><p>{t('The saved key pair could not be read. Save it again.')}</p></Notice>}
     {mathpix.keys_rejected && <Notice tone="attention"><p>{t('Mathpix did not accept the saved key pair. No request is sent until a new pair is saved.')}</p></Notice>}
     <form className="key-box" onSubmit={e => { e.preventDefault(); if (typed) savePair(); else if (mathpix.pair.configured) test() }}>

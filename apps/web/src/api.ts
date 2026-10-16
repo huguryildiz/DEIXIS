@@ -717,7 +717,7 @@ export type ModelOption = {
 }
 export type ModelHealth = {
   // 'pending': a saved key no request has checked yet. Not ready, but the first research step may use it (E6).
-  verification?: 'verified' | 'pending' | 'rejected'
+  verification?: 'verified' | 'pending' | 'rejected'; broken?: boolean
   connection: string; ready: boolean; reason_code?: string | null; reset_at?: string | null; reason?: string | null; installed?: boolean; cli_version?: string; signed_in?: boolean; key_configured?: boolean
   account_type?: string | null; plan_type?: string | null; models?: ModelOption[]
   isolation?: { instruction_sources: number; live_mcp_servers: string[] }
@@ -730,7 +730,9 @@ export type Connections = { models: Record<string, ModelHealth>; codex_home?: st
 export type Keychain = { available: boolean; name: string | null }
 export type KeyEntry = { env: string; group: 'model' | 'source'; service: string; configured: boolean; source: 'keychain' | 'dotenv' | 'environment' | null; testable: boolean; shell_fallback?: boolean; last4?: string | null
   // 'pending' is "saved, not verified"; null when no check ran in this session. `broken`: the saved item could not be read and was skipped (E2, E6).
-  verification?: 'verified' | 'pending' | 'rejected' | null; broken?: boolean }
+  verification?: 'verified' | 'pending' | 'rejected' | null; broken?: boolean
+  // The keychain did not answer at startup, so a saved key was not used this time; it is not known to be bad.
+  keychain_unavailable?: boolean }
 export type Credentials = { keychain: Keychain; keys: KeyEntry[] }
 export type KeyTest = { status: 'ok' | 'no_credit' | 'rejected' | 'failed' | 'unverified'; verification?: 'verified' | 'pending' | 'rejected'; detail: string; checked_at: string; kind?: string; http_status?: number | null; reset_at?: string | null }
 // One request to a keyless source (P5): whether it answered, with its HTTP status, or why no answer came.
@@ -763,7 +765,7 @@ export type EquationReader = {
 }
 // Mathpix (D40): the key pair (never shown), the switch, this month's requests against the budget and the PDFs it reads.
 export type Mathpix = {
-  pair: { configured: boolean; unreadable: boolean; app_id: string | null }; keys_rejected: boolean; switch: 'on' | 'off'
+  pair: { configured: boolean; unreadable: boolean; keychain_unavailable?: boolean; app_id: string | null }; keys_rejected: boolean; switch: 'on' | 'off'
   monthly_budget: number; month_requests: number; per_pdf_limit: number; marker_present: boolean
   pdfs: Partial<Record<'read' | 'pending' | 'reading' | 'failed' | 'no_candidates' | 'none_placed' | 'keys_rejected' | 'budget_reached', number>>
   reading: { asset_id: string; title: string | null; pages: number; started_at: string } | null

@@ -138,6 +138,7 @@ def memory_keychain(monkeypatch):
     monkeypatch.setattr(credentials, "_from_dotenv", set())
     monkeypatch.setattr(credentials, "_shell_values", {})
     monkeypatch.setattr(credentials, "_broken", set())
+    monkeypatch.setattr(credentials, "_unavailable", set())
     monkeypatch.setattr(key_verification, "_state", {})
     monkeypatch.setattr(credentials, "dotenv_path", None)
     yield backend

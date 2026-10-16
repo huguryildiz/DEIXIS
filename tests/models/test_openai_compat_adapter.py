@@ -92,7 +92,7 @@ def test_health_lists_models_and_offers_no_reasoning_effort(spec, monkeypatch):
         return httpx.Response(200, json={"object": "list", "data": [{"id": mid(spec, "a"), **SO}, {"id": mid(spec, "b"), **SO}, {"object": "x"}]})
 
     status = asyncio.run(adapter(spec, handler).health(refresh=True))
-    assert status["ready"] is True and status["connection"] == spec.id
+    assert status["ready"] is (spec.key_url is None) and status["connection"] == spec.id  # a public list is no check of the key
     assert [(m["id"], m["default_reasoning_effort"], m["reasoning_efforts"]) for m in status["models"]] == [
         (mid(spec, "a"), None, []), (mid(spec, "b"), None, [])]
     assert ("key_configured" in status) is bool(spec.key_env)
@@ -156,7 +156,8 @@ def test_health_tries_again_once_after_a_transport_error(spec, monkeypatch):
             raise httpx.ConnectTimeout("timed out", request=request)
         return httpx.Response(200, json={"data": [{"id": mid(spec, "a"), **SO}]})
 
-    assert asyncio.run(adapter(spec, handler).health(refresh=True))["ready"] is True and len(calls) == 2
+    # OpenRouter's list is public, so it cannot show that the key works: ready only after a step (E6).
+    assert asyncio.run(adapter(spec, handler).health(refresh=True))["ready"] is (spec.key_url is None) and len(calls) == 2
 
     calls.clear()
 

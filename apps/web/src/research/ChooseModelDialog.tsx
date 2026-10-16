@@ -4,7 +4,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { api, ApiError, researchModelApi, type ModelRole, type ResearchView, type ReviewCard, type ReviewFocus, type ReviewTargetKind, type Run } from '../api'
 import { ConfirmDialog } from '../ConfirmDialog'
-import { connectionModels, modelKey, modelRoles, type ConnectionModel } from '../Home'
+import { canRun, connectionModels, modelKey, modelRoles, type ConnectionModel } from '../Home'
 import { connectionName, reasoningLabel, shownVersion } from '../labels'
 import { ReviewRequest } from '../review/ReviewRequest'
 import '../review/review.css'
@@ -46,7 +46,7 @@ function RoleModelDialog({ target, view, dark, onClose, onChanged, onReload }: {
   useEffect(() => {
     if (!open) return
     let live = true
-    api.connections().then(next => { if (live) setModels(connectionModels(next).filter(m => next.models[m.connection]?.ready)) }, () => { if (live) setFailed(true) })
+    api.connections().then(next => { if (live) setModels(connectionModels(next).filter(m => canRun(next.models[m.connection]))) }, () => { if (live) setFailed(true) })
     return () => { live = false }
   }, [open])
   const chosen = models?.find(m => m.id === choice)

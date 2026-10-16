@@ -300,6 +300,112 @@ def test_a_connection_that_is_neither_ready_nor_pending_still_blocks_the_run(tmp
     assert (run["status"], run["pause_reason"]) == ("paused", "model_connection_not_ready") and adapter.calls == []
 
 
+MISTRAL = openai_compat.CONNECTIONS["mistral"]
+OPENROUTER = openai_compat.CONNECTIONS["openrouter"]
+
+
+def listed_and(chat, spec):
+    """A provider whose model list answers 200 (and, for OpenRouter, to any key); `chat` answers the step."""
+    return lambda request: (httpx.Response(200, json={"data": [{"id": "m-1", "supported_parameters": ["structured_outputs"]}]})
+                            if str(request.url) == spec.list_url else chat(request))
+
+
+def adapter_for(spec, wire):
+    return openai_compat.OpenAICompatAdapter(spec, client=httpx.AsyncClient(transport=httpx.MockTransport(wire)))
+
+
+async def _step(adapter, model="m-1"):
+    return await adapter.run_step("BASE", "DEV", "MSG", {"type": "object"}, model)
+
+
+def test_a_key_the_list_checks_is_ready_until_a_step_refuses_it(wire, monkeypatch):
+    monkeypatch.setenv("MISTRAL_API_KEY", "mistral-key-0123456789")
+    wire.answer = listed_and(lambda request: httpx.Response(401), MISTRAL)
+    adapter = adapter_for(MISTRAL, wire)
+
+    async def go():
+        first = await adapter.health(refresh=True)
+        assert (first["ready"], first["verification"]) == (True, "verified")
+        assert (await _step(adapter)).status == "failed"
+        again = await adapter.health()  # not refreshed: the cached "ready" must not outlive the refusal
+        assert (again["ready"], again["verification"], again["reason_code"]) == (False, "rejected", "auth_failed")
+        assert (await adapter.health(refresh=True))["ready"] is False  # the list still answers 200; the step's word stands
+    asyncio.run(go())
+
+
+def test_a_public_model_list_does_not_verify_the_key(wire, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "openrouter-key-0123456")
+    wire.answer = listed_and(completion, OPENROUTER)
+    adapter = adapter_for(OPENROUTER, wire)
+
+    async def go():
+        before = await adapter.health(refresh=True)
+        assert (before["ready"], before["verification"]) == (False, "pending") and before["models"]
+        assert (await _step(adapter)).status == "completed"
+        after = await adapter.health(refresh=True)
+        assert (after["ready"], after["verification"]) == (True, "verified")
+    asyncio.run(go())
+
+
+def test_a_refused_step_on_a_public_list_provider_ends_the_pending_state(wire, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "openrouter-key-0123456")
+    wire.answer = listed_and(lambda request: httpx.Response(403), OPENROUTER)
+    adapter = adapter_for(OPENROUTER, wire)
+
+    async def go():
+        assert (await adapter.health(refresh=True))["verification"] == "pending"
+        await _step(adapter)
+        after = await adapter.health(refresh=True)
+        assert (after["ready"], after["verification"]) == (False, "rejected")
+    asyncio.run(go())
+
+
+def test_the_flow_refuses_a_connection_whose_key_a_step_refused(tmp_path, wire, monkeypatch):
+    monkeypatch.setenv("MISTRAL_API_KEY", "mistral-key-0123456789")
+    chats: list[str] = []
+    wire.answer = listed_and(lambda request: (chats.append(str(request.url)), httpx.Response(401))[1], MISTRAL)
+    adapter = adapter_for(MISTRAL, wire)
+    asyncio.run(_step(adapter))  # the refusal
+    assert len(chats) == 1
+    with TestClient(app_for(tmp_path, adapter)) as client:
+        session(client)
+        rid = create(client, requested_model="m-1")
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
+        run = wait_run(client, rid, run["id"])[1]
+    assert (run["status"], run["pause_reason"]) == ("paused", "model_connection_not_ready") and len(chats) == 1
+
+
+def test_a_keychain_that_did_not_answer_is_not_a_broken_key(client, memory_keychain, monkeypatch):
+    monkeypatch.delenv("SCOPUS_API_KEY", raising=False)
+    memory_keychain.set_password("DEIXIS", "SCOPUS_API_KEY", "scopus-source-good-1")
+    real_get = memory_keychain.get_password
+
+    def locked(service, username):
+        if username == "SCOPUS_API_KEY":
+            raise RuntimeError("keychain is locked")
+        return real_get(service, username)
+
+    monkeypatch.setattr(memory_keychain, "get_password", locked)
+    credentials.load_into_environment()
+    key = {k["env"]: k for k in client.get("/api/credentials").json()["keys"]}["SCOPUS_API_KEY"]
+    assert (key["keychain_unavailable"], key["broken"], key["configured"]) == (True, False, False)
+    assert not os.environ.get("SCOPUS_API_KEY") and memory_keychain.items[("DEIXIS", "SCOPUS_API_KEY")] == "scopus-source-good-1"
+
+
+def test_a_unicode_key_from_the_shell_is_reported_broken_and_never_raises(wire, monkeypatch):
+    monkeypatch.setenv("MISTRAL_API_KEY", "mistral-ş-key-0123456")
+    adapter = adapter_for(MISTRAL, wire)
+
+    async def go():
+        health = await adapter.health(refresh=True)
+        assert (health["ready"], health["broken"], health["reason_code"]) == (False, True, "auth_failed")
+        sent = await _step(adapter)
+        assert (sent.status, sent.delivery_class) == ("unavailable", "before_send")
+    asyncio.run(go())
+    assert not wire.urls  # nothing left the process
+    assert credentials.status("MISTRAL_API_KEY")["broken"] is True
+
+
 def test_key_state_belongs_to_the_value():
     key_verification.set_state("X_KEY", "first-value-123", "verified")
     assert key_verification.state_of("X_KEY", "first-value-123") == "verified"

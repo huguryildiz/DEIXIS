@@ -183,6 +183,12 @@ class OpenAICompatAdapter:
             status["reason_code"] = "needs_key"
             status["reason"] = f"Add a {spec.name} API key in Settings"
             return status
+        if key and not key_verification.is_valid_key(key):  # from the shell or .env; a header cannot carry it (E11)
+            status["broken"] = True
+            status["reason_code"] = "auth_failed"
+            status["reason"] = f"The saved {spec.name} key is not a valid key: enter it again in Settings"
+            return status
+        state = key_verification.state_of(spec.key_env, key) if spec.key_env else None
         base = self._base()
         if self._base_url is not None:
             status["base_url"] = base
@@ -203,13 +209,11 @@ class OpenAICompatAdapter:
                                         else f"{spec.name} API unreachable: {type(exc).__name__}")
                     return status
         names: dict[str, str] = {}
-        verification = None
+        unchecked = False  # whether the model list says nothing about the key
         if response.status_code == 404 and spec.static_models:
-            # No model list endpoint: the key is not checked here. It stays "pending" (not ready, but the first step may
-            # run) until a step is answered or refused (E6).
+            # No model list endpoint: the key is not checked here.
             ids = list(spec.static_models)
-            if spec.key_env:
-                verification = key_verification.state_of(spec.key_env, key) or "pending"
+            unchecked = True
         elif response.status_code != 200:
             status["reason_code"] = http_limit(response)["error_kind"]
             status["reset_at"] = retry_at(http_limit(response)["retry_after"])
@@ -234,6 +238,7 @@ class OpenAICompatAdapter:
                                  key=lambda m: m["id"])
                 names = {m["id"]: m["name"] for m in entries if isinstance(m.get("name"), str) and m["name"]}
             ids = [m["id"] for m in entries] or list(spec.static_models)
+            unchecked = spec.key_url is not None  # that list is public (OpenRouter): any key or none is answered
         if not ids:
             status["reason_code"] = "no_models"
             status["reason"] = (f"{spec.name} lists no models: pull one, for example `ollama pull qwen3`" if spec.id == "ollama"
@@ -245,7 +250,16 @@ class OpenAICompatAdapter:
              "default_reasoning_effort": None, "reasoning_efforts": []}
             for i in ids
         ]
-        if verification:
+        if spec.key_env:
+            # A step's answer is the last word on the key (E6): a refused key is not ready whatever the list says. A key the
+            # list cannot check stays "pending" (not ready, but its first step may run) until a step is answered.
+            if state == "rejected":
+                verification = "rejected"
+            elif unchecked:
+                verification = state or "pending"
+            else:
+                verification = "verified"
+                key_verification.set_state(spec.key_env, key, verification)
             status["verification"] = verification
             if verification == "rejected":
                 status["reason_code"] = "auth_failed"
@@ -262,6 +276,9 @@ class OpenAICompatAdapter:
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],
                        requested_model: str | None, reasoning_effort: str | None = None) -> ModelStepResult:
         key, spec = self._key(), self.spec
+        if key and not key_verification.is_valid_key(key):  # nothing is sent with a key no header can carry
+            return ModelStepResult("unavailable", error="the saved key is not a valid key", delivery_class="before_send",
+                                   error_kind="auth_failed")
         missing_key = bool(spec.key_env) and not key
         if missing_key or not requested_model:
             return ModelStepResult("unavailable", error=f"{spec.key_env} is not set" if missing_key else "no model requested",

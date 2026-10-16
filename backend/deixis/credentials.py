@@ -79,7 +79,8 @@ MANAGED_KEYS = {k.env: k for k in (
 _from_keychain: set[str] = set()
 _from_dotenv: set[str] = set()
 _shell_values: dict[str, str] = {}  # shell keys a keychain key replaced, restored when that key is removed
-_broken: set[str] = set()  # keychain items skipped at startup because they could not be read or are not a valid key (E2)
+_broken: set[str] = set()  # keychain items skipped at startup because the value read is not a valid key (E2)
+_unavailable: set[str] = set()  # keychain items not read at startup because the keychain did not answer; the item may be fine
 dotenv_path: Path | None = None
 
 
@@ -173,13 +174,17 @@ def load_into_environment() -> None:
     if keychain_name() is None:
         return
     _broken.clear()
+    _unavailable.clear()
     for env, key in MANAGED_KEYS.items():
         if env in _from_dotenv or env in _from_keychain:
             continue
         try:
             value = keyring.get_password(SERVICE, env)
-        except Exception:  # noqa: BLE001 - a backend can fail in many ways (KeyringError, decoding, a locked store)
+        except ValueError:  # the stored bytes cannot be decoded: the item itself is damaged
             _broken.add(env)
+            continue
+        except Exception:  # noqa: BLE001 - a locked or unreachable keychain, in whatever way the backend reports it
+            _unavailable.add(env)
             continue
         if value:
             if not _stored_value_ok(key, value):
@@ -201,7 +206,9 @@ def status(env: str) -> dict[str, Any]:
             "testable": key.testable, "shell_fallback": env in _shell_values, "last4": value[-4:] if len(value) >= 16 else None,
             # 'verified', 'pending' (saved, no request showed it works) or 'rejected'; None when not checked in this run.
             "verification": key_verification.state_of(env, value) if configured else None,
-            "broken": env in _broken and not configured}
+            "broken": (env in _broken and not configured) or (configured and not key.pair and not key_verification.is_valid_key(value)),
+            # The keychain did not answer, so the saved key was not used this time; it is not known to be bad.
+            "keychain_unavailable": env in _unavailable and not configured}
 
 
 def save(env: str, value: str) -> None:
@@ -212,6 +219,7 @@ def save(env: str, value: str) -> None:
         _rewrite_dotenv(env, value)
         os.environ[env] = value
         _broken.discard(env)
+        _unavailable.discard(env)
         return
     keyring.set_password(SERVICE, env, value)
     if source == "environment":
@@ -219,6 +227,7 @@ def save(env: str, value: str) -> None:
     os.environ[env] = value
     _from_keychain.add(env)
     _broken.discard(env)
+    _unavailable.discard(env)
 
 
 def delete(env: str) -> None:
@@ -291,6 +300,7 @@ async def test(client: httpx.AsyncClient, env: str, value: str) -> dict[str, Any
     if code == 404 and env in COMPAT_BY_KEY_ENV and COMPAT_BY_KEY_ENV[env].static_models:
         return {"status": "unverified", "verification": "pending", "checked_at": now(), "http_status": code, "kind": "unknown",
                 "reset_at": None, "detail": "Saved, not verified. This API lists no models, so the key is checked by the first step."}
+    # The only 403 that is not a refusal: Elsevier knows the key (a wrong one gets 401), the network just has no access.
     if code == 403 and env == "SCOPUS_API_KEY":  # Elsevier knows the key (a wrong one gets 401) but this network has no access
         return {"status": "failed", "verification": "pending", "detail": "Elsevier knows the key, but Scopus gives no access from this network (HTTP 403).", "checked_at": now(), **fields}
     if code in (400, 401, 403):  # the provider's own message can quote part of the key, so it is not passed on

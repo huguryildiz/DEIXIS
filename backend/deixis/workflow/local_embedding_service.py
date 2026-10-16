@@ -118,6 +118,7 @@ class EmbeddingService:
         self._proc: asyncio.subprocess.Process | None = None
         self._install_fd: int | None = None
         self._in_use_fd: int | None = None
+        self._starting = False  # an install request is between its check and its job: a second one is turned away
 
     # ---- the job file: written only by the install lock's owner ----------------------------
     def _write_job(self, job: dict[str, Any]) -> None:
@@ -240,9 +241,16 @@ class EmbeddingService:
     async def install(self) -> dict[str, Any]:
         if not local_embedding.supported():
             raise ServiceError("unsupported_platform", "The built-in model is not available on Windows yet")
-        import fcntl  # after the platform check: Windows has no fcntl
-        if self.owns_job():
+        if self.owns_job() or self._starting:
             raise ServiceError("install_running", "The built-in model is already being installed")
+        self._starting = True  # before the first await, so two requests at once start one install
+        try:
+            return await self._begin_install()
+        finally:
+            self._starting = False
+
+    async def _begin_install(self) -> dict[str, Any]:
+        import fcntl  # Windows has no fcntl; install() has already refused that platform
         uv = await asyncio.to_thread(find_tool, "uv")
         if uv is None:
             raise ServiceError("uv_missing", "uv was not found on this computer's PATH")

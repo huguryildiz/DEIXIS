@@ -105,20 +105,33 @@ class AccountSignIn:
         self._known(tool)
         if self._view(tool)["state"] == "waiting":
             return self._view(tool)
-        binary, args, name = TOOLS[tool]
-        exe = await asyncio.to_thread(find_tool, binary)
-        if not exe:
-            raise SignInError(409, f"{name} was not found on this computer; install it first")
-        if tool == "codex":
-            self._codex_home.mkdir(parents=True, exist_ok=True, mode=0o700)
-        spec = build_launch(self._platform, exe, args, self._codex_home if tool == "codex" else None,
-                            script_dir=self._codex_home.parent / "sign-in")
-        try:
-            self._launcher(spec)
-        except OSError as exc:
-            raise SignInError(409, f"A terminal window could not be opened: {type(exc).__name__}") from exc
+        # Reserved before the first await, so two requests at once open one terminal; "busy" keeps the health check
+        # from reading a sign-in that is not open yet.
+        previous = (self._state.get(tool), self._run.get(tool))
         now = self._clock()
         self._state[tool] = {"state": "waiting", "message": None}
+        self._run[tool] = {"deadline": now + self._timeout, "last": now, "busy": True}
+        try:
+            binary, args, name = TOOLS[tool]
+            exe = await asyncio.to_thread(find_tool, binary)
+            if not exe:
+                raise SignInError(409, f"{name} was not found on this computer; install it first")
+            if tool == "codex":
+                self._codex_home.mkdir(parents=True, exist_ok=True, mode=0o700)
+            spec = build_launch(self._platform, exe, args, self._codex_home if tool == "codex" else None,
+                                script_dir=self._codex_home.parent / "sign-in")
+            try:
+                self._launcher(spec)
+            except OSError as exc:
+                raise SignInError(409, f"A terminal window could not be opened: {type(exc).__name__}") from exc
+        except BaseException:
+            for table, old in ((self._state, previous[0]), (self._run, previous[1])):
+                if old is None:
+                    table.pop(tool, None)
+                else:
+                    table[tool] = old
+            raise
+        now = self._clock()
         self._run[tool] = {"deadline": now + self._timeout, "last": now, "busy": False}
         return self._view(tool)
 

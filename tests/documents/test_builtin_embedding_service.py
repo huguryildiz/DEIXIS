@@ -674,3 +674,22 @@ def test_check_for_updates_hashes_the_files_again_and_reports_the_state_without_
     assert ready["status"] == "ready" and ready["last_full_check"]["at"] > first
     assert outdated["status"] == "update_available"
     assert setup["seen"] == []  # nothing was fetched
+
+
+def test_two_install_requests_at_once_start_one_install_and_the_second_is_told_so(setup, monkeypatch):
+    service = service_of(setup)
+    real = local_embedding_service.find_tool
+
+    def slow(name):
+        time.sleep(0.2)  # the tool search that now runs between the check and the job
+        return real(name)
+    monkeypatch.setattr(local_embedding_service, "find_tool", slow)
+
+    async def go():
+        results = await asyncio.gather(service.install(), service.install(), return_exceptions=True)
+        return results, await until_done(service)
+    results, job = asyncio.run(go())
+    errors = [r for r in results if isinstance(r, ServiceError)]
+    assert [e.code for e in errors] == ["install_running"] and sum(isinstance(r, dict) for r in results) == 1
+    assert job["status"] == "succeeded"
+    assert len(setup["record"].read_text().splitlines()) == 2  # venv and pip sync, once

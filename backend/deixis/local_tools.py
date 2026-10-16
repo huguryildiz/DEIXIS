@@ -303,12 +303,35 @@ class LocalTools:
         except (httpx.HTTPError, ValueError, KeyError, TypeError):
             return None
 
+    def _reserve(self, tool_id: str, message: str) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        """Take the tool's job slot before any await: a second request at once is turned away, and the two cannot both
+        run the installer or swap the same app folders. `_start` replaces the placeholder with the real job."""
+        previous = self._jobs.get(tool_id)
+        if (previous or {}).get("status") == "running":
+            raise ToolError(409, message)
+        placeholder = {"status": "running", "started_at": now(), "finished_at": None, "output": "", "completed": 0, "total": 0}
+        self._jobs[tool_id] = placeholder
+        return placeholder, previous
+
+    def _release(self, tool_id: str, placeholder: dict[str, Any], previous: dict[str, Any] | None) -> None:
+        if self._jobs.get(tool_id) is placeholder:  # a cancel may already have taken it over
+            if previous is None:
+                self._jobs.pop(tool_id, None)
+            else:
+                self._jobs[tool_id] = previous
+
     async def install(self, tool_id: str) -> dict[str, Any]:
         tool = TOOLS.get(tool_id)
         if tool is None:
             raise ToolError(404, f"Unknown tool '{tool_id}'")
-        if (self._jobs.get(tool_id) or {}).get("status") == "running":
-            raise ToolError(409, f"{tool.name} is already being installed")
+        reserved, previous = self._reserve(tool_id, f"{tool.name} is already being installed")
+        try:
+            return await self._install(tool_id, tool, reserved)
+        except BaseException:
+            self._release(tool_id, reserved, previous)
+            raise
+
+    async def _install(self, tool_id: str, tool: Tool, reserved: dict[str, Any]) -> dict[str, Any]:
         current = next(t for t in (await self.snapshot(refresh=True))["tools"] if t["id"] == tool_id)
         if _mac_app(tool_id):
             # Offered also when only Homebrew's CLI is there: without the app nothing starts the server.
@@ -316,7 +339,7 @@ class LocalTools:
                 raise ToolError(409, f"{tool.name} is already installed")
             return self._start(tool_id, {"status": "running", "command": current["install"]["command"], "started_at": now(),
                                          "finished_at": None, "output": "", "completed": 0, "total": 0},
-                               self._install_mac_app)
+                               self._install_mac_app, reserved)
         if current["installed"]:
             raise ToolError(409, f"{tool.name} is already installed")
         manager = await asyncio.to_thread(find_tool, tool.install[0])
@@ -324,7 +347,7 @@ class LocalTools:
             raise ToolError(422, current["install"]["unavailable_reason"])
         job = {"status": "running", "command": " ".join(tool.install), "started_at": now(), "finished_at": None, "output": ""}
         argv = [manager, *tool.install[1:]]
-        return self._start(tool_id, job, lambda tool_id, job: self._run(tool_id, job, argv))
+        return self._start(tool_id, job, lambda tool_id, job: self._run(tool_id, job, argv), reserved)
 
     async def update(self, tool_id: str) -> dict[str, Any]:
         """Install a newer Ollama or LM Studio the way the installed one came: Homebrew's Ollama with `brew upgrade` (and its
@@ -332,8 +355,14 @@ class LocalTools:
         tool = TOOLS.get(tool_id)
         if tool_id not in ("ollama", "lm_studio") or tool is None:
             raise ToolError(404, f"'{tool_id}' is not updated from DEIXIS")
-        if (self._jobs.get(tool_id) or {}).get("status") == "running":
-            raise ToolError(409, f"{tool.name} is already being installed or updated")
+        reserved, previous = self._reserve(tool_id, f"{tool.name} is already being installed or updated")
+        try:
+            return await self._update(tool_id, tool, reserved)
+        except BaseException:
+            self._release(tool_id, reserved, previous)
+            raise
+
+    async def _update(self, tool_id: str, tool: Tool, reserved: dict[str, Any]) -> dict[str, Any]:
         path = await asyncio.to_thread(find_tool, tool.binary)
         real = os.path.realpath(path) if path else ""
         brew = await asyncio.to_thread(find_tool, "brew")
@@ -348,7 +377,7 @@ class LocalTools:
                 if job["status"] == "succeeded" and any(line.split()[:2] == ["ollama", "started"] for line in services.splitlines()):
                     job["status"] = "running"
                     await self._run(tool_id, job, [brew, "services", "restart", "ollama"])
-            return self._start(tool_id, job, run)
+            return self._start(tool_id, job, run, reserved)
         mac = _mac_app(tool_id)
         if not mac or not mac[0].exists():
             raise ToolError(422, f"{tool.name} was not installed by Homebrew or as the macOS app; update it from {tool.url}")
@@ -357,9 +386,11 @@ class LocalTools:
         async def replace(tool_id: str, job: dict[str, Any]) -> None:
             await asyncio.to_thread(_quit_mac_app, mac[0])
             await self._install_mac_app(tool_id, job)
-        return self._start(tool_id, job, replace)
+        return self._start(tool_id, job, replace, reserved)
 
-    def _start(self, tool_id: str, job: dict[str, Any], run) -> dict[str, Any]:
+    def _start(self, tool_id: str, job: dict[str, Any], run, reserved: dict[str, Any]) -> dict[str, Any]:
+        if self._jobs.get(tool_id) is not reserved or reserved["status"] != "running":  # cancelled while the tool was looked for
+            raise ToolError(409, "It was stopped before it started")
         self._jobs[tool_id] = job
         task = asyncio.create_task(run(tool_id, job))
         self._tasks[tool_id] = task
@@ -630,7 +661,8 @@ class LocalTools:
         proc = self._procs.get(tool_id)
         if proc:
             proc.kill()
-        self._tasks[tool_id].cancel()
+        if task := self._tasks.get(tool_id):  # none yet while the tool is still being looked for
+            task.cancel()
         job.update(status="cancelled", finished_at=now())
         return job
 

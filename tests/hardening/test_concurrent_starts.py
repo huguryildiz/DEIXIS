@@ -197,3 +197,66 @@ def test_the_health_check_does_not_run_before_the_terminal_is_open(tmp_path, mon
         return view
     view = asyncio.run(scenario())
     assert checks == [] and view["state"] == "waiting"
+
+
+def downloader(monkeypatch):
+    """A LocalTools whose server check is slow, with Ollama and LM Studio running, counting the requests that start a download."""
+    sent = []
+
+    def handler(request):
+        sent.append(str(request.url))
+        if request.url.path == "/api/pull":
+            return httpx.Response(200, content=b'{"status":"success"}')
+        return httpx.Response(200, json={"status": "already_downloaded", "total_size_bytes": 5})
+    local = LocalTools(httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+
+    async def slow_snapshot(refresh=False):
+        await asyncio.sleep(0.2)  # the server check that runs between the "already running" check and the job
+        return {"tools": [{"id": "ollama", "running": True, "models": []}, {"id": "lm_studio", "running": True}]}
+    monkeypatch.setattr(local, "snapshot", slow_snapshot)
+    return local, sent
+
+
+def test_two_ollama_downloads_at_once_start_one(monkeypatch):
+    local, sent = downloader(monkeypatch)
+
+    async def scenario():
+        results = await asyncio.gather(local.pull_model("qwen3:8b"), local.pull_model("qwen3:8b"), return_exceptions=True)
+        await local._pull_task
+        return results
+    results = asyncio.run(scenario())
+    errors = [r for r in results if isinstance(r, ToolError)]
+    assert len(errors) == 1 and errors[0].status == 409 and sum(isinstance(r, dict) for r in results) == 1
+    assert sent.count("http://127.0.0.1:11434/api/pull") == 1 and local._pull["status"] == "succeeded"
+
+
+def test_two_lm_studio_downloads_at_once_start_one(monkeypatch):
+    local, sent = downloader(monkeypatch)
+
+    async def scenario():
+        return await asyncio.gather(local.lm_studio_pull("qwen/qwen3.5-9b"), local.lm_studio_pull("qwen/qwen3.5-9b"),
+                                    return_exceptions=True)
+    results = asyncio.run(scenario())
+    errors = [r for r in results if isinstance(r, ToolError)]
+    assert len(errors) == 1 and errors[0].status == 409 and sum(isinstance(r, dict) for r in results) == 1
+    assert sent.count("http://127.0.0.1:1234/api/v1/models/download") == 1
+
+
+def test_a_refused_download_gives_the_slot_back(monkeypatch):
+    local, sent = downloader(monkeypatch)
+    real = local.snapshot
+
+    async def down(refresh=False):
+        data = await real(refresh)
+        return {"tools": [{**t, "running": False} for t in data["tools"]]}
+    monkeypatch.setattr(local, "snapshot", down)
+
+    async def scenario():
+        for pull in (local.pull_model("qwen3:8b"), local.lm_studio_pull("qwen/qwen3.5-9b")):
+            with pytest.raises(ToolError):
+                await pull  # the server is not running
+        assert local._pull is None and local._lms_pull is None
+        monkeypatch.setattr(local, "snapshot", real)
+        return await local.pull_model("qwen3:8b"), await local.lm_studio_pull("qwen/qwen3.5-9b")
+    ollama, lms = asyncio.run(scenario())
+    assert ollama["status"] in ("running", "succeeded") and lms["status"] == "succeeded"

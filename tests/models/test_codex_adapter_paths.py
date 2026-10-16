@@ -27,6 +27,12 @@ def codex(monkeypatch, tmp_path):
         turn_error = None
         requests = []
         starts = 0
+        closed = 0
+        agent = None  # the app-server's `userAgent`, as the binary it was started from reports it
+        step_gate = None  # set to an asyncio.Event to hold a turn open
+
+        async def close(self):
+            type(self).closed += 1
 
         async def start(self):
             type(self).starts += 1
@@ -35,7 +41,7 @@ def codex(monkeypatch, tmp_path):
             self.proc = SimpleNamespace(returncode=None)
 
         async def initialize(self, client_name, version):
-            return {}
+            return {"userAgent": self.agent} if self.agent else {}
 
         async def request(self, method, params=None, timeout=60.0):
             self.requests.append((method, params))
@@ -54,6 +60,8 @@ def codex(monkeypatch, tmp_path):
                     self.proc.stdout.feed_eof()
                     await self._read_stdout()
                 elif self.turn_status != "client_timeout":
+                    if self.step_gate is not None:
+                        await self.step_gate.wait()
                     await self._route_notification({
                         "method": "item/completed", "params": {"threadId": params["threadId"], "item": {
                             "type": "agentMessage", "phase": "final_answer", "text": '{"synthetic": true}',
@@ -70,10 +78,13 @@ def codex(monkeypatch, tmp_path):
 
     monkeypatch.setattr(adapter, "CodexAppServer", FakeServer)
     monkeypatch.setattr(adapter, "find_tool", lambda name: "/SYNTHETIC/bin/codex")
+    disk = {"version": "SYNTHETIC codex version"}  # what `codex --version` prints now
+
     async def version(argv, timeout=None, env=None):
-        return tool_probe.Probe(0, "SYNTHETIC codex version")
+        return tool_probe.Probe(0, disk["version"])
 
     monkeypatch.setattr(adapter, "probe", version)
+    FakeServer.disk = disk
     return adapter.CodexAdapter(tmp_path / "home", tmp_path / "workspace"), FakeServer
 
 
@@ -221,3 +232,59 @@ def test_failed_turn_error_text_reaches_rate_limit_classifier(codex, message, li
     assert (result.status, result.delivery_class) == ("failed", "after_send_unknown")
     assert result.error == str(server.turn_error)
     assert adapter.is_rate_limited(result) is limited
+
+
+def swap_binary(server, version):
+    """The CLI updated itself: `codex --version` says `version` now, and a server started from here on reports it."""
+    server.disk["version"] = f"codex-cli {version}"
+    server.agent = f"deixis/{version} (SYNTHETIC)"
+
+
+def test_health_tells_the_running_version_from_the_one_on_disk_and_restarts_at_an_idle_moment(codex):
+    connection, server = codex
+    swap_binary(server, "1.0.0")
+    status = asyncio.run(connection.health(refresh=True))
+    assert (status["cli_version"], status["running_version"], status["restart_pending"], server.starts) == ("codex-cli 1.0.0", "1.0.0", False, 1)
+
+    swap_binary(server, "1.1.0")  # the CLI is updated while DEIXIS runs
+    status = asyncio.run(connection.health(refresh=True))
+    assert (status["cli_version"], status["running_version"], status["restart_pending"]) == ("codex-cli 1.1.0", "1.1.0", False)
+    assert (server.starts, server.closed) == (2, 1)  # idle: the old server was closed and a new one started
+    asyncio.run(connection.health(refresh=True))
+    assert server.starts == 2  # nothing changed, nothing restarted
+
+
+def test_a_swapped_binary_never_restarts_the_server_mid_step(codex):
+    connection, server = codex
+    swap_binary(server, "1.0.0")
+
+    async def scenario():
+        await connection.health(refresh=True)
+        server.step_gate = asyncio.Event()
+        step = asyncio.create_task(connection.run_step("BASE", "DEVELOPER", "MESSAGE", {"type": "object"}, "requested-model"))
+        while not any(method == "turn/start" for method, _ in server.requests):
+            await asyncio.sleep(0)
+        swap_binary(server, "1.1.0")
+        busy = await connection.health(refresh=True)  # a step is using the old server
+        assert (busy["running_version"], busy["restart_pending"], server.starts, server.closed) == ("1.0.0", True, 1, 0)
+        server.step_gate.set()
+        assert (await step).status == "completed"
+        idle = await connection.health(refresh=True)  # the step is done
+        return idle
+    idle = asyncio.run(scenario())
+    assert (idle["running_version"], idle["restart_pending"], server.starts, server.closed) == ("1.1.0", False, 2, 1)
+
+
+def test_a_step_looks_at_the_disk_version_at_most_every_30_seconds(codex):
+    connection, server = codex
+    swap_binary(server, "1.0.0")
+
+    async def scenario():
+        await connection.run_step("BASE", "DEVELOPER", "MESSAGE", {"type": "object"}, "requested-model")
+        swap_binary(server, "1.1.0")
+        await connection.run_step("BASE", "DEVELOPER", "MESSAGE", {"type": "object"}, "requested-model")
+        assert server.starts == 1  # looked less than 30 s ago
+        connection._disk_checked = 0.0
+        await connection.run_step("BASE", "DEVELOPER", "MESSAGE", {"type": "object"}, "requested-model")
+    asyncio.run(scenario())
+    assert (server.starts, server.closed, connection._running_version) == (2, 1, "1.1.0")

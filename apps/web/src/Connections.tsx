@@ -12,6 +12,7 @@ import { serviceErrorSentence, healthReasonText, localToolIcon, localToolNames, 
 import { ConnectionIcon } from './connectionIcons'
 import { writeClipboard } from './clipboard'
 import { Notice } from './Notice'
+import { createRequestOrder } from './requestOrder'
 
 const providerNames: Record<string, string> = {
   semantic_scholar: 'Semantic Scholar', crossref: 'Crossref', arxiv: 'arXiv', biorxiv: 'bioRxiv', pubmed: 'PubMed', openalex: 'OpenAlex', scopus: 'Scopus', ieee_xplore: 'IEEE Xplore', core: 'CORE', serpapi: 'SerpApi',
@@ -1074,10 +1075,19 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   // A later read wins: an answer to an earlier request that arrives after it is dropped. Semantic search reads and saves
   // share one version: a save moves it on, so a read started before or during the save never replaces the saved result.
   const seq = useRef({ connections: 0, tools: 0, semantic: 0, semanticVersion: 0, saving: false })
+  // The all-connections read and each single-connection check order their answers per connection through one counter (E7).
+  const order = useRef(createRequestOrder())
 
   const load = useCallback((refresh: boolean) => {
     const n = ++seq.current.connections
-    return api.connections(refresh).then(result => { if (n === seq.current.connections) { setData(result); setError('') } })
+    const ticket = order.current.start()
+    return api.connections(refresh).then(result => {
+      if (n !== seq.current.connections) return
+      // A connection checked on its own after this read began keeps that newer answer.
+      const taken = new Set(Object.keys(result.models).filter(id => order.current.settle(id, ticket)))
+      setData(old => ({ ...result, models: Object.fromEntries(Object.entries(result.models).map(([id, health]) => [id, taken.has(id) ? health : old?.models[id] ?? health])) }))
+      setError('')
+    })
       .catch((e: Error) => { if (n === seq.current.connections) setError(t('Connections could not be read: {message}', { message: e.message })) })
   }, [])
   const loadCredentials = useCallback(() => { api.credentials().then(setCredentials).catch((e: Error) => setError(t('Stored keys could not be read: {message}', { message: e.message }))) }, [])
@@ -1138,13 +1148,20 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
 
   const reloadTools = useCallback(() => loadTools(true).then(() => undefined), [loadTools])
   const reloadReader = useCallback(() => loadReader().then(() => undefined), [loadReader])
+  // A check of one connection: its answer is shown only if no later request for that connection started before it came back.
+  const readModel = useCallback((id: string) => {
+    const n = order.current.start(id)
+    return api.modelConnection(id, true).then(result => {
+      if (order.current.settle(id, n)) setData(current => current ? { ...current, models: { ...current.models, [id]: result } } : current)
+    })
+  }, [])
   const reloadAfterKeyChange = useCallback(() => { loadCredentials(); void load(true); void loadSemantic() }, [loadCredentials, load, loadSemantic])
   // A model key change also re-checks that one connection on its own: the full refresh waits on every connection
   // (about 12 s with the CLIs), and until then the card would still show the state before the change.
   const reloadAfterModelKeyChange = useCallback((conn: string) => {
     reloadAfterKeyChange()
-    api.modelConnection(conn, true).then(result => setData(old => old && { ...old, models: { ...old.models, [conn]: result } })).catch(() => {})
-  }, [reloadAfterKeyChange])
+    void readModel(conn).catch(() => {})
+  }, [reloadAfterKeyChange, readModel])
   // The page's default model choices follow the same connections answer (after a key change or a test).
   useEffect(() => { if (data) onConnections?.(data) }, [data, onConnections])
 
@@ -1162,18 +1179,14 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     }, (e: Error) => { setChecked(drop); setCheckFailed(old => ({ ...old, [key]: e.message })) })
       .finally(() => setChecking(current => current === key ? null : current))
   }
-  const refreshModel = (id: string) => api.modelConnection(id, true).then(result => {
-    setData(current => current ? { ...current, models: { ...current.models, [id]: result } } : current)
-  }).catch((e: Error) => { toast('error', t('Check failed: {message}', { message: e.message })); throw e })
+  const refreshModel = (id: string) => readModel(id).catch((e: Error) => { toast('error', t('Check failed: {message}', { message: e.message })); throw e })
   const settleSignIn = useCallback((tool: string, run: AccountSignIn) => {
     setSignInRun(current => current && current.tool !== tool ? current : { tool, run })
     if (run.state !== 'succeeded') return
     toast('success', t('Signed in to {name}.', { name: ACCOUNT_TOOLS[tool]?.name ?? tool }))
-    void api.modelConnection(tool, true).then(result => {
-      setData(current => current ? { ...current, models: { ...current.models, [tool]: result } } : current)
-    }).catch(() => undefined)
+    void readModel(tool).catch(() => undefined)
     void loadTools(true)
-  }, [toast, loadTools])
+  }, [toast, loadTools, readModel])
   const startSignIn = (tool: string) => {
     api.startAccountSignIn(tool).then(run => settleSignIn(tool, run), (e: Error) => {
       setSignInRun({ tool, run: { state: 'failed', message: e.message } })
@@ -1290,8 +1303,9 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   ]
   const saveLocalServer = (url: string) => {
     setServerBusy(true); setServerError('')
+    const n = order.current.start('local_server')
     api.saveLocalServer(url).then(result => {
-      setData(current => current ? { ...current, models: { ...current.models, local_server: { ...result, connection: 'local_server' } } } : current)
+      if (order.current.settle('local_server', n)) setData(current => current ? { ...current, models: { ...current.models, local_server: { ...result, connection: 'local_server' } } } : current)
       setServerDraft(null)
       toast('success', url ? t('Local server address saved.') : t('Local server address removed.'))
     }).catch((e: Error) => setServerError(e.message)).finally(() => setServerBusy(false))

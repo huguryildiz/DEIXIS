@@ -273,16 +273,22 @@ class EmbeddingService:
             _release(install_fd)
             raise
         self._install_fd, self._in_use_fd = install_fd, in_use_fd
-        # A job a closed DEIXIS left running is recovered here, under both locks.
-        job = self.read_job()
-        if job and job.get("status") == "running":
-            job.update(status="failed", finished_at=local_embedding.now_iso(),
-                       output=((job.get("output") or "") + f"\n{STOPPED}").strip())
-            self._write_job(job)
-        self.job = {"status": "running", "step": 0, "steps": len(STEP_NAMES), "step_name": None,
-                    "started_at": local_embedding.now_iso(), "finished_at": None, "pid": os.getpid(),
-                    "bytes_done": 0, "bytes_total": local_embedding.model_bytes(), "output": ""}
-        self._write_job(self.job)
+        try:
+            # A job a closed DEIXIS left running is recovered here, under both locks.
+            job = self.read_job()
+            if job and job.get("status") == "running":
+                job.update(status="failed", finished_at=local_embedding.now_iso(),
+                           output=((job.get("output") or "") + f"\n{STOPPED}").strip())
+                self._write_job(job)
+            self.job = {"status": "running", "step": 0, "steps": len(STEP_NAMES), "step_name": None,
+                        "started_at": local_embedding.now_iso(), "finished_at": None, "pid": os.getpid(),
+                        "bytes_done": 0, "bytes_total": local_embedding.model_bytes(), "output": ""}
+            self._write_job(self.job)
+        except BaseException as exc:  # a full disk must not leave the locks held and the install stuck (E9)
+            self._release_locks()
+            if isinstance(exc, OSError):
+                raise ServiceError("job_record_failed", f"The install could not start: {exc.strerror or exc}") from exc
+            raise
         self._task = asyncio.create_task(self._run(uv))
         return dict(self.job)
 
@@ -384,17 +390,28 @@ class EmbeddingService:
             log.exception("built-in model install failed")
             self._output(f"\n{type(exc).__name__}: {exc}")
         finally:
-            if self._proc and self._proc.returncode is None:
-                self._proc.kill()
-                await self._proc.wait()
-            self._proc = None
-            await _to_completion(local_embedding.remove_parts, p.models)
-            self.job.update(status=status, finished_at=local_embedding.now_iso())
-            self._write_job(self.job)
-            _release(self._in_use_fd)
-            _release(self._install_fd)
-            self._install_fd = self._in_use_fd = None
-            self.embedder.installing = False
+            try:
+                try:
+                    if self._proc and self._proc.returncode is None:
+                        self._proc.kill()
+                        await self._proc.wait()
+                    self._proc = None
+                    await _to_completion(local_embedding.remove_parts, p.models)
+                finally:
+                    self.job.update(status=status, finished_at=local_embedding.now_iso())
+                    try:
+                        self._write_job(self.job)
+                    except OSError:  # a full disk: the locks below are still released
+                        log.exception("built-in model install: the job record could not be written")
+            finally:
+                self._release_locks()
+
+    def _release_locks(self) -> None:
+        """Let go of the install and in-use locks and reopen the embedder; independent of any job-record write (E9)."""
+        _release(self._in_use_fd)
+        _release(self._install_fd)
+        self._install_fd = self._in_use_fd = None
+        self.embedder.installing = False
 
     async def check(self) -> dict[str, Any]:
         """Check for updates (D20): compare the installed copy with what this DEIXIS pins and hash its files again.

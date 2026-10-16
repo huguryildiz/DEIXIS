@@ -144,6 +144,7 @@ class CopilotCliAdapter:
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         if self._health and not refresh and time.monotonic() - self._health[0] < 60:
             return self._health[1]
+        self._health = None  # a fresh check replaces the cached answer whatever it finds (E7)
         resolved = await asyncio.to_thread(self._resolve)
         cmd = resolved.argv
         status: dict[str, Any] = {"connection": self.connection, "installed": bool(resolved.found), "ready": False}

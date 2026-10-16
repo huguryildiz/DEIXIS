@@ -441,10 +441,18 @@ class LocalTools:
             raise ToolError(400, "That is not an Ollama model name, such as qwen3.5:35b")
         if (self._pull or {}).get("status") == "running":
             raise ToolError(409, f"{self._pull['model']} is already being downloaded")
-        await self._running_ollama()
+        # The download slot is taken before the first await (E17): a second request at once is turned away.
         job = {"status": "running", "model": model, "step": "", "completed": 0, "total": 0,
                "started_at": now(), "finished_at": None, "output": ""}
-        self._pull = job
+        previous, self._pull = self._pull, job
+        try:
+            await self._running_ollama()
+            if job["status"] != "running":  # cancelled while Ollama was being looked for
+                raise ToolError(409, "It was stopped before it started")
+        except BaseException:
+            if self._pull is job:
+                self._pull = previous
+            raise
         self._pull_task = asyncio.create_task(self._run_pull(job))
         return job
 
@@ -561,6 +569,28 @@ class LocalTools:
             raise ToolError(400, "That is not an LM Studio catalog name, such as qwen/qwen3.5-9b")
         if (self._lms_pull or {}).get("status") == "running":
             raise ToolError(409, f"{self._lms_pull['model']} is already being downloaded")
+        # The download slot is taken before the first await (E17): a second request at once is turned away.
+        job = {"status": "running", "model": model, "step": "", "completed": 0, "total": 0,
+               "started_at": now(), "finished_at": None, "output": ""}
+        previous, self._lms_pull = self._lms_pull, job
+        try:
+            started = await self._start_lm_studio_download(model)
+            if job["status"] != "running":
+                raise ToolError(409, "It was stopped before it started")
+        except BaseException:
+            if self._lms_pull is job:
+                self._lms_pull = previous
+            raise
+        job["total"] = int(started.get("total_size_bytes") or 0)
+        if started.get("status") == "already_downloaded":
+            job.update(status="succeeded", finished_at=now(), step="already_downloaded")
+        elif started.get("status") == "failed" or not started.get("job_id"):
+            job.update(status="failed", finished_at=now(), output=str(started)[:OUTPUT_TAIL_CHARS])
+        else:
+            self._lms_task = asyncio.create_task(self._follow_lm_studio(job, str(started["job_id"])))
+        return job
+
+    async def _start_lm_studio_download(self, model: str) -> dict[str, Any]:
         await self._running_lm_studio()
         endpoint = TOOLS["lm_studio"].endpoint
         try:
@@ -571,17 +601,7 @@ class LocalTools:
             raise ToolError(409, "This LM Studio cannot download through its server; update LM Studio to 0.4 or later")
         if response.status_code != 200:
             raise ToolError(502, f"LM Studio answered {response.status_code}: {response.text[:300]}")
-        started = response.json()
-        job = {"status": "running", "model": model, "step": "", "completed": 0, "total": int(started.get("total_size_bytes") or 0),
-               "started_at": now(), "finished_at": None, "output": ""}
-        self._lms_pull = job
-        if started.get("status") == "already_downloaded":
-            job.update(status="succeeded", finished_at=now(), step="already_downloaded")
-        elif started.get("status") == "failed" or not started.get("job_id"):
-            job.update(status="failed", finished_at=now(), output=str(started)[:OUTPUT_TAIL_CHARS])
-        else:
-            self._lms_task = asyncio.create_task(self._follow_lm_studio(job, str(started["job_id"])))
-        return job
+        return response.json()
 
     async def _follow_lm_studio(self, job: dict[str, Any], job_id: str) -> None:
         url = f"{TOOLS['lm_studio'].endpoint}/api/v1/models/download/status/{job_id}"

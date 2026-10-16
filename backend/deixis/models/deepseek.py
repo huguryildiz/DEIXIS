@@ -38,7 +38,7 @@ class DeepSeekAdapter:
         self._client = client
         self._owns_client = client is None
         self.turn_timeout = turn_timeout
-        self._health: tuple[float, dict[str, Any]] | None = None
+        self._health: tuple[float, dict[str, Any], str] | None = None  # (time, answer, fingerprint of the key)
 
     def _http(self) -> httpx.AsyncClient:
         if self._client is None:
@@ -46,9 +46,12 @@ class DeepSeekAdapter:
         return self._client
 
     async def health(self, refresh: bool = False) -> dict[str, Any]:
-        if self._health and not refresh and time.monotonic() - self._health[0] < 60:
-            return self._health[1]
         key = api_key()
+        # A cached answer belongs to the key it was made with; a fresh check replaces it whatever it finds (E7).
+        mine = key_verification.fingerprint(key or "")
+        if self._health and not refresh and time.monotonic() - self._health[0] < 60 and self._health[2] == mine:
+            return self._health[1]
+        self._health = None
         status: dict[str, Any] = {
             "connection": self.connection,
             "ready": False,
@@ -90,7 +93,8 @@ class DeepSeekAdapter:
             if model.get("id")
         ]
         status["ready"] = True
-        self._health = (time.monotonic(), status)
+        if key_verification.fingerprint(api_key() or "") == mine:  # a key saved while this ran owns the cache now
+            self._health = (time.monotonic(), status, mine)
         return status
 
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],

@@ -172,6 +172,7 @@ class OpenAICompatAdapter:
         if (self._health and not refresh and time.monotonic() - self._health[0] < 60 and self._health[2] == mine
                 and not (spec.key_env and key_verification.state_of(key) == "rejected")):
             return self._health[1]
+        self._health = None  # a fresh check replaces the cached answer whatever it finds (E7)
         status: dict[str, Any] = {
             "connection": self.connection,
             "ready": False,
@@ -268,7 +269,8 @@ class OpenAICompatAdapter:
                 status["reason"] = f"The {spec.name} key is saved but not verified: the first step will try it"
                 return status
         status["ready"] = True
-        self._health = (time.monotonic(), status, mine)
+        if key_verification.fingerprint(self._key() or "") == mine:  # a key saved while this ran owns the cache now
+            self._health = (time.monotonic(), status, mine)
         return status
 
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],

@@ -693,3 +693,56 @@ def test_two_install_requests_at_once_start_one_install_and_the_second_is_told_s
     assert [e.code for e in errors] == ["install_running"] and sum(isinstance(r, dict) for r in results) == 1
     assert job["status"] == "succeeded"
     assert len(setup["record"].read_text().splitlines()) == 2  # venv and pip sync, once
+
+
+def disk_full_on(service, wanted):
+    """Make `_write_job` fail with ENOSPC for the writes `wanted(job)` picks, and count those it let through."""
+    real, seen = service._write_job, {"failed": 0}
+
+    def write(job):
+        if wanted(job):
+            seen["failed"] += 1
+            raise OSError(28, "No space left on device")
+        real(job)
+    service._write_job = write
+    return seen
+
+
+def test_a_full_disk_at_the_first_job_write_releases_the_locks_and_the_install_can_start_again(setup):
+    service, paths = service_of(setup), setup["paths"]
+    seen = disk_full_on(service, lambda job: job["status"] == "running")
+
+    async def go():
+        with pytest.raises(ServiceError) as refused:
+            await service.install()
+        assert refused.value.code == "job_record_failed" and seen["failed"] == 1
+        assert service.embedder.installing is False and service._install_fd is None and service._in_use_fd is None
+        for lock in (paths.install_lock, paths.in_use_lock):  # both locks are free again
+            fd = local_embedding_service._try_lock(lock)
+            assert fd is not None
+            local_embedding_service._release(fd)
+        del service._write_job  # the disk has room again
+        await service.install()
+        return await until_done(service)
+    assert asyncio.run(go())["status"] == "succeeded"
+
+
+def test_a_full_disk_at_the_last_job_write_still_releases_the_locks(setup):
+    service, paths = service_of(setup), setup["paths"]
+    seen = disk_full_on(service, lambda job: job["status"] in ("succeeded", "failed", "cancelled"))
+
+    async def go():
+        await service.install()
+        while service.owns_job():
+            await asyncio.sleep(0.02)
+        assert seen["failed"] == 1
+        assert service.embedder.installing is False and service._install_fd is None and service._in_use_fd is None
+        for lock in (paths.install_lock, paths.in_use_lock):
+            fd = local_embedding_service._try_lock(lock)
+            assert fd is not None
+            local_embedding_service._release(fd)
+        del service._write_job
+        with pytest.raises(ServiceError) as again:  # not "in use by another process": the locks are free
+            await service.install()
+        return again.value.code
+    assert asyncio.run(go()) == "already_installed"

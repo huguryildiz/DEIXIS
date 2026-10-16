@@ -23,6 +23,11 @@ from deixis.domain.limits import limit_kind, service_error_kind, safe_error
 from deixis.tool_paths import child_path, command_for, find_tool
 from deixis.tool_probe import probe
 
+# The version in the app-server's `userAgent` ("deixis/0.160.0 (...)") and in `codex --version` ("codex-cli 0.160.0").
+USER_AGENT_VERSION = re.compile(r"[^/\s]+/(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)")
+CLI_VERSION = re.compile(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?")
+DISK_CHECK_SECONDS = 30.0
+
 # Variables the Codex app-server needs to run and reach the network. Provider keys and other
 # settings loaded from .env are deliberately not passed on.
 CODEX_ENV_ALLOWLIST = frozenset({
@@ -120,14 +125,25 @@ class CodexAdapter:
         self._health: tuple[float, dict[str, Any]] | None = None
         self._active: set[tuple[str, str]] = set()
         self._abandoned: set[asyncio.Task] = set()
+        # E19: the version the running server was started as (its own report), and how many steps are in flight, so a
+        # server started from a binary that was replaced since is restarted only when no step is using it.
+        self._running_version: str | None = None
+        self._steps = 0
+        self._disk_checked = 0.0
 
     async def _ensure_server(self) -> CodexAppServer:
         async with self._lock:
-            return await self._ensure_server_locked()
+            return await self._ensure_server_locked(own_steps=1)
 
-    async def _ensure_server_locked(self) -> CodexAppServer:
+    async def _ensure_server_locked(self, own_steps: int = 0, disk_version: str | None = None) -> CodexAppServer:
+        """The running app-server, started if there is none. A server started from a Codex binary that the CLI's update has
+        replaced since is closed and started again, but only at an idle moment: `own_steps` is the caller's own count in
+        `_steps`, and any other step in flight keeps the old server until it is done (E19)."""
         if self._server and self._server.proc and self._server.proc.returncode is None:
-            return self._server
+            if self._steps > own_steps or self._abandoned or not await self._binary_replaced(disk_version):
+                return self._server
+            await self._server.close()
+            self._server = None
         self.codex_home.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.workspace.mkdir(parents=True, exist_ok=True)
         overrides, _ = isolation_overrides(config_path=self.codex_home / "config.toml")
@@ -137,13 +153,34 @@ class CodexAdapter:
             raise OSError(codex.problem)
         server = CodexAppServer([*(codex.argv or ["codex"]), "app-server", *overrides], cwd=str(self.workspace), env=env)
         await server.start()
-        await server.initialize("deixis", "0.1.0")
+        started = await server.initialize("deixis", "0.1.0")
+        agent = started.get("userAgent") if isinstance(started, dict) else None
+        found = USER_AGENT_VERSION.match(agent) if isinstance(agent, str) else None
+        self._running_version = found.group(1) if found else None
+        self._disk_checked = time.monotonic()
         self._server = server
         return server
+
+    async def _binary_replaced(self, disk_version: str | None = None) -> bool:
+        """Whether the Codex on disk is another version than the one the running server reports. Reading the disk version
+        runs `codex --version`, so a step looks at most every 30 s; health passes the version it has just read."""
+        if not self._running_version:
+            return False
+        if disk_version is None:
+            if time.monotonic() - self._disk_checked < DISK_CHECK_SECONDS:
+                return False
+            codex = await asyncio.to_thread(find_tool, "codex")
+            self._disk_checked = time.monotonic()
+            if not codex:
+                return False
+            disk_version = (await probe([codex, "--version"], env=codex_environment(self.codex_home))).stdout
+        found = CLI_VERSION.search(disk_version)
+        return bool(found) and found.group(0) != self._running_version
 
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         if self._health and not refresh and time.monotonic() - self._health[0] < 60:
             return self._health[1]
+        self._health = None  # a fresh check replaces the cached answer whatever it finds (E7)
         codex = command_for("codex", await asyncio.to_thread(find_tool, "codex"))
         status: dict[str, Any] = {"connection": "codex", "installed": bool(codex.found), "ready": False}
         if not codex.found:
@@ -160,7 +197,7 @@ class CodexAdapter:
         status["cli_version"] = version.stdout.strip() or None
         try:
             async with self._lock:
-                server = await self._ensure_server_locked()
+                server = await self._ensure_server_locked(disk_version=status["cli_version"] or "")
                 account = (await server.request("account/read", {})).get("account") or {}
                 status["signed_in"] = bool(account)
                 status["account_type"] = account.get("type")
@@ -187,6 +224,11 @@ class CodexAdapter:
             status["reason_code"] = limit_kind(exc.error if isinstance(exc, RpcError) else str(exc)) or "unknown"
             return status
         status["isolation"] = {"instruction_sources": len(sources), "live_mcp_servers": live_mcp}
+        # The version on disk (`cli_version`) and the version the running server started as are told apart (E19); when they
+        # differ and a step is in flight, the server is restarted at the next idle moment.
+        disk = CLI_VERSION.search(status["cli_version"] or "")
+        status["running_version"] = self._running_version
+        status["restart_pending"] = bool(disk and self._running_version and disk.group(0) != self._running_version)
         if not status["signed_in"]:
             status["reason_code"] = "auth_failed"
             status["reason"] = "Not signed in to the DEIXIS Codex home"
@@ -199,6 +241,14 @@ class CodexAdapter:
 
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],
                        requested_model: str | None, reasoning_effort: str | None = None) -> ModelStepResult:
+        self._steps += 1
+        try:
+            return await self._run_step(base, developer, message, output_schema, requested_model, reasoning_effort)
+        finally:
+            self._steps -= 1
+
+    async def _run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],
+                        requested_model: str | None, reasoning_effort: str | None = None) -> ModelStepResult:
         try:
             server = await self._ensure_server()
             started = await server.request(

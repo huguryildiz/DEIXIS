@@ -17,6 +17,7 @@ import ipaddress
 import os
 import socket
 import weakref
+import zlib
 from dataclasses import dataclass
 from typing import Any, Callable
 from urllib.parse import urljoin, urlsplit, urlunsplit
@@ -30,6 +31,9 @@ PDF_DEADLINE_SECONDS = 120.0
 MAX_REDIRECTS = 5
 USER_AGENT = "DEIXIS/0.1 (local research workspace)"
 PDF_ACCEPT = "application/pdf, */*;q=0.1"
+# The Content-Encodings `_fetch` decodes itself, one layer at most; asked for by name so a client default cannot widen it.
+DECODED_ENCODINGS = ("gzip", "x-gzip", "deflate")
+ACCEPT_ENCODING = "gzip, deflate"
 
 
 def user_agent(email: str | None = None) -> str:
@@ -67,7 +71,11 @@ def host_gate(url: str) -> asyncio.Lock:
     DOI lookups in `acquisition`. A hop to another host takes that host's lock after the first one's is released.
     """
     gates = _host_gates.setdefault(asyncio.get_running_loop(), {})
-    return gates.setdefault((urlsplit(url).hostname or "").lower(), asyncio.Lock())
+    try:
+        host = urlsplit(url).hostname or ""
+    except ValueError:  # an unclosed "[": check_public_url refuses it under this lock, so nothing is requested
+        host = ""
+    return gates.setdefault(host.lower(), asyncio.Lock())
 
 
 async def _resolve(host: str, port: int) -> list[str]:
@@ -77,7 +85,13 @@ async def _resolve(host: str, port: int) -> list[str]:
 
 async def check_public_url(url: str) -> str:
     """Return the public address to connect to; refuse if any resolved address is not public."""
-    parts = urlsplit(url)
+    try:
+        # A URL that cannot be read (port out of range or not a number, an unclosed or non-address "[...]") raises
+        # ValueError here, and an empty or too-long host label UnicodeError (a ValueError) in getaddrinfo's IDNA step.
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError as exc:
+        raise BlockedUrl(f"not a valid URL: {exc}") from exc
     if parts.scheme not in ("http", "https"):
         raise BlockedUrl(f"scheme {parts.scheme!r} not allowed")
     if not parts.hostname:
@@ -85,9 +99,11 @@ async def check_public_url(url: str) -> str:
     if parts.username or parts.password:
         raise BlockedUrl("credentials in URL not allowed")
     try:
-        addresses = await _resolve(parts.hostname, parts.port or (443 if parts.scheme == "https" else 80))
+        addresses = await _resolve(parts.hostname, port or (443 if parts.scheme == "https" else 80))
     except socket.gaierror as exc:
         raise BlockedUrl(f"host does not resolve: {exc}") from exc
+    except ValueError as exc:
+        raise BlockedUrl(f"not a valid URL: {exc}") from exc
     if not addresses:
         raise BlockedUrl("host does not resolve")
     for text in addresses:
@@ -104,6 +120,28 @@ async def check_public_url(url: str) -> str:
         ):
             raise BlockedUrl(f"{parts.hostname} resolves to non-public address")
     return addresses[0]
+
+
+def _inflater(encoding: str) -> Callable[[bytes, int], bytes]:
+    """One gzip or deflate layer, decoded as it arrives: each call returns at most `limit` (>= 1) bytes, so a small body
+    that inflates to gigabytes is never held. Output shorter than `limit` means all input was used; a cut at `limit` is
+    refused by the caller, so the decoder's leftover input is never read and needs no flush. "deflate" is sent both
+    zlib-wrapped and raw: as in httpx, a first chunk that is not zlib is read again as raw deflate."""
+    decoder = zlib.decompressobj(zlib.MAX_WBITS if encoding == "deflate" else zlib.MAX_WBITS | 16)
+    first = True
+
+    def inflate(data: bytes, limit: int) -> bytes:
+        nonlocal decoder, first
+        retry, first = first and encoding == "deflate", False
+        try:
+            return decoder.decompress(data, limit)
+        except zlib.error as exc:
+            if retry:
+                decoder = zlib.decompressobj(-zlib.MAX_WBITS)
+                return inflate(data, limit)
+            raise httpx.DecodingError(str(exc)) from exc
+
+    return inflate
 
 
 def _pinned_request(url: str, address: str) -> tuple[str, dict[str, str], dict[str, str]]:
@@ -145,6 +183,7 @@ async def _fetch(url: str, client: httpx.AsyncClient | None, deadline: float, *,
                         except BlockedUrl as exc:
                             return FetchResult("blocked_url", final_url=current, error=str(exc))
                         target, headers, extensions = _pinned_request(current, address)
+                        headers["Accept-Encoding"] = ACCEPT_ENCODING
                         if accept is not None:
                             headers["Accept"] = accept
                         async with client.stream("GET", target, headers=headers, extensions=extensions, follow_redirects=False) as response:
@@ -152,7 +191,10 @@ async def _fetch(url: str, client: httpx.AsyncClient | None, deadline: float, *,
                                 location = response.headers.get("location")
                                 if not location:
                                     return FetchResult("http_error", final_url=current, http_status=response.status_code, error="redirect without location")
-                                current = urljoin(current, location)
+                                try:
+                                    current = urljoin(current, location)
+                                except ValueError as exc:  # urllib reads "[...]" more strictly than httpx's own parser
+                                    return FetchResult("blocked_url", final_url=location, error=f"not a valid URL: {exc}")
                                 continue
                             if response.status_code != 200:
                                 return FetchResult("http_error", final_url=current, http_status=response.status_code)
@@ -162,8 +204,24 @@ async def _fetch(url: str, client: httpx.AsyncClient | None, deadline: float, *,
                             declared = response.headers.get("content-length")
                             if declared and declared.isdigit() and int(declared) > MAX_BYTES:
                                 return FetchResult("too_large", final_url=current, http_status=200)
+                            encoding = response.headers.get("content-encoding", "")
+                            layers = [e for e in (part.strip().lower() for part in encoding.split(",")) if e and e != "identity"]
+                            if len(layers) > 1 or (layers and layers[0] not in DECODED_ENCODINGS):
+                                return FetchResult("failed", final_url=current, http_status=200,
+                                                   error=f"content encoding {encoding!r} not accepted")
+                            if response.is_stream_consumed:
+                                # Only a body given to httpx.Response as bytes (a mock transport): already in memory,
+                                # read and decoded by httpx itself. A network response always arrives as a stream.
+                                if len(response.content) > MAX_BYTES:
+                                    return FetchResult("too_large", final_url=current, http_status=200)
+                                return finish(response, response.content, current)
+                            inflate = _inflater(layers[0]) if layers else None
+                            # Raw bytes, decoded here: httpx would inflate each network chunk whole, every stacked
+                            # layer at once, before the size could be counted. At most one byte past MAX_BYTES is
+                            # ever decoded.
                             chunks, size = [], 0
-                            async for chunk in response.aiter_bytes():
+                            async for raw in response.aiter_raw():
+                                chunk = inflate(raw, MAX_BYTES + 1 - size) if inflate else raw
                                 size += len(chunk)
                                 if size > MAX_BYTES:
                                     return FetchResult("too_large", final_url=current, http_status=200)

@@ -41,6 +41,7 @@ from deixis.documents import tool_updates
 from deixis.documents import equation_regions, mathpix
 from deixis.documents import upload_record
 from deixis.domain import proxy, skill
+from deixis.imports import bibtex_ris
 from deixis.workflow import abstract_stage
 from deixis.workflow import source_keys
 from deixis.workflow import fast_path, intent, small_batch
@@ -104,12 +105,30 @@ from deixis.domain.canonical import sha256_hex
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 MULTIPART_OVERHEAD_BYTES = 64 * 1024
+MATCH_MAX_FILES = 50
 UPLOAD_CHUNK_BYTES = 1024 * 1024
 CSRF_COOKIE = "deixis_csrf"
 CSRF_HEADER = "x-deixis-csrf"
 # The pauses an approval answers: the proposal itself, and a correction that left nothing searchable (slice 08a).
 INSTITUTIONAL_ACCESS_TTL_SECONDS = 600
 INSTITUTIONAL_ACCESS_RETRY_SECONDS = 30
+
+REPLACE_ASSET_PATH = re.compile(r"/api/researches/[^/]+/sources/[^/]+/assets/[^/]+")
+
+
+def upload_limit(method: str, path: str) -> tuple[int, str, str] | None:
+    """The largest body a file route accepts (with each file's multipart overhead), and the code and sentence that refuse
+    a larger one; None for a route that takes no file. Read by the guard before the body is parsed and spooled to disk."""
+    if path.endswith("/uploads"):
+        return MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD_BYTES, "upload_too_large", "PDF larger than 50 MB"
+    if method == "POST" and path.endswith("/uploads/match"):
+        return (MATCH_MAX_FILES * (MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD_BYTES), "upload_too_large",
+                "Upload larger than 50 PDFs of 50 MB")
+    if method == "PUT" and REPLACE_ASSET_PATH.fullmatch(path):
+        return MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD_BYTES, "upload_too_large", "PDF larger than 50 MB"
+    if method == "POST" and path == "/api/library/reference-imports":
+        return bibtex_ris.MAX_FILE_BYTES + MULTIPART_OVERHEAD_BYTES, "import_too_large", "Reference file larger than 5 MB"
+    return None
 
 
 class CreateResearch(BaseModel):
@@ -973,14 +992,14 @@ def create_app(
             cookie = request.cookies.get(CSRF_COOKIE, "")
             if not cookie or not secrets.compare_digest(cookie, request.headers.get(CSRF_HEADER, "")):
                 return JSONResponse({"detail": "Missing or invalid CSRF token"}, status_code=403)
-            if request.url.path.endswith("/uploads"):
+            if (limit := upload_limit(request.method, request.url.path)) is not None:
                 # Checked before the multipart body is read and spooled to disk.
                 length = request.headers.get("content-length", "")
                 if not length.isdigit():
                     return JSONResponse({"detail": "Upload size must be declared", "code": "upload_size_undeclared"},
                                         status_code=411)
-                if int(length) > MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD_BYTES:
-                    return JSONResponse({"detail": "PDF larger than 50 MB", "code": "upload_too_large"}, status_code=413)
+                if int(length) > limit[0]:
+                    return JSONResponse({"detail": limit[2], "code": limit[1]}, status_code=413)
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -2166,7 +2185,7 @@ def create_app(
         with disk_full_refused():
             settings.papers_dir.mkdir(parents=True, exist_ok=True)
         matches = []
-        for file in files[:50]:
+        for file in files[:MATCH_MAX_FILES]:
             staged = await store_upload(file, settings.papers_dir)
             sha = staged.sha256
             try:

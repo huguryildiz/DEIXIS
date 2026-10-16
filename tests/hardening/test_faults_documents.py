@@ -8,16 +8,20 @@ full disk (the process tests do that) or on a volume other than the one pytest r
 
 import asyncio
 import errno
+import gzip
 import logging
 import sqlite3
 import subprocess
 import time
+import tracemalloc
+import zlib
 from contextlib import contextmanager
 
 import httpx
 import pymupdf
 import pytest
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from deixis.api import app as app_module
 from deixis.api.app import create_app
@@ -25,6 +29,7 @@ from deixis.config import Settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import pdf
 from deixis.documents.fetch import FetchResult
+from deixis.imports import bibtex_ris
 from deixis.storage import db
 from deixis.workflow.store import Store
 from deixis.workflow.worker import Worker
@@ -206,6 +211,70 @@ def test_d6_upload_without_a_declared_size_is_refused_with_411(tmp_path):
         assert client.get(f"/api/researches/{rid}").json()["sources"] == []
 
 
+def multipart(field: str, filename: str, data: bytes, boundary="deixisboundary") -> bytes:
+    return (f"--{boundary}\r\nContent-Disposition: form-data; name=\"{field}\"; filename=\"{filename}\"\r\n"
+            f"Content-Type: application/octet-stream\r\n\r\n").encode() + data + f"\r\n--{boundary}--\r\n".encode()
+
+
+@pytest.mark.parametrize("route", ["match", "replace", "reference_import"])
+def test_d6_the_other_file_routes_check_the_declared_size_before_the_body_is_read(tmp_path, monkeypatch, route):
+    """D6: the match upload (up to 50 PDFs), the PDF replacement and the reference import get the /uploads guard too:
+    411 without a Content-Length and 413 over each route's own limit, both before the form is parsed and spooled."""
+    monkeypatch.setattr(app_module, "MAX_UPLOAD_BYTES", 10_000)
+    monkeypatch.setattr(app_module, "MULTIPART_OVERHEAD_BYTES", 1_000)
+    monkeypatch.setattr(bibtex_ris, "MAX_FILE_BYTES", 10_000)
+    parsed = []
+    get_form = Request._get_form
+
+    async def spy(self, **kwargs):
+        parsed.append(self.url.path)
+        return await get_form(self, **kwargs)
+
+    monkeypatch.setattr(Request, "_get_form", spy)
+    boundary = "deixisboundary"
+    content_type = {"content-type": f"multipart/form-data; boundary={boundary}"}
+    with TestClient(app_for(tmp_path)) as client:
+        session(client)
+        rid = create(client, source_scope="attached")
+        method, path, over, expected = {
+            # 50 files of 10_000 + 1_000 bytes each.
+            "match": ("POST", f"/api/researches/{rid}/uploads/match", 50 * 11_000,
+                      {"detail": "Upload larger than 50 PDFs of 50 MB", "code": "upload_too_large"}),
+            "replace": ("PUT", f"/api/researches/{rid}/sources/srv_X/assets/ast_X", 11_000,
+                        {"detail": "PDF larger than 50 MB", "code": "upload_too_large"}),
+            "reference_import": ("POST", "/api/library/reference-imports", 11_000,
+                                 {"detail": "Reference file larger than 5 MB", "code": "import_too_large"}),
+        }[route]
+        field = "files" if route == "match" else "file"
+        body = multipart(field, "big.bin", make_pdf(["SYNTHETIC"]) + b"%" * over)
+        declared = client.request(method, path, content=body, headers=content_type)
+        assert parsed == [], parsed  # refused by the guard, the form never parsed
+        assert (declared.status_code, declared.json()) == (413, expected)
+
+        def chunks():
+            small = multipart(field, "a.pdf", make_pdf(["SYNTHETIC"]))
+            for start in range(0, len(small), 200):
+                yield small[start:start + 200]
+
+        undeclared = client.request(method, path, content=chunks(), headers=content_type)
+        assert "content-length" not in undeclared.request.headers
+        assert (undeclared.status_code, undeclared.json()) == (
+            411, {"detail": "Upload size must be declared", "code": "upload_size_undeclared"})
+        assert parsed == []  # neither request reached the form parser
+
+        # Under the limit the guard lets the request through to its handler.
+        if route == "match":
+            normal = client.post(path, files={"files": ("a.pdf", make_pdf(["SYNTHETIC"]), "application/pdf")})
+            assert normal.status_code == 200 and len(normal.json()["matches"]) == 1
+        elif route == "reference_import":
+            normal = client.post(path, files={"file": ("refs.bib", b"not a reference", "text/plain")})
+            assert normal.status_code == 422 and normal.json()["code"] == "import_no_entries"
+        else:
+            normal = client.put(path, files={"file": ("a.pdf", make_pdf(["SYNTHETIC"]), "application/pdf")})
+            assert normal.status_code == 404  # no such asset: the handler ran
+        assert parsed == [path]
+
+
 def fetch_with(handler, monkeypatch, url="http://papers.example/big.pdf"):
     async def resolved(host, port):
         return ["93.184.216.34"]
@@ -245,6 +314,68 @@ def test_d7_download_over_the_limit_is_too_large_by_declared_length_and_by_strea
         200, headers={"content-type": "application/pdf"}, content=stream()), monkeypatch)
     assert (undeclared.status, undeclared.http_status, undeclared.data) == ("too_large", 200, b"")
     assert 30 <= len(streamed_chunks) <= 31  # read until the limit was passed, not to the end
+
+
+def gzipped(data: bytes) -> bytes:
+    return gzip.compress(data, compresslevel=9)
+
+
+def encoded(raw: bytes, encoding: str):
+    """A handler answering `raw` with this Content-Encoding, streamed in 4 KiB pieces as from a socket (a bytes body
+    would be read and decoded by httpx.Response itself, before `fetch_pdf` sees it)."""
+    async def pieces():
+        for start in range(0, len(raw), 4096):
+            yield raw[start:start + 4096]
+
+    return lambda request: httpx.Response(200, headers={
+        "content-type": "application/pdf", "content-encoding": encoding, "content-length": str(len(raw))}, content=pieces())
+
+
+def fetch_peak(raw: bytes, encoding: str, monkeypatch):
+    """`fetch_pdf` over a body sent with this Content-Encoding, and the most memory Python held while it ran."""
+    tracemalloc.start()
+    try:
+        result = fetch_with(encoded(raw, encoding), monkeypatch)
+        return result, tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+
+def test_d7_the_limit_counts_decoded_bytes_and_stops_decoding_at_it(monkeypatch):
+    """D7: a small gzip body that inflates far past MAX_BYTES is `too_large`, and decoding stops at the limit instead
+    of inflating the whole body first."""
+    monkeypatch.setattr(fetch_module, "MAX_BYTES", 64 * 1024)
+    raw = gzipped(b"%PDF-1.4\n" + b"\0" * (8 * 1024 * 1024))
+    assert len(raw) < 16 * 1024
+    result, peak = fetch_peak(raw, "gzip", monkeypatch)
+    assert (result.status, result.data) == ("too_large", b"")
+    assert peak < 2 * 1024 * 1024  # the 8 MiB the body inflates to was never held
+
+
+@pytest.mark.parametrize("encoding", ["gzip, gzip", "gzip,deflate", "br", "zstd", "compress"])
+def test_d7_a_stacked_or_unknown_content_encoding_is_refused_before_decoding(monkeypatch, encoding):
+    """D7: identity and one gzip or deflate layer are read; a stacked or other encoding is refused, never decoded."""
+    monkeypatch.setattr(fetch_module, "MAX_BYTES", 64 * 1024)
+    raw = gzipped(gzipped(b"%PDF-1.4\n" + b"\0" * (8 * 1024 * 1024)))
+    assert len(raw) < 2 * 1024
+    result, peak = fetch_peak(raw, encoding, monkeypatch)
+    assert (result.status, result.data, result.error) == ("failed", b"", f"content encoding {encoding!r} not accepted")
+    assert peak < 2 * 1024 * 1024
+
+
+def raw_deflate(data: bytes) -> bytes:
+    compressor = zlib.compressobj(wbits=-zlib.MAX_WBITS)
+    return compressor.compress(data) + compressor.flush()
+
+
+@pytest.mark.parametrize("encoding, encode", [
+    ("", None), ("identity", None), ("gzip", gzipped), ("x-gzip", gzipped), ("deflate", zlib.compress),
+    ("deflate", raw_deflate)])  # servers send "deflate" both zlib-wrapped and raw
+def test_d7_an_identity_or_single_layer_pdf_still_arrives_whole(monkeypatch, encoding, encode):
+    pdf_bytes = make_pdf(["SYNTHETIC"])
+    raw = encode(pdf_bytes) if encode else pdf_bytes
+    result = fetch_with(encoded(raw, encoding), monkeypatch)
+    assert (result.status, result.data) == ("ok", pdf_bytes)
 
 
 def flow_with_fetch_result(tmp_path, result_of):

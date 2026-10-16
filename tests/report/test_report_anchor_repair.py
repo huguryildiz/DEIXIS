@@ -35,6 +35,7 @@ def two_cells():
         {"claim_key": "IV.1", "passage_id": None, "cell_id": other["cell_id"], "quote": other["evidence"][0]["quote"]},
     ]
     draft["claims"][0]["cell_ids"].append(other["cell_id"])
+    draft["claims"][0]["passage_ids"] = []  # cell anchors only: an unanchored passage citation is invalid
     draft["claims"][0]["equation_origin"] = None
     return si, draft
 

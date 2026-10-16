@@ -7,7 +7,7 @@ from typing import Any
 
 from deixis.documents import embeddings, local_embedding, pdf
 from deixis.documents.jats import RENDITION_SQL
-from deixis.domain.contracts import locate_anchor
+from deixis.domain.contracts import locate_anchor, name_sources_in_prose
 from deixis.domain.rules import FULLTEXT_RUNS, effective_reviewer, result_applicability
 from deixis.workflow import english_question as english_question_rules
 from deixis.workflow import approval as approval_rules
@@ -1235,6 +1235,9 @@ def _review_view(store: Store, answer_id: str) -> dict[str, Any] | None:
         (review["step_id"],),
     ).fetchone() if review["step_id"] else None
     completed = review["status"] == "completed"
+    if completed and review["step_input_id"]:
+        # Handles the reviewer wrote into its reasons or notes reach the reader as source titles.
+        review["review"] = name_sources_in_prose(store.step_input_payload(review["step_input_id"]), review["review"])
     return {"status": review["status"], "failure_reason": review["failure_reason"], "created_at": review["created_at"],
             "reviews": review["review"]["reviews"] if completed else [], "notes": review["review"]["notes"] if completed else "",
             "issues": (review["review"] or {}).get("issues", []) if not completed else [],

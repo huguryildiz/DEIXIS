@@ -58,6 +58,7 @@ def _behavior_outputs(case: dict, si: dict) -> tuple[dict, dict]:
         for i, anchor in enumerate(good["citation_anchors"]):
             anchor["passage_id"] = None
             anchor["cell_id"] = si["report_target"]["cells"][i]["cell_id"]
+            good["claims"][i]["passage_ids"] = []  # cell-anchored only: an unanchored passage citation is invalid
         bad = copy.deepcopy(good)
         bad["claims"][0]["text"] = "SYNTHETIC Source A2 did not consider this method."
     elif cid == "RB02":

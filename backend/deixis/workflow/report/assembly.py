@@ -554,8 +554,7 @@ def _check_anchors(store: Store, reports: ReportStore, report_id: str, *, curren
             cell = cells.get(link["cell_id"])
             if not cell:
                 issues.append(_issue("cell_not_in_snapshot", section, f"ERROR: {key} cell is outside snapshot."))
-            elif anchor and not any(contracts.locate_anchor(anchor, evidence.get("quote") or "")
-                                    for evidence in cell.get("evidence", [])):
+            elif anchor and contracts.locate_in_cell_evidence(anchor, cell) is None:
                 issues.append(_issue("anchor_not_in_cell_evidence", section, f"ERROR: {key} anchor is absent from cell quotes."))
         else:
             passage = store.conn.execute("SELECT text FROM passages WHERE id = ?", (link["passage_id"],)).fetchone()

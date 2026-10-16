@@ -12,6 +12,7 @@ import json
 import re
 import unicodedata
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import cache
 from typing import Any
@@ -1219,7 +1220,7 @@ def report_vii_issues(claim: dict, gap_ids: set[str], future_cell: bool) -> list
 
 
 def _without_math(text: str) -> str:
-    """LaTeX math reads as one slot word, so its symbols and periods neither count as frame words nor split sentences."""
+    """LaTeX math reads as one word, so its symbols and periods neither count as words nor split sentences."""
     return MATH.sub("X", text)
 
 
@@ -1376,7 +1377,7 @@ def _check_phrasing(step_input: dict[str, Any], draft: dict[str, Any], report: V
             findings = report.issues if is_report else report.warnings
             findings.append(Issue("plural_sources_for_one_source", f"/claims/{i}/text",
                                        f"{phrase!r} speaks of several sources, but this claim cites one source; "
-                                       "use a frame for reporting what one source states"))
+                                       "write it as what that one source states"))
 
 
 def _check_report_writing(step_input: dict[str, Any], draft: dict[str, Any], report: ValidationReport) -> None:
@@ -1728,6 +1729,23 @@ def locate_anchor(quote: str, passage: str) -> AnchorMatch | None:
     if ratio < ANCHOR_MIN_RATIO:
         return None
     return AnchorMatch("fuzzy", passage[spans[start][0]:spans[end - 1][1]], round(ratio, 3))
+
+
+def locate_in_cell_evidence(quote: str, cell: dict[str, Any]) -> AnchorMatch | None:
+    """A cell anchor is located in one of the cell's stored evidence quotes, never in the passage directly."""
+    return next((match for evidence in cell.get("evidence", []) if evidence.get("quote")
+                 if (match := locate_anchor(quote, evidence["quote"])) is not None), None)
+
+
+def locate_citation_anchor(anchor: dict[str, Any], passages: dict[str, dict[str, Any]],
+                           cells: dict[str, dict[str, Any]] | None = None) -> AnchorMatch | None:
+    """Locate an answer or report anchor in its passage's text or its cell's stored quotes; None when the target
+    is not given. An answer anchor names passages only."""
+    if anchor.get("cell_id") is None:
+        passage = passages.get(anchor["passage_id"])
+        return locate_anchor(anchor["quote"], passage["text"]) if passage is not None else None
+    cell = (cells or {}).get(anchor["cell_id"])
+    return locate_in_cell_evidence(anchor["quote"], cell) if cell is not None else None
 
 
 def _title_words(title: str) -> int:
@@ -2266,23 +2284,41 @@ def _check_report_section(step_input: dict[str, Any], allow: dict[str, set[str]]
     maximum = (target.get("plan") or {}).get("section_budgets", {}).get(section_id, {}).get("max_words")
     if maximum is not None and words > maximum:
         report.issues.append(Issue("section_word_count_over_budget", "/claims", f"{words} words exceed budget {maximum}"))
+    # As in the answer path: every anchor names a claim of this draft and one of that claim's own passages or cells,
+    # and every allowlisted passage or cell a claim cites has an anchor (save_claims links anchors by claim_key).
+    cited = {c["claim_key"]: {("passage", p) for p in c["passage_ids"]} | {("cell", x) for x in c["cell_ids"]}
+             for c in draft["claims"]}
+    required = {(c["claim_key"], "passage", p) for c in draft["claims"] for p in c["passage_ids"] if p in allow["passage_ids"]}
+    required |= {(c["claim_key"], "cell", x) for c in draft["claims"] for x in c["cell_ids"]
+                 if x in allow.get("cell_ids", set())}
+    seen: set[tuple[str, str, str]] = set()
     for i, anchor in enumerate(draft["citation_anchors"]):
         if (anchor["passage_id"] is None) == (anchor["cell_id"] is None):
             report.issues.append(Issue(
                 "citation_anchor_target_count", f"/citation_anchors/{i}",
                 "expected exactly one of passage_id/cell_id to be non-null",
             ))
-        if anchor["passage_id"] in allow["passage_ids"]:
-            passage = next((p for p in step_input["passages"] if p["passage_id"] == anchor["passage_id"]), None)
-            if passage is None or locate_anchor(anchor["quote"], passage["text"]) is None:
-                report.issues.append(Issue("anchor_not_in_passage", f"/citation_anchors/{i}/quote",
-                                           "the quote was not found in the cited passage"))
-        if anchor["cell_id"] in allow.get("cell_ids", set()):
-            cell = next((c for c in step_input["report_target"]["cells"] if c["cell_id"] == anchor["cell_id"]), None)
-            if cell is None or not any(locate_anchor(anchor["quote"], e["quote"]) is not None
-                                       for e in cell.get("evidence", []) if e.get("quote")):
-                report.issues.append(Issue("anchor_not_in_cell_evidence", f"/citation_anchors/{i}/quote",
-                                           "the quote was not found in one stored cell evidence quote"))
+            # An anchor naming both targets is already blocked here; neither target is reported missing a second time.
+            seen.update((anchor["claim_key"], kind, target_id) for kind, target_id in
+                        (("passage", anchor["passage_id"]), ("cell", anchor["cell_id"])) if target_id is not None)
+            continue
+        kind, target_id = ("passage", anchor["passage_id"]) if anchor["passage_id"] is not None else ("cell", anchor["cell_id"])
+        if anchor["claim_key"] not in cited:
+            report.issues.append(Issue("unknown_anchor_claim", f"/citation_anchors/{i}/claim_key", anchor["claim_key"]))
+            continue
+        if (kind, target_id) not in cited[anchor["claim_key"]]:
+            report.issues.append(Issue("anchor_passage_not_cited", f"/citation_anchors/{i}/{kind}_id", target_id))
+            continue
+        seen.add((anchor["claim_key"], kind, target_id))
+        # An identifier outside the allowlist is already reported as unknown above.
+        given = allow["passage_ids"] if kind == "passage" else allow.get("cell_ids", set())
+        if target_id in given and locate_citation_anchor(anchor, passages, cells) is None:
+            code, where = (("anchor_not_in_passage", "the cited passage") if kind == "passage"
+                           else ("anchor_not_in_cell_evidence", "one stored cell evidence quote"))
+            report.issues.append(Issue(code, f"/citation_anchors/{i}/quote", f"the quote was not found in {where}"))
+    for key, kind, target_id in sorted(required - seen):
+        report.issues.append(Issue("missing_citation_anchor", "/citation_anchors",
+                                   f"{key}:{target_id}: this citation requires an exact contiguous quote"))
     for i, claim in enumerate(draft["claims"]):
         path = f"/claims/{i}"
         key = claim["claim_key"]
@@ -2396,7 +2432,7 @@ def _check_cited_claims(step_input: dict[str, Any], allow: dict[str, set[str]], 
 
     # A published citation must resolve to source-owned text so the evidence panel can show the exact highlighted
     # span (D27). D244 may prune anchor-only defects after validation; all other defects require bounded repair.
-    passage_text = {p["passage_id"]: p["text"] for p in step_input["passages"]}
+    passages = {p["passage_id"]: p for p in step_input["passages"]}
     required_anchors = {
         (claim["claim_label"], pid)
         for claim in draft["claims"]
@@ -2415,7 +2451,7 @@ def _check_cited_claims(step_input: dict[str, Any], allow: dict[str, set[str]], 
         if anchor["passage_id"] not in cited_by_claim[anchor["claim_label"]]:
             report.issues.append(Issue("anchor_passage_not_cited", f"/citation_anchors/{i}/passage_id", anchor["passage_id"]))
             continue
-        if locate_anchor(anchor["quote"], passage_text.get(anchor["passage_id"], "")) is None:
+        if locate_citation_anchor(anchor, passages) is None:
             report.issues.append(Issue("anchor_not_in_passage", f"/citation_anchors/{i}/quote",
                                        f"{anchor['claim_label']}:{anchor['passage_id']}: the quoted sentence was not found in the cited passage"))
     for claim_label, passage_id in sorted(required_anchors - seen_anchors):
@@ -2542,15 +2578,21 @@ def _report_id_fields(data: dict[str, Any], fields: tuple) -> Any:
             yield owner, key, kind, location
 
 
-def report_citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
-    """Number from stored records first, then display-only references; never extend an allowlist."""
+def _handle_numbering(kinds: tuple[str, ...]) -> tuple[dict[str, str], Callable[[Any, str], None]]:
+    """A handle map and the function that numbers each new identifier per kind; first occurrence wins."""
     handles: dict[str, str] = {}
-    counts = dict.fromkeys(("psg_P", "srv_S", "cel_L", "col_C"), 0)
+    counts = dict.fromkeys(kinds, 0)
 
     def add(identifier: Any, kind: str) -> None:
         if isinstance(identifier, str) and identifier not in handles:
             counts[kind] += 1
             handles[identifier] = f"{kind}{counts[kind]:07d}"
+    return handles, add
+
+
+def report_citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
+    """Number from stored records first, then display-only references; never extend an allowlist."""
+    handles, add = _handle_numbering(("psg_P", "srv_S", "cel_L", "col_C"))
 
     target = step_input.get("report_target") or {}
     for records, key, kind in ((step_input["passages"], "passage_id", "psg_P"),
@@ -2584,13 +2626,7 @@ def report_citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
 
 def lineage_citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
     """Number shown records, then display-only cells, then remaining declared slots; first occurrence wins."""
-    handles: dict[str, str] = {}
-    counts = dict.fromkeys(("psg_P", "srv_S", "cel_L"), 0)
-
-    def add(identifier: Any, kind: str) -> None:
-        if isinstance(identifier, str) and identifier not in handles:
-            counts[kind] += 1
-            handles[identifier] = f"{kind}{counts[kind]:07d}"
+    handles, add = _handle_numbering(("psg_P", "srv_S", "cel_L"))
 
     for records, key, kind in ((step_input["passages"], "passage_id", "psg_P"),
                                (step_input["sources"], "source_id", "srv_S")):
@@ -2608,13 +2644,7 @@ def lineage_citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
 
 def candidate_citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
     """Number passages, sources, version elements, then remaining declared slots; first occurrence wins."""
-    handles: dict[str, str] = {}
-    counts = dict.fromkeys(("psg_P", "srv_S", "ele_E"), 0)
-
-    def add(identifier: Any, kind: str) -> None:
-        if isinstance(identifier, str) and identifier not in handles:
-            counts[kind] += 1
-            handles[identifier] = f"{kind}{counts[kind]:07d}"
+    handles, add = _handle_numbering(("psg_P", "srv_S", "ele_E"))
 
     version = (step_input.get("candidate_target") or {}).get("version") or {}
     for records, key, kind in ((step_input["passages"], "passage_id", "psg_P"),
@@ -2695,27 +2725,35 @@ def issues_with_handles(step_input: dict[str, Any], issues: list[dict[str, Any]]
             for issue in issues]
 
 
-def name_sources_in_prose(step_input: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
-    """Replace citation handles the model wrote into an answer's prose with source titles, after validation.
+PADDED_HANDLE = re.compile(r"^(psg_P|srv_S|col_C|cnd_C|cel_L|ele_E)0*(\d{1,7})$")
+HANDLE_IN_PROSE = re.compile(r"\b(psg_P|srv_S|col_C|cnd_C|cel_L|ele_E)0*(\d{1,7})\b")
 
-    A handle would reach the reader as `srv_S0000002`. Validation (including text length limits) applies to what the model
-    wrote, so a long list of titles cannot turn a valid answer invalid.
+
+def name_sources_in_prose(step_input: dict[str, Any], data: dict[str, Any]) -> dict[str, Any]:
+    """Replace citation handles the model wrote into an answer's or answer review's prose with source titles, after
+    validation.
+
+    A handle would reach the reader as `srv_S0000002`; one copied with more or fewer leading zeros is named as well.
+    Validation (including text length limits) applies to what the model wrote, so a long list of titles cannot turn a
+    valid answer invalid.
     """
     real = {handle: identifier for identifier, handle in citation_handles(step_input).items()}
     titles = {s["source_id"]: s["title"] for s in step_input.get("sources", [])}
     titles |= {p["passage_id"]: titles[p["source_id"]] for p in step_input.get("passages", []) if p["source_id"] in titles}
     named = {handle: f"“{titles[identifier]}”" for handle, identifier in real.items() if identifier in titles}
     if named:
-        pattern = re.compile(r"\b(?:" + "|".join(map(re.escape, named)) + r")\b")
-        prose = lambda text: pattern.sub(lambda m: named[m.group(0)], text) if isinstance(text, str) else text
-        for items in (data.get("claims"), data.get("limitations")):
+        def title(match: re.Match[str]) -> str:
+            return named.get(f"{match.group(1)}{int(match.group(2)):07d}", match.group(0))
+        prose = lambda text: HANDLE_IN_PROSE.sub(title, text) if isinstance(text, str) else text
+        for items, key in ((data.get("claims"), "text"), (data.get("limitations"), "text"), (data.get("reviews"), "reason")):
             for item in items if isinstance(items, list) else []:
-                if isinstance(item, dict) and "text" in item:
-                    item["text"] = prose(item["text"])
+                if isinstance(item, dict) and key in item:
+                    item[key] = prose(item[key])
         if isinstance(data.get("unanswered_aspects"), list):
             data["unanswered_aspects"] = [prose(text) for text in data["unanswered_aspects"]]
-        if "capability_notice" in data:
-            data["capability_notice"] = prose(data["capability_notice"])
+        for key in ("capability_notice", "notes"):
+            if key in data:
+                data[key] = prose(data[key])
     return data
 
 
@@ -2889,7 +2927,6 @@ def salvage_answer_draft(step_input: dict[str, Any], draft: dict[str, Any]) -> t
     return draft, warnings
 
 
-PADDED_HANDLE = re.compile(r"^(psg_P|srv_S|col_C|cnd_C|cel_L|ele_E)0*(\d{1,7})$")
 
 
 def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict[str, Any]:
@@ -2927,7 +2964,8 @@ def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict
         for item in items if isinstance(items, list) else []:
             if isinstance(item, dict) and isinstance(item.get(key), list):
                 item[key] = [real(i) if isinstance(i, str) else i for i in item[key]]
-    for anchor in data.get("citation_anchors", []):
+    anchors = data.get("citation_anchors")
+    for anchor in anchors if isinstance(anchors, list) else []:
         if isinstance(anchor, dict) and isinstance(anchor.get("passage_id"), str):
             anchor["passage_id"] = real(anchor["passage_id"])
     records = data.get("records")

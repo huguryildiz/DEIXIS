@@ -49,8 +49,8 @@ def packet(section="IV"):
         "citation_anchors": [{"claim_key": claim["claim_key"], "passage_id": PID, "cell_id": None,
                               "quote": si["passages"][0]["text"]}], "subsections": [], "gaps": [], "insufficient_evidence": []}
     if section == "VII":
-        draft["citation_anchors"] = [{"claim_key": "VII.1", "passage_id": None, "cell_id": CID,
-                                      "quote": target["cells"][0]["evidence"][0]["quote"]}]
+        draft["citation_anchors"].append({"claim_key": "VII.1", "passage_id": None, "cell_id": CID,
+                                          "quote": target["cells"][0]["evidence"][0]["quote"]})
     return si, draft
 
 
@@ -358,6 +358,7 @@ def test_h9b_shapes_repair_at_the_section_or_end_section_failed(tmp_path, sectio
 def test_anchor_patch_is_fully_revalidated_against_original_input(tmp_path, monkeypatch):
     si, draft = packet()
     draft["claims"][0]["cell_ids"] = [CID]
+    draft["claims"][0]["passage_ids"] = []
     draft["citation_anchors"] = [{"claim_key": "IV.1", "passage_id": None, "cell_id": CID, "quote": "SYNTHETIC missing quote from cell."}]
     calls = 0
     def respond(current, schema, message):

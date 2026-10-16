@@ -100,15 +100,39 @@ def code_paths(issues):
     return [(i["code"], i["path"]) for i in issues]
 
 
-def replay_run(tmp_path, section, repair, *, mixed=False, enforces_schema=True):
+def with_missing_anchors(stored, draft):
+    """Stored H9 issues plus the later rule that every cited passage or cell has an anchor (H9 drafts predate it)."""
+    anchored = {(a["claim_key"], kind, a[kind + "_id"]) for a in draft["citation_anchors"]
+                for kind in ("passage", "cell") if a[kind + "_id"] is not None}
+    cited = {(c["claim_key"], "passage", p) for c in draft["claims"] for p in c["passage_ids"]}
+    cited |= {(c["claim_key"], "cell", x) for c in draft["claims"] for x in c["cell_ids"]}
+    missing = [{"code": "missing_citation_anchor", "path": "/citation_anchors",
+                "message": f"{key}:{target}: this citation requires an exact contiguous quote"}
+               for key, _, target in sorted(cited - anchored)]
+    at = max((n + 1 for n, i in enumerate(stored) if i["path"].startswith("/citation_anchors")), default=len(stored))
+    return stored[:at] + missing + stored[at:]
+
+
+def anchored_only(draft):
+    """The draft without cited passages and cells that no anchor names."""
+    draft = copy.deepcopy(draft)
+    for claim in draft["claims"]:
+        named = {a["passage_id"] or a["cell_id"] for a in draft["citation_anchors"] if a["claim_key"] == claim["claim_key"]}
+        claim["passage_ids"] = [p for p in claim["passage_ids"] if p in named]
+        claim["cell_ids"] = [x for x in claim["cell_ids"] if x in named]
+    return draft
+
+
+def replay_run(tmp_path, section, repair, *, mixed=False, enforces_schema=True, first=None):
     record = REPLAY["sections"][section]
+    first = first or record["first_output"]
     attempts = 0
 
     def handler(si, schema, message):
         nonlocal attempts
         attempts += 1
         if attempts == 1:
-            draft = rebind(record["first_output"], si)
+            draft = rebind(first, si)
             if mixed:
                 draft["section_id"] = "IV" if section == "V" else "V"
             return draft
@@ -117,7 +141,7 @@ def replay_run(tmp_path, section, repair, *, mixed=False, enforces_schema=True):
 
     output, store, adapter, flow, run = run_step(tmp_path, "report_section", record["step_input"], handler,
                                                enforces_schema=enforces_schema)
-    expected = code_paths(record["first_issues"])
+    expected = code_paths(with_missing_anchors(record["first_issues"], first))
     if mixed:
         expected = [("report_section_mismatch", "/section_id")] + expected
     assert code_paths(first_issues(store)) == expected
@@ -151,7 +175,7 @@ def test_h9_reduced_fixture_reproduces_exact_stored_issues(section):
     for prefix in ("first", "repair"):
         si = record["step_input"] if prefix == "first" else record["repair_step_input"]
         assert contracts.check_step_input(si) == []
-        expected = copy.deepcopy(record[prefix + "_issues"])
+        expected = with_missing_anchors(copy.deepcopy(record[prefix + "_issues"]), record[prefix + "_output"])
         if section == "IV" and prefix == "repair":
             expected += [
                 {"code": "own_work_phrase_in_claim", "path": "/claims/17/text", "message": "'Bu çalışmada' names this answer's own work, not a cited source"},
@@ -214,7 +238,8 @@ def test_a4_h9_v_patch_records_removal_and_keeps_every_other_claim(tmp_path):
         return patch(si, [{"anchor_index": i, "quote_number": None if i in removed_indices else 1} for i in indices],
                      [{"claim_key": "V.1", "text": None, "removed": True, "context": "No supporting stored quote",
                        "reason": "SYNTHETIC: the stored quotes do not establish this claim."}])
-    output, _, _, _, _ = replay_run(tmp_path, "V", response)
+    first = anchored_only(first)  # a cited cell without an anchor would need a full repair, not this patch
+    output, _, _, _, _ = replay_run(tmp_path, "V", response, first=first)
     assert not output.get("invalid")
     merged = output["result"]
     assert merged["claims"] == [c for c in first["claims"] if c["claim_key"] != "V.1"]

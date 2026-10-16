@@ -77,15 +77,9 @@ def _citation_links(payload: dict[str, Any], draft: dict[str, Any]) -> list[dict
     links = []
     for anchor in draft["citation_anchors"]:
         passage_id, cell_id = anchor["passage_id"], anchor["cell_id"]
-        if passage_id is not None:
-            record = passages[passage_id]
-            source_version_id = record["source_id"]
-            match = contracts.locate_anchor(anchor["quote"], record["text"])
-        else:
-            cell = cells[cell_id]
-            source_version_id = cell["source_version_id"]
-            match = next((located for evidence in cell.get("evidence", []) if evidence.get("quote")
-                          if (located := contracts.locate_anchor(anchor["quote"], evidence["quote"])) is not None), None)
+        source_version_id = (passages[passage_id]["source_id"] if passage_id is not None
+                             else cells[cell_id]["source_version_id"])
+        match = contracts.locate_citation_anchor(anchor, passages, cells)
         links.append({
             "claim_key": anchor["claim_key"],
             "passage_id": passage_id,
@@ -243,12 +237,11 @@ async def _run_section(flow: ResearchFlow, run: dict[str, Any], scope: dict[str,
 
     draft = output["result"]
     payload = flow.store.step_input_payload(output["step_input_id"])
-    exceptions: list[dict[str, Any]] = []
     validation = revalidate_section(payload, draft)
     if numbers is not None:
         language = (reports.report(report_id)["language"] or scope.get("language_hint") or "en").lower()
         draft["text"] = review_methodology.render_limitations(numbers, language)
-    issues = [vars(issue) for issue in validation.issues] + exceptions
+    issues = [vars(issue) for issue in validation.issues]
     invalid = not validation.ok
     status = "failed" if invalid else "valid"
     reports.save_claims(section_key, draft["claims"], _citation_links(payload, draft))

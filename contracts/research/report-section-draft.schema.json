@@ -100,7 +100,7 @@
     "citation_anchors": {
       "type": "array",
       "maxItems": 300,
-      "description": "One anchor per claim-evidence pair. Exactly one of passage_id/cell_id is non-null (checked in code): a cell-based claim's anchor is located in the cell's current revision's stored evidence quotes (cell_evidence_links.anchor_text via the frozen snapshot), never in the passage directly.",
+      "description": "One anchor per claim-evidence pair: every passage and cell in a claim's passage_ids and cell_ids needs an anchor with that claim_key, and an anchor must name a claim of this draft and one of that claim's own passages or cells (checked in code). Exactly one of passage_id/cell_id is non-null (checked in code): a cell-based claim's anchor is located in the cell's current revision's stored evidence quotes (cell_evidence_links.anchor_text via the frozen snapshot), never in the passage directly.",
       "items": {
         "type": "object",
         "additionalProperties": false,

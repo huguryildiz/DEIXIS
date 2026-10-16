@@ -18,13 +18,15 @@ import os
 import socket
 import weakref
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx
 
 MAX_BYTES = 30 * 1024 * 1024
 TIMEOUT_SECONDS = 30.0
+# The whole of one PDF fetch, redirects and body included: MAX_BYTES at a slow but working rate, not an idle wait.
+PDF_DEADLINE_SECONDS = 120.0
 MAX_REDIRECTS = 5
 USER_AGENT = "DEIXIS/0.1 (local research workspace)"
 PDF_ACCEPT = "application/pdf, */*;q=0.1"
@@ -114,63 +116,14 @@ def _pinned_request(url: str, address: str) -> tuple[str, dict[str, str], dict[s
     return pinned, {"Host": name + port}, extensions
 
 
-async def fetch_pdf(url: str, client: httpx.AsyncClient | None = None) -> FetchResult:
-    own_client = client is None
-    client = client or httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": user_agent()}, trust_env=False)
-    try:
-        current = url
-        for _ in range(MAX_REDIRECTS + 1):
-            # One request to a host at a time; a redirect to another host takes that host's lock after this one.
-            async with host_gate(current):
-                try:
-                    address = await check_public_url(current)
-                except BlockedUrl as exc:
-                    return FetchResult("blocked_url", final_url=current, error=str(exc))
-                target, headers, extensions = _pinned_request(current, address)
-                headers["Accept"] = PDF_ACCEPT
-                async with client.stream("GET", target, headers=headers, extensions=extensions, follow_redirects=False) as response:
-                    if response.is_redirect:
-                        location = response.headers.get("location")
-                        if not location:
-                            return FetchResult("http_error", final_url=current, http_status=response.status_code, error="redirect without location")
-                        current = urljoin(current, location)
-                        continue
-                    if response.status_code != 200:
-                        return FetchResult("http_error", final_url=current, http_status=response.status_code)
-                    declared = response.headers.get("content-length")
-                    if declared and declared.isdigit() and int(declared) > MAX_BYTES:
-                        return FetchResult("too_large", final_url=current, http_status=200)
-                    chunks, size = [], 0
-                    async for chunk in response.aiter_bytes():
-                        size += len(chunk)
-                        if size > MAX_BYTES:
-                            return FetchResult("too_large", final_url=current, http_status=200)
-                        chunks.append(chunk)
-                    data = b"".join(chunks)
-                    media_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
-                    if not data.startswith(b"%PDF-"):
-                        return FetchResult("not_pdf", final_url=current, media_type=media_type, http_status=200)
-                    return FetchResult("ok", data=data, final_url=current, media_type="application/pdf", http_status=200)
-        return FetchResult("http_error", final_url=current, error="too many redirects")
-    except httpx.TimeoutException as exc:
-        return FetchResult("timeout", final_url=url, error=type(exc).__name__)
-    except httpx.HTTPError as exc:
-        return FetchResult("failed", final_url=url, error=type(exc).__name__)
-    finally:
-        if own_client:
-            await client.aclose()
+async def _fetch(url: str, client: httpx.AsyncClient | None, deadline: float, *, accept: str | None = None, gate: Any = None,
+                 admit: Callable[[httpx.Response, str], FetchResult | None] | None = None,
+                 finish: Callable[[httpx.Response, bytes, str], FetchResult]) -> FetchResult:
+    """The protections both fetches share: public addresses only, the checked address pinned, at most MAX_REDIRECTS
+    redirects, MAX_BYTES, `host_gate` and one `asyncio.timeout(deadline)` over the whole fetch.
 
-
-async def fetch_file(url: str, media_types: tuple[str, ...], gate: Any = None, client: httpx.AsyncClient | None = None,
-                     deadline: float = TIMEOUT_SECONDS) -> FetchResult:
-    """A file of one of `media_types`, through fetch_pdf's protections: public addresses only, the checked address
-    pinned, at most MAX_REDIRECTS redirects, MAX_BYTES, the User-Agent and `host_gate`.
-
-    `gate` (the arXiv source route, D104) is called before and after every HTTP request, redirect hops included:
-    `await gate.before()` may wait and stamps the request's start, `gate.after()` stamps its end. The whole fetch, from
-    the first address check to the last byte and including the gate's waits between hops, runs inside one
-    `asyncio.timeout(deadline)`; the gate's wait before the first hop is outside it. Past the deadline the stream is
-    closed and the result is `timeout`. fetch_pdf has no such deadline and calls no gate."""
+    `admit` reads a 200 response's headers before the body and may refuse it; `finish` turns the body into the
+    result. A failure names the URL being read when it happened, after any redirect. `gate` is fetch_file's."""
     own_client = client is None
     client = client or httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": user_agent()}, trust_env=False)
     current = url
@@ -184,12 +137,15 @@ async def fetch_file(url: str, media_types: tuple[str, ...], gate: Any = None, c
                     await gate.before()
                 first = False
                 try:
+                    # One request to a host at a time; a redirect to another host takes that host's lock after this one.
                     async with host_gate(current):
                         try:
                             address = await check_public_url(current)
                         except BlockedUrl as exc:
                             return FetchResult("blocked_url", final_url=current, error=str(exc))
                         target, headers, extensions = _pinned_request(current, address)
+                        if accept is not None:
+                            headers["Accept"] = accept
                         async with client.stream("GET", target, headers=headers, extensions=extensions, follow_redirects=False) as response:
                             if response.is_redirect:
                                 location = response.headers.get("location")
@@ -199,9 +155,9 @@ async def fetch_file(url: str, media_types: tuple[str, ...], gate: Any = None, c
                                 continue
                             if response.status_code != 200:
                                 return FetchResult("http_error", final_url=current, http_status=response.status_code)
-                            media_type = response.headers.get("content-type", "").split(";")[0].strip().lower()
-                            if media_type not in media_types:
-                                return FetchResult("wrong_type", final_url=current, media_type=media_type, http_status=200)
+                            refused = admit(response, current) if admit is not None else None
+                            if refused is not None:
+                                return refused
                             declared = response.headers.get("content-length")
                             if declared and declared.isdigit() and int(declared) > MAX_BYTES:
                                 return FetchResult("too_large", final_url=current, http_status=200)
@@ -211,8 +167,7 @@ async def fetch_file(url: str, media_types: tuple[str, ...], gate: Any = None, c
                                 if size > MAX_BYTES:
                                     return FetchResult("too_large", final_url=current, http_status=200)
                                 chunks.append(chunk)
-                            return FetchResult("ok", data=b"".join(chunks), final_url=current, media_type=media_type, http_status=200,
-                                               content_disposition=response.headers.get("content-disposition"))
+                            return finish(response, b"".join(chunks), current)
                 finally:
                     if gate is not None:
                         gate.after()
@@ -226,3 +181,39 @@ async def fetch_file(url: str, media_types: tuple[str, ...], gate: Any = None, c
     finally:
         if own_client:
             await client.aclose()
+
+
+def _media_type(response: httpx.Response) -> str:
+    return response.headers.get("content-type", "").split(";")[0].strip().lower()
+
+
+async def fetch_pdf(url: str, client: httpx.AsyncClient | None = None, deadline: float = PDF_DEADLINE_SECONDS) -> FetchResult:
+    """A PDF, judged by its first bytes rather than its declared type. The whole fetch ends at `deadline`."""
+    def finish(response: httpx.Response, data: bytes, current: str) -> FetchResult:
+        if not data.startswith(b"%PDF-"):
+            return FetchResult("not_pdf", final_url=current, media_type=_media_type(response), http_status=200)
+        return FetchResult("ok", data=data, final_url=current, media_type="application/pdf", http_status=200)
+
+    return await _fetch(url, client, deadline, accept=PDF_ACCEPT, finish=finish)
+
+
+async def fetch_file(url: str, media_types: tuple[str, ...], gate: Any = None, client: httpx.AsyncClient | None = None,
+                     deadline: float = TIMEOUT_SECONDS) -> FetchResult:
+    """A file of one of `media_types`, through fetch_pdf's protections (`_fetch`).
+
+    `gate` (the arXiv source route, D104) is called before and after every HTTP request, redirect hops included:
+    `await gate.before()` may wait and stamps the request's start, `gate.after()` stamps its end. The whole fetch, from
+    the first address check to the last byte and including the gate's waits between hops, runs inside one
+    `asyncio.timeout(deadline)`; the gate's wait before the first hop is outside it. Past the deadline the stream is
+    closed and the result is `timeout`."""
+    def admit(response: httpx.Response, current: str) -> FetchResult | None:
+        media_type = _media_type(response)
+        if media_type not in media_types:
+            return FetchResult("wrong_type", final_url=current, media_type=media_type, http_status=200)
+        return None
+
+    def finish(response: httpx.Response, data: bytes, current: str) -> FetchResult:
+        return FetchResult("ok", data=data, final_url=current, media_type=_media_type(response), http_status=200,
+                           content_disposition=response.headers.get("content-disposition"))
+
+    return await _fetch(url, client, deadline, gate=gate, admit=admit, finish=finish)

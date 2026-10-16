@@ -30,7 +30,7 @@ from scripts.model_behavior.run_review_cases import (
 )
 
 CASES = REPO_ROOT / "tests/model_behavior/candidate_review_cases.json"
-EXPECTATIONS = REPO_ROOT / "tests/model_behavior/p8-b8b-expectations.md"
+EXPECTATIONS = REPO_ROOT / "docs/product/p8-b8b-expectations.md"
 CASE_IDS = ("CR01", "CR02", "CR04", "CR03")
 CALL_SHAPE_NOTES = [
     "Synthetic snapshot content instead of a database snapshot; no database, frozen-assessment-input or evidence-dependency reads.",

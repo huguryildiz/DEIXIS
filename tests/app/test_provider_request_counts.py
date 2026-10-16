@@ -8,7 +8,6 @@ makes.
 """
 
 import asyncio
-import shutil
 from types import SimpleNamespace
 
 import httpx
@@ -305,21 +304,13 @@ def test_an_attempt_out_when_the_process_stopped_stays_not_known_and_recovery_sa
     assert store.provider_request_counts(run_id)["api.openalex.org"] == {"sent": 1, "refused": 0, "unknown": 1}
 
 
-def test_a_run_older_than_the_record_has_no_figures_not_zero(tmp_path, monkeypatch):
-    """The migration marks every run that existed before it; their requests were never stored, so the count is not
-    known. A run made after the migration is counted from its first request."""
-    before = tmp_path / "before"
-    before.mkdir()
-    for path in db.MIGRATIONS_DIR.glob("*.sql"):
-        if path.name < "0011":
-            shutil.copy(path, before / path.name)
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", before)
-    store = Store(db.connect(tmp_path / "library.sqlite"))
-    db.migrate(store.conn)
+def test_a_run_older_than_the_record_has_no_figures_not_zero(tmp_path):
+    """A run marked as older than the record has no stored requests, so the count is not known. A run made after is
+    counted from its first request."""
+    store = library(tmp_path)
     old = a_run(store)
     store.update_run(old, status="cancelled")
-    monkeypatch.undo()
-    db.migrate(store.conn)
+    store.conn.execute("INSERT INTO provider_requests_unrecorded_runs (run_id) VALUES (?)", (old,))
     new = a_run(store)
     assert usage_routes.requests(store.provider_request_counts(old)) == {"recorded": False, "providers": None}
     assert usage_routes.requests(store.provider_request_counts(new))["providers"][0] == {

@@ -233,22 +233,6 @@ def test_a_session_stores_the_effort_its_adapter_sent_and_never_a_setting(tmp_pa
         assert models and all(m == {"connection": "fake", "model": "fake-model-2", "effort": None} for m in models)
 
 
-def test_migration_0009_keeps_earlier_sessions_with_a_null_effort(tmp_path):
-    """A session written before 0009 keeps its row and reads a null effort; nothing is back-filled. The earlier library
-    is made by taking 0009 back out of a migrated one after a run sent its calls with an effort."""
-    from deixis.storage import db
-    lib = library(tmp_path)
-    change(lib, "fake-model-2", effort="high")
-    execute(lib, fill(lib))
-    before = lib.conn.execute("SELECT id, requested_model, status FROM model_sessions ORDER BY rowid").fetchall()
-    assert before
-    lib.conn.execute("ALTER TABLE model_sessions DROP COLUMN reasoning_effort")
-    lib.conn.execute("DELETE FROM schema_migrations WHERE version = 9")
-    assert db.migrate(lib.conn) == [9]
-    after = lib.conn.execute("SELECT id, requested_model, status, reasoning_effort FROM model_sessions ORDER BY rowid").fetchall()
-    assert [tuple(r)[:3] for r in after] == [tuple(r) for r in before] and all(r["reasoning_effort"] is None for r in after)
-
-
 def test_a_step_lists_each_model_and_effort_once_with_its_latest_call_last(tmp_path):
     """Sol P3 r1: a step whose calls went high, low, then high again lists low before high, so the last entry is where
     its latest call went and the model line does not name an unchanged role as set for the next calls."""

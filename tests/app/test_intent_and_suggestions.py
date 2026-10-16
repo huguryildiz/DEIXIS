@@ -7,11 +7,8 @@ model is called. Every PDF, answer and title here is SYNTHETIC.
 """
 
 import json
-import shutil
-import sqlite3
 
 import httpx
-import pytest
 from fastapi.testclient import TestClient
 
 from deixis.api.app import create_app
@@ -170,25 +167,6 @@ def test_report_and_mixed_scope_researches_get_no_table_from_an_upload(tmp_path)
     finally:
         client.__exit__(None, None, None)
     assert found == []  # the mixed one gets its table after discovery, from the included sources
-
-
-def test_rows_from_before_the_intent_migration_read_as_reports(tmp_path, monkeypatch):
-    old = tmp_path / "old_migrations"
-    old.mkdir()
-    migration = next(db.MIGRATIONS_DIR.glob("*_research_intent.sql"))
-    for path in db.MIGRATIONS_DIR.glob("*.sql"):
-        if path.name.split("_", 1)[0] < migration.name.split("_", 1)[0]:
-            shutil.copy(path, old / path.name)
-    conn = db.connect(tmp_path / "library.sqlite")
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", old)
-    db.migrate(conn)
-    conn.execute("INSERT INTO researches (id, title, created_at, updated_at) VALUES ('res_old', 'SYNTHETIC', 'now', 'now')")
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", migration.parent)
-    db.migrate(conn)
-    assert conn.execute("SELECT intent FROM researches WHERE id = 'res_old'").fetchone()[0] == "report"
-    with pytest.raises(sqlite3.IntegrityError, match="CHECK"):
-        conn.execute("UPDATE researches SET intent = 'summary' WHERE id = 'res_old'")
-    conn.close()
 
 
 # ---- suggestions ------------------------------------------------------------------------------------------------------

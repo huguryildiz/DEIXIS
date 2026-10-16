@@ -4,6 +4,12 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D75 — Migrations 0001–0022 squashed into one schema file
+Status: accepted · Date: 2026-10-16 · Writer: Claude
+Context: Six days after the clean start the schema had 22 migration files again, most of them small column additions and table rebuilds. The owner asked for one file. D1 said the reset would not be repeated, but that rule was about dropping support for old libraries; this squash keeps the owner's library working.
+Decision: `storage/migrations/0001_schema.sql` holds the whole schema, generated from a library migrated through the old 22 files (tables, then indexes, then triggers, in creation order). The old files move to `tests/fixtures/storage/pre_squash_migrations/` for the tests. `storage/db.py` names the old files in `SQUASHED`. A library that recorded all 22 under those names has the same schema, and on its next start `migrate` replaces its 22 `schema_migrations` rows with one row for `0001_schema.sql` in one transaction; nothing else changes. A library that recorded `0001_baseline.sql` without all the rest (an old backup, say) is refused at startup with its own sentence, before anything is written. New schema changes start again at `0002_`. Tests that only checked the upgrade through one of the old files were removed or rewritten to set up the state directly.
+Limits: Checked by `tests/storage/test_squashed_baseline.py` (same `sqlite_master` from both paths, a SYNTHETIC old library folded with its rows, part-way libraries refused) and once on a copy of the owner's library (22 rows folded to one, schema equal to a fresh library, row counts, integrity and foreign keys unchanged). The live library itself is folded on its next start, not yet.
+
 ## D74 — Running headers and footers repeated across pages leave the PDF text
 Status: accepted · Date: 2026-10-16 · Writer: Claude
 Context: The owner saw "J. Mar. Sci. Eng. 2023, 11, 1567 17 of 23" as a passage of an MDPI paper. layout-v5 dropped only small-type blocks in the top 7% of the page, so a body-size header or any footer stayed in the page text, in passages and in what the model reads.
@@ -676,11 +682,11 @@ Providers
 
 Storage
 - One SQLite connection is shared by the API and the worker on the event-loop thread. Writes are short synchronous transactions with no `await` inside, and a UI-visible event is written in the same transaction as the state it describes.
-- The schema starts from `storage/migrations/0001_baseline.sql`. A schema change is a new numbered file from `0002_` on. A migration that has been applied is never edited, the baseline included, and tables are not dropped.
+- The schema starts from `storage/migrations/0001_schema.sql` (D75; it replaced `0001_baseline.sql` and 0002–0022). A schema change is a new numbered file from `0002_` on. A migration that has been applied is never edited, the baseline included, and tables are not dropped.
 - Runtime data (database, PDFs, provider payloads, Codex home) lives in `DEIXIS_DATA_DIR`, never in the repository.
 
 One-time reset (old D261)
-- The 77 old migrations were squashed once into the baseline, and the code that kept earlier libraries working was removed. A library written before the reset is refused at startup, and its app data folder is to be deleted. This reset is not repeated.
+- The 77 old migrations were squashed once into the baseline, and the code that kept earlier libraries working was removed. A library written before the reset is refused at startup, and its app data folder is to be deleted. This reset is not repeated. (D75 squashed again, but kept libraries from before it working.)
 
 Limits:
 - This entry restates decisions made, reviewed and tested under their old numbers and adds no behavior. The commit that wrote it also removed two method files no step loaded and corrected method and project docs to match the code.

@@ -7,7 +7,8 @@ DEIXIS/
 ├── docs/
 │   ├── layout.md          this file
 │   ├── decisions.md       durable decisions (DNN; restarted at D1, 10 Oct 2026)
-│   └── search-architecture.md  Mermaid map of the search pipeline (fast_path_v1)
+│   ├── search-architecture.md  Mermaid map of the search pipeline (fast_path_v1)
+│   └── product/           only files that code, tests or scripts read
 ├── backend/deixis/        local API, worker, persistence, providers, model adapters
 ├── apps/web/              React UI served by the backend
 ├── contracts/research/    JSON Schema model-step contracts
@@ -17,7 +18,7 @@ DEIXIS/
 └── .local/                ignored: INDEX.md, LESSONS.md, p10-plan.md, baseline-2026-10-10/
 ```
 
-- Files that code reads sit next to their reader: the connector ledger in `tests/providers/`, the frozen P8 expectation sheets (hashed by the runners) in `tests/model_behavior/`, and `providers.env.example` at the root.
+- `docs/product/` keeps the connector ledger read by `tests/providers/test_connector_contract.py`, the P8 expectation sheets that the runners hash, and `providers.env.example`. Nothing else goes there.
 - `.local/` is outside git. `INDEX.md` says what is where, `LESSONS.md` holds one-sentence lessons from past work, `p10-plan.md` is the waiting macOS packaging plan, and `baseline-2026-10-10/` holds the frozen 10 Oct measurement numbers, the scoring rule and the live-run tools for search work after P10. New design records and plans for current work go there, not in `docs/`. Older design documents and archives remain in Git history.
 - Links in `decisions.md` and `STATUS.md` that point into `.local/` resolve only on the owner's machine.
 - The decision entries before the clean start (old D1 to D261) are in Git history; `docs/decisions.md` at commit `26c8214` is the last full copy.

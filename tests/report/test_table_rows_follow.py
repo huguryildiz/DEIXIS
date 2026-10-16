@@ -6,13 +6,10 @@ Records and model outputs are SYNTHETIC (scripted FakeAdapter). Passing shows wo
 
 import hashlib
 import json
-import shutil
 import time
 
-from deixis.storage import db
 from deixis.workflow import table_rows
 from deixis.workflow.report.snapshot import build_snapshot
-from deixis.workflow.store import Store
 from deixis.workflow.tables import report_ready
 from fakes import valid_response
 from test_evidence_tables import PACKET_SIZE
@@ -219,36 +216,6 @@ def test_more_due_rows_than_one_run_reads_move_on_after_a_failed_run(tmp_path):
     (second,) = table_rows.advance(lib.store)
     assert {s["source_version_id"] for s in second["target"]["sources"]} == set(new) - {
         s["source_version_id"] for s in first["target"]["sources"]}
-
-
-def test_the_migration_marks_tables_made_from_the_included_sources(tmp_path, monkeypatch):
-    earlier = tmp_path / "migrations"
-    earlier.mkdir()
-    for path in db.MIGRATIONS_DIR.glob("*.sql"):
-        if int(path.name.split("_", 1)[0]) < 19:
-            shutil.copy(path, earlier / path.name)
-    conn = db.connect(tmp_path / "library.sqlite")
-    with monkeypatch.context() as patch:
-        patch.setattr(db, "MIGRATIONS_DIR", earlier)
-        db.migrate(conn)
-    store = Store(conn)
-    rid = store.create_research("SYNTHETIC migration question", "attached", "quick", [], "fake", "fake-model", None)
-    svid = store.create_upload_source("SYNTHETIC migrated source")
-    for tid, added_by in (("tbl_SYNTHincl0001", "included_at_creation"), ("tbl_SYNTHhand0001", "user"), ("tbl_SYNTHnone0001", None)):
-        conn.execute("INSERT INTO evidence_tables (id, research_id, title, created_at, updated_at) VALUES (?, ?, 'T', 't', 't')",
-                     (tid, rid))
-        if added_by:
-            conn.execute("INSERT INTO table_rows (table_id, source_version_id, added_by, created_at, removed_at)"
-                         " VALUES (?, ?, ?, 't', ?)", (tid, svid, added_by, "r" if added_by == "user" else None))
-    conn.commit()
-
-    assert db.migrate(conn)[0] == 19  # the first one applied; later migrations follow it
-    assert dict(conn.execute("SELECT id, follows_included FROM evidence_tables").fetchall()) == {
-        "tbl_SYNTHincl0001": 1, "tbl_SYNTHhand0001": 0, "tbl_SYNTHnone0001": 0}
-    assert [tuple(r) for r in conn.execute("SELECT table_id, added_by, created_at, removed_at FROM table_rows ORDER BY table_id")] == [
-        ("tbl_SYNTHhand0001", "user", "t", "r"), ("tbl_SYNTHincl0001", "included_at_creation", "t", None)]
-    conn.execute("INSERT INTO table_rows (table_id, source_version_id, added_by, created_at) VALUES ('tbl_SYNTHnone0001', ?,"
-                 " 'included_later', 't')", (svid,))
 
 
 def test_an_exclusion_during_one_equation_read_stops_the_next_sources_reads(tmp_path):

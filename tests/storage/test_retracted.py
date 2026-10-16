@@ -1,7 +1,6 @@
 """OpenAlex's retraction flag (D27): stored per source version, never cleared by an unknown read, shown per work and
 sent to answer steps only for a flagged work. Records are SYNTHETIC."""
 
-import shutil
 from dataclasses import replace
 
 from fastapi.testclient import TestClient
@@ -24,22 +23,6 @@ WORK = {
 
 def flag(store, svid):
     return tuple(store.conn.execute("SELECT is_retracted, is_retracted_at FROM source_versions WHERE id = ?", (svid,)).fetchone())
-
-
-def test_the_migration_adds_unknown_flags_to_earlier_versions(tmp_path, monkeypatch):
-    real = db.MIGRATIONS_DIR
-    older = tmp_path / "older"
-    older.mkdir()
-    for path in real.glob("*.sql"):
-        if int(path.name.split("_", 1)[0]) < 10:
-            shutil.copy(path, older / path.name)
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", older)
-    store = Store(db.connect(tmp_path / "library.sqlite"))
-    db.migrate(store.conn)
-    svid = store.create_upload_source("SYNTHETIC older record")
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", real)
-    assert 10 in db.migrate(store.conn)
-    assert flag(store, svid) == (None, None)
 
 
 def test_only_an_explicit_answer_replaces_the_stored_flag(tmp_path):
@@ -128,23 +111,3 @@ def test_a_flagged_version_outside_every_research_marks_the_work_everywhere_alik
         payload = app.state.worker.flow._step_input(run, store.scope(rid), new_id("stp"), "grounded_answer", [], [shown],
                                                    [], [], ("fake", "fake-model", None))
         assert payload["sources"][0]["is_retracted"] is True
-
-
-def test_0010_still_applies_to_a_library_that_already_ran_0011(tmp_path, monkeypatch):
-    """Migrations apply by version number, not in arrival order: a library that ran 0011 (P2, D31) before 0010 reached
-    main gets 0010 on its next start. 0011 adds new tables and 0010 adds columns to source_versions, so the order
-    between them does not matter."""
-    real = db.MIGRATIONS_DIR
-    copies = tmp_path / "migrations"
-    copies.mkdir()
-    for path in real.glob("*.sql"):
-        if not path.name.startswith("0010_"):
-            shutil.copy(path, copies / path.name)
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", copies)
-    conn = db.connect(tmp_path / "library.sqlite")
-    applied = db.migrate(conn)
-    assert 11 in applied and 10 not in applied
-    shutil.copy(next(real.glob("0010_*.sql")), copies)
-    assert db.migrate(conn) == [10]
-    assert {row[1] for row in conn.execute("PRAGMA table_info(source_versions)")} >= {"is_retracted", "is_retracted_at"}
-    assert conn.execute("SELECT COUNT(*) FROM provider_requests").fetchone()[0] == 0

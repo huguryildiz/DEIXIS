@@ -16,6 +16,17 @@ from typing import Any, Iterator
 
 MIGRATIONS_DIR = Path(__file__).parent / "migrations"
 FOREIGN_KEYS_OFF = "-- deixis:foreign-keys-off"
+# The files 0001_schema.sql replaced on 2026-10-16 (D75). A library that recorded all of them under these names has
+# exactly the schema of 0001_schema.sql, and its rows are folded into that one row once; one that recorded the old
+# baseline without all of the rest misses schema changes this version can no longer apply.
+SQUASHED = dict(enumerate((
+    "0001_baseline.sql", "0002_research_intent.sql", "0003_research_model_changes.sql", "0004_table_column_recheck.sql",
+    "0005_library_items.sql", "0006_screen_more.sql", "0007_followup_turns.sql", "0008_user_search_plan.sql",
+    "0009_model_session_effort.sql", "0010_retracted.sql", "0011_provider_requests.sql", "0012_upload_record_match.sql",
+    "0013_source_key_format.sql", "0014_mathpix_equations.sql", "0015_citation_map.sql", "0016_pdf_skips.sql",
+    "0017_answer_report_revision.sql", "0018_read_coverage.sql", "0019_table_rows_follow.sql", "0020_spend_ledger.sql",
+    "0021_scope_revision_withdraw.sql", "0022_followup_work_groups.sql"), start=1))
+SQUASHED_INTO = "0001_schema.sql"
 _ALPHABET = string.digits + string.ascii_letters
 
 
@@ -73,11 +84,25 @@ def packaged_versions() -> set[int]:
 
 def _applied_versions(conn: sqlite3.Connection) -> set[int] | None:
     try:
-        return {row[0] for row in conn.execute("SELECT version FROM schema_migrations")}
+        rows = {row[0]: row[1] for row in conn.execute("SELECT version, name FROM schema_migrations")}
     except sqlite3.OperationalError as exc:
         if "no such table" in str(exc):
             return None
         raise
+    return set(rows) - set(SQUASHED) | {1} if _squashed(rows) else set(rows)
+
+
+def _squashed(rows: dict[int, str]) -> bool:
+    """True for a library that recorded every file in SQUASHED; refuses one that recorded only some of them."""
+    if rows.get(1) != SQUASHED[1]:
+        return False
+    missing = [name for version, name in SQUASHED.items() if rows.get(version) != name]
+    if missing:
+        raise UnknownSchemaError(
+            f"This library was written by a DEIXIS from before 16 October 2026 that had not yet applied {len(missing)} "
+            f"schema migration{'s' if len(missing) != 1 else ''} (from {missing[0]}), and this version can no longer apply "
+            "them; open it once with a DEIXIS from before that date, then open it here. Nothing was changed.")
+    return True
 
 
 def _non_empty(path: Path) -> bool:
@@ -259,6 +284,10 @@ def migrate(conn: sqlite3.Connection) -> list[int]:
     conn.execute(
         "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)"
     )
+    if _squashed({row[0]: row[1] for row in conn.execute("SELECT version, name FROM schema_migrations")}):
+        with transaction(conn):
+            conn.execute(f"DELETE FROM schema_migrations WHERE version BETWEEN 2 AND {max(SQUASHED)}")
+            conn.execute("UPDATE schema_migrations SET name = ? WHERE version = 1", (SQUASHED_INTO,))
     applied = {row[0] for row in conn.execute("SELECT version FROM schema_migrations")}
     done = []
     for path in sorted(MIGRATIONS_DIR.glob("*.sql")):

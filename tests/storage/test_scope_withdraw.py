@@ -113,32 +113,6 @@ def test_only_the_current_revision_at_the_version_shown_can_be_withdrawn(tmp_pat
         store.withdraw_revision(rid, store.research(rid)["version"], 2)
 
 
-def test_the_migration_names_each_earlier_revisions_parent(tmp_path, monkeypatch):
-    import shutil
-    real = db.MIGRATIONS_DIR
-    number = int(next(p for p in real.glob("*.sql") if p.name.endswith("_scope_revision_withdraw.sql")).name.split("_", 1)[0])
-    older = tmp_path / "older"
-    older.mkdir()
-    for path in real.glob("*.sql"):
-        if int(path.name.split("_", 1)[0]) < number:
-            shutil.copy(path, older / path.name)
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", older)
-    store = Store(db.connect(tmp_path / "library.sqlite"))
-    db.migrate(store.conn)
-    rid = store.create_research("SYNTHETIC old question?", "academic", "quick", ["openalex"], "fake", "m", "en")
-    store.conn.execute("INSERT INTO scope_revisions (research_id, revision, question, source_scope, providers_json,"
-                       " effort, model_connection, requested_model, created_at) SELECT research_id, 2, 'SYNTHETIC second',"
-                       " source_scope, providers_json, effort, model_connection, requested_model, created_at"
-                       " FROM scope_revisions WHERE research_id = ?", (rid,))
-    store.conn.execute("UPDATE researches SET current_scope_revision = 2 WHERE id = ?", (rid,))
-    store._event(rid, "scope_revised", {"scope_revision": 2})
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", real)
-    assert number in db.migrate(store.conn)
-    assert store.scope(rid, 1)["parent_revision"] is None and store.scope(rid, 2)["parent_revision"] == 1
-    check = store.withdrawal(rid)
-    assert check["allowed"] and not check["restores_title"]
-
-
 def test_the_revision_current_at_a_time_follows_a_withdrawal(tmp_path):
     from types import SimpleNamespace
     from deixis.storage.db import now

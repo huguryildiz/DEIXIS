@@ -1080,7 +1080,9 @@ def _semantic_checks(step_input: dict[str, Any], output_type: str, result: dict[
 
 
 MATH = re.compile(r"\$\$.+?\$\$|\$[^$\n]+\$", re.DOTALL)
-LATEX_OUTSIDE_MATH = re.compile(r"\\(?:[A-Za-z]{2,}|[_^{}])|[_^]\{")
+# A command, an escaped brace or script mark, a braced sub/superscript, or the \( \[ delimiters the UI does not render
+# (D61). A regex escape such as \bword or a Windows path also matches; neither occurred in the measured outputs.
+LATEX_OUTSIDE_MATH = re.compile(r"\\(?:[A-Za-z]{2,}|[_^{}(\[])|[_^]\{")
 
 # Shared by section validation and final assembly; physical band/energy gaps are exempt.
 REPORT_BANNED = re.compile(

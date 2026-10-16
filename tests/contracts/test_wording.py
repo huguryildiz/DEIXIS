@@ -172,3 +172,18 @@ def test_latex_outside_dollar_delimiters_is_a_validation_issue():
     draft["claims"][0]["passage_ids"] = ["psg_SYNA1pg003"]
     report = contracts.validate_model_output(STEP_INPUTS["A_answer"], anchored(draft))
     assert [i.path for i in report.issues if i.code == "math_without_delimiters"] == ["/claims/0/text"]
+
+
+@pytest.mark.parametrize("text,flagged", [
+    (r"The holding time is \(t_0\) seconds.", True),  # LaTeX's own inline delimiters, which the answer view does not render
+    (r"\[ f(d) = R - d \]", True),
+    ("CO_{2} rises.", True),
+    (r"Its weight is \alpha.", True),
+    (r"Its weight is $\alpha$ and the delay $T_{\text{delay}}$.", False),
+    ("The node_id field and max_depth value.", False),
+    ("10^3 nodes and x^2.", False),
+    (r"50\% of nodes and a cost of \$5.", False),
+    ("α = p/W + (R − d·cosθ)/R", False),
+])
+def test_latex_outside_math_forms(text, flagged):
+    assert bool(contracts.LATEX_OUTSIDE_MATH.search(contracts.MATH.sub(" ", text))) is flagged

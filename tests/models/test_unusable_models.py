@@ -98,3 +98,15 @@ def test_a_record_lapses_after_keep_days():
     store = Settings({"gemini": {"old": {"reason": "not_served", "at": "2020-01-01T00:00:00.000+00:00"}}})
     unusable.record(store, "gemini", "new", unusable.NOT_SERVED)
     assert list(unusable.hidden(store, "gemini")) == ["new"]
+
+
+def test_a_hidden_model_can_be_offered_again(tmp_path):
+    with TestClient(app_for(tmp_path, FakeAdapter(models=["fake-model", "fake-model-2"]))) as raw:
+        client = session(raw)
+        unusable.record(raw.app.state.store, "fake", "fake-model-2", unusable.ANSWERED_AS, answered_as="fake-model-3")
+        url = "/api/connections/fake/hidden-models/show"
+        assert client.post(url, json={"model": "fake-model"}).status_code == 404  # not hidden
+        assert client.post("/api/connections/nope/hidden-models/show", json={"model": "x"}).status_code == 404
+        shown = client.post(url, json={"model": "fake-model-2"})
+        assert shown.status_code == 200 and [m["id"] for m in shown.json()["models"]] == ["fake-model", "fake-model-2"]
+        assert "hidden_models" not in shown.json() and raw.app.state.store.setting(unusable.KEY) == {}

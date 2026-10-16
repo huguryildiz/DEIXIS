@@ -245,6 +245,10 @@ class LocalServerAddress(BaseModel):
     base_url: str | None = Field(default=None, max_length=400)
 
 
+class HiddenModel(BaseModel):
+    model: str = Field(min_length=1, max_length=200)
+
+
 class OllamaModelBody(BaseModel):
     model: str = Field(min_length=1, max_length=200)
 
@@ -1207,6 +1211,18 @@ def create_app(
         if adapter is None:
             raise HTTPException(404, f"Model connection '{connection}' is not available")
         return unusable.health_view(store_of(request), connection, await adapter.health(refresh=refresh))
+
+    @app.post("/api/connections/{connection}/hidden-models/show")
+    async def show_hidden_model(connection: str, body: HiddenModel, request: Request) -> dict[str, Any]:
+        """Offer a model again that a failed step hid (D59); the next step on it fails as before if it is still gone."""
+        adapter = request.app.state.adapters.get(connection)
+        if adapter is None:
+            raise HTTPException(404, f"Model connection '{connection}' is not available")
+        store = store_of(request)
+        if body.model not in unusable.hidden(store, connection):
+            raise HTTPException(404, f"Model '{body.model}' is not hidden for {connection}")
+        unusable.forget(store, connection, body.model)
+        return unusable.health_view(store, connection, await adapter.health())
 
     @app.get("/api/institutional-access")
     async def institutional_access(request: Request, refresh: bool = False) -> dict[str, Any]:

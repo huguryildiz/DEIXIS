@@ -38,6 +38,15 @@ def record(store: Any, connection: str, model: str, reason: str, answered_as: st
     store.set_setting(KEY, hidden)
 
 
+def forget(store: Any, connection: str, model: str) -> None:
+    """Offer `model` again: the person asked for it back in Settings."""
+    recorded = store.setting(KEY) or {}
+    if recorded.get(connection, {}).pop(model, None) is not None:
+        if not recorded[connection]:
+            del recorded[connection]
+        store.set_setting(KEY, recorded)
+
+
 def hidden(store: Any, connection: str) -> dict[str, dict[str, Any]]:
     since = (datetime.now(timezone.utc) - timedelta(days=KEEP_DAYS)).isoformat(timespec="milliseconds")
     return {model: entry for model, entry in (store.setting(KEY) or {}).get(connection, {}).items()

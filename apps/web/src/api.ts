@@ -725,6 +725,8 @@ export type ModelHealth = {
   catalogue?: 'fixed'
   // The local server's saved address (D34, `local_server` only); null while none is saved.
   base_url?: string | null
+  // Models a failed research step hid from the lists (D59): 404 from the provider, or answered by another model.
+  hidden_models?: { id: string; reason: 'not_served' | 'answered_as'; answered_as?: string; at: string | null }[]
 }
 export type Connections = { models: Record<string, ModelHealth>; codex_home?: string; codex_login_command?: string; providers: { id: string; implemented: boolean; access_mode: string | null; key_broken?: boolean; supplementary?: boolean; role?: string; note: string }[] }
 export type Keychain = { available: boolean; name: string | null }
@@ -1362,6 +1364,7 @@ export const api = {
   connections: (refresh = false) => request<Connections>(`/api/connections${refresh ? '?refresh=true' : ''}`),
   modelConnection: (connection: string, refresh = false) => request<ModelHealth>(`/api/connections/${encodeURIComponent(connection)}${refresh ? '?refresh=true' : ''}`),
   // The local server's address (D34): loopback only, '' clears it; answers with the connection's fresh health.
+  showHiddenModel: (connection: string, model: string) => request<ModelHealth>(`/api/connections/${encodeURIComponent(connection)}/hidden-models/show`, json('POST', { model })),
   saveLocalServer: (baseUrl: string) => request<ModelHealth>('/api/connections/local_server', json('PUT', { base_url: baseUrl })),
   institutionalAccess: () => request<InstitutionalAccess>('/api/institutional-access'),
   credentials: () => request<Credentials>('/api/credentials'),

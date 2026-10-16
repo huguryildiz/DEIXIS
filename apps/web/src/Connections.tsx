@@ -120,6 +120,7 @@ function CompanyCard({ mark, name, maker, via, ready, status, active, compact = 
 }
 const formatBytes = (bytes: number) => bytes / 1e9 >= 1 ? t('{gb} GB', { gb: (bytes / 1e9).toFixed(1) }) : t('{mb} MB', { mb: Math.round(bytes / 1e6) })
 const clock = (iso: string | number) => new Date(iso).toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit' })
+const day = (iso: string) => new Date(iso).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'short' })
 
 // Settings icons, drawn in black and white (Settings.css): brand marks where connectionIcons.tsx has one, a plain glyph otherwise.
 const glyph = (icon: ReactNode) => <span className="connection-icon" aria-hidden="true">{icon}</span>
@@ -1014,6 +1015,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const [builtin, setBuiltin] = useState<BuiltinEmbedding | null>(null)
   // What this sheet checked itself, and when the answer came: "checked HH:MM" belongs to that answer only.
   const [checking, setChecking] = useState<string | null>(null)
+  const [showing, setShowing] = useState<string | null>(null)  // the hidden model being offered again
   const [checked, setChecked] = useState<Record<string, number>>({})
   const [checkFailed, setCheckFailed] = useState<Record<string, string>>({})
   // The sign-in DEIXIS started for a tool (D21); it is polled while the person finishes it in the terminal window that opened.
@@ -1409,6 +1411,24 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
       </details>}
     </section>
   }
+  // Models a failed research step took out of the lists (D59), each with why and a way to offer it again.
+  const showAgain = (conn: string, id: string) => {
+    setShowing(id)
+    api.showHiddenModel(conn, id).then(result => {
+      setData(current => current ? { ...current, models: { ...current.models, [conn]: result } } : current)
+      toast('success', t('{model} is offered again.', { model: id }))
+    }).catch((e: Error) => toast('error', e.message)).finally(() => setShowing(null))
+  }
+  const hiddenModels = (conn: string, hidden: NonNullable<ModelHealth['hidden_models']>) => <details className="way-more">
+    <summary><ChevronRight size={14} aria-hidden />{t(hidden.length === 1 ? '1 model hidden after a step failed on it' : '{n} models hidden after a step failed on them', { n: hidden.length })}</summary>
+    <p className="foot-note">{t('They stay out of the model lists for 30 days. Show one again if the provider serves it again.')}</p>
+    <ul className="connection-models">{hidden.map(item => <li key={item.id}>
+      <span className="connection-model-copy"><code className="model-id">{item.id}</code>
+        <small>{item.reason === 'answered_as' ? withCode(t('Answered as {model}'), { model: item.answered_as ?? '' }) : t('The provider no longer serves it')}{item.at ? ` · ${day(item.at)}` : ''}</small></span>
+      <span className="connection-model-meta"><button type="button" className="ghost" disabled={showing !== null} aria-busy={showing === item.id} onClick={() => showAgain(conn, item.id)}>
+        {t('Show again')}</button></span>
+    </li>)}</ul>
+  </details>
   // The key way: the key field of the company's API connection, with that connection's own state.
   const keyWay = (c: Company) => {
     const way = c.key
@@ -1425,6 +1445,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
       {entry?.configured && model && !model.ready && reasonNotice(`key:${way.conn}`, healthReasonText(model))}
       {credentials && <KeyField key={way.env} env={way.env} entry={entry} keychain={credentials.keychain} label={t('Key')} service={way.service ?? c.name}
         removeEffect={effect} onSaved={() => reloadAfterModelKeyChange(way.conn)} />}
+      {model?.hidden_models?.length ? hiddenModels(way.conn, model.hidden_models) : null}
       {model && (model.models?.length || way.conn === 'gemini') ? <details className="way-more">
         <summary><ChevronRight size={14} aria-hidden />{t('Details')}</summary>
         {way.conn === 'gemini' && <div className="connection-checks">

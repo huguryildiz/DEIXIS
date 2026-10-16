@@ -62,7 +62,7 @@ def test_a_tesseract_that_cannot_run_gives_a_code_and_its_own_words_stay_in_the_
     async def hangs(tesseract):
         return [Probe(None, "", "", "not_responding"), Probe(0, "", "")]
 
-    monkeypatch.setattr(ocr, "find_tool", lambda name: "/SYNTHETIC/bin/tesseract")
+    monkeypatch.setattr(ocr, "find_tool", lambda name: "/opt/fake/bin/tesseract")
     monkeypatch.setattr(ocr, "_ask_tesseract", fails)
     with caplog.at_level("WARNING", logger="deixis.documents.ocr"):
         failed = ocr.tesseract_status(("eng", "tur"))

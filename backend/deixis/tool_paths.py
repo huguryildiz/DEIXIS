@@ -4,7 +4,9 @@ An app started from the Finder, the Start menu or a desktop launcher gets a shor
 /usr/bin:/bin:/usr/sbin:/sbin), so `shutil.which` misses tools installed with Homebrew, npm, uv or nvm. `find_tool`
 looks in this order: the frozen bundle's own bin/ folder, the process PATH, the places installers usually put tools,
 and last the PATH of the person's login shell. A tool's child process gets a PATH with the tool's folder and node's
-folder on it (`child_path`), so an npm launcher's `#!/usr/bin/env node` finds node too.
+folder on it (`child_path`), so an npm launcher's `#!/usr/bin/env node` finds node too. `find_tools` lists every copy in
+that order (the first is the one `find_tool` returns), and `is_bundled` tells a tool of the packaged app's own bin/ folder
+from one the person installed (pre-P10 B1, E15).
 
 `command_for` turns what `find_tool` found into the argv that starts the tool (pre-P10 A4). On Windows a batch file
 (`codex.cmd`, `claude.cmd`) is never run: `cmd.exe` would parse the arguments and a path with `&`, `%` or `^` in it
@@ -173,6 +175,29 @@ def find_tool(name: str) -> str | None:
     if found := _which(name, known_places()):
         return found
     return _which(name, login_shell_path())
+
+
+def find_tools(name: str) -> list[str]:
+    """Every copy of the tool `name` that `find_tool` could pick, in its search order, the chosen one first (E15). Two
+    paths to the same file (a symlink in ~/.local/bin to the npm folder's copy) are one copy. The login shell is only
+    asked when nothing else has the tool, as in `find_tool`."""
+    folders = ([str(resource_root() / "bin")] if is_frozen() else []) + os.environ.get("PATH", os.defpath).split(os.pathsep) + known_places()
+    copies: dict[str, str] = {}
+    for folder in folders:
+        if folder and (found := _which(name, [folder])):
+            copies.setdefault(os.path.realpath(found), found)
+    if not copies:
+        for folder in login_shell_path():
+            if found := _which(name, [folder]):
+                copies.setdefault(os.path.realpath(found), found)
+    return list(copies.values())
+
+
+def is_bundled(path: str | None) -> bool:
+    """Whether `path` is a tool that comes inside the packaged app (its own bin/ folder); never true in a run from the repository."""
+    if not path or not is_frozen():
+        return False
+    return Path(os.path.abspath(path)).parent == Path(os.path.abspath(resource_root() / "bin"))
 
 
 def child_path(tool: str | None = None, base: str | None = None) -> str:

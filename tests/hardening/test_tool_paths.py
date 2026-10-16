@@ -276,3 +276,42 @@ def test_no_module_looks_for_a_tool_with_shutil_which_any_more():
     offenders = [str(p.relative_to(root)) for p in root.rglob("*.py")
                  if p.name != "tool_paths.py" and "shutil.which" in p.read_text()]
     assert offenders == []
+
+
+# ---- every copy, and the one that comes with the app (B1, E15) --------------------------------------------
+
+@posix_only
+def test_every_copy_of_a_tool_is_listed_in_search_order_and_a_link_to_the_same_file_is_one_copy(tmp_path, monkeypatch, short_path):
+    first, second = tool(tmp_path / "npm" / "bin"), tool(tmp_path / "brew" / "bin")
+    (tmp_path / "local").mkdir()
+    (tmp_path / "local" / "codex").symlink_to(first)  # the same file as the first copy, under another path
+    monkeypatch.setenv("PATH", os.pathsep.join([str(first.parent), str(tmp_path / "local"), str(second.parent), "/usr/bin"]))
+    assert tool_paths.find_tools("codex") == [str(first), str(second)]
+    assert tool_paths.find_tool("codex") == str(first)  # the first of them is the one that is used
+    assert tool_paths.find_tools("no-such-tool") == []
+
+
+@posix_only
+def test_copies_in_known_places_follow_the_ones_on_path_and_the_shell_is_asked_only_when_nothing_else_has_the_tool(tmp_path, monkeypatch, short_path):
+    on_path, known, in_shell = tool(tmp_path / "path"), tool(tmp_path / "known"), tool(tmp_path / "shell")
+    count = tmp_path / "count"
+    login = shell(tmp_path / "bin" / "zsh", f"echo x >> {count}\nprintf '__DEIXIS_PATH__%s__END__' '{in_shell.parent}'\n")
+    monkeypatch.setenv("SHELL", str(login))
+    monkeypatch.setenv("PATH", f"{on_path.parent}:/usr/bin")
+    monkeypatch.setattr(tool_paths, "known_places", lambda: [str(known.parent)])
+    assert tool_paths.find_tools("codex") == [str(on_path), str(known)]
+    assert not count.exists()  # found without the shell
+    monkeypatch.setenv("PATH", "/usr/bin")
+    monkeypatch.setattr(tool_paths, "known_places", lambda: [])
+    assert tool_paths.find_tools("codex") == [str(in_shell)] and count.read_text().count("x") == 1
+
+
+@posix_only
+def test_a_tool_is_bundled_only_in_a_packaged_app_and_only_from_its_own_bin_folder(tmp_path, monkeypatch, short_path):
+    inside, outside = tool(tmp_path / "bundle" / "bin", "tesseract"), tool(tmp_path / "other", "tesseract")
+    monkeypatch.setattr(tool_paths, "resource_root", lambda: tmp_path / "bundle")
+    monkeypatch.setattr(tool_paths, "is_frozen", lambda: False)
+    assert not tool_paths.is_bundled(str(inside))  # a run from the repository has no bundle, whatever is in that folder
+    monkeypatch.setattr(tool_paths, "is_frozen", lambda: True)
+    assert tool_paths.is_bundled(str(inside)) and not tool_paths.is_bundled(str(outside))
+    assert not tool_paths.is_bundled(None)

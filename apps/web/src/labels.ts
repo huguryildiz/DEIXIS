@@ -126,6 +126,7 @@ export function credentialFailureText(code: string | null, keychain: string): st
 export function installReasonText(code: string | null | undefined, manager?: string): string {
   return code === 'uv_missing' ? t('uv is needed for this and was not found on this computer. Install it, then restart DEIXIS.')
     : code === 'manager_missing' ? t('{manager} is needed for this and was not found on this computer. Install it, then restart DEIXIS.', { manager: manager ?? '' })
+    : code === 'download_page' ? t('DEIXIS has no install command for this on this computer. Download it from its official page, install it, then check again.')
     : code === 'server_not_answering' ? t('Ollama did not answer. Check that it is running, then try again.')
     : t('This cannot be done from here right now. Restart DEIXIS and try again.')  // a code this page does not know
 }

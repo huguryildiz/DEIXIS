@@ -371,7 +371,9 @@ export type ToolUpdate = { tool: 'tesseract' | 'marker' | 'pymupdf'; installed: 
 export type OcrJob = { status: 'running' | 'succeeded' | 'failed'; phase: 'preparing' | 'downloading' | 'installing'; output: string; started_at: string; finished_at: string | null }
 // Why Tesseract cannot be used, as a code the page words (ocr.ts).
 export type OcrReason = 'tesseract_missing' | 'tesseract_not_responding' | 'tesseract_failed' | 'tesseract_languages_missing'
-export type OcrTool = { available: boolean; version: string | null; languages: string[]; missing_languages: string[]; reason: OcrReason | null; can_install: boolean; job: OcrJob | null }
+// `bundled`: the Tesseract that comes inside the app (updated with DEIXIS, never through Homebrew); `install_url` is the page to get it from where Homebrew cannot.
+export type OcrTool = { available: boolean; version: string | null; languages: string[]; missing_languages: string[]; reason: OcrReason | null; can_install: boolean; job: OcrJob | null
+  path: string | null; bundled: boolean; install_url: string; install_manager: 'brew' | null }
 // What became of a cited passage's file since it was stored (D46).
 export type EvidenceStatus = 'current' | 'pdf_removed' | 'pdf_replaced' | 'text_superseded'
 export type ReplacedAsset = { id: string; original_filename: string | null; removed_at: string; replaced_by_asset_id: string }
@@ -751,15 +753,18 @@ export type KeyTest = { status: 'ok' | 'no_credit' | 'rejected' | 'failed' | 'un
 export type ProviderTest = { provider: string; answered: boolean; http_status: number | null; failure: 'timeout' | 'connection' | 'other' | null
   error: string | null; timeout_seconds: number; contact_email_sent: boolean; checked_at: string }
 export type LocalToolModel = { id: string; size_bytes: number | null; embedding: boolean }
-// `unavailable_reason` is a code (`uv_missing`, `manager_missing`) the page words; `manager` is the program the install needs.
-export type LocalToolInstall = { command: string; available: boolean; unavailable_reason: string | null; manager?: string; url: string }
+// `unavailable_reason` is a code (`uv_missing`, `manager_missing`, `download_page`) the page words; `manager` is the program the install needs;
+// `command` is null where there is none to run on this OS and the card links to `url`.
+export type LocalToolInstall = { command: string | null; available: boolean; unavailable_reason: string | null; manager?: string; url: string }
 // 'failed' is set by the page itself when the terminal could not be opened (the server answered with an error).
 export type AccountSignIn = { state: 'idle' | 'waiting' | 'succeeded' | 'session_confirmed' | 'failed' | 'timed_out'; message: string | null }
 export type LocalToolJob = { status: 'running' | 'succeeded' | 'failed' | 'cancelled'; started_at: string; finished_at: string | null; output: string; completed?: number; total?: number; kind?: 'update' } | null
 export type LocalTool = {
   id: 'claude_code' | 'codex' | 'copilot_cli' | 'gemini_cli' | 'ollama' | 'lm_studio' | 'zotero'; name: string; kind: 'cli' | 'server' | 'app'
   installed: boolean; version: string | null; path: string | null; role: 'runs_steps' | 'detected' | 'imports'
-  reason_code?: 'not_responding' | null  // the CLI did not answer its version check in time
+  reason_code?: 'not_responding' | 'not_runnable' | null  // the chosen copy did not answer its version check in time, or failed it
+  runnable?: boolean | null  // whether the chosen copy ran (null: nothing was run)
+  other_copies?: string[]  // more copies of the command on this computer; `path` is the one in use
   running?: boolean; endpoint?: string; models?: LocalToolModel[]; local_api?: boolean; web_configured?: boolean
   install: LocalToolInstall; job: LocalToolJob
   app_installed?: boolean  // Ollama on macOS: whether Ollama.app is in /Applications

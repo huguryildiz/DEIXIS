@@ -1072,7 +1072,8 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   // One counter per tool, moved on by every start and cancel: an answer to an earlier request that arrives after a
   // later one began (a poll that was in flight when the person cancelled) is dropped, never shown.
   const signInVersion = useRef<Record<string, number>>({})
-  const nextSignIn = (tool: string) => (signInVersion.current[tool] = (signInVersion.current[tool] ?? 0) + 1)
+  const signInVersionOf = (tool: string) => signInVersion.current[tool] ?? 0  // a tool never started on this page (re-attached) is at 0
+  const nextSignIn = (tool: string) => (signInVersion.current[tool] = signInVersionOf(tool) + 1)
   // The last answer to each keyless source's Test; shown only while its check's time is (the same check's answer).
   const [providerTests, setProviderTests] = useState<Record<string, ProviderTest>>({})
   const [showOthers, setShowOthers] = useState(false)
@@ -1197,17 +1198,17 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   }
   const refreshModel = (id: string) => readModel(id).catch((e: Error) => { toast('error', t('Check failed: {message}', { message: e.message })); throw e })
   const settleSignIn = useCallback((tool: string, run: AccountSignIn, version: number) => {
-    if (signInVersion.current[tool] !== version) return
+    if ((signInVersion.current[tool] ?? 0) !== version) return
     setSignInRuns(current => ({ ...current, [tool]: run }))
-    if (run.state !== 'succeeded') return
-    toast('success', t('Signed in to {name}.', { name: ACCOUNT_TOOLS[tool]?.name ?? tool }))
+    if (run.state !== 'succeeded' && run.state !== 'session_confirmed') return
+    if (run.state === 'succeeded') toast('success', t('Signed in to {name}.', { name: ACCOUNT_TOOLS[tool]?.name ?? tool }))
     void readModel(tool).catch(() => undefined)
     void loadTools(true)
   }, [toast, loadTools, readModel])
   const startSignIn = (tool: string) => {
     const version = nextSignIn(tool)
     api.startAccountSignIn(tool).then(run => settleSignIn(tool, run, version), (e: Error) => {
-      if (signInVersion.current[tool] !== version) return
+      if (signInVersionOf(tool) !== version) return
       setSignInRuns(current => ({ ...current, [tool]: { state: 'failed', message: e.message } }))
       toast('error', t('Could not start the sign-in: {message}', { message: e.message }))
     })
@@ -1215,7 +1216,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const cancelSignIn = (tool: string) => {
     const version = nextSignIn(tool)
     api.cancelAccountSignIn(tool).then(run => {
-      if (signInVersion.current[tool] !== version) return
+      if (signInVersionOf(tool) !== version) return
       setSignInRuns(({ [tool]: _gone, ...rest }) => run.state === 'idle' ? rest : { ...rest, [tool]: run })
     }, (e: Error) => toast('error', t('Could not cancel the sign-in: {message}', { message: e.message })))
   }
@@ -1225,7 +1226,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     const tools = waitingSignIns.split(',')
     const timer = window.setInterval(() => {
       for (const tool of tools) {
-        const version = signInVersion.current[tool] ?? 0
+        const version = signInVersionOf(tool)
         api.accountSignIn(tool).then(run => settleSignIn(tool, run, version), () => undefined)
       }
     }, 2000)
@@ -1471,6 +1472,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
         <button type="button" className="ghost" onClick={() => cancelSignIn(accountId)}>{t('Cancel')}</button>
       </p>}
       {ownRun && (ownRun.state === 'failed' || ownRun.state === 'timed_out') && ownRun.message && <p className="foot-note warn-t" role="alert">{t(ownRun.message)}</p>}
+      {ownRun?.state === 'session_confirmed' && ownRun.message && <p className="foot-note" role="status">{t(ownRun.message)}</p>}
       {ownRun && (ownRun.state === 'failed' || ownRun.state === 'timed_out') && signInCommand && <div className="signin-cmd">
         <p className="foot-note">{t('Run this in a terminal, then test the connection:')}</p>
         <div className="cmd-row"><code className="field mono">{signInCommand}</code><button type="button" className="ghost" onClick={() => copy(signInCommand)}><Copy aria-hidden />{t('Copy')}</button></div>

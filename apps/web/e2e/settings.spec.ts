@@ -696,21 +696,45 @@ test.describe.serial('S24: the Settings page', () => {
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
 
-  test('a reloaded page picks up every sign-in still running, not only the first (E20 review)', async () => {
+  test('a reloaded page picks up every sign-in still running and follows each to its end (E20 review)', async () => {
     await page.route(url => url.pathname === '/api/connections', async route => {
       const response = await route.fetch()
       const body = await response.json()
-      return route.fulfill({ response, json: { ...body, sign_ins: { codex: { state: 'waiting', message: null }, claude: { state: 'waiting', message: null } } } })
+      return route.fulfill({ response, json: { ...body, sign_ins: {
+        codex: { state: 'waiting', message: null }, claude: { state: 'waiting', message: null }, gemini_cli: { state: 'waiting', message: null } } } })
     })
-    await page.route(url => /^\/api\/accounts\/(codex|claude)\/sign-in$/.test(url.pathname), route => route.fulfill({ json: { state: 'waiting', message: null } }))
+    // The first poll after the reload still says waiting; the next ones are each tool's end.
+    const ends: Record<string, { state: string; message: string | null }> = {
+      codex: { state: 'succeeded', message: null },
+      claude: { state: 'timed_out', message: 'The sign-in was not completed within 10 minutes.' },
+      gemini_cli: { state: 'session_confirmed', message: 'Gemini CLI is signed in. DEIXIS cannot tell a new sign-in from the existing session.' },
+    }
+    const polls: Record<string, number> = {}
+    await page.route(url => /^\/api\/accounts\/(codex|claude|gemini_cli)\/sign-in$/.test(url.pathname), route => {
+      const tool = new URL(route.request().url()).pathname.split('/')[3]
+      polls[tool] = (polls[tool] ?? 0) + 1
+      return route.fulfill({ json: polls[tool] === 1 ? { state: 'waiting', message: null } : ends[tool] })
+    })
     await page.goto(server.url('#/settings/connections'))
     await page.reload()
-    for (const name of [/^ChatGPT/, /^Claude/]) {
+    const open = async (name: RegExp, dialog: string) => {
       await page.locator('.co-card').filter({ hasText: name }).first().click()
-      const sheet = page.getByRole('dialog').first()
-      await expect(sheet.getByText('A terminal window opened.')).toBeVisible()
-      await sheet.getByRole('button', { name: 'Close' }).click()
+      return page.getByRole('dialog', { name: dialog })
     }
+    const chatgpt = await open(/^ChatGPT/, 'ChatGPT')
+    await expect(chatgpt.getByText('A terminal window opened.')).toBeVisible()  // re-attached, not lost with the reload
+    await expect(chatgpt.getByText('A terminal window opened.')).toHaveCount(0)  // and followed to its end
+    await expect(chatgpt.getByRole('button', { name: 'Cancel' })).toHaveCount(0)
+    await chatgpt.getByRole('button', { name: 'Close' }).click()
+    const claude = await open(/^Claude/, 'Claude')
+    await expect(claude.getByText('A terminal window opened.')).toHaveCount(0)
+    await expect(claude.getByText('The sign-in was not completed within 10 minutes.')).toBeVisible()
+    await claude.getByRole('button', { name: 'Close' }).click()
+    const gemini = await open(/^Gemini/, 'Gemini')
+    await expect(gemini.getByText('A terminal window opened.')).toHaveCount(0)
+    await expect(gemini.getByText('Gemini CLI is signed in. DEIXIS cannot tell a new sign-in from the existing session.')).toBeVisible()
+    await expect(gemini.locator('.warn-t')).toHaveCount(0)  // an info line, not a warning or a success
+    await gemini.getByRole('button', { name: 'Close' }).click()
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
 

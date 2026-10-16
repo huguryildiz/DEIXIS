@@ -750,7 +750,7 @@ export type ProviderTest = { provider: string; answered: boolean; http_status: n
 export type LocalToolModel = { id: string; size_bytes: number | null; embedding: boolean }
 export type LocalToolInstall = { command: string; available: boolean; unavailable_reason: string | null; url: string }
 // 'failed' is set by the page itself when the terminal could not be opened (the server answered with an error).
-export type AccountSignIn = { state: 'idle' | 'waiting' | 'succeeded' | 'failed' | 'timed_out'; message: string | null }
+export type AccountSignIn = { state: 'idle' | 'waiting' | 'succeeded' | 'session_confirmed' | 'failed' | 'timed_out'; message: string | null }
 export type LocalToolJob = { status: 'running' | 'succeeded' | 'failed' | 'cancelled'; started_at: string; finished_at: string | null; output: string; completed?: number; total?: number; kind?: 'update' } | null
 export type LocalTool = {
   id: 'claude_code' | 'codex' | 'copilot_cli' | 'gemini_cli' | 'ollama' | 'lm_studio' | 'zotero'; name: string; kind: 'cli' | 'server' | 'app'

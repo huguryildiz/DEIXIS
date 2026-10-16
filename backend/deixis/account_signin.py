@@ -31,21 +31,11 @@ TOOLS = {"codex": ("codex", ["login"], "Codex CLI"), "claude": ("claude", ["auth
          "copilot_cli": ("copilot", ["login"], "GitHub Copilot CLI"),
          "gemini_cli": ("gemini", [], "Gemini CLI")}
 # `gemini` has no login command: the sign-in happens inside its interactive session, and a session that ends with exit 0
-# says nothing about it. What it does leave is its credentials file, rewritten when a sign-in completes; that file's
-# change stamp is the only sign-in-specific evidence there is. The file is also rewritten when the CLI refreshes an
-# expiring token, so the evidence is "something signed in or refreshed", never "this account is new" (no identity is
-# compared). Without a change the result is the uncertain one.
-def gemini_credentials_stamp() -> object:
-    from deixis.models.gemini_cli import user_credentials
-
-    try:
-        stat = user_credentials().stat()
-    except OSError:
-        return None
-    return (stat.st_mtime_ns, stat.st_size)
-
-
-EVIDENCE: dict[str, Callable[[], object]] = {"gemini_cli": gemini_credentials_stamp}
+# says nothing about it (its credentials file is also rewritten by an ordinary token refresh, so that is no evidence
+# either). For these tools exit 0 plus a health check that says signed in is reported as its own outcome,
+# "session_confirmed": signed in, but not known to be a new sign-in. No account identity is compared.
+NO_LOGIN_COMMAND = ("gemini_cli",)
+SESSION_CONFIRMED = "Gemini CLI is signed in. DEIXIS cannot tell a new sign-in from the existing session."
 LINUX_TERMINALS = ("x-terminal-emulator", "gnome-terminal", "konsole", "xterm")
 
 # What is handed to the process starter: an argument list. Nothing is ever parsed by cmd.exe (A4).
@@ -161,14 +151,13 @@ def read_exit_code(path: Path) -> Any:
 class AccountSignIn:
     def __init__(self, codex_home: Path, check: Check, launcher: Launcher | None = None, platform: str | None = None,
                  timeout: float = SIGNIN_TIMEOUT_SECONDS, clock: Callable[[], float] = time.monotonic,
-                 on_succeeded: Callable[[str], None] | None = None, evidence: dict[str, Callable[[], object]] | None = None):
+                 on_succeeded: Callable[[str], None] | None = None):
         self._codex_home = codex_home
         self._check = check
         self._launcher = launcher or start_process
         self._platform = platform or sys.platform
         self._timeout, self._clock = timeout, clock
         self._on_succeeded = on_succeeded
-        self._evidence = EVIDENCE if evidence is None else evidence
         self._state: dict[str, dict[str, Any]] = {}
         # Per tool: deadline, whether a start or a check is in flight, this attempt's status file and terminal handle.
         self._run: dict[str, dict[str, Any]] = {}
@@ -211,8 +200,7 @@ class AccountSignIn:
         now = self._clock()
         status_dir = self._codex_home.parent / "sign-in"
         status = status_dir / f"status-{tool}-{uuid.uuid4().hex}.exit"  # one per attempt; holds an exit code only
-        reserved = {"deadline": now + self._timeout, "busy": True, "starting": True, "status": status, "handle": None,
-                    "evidence": self._stamp(tool)}
+        reserved = {"deadline": now + self._timeout, "busy": True, "starting": True, "status": status, "handle": None}
         self._state[tool] = {"state": "waiting", "message": None}
         self._run[tool] = reserved
         try:
@@ -245,10 +233,6 @@ class AccountSignIn:
         now = self._clock()
         reserved.update(deadline=now + self._timeout, busy=False, starting=False)
         return self._view(tool)
-
-    def _stamp(self, tool: str) -> object:
-        read = self._evidence.get(tool)
-        return read() if read else None
 
     def cancel(self, tool: str) -> dict[str, Any]:
         """Stop waiting for a running sign-in and put the connection back as it was: idle, whatever session it had stays."""
@@ -322,8 +306,8 @@ class AccountSignIn:
                     signed_in = False
                 if not signed_in:
                     outcome = ("failed", "The sign-in command finished, but the tool does not show a signed-in account yet.")
-                elif tool in self._evidence and self._stamp(tool) == run["evidence"]:
-                    outcome = ("failed", "The command finished, but a new sign-in could not be confirmed.")
+                elif tool in NO_LOGIN_COMMAND:
+                    outcome = ("session_confirmed", SESSION_CONFIRMED)
                 else:
                     outcome = ("succeeded", None)
             if self._clock() >= run["deadline"]:  # the answer came after the time was up: it is not a sign-in either

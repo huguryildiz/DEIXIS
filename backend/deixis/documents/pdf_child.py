@@ -7,7 +7,8 @@ captioned rectangle took 6.6 s and 655 MB to render as a figure. Each read now r
 like `extract_pdf`'s, watched from the parent; a child that passes a limit, crashes or fails raises `ChildFailed`, which
 callers treat as they treat a PDF MuPDF cannot read.
 
-Only the reads named in `CALLS` run here. Arguments and results go as JSON; bytes (a rendered picture) as base64.
+Only the reads named in `CALLS` run here. Arguments go as JSON in a temporary file (a page-keyed equation list can be
+longer than a command line may be), results as JSON on stdout; bytes (a rendered picture) as base64.
 At most `MAX_CHILDREN` of these children run at once in the process (each may hold up to 1 GiB); a further read waits for
 one to end. `extract_pdf`, OCR and the arXiv source child are not counted.
 """
@@ -20,6 +21,7 @@ import json
 import logging
 import subprocess
 import sys
+import tempfile
 import threading
 from pathlib import Path
 from typing import Any
@@ -38,6 +40,8 @@ CALLS = {
     "math_pages": ("deixis.documents.math_reader", "_math_pages"),
     "table_pages": ("deixis.documents.math_reader", "_table_pages"),
     "check_equations": ("deixis.documents.math_reader", "_check_equations"),
+    "inline_math_marks": ("deixis.documents.math_reader", "_inline_math_marks"),
+    "render_crop": ("deixis.documents.equation_regions", "_render_crop"),
     "detect": ("deixis.documents.equation_regions", "_detect"),
     "stamp_key": ("deixis.documents.arxiv_source", "_stamp_key"),
 }
@@ -62,8 +66,11 @@ def _decode(item: dict) -> Any:
 
 def run(name: str, *args: Any) -> Any:
     """`CALLS[name]` on `args` in a bounded child; its result, or ChildFailed."""
-    argv = [sys.executable, "-m", "deixis.documents.pdf_child", name, json.dumps(args), str(MAX_MEMORY_BYTES)]
+    request = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8")
+    argv = [sys.executable, "-m", "deixis.documents.pdf_child", name, request.name, str(MAX_MEMORY_BYTES)]
     try:
+        with request:
+            json.dump(args, request)
         with _slots:
             completed = pdf._run_watched(argv, child_env({"PYTHONPATH": str(Path(__file__).resolve().parents[2])}, bundled=True),
                                          TIMEOUT_SECONDS, MAX_MEMORY_BYTES)
@@ -71,6 +78,8 @@ def run(name: str, *args: Any) -> Any:
         raise ChildFailed(f"{name} timed out") from None
     except pdf.MemoryWatchLost:
         raise ChildFailed(f"{name} memory limit could not be watched") from None
+    finally:
+        Path(request.name).unlink(missing_ok=True)
     if completed.returncode == pdf.MEMORY_EXIT_CODE:
         raise ChildFailed(f"{name} exceeded the memory limit")
     if completed.returncode == child_guard.GUARD_EXIT_CODE:
@@ -96,7 +105,7 @@ if __name__ == "__main__":
     pdf._watch_memory(int(sys.argv[3]))
     module, function = CALLS[sys.argv[1]]
     try:
-        out = {"result": getattr(importlib.import_module(module), function)(*json.loads(sys.argv[2]))}
+        out = {"result": getattr(importlib.import_module(module), function)(*json.loads(Path(sys.argv[2]).read_text(encoding="utf-8")))}
     except MemoryError:
         sys.exit(pdf.MEMORY_EXIT_CODE)
     except Exception as exc:  # noqa: BLE001 - untrusted input: any failure is an unreadable PDF, reported to the parent

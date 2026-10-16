@@ -2497,7 +2497,10 @@ def create_app(
         path = (root / store.asset(passage["asset_id"])["storage_path"]).resolve()
         if not path.is_relative_to(root) or not path.exists():
             raise HTTPException(404, "File missing")
-        png = await asyncio.to_thread(equation_regions.render_crop, path, item["crop"])
+        try:
+            png = await asyncio.to_thread(equation_regions.render_crop, path, item["crop"])
+        except pdf_child.ChildFailed:  # past its time or memory limit, or unreadable: as for a figure that cannot be shown
+            raise HTTPException(404, "The equation image could not be rendered from the stored PDF") from None
         if hashlib.sha256(png).hexdigest() != item["crop_sha256"]:
             raise HTTPException(409, "The stored PDF no longer gives the image that was read")
         return Response(png, media_type="image/png", headers={"Cache-Control": "no-cache"})

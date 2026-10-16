@@ -182,7 +182,7 @@ def upload(client, rid):
     return source["source_version_id"], source["access"]["assets"][0]["id"]
 
 
-def test_an_answer_run_reads_with_mathpix_and_the_passage_shows_its_numbers_fallbacks_and_crops(client_for):
+def test_an_answer_run_reads_with_mathpix_and_the_passage_shows_its_numbers_fallbacks_and_crops(client_for, monkeypatch):
     client, app, fake = client_for()
     assert client.put("/api/credentials/mathpix", json=PAIR_BODY).status_code == 200
     client.put("/api/mathpix", json={"switch": "on"})
@@ -210,6 +210,10 @@ def test_an_answer_run_reads_with_mathpix_and_the_passage_shows_its_numbers_fall
     math = json.loads(store.conn.execute("SELECT math_json FROM asset_extractions WHERE asset_id = ? AND outcome = 'current'", (aid,)).fetchone()[0])
     assert hashlib.sha256(crop.content).hexdigest() == next(p["crop_sha256"] for p in math["placed"] if p["n"] == "1")
     assert client.get(f"/api/researches/{rid}/passages/{passage['passage_id']}/equations/9/crop").status_code == 404
+    from deixis.documents import pdf_child
+
+    monkeypatch.setattr(pdf_child, "MAX_MEMORY_BYTES", 1024 * 1024)  # the crop's child stopped at its memory limit
+    assert client.get(f"/api/researches/{rid}/passages/{passage['passage_id']}/equations/1/crop").status_code == 404
 
 
 def test_an_anchor_found_only_in_a_fallback_is_a_contract_error():

@@ -227,7 +227,13 @@ def _table_pages(path: str) -> list[int]:
 
 def inline_math_marks(path: Path, pages: list[int]) -> tuple[dict[str, list[list[float]]], list[int]]:
     """For Marker's inline-math pass: each page's boxes of characters set in a math font or smaller than their line's
-    largest span (scripts), and the pages without a text layer, which Marker reads with its default settings."""
+    largest span (scripts), and the pages without a text layer, which Marker reads with its default settings. Read in a
+    bounded child."""
+    boxes, image_pages = pdf_child.run("inline_math_marks", str(path), pages)
+    return boxes, image_pages
+
+
+def _inline_math_marks(path: str, pages: list[int]) -> tuple[dict[str, list[list[float]]], list[int]]:
     boxes: dict[str, list[list[float]]] = {}
     image_pages = []
     with pymupdf.open(path, filetype="pdf") as doc:
@@ -336,7 +342,10 @@ class MathReader:
             if self.process is None or self.process.returncode is not None:
                 await self._start()
             self._requests += 1
-            math_boxes, image_pages = await _drain(asyncio.to_thread(inline_math_marks, path, pages))
+            try:
+                math_boxes, image_pages = await _drain(asyncio.to_thread(inline_math_marks, path, pages))
+            except pdf_child.ChildFailed as exc:  # a PDF MuPDF cannot read fails the reading, as a MuPDF error did in the server
+                raise RuntimeError(str(exc)) from exc
             request = {"id": self._requests, "path": str(path), "pages": pages, "image_pages": image_pages, "math_boxes": math_boxes}
             self.process.stdin.write((json.dumps(request) + "\n").encode())
             await self.process.stdin.drain()

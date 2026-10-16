@@ -213,7 +213,12 @@ def crop_dpi(box: tuple) -> int | None:
 
 
 def render_crop(path: Path, recipe: dict[str, Any]) -> bytes:
-    """The crop again from the stored PDF and its recipe (page, box, dpi, cut); the stored hash says whether it is the same."""
+    """The crop again from the stored PDF and its recipe (page, box, dpi, cut), in a bounded child; the stored hash says
+    whether it is the same."""
+    return pdf_child.run("render_crop", str(path), recipe)
+
+
+def _render_crop(path: str, recipe: dict[str, Any]) -> bytes:
     with pymupdf.open(path, filetype="pdf") as doc:
         return _render(doc[recipe["page"] - 1], tuple(recipe["box"]), recipe["cut"], recipe["dpi"])
 

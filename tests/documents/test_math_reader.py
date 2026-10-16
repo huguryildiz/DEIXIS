@@ -74,6 +74,23 @@ def test_reader_serves_requests_from_one_process_and_reports_errors(tmp_path, mo
     assert same and reader.version == "marker-0.0-fake"
 
 
+def test_a_reader_whose_inline_math_marks_pass_their_child_limit_fails_the_read(tmp_path, monkeypatch):
+    from deixis.documents import pdf_child
+
+    reader = math_reader.MathReader(fake_runtime(tmp_path, monkeypatch))
+    five_pages(tmp_path / "paper.pdf")
+    monkeypatch.setattr(pdf_child, "MAX_MEMORY_BYTES", 1024 * 1024)  # far below what a Python child starts with
+
+    async def scenario():
+        try:
+            with pytest.raises(RuntimeError, match="inline_math_marks"):
+                await reader.read(tmp_path / "paper.pdf", [0, 2])
+        finally:
+            await reader.close()
+
+    asyncio.run(scenario())
+
+
 def test_reader_without_the_runtime_is_unavailable(tmp_path):
     reader = math_reader.MathReader(math_reader.RuntimePaths(tmp_path / "tools"))
     assert not reader.available()

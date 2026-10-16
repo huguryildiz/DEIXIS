@@ -62,7 +62,7 @@ def native_binary(found: Path) -> str | None:
 
 def copilot_environment(home: Path, source: Mapping[str, str] | None = None) -> dict[str, str]:
     """The variables Copilot needs to run and reach the network. GITHUB_TOKEN, GH_TOKEN and COPILOT_GITHUB_TOKEN are
-    left out on purpose: Copilot would use them before the signed-in account, and GITHUB_TOKEN is the GitHub Models key
+    left out on purpose: Copilot would use them before the signed-in account, and GITHUB_TOKEN was the GitHub Models key
     of another connection (D22)."""
     source = os.environ if source is None else source
     env = {k: v for k, v in source.items() if k in CODEX_ENV_ALLOWLIST or k.startswith("LC_")}

@@ -47,6 +47,7 @@ from deixis.workflow import fast_path, intent, small_batch
 from deixis.workflow import file_restore, text_retry
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS, SEARCH_QUERY_CALLS,
                                  TEST_EFFORT_BUDGETS, RevisionConflict)
+from deixis.models import unusable
 from deixis.models.adapter import CodexAdapter, ModelAdapter
 from deixis.models.claude import ClaudeCodeAdapter
 from deixis.models.copilot_cli import CopilotCliAdapter
@@ -161,7 +162,7 @@ def check_offered(listed: list[dict[str, Any]] | None, connection: str, model: s
         raise HTTPException(422, f"Reasoning effort '{effort}' is not offered for {model}")
 
 
-async def checked_research_models(adapters: dict[str, Any], body: CreateResearch) -> tuple[str | None, str | None]:
+async def checked_research_models(store: Any, adapters: dict[str, Any], body: CreateResearch) -> tuple[str | None, str | None]:
     """Refuse a research request whose scope or models do not fit; returns (literature, review) connections.
 
     Awaits each connection's model list, so a caller writes the research only after this returns, with no await
@@ -178,7 +179,7 @@ async def checked_research_models(adapters: dict[str, Any], body: CreateResearch
             adapter = adapters.get(connection)
             if adapter is None:
                 raise HTTPException(422, f"Model connection '{connection}' is not available")
-            listed[connection] = (await adapter.health()).get("models")
+            listed[connection] = unusable.usable(store, connection, (await adapter.health()).get("models"))
         check_offered(listed[connection], connection, model, effort)
 
     # Each role's model must be listed by that role's own connection (D28).
@@ -1150,6 +1151,7 @@ def create_app(
         # The checks run side by side: each waits on its own CLI or HTTP probe, and one after another took ~19 s.
         adapters = request.app.state.adapters
         models = dict(zip(adapters, await asyncio.gather(*(a.health(refresh=refresh) for a in adapters.values()))))
+        models = {c: unusable.health_view(store_of(request), c, status) for c, status in models.items()}
 
         def key_broken(c) -> bool:
             # The variable holds a key no header can carry, or the keychain item was unreadable or invalid and skipped at startup.
@@ -1202,7 +1204,7 @@ def create_app(
         adapter = request.app.state.adapters.get(connection)
         if adapter is None:
             raise HTTPException(404, f"Model connection '{connection}' is not available")
-        return await adapter.health(refresh=refresh)
+        return unusable.health_view(store_of(request), connection, await adapter.health(refresh=refresh))
 
     @app.get("/api/institutional-access")
     async def institutional_access(request: Request, refresh: bool = False) -> dict[str, Any]:
@@ -1309,7 +1311,7 @@ def create_app(
 
     @app.post("/api/researches", status_code=201)
     async def create_research(body: CreateResearch, request: Request) -> dict[str, Any]:
-        connections = await checked_research_models(request.app.state.adapters, body)
+        connections = await checked_research_models(store_of(request), request.app.state.adapters, body)
         store = store_of(request)
         rid = create_research_row(store, body, *connections)
         return research_view(store, rid)
@@ -1328,7 +1330,8 @@ def create_app(
             adapter = request.app.state.adapters.get(body.model_connection)
             if adapter is None:
                 raise HTTPException(422, f"Model connection '{body.model_connection}' is not available")
-            check_offered((await adapter.health()).get("models"), body.model_connection, body.model, body.reasoning_effort)
+            check_offered(unusable.usable(store_of(request), body.model_connection, (await adapter.health()).get("models")),
+                          body.model_connection, body.model, body.reasoning_effort)
         store_of(request).set_setting(role, body.model_dump())
         return {role: body.model_dump()}
 
@@ -2725,7 +2728,7 @@ def create_app(
         adapter = request.app.state.adapters.get(body.connection)
         if adapter is None:
             raise HTTPException(422, f"Model connection '{body.connection}' is not available")
-        health = await adapter.health()
+        health = unusable.health_view(store_of(request), body.connection, await adapter.health())
         check_offered(health.get("models"), body.connection, body.model, body.reasoning_effort)
         return adapter, health
 

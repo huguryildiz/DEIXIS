@@ -66,7 +66,7 @@ type Company = {
   id: string; name: string; maker: string; icon?: string; mono?: string
   account?: { conn: string; label: string; desc: string }
   soon?: string  // the account way that is not built yet: its label
-  key: KeyWay
+  key?: KeyWay  // absent: the company connects with an account only
   keyFirst?: boolean  // the key is the recommended way (Gemini)
   intro?: string
   onlyWhenSet?: boolean  // an older connection, listed only while its key is saved
@@ -84,8 +84,8 @@ const MAIN_COMPANIES: Company[] = [
     account: { conn: 'gemini_cli', label: 'With your Google account', desc: 'A free Google account is enough; there is a daily usage limit.' },
     key: { conn: 'gemini', env: 'GEMINI_API_KEY', site: 'aistudio.google.com', desc: 'Get the key at {site}. The same key can also be used for semantic search.' } },
   { id: 'copilot', name: 'GitHub Copilot', maker: 'GitHub', icon: 'copilot',
-    account: { conn: 'copilot_cli', label: 'With your GitHub account', desc: 'If you have a Copilot subscription. Free for students and teachers.' },
-    key: { conn: 'copilot', env: 'GITHUB_TOKEN', site: 'github.com/settings/tokens', service: 'GitHub Models', label: 'With a GitHub Models token', desc: 'Create a token with the “models” permission at {site}.' } },
+    // GitHub retired GitHub Models, its token way, on 30 Jul 2026 (D59); Copilot CLI is a separate service.
+    account: { conn: 'copilot_cli', label: 'With your GitHub account', desc: 'If you have a Copilot subscription. Free for students and teachers.' } },
   { id: 'grok', name: 'Grok', maker: 'xAI', icon: 'grok', soon: 'With your SuperGrok account', key: { conn: 'grok', env: 'XAI_API_KEY', site: 'console.x.ai', service: 'xAI' } },
   { id: 'mistral', name: 'Mistral', maker: 'Mistral AI', icon: 'mistral', soon: 'With your Mistral account', key: { conn: 'mistral', env: 'MISTRAL_API_KEY', site: 'console.mistral.ai' } },
 ]
@@ -1205,11 +1205,11 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const companyState = (c: Company): { ready: boolean; status: string; via: string } => {
     if (!data) return { ready: false, status: error ? t('Not known') : t('Checking…'), via: '' }
     const acc = c.account ? data.models[c.account.conn] : undefined
-    const key = data.models[c.key.conn]
+    const key = c.key ? data.models[c.key.conn] : undefined
     const a = !!acc?.ready, k = !!key?.ready
     const via = a && k ? t('Connected with your account and an API key') : a ? t('Connected with your account') : k ? t('Connected with an API key')
       : key?.verification === 'pending' ? t('API key saved · not verified') : key?.key_configured ? t('API key saved · not ready') : acc?.signed_in ? t('Signed in · not ready')
-      : t(c.account ? 'Connect with your account or an API key' : 'Connect with an API key')
+      : t(c.account && c.key ? 'Connect with your account or an API key' : c.account ? 'Connect with your account' : 'Connect with an API key')
     return { ready: a || k, status: t(a || k ? 'Ready' : key?.verification === 'pending' ? 'Saved · not verified' : 'Not connected'), via }
   }
   const companyCard = (c: Company, compact = false) => {
@@ -1218,7 +1218,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
       status={state.status} active={isActive('company', c.id)} compact={compact} onClick={() => show({ kind: 'company', id: c.id })} />
   }
   // Older connections stay listed while their key is saved, so nobody loses one they set up.
-  const others = OTHER_COMPANIES.filter(c => !c.onlyWhenSet || !!data?.models[c.key.conn]?.key_configured || !!keyEntry(c.key.env)?.configured)
+  const others = OTHER_COMPANIES.filter(c => !c.onlyWhenSet || (!!c.key && (!!data?.models[c.key.conn]?.key_configured || !!keyEntry(c.key.env)?.configured)))
   const othersReady = others.filter(c => companyState(c).ready).length
 
   // Local models: Ollama is its own connection; LM Studio and other servers run research steps through the local server
@@ -1412,6 +1412,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   // The key way: the key field of the company's API connection, with that connection's own state.
   const keyWay = (c: Company) => {
     const way = c.key
+    if (!way) return null
     const model = data?.models[way.conn]
     const entry = keyEntry(way.env)
     const status: [Tone, string] = !data || !credentials ? loading : model?.ready ? ['ok', t('Ready')] : entry?.configured && model ? modelStatus(model) : ['no', t('No key entered')]
@@ -1458,9 +1459,10 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
       ? [keyWay(company), company.account && accountWay(company)]
       : [company.account ? accountWay(company) : company.soon ? soonWay(company.soon) : null, keyWay(company)]
     body = <>
-      <p className="foot-note is-ink">{t(company.intro ?? (company.account ? 'Either way is enough. If you have a subscription, signing in with your account is the easiest.' : 'This model connects with an API key only for now.'))}</p>
+      <p className="foot-note is-ink">{t(company.intro ?? (company.account && company.key ? 'Either way is enough. If you have a subscription, signing in with your account is the easiest.'
+        : company.account ? 'This model connects with your account only.' : 'This model connects with an API key only for now.'))}</p>
       {ways}
-      {company.account && <p className="foot-note">{t('If both are connected, each appears as its own choice in the model lists. A research uses the one you choose; DEIXIS does not switch between them by itself.')}</p>}
+      {company.account && company.key && <p className="foot-note">{t('If both are connected, each appears as its own choice in the model lists. A research uses the one you choose; DEIXIS does not switch between them by itself.')}</p>}
     </>
   } else if (sel?.kind === 'local' && sel.id === 'ollama') {
     const model = data?.models.ollama

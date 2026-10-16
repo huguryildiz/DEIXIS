@@ -23,7 +23,9 @@ from deixis.tool_probe import probe
 API_URL = "https://generativelanguage.googleapis.com/v1beta"
 KEY_ENV = "GEMINI_API_KEY"
 # Not text-generation models for this workflow, or aliases whose answering model differs from the requested id.
-EXCLUDED_MODEL_WORDS = ("image", "tts", "audio", "live", "embedding", "robotics", "computer-use", "omni", "latest", "aqa", "gemma")
+# banana (image), transcribe (speech) and customtools (an agent-tools variant) were listed on 16 Oct 2026 (D59).
+EXCLUDED_MODEL_WORDS = ("image", "tts", "audio", "live", "embedding", "robotics", "computer-use", "omni", "latest", "aqa",
+                        "gemma", "banana", "transcribe", "customtools")
 THINKING_LEVELS = ("low", "medium", "high")
 # The Gemini API answers 400 INVALID_ARGUMENT for array size bounds in a response schema (probed 2026-09-15);
 # DEIXIS validation still applies them to the output.

@@ -55,7 +55,6 @@ MANAGED_KEYS = {k.env: k for k in (
     ManagedKey("MOONSHOT_API_KEY", "model", "kimi", testable=True),
     ManagedKey("MISTRAL_API_KEY", "model", "mistral", testable=True),
     ManagedKey("XAI_API_KEY", "model", "grok", testable=True),
-    ManagedKey("GITHUB_TOKEN", "model", "copilot", testable=True),
     ManagedKey("ZAI_API_KEY", "model", "glm", testable=True),
     ManagedKey("MODEL_API_KEY", "model", "muse_spark", testable=True),
     ManagedKey("ANTHROPIC_API_KEY", "model", "anthropic", testable=True),

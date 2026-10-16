@@ -142,7 +142,7 @@ def register_library_routes(app, settings: Settings) -> None:
         work_ids = list(dict.fromkeys(body.work_ids))
         for work_id in work_ids:  # an unknown work is refused before the model lists are asked
             _library_work(store, work_id)
-        connections = await checked_research_models(request.app.state.adapters, CreateResearch(
+        connections = await checked_research_models(store, request.app.state.adapters, CreateResearch(
             **body.model_dump(exclude={"work_ids"})))
         # No await from here on: the works are read again (a purge may have run during the model checks), and the
         # research, its sources and its study table are written in one transaction, or nothing is.

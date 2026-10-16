@@ -383,7 +383,7 @@ const localToolIcons: Record<string, string> = { gemini_cli: 'gemini', qwen_code
 export const localToolIcon = (id: string) => localToolIcons[id] ?? id
 
 // Model connections that share the OpenAI-compatible adapter: connection id -> its key variable.
-export const compatConnectionKeys: Record<string, string> = { qwen: 'DASHSCOPE_API_KEY', kimi: 'MOONSHOT_API_KEY', mistral: 'MISTRAL_API_KEY', grok: 'XAI_API_KEY', copilot: 'GITHUB_TOKEN', glm: 'ZAI_API_KEY', muse_spark: 'MODEL_API_KEY', muse_glimmer: 'MODEL_API_KEY' }
+export const compatConnectionKeys: Record<string, string> = { qwen: 'DASHSCOPE_API_KEY', kimi: 'MOONSHOT_API_KEY', mistral: 'MISTRAL_API_KEY', grok: 'XAI_API_KEY', glm: 'ZAI_API_KEY', muse_spark: 'MODEL_API_KEY', muse_glimmer: 'MODEL_API_KEY' }
 
 // What a scholarly source is used for: searched for records, or asked what a record whose DOI is known is (D87).
 export const providerRole = (role: string | undefined) => t(role === 'verification' ? 'Metadata verification' : 'Record search')

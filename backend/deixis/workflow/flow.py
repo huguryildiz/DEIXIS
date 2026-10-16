@@ -37,7 +37,7 @@ from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTR
 from deixis.domain.rules import RevisionConflict
 from deixis.domain.skill import RUNTIME_FILES, SkillPackage
 from deixis.domain.vocabulary import Extraction
-from deixis.models import prompt
+from deixis.models import prompt, unusable
 from deixis.models.adapter import ModelAdapter, ModelStepResult, is_rate_limited
 from deixis.providers import openalex, query_compiler, facade, contract
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, SearchOutcome, normalize_doi, send_blocked
@@ -5449,9 +5449,12 @@ class ResearchFlow:
                     timeout_resent = True
                     self.store.start_step(step["id"])
                     continue
+                error_kind = service_error_kind(result.error_kind or result.http_status,
+                                                text=result.error or result.delivery_class or "", surface="model")
+                if error_kind == "model_unavailable" and requested_model:
+                    unusable.record(self.store, connection, requested_model, unusable.NOT_SERVED)
                 halt("model_call_failed", {"status": result.status, "error": safe_error(result.error),
-                     "error_kind": service_error_kind(result.error_kind or result.http_status,
-                         text=result.error or result.delivery_class or "", surface="model"),
+                     "error_kind": error_kind,
                      "http_status": result.http_status, "retry_after": result.retry_after if retry_at(result.retry_after) else None,
                      "reset_at": retry_at(result.retry_after), "connection": connection, "requested_model": requested_model})
             if not requested_model or (result.resolved_model != requested_model and not result.requested_model_verified):
@@ -5459,6 +5462,9 @@ class ResearchFlow:
                 mismatch = {"requested_model": requested_model, "resolved_model": result.resolved_model}
                 complete("failed", error_code="model_mismatch", error=mismatch,
                                                **sent_output())
+                if requested_model and result.resolved_model:
+                    unusable.record(self.store, connection, requested_model, unusable.ANSWERED_AS,
+                                    answered_as=result.resolved_model)
                 halt("model_mismatch", mismatch)
             output_text = result.raw_text or ""
             patch_record = None

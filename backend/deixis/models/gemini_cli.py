@@ -249,7 +249,9 @@ class GeminiCliAdapter:
             try:
                 probe = await self._run([cli, "-o", "stream-json", "-e", "none", "-p", ""], "", "", 60)
             except (OSError, TimeoutError) as exc:
-                status["reason"] = f"Gemini CLI error: {safe_error(str(exc))[:200]}"
+                # TimeoutError carries no message; a first start that sets the CLI up can take over a minute.
+                status["reason"] = ("Gemini CLI did not answer within 60 s" if isinstance(exc, TimeoutError)
+                                    else f"Gemini CLI error: {safe_error(str(exc))[:200]}")
                 status["reason_code"] = service_error_kind(exc=exc)
                 return status
         failure = auth_failure(probe.stderr)

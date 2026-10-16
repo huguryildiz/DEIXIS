@@ -26,6 +26,7 @@ class ModelChange(BaseModel):
 
 def register_research_model_routes(app):
     from deixis.api.app import check_offered
+    from deixis.models import unusable
 
     @app.put("/api/researches/{research_id}/models")
     async def change_research_model(research_id: str, body: ModelChange, request: Request):
@@ -34,7 +35,8 @@ def register_research_model_routes(app):
         adapter = request.app.state.adapters.get(body.connection)
         if adapter is None:
             raise HTTPException(422, f"Model connection '{body.connection}' is not available")
-        check_offered((await adapter.health()).get("models"), body.connection, body.model, body.reasoning_effort)
+        check_offered(unusable.usable(store, body.connection, (await adapter.health()).get("models")),
+                      body.connection, body.model, body.reasoning_effort)
         try:
             store.change_role_model(research_id, body.role, body.connection, body.model, body.reasoning_effort,
                                     body.expected_version, body.reason)

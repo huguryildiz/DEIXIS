@@ -57,7 +57,6 @@ def test_the_connections_use_the_documented_endpoints_and_key_variables():
         "kimi": ("https://api.moonshot.ai/v1", "MOONSHOT_API_KEY"),
         "mistral": ("https://api.mistral.ai/v1", "MISTRAL_API_KEY"),
         "grok": ("https://api.x.ai/v1", "XAI_API_KEY"),
-        "copilot": ("https://models.github.ai/inference", "GITHUB_TOKEN"),
         "glm": ("https://api.z.ai/api/paas/v4", "ZAI_API_KEY"),
         "muse_spark": ("https://api.meta.ai/v1", "MODEL_API_KEY"),
         "muse_glimmer": ("https://api.meta.ai/v1", "MODEL_API_KEY"),
@@ -66,7 +65,6 @@ def test_the_connections_use_the_documented_endpoints_and_key_variables():
         "ollama": ("http://127.0.0.1:11434/v1", None),
     }
     assert "local_server" not in openai_compat.CONNECTIONS  # its address comes from Settings
-    assert openai_compat.COPILOT.list_url == "https://models.github.ai/catalog/models"
     assert openai_compat.BY_KEY_ENV["MODEL_API_KEY"].base_url == "https://api.meta.ai/v1"
 
 
@@ -96,13 +94,6 @@ def test_health_lists_models_and_offers_no_reasoning_effort(spec, monkeypatch):
     assert [(m["id"], m["default_reasoning_effort"], m["reasoning_efforts"]) for m in status["models"]] == [
         (mid(spec, "a"), None, []), (mid(spec, "b"), None, [])]
     assert ("key_configured" in status) is bool(spec.key_env)
-
-
-def test_copilot_reads_the_github_models_catalog_array(monkeypatch):
-    monkeypatch.setenv("GITHUB_TOKEN", "test-key")
-    status = asyncio.run(adapter(openai_compat.COPILOT, lambda r: httpx.Response(200, json=[
-        {"id": "openai/gpt-4.1", "publisher": "OpenAI"}, {"id": "meta/llama-4"}])).health(refresh=True))
-    assert status["ready"] is True and [m["id"] for m in status["models"]] == ["openai/gpt-4.1", "meta/llama-4"]
 
 
 def test_glm_without_a_model_list_offers_its_known_models(monkeypatch):

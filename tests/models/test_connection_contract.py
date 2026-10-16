@@ -41,7 +41,7 @@ def test_a_step_input_for_every_registered_connection_passes_the_contract(tmp_pa
         assert check_step_input(step_input) == [], connection
 
 
-ADDED = ("anthropic", "openai", "copilot_cli", "gemini_cli", "local_server", "grok", "copilot", "glm", "muse_spark",
+ADDED = ("anthropic", "openai", "copilot_cli", "gemini_cli", "local_server", "grok", "glm", "muse_spark",
          "muse_glimmer", "openrouter", "mimo")
 
 

@@ -156,7 +156,7 @@ def test_openai_compatible_connections_are_registered_and_report_a_missing_key(t
     with TestClient(app) as c:
         models = c.get("/api/connections").json()["models"]
         for name, env in (("qwen", "DASHSCOPE_API_KEY"), ("kimi", "MOONSHOT_API_KEY"), ("mistral", "MISTRAL_API_KEY"),
-                          ("grok", "XAI_API_KEY"), ("copilot", "GITHUB_TOKEN"), ("glm", "ZAI_API_KEY"),
+                          ("grok", "XAI_API_KEY"), ("glm", "ZAI_API_KEY"),
                           ("muse_spark", "MODEL_API_KEY"), ("muse_glimmer", "MODEL_API_KEY")):
             assert (models[name]["ready"], models[name]["key_configured"]) == (False, False)
             assert "API key in Settings" in models[name]["reason"] and env not in models[name]["reason"] and "not implemented" not in models[name]["reason"]

@@ -1,5 +1,5 @@
-"""One adapter for model APIs that speak the OpenAI chat-completions dialect (Qwen, Kimi, Mistral, Grok, GitHub
-Copilot through GitHub Models, GLM, Meta's Muse Spark and Muse Glimmer, OpenRouter, Xiaomi MiMo, a local Ollama server
+"""One adapter for model APIs that speak the OpenAI chat-completions dialect (Qwen, Kimi, Mistral, Grok, GLM,
+Meta's Muse Spark and Muse Glimmer, OpenRouter, Xiaomi MiMo, a local Ollama server
 and a local server at an address set in Settings).
 
 Same boundary as the DeepSeek adapter: no tools, JSON-object mode, one new request per step, no schema enforcement
@@ -34,8 +34,6 @@ class CompatConnection:
     name: str
     base_url: str
     key_env: str | None  # None: a local server that takes no key (Ollama)
-    # Where the model list is read when it is not `{base_url}/models`; GitHub Models serves a bare JSON array there.
-    models_url: str | None = None
     # Only listed models whose id starts with this belong to the connection (Muse Spark and Glimmer share one API).
     model_prefix: str | None = None
     # Shown when the API lists no models (GLM has no model list endpoint).
@@ -51,15 +49,13 @@ class CompatConnection:
 
     @property
     def list_url(self) -> str:
-        return self.models_url or f"{self.base_url}/models"
+        return f"{self.base_url}/models"
 
 
 QWEN = CompatConnection("qwen", "Qwen", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1", "DASHSCOPE_API_KEY")
 KIMI = CompatConnection("kimi", "Kimi", "https://api.moonshot.ai/v1", "MOONSHOT_API_KEY")
 MISTRAL = CompatConnection("mistral", "Mistral", "https://api.mistral.ai/v1", "MISTRAL_API_KEY")
 GROK = CompatConnection("grok", "Grok", "https://api.x.ai/v1", "XAI_API_KEY")
-COPILOT = CompatConnection("copilot", "GitHub Copilot", "https://models.github.ai/inference", "GITHUB_TOKEN",
-                           models_url="https://models.github.ai/catalog/models")
 GLM = CompatConnection("glm", "GLM", "https://api.z.ai/api/paas/v4", "ZAI_API_KEY",
                        static_models=("glm-5.1", "glm-4.6", "glm-4.5-air"))
 MUSE_SPARK = CompatConnection("muse_spark", "Muse Spark", "https://api.meta.ai/v1", "MODEL_API_KEY", model_prefix="muse-spark")
@@ -79,7 +75,7 @@ LOCAL_TURN_TIMEOUT = 1200.0
 # Ollama's context window per call: the input estimated high (characters / 3) plus room for the answer, in 8K steps.
 OLLAMA_ANSWER_TOKENS = 8192
 OLLAMA_CONTEXT_STEP = 8192
-CONNECTIONS = {c.id: c for c in (QWEN, KIMI, MISTRAL, GROK, COPILOT, GLM, MUSE_SPARK, MUSE_GLIMMER, OPENROUTER, MIMO, OLLAMA)}
+CONNECTIONS = {c.id: c for c in (QWEN, KIMI, MISTRAL, GROK, GLM, MUSE_SPARK, MUSE_GLIMMER, OPENROUTER, MIMO, OLLAMA)}
 # llama.cpp, Jan, LocalAI, vLLM and the like: the address is set in Settings and read at each call, so this one is not
 # in CONNECTIONS, whose addresses are fixed.
 LOCAL_SERVER = CompatConnection("local_server", "Local server", "", None)

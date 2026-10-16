@@ -104,6 +104,38 @@ def _stop_asked(store: Any, run: dict[str, Any]) -> bool:
             or store.research(run["research_id"])["current_scope_revision"] != run["scope_revision"])
 
 
+async def _unwind(flow: Any, run: dict[str, Any], held: Any, error: BaseException, tasks: list[asyncio.Task]) -> None:
+    """End the read window after `error` in one of its arms or in the coordinator. Always raises.
+
+    The other arms are halted and drained first; their checkpoints read the halt as a stop while the run is held.
+    Then the hold is dropped, and the run's own stop is written: a pause or failure an arm asked for, else the
+    error. An unexpected error in one arm halts the others, whose checkpoint then reads as a stop: the error, not
+    that stop, ends the run, so the worker records it as a failure instead of leaving the run `running`. A pause,
+    cancel or new question revision the person asked for still wins: the run stops as asked, and the error is
+    logged rather than turning that stop into a failure.
+    """
+    from deixis.workflow.flow import RunStopped
+
+    store, run_id = flow.store, run["id"]
+    held.halted = True
+    held.wake.set()
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    flow._held.pop(run_id, None)
+    if held.stop:
+        kind, why, detail = held.stop
+        (flow._fail if kind == "fail" else flow._pause)(run_id, why, detail)
+    failure = next((r for r in [error, *results] if isinstance(r, Exception) and not isinstance(r, RunStopped)), None)
+    if failure is not None:
+        if not _stop_asked(store, run):
+            raise failure
+        log.error("run %s: error in the read window while a stop was asked; the stop stands", run_id,
+                  exc_info=(type(failure), failure, failure.__traceback__))
+        flow._checkpoint(run_id, run["scope_revision"])  # writes the asked-for stop and raises RunStopped
+    if isinstance(error, RunStopped) or any(isinstance(result, RunStopped) for result in results):
+        flow._checkpoint(run_id, run["scope_revision"])
+    raise error
+
+
 async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
                   listing: dict[str, Any], *, read_versions: dict[str, Any] | None = None) -> None:
     from deixis.workflow.flow import _Held, RunStopped
@@ -339,30 +371,8 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                 handed_off.add(wid)
         flow.background_fetch.wake()
     except BaseException as error:
-        held.halted = True
-        held.wake.set()
-        results = await asyncio.gather(*(task for task in [model, *reads.values(), *fetches.values()]
-                                         if task is not None), return_exceptions=True)
-        if held.stop:
-            kind, why, detail = held.stop
-            del flow._held[run_id]
-            (flow._fail if kind == "fail" else flow._pause)(run_id, why, detail)
-        # An unexpected error in one arm halts the others, whose checkpoint then reads as a stop: the error, not
-        # that stop, ends the run, so the worker records it as a failure instead of leaving the run `running`.
-        # A pause, cancel or new question revision the person asked for still wins: the run stops as asked, and the
-        # error is logged rather than turning that stop into a failure.
-        failure = next((r for r in [error, *results] if isinstance(r, Exception) and not isinstance(r, RunStopped)), None)
-        if failure is not None:
-            if not _stop_asked(store, run):
-                raise failure
-            log.error("run %s: error in the read window while a stop was asked; the stop stands", run_id,
-                      exc_info=(type(failure), failure, failure.__traceback__))
-            flow._held.pop(run_id, None)
-            flow._checkpoint(run_id, run["scope_revision"])  # writes the asked-for stop and raises RunStopped
-        if isinstance(error, RunStopped) or any(isinstance(result, RunStopped) for result in results):
-            flow._held.pop(run_id, None)
-            flow._checkpoint(run_id, run["scope_revision"])
-        raise
+        await _unwind(flow, run, held, error, [task for task in [model, *reads.values(), *fetches.values()]
+                                                if task is not None])
     finally:
         if timer is not None:
             timer.cancel()

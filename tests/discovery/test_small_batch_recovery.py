@@ -465,3 +465,20 @@ def test_answer_blocks_active_discovery_and_requires_its_completed_revision(tmp_
         binding = store.run(answer.json()["id"])["budget"]["inspection"]
         assert binding["list_run_id"] == run_id
         assert binding["manifest_hash"] == store.existing_step(run_id, small_batch.LIST_KEY)["output"]["manifest_hash"]
+
+
+def test_an_arm_error_while_a_pause_was_asked_ends_paused_not_running(tmp_path, monkeypatch):
+    """One arm of the read window fails after the person asked for a pause: the run stops paused as asked, the
+    error is logged, and the run is never left `running`."""
+    app, fetcher = seeded_app(tmp_path, monkeypatch)
+
+    async def broken(self, run, target):
+        self.store.update_run(run["id"], status="pause_requested")
+        raise RuntimeError("SYNTHETIC fetch error after a pause was asked")
+    monkeypatch.setattr(ResearchFlow, "_overlap_work", broken)
+    with session(app) as client:
+        rid, run_id = queue(client)
+        ended = wait(client, rid, run_id)[1]
+        held = dict(app.state.worker.flow._held)
+    assert (ended["status"], ended["pause_reason"]) == ("paused", "user_requested")
+    assert run_id not in held

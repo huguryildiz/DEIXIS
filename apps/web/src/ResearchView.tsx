@@ -349,6 +349,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // after a failed late revision cites nothing while V1 is shown). The facts strip, the rail and the Cited tab use it.
   const citedWorkIds = new Set(answer?.claims.flatMap(c => c.evidence.map(e => e.work_id)) ?? [])
   const citedCount = citedWorkIds.size
+  // A count is shown once it has something to say; a row of zeroes while the run works is noise, not a boundary.
+  const counts = ([['unique', 'Unique works', 'all'], ['included', 'Included', 'included'], ['inspected', 'Given to the model', 'all'], ['cited', 'Cited', null]] as const)
+    .map(([key, label, filter]) => [key, label, filter, key === 'cited' ? citedCount : view.counts[key]] as const)
+    .filter(([, , , n]) => n > 0)
   // How many claims of the shown answer cite each work (the Cited tab) and each version (a Sources row's "cited in N
   // claims" pill: an uncited version of a cited work gets none).
   const citedClaims = new Map<string, number>()
@@ -825,10 +829,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         title={t('Nothing was searched, answered or read under this revision yet; going back to revision {n} uses the readings made under it again.', { n: view.research.revision_withdrawal.parent_revision ?? 0 })}
         onClick={() => { void withdrawRevision(view.research.current_scope_revision, view.research.version) }}>{t('Undo revision {n}', { n: view.research.current_scope_revision })}</button>}
       {/* A count is shown once it has something to say; a row of zeroes while the run works is noise, not a boundary. */}
-      {([['unique', 'Unique works', 'all'], ['included', 'Included', 'included'], ['inspected', 'Given to the model', 'all'], ['cited', 'Cited', null]] as const)
-        .map(([key, label, filter]) => [key, label, filter, key === 'cited' ? citedCount : view.counts[key]] as const)
-        .filter(([, , , n]) => n > 0)
-        .map(([key, label, filter, n]) => <button key={key} type="button" onClick={() => (filter ? showSources(filter) : showAnswer())}><strong>{n}</strong><span>{t(label)}</span></button>)}
+      {counts.length > 0 && <div className="research-counts">{counts.map(([key, label, filter, n]) => <button key={key} type="button" onClick={() => (filter ? showSources(filter) : showAnswer())}><strong>{n}</strong><span>{t(label)}</span></button>)}</div>}
       <span title={t('Where DEIXIS looks for sources')}><ScopeIcon size={13} aria-hidden />{t(scopeLabels[view.scope.source_scope])}</span>
       <span title={t('How much searching and reading a run may do')}><EffortIcon size={13} aria-hidden />{t('{effort} depth', { effort: t(effortLabels[view.scope.effort]) })}</span>
     </div>

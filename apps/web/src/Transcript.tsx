@@ -797,7 +797,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       case 'review':
         if (group.length) return fallback()
         if (live) return ongoing(t('Checking every citation against its passage'))
-        return [t('Checked citations'), t('{located} of {total} anchors located in their passages', { located: evidence.length, total: evidence.length })].join(' · ')
+        // A structurally valid answer keeps only anchors that were located; how many were tried is not stored, so no total is named.
+        return [t('Checked citations'), plural(evidence.length, '{n} anchor located in its passage', '{n} anchors located in their passages')].join(' · ')
       default:
         return fallback()
     }
@@ -833,6 +834,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       </div>
     })
   }
+  // A chain request's search row counts the records that passed the term filter in time (flow.py), not what OpenAlex returned.
   const chainRecords = (direction: string) => view.search_runs.filter(s => s.run_id === run.id && s.query_text.startsWith('chain:') && s.query_text.includes(`:${direction}:`)).reduce((sum, s) => sum + s.result_count, 0)
   const modelRow = (label: string, agent: { connection: string; model: string | null; effort: string | null } | undefined) => agent?.model ? row(t(label), <ModelName connection={agent.connection} text={modelText(agent.model, agent.effort)} />) : null
 
@@ -872,8 +874,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         : row(t('Records merged by DOI'), `${funnel.retrieved.toLocaleString(uiLocale())} → ${funnel.unique.toLocaleString(uiLocale())}`, 'merged'))
     }
     if (key === 'chain') {
-      parts.push(row(t('Reference lists of {n} seed works', { n: chainSeeds }), plural(chainRecords('backward'), '{n} record returned', '{n} records returned'), 'backward'))
-      parts.push(row(t('Works citing the seeds'), plural(chainRecords('forward'), '{n} record returned', '{n} records returned'), 'forward'))
+      parts.push(row(t('Reference lists of {n} seed works', { n: chainSeeds }), plural(chainRecords('backward'), '{n} record kept after the term filter', '{n} records kept after the term filter'), 'backward'))
+      parts.push(row(t('Works citing the seeds'), plural(chainRecords('forward'), '{n} record kept after the term filter', '{n} records kept after the term filter'), 'forward'))
       if (run.source_counts?.counted && run.source_counts.chain) parts.push(row(t('Works the chain brought'), t('{works} works, {only} not found by any search', { works: run.source_counts.chain.works, only: run.source_counts.chain.only }), 'brought'))
       if (chainDone) parts.push(<div key="requests">{chainLine}</div>)
       const limits = run.approval?.chaining

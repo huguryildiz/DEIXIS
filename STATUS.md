@@ -1,6 +1,6 @@
 # DEIXIS status
 
-**Last updated:** 16 October 2026. Decisions are in [docs/decisions.md](docs/decisions.md); old D numbers point to the old log in Git (commit 26c8214).
+**Last updated:** 17 October 2026. Decisions are in [docs/decisions.md](docs/decisions.md); old D numbers point to the old log in Git (commit 26c8214).
 
 ## Now
 
@@ -66,6 +66,7 @@ Most of this was tested with fake models and synthetic data only; "Not measured"
 ### App
 
 - The UI moved to the mockup v24 design, and the 17 bugs found against the mockup are fixed (D5).
+- Mockup v25 (D77): the question shows its scope as a chip, the four evidence counts sit in one strip, and each run phase has a ringed icon on a rail with its details in a panel. The citation line no longer says "N of N" (only located anchors are stored), and the chain rows say "kept after the term filter". The parity check against v25 was not green when this was pushed: the research, report-panel, report-changes and detail-panel surfaces failed and have not been looked at.
 - Post-parity cleanup and small features (P0–P5, D25–D33) are done: unused CSS removed, search-plan strike-through, request counts, stored thinking level, proxy name, "Try" for keyless sources.
 - Pre-P10 readiness is done in code: the packaged app finds its files, tools work when opened from the desktop, Windows CLIs start, a Linux fallback holds keys for the session, and cost estimates are shown.
 - An open PDF viewer now loads the restored file after a file restore.

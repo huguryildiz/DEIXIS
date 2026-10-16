@@ -118,7 +118,7 @@ test.describe.serial('S9: the steps list', () => {
       `Screened ${funnel.abstracts_read} abstracts twice · ${funnel.candidates} passed the abstract stage, ${view.counts.flow!.buckets.out_of_scope_model + view.counts.flow!.buckets.out_of_scope_code} out of scope`,
       new RegExp(`^Read \\d+ works in their full text \\(selected pages\\) · ${view.counts.flow!.five.not_read_not_tried} passed the abstract stage, full text not tried$`),
       `Wrote a source-linked answer · ${answer.claims.length} claims from ${cited} sources`,
-      `Checked citations · ${evidence.length} of ${evidence.length} anchors located in their passages`,
+      `Checked citations · ${evidence.length} ${evidence.length === 1 ? 'anchor located in its passage' : 'anchors located in their passages'}`,
     ])
     const icons = []
     for (const text of ['Planned', 'Searched', 'Followed', 'Screened', /^Read \d+ works/, 'Wrote', 'Checked']) icons.push(await iconOf(page, text))
@@ -181,10 +181,10 @@ test.describe.serial('S9: the steps list', () => {
     await expect(search.locator('.step-row', { hasText: 'OpenAlex · keyword, query 1' }).locator('.step-row-query')).not.toBeEmpty()
     await expect(search.locator('.step-row', { hasText: 'OpenAlex · semantic' }).locator('.step-row-query')).not.toBeEmpty()
     await expect(search.locator('.step-row', { hasText: 'Records merged by DOI' })).toContainText(`${funnel.retrieved} → ${funnel.unique}`)
-    // Chaining: the seeds' reference lists and citing works, as records returned, and the requests the chain sent.
+    // Chaining: the seeds' reference lists and citing works, as the records kept after the term filter, and the requests the chain sent.
     const chain = await open('Followed')
-    await expect(chain.locator('.step-row', { hasText: /Reference lists of \d+ seed works/ })).toContainText(/records? returned/)
-    await expect(chain.locator('.step-row', { hasText: 'Works citing the seeds' })).toContainText(/records? returned/)
+    await expect(chain.locator('.step-row', { hasText: /Reference lists of \d+ seed works/ })).toContainText(/records? kept after the term filter/)
+    await expect(chain.locator('.step-row', { hasText: 'Works citing the seeds' })).toContainText(/records? kept after the term filter/)
     await expect(chain).toContainText(/\d+ requests? sent/)
     // How the seeds are chosen and which works are kept before the cutoff, as the approval record said it before S9.
     await expect(chain).toContainText('Works you verified are not used as seeds.')

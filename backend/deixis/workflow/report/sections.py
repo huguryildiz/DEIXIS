@@ -127,7 +127,8 @@ def _validation_context(flow: ResearchFlow, report_id: str, snapshot: dict, sect
             basis_passages.pop()
             break
     return {"source_ids": evidence_row_ids(snapshot), "column_ids": [c["column_id"] for c in snapshot["columns"]],
-            "cells": [{name: c[name] for name in ("cell_id", "source_version_id", "column_id", "state", "value", "reading_depth")} for c in snapshot["cells"]],
+            "cells": [{name: c[name] for name in ("cell_id", "source_version_id", "column_id", "state", "value", "reading_depth")}
+                      for c in selection.usable_cells(snapshot)],
             "accepted_gaps": accepted, "basis_cells": basis_cells, "basis_passages": basis_passages}
 
 

@@ -143,3 +143,12 @@ def test_earlier_issues_belong_to_cell_extraction_and_its_columns():
     assert contracts.check_step_input(si) == []
     si["extraction_target"]["earlier_issues"][0]["column_id"] = "col_SYNOTHER01"
     assert [i.code for i in contracts.check_step_input(si)] == ["earlier_issue_outside_columns"]
+
+
+def test_a_retry_names_its_columns_by_the_handles_the_model_sees():
+    si = cell_step_input()
+    si["extraction_target"]["earlier_issues"] = [{"column_id": "col_SYNMETHOD1", "code": "anchor_not_in_passage", "message": "m"}]
+    shown = contracts.with_citation_handles(si)
+    columns = [c["column_id"] for c in shown["extraction_target"]["columns"]]
+    assert shown["extraction_target"]["earlier_issues"][0]["column_id"] == columns[0] != "col_SYNMETHOD1"
+    assert si["extraction_target"]["earlier_issues"][0]["column_id"] == "col_SYNMETHOD1"  # the stored input keeps IDs

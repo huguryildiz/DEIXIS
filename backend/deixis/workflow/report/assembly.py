@@ -11,6 +11,7 @@ from typing import Any, Callable
 from deixis.domain import contracts, wording
 from deixis.workflow.report import review_methodology
 from deixis.workflow.report.store import ReportStore
+from deixis.workflow.report.selection import usable_cells
 from deixis.workflow.report.snapshot import evidence_row_ids
 from deixis.workflow.store import Store
 
@@ -324,7 +325,7 @@ def _check_corpus_counts(store: Store, reports: ReportStore, report_id: str) -> 
 def _check_count_fields(store: Store, reports: ReportStore, report_id: str, *, current: bool = False) -> list[dict[str, Any]]:
     snapshot = reports.snapshot(report_id)
     context = {"source_ids": evidence_row_ids(snapshot),
-               "column_ids": [c["column_id"] for c in snapshot["columns"]], "cells": snapshot["cells"]}
+               "column_ids": [c["column_id"] for c in snapshot["columns"]], "cells": usable_cells(snapshot)}
     issues = []
     for claim in _claims(store, report_id, current=current):
         if claim["count_json"] is None:

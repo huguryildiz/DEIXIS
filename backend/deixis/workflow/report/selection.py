@@ -43,6 +43,13 @@ def _query(plan: dict[str, Any]) -> str:
     return " OR ".join(f'"{term.replace(chr(34), "")}"' for term in terms if term.strip())
 
 
+def usable_cells(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    """The snapshot cells a report section may cite or count (D65). A source without text ('inaccessible') and a value
+    without linked evidence ('not_verified') stay in Table I and the basis note, but are neither evidence nor a count."""
+    return [cell for cell in snapshot.get("cells", [])
+            if cell["state"] != "inaccessible" and not (cell["state"] == "not_verified" and not cell.get("evidence"))]
+
+
 def select_evidence(store: Store, snapshot: dict[str, Any], section_id: str, plan: dict[str, Any],
                     prior_summaries: list[dict[str, Any]]) -> dict[str, Any]:
     """Return budgeted passages and cells plus source/kind records for omitted candidates.
@@ -157,10 +164,7 @@ def select_evidence(store: Store, snapshot: dict[str, Any], section_id: str, pla
                         break
 
     query = _query(plan)
-    # A cell with no quote to anchor a citation is not given (D65): a source without text ('inaccessible') and a
-    # value without linked evidence ('not_verified') stay in Table I and the counts, but no claim can cite them.
-    cells = [cell for cell in snapshot.get("cells", [])
-             if cell["state"] != "inaccessible" and not (cell["state"] == "not_verified" and not cell.get("evidence"))]
+    cells = usable_cells(snapshot)
     if section_id == "III":
         for entry in plan.get("glossary", []):
             passage = passage_by_id.get(entry["passage_id"])

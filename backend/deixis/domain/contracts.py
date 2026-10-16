@@ -2808,6 +2808,8 @@ def with_citation_handles(step_input: dict[str, Any]) -> dict[str, Any]:
         target["source_id"] = handles.get(target["source_id"], target["source_id"])
         for column in target["columns"]:
             column["column_id"] = handles[column["column_id"]]
+        for item in target.get("earlier_issues") or []:  # a retry names its columns as the model sees them (D65)
+            item["column_id"] = handles.get(item["column_id"], item["column_id"])
     if target := shown.get("adjudication_target"):
         target["source_id"] = handles.get(target["source_id"], target["source_id"])
     for key in ("passage_ids", "source_ids", "candidate_ids"):

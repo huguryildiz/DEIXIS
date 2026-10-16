@@ -20,7 +20,7 @@ from deixis.workflow.flow import RunStopped
 from deixis.workflow.report import assembly, sections, review_methodology
 from deixis.workflow.report.export import to_markdown
 from deixis.workflow.report.gaps import generate_corpus_absence_candidates
-from deixis.workflow.report.selection import select_evidence
+from deixis.workflow.report.selection import select_evidence, usable_cells
 from deixis.workflow.report.snapshot import build_snapshot, evidence_row_ids
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow.tables import TableStore, report_ready
@@ -568,3 +568,21 @@ def test_scripted_marker_fails_only_fixed_source_through_real_fill_path(state):
                    for s in store.run_steps(fill["id"]))
     assert store.conn.execute("SELECT COUNT(*) FROM cell_revisions r JOIN evidence_cells c ON c.id = r.cell_id"
                               " WHERE c.source_version_id = ?", (failed,)).fetchone()[0] == 0
+
+
+def test_cells_no_claim_can_cite_are_neither_evidence_nor_a_count(state):
+    _, store, reports, _, run, _, report = state
+    rid, table = run["research_id"], run["target"]["table_id"]
+    no_text = add_source(state, "SYNTHETIC no text", text=False)
+    fail_source(state, no_text, no_text=True)
+    sid = add_source(state, "SYNTHETIC unverified")
+    column = TableStore(store).target_columns(rid, table)[0]["id"]
+    TableStore(store).edit_cell(rid, table, column, sid, "not_verified", {"text": "SYNTHETIC unchecked value"}, None, None,
+                                0, None)
+    frozen = snapshot(state)
+    hidden = {c["cell_id"] for c in frozen["cells"] if c["source_version_id"] in (no_text, sid)}
+    assert hidden and not hidden & {c["cell_id"] for c in usable_cells(frozen)}
+    context = sections._validation_context(state[0], report, frozen, "IV")
+    assert not hidden & {c["cell_id"] for c in context["cells"]}
+    for section in ("IV", "V"):
+        assert not hidden & {c["cell_id"] for c in select_evidence(store, frozen, section, {}, [])["cells"]}

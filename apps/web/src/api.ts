@@ -661,6 +661,8 @@ export type ResearchView = {
   scope: Scope; runs: Run[]; search_runs: SearchRun[]; sources: Source[]; answers: Answer[]; counts: Counts; last_event_id: number
   // Every run of the research; `runs` lists the newest ten (UI parity S11).
   run_total?: number
+  // The study table an unfinished answer opens when it ends, with the sources it will have; null otherwise.
+  study_table_pending?: { sources: number } | null
   reportRuns: ReportSummary[]
   // The probe set's columns and the probes no arm found (slice 19).
   probes?: Probes | null

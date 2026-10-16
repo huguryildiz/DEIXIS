@@ -3794,6 +3794,8 @@ const tr: Record<string, string> = {
   'Open {name}': '{name} bölümünü aç',
   'The report appears here when it is written.': 'Rapor yazıldığında burada görünür.',
   'Evidence table · {sources} · {columns}': 'Kanıt tablosu · {sources} · {columns}',
+  'Evidence table · {sources} · after the answer': 'Kanıt tablosu · {sources} · cevaptan sonra',
+  'Filled in after the answer is written': 'Cevap yazıldıktan sonra doldurulur',
   'draft': 'taslak',
   'being written': 'yazılıyor',
   'Look again': 'Yeniden bakın',

@@ -96,6 +96,8 @@ export function Rail({ view, researchId, cited, reports, tables, hidden, candida
   const byTitle = new Map<string, TableSummary[]>()
   for (const table of [...(tables ?? [])].sort((a, b) => b.created_at.localeCompare(a.created_at))) byTitle.set(table.title, [...(byTitle.get(table.title) ?? []), table])
   const tableGroups = [...byTitle.values()]
+  // The study table a running answer opens when it ends: shown as coming, not counted until it exists.
+  const pending = view.study_table_pending
   const artifactCount = (reports.length > 0 ? 1 : 0) + tableGroups.length + (view.reportRuns.length > 0 ? 1 : 0)
   const funnel = counts.funnel
   // Reading depth is what the newest report's answer was given (its stored input), in works: a PDF or a list edit after
@@ -128,7 +130,7 @@ export function Rail({ view, researchId, cited, reports, tables, hidden, candida
   return <aside className="rail research-rail" aria-labelledby="rail-artifacts-title" hidden={off}>
     <div className="box">
       <h5><span id="rail-artifacts-title">{t('Artifacts')} ({artifactCount})</span></h5>
-      {artifactCount === 0
+      {artifactCount === 0 && !pending
         ? <span className="rail-empty">{t('The report appears here when it is written.')}</span>
         : <>
           {reports.length > 0 && <VersionedRow icon={MessageSquareQuote} label={reports[0].title} onOpen={onOpenReport}
@@ -145,6 +147,10 @@ export function Rail({ view, researchId, cited, reports, tables, hidden, candida
           {view.reportRuns.length > 0 && <VersionedRow icon={FileText} label={t('Evidence report')} onOpen={onOpenEvidenceReport}
             versions={view.reportRuns.map(item => ({ id: item.id, at: item.created_at,
               tag: item.status === 'valid' ? `V${item.report_version ?? ''}` : t(item.status === 'draft' ? 'draft' : 'being written') }))} />}
+          {pending && <div className="li pending" title={t('Filled in after the answer is written')}>
+            <Table2 size={16} strokeWidth={1.6} aria-hidden />
+            <span>{t('Evidence table · {sources} · after the answer', { sources: t(pending.sources === 1 ? '{n} source' : '{n} sources', { n: pending.sources }) })}</span>
+          </div>}
         </>}
     </div>
 

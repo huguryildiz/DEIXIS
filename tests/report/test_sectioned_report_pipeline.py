@@ -268,3 +268,20 @@ def test_an_answer_to_an_earlier_question_revision_opens_no_table(tmp_path, monk
     store.scope = lambda rid: {"search_workflow": "sw"}
     report_pipeline.after_answer(store, {"id": "run_1", "research_id": "res_1"})
     assert calls == []
+
+
+def test_view_says_the_study_table_is_coming_while_the_answer_runs(tmp_path):
+    """The rail's "after the answer" row: set while an answer is unfinished, no table exists and a source is included."""
+    for study_table, expected in (("auto", {"sources": 1}), ("off", None)):
+        settings = dataclasses.replace(sw_settings(tmp_path / study_table), study_table=study_table)
+        app = create_app(settings, adapters={"fake": PipelineAdapter()}, http_client=openalex_client(200), fetcher=fake_fetch,
+                         start_worker=False, extra_hosts=("testserver",), trusted_clients=("testclient",))
+        with TestClient(app) as raw:
+            client = session(raw)
+            research_id = create(client, source_scope="attached", effort="quick")
+            upload_and_include(client, research_id)
+            assert client.get(f"/api/researches/{research_id}").json()["study_table_pending"] is None
+            assert client.post(f"/api/researches/{research_id}/runs", json={"kind": "answer"}).status_code == 202
+            assert client.get(f"/api/researches/{research_id}").json()["study_table_pending"] == expected
+            assert client.post(f"/api/researches/{research_id}/tables", json={"title": "SYNTHETIC table"}).status_code == 201
+            assert client.get(f"/api/researches/{research_id}").json()["study_table_pending"] is None

@@ -793,6 +793,7 @@ def create_app(
         db.migrate(conn)
         store = Store(conn, clock=clock)
         store.recovery_dir = settings.recovery_dir
+        store.study_table = settings.study_table
         source_keys.assign_missing(store)
         settings = settings.bound_to(store.setting)  # the contact email set in Settings is read before the env var (F15)
         app.state.settings = settings

@@ -886,8 +886,18 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     # Every run of the research, not only the ten listed in `runs` (UI parity S11, the rail's Activity row). Beside
     # `runs`, not in `counts`: it is not an evidence count, and a watch check, which is a run, changes no count.
     run_total = conn.execute("SELECT COUNT(*) FROM runs WHERE research_id = ?", (research_id,)).fetchone()[0]
+    # The study table an unfinished answer opens when it ends (report_pipeline.after_answer), so the rail can say it is
+    # coming: only while the research has no table and includes a source; a late full-text revision opens none.
+    included_now = store.included_sources(research_id) if store.study_table == "auto" else []
+    study_table_pending = {"sources": len(included_now)} if included_now and not conn.execute(
+        "SELECT 1 FROM evidence_tables WHERE research_id = ? AND trashed_at IS NULL LIMIT 1", (research_id,)).fetchone() and conn.execute(
+        "SELECT 1 FROM runs r LEFT JOIN runs a ON a.id = json_extract(r.target_json, '$.answer_run_id')"
+        " WHERE r.research_id = ? AND r.scope_revision = ? AND r.kind IN ('answer', 'answer_review')"
+        " AND r.status IN ('queued', 'running', 'pause_requested', 'paused')"
+        " AND COALESCE(json_extract(COALESCE(a.budget_json, r.budget_json), '$.trigger'), '') != 'late_fulltext' LIMIT 1",
+        (research_id, research["current_scope_revision"])).fetchone() else None
     return {"research": research, "intent_outcome": intent_outcome(store, research), "scope": scope_view, "runs": runs,
-            "run_total": run_total, "search_runs": search_runs, "sources": sources,
+            "run_total": run_total, "study_table_pending": study_table_pending, "search_runs": search_runs, "sources": sources,
             "answers": answers, "reportRuns": report_runs, "counts": counts, "last_event_id": last_event,
             # The semantic search arm for this research's current revision (slice 21); no count of what will be sent.
             "semantic": semantic_view(store, research_id, scope),

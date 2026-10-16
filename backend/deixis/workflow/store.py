@@ -218,6 +218,7 @@ class Store:
         self.conn = conn
         self.clock = clock if clock is not None else fast_path.SystemClock()
         self.recovery_dir: Path | None = None
+        self.study_table = "off"  # Settings.study_table, set by create_app; the research view reads it
         self.pending_text_retry_interruptions: dict[str, str] = {}
         self.pending_file_restore_interruptions: dict[str, str] = {}
         self._text_retry_probe_errors: set[tuple[str, int | None]] = set()

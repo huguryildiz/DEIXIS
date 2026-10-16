@@ -4,6 +4,12 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D69 — A work the survey-title rule set aside is labelled code-decided, not unscreened or budget-deferred
+Status: accepted · Date: 2026-10-16 · Writer: Claude
+Context: A live run on 16 Oct had 1 (Quick) and 12 (Detailed) works that the survey-title rule (`survey_title_word`, next step `seed_pool`) set aside. The read closure counted them in `code_decided_count` (D60), but the answer's frozen cutoff labelled them `not_screened_at_cutoff`, which D60 defines as unscreened, and the closure's per-item blocker for them was `budget_deferred`, which reads as a budget cut. Neither label was true: a code rule decided them and no budget touched them.
+Decision: The cutoff gives such a work the reason `code_decided` (in `fast_answer.cutoff_snapshot`, for a work whose fresh abstract decision on its version has next step `seed_pool`). `work_state` gives it the blocker `code_decided` instead of `budget_deferred`. Only the labels change: the work stays out of the answer, stays unprocessed and blocked, and a "Screen more" admission after the cutoff may still take it like `not_screened_at_cutoff`. `late_revision` does not wait for it, as before.
+Limits: Workflow tests with the fake adapter and SYNTHETIC records; no live run. Stored cutoffs and closures from earlier runs keep their old labels. The UI does not show these two values.
+
 ## D68 — Failed table cells no longer stop a report
 Status: accepted · Date: 2026-10-16 · Writer: Claude
 Context: In a live Luna run on 16 Oct some `cell_extraction` calls failed with `anchor_not_in_passage` (the model quoted words that are not in the passage). Each failure emptied the whole batch of up to eight columns for that source: 7 of 49 cells were empty in one research and 16 of 40 in the other. Starting a report then returned 409 until `continue_with_failed` was sent, and the failed rows were left out of the report.

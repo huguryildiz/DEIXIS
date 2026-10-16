@@ -17,6 +17,8 @@ INPUT = "fast_path:v1:answer_input"
 VERSION_FIELDS = ("work_id", "title", "abstract", "doi", "version_label", "year")
 # A screened work whose abstract stage left it to its full text, and no reading of that text by the cutoff (D60).
 UNRESOLVED_WITHOUT_FULLTEXT = "unresolved_without_fulltext"
+# A work a code rule set aside from screening (the survey-title rule, `seed_pool`): decided, not unscreened (D69).
+CODE_DECIDED = "code_decided"
 # One review call plus one bounded schema repair.
 ANSWER_REVIEW_MODEL_CALLS = 2
 
@@ -201,7 +203,10 @@ def cutoff_snapshot(flow: Any, run: dict[str, Any], listing: dict[str, Any], clo
             routed = any(d["stage"] == "abstract" and d["source_version_id"] == svid and d["outcome"] == "unresolved"
                          and reason_code(d["reason_code"]).next_step == "fulltext_fetch" for d in fresh)
             unread_text = not full or full["reason_code"] in fulltext.OWNED_CODES
-            reason = UNRESOLVED_WITHOUT_FULLTEXT if routed and unread_text else "not_screened_at_cutoff"
+            set_aside = any(d["stage"] == "abstract" and d["source_version_id"] == svid
+                            and reason_code(d["reason_code"]).next_step == "seed_pool" for d in fresh)
+            reason = (UNRESOLVED_WITHOUT_FULLTEXT if routed and unread_text else
+                      CODE_DECIDED if set_aside else "not_screened_at_cutoff")
         passages = pools.get(svid, [])
         abstract_ids = [p["id"] for p in passages if p["kind"] == "abstract"][:1]
         full_ids = [p["id"] for p in passages if p["kind"] == "pdf_page" and p["asset_id"] == asset] if asset else []
@@ -281,7 +286,7 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
         later = screen_more.admissions_by_work(screen_more.answer_admissions(store, rid, run["scope_revision"]))
         for row in rows:
             found = later.get(row["work_id"])
-            if found and row["route"] == "abstract" and row["reason"] in ("outside_read_window", "not_screened_at_cutoff"):
+            if found and row["route"] == "abstract" and row["reason"] in ("outside_read_window", "not_screened_at_cutoff", CODE_DECIDED):
                 read = found["source_version_id"]
                 if read != row["source_version_id"]:
                     source = store.source(read)

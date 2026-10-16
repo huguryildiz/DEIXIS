@@ -11,7 +11,12 @@ background PDF fetch of it is out. A paused run does not hold it (unlike D52's r
 run start beside a paused one. A cell is due when its row is one the app added, its source is still included, its
 column existed when the row was added or was accepted by the study-table chain, and no fill of the table planned it
 since the row was added; so a fill that failed, paused or was cancelled is not queued again, and a person fills those
-cells from the table.
+cells from the table. An answer that fails only its own checks (a quote not found, say) is asked once more by the
+fill and otherwise stored as not verified when it has a value (D68); a call that fails as a whole fills none of its
+cells. Neither stops the report.
+
+Every following table gets its own fill: a cell belongs to one table's column (its own instruction and format), and a
+report is written from one table, so the same new source is a separate set of questions in each table.
 """
 
 from __future__ import annotations

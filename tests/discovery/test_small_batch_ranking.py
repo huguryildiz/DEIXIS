@@ -179,6 +179,16 @@ def test_terminal_access_is_distinct_from_inclusion_and_human_blockers(code, pro
     assert state["included"] is (code == "all_parts_verified")
 
 
+def test_survey_title_work_is_blocked_by_its_code_rule_not_by_the_budget():
+    """D69: a work the survey-title rule set aside is not a budget deferral; it stays blocked and unprocessed."""
+    item = {"work_id": "w", "head": "v", "position": 1, "user_priority": False}
+    work = {"work_id": "w", "head": "v", "versions": [{"id": "v", "fulltext": None, "abstract": {
+        "reason_code": "survey_title_word", "decided_by": "code", "stale": False}}]}
+    state = small_batch.work_state(item, work)
+    assert (state["status"], state["processed"], state["blocker"]) == ("blocked", False, "code_decided")
+    assert state["reason_code"] == "survey_title_word" and state["next_action"] == "seed_pool"
+
+
 def test_common_fetch_order_does_not_promote_candidate_over_unresolved():
     works = [{"work_id": head, "head": head, "chained": i % 2, "versions": [{"id": head,
               "has_text": False, "fulltext": None, "abstract": {"reason_code": code,

@@ -241,6 +241,9 @@ def work_state(item: dict[str, Any], work: dict[str, Any] | None) -> dict[str, A
                         "included": entry.outcome == "include"}
     if not ft and entry.outcome == "out_of_scope":
         return state | {"status": "processed", "processed": True}
+    if entry.next_step == "seed_pool":
+        # A code rule set the work aside (the survey-title rule); no budget cut it (D69).
+        return state | {"blocker": "code_decided"}
     return state | {"blocker": code if code in ("abstract_not_read", "abstract_not_proposed") else "budget_deferred"}
 
 

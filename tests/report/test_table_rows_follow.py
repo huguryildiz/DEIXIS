@@ -5,6 +5,7 @@ Records and model outputs are SYNTHETIC (scripted FakeAdapter). Passing shows wo
 """
 
 import hashlib
+import json
 import shutil
 import time
 
@@ -13,6 +14,7 @@ from deixis.workflow import table_rows
 from deixis.workflow.report.snapshot import build_snapshot
 from deixis.workflow.store import Store
 from deixis.workflow.tables import report_ready
+from fakes import valid_response
 from test_evidence_tables import PACKET_SIZE
 from test_table_extraction import add_pdf, cell, execute, fill, library, table_version
 
@@ -70,6 +72,36 @@ def test_a_source_included_later_gets_a_row_that_fills_itself(tmp_path):
     assert cell(lib, new)["current"]["kind"] == "model_fill"
     assert new not in missing_sources(lib)
     assert table_rows.advance(lib.store) == [] and len(view(lib)["rows"]) == 4
+
+
+def test_a_new_row_whose_quote_fails_is_retried_once_then_stored_not_verified_and_the_report_can_start(tmp_path):
+    """The 16 Oct live case: a row's automatic fill cites a quote its passage does not hold. The fill asks the column
+    once more (D68); still failing, the cell is a value without evidence, the report is not refused, and the sweep does
+    not queue the cell again."""
+    sent, broken = [], []
+
+    def respond(si):
+        draft = json.loads(valid_response(si))
+        sent.append("retry" if "earlier_issues" in si["extraction_target"] else "first")
+        if broken and any("later study" in p["text"] for p in si["passages"]):  # the model sees handles, not IDs
+            for answer in draft["cells"]:
+                answer["evidence"][0]["quote"] = "SYNTHETIC. These words are not in any passage."
+        return json.dumps(draft)
+
+    lib = library(tmp_path, respond)
+    assert execute(lib, fill(lib))["status"] == "completed"
+    new = include_later(lib)
+    broken.append(new)
+    sent.clear()
+    (run,) = table_rows.advance(lib.store)
+    assert run["target"]["auto_rows"] is True and run["target"]["cell_retry"] is True
+    assert execute(lib, run)["status"] == "completed"
+    assert sent == ["first", "first", "retry", "retry"]  # the call and its repair, then one retry and its repair
+    kept = cell(lib, new)["current"]
+    assert (kept["state"], kept["output_status"], kept["evidence"]) == ("not_verified", "unverified_draft", [])
+    assert kept["value"] is not None  # the model's value is kept, without linked evidence
+    assert report_ready(lib.store, lib.rid, lib.tid)["ready"] is True
+    assert table_rows.advance(lib.store) == []
 
 
 def test_a_row_a_person_removed_is_not_added_back_and_a_hand_picked_table_does_not_follow(tmp_path):

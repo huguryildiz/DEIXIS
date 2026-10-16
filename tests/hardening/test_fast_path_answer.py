@@ -99,7 +99,8 @@ def test_new_policy_and_old_bindings(tmp_path):
 
 
 @pytest.mark.parametrize("code,reason", [("runs_agree_out_of_scope", "out_of_scope"),
-    ("abstract_not_read", "not_screened_at_cutoff"), ("criterion_absent", "criterion_not_met")])
+    ("abstract_not_read", "not_screened_at_cutoff"), ("criterion_absent", "criterion_not_met"),
+    ("survey_title_word", "code_decided")])
 def test_cutoff_exclusions(tmp_path, code, reason):
     lib = setup(tmp_path, codes=("runs_agree_candidate", code))
     frozen = cutoff(lib)

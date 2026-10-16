@@ -32,7 +32,8 @@ from deixis.domain import canonical, contracts, vocabulary as question_words
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS,
                                  FULLTEXT_CRITERION_PASSAGES, FULLTEXT_PASSAGES_PER_CALL, FULLTEXT_QUOTE_MIN_CHARS,
                                  FULLTEXT_RUNS, MAX_RATE_LIMIT_MODEL_RETRIES, MAX_TRANSIENT_NETWORK_RETRIES,
-                                 after_invalid_output, effective_reviewer, schema_repairs, step_model)
+                                 after_invalid_output, effective_reviewer, run_schema_repairs, schema_repairs,
+                                 step_model)
 from deixis.domain.rules import RevisionConflict
 from deixis.domain.skill import RUNTIME_FILES, SkillPackage
 from deixis.domain.vocabulary import Extraction
@@ -5001,7 +5002,7 @@ class ResearchFlow:
             "candidates": candidates, "sources": sources, "passages": passages,
             "allowlist": allowlist,
             "human_corrections": [],
-            "budget": {"max_model_calls": small_batch.model_call_allowance(run["budget"]), "max_schema_repairs": schema_repairs(task_type),
+            "budget": {"max_model_calls": small_batch.model_call_allowance(run["budget"]), "max_schema_repairs": run_schema_repairs(run, task_type),
                        "max_provider_requests": run["budget"]["max_provider_requests"]},
             "model": {"connection": model[0], "requested_model": model[1]},
             "created_at": now(),
@@ -5252,7 +5253,8 @@ class ResearchFlow:
         self.store.start_step(step["id"])
         repair_issues: list[dict[str, Any]] | None = None
         output_text, invalid_raw, invalid_input = None, None, None
-        max_repairs = schema_repairs(task_type)
+        failed_sections: list[Any] = []  # a report section's failed drafts this run of the step, oldest first (D65)
+        max_repairs = run_schema_repairs(run, task_type)
         # `attempt` numbers every call this step sends; `repairs` counts only the schema repairs among them, so the
         # one resend after a turn timeout (slice 13e) takes nothing from the repairs the step is allowed.
         attempt, repairs, timeout_resent = -1, 0, False
@@ -5546,7 +5548,15 @@ class ResearchFlow:
                 if link_prunes:
                     report = contracts.validate_model_output(payload, output_text)
                 if task_type == "report_section" and repair_issues is not None:
-                    report.issues.extend(contracts.report_section_repair_issues(patch_base, output_text))
+                    # A second repair (D65) keeps what every earlier failed draft held, not only the latest one.
+                    # With a repair still to come, an issue names what was dropped in full: the next repair sees only
+                    # this draft, which lacks it.
+                    seen_issues: set[tuple[str, str, str]] = set()
+                    for base in failed_sections or [patch_base]:
+                        for issue in contracts.report_section_repair_issues(base, output_text, restore=max_repairs > 1):
+                            if (key := (issue.code, issue.path, issue.message)) not in seen_issues:
+                                seen_issues.add(key)
+                                report.issues.append(issue)
             salvage: list[contracts.Issue] = []
             if not report.ok and task_type == "grounded_answer" and isinstance(output_text, dict):
                 # D244: preserve links and claims while a repair can still fix their quotes.
@@ -5580,8 +5590,17 @@ class ResearchFlow:
                 complete("succeeded", output=output)
                 return output
             repair_issues = [vars(i) for i in report.issues]
+            # What a further repair (D65) is built from: the section as it now stands and its own issues.
+            next_issues, next_raw, next_input = repair_issues, result.raw_text, payload["step_input_id"]
             if anchor_patch:
+                if patch_record is None:  # the patch was refused, so the section is unchanged and keeps its faults
+                    next_issues, next_raw, next_input = first_anchor_issues, invalid_raw, patch_base_input
+                    output_text = patch_base
+                else:  # the patch applied and the merged section failed
+                    next_raw = json.dumps(output_text, ensure_ascii=False)
                 repair_issues = first_anchor_issues + repair_issues
+            if task_type == "report_section" and output_text is not patch_base:
+                failed_sections.append(output_text)
             invalid_raw, invalid_input = result.raw_text, payload["step_input_id"]
             if after_invalid_output(repairs, max_repairs) == "store_unverified_draft":
                 provenance = (sent_output()["output"] if attempt_record is not None else {"step_input_id": payload["step_input_id"]}
@@ -5597,3 +5616,4 @@ class ResearchFlow:
                 **recorded)
             if accepted is False:
                 raise RunStopped
+            repair_issues, invalid_raw, invalid_input = next_issues, next_raw, next_input

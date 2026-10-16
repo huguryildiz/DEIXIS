@@ -7,7 +7,8 @@ import json
 from typing import Any
 
 from deixis.domain.contracts import _math_span_is_well_formed, _math_spans
-from deixis.domain.rules import MAX_SCHEMA_REPAIRS, TEST_EFFORT_BUDGETS, RevisionConflict, check_expected_version
+from deixis.domain.rules import (MAX_SCHEMA_REPAIRS, REPORT_SECTION_REPAIRS, TEST_EFFORT_BUDGETS, RevisionConflict,
+                                 check_expected_version)
 from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow.report.snapshot import build_snapshot, included_table_rows
 from deixis.workflow.store import NotFound, Store
@@ -52,9 +53,12 @@ class ReportStore:
             # (Plan + model-written sections + optional research title + one optional phrase repair per section + review)
             # times (initial call + bounded schema repairs per model step).
             # The owner set a floor of 50 on 2026-09-18 so an unforeseen extra call cannot truncate a report.
-            max_model_calls = max(REPORT_CALL_FLOOR, (1 + section_count + 1 + section_count + 1) * (1 + MAX_SCHEMA_REPAIRS))
+            # A section's second repair adds one call per section (D65).
+            max_model_calls = max(REPORT_CALL_FLOOR, (1 + section_count + 1 + section_count + 1) * (1 + MAX_SCHEMA_REPAIRS)
+                                  + section_count * (REPORT_SECTION_REPAIRS - MAX_SCHEMA_REPAIRS))
             budget = TEST_EFFORT_BUDGETS[scope["effort"]].__dict__ | {
                 "max_model_calls": max_model_calls,
+                "max_report_section_repairs": REPORT_SECTION_REPAIRS,
                 "max_provider_requests": 0,
             }
             run = self.store.create_run(research_id, "report", budget, key, {"table_id": table_id})

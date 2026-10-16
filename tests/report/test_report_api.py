@@ -5,7 +5,7 @@ import asyncio
 import pytest
 from fastapi.testclient import TestClient
 
-from deixis.domain.rules import MAX_SCHEMA_REPAIRS
+from deixis.domain.rules import MAX_SCHEMA_REPAIRS, REPORT_SECTION_REPAIRS
 from deixis.storage.db import new_id
 from deixis.workflow.report.sections import ROUNDS, run_report
 from deixis.workflow.report.store import REPORT_CALL_FLOOR, ReportStore
@@ -193,8 +193,9 @@ def test_start_report_returns_an_idempotent_run_with_both_target_ids(tmp_path, e
         assert replay.status_code == 202, replay.text
         assert replay.json()["id"] == started.json()["id"]
         assert started.json()["budget"]["max_model_calls"] == max(REPORT_CALL_FLOOR, (
-            1 + sum(map(len, ROUNDS)) + 1 + sum(map(len, ROUNDS))
-        ) * (1 + MAX_SCHEMA_REPAIRS)) == 50
+            1 + sum(map(len, ROUNDS)) + 1 + sum(map(len, ROUNDS)) + 1
+        ) * (1 + MAX_SCHEMA_REPAIRS) + sum(map(len, ROUNDS)) * (REPORT_SECTION_REPAIRS - MAX_SCHEMA_REPAIRS)) == 56
+        assert started.json()["budget"]["max_report_section_repairs"] == REPORT_SECTION_REPAIRS
         assert started.json()["budget"]["max_provider_requests"] == 0
         assert started.json()["target"] == {
             "table_id": table["table"]["id"],

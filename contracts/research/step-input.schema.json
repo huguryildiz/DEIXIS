@@ -2066,7 +2066,7 @@
         "max_schema_repairs": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 1
+          "maximum": 2
         },
         "max_provider_requests": {
           "type": "integer",

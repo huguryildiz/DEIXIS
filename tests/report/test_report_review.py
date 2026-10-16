@@ -202,7 +202,9 @@ def test_report_budget_formula_includes_review(tmp_path, monkeypatch):
     monkeypatch.setattr(report_store, "REPORT_CALL_FLOOR", 0)
     store.update_run(run["id"], status="completed")
     requested = reports.request_report(run["research_id"], run["target"]["table_id"], None)
-    assert requested["budget"]["max_model_calls"] == (1 + 10 + 1 + 10 + 1) * (1 + report_store.MAX_SCHEMA_REPAIRS)
+    assert requested["budget"]["max_model_calls"] == (1 + 10 + 1 + 10 + 1) * (1 + report_store.MAX_SCHEMA_REPAIRS) + 10 * (
+        report_store.REPORT_SECTION_REPAIRS - report_store.MAX_SCHEMA_REPAIRS)
+    assert requested["budget"]["max_report_section_repairs"] == 2
 
 
 def test_pause_after_finalization_resumes_one_review(tmp_path, monkeypatch):

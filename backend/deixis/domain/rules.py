@@ -11,6 +11,8 @@ from typing import Any
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES
 
 MAX_SCHEMA_REPAIRS = 1
+# A report section gets a second repair (D65); frozen into a report run's budget, so older runs keep one.
+REPORT_SECTION_REPAIRS = 2
 MAX_RATE_LIMIT_MODEL_RETRIES = 2  # extra resends after a rate-limited response, before the call halts as today
 MAX_ACTIVE_MODEL_CALLS = 1
 MAX_TRANSIENT_NETWORK_RETRIES = 2
@@ -220,6 +222,14 @@ def role_model(scope: dict[str, Any], role: str, reviewer_default: dict[str, Any
 
 def schema_repairs(task_type: str) -> int:
     return 0 if task_type in NO_REPAIR_TASKS else MAX_SCHEMA_REPAIRS
+
+
+def run_schema_repairs(run: dict[str, Any], task_type: str) -> int:
+    """The repairs a step of this run may use. A report section reads its run's frozen budget; a report run frozen
+    before the second repair has no key there and keeps one."""
+    if task_type == "report_section":
+        return run["budget"].get("max_report_section_repairs", schema_repairs(task_type))
+    return schema_repairs(task_type)
 
 
 def after_invalid_output(repairs_used: int, limit: int = MAX_SCHEMA_REPAIRS) -> str:

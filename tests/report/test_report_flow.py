@@ -179,7 +179,7 @@ def _claim(section_id, passage_ids=None, cell_ids=None, body_refs=None):
 
 
 def report_flow(tmp_path, *, fill=True, broken_section=None, empty_section=None, unframed_section=None,
-                ambiguous_anchor_section=None, passage_kind="abstract", cell_quotes=None):
+                ambiguous_anchor_section=None, passage_kind="abstract", cell_quotes=None, section_repairs=None):
     conn = db.connect(tmp_path / "library.sqlite")
     db.migrate(conn)
     store = Store(conn)
@@ -228,10 +228,10 @@ def report_flow(tmp_path, *, fill=True, broken_section=None, empty_section=None,
                 cell_version_at_request=0, recheck=False,
             )
         store.update_run(fill_run["id"], status="completed")
-    run = store.create_run(
-        research_id, "report", {"max_model_calls": 100, "max_provider_requests": 0}, None,
-        {"table_id": table_id},
-    )
+    budget = {"max_model_calls": 100, "max_provider_requests": 0}
+    if section_repairs is not None:
+        budget["max_report_section_repairs"] = section_repairs
+    run = store.create_run(research_id, "report", budget, None, {"table_id": table_id})
     reports = ReportStore(store)
     report_id = reports.create_report(research_id, run["id"], 1, "en")
     store.update_run(
@@ -701,6 +701,100 @@ def test_a_failed_section_pauses_the_run_after_its_round(tmp_path):
     assert store.run(run["id"])["status"] == "paused"
     assert store.run(run["id"])["pause_reason"] == "section_failed"
     assert {section["section_id"] for section in reports.sections(report_id)} == {"II", "III", "IV", "V"}
+    assert reports.section(report_id, "IV")["status"] == "failed"
+
+
+def _break_section_calls(adapter, section_id, outputs):
+    """Section `section_id` answers with each of `outputs` in turn, then as the fixture normally does."""
+    ordinary, sent = adapter.responder, []
+
+    def respond(step_input):
+        if step_input["task_type"] == "report_section" and step_input["report_target"]["section_id"] == section_id:
+            sent.append(step_input)
+            if len(sent) <= len(outputs):
+                return json.dumps(outputs[len(sent) - 1])
+        return ordinary(step_input)
+    adapter.responder = respond
+
+
+def _repair_messages(store, run, section_id):
+    step = store.step(run["id"], f"report_section:{section_id}", "model:report_section")
+    return [row["message"] for row in store.conn.execute(
+        "SELECT user_message AS message FROM step_inputs WHERE step_id = ? ORDER BY attempt", (step["id"],))]
+
+
+def test_a_section_that_fails_its_first_repair_passes_on_the_second_and_the_report_finishes(tmp_path):
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path, section_repairs=2)
+    _break_section_calls(adapter, "IV", [{"SYNTHETIC_broken_first": True}, {"SYNTHETIC_broken_second": True}])
+
+    asyncio.run(run_report(flow, run, scope))
+
+    assert _section_calls(adapter)["IV"] == 3
+    assert store.run(run["id"])["pause_reason"] is None
+    assert reports.section(report_id, "IV")["status"] == "valid"
+    assert reports.report(report_id)["status"] == "valid"
+    messages = _repair_messages(store, run, "IV")
+    # The second repair is built from the latest failed attempt, as the first is from the original call.
+    assert "SYNTHETIC_broken_first" in messages[1] and "SYNTHETIC_broken_second" not in messages[1]
+    assert "SYNTHETIC_broken_second" in messages[2] and "SYNTHETIC_broken_first" not in messages[2]
+
+
+def test_a_section_that_fails_both_repairs_pauses_the_run(tmp_path):
+    flow, store, reports, adapter, run, scope, report_id = report_flow(
+        tmp_path, broken_section="IV", section_repairs=2)
+
+    with pytest.raises(RunStopped):
+        asyncio.run(run_report(flow, run, scope))
+
+    assert _section_calls(adapter)["IV"] == 3
+    stopped = store.run(run["id"])
+    assert (stopped["status"], stopped["pause_reason"], stopped["error"]["sections"]) == ("paused", "section_failed", ["IV"])
+    assert reports.section(report_id, "IV")["status"] == "failed"
+    step = store.step(run["id"], "report_section:IV", "model:report_section")
+    assert (step["status"], step["error_code"]) == ("failed", "invalid_model_output")
+
+
+def test_a_second_repair_must_keep_what_the_original_draft_recorded(tmp_path):
+    # D65: the first repair dropped an insufficient-evidence entry; the second repair is checked against the
+    # original draft as well, so leaving the entry out still fails.
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path, section_repairs=2)
+    ordinary, sent = adapter.responder, []
+    entry = {"context": "SYNTHETIC context", "reason": "SYNTHETIC: no passage reports the measured value."}
+
+    def respond(step_input):
+        text = ordinary(step_input)
+        if step_input["task_type"] != "report_section" or step_input["report_target"]["section_id"] != "IV":
+            return text
+        sent.append(step_input)
+        draft = json.loads(text)
+        if len(sent) == 1:
+            draft["insufficient_evidence"].append(entry)
+        if len(sent) < 3:
+            draft["claims"][0]["text"] += " The SYNTHETIC bound is \\frac{a}{b}."
+        return json.dumps(draft)
+    adapter.responder = respond
+
+    with pytest.raises(RunStopped):
+        asyncio.run(run_report(flow, run, scope))
+
+    assert len(sent) == 3
+    assert store.run(run["id"])["pause_reason"] == "section_failed"
+    step = store.step(run["id"], "report_section:IV", "model:report_section")
+    assert {issue["code"] for issue in json.loads(step["error_json"])} == {"repair_dropped_insufficient_evidence"}
+    # The second repair's input names the dropped entry in full, though the draft it repairs no longer holds it.
+    assert json.dumps(entry["reason"])[1:-1] in _repair_messages(store, run, "IV")[2]
+
+
+def test_a_report_run_frozen_before_the_second_repair_keeps_one_repair(tmp_path):
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
+    assert "max_report_section_repairs" not in run["budget"]
+    _break_section_calls(adapter, "IV", [{"SYNTHETIC_broken_first": True}, {"SYNTHETIC_broken_second": True}])
+
+    with pytest.raises(RunStopped):
+        asyncio.run(run_report(flow, run, scope))
+
+    assert _section_calls(adapter)["IV"] == 2
+    assert store.run(run["id"])["pause_reason"] == "section_failed"
     assert reports.section(report_id, "IV")["status"] == "failed"
 
 

@@ -301,3 +301,38 @@ def test_assembly_keeps_rejecting_stored_links_whose_quote_is_not_owned_by_the_c
         store.conn.execute("UPDATE report_snapshot SET snapshot_json = ? WHERE report_id = ?", (json.dumps(frozen), report_id))
     store.conn.execute("UPDATE report_citation_links SET anchor_text = ? WHERE cell_id IS NOT NULL", (quote,))
     assert "anchor_not_in_cell_evidence" in {item["rule"] for item in _check_anchors(store, reports, report_id)}
+
+
+def test_a_refused_anchor_patch_gets_a_second_patch_over_the_unchanged_section(tmp_path):
+    # D65: after a refused patch the section and its anchor faults are unchanged, so the second repair is built
+    # from them again, not from the patch's own issues.
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path, section_repairs=2)
+    original = adapter.responder
+    raw = []
+
+    def response(si):
+        draft = json.loads(original(si))
+        if si["task_type"] == "report_section" and si["report_target"]["section_id"] == "IV":
+            if raw:
+                draft = {"schema_version": "deixis.report_section_anchor_repair.v1",
+                         "step_input_id": si["step_input_id"], "scope_revision": si["scope_revision"],
+                         "anchors": [{"anchor_index": 0, "quote_number": 1 if len(raw) == 2 else 999}], "claims": []}
+            else:
+                draft["citation_anchors"][0]["quote"] = BAD_QUOTE
+            raw.append(json.dumps(draft))
+            return raw[-1]
+        return json.dumps(draft)
+
+    adapter.responder = response
+    asyncio.run(run_report(flow, run, scope))
+    assert len(raw) == 3
+    assert reports.section(report_id, "IV")["status"] == "valid"
+    step = store.step(run["id"], "report_section:IV", "model:report_section")
+    messages = [row[0] for row in store.conn.execute(
+        "SELECT user_message FROM step_inputs WHERE step_id = ? ORDER BY attempt", (step["id"],))]
+    assert len(messages) == 3
+    for message in messages[1:]:
+        assert prompt.REPORT_SECTION_ANCHOR_PATCH_GUIDANCE in message
+        pairs = json.loads(message.split("Cell anchor repair pairs:\n")[1].split("\nFor each failing anchor")[0])
+        assert [pair["quote"] for pair in pairs] == [BAD_QUOTE]
+    assert "anchor_patch_quote_number" not in messages[2]

@@ -2222,8 +2222,9 @@ def apply_report_section_anchor_patch(step_input: dict[str, Any], draft: dict[st
     return merged, changes
 
 
-def report_section_repair_issues(failed: Any, repaired: Any) -> list[Issue]:
-    """Check key coverage and kept evidence records, including readable parts of invalid drafts."""
+def report_section_repair_issues(failed: Any, repaired: Any, restore: bool = False) -> list[Issue]:
+    """Check key coverage and kept evidence records, including readable parts of invalid drafts. With `restore`, an
+    issue's message also carries the dropped claim or entry, for a further repair whose failed output lacks it (D65)."""
     def obj(value: Any) -> dict[str, Any]:
         if isinstance(value, str):
             try:
@@ -2246,10 +2247,15 @@ def report_section_repair_issues(failed: Any, repaired: Any) -> list[Issue]:
         prefix = f"{key}: "
         if not any(isinstance(r.get("context"), str) and r["context"].startswith(prefix)
                    and r["context"][len(prefix):].strip() for r in new_entries):
-            issues.append(Issue("repair_dropped_claim", "/claims", key))
+            dropped = next((r for r in items(failed, "claims") if r.get("claim_key") == key), None)
+            issues.append(Issue("repair_dropped_claim", "/claims", key + (
+                "\nKeep this claim or record it in insufficient_evidence: " + json.dumps(dropped, ensure_ascii=False)
+                if restore else "")))
     for entry in old_entries:
         if not any(r.get("context") == entry["context"] and r.get("reason") == entry["reason"] for r in new_entries):
-            issues.append(Issue("repair_dropped_insufficient_evidence", "/insufficient_evidence", entry["context"]))
+            issues.append(Issue("repair_dropped_insufficient_evidence", "/insufficient_evidence", entry["context"] + (
+                "\nRestore this entry exactly: " + json.dumps({"context": entry["context"], "reason": entry["reason"]},
+                                                              ensure_ascii=False) if restore else "")))
     return issues
 
 

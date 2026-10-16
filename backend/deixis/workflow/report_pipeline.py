@@ -114,7 +114,9 @@ def _queue_fill(store: Store, tables: TableStore, run: dict[str, Any], table_id:
     version = tables._table(rid, table_id)["version"]
     try:
         with transaction(store.conn):
-            fill = tables.request_fill(rid, table_id, None, True, version, f"{PIPELINE}:{pipeline['id']}:fill:{round_}")
+            # The app's own fill reads only sources that are still included (D63).
+            fill = tables.request_fill(rid, table_id, None, True, version, f"{PIPELINE}:{pipeline['id']}:fill:{round_}",
+                                       included_only=True)
             _mark(store, fill, {**pipeline, "round": round_})
     except InvalidTableInput:
         if round_ == 1:

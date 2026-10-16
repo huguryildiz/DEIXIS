@@ -254,9 +254,11 @@ class TableStore:
             svids = self.store.included_sources(research_id) if rows is None else list(dict.fromkeys(rows))
             self._check_members(research_id, svids)
             tid, ts = new_id("tbl"), now()
+            # A table made from the included sources follows them (D63, `table_rows.advance`); a hand-picked list does not.
             self.conn.execute(
-                "INSERT INTO evidence_tables (id, research_id, title, template_id, idempotency_key, created_at, updated_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?)", (tid, research_id, title.strip(), template_id, key, ts, ts),
+                "INSERT INTO evidence_tables (id, research_id, title, template_id, idempotency_key, follows_included, created_at,"
+                " updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (tid, research_id, title.strip(), template_id, key, int(rows is None), ts, ts),
             )
             self.conn.executemany(
                 "INSERT INTO table_rows (table_id, source_version_id, added_by, created_at) VALUES (?, ?, ?, ?)",
@@ -715,7 +717,8 @@ class TableStore:
         )]
 
     def fill_plan(self, research_id: str, table_id: str, column_ids: list[str] | None = None,
-                  include_stale: bool = False, refresh: bool = False) -> dict[str, Any]:
+                  include_stale: bool = False, refresh: bool = False, included_only: bool = False,
+                  only: dict[str, list[str]] | None = None) -> dict[str, Any]:
         """The cells a fill would read: empty cells and, with include_stale, values made under an earlier column revision
         or citing passages no longer given to a model (a removed or replaced PDF, an earlier extraction).
 
@@ -723,11 +726,17 @@ class TableStore:
         abstract or metadata, made before PDF text of its source was stored, with no proposal waiting and not planned by
         an earlier automatic re-read since that text (DUE_SQL).
 
+        With included_only (the app's own fills, D63) a row whose source is not included is skipped; with `only` just the
+        named sources and, of each, the named columns are read.
+
         Rows are taken in table order up to MAX_FILL_SOURCES sources. A source without stored text needs no model call.
         """
         columns = self.target_columns(research_id, table_id, column_ids)
         sources, beyond = [], 0
+        included = set(self.store.included_sources(research_id)) if included_only else None
         for svid in self.active_rows(table_id):
+            if (included is not None and svid not in included) or (only is not None and svid not in only):
+                continue
             cells = {r["column_id"]: r for r in self.conn.execute(
                 "SELECT c.column_id, c.version, r.column_revision, EXISTS (SELECT 1 FROM cell_evidence_links l"
                 f" JOIN passages p ON p.id = l.passage_id LEFT JOIN source_assets a ON a.id = p.asset_id"
@@ -748,6 +757,8 @@ class TableStore:
                            or (include_stale and not cells[c["id"]]["waiting"]
                                and (cells[c["id"]]["column_revision"] != c["current_revision"] or cells[c["id"]]["shadowed"]
                                     or cells[c["id"]]["newer_text"]))]
+            if only is not None:
+                targets = [cid for cid in targets if cid in only[svid]]
             if not targets:
                 continue
             if len(sources) == MAX_FILL_SOURCES:
@@ -765,23 +776,31 @@ class TableStore:
         return self.store.run(row["id"]) if row else None
 
     def request_fill(self, research_id: str, table_id: str, column_ids: list[str] | None, include_stale: bool,
-                     expected_version: int, idempotency_key: str | None, refresh: bool = False) -> dict[str, Any]:
+                     expected_version: int, idempotency_key: str | None, refresh: bool = False, included_only: bool = False,
+                     only: dict[str, list[str]] | None = None) -> dict[str, Any]:
         """Queue a fill of the planned cells. The plan is stored with the run, so a resumed run reads the same sources.
 
         With refresh the run is an automatic re-read after PDF text arrived (D52, `table_refresh`); its target says so.
+        With included_only (D63) the run reads included sources only, here and again while it runs (`flow._left_out`);
+        `only` (the rows the app added, `table_rows`) marks the run `auto_rows`.
         """
         key = self._key(research_id, idempotency_key)
         with transaction(self.conn):
             if replayed := self._replayed_run(key, "table_fill"):
                 return replayed
             check_expected_version(expected_version, self._table(research_id, table_id)["version"])
-            plan = self.fill_plan(research_id, table_id, column_ids, include_stale, refresh=refresh)
+            plan = self.fill_plan(research_id, table_id, column_ids, include_stale, refresh=refresh, included_only=included_only,
+                                  only=only)
             if not plan["sources"]:
                 raise InvalidTableInput("No cell of this table needs filling")
             target = {"table_id": table_id, "column_ids": column_ids, "include_stale": include_stale,
                       "sources": [{k: s[k] for k in ("source_version_id", "column_ids", "cell_versions")} for s in plan["sources"]]}
             if refresh:
                 target["auto_refresh"] = True
+            if included_only:
+                target["included_only"] = True
+            if only is not None:
+                target["auto_rows"] = True
             return self.store.create_run(research_id, "table_fill", {"max_model_calls": plan["max_model_calls"], "max_provider_requests": 0},
                                          key, target)
 

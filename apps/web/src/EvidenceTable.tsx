@@ -61,6 +61,8 @@ const kindLabels: Record<CellRevision['kind'], string> = {
 }
 const decisionLabels: Record<NonNullable<CellRevision['decision']>, string> = { accepted: 'used', dismissed: 'not used', pending: 'waiting for your decision', superseded: 'replaced by a newer proposal' }
 const selectionLabels: Record<string, string> = { included: 'Included in Sources', pending: 'Undecided in Sources', excluded: 'Excluded in Sources' }
+// A row stays in the table when its source is excluded or undecided later; the report reads included sources only (D63).
+const rowSelectionLabels: Record<string, string> = { included: 'Included in Sources', pending: 'Undecided in Sources · not in the report', excluded: 'Excluded in Sources · not in the report' }
 const selectionOrder: Record<string, number> = { included: 0, pending: 1, excluded: 2 }
 
 function formatText(column: Pick<ColumnSpec, 'answer_format' | 'unit_hint' | 'allow_multiple'> & { options: unknown[] | null }) {
@@ -593,7 +595,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                  <span className="src-m evidence-row-meta">{[row.year, sort?.key === 'similarity' && source?.similarity != null && t('similarity {score}', { score: source.similarity.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }), t(accessLabels[row.access_level]), versionText(row.version_label), row.selection_state && t(selectionLabels[row.selection_state])].filter(Boolean).join(' · ')}</span>
+                  <span className="src-m evidence-row-meta">{[row.year, sort?.key === 'similarity' && source?.similarity != null && t('similarity {score}', { score: source.similarity.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }), t(accessLabels[row.access_level]), versionText(row.version_label), row.selection_state && t(rowSelectionLabels[row.selection_state])].filter(Boolean).join(' · ')}</span>
                 </th>
                 {columns.map((col, c) => {
                   const id = `${col.id}:${row.source_version_id}`

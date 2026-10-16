@@ -130,6 +130,13 @@ def build_snapshot(store: Store, research_id: str, table_id: str,
     reading = reading_counts(store, research_id, included)
     if reading is not None:
         result["reading"] = reading
+    # Rows of the table whose source is not included (excluded or undecided since): not evidence, but recorded, so the
+    # report's table boundary is not dropped silently (D63). Written only when there are some.
+    states = dict(store.conn.execute("SELECT source_version_id, state FROM selections WHERE research_id = ?", (research_id,)).fetchall())
+    left_out = [{"source_version_id": source_id, "selection_state": states.get(source_id)}
+                for source_id in tables.active_rows(table_id) if source_id not in source_ids]
+    if left_out:
+        result["left_out_rows"] = left_out
     if failed_rows:
         result["failed_rows"] = failed_rows
         result["row_counts"] = {"included": len(source_ids), "completed": len(source_ids) - len(failed_rows),

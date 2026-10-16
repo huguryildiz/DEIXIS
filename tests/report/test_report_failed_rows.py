@@ -316,13 +316,24 @@ def test_flagged_resume_uses_frozen_snapshot_after_live_edits(state, change):
     assert reports.snapshot(report) == before
 
 
-def test_default_resume_still_checks_live_readiness_first(state):
+def test_default_resume_goes_on_from_its_saved_snapshot_and_plan(state):
+    # D63: a report paused after its snapshot and plan is not failed by rows the table gained since, and its word budgets
+    # stay those it froze; the added source is reported as a change instead.
     flow, store, reports, adapter, run, scope, report = state
-    reports.save_snapshot(report, run["target"]["table_id"])
-    add_source(state, "SYNTHETIC untried")
+    adapter.before = lambda si: store.update_run(run["id"], status="pause_requested") if si["task_type"] == "report_section" else None
     with pytest.raises(RunStopped):
         asyncio.run(sections.run_report(flow, run, scope))
-    assert store.run(run["id"])["pause_reason"] == "table_not_ready" and adapter.calls == []
+    before, plan = reports.snapshot(report), reports.report(report)["plan"]
+    assert plan is not None
+    add_source(state, "SYNTHETIC untried")
+    assert not report_ready(store, run["research_id"], run["target"]["table_id"])["ready"]
+    adapter.before = None
+    store.update_run(run["id"], status="running", pause_reason=None)
+    asyncio.run(flow.execute(run["id"]))
+    assert store.run(run["id"])["status"] == "completed"
+    assert reports.snapshot(report) == before and reports.report(report)["plan"] == plan
+    assert reports.evidence_changes(report)["added_sources"] == 1
+
 
 
 @pytest.mark.parametrize("failed", [False, True])

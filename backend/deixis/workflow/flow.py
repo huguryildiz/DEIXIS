@@ -2574,10 +2574,14 @@ class ResearchFlow:
                 await self._read_source_equations(run, svids)
             return
         run_id = run["id"]
-        assets = [r[0] for svid in svids for r in self.store.conn.execute(
+        assets = [(svid, r[0]) for svid in svids for r in self.store.conn.execute(
             "SELECT id FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL", (svid,))]
-        skipped = 0
-        for asset_id in assets:
+        skipped = left_out = 0
+        for svid, asset_id in assets:
+            if self._left_out(run, svid):  # checked before a step opens, so none waits `pending` for an excluded source
+                done = self.store.existing_step(run_id, f"equations:{asset_id}")
+                left_out += done is None or done["status"] not in ("succeeded", "failed")
+                continue
             step = self.store.step(run_id, f"equations:{asset_id}", "read_equations")
             if step["status"] in ("succeeded", "failed") or equation_state(self.store, asset_id)["state"] in ("read", "no_math"):
                 continue
@@ -2602,17 +2606,18 @@ class ResearchFlow:
             summary = self.store.step(run_id, "equations_skipped", "equations_skipped")
             if summary["status"] != "succeeded":
                 self.store.start_step(summary["id"])
-                self.store.finish_step(summary["id"], "succeeded", output={"pdfs_read": len(assets) - skipped, "pdfs_skipped": skipped})
+                self.store.finish_step(summary["id"], "succeeded", output={"pdfs_read": len(assets) - skipped - left_out, "pdfs_skipped": skipped,
+                                                                           **({"pdfs_left_out": left_out} if left_out else {})})
 
     async def _read_source_equations(self, run: dict[str, Any], svids: list[str]) -> None:
         """The arXiv source route's and Mathpix's step per PDF (D104, D40): tried at most once per run, never pausing it.
         A PDF the source route settles for good within the step goes on to Mathpix in the same step."""
         service = self.deps.equations
         run_id = run["id"]
-        assets = [r[0] for svid in svids for r in self.store.conn.execute(
+        assets = [(svid, r[0]) for svid in svids for r in self.store.conn.execute(
             "SELECT id FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL", (svid,))]
-        skipped = 0
-        for asset_id in assets:
+        skipped = left_out = 0
+        for svid, asset_id in assets:
             state = equation_state(self.store, asset_id)
             again = (state["state"] == "failed" and state.get("attempts", EQUATION_ATTEMPTS) < EQUATION_ATTEMPTS
                      and (state.get("reason") == EXTRACTION_FAILED or state.get("route") == "mathpix")) \
@@ -2621,6 +2626,10 @@ class ResearchFlow:
             on_route = state.get("route") == "mathpix" or (state.get("route") == "arxiv_source" and service.route_target(asset_id))
             if not on_route or (state["state"] != "pending" and not again and not waiting):
                 continue  # read, refused, permanently absent or failed for good: nothing to ask, no request
+            if self._left_out(run, svid):
+                done = self.store.existing_step(run_id, f"equations:{asset_id}")
+                left_out += done is None or done["status"] not in ("succeeded", "failed")
+                continue
             step = self.store.step(run_id, f"equations:{asset_id}", "read_equations")
             if step["status"] in ("succeeded", "failed"):
                 continue
@@ -2633,7 +2642,9 @@ class ResearchFlow:
                 self.store.finish_step(step["id"], "succeeded", output={"asset_id": asset_id, "route": "arxiv_source", **state})
                 continue
             route = state["route"]
-            for _ in range(2):
+            for attempt in range(2):
+                if attempt and self._left_out(run, svid):
+                    break  # excluded while the source route was read: Mathpix is not asked (D63)
                 try:
                     state = await service.read_asset(asset_id, run_id)
                 except RunInProgress:
@@ -2649,7 +2660,8 @@ class ResearchFlow:
             summary = self.store.step(run_id, "equations_skipped", "equations_skipped")
             if summary["status"] != "succeeded":
                 self.store.start_step(summary["id"])
-                self.store.finish_step(summary["id"], "succeeded", output={"pdfs_read": len(assets) - skipped, "pdfs_skipped": skipped})
+                self.store.finish_step(summary["id"], "succeeded", output={"pdfs_read": len(assets) - skipped - left_out, "pdfs_skipped": skipped,
+                                                                           **({"pdfs_left_out": left_out} if left_out else {})})
 
     async def _acquire_pdf(self, run: dict[str, Any], svid: str, downloads: int, limit: int | None,
                            other_versions: bool = False) -> int:
@@ -4137,8 +4149,8 @@ class ResearchFlow:
         for planned in target["sources"]:
             svid = planned["source_version_id"]
             columns = [c for c in self._live_columns(run, tables) if c["id"] in planned["column_ids"]]
-            if not columns or svid not in tables.active_rows(target["table_id"]):
-                continue  # the column or row was removed after the fill was requested
+            if not columns or svid not in tables.active_rows(target["table_id"]) or self._left_out(run, svid):
+                continue  # the column or row was removed, or the source excluded (D63), after the fill was requested
             if not self.store.passages_for(svid):
                 step = self.store.step(run["id"], f"no_text:{svid}", "table_no_text")
                 if step["status"] != "succeeded":
@@ -4152,6 +4164,10 @@ class ResearchFlow:
                 chunk = [c for c in columns if c["id"] in planned["column_ids"][index:index + MAX_COLUMNS_PER_CALL]]
                 if chunk:
                     yield _FillJob(f"cell_extraction:{svid}:{index // MAX_COLUMNS_PER_CALL}", svid, chunk, planned["cell_versions"])
+
+    def _left_out(self, run: dict[str, Any], svid: str) -> bool:
+        """Whether an app-started fill (`included_only`, D63) must not start reading a source excluded since it was planned."""
+        return bool((run.get("target") or {}).get("included_only")) and svid not in self.store.included_sources(run["research_id"])
 
     def _fill_stopped(self, run_id: str, scope_revision: int) -> bool:
         """Whether a returned fill call must defer or permanently skip updating its cells."""
@@ -4245,6 +4261,8 @@ class ResearchFlow:
     async def _extraction(self, run: dict[str, Any], scope: dict[str, Any], key: str, svid: str, columns: list[dict[str, Any]],
                           limit: int, limiter: ModelCallLimiter | None = None) -> dict[str, Any] | None:
         """One cell extraction step for one source; None when the source has no stored text to give."""
+        if self._left_out(run, svid):
+            return None  # excluded since the fill was planned (D63): no step opens for it
         step = self.store.step(run["id"], key, "model:cell_extraction")
         if step["status"] == "succeeded":
             return step["output"]
@@ -4255,6 +4273,10 @@ class ResearchFlow:
         if not available:
             return None
         given = await self._cell_passages(run, scope, key, svid, columns, available, limit)
+        if self._left_out(run, svid):  # excluded while its passages were ranked (D63); a call already sent finishes
+            self.store.start_step(step["id"])
+            self.store.finish_step(step["id"], "cancelled", error_code="source_excluded")
+            return None
         pages = {p["id"] for p in available if p["kind"] == "pdf_page"}
         target = {"table_id": run["target"]["table_id"], "source_id": svid, "columns": [extraction_column(c) for c in columns],
                   "passage_scope": {"given": len(given), "available": len(available),

@@ -858,7 +858,7 @@ export type TableColumn = {
 }
 export type TableRow = {
   source_version_id: string; work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; version_label: string | null
-  selection_state: 'included' | 'excluded' | 'pending' | null; added_by: 'included_at_creation' | 'user'; added_at: string; removed_at: string | null
+  selection_state: 'included' | 'excluded' | 'pending' | null; added_by: 'included_at_creation' | 'included_later' | 'user'; added_at: string; removed_at: string | null
   access_level: 'pdf_available' | 'abstract' | 'metadata'
 }
 export type CellValue = { option_ids?: string[]; number?: number; unit?: string | null; as_stated?: string | null; answer?: 'yes' | 'no'; text?: string }

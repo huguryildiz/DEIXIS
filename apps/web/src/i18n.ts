@@ -2596,6 +2596,8 @@ const tr: Record<string, string> = {
   'Included in Sources': 'Kaynaklar’da dahil',
   'Undecided in Sources': 'Kaynaklar’da kararsız',
   'Excluded in Sources': 'Kaynaklar’da hariç',
+  'Excluded in Sources · not in the report': 'Kaynaklar’da hariç · rapora girmez',
+  'Undecided in Sources · not in the report': 'Kaynaklar’da kararsız · rapora girmez',
   '{n} options, several allowed': '{n} seçenek, birden fazlası seçilebilir',
   '{n} options, one allowed': '{n} seçenek, biri seçilir',
   'Yes': 'Evet',

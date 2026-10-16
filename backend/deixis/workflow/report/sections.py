@@ -16,7 +16,7 @@ from deixis.workflow.report.review import run_report_review
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow.report.snapshot import evidence_row_ids
 from deixis.workflow.store import NotFound
-from deixis.workflow.tables import TableStore, report_ready
+from deixis.workflow.tables import report_ready
 
 if TYPE_CHECKING:
     from deixis.workflow.flow import ResearchFlow
@@ -273,15 +273,14 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
     """Run the frozen report plan, code-written methodology, section rounds and assembly checks."""
     run_id, research_id = run["id"], run["research_id"]
     table_id, report_id = run["target"]["table_id"], run["target"]["report_id"]
-    tables, reports = TableStore(flow.store), ReportStore(flow.store)
+    reports = ReportStore(flow.store)
     flow._checkpoint(run_id, run["scope_revision"])
     continue_with_failed = run["target"].get("continue_with_failed", False)
-    snapshot = None
-    if continue_with_failed:
-        try:
-            snapshot = reports.snapshot(report_id)
-        except NotFound:
-            pass
+    # A resumed report goes on from the snapshot it saved: rows the table gained since (D63) are not its evidence.
+    try:
+        snapshot = reports.snapshot(report_id)
+    except NotFound:
+        snapshot = None
     if snapshot is None:
         readiness = report_ready(flow.store, research_id, table_id, continue_with_failed=continue_with_failed)
         if not readiness["ready"]:
@@ -320,8 +319,8 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
     flow._checkpoint(run_id, run["scope_revision"])
     if output.get("invalid"):
         flow._fail(run_id, "invalid_model_output", {"step": "report_plan", "issues": output["issues"]})
-    frozen_plan = freeze_plan(output["result"], snapshot,
-                              snapshot.get("row_counts", {}).get("completed", len(tables.active_rows(table_id))))
+    # The word budget counts the snapshot's rows, never the live table: a resumed report freezes the same plan (D63).
+    frozen_plan = freeze_plan(output["result"], snapshot, snapshot.get("row_counts", {}).get("completed", len(snapshot["rows"])))
     reports.set_plan(report_id, frozen_plan)
 
     if not flow.store.research(research_id)["title"]:

@@ -157,7 +157,10 @@ def select_evidence(store: Store, snapshot: dict[str, Any], section_id: str, pla
                         break
 
     query = _query(plan)
-    cells = snapshot.get("cells", [])
+    # A cell with no quote to anchor a citation is not given (D65): a source without text ('inaccessible') and a
+    # value without linked evidence ('not_verified') stay in Table I and the counts, but no claim can cite them.
+    cells = [cell for cell in snapshot.get("cells", [])
+             if cell["state"] != "inaccessible" and not (cell["state"] == "not_verified" and not cell.get("evidence"))]
     if section_id == "III":
         for entry in plan.get("glossary", []):
             passage = passage_by_id.get(entry["passage_id"])

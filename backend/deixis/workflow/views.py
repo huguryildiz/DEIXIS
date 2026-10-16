@@ -349,6 +349,7 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
                          "SELECT 1 FROM report_edit_checks WHERE report_id = ? LIMIT 1", (report_id,),
                      ).fetchone() else None,
                      "references": references, "table_i": table_i, "missing_rows": missing_rows,
+                     "basis": (frozen or {}).get("basis"),
                      "run": run, "table_id": table_id}
 
 

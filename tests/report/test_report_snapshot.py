@@ -53,26 +53,26 @@ def _fill(lib):
     return revision_id
 
 
-def test_report_ready_requires_every_included_source_and_column_to_have_a_terminal_cell(lib):
-    store, _, _, research_id, source_id, _, table_id, column_id = lib
+def test_report_ready_needs_a_column_and_an_included_row_and_lists_unfinished_cells(lib):
+    store, _, tables, research_id, source_id, _, table_id, column_id = lib
+    # An empty cell does not stop a report (D65); it is listed for the table's counts.
     assert report_ready(store, research_id, table_id) == {
-        "ready": False, "missing": [{"source_version_id": source_id, "column_id": column_id}], "failed_rows": []}
+        "ready": True, "missing": [{"source_version_id": source_id, "column_id": column_id}], "rows": 1}
     _fill(lib)
-    assert report_ready(store, research_id, table_id) == {"ready": True, "missing": [], "failed_rows": []}
+    assert report_ready(store, research_id, table_id) == {"ready": True, "missing": [], "rows": 1}
     second = store.create_upload_source("Second synthetic study")
     store.add_to_corpus(research_id, second, "user_upload", selection_state="included", selection_origin="user")
+    tables.add_rows(research_id, table_id, [second], tables._table(research_id, table_id)["version"])
     assert report_ready(store, research_id, table_id)["missing"] == [{"source_version_id": second, "column_id": column_id}]
+    store.conn.execute("UPDATE selections SET state = 'excluded' WHERE research_id = ?", (research_id,))
+    assert report_ready(store, research_id, table_id) == {"ready": False, "missing": [], "rows": 0}
 
 
-def test_table_list_reports_server_readiness_and_failed_rows(lib):
+def test_table_list_reports_server_readiness(lib):
     store, _, tables, research_id, source_id, _, table_id, column_id = lib
-    assert tables.tables(research_id)[0]["report_ready"] == {
-        "ready": False, "cells_left": 1, "cells_total": 1, "failed_rows": 0,
-        "can_continue_with_failed": False, "failed_cells": 0, "included_rows": 1}
+    assert tables.tables(research_id)[0]["report_ready"] == {"ready": True, "cells_left": 1, "cells_total": 1, "included_rows": 1}
     _fill(lib)
-    assert tables.tables(research_id)[0]["report_ready"] == {
-        "ready": True, "cells_left": 0, "cells_total": 1, "failed_rows": 0,
-        "can_continue_with_failed": True, "failed_cells": 0, "included_rows": 1}
+    assert tables.tables(research_id)[0]["report_ready"] == {"ready": True, "cells_left": 0, "cells_total": 1, "included_rows": 1}
     second = store.create_upload_source("Failed synthetic study")
     store.add_to_corpus(research_id, second, "user_upload", selection_state="included", selection_origin="user")
     tables.add_rows(research_id, table_id, [second], tables._table(research_id, table_id)["version"])
@@ -80,41 +80,17 @@ def test_table_list_reports_server_readiness_and_failed_rows(lib):
                            {"table_id": table_id, "sources": [{"source_version_id": second, "column_ids": [column_id]}]})
     step = store.step(run["id"], f"cell_extraction:{second}:0", "model:cell_extraction")
     store.finish_step(step["id"], "failed", error_code="synthetic_failure")
-    assert tables.tables(research_id)[0]["report_ready"] == {
-        "ready": False, "cells_left": 1, "cells_total": 2, "failed_rows": 1,
-        "can_continue_with_failed": True, "failed_cells": 1, "included_rows": 2}
+    assert tables.tables(research_id)[0]["report_ready"] == {"ready": True, "cells_left": 1, "cells_total": 2, "included_rows": 2}
 
 
-def test_report_ready_accepts_human_not_reported_decision(lib):
+def test_report_ready_counts_a_human_not_reported_decision_as_finished(lib):
     store, _, tables, research_id, source_id, _, table_id, column_id = lib
     tables.edit_cell(research_id, table_id, column_id, source_id, "not_reported", None,
                      "Checked the available source.", None, 0, None)
-    expected = {"ready": True, "missing": [], "failed_rows": []}
-    assert report_ready(store, research_id, table_id) == expected
-    assert report_ready(store, research_id, table_id, continue_with_failed=True) == expected
+    assert report_ready(store, research_id, table_id) == {"ready": True, "missing": [], "rows": 1}
 
 
-def test_report_ready_requires_explicit_choice_to_continue_with_failed_row(lib):
-    store, reports, tables, research_id, source_id, _, table_id, column_id = lib
-    run = store.create_run(research_id, "table_fill", {}, None,
-                           {"table_id": table_id, "sources": [{"source_version_id": source_id, "column_ids": [column_id]}]})
-    step = store.step(run["id"], f"cell_extraction:{source_id}:0", "model:cell_extraction")
-    store.finish_step(step["id"], "failed", error_code="synthetic_failure")
-    assert report_ready(store, research_id, table_id) == {
-        "ready": False, "missing": [{"source_version_id": source_id, "column_id": column_id}],
-        "failed_rows": [source_id]}
-    assert report_ready(store, research_id, table_id, continue_with_failed=True)["ready"] is False
-    store.update_run(run["id"], status="completed")
-    completed = store.create_upload_source("Completed synthetic study")
-    passage = store._insert_passage(completed, None, "abstract", None, None, "provider", None, None,
-                                    "The study uses 128-byte packets.")
-    store.add_to_corpus(research_id, completed, "user_upload", selection_state="included", selection_origin="user")
-    tables.add_rows(research_id, table_id, [completed], tables._table(research_id, table_id)["version"])
-    _fill((store, reports, tables, research_id, completed, passage, table_id, column_id))
-    assert report_ready(store, research_id, table_id, continue_with_failed=True)["ready"] is True
-
-
-def test_report_ready_can_exclude_a_row_with_no_readable_text(lib):
+def test_a_row_with_no_readable_text_is_kept_and_listed_as_unfinished(lib):
     store, _, tables, research_id, _, _, table_id, column_id = lib
     _fill(lib)
     no_text = store.create_upload_source("No text synthetic study")
@@ -125,11 +101,10 @@ def test_report_ready_can_exclude_a_row_with_no_readable_text(lib):
     step = store.step(run["id"], f"no_text:{no_text}", "table_no_text")
     tables.save_no_text(research_id, table_id, column_id, no_text, column_revision=1,
                         run_id=run["id"], step_id=step["id"], scope_revision=1)
-    assert report_ready(store, research_id, table_id)["ready"] is False
-    readiness = report_ready(store, research_id, table_id, continue_with_failed=True)
-    assert readiness == {
-        "ready": True, "missing": [{"source_version_id": no_text, "column_id": column_id}], "failed_rows": [no_text],
-        "failed_row_details": readiness["failed_row_details"]}
+    assert report_ready(store, research_id, table_id) == {
+        "ready": True, "missing": [{"source_version_id": no_text, "column_id": column_id}], "rows": 2}
+    basis = build_snapshot(store, research_id, table_id)["basis"]
+    assert (basis["sources"], basis["abstract_only"], basis["metadata_only"], basis["cells_unverified"]) == (2, 1, 1, 0)
 
 
 def test_snapshot_counts_unique_works_separately_from_included_sources(lib):

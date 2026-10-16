@@ -120,6 +120,34 @@ def missing_rows_sentence(missing: dict[str, Any], tr: bool) -> str:
         "Bu satırlar raporun kanıt değerlendirmesine ve toplulaştırma paydalarına alınmadı.")
 
 
+def basis_note(basis: dict[str, Any], tr: bool) -> str:
+    """PLAIN: Return the report's basis note: what the table was read from, how many cells could not be verified, and
+    the advice to upload PDFs when a source was read from less than full text."""
+    n, full, short = basis["sources"], basis["full_text"], basis["abstract_only"] + basis["metadata_only"]
+    unverified, total = basis["cells_unverified"], basis["cells_total"]
+    parts = [pick(f"Basis of this report: {full} of {n} {'source was' if n == 1 else 'sources were'} read from full text"
+                  f" and {short} from the abstract or metadata only.", tr,
+                  f"Bu raporun dayanağı: {n} kaynağın {full} tanesi tam metinden, {short} tanesi yalnızca özetten veya"
+                  " künye bilgisinden okundu.")]
+    if unverified:
+        parts.append(pick(f"{unverified} of {total} table {'cell' if total == 1 else 'cells'} could not be verified against"
+                          " a quote; the report does not cite them. They belong to the sources listed below.", tr,
+                          f"{total} tablo hücresinin {unverified} tanesi bir alıntıyla doğrulanamadı; rapor bu hücrelere"
+                          " atıf yapmıyor. Bu hücreler aşağıda listelenen kaynaklara ait."))
+    if short:
+        parts.append(pick("Upload the PDFs of the sources read from the abstract or metadata for a more detailed report.", tr,
+                          "Daha ayrıntılı bir rapor için özetten veya künye bilgisinden okunan kaynakların PDF'lerini"
+                          " yükleyin."))
+    return " ".join(parts)
+
+
+def basis_source_fields(row: dict[str, Any], tr: bool, esc: Callable[[Any], str]) -> tuple[str, str]:
+    """PIECEWISE: Escape a named source and its count of unverified cells separately."""
+    return esc(row["source_key"] or row["title"]), esc(pick(
+        f"{row['cells_unverified']} of {row['cells_total']} cells not verified", tr,
+        f"{row['cells_total']} hücreden {row['cells_unverified']} tanesi doğrulanmadı"))
+
+
 def missing_row_fields(row: dict[str, Any], tr: bool, esc: Callable[[Any], str]) -> tuple[str, str]:
     """PIECEWISE: Escape the source and rendered reason separately."""
     return esc(row['source_key'] or row['title']), esc(failed_reason_text(row['reason'], 'tr' if tr else 'en'))

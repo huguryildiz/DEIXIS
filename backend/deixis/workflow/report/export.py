@@ -100,6 +100,13 @@ def to_markdown(view: dict[str, Any], *, title: str, corpus: dict[str, int] | No
     if draft is not None:
         lines.extend([f"> {_md(draft)}", ""])
     lines.extend([f"# {_md(title)}", export_text.report_identity(view, tr), ""])
+    if basis := view.get("basis"):
+        lines.extend([export_text.basis_note(basis, tr), ""])
+        if basis["unverified_sources"]:
+            for row in basis["unverified_sources"]:
+                source, count = export_text.basis_source_fields(row, tr, _md)
+                lines.append(f"- {source}: {count}")
+            lines.append("")
     missing = view.get("missing_rows")
     if missing:
         lines.extend([export_text.missing_rows_sentence(missing, tr), ""])

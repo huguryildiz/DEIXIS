@@ -1,6 +1,6 @@
 import { downloadName } from './downloadName'
 import { type CellRevision, type CellState, type CellValue, type ResearchView, type Source, type TableColumn, type TableRow, type TableSummary, type TableView } from './api'
-import { locatorText, tableTitle, versionText } from './labels'
+import { locatorText, versionText } from './labels'
 import { citationStyle, formatReferenceText, type CitationStyle } from './citations'
 import { t, uiLocale } from './i18n'
 
@@ -62,14 +62,14 @@ export function downloadTableCsv(table: TableView, sources: Source[]) {
 }
 
 // Why a report cannot be written from this table now, or '' when it can. The table panel's "Write a manuscript draft"
-// and the evidence report’s "Write a new version" read the same rule from the table's stored `report_ready`.
-export function reportGate(view: ResearchView, summary: TableSummary | undefined, columns: number, title: string) {
+// and the evidence report’s "Write a new version" read the same rule from the table's stored `report_ready`. Empty or
+// unverified cells never stop a report (D65): `unfinished` counts them for a plain notice, and the report's own
+// basis note says what each source was read from.
+export function reportGate(view: ResearchView, summary: TableSummary | undefined, columns: number) {
   const ready = summary?.report_ready
-  const continueWithFailed = !ready?.ready && Boolean(ready?.can_continue_with_failed)
   const reason = view.runs.some(item => ['queued', 'running', 'pause_requested', 'paused'].includes(item.status))
     ? t('Available when the active run finishes')
     : !columns ? t('Add a column and fill its cells before writing a report.')
-    : ready?.cells_total === 0 ? t('A report needs included sources and a filled column.')
-    : !ready?.ready && !continueWithFailed ? t('A report needs a filled evidence table: {n} cells left in “{table}”.', { n: ready?.cells_left ?? 0, table: tableTitle(title) }) : ''
-  return { reason, continueWithFailed }
+    : !ready?.ready ? t('A report needs included sources and a column.') : ''
+  return { reason, unfinished: ready?.ready ? ready.cells_left : 0 }
 }

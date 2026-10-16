@@ -109,6 +109,11 @@ def blocks(view: dict[str, Any], *, title: str, corpus: dict[str, int] | None,
     if draft is not None:
         out.append(ooxml.paragraph(plain(draft), style="Quote"))
     out += [ooxml.heading(0, plain(title)), ooxml.paragraph(export_text.report_identity(view, tr))]
+    if basis := view.get("basis"):
+        out.append(ooxml.paragraph(export_text.basis_note(basis, tr)))
+        named = [export_text.basis_source_fields(row, tr, plain) for row in basis["unverified_sources"]]
+        if named:
+            out.append(ooxml.bullets([f"{source}: {count}"] for source, count in named))
     missing = view.get("missing_rows")
     if missing:
         out.append(ooxml.paragraph(export_text.missing_rows_sentence(missing, tr)))

@@ -4028,12 +4028,27 @@ class ResearchFlow:
         limiter = self.deps.limiter
 
         async def call(job: _FillJob) -> dict[str, Any] | None:
-            return await self._extraction(run, scope, job.key, job.svid, job.columns, MAX_FILL_PASSAGES, limiter)
+            output = await self._extraction(run, scope, job.key, job.svid, job.columns, MAX_FILL_PASSAGES, limiter)
+            salvage = self._cell_salvage(output)
+            if salvage is None:
+                return output
+            # Some answers of the call failed their checks and the rest passed: the rest are kept, and the failed
+            # columns are asked once more in one smaller call that is told what went wrong. A run planned before
+            # this rule has no room in its budget for the retry and stores the failed columns as not verified.
+            retry = None
+            columns = [c for c in job.columns if c["id"] in salvage["bad"]]
+            if columns and (run.get("target") or {}).get("cell_retry"):
+                retry = await self._extraction(run, scope, f"{job.key}:retry", job.svid, columns, MAX_FILL_PASSAGES, limiter,
+                                               earlier_issues=contracts.earlier_issues(salvage["bad"]))
+            return {"salvaged": output, "salvage": salvage, "retry": retry}
 
         def apply(completed: list[tuple[dict[str, Any] | None, _FillJob]]) -> None:
             for output, job in completed:
                 if output is not None and not self._fill_stopped(run_id, run["scope_revision"]):
-                    self._save_cells(run, output, job.cell_versions, recheck=False)
+                    if "salvage" in output:
+                        self._save_salvaged(run, job, output)
+                    else:
+                        self._save_cells(run, output, job.cell_versions, recheck=False)
 
         stop = await self._send_through_limiter(run, self._fill_jobs(run, tables, target), call, apply)
         if stop is not None:
@@ -4222,7 +4237,8 @@ class ResearchFlow:
             raise
 
     async def _extraction(self, run: dict[str, Any], scope: dict[str, Any], key: str, svid: str, columns: list[dict[str, Any]],
-                          limit: int, limiter: ModelCallLimiter | None = None) -> dict[str, Any] | None:
+                          limit: int, limiter: ModelCallLimiter | None = None,
+                          earlier_issues: list[dict[str, str]] | None = None) -> dict[str, Any] | None:
         """One cell extraction step for one source; None when the source has no stored text to give."""
         if self._left_out(run, svid):
             return None  # excluded since the fill was planned (D63): no step opens for it
@@ -4244,6 +4260,8 @@ class ResearchFlow:
         target = {"table_id": run["target"]["table_id"], "source_id": svid, "columns": [extraction_column(c) for c in columns],
                   "passage_scope": {"given": len(given), "available": len(available),
                                     "all_pages_given": bool(pages) and pages <= {p["id"] for p in given}}}
+        if earlier_issues:
+            target["earlier_issues"] = earlier_issues
         return await self._model_step(run, scope, key, "cell_extraction", source_ids=[svid], passage_rows=given,
                                       extraction_target=target, limiter=limiter)
 
@@ -4268,14 +4286,83 @@ class ResearchFlow:
 
     def _save_cells(self, run: dict[str, Any], output: dict[str, Any], cell_versions: dict[str, int], recheck: bool) -> int:
         """Store one extraction step's answers as cell revisions. From an invalid output, what can be kept is kept as unverified."""
-        payload = self.store.step_input_payload(output["step_input_id"])
-        target = payload["extraction_target"]
-        session = self.store.model_session(output["step_input_id"])
         if output.get("invalid"):
-            raw = contracts.resolve_citation_handles(payload, session["raw_output"] or "")
-            cells, status = contracts.storable_cells(payload, raw), "unverified_draft"
-        else:
-            cells, status = output["result"]["cells"], "structurally_valid"
+            payload = self.store.step_input_payload(output["step_input_id"])
+            raw = contracts.resolve_citation_handles(payload, self.store.model_session(output["step_input_id"])["raw_output"] or "")
+            return self._store_cells(run, output["step_input_id"], contracts.storable_cells(payload, raw), "unverified_draft",
+                                     cell_versions, recheck)
+        return self._store_cells(run, output["step_input_id"], output["result"]["cells"], "structurally_valid", cell_versions, recheck)
+
+    def _cell_salvage(self, output: dict[str, Any] | None) -> dict[str, Any] | None:
+        """The per-cell split of a cell extraction output that failed validation (contracts.salvage_cells), or None when
+        the output is valid, missing, or failed as a whole (a broken shape, a model that did not answer)."""
+        if output is None or not output.get("invalid") or not output.get("step_input_id"):
+            return None
+        try:
+            session = self.store.model_session(output["step_input_id"])
+        except NotFound:
+            return None
+        if not session["raw_output"]:
+            return None
+        payload = self.store.step_input_payload(output["step_input_id"])
+        return contracts.salvage_cells(payload, contracts.cell_draft_from_raw(payload, session["raw_output"]))
+
+    def _save_salvaged(self, run: dict[str, Any], job: _FillJob, result: dict[str, Any]) -> None:
+        """Store a salvaged cell extraction: the answers that passed, the retry's answers that pass, and every column
+        still failing as not verified (a value without linked evidence) or, without a value, as before (D65).
+
+        What was kept, asked again and dropped is recorded once in a `cell_salvage` step, the way an answer's salvage
+        records its dropped citations. Cells are saved before that step closes and saving is idempotent per StepInput,
+        so a resumed run that finds the step open saves the same revisions again without adding any.
+        """
+        step = self.store.step(run["id"], job.key.replace("cell_extraction:", "cell_salvage:", 1), "table_cell_salvage")
+        if step["status"] == "succeeded":
+            return
+        first, salvage, retry = result["salvaged"], result["salvage"], result["retry"]
+        self._store_cells(run, first["step_input_id"], salvage["cells"], "structurally_valid", job.cell_versions, recheck=False)
+        failing = dict(salvage["bad"])
+        fallback = first  # whose unverified answers a still-failing column takes
+        retry_salvage = None
+        if retry is not None and not retry.get("invalid"):
+            self._save_cells(run, retry, job.cell_versions, recheck=False)
+            failing = {}
+        elif retry is not None and retry.get("step_input_id"):
+            fallback = retry
+            if (retry_salvage := self._cell_salvage(retry)) is not None:
+                self._store_cells(run, retry["step_input_id"], retry_salvage["cells"], "structurally_valid", job.cell_versions,
+                                  recheck=False)
+                failing = {column_id: issues for column_id, issues in failing.items() if column_id in retry_salvage["bad"]}
+        not_verified, proposed = [], []
+        if failing:
+            payload = self.store.step_input_payload(fallback["step_input_id"])
+            draft = contracts.cell_draft_from_raw(payload, self.store.model_session(fallback["step_input_id"])["raw_output"] or "")
+            kept = [cell for cell in contracts.storable_cells(payload, draft) if cell["column_id"] in failing]
+            # A value whose quote could not be located is kept as a value without linked evidence, never as a verified
+            # value; any other failing answer waits as an unverified proposal, as a failed output's answers did before.
+            unverified = [dict(cell, state="not_verified", evidence=[]) for cell in kept if cell["state"] == "value"]
+            others = [cell for cell in kept if cell["state"] != "value"]
+            self._store_cells(run, fallback["step_input_id"], unverified, "unverified_draft", job.cell_versions, recheck=False,
+                              unverified_fill=True)
+            self._store_cells(run, fallback["step_input_id"], others, "unverified_draft", job.cell_versions, recheck=False)
+            not_verified, proposed = [c["column_id"] for c in unverified], [c["column_id"] for c in others]
+        self.store.start_step(step["id"])
+        self.store.finish_step(step["id"], "succeeded", output={
+            "source_version_id": job.svid, "step_input_id": first["step_input_id"],
+            "kept": [c["column_id"] for c in salvage["cells"]],
+            "dropped": [{"column_id": column_id, "codes": sorted({i["code"] for i in issues})}
+                        for column_id, issues in salvage["bad"].items()],
+            "retry_step_input_id": (retry or {}).get("step_input_id"),
+            "retry": "not_sent" if retry is None else "valid" if not retry.get("invalid") else "salvaged" if retry_salvage and retry_salvage["cells"] else "failed",
+            "not_verified": not_verified, "unverified_proposals": proposed,
+            "left_empty": [column_id for column_id in failing if column_id not in not_verified + proposed],
+        })
+
+    def _store_cells(self, run: dict[str, Any], step_input_id: str, cells: list[dict[str, Any]], status: str,
+                     cell_versions: dict[str, int], recheck: bool, unverified_fill: bool = False) -> int:
+        """Store cell answers of one extraction StepInput as cell revisions."""
+        payload = self.store.step_input_payload(step_input_id)
+        target = payload["extraction_target"]
+        session = self.store.model_session(step_input_id)
         columns = {c["column_id"]: c for c in target["columns"]}
         # Reading depth follows the passages the step was given, never the model's words; no cell gets full_text (D37).
         depth = "abstract" if all(p["locator"]["kind"] == "abstract" for p in payload["passages"]) else "selected_sections"
@@ -4291,6 +4378,7 @@ class ResearchFlow:
                 step_id=payload["step_id"], step_input_id=payload["step_input_id"], model_connection=session["connection"],
                 resolved_model=session["resolved_model"], scope_revision=payload["scope_revision"],
                 cell_version_at_request=cell_versions.get(column["column_id"]), recheck=recheck, refresh=refresh,
+                unverified_fill=unverified_fill,
             )
         return len(cells)
 

@@ -31,6 +31,8 @@ MAX_OPTIONS = 20
 MAX_FILL_SOURCES = 25  # sources one fill run reads; the rest stay empty for another fill (D37)
 MAX_COLUMNS_PER_CALL = 8  # columns one cell extraction call answers for its source
 CALLS_PER_REQUEST = 2  # a model call and its one schema repair
+# A fill call, then at most one retry of the columns whose answers failed their checks; each with its schema repair.
+FILL_CALLS_PER_BATCH = 2 * CALLS_PER_REQUEST
 SHADOWED_STATUSES = ("pdf_removed", "pdf_replaced", "text_superseded")  # cell flags, in display order (D45)
 # A row whose source was removed from the research is hidden and not filled; its cells stay and return with the source (D50).
 # PDF text stored for the cell's source after its current value was made (a PDF found or uploaded later); the value was
@@ -624,7 +626,8 @@ class TableStore:
     def save_model_output(self, research_id: str, table_id: str, column_id: str, svid: str, *, column_revision: int, state: str,
                           value: Any, note: str | None, reading_depth: str, output_status: str, links: list[dict[str, Any]],
                           run_id: str, step_id: str, step_input_id: str, model_connection: str, resolved_model: str | None,
-                          scope_revision: int, cell_version_at_request: int | None, recheck: bool, refresh: bool = False) -> str:
+                          scope_revision: int, cell_version_at_request: int | None, recheck: bool, refresh: bool = False,
+                          unverified_fill: bool = False) -> str:
         """A valid fill result for an empty cell becomes its value; every other model result waits as a proposal.
 
         With `refresh` (an automatic re-read after PDF text arrived, D52) a valid result also replaces a current value a
@@ -632,7 +635,13 @@ class TableStore:
         is at the revision the model answered, the cell is at the version the run planned and no proposal waits. These are
         checked here, in the write transaction: a person who edited the cell or column, or removed the PDF, meanwhile gets
         the result as a proposal.
+
+        With `unverified_fill` (a fill answer whose quotes still failed after its one retry) a 'not_verified' answer
+        without links becomes the value of an empty cell, so the table and the report show a value without linked
+        evidence instead of an empty cell; it is never accepted as verified and a newer reading replaces it (D52).
         """
+        if unverified_fill and (state != "not_verified" or links or output_status != "unverified_draft"):
+            raise ValueError("An unverified fill is a not_verified value without links")
         with transaction(self.conn):
             cell = self._cell(table_id, column_id, svid, create=True)
             existing = self.conn.execute(
@@ -640,7 +649,7 @@ class TableStore:
             ).fetchone()
             if existing:
                 return existing["id"]  # saved before a restart; a resumed run must not add it twice
-            fill = not recheck and cell["current_revision_id"] is None and output_status == "structurally_valid"
+            fill = not recheck and cell["current_revision_id"] is None and (output_status == "structurally_valid" or unverified_fill)
             replaced = self._refreshable(cell, cell_version_at_request, column_revision, links) if (
                 refresh and not fill and output_status == "structurally_valid" and reading_depth != "abstract") else None
             kind = "model_fill" if fill or replaced else "model_proposal"
@@ -767,7 +776,7 @@ class TableStore:
             sources.append({"source_version_id": svid, "column_ids": targets, "has_text": bool(self.store.passages_for(svid)),
                             "cell_versions": {cid: cells[cid]["version"] if cid in cells else 0 for cid in targets}})
         calls = sum(math.ceil(len(s["column_ids"]) / MAX_COLUMNS_PER_CALL) for s in sources if s["has_text"])
-        return {"sources": sources, "sources_beyond_limit": beyond, "model_calls": calls, "max_model_calls": CALLS_PER_REQUEST * calls}
+        return {"sources": sources, "sources_beyond_limit": beyond, "model_calls": calls, "max_model_calls": FILL_CALLS_PER_BATCH * calls}
 
     def _replayed_run(self, key: str | None, kind: str) -> dict[str, Any] | None:
         row = self.conn.execute("SELECT id, kind FROM runs WHERE idempotency_key = ?", (key,)).fetchone() if key else None
@@ -793,7 +802,7 @@ class TableStore:
                                   only=only)
             if not plan["sources"]:
                 raise InvalidTableInput("No cell of this table needs filling")
-            target = {"table_id": table_id, "column_ids": column_ids, "include_stale": include_stale,
+            target = {"table_id": table_id, "column_ids": column_ids, "include_stale": include_stale, "cell_retry": True,
                       "sources": [{k: s[k] for k in ("source_version_id", "column_ids", "cell_versions")} for s in plan["sources"]]}
             if refresh:
                 target["auto_refresh"] = True
@@ -930,7 +939,6 @@ class TableStore:
             " (SELECT COUNT(*) FROM table_columns c WHERE c.table_id = et_outer.id AND c.removed_at IS NULL) AS columns"
             " FROM evidence_tables et_outer WHERE et_outer.research_id = ? AND et_outer.trashed_at IS NULL ORDER BY et_outer.created_at", (research_id,)
         )]
-        included_count = len(self.store.included_sources(research_id))
         for row in rows:
             access = {"pdf_available": 0, "abstract": 0, "metadata": 0}
             for r in self.conn.execute(
@@ -945,14 +953,9 @@ class TableStore:
             row["auto_columns"] = self.conn.execute(
                 "SELECT COUNT(*) FROM table_columns WHERE table_id = ? AND removed_at IS NULL AND accepted_by = 'automatic'",
                 (row["id"],)).fetchone()[0]
-            readiness = report_ready(self.store, research_id, row["id"], continue_with_failed=True)
-            row["report_ready"] = {"ready": bool(included_count and row["columns"]) and not readiness["missing"], "cells_left": len(readiness["missing"]),
-                                   "cells_total": included_count * row["columns"],
-                                   "failed_rows": len(readiness["failed_rows"]),
-                                   "can_continue_with_failed": readiness["ready"],
-                                   "failed_cells": sum(item["source_version_id"] in readiness["failed_rows"]
-                                                       for item in readiness["missing"]),
-                                   "included_rows": included_count}
+            readiness = report_ready(self.store, research_id, row["id"])
+            row["report_ready"] = {"ready": readiness["ready"], "cells_left": len(readiness["missing"]),
+                                   "cells_total": readiness["rows"] * row["columns"], "included_rows": readiness["rows"]}
         return rows
 
     def _revision_view(self, revision: dict[str, Any]) -> dict[str, Any]:
@@ -1086,76 +1089,25 @@ class TableStore:
         return self._cell_summary(cell, column) | {"revisions": revisions}
 
 
-def report_ready(store: Store, research_id: str, table_id: str, continue_with_failed: bool = False) -> dict[str, Any]:
-    """Check every included source and active column; failed rows require an explicit continue choice."""
+def report_ready(store: Store, research_id: str, table_id: str) -> dict[str, Any]:
+    """Whether a report can be written from this table: it needs a column and an included source among its rows.
+
+    Empty, failed and unverified cells do not stop a report (D65): the report writes from what the table holds, uses
+    a source without values from its abstract or metadata, and its basis note says which sources those are. `missing`
+    lists the cells of included rows that hold no finished answer, for the counts the table shows.
+    """
     tables = TableStore(store)
     columns = tables.target_columns(research_id, table_id)
-    column_ids = [column["id"] for column in columns]
-    included = store.included_sources(research_id)
-    active_rows = set(tables.active_rows(table_id))
+    included = set(store.included_sources(research_id))
+    rows = [source_id for source_id in tables.active_rows(table_id) if source_id in included]
     states = {(row["source_version_id"], row["column_id"]): row["state"] for row in store.conn.execute(
         "SELECT c.source_version_id, c.column_id, r.state FROM evidence_cells c"
         " JOIN cell_revisions r ON r.id = c.current_revision_id WHERE c.table_id = ?", (table_id,)
     )}
-    terminal = {"value", "unknown", "not_reported", "not_applicable", "not_found_in_inspected_scope", "not_verified"}
-    missing = [{"source_version_id": source_id, "column_id": column_id}
-               for source_id in included for column_id in column_ids
-               if source_id not in active_rows or states.get((source_id, column_id)) not in terminal]
-
-    failed_pairs = {pair for pair, state in states.items() if state == "inaccessible"}
-    failure_reasons = {}
-    scope_revision = store.research(research_id)["current_scope_revision"]
-    for row in store.conn.execute(
-        "SELECT r.target_json, s.operation_key, s.error_code FROM runs r JOIN run_steps s ON s.run_id = r.id"
-        " WHERE r.research_id = ? AND r.kind = 'table_fill' AND json_extract(r.target_json, '$.table_id') = ?"
-        " AND r.scope_revision = ? AND s.kind = 'model:cell_extraction' AND s.status IN ('failed', 'outcome_unknown') ORDER BY s.rowid",
-        (research_id, table_id, scope_revision),
-    ):
-        target = json.loads(row["target_json"])
-        for source in target.get("sources", []):
-            prefix = f"cell_extraction:{source['source_version_id']}:"
-            if not row["operation_key"].startswith(prefix):
-                continue
-            batch = row["operation_key"][len(prefix):]
-            if not batch.isdigit():
-                continue
-            for column_id in source["column_ids"][int(batch) * MAX_COLUMNS_PER_CALL:(int(batch) + 1) * MAX_COLUMNS_PER_CALL]:
-                pair = (source["source_version_id"], column_id)
-                failed_pairs.add(pair)
-                failure_reasons[pair] = row["error_code"] or "extraction_failed"
-    missing_pairs = {(item["source_version_id"], item["column_id"]) for item in missing}
-    failed_rows = [source_id for source_id in included if source_id in active_rows
-                   and any((source_id, column_id) in missing_pairs for column_id in column_ids)
-                   and all((source_id, column_id) in failed_pairs for column_id in column_ids
-                           if (source_id, column_id) in missing_pairs)]
-    result = {"ready": bool(included and columns) and (not missing or
-            (continue_with_failed and len(failed_rows) < len(included)
-             and all(item["source_version_id"] in failed_rows for item in missing))),
-            "missing": missing, "failed_rows": failed_rows}
-    if continue_with_failed and failed_rows:
-        details = []
-        for source_id in tables.active_rows(table_id):
-            if source_id not in failed_rows:
-                continue
-            source = store.conn.execute(
-                "SELECT v.title, w.source_key FROM source_versions v JOIN works w ON w.id = v.work_id WHERE v.id = ?",
-                (source_id,),
-            ).fetchone()
-            missing_columns = [{"column_id": column["id"], "name": column["name"],
-                                "reason": "no_stored_text" if states.get((source_id, column["id"])) == "inaccessible"
-                                else failure_reasons.get((source_id, column["id"]), "extraction_failed")}
-                               for column in columns if (source_id, column["id"]) in missing_pairs]
-            existing_cells = [dict(cell) for cell in store.conn.execute(
-                "SELECT c.id AS cell_id, r.id AS cell_revision_id, c.column_id, r.state FROM evidence_cells c"
-                " JOIN cell_revisions r ON r.id = c.current_revision_id WHERE c.table_id = ?"
-                " AND c.source_version_id = ? AND r.state = 'inaccessible' ORDER BY c.rowid",
-                (table_id, source_id),
-            ) if cell["column_id"] in column_ids]
-            details.append({"source_version_id": source_id, "source_key": source["source_key"],
-                            "title": source["title"], "missing_columns": missing_columns,
-                            "reason": missing_columns[0]["reason"], "existing_cells": existing_cells})
-        result["failed_row_details"] = details
-    return result
+    terminal = {"value", "unknown", "not_reported", "not_applicable", "not_found_in_inspected_scope"}
+    missing = [{"source_version_id": source_id, "column_id": column["id"]}
+               for source_id in rows for column in columns if states.get((source_id, column["id"])) not in terminal]
+    return {"ready": bool(rows and columns), "missing": missing, "rows": len(rows)}
 
 
 def purge_tables(conn: Any, research_id: str) -> None:

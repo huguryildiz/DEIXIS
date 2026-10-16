@@ -221,7 +221,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
   const model = modelText(view.scope.requested_model, view.scope.reasoning_effort)
   const tableRun = run && TABLE_RUN_KINDS.has(run.kind) && (activeRun || run.status === 'paused') ? run : null
   const summary = tables?.find(item => item.id === table?.table.id)
-  const { reason: reportReason, continueWithFailed } = reportGate(view, summary, table?.columns.length ?? 0, table?.table.title ?? '')
+  const { reason: reportReason, unfinished } = reportGate(view, summary, table?.columns.length ?? 0)
   const control = (target: Run, action: 'pause' | 'resume' | 'cancel') => act(() => api.controlRun(target.id, action))
   const cancelDialog = <ConfirmDialog open={Boolean(cancelling)} dark={dark} title={t('Cancel this run?')}
     description={t(cancelling?.kind === 'lineage_links' ? 'The run stops. Development decisions already recorded are kept. A cancelled run cannot be resumed.' : 'The run stops. Values already written stay in the table; the answer of a model call still in progress is not written. A cancelled run cannot be resumed; empty cells can be filled again later.')}
@@ -426,8 +426,8 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
   </DropdownMenu>
 
   return <div className="table-panel">
-    {/* What a report from this table would leave out, then why it cannot be written yet (mockup `repGate`). */}
-    {continueWithFailed && summary && <div className="notice warn table-failed"><TriangleAlert size={16} aria-hidden /><span>{t('{n} of {m} sources did not complete the table (missing cells: {cells}). These rows will be excluded from the report’s evidence assessment and aggregation denominators.', { n: summary.report_ready.failed_rows, m: summary.report_ready.included_rows, cells: summary.report_ready.cells_left })}</span></div>}
+    {/* What a report from this table would say it lacks, then why it cannot be written yet (mockup `repGate`). */}
+    {!reportReason && unfinished > 0 && summary && <div className="notice table-unfinished"><Info size={15} aria-hidden /><span>{t(unfinished === 1 ? '{n} of {m} cells has no verified answer. A report still uses every source and says which ones were read from the abstract or metadata only.' : '{n} of {m} cells have no verified answer. A report still uses every source and says which ones were read from the abstract or metadata only.', { n: unfinished, m: summary.report_ready.cells_total })}</span></div>}
     {reportReason && <p id="evidence-report-reason" className={columns.length ? 'foot-note table-reason' : 'sr-only'}>{reportReason}</p>}
     {newIncluded.length > 0 && <div className="notice evidence-new-rows"><Info size={15} aria-hidden />
       <span>{t(newIncluded.length === 1 ? '{n} source was included after this table was made and is not a row yet.' : '{n} sources were included after this table was made and are not rows yet.', { n: newIncluded.length })}</span>
@@ -450,7 +450,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
         <RotateCw size={15} aria-hidden />{t(recheck.cells === 1 ? 'Recheck changed cells · {n} cell · up to {calls} calls' : 'Recheck changed cells · {n} cells · up to {calls} calls', { n: recheck.cells, calls: recheck.max_model_calls })}
       </button>}
       <button type="button" className="ghost" disabled={busy || Boolean(reportReason)} title={reportReason || undefined} aria-describedby={reportReason ? 'evidence-report-reason' : undefined}
-        onClick={() => act(async () => { await api.startReport(researchId, tableId, newKey(), continueWithFailed ? { continueWithFailed: true } : undefined); onRunStarted() })}><AlignLeft size={15} aria-hidden />{t(continueWithFailed ? 'Write the report with missing rows' : 'Write a manuscript draft')}</button>
+        onClick={() => act(async () => { await api.startReport(researchId, tableId, newKey()); onRunStarted() })}><AlignLeft size={15} aria-hidden />{t('Write a manuscript draft')}</button>
       {activeRun && <span className="lockb" title={lockTitle}><Pause size={13} aria-hidden />{t('Model actions locked')}</span>}
       <span className="spacer" />
       {columns.length > 0 && <DropdownMenu>

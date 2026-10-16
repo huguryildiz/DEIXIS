@@ -525,6 +525,13 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
                 issues.append(Issue("passage_outside_extraction_source", f"/passages/{p['passage_id']}", p["source_id"]))
         if not 1 <= len(target["columns"]) <= MAX_COLUMNS_PER_CALL:
             issues.append(Issue("extraction_column_count", "/extraction_target/columns", str(len(target["columns"]))))
+        asked = {c["column_id"] for c in target["columns"]}
+        for i, item in enumerate(target.get("earlier_issues") or []):
+            # A retry names problems of the columns it asks again for, and only those.
+            if item["column_id"] not in asked:
+                issues.append(Issue("earlier_issue_outside_columns", f"/extraction_target/earlier_issues/{i}", item["column_id"]))
+    if target is not None and "earlier_issues" in target and step_input["task_type"] != "cell_extraction":
+        issues.append(Issue("earlier_issues_outside_cell_extraction", "/extraction_target/earlier_issues", step_input["task_type"]))
     if target is not None and "comparison_frame" in target and step_input["task_type"] != "table_columns":
         # The compare intent frames column suggestions only; a cell is read against its column, never a frame.
         issues.append(Issue("comparison_frame_outside_column_suggestions", "/extraction_target/comparison_frame",
@@ -3161,6 +3168,77 @@ def claim_assessment_evidence(step_input: dict[str, Any], item: dict[str, Any]) 
     abstract = passage["locator"]["kind"] == "abstract"
     return {"evidence_kind": "abstract" if abstract else "passage",
             "passage_id": None if abstract else passage["passage_id"], "quote": anchor.text}
+
+
+# Problems of one cell answer that leave the other answers of the same cell extraction output usable (D65).
+# Anything else (a schema error, an envelope mismatch, an unknown or twice-answered column) fails the whole output.
+CELL_SALVAGE_HINTS = {
+    "anchor_not_in_passage": "A quote was not found word for word in the passage it cites. Copy the words exactly from"
+                             " the passage, cite the passage that holds them, or leave the evidence out if no passage"
+                             " supports the answer.",
+    "unknown_passage_id": "The evidence cited a passage that was not given. Cite only the passages given.",
+    "duplicate_evidence_quote": "The same quote of a passage was given twice. Give each quote once.",
+    "value_without_evidence": "A 'value' answer needs at least one exact quote from a given passage.",
+    "unknown_without_evidence": "An 'unknown' answer needs at least one exact quote from a given passage.",
+    "evidence_for_not_found": "A 'not_found_in_inspected_scope' answer cites no passage.",
+    "invalid_cell_value": "The value did not fit the column's answer format.",
+    "not_applicable_without_note": "A 'not_applicable' answer needs a short note saying why.",
+    "locator_in_note": "The note named a page, equation, table, figure or section number. Leave locators out of the note.",
+    "column_without_answer": "The column was not answered. Answer it once.",
+}
+
+
+def cell_draft_from_raw(step_input: dict[str, Any], raw: str) -> str | dict[str, Any]:
+    """A cell extraction's raw model text as `_model_step` validated it: handles resolved, field names normalised and
+    the code-owned envelope stamped. Used to read the per-cell problems of an output that failed validation."""
+    draft = resolve_citation_handles(step_input, raw)
+    draft, _ = normalise_output("cell_extraction", draft)
+    draft, _ = stamp_package_hash("cell_extraction", step_input, draft)
+    draft, _ = stamp_step_input_id("cell_extraction", step_input, draft)
+    return draft
+
+
+def salvage_cells(step_input: dict[str, Any], draft: str | dict[str, Any]) -> dict[str, Any] | None:
+    """Split a failed cell extraction output into the answers that pass every check and the columns that do not.
+
+    Returns None when the output is valid or when any problem is not a problem of one cell answer: then the output
+    fails as a whole, as before. Otherwise `cells` are the answers of the columns without a problem, checked again on
+    their own against a copy of the input that asks for those columns only, and `bad` maps each other column to its
+    problems. A kept answer is as checked as an answer of a valid output; nothing of a bad column is kept here.
+    """
+    if step_input.get("task_type") != "cell_extraction" or not isinstance(draft, dict):
+        return None
+    report = validate_model_output(step_input, draft)
+    if report.ok or any(issue.code not in CELL_SALVAGE_HINTS for issue in report.issues):
+        return None
+    columns = [c["column_id"] for c in step_input["extraction_target"]["columns"]]
+    bad: dict[str, list[dict[str, str]]] = {}
+    for issue in report.issues:
+        if issue.code == "column_without_answer":
+            column_id = issue.message
+        else:
+            match = re.match(r"^/cells/(\d+)(?:/|$)", issue.path)
+            if match is None:
+                return None
+            column_id = draft["cells"][int(match.group(1))]["column_id"]
+        if column_id not in columns:
+            return None
+        bad.setdefault(column_id, []).append({"code": issue.code, "path": issue.path, "message": issue.message})
+    good = [column_id for column_id in columns if column_id not in bad]
+    cells = [cell for cell in draft["cells"] if cell["column_id"] in good]
+    if good:
+        narrowed = copy.deepcopy(step_input)
+        narrowed["extraction_target"]["columns"] = [c for c in narrowed["extraction_target"]["columns"] if c["column_id"] in good]
+        if not validate_model_output(narrowed, dict(draft, cells=cells)).ok:
+            return None
+    return {"cells": cells, "bad": bad}
+
+
+def earlier_issues(bad: dict[str, list[dict[str, str]]]) -> list[dict[str, str]]:
+    """What the one retry of a cell extraction is told about its columns' earlier answers: a fixed hint per problem,
+    without passage identifiers (the model knows passages by handles only)."""
+    return [{"column_id": column_id, "code": code, "message": CELL_SALVAGE_HINTS[code]}
+            for column_id, issues in bad.items() for code in dict.fromkeys(issue["code"] for issue in issues)]
 
 
 def storable_cells(step_input: dict[str, Any], data: str | dict[str, Any]) -> list[dict[str, Any]]:

@@ -278,7 +278,7 @@ def passage_ids(lib, svid):
 def test_fill_links_each_cell_to_its_own_source_version_and_skips_the_model_without_text(tmp_path):
     lib = library(tmp_path)
     run = fill(lib)
-    assert run["kind"] == "table_fill" and run["stage"] == "extraction" and run["budget"]["max_model_calls"] == 4
+    assert run["kind"] == "table_fill" and run["stage"] == "extraction" and run["budget"]["max_model_calls"] == 8
     assert execute(lib, run)["status"] == "completed"
     assert len(lib.adapter.calls) == 2  # the source without text had no model call
 
@@ -326,7 +326,7 @@ def test_a_source_answers_at_most_eight_columns_per_call_and_a_spent_budget_paus
     lib = library(tmp_path / "full")
     nine_columns(lib)
     run = fill(lib)
-    assert run["budget"]["max_model_calls"] == 8
+    assert run["budget"]["max_model_calls"] == 16  # four batches, each a call, a retry and their repairs
     assert execute(lib, run)["status"] == "completed"
     assert [len(call["extraction_target"]["columns"]) for call in lib.adapter.calls] == [8, 1, 8, 1]
 
@@ -352,7 +352,7 @@ def test_a_fill_reads_at_most_25_sources(tmp_path):
     tid = lib.tables.create_table(rid, "Many", None, None, None)
     lib.tables.add_column(rid, tid, PACKET_SIZE, 1, None)
     plan = lib.tables.fill_plan(rid, tid)
-    assert (len(plan["sources"]), plan["sources_beyond_limit"], plan["model_calls"], plan["max_model_calls"]) == (25, 1, 25, 50)
+    assert (len(plan["sources"]), plan["sources_beyond_limit"], plan["model_calls"], plan["max_model_calls"]) == (25, 1, 25, 100)
 
 
 def test_a_stale_fill_only_proposes(tmp_path):
@@ -454,7 +454,7 @@ def test_fill_and_column_suggestion_api(tmp_path):
         upload(client, rid, "a.pdf", "SYNTHETIC packets of 128 bytes minimize energy per bit.")
         tid = client.post(f"/api/researches/{rid}/tables", json={"title": "Packets"}).json()["table"]["id"]
         view = client.post(f"{table_url(rid, tid)}/columns", json=PACKET_SIZE | {"expected_version": 1}).json()
-        assert view["fill_estimate"] == {"sources": 1, "sources_without_text": 0, "sources_beyond_limit": 0, "model_calls": 1, "max_model_calls": 2}
+        assert view["fill_estimate"] == {"sources": 1, "sources_without_text": 0, "sources_beyond_limit": 0, "model_calls": 1, "max_model_calls": 4}
         version = view["table"]["version"]
 
         assert client.post(f"{table_url(rid, tid)}/fill", json={"expected_version": version - 1}).status_code == 409

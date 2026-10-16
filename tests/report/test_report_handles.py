@@ -12,7 +12,7 @@ from deixis.workflow.flow import RunStopped
 from fakes import parse_step_input
 from test_contracts import CASES, STEP_INPUTS
 from test_report_flow import report_flow, _claim
-from test_report_failed_rows import add_source, fail_source, flagged
+from test_report_failed_rows import add_source, fail_source, legacy_snapshot
 
 
 OLD_HASH = "sha256:08f1bdeadc63b809bdf6d123a1e77889cada14d64d3e851c3d9fe25bfb2704ee"
@@ -330,7 +330,7 @@ def test_viii_failed_row_builder_sends_display_only_sources_and_review_count_bui
     flow, store, reports, adapter, run, scope, report_id = state
     failed_id = add_source(state, "SYNTHETIC failed row")
     fail_source(state, failed_id)
-    run = flagged(state)
+    legacy_snapshot(state, [failed_id])  # a report saved under the failed-row rule resumes from that snapshot
     asyncio.run(run_report(flow, run, scope))
     # Select the VIII payload explicitly: frozen plan budgets also mention VIII in earlier sections.
     row = next(row for row in store.conn.execute("SELECT payload_json, user_message FROM step_inputs WHERE run_id = ?",

@@ -230,6 +230,11 @@ class _Writer:
         draft = export_text.draft_line(view, tr)
         if draft is not None:
             blocks.append(r"\noindent " + line(draft))
+        if basis := view.get("basis"):
+            blocks.append(r"\noindent " + fixed(export_text.basis_note(basis, tr)))
+            if basis["unverified_sources"]:
+                blocks.append(_itemize([": ".join(export_text.basis_source_fields(row, tr, line))
+                                        for row in basis["unverified_sources"]]))
         missing = view.get("missing_rows")
         if missing:
             blocks.append(r"\noindent " + fixed(export_text.missing_rows_sentence(missing, tr)))

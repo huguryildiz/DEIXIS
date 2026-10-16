@@ -16,6 +16,7 @@ from deixis.workflow.tables import InvalidTableInput, TableStore
 
 # The smallest model-call ceiling a report run may get, whatever the derived worst case is (owner, 2026-09-18).
 REPORT_CALL_FLOOR = 50
+REPORT_REFUSAL = "A report needs an evidence table with at least one column and one included source"
 DISPLAY_ORDER = ("abstract", "index_terms", "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX")
 
 
@@ -28,9 +29,8 @@ class ReportStore:
         report = self.report(report_id)
         self.store._event(report["research_id"], type_, {"report_id": report_id, **payload}, report["run_id"])
 
-    def request_report(self, research_id: str, table_id: str,
-                       idempotency_key: str | None, continue_with_failed: bool = False) -> dict[str, Any]:
-        """Queue a report run over one evidence table, refusing a table that is not ready."""
+    def request_report(self, research_id: str, table_id: str, idempotency_key: str | None) -> dict[str, Any]:
+        """Queue a report run over one evidence table, refusing only a table without a column or an included row."""
         from deixis.workflow.report.sections import ROUNDS
         from deixis.workflow.tables import report_ready
 
@@ -45,9 +45,8 @@ class ReportStore:
                 return self.store.run(existing["id"])
 
             scope = self.store.scope(research_id)
-            readiness = report_ready(self.store, research_id, table_id, continue_with_failed=continue_with_failed)
-            if not self.store.included_sources(research_id) or not readiness["ready"]:
-                raise RevisionConflict("Include sources and fill every active evidence-table column before starting a report")
+            if not report_ready(self.store, research_id, table_id)["ready"]:
+                raise RevisionConflict(REPORT_REFUSAL)
 
             section_count = sum(map(len, ROUNDS))
             # (Plan + model-written sections + optional research title + one optional phrase repair per section + review)
@@ -65,10 +64,7 @@ class ReportStore:
             report_id = self.create_report(
                 research_id, run["id"], run["scope_revision"], scope["language_hint"],
             )
-            return self.store.update_run(
-                run["id"], target_json=dumps({"table_id": table_id, "report_id": report_id,
-                                            **({"continue_with_failed": True} if continue_with_failed else {})}),
-            )
+            return self.store.update_run(run["id"], target_json=dumps({"table_id": table_id, "report_id": report_id}))
 
     def create_report(self, research_id: str, run_id: str, scope_revision: int, language: str | None) -> str:
         with transaction(self.conn):
@@ -111,7 +107,7 @@ class ReportStore:
             self.conn.execute("UPDATE reports SET plan_json = ?, updated_at = ? WHERE id = ?", (dumps(plan), now(), report_id))
             self._event(report_id, "report_plan_saved")
 
-    def save_snapshot(self, report_id: str, table_id: str, continue_with_failed: bool = False) -> dict[str, Any]:
+    def save_snapshot(self, report_id: str, table_id: str) -> dict[str, Any]:
         """Read and insert once in one transaction; later table edits cannot change this report's evidence."""
         with transaction(self.conn):
             report = self.report(report_id)
@@ -120,14 +116,11 @@ class ReportStore:
                 if existing["table_id"] != table_id:
                     raise ValueError("This report already has a snapshot of another table")
                 return json.loads(existing["snapshot_json"])
-            readiness = None
-            if continue_with_failed:
-                from deixis.workflow.tables import report_ready
+            from deixis.workflow.tables import report_ready
 
-                readiness = report_ready(self.store, report["research_id"], table_id, continue_with_failed=True)
-                if not readiness["ready"]:
-                    raise RevisionConflict("Include sources and fill every active evidence-table column before starting a report")
-            snapshot = build_snapshot(self.store, report["research_id"], table_id, readiness)
+            if not report_ready(self.store, report["research_id"], table_id)["ready"]:
+                raise RevisionConflict(REPORT_REFUSAL)
+            snapshot = build_snapshot(self.store, report["research_id"], table_id)
             self.conn.execute(
                 "INSERT INTO report_snapshot (report_id, table_id, table_revision, snapshot_json, created_at)"
                 " VALUES (?, ?, ?, ?, ?)",

@@ -1933,6 +1933,8 @@ FILE_EXPECTED = {
         '# SYNTHETIC valid\n'
         'Evidence report · V1\n'
         '\n'
+        'Basis of this report: 0 of 1 source was read from full text and 1 from the abstract or metadata only. Upload the PDFs of the sources read from the abstract or metadata for a more detailed report.\n'
+        '\n'
         '## Abstract\n'
         '\n'
         'This report has shown that the SYNTHETIC formulation is bounded.\n'
@@ -1998,6 +2000,8 @@ FILE_EXPECTED = {
     'valid-tr': (
         '# SYNTHETIC valid\n'
         'Kanıt raporu · V1\n'
+        '\n'
+        "Bu raporun dayanağı: 1 kaynağın 0 tanesi tam metinden, 1 tanesi yalnızca özetten veya künye bilgisinden okundu. Daha ayrıntılı bir rapor için özetten veya künye bilgisinden okunan kaynakların PDF'lerini yükleyin.\n"
         '\n'
         '## Özet\n'
         '\n'
@@ -2067,6 +2071,8 @@ FILE_EXPECTED = {
         '# SYNTHETIC draft\n'
         'Evidence report · draft\n'
         '\n'
+        'Basis of this report: 0 of 1 source was read from full text and 1 from the abstract or metadata only. Upload the PDFs of the sources read from the abstract or metadata for a more detailed report.\n'
+        '\n'
         '## Abstract\n'
         '\n'
         'This report has shown that the SYNTHETIC formulation is bounded.\n'
@@ -2135,6 +2141,8 @@ FILE_EXPECTED = {
         '# SYNTHETIC draft\n'
         'Kanıt raporu · taslak\n'
         '\n'
+        "Bu raporun dayanağı: 1 kaynağın 0 tanesi tam metinden, 1 tanesi yalnızca özetten veya künye bilgisinden okundu. Daha ayrıntılı bir rapor için özetten veya künye bilgisinden okunan kaynakların PDF'lerini yükleyin.\n"
+        '\n'
         '## Özet\n'
         '\n'
         'This report has shown that the SYNTHETIC formulation is bounded.\n'
@@ -2200,6 +2208,8 @@ FILE_EXPECTED = {
     'non-ascii-en': (
         '# SYNTHETIC café İığşçöü\n'
         'Evidence report · V1\n'
+        '\n'
+        'Basis of this report: 0 of 1 source was read from full text and 1 from the abstract or metadata only. Upload the PDFs of the sources read from the abstract or metadata for a more detailed report.\n'
         '\n'
         '## Abstract\n'
         '\n'
@@ -2267,6 +2277,8 @@ FILE_EXPECTED = {
         '# SYNTHETIC café İığşçöü\n'
         'Kanıt raporu · V1\n'
         '\n'
+        "Bu raporun dayanağı: 1 kaynağın 0 tanesi tam metinden, 1 tanesi yalnızca özetten veya künye bilgisinden okundu. Daha ayrıntılı bir rapor için özetten veya künye bilgisinden okunan kaynakların PDF'lerini yükleyin.\n"
+        '\n'
         '## Özet\n'
         '\n'
         'This report has shown that the SYNTHETIC formulation is bounded.\n'
@@ -2332,6 +2344,8 @@ FILE_EXPECTED = {
     'symbols-en': (
         '# !@#$%^&*()\n'
         'Evidence report · V1\n'
+        '\n'
+        'Basis of this report: 0 of 1 source was read from full text and 1 from the abstract or metadata only. Upload the PDFs of the sources read from the abstract or metadata for a more detailed report.\n'
         '\n'
         '## Abstract\n'
         '\n'
@@ -2399,6 +2413,8 @@ FILE_EXPECTED = {
         '# !@#$%^&*()\n'
         'Kanıt raporu · V1\n'
         '\n'
+        "Bu raporun dayanağı: 1 kaynağın 0 tanesi tam metinden, 1 tanesi yalnızca özetten veya künye bilgisinden okundu. Daha ayrıntılı bir rapor için özetten veya künye bilgisinden okunan kaynakların PDF'lerini yükleyin.\n"
+        '\n'
         '## Özet\n'
         '\n'
         'This report has shown that the SYNTHETIC formulation is bounded.\n'
@@ -2465,6 +2481,8 @@ FILE_EXPECTED = {
         '# SYNTHETIC aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa tail\n'
         'Evidence report · V1\n'
         '\n'
+        'Basis of this report: 0 of 1 source was read from full text and 1 from the abstract or metadata only. Upload the PDFs of the sources read from the abstract or metadata for a more detailed report.\n'
+        '\n'
         '## Abstract\n'
         '\n'
         'This report has shown that the SYNTHETIC formulation is bounded.\n'
@@ -2530,6 +2548,8 @@ FILE_EXPECTED = {
     'cut-hyphen-tr': (
         '# SYNTHETIC aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa tail\n'
         'Kanıt raporu · V1\n'
+        '\n'
+        "Bu raporun dayanağı: 1 kaynağın 0 tanesi tam metinden, 1 tanesi yalnızca özetten veya künye bilgisinden okundu. Daha ayrıntılı bir rapor için özetten veya künye bilgisinden okunan kaynakların PDF'lerini yükleyin.\n"
         '\n'
         '## Özet\n'
         '\n'

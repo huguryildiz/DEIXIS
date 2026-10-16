@@ -6,13 +6,15 @@ import path from 'node:path'
 import { nextPort } from './ports'
 import { openPanel, showAnswer } from './panels'
 
-// Synthetic records and one fixed extraction failure; this tests the report boundary, not model quality.
+// Synthetic records and one fixed extraction failure; this tests that failed cells do not stop a report and that the
+// report says what it rests on (D65), not model quality.
 const REPO = path.resolve(process.cwd(), '..', '..')
 const OUT = path.resolve(process.env.DEIXIS_ACCEPTANCE_DIR ?? 'test-results/acceptance')
 const PORT = nextPort() // P17 has its own server and library.
 const URL = `http://127.0.0.1:${PORT}`
 const FAILED = 'SYNTHETIC molecule release scheduling with bisection'
-const NOTE = '1 of 2 sources did not complete the table (missing cells: 1).'
+const NOTE = '1 of 2 cells has no verified answer.'
+const BASIS = 'Basis of this report: 0 of 2 sources were read from full text and 2 from the abstract or metadata only. 1 of 2 table cells could not be verified against a quote'
 mkdirSync(OUT, { recursive: true })
 
 async function screenshots(page: Page, state: 'choice' | 'sheet') {
@@ -29,7 +31,7 @@ async function screenshots(page: Page, state: 'choice' | 'sheet') {
       if (state === 'choice') await openPanel(page, 'table'); else await showAnswer(page)
       if (state === 'sheet') await page.getByRole('button', { name: 'Open evidence report' }).click()
       const surface = state === 'choice' ? page.locator('.notice', { hasText: NOTE }) : page.locator('.report-sheet')
-      await expect(surface).toContainText(NOTE)
+      await expect(surface).toContainText(state === 'choice' ? NOTE : BASIS)
       await surface.scrollIntoViewIfNeeded()
       await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
       if (state === 'sheet') {
@@ -40,7 +42,7 @@ async function screenshots(page: Page, state: 'choice' | 'sheet') {
   }
 }
 
-test('explicitly write a report with a recorded failed row and disclose it in the sheet and export', async ({ browser }) => {
+test('write a report over a row whose cells failed and name it in the basis note of the sheet and export', async ({ browser }) => {
   const data = mkdtempSync(path.join(tmpdir(), 'deixis-p17-'))
   let proc: ChildProcess | undefined
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
@@ -50,8 +52,7 @@ test('explicitly write a report with a recorded failed row and disclose it in th
       [path.join(REPO, 'tests/acceptance/fixture_server.py'), '--data-dir', data, '--port', String(PORT)],
       { cwd: REPO, env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: `${REPO}/backend:${REPO}` }, stdio: 'inherit' })
     await expect.poll(async () => { try { return (await fetch(`${URL}/api/health`)).ok } catch { return false } }).toBe(true)
-    const csrf = (await (await api.get('/api/session')).json()).csrf_token as string
-    await page.goto(URL)
+        await page.goto(URL)
     await page.getByLabel('Research question').fill('SYNTHETIC: How are molecule release schedules compared? [fill-fails-one-row]')
     await page.getByRole('button', { name: 'Start research' }).click()
     await page.waitForURL(/#\/research\//)
@@ -71,21 +72,15 @@ test('explicitly write a report with a recorded failed row and disclose it in th
     await editor.getByRole('button', { name: 'Add column' }).click()
     await page.getByRole('button', { name: /^Fill empty cells/ }).click()
     const toolbar = page.locator('.evidence-toolbar')
-    await expect(toolbar.getByRole('button', { name: 'Write the report with missing rows' })).toBeEnabled({ timeout: 60_000 })
-    await expect(toolbar.getByRole('button', { name: 'Write a manuscript draft', exact: true })).toHaveCount(0)
+    // No extra choice: the one report button stays, and a plain notice says what the report will lack.
+    await expect(toolbar.getByRole('button', { name: 'Write a manuscript draft', exact: true })).toBeEnabled({ timeout: 60_000 })
+    await expect(toolbar.getByRole('button', { name: 'Write the report with missing rows' })).toHaveCount(0)
     // The answer's own notices in the thread are .notice too (UI parity S10); this one is the table's.
     await expect(page.locator('.notice', { hasText: NOTE })).toBeVisible()
     const tables = await (await api.get(`/api/researches/${rid}/tables`)).json()
-    const tableId = tables[0].id as string
-    expect(tables[0].report_ready).toMatchObject({ ready: false, can_continue_with_failed: true, failed_rows: 1, failed_cells: 1, included_rows: 2 })
-    const refused = await api.post(`/api/researches/${rid}/reports`, { data: { table_id: tableId }, headers: { 'x-deixis-csrf': csrf } })
-    expect(refused.status()).toBe(409)
-    expect(await refused.text()).toContain('Include sources and fill every active evidence-table column before starting a report')
-    const panel = page.locator('.evidence-toolbar')
-    await expect(page.locator('.notice', { hasText: NOTE })).toBeVisible()
-    await expect(panel.getByRole('button', { name: 'Write a manuscript draft', exact: true })).toHaveCount(0)
+    expect(tables[0].report_ready).toEqual({ ready: true, cells_left: 1, cells_total: 2, included_rows: 2 })
     await screenshots(page, 'choice')
-    await panel.getByRole('button', { name: 'Write the report with missing rows' }).click()
+    await toolbar.getByRole('button', { name: 'Write a manuscript draft', exact: true }).click()
     await expect.poll(async () => {
       const view = await (await api.get(`/api/researches/${rid}`)).json()
       return view.runs.find((run: { kind: string }) => run.kind === 'report')?.status
@@ -93,22 +88,25 @@ test('explicitly write a report with a recorded failed row and disclose it in th
     const summaries = await (await api.get(`/api/researches/${rid}/reports`)).json()
     const reportId = summaries[0].id as string
     const report = await (await api.get(`/api/researches/${rid}/reports/${reportId}`)).json()
-    expect(report.missing_rows.counts).toEqual({ included: 2, completed: 1, failed: 1, cells_total: 2, cells_missing: 1 })
-    expect(report.missing_rows.failed_rows[0].title).toBe(FAILED)
-    expect(report.table_i.rows.filter((row: { failed?: boolean }) => row.failed)).toHaveLength(1)
+    expect(report.missing_rows).toBeNull()
+    expect(report.basis).toMatchObject({ sources: 2, cells_total: 2, cells_unverified: 1 })
+    expect(report.basis.unverified_sources).toHaveLength(1)
+    const failed = report.basis.unverified_sources[0]
+    expect(failed.title).toBe(FAILED)
+    // The failed source stays a row of the report's table.
+    expect(report.table_i.rows).toHaveLength(2)
     await showAnswer(page)  // the report card sits on the Answer tab since D230
     await page.getByRole('button', { name: 'Open evidence report' }).click()
     const sheet = page.locator('[data-split-panel]').filter({ has: page.locator('.report-sheet') }).last()
-    await expect(sheet.locator('.report-document > .notice').first()).toContainText(NOTE)
-    await expect(sheet.locator('.report-document > .notice').first()).toContainText(report.missing_rows.failed_rows[0].source_key)
+    await expect(sheet.locator('.report-document > .notice').first()).toContainText(BASIS)
+    await expect(sheet.locator('.report-document > .notice').first()).toContainText(failed.source_key)
     await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: URL })
     await sheet.getByRole('button', { name: 'Download report' }).click()
     await page.getByRole('menuitem', { name: /^Copy/ }).click()
-    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(NOTE)
+    await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(BASIS)
     const exported = await api.get(`/api/researches/${rid}/reports/${reportId}/export?format=markdown`)
     expect(exported.status()).toBe(200)
-    expect(await exported.text()).toContain(report.missing_rows.failed_rows[0].source_key)
-    expect(await exported.text()).toContain('invalid model output')
+    expect(await exported.text()).toContain(`- ${failed.source_key}: 1 of 1 cells not verified`)
     await screenshots(page, 'sheet')
   } finally {
     await page.close()

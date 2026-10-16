@@ -681,8 +681,10 @@ def test_assembly_catches_viii_text_drift(tmp_path):
     assert "limitations_text_drift" in {issue["rule"] for issue in run_assembly_checks(store, reports, report_id)}
 
 
-def test_report_run_fails_when_the_evidence_table_is_not_ready(tmp_path):
+def test_report_run_fails_when_the_evidence_table_has_no_included_row(tmp_path):
+    # Empty cells do not stop a report (D65); a table none of whose rows is an included source does.
     flow, store, reports, _, run, scope, report_id = report_flow(tmp_path, fill=False)
+    store.conn.execute("UPDATE selections SET state = 'excluded' WHERE research_id = ?", (run["research_id"],))
 
     with pytest.raises(RunStopped):
         asyncio.run(run_report(flow, run, scope))

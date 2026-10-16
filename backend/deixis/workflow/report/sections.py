@@ -268,21 +268,20 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
     table_id, report_id = run["target"]["table_id"], run["target"]["report_id"]
     reports = ReportStore(flow.store)
     flow._checkpoint(run_id, run["scope_revision"])
-    continue_with_failed = run["target"].get("continue_with_failed", False)
     # A resumed report goes on from the snapshot it saved: rows the table gained since (D63) are not its evidence.
+    # Empty or unverified cells do not stop it; the snapshot's basis note says what each source was read from.
     try:
         snapshot = reports.snapshot(report_id)
     except NotFound:
         snapshot = None
     if snapshot is None:
-        readiness = report_ready(flow.store, research_id, table_id, continue_with_failed=continue_with_failed)
+        readiness = report_ready(flow.store, research_id, table_id)
         if not readiness["ready"]:
             flow._fail(run_id, "table_not_ready", readiness)
         try:
-            snapshot = reports.save_snapshot(report_id, table_id, continue_with_failed=continue_with_failed)
+            snapshot = reports.save_snapshot(report_id, table_id)
         except RevisionConflict:
-            flow._fail(run_id, "table_not_ready", report_ready(flow.store, research_id, table_id,
-                                                              continue_with_failed=continue_with_failed))
+            flow._fail(run_id, "table_not_ready", report_ready(flow.store, research_id, table_id))
     target = {"report_id": report_id, "section_id": None, "columns": snapshot["columns"], "plan": None, "cells": [],
               "gap_candidates": [], "prior_summaries": [], "review_scope": None,
               "limitations_core": None}

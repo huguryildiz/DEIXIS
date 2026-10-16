@@ -59,16 +59,51 @@ def reading_counts(store: Store, research_id: str, included: list[str]) -> dict[
     return counts
 
 
-def build_snapshot(store: Store, research_id: str, table_id: str,
-                   readiness: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Copy current source, column, cell and quote records; this function does not write."""
+def reading_basis(store: Store, rows: list[dict[str, Any]], cells: list[dict[str, Any]],
+                  columns: list[dict[str, Any]]) -> dict[str, Any]:
+    """What the report's table rests on, for the basis note at the top of the report (D65).
+
+    A row read from PDF text has a cell made from selected PDF passages; any other row was read from its abstract or,
+    without one, from its metadata. A cell could not be verified when it holds no finished answer (empty, or a failed
+    extraction left it so) or holds a value without linked evidence (`not_verified`); 'inaccessible' cells of a source
+    without stored text are counted with the metadata-only rows instead. Rows with such cells are named.
+    """
+    unverified_states = {None, "not_verified"}
+    by_cell = {(c["source_version_id"], c["column_id"]): c for c in cells}
+    full_text, abstract_only, metadata_only, named = 0, 0, 0, []
+    for row in rows:
+        source_id = row["source_version_id"]
+        if row["reading_depth"] in ("selected_sections", "full_text"):
+            full_text += 1
+        elif row["reading_depth"] == "abstract" or (
+                row["reading_depth"] is None and any(p["kind"] == "abstract" for p in store.passages_for(source_id))):
+            abstract_only += 1
+        else:
+            metadata_only += 1
+        unverified = sum((by_cell.get((source_id, column["column_id"])) or {}).get("state") in unverified_states
+                         for column in columns)
+        if unverified:
+            source = store.conn.execute(
+                "SELECT v.title, w.source_key FROM source_versions v JOIN works w ON w.id = v.work_id WHERE v.id = ?",
+                (source_id,)).fetchone()
+            named.append({"source_version_id": source_id, "source_key": source["source_key"], "title": source["title"],
+                          "cells_unverified": unverified, "cells_total": len(columns)})
+    return {"sources": len(rows), "full_text": full_text, "abstract_only": abstract_only, "metadata_only": metadata_only,
+            "cells_total": len(rows) * len(columns), "cells_unverified": sum(item["cells_unverified"] for item in named),
+            "unverified_sources": named}
+
+
+def build_snapshot(store: Store, research_id: str, table_id: str) -> dict[str, Any]:
+    """Copy current source, column, cell and quote records; this function does not write.
+
+    Every included row of the table is evidence, whatever its cells hold: a row whose cells failed is read from its
+    abstract or metadata and named in the basis note. Only snapshots saved before this rule carry `failed_rows`.
+    """
     tables = TableStore(store)
     table = tables._table(research_id, table_id)
     columns = tables.target_columns(research_id, table_id)
     included = store.included_sources(research_id)
     source_ids = included_table_rows(store, research_id, table_id)
-    failed_rows = (readiness or {}).get("failed_row_details", [])
-    failed_ids = {row["source_version_id"] for row in failed_rows}
     column_ids = {column["id"] for column in columns}
     cells = []
     for row in store.conn.execute(
@@ -76,7 +111,7 @@ def build_snapshot(store: Store, research_id: str, table_id: str,
         " r.state, r.value_json, r.reading_depth FROM evidence_cells c"
         " JOIN cell_revisions r ON r.id = c.current_revision_id WHERE c.table_id = ?", (table_id,),
     ):
-        if row["source_version_id"] not in source_ids or row["source_version_id"] in failed_ids or row["column_id"] not in column_ids:
+        if row["source_version_id"] not in source_ids or row["column_id"] not in column_ids:
             continue
         evidence = [{"passage_id": link["passage_id"], "quote": link["anchor_text"]} for link in store.conn.execute(
             "SELECT passage_id, anchor_text FROM cell_evidence_links WHERE cell_revision_id = ? ORDER BY rowid",
@@ -137,9 +172,5 @@ def build_snapshot(store: Store, research_id: str, table_id: str,
                 for source_id in tables.active_rows(table_id) if source_id not in source_ids]
     if left_out:
         result["left_out_rows"] = left_out
-    if failed_rows:
-        result["failed_rows"] = failed_rows
-        result["row_counts"] = {"included": len(source_ids), "completed": len(source_ids) - len(failed_rows),
-                                "failed": len(failed_rows), "cells_total": len(source_ids) * len(columns),
-                                "cells_missing": len(readiness["missing"])}
+    result["basis"] = reading_basis(store, rows, cells, result["columns"])
     return result

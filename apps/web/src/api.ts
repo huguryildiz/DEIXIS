@@ -905,7 +905,9 @@ export type TableView = {
   column_suggestions: { run_id: string; step_id: string; columns: ColumnSuggestion[]; notes: string } | null
 }
 export type TableSummary = { id: string; title: string; version: number; answer_version: number | null; created_at: string; updated_at: string; rows: number; columns: number; access: { pdf_available: number; abstract: number; metadata: number }; auto_columns: number
-  report_ready: { ready: boolean; cells_left: number; cells_total: number; failed_rows: number; can_continue_with_failed: boolean; failed_cells: number; included_rows: number } }
+  report_ready: { ready: boolean; cells_left: number; cells_total: number; included_rows: number } }
+export type ReportBasis = { sources: number; full_text: number; abstract_only: number; metadata_only: number; cells_total: number; cells_unverified: number
+  unverified_sources: { source_version_id: string; source_key: string | null; title: string; cells_unverified: number; cells_total: number }[] }
 export type ReportSummary = { id: string; status: 'in_progress' | 'valid' | 'draft'; report_version: number | null; created_at: string }
 export type ReportLink = { link_id: string; passage_id: string | null; cell_id: string | null; source_version_id: string; ref_number: number; open_passage_id: string | null
   anchor_text: string | null; anchor_match: 'exact' | 'normalized' | 'fuzzy' | null }
@@ -928,6 +930,8 @@ export type ReportDetail = ReportSummary & { language: string; updated_at: strin
   passage_freshness: PassageFreshness
   missing_rows: { counts: { included: number; completed: number; failed: number; cells_missing: number; cells_total: number }
     failed_rows: { source_version_id: string; source_key: string | null; title: string; reason: string; missing_columns: { column_id: string; name: string; reason: string }[] }[] } | null
+  // What the table was read from, frozen with the snapshot (D65); null for a report saved before it.
+  basis: ReportBasis | null
   // `stale`: every cited cell or row that differs from the snapshot, including changes a section marked as seen.
   evidence_changes: { any: boolean; changed_cells: number; removed_sources: number; added_sources: number; revised_columns: number; not_checked: string[]
     stale?: { key: string; kind: 'cell_changed' | 'source_removed'; source_version_id: string; cell_id?: string; column_id?: string }[] }
@@ -1451,7 +1455,7 @@ export const api = {
     request<ResearchView>(`/api/researches/${id}/english-question`, json('PUT', body)),
   tables: (id: string) => request<TableSummary[]>(`/api/researches/${id}/tables`),
   answerMethod: (id: string, answerId: string) => request<AnswerMethod>(`/api/researches/${id}/answers/${answerId}/method`),
-  startReport: (id: string, tableId: string, key: string, options?: { continueWithFailed?: boolean }) => request<Run>(`/api/researches/${id}/reports`, json('POST', { table_id: tableId, ...(options?.continueWithFailed ? { continue_with_failed: true } : {}) }, { 'Idempotency-Key': key })),
+  startReport: (id: string, tableId: string, key: string) => request<Run>(`/api/researches/${id}/reports`, json('POST', { table_id: tableId }, { 'Idempotency-Key': key })),
   report: (id: string, reportId: string) => request<ReportDetail>(`/api/researches/${id}/reports/${reportId}`),
   reportGaps: (id: string, reportId: string) => request<ReportGap[]>(`/api/researches/${id}/reports/${reportId}/gaps`),
   candidates: (id: string) => request<CandidateListItem[]>(`/api/researches/${id}/candidates`),

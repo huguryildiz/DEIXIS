@@ -1,4 +1,7 @@
-"""Failed-row report boundaries using synthetic records and fake adapters only."""
+"""Reports over tables with failed or empty cells (D65), and the older failed-row snapshots they still read.
+
+Synthetic records and fake adapters only: these tests show what the report run, its snapshot, views and exports do with
+such cells; they say nothing about model quality.""" 
 
 import asyncio
 import copy
@@ -27,7 +30,7 @@ from test_report_api import create_table, fill_table, upload_and_include
 from test_report_flow import COLUMN, PASSAGE, CELL_QUOTE, ReportAdapter, _add_pdf, _claim, report_flow
 
 
-REFUSAL = "Include sources and fill every active evidence-table column before starting a report"
+REFUSAL = "A report needs an evidence table with at least one column and one included source"
 
 
 def synthetic_fill_run(store, run, target):
@@ -107,94 +110,133 @@ def save_cell(state, sid, cid, *, state_name="value", depth="abstract"):
     return revision
 
 
-def flagged(state):
-    _, store, _, _, run, _, _ = state
-    return store.update_run(run["id"], target_json=dumps(run["target"] | {"continue_with_failed": True}))
-
-
 def snapshot(state):
     _, _, reports, _, run, _, report = state
-    return reports.save_snapshot(report, run["target"]["table_id"], continue_with_failed=True)
+    return reports.save_snapshot(report, run["target"]["table_id"])
 
 
-def test_default_refuses_and_flag_requires_recorded_failures_and_a_completed_row(state):
+def legacy_snapshot(state, failed, reason="anchor_not_in_passage", save=True):
+    """Save a snapshot as the failed-row rule saved it before D65: the failed rows listed with their missing
+    columns, their cells left out, row counts, and no basis."""
+    _, store, reports, _, run, _, report = state
+    rid, table = run["research_id"], run["target"]["table_id"]
+    frozen = build_snapshot(store, rid, table)
+    frozen.pop("basis")
+    terminal = {"value", "unknown", "not_reported", "not_applicable", "not_found_in_inspected_scope", "not_verified"}
+    states = {(c["source_version_id"], c["column_id"]): c["state"] for c in frozen["cells"]}
+    details, missing = [], 0
+    for sid in failed:
+        source = store.conn.execute("SELECT v.title, w.source_key FROM source_versions v JOIN works w ON w.id = v.work_id"
+                                    " WHERE v.id = ?", (sid,)).fetchone()
+        columns = [{"column_id": c["column_id"], "name": c["name"], "reason": reason}
+                   for c in frozen["columns"] if states.get((sid, c["column_id"])) not in terminal]
+        missing += len(columns)
+        details.append({"source_version_id": sid, "source_key": source["source_key"], "title": source["title"],
+                        "missing_columns": columns, "reason": reason, "existing_cells": []})
+    frozen["cells"] = [c for c in frozen["cells"] if c["source_version_id"] not in failed]
+    frozen["failed_rows"] = details
+    frozen["row_counts"] = {"included": len(frozen["rows"]), "completed": len(frozen["rows"]) - len(failed),
+                            "failed": len(failed), "cells_total": len(frozen["rows"]) * len(frozen["columns"]),
+                            "cells_missing": missing}
+    if save:
+        store.conn.execute("INSERT INTO report_snapshot (report_id, table_id, table_revision, snapshot_json, created_at)"
+                           " VALUES (?, ?, ?, ?, 'synthetic')", (report, table, frozen["table_revision"], dumps(frozen)))
+    return frozen
+
+
+def test_a_report_starts_without_a_choice_when_cells_failed_or_are_empty(state):
     _, store, reports, _, run, _, _ = state
     rid, table = run["research_id"], run["target"]["table_id"]
-    sid = add_source(state, "SYNTHETIC failed extraction")
-    fail_source(state, sid)
+    failed = add_source(state, "SYNTHETIC failed extraction")
+    fail_source(state, failed)
+    add_source(state, "SYNTHETIC never filled")
+    readiness = report_ready(store, rid, table)
+    assert readiness["ready"] is True and len(readiness["missing"]) == 6 and readiness["rows"] == 3
+    assert TableStore(store).tables(rid)[0]["report_ready"] == {"ready": True, "cells_left": 6, "cells_total": 9, "included_rows": 3}
+    store.update_run(run["id"], status="completed")
+    created = reports.request_report(rid, table, "plain")
+    assert created["target"] == {"table_id": table, "report_id": created["target"]["report_id"]}
+
+
+def test_only_a_table_without_a_column_or_an_included_row_is_refused(state):
+    _, store, reports, _, run, _, _ = state
+    rid, table = run["research_id"], run["target"]["table_id"]
+    store.update_run(run["id"], status="completed")
+    tables = TableStore(store)
+    for column in tables.target_columns(rid, table):
+        tables.remove_column(rid, table, column["id"], column["version"])
     assert report_ready(store, rid, table)["ready"] is False
-    assert report_ready(store, rid, table, True)["ready"] is True
     with pytest.raises(RevisionConflict, match=REFUSAL):
         reports.request_report(rid, table, None)
-    store.update_run(run["id"], status="completed")
-    created = reports.request_report(rid, table, "explicit", continue_with_failed=True)
-    assert created["target"] == {"table_id": table, "report_id": created["target"]["report_id"], "continue_with_failed": True}
-    store.update_run(created["id"], status="completed")
-    untried = add_source(state, "SYNTHETIC untried")
-    assert not report_ready(store, rid, table, True)["ready"]
-    fail_source(state, untried)
-    completed = evidence_row_ids(build_snapshot(store, rid, table))[0]
-    tables = TableStore(store)
-    tables.remove_row(rid, table, completed, tables._table(rid, table)["version"])
-    # An included source without an active row is blocked even with its old terminal revisions.
-    assert not report_ready(store, rid, table, True)["ready"]
-    store.conn.execute("UPDATE corpus_memberships SET removed_at = 'synthetic' WHERE source_version_id = ?", (completed,))
-    assert not report_ready(store, rid, table, True)["ready"]  # every remaining row failed
+    empty = tables.create_table(rid, "SYNTHETIC empty", [], None, None)
+    tables.add_column(rid, empty, COLUMN, tables._table(rid, empty)["version"], None)
+    assert report_ready(store, rid, empty)["ready"] is False
 
 
-@pytest.mark.parametrize("status,code,expected", [("failed", "anchor_not_in_passage", "anchor_not_in_passage"),
-                                                 ("outcome_unknown", None, "extraction_failed")])
-def test_snapshot_keeps_failed_provenance_but_writes_no_cell_evidence(state, status, code, expected):
+def test_the_snapshot_keeps_every_row_and_its_basis_names_what_could_not_be_verified(state):
     _, store, _, _, run, _, _ = state
+    rid, table = run["research_id"], run["target"]["table_id"]
     no_text = add_source(state, "SYNTHETIC no text", text=False)
     fail_source(state, no_text, no_text=True)
     failed = add_source(state, "SYNTHETIC failed")
-    fail_source(state, failed, status=status, code=code)
-    counts_before = [store.conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
-                     for name in ("cell_revisions", "cell_evidence_links")]
+    fail_source(state, failed)
+    partial = add_source(state, "SYNTHETIC partly read")
+    _add_pdf(store, partial, [PASSAGE])
+    columns = [c["id"] for c in TableStore(store).target_columns(rid, table)]
+    save_cell(state, partial, columns[0], depth="selected_sections")
     frozen = snapshot(state)
-    assert len(frozen["rows"]) == 3 and len(frozen["cells"]) == 3
-    assert all(row["reading_depth"] is None for row in frozen["rows"] if row["source_version_id"] in (failed, no_text))
-    assert [r["source_version_id"] for r in frozen["failed_rows"]] == [no_text, failed]
-    for row, reason in zip(frozen["failed_rows"], ("no_stored_text", expected)):
-        assert row["title"] and row["source_key"] and row["reason"] == reason
-        assert [c["reason"] for c in row["missing_columns"]] == [reason] * 3
-        assert all(set(cell) == {"cell_id", "cell_revision_id", "column_id", "state"} for cell in row["existing_cells"])
-    assert len(frozen["failed_rows"][0]["existing_cells"]) == 3
-    assert {c["cell_revision_id"] for c in frozen["failed_rows"][0]["existing_cells"]} == {
-        row[0] for row in store.conn.execute("SELECT current_revision_id FROM evidence_cells WHERE source_version_id = ?", (no_text,))}
-    assert frozen["failed_rows"][1]["existing_cells"] == []
-    assert frozen["row_counts"] == {"included": 3, "completed": 1, "failed": 2, "cells_total": 9, "cells_missing": 6}
-    assert counts_before == [store.conn.execute(f"SELECT COUNT(*) FROM {name}").fetchone()[0]
-                             for name in ("cell_revisions", "cell_evidence_links")]
-    summary = TableStore(store).tables(run["research_id"])[0]["report_ready"]
-    assert summary == {"ready": False, "cells_left": 6, "cells_total": 9, "failed_rows": 2,
-                       "can_continue_with_failed": True, "failed_cells": 6, "included_rows": 3}
-
-
-def test_failed_step_from_another_scope_cannot_qualify_an_untried_row(state):
-    _, store, _, _, run, _, _ = state
-    sid = add_source(state, "SYNTHETIC stale failure")
-    fail_source(state, sid, revision=0)
-    assert report_ready(store, run["research_id"], run["target"]["table_id"], True)["failed_rows"] == []
-
-
-def test_flagged_snapshot_refusal_writes_nothing_but_default_still_saves(state):
-    _, store, reports, _, _, _, report = state
-    add_source(state, "SYNTHETIC untried")
-    events = store.conn.execute("SELECT COUNT(*) FROM events WHERE type = 'report_snapshot_saved'").fetchone()[0]
-    with pytest.raises(RevisionConflict, match=REFUSAL):
-        snapshot(state)
-    assert store.conn.execute("SELECT COUNT(*) FROM report_snapshot").fetchone()[0] == 0
-    assert store.conn.execute("SELECT COUNT(*) FROM events WHERE type = 'report_snapshot_saved'").fetchone()[0] == events
-    table = state[4]["target"]["table_id"]
-    old = reports.save_snapshot(report, table)
-    assert "failed_rows" not in old and "row_counts" not in old
-    assert reports.save_snapshot(report, table, True) == old
+    assert "failed_rows" not in frozen and "row_counts" not in frozen
+    assert [r["source_version_id"] for r in frozen["rows"]][1:] == [no_text, failed, partial]
+    assert frozen["basis"] == {
+        "sources": 4, "full_text": 1, "abstract_only": 2, "metadata_only": 1, "cells_total": 12, "cells_unverified": 5,
+        "unverified_sources": [
+            {"source_version_id": failed, "source_key": frozen["basis"]["unverified_sources"][0]["source_key"],
+             "title": "SYNTHETIC failed", "cells_unverified": 3, "cells_total": 3},
+            {"source_version_id": partial, "source_key": frozen["basis"]["unverified_sources"][1]["source_key"],
+             "title": "SYNTHETIC partly read", "cells_unverified": 2, "cells_total": 3}]}
+    assert all(item["source_key"] for item in frozen["basis"]["unverified_sources"])
+    assert evidence_row_ids(frozen) == [r["source_version_id"] for r in frozen["rows"]]
 
 
 @pytest.mark.parametrize("language", ["en", "tr"])
-def test_complete_flagged_run_views_export_numbers_and_evidence_inputs(state, language):
+def test_a_fully_failed_source_is_used_from_its_abstract_and_named_in_the_basis_note(state, language):
+    flow, store, reports, adapter, run, _, report = state
+    store.conn.execute("UPDATE reports SET language = ? WHERE id = ?", (language, report))
+    sid = add_source(state, "SYNTHETIC fully failed")
+    fail_source(state, sid)
+    asyncio.run(flow.execute(run["id"]))
+    assert store.run(run["id"])["status"] == "completed"
+    assert reports.report(report)["status"] == "valid"
+    frozen = reports.snapshot(report)
+    assert sid in evidence_row_ids(frozen) and not any(c["source_version_id"] == sid for c in frozen["cells"])
+    # Its abstract is given to the sections that read passages; its cells, holding nothing, are not.
+    # The model sees records by handle, so the source is found by its title and its passage by that source.
+    given = [call for call in adapter.calls if call["task_type"] == "report_section"]
+    shown = [(call, next((x["source_id"] for x in call["sources"] if x.get("title") == "SYNTHETIC fully failed"), None))
+             for call in given]
+    assert any(handle and any(p["source_id"] == handle and p["text"] == PASSAGE for p in call["passages"])
+               for call, handle in shown)
+    assert not any(c["source_version_id"] == handle for call, handle in shown if handle
+                   for c in call["report_target"]["cells"])
+    assert assembly.run_assembly_checks(store, reports, report) == []
+    view = report_view(store, run["research_id"], report)
+    assert view["missing_rows"] is None
+    assert view["basis"]["unverified_sources"][0]["source_version_id"] == sid
+    markdown = to_markdown(view, title="SYNTHETIC report", corpus=frozen["corpus"])
+    key = view["basis"]["unverified_sources"][0]["source_key"]
+    if language == "en":
+        assert ("Basis of this report: 0 of 2 sources were read from full text and 2 from the abstract or metadata only."
+                " 3 of 6 table cells could not be verified against a quote; the report does not cite them.") in markdown
+        assert "Upload the PDFs of the sources read from the abstract or metadata for a more detailed report." in markdown
+        assert f"- {key}: 3 of 3 cells not verified" in markdown
+    else:
+        assert "Bu raporun dayanağı: 2 kaynağın 0 tanesi tam metinden" in markdown and "PDF'lerini yükleyin" in markdown
+        assert f"- {key}: 3 hücreden 3 tanesi doğrulanmadı" in markdown
+    assert markdown.index("Basis") < markdown.index("## ") if language == "en" else markdown.index("dayanağı") < markdown.index("## ")
+
+
+@pytest.mark.parametrize("language", ["en", "tr"])
+def test_a_legacy_failed_row_snapshot_keeps_its_boundary_views_and_export(state, language):
     flow, store, reports, adapter, run, _, report = state
     store.conn.execute("UPDATE reports SET language = ? WHERE id = ?", (language, report))
     sid = add_source(state, "SYNTHETIC partially filled")
@@ -206,7 +248,7 @@ def test_complete_flagged_run_views_export_numbers_and_evidence_inputs(state, la
     fail_source(state, sid, columns=[columns[2]["id"]])
     failed_passages = {p["id"] for p in store.passages_for(sid)}
     failed_cells = {r[0] for r in store.conn.execute("SELECT id FROM evidence_cells WHERE source_version_id = ?", (sid,))}
-    flagged(state)
+    legacy_snapshot(state, [sid])
     asyncio.run(flow.execute(run["id"]))
     assert store.run(run["id"])["status"] == "completed"
     assert reports.report(report)["status"] == "valid"
@@ -237,7 +279,7 @@ def test_complete_flagged_run_views_export_numbers_and_evidence_inputs(state, la
     assert "anchor not in passage" in viii["draft"]["text"]
     assert assembly.run_assembly_checks(store, reports, report) == []
     view = report_view(store, run["research_id"], report)
-    assert view["missing_rows"]["counts"] == frozen["row_counts"]
+    assert view["missing_rows"]["counts"] == frozen["row_counts"] and view["basis"] is None
     assert [r.get("failed", False) for r in view["table_i"]["rows"]] == [False, True]
     markdown = to_markdown(view, title="SYNTHETIC report", corpus=frozen["corpus"])
     assert ("missing cells: 1" if language == "en" else "1 hücre eksik") in markdown
@@ -245,31 +287,20 @@ def test_complete_flagged_run_views_export_numbers_and_evidence_inputs(state, la
     assert "—" in markdown
 
 
-def test_runner_without_choice_fails_before_snapshot(state):
-    flow, store, reports, adapter, run, scope, _ = state
-    fail_source(state, add_source(state, "SYNTHETIC failed"))
-    with pytest.raises(RunStopped):
-        asyncio.run(sections.run_report(flow, run, scope))
-    assert store.run(run["id"])["pause_reason"] == "table_not_ready"
-    assert adapter.calls == [] and store.conn.execute("SELECT COUNT(*) FROM report_snapshot").fetchone()[0] == 0
-
-
 def test_runner_fails_closed_if_transactional_readiness_changes(state, monkeypatch):
     flow, store, _, _, run, scope, _ = state
     fail_source(state, add_source(state, "SYNTHETIC failed"))
-    run = flagged(state)
     from deixis.workflow import tables as table_module
     original = table_module.report_ready
     moments = []
-    def changed(store_arg, rid, table, continue_with_failed=False):
+    def changed(store_arg, rid, table):
         moments.append(store_arg.conn.in_transaction)
-        if store_arg.conn.in_transaction:
-            add_source(state, "SYNTHETIC row added before snapshot")
-        return original(store_arg, rid, table, continue_with_failed)
+        result = original(store_arg, rid, table)
+        return result | {"ready": False} if store_arg.conn.in_transaction else result
     monkeypatch.setattr(table_module, "report_ready", changed)
     with pytest.raises(RunStopped):
         asyncio.run(sections.run_report(flow, run, scope))
-    assert moments == [True]
+    assert moments[-1] is True
     assert store.run(run["id"])["pause_reason"] == "table_not_ready"
     assert store.conn.execute("SELECT COUNT(*) FROM report_snapshot").fetchone()[0] == 0
     assert store.conn.execute("SELECT COUNT(*) FROM events WHERE type = 'report_snapshot_saved'").fetchone()[0] == 0
@@ -279,7 +310,7 @@ def test_failed_row_edits_are_not_cell_changes_but_departure_remains_a_corpus_ch
     _, store, reports, _, run, _, report = state
     sid = add_source(state, "SYNTHETIC failed")
     fail_source(state, sid)
-    frozen = snapshot(state)
+    frozen = legacy_snapshot(state, [sid])
     save_cell(state, sid, frozen["columns"][0]["column_id"])
     assert reports.evidence_changes(report)["changed_cells"] == 0
     tables = TableStore(store)
@@ -289,11 +320,10 @@ def test_failed_row_edits_are_not_cell_changes_but_departure_remains_a_corpus_ch
 
 
 @pytest.mark.parametrize("change", ["fill", "column", "source"])
-def test_flagged_resume_uses_frozen_snapshot_after_live_edits(state, change):
+def test_a_resume_with_failed_cells_uses_its_frozen_snapshot_after_live_edits(state, change):
     flow, store, reports, adapter, run, scope, report = state
     sid = add_source(state, "SYNTHETIC failed")
     fail_source(state, sid)
-    run = flagged(state)
     adapter.before = lambda si: store.update_run(run["id"], status="pause_requested") if si["task_type"] == "report_plan" else None
     with pytest.raises(RunStopped):
         asyncio.run(sections.run_report(flow, run, scope))
@@ -305,10 +335,8 @@ def test_flagged_resume_uses_frozen_snapshot_after_live_edits(state, change):
     elif change == "column":
         tables.add_column(run["research_id"], table, COLUMN | {"name": "SYNTHETIC new column"},
                           tables._table(run["research_id"], table)["version"], None)
-        assert not report_ready(store, run["research_id"], table, True)["ready"]
     else:
         add_source(state, "SYNTHETIC new untried source")
-        assert not report_ready(store, run["research_id"], table, True)["ready"]
     adapter.before = None
     store.update_run(run["id"], status="running", pause_reason=None)
     asyncio.run(flow.execute(run["id"]))
@@ -326,7 +354,6 @@ def test_default_resume_goes_on_from_its_saved_snapshot_and_plan(state):
     before, plan = reports.snapshot(report), reports.report(report)["plan"]
     assert plan is not None
     add_source(state, "SYNTHETIC untried")
-    assert not report_ready(store, run["research_id"], run["target"]["table_id"])["ready"]
     adapter.before = None
     store.update_run(run["id"], status="running", pause_reason=None)
     asyncio.run(flow.execute(run["id"]))
@@ -340,8 +367,9 @@ def test_default_resume_goes_on_from_its_saved_snapshot_and_plan(state):
 def test_word_budget_uses_completed_snapshot_rows_only_when_present(state, monkeypatch, failed):
     flow, store, _, _, run, scope, _ = state
     if failed:
-        fail_source(state, add_source(state, "SYNTHETIC failed"))
-        run = flagged(state)
+        sid = add_source(state, "SYNTHETIC failed")
+        fail_source(state, sid)
+        legacy_snapshot(state, [sid])
     original = sections.freeze_plan
     counts = []
     def freeze(output, frozen, count):
@@ -361,8 +389,7 @@ def test_limitations_input_contract_accepts_six_and_seven_but_refuses_bad_sevent
     assert contracts.check_step_input(old) == []
     sid = add_source(state, "SYNTHETIC failed")
     fail_source(state, sid)
-    frozen = build_snapshot(store, run["research_id"], run["target"]["table_id"],
-                            report_ready(store, run["research_id"], run["target"]["table_id"], True))
+    frozen = legacy_snapshot(state, [sid], save=False)
     updated = copy.deepcopy(old)
     updated["report_target"]["limitations_core"] = review_methodology.limitations_core(store, reports, report, frozen)
     assert contracts.check_step_input(updated) == []
@@ -393,7 +420,7 @@ def test_three_full_text_absence_rows_have_identical_candidates_with_failed_row(
     save_cell(state, failed, cid, state_name="not_found_in_inspected_scope", depth="full_text")
     remaining = [c["id"] for c in TableStore(store).target_columns(rid, table)][1:]
     fail_source(state, failed, columns=remaining)
-    frozen = snapshot(state)
+    frozen = legacy_snapshot(state, [failed])
     assert generate_corpus_absence_candidates(frozen, axes) == baseline
     reports.set_plan(report, {"axes": axes})
     reports.save_gaps(report, [{"gap_id": "gap1", "kind": "corpus_absence", "text": "SYNTHETIC candidate",
@@ -411,11 +438,11 @@ def test_three_full_text_absence_rows_have_identical_candidates_with_failed_row(
     assert reports.section(report, "II")["validation"]["numbers"]["full_text_ratio"] == 1
 
 
-def test_existing_assembly_rule_rejects_failed_source_citation(state):
+def test_existing_assembly_rule_rejects_a_legacy_failed_source_citation(state):
     _, store, reports, _, run, _, report = state
     sid = add_source(state, "SYNTHETIC failed")
     fail_source(state, sid)
-    snapshot(state)
+    legacy_snapshot(state, [sid])
     section = reports.create_section(report, "III", 3)
     passage = store.passages_for(sid)[0]["id"]
     step = store.step(run["id"], "synthetic:citation", "model:report_section")
@@ -438,7 +465,7 @@ def test_old_snapshot_and_code_sections_keep_their_shapes_and_output(state):
     flow, store, reports, _, run, scope, report = state
     table, rid = run["target"]["table_id"], run["research_id"]
     old = build_snapshot(store, rid, table)
-    assert set(old) == {"table_revision", "columns", "rows", "cells", "corpus"}
+    assert set(old) == {"table_revision", "columns", "rows", "cells", "corpus", "basis"}
     source = store.included_sources(rid)[0]
     passage = store.passages_for(source)[0]["id"]
     version = store.conn.execute("SELECT version_label FROM source_versions WHERE id = ?", (source,)).fetchone()[0]
@@ -451,9 +478,10 @@ def test_old_snapshot_and_code_sections_keep_their_shapes_and_output(state):
                                "source_version_id": source, "state": "value", "value": {"text": "SYNTHETIC bounded formulation"},
                                "reading_depth": "abstract", "evidence": [{"passage_id": passage, "quote": CELL_QUOTE}]}
                               for c in old["cells"]],
-                    "corpus": {"found": 0, "unique": 1, "screened": 0, "included": 1, "full_text": 0}}
+                    "corpus": {"found": 0, "unique": 1, "screened": 0, "included": 1, "full_text": 0},
+                    "basis": {"sources": 1, "full_text": 0, "abstract_only": 1, "metadata_only": 0, "cells_total": 3,
+                              "cells_unverified": 0, "unverified_sources": []}}
     assert old == expected_old
-    assert reports.save_snapshot(report, table, True) == old
     assert reports.save_snapshot(report, table) == old
     asyncio.run(sections.run_report(flow, run, scope))
     view = report_view(store, rid, report)
@@ -476,7 +504,7 @@ def test_old_snapshot_and_code_sections_keep_their_shapes_and_output(state):
     assert to_markdown(report_view(store, rid, report), title="SYNTHETIC", corpus=old["corpus"]) == before
 
 
-def test_api_requires_explicit_choice_and_completes_flagged_report(tmp_path):
+def test_api_starts_a_report_over_a_row_without_text_and_names_it(tmp_path):
     app = create_app(Settings(data_dir=tmp_path / "api", port=8804), adapters={"fake": ReportAdapter()},
                      extra_hosts=("testserver",), trusted_clients=("testclient",))
     with TestClient(app) as raw:
@@ -496,14 +524,24 @@ def test_api_requires_explicit_choice_and_completes_flagged_report(tmp_path):
         _, done = wait_run(client, rid, fill["id"])
         assert done["status"] == "completed"
         url = f"/api/researches/{rid}/reports"
-        refused = client.post(url, json={"table_id": table_id})
-        assert refused.status_code == 409 and REFUSAL in refused.text
-        accepted = client.post(url, json={"table_id": table_id, "continue_with_failed": True})
+        accepted = client.post(url, json={"table_id": table_id})
         assert accepted.status_code == 202, accepted.text
-        assert accepted.json()["target"]["continue_with_failed"] is True
+        assert "continue_with_failed" not in accepted.json()["target"]
         _, done = wait_run(client, rid, accepted.json()["id"])
-        assert done["status"] == "completed", done
-        assert client.get(f"{url}/{accepted.json()['target']['report_id']}").json()["missing_rows"] is not None
+        assert done["status"] == "completed", (done["pause_reason"], done.get("error"))
+        view = client.get(f"{url}/{accepted.json()['target']['report_id']}").json()
+        assert view["missing_rows"] is None
+        assert (view["basis"]["sources"], view["basis"]["metadata_only"]) == (2, 1)
+        # A row without text holds 'inaccessible' cells: it counts as read from metadata only, not as unverified.
+        assert view["basis"]["unverified_sources"] == [] and sid in [r["source_version_id"] for r in reports_rows(raw, accepted)]
+        # An older client that still sends the removed choice is not refused.
+        again = client.post(url, json={"table_id": table_id, "continue_with_failed": True})
+        assert again.status_code == 202, again.text
+        wait_run(client, rid, again.json()["id"])
+
+
+def reports_rows(raw, accepted):
+    return ReportStore(raw.app.state.store).snapshot(accepted.json()["target"]["report_id"])["rows"]
 
 
 def test_scripted_marker_fails_only_fixed_source_through_real_fill_path(state):
@@ -522,7 +560,11 @@ def test_scripted_marker_fails_only_fixed_source_through_real_fill_path(state):
     steps = [s for s in store.run_steps(fill["id"]) if s["kind"] == "model:cell_extraction"]
     assert [(s["status"], s["error_code"]) for s in steps if failed in s["operation_key"]] == [("failed", "invalid_model_output")]
     assert all(s["status"] == "succeeded" for s in steps if healthy in s["operation_key"])
-    readiness = report_ready(store, rid, table, True)
-    assert readiness["ready"] and readiness["failed_rows"] == [failed] and len(readiness["missing"]) == 3
+    readiness = report_ready(store, rid, table)
+    assert readiness["ready"] and {m["source_version_id"] for m in readiness["missing"]} == {failed}
+    assert len(readiness["missing"]) == 3
+    # Invalid JSON is a whole-output failure: nothing is salvaged or retried for it.
+    assert not any(s["operation_key"].startswith("cell_salvage:") or s["operation_key"].endswith(":retry")
+                   for s in store.run_steps(fill["id"]))
     assert store.conn.execute("SELECT COUNT(*) FROM cell_revisions r JOIN evidence_cells c ON c.id = r.cell_id"
                               " WHERE c.source_version_id = ?", (failed,)).fetchone()[0] == 0

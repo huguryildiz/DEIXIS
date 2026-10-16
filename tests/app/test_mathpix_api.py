@@ -90,7 +90,7 @@ def test_the_pair_is_tested_then_saved_as_one_keychain_item_and_never_returned(c
     client, _, fake = client_for()
     saved = client.put("/api/credentials/mathpix", json=PAIR_BODY)
     assert saved.status_code == 200, saved.text
-    assert saved.json()["test"]["status"] == "ok" and saved.json()["mathpix"]["pair"] == {"configured": True, "unreadable": False, "keychain_unavailable": False, "app_id": "synthetic-app"}
+    assert saved.json()["test"]["status"] == "ok" and saved.json()["mathpix"]["pair"] == {"configured": True, "unreadable": False, "keychain_unavailable": False, "keychain_pending": False, "app_id": "synthetic-app"}
     usage = fake.requests[0]
     assert str(usage.url) == mathpix.USAGE_URL and usage.headers["app_id"] == "synthetic-app" and usage.headers["app_key"] == "synthetic-key-0001"
     item = json.loads(memory_keychain.items[("DEIXIS", mathpix.ENV)])
@@ -155,7 +155,7 @@ def test_an_unreadable_saved_pair_is_absent_and_says_so(client_for, monkeypatch)
     monkeypatch.setenv(mathpix.ENV, "{not json")
     client.put("/api/mathpix", json={"switch": "on"})
     status = client.get("/api/mathpix").json()
-    assert status["pair"] == {"configured": False, "unreadable": True, "keychain_unavailable": False, "app_id": None}
+    assert status["pair"] == {"configured": False, "unreadable": True, "keychain_unavailable": False, "keychain_pending": False, "app_id": None}
     assert not app.state.equations.mathpix_ready() and fake.requests == []
     assert client.post("/api/credentials/mathpix/test").status_code == 422
 

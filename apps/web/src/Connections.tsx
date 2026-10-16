@@ -177,6 +177,41 @@ function RemoveNotice({ text, busy, onRemove, onKeep }: { text: string; busy: bo
   </div>
 }
 
+// Where a saved key lives (E5, A6): the system keychain, this run's memory when there is none, or the file the person chose.
+function keyHome(keychain: Keychain) {
+  const name = keychain.name ?? t('the system keychain')
+  return keychain.mode === 'session' ? { where: t('kept for this session only'), note: t('Kept in memory for this session only, never in research files or exports.') }
+    : keychain.mode === 'file' ? { where: t('stored unencrypted in your data folder'), note: t('Stored unencrypted in your data folder, never in research files or exports.') }
+    : { where: t('stored in {keychain}', { keychain: name }), note: t('Stored in {keychain}, never in research files or exports.', { keychain: name }) }
+}
+
+// The keychain's own refusals say what happened in English; the person sees them in their language.
+function keychainError(e: Error): string {
+  if (!(e instanceof ApiError)) return e.message
+  return e.code === 'keychain_not_responding' ? t('The system keychain is not responding, so the change may not have been made. DEIXIS shows the real state when it answers.')
+    : e.code === 'keychain_busy' ? t('The previous change to this key has not finished. Wait for the system keychain to answer.') : e.message
+}
+
+// With no system keychain a key lives in memory for this run; the person can choose an unencrypted file instead (A6).
+function KeyStore({ keychain, onChanged }: { keychain: Keychain; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  if (keychain.mode === 'keychain') return null
+  const file = keychain.mode === 'file'
+  function choose(enabled: boolean) {
+    setBusy(true); setError('')
+    api.setFileStore(enabled).then(() => onChanged()).catch((e: Error) => setError(e.message)).finally(() => setBusy(false))
+  }
+  return <>
+    <Notice tone="attention">
+      <p>{file ? t('Keys are stored unencrypted in a file in your data folder that only you can read. A system keychain is safer: GNOME → gnome-keyring, KDE → KWallet.')
+        : t('We’re using this key for this session; to keep it, install the system keychain: GNOME → gnome-keyring, KDE → KWallet.')}</p>
+      <div className="acts"><button type="button" className="ghost" disabled={busy} onClick={() => choose(!file)}>{t(file ? 'Stop storing keys in a file' : 'Store keys in a file instead (unencrypted)')}</button></div>
+    </Notice>
+    {error && <Notice tone="error"><p>{error}</p></Notice>}
+  </>
+}
+
 // A key field (mockup sheet `key` kind). The stored key is never shown: the field starts empty and its placeholder says
 // where the key is kept. Save and test, Test and Remove key report only what the server answered.
 function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved, plain = false, note = true }: {
@@ -193,10 +228,9 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
   const id = `key-${env}`
   // A key saved here replaces one from the shell; removing it brings the shell key back.
   const fromShell = entry.source === 'environment'
-  if (fromShell && !keychain.available) return <p className="foot-note">{t('This key comes from the terminal that started DEIXIS; change or remove it there.')}</p>
   const inDotenv = entry.source === 'dotenv'
-  if (!entry.configured && !keychain.available) return <p className="foot-note">{t('No system keychain is available.')}</p>
-  const where = inDotenv ? '' : fromShell ? t('from the terminal that started DEIXIS') : t('stored in {keychain}', { keychain: keychain.name ?? t('the system keychain') })
+  const home = keyHome(keychain)
+  const where = inDotenv ? '' : fromShell ? t('from the terminal that started DEIXIS') : home.where
   const typed = value.trim()
 
   // The third state: the key is saved but no request showed that it works. An API without a model list says so; any other
@@ -221,12 +255,12 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
         : t('Key saved.'))
     }).catch((e: Error) => setFormError(e instanceof ApiError && e.code === 'credential_test_failed'
       ? t('The key was not saved.') + ' ' + (keyRefusal(service, env, e.details?.http_status) ?? serviceErrorSentence({ kind: e.details?.kind, service, resetAt: e.details?.reset_at, effect: 'settings' }))
-      : e.message)).finally(() => setBusy(false))
+      : keychainError(e))).finally(() => setBusy(false))
   }
   function remove() {
     setBusy(true); setFormError('')
     api.removeCredential(env).then(() => { setAsking(false); onSaved(); toast('success', t('Key removed.')) })
-      .catch((e: Error) => setFormError(e.message)).finally(() => setBusy(false))
+      .catch((e: Error) => setFormError(keychainError(e))).finally(() => setBusy(false))
   }
   const primary = typed ? (entry.testable ? 'Save and test' : 'Save') : entry.configured && entry.testable ? 'Test' : null
   return <form className="key-box" onSubmit={e => { e.preventDefault(); if (typed) save(); else if (primary) test() }}>
@@ -237,11 +271,13 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
         placeholder={entry.configured ? `${entry.last4 ? `••••••••${entry.last4}` : '••••••••••••'} ${where}`.trim() : t(plain ? 'Type your user ID' : 'Paste your key')} onChange={e => { setValue(e.target.value); setFormError('') }} />
     </label>
     {entry.keychain_unavailable && <Notice tone="attention"><p>{t('The system keychain did not answer, so your saved key was not used this time. It may be fine: restart DEIXIS once the keychain is unlocked.')}</p></Notice>}
+    {entry.keychain_pending && <Notice tone="attention"><p>{t('The system keychain has not answered the last change to this key yet. The key shows its real state once it does; reopen Settings in a moment.')}</p></Notice>}
     {entry.broken && <Notice tone="attention"><p>{t('This saved key is broken and was not used. Enter it again.')}</p></Notice>}
     {entry.configured && entry.verification === 'pending' && <p className="foot-note"><Info aria-hidden />{t('Saved, not verified: no request has shown that this key works yet.')}</p>}
     {entry.configured && entry.verification === 'rejected' && <Notice tone="attention"><p>{t('{service} did not accept this key. Enter it again.', { service })}</p></Notice>}
-    {note && <p className="foot-note key-note"><ShieldCheck aria-hidden />{fromShell && `${t('This key comes from the terminal that started DEIXIS. A key saved here replaces it.')} `}{inDotenv ? t('Never stored in research files or exports.') : t('Stored in {keychain}, never in research files or exports.', { keychain: keychain.name ?? t('the system keychain') })}
+    {note && <p className="foot-note key-note"><ShieldCheck aria-hidden />{fromShell && `${t('This key comes from the terminal that started DEIXIS. A key saved here replaces it.')} `}{inDotenv ? t('Never stored in research files or exports.') : home.note}
       {entry.testable && ` ${t('A new key is tested with one short request before it is saved.')}`}</p>}
+    {note && <KeyStore keychain={keychain} onChanged={onSaved} />}
     {formError && <Notice tone="error"><p>{formError}</p></Notice>}
     <div className="acts">
       {primary && <button type="submit" className="btn-pri" disabled={busy}>{busy ? <span className="spin" aria-hidden /> : typed ? <Save aria-hidden /> : <CircleCheck aria-hidden />}{t(busy ? (typed ? (entry.testable ? 'Testing and saving…' : 'Saving…') : 'Testing…') : primary)}</button>}
@@ -421,7 +457,7 @@ const MATHPIX_PRIVACY_URL = 'https://mathpix.com/privacy-policy'
 
 // Mathpix (D40): an online reader for numbered display equations, off until the person saves a key pair and turns it on.
 // The pair is tested against Mathpix's usage API before it is saved; the switch asks first, with an upper bound of requests.
-function MathpixDetails({ mathpix, keychain, dark, onChanged }: { mathpix: Mathpix; keychain: Keychain; dark: boolean; onChanged: (next?: Mathpix) => void }) {
+function MathpixDetails({ mathpix, keychain, dark, onChanged, onKeychainChanged }: { mathpix: Mathpix; keychain: Keychain; dark: boolean; onChanged: (next?: Mathpix) => void; onKeychainChanged: () => void }) {
   const [appId, setAppId] = useState('')
   const [appKey, setAppKey] = useState('')
   const [budget, setBudget] = useState<string | null>(null)
@@ -439,7 +475,7 @@ function MathpixDetails({ mathpix, keychain, dark, onChanged }: { mathpix: Mathp
       toast(result.test.status === 'ok' ? 'success' : 'warning', result.test.status === 'ok'
         ? t('Key pair saved. Mathpix accepted it.') : t('Key pair saved, but Mathpix could not be reached to test it.'))
     }).catch((e: Error) => setFormError(e instanceof ApiError && e.code === 'credential_test_failed'
-      ? t('The key pair was not saved. Mathpix did not accept it (HTTP {code}).', { code: String(e.details?.http_status ?? '?') }) : e.message))
+      ? t('The key pair was not saved. Mathpix did not accept it (HTTP {code}).', { code: String(e.details?.http_status ?? '?') }) : keychainError(e)))
       .finally(() => setBusy(false))
   }
   function test() {
@@ -454,7 +490,7 @@ function MathpixDetails({ mathpix, keychain, dark, onChanged }: { mathpix: Mathp
   function remove() {
     setBusy(true); setFormError('')
     api.removeMathpixPair().then(result => { setAsking(false); onChanged(result.mathpix); toast('success', t('Key pair removed.')) })
-      .catch(fail).finally(() => setBusy(false))
+      .catch((e: Error) => setFormError(keychainError(e))).finally(() => setBusy(false))
   }
   function askToTurnOn() {
     setBusy(true); setFormError('')
@@ -479,13 +515,15 @@ function MathpixDetails({ mathpix, keychain, dark, onChanged }: { mathpix: Mathp
   const waiting = (pdfs.pending ?? 0) + (pdfs.reading ?? 0)
   const notUsed = (pdfs.no_candidates ?? 0) + (pdfs.none_placed ?? 0)
   const stopped = (pdfs.failed ?? 0) + (pdfs.keys_rejected ?? 0) + (pdfs.budget_reached ?? 0)
-  const where = t('stored in {keychain}', { keychain: keychain.name ?? t('the system keychain') })
+  const home = keyHome(keychain)
+  const where = home.where
   return <div className="local-tool-details-panel tool-panel">
     <p className="tool-lead">{t('Mathpix reads the numbered equations in your PDFs from an image of the page. DEIXIS keeps an equation only when its letters, scripts and signs match the PDF’s own text.')}</p>
     <ToolTraits items={[[<Cloud key="c" />, 'Runs on Mathpix’s servers'], [<KeyRound key="k" />, 'Needs your own Mathpix key pair']]} />
     <Notice tone="attention"><p>{t('DEIXIS does not send the PDF or its extracted text. For each numbered equation it sends an image of the area it takes to be the equation; that area can hold nearby content.')} <a href={MATHPIX_PRIVACY_URL} target="_blank" rel="noopener noreferrer">{t('Mathpix privacy policy')}</a></p></Notice>
     {mathpix.marker_present && <p className="local-tool-note">{t('Marker is installed, so Marker reads the equations and Mathpix sends nothing.')}</p>}
     {mathpix.pair.keychain_unavailable && <Notice tone="attention"><p>{t('The system keychain did not answer, so your saved key pair was not used this time. It may be fine: restart DEIXIS once the keychain is unlocked.')}</p></Notice>}
+    {mathpix.pair.keychain_pending && <Notice tone="attention"><p>{t('The system keychain has not answered the last change to this key pair yet. The pair shows its real state once it does; reopen Settings in a moment.')}</p></Notice>}
     {mathpix.pair.unreadable && <Notice tone="attention"><p>{t('The saved key pair could not be read. Save it again.')}</p></Notice>}
     {mathpix.keys_rejected && <Notice tone="attention"><p>{t('Mathpix did not accept the saved key pair. No request is sent until a new pair is saved.')}</p></Notice>}
     <form className="key-box" onSubmit={e => { e.preventDefault(); if (typed) savePair(); else if (mathpix.pair.configured) test() }}>
@@ -497,7 +535,8 @@ function MathpixDetails({ mathpix, keychain, dark, onChanged }: { mathpix: Mathp
         <input id="mathpix-app-key" className="field" type="password" spellCheck={false} value={appKey} disabled={busy} autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"
           placeholder={mathpix.pair.configured ? `•••••••••••• ${where}` : t('Paste your key')} onChange={e => { setAppKey(e.target.value); setFormError('') }} />
       </label>
-      <p className="foot-note">{t('Stored in {keychain}, never in research files or exports.', { keychain: keychain.name ?? t('the system keychain') })} {t('A new pair is tested with Mathpix’s usage API before it is saved. The test shows that Mathpix accepted the pair, not that the account has credit for reading images.')}</p>
+      <p className="foot-note">{home.note} {t('A new pair is tested with Mathpix’s usage API before it is saved. The test shows that Mathpix accepted the pair, not that the account has credit for reading images.')}</p>
+      <KeyStore keychain={keychain} onChanged={onKeychainChanged} />
       {formError && <Notice tone="error"><p>{formError}</p></Notice>}
       <div className="acts">
         {(typed || mathpix.pair.configured) && <button type="submit" className="btn-pri" disabled={busy}>{busy ? <span className="spin" aria-hidden /> : typed ? <Save aria-hidden /> : <CircleCheck aria-hidden />}{t(typed ? 'Save and test' : 'Test')}</button>}
@@ -1584,7 +1623,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   } else if (sel?.kind === 'mathpix') {
     body = <>
       <div className="tool-status">{dmeta('mathpix', mathpixStatus())}</div>
-      {mathpix && credentials && <MathpixDetails mathpix={mathpix} keychain={credentials.keychain} dark={dark} onChanged={next => { if (next) setMathpix(next); else void loadMathpix() }} />}
+      {mathpix && credentials && <MathpixDetails mathpix={mathpix} keychain={credentials.keychain} dark={dark} onKeychainChanged={loadCredentials} onChanged={next => { if (next) setMathpix(next); else void loadMathpix() }} />}
     </>
   } else if (sel?.kind === 'ocr-tool') {
     body = <>

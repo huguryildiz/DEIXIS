@@ -112,7 +112,8 @@ def test_a_model_key_is_tested_stored_in_the_keychain_and_never_returned(client,
     assert saved.status_code == 200 and saved.json()["test"]["status"] == "ok"
     assert saved.json()["key"] == {"env": "GEMINI_API_KEY", "group": "model", "service": "gemini", "configured": True,
                                    "source": "keychain", "testable": True, "shell_fallback": False,
-                                   "last4": "-123", "verification": "verified", "broken": False, "keychain_unavailable": False}
+                                   "last4": "-123", "verification": "verified", "broken": False, "keychain_unavailable": False,
+                                   "keychain_pending": False}
     assert memory_keychain.items == {("DEIXIS", "GEMINI_API_KEY"): GOOD_GEMINI} and os.environ["GEMINI_API_KEY"] == GOOD_GEMINI
     listed = client.get("/api/credentials")
     assert GOOD_GEMINI not in listed.text and listed.json()["keychain"]["available"] is True

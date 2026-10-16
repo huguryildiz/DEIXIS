@@ -732,12 +732,15 @@ export type ModelHealth = {
   hidden_models?: { id: string; reason: 'not_served' | 'answered_as'; answered_as?: string; at: string | null }[]
 }
 export type Connections = { models: Record<string, ModelHealth>; codex_home?: string; codex_login_command?: string; providers: { id: string; implemented: boolean; access_mode: string | null; key_broken?: boolean; supplementary?: boolean; role?: string; note: string }[] }
-export type Keychain = { available: boolean; name: string | null }
-export type KeyEntry = { env: string; group: 'model' | 'source'; service: string; configured: boolean; source: 'keychain' | 'dotenv' | 'environment' | null; testable: boolean; shell_fallback?: boolean; last4?: string | null
+// `available`: a system keychain exists. `mode`: where a saved key lives (E5, A6): that keychain, the unencrypted file the person chose, or this run's memory.
+export type Keychain = { available: boolean; name: string | null; mode: 'keychain' | 'file' | 'session' }
+export type KeyEntry = { env: string; group: 'model' | 'source'; service: string; configured: boolean; source: 'keychain' | 'file' | 'session' | 'dotenv' | 'environment' | null; testable: boolean; shell_fallback?: boolean; last4?: string | null
   // 'pending' is "saved, not verified"; null when no check ran in this session. `broken`: the saved item could not be read and was skipped (E2, E6).
   verification?: 'verified' | 'pending' | 'rejected' | null; broken?: boolean
   // The keychain did not answer at startup, so a saved key was not used this time; it is not known to be bad.
-  keychain_unavailable?: boolean }
+  keychain_unavailable?: boolean
+  // The last change got no answer from the keychain yet; the key shows its real state when it does.
+  keychain_pending?: boolean }
 export type Credentials = { keychain: Keychain; keys: KeyEntry[] }
 export type KeyTest = { status: 'ok' | 'no_credit' | 'rejected' | 'failed' | 'unverified'; verification?: 'verified' | 'pending' | 'rejected'; detail: string; checked_at: string; kind?: string; http_status?: number | null; reset_at?: string | null }
 // One request to a keyless source (P5): whether it answered, with its HTTP status, or why no answer came.
@@ -770,7 +773,7 @@ export type EquationReader = {
 }
 // Mathpix (D40): the key pair (never shown), the switch, this month's requests against the budget and the PDFs it reads.
 export type Mathpix = {
-  pair: { configured: boolean; unreadable: boolean; keychain_unavailable?: boolean; app_id: string | null }; keys_rejected: boolean; switch: 'on' | 'off'
+  pair: { configured: boolean; unreadable: boolean; keychain_unavailable?: boolean; keychain_pending?: boolean; app_id: string | null }; keys_rejected: boolean; switch: 'on' | 'off'
   monthly_budget: number; month_requests: number; per_pdf_limit: number; marker_present: boolean
   pdfs: Partial<Record<'read' | 'pending' | 'reading' | 'failed' | 'no_candidates' | 'none_placed' | 'keys_rejected' | 'budget_reached', number>>
   reading: { asset_id: string; title: string | null; pages: number; started_at: string } | null
@@ -1372,6 +1375,7 @@ export const api = {
   institutionalAccess: () => request<InstitutionalAccess>('/api/institutional-access'),
   credentials: () => request<Credentials>('/api/credentials'),
   saveCredential: (env: string, value: string) => request<{ key: KeyEntry; test: KeyTest | null }>(`/api/credentials/${env}`, json('PUT', { value })),
+  setFileStore: (enabled: boolean) => request<Credentials>('/api/credentials/file-store', json('PUT', { enabled })),
   removeCredential: (env: string) => request<{ key: KeyEntry }>(`/api/credentials/${env}`, { method: 'DELETE' }),
   testCredential: (env: string) => request<KeyTest>(`/api/credentials/${env}/test`, { method: 'POST' }),
   testProvider: (id: string) => request<ProviderTest>(`/api/providers/${encodeURIComponent(id)}/test`, { method: 'POST' }),

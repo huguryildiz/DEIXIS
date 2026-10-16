@@ -227,6 +227,10 @@ class KeyValue(BaseModel):
     value: str = Field(min_length=1, max_length=400, pattern=KEY_PATTERN)
 
 
+class FileStoreChoice(BaseModel):
+    enabled: bool
+
+
 class MathpixPair(BaseModel):
     app_id: str = Field(min_length=1, max_length=200, pattern=KEY_PATTERN)
     app_key: str = Field(min_length=8, max_length=400, pattern=KEY_PATTERN)
@@ -808,6 +812,7 @@ def create_app(
         source_keys.assign_missing(store)
         settings = settings.bound_to(store.setting)  # the contact email set in Settings is read before the env var (F15)
         app.state.settings = settings
+        credentials.set_data_dir(settings.data_dir)
         http = http_client or httpx.AsyncClient(headers={"User-Agent": fetch_module.user_agent(settings.contact_email)})
         # Requests to servers on this computer (Ollama and LM Studio embeddings, the local tool checks, Zotero's local
         # API) go through a client that ignores HTTP_PROXY/ALL_PROXY and follows no redirect (D34).
@@ -1361,6 +1366,20 @@ def create_app(
         return JSONResponse(status_code=422, content={"code": "use_pair_route",
                                                       "detail": "This key is part of a pair and is saved on its own route."})
 
+    @app.exception_handler(credentials.KeychainNotResponding)
+    async def keychain_not_responding(request: Request, exc: credentials.KeychainNotResponding) -> JSONResponse:
+        return JSONResponse(status_code=503, content={"code": "keychain_not_responding", "detail":
+            "The system keychain is not responding, so the change may not have been made. DEIXIS shows the real state when it answers."})
+
+    @app.exception_handler(credentials.KeychainBusy)
+    async def keychain_busy(request: Request, exc: credentials.KeychainBusy) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"code": "keychain_busy", "detail":
+            "The previous change to this key has not finished. Wait for the system keychain to answer."})
+
+    @app.exception_handler(credentials.FileStoreUnavailable)
+    async def file_store_unavailable(request: Request, exc: credentials.FileStoreUnavailable) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"code": "file_store_unavailable", "detail": str(exc)})
+
     def managed_key(env: str) -> credentials.ManagedKey:
         if env not in credentials.MANAGED_KEYS:
             raise HTTPException(404, f"{env} is not a key DEIXIS manages")
@@ -1371,8 +1390,18 @@ def create_app(
     @app.get("/api/credentials")
     async def list_credentials() -> dict[str, Any]:
         name = credentials.keychain_name()
-        return {"keychain": {"available": name is not None, "name": name},
+        # `mode` says where a saved key lives: the system keychain, the unencrypted file the person chose, or this run's memory (A6).
+        return {"keychain": {"available": name is not None, "name": name, "mode": credentials.store_kind()},
                 "keys": [credentials.status(env) for env, key in credentials.MANAGED_KEYS.items() if not key.pair]}
+
+    @app.put("/api/credentials/file-store")
+    async def put_file_store(body: FileStoreChoice, request: Request) -> dict[str, Any]:
+        """Without a system keychain: keep the keys in an unencrypted file in the data folder (0600), or stop (A6)."""
+        try:
+            credentials.set_file_store(body.enabled, request.app.state.settings.data_dir)
+        except OSError as exc:
+            raise HTTPException(503, f"The key file could not be written ({type(exc).__name__})") from exc
+        return await list_credentials()
 
     # ---- Mathpix (D40): the key pair, the switch and the monthly budget --------------------------------------------
     @app.get("/api/mathpix")
@@ -1398,21 +1427,19 @@ def create_app(
     async def save_mathpix_pair(body: MathpixPair, request: Request) -> Any:
         """Test the pair against Mathpix's usage API, then store it as one keychain item; a refused pair is not stored. A
         pair that only failed to reach Mathpix is stored, untested."""
-        if credentials.status(mathpix.ENV)["source"] != "dotenv" and credentials.keychain_name() is None:
-            raise HTTPException(503, "No system keychain is available")
         result = await mathpix.test_pair(request.app.state.http, body.app_id, body.app_key)
         if result["status"] == "rejected":
             return JSONResponse(status_code=422, content={"code": "credential_test_failed", "service": "mathpix",
                                                           "detail": f"The key pair was not saved. {result['detail']}",
                                                           "http_status": result["http_status"]})
         try:
-            credentials.save(mathpix.ENV, mathpix.encode_pair(body.app_id, body.app_key))
+            await credentials.save_async(mathpix.ENV, mathpix.encode_pair(body.app_id, body.app_key))
         except credentials.KeySourceConflict as exc:
             raise HTTPException(409, str(exc)) from exc
         except KeyringError as exc:
             raise HTTPException(503, f"The keychain did not store the key pair ({type(exc).__name__})") from exc
         except OSError as exc:
-            raise HTTPException(503, f".env could not be written ({type(exc).__name__})") from exc
+            raise HTTPException(503, f"The key could not be written ({type(exc).__name__})") from exc
         return {"mathpix": request.app.state.equations.mathpix_status(), "test": result}
 
     @app.post("/api/credentials/mathpix/test")
@@ -1425,13 +1452,13 @@ def create_app(
     @app.delete("/api/credentials/mathpix")
     async def delete_mathpix_pair(request: Request) -> dict[str, Any]:
         try:
-            credentials.delete(mathpix.ENV)
+            await credentials.delete_async(mathpix.ENV)
         except credentials.KeySourceConflict as exc:
             raise HTTPException(409, str(exc)) from exc
         except KeyringError as exc:
             raise HTTPException(503, f"The keychain did not remove the key pair ({type(exc).__name__})") from exc
         except OSError as exc:
-            raise HTTPException(503, f".env could not be written ({type(exc).__name__})") from exc
+            raise HTTPException(503, f"The key could not be written ({type(exc).__name__})") from exc
         return {"mathpix": request.app.state.equations.mathpix_status()}
 
     @app.put("/api/credentials/{env}")
@@ -1442,9 +1469,6 @@ def create_app(
             raise HTTPException(422, "A zotero.org library ID is a number")
         if env != "ZOTERO_LIBRARY_ID" and len(body.value) < 8:
             raise HTTPException(422, "A key has at least 8 characters")
-        source = credentials.status(env)["source"]
-        if source != "dotenv" and credentials.keychain_name() is None:
-            raise HTTPException(503, "No system keychain is available")
         result = await credentials.test(request.app.state.http, env, body.value) if key.testable else None
         # Only a refusal (400/401/403) keeps a key out. One that could not be checked (no network, timeout, 5xx, 429, an API
         # without a model list) is saved as "saved, not verified" (E6, E12).
@@ -1454,13 +1478,13 @@ def create_app(
                 "kind": result.get("kind", "unknown"), "http_status": result.get("http_status"),
                 "reset_at": result.get("reset_at")})
         try:
-            credentials.save(env, body.value)
+            await credentials.save_async(env, body.value)
         except credentials.KeySourceConflict as exc:
             raise HTTPException(409, str(exc)) from exc
         except KeyringError as exc:
             raise HTTPException(503, f"The keychain did not store the key ({type(exc).__name__})") from exc
         except OSError as exc:
-            raise HTTPException(503, f".env could not be written ({type(exc).__name__})") from exc
+            raise HTTPException(503, f"The key could not be written ({type(exc).__name__})") from exc
         if result:
             key_verification.set_state(body.value, result["verification"])
         return {"key": credentials.status(env), "test": result}
@@ -1469,13 +1493,13 @@ def create_app(
     async def delete_credential(env: str) -> dict[str, Any]:
         managed_key(env)
         try:
-            credentials.delete(env)
+            await credentials.delete_async(env)
         except credentials.KeySourceConflict as exc:
             raise HTTPException(409, str(exc)) from exc
         except KeyringError as exc:
             raise HTTPException(503, f"The keychain did not remove the key ({type(exc).__name__})") from exc
         except OSError as exc:
-            raise HTTPException(503, f".env could not be written ({type(exc).__name__})") from exc
+            raise HTTPException(503, f"The key could not be written ({type(exc).__name__})") from exc
         return {"key": credentials.status(env)}
 
     @app.post("/api/credentials/{env}/test")

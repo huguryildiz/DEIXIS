@@ -149,6 +149,7 @@ def load_settings() -> Settings:
     # Only a run from the repository reads `.env` (A2): a packaged app never reads or writes its install folder.
     if not is_frozen():
         credentials.mark_dotenv(load_dotenv(RESOURCE_ROOT / ".env"), RESOURCE_ROOT / ".env")
+    credentials.set_data_dir(default_data_dir())  # where the opted-in key file lives (A6)
     credentials.move_dotenv_keys_to_keychain()
     credentials.load_into_environment()
     if "DEIXIS_SEARCH_WORKFLOW" in os.environ:

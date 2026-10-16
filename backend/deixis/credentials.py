@@ -8,15 +8,24 @@ Secret Service) under the service `DEIXIS`. Either way it is put into the proces
 read their keys at call time. Key values are never logged or returned by the API.
 
 Only a run from the repository reads or writes `.env` (A2). A packaged app never touches its install folder: it keeps keys
-in the keychain (and, once A6 lands, in that item's session store when no keychain is available).
+in the keychain. With no keychain backend (Linux without Secret Service) a key lives in memory for this run only (A6), or in
+an unencrypted file in the data folder when the person chose that.
+
+Every call into the keychain runs on one worker thread, one at a time, with a time limit (E5): a keychain that never answers
+holds up the keychain calls behind it, never the API or the start of the app.
 """
 
 from __future__ import annotations
 
+import asyncio
+import concurrent.futures
 import json
 import os
+import queue
 import re
 import tempfile
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -34,6 +43,9 @@ from deixis.storage.db import now
 from deixis.domain.limits import service_error_kind, http_limit, retry_at
 
 SERVICE = "DEIXIS"
+KEYCHAIN_TIMEOUT = 10.0  # seconds a keychain call may take before the app says the keychain is not responding (E5)
+STARTUP_TIMEOUT = 20.0  # seconds the whole start-up read of saved keys may take
+FILE_STORE = "keys-unencrypted.json"  # the opted-in file store in the data folder (A6)
 OPENAI_API_URL = "https://api.openai.com/v1"
 DEEPSEEK_API_URL = "https://api.deepseek.com"
 
@@ -81,10 +93,112 @@ _shell_values: dict[str, str] = {}  # shell keys a keychain key replaced, restor
 _broken: set[str] = set()  # keychain items skipped at startup because the value read is not a valid key (E2)
 _unavailable: set[str] = set()  # keychain items not read at startup because the keychain did not answer; the item may be fine
 dotenv_path: Path | None = None
+_session: dict[str, str] = {}  # keys kept in memory when no keychain backend exists (A6); also what the file store holds
+_data_dir: Path | None = None  # where the file store lives
+_settling: dict[str, asyncio.Task[None]] = {}  # keys whose last keychain call timed out and is still unfinished (E5)
 
 
 class KeySourceConflict(Exception):
     """The key is set in the shell, which the app does not change."""
+
+
+class KeychainNotResponding(Exception):
+    """The keychain did not answer in time; whether the change was made is not known yet."""
+
+
+class KeychainBusy(Exception):
+    """The previous change to this key has not finished, so a new one is refused."""
+
+
+class FileStoreUnavailable(Exception):
+    """A system keychain exists, so keys are kept there and a file store cannot be chosen."""
+
+
+class _Worker:
+    """One daemon thread takes every keychain call in turn: a call stuck inside the keychain blocks only the calls behind
+    it, uses no thread pool, and does not keep the process from exiting."""
+
+    def __init__(self) -> None:
+        self._queue: queue.SimpleQueue[tuple[concurrent.futures.Future[Any], Any, tuple[Any, ...]]] = queue.SimpleQueue()
+        self._lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+        self.running_since: float | None = None
+
+    def submit(self, fn: Any, *args: Any) -> concurrent.futures.Future[Any]:
+        future: concurrent.futures.Future[Any] = concurrent.futures.Future()
+        with self._lock:
+            if self._thread is None:
+                self._thread = threading.Thread(target=self._run, name="keychain", daemon=True)
+                self._thread.start()
+        self._queue.put((future, fn, args))
+        return future
+
+    def _run(self) -> None:
+        while True:
+            future, fn, args = self._queue.get()
+            if not future.set_running_or_notify_cancel():  # cancelled while it waited: it never runs
+                continue
+            self.running_since = time.monotonic()
+            try:
+                future.set_result(fn(*args))
+            except BaseException as exc:  # noqa: BLE001 - handed to the caller
+                future.set_exception(exc)
+            finally:
+                self.running_since = None
+
+    def stuck(self) -> bool:
+        since = self.running_since
+        return since is not None and time.monotonic() - since > KEYCHAIN_TIMEOUT
+
+
+_worker = _Worker()
+
+
+def _as_keyring_error(exc: BaseException) -> BaseException:
+    return exc if isinstance(exc, (KeyringError, OSError, ValueError)) else KeyringError(type(exc).__name__)
+
+
+def _call_sync(fn: Any, *args: Any) -> Any:
+    """A keychain call from code with no event loop (start-up, tests): the same queue, the same time limit."""
+    if _worker.stuck():
+        raise KeychainNotResponding()
+    future = _worker.submit(fn, *args)
+    try:
+        return future.result(timeout=KEYCHAIN_TIMEOUT)
+    except concurrent.futures.TimeoutError as exc:
+        future.cancel()
+        raise KeychainNotResponding() from exc
+    except Exception as exc:  # noqa: BLE001
+        raise _as_keyring_error(exc) from exc
+
+
+async def _call(env: str, fn: Any, *args: Any) -> Any:
+    """A keychain call from the API. On timeout the call may still finish later: until it has, a new change to the same key
+    is refused, and when it finishes the keychain is read again so the app shows what it really holds (E5)."""
+    future = _worker.submit(fn, *args)
+    wrapped = asyncio.wrap_future(future)
+    done, _ = await asyncio.wait({wrapped}, timeout=KEYCHAIN_TIMEOUT)
+    if not done:
+        if not future.cancel():  # already running inside the keychain: its outcome is unknown
+            _settling[env] = asyncio.get_running_loop().create_task(_settle(env, wrapped))
+        raise KeychainNotResponding()
+    try:
+        return wrapped.result()
+    except Exception as exc:  # noqa: BLE001
+        raise _as_keyring_error(exc) from exc
+
+
+async def _settle(env: str, late: asyncio.Future[Any]) -> None:
+    try:
+        await asyncio.wait({late})
+        if not late.cancelled():
+            late.exception()  # a late failure is read here, not left unretrieved
+        try:
+            _adopt(env, await asyncio.wrap_future(_worker.submit(_store_get, env)))
+        except Exception as exc:  # noqa: BLE001
+            _note_unread(env, exc)
+    finally:
+        _settling.pop(env, None)
 
 
 def keychain_name() -> str | None:
@@ -93,6 +207,117 @@ def keychain_name() -> str | None:
         return None
     return {"macOS": "macOS Keychain", "Windows": "Windows Credential Locker"}.get(
         type(backend).__module__.rsplit(".", 1)[-1], getattr(backend, "name", None) or type(backend).__name__)
+
+
+def store_kind() -> str:
+    """Where a saved key lives: the system 'keychain', the unencrypted 'file' the person chose, or this run's 'session' memory."""
+    if keychain_name() is not None:
+        return "keychain"
+    return "file" if file_store_enabled() else "session"
+
+
+def set_data_dir(path: Path) -> None:
+    global _data_dir
+    _data_dir = path
+
+
+def file_store_enabled() -> bool:
+    return _data_dir is not None and (_data_dir / FILE_STORE).is_file()
+
+
+def _write_file_store() -> None:
+    assert _data_dir is not None
+    _data_dir.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=_data_dir, prefix=".keys.")  # created 0600
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump({"keys": _session}, handle)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, _data_dir / FILE_STORE)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def set_file_store(enabled: bool, data_dir: Path) -> None:
+    """Choose to keep the session's keys in an unencrypted file in the data folder (0600), or stop. Only without a keychain."""
+    if keychain_name() is not None:
+        raise FileStoreUnavailable("A system keychain is available; keys are kept there")
+    set_data_dir(data_dir)
+    if enabled:
+        _write_file_store()
+    else:
+        (data_dir / FILE_STORE).unlink(missing_ok=True)  # the keys stay in memory until DEIXIS closes
+
+
+def _load_file_store() -> None:
+    if not file_store_enabled():
+        return
+    try:
+        data = json.loads((_data_dir / FILE_STORE).read_text(encoding="utf-8"))["keys"]  # type: ignore[operator]
+    except (OSError, ValueError, KeyError, TypeError):
+        return
+    if isinstance(data, dict):
+        _session.update({k: v for k, v in data.items() if k in MANAGED_KEYS and isinstance(v, str)})
+
+
+def _store_get(env: str) -> str | None:
+    return keyring.get_password(SERVICE, env) if keychain_name() is not None else _session.get(env)
+
+
+def _store_set(env: str, value: str) -> None:
+    if keychain_name() is not None:
+        keyring.set_password(SERVICE, env, value)
+        return
+    _session[env] = value
+    if file_store_enabled():
+        _write_file_store()
+
+
+def _store_delete(env: str) -> None:
+    if keychain_name() is not None:
+        try:
+            keyring.delete_password(SERVICE, env)
+        except PasswordDeleteError:
+            pass  # already absent from the keychain
+        return
+    _session.pop(env, None)
+    if file_store_enabled():
+        _write_file_store()
+
+
+async def _io(env: str, fn: Any, *args: Any) -> Any:
+    """A store call from the API: the keychain goes through the queue, memory and the file are fast and run here."""
+    return await _call(env, fn, *args) if keychain_name() is not None else fn(*args)
+
+
+def _io_sync(fn: Any, *args: Any) -> Any:
+    return _call_sync(fn, *args) if keychain_name() is not None else fn(*args)
+
+
+def _note_unread(env: str, exc: BaseException) -> None:
+    """A stored item that could not be read: damaged bytes make it broken, anything else means the keychain did not answer."""
+    (_broken if isinstance(exc, ValueError) else _unavailable).add(env)
+
+
+def _adopt(env: str, value: str | None) -> None:
+    """Make the process environment match what the store holds for this key."""
+    _broken.discard(env)
+    _unavailable.discard(env)
+    if value:
+        if not _stored_value_ok(MANAGED_KEYS[env], value):
+            _broken.add(env)
+            return
+        if os.environ.get(env) and env not in _from_keychain:
+            _shell_values[env] = os.environ[env]
+        os.environ[env] = value
+        _from_keychain.add(env)
+    elif env in _from_keychain:
+        _from_keychain.discard(env)
+        if env in _shell_values:
+            os.environ[env] = _shell_values.pop(env)
+        else:
+            os.environ.pop(env, None)
 
 
 def mark_dotenv(names: set[str], path: Path) -> None:
@@ -144,11 +369,11 @@ def move_dotenv_keys_to_keychain() -> None:
         if not value:
             continue
         try:
-            keyring.set_password(SERVICE, env, value)
-            if keyring.get_password(SERVICE, env) != value:
+            _call_sync(keyring.set_password, SERVICE, env, value)
+            if _call_sync(keyring.get_password, SERVICE, env) != value:
                 continue
             _rewrite_dotenv(env, None)
-        except (KeyringError, OSError):
+        except (KeyringError, OSError, ValueError, KeychainNotResponding):
             continue
         _from_dotenv.discard(env)
         _from_keychain.add(env)
@@ -168,38 +393,40 @@ def _stored_value_ok(key: ManagedKey, value: str) -> bool:
 
 
 def load_into_environment() -> None:
-    """Fill key variables from the keychain, over a shell value but not over `.env`; called after .env is read. An item
-    that cannot be read or is not a valid key is skipped, never put into the environment, and shown as broken (E2)."""
-    if keychain_name() is None:
-        return
+    """Fill key variables from the keychain (or, with none, the session store and the file the person chose), over a shell
+    value but not over `.env`; called after .env is read. An item that cannot be read or is not a valid key is skipped, never
+    put into the environment, and shown as broken (E2). A keychain that does not answer in time leaves the keys it holds
+    unread and shown as unavailable; the app starts without them (E5)."""
     _broken.clear()
     _unavailable.clear()
-    for env, key in MANAGED_KEYS.items():
-        if env in _from_dotenv or env in _from_keychain:
-            continue
+    todo = [env for env in MANAGED_KEYS if env not in _from_dotenv and env not in _from_keychain]
+    if keychain_name() is None:
+        _load_file_store()
+        for env in todo:
+            if value := _session.get(env):
+                _adopt(env, value)
+        return
+    reads = {env: _worker.submit(_store_get, env) for env in todo}  # all queued at once, read against one deadline
+    deadline = time.monotonic() + STARTUP_TIMEOUT
+    for env, read in reads.items():
         try:
-            value = keyring.get_password(SERVICE, env)
-        except ValueError:  # the stored bytes cannot be decoded: the item itself is damaged
-            _broken.add(env)
-            continue
-        except Exception:  # noqa: BLE001 - a locked or unreachable keychain, in whatever way the backend reports it
+            value = read.result(timeout=max(0.0, deadline - time.monotonic()))
+        except concurrent.futures.TimeoutError:
+            read.cancel()
             _unavailable.add(env)
             continue
+        except Exception as exc:  # noqa: BLE001 - a locked or unreachable keychain, in whatever way the backend reports it
+            _note_unread(env, exc)
+            continue
         if value:
-            if not _stored_value_ok(key, value):
-                _broken.add(env)
-                continue
-            if os.environ.get(env):
-                _shell_values[env] = os.environ[env]
-            os.environ[env] = value
-            _from_keychain.add(env)
+            _adopt(env, value)
 
 
 def status(env: str) -> dict[str, Any]:
     key = MANAGED_KEYS[env]
     value = os.environ.get(env) or ""
     configured = bool(value)
-    source = ("keychain" if env in _from_keychain else "dotenv" if env in _from_dotenv else "environment") if configured else None
+    source = (store_kind() if env in _from_keychain else "dotenv" if env in _from_dotenv else "environment") if configured else None
     # The last four characters let the user tell which key is saved; a short value is not shown at all.
     return {"env": env, "group": key.group, "service": key.service, "configured": configured, "source": source,
             "testable": key.testable, "shell_fallback": env in _shell_values, "last4": value[-4:] if len(value) >= 16 else None,
@@ -207,20 +434,27 @@ def status(env: str) -> dict[str, Any]:
             "verification": key_verification.state_of(value) if configured else None,
             "broken": (env in _broken and not configured) or (configured and not key.pair and not key_verification.is_valid_key(value)),
             # The keychain did not answer, so the saved key was not used this time; it is not known to be bad.
-            "keychain_unavailable": env in _unavailable and not configured}
+            "keychain_unavailable": env in _unavailable and not configured,
+            # The last change to this key got no answer from the keychain yet; the key shows its real state when it does (E5).
+            "keychain_pending": env in _settling}
 
 
-def save(env: str, value: str) -> None:
+def _prepare_save(env: str, value: str) -> str | None:
     if not MANAGED_KEYS[env].pair and not key_verification.is_valid_key(value):
         raise ValueError("not a valid key")  # the routes refuse these first; this keeps one out of the environment for good
-    source = status(env)["source"]
-    if source == "dotenv":
-        _rewrite_dotenv(env, value)
-        os.environ[env] = value
-        _broken.discard(env)
-        _unavailable.discard(env)
-        return
-    keyring.set_password(SERVICE, env, value)
+    if env in _settling:
+        raise KeychainBusy()
+    return status(env)["source"]
+
+
+def _save_dotenv(env: str, value: str) -> None:
+    _rewrite_dotenv(env, value)
+    os.environ[env] = value
+    _broken.discard(env)
+    _unavailable.discard(env)
+
+
+def _finish_save(env: str, value: str, source: str | None) -> None:
     if source == "environment":
         _shell_values[env] = os.environ[env]
     os.environ[env] = value
@@ -229,7 +463,26 @@ def save(env: str, value: str) -> None:
     _unavailable.discard(env)
 
 
-def delete(env: str) -> None:
+def save(env: str, value: str) -> None:
+    source = _prepare_save(env, value)
+    if source == "dotenv":
+        return _save_dotenv(env, value)
+    _io_sync(_store_set, env, value)
+    _finish_save(env, value, source)
+
+
+async def save_async(env: str, value: str) -> None:
+    """`save` for the API: the keychain call goes through the queue with a time limit (E5)."""
+    source = _prepare_save(env, value)
+    if source == "dotenv":
+        return _save_dotenv(env, value)
+    await _io(env, _store_set, env, value)
+    _finish_save(env, value, source)
+
+
+def _prepare_delete(env: str) -> str | None:
+    if env in _settling:
+        raise KeychainBusy()
     source = status(env)["source"]
     _broken.discard(env)
     if source == "environment":
@@ -238,16 +491,29 @@ def delete(env: str) -> None:
         _rewrite_dotenv(env, None)
         os.environ.pop(env, None)
         _from_dotenv.discard(env)
-        return
-    try:
-        keyring.delete_password(SERVICE, env)
-    except PasswordDeleteError:
-        pass  # already absent from the keychain
+    return source
+
+
+def _finish_delete(env: str) -> None:
     if env in _shell_values:
         os.environ[env] = _shell_values.pop(env)
     else:
         os.environ.pop(env, None)
     _from_keychain.discard(env)
+
+
+def delete(env: str) -> None:
+    if _prepare_delete(env) == "dotenv":
+        return
+    _io_sync(_store_delete, env)
+    _finish_delete(env)
+
+
+async def delete_async(env: str) -> None:
+    if _prepare_delete(env) == "dotenv":
+        return
+    await _io(env, _store_delete, env)
+    _finish_delete(env)
 
 
 # One short request per scholarly source, sent the way its adapter sends the key. Each source answers a made-up key

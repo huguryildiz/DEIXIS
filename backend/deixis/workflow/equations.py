@@ -920,6 +920,7 @@ class EquationService:
         counts = mathpix_counts(self.store)
         return {"pair": {"configured": isinstance(pair, mathpix.Pair), "unreadable": pair == "unreadable" or credentials.status(mathpix.ENV)["broken"],  # the second: skipped at startup (E2)
                          "keychain_unavailable": credentials.status(mathpix.ENV)["keychain_unavailable"],
+                         "keychain_pending": credentials.status(mathpix.ENV)["keychain_pending"],
                          "app_id": pair.app_id if isinstance(pair, mathpix.Pair) else None},
                 "keys_rejected": mathpix_keys_rejected(self.store, pair), "switch": "on" if mathpix_switch(self.store) else "off",
                 "monthly_budget": counts["budget"], "month_requests": counts["month"], "per_pdf_limit": MAX_ASSET_REQUESTS,

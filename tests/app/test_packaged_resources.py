@@ -9,11 +9,13 @@ from __future__ import annotations
 
 import compileall
 import hashlib
+import importlib.metadata
 import json
 import os
 import shutil
 import subprocess
 import sys
+import sysconfig
 from pathlib import Path
 
 import pytest
@@ -22,10 +24,12 @@ from deixis import config, credentials, package_manifest, paths
 from deixis.domain import skill
 
 REPO = Path(__file__).resolve().parents[2]
+METADATA = Path(importlib.metadata.distribution("deixis")._path)  # the dev install's dist-info
 
 
 def bundle(tmp_path: Path) -> Path:
-    """The package compiled to sourceless `.pyc` files, plus the manifest's data files and nothing else."""
+    """The package compiled to sourceless `.pyc` files, the manifest's data files and the `deixis` dist-info that
+    P10d's `copy_metadata("deixis")` adds, and nothing else."""
     root = tmp_path / "bundle"
     shutil.copytree(REPO / "backend" / "deixis", root / "deixis",
                     ignore=lambda folder, names: [n for n in names if not (n.endswith(".py") or Path(folder, n).is_dir())
@@ -40,16 +44,35 @@ def bundle(tmp_path: Path) -> Path:
     for source, dest in pairs:
         (root / dest).mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, root / dest)
+    shutil.copytree(METADATA, root / METADATA.name)
     return root
 
 
+def dependencies(tmp_path: Path) -> Path:
+    """The dev environment's installed packages without its own `deixis` dist-info and `.pth` files (the editable
+    install), so the child can only find DEIXIS and its metadata in the bundle."""
+    folder = tmp_path / "site"
+    folder.mkdir()
+    for entry in Path(sysconfig.get_paths()["purelib"]).iterdir():
+        if entry.resolve() != METADATA.resolve() and entry.suffix != ".pth":
+            (folder / entry.name).symlink_to(entry)
+    return folder
+
+
+# Only what the OS and Python need; never a key or token from the shell that runs the tests.
+CHILD_ENV = ("PATH", "HOME", "TMPDIR", "TEMP", "TMP", "LANG", "LC_ALL", "LC_CTYPE", "SYSTEMROOT", "WINDIR",
+             "USERPROFILE", "LOCALAPPDATA")
+
+
 def run_frozen(root: Path, tmp_path: Path, body: str) -> dict:
-    """Run `body` in a fresh Python that imports DEIXIS from the bundle as a frozen app; it prints one JSON line."""
-    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "DEIXIS_REPO_ROOT")}
-    env |= {"PYTHONPATH": str(root), "DEIXIS_DATA_DIR": str(tmp_path / "data"),
-            "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring", "PYTHONDONTWRITEBYTECODE": "1"}
-    script = f"import sys\nsys.frozen = True\nsys._MEIPASS = {str(root)!r}\n" + body
-    done = subprocess.run([sys.executable, "-c", script], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=120)
+    """Run `body` in an isolated Python (`-I -S`) that sees only the bundle and the dependencies, as a frozen app; it
+    prints one JSON line."""
+    env = {k: os.environ[k] for k in CHILD_ENV if k in os.environ}
+    env |= {"DEIXIS_DATA_DIR": str(tmp_path / "data"), "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring"}
+    script = (f"import sys\nsys.path[:0] = [{str(root)!r}, {str(dependencies(tmp_path))!r}]\n"
+              f"sys.frozen = True\nsys._MEIPASS = {str(root)!r}\n" + body)
+    done = subprocess.run([sys.executable, "-I", "-S", "-B", "-c", script], cwd=tmp_path, env=env, capture_output=True,
+                          text=True, timeout=120)
     assert done.returncode == 0, done.stderr
     return json.loads(done.stdout.strip().splitlines()[-1])
 
@@ -69,7 +92,7 @@ def test_an_app_holding_only_the_manifest_files_starts_and_passes_the_integrity_
     root = bundle(tmp_path)
     (root / ".env").write_text("OPENALEX_API_KEY=SYNTHETIC-dotenv-key\n")  # never read by a frozen app (A2)
     seen = run_frozen(root, tmp_path, """
-import json, os
+import importlib.metadata, json, os
 from fastapi.testclient import TestClient
 import deixis
 from deixis.api.app import create_app
@@ -81,13 +104,16 @@ with TestClient(app) as client:
     health = client.get("/api/health").json()
     page = client.get("/").text
 print(json.dumps({"package": deixis.__file__, "root": str(RESOURCE_ROOT), "issues": skill.integrity_issues(),
-                  "health": health, "page": page, "key": os.environ.get("OPENALEX_API_KEY")}))
+                  "health": health, "page": page, "key_set": "OPENALEX_API_KEY" in os.environ,
+                  "metadata": str(importlib.metadata.distribution("deixis")._path),
+                  "version": importlib.metadata.version("deixis")}))
 """)
     assert seen["package"].startswith(str(root)) and seen["package"].endswith(".pyc") and seen["root"] == str(root)
     assert seen["issues"] == [] and seen["health"]["status"] == "ok"
     assert seen["health"]["skill_package_hash"] == skill.package_hash(REPO / "methods" / "deixis-research")
     assert "SYNTHETIC web build" in seen["page"] or "<div id=\"root\">" in seen["page"]
-    assert seen["key"] is None and (root / ".env").read_text() == "OPENALEX_API_KEY=SYNTHETIC-dotenv-key\n"
+    assert seen["metadata"].startswith(str(root)) and seen["version"] == importlib.metadata.version("deixis")
+    assert seen["key_set"] is False and (root / ".env").read_text() == "OPENALEX_API_KEY=SYNTHETIC-dotenv-key\n"
     assert not list(root.rglob("*.env.*"))
 
 

@@ -20,3 +20,5 @@ apps/web/playwright-report/
 /.claude/
 /TODO.md
 .vscode/
+# pytest-testmon's record of which tests touch which code.
+.testmondata*

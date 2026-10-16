@@ -6,8 +6,9 @@ DEIXIS is a local, single-user research workspace: question → scholarly search
 
 ```sh
 uv sync
-uv run pytest                          # quick: slow tests left out, 6 workers
-uv run pytest -m "slow or not slow"    # everything; run before a push
+uv run pytest --testmon tests          # after a change: only the tests that touch changed Python code
+uv run pytest                          # quick: slow tests left out, 4 workers
+uv run pytest -m "slow or not slow"    # everything; GitHub Actions runs it on every push to main
 uv run python -m deixis serve          # http://127.0.0.1:8765, serves apps/web/dist
 cd apps/web && npm ci && npm run build && npm run lint
 DEIXIS_ACCEPTANCE_DIR=/tmp/deixis-acceptance npm run test:acceptance   # Playwright, needs a fresh build
@@ -43,6 +44,7 @@ Python 3.12, native arm64. Runtime data lives in `DEIXIS_DATA_DIR` (default `~/L
 
 - Port 8765 may be the owner's real library: don't restart it while a run is active; test on another port with a temp `DEIXIS_DATA_DIR`.
 - The worktree may hold someone else's changes; don't stage or revert them. No destructive git.
+- Testing: after a change run `pytest --testmon tests`; it does not see edits to schemas, methods, SQL or fixtures, so after those run the files that read them. Don't run the full suite locally before a push: the `tests` workflow runs it on GitHub; check its result and fix a red run first.
 - Tests are model-free (`FakeAdapter`, mocked `httpx`, fake fetcher via `create_app`); a new test folder goes into `pythonpath` in `pyproject.toml`. Passing tests show workflow behavior, not model quality.
 - Decisions go in [docs/decisions.md](docs/decisions.md), newest on top. Plans and design notes go in the ignored `.local/`.
 - Report what changed, which checks ran and passed, what was skipped or left unverified, and whether anything was pushed.

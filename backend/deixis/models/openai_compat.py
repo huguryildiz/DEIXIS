@@ -24,7 +24,7 @@ import httpx
 
 from deixis import key_verification
 from deixis.domain.limits import error_name, http_limit, service_error_kind, retry_at
-from deixis.models.adapter import ModelStepResult
+from deixis.models.adapter import ModelStepResult, broken_key_status, invalid_key_result
 from deixis.models.schema_subset import portable_schema
 
 
@@ -184,10 +184,7 @@ class OpenAICompatAdapter:
             status["reason"] = f"Add a {spec.name} API key in Settings"
             return status
         if key and not key_verification.is_valid_key(key):  # from the shell or .env; a header cannot carry it (E11)
-            status["broken"] = True
-            status["reason_code"] = "auth_failed"
-            status["reason"] = f"The saved {spec.name} key is not a valid key: enter it again in Settings"
-            return status
+            return broken_key_status(status, spec.name)
         state = key_verification.state_of(spec.key_env, key) if spec.key_env else None
         base = self._base()
         if self._base_url is not None:
@@ -277,8 +274,7 @@ class OpenAICompatAdapter:
                        requested_model: str | None, reasoning_effort: str | None = None) -> ModelStepResult:
         key, spec = self._key(), self.spec
         if key and not key_verification.is_valid_key(key):  # nothing is sent with a key no header can carry
-            return ModelStepResult("unavailable", error="the saved key is not a valid key", delivery_class="before_send",
-                                   error_kind="auth_failed")
+            return invalid_key_result()
         missing_key = bool(spec.key_env) and not key
         if missing_key or not requested_model:
             return ModelStepResult("unavailable", error=f"{spec.key_env} is not set" if missing_key else "no model requested",

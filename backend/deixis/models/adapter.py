@@ -63,6 +63,18 @@ class ModelStepResult:
         self.error = safe_error(self.error)
 
 
+def broken_key_status(status: dict[str, Any], service: str) -> dict[str, Any]:
+    """A health answer for a key that is not printable ASCII (from the shell or .env): no header can carry it, so nothing is
+    sent and the connection says the key is broken (E2, E11)."""
+    status.update(ready=False, broken=True, reason_code="auth_failed",
+                  reason=f"The saved {service} key is not a valid key: enter it again in Settings")
+    return status
+
+
+def invalid_key_result() -> ModelStepResult:
+    return ModelStepResult("unavailable", error="the saved key is not a valid key", delivery_class="before_send", error_kind="auth_failed")
+
+
 def is_rate_limited(result: ModelStepResult) -> bool:
     """Only temporary/unknown rate limits qualify for the workflow's bounded resend."""
     kind = getattr(result, "error_kind", None) or limit_kind(getattr(result, "error", None))

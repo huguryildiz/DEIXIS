@@ -18,8 +18,9 @@ from typing import Any
 
 import httpx
 
+from deixis import key_verification
 from deixis.domain.limits import error_name, http_limit, retry_at, service_error_kind
-from deixis.models.adapter import ModelStepResult, is_dated_snapshot
+from deixis.models.adapter import ModelStepResult, broken_key_status, invalid_key_result, is_dated_snapshot
 
 API_URL = "https://api.openai.com/v1"
 KEY_ENV = "OPENAI_API_KEY"
@@ -87,6 +88,8 @@ class OpenAIAdapter:
             status["reason_code"] = "needs_key"
             status["reason"] = "Add an OpenAI API key in Settings"
             return status
+        if not key_verification.is_valid_key(key):
+            return broken_key_status(status, "OpenAI")
         for attempt in range(2):  # one retry after a transport error, as for the other API connections
             try:
                 response = await self._http().get(f"{API_URL}/models", headers={"Authorization": f"Bearer {key}"}, timeout=20)
@@ -117,6 +120,8 @@ class OpenAIAdapter:
         if not key or not requested_model:
             return ModelStepResult("unavailable", error=f"{KEY_ENV} is not set" if not key else "no model requested",
                                    delivery_class="before_send", error_kind="needs_key" if not key else "unknown")
+        if not key_verification.is_valid_key(key):  # a header cannot carry it; nothing is sent
+            return invalid_key_result()
         body = {"model": requested_model, "instructions": f"{base}\n\n{developer}", "input": message, "store": False,
                 "text": {"format": {"type": "json_schema", "name": "deixis_step", "schema": output_schema, "strict": True}}}
         if reasoning_effort:

@@ -406,6 +406,58 @@ def test_a_unicode_key_from_the_shell_is_reported_broken_and_never_raises(wire, 
     assert credentials.status("MISTRAL_API_KEY")["broken"] is True
 
 
+BAD_SHELL_KEY = "key-ş-0123456789"  # as if it came from the shell or .env
+API_ADAPTERS = {  # (adapter class, key variable, service name in the message)
+    "anthropic": ("deixis.models.anthropic_api.AnthropicAdapter", "ANTHROPIC_API_KEY", "Anthropic"),
+    "openai": ("deixis.models.openai_api.OpenAIAdapter", "OPENAI_API_KEY", "OpenAI"),
+    "gemini": ("deixis.models.gemini.GeminiAdapter", "GEMINI_API_KEY", "Gemini"),
+    "deepseek": ("deixis.models.deepseek.DeepSeekAdapter", "DEEPSEEK_API_KEY", "DeepSeek"),
+}
+
+
+@pytest.mark.parametrize("name", API_ADAPTERS)
+def test_every_api_adapter_reports_a_key_no_header_can_carry_as_broken_and_sends_nothing(wire, monkeypatch, name):
+    import importlib
+    path, env, service = API_ADAPTERS[name]
+    module, cls = path.rsplit(".", 1)
+    adapter = getattr(importlib.import_module(module), cls)(client=httpx.AsyncClient(transport=httpx.MockTransport(wire)))
+    monkeypatch.setenv(env, BAD_SHELL_KEY)
+
+    async def go():
+        health = await adapter.health(refresh=True)
+        assert (health["ready"], health["broken"], health["reason_code"]) == (False, True, "auth_failed")
+        assert service in health["reason"] and BAD_SHELL_KEY not in health["reason"]
+        sent = await adapter.run_step("BASE", "DEV", "MSG", {"type": "object"}, "some-model")
+        assert (sent.status, sent.delivery_class, sent.error_kind) == ("unavailable", "before_send", "auth_failed")
+    asyncio.run(go())
+    assert not wire.urls and credentials.status(env)["broken"] is True
+
+
+def test_a_source_key_no_header_can_carry_counts_as_no_key(monkeypatch):
+    from deixis.providers.registry import CONNECTORS
+    monkeypatch.setenv("S2_API_KEY", BAD_SHELL_KEY)
+    assert CONNECTORS["semantic_scholar"].api_key() is None
+    monkeypatch.setenv("S2_API_KEY", "s2-key-0123456789")
+    assert CONNECTORS["semantic_scholar"].api_key() == "s2-key-0123456789"
+
+
+def test_a_zotero_or_embedding_key_no_header_can_carry_stops_before_sending(wire, monkeypatch):
+    from deixis.documents.embeddings import Embedder, EmbeddingError
+    from deixis.providers import zotero
+    monkeypatch.setenv("ZOTERO_API_KEY", BAD_SHELL_KEY)
+    monkeypatch.setenv("ZOTERO_LIBRARY_ID", "123")
+    with pytest.raises(zotero.ZoteroError):
+        zotero.library("web")
+    monkeypatch.setenv("GEMINI_API_KEY", BAD_SHELL_KEY)
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(wire)) as http:
+            with pytest.raises(EmbeddingError):
+                await Embedder("gemini", "m").embed(http, ["text"], "RETRIEVAL_DOCUMENT")
+    asyncio.run(go())
+    assert not wire.urls
+
+
 def test_key_state_belongs_to_the_value():
     key_verification.set_state("X_KEY", "first-value-123", "verified")
     assert key_verification.state_of("X_KEY", "first-value-123") == "verified"

@@ -17,6 +17,7 @@ from types import MappingProxyType
 from typing import Any, Awaitable, Callable, Mapping
 from urllib.parse import urlsplit
 
+from deixis import key_verification
 from deixis.providers import arxiv, biorxiv, core, crossref, ieee_xplore, openalex, pacing, pubmed, scopus, semantic_scholar, serpapi
 from deixis.providers import common, lookup
 from deixis.providers.common import SearchOutcome
@@ -118,7 +119,9 @@ class Connector:
         object.__setattr__(self, "capabilities", MappingProxyType(dict(self.capabilities)))
 
     def api_key(self) -> str | None:
-        return (os.environ.get(self.key_env) or None) if self.key_env else None
+        # A key no header can carry (from the shell or .env) counts as no key: the source is not configured, nothing raises.
+        value = (os.environ.get(self.key_env) or None) if self.key_env else None
+        return value if value is None or key_verification.is_valid_key(value) else None
 
     def access_mode(self) -> str:
         if self.api_key():

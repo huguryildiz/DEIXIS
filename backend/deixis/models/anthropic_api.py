@@ -16,8 +16,9 @@ from typing import Any
 
 import httpx
 
+from deixis import key_verification
 from deixis.domain.limits import error_name, http_limit, retry_at, service_error_kind
-from deixis.models.adapter import ModelStepResult, is_dated_snapshot
+from deixis.models.adapter import ModelStepResult, broken_key_status, invalid_key_result, is_dated_snapshot
 from deixis.models.schema_subset import portable_schema
 
 API_URL = "https://api.anthropic.com/v1"
@@ -68,6 +69,8 @@ class AnthropicAdapter:
             status["reason_code"] = "needs_key"
             status["reason"] = "Add an Anthropic API key in Settings"
             return status
+        if not key_verification.is_valid_key(key):
+            return broken_key_status(status, "Anthropic")
         # A second try after a transport error, as for the other API connections: one failed check pauses a run.
         for attempt in range(2):
             try:
@@ -105,6 +108,8 @@ class AnthropicAdapter:
         if not key or not requested_model:
             return ModelStepResult("unavailable", error=f"{KEY_ENV} is not set" if not key else "no model requested",
                                    delivery_class="before_send", error_kind="needs_key" if not key else "unknown")
+        if not key_verification.is_valid_key(key):  # a header cannot carry it; nothing is sent
+            return invalid_key_result()
         output_config: dict[str, Any] = {"format": {"type": "json_schema", "schema": portable_schema(output_schema)}}
         if reasoning_effort:
             output_config["effort"] = reasoning_effort

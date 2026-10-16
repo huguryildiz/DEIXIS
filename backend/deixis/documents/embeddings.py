@@ -23,6 +23,7 @@ from array import array
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from deixis import key_verification
 from deixis.documents import local_embedding
 
 import httpx
@@ -306,6 +307,8 @@ class Embedder:
             key = os.environ.get(KEY_ENVS[self.provider])
             if not key:
                 raise EmbeddingError(f"{KEY_ENVS[self.provider]} is not set")
+            if not key_verification.is_valid_key(key):  # a header cannot carry it; nothing is sent
+                raise EmbeddingError(f"{KEY_ENVS[self.provider]} is not a valid key")
             if self.provider == "gemini":
                 return await embed(client, key, texts, task_type, budget, stop, on_sent)
             return await embed_openai_compatible(client, OPENAI_URL, key, self.model, texts, budget, stop, on_sent)

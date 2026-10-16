@@ -28,6 +28,7 @@ from urllib.request import url2pathname
 
 import httpx
 
+from deixis import key_verification
 from deixis.documents.fetch import FetchResult
 from deixis.providers.common import ProviderRecord, SearchOutcome, normalize_doi, send, year_of
 
@@ -76,7 +77,7 @@ def library(source: str) -> Library:
     # The variable names pyzotero uses; ZOTERO_LIBRARY_TYPE is "user" (the default) or "group".
     key, library_id = os.environ.get("ZOTERO_API_KEY"), os.environ.get("ZOTERO_LIBRARY_ID", "")
     library_type = os.environ.get("ZOTERO_LIBRARY_TYPE", "user").strip().lower()
-    if not key or not library_id.isdigit() or library_type not in ("user", "group"):
+    if not key or not key_verification.is_valid_key(key) or not library_id.isdigit() or library_type not in ("user", "group"):
         raise ZoteroError("The zotero.org library is not set up.", 422)
     # A linked file stays on the computer that linked it; zotero.org stores only imported files.
     return Library("web", WEB_BASE.format(prefix=f"{library_type}s/{library_id}"), {"Zotero-API-Version": "3", "Zotero-API-Key": key},

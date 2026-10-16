@@ -14,7 +14,8 @@ from typing import Any
 
 import httpx
 
-from deixis.models.adapter import ModelStepResult
+from deixis import key_verification
+from deixis.models.adapter import ModelStepResult, broken_key_status, invalid_key_result
 from deixis.domain.limits import error_name, http_limit, service_error_kind, retry_at
 from deixis.tool_paths import child_path, find_tool
 from deixis.tool_probe import probe
@@ -76,6 +77,8 @@ class GeminiAdapter:
             status["reason_code"] = "needs_key"
             status["reason"] = "Add a Gemini API key in Settings to use the Gemini API"
             return status
+        if not key_verification.is_valid_key(key):
+            return broken_key_status(status, "Gemini")
         # A second try after a transport error: the first can expire while something else holds the event loop, and
         # one failed check pauses the whole run.
         for attempt in range(2):
@@ -112,6 +115,8 @@ class GeminiAdapter:
         if not key or not requested_model:
             return ModelStepResult("unavailable", error=f"{KEY_ENV} is not set" if not key else "no model requested",
                                    delivery_class="before_send", error_kind="needs_key" if not key else "unknown")
+        if not key_verification.is_valid_key(key):  # a header cannot carry it; nothing is sent
+            return invalid_key_result()
         config: dict[str, Any] = {"responseMimeType": "application/json", "responseJsonSchema": response_schema(output_schema)}
         if reasoning_effort:
             config["thinkingConfig"] = {"thinkingLevel": reasoning_effort}

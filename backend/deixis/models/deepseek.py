@@ -8,7 +8,8 @@ from typing import Any
 
 import httpx
 
-from deixis.models.adapter import ModelStepResult
+from deixis import key_verification
+from deixis.models.adapter import ModelStepResult, broken_key_status, invalid_key_result
 from deixis.models.openai_compat import chat_tool_items
 from deixis.domain.limits import error_name, http_limit, service_error_kind, retry_at
 
@@ -58,6 +59,8 @@ class DeepSeekAdapter:
             status["reason_code"] = "needs_key"
             status["reason"] = "Add a DeepSeek API key in Settings"
             return status
+        if not key_verification.is_valid_key(key):
+            return broken_key_status(status, "DeepSeek")
         # A second try after a transport error: the first can expire while something else holds the event loop, and
         # one failed check pauses the whole run.
         for attempt in range(2):
@@ -96,6 +99,8 @@ class DeepSeekAdapter:
         if not key or not requested_model:
             return ModelStepResult("unavailable", error=f"{KEY_ENV} is not set" if not key else "no model requested",
                                    delivery_class="before_send", error_kind="needs_key" if not key else "unknown")
+        if not key_verification.is_valid_key(key):  # a header cannot carry it; nothing is sent
+            return invalid_key_result()
         # The schema reaches the model through the developer instructions the step stores (the appendix a
         # non-enforcing adapter is given, D86); a second copy here would be text the stored StepInput never shows.
         system = f"{base}\n\n{developer}\n\nReturn only a JSON object."

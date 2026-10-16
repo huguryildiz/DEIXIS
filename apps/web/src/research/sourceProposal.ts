@@ -1,4 +1,4 @@
-import { type Source } from '../api'
+import { type ReadCoverage, type Source } from '../api'
 import { hasQueueReason, queueReasonText, waitingReasonText } from '../labels'
 import { t } from '../i18n'
 
@@ -37,6 +37,12 @@ const ABSTRACT_BASIS: Record<string, string> = {
   runs_disagree_kept_as_candidate: 'basis: title and abstract · two reads',
   quote_not_found_kept_as_candidate: 'basis: title and abstract · two reads',
 }
+// "All text parts" is every extracted text part, never the whole PDF: a page without text has no part (audit item 3).
+function readingBasis(c: ReadCoverage | null): string {
+  if (!c) return t('basis: full text (selected pages) · two reads')
+  if (c.all_parts_shown) return t(c.parts_total === 1 ? 'basis: full text · its one text part read · two reads' : 'basis: full text · all {n} text parts read · two reads', { n: c.parts_total })
+  return t('basis: full text · {k} of {n} text parts read, from {p} of {q} pages · two reads', { k: c.parts_shown, n: c.parts_total, p: c.pages_shown, q: c.pdf_pages ?? c.pages_with_text })
+}
 const NOT_READ = new Set(['no_abstract', 'abstract_not_found', 'abstract_not_read', 'abstract_not_proposed'])
 export function proposalOf(source: Source): Proposal | null {
   const sc = source.screening
@@ -47,8 +53,9 @@ export function proposalOf(source: Source): Proposal | null {
     if (sc.next_step === 'waiting_for_pdf') return { tone: 'none', word: t('not read in full'), reason: waitingReasonText(code), basis: '' }
     if (sc.next_step === 'reading_queue') return { tone: 'none', word: t('not read in full'), reason: t('The full text is in hand and waits to be read.'), basis: '' }
     if (code === 'pdf_identity_unconfirmed') return { tone: 'none', word: t('not read in full'), reason: queueReasonText(code), basis: '' }
-    // A reading happened: two model runs read the selected pages (the agreement or the rule applied to it decides).
-    const basis = t('basis: full text (selected pages) · two reads')
+    // A reading happened: two model runs read the selected pages (the agreement or the rule applied to it decides). The
+    // decision's recorded coverage says how much of the extracted text they were shown; older decisions have none.
+    const basis = readingBasis(sc.read_coverage)
     if (sc.outcome === 'include') return { tone: 'include', word: t('include'), reason: t('Both full-text reads found every part of the criterion.'), basis }
     if (sc.outcome === 'criterion_not_met') return { tone: 'exclude', word: t('exclude'), reason: t('The parts of the criterion were not found in the passages read.'), basis }
     return { tone: 'uncertain', word: t('uncertain'), reason: hasQueueReason(code) ? queueReasonText(code) : t('Left open at the full-text stage.'), basis }

@@ -173,9 +173,14 @@ def machine_screening(ctx: Any, work_id: str) -> dict[str, Any]:
     code = chosen.get("reason_code")
     # Where the reason table sends the work next: `waiting_for_pdf` and `reading_queue` say the full text was not read.
     step = "human_queue" if code == queue.VERSIONS_DISAGREE else REASON_CODES[code].next_step if code in REASON_CODES else None
+    # What the reading behind the chosen full-text decision showed the model, from that decision's own row (audit item 3).
+    row = next((d for d in reversed(machine) if chosen.get("stage") == "fulltext" and d["stage"] == "fulltext"
+                and d["source_version_id"] == chosen.get("source_version_id") and d["reason_code"] == code), None)
+    coverage = json.loads(row["read_coverage"]) if row is not None and row.get("read_coverage") else None
     return {"stage": chosen.get("stage"), "outcome": chosen.get("outcome"), "reason_code": code,
             "decided_by": chosen.get("decided_by"), "source_version_id": chosen.get("source_version_id"),
-            "next_step": step, "stale": stale, "passed_abstract": passed_abstract(ctx, work_id)}
+            "next_step": step, "stale": stale, "passed_abstract": passed_abstract(ctx, work_id),
+            "read_coverage": coverage}
 
 
 def flow_boxes(ctx: Any, flow: dict[str, Any]) -> dict[str, Any]:

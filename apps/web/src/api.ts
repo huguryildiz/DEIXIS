@@ -469,6 +469,9 @@ export type PersonFile = {
   quotes: { part: string; quote: string; page: number | null; rendition?: boolean }[]; after_run: boolean; decided_code: string | null
 }
 export type PersonFiles = { rows: PersonFile[]; reading_on: boolean; paused_run: { id: string; kind: string; status: string; pause_reason: string | null } | null }
+// What a full-text reading showed the model of a version's extracted text (audit item 3): text parts are the ≤1,400-character
+// passages of the pages that have text; `all_parts_shown` never means the whole PDF (`pdf_pages` is the file's page count).
+export type ReadCoverage = { parts_shown: number; parts_total: number; pages_shown: number; pages_with_text: number; pdf_pages: number | null; all_parts_shown: boolean }
 export type Source = {
   // An author–year–title key such as "nakano2013molecular", one per work across the library (D59, D38); null only before it is given.
   source_version_id: string; work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null
@@ -497,7 +500,7 @@ export type Source = {
   provider_records: string[]
   // What code and the model runs decided about the work, current decisions only, a person's left out (UI parity S13);
   // null on other versions. `passed_abstract`: a current abstract-stage `candidate`, the funnel's rule.
-  screening: { stage: 'abstract' | 'fulltext' | null; outcome: string | null; reason_code: string | null; decided_by: 'code' | 'model_agreement' | null; source_version_id: string | null; next_step: string | null; stale: boolean; passed_abstract: boolean } | null
+  screening: { stage: 'abstract' | 'fulltext' | null; outcome: string | null; reason_code: string | null; decided_by: 'code' | 'model_agreement' | null; source_version_id: string | null; next_step: string | null; stale: boolean; passed_abstract: boolean; read_coverage: ReadCoverage | null } | null
 }
 export type Evidence = {
   // work_id: the work the cited version belongs to, kept for a source since removed from the research (it is not in `sources`).

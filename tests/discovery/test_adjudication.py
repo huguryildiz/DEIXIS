@@ -6,6 +6,7 @@ bakery). Passing shows the rules behave as the slice says. It does not show that
 or that a quote which verifies also supports the label.
 """
 
+import json
 import random
 
 import pytest
@@ -583,3 +584,47 @@ def test_the_marker_compares_part_names_as_the_criterion_check_does(named):
     elements = [{"role": "comparator", "words": "usual watering", "part": named}]
     marked = adjudication.mark_comparator(SENT, elements, ["comparator"])
     assert marked == [SENT[0], SENT[1] | {"role": "comparator"}, SENT[2]]
+
+
+# ---- what a reading showed of the extracted text (audit item 3) -----------------------------------
+
+def pages_of(n, per_page=1):
+    return [{"id": f"psg_{i}", "kind": "pdf_page", "physical_page": 1 + i // per_page} for i in range(n)]
+
+
+def test_coverage_counts_parts_and_pages_shown():
+    passages = pages_of(30, per_page=2) + [{"id": "psg_abs", "kind": "abstract", "physical_page": None}]
+    listed = adjudication.reading_list(passages, None, [], 12, 8)["passages"]
+    got = adjudication.coverage({p["id"] for p in listed} | {"psg_abs", "psg_other_version"}, passages, 17)
+    assert got == {"parts_shown": 12, "parts_total": 30, "pages_shown": 6, "pages_with_text": 15, "pdf_pages": 17,
+                   "all_parts_shown": False}
+
+
+@pytest.mark.parametrize("n", [1, 11, 12])
+def test_coverage_says_every_text_part_when_every_part_was_shown(n):
+    """Twelve parts are the selection path, but all twelve are chosen, so every part was shown."""
+    passages = pages_of(n)
+    listed = adjudication.reading_list(passages, None, [], 12, 8)["passages"]
+    got = adjudication.coverage({p["id"] for p in listed}, passages, None)
+    assert got["all_parts_shown"] and got["parts_shown"] == got["parts_total"] == n and got["pdf_pages"] is None
+
+
+def test_coverage_of_no_text_is_not_every_part():
+    assert adjudication.coverage(set(), [], 3)["all_parts_shown"] is False
+
+
+def test_coverage_stays_with_its_decision_and_comes_back_with_an_undo(library):
+    store = library
+    rid, run_id = research(store)
+    svid, _ = one_record(store, rid, run_id)
+    step = store.step(run_id, f"fulltext_adjudication:{svid}:2", "model:fulltext_adjudication")
+    decisions = DecisionStore(store)
+    shown = {"parts_shown": 3, "parts_total": 9, "pages_shown": 2, "pages_with_text": 4, "pdf_pages": 4,
+             "all_parts_shown": False}
+    first = decisions.record(rid, svid, "fulltext_runs_disagree", step_id=step["id"], read_coverage=shown)
+    # The same decision from the same step is the same row (a resumed close), coverage and all.
+    assert decisions.record(rid, svid, "fulltext_runs_disagree", step_id=step["id"], read_coverage=shown)["id"] == first["id"]
+    decisions.record(rid, svid, "human_include")
+    assert decisions.current(rid, svid, "fulltext")["read_coverage"] is None
+    restored = decisions.undo_human(rid, svid, "fulltext")
+    assert restored["step_id"] == step["id"] and json.loads(restored["read_coverage"]) == shown

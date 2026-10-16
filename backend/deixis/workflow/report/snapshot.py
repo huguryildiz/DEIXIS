@@ -21,6 +21,44 @@ def evidence_row_ids(snapshot: dict[str, Any]) -> list[str]:
     return [row["source_version_id"] for row in snapshot.get("rows", []) if row["source_version_id"] not in failed]
 
 
+def reading_counts(store: Store, research_id: str, included: list[str]) -> dict[str, int] | None:
+    """How much of each included version's extracted text a two-run full-text reading showed the model (audit item 3).
+
+    A reading decision is a full-text decision written from a `model:fulltext_adjudication` step, superseded or stale
+    or not: what was shown does not change when a person decides later or the criterion moves. The newest one on the
+    version answers; a version with none takes the newest on another version of its work, and `other_version` counts
+    those (a subset of the other three). `none` is not "not read": a reading whose second call failed writes no
+    decision, and the answer path can read an attached PDF without any reading here. None when the research holds no
+    reading decision at all.
+    """
+    by_version: dict[str, dict[str, Any]] = {}
+    by_work: dict[str, dict[str, Any]] = {}
+    for row in store.conn.execute(
+        "SELECT d.source_version_id, d.read_coverage, v.work_id FROM stage_decisions d"
+        " JOIN run_steps s ON s.id = d.step_id JOIN source_versions v ON v.id = d.source_version_id"
+        " WHERE d.research_id = ? AND d.stage = 'fulltext' AND s.kind = 'model:fulltext_adjudication'"
+        " ORDER BY d.created_at, d.rowid", (research_id,),
+    ):
+        by_version[row["source_version_id"]] = dict(row)
+        by_work[row["work_id"]] = dict(row)
+    if not by_version:
+        return None  # no reading in this research at all (attached PDFs only, or no full-text stage)
+    counts = {"all_parts": 0, "some_parts": 0, "unrecorded": 0, "none": 0, "other_version": 0}
+    for source_id in included:
+        reading = by_version.get(source_id)
+        if reading is None:
+            work = store.conn.execute("SELECT work_id FROM source_versions WHERE id = ?", (source_id,)).fetchone()
+            reading = by_work.get(work["work_id"]) if work is not None else None
+            counts["other_version"] += reading is not None
+        if reading is None:
+            counts["none"] += 1
+        elif not reading["read_coverage"]:
+            counts["unrecorded"] += 1
+        else:
+            counts["all_parts" if json.loads(reading["read_coverage"])["all_parts_shown"] else "some_parts"] += 1
+    return counts
+
+
 def build_snapshot(store: Store, research_id: str, table_id: str,
                    readiness: dict[str, Any] | None = None) -> dict[str, Any]:
     """Copy current source, column, cell and quote records; this function does not write."""
@@ -87,6 +125,11 @@ def build_snapshot(store: Store, research_id: str, table_id: str,
         "corpus": {"found": found, "unique": unique, "screened": screened, "included": len(included),
                    "full_text": sum(store.has_pdf_text(source_id) for source_id in included)},
     }
+    # Written whenever the research has a recorded screening reading, even when no included source has one; a research
+    # without any (attached PDFs only, or no full-text stage) keeps the snapshot and II/VIII text it had (audit item 3).
+    reading = reading_counts(store, research_id, included)
+    if reading is not None:
+        result["reading"] = reading
     if failed_rows:
         result["failed_rows"] = failed_rows
         result["row_counts"] = {"included": len(source_ids), "completed": len(source_ids) - len(failed_rows),

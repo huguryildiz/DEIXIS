@@ -240,8 +240,9 @@ def _check_derived_strength(store: Store, reports: ReportStore, report_id: str, 
 
 
 def _check_corpus_counts(store: Store, reports: ReportStore, report_id: str) -> list[dict[str, Any]]:
-    del store
-    corpus = reports.snapshot(report_id).get("corpus")
+    snapshot = reports.snapshot(report_id)
+    corpus = snapshot.get("corpus")
+    reading = snapshot.get("reading")
     sections = {section["section_id"]: section for section in reports.sections(report_id)}
     issues = []
     for section_id in ("II", "VIII"):
@@ -280,6 +281,13 @@ def _check_corpus_counts(store: Store, reports: ReportStore, report_id: str) -> 
                     expected_ratio = math.inf
                 if not math.isfinite(expected_ratio) or abs(ratio - expected_ratio) > 1e-9:
                     issues.append(_issue("corpus_count_mismatch", section_id, "ERROR: full_text_ratio differs from counts."))
+            # Audit item 3: the reading counts II prints are the frozen ones.
+            if reading and numbers.get("reading") != reading:
+                issues.append(_issue("corpus_count_mismatch", section_id, "ERROR: reading counts differ from frozen snapshot."))
+            elif reading and review_methodology.reading_sentence(
+                    reading, corpus["included"], review_methodology.report_language(store, reports.report(report_id))
+            ) not in str(((section.get("draft") if isinstance(section.get("draft"), dict) else {}) or {}).get("text", "")):
+                issues.append(_issue("corpus_count_mismatch", section_id, "ERROR: reading sentence differs from frozen snapshot."))
         else:
             for key in ("included", "full_text"):
                 value = checked(numbers, key)
@@ -303,6 +311,13 @@ def _check_corpus_counts(store: Store, reports: ReportStore, report_id: str) -> 
                 numbers, reports.report(report_id)["language"] or "en"
             ):
                 issues.append(_issue("limitations_text_drift", section_id, "ERROR: VIII text differs from structured items."))
+            if reading and isinstance(items, list):
+                # Audit item 3: item 2's reading sentence is rendered again from the frozen counts.
+                expected = review_methodology.reading_sentence(
+                    reading, corpus["included"], review_methodology.report_language(store, reports.report(report_id)))
+                note = next((item for item in items if isinstance(item, dict) and item.get("key") == "open_access_bias_note"), None)
+                if note is None or not str(note.get("text", "")).endswith(expected):
+                    issues.append(_issue("corpus_count_mismatch", section_id, "ERROR: reading sentence differs from frozen snapshot."))
     return issues
 
 

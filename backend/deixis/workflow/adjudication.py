@@ -202,6 +202,24 @@ def reading_list(passages: list[dict[str, Any]], criterion: dict[str, Any] | Non
     return {"passages": chosen, "whole_text": False}
 
 
+def coverage(shown_ids: set[str], passages: list[dict[str, Any]], pdf_pages: int | None) -> dict[str, Any]:
+    """How much of a version's extracted PDF text a reading showed the model (audit item 3).
+
+    `passages` are the version's pdf passages when the reading closed; `shown_ids` the ids the stored calls carried.
+    `all_parts_shown` says every extracted text part was shown, not that the whole PDF was: a page without text has no
+    passage, so `pdf_pages` (the file's page count, None when unknown) is kept beside the pages that have text.
+    """
+    pages = [p for p in passages if p.get("kind", "pdf_page") == "pdf_page"]
+    ids = {p["id"] for p in pages}
+    shown = shown_ids & ids
+    page_of = {p["id"]: p.get("physical_page") for p in pages}
+    with_text = {page for page in page_of.values() if isinstance(page, int)}
+    return {"parts_shown": len(shown), "parts_total": len(ids),
+            "pages_shown": len({page_of[pid] for pid in shown if isinstance(page_of[pid], int)}),
+            "pages_with_text": len(with_text), "pdf_pages": pdf_pages,
+            "all_parts_shown": bool(ids) and shown == ids}
+
+
 def _page(passage: dict[str, Any]) -> int:
     page = passage.get("physical_page")
     return page if isinstance(page, int) else 10**9

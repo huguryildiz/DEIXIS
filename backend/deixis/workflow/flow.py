@@ -3491,12 +3491,14 @@ class ResearchFlow:
         decisions = DecisionStore(self.store)
         views: list[dict[str, Any] | None] = []
         last_step: str | None = None
+        shown_ids: set[str] = set()
         for run_no, output in enumerate(outputs, start=1):
             if not output or output.get("invalid") or not output.get("step_input_id"):
                 views.append(None)
                 continue
             payload = self.store.step_input_payload(output["step_input_id"])
             last_step = payload["step_id"]
+            shown_ids |= {passage["passage_id"] for passage in payload["passages"]}
             shown: dict[str, dict[str, Any]] = {}
             page_numbers: set[int] = set()
             for passage in payload["passages"]:
@@ -3529,8 +3531,14 @@ class ResearchFlow:
         earlier = decisions.current(run["research_id"], read, "fulltext")
         renew = ({read} if item.get("asset_id") and earlier is not None
                  and self.store.decision_read_file(earlier) != (item["asset_id"], item["page_digest"]) else set())
+        # What the two calls showed of the version's extracted text, kept with the decision it writes (audit item 3).
+        asset_id = item.get("asset_id") or self._current_asset(read)
+        page_count = self.store.asset(asset_id).get("page_count") if asset_id else None
+        coverage = adjudication.coverage(shown_ids, [p for p in self.store.passages_for(read) if p["kind"] == "pdf_page"],
+                                         page_count)
         with transaction(self.store.conn):
-            self._write_adjudication_codes(run, last_step, [(read, code)], renew, {read: note} if note else None)
+            self._write_adjudication_codes(run, last_step, [(read, code)], renew, {read: note} if note else None,
+                                           {read: coverage})
             # The decision and its person's request move together (decision 4).
             current = decisions.current(run["research_id"], read, "fulltext")
             if current is not None and current["step_id"] == last_step:
@@ -3540,11 +3548,12 @@ class ResearchFlow:
 
     def _write_adjudication_codes(self, run: dict[str, Any], step_id: str | None,
                                   writes: list[tuple[str, str]], renew: set[str] | None = None,
-                                  notes: dict[str, str] | None = None) -> None:
+                                  notes: dict[str, str] | None = None,
+                                  coverage: dict[str, dict[str, Any]] | None = None) -> None:
         """Write these full-text decisions and derive each work's selection. The user's decision is left as it is;
         a version in `renew` is written even over the same code (slice 18b). A version in `notes` is written with
         that note (`protocol_title`, slice 26; `comparator_exclusion_withheld`, slice 28); every other decision carries
-        none, as before."""
+        none, as before. A version in `coverage` is written with what its reading showed (audit item 3)."""
         rid = run["research_id"]
         decisions = DecisionStore(self.store)
         stale_key = decisions.staleness_key(rid)
@@ -3557,7 +3566,8 @@ class ResearchFlow:
                                                                           or svid in (renew or ()))):
                 continue
             try:
-                decisions.record(rid, svid, code, step_id=step_id, note=(notes or {}).get(svid))
+                decisions.record(rid, svid, code, step_id=step_id, note=(notes or {}).get(svid),
+                                 read_coverage=(coverage or {}).get(svid))
             except HumanDecisionStands:
                 continue
             touched.add(self.store.source(svid)["work_id"])
@@ -4921,7 +4931,18 @@ class ResearchFlow:
             kinds = {p["kind"] for p in self.store.passages_for(svid)}
             if task_type == "followup_answer" or task_type == "grounded_answer" and fast_path.enforces(run["budget"], "answer"):
                 kinds = {p["kind"] for p in passage_rows if p["source_version_id"] == svid}
-            access = "pdf_available" if "pdf_page" in kinds else "abstract" if "abstract" in kinds else "metadata"
+            elif task_type in ("report_plan", "report_section", "report_review"):
+                # A report step names what it sends: the source's pages and its table cells by their reading depth, with
+                # VII's basis pages and cells in its validation context, not every page the library holds (audit item 3).
+                context = (report_target or {}).get("validation_context") or {}
+                cells = [*((report_target or {}).get("cells") or []), *(context.get("basis_cells") or [])]
+                kinds = ({p["kind"] for p in passage_rows if p["source_version_id"] == svid}
+                         | {(p.get("locator") or {}).get("kind") for p in context.get("basis_passages") or []
+                            if p.get("source_id") == svid}
+                         | {"abstract" if c.get("reading_depth") == "abstract" else "pdf_page" for c in cells
+                            if c.get("source_version_id") == svid
+                            and c.get("reading_depth") in ("abstract", "selected_sections", "full_text")})
+            access ="pdf_available" if "pdf_page" in kinds else "abstract" if "abstract" in kinds else "metadata"
             sources.append({"source_id": svid, "work_id": source["work_id"], "title": source["title"], "year": source["year"],
                             "version_label": source["version_label"], "access_level": access}
                            # Only a flagged work carries the field, so an unflagged source keeps its shape. Any

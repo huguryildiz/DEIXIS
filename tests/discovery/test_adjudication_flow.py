@@ -770,3 +770,94 @@ def test_an_element_naming_its_part_in_another_case_still_withholds_the_exclusio
         ("pending", "code_rule"))
     assert found["rows"][0]["question"]["part"] == "measured outcome"
     assert all(parts[1].get("role") == "comparator" for parts in found["targets"])
+
+
+# ---- what each reading showed of the extracted text (audit item 3) --------------------------------
+
+def long_pdf(doi, pages):
+    return make_pdf([f"SYNTHETIC first page https://doi.org/{doi} irrigation scheduling of a greenhouse crop."]
+                    + [f"SYNTHETIC page {n} on irrigation scheduling of a greenhouse crop." for n in range(2, pages + 1)])
+
+
+@pytest.mark.parametrize(("pages", "responder", "code"), [
+    (1, valid_response, "all_parts_verified"),
+    (15, valid_response, "all_parts_verified"),
+    (15, disagree_response, "fulltext_runs_disagree"),
+])
+def test_each_reading_decision_keeps_what_its_calls_showed(tmp_path, monkeypatch, pages, responder, code):
+    """Coverage is written with model-agreement and code decisions alike, and the Sources view reads it."""
+    works = [work(1, pdf_url="https://example.org/w1.pdf")]
+    fetcher = Fetcher({"https://example.org/w1.pdf": ok(long_pdf("10.1/oa.1", pages))})
+    adapter = FakeAdapter(responder)
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=adapter)
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        wait_fetch(client, rid)
+        view, reading = wait_kind(client, rid, "fulltext_adjudication")
+        store = app.state.store
+        read = step_output(store, reading["id"], "adjudication_plan")["works"][0]["read_version"]
+        decision = DecisionStore(store).current(rid, read, "fulltext")
+        shown = [{p["passage_id"] for p in call["passages"]} for call in adj_calls(adapter, reading["id"])]
+        screening = next(s["screening"] for s in view["sources"] if s["source_version_id"] == records_of(store, rid)["W1"])
+    finally:
+        client.__exit__(None, None, None)
+    coverage = json.loads(decision["read_coverage"])
+    assert decision["reason_code"] == code and len(shown) == 2
+    assert coverage == {"parts_shown": min(pages, 12), "parts_total": pages, "pages_shown": min(pages, 12),
+                        "pages_with_text": pages, "pdf_pages": pages, "all_parts_shown": pages <= 12}
+    assert coverage["parts_shown"] == len(shown[0] | shown[1])
+    assert screening["stage"] == "fulltext" and screening["read_coverage"] == coverage
+
+
+def test_coverage_is_the_union_of_both_calls_and_a_replayed_close_adds_nothing(tmp_path, monkeypatch):
+    """The two calls see different pages; a second close of the same calls, and a same-code close over a decision
+    written before coverage existed, write no new decision (the old one keeps what it had)."""
+    from deixis.workflow.flow import ResearchFlow
+
+    original = ResearchFlow._adjudication_passages
+    sent = {"n": 0}
+
+    def shifted(self, research_id, scope, criterion, svid):
+        # The second call is shown the pages the first was not, and one it was.
+        rows = original(self, research_id, scope, criterion, svid)
+        sent["n"] += 1
+        if sent["n"] % 2:
+            sent["first"] = {p["id"] for p in rows}
+            return rows
+        pages = [p for p in self.store.passages_for(svid) if p["kind"] == "pdf_page"]
+        return [p for p in pages if p["id"] not in sent["first"]] + rows[:1]
+
+    monkeypatch.setattr(ResearchFlow, "_adjudication_passages", shifted)
+    works = [work(1, pdf_url="https://example.org/w1.pdf")]
+    fetcher = Fetcher({"https://example.org/w1.pdf": ok(long_pdf("10.1/oa.1", 15))})
+    adapter = FakeAdapter(valid_response)
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, adapter=adapter)
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        wait_fetch(client, rid)
+        _, reading = wait_kind(client, rid, "fulltext_adjudication")
+        store, flow = app.state.store, app.state.worker.flow
+        plan = step_output(store, reading["id"], "adjudication_plan")
+        item = plan["works"][0]
+        read = item["read_version"]
+        decision = DecisionStore(store).current(rid, read, "fulltext")
+        outputs = [step["output"] for step in sorted(
+            (s for s in store.run_steps(reading["id"]) if s["kind"] == "model:fulltext_adjudication"),
+            key=lambda s: s["operation_key"])]
+        count = lambda: store.conn.execute("SELECT COUNT(*) FROM stage_decisions WHERE source_version_id = ?",
+                                           (read,)).fetchone()[0]
+        before = count()
+        flow._close_adjudication(store.run(reading["id"]), item, plan, outputs)
+        replayed = (count(), DecisionStore(store).current(rid, read, "fulltext")["id"])
+        store.conn.execute("UPDATE stage_decisions SET read_coverage = NULL WHERE id = ?", (decision["id"],))
+        flow._close_adjudication(store.run(reading["id"]), item, plan, outputs)
+        legacy = DecisionStore(store).current(rid, read, "fulltext")
+        after = count()
+    finally:
+        client.__exit__(None, None, None)
+    coverage = json.loads(decision["read_coverage"])
+    assert coverage["parts_shown"] == 15 and coverage["all_parts_shown"] and sent["n"] == 2
+    assert replayed == (before, decision["id"])
+    assert legacy["id"] == decision["id"] and legacy["read_coverage"] is None and after == before

@@ -140,7 +140,8 @@ test.describe.serial('S13: the Sources panel', () => {
     await expect(row.locator('.pills .pill').first()).toHaveText('DOI')
     // Included by two agreeing full-text reads: the column names that decision and its basis.
     await expect(row.locator('.prop')).toContainText('include')
-    await expect(row.locator('.prop')).toContainText('basis: full text (selected pages) · two reads')
+    // The basis names how much of the extracted text the reads were shown (audit item 3).
+    await expect(row.locator('.prop')).toContainText(/basis: full text · (its one text part read|all \d+ text parts read|\d+ of \d+ text parts read, from \d+ of \d+ pages) · two reads/)
     const decision = row.getByRole('group', { name: /^Selection for / })
     await expect(decision.getByRole('button')).toHaveText(['Include', 'Undecided', 'Exclude'])
     await expect(decision.getByRole('button', { name: 'Include', exact: true })).toHaveAttribute('aria-pressed', 'true')

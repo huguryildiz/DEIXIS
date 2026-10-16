@@ -11,6 +11,7 @@ place these decisions reach `selections`, and only for a research on the `sw` wo
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from deixis.domain.canonical import sha256_hex
@@ -51,7 +52,8 @@ class DecisionStore:
 
     # ---- decisions --------------------------------------------------------------------
     def record(self, research_id: str, source_version_id: str, reason_code: str, *, step_id: str | None = None,
-               note: str | None = None, renew_stale: bool = False) -> dict[str, Any]:
+               note: str | None = None, renew_stale: bool = False,
+               read_coverage: dict[str, Any] | None = None) -> dict[str, Any]:
         """Decide this record's stage under `reason_code`, closing whatever the stage said before.
 
         The same decision from the same step is written once, so a resumed run repeats the call without adding a row.
@@ -74,21 +76,23 @@ class DecisionStore:
                 if current["decided_by"] == "human" and code.decided_by != "human":
                     raise HumanDecisionStands(f"{source_version_id}: the user decided this record's {code.stage} stage")
             return self._insert(research_id, source_version_id, code, step_id, note, scope_revision,
-                                protocol_hash, criterion_hash, closing=current)
+                                protocol_hash, criterion_hash, closing=current, read_coverage=read_coverage)
 
     def _insert(self, research_id: str, source_version_id: str, code: Any, step_id: str | None, note: str | None,
                 scope_revision: int, protocol_hash: str | None, criterion_hash: str | None,
-                closing: dict[str, Any] | None) -> dict[str, Any]:
-        """Close the current decision and add the new one; the caller holds the transaction."""
+                closing: dict[str, Any] | None, read_coverage: dict[str, Any] | str | None = None) -> dict[str, Any]:
+        """Close the current decision and add the new one; the caller holds the transaction. `read_coverage` is what
+        the reading behind the decision showed the model (a dict, or the stored JSON of a restored decision)."""
         ts, did = now(), new_id("dec")
         if closing is not None:
             self.conn.execute("UPDATE stage_decisions SET superseded_at = ? WHERE id = ?", (ts, closing["id"]))
         self.conn.execute(
             "INSERT INTO stage_decisions (id, research_id, source_version_id, stage, outcome, reason_code, decided_by,"
-            " next_step, note, scope_revision, protocol_hash, criterion_hash, step_id, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " next_step, note, scope_revision, protocol_hash, criterion_hash, step_id, created_at, read_coverage)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (did, research_id, source_version_id, code.stage, code.outcome, code.code, code.decided_by, code.next_step,
-             note, scope_revision, protocol_hash, criterion_hash, step_id, ts),
+             note, scope_revision, protocol_hash, criterion_hash, step_id, ts,
+             json.dumps(read_coverage, sort_keys=True) if isinstance(read_coverage, dict) else read_coverage),
         )
         return dict(self.conn.execute("SELECT * FROM stage_decisions WHERE id = ?", (did,)).fetchone())
 
@@ -129,7 +133,8 @@ class DecisionStore:
             # decision that went stale while the user's stood must still read as stale (SW11.10).
             return self._insert(research_id, source_version_id, reason(previous["reason_code"]), previous["step_id"],
                                 "restored after an undone human decision", previous["scope_revision"],
-                                previous["protocol_hash"], previous["criterion_hash"], closing=current)
+                                previous["protocol_hash"], previous["criterion_hash"], closing=current,
+                                read_coverage=previous["read_coverage"])
 
     def human_decided_works(self, research_id: str, stage: str | None = None) -> set[str]:
         """The works a person decided, on any version still in the research, at `stage` or at any stage (SW11.7).

@@ -38,6 +38,38 @@ _ROW_TEMPLATES = {
 }
 
 
+def report_language(store: Store, report: dict[str, Any]) -> str:
+    """The report's language, else its question's language hint, else English; II, VIII and assembly read it alike."""
+    return (report["language"] or store.scope(report["research_id"], report["scope_revision"]).get("language_hint")
+            or "en").lower()
+
+
+def reading_sentence(reading: dict[str, int], included: int, language: str) -> str:
+    """How much of the included sources' extracted text the two-run full-text screening showed the model (audit item 3).
+
+    "Every extracted text part" is not the whole PDF: a page without text has no part. `none` says no screening reading
+    is recorded, not that nobody read the source: the answer path can read an attached PDF without one.
+    """
+    unrecorded, other = reading["unrecorded"], reading["other_version"]
+    if language.startswith("tr"):
+        text = (f" {included} dahil kaynağın {reading['all_parts']} tanesinde tam metin taramasında modele çıkarılan "
+                f"metin parçalarının hepsi, {reading['some_parts']} tanesinde bir kısmı gösterildi")
+        if unrecorded:
+            text += f"; {unrecorded} tanesinde hangi parçaların gösterildiği kaydedilmedi"
+        text += f"; {reading['none']} tanesi için kayıtlı bir tam metin taraması yok."
+        if other:
+            text += f" Bu okumalardan {other} tanesi aynı eserin başka bir sürümüne aitti."
+        return text
+    text = (f" Of the {included} included sources, the full-text screening showed the model every extracted text part "
+            f"of {reading['all_parts']} and some of the parts of {reading['some_parts']}")
+    if unrecorded:
+        text += f"; for {unrecorded}, which parts were shown was not recorded"
+    text += f"; {reading['none']} had no full-text screening recorded."
+    if other:
+        text += f" {other} of these readings {'was' if other == 1 else 'were'} of another version of the same work."
+    return text
+
+
 def failed_reason_text(reason: str, language: str) -> str:
     if reason == "no_stored_text":
         return "saklı metin yok" if language.startswith("tr") else "no stored text"
@@ -78,7 +110,8 @@ def render_review_methodology(numbers: dict[str, Any], language: str, *, provide
         fetch_pdf=numbers["fetch_pdf"], pdf_other_copy=numbers["pdf_other_copy"],
         providers=providers, queries=queries, compiler_versions=compiler_versions,
         screening_models=screening_models, screening_criteria=screening_criteria,
-    ) + chain_provenance + (_ROW_TEMPLATES["tr" if language.startswith("tr") else "en"].format(**numbers["rows"])
+    ) + (reading_sentence(numbers["reading"], numbers["corpus"]["included"], language) if "reading" in numbers else "") \
+        + chain_provenance + (_ROW_TEMPLATES["tr" if language.startswith("tr") else "en"].format(**numbers["rows"])
                             if "rows" in numbers else "")
 
 
@@ -122,8 +155,7 @@ def limitations_core(store: Store, reports: ReportStore, report_id: str,
         "by_section": by_section,
     }
     report = reports.report(report_id)
-    language = (report["language"] or store.scope(report["research_id"], report["scope_revision"])
-                .get("language_hint") or "en").lower()
+    language = report_language(store, report)
     tr = language.startswith("tr")
     share = (included - full_text) / included if included else 0.0
     section_cuts = ", ".join(
@@ -159,6 +191,9 @@ def limitations_core(store: Store, reports: ReportStore, report_id: str,
             f"for {truncation['missing_evidence']} cells (by section: {section_cuts}).",
         ]
     )
+    if snapshot.get("reading"):
+        # Item 2 says the full text was available; this says how much of it the screening showed (audit item 3).
+        texts[1] += reading_sentence(snapshot["reading"], included, language)
     keys = ("recall_measurement", "open_access_bias_note", "no_full_text_share", "analyst_inference_share",
             "kill_search_status", "truncation")
     result = {"version": 1, "kind": "limitations", "as_of": "before_viii", "corpus": corpus,
@@ -260,11 +295,13 @@ def write_review_methodology(store: Store, reports: ReportStore, report_id: str,
     screening_models, screening_criteria = _screening_provenance(store, research_id, scope_revision)
     corpus = snapshot["corpus"]
     included = corpus["included"]
-    language = (report["language"] or store.scope(research_id, scope_revision).get("language_hint") or "en").lower()
+    language = report_language(store, report)
     numbers = {"version": 1, "kind": "review_methodology", "corpus": dict(corpus),
                "full_text_ratio": corpus["full_text"] / included if included else 0.0,
                "fetch_pdf": sum(step["kind"] == "fetch_pdf" for step in steps),
                "pdf_other_copy": sum(step["kind"] == "pdf_other_copy" for step in steps)}
+    if snapshot.get("reading"):
+        numbers["reading"] = dict(snapshot["reading"])
     if snapshot.get("failed_rows"):
         numbers["rows"] = dict(snapshot["row_counts"])
     text = render_review_methodology(

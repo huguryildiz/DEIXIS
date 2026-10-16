@@ -32,7 +32,7 @@ from deixis.workflow.review.snapshot import _shown_passage
 from deixis.workflow.review.store import resolve_finding
 
 CASES = REPO_ROOT / "tests/model_behavior/review_cases.json"
-EXPECTATIONS = REPO_ROOT / "docs/product/p8-review-expectations.md"
+EXPECTATIONS = REPO_ROOT / "tests/model_behavior/p8-review-expectations.md"
 CASE_IDS = ("RB01", "RB02", "RB03", "RB04", "RB05", "PE2", "PE1", "RB06")
 MAX_REQUEST_CHARS = REVIEW_BUDGET_TOKENS * 4
 CALL_SHAPE_NOTES = [

@@ -251,14 +251,22 @@ def _service_errored(exc: RuntimeError) -> bool:
     return bool(os.environ.get("DBUS_SESSION_BUS_ADDRESS"))
 
 
+def _chosen_on_purpose() -> bool:
+    """`fail.Keyring` was named in PYTHON_KEYRING_BACKEND or keyring's config file: the person wants no keychain."""
+    try:
+        return isinstance(keyring.core.load_env() or keyring.core.load_config(), fail.Keyring)
+    except Exception:  # noqa: BLE001 - a config keyring cannot read is not a choice
+        return False
+
+
 def _probe(again: bool = False) -> _Found:
     """Find the keychain; runs on the worker, because discovery and a backend's priority can talk to a desktop service.
     keyring turns any error of a backend it probes into 'not viable' and falls back to `fail.Keyring`, which looks the same
     as having no backend, and it remembers that choice for the life of the process. So `again` (the last look found the
     keychain unreachable) makes it forget and detect anew. When it fell back, each registered backend is asked again: a
     priority that raises anything but a RuntimeError that says the service is not there (`_service_errored`), or a backend
-    that is viable but cannot be built, means a keychain exists and is broken. When the last look found it broken and a
-    backend now answers while keyring still holds `fail.Keyring`, that backend is made keyring's choice. Limit: an error while a backend plugin is
+    that is viable but cannot be built, means a keychain exists and is broken. A backend that answers while keyring holds
+    `fail.Keyring` (its own look hit an error a moment ago) is made keyring's choice, unless `fail.Keyring` was configured. Limit: an error while a backend plugin is
     loaded is only logged by keyring and is not seen here."""
     if again:
         with contextlib.suppress(KeyError):
@@ -285,7 +293,7 @@ def _probe(again: bool = False) -> _Found:
                     usable.append((priority, cls()))
                 except Exception:  # noqa: BLE001
                     return _Found(backend, None, True)
-        if again and usable:  # the last look found it broken, and now it answers: use it, not 'no keychain'
+        if usable and not _chosen_on_purpose():  # keyring dropped a backend that answers now: use it, not 'no keychain'
             chosen = max(usable, key=lambda pair: pair[0])[1]
             keyring.set_keyring(chosen)
             return _Found(chosen, _display_name(chosen), False)

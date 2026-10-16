@@ -146,6 +146,8 @@ def memory_keychain(monkeypatch):
     monkeypatch.setattr(credentials, "_found_cache", None)
     monkeypatch.setattr(credentials, "_failed_at", None)
     monkeypatch.setattr(credentials, "_keys_pending", False)
+    # a test that sets fail.Keyring means "no keychain", while its own fake backends stay registered with keyring
+    monkeypatch.setattr(credentials, "_chosen_on_purpose", lambda: True)
     monkeypatch.setattr(key_verification, "_state", {})
     monkeypatch.setattr(credentials, "dotenv_path", None)
     yield backend

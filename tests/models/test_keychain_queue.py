@@ -330,10 +330,10 @@ class UnbuildableService(KeyringBackend):
 @pytest.fixture(autouse=True)
 def only_while_a_test_uses_them():
     """Backends register themselves in keyring's list of classes; the broken ones are there only for the tests that ask."""
-    for cls in (BrokenService, UnbuildableService, RecoveringService):
+    for cls in (BrokenService, UnbuildableService, RecoveringService, FlakyAtFirstService):
         KeyringBackend._classes.discard(cls)
     yield
-    for cls in (BrokenService, UnbuildableService, RecoveringService):
+    for cls in (BrokenService, UnbuildableService, RecoveringService, FlakyAtFirstService):
         KeyringBackend._classes.discard(cls)
 
 
@@ -666,7 +666,8 @@ class RecoveringService(KeyringBackend):
         self.items.pop((service, username), None)
 
 
-def test_a_backend_that_answers_on_the_second_look_is_used_not_cached_as_no_keychain(client):
+def test_a_backend_that_answers_on_the_second_look_is_used_not_cached_as_no_keychain(client, monkeypatch):
+    monkeypatch.setattr(credentials, "_chosen_on_purpose", lambda: False)
     RecoveringService.up, RecoveringService.items = False, {}
     KeyringBackend._classes.add(RecoveringService)
     try:
@@ -690,3 +691,49 @@ def test_a_backend_that_still_cannot_be_built_on_the_second_look_stays_retryable
     for _ in range(2):
         assert client.put(f"/api/credentials/{KEY}", json={"value": V1}).status_code == 503
         assert credentials._failed_at is not None and credentials._found_cache is None and credentials._session == {}
+
+
+REAL_CHOSEN_ON_PURPOSE = credentials._chosen_on_purpose  # read at import, before the conftest fixture replaces it
+
+
+class FlakyAtFirstService(RecoveringService):
+    """Errors only on keyring's own first look, answers when DEIXIS asks again in the same discovery."""
+
+    calls = 0
+
+    @properties.classproperty
+    def priority(cls):
+        cls.calls += 1
+        if cls.calls == 1:
+            raise OSError("the secret service is not answering yet")
+        return 9
+
+
+def test_a_backend_that_answers_within_the_first_discovery_is_used_not_cached_as_no_keychain(client, monkeypatch):
+    monkeypatch.setattr(credentials, "_chosen_on_purpose", REAL_CHOSEN_ON_PURPOSE)
+    monkeypatch.delenv("PYTHON_KEYRING_BACKEND")
+    monkeypatch.setattr(keyring.core, "load_config", lambda: None)
+    FlakyAtFirstService.calls, FlakyAtFirstService.items = 1, {}  # keyring's own look already hit the error
+    KeyringBackend._classes.add(FlakyAtFirstService)
+    try:
+        keyring.set_keyring(fail.Keyring())  # what keyring kept after that error
+        credentials._found_cache = None
+        saved = client.put(f"/api/credentials/{KEY}", json={"value": V1})
+        assert saved.status_code == 200 and saved.json()["key"]["source"] == "keychain"
+        assert credentials._session == {} and FlakyAtFirstService.items == {("DEIXIS", KEY): V1}
+    finally:
+        KeyringBackend._classes.discard(FlakyAtFirstService)
+
+
+def test_a_configured_fail_keyring_is_kept_even_when_a_backend_answers(client, monkeypatch):
+    monkeypatch.setattr(credentials, "_chosen_on_purpose", REAL_CHOSEN_ON_PURPOSE)
+    monkeypatch.setenv("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
+    RecoveringService.up, RecoveringService.items = True, {}
+    KeyringBackend._classes.add(RecoveringService)
+    try:
+        keyring.set_keyring(fail.Keyring())
+        credentials._found_cache = None
+        saved = client.put(f"/api/credentials/{KEY}", json={"value": V1})
+        assert saved.status_code == 200 and saved.json()["key"]["source"] == "session" and RecoveringService.items == {}
+    finally:
+        KeyringBackend._classes.discard(RecoveringService)

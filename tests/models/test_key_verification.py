@@ -406,6 +406,62 @@ def test_a_unicode_key_from_the_shell_is_reported_broken_and_never_raises(wire, 
     assert credentials.status("MISTRAL_API_KEY")["broken"] is True
 
 
+def test_a_list_answer_that_lands_after_a_refusal_does_not_lift_it(monkeypatch):
+    monkeypatch.setenv("MISTRAL_API_KEY", "mistral-key-0123456789")
+    list_started, release = asyncio.Event(), asyncio.Event()
+
+    async def handler(request):
+        if str(request.url) == MISTRAL.list_url:
+            list_started.set()
+            await release.wait()  # the list is in flight while a step is refused
+            return httpx.Response(200, json={"data": [{"id": "m-1"}]})
+        return httpx.Response(401)
+
+    adapter = adapter_for(MISTRAL, handler)
+
+    async def go():
+        health = asyncio.create_task(adapter.health(refresh=True))
+        await list_started.wait()
+        assert (await _step(adapter)).status == "failed"
+        release.set()
+        late = await health
+        assert (late["ready"], late["verification"]) == (False, "rejected")
+        assert (await adapter.health())["ready"] is False  # and nothing ready was cached
+    asyncio.run(go())
+
+
+def test_connections_that_share_a_key_share_its_refusal(monkeypatch):
+    monkeypatch.setenv("MODEL_API_KEY", "meta-key-0123456789")
+    glimmer_spec, spark_spec = openai_compat.MUSE_GLIMMER, openai_compat.MUSE_SPARK
+
+    def handler(request):
+        if str(request.url) == glimmer_spec.list_url:
+            return httpx.Response(200, json={"data": [{"id": "muse-glimmer-1"}, {"id": "muse-spark-1"}]})
+        return httpx.Response(401)
+
+    glimmer, spark = adapter_for(glimmer_spec, handler), adapter_for(spark_spec, handler)
+
+    async def go():
+        assert (await glimmer.health(refresh=True))["ready"] and (await spark.health(refresh=True))["ready"]
+        assert (await adapter_step(glimmer, "muse-glimmer-1")).status == "failed"
+        after = await spark.health()  # cached as ready before the refusal
+        assert (after["ready"], after["verification"]) == (False, "rejected")
+    asyncio.run(go())
+
+
+async def adapter_step(adapter, model):
+    return await adapter.run_step("BASE", "DEV", "MSG", {"type": "object"}, model)
+
+
+def test_a_source_card_says_when_its_saved_key_is_broken(client, monkeypatch):
+    monkeypatch.setenv("S2_API_KEY", "s2-ş-key-0123456")
+    providers = {p["id"]: p for p in client.get("/api/connections").json()["providers"]}
+    assert providers["semantic_scholar"]["key_broken"] is True and "broken" in providers["semantic_scholar"]["note"]
+    assert providers["semantic_scholar"]["access_mode"] != "api_key"  # run without the key
+    monkeypatch.setenv("S2_API_KEY", "s2-key-0123456789")
+    assert {p["id"]: p for p in client.get("/api/connections").json()["providers"]}["semantic_scholar"]["key_broken"] is False
+
+
 BAD_SHELL_KEY = "key-ş-0123456789"  # as if it came from the shell or .env
 API_ADAPTERS = {  # (adapter class, key variable, service name in the message)
     "anthropic": ("deixis.models.anthropic_api.AnthropicAdapter", "ANTHROPIC_API_KEY", "Anthropic"),
@@ -459,6 +515,9 @@ def test_a_zotero_or_embedding_key_no_header_can_carry_stops_before_sending(wire
 
 
 def test_key_state_belongs_to_the_value():
-    key_verification.set_state("X_KEY", "first-value-123", "verified")
-    assert key_verification.state_of("X_KEY", "first-value-123") == "verified"
-    assert key_verification.state_of("X_KEY", "second-value-12") is None and key_verification.state_of("X_KEY", None) is None
+    key_verification.set_state("first-value-123", "verified")
+    assert key_verification.state_of("first-value-123") == "verified"
+    assert key_verification.state_of("second-value-12") is None and key_verification.state_of(None) is None
+    key_verification.set_state("first-value-123", "rejected")
+    assert key_verification.settle("first-value-123", "verified") == "rejected"  # a list answer never lifts a refusal
+    assert key_verification.settle("second-value-12", "verified") == "verified"

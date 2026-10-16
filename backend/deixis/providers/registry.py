@@ -123,6 +123,11 @@ class Connector:
         value = (os.environ.get(self.key_env) or None) if self.key_env else None
         return value if value is None or key_verification.is_valid_key(value) else None
 
+    def key_broken(self) -> bool:
+        """A key is set but no header can carry it, so the source runs as if none were set; the card says so."""
+        value = os.environ.get(self.key_env) if self.key_env else None
+        return bool(value) and not key_verification.is_valid_key(value)
+
     def access_mode(self) -> str:
         if self.api_key():
             return "api_key"

@@ -1194,7 +1194,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const mathpixStatus = (): [Tone, string] => !mathpix ? (toolsError ? unknown : loading)
     : mathpix.keys_rejected ? ['warn', t('Key pair refused')] : !mathpix.pair.configured ? ['no', t('Not set up')]
     : mathpix.switch === 'on' ? ['ok', t('On')] : ['no', t('Off')]
-  const providerStatus = (mode: string | null): [Tone, string] => mode === 'api_key' ? ['ok', t('Key configured')] : mode === 'keyless' ? ['ok', t('No key needed')] : ['no', t('Not set up')]
+  const providerStatus = (mode: string | null, keyBroken = false): [Tone, string] => keyBroken ? ['warn', t('Key broken')] : mode === 'api_key' ? ['ok', t('Key configured')] : mode === 'keyless' ? ['ok', t('No key needed')] : ['no', t('Not set up')]
   const zoteroStatus = (): [Tone, string] => !zotero ? (tools ? ['no', t('Not set up')] : toolsError ? unknown : loading)
     : zotero.running && zotero.local_api ? ['ok', t('Local API on')] : zotero.web_configured ? ['ok', t('zotero.org set')]
     : zotero.installed ? ['no', t(zotero.running ? 'Local API off' : 'Not running')] : ['no', t('Not set up')]
@@ -1524,7 +1524,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     </>
   } else if (sel?.kind === 'provider' && provider) {
     const env = providerKeyEnv[provider.id]
-    const [tone, status] = providerStatus(provider.access_mode)
+    const [tone, status] = providerStatus(provider.access_mode, provider.key_broken)
     const key = `provider:${provider.id}`
     const keyless = provider.access_mode === 'keyless'
     const test = keyless && checking !== key && checked[key] && !checkFailed[key] ? providerTests[provider.id] : undefined
@@ -1684,7 +1684,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     {access}
 
     <h2 data-panel="sources">{t('Scholarly sources')}</h2>
-    <div className="grid3" data-group="sources" data-panel="sources">{providers.map(p => tile(p.id, 'provider', p.id, providerNames[p.id] ?? p.id, providerUse[p.id] ? t(providerUse[p.id]) : providerRole(p.role), providerStatus(p.access_mode)))}</div>
+    <div className="grid3" data-group="sources" data-panel="sources">{providers.map(p => tile(p.id, 'provider', p.id, providerNames[p.id] ?? p.id, providerUse[p.id] ? t(providerUse[p.id]) : providerRole(p.role), providerStatus(p.access_mode, p.key_broken)))}</div>
     <p className="foot-note sources-note" data-panel="sources">{t('Searches run on OpenAlex, joined by Semantic Scholar in Detailed mode. The other sources fill in abstracts, check records or find PDFs.')}</p>
 
     <h2 data-panel="sources">{t('Reference managers')}</h2>

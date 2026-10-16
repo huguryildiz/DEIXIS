@@ -1157,10 +1157,11 @@ def create_app(
             "codex_home": str(settings.codex_home),
             "providers": [
                 {"id": p, "implemented": True, "access_mode": c.access_mode(), "supplementary": c.supplementary,
-                 "key_env": c.key_env, "role": provider_role(c),
+                 "key_env": c.key_env, "key_broken": c.key_broken(), "role": provider_role(c),
                  "contract_id": descriptors[p].contract_id, "adapter_revision": descriptors[p].adapter_revision,
                  "capabilities": sorted(descriptors[p].capabilities),
-                 "note": "Add a key below to use this source." if c.access_mode() == "not_configured"
+                 "note": "The saved key is broken and was not used: enter it again below." if c.key_broken()
+                 else "Add a key below to use this source." if c.access_mode() == "not_configured"
                  else "New researches use this source."}
                 for p, c in CONNECTORS.items()
             ],
@@ -1435,7 +1436,7 @@ def create_app(
         except OSError as exc:
             raise HTTPException(503, f".env could not be written ({type(exc).__name__})") from exc
         if result:
-            key_verification.set_state(env, body.value, result["verification"])
+            key_verification.set_state(body.value, result["verification"])
         return {"key": credentials.status(env), "test": result}
 
     @app.delete("/api/credentials/{env}")
@@ -1459,7 +1460,7 @@ def create_app(
         if not value:
             raise HTTPException(422, f"{env} is not set")
         result = await credentials.test(request.app.state.http, env, value)
-        key_verification.set_state(env, value, result["verification"])
+        key_verification.set_state(value, result["verification"])
         return result
 
     @app.get("/api/local-tools")

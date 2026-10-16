@@ -2401,6 +2401,8 @@ const tr: Record<string, string> = {
   'The system keychain did not answer, so your saved key was not used this time. It may be fine: restart DEIXIS once the keychain is unlocked.': 'Sistem anahtarlığı yanıt vermedi, bu yüzden kayıtlı anahtarınız bu seferlik kullanılmadı. Anahtar sağlam olabilir: anahtarlık açıldıktan sonra DEIXIS\'i yeniden başlatın.',
   'The system keychain did not answer, so your saved key pair was not used this time. It may be fine: restart DEIXIS once the keychain is unlocked.': 'Sistem anahtarlığı yanıt vermedi, bu yüzden kayıtlı anahtar çiftiniz bu seferlik kullanılmadı. Çift sağlam olabilir: anahtarlık açıldıktan sonra DEIXIS\'i yeniden başlatın.',
   'The saved key is broken and was not used. Enter it again.': 'Kayıtlı anahtar bozuk, kullanılmadı. Yeniden girin.',
+  'Key broken': 'Anahtar bozuk',
+  'The saved key is broken and was not used: enter it again below.': 'Kayıtlı anahtar bozuk, kullanılmadı: aşağıdan yeniden girin.',
   'Key saved, not verified.': 'Anahtar kaydedildi, doğrulanamadı.',
   'Saved · not verified': 'Kayıtlı · doğrulanmadı',
   'Key refused': 'Anahtar reddedildi',

@@ -205,7 +205,7 @@ def status(env: str) -> dict[str, Any]:
     return {"env": env, "group": key.group, "service": key.service, "configured": configured, "source": source,
             "testable": key.testable, "shell_fallback": env in _shell_values, "last4": value[-4:] if len(value) >= 16 else None,
             # 'verified', 'pending' (saved, no request showed it works) or 'rejected'; None when not checked in this run.
-            "verification": key_verification.state_of(env, value) if configured else None,
+            "verification": key_verification.state_of(value) if configured else None,
             "broken": (env in _broken and not configured) or (configured and not key.pair and not key_verification.is_valid_key(value)),
             # The keychain did not answer, so the saved key was not used this time; it is not known to be bad.
             "keychain_unavailable": env in _unavailable and not configured}

@@ -169,9 +169,11 @@ class OpenAICompatAdapter:
         return self._client
 
     async def health(self, refresh: bool = False) -> dict[str, Any]:
-        if self._health and not refresh and time.monotonic() - self._health[0] < 60:
-            return self._health[1]
         key, spec = self._key(), self.spec
+        # A cached answer is not used once the key has been refused, by a step of this connection or of another that shares it.
+        if (self._health and not refresh and time.monotonic() - self._health[0] < 60
+                and not (spec.key_env and key_verification.state_of(key) == "rejected")):
+            return self._health[1]
         status: dict[str, Any] = {
             "connection": self.connection,
             "ready": False,
@@ -185,7 +187,6 @@ class OpenAICompatAdapter:
             return status
         if key and not key_verification.is_valid_key(key):  # from the shell or .env; a header cannot carry it (E11)
             return broken_key_status(status, spec.name)
-        state = key_verification.state_of(spec.key_env, key) if spec.key_env else None
         base = self._base()
         if self._base_url is not None:
             status["base_url"] = base
@@ -250,13 +251,15 @@ class OpenAICompatAdapter:
         if spec.key_env:
             # A step's answer is the last word on the key (E6): a refused key is not ready whatever the list says. A key the
             # list cannot check stays "pending" (not ready, but its first step may run) until a step is answered.
+            # The state is read now, after the request: a step may have been refused while the list was on its way, and a
+            # list answer never lifts a refusal. The state belongs to the key, so connections sharing it agree.
+            state = key_verification.state_of(key)
             if state == "rejected":
                 verification = "rejected"
             elif unchecked:
                 verification = state or "pending"
             else:
-                verification = "verified"
-                key_verification.set_state(spec.key_env, key, verification)
+                verification = key_verification.settle(key, "verified")
             status["verification"] = verification
             if verification == "rejected":
                 status["reason_code"] = "auth_failed"
@@ -319,7 +322,7 @@ class OpenAICompatAdapter:
         except httpx.HTTPError as exc:
             return ModelStepResult("failed", error=type(exc).__name__,
                                    delivery_class="after_send_unknown")
-        self._note_key(response.status_code)
+        self._note_key(response.status_code, key)
         if response.status_code != 200:
             # An exhausted balance (402) is a quota failure for the shared text classifier; 429 is classified by http_limit.
             quota = " (quota)" if response.status_code == 402 else ""
@@ -343,11 +346,10 @@ class OpenAICompatAdapter:
                                    error=f"finish reason {choice.get('finish_reason')}", **common)
         return ModelStepResult("completed", raw_text=content, **common)
 
-    def _note_key(self, code: int) -> None:
-        """What a step's answer shows about the key (E6): a 200 accepts it, 401 and 403 refuse it."""
-        env, key = self.spec.key_env, self._key()
-        if env and key and (code == 200 or code in (401, 403)):
-            key_verification.set_state(env, key, "verified" if code == 200 else "rejected")
+    def _note_key(self, code: int, key: str | None) -> None:
+        """What a step's answer shows about the key it was sent with (E6): a 200 accepts it, 401 and 403 refuse it."""
+        if self.spec.key_env and key and (code == 200 or code in (401, 403)):
+            key_verification.set_state(key, "verified" if code == 200 else "rejected")
             self._health = None
 
     async def _context_limit(self, root: str, model: str) -> int | None:

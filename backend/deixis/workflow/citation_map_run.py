@@ -284,7 +284,7 @@ async def _request(flow: Any, run: dict[str, Any], key: str, send: Callable[[], 
     lookups.settle_dispatch(store, run_id, step, dispatched, reserved, "provider_requests", "provider_sends")
     outcome = dispatched.outcome
     if outcome.error_kind == "quota_exhausted":
-        _budget_stop(flow, run, step, acquisition._reset_at(outcome.rate_limit), skipped=False)
+        _budget_stop(flow, run, step, acquisition.budget_reset_at(outcome.rate_limit), skipped=False)
     ok = outcome.status in ("completed", "zero_results")
     returned = len((outcome.raw_payload or {}).get("results") or [])
     if ok and outcome.provider_total is not None and outcome.provider_total > returned:
@@ -306,11 +306,11 @@ def _budget_stop(flow: Any, run: dict[str, Any], step: dict[str, Any], reset_at:
     write; everything stored before stays."""
     from deixis.workflow.flow import RunStopped
     store = flow.store
-    reset_at = reset_at or acquisition._reset_at({})
+    reset_at = reset_at or acquisition.budget_reset_at({})
     with transaction(store.conn):
         store.finish_step(step["id"], "cancelled" if skipped else "failed", output={"unsent": skipped, "reset_at": reset_at},
                           error_code="quota_exhausted")
-        store._note_openalex_budget(run["research_id"], run["id"], reset_at, skipped=skipped)
+        store.note_openalex_budget(run["research_id"], run["id"], reset_at, skipped=skipped)
         # A cancel that arrived while the request was in flight stands; the budget answer does not reopen the run.
         if store.run(run["id"])["status"] != "cancelled":
             store.update_run(run["id"], event="run_paused", status="paused", pause_reason=BUDGET_STOP,

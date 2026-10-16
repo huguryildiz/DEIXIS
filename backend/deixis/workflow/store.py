@@ -2528,7 +2528,7 @@ class Store:
                 f"INSERT INTO pdf_discovery_runs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
                 tuple(columns.values()))
             if counted:
-                self._note_openalex_budget(research_id, workflow_run_id, retry_after,
+                self.note_openalex_budget(research_id, workflow_run_id, retry_after,
                                            skipped=outcome.http_status is None)
             self._event(research_id, "pdf_discovery_recorded", {
                 "source_version_id": svid, "provider": provider, "status": outcome.status,
@@ -2538,7 +2538,7 @@ class Store:
             })
         return run_id
 
-    def _note_openalex_budget(self, research_id: str, run_id: str, reset_at: str, *, skipped: bool) -> None:
+    def note_openalex_budget(self, research_id: str, run_id: str, reset_at: str, *, skipped: bool) -> None:
         """Count one OpenAlex lookup the daily budget did not serve, inside the transaction that records its row.
 
         The run's first one opens its row and its one `openalex_budget_exhausted` event; later ones, in this process or

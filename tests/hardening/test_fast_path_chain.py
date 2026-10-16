@@ -350,7 +350,7 @@ def test_daily_budget_and_cutoff_refuse_unsent_requests(library, tmp_path, monke
     scripted(monkeypatch, handler)
     reset = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
     with transaction(lib.conn):
-        lib.store._note_openalex_budget(lib.rid, lib.run['id'], reset, skipped=False)
+        lib.store.note_openalex_budget(lib.rid, lib.run['id'], reset, skipped=False)
     async def run():
         round_.initial()
         round_.admit.set()

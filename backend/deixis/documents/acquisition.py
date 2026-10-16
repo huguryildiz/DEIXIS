@@ -109,7 +109,7 @@ def openalex_quota_exhausted(headers: Any) -> bool:
     return prepaid is None or _decimal(prepaid) == 0
 
 
-def _reset_at(headers: Any) -> str:
+def budget_reset_at(headers: Any) -> str:
     """When the budget returns: `x-ratelimit-reset` is delta seconds (OpenAlex's documentation); a missing, malformed
     or beyond-a-day value is ignored and the next midnight UTC, when the daily budget renews, is used instead."""
     now = datetime.now(timezone.utc)
@@ -222,7 +222,7 @@ async def _openalex_request(client: httpx.AsyncClient, doi: str, source_version:
         return Lookup("zero_results", [], 404)
     if response.status_code == 429:
         if openalex_quota_exhausted(response.headers):
-            reset_at = _reset_at(response.headers)
+            reset_at = budget_reset_at(response.headers)
             if budget is not None:
                 budget.reset_at = reset_at
             return Lookup("rate_limited", [], 429, QUOTA_EXHAUSTED, reset_at=reset_at, attempt_id=attempt_id)

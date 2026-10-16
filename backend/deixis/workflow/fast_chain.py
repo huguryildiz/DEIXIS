@@ -266,9 +266,9 @@ class Round:
                 lookups.settle_dispatch(self.store, self.run["id"], step, dispatched, 1 + retries, "chain_requests", "chain_sends")
                 outcome = dispatched.outcome
                 if outcome.error_kind == "quota_exhausted":
-                    reset = acquisition._reset_at(outcome.rate_limit)
+                    reset = acquisition.budget_reset_at(outcome.rate_limit)
                     with transaction(self.store.conn):
-                        self.store._note_openalex_budget(self.run["research_id"], self.run["id"], reset, skipped=False)
+                        self.store.note_openalex_budget(self.run["research_id"], self.run["id"], reset, skipped=False)
                 if outcome.delivery_class == "before_send" and attempts < MAX_TRANSIENT_NETWORK_RETRIES:
                     attempts += 1
                     await asyncio.sleep(RETRY_BACKOFF_SECONDS * attempts)

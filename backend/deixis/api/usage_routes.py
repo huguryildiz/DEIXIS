@@ -125,7 +125,7 @@ def budget(rows: list[tuple[str, str | None]], moment: datetime) -> dict[str, An
             limit = _number(headers.get(limit_key))
             seconds = _number(headers.get("x-ratelimit-reset"))
             # The reset header is delta seconds from the response; a missing or beyond-a-day value falls back to the
-            # next midnight UTC, as the PDF lookup does (documents/acquisition._reset_at).
+            # next midnight UTC, as the PDF lookup does (documents/acquisition.budget_reset_at).
             reset = (when + timedelta(seconds=int(seconds)) if seconds is not None and seconds <= DAY_SECONDS
                      else since + timedelta(days=1))
             used = (min(1.0, max(0.0, float((limit - remaining) / limit))) if limit else None)

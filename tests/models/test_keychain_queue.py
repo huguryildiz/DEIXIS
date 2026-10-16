@@ -330,10 +330,10 @@ class UnbuildableService(KeyringBackend):
 @pytest.fixture(autouse=True)
 def only_while_a_test_uses_them():
     """Backends register themselves in keyring's list of classes; the broken ones are there only for the tests that ask."""
-    for cls in (BrokenService, UnbuildableService):
+    for cls in (BrokenService, UnbuildableService, RecoveringService):
         KeyringBackend._classes.discard(cls)
     yield
-    for cls in (BrokenService, UnbuildableService):
+    for cls in (BrokenService, UnbuildableService, RecoveringService):
         KeyringBackend._classes.discard(cls)
 
 
@@ -642,3 +642,51 @@ def test_a_shell_key_is_replaced_when_a_system_keychain_holds_the_replacement(cl
     monkeypatch.setenv(KEY, "shell-source-key-value")
     replaced = client.put(f"/api/credentials/{KEY}", json={"value": V1})
     assert replaced.status_code == 200 and replaced.json()["key"]["source"] == "keychain" and os.environ[KEY] == V1
+
+
+class RecoveringService(KeyringBackend):
+    """A backend whose service errors at first and answers later, while keyring keeps the `fail.Keyring` it chose."""
+
+    up = False
+    items: dict = {}
+
+    @properties.classproperty
+    def priority(cls):
+        if not cls.up:
+            raise OSError("the secret service is not answering")
+        return 9
+
+    def get_password(self, service, username):
+        return self.items.get((service, username))
+
+    def set_password(self, service, username, password):
+        self.items[(service, username)] = password
+
+    def delete_password(self, service, username):
+        self.items.pop((service, username), None)
+
+
+def test_a_backend_that_answers_on_the_second_look_is_used_not_cached_as_no_keychain(client):
+    RecoveringService.up, RecoveringService.items = False, {}
+    KeyringBackend._classes.add(RecoveringService)
+    try:
+        keyring.set_keyring(fail.Keyring())  # keyring's choice from the first look, kept by keyring
+        credentials._found_cache = None
+        assert client.put(f"/api/credentials/{KEY}", json={"value": V1}).status_code == 503  # the first look: it errored
+        assert credentials._failed_at is not None and credentials._session == {}
+        RecoveringService.up = True  # the second look: the same backend answers, keyring's choice is still fail.Keyring
+        saved = client.put(f"/api/credentials/{KEY}", json={"value": V1})
+        assert saved.status_code == 200 and saved.json()["key"]["source"] == "keychain"
+        assert credentials._session == {} and RecoveringService.items == {("DEIXIS", KEY): V1}
+        assert isinstance(keyring.get_keyring(), RecoveringService) and credentials._failed_at is None
+    finally:
+        KeyringBackend._classes.discard(RecoveringService)
+
+
+def test_a_backend_that_still_cannot_be_built_on_the_second_look_stays_retryable(client):
+    KeyringBackend._classes.add(UnbuildableService)
+    keyring.set_keyring(fail.Keyring())
+    credentials._found_cache = None
+    for _ in range(2):
+        assert client.put(f"/api/credentials/{KEY}", json={"value": V1}).status_code == 503
+        assert credentials._failed_at is not None and credentials._found_cache is None and credentials._session == {}

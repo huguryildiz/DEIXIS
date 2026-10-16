@@ -36,6 +36,7 @@ import httpx
 import keyring
 from keyring.backend import KeyringBackend
 from keyring.backends import fail
+from keyring.backends.chainer import ChainerBackend
 from keyring.errors import KeyringError, PasswordDeleteError
 
 from deixis import key_verification
@@ -256,7 +257,8 @@ def _probe(again: bool = False) -> _Found:
     as having no backend, and it remembers that choice for the life of the process. So `again` (the last look found the
     keychain unreachable) makes it forget and detect anew. When it fell back, each registered backend is asked again: a
     priority that raises anything but a RuntimeError that says the service is not there (`_service_errored`), or a backend
-    that is viable but cannot be built, means a keychain exists and is broken. Limit: an error while a backend plugin is
+    that is viable but cannot be built, means a keychain exists and is broken. When the last look found it broken and a
+    backend now answers while keyring still holds `fail.Keyring`, that backend is made keyring's choice. Limit: an error while a backend plugin is
     loaded is only logged by keyring and is not seen here."""
     if again:
         with contextlib.suppress(KeyError):
@@ -266,22 +268,27 @@ def _probe(again: bool = False) -> _Found:
     if backend.priority > 0:
         return _Found(backend, _display_name(backend), False)
     if isinstance(backend, fail.Keyring):
+        usable: list[tuple[float, Any]] = []
         for cls in list(getattr(KeyringBackend, "_classes", ())):
-            if cls is fail.Keyring:
+            if cls is fail.Keyring or issubclass(cls, ChainerBackend):
                 continue
             try:
-                viable = cls.priority > 0
+                priority = cls.priority
             except RuntimeError as exc:
                 if _service_errored(exc):
                     return _Found(backend, None, True)
                 continue
             except Exception:  # noqa: BLE001
                 return _Found(backend, None, True)
-            if viable:
+            if priority > 0:
                 try:
-                    cls()
+                    usable.append((priority, cls()))
                 except Exception:  # noqa: BLE001
                     return _Found(backend, None, True)
+        if again and usable:  # the last look found it broken, and now it answers: use it, not 'no keychain'
+            chosen = max(usable, key=lambda pair: pair[0])[1]
+            keyring.set_keyring(chosen)
+            return _Found(chosen, _display_name(chosen), False)
     return _Found(backend, None, False)
 
 

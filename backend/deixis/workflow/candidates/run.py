@@ -67,7 +67,7 @@ def transport_plan(providers: list[str]) -> dict:
 
 
 def eligible_providers(scope: dict) -> list[str]:
-    return [pid for pid in search_providers(scope["providers"], scope.get("search_workflow"))
+    return [pid for pid in search_providers(scope["providers"])
             if CONNECTORS[pid].access_mode() != "not_configured"
             and isinstance(CONNECTORS[pid].requests_per_search, int)
             and not isinstance(CONNECTORS[pid].requests_per_search, bool)

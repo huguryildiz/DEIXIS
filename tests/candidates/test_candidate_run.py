@@ -62,6 +62,15 @@ def test_eligible_providers_keep_scope_order_drop_missing_keys_and_respect_sw(mo
     assert planning.eligible_providers(scope) == ["openalex", "arxiv"]
 
 
+def test_a_scope_without_a_workflow_key_lists_no_source_the_search_leaves_out(monkeypatch):
+    # Every research is searched one way; a scope dictionary that does not name it must not bring Scopus, CORE or
+    # SerpApi back into the search list.
+    for env in ("SCOPUS_API_KEY", "CORE_API_KEY", "SERPAPI_API_KEY"):
+        monkeypatch.setenv(env, "SYNTHETIC-key")
+    scope = {"providers": ["openalex", "scopus", "core", "serpapi", "arxiv"]}
+    assert planning.eligible_providers(scope) == ["openalex", "arxiv"]
+
+
 @pytest.mark.parametrize("rows,depth,length", [([row()], "abstract", 1),
     ([row(), row("pdf_page", n=2)], "stored_passages", 2),
     ([row(text=" "), row("pdf_page", text="\n", n=2)], "metadata_only", 0),

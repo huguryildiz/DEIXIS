@@ -129,8 +129,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     # the user's own correction at the approval step (SW2.6).
     default_origin = "user" if vocabulary and vocabulary["block_assignment"] == "user" else "rule"
     block_origin = block_origins(vocabulary) if vocabulary else {}
-    # An sw body frozen without a routing is a run from before D93, which still searched CORE and SerpApi.
-    searched = search_providers(scope["providers"], "sw", routed=routing is not None)
+    searched = search_providers(scope["providers"])
     in_scope = searched
     if routing is not None:
         # A routed source is searched only when a query was compiled for it: the effort's query limit can leave a

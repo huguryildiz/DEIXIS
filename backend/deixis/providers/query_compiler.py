@@ -19,14 +19,13 @@ PLAIN_PROVIDERS = tuple(pid for pid, connector in CONNECTORS.items()
                         if connector.query_syntax is not None and connector.query_syntax.kind == "plain")
 
 
-def _searchable(providers: list[str], workflow: str | None = None, *, routed: bool = True) -> list[str]:
+def _searchable(providers: list[str]) -> list[str]:
     """The given providers a query may go to, once each and in the order they arrived.
 
     A connector that is only asked about a record whose DOI is already known is dropped here rather than by each
-    caller, so no caller names a provider and a research whose scope still holds one compiles no query for it (D87).
-    An sw vocabulary also leaves out a connector that only a legacy research searches (D91).
+    caller, so no caller names a provider and a research whose scope still holds one compiles no query for it (D87, D91).
     """
-    return search_providers(list(dict.fromkeys(providers)), workflow, routed=routed)
+    return search_providers(list(dict.fromkeys(providers)))
 
 
 def quoted(term: str) -> str:
@@ -74,16 +73,14 @@ def fit_block_counts(provider: str, groups: list[list[str]], endpoint: str | Non
         counts[max(range(len(counts)), key=lambda position: (counts[position], position))] -= 1
 
 
-def compile_block_queries(vocabulary: dict[str, Any], enabled_providers: list[str], limit: int, *,
-                          routed: bool = True) -> list[dict[str, Any]]:
+def compile_block_queries(vocabulary: dict[str, Any], enabled_providers: list[str], limit: int) -> list[dict[str, Any]]:
     """One query per provider from the code vocabulary's blocks: OR inside a block, AND between blocks (SW2.7).
 
     Only terms of the setting and task blocks are read. Claim words, exclusion words and outcome terms are not in
     `terms`, so no query can hold one. Each returned dictionary names the provider, the query text and its rationale,
     plus the terms a provider's limits left out. A connector whose sw queries go to
     another endpoint (Semantic Scholar's bulk search, D93) gets a query in that endpoint's syntax, which names the
-    endpoint and its sort. `routed` false compiles as before D93, for an sw run from before routing: no endpoint, and
-    CORE and SerpApi still searched, so the run keeps the query semantics its card showed.
+    endpoint and its sort.
     """
     groups, names = [], []
     for block in BLOCK_ORDER:
@@ -96,10 +93,10 @@ def compile_block_queries(vocabulary: dict[str, Any], enabled_providers: list[st
         return []
     rationale = "Concept blocks: " + " AND ".join(names)
     queries: list[dict[str, Any]] = []
-    for provider in _searchable(enabled_providers, "sw", routed=routed):
+    for provider in _searchable(enabled_providers):
         if len(queries) >= limit:
             break
-        extra = CONNECTORS[provider].sw_query if routed else {}
+        extra = CONNECTORS[provider].sw_query
         if (fitted := _fit_blocks(provider, groups, extra.get("endpoint"))) is None:
             continue
         text, dropped = fitted

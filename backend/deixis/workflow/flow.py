@@ -5035,7 +5035,7 @@ class ResearchFlow:
             # The providers a query may go to. A verification connector stays in the research's scope for the records
             # whose DOI is already known, and is never offered to the model as a place to search (D87).
             "capabilities": CAPABILITIES,
-            "enabled_providers": search_providers(scope["providers"], scope.get("search_workflow")),
+            "enabled_providers": search_providers(scope["providers"]),
             "candidates": candidates, "sources": sources, "passages": passages,
             "allowlist": allowlist,
             "human_corrections": [],

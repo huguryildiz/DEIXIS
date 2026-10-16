@@ -59,7 +59,7 @@ SELECT = ",".join(
     ]
 )
 ABSTRACT_ORIGIN = "provider_openalex_inverted_index"
-# Asked for only on an sw read (slices 05 and 07), so a legacy request keeps the `select` it always had.
+# Asked for only on a paged search read (slices 05 and 07), through the connector's `sw_options`.
 REFERENCE_COUNT_FIELD = "referenced_works_count"
 REFERENCES_FIELD = "referenced_works"
 RATE_LIMIT_HEADERS = (

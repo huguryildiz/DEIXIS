@@ -531,7 +531,7 @@ def stored_research(tmp_path, records, workflow="sw"):
 
 
 def rank(store, rid, run, embedding_model=None):
-    return ranking.rank_records(store, run, store.scope(rid), VOCABULARY, [], embedding_model)
+    return ranking.rank_records(store, run, store.scope(rid), VOCABULARY, embedding_model)
 
 
 def test_without_a_verified_seed_tfidf_does_not_run_at_all(tmp_path):

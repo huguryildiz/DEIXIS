@@ -10,7 +10,7 @@ import sys
 from pathlib import Path
 
 from deixis.workflow import ranking
-from deixis.workflow.expansion import expansion_blocks, queried_form, queried_terms, TASK_BLOCK
+from deixis.workflow.expansion import queried_form, queried_terms, TASK_BLOCK
 
 try:
     from .check import connect, rows, selected_ranking
@@ -182,10 +182,7 @@ def read_snapshot(conn, benchmark, answer_id=None, ranking_step=None):
     if len(approval) != 1:
         raise ValueError('recorded approved vocabulary required')
     vocab = json.loads(approval[0]['output_json'])['approved']['vocabulary']
-    expansion = rows(conn, "SELECT output_json FROM run_steps WHERE run_id=? AND operation_key='vocabulary_expansion'",
-                     (step['run_id'],))
-    expanded = json.loads(expansion[0]['output_json'] or '{}') if expansion else {}
-    query_words, blocks = ranking.query_vocabulary(scope, vocab, expansion_blocks(expanded.get('expansion'), expanded.get('queries')))
+    query_words, blocks = ranking.query_vocabulary(scope, vocab)
     searches = rows(conn, 'SELECT id FROM search_runs WHERE research_id=? AND run_id=? AND retrieved_at<=?',
                     (rid, step['run_id'], cutoff))
     search_ids = {s['id'] for s in searches}

@@ -14848,6 +14848,5718 @@
         "   "
       ],
       "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "serpapi",
+          "core",
+          "scopus",
+          "ieee_xplore",
+          "pubmed",
+          "biorxiv",
+          "arxiv",
+          "crossref",
+          "semantic_scholar",
+          "openalex"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "serpapi",
+          "core",
+          "scopus",
+          "ieee_xplore",
+          "pubmed",
+          "biorxiv",
+          "arxiv",
+          "crossref",
+          "semantic_scholar",
+          "openalex"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "serpapi",
+          "core",
+          "scopus",
+          "ieee_xplore",
+          "pubmed",
+          "biorxiv",
+          "arxiv",
+          "crossref",
+          "semantic_scholar",
+          "openalex"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "serpapi",
+          "core",
+          "scopus",
+          "ieee_xplore",
+          "pubmed",
+          "biorxiv",
+          "arxiv",
+          "crossref",
+          "semantic_scholar",
+          "openalex"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi",
+          "openalex",
+          "semantic_scholar"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi",
+          "openalex",
+          "semantic_scholar"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi",
+          "openalex",
+          "semantic_scholar"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi",
+          "openalex",
+          "semantic_scholar"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "crossref",
+          "serpapi"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "crossref",
+          "serpapi"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "crossref",
+          "serpapi"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "crossref",
+          "serpapi"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "semantic_scholar",
+          "arxiv",
+          "serpapi"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "semantic_scholar",
+          "arxiv",
+          "serpapi"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "semantic_scholar",
+          "arxiv",
+          "serpapi"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "semantic_scholar",
+          "arxiv",
+          "serpapi"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "serpapi",
+          "core",
+          "scopus",
+          "ieee_xplore",
+          "pubmed",
+          "biorxiv",
+          "arxiv",
+          "crossref",
+          "semantic_scholar",
+          "openalex"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "serpapi",
+          "core",
+          "scopus",
+          "ieee_xplore",
+          "pubmed",
+          "biorxiv",
+          "arxiv",
+          "crossref",
+          "semantic_scholar",
+          "openalex"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "serpapi",
+          "core",
+          "scopus",
+          "ieee_xplore",
+          "pubmed",
+          "biorxiv",
+          "arxiv",
+          "crossref",
+          "semantic_scholar",
+          "openalex"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "serpapi",
+          "core",
+          "scopus",
+          "ieee_xplore",
+          "pubmed",
+          "biorxiv",
+          "arxiv",
+          "crossref",
+          "semantic_scholar",
+          "openalex"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi",
+          "openalex",
+          "semantic_scholar"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi",
+          "openalex",
+          "semantic_scholar"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi",
+          "openalex",
+          "semantic_scholar"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi",
+          "openalex",
+          "semantic_scholar"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "crossref",
+          "serpapi"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "crossref",
+          "serpapi"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "crossref",
+          "serpapi"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "crossref",
+          "serpapi"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "semantic_scholar",
+          "arxiv",
+          "serpapi"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "semantic_scholar",
+          "arxiv",
+          "serpapi"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "semantic_scholar",
+          "arxiv",
+          "serpapi"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "semantic_scholar",
+          "arxiv",
+          "serpapi"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "serpapi",
+          "core",
+          "scopus",
+          "ieee_xplore",
+          "pubmed",
+          "biorxiv",
+          "arxiv",
+          "crossref",
+          "semantic_scholar",
+          "openalex"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "serpapi",
+          "core",
+          "scopus",
+          "ieee_xplore",
+          "pubmed",
+          "biorxiv",
+          "arxiv",
+          "crossref",
+          "semantic_scholar",
+          "openalex"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "serpapi",
+          "core",
+          "scopus",
+          "ieee_xplore",
+          "pubmed",
+          "biorxiv",
+          "arxiv",
+          "crossref",
+          "semantic_scholar",
+          "openalex"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "serpapi",
+          "core",
+          "scopus",
+          "ieee_xplore",
+          "pubmed",
+          "biorxiv",
+          "arxiv",
+          "crossref",
+          "semantic_scholar",
+          "openalex"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi",
+          "openalex",
+          "semantic_scholar"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi",
+          "openalex",
+          "semantic_scholar"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi",
+          "openalex",
+          "semantic_scholar"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi",
+          "openalex",
+          "semantic_scholar"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "crossref",
+          "serpapi"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "crossref",
+          "serpapi"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "crossref",
+          "serpapi"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "crossref",
+          "serpapi"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "semantic_scholar",
+          "arxiv",
+          "serpapi"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "semantic_scholar",
+          "arxiv",
+          "serpapi"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "semantic_scholar",
+          "arxiv",
+          "serpapi"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "semantic_scholar",
+          "arxiv",
+          "serpapi"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "serpapi",
+          "core",
+          "scopus",
+          "ieee_xplore",
+          "pubmed",
+          "biorxiv",
+          "arxiv",
+          "crossref",
+          "semantic_scholar",
+          "openalex"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "serpapi",
+          "core",
+          "scopus",
+          "ieee_xplore",
+          "pubmed",
+          "biorxiv",
+          "arxiv",
+          "crossref",
+          "semantic_scholar",
+          "openalex"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "serpapi",
+          "core",
+          "scopus",
+          "ieee_xplore",
+          "pubmed",
+          "biorxiv",
+          "arxiv",
+          "crossref",
+          "semantic_scholar",
+          "openalex"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "serpapi",
+          "core",
+          "scopus",
+          "ieee_xplore",
+          "pubmed",
+          "biorxiv",
+          "arxiv",
+          "crossref",
+          "semantic_scholar",
+          "openalex"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi",
+          "openalex",
+          "semantic_scholar"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi",
+          "openalex",
+          "semantic_scholar"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi",
+          "openalex",
+          "semantic_scholar"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi",
+          "openalex",
+          "semantic_scholar"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "crossref",
+          "serpapi"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "crossref",
+          "serpapi"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "crossref",
+          "serpapi"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "crossref",
+          "serpapi"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "semantic_scholar",
+          "arxiv",
+          "serpapi"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "semantic_scholar",
+          "arxiv",
+          "serpapi"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "semantic_scholar",
+          "arxiv",
+          "serpapi"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "semantic_scholar",
+          "arxiv",
+          "serpapi"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "serpapi",
+          "core",
+          "scopus",
+          "ieee_xplore",
+          "pubmed",
+          "biorxiv",
+          "arxiv",
+          "crossref",
+          "semantic_scholar",
+          "openalex"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "serpapi",
+          "core",
+          "scopus",
+          "ieee_xplore",
+          "pubmed",
+          "biorxiv",
+          "arxiv",
+          "crossref",
+          "semantic_scholar",
+          "openalex"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "serpapi",
+          "core",
+          "scopus",
+          "ieee_xplore",
+          "pubmed",
+          "biorxiv",
+          "arxiv",
+          "crossref",
+          "semantic_scholar",
+          "openalex"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "serpapi",
+          "core",
+          "scopus",
+          "ieee_xplore",
+          "pubmed",
+          "biorxiv",
+          "arxiv",
+          "crossref",
+          "semantic_scholar",
+          "openalex"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi",
+          "openalex",
+          "semantic_scholar"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi",
+          "openalex",
+          "semantic_scholar"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi",
+          "openalex",
+          "semantic_scholar"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref",
+          "arxiv",
+          "biorxiv",
+          "pubmed",
+          "ieee_xplore",
+          "scopus",
+          "core",
+          "serpapi",
+          "openalex",
+          "semantic_scholar"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "openalex",
+          "semantic_scholar",
+          "crossref"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "crossref",
+          "serpapi"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "crossref",
+          "serpapi"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "crossref",
+          "serpapi"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "crossref",
+          "serpapi"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "semantic_scholar",
+          "arxiv",
+          "serpapi"
+        ],
+        0
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "semantic_scholar",
+          "arxiv",
+          "serpapi"
+        ],
+        1
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "semantic_scholar",
+          "arxiv",
+          "serpapi"
+        ],
+        3
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "semantic_scholar",
+          "arxiv",
+          "serpapi"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "openalex"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "openalex"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "openalex"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "semantic_scholar"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "semantic_scholar"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "semantic_scholar"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "semantic_scholar"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "semantic_scholar"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "crossref"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "crossref"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "crossref"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "crossref"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "crossref"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "arxiv"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "arxiv"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "arxiv"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "arxiv"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "arxiv"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "biorxiv"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "biorxiv"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "biorxiv"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "biorxiv"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "biorxiv"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "pubmed"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "pubmed"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "pubmed"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "pubmed"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "pubmed"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "ieee_xplore"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "ieee_xplore"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "ieee_xplore"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "ieee_xplore"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "ieee_xplore"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "scopus"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "scopus"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "scopus"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "scopus"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "scopus"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "core"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "core"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "core"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "core"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "core"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "gamma",
+              "phrase": "gamma",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "delta",
+              "phrase": "delta",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "outcome",
+              "root": "outcome",
+              "phrase": "outcome",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "serpapi"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": []
+        },
+        [
+          "serpapi"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "serpapi"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "alpha",
+              "phrase": "alpha",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "beta",
+              "phrase": "beta",
+              "in_query": "phrase",
+              "dropped": null
+            }
+          ]
+        },
+        [
+          "serpapi"
+        ],
+        100
+      ],
+      "kwargs": {}
+    },
+    {
+      "args": [
+        {
+          "terms": [
+            {
+              "block": "setting",
+              "root": "root",
+              "phrase": "root phrase",
+              "in_query": "root",
+              "dropped": null
+            },
+            {
+              "block": "task",
+              "root": "task",
+              "phrase": "task phrase",
+              "in_query": "phrase",
+              "dropped": null
+            },
+            {
+              "block": "setting",
+              "root": "ignored",
+              "phrase": "ignored",
+              "in_query": "phrase",
+              "dropped": "user"
+            }
+          ]
+        },
+        [
+          "serpapi"
+        ],
+        100
+      ],
+      "kwargs": {}
     }
   ],
   "outputs": [
@@ -101004,485 +106716,245 @@
       "provider": null,
       "endpoint": null,
       "samples": [
-        450,
+        764,
         163,
-        451,
-        163,
-        452,
+        765,
         1312,
-        453,
-        1312,
-        454,
-        1313,
-        455,
+        766,
         1314,
-        456,
-        1315,
-        457,
+        767,
         1316,
-        458,
+        768,
         163,
-        459,
-        163,
-        460,
-        1317,
-        461,
+        769,
         1318,
-        462,
-        1319,
-        463,
+        770,
         1320,
-        464,
-        1321,
-        465,
+        771,
         1322,
-        466,
+        772,
         163,
-        467,
-        163,
-        468,
+        773,
         1312,
-        469,
-        1312,
-        470,
-        1313,
-        471,
+        774,
         1314,
-        472,
-        1315,
-        473,
+        775,
         1316,
-        474,
+        776,
         163,
-        475,
-        163,
-        476,
+        777,
         1312,
-        477,
-        1312,
-        478,
-        1323,
-        479,
+        778,
         1324,
-        480,
-        1323,
-        481,
+        779,
         1324,
-        482,
+        780,
         163,
-        483,
+        781,
         163,
-        484,
-        1317,
-        485,
+        782,
         163,
-        486,
-        1317,
-        487,
+        783,
         163,
-        488,
-        1317,
-        489,
+        784,
         163,
-        490,
-        163,
-        491,
-        163,
-        492,
-        1325,
-        493,
+        785,
         1326,
-        494,
-        1327,
-        495,
+        786,
         1328,
-        496,
-        1327,
-        497,
+        787,
         1328,
-        509,
+        788,
         163,
-        510,
+        789,
         163,
-        511,
+        790,
         163,
-        512,
+        791,
         163,
-        513,
+        792,
         163,
-        514,
+        793,
         163,
-        515,
+        794,
         163,
-        516,
+        795,
         163,
-        517,
+        796,
         163,
-        518,
+        797,
         163,
-        519,
+        798,
         163,
-        520,
+        799,
         163,
-        521,
+        800,
         163,
-        522,
+        801,
         163,
-        523,
+        802,
         163,
-        524,
+        803,
         163,
-        525,
+        804,
         163,
-        526,
+        805,
         163,
-        527,
+        806,
         163,
-        528,
+        807,
         163,
-        529,
+        808,
         163,
-        530,
+        809,
         163,
-        531,
+        810,
         163,
-        532,
+        811,
         163,
-        533,
+        812,
         163,
-        534,
-        163,
-        535,
-        163,
-        536,
-        163,
-        537,
-        163,
-        538,
-        163,
-        539,
-        163,
-        540,
-        163,
-        541,
-        163,
-        542,
-        163,
-        543,
-        163,
-        544,
-        163,
-        545,
-        163,
-        546,
-        163,
-        547,
-        163,
-        548,
-        163,
-        549,
-        163,
-        550,
-        163,
-        551,
-        163,
-        552,
-        163,
-        553,
-        163,
-        554,
-        163,
-        555,
-        163,
-        556,
-        163,
-        568,
-        163,
-        569,
-        163,
-        570,
+        813,
         1333,
-        571,
-        1333,
-        572,
-        1334,
-        573,
+        814,
         1335,
-        574,
-        1336,
-        575,
+        815,
         1337,
-        576,
+        816,
         163,
-        577,
-        163,
-        578,
-        1338,
-        579,
+        817,
         1339,
-        580,
-        1340,
-        581,
+        818,
         1341,
-        582,
-        1342,
-        583,
+        819,
         1343,
-        584,
+        820,
         163,
-        585,
-        163,
-        586,
+        821,
         1333,
-        587,
-        1333,
-        588,
-        1334,
-        589,
+        822,
         1335,
-        590,
-        1336,
-        591,
+        823,
         1337,
-        592,
+        824,
         163,
-        593,
-        163,
-        594,
+        825,
         1333,
-        595,
-        1333,
-        596,
-        1344,
-        597,
+        826,
         1345,
-        598,
-        1344,
-        599,
+        827,
         1345,
-        600,
+        828,
         163,
-        601,
+        829,
         163,
-        602,
-        1338,
-        603,
+        830,
         163,
-        604,
-        1338,
-        605,
+        831,
         163,
-        606,
-        1338,
-        607,
+        832,
         163,
-        608,
-        163,
-        609,
-        163,
-        610,
-        1346,
-        611,
+        833,
         1347,
-        612,
-        1348,
-        613,
+        834,
         1349,
-        614,
-        1348,
-        615,
+        835,
         1349,
-        627,
+        836,
         163,
-        628,
-        163,
-        629,
+        837,
         1354,
-        630,
-        1354,
-        631,
-        1355,
-        632,
+        838,
         1356,
-        633,
-        1357,
-        634,
+        839,
         1358,
-        635,
+        840,
         163,
-        636,
-        163,
-        637,
-        1359,
-        638,
+        841,
         1360,
-        639,
-        1361,
-        640,
+        842,
         1362,
-        641,
-        1363,
-        642,
+        843,
         1364,
-        643,
+        844,
         163,
-        644,
-        163,
-        645,
+        845,
         1354,
-        646,
-        1354,
-        647,
-        1355,
-        648,
+        846,
         1356,
-        649,
-        1357,
-        650,
+        847,
         1358,
-        651,
+        848,
         163,
-        652,
-        163,
-        653,
+        849,
         1354,
-        654,
-        1354,
-        655,
-        1365,
-        656,
+        850,
         1366,
-        657,
-        1365,
-        658,
+        851,
         1366,
-        659,
+        852,
         163,
-        660,
+        853,
         163,
-        661,
-        1359,
-        662,
+        854,
         163,
-        663,
-        1359,
-        664,
+        855,
         163,
-        665,
-        1359,
-        666,
+        856,
         163,
-        667,
-        163,
-        668,
-        163,
-        669,
-        1367,
-        670,
+        857,
         1368,
-        671,
-        1369,
-        672,
+        858,
         1370,
-        673,
-        1369,
-        674,
+        859,
         1370,
-        686,
+        860,
         163,
-        687,
-        163,
-        688,
+        861,
         1375,
-        689,
-        1375,
-        690,
-        1376,
-        691,
+        862,
         1377,
-        692,
-        1378,
-        693,
+        863,
         1379,
-        694,
+        864,
         163,
-        695,
-        163,
-        696,
-        1380,
-        697,
+        865,
         1381,
-        698,
-        1382,
-        699,
+        866,
         1383,
-        700,
-        1384,
-        701,
+        867,
         1385,
-        702,
+        868,
         163,
-        703,
-        163,
-        704,
+        869,
         1375,
-        705,
-        1375,
-        706,
-        1376,
-        707,
+        870,
         1377,
-        708,
-        1378,
-        709,
+        871,
         1379,
-        710,
+        872,
         163,
-        711,
-        163,
-        712,
+        873,
         1375,
-        713,
-        1375,
-        714,
-        1386,
-        715,
+        874,
         1387,
-        716,
-        1386,
-        717,
+        875,
         1387,
-        718,
+        876,
         163,
-        719,
+        877,
         163,
-        720,
-        1380,
-        721,
+        878,
         163,
-        722,
-        1380,
-        723,
+        879,
         163,
-        724,
-        1380,
-        725,
+        880,
         163,
-        726,
-        163,
-        727,
-        163,
-        728,
-        1388,
-        729,
+        881,
         1389,
-        730,
-        1390,
-        731,
+        882,
         1391,
-        732,
-        1390,
-        733,
+        883,
         1391
       ]
     },
@@ -101491,15 +106963,15 @@
       "provider": "openalex",
       "endpoint": null,
       "samples": [
-        498,
+        884,
         1312,
-        557,
+        885,
         163,
-        616,
+        886,
         1333,
-        675,
+        887,
         1354,
-        734,
+        888,
         1375
       ]
     },
@@ -101508,16 +106980,16 @@
       "provider": "semantic_scholar",
       "endpoint": null,
       "samples": [
-        499,
-        1325,
-        558,
+        889,
+        1326,
+        890,
         163,
-        617,
-        1346,
-        676,
-        1367,
-        735,
-        1388
+        891,
+        1347,
+        892,
+        1368,
+        893,
+        1389
       ]
     },
     {
@@ -101525,15 +106997,15 @@
       "provider": "semantic_scholar",
       "endpoint": "bulk",
       "samples": [
-        500,
+        889,
         1326,
-        559,
+        890,
         163,
-        618,
+        891,
         1347,
-        677,
+        892,
         1368,
-        736,
+        893,
         1389
       ]
     },
@@ -101542,15 +107014,15 @@
       "provider": "crossref",
       "endpoint": null,
       "samples": [
-        501,
+        894,
         163,
-        560,
+        895,
         163,
-        619,
+        896,
         163,
-        678,
+        897,
         163,
-        737,
+        898,
         163
       ]
     },
@@ -101559,15 +107031,15 @@
       "provider": "arxiv",
       "endpoint": null,
       "samples": [
-        502,
+        899,
         1329,
-        561,
+        900,
         163,
-        620,
+        901,
         1350,
-        679,
+        902,
         1371,
-        738,
+        903,
         1392
       ]
     },
@@ -101576,15 +107048,15 @@
       "provider": "biorxiv",
       "endpoint": null,
       "samples": [
-        503,
+        904,
         1330,
-        562,
+        905,
         163,
-        621,
+        906,
         1351,
-        680,
+        907,
         1372,
-        739,
+        908,
         1393
       ]
     },
@@ -101593,15 +107065,15 @@
       "provider": "pubmed",
       "endpoint": null,
       "samples": [
-        504,
+        909,
         1331,
-        563,
+        910,
         163,
-        622,
+        911,
         1352,
-        681,
+        912,
         1373,
-        740,
+        913,
         1394
       ]
     },
@@ -101610,15 +107082,15 @@
       "provider": "ieee_xplore",
       "endpoint": null,
       "samples": [
-        505,
+        914,
         1318,
-        564,
+        915,
         163,
-        623,
+        916,
         1339,
-        682,
+        917,
         1360,
-        741,
+        918,
         1381
       ]
     },
@@ -101627,15 +107099,15 @@
       "provider": "scopus",
       "endpoint": null,
       "samples": [
-        506,
+        919,
         163,
-        565,
+        920,
         163,
-        624,
+        921,
         163,
-        683,
+        922,
         163,
-        742,
+        923,
         163
       ]
     },
@@ -101644,16 +107116,16 @@
       "provider": "core",
       "endpoint": null,
       "samples": [
-        507,
-        1332,
-        566,
+        924,
         163,
-        625,
-        1353,
-        684,
-        1374,
-        743,
-        1395
+        925,
+        163,
+        926,
+        163,
+        927,
+        163,
+        928,
+        163
       ]
     },
     {
@@ -101661,16 +107133,16 @@
       "provider": "serpapi",
       "endpoint": null,
       "samples": [
-        508,
-        1317,
-        567,
+        929,
         163,
-        626,
-        1338,
-        685,
-        1359,
-        744,
-        1380
+        930,
+        163,
+        931,
+        163,
+        932,
+        163,
+        933,
+        163
       ]
     },
     {

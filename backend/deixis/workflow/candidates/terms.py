@@ -36,4 +36,4 @@ def block_vocabulary(setting: list[str], task: list[str]) -> dict:
 
 
 def compile_queries(vocabulary, providers, limit=6):
-    return compile_block_queries(vocabulary, providers, limit, routed=True)
+    return compile_block_queries(vocabulary, providers, limit)

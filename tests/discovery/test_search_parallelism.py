@@ -25,7 +25,7 @@ import pytest
 from deixis.providers import biorxiv as biorxiv_module
 from deixis.providers import common
 from deixis.providers.registry import CONNECTORS
-from deixis.workflow import flow
+from deixis.workflow import flow, search_page
 from test_search_paging import (ALPHA, BETA, PagedProviders, app_for, client_of, discover, keyword_plan, keyword_reader,
                                 library, reached_screening, read_pages, wait)  # noqa: F401  (library is a fixture)
 
@@ -266,14 +266,14 @@ class AlwaysRefused(PagedProviders):
 def small_allowances(monkeypatch, shares):
     """Give the named queries a share of `shares[query]` requests, plus what a retry action adds, and leave every
     other query the share the effort derives."""
-    derived = flow.page_allowance
+    derived = search_page.page_allowance
 
     def allowance(query, effort, budget):
         if query["query_text"] in shares:
             return shares[query["query_text"]] + budget.get("retry_provider_requests", 0)
         return derived(query, effort, budget)
 
-    monkeypatch.setattr(flow, "page_allowance", allowance)
+    monkeypatch.setattr(search_page, "page_allowance", allowance)
 
 
 def test_a_query_that_uses_up_its_share_ends_its_own_read_and_the_other_query_goes_on(library, tmp_path, monkeypatch):
@@ -318,7 +318,7 @@ def test_a_retried_query_keeps_its_count(library, tmp_path, monkeypatch):
 def test_a_run_whose_every_share_was_spent_before_it_asked_pauses_instead_of_going_on(tmp_path, monkeypatch):
     """D18: with no successful search the run pauses, also when no search failed because every query's share was
     already spent (a run resumed after a crash). Asked to search again, the retry adds to every share and reads."""
-    monkeypatch.setattr(flow, "page_allowance", lambda query, effort, budget: budget.get("retry_provider_requests", 0))
+    monkeypatch.setattr(search_page, "page_allowance", lambda query, effort, budget: budget.get("retry_provider_requests", 0))
     providers = PagedProviders(openalex_total=45)
     client = client_of(app_for(tmp_path, monkeypatch, providers))
     try:

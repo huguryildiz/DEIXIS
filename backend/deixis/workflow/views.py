@@ -536,9 +536,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     scope_view["seed_status"] = store.seed_status(research_id, scope)
     # An sw research may ask for an answer with no included work once this revision's search finished (SW22, D106).
     scope_view["discovery_completed"] = store.discovery_completed(research_id)
-    # The providers a query may go to; a verification connector in the scope is not one (D87), nor Scopus in an sw
-    # research (D91).
-    scope_view["search_providers"] = search_providers(scope["providers"], scope.get("search_workflow"))
+    # The providers a query may go to; a verification connector in the scope is not one (D87), nor Scopus (D91).
+    scope_view["search_providers"] = search_providers(scope["providers"])
 
     service_waits = {row["run_id"]: json.loads(row["payload_json"]) for row in conn.execute(
         "SELECT run_id, payload_json FROM events WHERE research_id = ? AND type = 'service_waiting' ORDER BY id",

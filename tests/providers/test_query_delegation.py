@@ -172,12 +172,11 @@ def test_synthetic_registry_translation(monkeypatch):
     monkeypatch.setitem(registry.CONNECTORS, connector.provider_id, connector)
     assert connector.provider_id not in rules.NAMES
     vocabulary = baseline.vocabulary([["alpha", "beta"], ["gamma", "delta"]])
-    for routed, endpoint, text, dropped in [(False, None, "alpha gamma", ["beta", "delta"]),
-                                           (True, "extra", "(alpha | beta) + (gamma | delta)", [])]:
-        (compiled,) = compiler.compile_block_queries(vocabulary, [connector.provider_id], 10, routed=routed)
-        assert compiled["query_text"] == text
-        assert compiled.get("endpoint") == endpoint
-        assert compiled["dropped_terms"] == dropped
+    (compiled,) = compiler.compile_block_queries(vocabulary, [connector.provider_id], 10)
+    assert compiled["query_text"] == "(alpha | beta) + (gamma | delta)" and compiled["endpoint"] == "extra"
+    assert compiled["dropped_terms"] == []
+    for endpoint, text, dropped in [(None, "alpha gamma", ["beta", "delta"]),
+                                    ("extra", "(alpha | beta) + (gamma | delta)", [])]:
         assert rules.query_issues(connector.provider_id, text, endpoint) == []
         rendered = facade.connectors()[connector.provider_id].render_query([["alpha", "beta"], ["gamma", "delta"]], endpoint)
         assert rendered.native_query == text and list(rendered.dropped) == dropped

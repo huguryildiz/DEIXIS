@@ -3,7 +3,9 @@
 PYTHONPATH=backend:. .venv/bin/python tests/query_baseline.py --write
 
 The entries of the SearchPlan v2 compiler (`compile_queries`, `_terms`, `_fit`, `_compact_openalex`) were taken out
-of the frozen file when that compiler was removed (clean start, slice 3a); every other entry is the e19a7f7 freeze.
+of the frozen file when that compiler was removed (clean start, slice 3a). When the pre-D93 `routed=False` compile was
+removed, its `compile_block_queries` samples were dropped (no provider named) or re-recorded with today's single
+compile (one provider named); every other entry is the e19a7f7 freeze.
 
 Arguments and results are interned by their order-preserving JSON bytes to keep
 the broad rule cross-product below 4 MB. No canonical/sorted conversion is used.
@@ -218,11 +220,10 @@ def capture():
     for vocab in vocabs:
         for selected in provider_lists:
             for limit in (0, 1, 3, 100):
-                for routed in (False, True):
-                    record("compile_block_queries", None, None, (vocab, selected, limit), {"routed": routed})
+                record("compile_block_queries", None, None, (vocab, selected, limit))
         for pid, connector in registry.CONNECTORS.items():
             for endpoint in (None, *connector.endpoints):
-                record("compile_block_queries", pid, endpoint, (vocab, [pid], 100), {"routed": endpoint is not None})
+                record("compile_block_queries", pid, endpoint, (vocab, [pid], 100))
     synonyms = [*TERMS.values(), "Alpha", "alpha", "Alpha", '"quoted"', "(parenthesized)", "[bracketed]", "", "   "]
     for synonym in synonyms:
         record("quoted", None, None, (synonym,))

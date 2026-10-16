@@ -15,7 +15,8 @@ import fast_search_helpers as fast
 from deixis.domain.rules import MAX_TRANSIENT_NETWORK_RETRIES, PROVIDER_WAIT, SW_READ_LIMIT
 from deixis.providers import common, contract, facade, registry
 from deixis.workflow import flow as module
-from deixis.workflow.flow import Page, page_allowance
+from deixis.workflow import search_page
+from deixis.workflow.search_page import Page, page_allowance
 from test_connector_contract import dispatch_flow, candidate_lib, FIXTURES, body_of, endpoint_fixture
 from test_candidate_flow import queue_kill
 
@@ -310,7 +311,7 @@ def test_pubmed_read_stops_at_corrected_budget_and_carries_trace(dispatch_flow, 
     # pages cost two requests each.
     flow, new_run = dispatch_flow
     run = new_run(("pubmed",))
-    monkeypatch.setattr(module, "page_allowance", lambda *args: 3)
+    monkeypatch.setattr(search_page, "page_allowance", lambda *args: 3)
     script = Script([("esearch", 200), ("efetch", 200)] * 2, total=100)
     use_client(flow, script)
     with baseline.fake_clock():
@@ -506,7 +507,7 @@ def test_discovery_tight_share_minus_one_plus_reservation_bound(dispatch_flow, m
     run = new_run()
     share = 3
     flow.store.add_usage(run["id"], "provider_requests", share - 1, query="search:0")
-    monkeypatch.setattr(module, "page_allowance", lambda *args: share)
+    monkeypatch.setattr(search_page, "page_allowance", lambda *args: share)
     stages = ["esearch", "efetch"] if pid == "pubmed" else ["search"]
     script = Script([(s, code) for s in stages for code in [429, 200]], total=100)
     use_client(flow, script)

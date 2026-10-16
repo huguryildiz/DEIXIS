@@ -227,18 +227,17 @@ def code_terms(vocabulary: dict[str, Any]) -> list[dict[str, Any]]:
     return list(vocabulary["code_query"]["vocabulary"]["terms"]) if code_searched(vocabulary) else []
 
 
-def compile_queries(vocabulary: dict[str, Any], providers: list[str], limit: int, *,
-                    routed: bool = True) -> list[dict[str, Any]]:
+def compile_queries(vocabulary: dict[str, Any], providers: list[str], limit: int) -> list[dict[str, Any]]:
     """The first round: per provider the model's query and then the code's, until `limit` queries.
 
     Interleaving keeps the pair the measurement read — both queries on OpenAlex — on every effort, however few
     queries it allows. A code query whose text is the model's own is not sent twice. Every query says where it came
-    from (`origin`: `model`, `user` for a person's saved plan, or `code`). `routed` false is an sw run from before D93 (`compile_block_queries`).
+    from (`origin`: `model`, `user` for a person's saved plan, or `code`).
     """
     # The terms of a person's saved search plan (S23a) take the model's place and say so.
     origin = "user" if vocabulary["search_query"].get("origin") == "user" else "model"
     model = {q["provider_id"]: q | {"origin": origin}
-             for q in query_compiler.compile_block_queries(vocabulary, providers, limit, routed=routed)}
+             for q in query_compiler.compile_block_queries(vocabulary, providers, limit)}
     code = {q["provider_id"]: q | {"origin": "code"} for q in vocabulary["code_query"]["queries"]} \
         if vocabulary["code_query"]["searched"] else {}
     ordered: list[dict[str, Any]] = []
@@ -247,8 +246,3 @@ def compile_queries(vocabulary: dict[str, Any], providers: list[str], limit: int
         if provider in code and (provider not in model or code[provider]["query_text"] != model[provider]["query_text"]):
             ordered.append(code[provider])
     return ordered[:limit]
-
-
-def model_queries(queries: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The first round's queries the model's terms wrote; all of them for a vocabulary with no origin marks."""
-    return [query for query in queries if query.get("origin", "model") == "model"]

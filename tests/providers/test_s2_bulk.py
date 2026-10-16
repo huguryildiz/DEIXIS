@@ -17,7 +17,7 @@ import pytest
 
 from deixis.providers import common, query_compiler, query_rules, semantic_scholar
 from deixis.providers.registry import endpoint_options, reading
-from deixis.workflow import flow
+from deixis.workflow import search_page
 from test_query_compiler import _blocks
 from test_search_paging import keyword_plan, keyword_reader, library, read_pages  # noqa: F401  (library is a fixture)
 
@@ -142,9 +142,9 @@ def test_a_bulk_query_is_read_as_one_cursor_page_of_up_to_a_thousand():
     assert (shape.paging, shape.max_results, shape.max_reachable) == ("cursor", 1000, None)
     old = reading({"provider_id": "semantic_scholar", "query_text": "a b"})
     assert (old.paging, old.max_results, old.max_reachable) == ("offset", 100, 1000)
-    per_page = 1 + flow.PROVIDER_WAIT["detailed"] + flow.MAX_TRANSIENT_NETWORK_RETRIES
-    assert flow.page_allowance(query, "detailed", {}) == per_page
-    assert flow.page_allowance({"provider_id": "semantic_scholar", "query_text": "a b"}, "detailed", {}) == 10 * per_page
+    per_page = 1 + search_page.PROVIDER_WAIT["detailed"] + search_page.MAX_TRANSIENT_NETWORK_RETRIES
+    assert search_page.page_allowance(query, "detailed", {}) == per_page
+    assert search_page.page_allowance({"provider_id": "semantic_scholar", "query_text": "a b"}, "detailed", {}) == 10 * per_page
 
 
 # ---- through a discovery run -------------------------------------------------------------------------------------

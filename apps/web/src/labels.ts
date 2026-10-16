@@ -515,6 +515,7 @@ const codeStepLabels: Record<string, string> = {
   source_routing: 'Choosing the sources to search (code)',
   user_search_query: 'Your search query (code)',
   vocabulary: 'Search words from the question (code)',
+  // No longer written; kept so stored runs that hold the empty step still read in plain words.
   vocabulary_expansion: 'Expanding the search words (code)',
 }
 

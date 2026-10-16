@@ -85,16 +85,16 @@ class Connector:
     # DOI is already known — its metadata, its links — and is never asked to find records (D87). The queries are
     # compiled from this flag alone, so neither the flow nor the compiler names a provider (slice 05).
     searchable: bool = True
-    # Whether an sw research sends a query here. Scopus is searched by a legacy research and, in an sw research, is
-    # only the last abstract source, and only on an institutional network (D91). A query an sw run already stored is
-    # still read: `searchable` alone decides that, so a resumed run searches the queries its protocol names.
+    # Whether a new query is compiled for this connector. Scopus is only the last abstract source, and only on an
+    # institutional network (D91); CORE and SerpApi were taken out of the search (D93). A query a run already stored
+    # is still read: `searchable` alone decides that, so a resumed run searches the queries its protocol names.
     sw_searchable: bool = True
     # How an sw query reads its pages (slice 04c): a provider-issued `cursor`, a record `offset`, or one page only.
     paging: str = "offset"
     max_reachable: int | None = None  # the deepest record the provider serves, when that is below the read limit
     page_gap: float = 0.0  # seconds to wait between two pages of the same query
-    # Extra arguments an sw paged read passes to `search`, so a legacy request stays byte for byte what it was and
-    # the flow never names a provider to decide what to ask for (slice 05).
+    # Extra arguments a paged read passes to `search`, so the flow never names a provider to decide what to ask
+    # for (slice 05).
     sw_options: dict[str, Any] = field(default_factory=dict)
     options: tuple[str, ...] = ()
     # The host name a search request goes to, taken from the URL the module sends it to. Two connectors that share one
@@ -187,9 +187,9 @@ CONNECTORS = {c.provider_id: c for c in (
     Connector("scopus", scopus.search, scopus.MAX_RESULTS, "SCOPUS_API_KEY", key_required=True,
               sw_searchable=False, host=_host(scopus.SEARCH_URL), adapter_revision=2, display_name="Scopus",
               capabilities={"doi_lookup": CapabilityBinding(_scopus_lookup, lookup.SCOPUS_LOOKUP_BATCH)},
-              query_syntax=QuerySyntax("field_group", wrapper="TITLE-ABS-KEY")),  # sw: last abstract source only (D91)
-    # CORE and SerpApi are searched by a legacy research only: in the third D88 measurement neither brought a verified
-    # work no other source brought, and SerpApi is paid (D93).
+              query_syntax=QuerySyntax("field_group", wrapper="TITLE-ABS-KEY")),  # last abstract source only (D91)
+    # CORE and SerpApi get no new query: in the third D88 measurement neither brought a verified work no other source
+    # brought, and SerpApi is paid (D93).
     Connector("core", core.search, core.MAX_RESULTS, "CORE_API_KEY", key_required=True, sw_searchable=False,
               host=_host(core.SEARCH_URL), adapter_revision=2, display_name="CORE",
               query_syntax=QuerySyntax(boolean_checks=True, extra_rules="field_phrase",
@@ -238,23 +238,15 @@ def configured_providers() -> list[str]:
     return _configured()
 
 
-# The connectors source routing took out of the sw search (D93). An sw run from before routing, which searches the
-# queries its card showed, still searches them in its own scope revision.
-LEFT_BY_ROUTING = frozenset({"core", "serpapi"})
-
-
-def search_providers(providers: list[str], workflow: str | None, *, routed: bool = True) -> list[str]:
-    """The given providers a new query of this workflow may go to, in the order given (D87, D91). `routed` false is an
-    sw run from before D93, which still searches CORE and SerpApi."""
-    return [p for p in providers if CONNECTORS[p].searchable and (
-        workflow != "sw" or CONNECTORS[p].sw_searchable or (not routed and p in LEFT_BY_ROUTING))]
+def search_providers(providers: list[str]) -> list[str]:
+    """The given providers a new query may go to, in the order given (D87, D91, D93)."""
+    return [p for p in providers if CONNECTORS[p].searchable and CONNECTORS[p].sw_searchable]
 
 
 def reading(query: dict[str, Any]) -> Connector:
     """The connector as a read of this query sees it: with the paging and depth of the endpoint the query names.
 
-    A query that names no endpoint — every legacy query, and an sw query stored before D93 — is read by the
-    connector's own paging, as it always was.
+    A query that names no endpoint is read by the connector's own paging.
     """
     connector = CONNECTORS[query["provider_id"]]
     endpoint = query.get("endpoint")

@@ -190,7 +190,7 @@ def test_06_skipped_stages_carry_their_bases(library):
     assert stage(lib, "plan")["status"] == stage(lib, "search")["status"] == "skipped"
     assert stage(lib, "plan")["used_ms"] == 0
     assert stage(lib, "ranking")["alloc_ms"] == 90000
-    with pytest.raises(AssertionError, match="previous stage"):
+    with pytest.raises(fast_path.LedgerMismatch, match="previous stage"):
         fast_path.enter_stage(lib.store, lib.run, "read")
 
 

@@ -13,19 +13,24 @@ require.extensions['.ts'] = (module, file) => module._compile(ts.transpileModule
 const { limited, isLeft, gaveNoAnswer } = require('./src/readLimit.ts');
 // A read that waits for its signal, as a fetch does: it rejects with an AbortError when the signal fires.
 const hang = signal => new Promise((resolve, reject) => {
-  signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true })
+  const abort = () => reject(new DOMException('aborted', 'AbortError'));
+  if (signal.aborted) return abort();  // a fetch given an already-aborted signal rejects at once
+  signal.addEventListener('abort', abort, { once: true });
 });
 const late = () => Object.assign(new Error('late'), { code: 'read_timed_out' });
 (async () => {
 %s
+  console.log('FINISHED');
 })().catch(e => { console.error(e); process.exit(1) });
 """
 
 
 def run_node(body: str):
     root = Path(__file__).resolve().parents[2]
-    result = subprocess.run(["node", "-e", PRELUDE % body], cwd=root / "apps/web", capture_output=True, text=True)
+    # Node exits 0 when the script ends with a promise still pending, so the script must say it ran to the end.
+    result = subprocess.run(["node", "-e", PRELUDE % body], cwd=root / "apps/web", capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr
+    assert "FINISHED" in result.stdout, "the script did not run to its end"
 
 
 def test_leaving_cancels_a_pending_read_with_an_abort_not_a_timeout():
@@ -59,3 +64,27 @@ assert.strictEqual(await limited(async () => 7, undefined, 1000, late), 7);
 const boom = new Error('HTTP 500');
 await assert.rejects(limited(async () => { throw boom }, undefined, 1000, late), e => e === boom && !gaveNoAnswer(e));
 """)
+
+
+def test_a_read_with_no_limit_is_never_cut_however_slow_the_answer_is():
+    # Connections, a connection's check, the local tools and the tool checks run CLIs: they are passed `null` and no timer exists.
+    run_node(r"""
+const real = global.setTimeout, timers = [];
+global.setTimeout = (fn, ms, ...rest) => { timers.push(ms); return real(fn, ms, ...rest) };
+let finish;
+const slow = limited(() => new Promise(resolve => { finish = resolve }), undefined, null, late);
+await new Promise(resolve => real(resolve, 50));
+assert.deepStrictEqual(timers, []);  // nothing was scheduled that could end the read with "did not answer"
+finish('an 80 s health answer');
+assert.strictEqual(await slow, 'an 80 s health answer');
+// leaving still cancels it
+const leaving = new AbortController();
+const read = limited(hang, leaving.signal, null, late);
+leaving.abort();
+await assert.rejects(read, isLeft);
+global.setTimeout = real;
+""")
+    api = (Path(__file__).resolve().parents[2] / "apps/web/src/api.ts").read_text()
+    for method in ("connections:", "modelConnection:", "localTools:", "ocr:", "toolUpdate:"):
+        line = next(x for x in api.splitlines() if x.strip().startswith(method) and "read<" in x)
+        assert line.rstrip().rstrip(",").endswith("null),") or ", null)" in line, line

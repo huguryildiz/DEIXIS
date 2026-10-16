@@ -1,6 +1,6 @@
 // Client for the local DEIXIS API. Types mirror backend/deixis/workflow/views.py.
 import { t } from './i18n'
-import { CHECK_LIMIT_MS, READ_LIMIT_MS, limited } from './readLimit'
+import { READ_LIMIT_MS, limited } from './readLimit'
 
 export type RunStatus = 'queued' | 'running' | 'pause_requested' | 'paused' | 'completed' | 'failed' | 'cancelled'
 export type SourceScope = 'academic' | 'attached' | 'attached_and_academic'
@@ -1117,9 +1117,10 @@ async function request<T>(path: string, init: RequestInit = {}, retried = false)
   return response.json() as Promise<T>
 }
 
-// A Settings read: cancelled when `leaving` fires, ended with a "did not answer" error after `ms` (E25). Writes use `request`
+// A Settings read: cancelled when `leaving` fires, ended with a "did not answer" error after `ms` (E25); `null` for a read that
+// runs a CLI (no time limit). Writes use `request`
 // and are never cancelled.
-const read = <T,>(path: string, leaving?: AbortSignal, ms = READ_LIMIT_MS) =>
+const read = <T,>(path: string, leaving?: AbortSignal, ms: number | null = READ_LIMIT_MS) =>
   limited(signal => request<T>(path, { signal }), leaving, ms, () => new ApiError(0, t('DEIXIS did not answer in time. Try again.'), [], null, 'read_timed_out'))
 
 const json = (method: string, body: unknown, extra: Record<string, string> = {}): RequestInit =>
@@ -1383,8 +1384,8 @@ export const api = {
   assetText: (id: string, assetId: string, extractionId?: string) => request<AssetText>(`/api/researches/${id}/assets/${assetId}/text${extractionId ? `?extraction_id=${encodeURIComponent(extractionId)}` : ''}`),
   assetFigures: (id: string, assetId: string) => request<{ figures: AssetFigure[] }>(`/api/researches/${id}/assets/${assetId}/figures`),
   events: (id: string, after = 0) => request<ActivityEvent[]>(`/api/researches/${id}/events?after=${after}`),
-  connections: (refresh = false, leaving?: AbortSignal) => read<Connections>(`/api/connections${refresh ? '?refresh=true' : ''}`, leaving, CHECK_LIMIT_MS),
-  modelConnection: (connection: string, refresh = false, leaving?: AbortSignal) => read<ModelHealth>(`/api/connections/${encodeURIComponent(connection)}${refresh ? '?refresh=true' : ''}`, leaving, CHECK_LIMIT_MS),
+  connections: (refresh = false, leaving?: AbortSignal) => read<Connections>(`/api/connections${refresh ? '?refresh=true' : ''}`, leaving, null),
+  modelConnection: (connection: string, refresh = false, leaving?: AbortSignal) => read<ModelHealth>(`/api/connections/${encodeURIComponent(connection)}${refresh ? '?refresh=true' : ''}`, leaving, null),
   // The local server's address (D34): loopback only, '' clears it; answers with the connection's fresh health.
   showHiddenModel: (connection: string, model: string) => request<ModelHealth>(`/api/connections/${encodeURIComponent(connection)}/hidden-models/show`, json('POST', { model })),
   saveLocalServer: (baseUrl: string) => request<ModelHealth>('/api/connections/local_server', json('PUT', { base_url: baseUrl })),
@@ -1409,14 +1410,14 @@ export const api = {
   saveMathpixPair: (appId: string, appKey: string) => request<{ mathpix: Mathpix; test: MathpixTest }>('/api/credentials/mathpix', json('PUT', { app_id: appId, app_key: appKey })),
   testMathpixPair: () => request<MathpixTest>('/api/credentials/mathpix/test', { method: 'POST' }),
   removeMathpixPair: () => request<{ mathpix: Mathpix }>('/api/credentials/mathpix', { method: 'DELETE' }),
-  ocr: (leaving?: AbortSignal) => read<OcrTool>('/api/ocr', leaving),
+  ocr: (leaving?: AbortSignal) => read<OcrTool>('/api/ocr', leaving, null),
   installOcr: () => request<{ job: OcrJob }>('/api/ocr/install', { method: 'POST' }),
   pdfReader: (leaving?: AbortSignal) => read<PdfReader>('/api/pdf-reader', leaving),
-  toolUpdate: (tool: ToolUpdate['tool'], leaving?: AbortSignal) => read<ToolUpdate>(`/api/tool-updates/${tool}`, leaving),
+  toolUpdate: (tool: ToolUpdate['tool'], leaving?: AbortSignal) => read<ToolUpdate>(`/api/tool-updates/${tool}`, leaving, null),
   // Starts a pdf_ocr run that reads the PDF's pages without text with the local Tesseract (D51).
   readWithOcr: (id: string, sourceId: string, assetId: string) =>
     request<Run>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/ocr`, { method: 'POST' }),
-  localTools: (refresh = false, leaving?: AbortSignal) => read<LocalTools>(`/api/local-tools${refresh ? '?refresh=true' : ''}`, leaving, CHECK_LIMIT_MS),
+  localTools: (refresh = false, leaving?: AbortSignal) => read<LocalTools>(`/api/local-tools${refresh ? '?refresh=true' : ''}`, leaving, null),
   installLocalTool: (id: string) => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/install`, { method: 'POST' }),
   updateLocalTool: (id: 'ollama' | 'lm_studio') => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/update`, { method: 'POST' }),
   pullOllamaModel: (model: string) => request<{ job: LocalTool['pull'] }>('/api/local-tools/ollama/pull', json('POST', { model })),

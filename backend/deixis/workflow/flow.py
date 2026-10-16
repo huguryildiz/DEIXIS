@@ -5263,6 +5263,7 @@ class ResearchFlow:
                 resplit["issues"], resplit["raw_output"], resplit["step_input_id"], max_repairs)
 
         split_relabel: dict[str, list[str]] = {}
+        link_prunes: list[contracts.Issue] = []  # report-section citations without an anchor, dropped from the draft
 
         def resplit_meta(outcome: str) -> dict[str, Any]:
             if resplit is None:
@@ -5539,6 +5540,11 @@ class ResearchFlow:
                     split_relabel.clear()
                     split_relabel.update(relabelled)
                 report = contracts.validate_model_output(payload, output_text)
+                # As the answer path drops an unanchored citation link, a report claim keeps only its anchored
+                # citations; a claim with no anchored citation left is not pruned and still fails.
+                output_text, link_prunes = contracts.prune_unanchored_report_links(payload, output_text, report.issues)
+                if link_prunes:
+                    report = contracts.validate_model_output(payload, output_text)
                 if task_type == "report_section" and repair_issues is not None:
                     report.issues.extend(contracts.report_section_repair_issues(patch_base, output_text))
             salvage: list[contracts.Issue] = []
@@ -5552,7 +5558,7 @@ class ResearchFlow:
                     report = retry
                 else:
                     salvage = []
-            warnings = [vars(w) for w in salvage + report.warnings]
+            warnings = [vars(w) for w in link_prunes + salvage + report.warnings]
             recorded["validation_json"] = {"ok": report.ok, "issues": [vars(i) for i in report.issues], "warnings": warnings,
                                          "normalised": normalised_changes}
             if patch_record is not None:

@@ -100,12 +100,17 @@ def code_paths(issues):
     return [(i["code"], i["path"]) for i in issues]
 
 
-def with_missing_anchors(stored, draft):
-    """Stored H9 issues plus the later rule that every cited passage or cell has an anchor (H9 drafts predate it)."""
+def with_missing_anchors(stored, draft, *, pruned=False):
+    """Stored H9 issues plus the later rule that every cited passage or cell has an anchor (H9 drafts predate it).
+
+    With `pruned`, as _model_step validates: a claim that has an anchored citation loses its unanchored ones, so only
+    claims with no anchored citation at all report missing anchors.
+    """
     anchored = {(a["claim_key"], kind, a[kind + "_id"]) for a in draft["citation_anchors"]
                 for kind in ("passage", "cell") if a[kind + "_id"] is not None}
-    cited = {(c["claim_key"], "passage", p) for c in draft["claims"] for p in c["passage_ids"]}
-    cited |= {(c["claim_key"], "cell", x) for c in draft["claims"] for x in c["cell_ids"]}
+    claims = [c for c in draft["claims"] if not pruned or not any(k == c["claim_key"] for k, _, _ in anchored)]
+    cited = {(c["claim_key"], "passage", p) for c in claims for p in c["passage_ids"]}
+    cited |= {(c["claim_key"], "cell", x) for c in claims for x in c["cell_ids"]}
     missing = [{"code": "missing_citation_anchor", "path": "/citation_anchors",
                 "message": f"{key}:{target}: this citation requires an exact contiguous quote"}
                for key, _, target in sorted(cited - anchored)]
@@ -141,7 +146,7 @@ def replay_run(tmp_path, section, repair, *, mixed=False, enforces_schema=True, 
 
     output, store, adapter, flow, run = run_step(tmp_path, "report_section", record["step_input"], handler,
                                                enforces_schema=enforces_schema)
-    expected = code_paths(with_missing_anchors(record["first_issues"], first))
+    expected = code_paths(with_missing_anchors(record["first_issues"], first, pruned=True))
     if mixed:
         expected = [("report_section_mismatch", "/section_id")] + expected
     assert code_paths(first_issues(store)) == expected
@@ -238,11 +243,17 @@ def test_a4_h9_v_patch_records_removal_and_keeps_every_other_claim(tmp_path):
         return patch(si, [{"anchor_index": i, "quote_number": None if i in removed_indices else 1} for i in indices],
                      [{"claim_key": "V.1", "text": None, "removed": True, "context": "No supporting stored quote",
                        "reason": "SYNTHETIC: the stored quotes do not establish this claim."}])
-    first = anchored_only(first)  # a cited cell without an anchor would need a full repair, not this patch
-    output, _, _, _, _ = replay_run(tmp_path, "V", response, first=first)
-    assert not output.get("invalid")
+    # H9's V lists cited cells no anchor names; they are dropped before validation, so the cheap patch still applies.
+    unanchored = {(c["claim_key"], x) for c in first["claims"] for x in c["cell_ids"]} - {
+        (a["claim_key"], a["cell_id"]) for a in first["citation_anchors"] if a["cell_id"] is not None}
+    assert unanchored
+    output, store, adapter, _, _ = replay_run(tmp_path, "V", response)
+    assert not output.get("invalid") and len(adapter.calls) == 2 and "anchor_patch" in output
     merged = output["result"]
-    assert merged["claims"] == [c for c in first["claims"] if c["claim_key"] != "V.1"]
+    assert merged["claims"] == [c for c in anchored_only(first)["claims"] if c["claim_key"] != "V.1"]
+    pruned = [w for w in json.loads(sessions(store)[0]["validation_json"])["warnings"] if w["code"] == "citation_link_pruned"]
+    assert {(w["claim_key"], w["cell_id"]) for w in pruned} == unanchored
+    assert pruned == [w for w in output["warnings"] if w["code"] == "citation_link_pruned"]
     assert not any(a["claim_key"] == "V.1" for a in merged["citation_anchors"])
     assert merged["insufficient_evidence"][-1]["context"].startswith("V.1: ")
 
@@ -428,3 +439,25 @@ def test_m1_package_hash_changed_and_integrity_passes():
     # the comparison frame rule of UI parity S5a, the follow-up method file of S22a, the D28 writing rules, the D27 retracted-source rules (answer and owner review) and the D51 report writing rules.
     assert package_hash == "sha256:5fce958ff3b70f14ffec954b9670d8e29dc148fadf992f96453bfb185d4c0fe5"
     assert skill.integrity_issues() == []
+
+
+def test_unanchored_report_link_is_pruned_but_a_claim_without_any_anchor_still_fails():
+    """A cited cell no anchor names is dropped and recorded; a claim none of whose citations has an anchor is kept as
+    it is and still fails with missing_citation_anchor, and an unknown ID is never pruned away."""
+    record = REPLAY["sections"]["V"]
+    si, draft = record["step_input"], copy.deepcopy(record["first_output"])
+    claim = draft["claims"][0]
+    key = claim["claim_key"]
+    others = [a for a in draft["citation_anchors"] if a["claim_key"] != key]
+    draft["citation_anchors"] = others  # this claim now has no anchor at all
+    claim["cell_ids"].append("cel_unknown")
+    report = contracts.validate_model_output(si, draft)
+    pruned, warnings = contracts.prune_unanchored_report_links(si, draft, report.issues)
+    assert key not in {w.claim_key for w in warnings}
+    assert next(c for c in pruned["claims"] if c["claim_key"] == key) == claim
+    after = contracts.validate_model_output(si, pruned)
+    assert any(i.code == "missing_citation_anchor" and i.message.startswith(f"{key}:") for i in after.issues)
+    assert any(i.code == "unknown_cell_id" and "cel_unknown" in i.message for i in after.issues)
+    assert not any(i.code == "missing_citation_anchor" and not i.message.startswith(f"{key}:") for i in after.issues)
+    assert warnings and all(w.code == "citation_link_pruned" and w.issue_codes == ["missing_citation_anchor"]
+                            for w in warnings)

@@ -466,6 +466,15 @@ class AnchorSalvageWarning(Issue):
 
 
 @dataclass
+class ReportLinkPruneWarning(Issue):
+    claim_key: str
+    passage_id: str | None
+    cell_id: str | None
+    dropped: str
+    issue_codes: list[str]
+
+
+@dataclass
 class ValidationReport:
     output_type: str | None = None
     result: dict[str, Any] | None = None
@@ -2927,6 +2936,46 @@ def salvage_answer_draft(step_input: dict[str, Any], draft: dict[str, Any]) -> t
     return draft, warnings
 
 
+
+def prune_unanchored_report_links(step_input: dict[str, Any], draft: Any,
+                                  issues: list[Issue]) -> tuple[Any, list[Issue]]:
+    """A report section's cited passage or cell that no anchor of its claim names is dropped from the claim, as the
+    answer path's salvage drops an unanchored citation link; each drop is returned as a warning.
+
+    Only allowlisted targets are dropped (an unknown ID stays an error), and only from a claim that keeps at least one
+    anchored target: a claim none of whose citations has an anchor is left as it is, so it still fails validation.
+    """
+    if (step_input.get("task_type") != "report_section" or not isinstance(draft, dict)
+            or not any(issue.code == "missing_citation_anchor" for issue in issues)):
+        return draft, []
+    keys = [claim["claim_key"] for claim in draft["claims"]]
+    if len(keys) != len(set(keys)):  # anchors name claims by key; a duplicate key makes the pairing ambiguous
+        return draft, []
+    allowed = {"passage": set(step_input["allowlist"]["passage_ids"]),
+               "cell": set(step_input["allowlist"].get("cell_ids", []))}
+    anchored = {(a["claim_key"], kind, a[kind + "_id"]) for a in draft["citation_anchors"]
+                if (a["passage_id"] is None) != (a["cell_id"] is None)
+                for kind in ("passage", "cell") if a[kind + "_id"] is not None}
+    draft = copy.deepcopy(draft)
+    warnings: list[Issue] = []
+    for i, claim in enumerate(draft["claims"]):
+        key = claim["claim_key"]
+        targets = [(kind, x) for kind in ("passage", "cell") for x in claim[kind + "_ids"]]
+        if not any((key, kind, x) in anchored for kind, x in targets):
+            continue
+        for kind in ("passage", "cell"):
+            kept = []
+            for j, x in enumerate(claim[kind + "_ids"]):
+                if x in allowed[kind] and (key, kind, x) not in anchored:
+                    warnings.append(ReportLinkPruneWarning(
+                        "citation_link_pruned", f"/claims/{i}/{kind}_ids/{j}",
+                        f"{key}:{x}: removed citation_link (missing_citation_anchor)",
+                        key, x if kind == "passage" else None, x if kind == "cell" else None,
+                        "citation_link", ["missing_citation_anchor"]))
+                else:
+                    kept.append(x)
+            claim[kind + "_ids"] = kept
+    return draft, warnings
 
 
 def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict[str, Any]:

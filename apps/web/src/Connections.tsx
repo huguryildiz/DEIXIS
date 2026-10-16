@@ -345,6 +345,7 @@ function LocalToolDetails({ tool, dark, onChanged, refresh = true, chip = true }
     </dl>}
     {tool.reason_code === 'not_responding' && <p className="local-tool-note is-callout">{t('Not responding: it did not answer its version check within 5 seconds.')}</p>}
     {tool.reason_code === 'not_runnable' && <p className="local-tool-note is-callout">{t('Found, but it did not run: its version check failed. Reinstall it, or remove the broken copy.')}</p>}
+    {tool.reason_code === 'unsupported_install' && <p className="local-tool-note is-callout">{t('This copy is installed in a way DEIXIS cannot start on Windows. Install it again with its official Windows installer.')}</p>}
     {tool.installed && (tool.other_copies?.length ?? 0) > 0 && <p className="local-tool-note">{t('More than one copy is installed. DEIXIS uses the one shown under Path.')}</p>}
     {tool.kind === 'cli' && tool.role === 'detected' && <p className="local-tool-note">{t('DEIXIS only checks whether this tool is installed; it never uses it for research.')}</p>}
     {tool.kind === 'server' && tool.installed && (tool.running
@@ -1529,6 +1530,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
           {tool.other_copies?.map(copy => <Fragment key={copy}><dt>{t('Also found')}</dt><dd className="local-tool-path">{wrapPath(copy)}</dd></Fragment>)}
         </dl>}
         {tool?.reason_code === 'not_runnable' && <p className="local-tool-note is-callout">{t('Found, but it did not run: its version check failed. Reinstall it, or remove the broken copy.')}</p>}
+        {tool?.reason_code === 'unsupported_install' && <p className="local-tool-note is-callout">{t('This copy is installed in a way DEIXIS cannot start on Windows. Install it again with its official Windows installer.')}</p>}
         {tool?.installed && (tool.other_copies?.length ?? 0) > 0 && <p className="foot-note">{t('More than one copy is installed. DEIXIS uses the one shown under Path.')}</p>}
         {model.catalogue === 'fixed' && <p className="foot-note">{t('Gemini CLI cannot list its models, so this list is fixed in DEIXIS. A step that another model answers is stopped.')}</p>}
         <ModelCatalogue model={model} />

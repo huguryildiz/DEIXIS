@@ -4839,6 +4839,7 @@ const tr: Record<string, string> = {
   'Found, but it did not run: its version check failed. Reinstall it, or remove the broken copy.': 'Bulundu ama çalışmadı: sürüm denetimi başarısız oldu. Yeniden kurun ya da bozuk kopyayı kaldırın.',
   'More than one copy is installed. DEIXIS uses the one shown under Path.': 'Birden fazla kopya kurulu. DEIXIS, Konum altında gösterileni kullanır.',
   'Also found': 'Ayrıca bulundu',
+  'This copy is installed in a way DEIXIS cannot start on Windows. Install it again with its official Windows installer.': 'Bu kopya DEIXIS’in Windows’ta başlatamayacağı biçimde kurulmuş. Resmî Windows kurucusuyla yeniden kurun.',
   'Preparing…': 'Hazırlanıyor…',
   'Downloading…': 'İndiriliyor…',
   'DEIXIS installs it on this computer.': 'DEIXIS bunu bu bilgisayara kurar.',

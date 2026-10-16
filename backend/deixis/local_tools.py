@@ -33,7 +33,7 @@ import httpx
 from deixis.child_env import NODE_TLS, UV_TLS, child_env
 from deixis.job_failure import failure_line
 from deixis.storage.db import now
-from deixis.tool_paths import find_tool, find_tools
+from deixis.tool_paths import command_for, find_tool, find_tools
 from deixis.tool_probe import Probe, probe, probe_blocking
 
 CACHE_SECONDS = 30
@@ -213,9 +213,27 @@ def app_locations(tool: Tool) -> list[Path]:
     return found
 
 
+def _usable(path: Path) -> bool:
+    """Whether `path` is the thing an installer leaves: an .app bundle on macOS, an AppImage file (which a download may
+    leave without its executable bit), otherwise a regular file that can be run. A folder named ollama.exe is not Ollama."""
+    if sys.platform == "darwin" and path.suffix.lower() == ".app":
+        return path.is_dir()
+    if not path.is_file():
+        return False
+    return path.suffix.lower() == ".appimage" or sys.platform == "win32" or os.access(path, os.X_OK)
+
+
 def installed_app(tool: Tool) -> Path | None:
-    """The first of the tool's `app_locations` that exists."""
-    return next((p for p in app_locations(tool) if p.exists()), None)
+    """The first of the tool's `app_locations` that is really there."""
+    return next((p for p in app_locations(tool) if _usable(p)), None)
+
+
+def other_copies(tool: Tool, chosen: str | None, on_path: list[str]) -> list[str]:
+    """Copies of the tool's command besides the one chosen (E15): those `find_tools` lists and the command files of its
+    `app_locations` (a user and a system install of Ollama), each real file once."""
+    found = [*on_path, *(str(p) for p in app_locations(tool) if p.is_file() and p.stem.lower() == tool.binary and _usable(p))]
+    seen = {os.path.realpath(chosen)} if chosen else set()
+    return [c for c in found if not (os.path.realpath(c) in seen or seen.add(os.path.realpath(c)))]
 
 
 def _command_output(argv: list[str], timeout: float | None = None) -> str | None:
@@ -333,11 +351,12 @@ class LocalTools:
         app = str(located) if located else None
         if path is None and located and located.is_file() and located.stem.lower() == tool.binary:
             path = app  # the command itself, found where its installer puts it though that folder is not on PATH
-        probed = await probe([path, "--version"], env=child_env(tool=path)) if path else None
+        # Started the way the model adapters start it: on Windows a `.cmd` launcher is never run, its native program or node is.
+        command = await asyncio.to_thread(command_for, tool.binary, path) if path else None
+        probed = await probe([*command.argv, "--version"], env=child_env(tool=path)) if command and command.argv else None
         version = _version_line(probed) if probed else None
         # The other copies of the command on this computer (E15); the first one found is the one used and shown.
-        copies = await asyncio.to_thread(find_tools, tool.binary) if path else []
-        others = [c for c in copies if os.path.realpath(c) != os.path.realpath(path)]
+        others = other_copies(tool, path, await asyncio.to_thread(find_tools, tool.binary) if path else [])
         argv = install_argv(tool)
         manager = await asyncio.to_thread(find_tool, argv[0]) if argv else None
         models = await self._server_models(tool) if tool.kind == "server" else None
@@ -347,8 +366,9 @@ class LocalTools:
             "version": version or (_app_version(app) if app else None), "path": path or app, "role": tool.role,
             # The chosen copy answered its version check (None: nothing was run). No version is required anywhere in DEIXIS,
             # so "ran" is the whole test; a copy that did not run, or did not answer in time (A3b), says so on its card.
-            "runnable": None if probed is None else probed.ok, "other_copies": others,
-            "reason_code": "not_responding" if probed and probed.error == "not_responding" else "not_runnable" if probed and not probed.ok else None,
+            "runnable": False if command and command.problem else None if probed is None else probed.ok, "other_copies": others,
+            "reason_code": "unsupported_install" if command and command.problem  # an install type DEIXIS cannot start (A4)
+            else "not_responding" if probed and probed.error == "not_responding" else "not_runnable" if probed and not probed.ok else None,
             # `unavailable_reason` is a code (`uv_missing`, `manager_missing`, `download_page`); `manager` names the program the install needs.
             "install": {"command": " ".join(argv) if argv else None, "available": bool(manager),
                         "unavailable_reason": None if manager else manager_missing(argv[0]) if argv else "download_page",

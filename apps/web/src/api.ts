@@ -762,7 +762,7 @@ export type LocalToolJob = { status: 'running' | 'succeeded' | 'failed' | 'cance
 export type LocalTool = {
   id: 'claude_code' | 'codex' | 'copilot_cli' | 'gemini_cli' | 'ollama' | 'lm_studio' | 'zotero'; name: string; kind: 'cli' | 'server' | 'app'
   installed: boolean; version: string | null; path: string | null; role: 'runs_steps' | 'detected' | 'imports'
-  reason_code?: 'not_responding' | 'not_runnable' | null  // the chosen copy did not answer its version check in time, or failed it
+  reason_code?: 'not_responding' | 'not_runnable' | 'unsupported_install' | null  // the chosen copy did not answer its version check in time, or failed it
   runnable?: boolean | null  // whether the chosen copy ran (null: nothing was run)
   other_copies?: string[]  // more copies of the command on this computer; `path` is the one in use
   running?: boolean; endpoint?: string; models?: LocalToolModel[]; local_api?: boolean; web_configured?: boolean

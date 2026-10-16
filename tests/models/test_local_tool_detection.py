@@ -258,3 +258,68 @@ def test_a_broken_first_copy_does_not_hide_that_a_working_second_one_exists(dete
 def test_a_tool_that_is_not_there_has_no_copy_and_nothing_was_run(detect):
     found = detect("qwen_code")
     assert (found["installed"], found["path"], found["runnable"], found["other_copies"], found["reason_code"]) == (False, None, None, [], None)
+
+
+# ---- review fixes -------------------------------------------------------------------------------------------
+
+@posix_only
+def test_on_windows_a_cmd_launcher_is_probed_through_node_like_the_adapters_start_it(detect, tmp_path, monkeypatch):
+    folder = tmp_path / "npm"
+    (folder / "node_modules" / "qwen").mkdir(parents=True)
+    script(folder / "node_modules" / "qwen" / "cli.js", "echo not run directly")  # only started as an argument of node
+    node = script(folder / "node.exe", 'case "$1" in *cli.js) echo "qwen 1.4.0";; *) exit 9;; esac')
+    launcher = folder / "qwen.cmd"
+    launcher.write_text('@ECHO off\r\n"%_prog%"  "%dp0%\\node_modules\\qwen\\cli.js" %*\r\n')
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(local_tools, "find_tool", lambda name: str(launcher) if name == "qwen" else None)
+    monkeypatch.setattr(local_tools, "find_tools", lambda name: [])
+    found = detect("qwen_code")
+    assert (found["path"], found["runnable"], found["version"], found["reason_code"]) == (str(launcher), True, "qwen 1.4.0", None)
+    assert node.exists()
+
+
+@posix_only
+def test_on_windows_a_launcher_that_cannot_be_started_safely_is_reported_as_an_unsupported_install(detect, tmp_path, monkeypatch):
+    launcher = tmp_path / "npm" / "qwen.cmd"
+    launcher.parent.mkdir()
+    launcher.write_text("@ECHO off\r\nsomething else\r\n")
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(local_tools, "find_tool", lambda name: str(launcher) if name == "qwen" else None)
+    monkeypatch.setattr(local_tools, "find_tools", lambda name: [])
+    found = detect("qwen_code")
+    assert (found["installed"], found["runnable"], found["reason_code"]) == (True, False, "unsupported_install")
+
+
+@posix_only
+def test_a_second_install_found_through_the_app_locations_is_an_other_copy(detect, tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "Local"))
+    monkeypatch.setenv("ProgramFiles", str(tmp_path / "pf"))
+    user = script(tmp_path / "Local" / "Programs" / "Ollama" / "ollama.exe", "echo ollama version is 0.5.1")
+    system = script(tmp_path / "pf" / "Ollama" / "ollama.exe", "echo ollama version is 0.4.0")
+    found = detect("ollama")
+    assert (found["path"], found["other_copies"]) == (str(user), [str(system)])
+    monkeypatch.setattr(local_tools, "find_tool", lambda name: str(user) if name == "ollama" else None)  # also on PATH: still one other copy
+    monkeypatch.setattr(local_tools, "find_tools", lambda name: [str(user), str(system)] if name == "ollama" else [])
+    assert detect("ollama")["other_copies"] == [str(system)]
+
+
+@posix_only
+def test_a_folder_or_a_file_that_cannot_run_is_not_an_installed_app(detect, tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "Local"))
+    (tmp_path / "Local" / "Programs" / "Ollama" / "ollama.exe").mkdir(parents=True)  # a folder with the program's name
+    found = detect("ollama")
+    assert (found["installed"], found["path"]) == (False, None)
+    monkeypatch.setattr(sys, "platform", "linux")
+    plain = tmp_path / "root" / "usr" / "bin" / "ollama"
+    plain.parent.mkdir(parents=True)
+    plain.write_text("not executable")
+    assert detect("ollama")["installed"] is False  # no executable bit
+    plain.chmod(0o755)
+    assert detect("ollama")["installed"] is True
+    monkeypatch.setattr(sys, "platform", "darwin")
+    tool = dataclasses.replace(local_tools.TOOLS["zotero"], app=str(tmp_path / "Zotero.app"))
+    monkeypatch.setitem(local_tools.TOOLS, "zotero", tool)
+    (tmp_path / "Zotero.app").write_text("a file, not a bundle")
+    assert detect("zotero")["installed"] is False

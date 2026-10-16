@@ -13,6 +13,7 @@ in the keychain (and, once A6 lands, in that item's session store when no keycha
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import tempfile
@@ -24,6 +25,7 @@ import httpx
 import keyring
 from keyring.errors import KeyringError, PasswordDeleteError
 
+from deixis import key_verification
 from deixis.models.anthropic_api import API_URL as ANTHROPIC_API_URL, KEY_ENV as ANTHROPIC_KEY_ENV, headers as anthropic_headers
 from deixis.models.gemini import API_URL as GEMINI_API_URL
 from deixis.models.openai_compat import BY_KEY_ENV as COMPAT_BY_KEY_ENV
@@ -77,6 +79,7 @@ MANAGED_KEYS = {k.env: k for k in (
 _from_keychain: set[str] = set()
 _from_dotenv: set[str] = set()
 _shell_values: dict[str, str] = {}  # shell keys a keychain key replaced, restored when that key is removed
+_broken: set[str] = set()  # keychain items skipped at startup because they could not be read or are not a valid key (E2)
 dotenv_path: Path | None = None
 
 
@@ -151,18 +154,37 @@ def move_dotenv_keys_to_keychain() -> None:
         _from_keychain.add(env)
 
 
+def _stored_value_ok(key: ManagedKey, value: str) -> bool:
+    """Whether a value read from the keychain is one this app would have saved: a key of printable ASCII, or for a pair
+    the JSON item whose secrets are such keys."""
+    if not key.pair:
+        return key_verification.is_valid_key(value)
+    try:
+        data = json.loads(value)
+    except ValueError:
+        return False
+    return (isinstance(data, dict) and all(isinstance(data.get(k), str) and key_verification.is_valid_key(data[k])
+                                           for k in ("app_id", "app_key", "revision")))
+
+
 def load_into_environment() -> None:
-    """Fill key variables from the keychain, over a shell value but not over `.env`; called after .env is read."""
+    """Fill key variables from the keychain, over a shell value but not over `.env`; called after .env is read. An item
+    that cannot be read or is not a valid key is skipped, never put into the environment, and shown as broken (E2)."""
     if keychain_name() is None:
         return
-    for env in MANAGED_KEYS:
+    _broken.clear()
+    for env, key in MANAGED_KEYS.items():
         if env in _from_dotenv or env in _from_keychain:
             continue
         try:
             value = keyring.get_password(SERVICE, env)
-        except KeyringError:
+        except Exception:  # noqa: BLE001 - a backend can fail in many ways (KeyringError, decoding, a locked store)
+            _broken.add(env)
             continue
         if value:
+            if not _stored_value_ok(key, value):
+                _broken.add(env)
+                continue
             if os.environ.get(env):
                 _shell_values[env] = os.environ[env]
             os.environ[env] = value
@@ -176,24 +198,32 @@ def status(env: str) -> dict[str, Any]:
     source = ("keychain" if env in _from_keychain else "dotenv" if env in _from_dotenv else "environment") if configured else None
     # The last four characters let the user tell which key is saved; a short value is not shown at all.
     return {"env": env, "group": key.group, "service": key.service, "configured": configured, "source": source,
-            "testable": key.testable, "shell_fallback": env in _shell_values, "last4": value[-4:] if len(value) >= 16 else None}
+            "testable": key.testable, "shell_fallback": env in _shell_values, "last4": value[-4:] if len(value) >= 16 else None,
+            # 'verified', 'pending' (saved, no request showed it works) or 'rejected'; None when not checked in this run.
+            "verification": key_verification.state_of(env, value) if configured else None,
+            "broken": env in _broken and not configured}
 
 
 def save(env: str, value: str) -> None:
+    if not MANAGED_KEYS[env].pair and not key_verification.is_valid_key(value):
+        raise ValueError("not a valid key")  # the routes refuse these first; this keeps one out of the environment for good
     source = status(env)["source"]
     if source == "dotenv":
         _rewrite_dotenv(env, value)
         os.environ[env] = value
+        _broken.discard(env)
         return
     keyring.set_password(SERVICE, env, value)
     if source == "environment":
         _shell_values[env] = os.environ[env]
     os.environ[env] = value
     _from_keychain.add(env)
+    _broken.discard(env)
 
 
 def delete(env: str) -> None:
     source = status(env)["source"]
+    _broken.discard(env)
     if source == "environment":
         raise KeySourceConflict(f"{env} is set in the shell; change or remove it there")
     if source == "dotenv":
@@ -229,6 +259,9 @@ def _source_request(env: str, value: str) -> tuple[str, dict[str, Any], dict[str
 
 async def test(client: httpx.AsyncClient, env: str, value: str) -> dict[str, Any]:
     """One short request with the key: a scholarly source asks for one record (SerpApi: its account page); Gemini, DeepSeek, Anthropic and the OpenAI-compatible connections list models (OpenRouter reads its key's limits); OpenAI embeds one word, which also shows missing credit."""
+    if not key_verification.is_valid_key(value):  # a header cannot carry it; nothing is sent
+        return {"status": "rejected", "verification": "rejected", "detail": "The saved key is not a valid key. Enter it again.",
+                "checked_at": now(), "kind": "auth_failed", "http_status": None, "reset_at": None}
     source = _source_request(env, value)
     try:
         if source:
@@ -247,19 +280,20 @@ async def test(client: httpx.AsyncClient, env: str, value: str) -> dict[str, Any
         else:
             response = await client.post(f"{OPENAI_API_URL}/embeddings", json={"model": "text-embedding-3-small", "input": ["test"]},
                                          headers={"Authorization": f"Bearer {value}"}, timeout=20)
-    except httpx.HTTPError as exc:
-        return {"status": "failed", "detail": f"Could not reach the API: {type(exc).__name__}", "checked_at": now(),
+    except (httpx.HTTPError, UnicodeEncodeError) as exc:
+        return {"status": "failed", "verification": "pending", "detail": f"Could not reach the API: {type(exc).__name__}", "checked_at": now(),
                 "kind": service_error_kind(exc=exc), "http_status": None, "reset_at": None}
     code = response.status_code
     metadata = http_limit(response)
     fields = {"kind": metadata["error_kind"], "http_status": code, "reset_at": retry_at(metadata["retry_after"])}
     if code == 200:
-        return {"status": "ok", "detail": "The key works.", "checked_at": now()}
+        return {"status": "ok", "verification": "verified", "detail": "The key works.", "checked_at": now()}
     if code == 404 and env in COMPAT_BY_KEY_ENV and COMPAT_BY_KEY_ENV[env].static_models:
-        return {"status": "ok", "detail": "Saved. This API lists no models, so the key is checked by the first step.", "checked_at": now()}
+        return {"status": "unverified", "verification": "pending", "checked_at": now(), "http_status": code, "kind": "unknown",
+                "reset_at": None, "detail": "Saved, not verified. This API lists no models, so the key is checked by the first step."}
     if code == 403 and env == "SCOPUS_API_KEY":  # Elsevier knows the key (a wrong one gets 401) but this network has no access
-        return {"status": "failed", "detail": "Elsevier knows the key, but Scopus gives no access from this network (HTTP 403).", "checked_at": now(), **fields}
+        return {"status": "failed", "verification": "pending", "detail": "Elsevier knows the key, but Scopus gives no access from this network (HTTP 403).", "checked_at": now(), **fields}
     if code in (400, 401, 403):  # the provider's own message can quote part of the key, so it is not passed on
-        return {"status": "rejected", "detail": f"The API did not accept the key (HTTP {code}).", "checked_at": now(), **fields}
+        return {"status": "rejected", "verification": "rejected", "detail": f"The API did not accept the key (HTTP {code}).", "checked_at": now(), **fields}
     # 429: Gemini quota or OpenAI insufficient_quota; the message says which.
-    return {"status": "no_credit" if code == 429 else "failed", "detail": f"API request failed (HTTP {code}).", "checked_at": now(), **fields}
+    return {"status": "no_credit" if code == 429 else "failed", "verification": "pending", "detail": f"API request failed (HTTP {code}).", "checked_at": now(), **fields}

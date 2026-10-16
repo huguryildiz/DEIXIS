@@ -5198,7 +5198,8 @@ class ResearchFlow:
                 return cut_before_send()
         else:
             health = await adapter.health()
-        if not health.get("ready"):
+        # A saved key no request has checked yet is not "ready", but its first step is what checks it (E6).
+        if not health.get("ready") and health.get("verification") != "pending":
             halt("model_connection_not_ready", {"connection": connection, "reason": safe_error(health.get("reason")),
                  **({"error_kind": health["reason_code"]} if health.get("reason_code") else {}), "reset_at": health.get("reset_at")})
         self._checkpoint(run_id)  # a pause or cancel may have arrived while the connection was checked

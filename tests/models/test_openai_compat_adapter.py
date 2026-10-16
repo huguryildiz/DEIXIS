@@ -108,7 +108,9 @@ def test_copilot_reads_the_github_models_catalog_array(monkeypatch):
 def test_glm_without_a_model_list_offers_its_known_models(monkeypatch):
     monkeypatch.setenv("ZAI_API_KEY", "test-key")
     status = asyncio.run(adapter(openai_compat.GLM, lambda r: httpx.Response(404)).health(refresh=True))
-    assert status["ready"] is True and [m["id"] for m in status["models"]] == list(openai_compat.GLM.static_models)
+    # Not "ready": no request has shown the key works, so it stays pending until the first step (E6).
+    assert status["ready"] is False and status["verification"] == "pending"
+    assert [m["id"] for m in status["models"]] == list(openai_compat.GLM.static_models)
 
 
 def test_the_muse_connections_split_metas_model_list(monkeypatch):
@@ -363,7 +365,8 @@ def test_openrouter_keeps_only_models_that_take_structured_outputs_sorted_with_t
 def test_mimo_without_a_model_list_offers_its_documented_models(monkeypatch):
     monkeypatch.setenv("MIMO_API_KEY", "test-key")
     status = asyncio.run(adapter(openai_compat.MIMO, lambda r: httpx.Response(404)).health(refresh=True))
-    assert status["ready"] is True and [m["id"] for m in status["models"]] == ["mimo-v2.6-pro", "mimo-v2.6-flash"]
+    assert status["ready"] is False and status["verification"] == "pending"
+    assert [m["id"] for m in status["models"]] == ["mimo-v2.6-pro", "mimo-v2.6-flash"]
 
 
 @pytest.mark.parametrize("value,expected", [

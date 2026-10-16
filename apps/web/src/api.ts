@@ -716,6 +716,8 @@ export type ModelOption = {
   default_reasoning_effort?: string | null; reasoning_efforts?: { id: string; description: string }[]
 }
 export type ModelHealth = {
+  // 'pending': a saved key no request has checked yet. Not ready, but the first research step may use it (E6).
+  verification?: 'verified' | 'pending' | 'rejected'
   connection: string; ready: boolean; reason_code?: string | null; reset_at?: string | null; reason?: string | null; installed?: boolean; cli_version?: string; signed_in?: boolean; key_configured?: boolean
   account_type?: string | null; plan_type?: string | null; models?: ModelOption[]
   isolation?: { instruction_sources: number; live_mcp_servers: string[] }
@@ -726,9 +728,11 @@ export type ModelHealth = {
 }
 export type Connections = { models: Record<string, ModelHealth>; codex_home?: string; providers: { id: string; implemented: boolean; access_mode: string | null; supplementary?: boolean; role?: string; note: string }[] }
 export type Keychain = { available: boolean; name: string | null }
-export type KeyEntry = { env: string; group: 'model' | 'source'; service: string; configured: boolean; source: 'keychain' | 'dotenv' | 'environment' | null; testable: boolean; shell_fallback?: boolean; last4?: string | null }
+export type KeyEntry = { env: string; group: 'model' | 'source'; service: string; configured: boolean; source: 'keychain' | 'dotenv' | 'environment' | null; testable: boolean; shell_fallback?: boolean; last4?: string | null
+  // 'pending' is "saved, not verified"; null when no check ran in this session. `broken`: the saved item could not be read and was skipped (E2, E6).
+  verification?: 'verified' | 'pending' | 'rejected' | null; broken?: boolean }
 export type Credentials = { keychain: Keychain; keys: KeyEntry[] }
-export type KeyTest = { status: 'ok' | 'no_credit' | 'rejected' | 'failed'; detail: string; checked_at: string; kind?: string; http_status?: number | null; reset_at?: string | null }
+export type KeyTest = { status: 'ok' | 'no_credit' | 'rejected' | 'failed' | 'unverified'; verification?: 'verified' | 'pending' | 'rejected'; detail: string; checked_at: string; kind?: string; http_status?: number | null; reset_at?: string | null }
 // One request to a keyless source (P5): whether it answered, with its HTTP status, or why no answer came.
 export type ProviderTest = { provider: string; answered: boolean; http_status: number | null; failure: 'timeout' | 'connection' | 'other' | null
   error: string | null; timeout_seconds: number; contact_email_sent: boolean; checked_at: string }

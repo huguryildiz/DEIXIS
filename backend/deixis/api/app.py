@@ -26,7 +26,7 @@ from keyring.errors import KeyringError
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from deixis import account_signin, credentials, local_tools
+from deixis import account_signin, credentials, key_verification, local_tools
 from deixis.tool_paths import find_tool
 from deixis.config import Settings, load_settings
 from deixis.documents import fetch as fetch_module
@@ -217,13 +217,18 @@ def create_research_row(store: Store, body: CreateResearch, literature_connectio
 SECRET_FIELDS = {"value", "app_id", "app_key", "api_key", "key", "token", "password", "secret"}
 
 
+# A key is printable ASCII without spaces (0x21-0x7E): no control, invisible or non-ASCII character can reach the keychain,
+# the process environment or an HTTP header (E2, E11). Nothing in the refusal repeats the value (E3).
+KEY_PATTERN = r"^[!-~]+$"
+
+
 class KeyValue(BaseModel):
-    value: str = Field(min_length=1, max_length=400, pattern=r"^\S+$")
+    value: str = Field(min_length=1, max_length=400, pattern=KEY_PATTERN)
 
 
 class MathpixPair(BaseModel):
-    app_id: str = Field(min_length=1, max_length=200, pattern=r"^\S+$")
-    app_key: str = Field(min_length=8, max_length=400, pattern=r"^\S+$")
+    app_id: str = Field(min_length=1, max_length=200, pattern=KEY_PATTERN)
+    app_key: str = Field(min_length=8, max_length=400, pattern=KEY_PATTERN)
 
 
 class MathpixSettings(BaseModel):
@@ -1414,8 +1419,9 @@ def create_app(
         if source != "dotenv" and credentials.keychain_name() is None:
             raise HTTPException(503, "No system keychain is available")
         result = await credentials.test(request.app.state.http, env, body.value) if key.testable else None
-        # A source key that only failed to reach its API (timeout, 5xx, rate limit) is still saved; a refused one is not.
-        if result and (result["status"] == "rejected" or (result["status"] == "failed" and key.group == "model")):
+        # Only a refusal (400/401/403) keeps a key out. One that could not be checked (no network, timeout, 5xx, 429, an API
+        # without a model list) is saved as "saved, not verified" (E6, E12).
+        if result and result["status"] == "rejected":
             return JSONResponse(status_code=422, content={"code": "credential_test_failed",
                 "detail": f"The key was not saved. {result['detail']}", "service": key.service,
                 "kind": result.get("kind", "unknown"), "http_status": result.get("http_status"),
@@ -1428,6 +1434,8 @@ def create_app(
             raise HTTPException(503, f"The keychain did not store the key ({type(exc).__name__})") from exc
         except OSError as exc:
             raise HTTPException(503, f".env could not be written ({type(exc).__name__})") from exc
+        if result:
+            key_verification.set_state(env, body.value, result["verification"])
         return {"key": credentials.status(env), "test": result}
 
     @app.delete("/api/credentials/{env}")
@@ -1450,7 +1458,9 @@ def create_app(
             raise HTTPException(422, f"{env} is not tested in advance; access is recorded with each request")
         if not value:
             raise HTTPException(422, f"{env} is not set")
-        return await credentials.test(request.app.state.http, env, value)
+        result = await credentials.test(request.app.state.http, env, value)
+        key_verification.set_state(env, value, result["verification"])
+        return result
 
     @app.get("/api/local-tools")
     async def get_local_tools(request: Request, refresh: bool = False) -> dict[str, Any]:

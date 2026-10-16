@@ -6,7 +6,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem,
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useToast } from './Toast'
-import { api, ApiError, homeApi, preferencesApi, type Connections, type Effort, type EffortLimits, type IntentOutcome, type ModelOption, type ModelRole, type ResearchIntent, type ResearchSummary, type RoleModelSetting, type SeedSelection, type SourceScope, type Suggestion } from './api'
+import { api, ApiError, homeApi, preferencesApi, type Connections, type Effort, type EffortLimits, type IntentOutcome, type ModelHealth, type ModelOption, type ModelRole, type ResearchIntent, type ResearchSummary, type RoleModelSetting, type SeedSelection, type SourceScope, type Suggestion } from './api'
 import { connectionName, fileRestoreNote, fileRestoreTone, reasoningLabel, scopeLabels, shownVersion } from './labels'
 import { t, uiLanguage, uiLocale } from './i18n'
 import { ZoteroDialog, type ZoteroChoice } from './ZoteroDialog'
@@ -56,9 +56,11 @@ export type ConnectionModel = ModelOption & { connection: string; model: string 
 export const modelKey = (connection: string, model: string) => `${connection}:${model}`
 export const connectionModels = (connections: Connections): ConnectionModel[] =>
   Object.entries(connections.models).flatMap(([connection, health]) => (health.models ?? []).map(m => ({ ...m, id: modelKey(connection, m.id), connection, model: m.id })))
+// A connection can run a step when it is ready, or when its saved key is only waiting for the first step to check it (E6).
+export const canRun = (health?: ModelHealth) => !!health && (health.ready || health.verification === 'pending')
 // Why implemented connections offer no model.
 export const notReadyReasons = (connections: Connections) =>
-  Object.values(connections.models).filter(h => !h.ready).map(h => `${connectionName(h.connection)}: ${h.reason ?? ''}`).join('; ')
+  Object.values(connections.models).filter(h => !canRun(h)).map(h => `${connectionName(h.connection)}: ${h.reason ?? ''}`).join('; ')
 
 // The most PDFs that guide one search (D3); the backend enforces it.
 export const MAX_SEED_PDFS = 5
@@ -336,7 +338,7 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
       setDefaults(saved)
       const models = connectionModels(result)
       // Only a ready connection can run a step: a signed-out Codex still lists its models, so it must not be the start.
-      const ready = models.filter(m => result.models[m.connection]?.ready)
+      const ready = models.filter(m => canRun(result.models[m.connection]))
       // Claude Code lists a "default" alias first; the composer names a real model, so the alias is skipped when another is listed.
       const named = ready.filter(m => m.model !== 'default')
       const preferred = named.find(m => m.is_default) ?? named[0] ?? ready[0]
@@ -509,7 +511,7 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
   // A Settings default whose connection is not ready is not used; the row says so instead of switching models silently.
   const notReady = (role: ModelRole) => {
     const saved = defaults?.[role]
-    if (!saved?.model || connections?.models[saved.model_connection]?.ready) return null
+    if (!saved?.model || canRun(connections?.models[saved.model_connection])) return null
     return t('{model} from Settings is not used: {connection} is not connected.', { model: modelName(modelKey(saved.model_connection, saved.model)), connection: connectionName(saved.model_connection) })
   }
   const roleRows: { role: ModelRole; summary: string; note: string | null }[] = [

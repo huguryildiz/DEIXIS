@@ -22,6 +22,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from deixis import key_verification
 from deixis.domain.limits import error_name, http_limit, service_error_kind, retry_at
 from deixis.models.adapter import ModelStepResult
 from deixis.models.schema_subset import portable_schema
@@ -202,9 +203,13 @@ class OpenAICompatAdapter:
                                         else f"{spec.name} API unreachable: {type(exc).__name__}")
                     return status
         names: dict[str, str] = {}
+        verification = None
         if response.status_code == 404 and spec.static_models:
-            # No model list endpoint: the key is not checked here; the first step shows a rejected key.
+            # No model list endpoint: the key is not checked here. It stays "pending" (not ready, but the first step may
+            # run) until a step is answered or refused (E6).
             ids = list(spec.static_models)
+            if spec.key_env:
+                verification = key_verification.state_of(spec.key_env, key) or "pending"
         elif response.status_code != 200:
             status["reason_code"] = http_limit(response)["error_kind"]
             status["reset_at"] = retry_at(http_limit(response)["retry_after"])
@@ -240,6 +245,16 @@ class OpenAICompatAdapter:
              "default_reasoning_effort": None, "reasoning_efforts": []}
             for i in ids
         ]
+        if verification:
+            status["verification"] = verification
+            if verification == "rejected":
+                status["reason_code"] = "auth_failed"
+                status["reason"] = f"{spec.name} did not accept the key: enter it again in Settings"
+                return status
+            if verification == "pending":
+                status["reason_code"] = "unverified"
+                status["reason"] = f"The {spec.name} key is saved but not verified: the first step will try it"
+                return status
         status["ready"] = True
         self._health = (time.monotonic(), status)
         return status
@@ -291,6 +306,7 @@ class OpenAICompatAdapter:
         except httpx.HTTPError as exc:
             return ModelStepResult("failed", error=type(exc).__name__,
                                    delivery_class="after_send_unknown")
+        self._note_key(response.status_code)
         if response.status_code != 200:
             # An exhausted balance (402) is a quota failure for the shared text classifier; 429 is classified by http_limit.
             quota = " (quota)" if response.status_code == 402 else ""
@@ -313,6 +329,13 @@ class OpenAICompatAdapter:
             return ModelStepResult("failed", raw_text=content or None,
                                    error=f"finish reason {choice.get('finish_reason')}", **common)
         return ModelStepResult("completed", raw_text=content, **common)
+
+    def _note_key(self, code: int) -> None:
+        """What a step's answer shows about the key (E6): a 200 accepts it, 401 and 403 refuse it."""
+        env, key = self.spec.key_env, self._key()
+        if env and key and (code == 200 or code in (401, 403)):
+            key_verification.set_state(env, key, "verified" if code == 200 else "rejected")
+            self._health = None
 
     async def _context_limit(self, root: str, model: str) -> int | None:
         """The model's own context length from Ollama's /api/show (model_info '<arch>.context_length'); None if unknown."""

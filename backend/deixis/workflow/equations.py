@@ -36,7 +36,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from deixis import library_lock
+from deixis import credentials, library_lock
 from deixis.child_env import UV_TLS, child_env
 from deixis.documents import arxiv_source, equation_regions, math_reader, mathpix, pdf
 from deixis.storage.db import new_id, now, transaction
@@ -918,7 +918,7 @@ class EquationService:
             if state.get("route") == mathpix.ENGINE:
                 states[state["state"]] = states.get(state["state"], 0) + 1
         counts = mathpix_counts(self.store)
-        return {"pair": {"configured": isinstance(pair, mathpix.Pair), "unreadable": pair == "unreadable",
+        return {"pair": {"configured": isinstance(pair, mathpix.Pair), "unreadable": pair == "unreadable" or credentials.status(mathpix.ENV)["broken"],  # the second: skipped at startup (E2)
                          "app_id": pair.app_id if isinstance(pair, mathpix.Pair) else None},
                 "keys_rejected": mathpix_keys_rejected(self.store, pair), "switch": "on" if mathpix_switch(self.store) else "off",
                 "monthly_budget": counts["budget"], "month_requests": counts["month"], "per_pdf_limit": MAX_ASSET_REQUESTS,

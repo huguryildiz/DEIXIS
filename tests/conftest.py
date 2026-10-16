@@ -10,7 +10,7 @@ import pytest
 from keyring.backend import KeyringBackend
 from keyring.errors import PasswordDeleteError
 
-from deixis import credentials
+from deixis import credentials, key_verification
 
 
 class MemoryKeyring(KeyringBackend):
@@ -137,6 +137,8 @@ def memory_keychain(monkeypatch):
     monkeypatch.setattr(credentials, "_from_keychain", set())
     monkeypatch.setattr(credentials, "_from_dotenv", set())
     monkeypatch.setattr(credentials, "_shell_values", {})
+    monkeypatch.setattr(credentials, "_broken", set())
+    monkeypatch.setattr(key_verification, "_state", {})
     monkeypatch.setattr(credentials, "dotenv_path", None)
     yield backend
     keyring.set_keyring(previous)

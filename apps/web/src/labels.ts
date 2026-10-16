@@ -91,8 +91,10 @@ export function serviceErrorText({ kind, service, resetAt, effect }: { kind?: un
 }
 
 export const serviceErrorSentence = (options: Parameters<typeof serviceErrorText>[0]) => Object.values(serviceErrorText(options)).join(' ')
-export const healthReasonText = (health: { connection: string; reason_code?: string | null; reset_at?: string | null; reason?: string | null }) =>
-  health.reason_code ? serviceErrorSentence({ kind: health.reason_code, service: connectionName(health.connection), resetAt: health.reset_at, effect: 'settings' }) : t('The connection is not ready. Check it in Settings.')
+export const healthReasonText = (health: { connection: string; reason_code?: string | null; reset_at?: string | null; reason?: string | null; verification?: string | null }) =>
+  health.verification === 'pending' ? t('The key is saved but not verified. The first research step will try it.')
+  : health.verification === 'rejected' ? t('{service} did not accept this key. Enter it again.', { service: connectionName(health.connection) })
+  : health.reason_code ? serviceErrorSentence({ kind: health.reason_code, service: connectionName(health.connection), resetAt: health.reset_at, effect: 'settings' }) : t('The connection is not ready. Check it in Settings.')
 export const serviceWaitingText = (service: string, attempt: number) => t('Waiting for {service} before retry {n}.', { service, n: attempt })
 export const serviceWaitRecordText = (service: string, attempt: number, seconds: number) => t('Rate-limit wait for {service} before retry {n}: {seconds} s.', { service, n: attempt, seconds })
 export const providerRetryText = (count: number) => t('Retried {n} times after a rate limit.', { n: count })

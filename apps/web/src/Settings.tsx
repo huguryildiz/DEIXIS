@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Info, RotateCw } from 'lucide-react'
 import { api, preferencesApi, shellApi, usageApi, type ContactEmailSetting, type Effort, type EffortLimits, type PreferenceChange, type Preferences, type Profile, type Connections, type InstitutionalAccess, type ModelRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Usage, type UsageRole } from './api'
-import { connectionModels, modelKey, type ConnectionModel } from './Home'
+import { canRun, connectionModels, modelKey, type ConnectionModel } from './Home'
 import { defaultEffort, exposesEffortControl } from './modelEffort'
 import { ConnectionsTab } from './Connections'
 import { useToast } from './Toast'
@@ -128,7 +128,7 @@ export function SettingsPage({ dark, section, language, onLanguage, theme, onThe
 
   // The model choices come from the connections answer the sections below read, so a key change or a connection test
   // there updates them too (the sections show their own read error).
-  const onConnections = useCallback((result: Connections) => { setModels(connectionModels(result)); setAnyReady(Object.values(result.models).some(h => h.ready)) }, [])
+  const onConnections = useCallback((result: Connections) => { setModels(connectionModels(result)); setAnyReady(Object.values(result.models).some(canRun)) }, [])
   useEffect(() => {
     api.settings().then(setDefaults).catch((e: Error) => setError(t('The default models could not be read: {message}', { message: e.message })))
   }, [])

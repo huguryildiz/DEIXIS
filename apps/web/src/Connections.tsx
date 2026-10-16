@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
 import { DataLocationCard } from './DataLocation'
-import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinEmbedding, type Connections, type Credentials, type KeyEntry, type Keychain, type EquationReader, type LocalTool, type Mathpix, type OllamaUpdates, type OcrTool, type PdfReader, type ToolUpdate, type LocalTools, type ProviderTest, type ModelHealth, type ReferenceImport, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
+import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinEmbedding, type Connections, type Credentials, type KeyEntry, type KeyTest, type Keychain, type EquationReader, type LocalTool, type Mathpix, type OllamaUpdates, type OcrTool, type PdfReader, type ToolUpdate, type LocalTools, type ProviderTest, type ModelHealth, type ReferenceImport, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
 import { useToast } from './Toast'
 import { ocrLanguagesText } from './ocr'
 import { t, uiLocale } from './i18n'
@@ -198,10 +198,16 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
   const where = inDotenv ? '' : fromShell ? t('from the terminal that started DEIXIS') : t('stored in {keychain}', { keychain: keychain.name ?? t('the system keychain') })
   const typed = value.trim()
 
+  // The third state: the key is saved but no request showed that it works. An API without a model list says so; any other
+  // test that did not get an answer keeps the service's own reason (quota, network, server error).
+  const notVerifiedSentence = (test: KeyTest) => test.status === 'unverified'
+    ? t('{service} has no request that checks a key on its own. The first research step will try it.', { service })
+    : test.status === 'rejected' ? t('{service} did not accept this key. Enter it again.', { service })
+    : serviceErrorSentence({ kind: test.kind, service, resetAt: test.reset_at, effect: 'settings' })
   function test() {
     setBusy(true); setFormError('')
     api.testCredential(env).then(result => {
-      toast(result.status === 'ok' ? 'success' : 'warning', result.status === 'ok' ? t('The key works.') : serviceErrorSentence({ kind: result.kind, service, resetAt: result.reset_at, effect: 'settings' }))
+      toast(result.status === 'ok' ? 'success' : 'warning', result.status === 'ok' ? t('The key works.') : notVerifiedSentence(result))
       onSaved()
     }).catch((e: Error) => setFormError(e.message)).finally(() => setBusy(false))
   }
@@ -210,7 +216,7 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
     api.saveCredential(env, typed).then(result => {
       setValue(''); onSaved()
       toast(result.test && result.test.status !== 'ok' ? 'warning' : 'success', result.test && result.test.status !== 'ok'
-        ? t('Key saved, but the service test failed.') + ' ' + serviceErrorSentence({ kind: result.test.kind, service, resetAt: result.test.reset_at, effect: 'settings' })
+        ? t('Key saved, not verified.') + ' ' + notVerifiedSentence(result.test)
         : t('Key saved.'))
     }).catch((e: Error) => setFormError(e instanceof ApiError && e.code === 'credential_test_failed'
       ? t('The key was not saved.') + ' ' + (keyRefusal(service, env, e.details?.http_status) ?? serviceErrorSentence({ kind: e.details?.kind, service, resetAt: e.details?.reset_at, effect: 'settings' }))
@@ -229,6 +235,9 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
         autoComplete={plain ? 'off' : 'new-password'} data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"
         placeholder={entry.configured ? `${entry.last4 ? `••••••••${entry.last4}` : '••••••••••••'} ${where}`.trim() : t(plain ? 'Type your user ID' : 'Paste your key')} onChange={e => { setValue(e.target.value); setFormError('') }} />
     </label>
+    {entry.broken && <Notice tone="attention"><p>{t('This saved key is broken and was not used. Enter it again.')}</p></Notice>}
+    {entry.configured && entry.verification === 'pending' && <p className="foot-note"><Info aria-hidden />{t('Saved, not verified: no request has shown that this key works yet.')}</p>}
+    {entry.configured && entry.verification === 'rejected' && <Notice tone="attention"><p>{t('{service} did not accept this key. Enter it again.', { service })}</p></Notice>}
     {note && <p className="foot-note key-note"><ShieldCheck aria-hidden />{fromShell && `${t('This key comes from the terminal that started DEIXIS. A key saved here replaces it.')} `}{inDotenv ? t('Never stored in research files or exports.') : t('Stored in {keychain}, never in research files or exports.', { keychain: keychain.name ?? t('the system keychain') })}
       {entry.testable && ` ${t('A new key is tested with one short request before it is saved.')}`}</p>}
     {formError && <Notice tone="error"><p>{formError}</p></Notice>}
@@ -1159,6 +1168,8 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     : false)
 
   const modelStatus = (m: ModelHealth): [Tone, string] => m.ready ? ['ok', t('Ready')]
+    : m.verification === 'pending' ? ['warn', t('Saved · not verified')]
+    : m.verification === 'rejected' ? ['warn', t('Key refused')]
     : m.key_configured === false ? ['no', t('Not set up')]
     : m.signed_in === false && m.installed ? ['no', t('Not signed in')]
     : m.installed === false && m.key_configured === undefined ? ['no', t('Not installed')]
@@ -1195,9 +1206,9 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     const key = data.models[c.key.conn]
     const a = !!acc?.ready, k = !!key?.ready
     const via = a && k ? t('Connected with your account and an API key') : a ? t('Connected with your account') : k ? t('Connected with an API key')
-      : key?.key_configured ? t('API key saved · not ready') : acc?.signed_in ? t('Signed in · not ready')
+      : key?.verification === 'pending' ? t('API key saved · not verified') : key?.key_configured ? t('API key saved · not ready') : acc?.signed_in ? t('Signed in · not ready')
       : t(c.account ? 'Connect with your account or an API key' : 'Connect with an API key')
-    return { ready: a || k, status: t(a || k ? 'Ready' : 'Not connected'), via }
+    return { ready: a || k, status: t(a || k ? 'Ready' : key?.verification === 'pending' ? 'Saved · not verified' : 'Not connected'), via }
   }
   const companyCard = (c: Company, compact = false) => {
     const state = companyState(c)

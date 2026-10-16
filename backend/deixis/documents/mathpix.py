@@ -92,6 +92,8 @@ async def send(client: httpx.AsyncClient, pair: Pair, data_url: str) -> Outcome:
                     body.extend(chunk)
                     if len(body) > MAX_RESPONSE_BYTES:
                         return Outcome("error", response.status_code, reason="server_error")
+    except UnicodeEncodeError:  # a key pair a header cannot carry; nothing was sent
+        return Outcome("error", reason="keys_rejected", sent=False)
     except (httpx.ConnectError, httpx.ConnectTimeout):
         return Outcome("error", reason="network", sent=False)
     except (TimeoutError, httpx.TimeoutException, httpx.TransportError):
@@ -117,7 +119,7 @@ async def test_pair(client: httpx.AsyncClient, app_id: str, app_key: str) -> dic
     OCR credit is left."""
     try:
         response = await client.get(USAGE_URL, headers={"app_id": app_id, "app_key": app_key}, timeout=20)
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, UnicodeEncodeError) as exc:  # the second: a header that is not ASCII is never sent
         return {"status": "failed", "detail": f"Could not reach Mathpix: {type(exc).__name__}", "http_status": None, "checked_at": now()}
     code = response.status_code
     if code == 200:

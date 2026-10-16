@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from deixis.models import quota
 from deixis.models.codex_isolation import isolation_overrides
 from deixis.models.codex_rpc import CodexAppServer, RpcError
 from deixis.domain.limits import limit_kind, service_error_kind, safe_error
@@ -189,6 +190,17 @@ class CodexAdapter:
         elif self._health:
             return self._health[1]  # a newer check owns the answer: the caller gets that one, not this stale one
         return status
+
+    async def quota(self) -> dict[str, Any] | None:
+        """Codex's own usage limit, read live from the signed-in account; None when it cannot be read."""
+        try:
+            async with self._lock:
+                server = await self._ensure_server_locked()
+                result = await server.request("account/rateLimits/read", None, timeout=10.0)
+        except (RpcError, ConnectionError, TimeoutError, OSError):
+            return None
+        windows = quota.codex_windows(result)
+        return {"source": "live", "seen_at": quota.now_iso(), "windows": windows} if windows else None
 
     async def _check(self) -> dict[str, Any]:
         codex = command_for("codex", await asyncio.to_thread(find_tool, "codex"))

@@ -24,6 +24,7 @@ from fastapi import HTTPException, Query, Request
 from deixis.domain.rules import LITERATURE_TASKS
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import now
+from deixis.workflow import spend
 
 ROLES = ("answer", "literature", "reviewer")  # the three roles the Settings page sets a model for
 REVIEWER_TASKS = ("answer_review",)
@@ -170,6 +171,46 @@ async def read_live(client, api_key: str) -> dict[str, Any] | None:
         return None
 
 
+def month_days(moment: datetime) -> tuple[str, str]:
+    """[first day, first day of next month) of the local calendar month, as the spend ledger's day strings."""
+    local = moment.astimezone()
+    after = (local.year + (local.month == 12), local.month % 12 + 1)
+    return f"{local.year:04d}-{local.month:02d}-01", f"{after[0]:04d}-{after[1]:02d}-01"
+
+
+def month_spend(conn, connection: str, first: str, after: str) -> dict[str, Any]:
+    """The spend ledger's estimate for one paid-API connection over [first, after)."""
+    row = conn.execute(
+        "SELECT COALESCE(SUM(cost_usd), 0) AS usd, COUNT(cost_usd) AS priced, COALESCE(SUM(cost_usd IS NULL), 0) AS unpriced"
+        " FROM spend_ledger WHERE connection = ? AND day >= ? AND day < ?", (connection, first, after)).fetchone()
+    return {"estimated_usd": row["usd"], "priced_calls": row["priced"], "unpriced_calls": row["unpriced"]}
+
+
+async def connection_rows(store, adapters: dict[str, Any], moment: datetime) -> list[dict[str, Any]]:
+    """One row per model connection a Settings role uses now, plus any paid-API connection with spend this month: what
+    it costs (paid by key: this month's estimate) or how much of its own limit is used (a subscription that reports one)."""
+    first, after = month_days(moment)
+    used: dict[str, list[str]] = {}
+    for role in ROLES:
+        setting = store.setting(role) or {}
+        if role == "reviewer" and not setting.get("model"):
+            continue  # no reviewer model: no review runs
+        used.setdefault(setting.get("model_connection") or "codex", []).append(role)
+    for (connection,) in store.conn.execute(
+            "SELECT DISTINCT connection FROM spend_ledger WHERE day >= ? AND day < ?", (first, after)):
+        used.setdefault(connection, [])
+    rows = []
+    for connection, roles in used.items():
+        kind = spend.kind_of(connection)
+        row: dict[str, Any] = {"connection": connection, "kind": kind, "roles": roles, "spend": None, "quota": None}
+        if kind == "api":
+            row["spend"] = month_spend(store.conn, connection, first, after)
+        elif kind == "subscription" and hasattr(adapter := adapters.get(connection), "quota"):
+            row["quota"] = await adapter.quota()
+        rows.append(row)
+    return rows
+
+
 def register_usage_routes(app) -> None:
     @app.get("/api/openalex/budget-today")
     async def openalex_budget_today(request: Request) -> dict[str, Any]:
@@ -178,6 +219,13 @@ def register_usage_routes(app) -> None:
             return live
         moment = datetime.now(timezone.utc)
         return budget(request.app.state.store.openalex_rate_limit_rows(iso(day_start(moment))), moment)
+
+    @app.get("/api/usage/models")
+    async def model_usage(request: Request) -> dict[str, Any]:
+        moment = datetime.now(timezone.utc)
+        first, _ = month_days(moment)
+        return {"as_of": now(), "month_start": first,
+                "connections": await connection_rows(request.app.state.store, request.app.state.adapters, moment)}
 
     @app.get("/api/usage")
     async def get_usage(request: Request, period: Literal["month", "run"] = "month",

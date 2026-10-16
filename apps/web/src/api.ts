@@ -1644,8 +1644,19 @@ export type OpenAlexBudgetToday = {
   as_of: string | null; source: 'live' | 'last_stored_response'
 }
 
+// Model connections in Settings → Usage (api/usage_routes.py): one row per connection a role uses now (plus any paid-by-key
+// connection with spend this month). Paid by key: this month's estimated spend. A subscription: its own usage limit, read live
+// (Codex, `source` 'live') or as reported on the last call (Claude Code, 'last_call'); null when it reports none.
+export type QuotaWindow = { window: 'five_hour' | 'seven_day' | 'other'; minutes: number; used_fraction: number; resets_at: string | null }
+export type ConnectionUsage = {
+  connection: string; kind: 'api' | 'subscription' | 'local' | 'none'; roles: UsageRole[]
+  spend: { estimated_usd: number; priced_calls: number; unpriced_calls: number } | null
+  quota: { source: 'live' | 'last_call'; seen_at: string; windows: QuotaWindow[] } | null
+}
+export type ModelUsage = { as_of: string; month_start: string; connections: ConnectionUsage[] }
+
 export const usageApi = {
-  usageThisMonth: (leaving?: AbortSignal) => read<Usage>('/api/usage?period=month', leaving),
+  modelUsage: (leaving?: AbortSignal) => read<ModelUsage>('/api/usage/models', leaving),
   usageOfRun: (runId: string) => request<Usage>(`/api/usage?period=run&run_id=${encodeURIComponent(runId)}`),
   openAlexBudgetToday: (leaving?: AbortSignal) => read<OpenAlexBudgetToday>('/api/openalex/budget-today', leaving),
 }

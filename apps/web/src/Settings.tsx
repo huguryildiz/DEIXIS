@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Info, RotateCw } from 'lucide-react'
-import { api, preferencesApi, shellApi, spendApi, usageApi, type About, type ContactEmailSetting, type Effort, type EffortLimits, type PreferenceChange, type Preferences, type Profile, type Connections, type InstitutionalAccess, type ModelRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Spending, type Usage, type UsageRole } from './api'
+import { api, preferencesApi, shellApi, spendApi, usageApi, type About, type ContactEmailSetting, type Effort, type EffortLimits, type PreferenceChange, type Preferences, type Profile, type Connections, type InstitutionalAccess, type ModelRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Spending, type ConnectionUsage, type ModelUsage, type QuotaWindow, type UsageRole } from './api'
 import { canRun, connectionModels, modelKey, type ConnectionModel } from './Home'
 import { defaultEffort, exposesEffortControl } from './modelEffort'
 import { ConnectionsTab } from './Connections'
@@ -427,11 +427,12 @@ function ProxyNameRow({ access, proxy }: { access: AccessControl; proxy: ProxySe
   </form>
 }
 
-// Usage this month (plan ST9, F7/F8): model calls per Settings role, counted from the stored model sessions of this
-// calendar month; the bar is the role's share of those calls. OpenAlex's budget today is its last stored response,
-// shown with that response's time. A figure that could not be read is "not known", never 0.
+// Usage this month (plan ST9, F7/F8): one row per model connection the roles use. A connection paid by API key shows this
+// month's estimated spend; a subscription shows how much of its own usage limit is used (Codex read live, Claude Code as
+// reported on its last call), the bar being the most-used window. OpenAlex's budget today is read live or from its last
+// stored response, shown with that time. A figure that could not be read is "not known", never 0.
 function UsageThisMonth() {
-  const [month, setMonth] = useState<{ value: Usage | null; failed: string }>({ value: null, failed: '' })
+  const [models, setModels] = useState<{ value: ModelUsage | null; failed: string }>({ value: null, failed: '' })
   const [budget, setBudget] = useState<{ value: OpenAlexBudgetToday | null; failed: string }>({ value: null, failed: '' })
   const [loading, setLoading] = useState(true)
   const seq = useRef(0)
@@ -439,9 +440,9 @@ function UsageThisMonth() {
   const read = (again = true) => {
     const n = ++seq.current
     if (again) setLoading(true)
-    void Promise.allSettled([usageApi.usageThisMonth(leaving()), usageApi.openAlexBudgetToday(leaving())]).then(([u, b]) => {
+    void Promise.allSettled([usageApi.modelUsage(leaving()), usageApi.openAlexBudgetToday(leaving())]).then(([u, b]) => {
       if (n !== seq.current || (u.status === 'rejected' && isLeft(u.reason))) return
-      setMonth(u.status === 'fulfilled' ? { value: u.value, failed: '' } : old => ({ value: old.value, failed: (u.reason as Error).message }))
+      setModels(u.status === 'fulfilled' ? { value: u.value, failed: '' } : old => ({ value: old.value, failed: (u.reason as Error).message }))
       setBudget(b.status === 'fulfilled' ? { value: b.value, failed: '' } : old => ({ value: old.value, failed: (b.reason as Error).message }))
       setLoading(false)
     })
@@ -449,27 +450,49 @@ function UsageThisMonth() {
   useEffect(() => read(false), [])
   const words: Record<UsageRole, string> = { literature: 'Literature model', answer: 'Answer model', reviewer: 'Reviewer model' }
   const order: UsageRole[] = ['literature', 'answer', 'reviewer']
+  const windowWords: Record<QuotaWindow['window'], string> = { five_hour: '{p}% of 5-hour limit', seven_day: '{p}% of weekly limit', other: '{p}% of limit' }
   const number = (n: number) => n.toLocaleString(uiLocale())
+  // A calendar day (YYYY-MM-DD) as local midnight; `new Date('2026-10-01')` would be UTC midnight, the day before in the Americas.
+  const localDay = (day: string) => { const [y, m, d] = day.split('-').map(Number); return new Date(y, m - 1, d) }
+  const when = (iso: string) => new Date(iso).toDateString() === new Date().toDateString() ? clock(iso)
+    : new Date(iso).toLocaleString(uiLocale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
   const b = budget.value
   const budgetText = !b ? null
     : b.used_fraction !== null ? t('{p}% of budget', { p: Math.round(b.used_fraction * 100) })
     : b.remaining === null ? null
     : b.unit === 'usd' ? t('${x} left today', { x: b.remaining.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })
     : t(b.remaining === 1 ? '{n} credit left today' : '{n} credits left today', { n: number(b.remaining) })
-  const failed = month.failed || budget.failed
+  const failed = models.failed || budget.failed
+  const row = (c: ConnectionUsage) => {
+    const name = connectionName(c.connection)
+    const most = c.quota ? Math.max(...c.quota.windows.map(w => w.used_fraction)) : null
+    let text: string, note = ''
+    if (c.kind === 'api' && c.spend) {
+      // Calls with no listed price have no cost: all of them unpriced is "not known", some of them makes the total a floor.
+      const { priced_calls: priced, unpriced_calls: unpriced } = c.spend
+      text = priced === 0 && unpriced > 0 ? t('not known')
+        : t(unpriced > 0 ? 'at least {x} this month' : '{x} this month', { x: money(c.spend.estimated_usd) })
+      note = priced > 0 ? t(priced === 1 ? 'estimated from {n} call' : 'estimated from {n} calls', { n: number(priced) }) : ''
+      if (unpriced > 0) note += `${note ? ' · ' : ''}${t('{n} with no listed price', { n: number(unpriced) })}`
+    } else if (c.quota) {
+      text = c.quota.windows.map(w => t(windowWords[w.window], { p: Math.round(w.used_fraction * 100) })).join(' · ')
+      note = t(c.quota.source === 'live' ? 'Read from {name}, {time}' : 'Reported on the last call, {time}', { name, time: when(c.quota.seen_at) })
+    } else {
+      text = t(c.kind === 'local' ? 'On this computer, no charge' : c.connection === 'claude' ? 'Shown after the first call' : 'Limit not reported')
+    }
+    return <div key={c.connection} data-connection={c.connection}>
+      <b>{name}{c.roles.length > 0 && <small>{order.filter(r => c.roles.includes(r)).map(r => t(words[r])).join(', ')}</small>}</b>
+      <div className="bar" aria-hidden style={most === null ? { visibility: 'hidden' } : undefined}><i style={{ width: `${Math.round((most ?? 0) * 100)}%`, background: (most ?? 0) >= 0.9 ? 'var(--tone-exclude)' : undefined }} /></div>
+      <p className="tnum">{text}{note && <small>{note}</small>}</p>
+    </div>
+  }
   return <>
     <h2 data-panel="usage">{t('Usage this month')}</h2>
     {failed && <div className="notice warn" role="alert" data-panel="usage"><Info aria-hidden /><div className="nb"><span>{t('Usage could not be read: {message}', { message: failed })}</span>
       <div className="acts"><button type="button" className="ghost" disabled={loading} onClick={() => read()}>{t('Try again')}</button></div></div></div>}
     <div className="rows set-usage" data-panel="usage">
-      {order.map(role => {
-        const row = month.value?.roles.find(r => r.role === role)
-        return <div key={role} data-role={role}>
-          <b>{t(words[role])}</b>
-          <div className="bar" aria-hidden><i style={{ width: `${Math.round((row?.share ?? 0) * 100)}%` }} /></div>
-          <p className="tnum">{!row ? t(loading && !month.failed ? 'Checking…' : 'not known') : t(row.calls === 1 ? '{n} call' : '{n} calls', { n: number(row.calls) })}</p>
-        </div>
-      })}
+      {models.value ? models.value.connections.map(row)
+        : <div data-connection=""><b>{t('Models')}</b><div className="bar" aria-hidden style={{ visibility: 'hidden' }}><i /></div><p className="tnum">{t(loading && !models.failed ? 'Checking…' : 'not known')}</p></div>}
       <div data-role="openalex">
         <b>{t('OpenAlex today')}</b>
         <div className="bar" aria-hidden style={b && b.used_fraction === null ? { visibility: 'hidden' } : undefined}><i style={{ width: `${Math.round((b?.used_fraction ?? 0) * 100)}%`, background: (b?.used_fraction ?? 0) >= 1 ? 'var(--tone-exclude)' : undefined }} /></div>
@@ -477,7 +500,7 @@ function UsageThisMonth() {
           <small>{b?.as_of ? t(b.source === 'live' ? 'Read from OpenAlex, {time}' : 'Last stored response, {time}', { time: clock(b.as_of) }) : b ? t('No OpenAlex response stored today') : ''}</small></p>
       </div>
     </div>
-    {month.value?.since && <p className="foot-note set-usage-note" data-panel="usage">{t(b?.source === 'live' ? 'Model calls counted since {date}. The OpenAlex figure is read from OpenAlex when this page opens.' : 'Model calls counted since {date}. The OpenAlex figure comes from its last response, not a live reading.', { date: new Date(month.value.since).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'long' }) })}</p>}
+    {models.value && <p className="foot-note set-usage-note" data-panel="usage">{t('Spending is estimated for models paid by API key, from {date}. A subscription shows its own limit: Codex is read when this page opens, Claude Code reports it with each call.', { date: localDay(models.value.month_start).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'long' }) })} {t(b?.source === 'live' ? 'The OpenAlex figure is read from OpenAlex when this page opens.' : 'The OpenAlex figure comes from its last response, not a live reading.')}</p>}
   </>
 }
 

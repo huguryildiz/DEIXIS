@@ -62,6 +62,7 @@ Most of this was tested with fake models and synthetic data only; "Not measured"
 - arXiv formulas come from the authors' LaTeX source by default, with Mathpix as an option (D36, D40).
 - Models that return 404 or answer as another model are hidden for 30 days, and GitHub Copilot connects only through the account (D59).
 - Settings › This computer shows the library folder and its size and can move it (D32).
+- Settings › Usage shows, per model connection, this month's estimated spend (API key) or the subscription's own 5-hour and weekly limit (Codex live, Claude Code from the last call) instead of call counts (D78).
 
 ### App
 

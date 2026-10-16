@@ -386,21 +386,32 @@ test.describe.serial('S24: the Settings page', () => {
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
 
-  test('usage rows: calls per role from stored sessions, bar = share; OpenAlex from its last stored response; unknown is "not known"', async () => {
-    const usage = { period: 'month', since: new Date(2026, 9, 1).toISOString(), until: new Date(2026, 10, 1).toISOString(), as_of: PINNED, total: 20,
-      roles: [{ role: 'answer', calls: 6, share: 0.3 }, { role: 'literature', calls: 13, share: 0.65 }, { role: 'reviewer', calls: 1, share: 0.05 }] }
+  test('usage rows: one per model connection; a paid key shows this month\'s spend, a subscription its own limit; OpenAlex from its last stored response; unknown is "not known"', async () => {
+    const usage = { as_of: PINNED, month_start: '2026-10-01', connections: [
+      { connection: 'codex', kind: 'subscription', roles: ['literature', 'answer'], spend: null,
+        quota: { source: 'live', seen_at: PINNED, windows: [{ window: 'five_hour', minutes: 300, used_fraction: 0.37, resets_at: null }, { window: 'seven_day', minutes: 10080, used_fraction: 0.92, resets_at: null }] } },
+      { connection: 'claude', kind: 'subscription', roles: ['reviewer'], spend: null, quota: null },
+      { connection: 'deepseek', kind: 'api', roles: [], spend: { estimated_usd: 4.2, priced_calls: 12, unpriced_calls: 0 }, quota: null },
+      { connection: 'openrouter', kind: 'api', roles: [], spend: { estimated_usd: 0, priced_calls: 0, unpriced_calls: 3 }, quota: null },
+      { connection: 'openai', kind: 'api', roles: [], spend: { estimated_usd: 1, priced_calls: 2, unpriced_calls: 1 }, quota: null },
+    ] }
     let budget: Record<string, unknown> = { provider: 'openalex', unit: 'credits', remaining: 620, limit: 1000, used_fraction: 0.38, reset_at: PINNED, as_of: PINNED, source: 'last_stored_response' }
     let usageFails = false
-    await page.route('**/api/usage?period=month', route => usageFails ? route.fulfill({ status: 500, json: { detail: 'SYNTHETIC usage failure' } }) : route.fulfill({ json: usage }))
+    await page.route('**/api/usage/models', route => usageFails ? route.fulfill({ status: 500, json: { detail: 'SYNTHETIC usage failure' } }) : route.fulfill({ json: usage }))
     await page.route('**/api/openalex/budget-today', route => route.fulfill({ json: budget }))
     await page.goto(server.url('#/settings/usage'))
     const time = await hhmm(page, PINNED)
-    for (const row of usage.roles) {
-      const line = page.locator(`.set-usage [data-role="${row.role}"]`)
-      await expect(line.locator('p')).toHaveText(`${row.calls} ${row.calls === 1 ? 'call' : 'calls'}`)
-      await expect(line.locator('.bar i')).toHaveAttribute('style', new RegExp(`width: ${Math.round(row.share * 100)}%`))
-    }
-    await expect(page.locator('.set-usage > div > b')).toHaveText(['Literature model', 'Answer model', 'Reviewer model', 'OpenAlex today'])
+    await expect(page.locator('.set-usage > div > b')).toHaveText(['CodexLiterature model, Answer model', 'Claude CodeReviewer model', 'DeepSeek', 'OpenRouter', 'OpenAI API', 'OpenAlex today'])
+    const codex = page.locator('.set-usage [data-connection="codex"]')
+    // A reading from another day names its date as well as its time.
+    await expect(codex.locator('p')).toHaveText(new RegExp(`^37% of 5-hour limit · 92% of weekly limitRead from Codex, .*${time}$`))
+    await expect(codex.locator('.bar i')).toHaveAttribute('style', /width: 92%/)  // the most-used window
+    await expect(page.locator('.set-usage [data-connection="claude"] p')).toHaveText('Shown after the first call')
+    await expect(page.locator('.set-usage [data-connection="claude"] .bar')).toHaveCSS('visibility', 'hidden')
+    await expect(page.locator('.set-usage [data-connection="deepseek"] p')).toHaveText('$4.20 this monthestimated from 12 calls')
+    // Every call unpriced: not known, never $0.00. Some unpriced: the total is a floor.
+    await expect(page.locator('.set-usage [data-connection="openrouter"] p')).toHaveText('not known3 with no listed price')
+    await expect(page.locator('.set-usage [data-connection="openai"] p')).toHaveText('at least $1.00 this monthestimated from 2 calls · 1 with no listed price')
     const openalex = page.locator('.set-usage [data-role="openalex"]')
     await expect(openalex.locator('p')).toHaveText(`38% of budgetLast stored response, ${time}`)
     await expect(openalex.locator('.bar i')).toHaveAttribute('style', /width: 38%/)
@@ -417,14 +428,14 @@ test.describe.serial('S24: the Settings page', () => {
     await page.reload()
     await expect(openalex.locator('p')).toHaveText('not knownNo OpenAlex response stored today')
 
-    // A failed read says so and keeps the rows unknown; Try again reads them.
+    // A failed read says so and keeps the models unknown; Try again reads them.
     usageFails = true
     await page.reload()
     await expect(page.getByRole('alert').filter({ hasText: 'Usage could not be read' })).toBeVisible()
-    await expect(page.locator('.set-usage [data-role="literature"] p')).toHaveText('not known')
+    await expect(page.locator('.set-usage > div').first().locator('p')).toHaveText('not known')
     usageFails = false
     await page.getByRole('alert').filter({ hasText: 'Usage could not be read' }).getByRole('button', { name: 'Try again' }).click()
-    await expect(page.locator('.set-usage [data-role="literature"] p')).toHaveText('13 calls')
+    await expect(codex.locator('p')).toContainText('92% of weekly limit')
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
 

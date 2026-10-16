@@ -21,12 +21,14 @@ from claude_agent_sdk import (
     ClaudeAgentOptions,
     ClaudeSDKClient,
     ClaudeSDKError,
+    RateLimitEvent,
     ResultMessage,
     TextBlock,
     ToolUseBlock,
 )
 
 from deixis.tools.child_env import NODE_TLS
+from deixis.models import quota
 from deixis.models.adapter import ModelStepResult
 from deixis.domain.limits import limit_kind, service_error_kind, safe_error
 from deixis.tools.tool_paths import child_path, command_for, find_tool
@@ -57,6 +59,19 @@ class ClaudeCodeAdapter:
         self._checks = 0  # health checks started, to order their answers
         self._lock = asyncio.Lock()
         self._active: set[ClaudeSDKClient] = set()
+        # The usage limit the CLI reported on the last call (there is no live read), kept across restarts.
+        self._quota_file = workspace.parent / "claude-quota.json"
+        self._quota: dict[str, Any] | None = None
+
+    async def quota(self) -> dict[str, Any] | None:
+        """Claude's usage limit as reported on the last call, with that call's time; None before any call."""
+        return self._quota or await asyncio.to_thread(quota.load, self._quota_file)
+
+    def _note_quota(self, raw: Any) -> None:
+        windows = quota.claude_windows(raw)
+        if windows:
+            self._quota = {"source": "last_call", "seen_at": quota.now_iso(), "windows": windows}
+            quota.save(self._quota_file, self._quota)
 
     def _options(self, cli: str, **overrides: Any) -> ClaudeAgentOptions:
         self.workspace.mkdir(parents=True, exist_ok=True)
@@ -212,6 +227,8 @@ class ClaudeCodeAdapter:
                                     text_parts.append(block.text)
                                 elif isinstance(block, ToolUseBlock):
                                     tool_types.append(block.name)
+                        elif isinstance(item, RateLimitEvent):
+                            self._note_quota(item.rate_limit_info.raw)
                         elif isinstance(item, ResultMessage):
                             session_id = item.session_id
                             usage = item.usage or usage

@@ -342,3 +342,120 @@ def test_without_a_key_nothing_is_asked_and_a_failed_read_falls_back_to_the_stor
         monkeypatch.setenv("OPENALEX_API_KEY", "SYNTHETIC")
         assert client.get("/api/openalex/budget-today").json() == EMPTY
         assert len(seen) == 1
+
+
+# ---- Model connections: spend this month (paid by key) and subscription limits -------------------------------------
+
+class QuotaAdapter(FakeAdapter):
+    def __init__(self, reading):
+        super().__init__()
+        self.reading = reading
+
+    async def quota(self):
+        return self.reading
+
+
+def ledger(store, session_id, day, connection, cost):
+    store.conn.execute("INSERT INTO spend_ledger (session_id, day, connection, model, cost_usd, basis, recorded_at)"
+                       " VALUES (?, ?, ?, 'm', ?, ?, '2026-10-01T00:00:00.000+00:00')",
+                       (session_id, day, connection, cost, "reported" if cost is not None else "unpriced"))
+
+
+def test_codex_windows_are_named_by_length_and_a_missing_window_is_left_out():
+    result = {"rateLimits": {"primary": {"usedPercent": 80, "windowDurationMins": 10080, "resetsAt": 1792650762},
+                             "secondary": None}}
+    from deixis.models import quota
+    assert quota.codex_windows(result) == [{"window": "seven_day", "minutes": 10080, "used_fraction": 0.8,
+                                           "resets_at": "2026-10-22T06:32:42.000+00:00"}]
+
+
+def test_codex_windows_reject_malformed_figures():
+    from deixis.models import quota
+    assert quota.codex_windows({"rateLimits": {"primary": {"usedPercent": True, "windowDurationMins": 300}}}) == []
+    assert quota.codex_windows({"rateLimits": None}) == []
+    for minutes in (True, 0, -300):
+        assert quota.codex_windows({"rateLimits": {"primary": {"usedPercent": 10, "windowDurationMins": minutes}}}) == []
+    assert quota.codex_windows(None) == []
+
+
+def test_claude_windows_come_from_unified_windows_and_a_missing_utilization_is_left_out():
+    from deixis.models import quota
+    raw = {"status": "allowed", "unifiedWindows": {"five_hour": {"utilization": 0.37, "resetsAt": 1792188600},
+                                                   "seven_day": {"resetsAt": 1792342800}}}
+    assert quota.claude_windows(raw) == [{"window": "five_hour", "minutes": 300, "used_fraction": 0.37,
+                                          "resets_at": "2026-10-16T22:10:00.000+00:00"}]
+    assert quota.claude_windows({"status": "allowed"}) == []
+
+
+def test_the_claude_reading_survives_a_restart(tmp_path):
+    from deixis.models import quota
+    from deixis.models.claude import ClaudeCodeAdapter
+    adapter = ClaudeCodeAdapter(workspace=tmp_path / "claude-workspace")
+    assert asyncio.run(adapter.quota()) is None
+    adapter._note_quota({"unifiedWindows": {"seven_day": {"utilization": 0.5, "resetsAt": 1792342800}}})
+    again = ClaudeCodeAdapter(workspace=tmp_path / "claude-workspace")
+    reading = asyncio.run(again.quota())
+    assert reading["source"] == "last_call" and [w["window"] for w in reading["windows"]] == ["seven_day"]
+    assert quota.load(tmp_path / "missing.json") is None
+
+
+def test_the_models_route_gives_spend_for_a_paid_key_and_the_limit_for_a_subscription(tmp_path):
+    settings = Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1, search_query="code", fulltext_fetch="off")
+    reading = {"source": "live", "seen_at": "2026-10-17T09:00:00.000+00:00",
+               "windows": [{"window": "seven_day", "minutes": 10080, "used_fraction": 0.8, "resets_at": None}]}
+    app = create_app(settings, adapters={"codex": QuotaAdapter(reading), "deepseek": FakeAdapter()}, http_client=httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda request: httpx.Response(200, json={}))), start_worker=False,
+        extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as client:
+        store = app.state.store
+        store.set_setting("answer", {"model_connection": "deepseek", "model": "deepseek-chat", "reasoning_effort": None})
+        first, after = usage_routes.month_days(datetime.now(UTC))
+        ledger(store, "s1", first, "deepseek", 1.5)
+        ledger(store, "s2", first, "deepseek", None)
+        ledger(store, "s3", "1999-01-01", "deepseek", 9.0)  # another month: not counted
+        body = client.get("/api/usage/models").json()
+    rows = {r["connection"]: r for r in body["connections"]}
+    assert body["month_start"] == first
+    assert rows["codex"] == {"connection": "codex", "kind": "subscription", "roles": ["literature"], "spend": None, "quota": reading}
+    assert rows["deepseek"]["kind"] == "api" and rows["deepseek"]["roles"] == ["answer"]
+    assert rows["deepseek"]["spend"] == {"estimated_usd": 1.5, "priced_calls": 1, "unpriced_calls": 1}
+    assert set(rows) == {"codex", "deepseek"}  # no reviewer model: no reviewer row
+
+
+def test_month_days_roll_over_the_year():
+    assert usage_routes.month_days(datetime(2026, 12, 15, 12, tzinfo=UTC)) == ("2026-12-01", "2027-01-01")
+
+
+def test_a_malformed_kept_claude_reading_is_unknown_not_a_crash(tmp_path):
+    from deixis.models import quota
+    path = tmp_path / "claude-quota.json"
+    good = {"source": "last_call", "seen_at": "2026-10-17T07:40:00.000+00:00",
+            "windows": [{"window": "five_hour", "minutes": 300, "used_fraction": 0.37, "resets_at": None}]}
+    for bad in ({"windows": [None]}, {**good, "windows": [{**good["windows"][0], "used_fraction": "0.4"}]},
+                {**good, "windows": [{**good["windows"][0], "used_fraction": 1.5}]}, {**good, "windows": []},
+                {**good, "windows": [{**good["windows"][0], "used_fraction": None}]},
+                {**good, "windows": [{k: v for k, v in good["windows"][0].items() if k != "used_fraction"}]},
+                {**good, "seen_at": "0001-01-01T00:00:00+01:00"},
+                {**good, "windows": [{**good["windows"][0], "resets_at": "9999-12-31T23:59:59-01:00"}]},
+                {**good, "seen_at": "garbage"}, {**good, "seen_at": "2026-10-17T07:40:00"},
+                {**good, "windows": [{**good["windows"][0], "resets_at": "garbage"}]},
+                {**good, "windows": good["windows"] * 2},
+                {**good, "source": "live"}, [good]):
+        path.write_text(json.dumps(bad))
+        assert quota.load(path) is None, bad
+    path.write_text(json.dumps(good))
+    assert quota.load(path) == good
+    # Any other spelling of a valid moment is rewritten in the one format the page reads.
+    path.write_text(json.dumps({**good, "seen_at": "2026-10-17X09:40:00+02:00"}))
+    assert quota.load(path)["seen_at"] == "2026-10-17T07:40:00.000+00:00"
+
+
+def test_nonfinite_or_out_of_range_figures_are_left_out_not_shown_as_0_or_100():
+    from deixis.models import quota
+    raw = {"unifiedWindows": {"five_hour": {"utilization": float("nan")}, "seven_day": {"utilization": float("inf")}}}
+    assert quota.claude_windows(raw) == []
+    assert quota.stamp(1e20) is None and quota.stamp(float("inf")) is None
+    assert quota.stamp(10**400) is None and quota.fraction(10**400) is None
+    assert quota.codex_windows({"rateLimits": {"primary": {"usedPercent": 10**400, "windowDurationMins": 300}}}) == []
+    windows = quota.codex_windows({"rateLimits": {"primary": {"usedPercent": 10, "windowDurationMins": 300, "resetsAt": 1e20}}})
+    assert windows == [{"window": "five_hour", "minutes": 300, "used_fraction": 0.1, "resets_at": None}]

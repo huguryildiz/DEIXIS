@@ -61,11 +61,20 @@
 .app .settings-page .bar i{display:block;height:100%;background:var(--accent);transition:width .3s}
 .app .settings-page .set-usage p{flex:0 0 auto;min-width:0;text-align:right}
 .app .settings-page .set-usage p small{display:block;color:var(--muted);font-size:11.5px}
+.app .settings-page .set-usage b small{display:block;color:var(--muted);font-size:11.5px;font-weight:400}
 .app .settings-page .set-spending p.tnum{flex:0 0 auto;min-width:0;text-align:right}
 .app .settings-page .set-spending p small{display:block;color:var(--muted);font-size:11.5px}
 .app .settings-page .set-spending .field{width:96px;max-width:100%;height:27px}
 /* Input, Save and Turn off stay on one row; on a phone the row wraps under the text as a whole. */
 .app .settings-page .set-spend-actions{display:flex;flex:none;align-items:center;gap:8px;margin-left:auto}
+/* Estimated spending: the two lines share one set of columns (label, explanation, figure or field), so they line up. */
+@media(min-width:621px){
+  .app .settings-page .set-spending{display:grid;grid-template-columns:max-content minmax(0,1fr) max-content}
+  .app .settings-page .set-spending>div,.app .settings-page .set-spending>form{display:grid;grid-column:1/-1;grid-template-columns:subgrid;column-gap:20px}
+  .app .settings-page .set-spending p{min-width:0}
+  .app .settings-page .set-spending .set-spend-actions,.app .settings-page .set-spending p.tnum{justify-self:end;margin-left:0}
+  .app .settings-page .set-spending form>.notice{grid-column:1/-1}
+}
 @media(max-width:620px){.app .settings-page .set-spend-actions{flex:1 1 100%;margin-left:0}}
 .app .settings-page .set-spending form>.notice{flex:1 0 100%;margin:0}
 

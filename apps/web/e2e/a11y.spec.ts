@@ -707,7 +707,7 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
       await scan(page, '9c connection sheet', () => dismissToasts(page))
       await page.keyboard.press('Escape')
       await page.goto(main.url('#/settings/usage'))
-      await expect(page.locator('.set-usage [data-role="literature"] p')).toHaveText(/calls?$/)
+      await expect(page.locator('.set-usage [data-role="openalex"] p')).not.toHaveText('Checking…')
       await scan(page, '9d settings usage', () => dismissToasts(page))
       await page.goto(main.url('#/settings/general'))
       await expect(page.locator('.data-location')).toBeVisible()

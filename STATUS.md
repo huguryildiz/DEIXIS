@@ -93,6 +93,16 @@ One run per mode with gpt-5.6-luna on the DBR/VBF question, on a library copy.
 - The search stage can look finished while chain requests are still running, because those requests count toward screening.
 - Test gaps: the Playwright rate-limit cases do not match each failed OpenAlex request to its own row, and the fast-answer flow has no pause/resume test.
 
+### Answer coverage (grounding audit, 16 Oct)
+
+A model-free check of the 8 stored answers found all 171 citation links sound: each anchor sits word for word in a passage of that answer's own input. The gap is coverage, not integrity (`.local/grounding-audit-2026-10-16.md`).
+
+1. The latest DBR/VBF answer cites 14 of 20 full-text works and none of 24 abstract-only works. Relevant works go uncited, for example "Light-weight depth-based routing" and the Q-learning DBR paper (both full text), and "Adaptive Holding time and DBR" (abstract only, though the question asks for holding-time formulas).
+2. Target: every input work with a passage that answers the question is cited, or the answer says why it is left out. Not every input work: surveys, MAC and security papers are in the input too. Rough guess for this question: 20–25 such works against about 14 cited (not measured).
+3. Possible causes, not measured: the answer length limit (9 Oct: 48→120 passages barely raised citations), abstracts that give no numbers or formulas, and claims tied to only one source each.
+4. Next: measure it. For each uncited input work, say whether it had an answering passage, then find which cause applies.
+5. Chain of Ideas–style idea generation waits until this is fixed, and it needs its own contract: premises cited, speculation marked as unsourced.
+
 ### Search (after P10)
 
 1. In broad questions, known key papers are not near the top (battery_soh: 3 of 15 targets in the top 50), and the answer score does not measure this.
@@ -118,7 +128,7 @@ One run per mode with gpt-5.6-luna on the DBR/VBF question, on a library copy.
 
 - The re-extraction background reader is not tested in the matrix.
 - UI: the sticky answer area in the queue grew to about 300 px at 1280×900, the selected tab may not scroll into view after a TR/EN switch, and report icon buttons on phones have no visible hint.
-- The first answer draft often breaks citation-anchor rules and repair adds 1–2 minutes per answer; CI runs on every push but is not required, and parallel tests fail now and then.
+- The first answer draft often breaks citation-anchor rules and repair adds 1–2 minutes per answer; CI runs on every push but is not required, and parallel tests fail now and then. On 16 Oct the quick run gave 143 failed and 65 errors at machine load 150–215 (another session was running tests); the failing review tests pass alone (27/27). Re-run on a quiet machine with `-rfE` to get the list.
 
 ### Live findings (4–5 Oct)
 

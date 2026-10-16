@@ -45,9 +45,9 @@ class SignInError(Exception):
 def start_process(spec: LaunchSpec) -> None:
     """Start the terminal launcher and let it go; its window belongs to the person from here on."""
     if sys.platform == "win32":
-        # PowerShell is a console program: it gets a window of its own, which stays with the person.
-        subprocess.Popen(spec, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         creationflags=subprocess.CREATE_NEW_CONSOLE)
+        # PowerShell is a console program: its new window owns the standard streams, so the prompts and errors of the
+        # login show there. They are not redirected.
+        subprocess.Popen(spec, creationflags=subprocess.CREATE_NEW_CONSOLE)
         return
     subprocess.Popen(spec, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      start_new_session=True)

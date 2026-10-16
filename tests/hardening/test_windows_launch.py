@@ -275,3 +275,67 @@ def test_the_connections_route_carries_the_command_for_the_systems_shell(tmp_pat
         with TestClient(app) as client:
             command = client.get("/api/connections").json()["codex_login_command"]
         assert command.startswith(start) and command.endswith("codex login") and str(settings.codex_home) in command
+
+
+# --- review round 1: absolute paths, the exact architecture, a console that owns its streams ------------------------
+
+def test_a_launcher_found_through_a_relative_path_gives_absolute_argv(windows, tmp_path, monkeypatch):
+    npm_install(tmp_path / "npm", "codex", "node_modules\\@openai\\codex\\bin\\codex.js")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(tmp_path)
+    command = command_for("codex", "npm/codex.cmd")  # what shutil.which returns for a relative PATH entry
+    assert command.argv == [str(tmp_path / "npm/node.exe"), str(tmp_path / "npm/node_modules/@openai/codex/bin/codex.js")]
+    monkeypatch.chdir(elsewhere)  # the child's folder is another one: nothing in argv depends on it
+    assert all(Path(part).is_absolute() and Path(part).is_file() for part in command.argv)
+    assert command_for("codex", "../npm/codex.cmd").argv == command.argv
+    monkeypatch.chdir(tmp_path)
+    touch(tmp_path / "native" / "claude.exe")
+    assert command_for("claude", "native/claude.exe").argv == [str(tmp_path / "native/claude.exe")]
+    # A relative node from the search path is made absolute too.
+    (tmp_path / "npm" / "node.exe").unlink()
+    touch(tmp_path / "bin" / "node.exe")
+    monkeypatch.setattr(tool_paths, "find_tool", lambda name: "bin/node.exe")
+    assert command_for("codex", "npm/codex.cmd").argv[0] == str(tmp_path / "bin/node.exe")
+
+
+def codex_vendor(root: Path, package: str, triple: str) -> Path:
+    return touch(root / "node_modules/@openai" / package / "vendor" / triple / "codex/codex.exe")
+
+
+def test_only_the_binary_for_the_running_machine_is_used(windows, tmp_path, monkeypatch):
+    launcher = npm_install(tmp_path, "codex", "node_modules\\@openai\\codex\\bin\\codex.js")
+    node_script = [str(tmp_path / "node.exe"), str(tmp_path / "node_modules/@openai/codex/bin/codex.js")]
+    arm = codex_vendor(tmp_path, "codex-win32-arm64", "aarch64-pc-windows-msvc")
+    # An x64 machine with only the ARM64 binary falls back to node, as does a machine of a kind with no build.
+    assert command_for("codex", str(launcher)).argv == node_script
+    monkeypatch.setattr(tool_paths.platform, "machine", lambda: "x86")
+    assert command_for("codex", str(launcher)).argv == node_script
+    monkeypatch.setattr(tool_paths.platform, "machine", lambda: "ARM64")
+    assert command_for("codex", str(launcher)).argv == [str(arm)]
+    x64 = codex_vendor(tmp_path, "codex-win32-x64", "x86_64-pc-windows-msvc")
+    monkeypatch.setattr(tool_paths.platform, "machine", lambda: "AMD64")
+    assert command_for("codex", str(launcher)).argv == [str(x64)]
+
+
+def test_the_architecture_in_a_parent_folder_name_does_not_skew_the_pick(windows, tmp_path, monkeypatch):
+    # The whole install sits under a folder called x86_64; only the ARM64 build is there, and an x64 machine must not take it.
+    root = tmp_path / "x86_64 tools"
+    launcher = npm_install(root, "codex", "node_modules\\@openai\\codex\\bin\\codex.js")
+    codex_vendor(root, "codex-win32-arm64", "aarch64-pc-windows-msvc")
+    assert command_for("codex", str(launcher)).argv[0] == str(root / "node.exe")
+    # And an install under an aarch64 folder takes the x64 build on an x64 machine.
+    other = tmp_path / "aarch64 tools"
+    launcher = npm_install(other, "codex", "node_modules\\@openai\\codex\\bin\\codex.js")
+    codex_vendor(other, "codex-win32-arm64", "aarch64-pc-windows-msvc")
+    x64 = codex_vendor(other, "codex-win32-x64", "x86_64-pc-windows-msvc")
+    assert command_for("codex", str(launcher)).argv == [str(x64)]
+
+
+def test_the_sign_in_console_owns_its_standard_streams(monkeypatch):
+    calls = []
+    monkeypatch.setattr(account_signin.sys, "platform", "win32")
+    monkeypatch.setattr(account_signin.subprocess, "CREATE_NEW_CONSOLE", 0x10, raising=False)
+    monkeypatch.setattr(account_signin.subprocess, "Popen", lambda spec, **kwargs: calls.append((spec, kwargs)))
+    account_signin.start_process(["powershell.exe", "-NoExit"])
+    assert calls == [(["powershell.exe", "-NoExit"], {"creationflags": 0x10})]

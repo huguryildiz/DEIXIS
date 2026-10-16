@@ -189,9 +189,12 @@ NATIVE = (".exe", ".com")
 # npm's Windows launcher ends in `"%_prog%" "%dp0%\node_modules\...\tool.js" %*` (older ones write `%~dp0`).
 SHIM_ENTRY = re.compile(r'"%(?:~dp0|dp0%)\\?([^"%]+\.[cm]?js)"', re.I)
 # The native binary an npm package ships next to its launcher script, by tool: glob patterns under the launcher's folder.
-NATIVE_BINARIES = {"codex": ("node_modules/@openai/codex/vendor/*/codex/codex.exe",
-                             "node_modules/@openai/codex/node_modules/@openai/codex-*/vendor/*/codex/codex.exe",
-                             "node_modules/@openai/codex-*/vendor/*/codex/codex.exe")}
+# {triple} is the exact target folder of the running machine, so a binary built for another architecture never matches.
+NATIVE_BINARIES = {"codex": ("node_modules/@openai/codex/vendor/{triple}/codex/codex.exe",
+                             "node_modules/@openai/codex/node_modules/@openai/codex-*/vendor/{triple}/codex/codex.exe",
+                             "node_modules/@openai/codex-*/vendor/{triple}/codex/codex.exe")}
+WINDOWS_TRIPLES = {"amd64": "x86_64-pc-windows-msvc", "x86_64": "x86_64-pc-windows-msvc",
+                   "arm64": "aarch64-pc-windows-msvc", "aarch64": "aarch64-pc-windows-msvc"}
 # Tools whose launcher is never started through node: the Claude Agent SDK takes one executable and refuses a batch file.
 NATIVE_ONLY = frozenset({"claude"})
 DISPLAY_NAMES = {"codex": "Codex CLI", "claude": "Claude Code", "gemini": "Gemini CLI", "copilot": "GitHub Copilot CLI"}
@@ -206,12 +209,6 @@ class CliCommand:
     problem: str | None = None
 
 
-def _arch_first(paths: list[Path]) -> list[Path]:
-    machine = platform.machine().lower()
-    triple = "aarch64" if machine in ("arm64", "aarch64") else "x86_64"
-    return sorted(paths, key=lambda p: triple not in str(p))
-
-
 def _unsupported(name: str) -> str:
     shown = DISPLAY_NAMES.get(name, name)
     if name in NATIVE_ONLY:
@@ -221,16 +218,17 @@ def _unsupported(name: str) -> str:
 
 
 def _windows_command(name: str, found: str) -> CliCommand:
-    path = Path(found)
+    path = Path(found)  # absolute already: command_for made it so
     if path.suffix.lower() in NATIVE:
         return CliCommand(found, [found])
     problem = CliCommand(found, [], _unsupported(name))
     if name in NATIVE_ONLY or path.suffix.lower() not in (".cmd", ".bat"):
         return problem
     folder = path.parent
-    for pattern in NATIVE_BINARIES.get(name, ()):
+    triple = WINDOWS_TRIPLES.get(platform.machine().lower())
+    for pattern in NATIVE_BINARIES.get(name, ()) if triple else ():
         try:
-            hits = _arch_first([p for p in folder.glob(pattern) if p.is_file()])
+            hits = sorted(p for p in folder.glob(pattern.format(triple=triple)) if p.is_file())
         except OSError:
             hits = []
         if hits:
@@ -241,19 +239,25 @@ def _windows_command(name: str, found: str) -> CliCommand:
         return problem
     entries = SHIM_ENTRY.findall(shim)
     entry = folder.joinpath(*entries[-1].split("\\")) if entries else None
-    if entry is None or not entry.is_file():
+    if entry is None:
         return problem
+    entry = Path(os.path.abspath(entry))
     node = folder / "node.exe"
-    node = str(node) if node.is_file() else find_tool("node")
-    if not node or Path(node).suffix.lower() not in NATIVE or not Path(node).is_file():
+    if not node.is_file():
+        on_path = find_tool("node")
+        node = Path(os.path.abspath(on_path)) if on_path else None
+    if not entry.is_file() or node is None or node.suffix.lower() not in NATIVE or not node.is_file():
         return problem
-    return CliCommand(found, [node, str(entry)])
+    return CliCommand(found, [str(node), str(entry)])
 
 
 def command_for(name: str, found: str | None) -> CliCommand:
     """The argv that starts the tool `name` found at `found` (what `find_tool` returned)."""
     if not found:
         return CliCommand(None)
+    # A tool found through a relative PATH entry is relative to the folder DEIXIS was in when it looked; the child runs
+    # in another folder, so every path handed on is absolute, and is checked as an absolute path.
+    found = os.path.abspath(found)
     if sys.platform != "win32":
         return CliCommand(found, [found])
     return _windows_command(name, found)

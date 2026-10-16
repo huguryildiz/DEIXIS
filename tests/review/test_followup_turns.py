@@ -830,12 +830,14 @@ def test_the_evidence_tables_values_are_context_and_their_passages_come_first(tm
     model_output(lib)
     context = followup.conversation(lib.store, lib.rid, "How large are packets?", {"id": "none", "created_at": "9999"})
     assert context["evidence_table"] == [{"work": "Packet size study", "column": "Packet size", "value": "128 bytes"}]
-    frozen = followup.pool(lib.store, lib.rid, 1)
-    assert frozen["priority"] == [lib.abstracts[lib.published]]
+    choice = followup.table_choice(followup._table_values(lib.store, lib.rid), {lib.abstracts[lib.published]: 0})
+    assert choice["columns"] == ["packet size"] and choice["passage_ids"] == [lib.abstracts[lib.published]]
+    # The pool's own priority is the latest answer's passages only (D53): the table's are chosen per follow-up.
+    assert followup.pool(lib.store, lib.rid, 1)["priority"] == []
     # A trashed table gives nothing.
     lib.conn.execute("UPDATE evidence_tables SET trashed_at = '2026-10-16' WHERE id = ?", (lib.tid,))
     assert followup.conversation(lib.store, lib.rid, "Q", {"id": "none", "created_at": "9999"})["evidence_table"] == []
-    assert followup.pool(lib.store, lib.rid, 1)["priority"] == []
+    assert followup.table_choice(followup._table_values(lib.store, lib.rid), {})["cell_ids"] == []
 
 
 def test_the_model_may_ask_the_library_once_more_and_the_second_round_answers(tmp_path):
@@ -952,3 +954,82 @@ def test_an_empty_pool_with_a_reserve_reads_the_reserve(tmp_path, monkeypatch):
     monkeypatch.setattr(followup, "_included", lambda store, rid, current: {"svA": ["p1", "p2"]})
     frozen = followup._with_reserve(lib.store, lib.rid, {}, {"sources": {}, "basis": "answer_input"})
     assert frozen["sources"] == {"svA": ["p1", "p2"]} and frozen["reserve"] == {}
+
+
+def table_rows(spec):
+    """SYNTHETIC `_table_values` rows: (cell id, column name, passage id) per cited passage."""
+    return [{"cell_id": cell, "column_name": column, "passage_id": pid} for cell, column, pid in spec]
+
+
+def test_the_columns_most_related_to_the_follow_up_give_their_values_across_tables():
+    """D53: a value scores by the rank its cited passages reached for this follow-up; a column, by name across the
+    research's tables, by its values' mean. The best columns give all their values, best first; others give none."""
+    rows = table_rows([
+        ("c1", "Packet delivery result", "p_pdr1"), ("c2", "Packet delivery result", "p_pdr2"),
+        ("c3", "Energy result", "p_energy"), ("c4", "Routing family", "p_family"), ("c5", "Evaluation setting", None),
+        ("c6", "Packet  delivery RESULT", "p_pdr3"),  # the same column in another table
+        ("c7", "Comparison protocols", "p_far"),
+    ])
+    rank = {"p_pdr2": 0, "p_pdr1": 1, "p_pdr3": 2, "p_energy": 5, "p_family": 40, "p_far": 400}
+    choice = followup.table_choice(rows, rank)
+    assert choice["columns"] == ["packet delivery result", "energy result", "routing family"]
+    assert choice["cell_ids"] == ["c2", "c1", "c6", "c3", "c4"]
+    assert choice["passage_ids"] == ["p_pdr2", "p_pdr1", "p_pdr3", "p_energy", "p_family"]
+    # No ranking reached a table passage: the first columns in table order, as before.
+    assert followup.table_choice(rows, {})["columns"] == ["packet delivery result", "energy result", "routing family"]
+    many = table_rows([(f"v{n}", "Packet delivery result", f"q{n}") for n in range(200)])
+    assert len(followup.table_choice(many, {f"q{n}": n for n in range(200)})["cell_ids"]) == followup.MAX_TABLE_VALUES
+
+
+def test_a_follow_up_reads_the_table_values_its_question_is_about(tmp_path):
+    """D53 end to end: the table has two columns; the follow-up's ranking reaches the page one column's value cites,
+    so that column's value is sent as context and its page goes first. SYNTHETIC records and the fake adapter."""
+    from types import SimpleNamespace
+    from deixis.workflow.tables import TableStore
+    from test_evidence_tables import model_output
+    pages = ["SYNTHETIC. Interference between symbols is bounded by a linear constraint on the emitted amount.",
+             "SYNTHETIC. The release schedule uses a binary variable per time slot to decide when molecules are emitted.",
+             "SYNTHETIC. The bibliography lists unrelated works on acoustic modems and ocean sensing."]
+    adapter = FakeAdapter()
+    app = app_for(tmp_path, adapter)
+    with TestClient(app) as client:
+        session(client)
+        rid, (svid,) = research(client, (("a.pdf", pages),))
+        store = app.state.store
+        page = {p["text"][:40]: p["id"] for p in store.passages_for(svid)}
+        variable = next(pid for text, pid in page.items() if "release schedule" in text)
+        interference = next(pid for text, pid in page.items() if "Interference" in text)
+        run = store.create_run(rid, "answer", {"max_model_calls": 4}, None)
+        store.update_run(run["id"], status="completed")
+        lib = SimpleNamespace(store=store, conn=store.conn, tables=TableStore(store), rid=rid, published=svid,
+                              run_id=run["id"], step_id=store.step(run["id"], "cell", "model:cell_extraction")["id"])
+        lib.tid = lib.tables.create_table(rid, "Study table", None, None, None)
+        columns = {}
+        for name in ("Interference bound", "Decision variable"):  # table order puts the other column first
+            lib.cid = columns[name] = lib.tables.add_column(rid, lib.tid, {
+                "name": name, "instruction": f"SYNTHETIC {name}.", "answer_format": "text", "options": None,
+                "allow_multiple": False, "unit_hint": None},
+                store.conn.execute("SELECT version FROM evidence_tables WHERE id = ?", (lib.tid,)).fetchone()[0], None)
+            pid, quote = (variable, "binary variable per time slot") if name == "Decision variable" else (
+                interference, "bounded by a linear constraint")
+            model_output(lib, passage=pid, value={"text": f"SYNTHETIC value for {name}"}, anchors=(quote,))
+        turn = answered(client, rid)  # "Which binary variable decides the release time slot?"
+        (payload,) = step_inputs(app, turn["run"]["id"])
+        table = payload["conversation"]["evidence_table"]
+        assert table[0]["column"] == "Decision variable" and payload["passages"][0]["passage_id"] == variable
+        selection = store.existing_step(turn["run"]["id"], followup.SELECTION_KEY)["output"]
+        assert selection["table_columns"][0] == "decision variable"
+        # The values are frozen with the selection: the conversation a resumed turn sends is read from it.
+        assert selection["table_values"] == table
+
+
+def test_table_values_dedupe_by_source_and_column_and_freeze_with_the_selection():
+    """D53: two works that share a title and year keep their own values; the same work's same value under the same
+    column (spaced differently) in another table is sent once."""
+    def row(cell, svid, column, text):
+        return {"cell_id": cell, "source_version_id": svid, "title": "SYNTHETIC same title", "year": 2020,
+                "column_name": column, "options_json": None, "value_json": json.dumps({"text": text}), "passage_id": None}
+    rows = [row("a", "sv1", "Packet delivery result", "88%"), row("b", "sv2", "Packet delivery result", "88%"),
+            row("c", "sv1", "Packet  delivery result", "88%"), row("d", "sv1", "Packet delivery result", "x" * 900)]
+    values = followup.table_values(rows, ["a", "b", "c", "d"])
+    assert [v["value"] for v in values] == ["88%", "88%", "x" * followup.MAX_VALUE_CHARS]

@@ -4,6 +4,12 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D53 — A follow-up reads the evidence-table columns its question is about
+Status: accepted · Date: 2026-10-16 · Writer: Claude
+Context: D50 sent a follow-up the first 60 evidence-table values in table order. On the owner's DBR/VBF research (4 tables, about 8 columns and 31 works each, about 990 values) that was the first table's first seven or eight works, so most packet-delivery and energy results never reached the model, and the table's passages were cut at the priority limit in table order.
+Decision: Each follow-up chooses its table values. A value scores by the best rank its cited passages reached in the follow-up's own passage ranking (lexical and semantic, RRF); a column, taken by name across the research's tables, by its values' mean score. The three best columns give up to 120 values, best first, each at most 400 characters, the same value twice only once. Their cited passages come first in the selection after the latest answer's (up to a quarter of the limit), together at most half the limit. When no ranking reached a table passage, the first columns in table order are read. The choice is stored with the selection, so a resumed turn reads the same values.
+Limits: Workflow tests with the fake adapter; not yet tried with a real model. A column whose values cite no passage scores zero and is read only when no column scores. The table's own gaps stay: a value the table read without a number (a figure, a table in the PDF) still gives none.
+
 ## D51 — Report sections paraphrase, relate sources and keep the kind of evidence
 Status: accepted · Date: 2026-10-16 · Writer: Claude
 Context: The owner asked whether a PDF-grounded academic writing skill from another repository would help the report. Most of it was already in `report.md` or enforced in code (anchors in passages and cells, source-stated versus analyst inference, banned novelty words, absence scoped to the inspected text). Its file-handling steps do not apply to a model step without tools. Four writing rules were missing.

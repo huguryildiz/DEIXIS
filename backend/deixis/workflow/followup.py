@@ -45,7 +45,9 @@ PUBLISHED = ("answered", "partly_answered", "not_answered")
 MAX_TERMS = 40
 MAX_EARLIER_TURNS = 3  # the published turns before this one that the model reads as conversation context
 MAX_CONTEXT_CLAIMS = 12  # claim texts kept from the latest answer and from each earlier turn
-MAX_TABLE_VALUES = 60  # evidence-table values the model reads as context (D50)
+MAX_TABLE_VALUES = 120  # evidence-table values the model reads as context (D50, D53)
+MAX_TABLE_COLUMNS = 3  # the table columns, by name across tables, most related to the follow-up (D53)
+MAX_VALUE_CHARS = 400  # one value's text as the model reads it
 MAX_MORE_QUERIES = 3  # search phrases one follow-up may ask the library with (D50)
 MORE_KEY = "followup_answer:more"
 MORE_SELECTION_KEY = "followup:more_passages"
@@ -214,7 +216,7 @@ def _with_reserve(store: Any, research_id: str, current: dict[str, list[str]], f
     holds: every included work's current passages the pool does not already give, which a second round reads when
     the model asks for more. Priority passages are the ones the research's latest answer and its evidence table's
     current values cite; they go first in the selection, so the follow-up starts from what the answer and the table
-    stand on."""
+    stand on. The table's own passages are chosen per follow-up with its values (`table_choice`, D53)."""
     given = {pid for ids in frozen["sources"].values() for pid in ids}
     reserve = {}
     for svid, ids in _included(store, research_id, current).items():
@@ -231,7 +233,6 @@ def _with_reserve(store: Any, research_id: str, current: dict[str, list[str]], f
         "SELECT l.passage_id FROM evidence_links l JOIN claims c ON c.id = l.claim_id WHERE c.answer_id ="
         " (SELECT id FROM answers WHERE research_id = ? AND status = 'structurally_valid'"
         "  ORDER BY created_at DESC, rowid DESC LIMIT 1) ORDER BY c.ordinal, l.rowid", (research_id,))]
-    cited += [row["passage_id"] for row in _table_values(store, research_id) if row["passage_id"]]
     return frozen | {"reserve": reserve, "priority": [pid for pid in dict.fromkeys(cited) if pid in held]}
 
 
@@ -288,7 +289,59 @@ def _code_step(flow: Any, run: dict[str, Any], key: str, kind: str, build: Any) 
     return output
 
 
-def conversation(store: Any, research_id: str, question: str, turn: dict[str, Any]) -> dict[str, Any]:
+def table_choice(rows: list[dict[str, Any]], rank_of: dict[str, int]) -> dict[str, Any]:
+    """The evidence-table values a follow-up reads (D53). A value scores by the best rank its cited passages reached in
+    the follow-up's own passage ranking; a column, taken by its name across the research's tables, by its values'
+    mean score. The best-scoring columns give their values, best first. When no ranking reached a table passage, the
+    first columns in table order are read, as before."""
+    cells: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        cell = cells.setdefault(row["cell_id"], {"column": _column_key(row["column_name"]),
+                                                 "score": 0.0, "passages": []})
+        if row["passage_id"]:
+            cell["passages"].append(row["passage_id"])
+            if row["passage_id"] in rank_of:
+                cell["score"] = max(cell["score"], 1 / (1 + rank_of[row["passage_id"]]))
+    by_column: dict[str, list[float]] = {}
+    for cell in cells.values():
+        by_column.setdefault(cell["column"], []).append(cell["score"])
+    mean = {column: sum(scores) / len(scores) for column, scores in by_column.items()}
+    columns = [c for c in sorted(mean, key=lambda c: -mean[c]) if mean[c] > 0][:MAX_TABLE_COLUMNS]
+    if not columns:
+        columns = list(by_column)[:MAX_TABLE_COLUMNS]
+    position = {column: i for i, column in enumerate(columns)}
+    chosen = sorted((cid for cid, cell in cells.items() if cell["column"] in position),
+                    key=lambda cid: (-cells[cid]["score"], position[cells[cid]["column"]]))[:MAX_TABLE_VALUES]
+    passages = list(dict.fromkeys(pid for cid in chosen for pid in cells[cid]["passages"]))
+    return {"columns": columns, "cell_ids": chosen, "passage_ids": passages}
+
+
+def _column_key(name: str) -> str:
+    return " ".join(name.lower().split())
+
+
+def table_values(rows: list[dict[str, Any]], cell_ids: list[str] | None = None) -> list[dict[str, str]]:
+    """The values sent for these cells, in their order (without ids: the tables in their order, up to the cap): one per
+    cell, cut to its length; the same work's same value under the same column of another table is sent once."""
+    by_cell: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        by_cell.setdefault(row["cell_id"], row)  # one value per cell: a row per cited passage
+    values, seen = [], set()
+    for cid in cell_ids if cell_ids is not None else list(by_cell)[:MAX_TABLE_VALUES]:
+        row = by_cell.get(cid)
+        if row is None:
+            continue
+        text = _value_text(json.loads(row["value_json"]), row["options_json"])[:MAX_VALUE_CHARS]
+        if (key := (row["source_version_id"], _column_key(row["column_name"]), text)) in seen:
+            continue
+        seen.add(key)
+        work = f"{row['title']} ({row['year']})" if row["year"] else row["title"]
+        values.append({"work": work, "column": row["column_name"], "value": text})
+    return values
+
+
+def conversation(store: Any, research_id: str, question: str, turn: dict[str, Any],
+                 values: list[dict[str, str]] | None = None) -> dict[str, Any]:
     """What the conversation so far says, so the model reads the follow-up in its context (D49): the research question,
     the claim texts of the research's latest valid answer, and the last published turns asked before this one. It is
     context, never evidence: the texts carry no passage, and a claim may cite only the passages of this StepInput."""
@@ -307,15 +360,11 @@ def conversation(store: Any, research_id: str, question: str, turn: dict[str, An
         draft = json.loads(row["draft_json"] or "{}")
         claims = [c["text"] for c in draft.get("claims", []) if isinstance(c, dict) and isinstance(c.get("text"), str)]
         earlier.append({"question": row["question"], "answer": claims[:MAX_CONTEXT_CLAIMS]})
-    values: dict[str, dict[str, str]] = {}
-    for row in _table_values(store, research_id):
-        key = row["cell_id"]  # one value per cell: a row per cited passage, tables with the same column names apart
-        if key not in values and len(values) < MAX_TABLE_VALUES:
-            work = f"{row['title']} ({row['year']})" if row["year"] else row["title"]
-            values[key] = {"work": work, "column": row["column_name"],
-                           "value": _value_text(json.loads(row["value_json"]), row["options_json"])}
+    # The values the follow-up's selection chose and stored with it (D53); without them, the tables in their order.
+    if values is None:
+        values = table_values(_table_values(store, research_id))
     return {"research_question": question, "latest_answer": latest, "earlier_turns": earlier,
-            "evidence_table": list(values.values())}
+            "evidence_table": values}
 
 
 def _value_text(value: Any, options_json: str | None) -> str:
@@ -365,9 +414,14 @@ async def _selection(flow: Any, run: dict[str, Any], scope: dict[str, Any], ques
     # The passages no ranking matched, breadth-first: each source's first passage (its abstract when it has one),
     # then each source's second, and so on. A question in another language than the passages matches no word, and
     # the model, not the word match, says whether the passages answer it.
-    # The passages the latest answer and the evidence table cite go first, up to half the limit (D50).
-    # A table value may cite a passage of the reserve; it is read in this round too.
-    ranked_ids = frozen_pool.get("priority", [])[:limit // 2] + ranked_ids
+    # The passages the latest answer cites, then those of the table values this follow-up reads (D53), go first, up
+    # to half the limit (D50). A table value may cite a passage of the reserve; it is read in this round too.
+    held = {pid for part in (sources, frozen_pool.get("reserve", {})) for pid_list in part.values() for pid in pid_list}
+    rows = _table_values(store, run["research_id"])
+    table = table_choice(rows, {pid: i for i, pid in enumerate(ranked_ids)})
+    priority = list(dict.fromkeys(frozen_pool.get("priority", [])[:limit // 4]
+                                  + [pid for pid in table["passage_ids"] if pid in held]))[:limit // 2]
+    ranked_ids = priority + ranked_ids
     seen, fill = set(ranked_ids), []
     for depth in range(max((len(v) for v in sources.values()), default=0)):
         fill += [sources[svid][depth] for svid in svids if depth < len(sources[svid]) and sources[svid][depth] not in seen]
@@ -389,7 +443,10 @@ async def _selection(flow: Any, run: dict[str, Any], scope: dict[str, Any], ques
               "semantic_matches": len(semantic), "semantic_step": semantic_step["status"] if semantic_step else None,
               "limit": limit, "per_source": per_source, "passage_ids": chosen,
               "from_ranking": from_ranking, "from_fill": len(chosen) - from_ranking,
-              "from_priority": len(set(chosen) & set(frozen_pool.get("priority", [])))}
+              "from_priority": len(set(chosen) & set(priority)),
+              "table_columns": table["columns"], "table_cells": table["cell_ids"],
+              # The values themselves, frozen with the selection: a resumed turn reads these, not the table as it is.
+              "table_values": table_values(rows, table["cell_ids"])}
     return _code_step(flow, run, SELECTION_KEY, "code:followup_passages", lambda: output)
 
 
@@ -464,7 +521,8 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
     selected = await _selection(flow, run, scope, turn["question"], frozen_pool)
     flow._checkpoint(run_id, run["scope_revision"])
     context = _code_step(flow, run, CONVERSATION_KEY, "code:followup_conversation",
-                         lambda: conversation(store, run["research_id"], scope["question"], turn))
+                         lambda: conversation(store, run["research_id"], scope["question"], turn,
+                                              selected.get("table_values")))
     passages = [store.passage(pid) for pid in selected["passage_ids"]]
     key, output = TASK, await _call(flow, run, scope, TASK, passages, context | {"more_queries_allowed": True}, frozen_pool)
     queries = [] if output.get("invalid") else [q for q in output["result"].get("more_queries", []) if q.strip()]

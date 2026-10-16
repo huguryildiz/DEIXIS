@@ -19,8 +19,10 @@ claims unless a supplied passage states it, and do not say the research
 question is missing.
 
 Start from what the research already established. `latest_answer` is its
-report and `evidence_table` holds its evidence table's values (one work, one
-column, one value); the passages they cite come first in this StepInput. Build
+report and `evidence_table` holds the values of its evidence-table columns
+most related to this question (one work, one column, one value); the passages
+they cite come first in this StepInput. A table value that gives no number
+means the table did not find one, not that the work reports none. Build
 the answer on them, check each point against a supplied passage, and cite the
 passage, never the report or the table.
 

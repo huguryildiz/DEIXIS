@@ -1423,8 +1423,8 @@
         "latest_answer": { "type": "array", "maxItems": 12, "items": { "type": "string" } },
         "evidence_table": {
           "type": "array",
-          "maxItems": 60,
-          "description": "The current values of the research's evidence tables: one work, one column, the value as the table shows it.",
+          "maxItems": 120,
+          "description": "The current values of the research's evidence tables that this follow-up reads: the columns most related to it, one work, one column, the value as the table shows it.",
           "items": {
             "type": "object",
             "additionalProperties": false,

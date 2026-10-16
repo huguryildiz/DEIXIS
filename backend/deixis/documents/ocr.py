@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import subprocess
@@ -25,6 +26,8 @@ from deixis.child_env import child_env
 from deixis.documents import pdf
 from deixis.tool_paths import find_tool
 from deixis.tool_probe import Probe, probe
+
+log = logging.getLogger(__name__)
 
 LANGUAGES = ("eng", "tur")
 DPI = 300
@@ -47,22 +50,32 @@ async def _ask_tesseract(tesseract: str) -> list[Probe]:
     return await asyncio.gather(probe([tesseract, "--version"], env=env), probe([tesseract, "--list-langs"], env=env))
 
 
+# Why Tesseract cannot be used, as the code `tesseract_status` gives; the page words each in its own language (B3).
+REASONS = {
+    "tesseract_missing": "Tesseract is not installed.",
+    "tesseract_not_responding": "Tesseract did not answer in time.",
+    "tesseract_failed": "Tesseract could not be run.",
+    "tesseract_languages_missing": "Tesseract has no data for a language DEIXIS reads.",
+}
+
+
 def tesseract_status(langs=LANGUAGES) -> dict:
-    """Whether Tesseract is installed, its version, and which of `langs` have data. Call it off the event loop."""
+    """Whether Tesseract is installed, its version, and which of `langs` have data. `reason` is a code from `REASONS`, or
+    None. Call it off the event loop."""
     missing = {"available": False, "version": None, "languages": [], "missing_languages": list(langs)}
     if (tesseract := find_tool("tesseract")) is None:
-        return missing | {"reason": "Tesseract is not installed. Install it in Settings → On this computer → OCR."}
+        return missing | {"reason": "tesseract_missing"}
     version, listed = asyncio.run(_ask_tesseract(tesseract))
     if failed := next((p for p in (version, listed) if p.error), None):
-        problem = "it did not answer in time" if failed.error == "not_responding" else failed.stderr
-        return missing | {"reason": f"Tesseract could not be run: {problem}"}
+        if failed.error != "not_responding":
+            log.warning("Tesseract could not be run: %s", failed.stderr)  # its own words go to the log, not to the page
+        return missing | {"reason": "tesseract_not_responding" if failed.error == "not_responding" else "tesseract_failed"}
     match = re.search(r"tesseract v?(\d+(?:\.\d+)*)", version.stdout + version.stderr)
     installed = set(listed.stdout.split()[1:] if listed.returncode == 0 else [])  # the first line is a header
     languages = [lang for lang in langs if lang in installed]
     absent = [lang for lang in langs if lang not in installed]
-    reason = f"Tesseract has no data for {', '.join(absent)}. Install it in Settings → On this computer → OCR." if absent else None
     return {"available": bool(match and languages), "version": match.group(1) if match else None, "languages": languages,
-            "missing_languages": absent, "reason": reason}
+            "missing_languages": absent, "reason": "tesseract_languages_missing" if absent else None}
 
 
 def read_page(path: Path, page: int, langs, timeout: float = TIMEOUT_SECONDS, max_memory: int = MAX_MEMORY_BYTES) -> OcrPage:

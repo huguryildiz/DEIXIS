@@ -50,7 +50,26 @@ def test_tesseract_status_reports_the_tool_and_the_languages_it_lacks(monkeypatc
     monkeypatch.setattr(ocr, "find_tool", lambda name: None)
     missing = ocr.tesseract_status(("eng", "tur"))
     assert (missing["available"], missing["languages"]) == (False, [])
-    assert "Settings → On this computer → OCR" in missing["reason"]
+    assert missing["reason"] == "tesseract_missing"
+
+
+def test_a_tesseract_that_cannot_run_gives_a_code_and_its_own_words_stay_in_the_log(monkeypatch, caplog):
+    from deixis.tool_probe import Probe
+
+    async def fails(tesseract):
+        return [Probe(1, "", "SYNTHETIC dyld: Library not loaded: /private/path/libtesseract.dylib", "failed"), Probe(0, "tesseract 5.5.2", "")]
+
+    async def hangs(tesseract):
+        return [Probe(None, "", "", "not_responding"), Probe(0, "", "")]
+
+    monkeypatch.setattr(ocr, "find_tool", lambda name: "/SYNTHETIC/bin/tesseract")
+    monkeypatch.setattr(ocr, "_ask_tesseract", fails)
+    with caplog.at_level("WARNING", logger="deixis.documents.ocr"):
+        failed = ocr.tesseract_status(("eng", "tur"))
+    assert failed["reason"] == "tesseract_failed" and "SYNTHETIC" not in str(failed) and "libtesseract" in caplog.text
+    monkeypatch.setattr(ocr, "_ask_tesseract", hangs)
+    assert ocr.tesseract_status(("eng", "tur"))["reason"] == "tesseract_not_responding"
+    assert set(ocr.REASONS) == {"tesseract_missing", "tesseract_not_responding", "tesseract_failed", "tesseract_languages_missing"}
 
 
 @needs_tesseract

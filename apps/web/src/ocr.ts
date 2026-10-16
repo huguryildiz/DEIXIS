@@ -10,6 +10,16 @@ const ACTIVE = new Set(['queued', 'running', 'pause_requested', 'paused'])
 const languageNames: Record<string, string> = { eng: 'English', tur: 'Turkish' }
 export const ocrLanguagesText = (languages: string[]) => languages.map(l => t(languageNames[l] ?? l)).join(' + ')
 
+// Why Tesseract cannot be used, from the code the backend names (B3).
+export function ocrReasonText(tool: Pick<OcrTool, 'reason' | 'missing_languages'>): string {
+  switch (tool.reason) {
+    case 'tesseract_missing': return t('Tesseract is not installed. Install it under Scanned PDF reader (OCR) in Settings.')
+    case 'tesseract_not_responding': return t('Tesseract did not answer in time. Try again, or restart DEIXIS.')
+    case 'tesseract_languages_missing': return t('Tesseract has no data for {languages}. Install it under Scanned PDF reader (OCR) in Settings.', { languages: ocrLanguagesText(tool.missing_languages) })
+    default: return t('Tesseract could not be run. Check it under Scanned PDF reader (OCR) in Settings.')
+  }
+}
+
 export type OcrOffer =
   // blocked: another run of this research is working; the endpoint refuses a second one.
   | { kind: 'ready'; pages: number; tool: OcrTool; blocked: boolean }
@@ -29,6 +39,6 @@ export function ocrOffer(asset: Asset, tool: OcrTool | null, runs: Run[]): OcrOf
   // A reading with this Tesseract version and these languages is not repeated (the endpoint answers 409).
   const last = ocr.last_read
   if (last && last.version === tool.version && last.languages.join('+') === tool.languages.join('+')) return null
-  if (!tool.available) return { kind: 'off', reason: tool.reason ?? t('Tesseract is not available.') }
+  if (!tool.available) return { kind: 'off', reason: ocrReasonText(tool) }
   return { kind: 'ready', pages: ocr.pages_without_text, tool, blocked: runs.some(r => ACTIVE.has(r.status) && r.status !== 'paused') }
 }

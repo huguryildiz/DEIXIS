@@ -168,7 +168,7 @@ def test_a_refusing_keychain_starts_the_app_keyless_and_refuses_the_change(monke
     credentials.load_into_environment()
     assert entry(client)["keychain_unavailable"] is True
     refused = client.put(f"/api/credentials/{KEY}", json={"value": V1})
-    assert refused.status_code == 503 and "did not store" in refused.json()["detail"] and not os.environ.get(KEY)
+    assert refused.status_code == 503 and refused.json()["code"] == "keychain_locked" and not os.environ.get(KEY)
     assert client.get("/api/credentials").status_code == 200
 
 
@@ -384,7 +384,7 @@ def no_keychain():
 
 def test_without_a_keychain_a_key_lasts_for_the_session_and_is_gone_after_a_restart(no_keychain, client):
     listed = client.get("/api/credentials").json()["keychain"]
-    assert listed == {"available": False, "name": None, "mode": "session", "file_error": False}
+    assert listed == {"available": False, "name": None, "kind": None, "mode": "session", "file_error": False}
     saved = client.put(f"/api/credentials/{KEY}", json={"value": V1})  # was a 503 "No system keychain is available"
     assert saved.status_code == 200 and saved.json()["key"]["source"] == "session" and os.environ[KEY] == V1
     assert entry(client)["configured"] and V1 not in client.get("/api/credentials").text

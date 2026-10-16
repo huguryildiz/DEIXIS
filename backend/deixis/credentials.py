@@ -21,10 +21,13 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import contextlib
+import errno
 import json
+import logging
 import os
 import queue
 import re
+import sys
 import tempfile
 import threading
 import time
@@ -37,7 +40,7 @@ import keyring
 from keyring.backend import KeyringBackend
 from keyring.backends import fail
 from keyring.backends.chainer import ChainerBackend
-from keyring.errors import KeyringError, PasswordDeleteError
+from keyring.errors import KeyringError, KeyringLocked, PasswordDeleteError
 
 from deixis import key_verification
 from deixis.models.anthropic_api import API_URL as ANTHROPIC_API_URL, KEY_ENV as ANTHROPIC_KEY_ENV, headers as anthropic_headers
@@ -46,6 +49,8 @@ from deixis.models.openai_compat import BY_KEY_ENV as COMPAT_BY_KEY_ENV
 from deixis.paths import is_frozen
 from deixis.storage.db import now
 from deixis.domain.limits import service_error_kind, http_limit, retry_at
+
+log = logging.getLogger(__name__)
 
 SERVICE = "DEIXIS"
 KEYCHAIN_TIMEOUT = 10.0  # seconds a keychain call may take before the app says the keychain is not responding (E5)
@@ -172,7 +177,52 @@ _worker = _Worker()
 
 
 def _as_keyring_error(exc: BaseException) -> BaseException:
-    return exc if isinstance(exc, (KeyringError, OSError, ValueError)) else KeyringError(type(exc).__name__)
+    """The error as one the routes handle. An error that already is one passes through with its own cause, which `failure_code`
+    reads; any other is wrapped, with the original as its cause."""
+    if isinstance(exc, (KeyringError, OSError, ValueError)):
+        return exc
+    wrapped = KeyringError(type(exc).__name__)
+    wrapped.__cause__ = exc
+    return wrapped
+
+
+# Why a key could not be saved or removed, by cause (E14). The page words each code in its own language and names the keychain
+# by operating system (B3); these English lines are only what a caller without the page sees. They never name an exception.
+FAILURES = {
+    "keychain_unavailable": "The system keychain could not be used, so the key was not changed.",
+    "keychain_locked": "The system keychain is locked, so the key was not changed.",
+    "keychain_denied": "The system keychain refused access, so the key was not changed.",
+    "keychain_too_large": "The system keychain cannot hold a key this long, so the key was not changed.",
+    "file_write_failed": "The key could not be written to disk, so it was not changed.",
+}
+_LOCKED_WORDS = ("locked", "unlock", "-25308")  # -25308: macOS errSecInteractionNotAllowed
+_DENIED_WORDS = ("denied", "permission", "not allowed", "not authorized", "forbidden", "refused", "cancel", "-25293", "-128")
+_TOO_LARGE_WORDS = ("too long", "too large", "too big", "exceed", "size limit", "maximum size")
+_WINDOWS_BAD_BLOB = 1783  # CredWrite: the stub received bad data, what a value over the 2560-byte limit comes back as
+
+
+def failure_code(exc: BaseException) -> str:
+    """The cause of a failed key change as one of `FAILURES`. The keychain backends give no common error type, so the cause is
+    read from the exception chain (keyring's own locked/absent types, the error numbers and the words backends use); a
+    cause not recognised is `keychain_unavailable`. The exception, with its class, goes to the log and nowhere else."""
+    log.warning("A key change failed: %s: %s", type(exc).__name__, exc, exc_info=exc)
+    chain: list[BaseException] = []
+    cause: BaseException | None = exc
+    while cause is not None and len(chain) < 10 and cause not in chain:
+        chain.append(cause)
+        cause = cause.__cause__ or cause.__context__
+    text = " ".join(str(e) for e in chain).lower()
+    numbers = {a for e in chain for a in e.args if isinstance(a, int)}
+    if isinstance(exc, OSError) and store_kind() != "keychain":
+        return "file_write_failed"  # the key file in the data folder (or .env in a repository run)
+    if _WINDOWS_BAD_BLOB in numbers or any(word in text for word in _TOO_LARGE_WORDS):
+        return "keychain_too_large"
+    if any(isinstance(e, KeyringLocked) for e in chain) or any(word in text for word in _LOCKED_WORDS):
+        return "keychain_locked"
+    if any(isinstance(e, PermissionError) or getattr(e, "errno", None) in (errno.EACCES, errno.EPERM) for e in chain) \
+            or any(word in text for word in _DENIED_WORDS):
+        return "keychain_denied"
+    return "keychain_unavailable"
 
 
 def _call_sync(fn: Any, *args: Any) -> Any:
@@ -186,7 +236,7 @@ def _call_sync(fn: Any, *args: Any) -> Any:
         future.cancel()
         raise KeychainNotResponding() from exc
     except Exception as exc:  # noqa: BLE001
-        raise _as_keyring_error(exc) from exc
+        raise _as_keyring_error(exc)
 
 
 async def _call(env: str, fn: Any, *args: Any) -> Any:
@@ -202,7 +252,7 @@ async def _call(env: str, fn: Any, *args: Any) -> Any:
     try:
         return wrapped.result()
     except Exception as exc:  # noqa: BLE001
-        raise _as_keyring_error(exc) from exc
+        raise _as_keyring_error(exc)
 
 
 async def _settle(env: str, late: asyncio.Future[Any]) -> None:
@@ -224,6 +274,11 @@ class _Found:
     name: str | None  # the keychain's display name; None when there is no usable keychain
     failed: bool  # a keychain is meant to exist but could not be reached: not the same as having none (E5)
 
+    @property
+    def kind(self) -> str | None:
+        """The keychain by operating system ('macos', 'windows', 'linux'), so the page names it in its own words (B3)."""
+        return None if self.name is None else _kind(self.backend)
+
 
 _UNREACHABLE = _Found(None, None, True)
 
@@ -231,6 +286,11 @@ _UNREACHABLE = _Found(None, None, True)
 def _display_name(backend: Any) -> str:
     return {"macOS": "macOS Keychain", "Windows": "Windows Credential Locker"}.get(
         type(backend).__module__.rsplit(".", 1)[-1], getattr(backend, "name", None) or type(backend).__name__)
+
+
+def _kind(backend: Any) -> str:
+    return {"macOS": "macos", "Windows": "windows"}.get(type(backend).__module__.rsplit(".", 1)[-1]) or (
+        "macos" if sys.platform == "darwin" else "windows" if sys.platform == "win32" else "linux")
 
 
 def _service_errored(exc: RuntimeError) -> bool:
@@ -375,6 +435,10 @@ async def probe_async() -> None:
 
 def keychain_name() -> str | None:
     return _found().name
+
+
+def keychain_kind() -> str | None:
+    return _found().kind
 
 
 def keychain_failed() -> bool:
@@ -693,7 +757,7 @@ def _refuse_shell_key(env: str) -> None:
     stays as it is rather than moving to the session store."""
     found = _found()
     if status(env)["source"] == "environment" and found.name is None and not found.failed:
-        raise ShellKeyStays(f"{env} is set in the shell and there is no system keychain; change it there")
+        raise ShellKeyStays("This key is set outside DEIXIS and there is no system keychain to hold a replacement; change it where it was set")
 
 
 async def check_save(env: str) -> None:
@@ -750,7 +814,7 @@ def _prepare_delete(env: str) -> str | None:
     source = status(env)["source"]
     _broken.discard(env)
     if source == "environment":
-        raise KeySourceConflict(f"{env} is set in the shell; change or remove it there")
+        raise KeySourceConflict("This key is set outside DEIXIS; change or remove it where it was set")
     if source == "dotenv":
         _rewrite_dotenv(env, None)
         os.environ.pop(env, None)

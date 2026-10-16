@@ -133,9 +133,15 @@ TOOLS = {t.id: t for t in (
 
 
 class ToolError(Exception):
-    def __init__(self, status: int, message: str):
+    def __init__(self, status: int, message: str, code: str | None = None):
         super().__init__(message)
         self.status = status
+        self.code = code  # a reason the page words in its own language (B3); None for a plain refusal
+
+
+def manager_missing(name: str) -> str:
+    """The reason code for an installer program that is not on this computer."""
+    return "uv_missing" if name == "uv" else "manager_missing"
 
 
 def _command_output(argv: list[str], timeout: float | None = None) -> str | None:
@@ -260,8 +266,9 @@ class LocalTools:
             "version": version or (_app_version(app) if app else None), "path": path or app, "role": tool.role,
             # A CLI that did not answer its version probe in time (A3b); the card says so instead of showing no version.
             "reason_code": "not_responding" if probed and probed.error == "not_responding" else None,
+            # `unavailable_reason` is a code (`uv_missing`, `manager_missing`); `manager` names the program the install needs.
             "install": {"command": " ".join(tool.install), "available": bool(manager),
-                        "unavailable_reason": None if manager else f"{tool.install[0]} was not found on this computer's PATH",
+                        "unavailable_reason": None if manager else manager_missing(tool.install[0]), "manager": tool.install[0],
                         "url": tool.url},
         }
         if tool.kind == "server":
@@ -352,7 +359,7 @@ class LocalTools:
             raise ToolError(409, f"{tool.name} is already installed")
         manager = await asyncio.to_thread(find_tool, tool.install[0])
         if not manager:
-            raise ToolError(422, current["install"]["unavailable_reason"])
+            raise ToolError(422, f"{tool.install[0]} was not found on this computer", manager_missing(tool.install[0]))
         job = {"status": "running", "command": " ".join(tool.install), "started_at": now(), "finished_at": None, "output": ""}
         argv = [manager, *tool.install[1:]]
         return self._start(tool_id, job, lambda tool_id, job: self._run(tool_id, job, argv), reserved)

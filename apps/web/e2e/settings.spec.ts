@@ -462,7 +462,7 @@ test.describe.serial('S24: the Settings page', () => {
   })
 
   test('connection sheet: a key field never shows the stored key; Save and test, Remove key with its inline confirmation', async () => {
-    const keychain = { available: true, name: 'SYNTHETIC keychain' }
+    const keychain = { available: true, name: 'SYNTHETIC keychain', kind: 'macos' }
     let configured = false
     let hold: Promise<void> | null = null
     const entry = () => ({ env: 'OPENAI_API_KEY', group: 'model', service: 'openai', configured, source: configured ? 'keychain' : null, testable: true })
@@ -489,7 +489,7 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(page.getByText('Key saved.')).toBeVisible()
     // Saved: the field is empty again and says where the key is kept, without any of it.
     await expect(field).toHaveValue('')
-    await expect(field).toHaveAttribute('placeholder', /stored in SYNTHETIC keychain$/)
+    await expect(field).toHaveAttribute('placeholder', /stored in the Keychain$/)
     expect(await sheet.innerText()).not.toContain('SYNTHETIC-not-a-key')
     await expect(sheet.getByRole('button', { name: 'Test', exact: true })).toBeVisible()
     await sheet.getByRole('button', { name: 'Remove key' }).click()

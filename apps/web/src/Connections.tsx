@@ -8,7 +8,7 @@ import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinEmbed
 import { useToast } from './Toast'
 import { ocrLanguagesText } from './ocr'
 import { t, uiLocale } from './i18n'
-import { serviceErrorSentence, healthReasonText, localToolIcon, localToolNames, providerRole, reasoningLabel } from './labels'
+import { serviceErrorSentence, healthReasonText, installReasonText, credentialFailureText, keychainLabel, localToolIcon, localToolNames, providerRole, reasoningLabel } from './labels'
 import { ConnectionIcon } from './connectionIcons'
 import { writeClipboard } from './clipboard'
 import { Notice } from './Notice'
@@ -180,18 +180,16 @@ function RemoveNotice({ text, busy, onRemove, onKeep }: { text: string; busy: bo
 
 // Where a saved key lives (E5, A6): the system keychain, this run's memory when there is none, or the file the person chose.
 function keyHome(keychain: Keychain) {
-  const name = keychain.name ?? t('the system keychain')
+  const name = keychainLabel(keychain.kind)
   return keychain.mode === 'session' ? { where: t('kept for this session only'), note: t('Kept in memory for this session only, never in research files or exports.') }
     : keychain.mode === 'file' ? { where: t('stored unencrypted in your data folder'), note: t('Stored unencrypted in your data folder, never in research files or exports.') }
     : { where: t('stored in {keychain}', { keychain: name }), note: t('Stored in {keychain}, never in research files or exports.', { keychain: name }) }
 }
 
-// The keychain's own refusals say what happened in English; the person sees them in their language.
-function keychainError(e: Error): string {
+// The keychain's refusals come as a cause code; the person reads it in their language, with the keychain named for their system.
+function keychainError(e: Error, keychain: Keychain): string {
   if (!(e instanceof ApiError)) return e.message
-  return e.code === 'keychain_not_responding' ? t('The system keychain is not responding, so the change may not have been made. DEIXIS shows the real state when it answers.')
-    : e.code === 'keychain_busy' ? t('The previous change to this key has not finished. Wait for the system keychain to answer.')
-    : e.code === 'file_store_damaged' ? t('The key file in your data folder cannot be read, so DEIXIS left it as it is and changes no key until it is fixed or removed.') : e.message
+  return credentialFailureText(e.code, keychainLabel(keychain.kind), e.message)
 }
 
 // With no system keychain a key lives in memory for this run; the person can choose an unencrypted file instead (A6).
@@ -202,7 +200,7 @@ function KeyStore({ keychain, onChanged }: { keychain: Keychain; onChanged: () =
   const file = keychain.mode === 'file'
   function choose(enabled: boolean) {
     setBusy(true); setError('')
-    api.setFileStore(enabled).then(() => onChanged()).catch((e: Error) => setError(keychainError(e))).finally(() => setBusy(false))
+    api.setFileStore(enabled).then(() => onChanged()).catch((e: Error) => setError(keychainError(e, keychain))).finally(() => setBusy(false))
   }
   return <>
     <Notice tone="attention">
@@ -232,10 +230,10 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
   // A key saved here replaces one from the shell; removing it brings the shell key back.
   const fromShell = entry.source === 'environment'
   // D29: with no system keychain a shell key keeps its note and cannot be replaced, though other keys can be kept for the session.
-  if (fromShell && !keychain.available) return <p className="foot-note">{t('This key comes from the terminal that started DEIXIS; change or remove it there.')}</p>
+  if (fromShell && !keychain.available) return <p className="foot-note">t('This key is set outside DEIXIS; change or remove it where it was set.')</p>
   const inDotenv = entry.source === 'dotenv'
   const home = keyHome(keychain)
-  const where = inDotenv ? '' : fromShell ? t('from the terminal that started DEIXIS') : home.where
+  const where = inDotenv ? '' : fromShell ? t('set outside DEIXIS') : home.where
   const typed = value.trim()
 
   // The third state: the key is saved but no request showed that it works. An API without a model list says so; any other
@@ -260,17 +258,18 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
         : t('Key saved.'))
     }).catch((e: Error) => setFormError(e instanceof ApiError && e.code === 'credential_test_failed'
       ? t('The key was not saved.') + ' ' + (keyRefusal(service, env, e.details?.http_status) ?? serviceErrorSentence({ kind: e.details?.kind, service, resetAt: e.details?.reset_at, effect: 'settings' }))
-      : keychainError(e))).finally(() => setBusy(false))
+      : keychainError(e, keychain))).finally(() => setBusy(false))
   }
   function remove() {
     setBusy(true); setFormError('')
     api.removeCredential(env).then(() => { setAsking(false); onSaved(); toast('success', t('Key removed.')) })
-      .catch((e: Error) => setFormError(keychainError(e))).finally(() => setBusy(false))
+      .catch((e: Error) => setFormError(keychainError(e, keychain))).finally(() => setBusy(false))
   }
   const primary = typed ? (entry.testable ? 'Save and test' : 'Save') : entry.configured && entry.testable ? 'Test' : null
   return <form className="key-box" onSubmit={e => { e.preventDefault(); if (typed) save(); else if (primary) test() }}>
     <label className="lbl" htmlFor={id}>{label}
       <input id={id} className="field" type={plain ? 'text' : 'password'} inputMode={plain ? 'numeric' : undefined} spellCheck={false} value={value} disabled={busy}
+        aria-invalid={formError ? true : undefined} aria-describedby={formError ? `${id}-error` : undefined}
         // A browser or password manager would fill a saved web password here and it would be saved as the key.
         autoComplete={plain ? 'off' : 'new-password'} data-1p-ignore data-lpignore="true" data-bwignore data-form-type="other"
         placeholder={entry.configured ? `${entry.last4 ? `••••••••${entry.last4}` : '••••••••••••'} ${where}`.trim() : t(plain ? 'Type your user ID' : 'Paste your key')} onChange={e => { setValue(e.target.value); setFormError('') }} />
@@ -280,18 +279,21 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
     {entry.broken && <Notice tone="attention"><p>{t('This saved key is broken and was not used. Enter it again.')}</p></Notice>}
     {entry.configured && entry.verification === 'pending' && <p className="foot-note"><Info aria-hidden />{t('Saved, not verified: no request has shown that this key works yet.')}</p>}
     {entry.configured && entry.verification === 'rejected' && <Notice tone="attention"><p>{t('{service} did not accept this key. Enter it again.', { service })}</p></Notice>}
-    {note && <p className="foot-note key-note"><ShieldCheck aria-hidden />{fromShell && `${t('This key comes from the terminal that started DEIXIS. A key saved here replaces it.')} `}{inDotenv ? t('Never stored in research files or exports.') : home.note}
+    {note && <p className="foot-note key-note"><ShieldCheck aria-hidden />{fromShell && `${t('This key is set outside DEIXIS. A key saved here replaces it.')} `}{inDotenv ? t('Never stored in research files or exports.') : home.note}
       {entry.testable && ` ${t('A new key is tested with one short request before it is saved.')}`}</p>}
     {note && <KeyStore keychain={keychain} onChanged={onSaved} />}
-    {formError && <Notice tone="error"><p>{formError}</p></Notice>}
+    {formError && <Notice tone="error"><p id={`${id}-error`}>{formError}</p></Notice>}
     <div className="acts">
       {primary && <button type="submit" className="btn-pri" disabled={busy}>{busy ? <span className="spin" aria-hidden /> : typed ? <Save aria-hidden /> : <CircleCheck aria-hidden />}{t(busy ? (typed ? (entry.testable ? 'Testing and saving…' : 'Saving…') : 'Testing…') : primary)}</button>}
       {entry.configured && !fromShell && !asking && <button type="button" className="ghost" disabled={busy} onClick={() => setAsking(true)}>{t(plain ? 'Remove ID' : 'Remove key')}</button>}
     </div>
     {asking && <RemoveNotice busy={busy} onRemove={remove} onKeep={() => setAsking(false)}
-      text={t(plain ? 'Remove the ID for {name}?' : 'Remove the key for {name}?', { name: service }) + ' ' + (entry.shell_fallback ? t('DEIXIS goes back to the key from the terminal that started it.') : removeEffect)} />}
+      text={t(plain ? 'Remove the ID for {name}?' : 'Remove the key for {name}?', { name: service }) + ' ' + (entry.shell_fallback ? t('DEIXIS goes back to the key that is set outside it.') : removeEffect)} />}
   </form>
 }
+
+// A refused install that names the missing program by code reads in the person's language; any other refusal keeps its own line.
+const installError = (e: Error, tool: LocalTool) => e instanceof ApiError && e.code ? installReasonText(e.code, tool.install.manager) || e.message : e.message
 
 // Warnings are left out: brew prints them for unrelated taps, so they rarely explain a failed install.
 function errorLines(output: string): string[] {
@@ -311,7 +313,7 @@ function LocalToolDetails({ tool, dark, onChanged, refresh = true, chip = true }
   const offerInstall = !tool.installed || offerApp
   function install() {
     setBusy(true)
-    api.installLocalTool(tool.id).then(() => { setConfirmOpen(false); onChanged() }).catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
+    api.installLocalTool(tool.id).then(() => { setConfirmOpen(false); onChanged() }).catch((e: Error) => toast('error', installError(e, tool))).finally(() => setBusy(false))
   }
   function cancelInstall() {
     setCancelling(true)
@@ -347,7 +349,7 @@ function LocalToolDetails({ tool, dark, onChanged, refresh = true, chip = true }
         {!running && <div className="actions"><Button size="sm" onClick={() => setConfirmOpen(true)}>{t(offerApp ? 'Install the Ollama app' : 'Install')}</Button></div>}
         <ConfirmDialog open={confirmOpen} dark={dark} title={t('Install {name}?', { name })} description={t(tool.app_installed === false ? 'DEIXIS downloads the Ollama app from ollama.com (about 200 MB), copies it to Applications and opens it.' : 'DEIXIS installs it on this computer.')} confirmLabel={t('Install')} cancelLabel={t('Cancel')} busy={busy} onConfirm={install} onOpenChange={setConfirmOpen} />
       </>
-      : <p className="local-tool-note">{tool.install.unavailable_reason}<br /><a href={tool.install.url} target="_blank" rel="noopener noreferrer">{t('Installation instructions')}</a></p>)}
+      : <p className="local-tool-note">{installReasonText(tool.install.unavailable_reason, tool.install.manager)}<br /><a href={tool.install.url} target="_blank" rel="noopener noreferrer">{t('Installation instructions')}</a></p>)}
     {tool.job && <>
       {running
         ? tool.job.total
@@ -433,7 +435,7 @@ function EquationReaderDetails({ reader, dark, onChanged }: { reader: EquationRe
       <div><b>{t('About 4.4 GB of disk · {gb} GB free', { gb: reader.disk_free_gb })}</b><span>{t('DEIXIS installs it into its data folder.')}</span></div>
       <Button size="sm" onClick={() => setConfirm('install')}>{t('Install')}</Button>
     </section>}
-    {!ready && !running && !reader.install.available && <p className="local-tool-note">{reader.install.unavailable_reason}<br /><a href={reader.install.url} target="_blank" rel="noopener noreferrer">{t('Installation instructions')}</a></p>}
+    {!ready && !running && !reader.install.available && <p className="local-tool-note">{installReasonText(reader.install.unavailable_reason)}<br /><a href={reader.install.url} target="_blank" rel="noopener noreferrer">{t('Installation instructions')}</a></p>}
     {reader.installed && <ReaderProgress reader={reader} />}
     <ToolCaveat>{t('About one Marker equation in fifty was misread in a test on three papers, and a misread equation looks correct. Equations that do not match the PDF’s own text are marked to check against the page.')}</ToolCaveat>
     <ToolFacts foot={ready && !running ? <ToolUpdateCheck tool="marker" /> : null}>
@@ -484,7 +486,7 @@ function MathpixDetails({ mathpix, keychain, dark, onChanged, onKeychainChanged 
       toast(result.test.status === 'ok' ? 'success' : 'warning', result.test.status === 'ok'
         ? t('Key pair saved. Mathpix accepted it.') : t('Key pair saved, but Mathpix could not be reached to test it.'))
     }).catch((e: Error) => setFormError(e instanceof ApiError && e.code === 'credential_test_failed'
-      ? t('The key pair was not saved. Mathpix did not accept it (HTTP {code}).', { code: String(e.details?.http_status ?? '?') }) : keychainError(e)))
+      ? t('The key pair was not saved. Mathpix did not accept it (HTTP {code}).', { code: String(e.details?.http_status ?? '?') }) : keychainError(e, keychain)))
       .finally(() => setBusy(false))
   }
   function test() {
@@ -499,7 +501,7 @@ function MathpixDetails({ mathpix, keychain, dark, onChanged, onKeychainChanged 
   function remove() {
     setBusy(true); setFormError('')
     api.removeMathpixPair().then(result => { setAsking(false); onChanged(result.mathpix); toast('success', t('Key pair removed.')) })
-      .catch((e: Error) => setFormError(keychainError(e))).finally(() => setBusy(false))
+      .catch((e: Error) => setFormError(keychainError(e, keychain))).finally(() => setBusy(false))
   }
   function askToTurnOn() {
     setBusy(true); setFormError('')
@@ -609,7 +611,7 @@ function LocalAppInstall({ tool, dark, onChanged, onDone }: { tool: LocalTool; d
   if (!tool.install.available || (tool.installed && !app && status !== 'running')) return null
   function install() {
     setBusy(true)
-    api.installLocalTool(tool.id).then(() => { setConfirmOpen(false); return onChanged() }).catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
+    api.installLocalTool(tool.id).then(() => { setConfirmOpen(false); return onChanged() }).catch((e: Error) => toast('error', installError(e, tool))).finally(() => setBusy(false))
   }
   return <div className="server-pull">
     {status === 'running'
@@ -960,7 +962,7 @@ function BuiltinEmbeddingPanel({ builtin, dark, onChanged }: { builtin: BuiltinE
     {canDownload && (builtin.uv.available
       ? <div className="actions"><Button variant="outline" size="sm" disabled={busy} onClick={() => setConfirm('install')}>{t(builtin.status === 'update_available' ? 'Update' : failed || builtin.status === 'files_do_not_match' ? 'Try again' : 'Download')}</Button>
         {builtin.status === 'update_available' && <Button variant="outline" size="sm" className="is-destructive" disabled={busy} onClick={() => setConfirm('remove')}>{t('Remove')}</Button>}</div>
-      : <p className="local-tool-note">{builtin.uv.reason}<br /><a href={builtin.uv.url} target="_blank" rel="noopener noreferrer">{t('Installation instructions')}</a></p>)}
+      : <p className="local-tool-note">{installReasonText(builtin.uv.reason)}<br /><a href={builtin.uv.url} target="_blank" rel="noopener noreferrer">{t('Installation instructions')}</a></p>)}
     {running && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" disabled={busy} onClick={() => run(api.cancelBuiltinEmbedding)}>{t('Cancel download')}</Button></div>}
     {builtin.status === 'ready' && <div className="actions"><Button variant="outline" size="sm" disabled={busy} onClick={() => run(async () => { await api.checkBuiltinEmbedding(); setUpToDate(true) })}>{t('Check for updates')}</Button>
       <Button variant="outline" size="sm" className="is-destructive" disabled={busy} onClick={() => setConfirm('remove')}>{t('Remove')}</Button></div>}

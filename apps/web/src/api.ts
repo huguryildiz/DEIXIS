@@ -369,7 +369,9 @@ export type PdfReader = { available: boolean; version: string; mupdf_version: st
 export type OllamaUpdates = { version: string | null; latest: string | null; update_available: boolean | null; installed_with: 'homebrew' | 'app' | null; models: Record<string, boolean | null> }
 export type ToolUpdate = { tool: 'tesseract' | 'marker' | 'pymupdf'; installed: string | null; tested: string | null; latest: string | null; update_available: boolean | null; error: string | null }
 export type OcrJob = { status: 'running' | 'succeeded' | 'failed'; phase: 'preparing' | 'downloading' | 'installing'; output: string; started_at: string; finished_at: string | null }
-export type OcrTool = { available: boolean; version: string | null; languages: string[]; missing_languages: string[]; reason: string | null; can_install: boolean; job: OcrJob | null }
+// Why Tesseract cannot be used, as a code the page words (ocr.ts).
+export type OcrReason = 'tesseract_missing' | 'tesseract_not_responding' | 'tesseract_failed' | 'tesseract_languages_missing'
+export type OcrTool = { available: boolean; version: string | null; languages: string[]; missing_languages: string[]; reason: OcrReason | null; can_install: boolean; job: OcrJob | null }
 // What became of a cited passage's file since it was stored (D46).
 export type EvidenceStatus = 'current' | 'pdf_removed' | 'pdf_replaced' | 'text_superseded'
 export type ReplacedAsset = { id: string; original_filename: string | null; removed_at: string; replaced_by_asset_id: string }
@@ -734,7 +736,8 @@ export type ModelHealth = {
 export type Connections = { models: Record<string, ModelHealth>; codex_home?: string; codex_login_command?: string; sign_ins?: Record<string, AccountSignIn>; providers: { id: string; implemented: boolean; access_mode: string | null; key_broken?: boolean; supplementary?: boolean; role?: string; note: string }[] }
 // `available`: a system keychain exists. `mode`: where a saved key lives (E5, A6): that keychain, the unencrypted file the person chose, or this run's memory.
 // `file_error`: the key file exists and cannot be read; it is left alone and no key changes until it is fixed.
-export type Keychain = { available: boolean; name: string | null; mode: 'keychain' | 'file' | 'session'; file_error?: boolean }
+// `kind`: the keychain by operating system, so the page names it in its own words; `name` is the backend's own and is not shown.
+export type Keychain = { available: boolean; name: string | null; kind?: 'macos' | 'windows' | 'linux' | null; mode: 'keychain' | 'file' | 'session'; file_error?: boolean }
 export type KeyEntry = { env: string; group: 'model' | 'source'; service: string; configured: boolean; source: 'keychain' | 'file' | 'session' | 'dotenv' | 'environment' | null; testable: boolean; shell_fallback?: boolean; last4?: string | null
   // 'pending' is "saved, not verified"; null when no check ran in this session. `broken`: the saved item could not be read and was skipped (E2, E6).
   verification?: 'verified' | 'pending' | 'rejected' | null; broken?: boolean
@@ -748,7 +751,8 @@ export type KeyTest = { status: 'ok' | 'no_credit' | 'rejected' | 'failed' | 'un
 export type ProviderTest = { provider: string; answered: boolean; http_status: number | null; failure: 'timeout' | 'connection' | 'other' | null
   error: string | null; timeout_seconds: number; contact_email_sent: boolean; checked_at: string }
 export type LocalToolModel = { id: string; size_bytes: number | null; embedding: boolean }
-export type LocalToolInstall = { command: string; available: boolean; unavailable_reason: string | null; url: string }
+// `unavailable_reason` is a code (`uv_missing`, `manager_missing`) the page words; `manager` is the program the install needs.
+export type LocalToolInstall = { command: string; available: boolean; unavailable_reason: string | null; manager?: string; url: string }
 // 'failed' is set by the page itself when the terminal could not be opened (the server answered with an error).
 export type AccountSignIn = { state: 'idle' | 'waiting' | 'succeeded' | 'session_confirmed' | 'failed' | 'timed_out'; message: string | null }
 export type LocalToolJob = { status: 'running' | 'succeeded' | 'failed' | 'cancelled'; started_at: string; finished_at: string | null; output: string; completed?: number; total?: number; kind?: 'update' } | null
@@ -767,7 +771,7 @@ export type LocalTool = {
 // The optional equation reader (Marker, D52), installed under the data directory.
 export type EquationReader = {
   installed: boolean; package: string; path: string; size_bytes: number; models_downloaded: boolean; disk_free_gb: number
-  install: { available: boolean; unavailable_reason: string | null; url: string }
+  install: { available: boolean; unavailable_reason: 'uv_missing' | null; url: string }
   job: { status: 'running' | 'succeeded' | 'failed' | 'cancelled'; step: number; steps: number; started_at: string; finished_at: string | null; output: string } | null
   reading: { asset_id: string; title: string | null; pages: number; started_at: string } | null
   pdfs: Partial<Record<'read' | 'no_math' | 'failed' | 'reading' | 'pending', number>>
@@ -797,7 +801,7 @@ export type BuiltinEmbedding = { status: 'unsupported_platform' } | {
   installed: boolean; available: boolean; last_full_check: { at: string; passed: boolean } | null; job: BuiltinEmbeddingJob | null
   model: { name: string; id: string; repository: string; revision: string; package: string }
   sizes: { runtime_bytes: number; model_bytes: number; python_bytes: number }
-  path: string; size_bytes: number; uv: { available: boolean; reason: string | null; url: string }
+  path: string; size_bytes: number; uv: { available: boolean; reason: 'uv_missing' | null; url: string }
 }
 export type SemanticSearch = { provider: SemanticSearchProvider; model: string | null; explicit: boolean; options: SemanticSearchOption[] }
 export type InstitutionalAccess = { status: 'institutional' | 'none' | 'unknown' | 'not_checked'; via?: string; reason?: string }

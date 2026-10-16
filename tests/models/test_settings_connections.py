@@ -403,7 +403,7 @@ def test_local_tools_report_clis_running_servers_and_embedding_models(client, pa
     ollama = tools["ollama"]
     assert (ollama["running"], ollama["installed"]) == (True, True)  # the server answers although no binary is on PATH
     assert [(m["id"], m["embedding"]) for m in ollama["models"]] == [("qwen3:8b", False), ("nomic-embed-text:latest", True)]
-    assert ollama["install"]["available"] is False and "brew" in ollama["install"]["unavailable_reason"]
+    assert ollama["install"]["available"] is False and ollama["install"]["unavailable_reason"] == "manager_missing" and ollama["install"]["manager"] == "brew"
     assert (tools["lm_studio"]["installed"], tools["lm_studio"]["running"], tools["lm_studio"]["models"]) == (False, False, [])
     zotero = tools["zotero"]
     assert (zotero["kind"], zotero["role"], zotero["installed"], zotero["running"], zotero["local_api"]) == ("app", "imports", False, False, False)
@@ -436,7 +436,7 @@ def test_other_llm_clis_are_detected_only_with_a_fixed_install_command(client, p
     assert tools["aider"]["installed"] is True and tools["kimi_cli"]["installed"] is False
     # uv is on PATH here, npm and brew are not, so only the uv-installed tools can be installed.
     assert tools["kimi_cli"]["install"]["available"] is True and tools["cline"]["install"]["available"] is False
-    assert "npm" in tools["cline"]["install"]["unavailable_reason"]
+    assert (tools["cline"]["install"]["unavailable_reason"], tools["cline"]["install"]["manager"]) == ("manager_missing", "npm")
     # Only the step-running CLIs carry that role: Claude Code, Codex and, of the new ones, Copilot CLI (D24) and Gemini CLI (D23).
     assert sorted(t["id"] for t in tools.values() if t["role"] == "runs_steps") == ["claude_code", "codex", "copilot_cli", "gemini_cli"]
 
@@ -860,3 +860,20 @@ def test_a_source_key_that_could_not_be_checked_is_still_saved(client, memory_ke
     assert memory_keychain.items == {("DEIXIS", "SCOPUS_API_KEY"): "scopus-off-campus-key"}
     retest = client.post("/api/credentials/SCOPUS_API_KEY/test")  # a failed test is an answer, not a server error
     assert retest.status_code == 200 and retest.json()["http_status"] == 403
+
+
+def test_a_missing_installer_is_a_reason_code_not_a_sentence(client, paths, monkeypatch):
+    """B3: the page words the reason in its own language; the response names the missing program and nothing else."""
+    tools = {t["id"]: t for t in client.get("/api/local-tools?refresh=true").json()["tools"]}
+    assert (tools["cline"]["install"]["unavailable_reason"], tools["cline"]["install"]["manager"]) == ("manager_missing", "npm")
+    assert (tools["kimi_cli"]["install"]["unavailable_reason"], tools["kimi_cli"]["install"]["manager"]) == ("uv_missing", "uv")
+    refused = client.post("/api/local-tools/kimi_cli/install")
+    assert refused.status_code == 422 and refused.json()["code"] == "uv_missing" and "PATH" not in refused.text
+    assert client.post("/api/local-tools/cline/install").json()["code"] == "manager_missing"
+    monkeypatch.setattr("deixis.workflow.equations.find_tool", lambda name: None)
+    monkeypatch.setattr("deixis.workflow.local_embedding_service.find_tool", lambda name: None)
+    reader, builtin = client.get("/api/equation-reader").json(), client.get("/api/semantic-search/builtin").json()
+    assert reader["install"]["available"] is False and reader["install"]["unavailable_reason"] == "uv_missing"
+    assert builtin["uv"]["available"] is False and builtin["uv"]["reason"] == "uv_missing"
+    for body in (tools, reader, builtin):
+        assert "was not found" not in str(body)

@@ -12,7 +12,7 @@ from deixis.documents import ocr
 from helpers import make_scanned_pdf
 from test_api_flow import app_for, create, session, wait_run
 
-READY = {"available": True, "version": "5.5.2", "languages": ["eng"], "missing_languages": ["tur"], "reason": "no tur"}
+READY = {"available": True, "version": "5.5.2", "languages": ["eng"], "missing_languages": ["tur"], "reason": "tesseract_languages_missing"}
 
 
 def fake_reader(monkeypatch, fail_once=(), gate=None):
@@ -109,9 +109,9 @@ def test_the_ocr_action_checks_the_tool_the_source_the_file_and_other_runs(tmp_p
 
         monkeypatch.setattr(ocr, "tesseract_status", lambda langs=ocr.LANGUAGES: {
             "available": False, "version": None, "languages": [], "missing_languages": ["eng", "tur"],
-            "reason": "Tesseract is not installed. Install it with: brew install tesseract tesseract-lang"})
+            "reason": "tesseract_missing"})
         missing = client.post(ocr_url(rid, svid, aid))
-        assert missing.status_code == 422 and "brew install tesseract tesseract-lang" in missing.json()["detail"]
+        assert missing.status_code == 422 and missing.json()["code"] == "tesseract_missing" and "Tesseract" in missing.json()["detail"]
         monkeypatch.setattr(ocr, "tesseract_status", lambda langs=ocr.LANGUAGES: READY)
 
         run = client.post(ocr_url(rid, svid, aid)).json()

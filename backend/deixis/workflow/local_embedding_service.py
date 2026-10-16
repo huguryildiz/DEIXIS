@@ -233,7 +233,7 @@ class EmbeddingService:
             "sizes": {"runtime_bytes": local_embedding.RUNTIME_BYTES_ESTIMATE, "model_bytes": local_embedding.MODEL_DISK_BYTES,
                       "python_bytes": local_embedding.PYTHON_BYTES_ESTIMATE},
             "path": str(self.paths.root), "size_bytes": size,
-            "uv": {"available": bool(uv), "reason": None if uv else "uv was not found on this computer's PATH",
+            "uv": {"available": bool(uv), "reason": None if uv else "uv_missing",
                    "url": "https://docs.astral.sh/uv/getting-started/installation/"},
         }
 

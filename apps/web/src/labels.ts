@@ -97,6 +97,35 @@ export const healthReasonText = (health: { connection: string; reason_code?: str
   : health.verification === 'rejected' ? t('{service} did not accept this key. Enter it again.', { service: connectionName(health.connection) })
   : health.reason_code === 'unsupported_install' ? t('{service} is installed in a way DEIXIS cannot start on Windows. Install it again with its official Windows installer, then check the connection again.', { service: connectionName(health.connection) })
   : health.reason_code ? serviceErrorSentence({ kind: health.reason_code, service: connectionName(health.connection), resetAt: health.reset_at, effect: 'settings' }) : t('The connection is not ready. Check it in Settings.')
+// The keychain by operating system (B3): the backend sends only the kind, never its own product name.
+const keychainNames: Record<string, string> = { macos: 'the Keychain', windows: 'the Credential Manager', linux: 'the system keyring' }
+export const keychainLabel = (kind?: string | null) => t(keychainNames[kind ?? ''] ?? 'the system keychain')
+
+// Why a key could not be saved or removed, by the cause the backend names (E14). Unknown codes keep the backend's English line.
+export function credentialFailureText(code: string | null, keychain: string, fallback: string): string {
+  const v = { keychain }
+  switch (code) {
+    case 'keychain_unavailable': return t('The key was not changed: {keychain} could not be used. Try again in Settings or restart DEIXIS.', v)
+    case 'keychain_locked': return t('The key was not changed: {keychain} is locked. Unlock it and try again.', v)
+    case 'keychain_denied': return t('The key was not changed: {keychain} refused access. Allow DEIXIS to use it when asked, then try again.', v)
+    case 'keychain_too_large': return t('The key was not changed: {keychain} cannot hold a key this long. Check that only the key was pasted.', v)
+    case 'file_write_failed': return t('The key was not changed: it could not be written to disk. Check that the data folder can be written to and has free space.')
+    case 'keychain_not_responding': return t('The system keychain is not responding, so the change may not have been made. DEIXIS shows the real state when it answers.')
+    case 'keychain_busy': return t('The previous change to this key has not finished. Wait for the system keychain to answer.')
+    case 'file_store_damaged': return t('The key file in your data folder cannot be read, so DEIXIS left it as it is and changes no key until it is fixed or removed.')
+    case 'file_store_unavailable': return t('A system keychain is available, so keys are kept there.')
+    case 'shell_key_stays': return t('This key is set outside DEIXIS and no system keychain can hold a replacement. Change it where it was set.')
+    case 'shell_key': return t('This key is set outside DEIXIS; change or remove it where it was set.')
+    default: return fallback
+  }
+}
+
+// Why a tool or the equation reader cannot be installed from Settings: the backend names the missing program by code.
+export function installReasonText(code: string | null | undefined, manager?: string): string {
+  return code === 'uv_missing' ? t('uv is needed for this and was not found on this computer. Install it, then restart DEIXIS.')
+    : code === 'manager_missing' ? t('{manager} is needed for this and was not found on this computer. Install it, then restart DEIXIS.', { manager: manager ?? '' })
+    : ''
+}
 export const serviceWaitingText = (service: string, attempt: number) => t('Waiting for {service} before retry {n}.', { service, n: attempt })
 export const serviceWaitRecordText = (service: string, attempt: number, seconds: number) => t('Rate-limit wait for {service} before retry {n}: {seconds} s.', { service, n: attempt, seconds })
 export const providerRetryText = (count: number) => t('Retried {n} times after a rate limit.', { n: count })

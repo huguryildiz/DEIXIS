@@ -1247,7 +1247,7 @@ def create_app(
         # local route to it changed (a VPN started or stopped) or the answer expired; a failed check expires sooner.
         key = CONNECTORS["scopus"].api_key()
         if not key:
-            return {"status": "not_checked", "reason": "SCOPUS_API_KEY is not configured"}
+            return {"status": "not_checked", "reason": "key_missing"}
         route = await asyncio.to_thread(scopus.route_source)
         cached = request.app.state.institutional_access
         if cached and not refresh and cached[1] == route and time.monotonic() < cached[0]:
@@ -1377,6 +1377,21 @@ def create_app(
         return JSONResponse(status_code=422, content={"code": "use_pair_route",
                                                       "detail": "This key is part of a pair and is saved on its own route."})
 
+    class CredentialFailure(Exception):
+        """A key could not be saved or removed; `code` is the cause (E14), worded by the page in its own language."""
+
+        def __init__(self, code: str):
+            super().__init__(code)
+            self.code = code
+
+    @app.exception_handler(CredentialFailure)
+    async def credential_failure(request: Request, exc: CredentialFailure) -> JSONResponse:
+        return JSONResponse(status_code=503, content={"code": exc.code, "detail": credentials.FAILURES[exc.code]})
+
+    @app.exception_handler(credentials.KeySourceConflict)
+    async def shell_key(request: Request, exc: credentials.KeySourceConflict) -> JSONResponse:
+        return JSONResponse(status_code=409, content={"code": "shell_key", "detail": str(exc)})
+
     @app.exception_handler(credentials.KeychainNotResponding)
     async def keychain_not_responding(request: Request, exc: credentials.KeychainNotResponding) -> JSONResponse:
         return JSONResponse(status_code=503, content={"code": "keychain_not_responding", "detail":
@@ -1419,7 +1434,7 @@ def create_app(
         name = credentials.keychain_name()
         # `mode` says where a saved key lives: the system keychain, the unencrypted file the person chose, or this run's memory (A6).
         # `file_error`: that file exists and cannot be read, so no key is changed until it is fixed.
-        return {"keychain": {"available": name is not None, "name": name, "mode": credentials.store_kind(),
+        return {"keychain": {"available": name is not None, "name": name, "kind": credentials.keychain_kind(), "mode": credentials.store_kind(),
                              "file_error": credentials.file_store_damaged()},
                 "keys": [credentials.status(env) for env, key in credentials.MANAGED_KEYS.items() if not key.pair]}
 
@@ -1430,7 +1445,7 @@ def create_app(
         try:
             credentials.set_file_store(body.enabled, request.app.state.settings.data_dir)
         except OSError as exc:
-            raise HTTPException(503, f"The key file could not be written ({type(exc).__name__})") from exc
+            raise CredentialFailure(credentials.failure_code(exc)) from exc
         return await list_credentials()
 
     # ---- Mathpix (D40): the key pair, the switch and the monthly budget --------------------------------------------
@@ -1465,12 +1480,8 @@ def create_app(
                                                           "http_status": result["http_status"]})
         try:
             await credentials.save_async(mathpix.ENV, mathpix.encode_pair(body.app_id, body.app_key))
-        except credentials.KeySourceConflict as exc:
-            raise HTTPException(409, str(exc)) from exc
-        except KeyringError as exc:
-            raise HTTPException(503, f"The keychain did not store the key pair ({type(exc).__name__})") from exc
-        except OSError as exc:
-            raise HTTPException(503, f"The key could not be written ({type(exc).__name__})") from exc
+        except (KeyringError, OSError) as exc:
+            raise CredentialFailure(credentials.failure_code(exc)) from exc
         return {"mathpix": request.app.state.equations.mathpix_status(), "test": result}
 
     @app.post("/api/credentials/mathpix/test")
@@ -1484,12 +1495,8 @@ def create_app(
     async def delete_mathpix_pair(request: Request) -> dict[str, Any]:
         try:
             await credentials.delete_async(mathpix.ENV)
-        except credentials.KeySourceConflict as exc:
-            raise HTTPException(409, str(exc)) from exc
-        except KeyringError as exc:
-            raise HTTPException(503, f"The keychain did not remove the key pair ({type(exc).__name__})") from exc
-        except OSError as exc:
-            raise HTTPException(503, f"The key could not be written ({type(exc).__name__})") from exc
+        except (KeyringError, OSError) as exc:
+            raise CredentialFailure(credentials.failure_code(exc)) from exc
         return {"mathpix": request.app.state.equations.mathpix_status()}
 
     @app.put("/api/credentials/{env}")
@@ -1511,12 +1518,8 @@ def create_app(
                 "reset_at": result.get("reset_at")})
         try:
             await credentials.save_async(env, body.value)
-        except credentials.KeySourceConflict as exc:
-            raise HTTPException(409, str(exc)) from exc
-        except KeyringError as exc:
-            raise HTTPException(503, f"The keychain did not store the key ({type(exc).__name__})") from exc
-        except OSError as exc:
-            raise HTTPException(503, f"The key could not be written ({type(exc).__name__})") from exc
+        except (KeyringError, OSError) as exc:
+            raise CredentialFailure(credentials.failure_code(exc)) from exc
         if result:
             key_verification.set_state(body.value, result["verification"])
         key_changed(request, env)
@@ -1527,12 +1530,8 @@ def create_app(
         managed_key(env)
         try:
             await credentials.delete_async(env)
-        except credentials.KeySourceConflict as exc:
-            raise HTTPException(409, str(exc)) from exc
-        except KeyringError as exc:
-            raise HTTPException(503, f"The keychain did not remove the key ({type(exc).__name__})") from exc
-        except OSError as exc:
-            raise HTTPException(503, f"The key could not be written ({type(exc).__name__})") from exc
+        except (KeyringError, OSError) as exc:
+            raise CredentialFailure(credentials.failure_code(exc)) from exc
         key_changed(request, env)
         return {"key": credentials.status(env)}
 
@@ -1556,6 +1555,8 @@ def create_app(
         try:
             return {"job": await request.app.state.local_tools.install(tool_id)}
         except local_tools.ToolError as exc:
+            if exc.code:
+                return JSONResponse(status_code=exc.status, content={"code": exc.code, "detail": str(exc)})
             raise HTTPException(exc.status, str(exc)) from exc
 
     @app.post("/api/local-tools/ollama/pull-embedding-model", status_code=202)
@@ -2668,7 +2669,8 @@ def create_app(
             raise HTTPException(422, "Text was extracted from every page of this PDF")
         status = await asyncio.to_thread(ocr.tesseract_status)
         if not status["available"]:
-            raise HTTPException(422, status["reason"])
+            code = status["reason"] if status["reason"] in ocr.REASONS else "tesseract_failed"
+            return JSONResponse(status_code=422, content={"code": code, "detail": ocr.REASONS[code]})
         version = ocr.target_version(recovery.text_base(asset["extraction_version"]), status["version"], status["languages"])
         if store.conn.execute("SELECT 1 FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?", (asset_id, version)).fetchone():
             raise HTTPException(409, "This PDF was already read with this OCR version and these languages")

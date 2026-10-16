@@ -1080,7 +1080,7 @@ class EquationService:
         uv = await asyncio.to_thread(find_tool, "uv")
         return {"installed": self.available(), "package": math_reader.MARKER_PACKAGE, "path": str(paths.env),
                 "size_bytes": env_size + models_size, "models_downloaded": models_size > 0,"disk_free_gb": round(shutil.disk_usage(Path.home()).free / 2**30),
-                "install": {"available": bool(uv), "unavailable_reason": None if uv else "uv was not found on this computer's PATH",
+                "install": {"available": bool(uv), "unavailable_reason": None if uv else "uv_missing",
                             "url": "https://docs.astral.sh/uv/getting-started/installation/"},
                 "job": self.job, "reading": reading, "pdfs": states}
 

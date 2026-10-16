@@ -720,6 +720,7 @@ EMPTY_BECAUSE = {
     "recovery_purge_authorizations": "a temporary row opened and removed inside the recovery purge transaction",
     "scope_english_questions": "written only for a non-English question that gets an English rendering",
     "source_similarities": "written by the semantic ranking step, which needs an embedding model",
+    "spend_ledger": "written only for a model call on a paid API key (F4); the library builder uses the scripted model",
     "suspected_duplicates": "written only when two sources look like duplicates of one work",
     "table_purge_authorizations": "a temporary row opened and removed inside the table purge",
     "watches": "the rich library builder starts no follow-up watch (P8 B5 adds no builder)",

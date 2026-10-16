@@ -144,10 +144,13 @@ def test_t09d_an_older_screen_cannot_overwrite_a_newer_edit(lib):
 
 def test_t09e_a_proposal_requested_before_an_edit_is_marked(lib):
     model_output(lib)
-    proposal = model_output(lib, recheck=True, at_version=1)
     edit(lib, 1)
+    proposal = model_output(lib, recheck=True, at_version=1)  # asked for before the edit, saved after it
     view = cell(lib)
     assert view["pending_proposal"]["id"] == proposal and "proposal_before_edit" in view["flags"]
+    edit(lib, 2)  # a value newer than the proposal: it no longer waits, as the fill plan and the re-read sweep read it
+    view = cell(lib)
+    assert view["pending_proposal"] is None and "proposal_before_edit" not in view["flags"]
 
 
 def test_t09g_a_repeated_request_returns_the_same_revision(lib):

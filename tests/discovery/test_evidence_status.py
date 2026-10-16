@@ -15,7 +15,7 @@ from fakes import valid_response
 from helpers import make_pdf
 from test_api_flow import app_for, create, session, wait_run
 from test_asset_replacement import PAGES, extraction, replace
-from test_table_extraction import add_pdf, cell, execute, fill, library, table_version
+from test_table_extraction import add_pdf, cell, execute, fill, library, recheck, table_version
 
 CHUNK = lambda text: [(0, len(text), text)]  # noqa: E731
 
@@ -241,6 +241,34 @@ def test_a_cell_with_a_waiting_proposal_is_left_to_the_person(tmp_path, monkeypa
     assert view["pending_proposal"] is not None and "newer_text_auto" not in view["flags"]
     count, made = runs(lib), plans(monkeypatch)
     assert table_refresh.advance(lib.store) == [] and made == [] and runs(lib) == count
+
+
+def test_a_proposal_older_than_the_value_does_not_wait_or_block_the_re_read(tmp_path):
+    lib = library(tmp_path)
+    # A recheck of the empty cell proposes; a fill then gives the cell its abstract value, newer than that proposal.
+    assert execute(lib, recheck(lib, lib.preprint, 0))["status"] == "completed"
+    assert execute(lib, fill(lib))["status"] == "completed"
+    view = cell(lib, lib.preprint)
+    assert view["current"]["reading_depth"] == "abstract" and view["pending_proposal"] is None and "proposal_before_edit" not in view["flags"]
+    assert lib.tables.table_view(lib.rid, lib.tid)["counts"]["pending_proposals"] == 0
+
+    lib.adapter.responder = citing("pdf")
+    arrive(lib, lib.preprint)
+    (run,) = table_refresh.advance(lib.store)
+    assert execute(lib, run)["status"] == "completed"
+    view = cell(lib, lib.preprint)
+    assert view["current"]["reading_depth"] == "selected_sections" and view["pending_proposal"] is None
+    assert lib.tables.table_view(lib.rid, lib.tid)["counts"]["pending_proposals"] == 0
+    assert [r["decision"] for r in view["revisions"] if r["kind"] == "model_proposal"] == ["superseded"]
+
+
+def test_a_proposal_newer_than_the_value_still_waits(tmp_path):
+    lib = filled(tmp_path)
+    assert execute(lib, recheck(lib, lib.preprint, cell(lib, lib.preprint)["version"]))["status"] == "completed"
+    view = cell(lib, lib.preprint)
+    assert view["pending_proposal"] is not None and "proposal_before_edit" not in view["flags"]
+    assert [r["decision"] for r in view["revisions"] if r["kind"] == "model_proposal"] == ["pending"]
+    assert lib.tables.table_view(lib.rid, lib.tid)["counts"]["pending_proposals"] == 1
 
 
 def test_answer_quotes_and_passages_show_a_replaced_pdf_and_the_old_file_opens_only_where_cited(tmp_path):

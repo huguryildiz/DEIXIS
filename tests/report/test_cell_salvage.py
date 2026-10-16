@@ -107,6 +107,23 @@ def test_a_fill_planned_before_the_retry_rule_stores_the_bad_cell_as_not_verifie
     assert record["output"]["retry"] == "not_sent"
 
 
+def test_a_retry_that_fails_as_a_whole_leaves_the_first_value_as_not_verified(tmp_path):
+    calls = []
+    first_call = responder(calls, retry_fixes=False)
+    lib = library(tmp_path, lambda si: "SYNTHETIC not json" if "earlier_issues" in si["extraction_target"] else first_call(si))
+    _, _, field_b = three_columns(lib)
+    run = fill(lib)
+    assert execute(lib, run)["status"] == "completed"
+    # The retry was sent and broke as a whole: Field B keeps the first call's value, as it does when no retry is sent.
+    bad = cell(lib, lib.published, field_b)["current"]
+    assert bad is not None
+    assert (bad["kind"], bad["state"], bad["output_status"]) == ("model_fill", "not_verified", "unverified_draft")
+    assert bad["evidence"] == [] and bad["value"] == {"text": "SYNTHETIC fake value"}
+    record = published_steps(lib, run["id"])[f"cell_salvage:{lib.published}:0"]["output"]
+    assert record["retry"] == "failed" and record["retry_step_input_id"]
+    assert (record["not_verified"], record["left_empty"]) == ([field_b], [])
+
+
 def test_a_broken_output_still_fails_as_a_whole(tmp_path):
     lib = library(tmp_path, lambda si: "SYNTHETIC not json")
     run = fill(lib)

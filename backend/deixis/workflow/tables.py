@@ -690,10 +690,21 @@ class TableStore:
         current = self._revision(cell["current_revision_id"])
         if current["author"] not in ("model", "system") or current["reading_depth"] not in ("abstract", "metadata"):
             return None
-        latest = self._latest_proposal(cell["id"])
-        if latest and self._decision(latest["id"]) is None:
+        if self._pending_proposal(cell) is not None:
             return None
         return current["id"]
+
+    def _pending_proposal(self, cell: dict[str, Any]) -> dict[str, Any] | None:
+        """The proposal that waits for a decision: the cell's latest, undecided and saved after its current revision
+        (WAITING_SQL, as the fill plan and the re-read sweep read it). One older than the current value was overtaken."""
+        latest = self._latest_proposal(cell["id"])
+        if latest is None or self._decision(latest["id"]) is not None:
+            return None
+        if cell["current_revision_id"] is not None and not self.conn.execute(
+                f"SELECT {WAITING_SQL.format(cell='c', revision='r')} FROM evidence_cells c"
+                " JOIN cell_revisions r ON r.id = c.current_revision_id WHERE c.id = ?", (cell["id"],)).fetchone()[0]:
+            return None
+        return latest
 
     def save_no_text(self, research_id: str, table_id: str, column_id: str, svid: str, *, column_revision: int, run_id: str,
                      step_id: str, scope_revision: int) -> str | None:
@@ -979,8 +990,7 @@ class TableStore:
     def _cell_summary(self, cell: dict[str, Any], column: dict[str, Any]) -> dict[str, Any]:
         current = self._revision(cell["current_revision_id"]) if cell["current_revision_id"] else None
         current_view = self._revision_view(current) if current else None
-        latest = self._latest_proposal(cell["id"])
-        pending = latest if latest and self._decision(latest["id"]) is None else None
+        pending = self._pending_proposal(cell)
         flags = []
         if current_view and current_view["column_revision"] != column["current_revision"]:
             flags.append("stale_column")
@@ -1077,14 +1087,14 @@ class TableStore:
             return {"cell_id": None, "column_id": column_id, "source_version_id": svid, "version": 0, "current": None,
                     "pending_proposal": None, "flags": [], "revisions": []}
         cell = dict(found)
-        latest = self._latest_proposal(cell["id"])
+        pending = self._pending_proposal(cell)
         revisions = []
         for r in self.conn.execute("SELECT * FROM cell_revisions WHERE cell_id = ? ORDER BY created_at, rowid", (cell["id"],)):
             view = self._revision_view(dict(r))
             if r["kind"] == "model_proposal":
                 decision = self._decision(r["id"])
                 view["decision"] = {"accept_proposal": "accepted", "dismiss_proposal": "dismissed"}.get(decision or "") or (
-                    "pending" if latest and latest["id"] == r["id"] else "superseded")
+                    "pending" if pending and pending["id"] == r["id"] else "superseded")
             revisions.append(view)
         return self._cell_summary(cell, column) | {"revisions": revisions}
 

@@ -4379,22 +4379,28 @@ class ResearchFlow:
         first, salvage, retry = result["salvaged"], result["salvage"], result["retry"]
         self._store_cells(run, first["step_input_id"], salvage["cells"], "structurally_valid", job.cell_versions, recheck=False)
         failing = dict(salvage["bad"])
-        fallback = first  # whose unverified answers a still-failing column takes
+        fallbacks = [first]  # whose unverified answers a still-failing column takes, in order of preference
         retry_salvage = None
         if retry is not None and not retry.get("invalid"):
             self._save_cells(run, retry, job.cell_versions, recheck=False)
             failing = {}
         elif retry is not None and retry.get("step_input_id"):
-            fallback = retry
+            fallbacks = [retry, first]
             if (retry_salvage := self._cell_salvage(retry)) is not None:
                 self._store_cells(run, retry["step_input_id"], retry_salvage["cells"], "structurally_valid", job.cell_versions,
                                   recheck=False)
                 failing = {column_id: issues for column_id, issues in failing.items() if column_id in retry_salvage["bad"]}
         not_verified, proposed = [], []
-        if failing:
+        # A column takes the retry's answer when the retry has a storable one for it, else the first call's: a retry
+        # that broke as a whole, or left the column out, never empties a column the first call answered.
+        open_columns = set(failing)
+        for fallback in fallbacks:
+            if not open_columns:
+                break
             payload = self.store.step_input_payload(fallback["step_input_id"])
             draft = contracts.cell_draft_from_raw(payload, self.store.model_session(fallback["step_input_id"])["raw_output"] or "")
-            kept = [cell for cell in contracts.storable_cells(payload, draft) if cell["column_id"] in failing]
+            kept = [cell for cell in contracts.storable_cells(payload, draft) if cell["column_id"] in open_columns]
+            open_columns -= {cell["column_id"] for cell in kept}
             # A value whose quote could not be located is kept as a value without linked evidence, never as a verified
             # value; any other failing answer waits as an unverified proposal, as a failed output's answers did before.
             unverified = [dict(cell, state="not_verified", evidence=[]) for cell in kept if cell["state"] == "value"]
@@ -4402,7 +4408,8 @@ class ResearchFlow:
             self._store_cells(run, fallback["step_input_id"], unverified, "unverified_draft", job.cell_versions, recheck=False,
                               unverified_fill=True)
             self._store_cells(run, fallback["step_input_id"], others, "unverified_draft", job.cell_versions, recheck=False)
-            not_verified, proposed = [c["column_id"] for c in unverified], [c["column_id"] for c in others]
+            not_verified += [c["column_id"] for c in unverified]
+            proposed += [c["column_id"] for c in others]
         self.store.start_step(step["id"])
         self.store.finish_step(step["id"], "succeeded", output={
             "source_version_id": job.svid, "step_input_id": first["step_input_id"],

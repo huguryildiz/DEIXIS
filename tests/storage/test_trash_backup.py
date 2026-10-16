@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from deixis.config import Settings
 from deixis.storage.backup import create_backup, restore_backup
+from deixis.workflow import table_rows
 from test_api_flow import app_for, create, session
 from test_corpus_removal import search_found_again, upload
 from test_evidence_tables import PACKET_SIZE, table_with_edit
@@ -61,6 +62,9 @@ def test_backup_keeps_trashed_and_removed_items_and_the_restored_library_brings_
                                         " WHERE research_id = ? AND source_version_id = ?", (rid, gone)).fetchone()
         assert membership["removed_at"] and membership["removal_note"] == "SYNTHETIC off topic" and membership["found_again_at"]
         assert store.asset(wrong_asset)["removal_reason"] == "wrong_file"
+        # The worker's row sweep (D63) gives "Kept" its row for the later upload; settle it before the backup, as the
+        # restored library's first worker turn would.
+        table_rows.advance(store, rid)
         rows, trash, view = trash_rows(store.conn), client.get("/api/trash").json(), client.get(base).json()
         assert [t["id"] for t in trash["tables"]] == [trashed] and [s["source_version_id"] for s in trash["sources"]] == [gone]
         assert [t["id"] for t in trash["templates"]] == [template]

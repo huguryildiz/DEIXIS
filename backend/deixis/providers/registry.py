@@ -27,7 +27,7 @@ from deixis.providers.query_rules import QuerySyntax
 
 @dataclass(frozen=True)
 class Endpoint:
-    """Another endpoint of a connector that an sw query can name (D93), and how a read of it pages."""
+    """Another endpoint of a connector that a search query can name (D93), and how a read of it pages."""
 
     paging: str
     max_results: int
@@ -85,22 +85,21 @@ class Connector:
     # DOI is already known — its metadata, its links — and is never asked to find records (D87). The queries are
     # compiled from this flag alone, so neither the flow nor the compiler names a provider (slice 05).
     searchable: bool = True
-    # Whether an sw research sends a query here. Scopus is searched by a legacy research and, in an sw research, is
-    # only the last abstract source, and only on an institutional network (D91). A query an sw run already stored is
-    # still read: `searchable` alone decides that, so a resumed run searches the queries its protocol names.
+    # Whether the fast path sends a search query here. Scopus is not searched; it is only the last abstract source, and
+    # only on an institutional network (D91). A query a run already stored is still read: `searchable` alone decides that, so a resumed run searches the queries its protocol names.
     sw_searchable: bool = True
-    # How an sw query reads its pages (slice 04c): a provider-issued `cursor`, a record `offset`, or one page only.
+    # How a search query reads its pages (slice 04c): a provider-issued `cursor`, a record `offset`, or one page only.
     paging: str = "offset"
     max_reachable: int | None = None  # the deepest record the provider serves, when that is below the read limit
     page_gap: float = 0.0  # seconds to wait between two pages of the same query
-    # Extra arguments an sw paged read passes to `search`, so a legacy request stays byte for byte what it was and
+    # Extra arguments a paged read passes to `search`, so a request that names none stays byte for byte what it was and
     # the flow never names a provider to decide what to ask for (slice 05).
     sw_options: dict[str, Any] = field(default_factory=dict)
     options: tuple[str, ...] = ()
     # The host name a search request goes to, taken from the URL the module sends it to. Two connectors that share one
     # are read one request at a time between them (D89): bioRxiv is searched through OpenAlex.
     host: str = ""
-    # What a new sw query compiled for this connector names besides its text: Semantic Scholar's bulk endpoint and its
+    # What a new query compiled for this connector names besides its text: Semantic Scholar's bulk endpoint and its
     # sort (D93). The query carries it, so a resumed run reads the endpoint its stored query names, and a query stored
     # before D93, which names none, is read as it was (`reading`).
     sw_query: dict[str, Any] = field(default_factory=dict)
@@ -151,7 +150,7 @@ CONNECTORS = {c.provider_id: c for c in (
                                 options=(OptionDescriptor("sort", "str", None),
                                          OptionDescriptor("publication_date", "bool", None)))},
               display_name="OpenAlex", query_syntax=QuerySyntax(boolean_checks=True)),
-    # Semantic Scholar's relevance search serves `offset + limit` up to 1,000 and refuses a deeper page. An sw query
+    # Semantic Scholar's relevance search serves `offset + limit` up to 1,000 and refuses a deeper page. A search query
     # goes to the bulk endpoint instead: up to 1,000 papers a call, continued by a token (D93).
     Connector("semantic_scholar", semantic_scholar.search, semantic_scholar.MAX_RESULTS, "S2_API_KEY", max_reachable=1000,
               host=_host(semantic_scholar.SEARCH_URL), adapter_revision=2,
@@ -187,8 +186,8 @@ CONNECTORS = {c.provider_id: c for c in (
     Connector("scopus", scopus.search, scopus.MAX_RESULTS, "SCOPUS_API_KEY", key_required=True,
               sw_searchable=False, host=_host(scopus.SEARCH_URL), adapter_revision=2, display_name="Scopus",
               capabilities={"doi_lookup": CapabilityBinding(_scopus_lookup, lookup.SCOPUS_LOOKUP_BATCH)},
-              query_syntax=QuerySyntax("field_group", wrapper="TITLE-ABS-KEY")),  # sw: last abstract source only (D91)
-    # CORE and SerpApi are searched by a legacy research only: in the third D88 measurement neither brought a verified
+              query_syntax=QuerySyntax("field_group", wrapper="TITLE-ABS-KEY")),  # fast path: last abstract source only (D91)
+    # CORE and SerpApi are not searched by the fast path: in the third D88 measurement neither brought a verified
     # work no other source brought, and SerpApi is paid (D93).
     Connector("core", core.search, core.MAX_RESULTS, "CORE_API_KEY", key_required=True, sw_searchable=False,
               host=_host(core.SEARCH_URL), adapter_revision=2, display_name="CORE",
@@ -238,14 +237,15 @@ def configured_providers() -> list[str]:
     return _configured()
 
 
-# The connectors source routing took out of the sw search (D93). An sw run from before routing, which searches the
+# The connectors source routing took out of the search (D93). A run frozen before routing, which searches the
 # queries its card showed, still searches them in its own scope revision.
 LEFT_BY_ROUTING = frozenset({"core", "serpapi"})
 
 
 def search_providers(providers: list[str], workflow: str | None, *, routed: bool = True) -> list[str]:
-    """The given providers a new query of this workflow may go to, in the order given (D87, D91). `routed` false is an
-    sw run from before D93, which still searches CORE and SerpApi."""
+    """The given providers a new query may go to, in the order given (D87, D91). `workflow` is the label a scope stores
+    (`sw`, the only one left; the fast path always uses it). `routed` false is a run frozen before D93, which still
+    searches CORE and SerpApi."""
     return [p for p in providers if CONNECTORS[p].searchable and (
         workflow != "sw" or CONNECTORS[p].sw_searchable or (not routed and p in LEFT_BY_ROUTING))]
 
@@ -253,7 +253,7 @@ def search_providers(providers: list[str], workflow: str | None, *, routed: bool
 def reading(query: dict[str, Any]) -> Connector:
     """The connector as a read of this query sees it: with the paging and depth of the endpoint the query names.
 
-    A query that names no endpoint — every legacy query, and an sw query stored before D93 — is read by the
+    A query that names no endpoint — one stored before D93, or one for a connector with a single endpoint — is read by the
     connector's own paging, as it always was.
     """
     connector = CONNECTORS[query["provider_id"]]

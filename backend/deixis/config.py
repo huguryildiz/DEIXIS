@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import sys
-import warnings
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable
@@ -46,18 +45,18 @@ class Settings:
     host: str = "127.0.0.1"
     port: int = 8765
     model_concurrency: int = 6
-    # Whether a completed `sw` discovery run is followed by a full-text retrieval run (D83, slice 10). `auto` is the
+    # Whether a completed discovery run is followed by a full-text retrieval run (D83, slice 10). `auto` is the
     # product's behavior; `off` leaves the corpus where the discovery run left it, for a measurement or a test that
     # needs no second run.
     fulltext_fetch: str = "auto"
-    # Whether a valid `sw` answer is followed by the study table (proposed columns added without review, then filled).
+    # Whether a valid answer is followed by the study table (proposed columns added without review, then filled).
     # The dataclass default is `off` so a test that builds Settings by hand sees no extra runs; `load_settings` defaults to `auto`.
     study_table: str = "off"
-    # Whether a completed `sw` full-text retrieval run is followed by a full-text reading run (D85, slice 12).
+    # Whether a completed full-text retrieval run is followed by a full-text reading run (D85, slice 12).
     # `auto` is the product's behavior; `off` leaves the fetched works at `not_read_yet`, for a measurement or a
     # test that needs no second model run.
     fulltext_adjudication: str = "auto"
-    # Who writes an sw discovery run's keyword query (D92, slice 13h). `model` is the product's behavior: a model
+    # Who writes a discovery run's keyword query (D92, slice 13h). `model` is the product's behavior: a model
     # writes it once per scope revision and the code's own query is searched beside it. `code` is the query of
     # slice 13g alone, with no model call, for a measurement or a test that needs the code path only.
     search_query: str = "model"
@@ -152,8 +151,6 @@ def load_settings() -> Settings:
     credentials.set_data_dir(default_data_dir())  # where the opted-in key file lives (A6)
     credentials.move_dotenv_keys_to_keychain()
     credentials.load_into_environment()
-    if "DEIXIS_SEARCH_WORKFLOW" in os.environ:
-        warnings.warn("DEIXIS_SEARCH_WORKFLOW is ignored; new researches use sw", UserWarning, stacklevel=2)
     fulltext_fetch = os.environ.get("DEIXIS_FULLTEXT_FETCH", "auto")
     if fulltext_fetch not in ("auto", "off"):
         raise ValueError("DEIXIS_FULLTEXT_FETCH must be auto or off")

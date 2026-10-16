@@ -17,7 +17,7 @@ import { TrashPage } from './TrashPage'
 import { setUiLanguage, t, uiLanguage, type UiLanguage } from './i18n'
 import './App.css'
 import './Home.css'
-import './LegacyWorkspace.css'
+import './ResearchPage.css'
 import './workspace.css'
 // The research page's rules, split from workspace.css (S0b). The cascade depends on this order; keep it.
 import './research/thread.css'

@@ -986,8 +986,16 @@ function BuiltinEmbeddingPanel({ builtin, dark, onChanged }: { builtin: BuiltinE
 
 // Turns the bare site addresses in a settings sentence (openalex.org, zotero.org/settings/keys) into links.
 function linkify(text: string): ReactNode {
-  return text.split(/(\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:org|com|uk|gov|ai)(?:\/[\w\/#?=.-]*[\w\/])?)/).map((part, i) => i % 2
+  return text.split(/(\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:org|com|uk|gov|ai)(?:\/[\w/#?=.-]*[\w/])?)/).map((part, i) => i % 2
     ? <a key={i} href={`https://${part}`} target="_blank" rel="noopener noreferrer">{part}</a> : part)
+}
+
+// A check button. The check to run reaches it as a prop, so no render-time helper is handed a function that touches a ref.
+function CheckButton({ id, label, run, checking, start, disabled = false, quiet = false }: {
+  id: string; label: string; run: () => Promise<unknown>; checking: string | null
+  start: (key: string, check: () => Promise<unknown>) => void; disabled?: boolean; quiet?: boolean
+}) {
+  return <button type="button" className={quiet ? 'ghost' : 'btn-pri'} disabled={disabled || checking !== null} onClick={() => start(id, run)}>{checking === id ? <span className="spin" aria-hidden /> : <RotateCw aria-hidden />}{t(label)}</button>
 }
 
 function GeminiKeyPath() {
@@ -1442,8 +1450,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     <p className="dmeta">{checking === key ? <span><span className="spin" aria-hidden /> {t('Checking…')}</span> : <span className={`status-chip is-status ${tone === 'warn' ? 'is-warning' : tone === 'no' ? 'is-configured' : ''}`}>{status}</span>}{extra}{checking !== key && checkedLine(key)}</p>
     {reasonNotice(key, reason)}
   </>
-  const checkButton = (key: string, label: string, run: () => Promise<unknown>, disabled = false, quiet = false) =>
-    <button type="button" className={quiet ? 'ghost' : 'btn-pri'} disabled={disabled || checking !== null} onClick={() => runCheck(key, run)}>{checking === key ? <span className="spin" aria-hidden /> : <RotateCw aria-hidden />}{t(label)}</button>
+  const checkProps = { checking, start: runCheck }
   // The Codex login command comes from the backend, written for this computer's shell (the Sign in button is the main way).
   const codexLogin = data?.codex_login_command ?? null
   const signInCommandOf = (id: string) => id === 'codex' ? codexLogin : id === 'claude' ? 'claude auth login' : id === 'copilot_cli' ? 'copilot login' : id === 'gemini_cli' ? 'gemini' : null
@@ -1475,7 +1482,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
           {ownRun?.state === 'waiting' && <span className="spin" aria-hidden />}
           {ownRun && (ownRun.state === 'failed' || ownRun.state === 'timed_out') ? t('Try again') : model?.signed_in ? t('Sign in again') : t('Sign in')}
         </button>}
-        {checkButton(key, 'Test the connection', () => refreshModel(accountId), !model, true)}
+        <CheckButton {...checkProps} id={key} label="Test the connection" run={() => refreshModel(accountId)} disabled={!model} quiet />
       </div>
       {ownRun?.state === 'waiting' && <p className="foot-note signin-wait" role="status">
         <span className="spin" aria-hidden />{t('A terminal window opened. Finish signing in there; this updates by itself.')}
@@ -1595,7 +1602,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     body = <>
       {dmeta('local:ollama', model ? modelStatus(model) : data ? unknown : loading, where ? <span>{where}</span> : undefined, model && !model.ready ? healthReasonText(model) : undefined)}
       <p className="foot-note">{t(tool && !tool.installed ? 'Ollama is not installed on this computer.' : tool && !tool.running ? 'Open the Ollama app or run `ollama serve`.' : 'No key is needed; DEIXIS uses Ollama on this computer.')}</p>
-      <div className="acts">{checkButton('local:ollama', 'Test', () => localCheck(model ? 'ollama' : null), false, true)}</div>
+      <div className="acts"><CheckButton {...checkProps} id="local:ollama" label="Test" run={() => localCheck(model ? 'ollama' : null)} quiet /></div>
       {tool?.running && <section className="server-block" aria-label="Ollama">
         {embeddingChoice('ollama')}
         <LocalModels tool={tool} dark={dark} memoryGb={machine?.memory_gb ?? null} onChanged={reloadTools} onDone={() => { void localCheck('ollama') }} />
@@ -1610,7 +1617,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
       <p className="foot-note is-ink">{t('LM Studio runs models on this computer. Research steps reach it through its local server address; semantic search can use one of its embedding models.')}</p>
       {serverError && <Notice tone="error"><p>{serverError}</p></Notice>}
       <div className="acts">
-        {checkButton('local:lm_studio', 'Test', () => localCheck(lmStudioInUse ? 'local_server' : null))}
+        <CheckButton {...checkProps} id="local:lm_studio" label="Test" run={() => localCheck(lmStudioInUse ? 'local_server' : null)} />
         {lmStudioUrl && lmStudio?.installed && !lmStudioInUse && <button type="button" className="ghost" disabled={serverBusy || !lmStudio?.running} onClick={() => saveLocalServer(lmStudioUrl)}
           title={lmStudio?.running ? undefined : t('Start LM Studio’s local server first')}>{t('Use for research steps')}</button>}
       </div>
@@ -1640,7 +1647,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
         <div className="acts">
           <button type="submit" className="btn-pri" disabled={serverBusy || !changed || !field.trim()}>{serverBusy ? <span className="spin" aria-hidden /> : <Save aria-hidden />}{t(serverBusy ? 'Saving…' : 'Save and test')}</button>
           {saved && <button type="button" className="ghost" disabled={serverBusy} onClick={() => saveLocalServer('')}>{t('Remove')}</button>}
-          {saved && checkButton('local:local_server', 'Test', () => refreshModel('local_server'), serverBusy, true)}
+          {saved && <CheckButton {...checkProps} id="local:local_server" label="Test" run={() => refreshModel('local_server')} disabled={serverBusy} quiet />}
         </div>
       </form>
       {localServer && saved && <ModelCatalogue model={localServer} />}
@@ -1669,7 +1676,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
       {env && credentials && !keyEntry(env)?.configured && providerNoKey[provider.id] && <Notice tone="attention">{t(providerNoKey[provider.id])}</Notice>}
       {keyless && <section className="sheet-card">
         <p className="sheet-card-text">{t('Test sends one request to {name} without a key and shows how it answered.', { name: providerNames[id] ?? id })}</p>
-        <div className="acts">{checkButton(key, 'Test', () => api.testProvider(id).then(result => { setProviderTests(old => ({ ...old, [id]: result })); return result }))}</div>
+        <div className="acts"><CheckButton {...checkProps} id={key} label="Test" run={() => api.testProvider(id).then(result => { setProviderTests(old => ({ ...old, [id]: result })); return result })} /></div>
         {test && !test.contact_email_sent && <p className="foot-note">{t('Sent without a contact email; none is set in Profile.')}</p>}
       </section>}
       {MAILTO_PROVIDERS.has(provider.id) && <dl className="sheet-facts">
@@ -1678,7 +1685,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     </>
   } else if (sel?.kind === 'equation-reader') {
     body = <>
-      <div className="tool-status">{dmeta('equation-reader', readerStatus())}{checkButton('equation-reader', 'Find it on this computer', () => loadReader(true), false, true)}</div>
+      <div className="tool-status">{dmeta('equation-reader', readerStatus())}<CheckButton {...checkProps} id="equation-reader" label="Find it on this computer" run={() => loadReader(true)} quiet /></div>
       {reader && <EquationReaderDetails reader={reader} dark={dark} onChanged={reloadReader} />}
     </>
   } else if (sel?.kind === 'mathpix') {
@@ -1704,7 +1711,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
         <div className="zotero-route-head"><span className="route-ico" aria-hidden><Laptop /></span><h3>{t('This computer')}</h3>{zotero && <span className={`status-chip is-status ${zotero.installed && zotero.running && zotero.local_api ? '' : 'is-configured'}`}>
           {t(!zotero.installed ? 'Not installed' : !zotero.running ? 'Not running' : zotero.local_api ? 'Local API on' : 'Local API off')}</span>}</div>
         {zotero && <LocalToolDetails tool={zotero} dark={dark} onChanged={reloadTools} refresh={false} chip={false} />}
-        <div className="acts">{checkButton('zotero', 'Find it on this computer', () => loadTools(true, true), false, true)}</div>
+        <div className="acts"><CheckButton {...checkProps} id="zotero" label="Find it on this computer" run={() => loadTools(true, true)} quiet /></div>
       </section>
       {credentials && <section className="zotero-route sheet-card">
         <div className="zotero-route-head"><span className="route-ico" aria-hidden><Cloud /></span><h3>zotero.org</h3>{zotero && <span className={`status-chip is-status ${zotero.web_configured ? '' : 'is-configured'}`}>{t(zotero.web_configured ? 'Key and user ID saved' : 'Not set up')}</span>}</div>

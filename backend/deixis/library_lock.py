@@ -12,9 +12,9 @@ process) are started with `guard`, so a child that outlives its DEIXIS still kee
 `flock` and the child inherits the descriptor (`pass_fds`). Windows (`msvcrt`) has no shared lock: a shared holder
 locks one byte of a slot range and the exclusive holder the whole range, and a byte-range lock is not inherited. There
 the child is started through a small holder process (`python -m deixis hold-folder`) that takes the shared lock
-itself, tells the parent it holds it (a file the parent waits for), and only then starts the real command; it
-exits when the command does, and a job object ends the command if the holder is killed. The Windows path has not run
-on a Windows computer.
+itself, starts the real command suspended inside a kill-on-close job object (`models/cli_process.py`), lets it run and
+tells the parent (a file the parent waits for). The command exits when the holder does, so it never runs without the
+lock, and it does not run at all when it cannot join the job. The Windows path has not run on a Windows computer.
 """
 
 from __future__ import annotations
@@ -143,6 +143,14 @@ class Guard:
         entry = [sys.executable] if getattr(sys, "frozen", False) else [sys.executable, "-m", "deixis"]
         self.argv = [*entry, "hold-folder", name, *map(str, _held), "--", *argv]
 
+    def env(self, base: dict[str, str] | None = None) -> dict[str, str]:
+        """The environment for the process call. The holder of a frozen onefile build outlives the parent that unpacked it, so
+        it must not reuse the parent's unpacked files (PyInstaller: PYINSTALLER_RESET_ENVIRONMENT=1)."""
+        env = dict(os.environ if base is None else base)
+        if self._ready is not None and getattr(sys, "frozen", False):
+            env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+        return env
+
     def wait_ready(self, timeout: float = HANDSHAKE_SECONDS) -> None:
         if self._ready is None:
             return
@@ -156,6 +164,8 @@ class Guard:
                 return
             if answer == "busy":
                 raise ChildLockFailed("the data folder is being moved; the command was not started")
+            if answer == "failed":
+                raise ChildLockFailed("the command could not be tied to the folder lock holder; it was not run")
             if time.monotonic() > deadline:
                 raise ChildLockFailed("the folder lock holder did not answer; the command was not started")
             time.sleep(0.05)
@@ -172,6 +182,7 @@ def guard(argv: list[str]) -> Guard:
 def run(argv: list[str], **options) -> None:
     """`subprocess.run(argv, check=True)` inside the held folders."""
     child = guard(argv)
+    options = {**options, "env": child.env(options.get("env"))}
     try:
         process = subprocess.Popen(child.argv, **child.kwargs, **options)
         try:
@@ -186,53 +197,24 @@ def run(argv: list[str], **options) -> None:
         child.done()
 
 
-def _end_with_me(process: subprocess.Popen) -> None:
-    """Windows: a job object that ends `process` when this holder ends, so killing the holder cannot leave the command
-    running without a lock. Best effort: without it the command still runs under the holder's lock."""
-    import ctypes
-    from ctypes import wintypes
-
-    kernel = ctypes.WinDLL("kernel32", use_last_error=True)  # type: ignore[attr-defined]
-
-    class Basic(ctypes.Structure):
-        _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
-                    ("LimitFlags", wintypes.DWORD), ("MinimumWorkingSetSize", ctypes.c_size_t),
-                    ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", wintypes.DWORD),
-                    ("Affinity", ctypes.c_size_t), ("PriorityClass", wintypes.DWORD), ("SchedulingClass", wintypes.DWORD)]
-
-    class Counters(ctypes.Structure):
-        _fields_ = [(name, ctypes.c_uint64) for name in ("a", "b", "c", "d", "e", "f")]
-
-    class Extended(ctypes.Structure):
-        _fields_ = [("BasicLimitInformation", Basic), ("IoInfo", Counters), ("ProcessMemoryLimit", ctypes.c_size_t),
-                    ("JobMemoryLimit", ctypes.c_size_t), ("PeakProcessMemoryUsed", ctypes.c_size_t),
-                    ("PeakJobMemoryUsed", ctypes.c_size_t)]
-
-    kernel.CreateJobObjectW.restype = wintypes.HANDLE
-    job = kernel.CreateJobObjectW(None, None)
-    info = Extended()
-    info.BasicLimitInformation.LimitFlags = 0x2000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-    kernel.SetInformationJobObject(wintypes.HANDLE(job), 9, ctypes.byref(info), ctypes.sizeof(info))  # 9: extended limits
-    kernel.AssignProcessToJobObject(wintypes.HANDLE(job), wintypes.HANDLE(int(process._handle)))  # type: ignore[attr-defined]
-
-
 def holder_main(args: list[str]) -> int:
-    """`hold-folder READY_FILE FOLDER... -- COMMAND...` (the Windows holder): take the shared lock of every folder, say so
-    in READY_FILE ("ready", or "busy" when a move holds one), then run COMMAND and exit with its status."""
+    """`hold-folder READY_FILE FOLDER... -- COMMAND...` (the Windows holder): take the shared lock of every folder, start
+    COMMAND suspended, put it in a kill-on-close job object, let it run, say "ready" in READY_FILE and exit with its status.
+    "busy" means a move holds a folder; "failed" means COMMAND could not be started inside the job, and it did not run."""
+    from deixis.models import cli_process
+
     split = args.index("--")
     ready, folders, command = Path(args[0]), [Path(p) for p in args[1:split]], args[split + 1:]
-    got = all(hold_shared(folder) for folder in folders)
-    ready.write_text("ready" if got else "busy")
-    if not got:
+    if not all(hold_shared(folder) for folder in folders):
+        ready.write_text("busy")
         return 3
     try:
-        process = subprocess.Popen(command)
+        process = subprocess.Popen(command, **cli_process.spawn_options())
+        cli_process.track(process, require_job=True)  # a command that cannot join the job is killed unrun, never left free of the lock
     except OSError:
-        return 127
-    try:
-        _end_with_me(process)
-    except Exception:
-        pass
+        ready.write_text("failed")
+        return 1
+    ready.write_text("ready")
     return process.wait()
 
 

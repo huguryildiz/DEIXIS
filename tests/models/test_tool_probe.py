@@ -188,3 +188,20 @@ def test_tesseract_is_asked_twice_at_once_and_undecodable_output_still_reports(t
     status = ocr.tesseract_status(("eng",))
     assert time.monotonic() - started < 1.8  # both questions are asked side by side, each taking 1 s
     assert (status["available"], status["version"], status["languages"]) == (True, "5.5.2", ["eng"])
+
+
+def test_a_required_job_that_cannot_be_joined_kills_the_process_without_running_it(monkeypatch):
+    """The folder lock holder's command must not run outside the job: no resume, the process is killed, the caller told."""
+    calls = windows(monkeypatch, AssignProcessToJobObject=0)
+    proc = FakeProc()
+    with pytest.raises(OSError, match="stopped, not run"):
+        cli_process.track(proc, require_job=True)
+    assert not any(c[0] == "NtResumeProcess" for c in calls) and ("CloseHandle", 7) in calls and proc.returncode == -9
+    calls = windows(monkeypatch, CreateJobObjectW=None)
+    other = FakeProc()
+    with pytest.raises(OSError):
+        cli_process.track(other, require_job=True)
+    assert not any(c[0] == "NtResumeProcess" for c in calls) and other.returncode == -9
+    ok = windows(monkeypatch)
+    cli_process.track(FakeProc(), require_job=True)
+    assert [c[0] for c in ok].index("AssignProcessToJobObject") < [c[0] for c in ok].index("NtResumeProcess")

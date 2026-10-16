@@ -299,7 +299,7 @@ class MathReader:
         try:
             self.process = await asyncio.create_subprocess_exec(
                 *child.argv, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL, env=env, limit=64 * 1024 * 1024, **child.kwargs,
+                stderr=asyncio.subprocess.DEVNULL, env=child.env(env), limit=64 * 1024 * 1024, **child.kwargs,
             )
             await asyncio.to_thread(child.wait_ready)
             ready = json.loads(await asyncio.wait_for(self.process.stdout.readline(), READY_TIMEOUT_SECONDS))

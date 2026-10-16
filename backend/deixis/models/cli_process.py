@@ -81,7 +81,7 @@ def _kill_on_close() -> Any:
     return info
 
 
-def track(proc: asyncio.subprocess.Process) -> None:
+def track(proc: asyncio.subprocess.Process, require_job: bool = False) -> None:
     """Windows: puts the CLI started by spawn_options() in a job object, then lets it run. stop_group then ends the
     CLI and everything it started, also after the CLI itself has exited (taskkill /T finds a child only through its
     running parent). POSIX needs nothing: the process group outlives its leader.
@@ -90,7 +90,9 @@ def track(proc: asyncio.subprocess.Process) -> None:
     created with CREATE_SUSPENDED (no code of its own has run, it cannot have started a child or exited, so its pid
     is still its own), assigned to the job and only then resumed. Popen keeps no thread handle to ResumeThread, so
     the whole process is resumed with NtResumeProcess, an ntdll export long used for this. If the job cannot be made,
-    the CLI still runs, untracked (stop_group falls back to taskkill); if it cannot even be resumed, it is killed."""
+    the CLI still runs, untracked (stop_group falls back to taskkill); if it cannot even be resumed, it is killed.
+    `require_job` (the folder-lock holder's command, which must never run outside the job): a job that cannot be made
+    or joined kills the process without resuming it and raises OSError."""
     if not WINDOWS:
         return
     import ctypes
@@ -106,15 +108,20 @@ def track(proc: asyncio.subprocess.Process) -> None:
                                              ctypes.sizeof(info)) and k.AssignProcessToJobObject(job, handle):
             _JOBS[proc] = job
             weakref.finalize(proc, k.CloseHandle, job)
-        elif job:
-            k.CloseHandle(job)
+        else:
+            if job:
+                k.CloseHandle(job)
+            if require_job:
+                raise OSError("the process could not join a job object")
         if _ntdll().NtResumeProcess(handle) != 0:
             raise OSError("NtResumeProcess failed")
-    except (OSError, AttributeError):
+    except (OSError, AttributeError) as exc:
         try:
             proc.kill()  # left suspended it would hold its caller until the timeout
         except (ProcessLookupError, OSError):
             pass
+        if require_job:
+            raise OSError(f"the process was stopped, not run: {exc}") from exc
     finally:
         if handle:
             k.CloseHandle(handle)

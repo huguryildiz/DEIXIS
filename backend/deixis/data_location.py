@@ -4,7 +4,10 @@ A change takes effect at the next start; the open SQLite library is never moved 
 carries `move_from`, `apply_pending_move` moves the old folder's entries into the new one before anything opens them,
 holding both folders' exclusive locks (`library_lock`, E1). The pointer records the move's phase before each step that
 changes a folder (E22), so a start after an interruption finishes the step that was cut short. Nothing is deleted from
-the old folder before the copy, its directory entries and the record of it are on disk (`_fsync_tree`, `_sync_dir`).
+the old folder before the copy, its directory entries and the record of it are on disk (`_delete_originals`). Windows
+cannot flush a folder or a read-only file, so there the copies are not deleted by the run that makes them: the pointer
+says `placed_pending_cleanup`, the next start that opens the new library marks it opened, and the start after that deletes
+the originals (`finish_cleanup`).
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ POINTER_NAME = "location.json"
 NOT_MOVED = {POINTER_NAME, "worker.lock", library_lock.LOCK_NAME}
 DATABASE_FILES = ("library.sqlite-wal", "library.sqlite-shm", "library.sqlite")  # moved last, the database itself at the end
 MOVING_PREFIX = ".deixis-moving-"
+PENDING_CLEANUP = "placed_pending_cleanup"  # every entry is in the new folder; the copies in the old one wait to be deleted
 BREAKDOWN = (
     ("database", "Library database", {"library.sqlite", "library.sqlite-wal", "library.sqlite-shm"}),
     ("pdfs", "PDFs", {"papers"}),
@@ -81,14 +85,14 @@ def pointer_path() -> Path | None:
 
 
 def write_pointer(path: Path, move_from: Path | None, moved: list[str] | None = None, phase: str | None = None,
-                  placing: str | None = None) -> None:
+                  placing: str | None = None, opened: bool = False) -> None:
     target = pointer_file()
     if path == config.platform_data_dir() and move_from is None:
         target.unlink(missing_ok=True)
         return
     target.parent.mkdir(parents=True, exist_ok=True)
     data = ({"path": str(path)} | ({"move_from": str(move_from)} if move_from is not None else {}) | ({"moved": moved} if moved else {})
-            | ({"phase": phase} if phase else {}) | ({"placing": placing} if placing else {}))
+            | ({"phase": phase} if phase else {}) | ({"placing": placing} if placing else {}) | ({"opened": True} if opened else {}))
     temporary = target.with_name(POINTER_NAME + ".tmp")
     temporary.write_text(json.dumps(data), encoding="utf-8")
     _fsync_path(temporary)  # the record is on disk before it takes the pointer's name, and the name before anything is deleted
@@ -289,6 +293,62 @@ def _sync_dir(path: Path) -> None:
         os.close(fd)
 
 
+def _defers_deletion() -> bool:
+    """Windows keeps the originals until a later start (see the module comment)."""
+    return sys.platform == "win32"
+
+
+def _make_dir(path: Path) -> None:
+    """Create `path` and any missing parents, with each new name flushed into its parent folder."""
+    missing = []
+    for folder in (path, *path.parents):
+        if folder.exists():
+            break
+        missing.append(folder)
+    path.mkdir(parents=True, exist_ok=True)
+    for folder in missing:
+        _sync_dir(folder.parent)
+    _sync_dir(path)
+
+
+def _delete_originals(old: Path, data_dir: Path, names: list[str]) -> None:
+    """Delete `names` from `old` once their copies in `data_dir` and the names of those copies are on disk. Called on every
+    path that deletes an original (a move, its resumption), so none can skip the flush."""
+    present = [name for name in names if (old / name).exists() or (old / name).is_symlink()]
+    for name in present:
+        _fsync_tree(data_dir / name)
+    _sync_dir(data_dir)
+    for name in present:
+        _remove(old / name)
+    if present:
+        _sync_dir(old)
+
+
+def finish_cleanup(data_dir: Path) -> str | None:
+    """Windows: the step after a move that kept its originals. The start that opens the new library marks the move opened;
+    a later start deletes the originals (those whose size still equals their copy's) and clears the record. Returns one
+    sentence when the originals stay, else None. Call it after the library opened."""
+    if set_outside_app() or (data := read_pointer()) is None or data.get("phase") != PENDING_CLEANUP or Path(data["path"]) != data_dir:
+        return None
+    old, moved = Path(data["move_from"]), [name for name in data.get("moved", []) if isinstance(name, str)]
+    if not data.get("opened"):
+        write_pointer(data_dir, old, moved, phase=PENDING_CLEANUP, opened=True)
+        return None
+    if old.is_dir():
+        try:
+            with library_lock.exclusive(old):
+                if differing := next((n for n in moved if (old / n).exists() and _size(str(old / n)) != _size(str(data_dir / n))), None):
+                    return (f"DEIXIS kept the old copy of {differing} in {old}: it differs in size from the one in {data_dir}. "
+                            "Check the new library, then delete the old folder's copies yourself.")
+                _delete_originals(old, data_dir, moved)
+        except library_lock.Busy:
+            return None  # in use by another DEIXIS; the next start tries again
+        except OSError as exc:
+            return f"DEIXIS could not delete the old copies in {old} ({type(exc).__name__}: {exc}); it will try again at the next start."
+    write_pointer(data_dir, None)
+    return None
+
+
 def _fsync_tree(path: Path) -> None:
     """Every file and folder under `path` (or the one file), then `path`'s parent folder, on disk."""
     if path.is_dir() and not path.is_symlink():
@@ -328,6 +388,8 @@ def apply_pending_move(data_dir: Path) -> str | Postponed | None:
     if Path(data["path"]) != data_dir:
         return None
     old, phase = Path(data["move_from"]), data.get("phase")
+    if phase == PENDING_CLEANUP:
+        return None  # moved; only the originals are left (finish_cleanup)
     if old != data_dir and not old.is_dir() and phase != "relinking" and not (phase is None and (data_dir / "library.sqlite").exists()):
         # The old folder is out of reach (an unplugged drive, a renamed folder): opening the new one now would open an
         # incomplete or empty library, and clearing the record would forget where the rest is.
@@ -342,7 +404,7 @@ def apply_pending_move(data_dir: Path) -> str | Postponed | None:
         return None
     if problem := (data_dir_problem(data_dir) if phase else target_problem(data_dir, old)):
         return f"Cannot move the library to {data_dir}: it {problem}. Choose another folder in Settings from the old location."
-    data_dir.mkdir(parents=True, exist_ok=True)
+    _make_dir(data_dir)
     try:
         with library_lock.exclusive(old, data_dir):  # source first, then target; neither waits
             return _move(data, old, data_dir)
@@ -367,9 +429,8 @@ def _move(data: dict, old: Path, data_dir: Path) -> str | None:
                 moved.append(placing)  # put in place before the interruption; only the deletion of the original was left
             for leftover in data_dir.glob(MOVING_PREFIX + "*"):  # a copy an interrupted move left half done; the original is still in `old`
                 _remove(leftover)
-            for name in moved:  # copied in full before the interruption; only the deletion of the original was left
-                if (old / name).exists() or (old / name).is_symlink():
-                    _remove(old / name)
+            if not _defers_deletion():  # copied in full before the interruption; only the deletion of the original was left
+                _delete_originals(old, data_dir, moved)
             entries = [e for e in old.iterdir() if e.name not in NOT_MOVED and e.name not in moved]
             entries.sort(key=lambda e: (DATABASE_FILES.index(e.name) + 1 if e.name in DATABASE_FILES else 0, e.name))
             if clash := next((e.name for e in entries if (data_dir / e.name).exists() or (data_dir / e.name).is_symlink()), None):
@@ -395,7 +456,8 @@ def _move(data: dict, old: Path, data_dir: Path) -> str | None:
                 _sync_dir(data_dir)
                 moved.append(entry.name)
                 write_pointer(data_dir, old, moved, phase="moving")  # on disk before the original is deleted, so a retry never deletes the copy
-                _remove(entry)
+                if not _defers_deletion():
+                    _delete_originals(old, data_dir, [entry.name])
             _sync_dir(data_dir)
             _sync_dir(old)  # the renames: both folders' entries on disk before the record moves on
             write_pointer(data_dir, old, moved, phase="relinking")
@@ -404,7 +466,10 @@ def _move(data: dict, old: Path, data_dir: Path) -> str | None:
     except OSError as exc:
         return (f"Could not finish moving the library from {old} to {data_dir} ({type(exc).__name__}: {exc}). "
                 "Every file is still in one of the two folders; start DEIXIS again to finish the move.")
-    write_pointer(data_dir, None)
+    if _defers_deletion() and any((old / name).exists() or (old / name).is_symlink() for name in moved):
+        write_pointer(data_dir, old, moved, phase=PENDING_CLEANUP)  # the copies in `old` go at a later start
+    else:
+        write_pointer(data_dir, None)
     return None
 
 

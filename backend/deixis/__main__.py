@@ -162,6 +162,8 @@ def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...], re
     if (problem := db.open_problem(settings.db_path)) is not None:
         print(problem, file=sys.stderr)
         return 2
+    if (note := data_location.finish_cleanup(settings.data_dir)) is not None:  # Windows: old copies of a finished move
+        print(note, file=sys.stderr)
     if not settings.web_dist.exists():
         print("UI build not found (apps/web/dist). The API will run; build the UI with `npm run build` in apps/web.")
     # Open event streams would otherwise hold graceful shutdown (and the port) until the browser disconnects.

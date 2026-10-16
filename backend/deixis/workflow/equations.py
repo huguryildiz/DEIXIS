@@ -1106,7 +1106,7 @@ class EquationService:
                     child = library_lock.guard(argv)  # keeps the data folder busy while it runs (E1)
                     try:
                         self._install_proc = proc = await asyncio.create_subprocess_exec(
-                            *child.argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
+                            *child.argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=child.env(env),
                             **child.kwargs)
                         await asyncio.to_thread(child.wait_ready)
                     except library_lock.ChildLockFailed:

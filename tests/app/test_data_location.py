@@ -802,3 +802,194 @@ def test_an_unreadable_mount_table_is_none_not_an_empty_list(monkeypatch):
     monkeypatch.setattr(data_location.subprocess, "run", fail)
     monkeypatch.setattr(data_location.sys, "platform", "darwin")
     assert data_location._mounts() is None
+
+
+# ---- review round 2: the holder's job, Windows deferred deletion, the recovery path ------------------------------------
+
+
+class FakeChild:
+    def __init__(self, log):
+        self.log = log
+
+    def wait(self):
+        self.log.append("wait")
+        return 7
+
+
+def run_holder(tmp_path, monkeypatch, track):
+    """holder_main with a stand-in for the process call; returns (exit status, what the ready file said, event log)."""
+    from deixis.models import cli_process
+
+    folder, ready, log = tmp_path / "held", tmp_path / "ready", []
+    folder.mkdir(exist_ok=True)
+    ready.write_text("")
+
+    def popen(command, **options):
+        log.append(("popen", command, options))
+        return FakeChild(log)
+
+    def tracked(process, require_job=False):
+        log.append(("track", require_job, ready.read_text()))  # what the parent can see while the command is still held
+        track(process)
+
+    monkeypatch.setattr(library_lock.subprocess, "Popen", popen)
+    monkeypatch.setattr(cli_process, "track", tracked)
+    code = library_lock.holder_main([str(ready), str(folder), "--", "the", "command"])
+    return code, ready.read_text(), log
+
+
+def test_the_holder_starts_the_command_suspended_joins_the_job_and_only_then_signals_ready(tmp_path, monkeypatch):
+    from deixis.models import cli_process
+
+    code, answer, log = run_holder(tmp_path, monkeypatch, lambda process: None)
+    assert (code, answer) == (7, "ready")
+    assert [e if isinstance(e, str) else e[0] for e in log] == ["popen", "track", "wait"]
+    assert log[0][1] == ["the", "command"] and log[0][2] == cli_process.spawn_options()  # suspended on Windows
+    assert log[1][1:] == (True, "")  # the job is required, and "ready" was not said before the command joined it
+
+
+def test_the_holder_does_not_run_the_command_when_the_job_cannot_be_joined(tmp_path, monkeypatch):
+    def refuse(process):
+        raise OSError("the process was stopped, not run")
+
+    code, answer, log = run_holder(tmp_path, monkeypatch, refuse)
+    assert (code, answer) == (1, "failed") and "wait" not in log
+    child = library_lock.Guard.__new__(library_lock.Guard)
+    child._ready = tmp_path / "ready"
+    with pytest.raises(library_lock.ChildLockFailed, match="could not be tied"):
+        child.wait_ready(timeout=0.2)
+
+
+def test_a_frozen_windows_holder_gets_a_clean_pyinstaller_environment(named_folder, monkeypatch, windows_children):
+    monkeypatch.setattr(library_lock.sys, "frozen", True, raising=False)
+    child = library_lock.guard(["x"])
+    assert child.argv[1] == "hold-folder" and child.env({"A": "1"}) == {"A": "1", "PYINSTALLER_RESET_ENVIRONMENT": "1"}
+    child.done()
+    monkeypatch.setattr(library_lock.sys, "frozen", False, raising=False)
+    plain = library_lock.guard(["x"])
+    assert "PYINSTALLER_RESET_ENVIRONMENT" not in plain.env({"A": "1"})
+    plain.done()
+
+
+def cross_disk_and_windows(monkeypatch):
+    monkeypatch.setattr(data_location, "_defers_deletion", lambda: True)
+
+    def cross_disk(src, dst):
+        raise OSError(errno.EXDEV, "cross-device link")
+
+    monkeypatch.setattr(data_location.os, "rename", cross_disk)
+
+
+def test_on_windows_the_originals_stay_until_a_later_start_has_opened_the_new_library(default, tmp_path, monkeypatch):
+    library(default)
+    new = tmp_path / "new"
+    data_location.write_pointer(new, default)
+    cross_disk_and_windows(monkeypatch)
+    assert data_location.apply_pending_move(new) is None
+    assert (new / "library.sqlite").read_text() == "old" and (default / "library.sqlite").read_text() == "old"  # both
+    pointer = json.loads((default / "location.json").read_text())
+    assert pointer["phase"] == "placed_pending_cleanup" and pointer["path"] == str(new) and "opened" not in pointer
+    assert config.default_data_dir() == new
+    assert data_location.apply_pending_move(new) is None and (default / "papers" / "a.pdf").exists()  # a start in between moves nothing
+    assert data_location.finish_cleanup(new) is None  # the first start that opened the new library: it is marked, nothing deleted
+    assert json.loads((default / "location.json").read_text())["opened"] is True and (default / "library.sqlite").exists()
+    assert data_location.finish_cleanup(new) is None  # the next one deletes the originals
+    assert sorted(p.name for p in default.iterdir()) == ["library.lock", "location.json", "worker.lock"]
+    assert json.loads((default / "location.json").read_text()) == {"path": str(new)}
+    assert (new / "library.sqlite").read_text() == "old" and (new / "papers" / "a.pdf").exists()
+
+
+def test_a_copy_that_differs_in_size_keeps_the_original_and_says_so(default, tmp_path, monkeypatch):
+    library(default)
+    new = tmp_path / "new"
+    data_location.write_pointer(new, default)
+    cross_disk_and_windows(monkeypatch)
+    assert data_location.apply_pending_move(new) is None
+    data_location.finish_cleanup(new)
+    (new / "library.sqlite").write_text("truncated?")
+    message = data_location.finish_cleanup(new)
+    assert "library.sqlite" in message and str(default) in message
+    assert (default / "library.sqlite").read_text() == "old" and "placed_pending_cleanup" in (default / "location.json").read_text()
+
+
+def test_the_old_copies_wait_while_another_deixis_uses_the_old_folder(default, tmp_path, monkeypatch, holder):
+    library(default)
+    new = tmp_path / "new"
+    data_location.write_pointer(new, default)
+    cross_disk_and_windows(monkeypatch)
+    data_location.apply_pending_move(new)
+    data_location.finish_cleanup(new)
+    other = holder(default)
+    assert data_location.finish_cleanup(new) is None and (default / "library.sqlite").exists()
+    stop(other)
+    assert data_location.finish_cleanup(new) is None and not (default / "library.sqlite").exists()
+
+
+def test_serve_runs_the_cleanup_only_after_the_library_opened(default, tmp_path, monkeypatch):
+    new = tmp_path / "new"
+    new.mkdir()
+    data_location.write_pointer(new, default, ["papers"], phase="placed_pending_cleanup")
+    order = []
+
+    class Stop(Exception):
+        pass
+
+    monkeypatch.setattr(cli, "port_available", lambda host, port: True)
+    monkeypatch.setattr(cli.db, "open_problem", lambda path: order.append("open") or None)
+    monkeypatch.setattr(cli.data_location, "finish_cleanup", lambda path: order.append(("cleanup", path)))
+    monkeypatch.setattr(cli, "create_app", lambda *a, **k: (_ for _ in ()).throw(Stop()))
+    with pytest.raises(Stop):
+        cli.serve(Settings(data_dir=new), False, ())
+    assert order == ["open", ("cleanup", new)]
+
+
+def test_a_stop_after_a_copy_took_its_name_flushes_the_target_before_the_original_goes(default, tmp_path, monkeypatch):
+    """The recovery path deletes an original too: it must flush the copy and its name first, like the first run."""
+    library(default)
+    new = tmp_path / "new"
+    data_location.write_pointer(new, default)
+    real_replace, real_rename = os.replace, os.rename
+
+    def cross_disk(src, dst):
+        raise OSError(errno.EXDEV, "cross-device link")
+
+    def stop_after_placing(src, dst):
+        real_replace(src, dst)
+        if Path(src).name.startswith(data_location.MOVING_PREFIX):
+            raise Killed
+
+    monkeypatch.setattr(data_location.os, "rename", cross_disk)
+    monkeypatch.setattr(data_location.os, "replace", stop_after_placing)
+    with pytest.raises(Killed):
+        data_location.apply_pending_move(new)
+    monkeypatch.setattr(data_location.os, "replace", real_replace)
+    events = []
+    for name, label in (("_fsync_tree", "tree"), ("_sync_dir", "dir"), ("_remove", "remove")):
+        real = getattr(data_location, name)
+        monkeypatch.setattr(data_location, name, lambda path, real=real, label=label: (events.append((label, Path(path).name)), real(path))[1])
+    assert data_location.apply_pending_move(new) is None
+    tree = events.index(("tree", "papers"))
+    assert tree < events.index(("dir", "new"), tree) < events.index(("remove", "papers"))
+    assert not (default / "papers").exists() and (new / "papers" / "a.pdf").exists()
+
+
+def test_a_new_target_folder_and_its_new_parents_are_flushed_into_their_parents(default, tmp_path, monkeypatch):
+    library(default)
+    new = tmp_path / "a" / "b" / "DEIXIS"
+    data_location.write_pointer(new, default)
+    synced, real = [], data_location._sync_dir
+    monkeypatch.setattr(data_location, "_sync_dir", lambda path: (synced.append(Path(path)), real(path))[1])
+    assert data_location.apply_pending_move(new) is None
+    first = synced[: synced.index(new) + 1]
+    assert tmp_path in first and tmp_path / "a" in first and tmp_path / "a" / "b" in first and new in first
+
+
+def test_the_first_start_with_no_pointer_and_no_folder_still_works(default, tmp_path, monkeypatch):
+    fresh = tmp_path / "fresh" / "DEIXIS"
+    monkeypatch.setenv("DEIXIS_DATA_DIR", str(fresh))
+    assert data_location.apply_pending_move(fresh) is None and data_location.finish_cleanup(fresh) is None
+    seen = []
+    monkeypatch.setattr(cli, "port_available", lambda host, port: True)
+    monkeypatch.setattr(cli, "schema_problem", lambda path: seen.append(path) or "stop here")
+    assert cli.main(["serve", "--no-browser"]) == 2
+    assert seen == [fresh / "library.sqlite"] and fresh in library_lock._held and not (default / "location.json").exists()

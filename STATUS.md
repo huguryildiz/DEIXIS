@@ -20,6 +20,7 @@ Most of this was tested with fake models and synthetic data only; "Not measured"
 - Clean start (10–11 Oct): the fast path is the only search path, the old search and answer paths and old data support are gone, and the schema starts from one baseline.
 - Seed PDFs steer the search (D2, D3, D6): up to 5 uploaded or Zotero PDFs feed the citation chain and similar-paper requests without pushing out the question's own results.
 - OpenAlex similar-paper requests now overlap, starting 1.5 s apart with 100 records per page (D10).
+- PRISMA-S, the Method box and Watch now read the requests the fast plan really sends, including its semantic and Semantic Scholar requests, and Watch keeps each query's saved position.
 - Citation map (D42): a panel draws the sources by year or as a network from OpenAlex reference lists, and a work cited by two or more sources can be added as a candidate.
 
 ### Reading and answers
@@ -29,6 +30,7 @@ Most of this was tested with fake models and synthetic data only; "Not measured"
 - The line above the answer says how many cited sources were read in full and how many from the abstract only, and table cells filled from an abstract are re-read when the PDF arrives (D52).
 - The full-text label says how many text chunks and pages the model actually saw (D62).
 - Formula questions put each source's most formula-heavy page into the answer input (D56).
+- Works the survey title rule set aside are labeled `code_decided` in the answer input, not `not_screened_at_cutoff` (D69).
 - Raw LaTeX outside `$…$` in answers, follow-ups and report sections sends the step to repair (D61).
 
 ### Follow-up questions
@@ -63,6 +65,8 @@ Most of this was tested with fake models and synthetic data only; "Not measured"
 - The UI moved to the mockup v24 design, and the 17 bugs found against the mockup are fixed (D5).
 - Post-parity cleanup and small features (P0–P5, D25–D33) are done: unused CSS removed, search-plan strike-through, request counts, stored thinking level, proxy name, "Try" for keyless sources.
 - Pre-P10 readiness is done in code: the packaged app finds its files, tools work when opened from the desktop, Windows CLIs start, a Linux fallback holds keys for the session, and cost estimates are shown.
+- An open PDF viewer now loads the restored file after a file restore.
+- A GitHub Actions workflow runs the quick tests and the web build on every push to main; it is informational and blocks nothing.
 - The P9 upgrade check's 15 teardown errors are fixed (385b4511), and the arXiv source-archive test that used to fail now passes.
 - Answers no longer overuse "It has been reported that…": the phrasebank is gone, and a live check on 16 Oct found no formula openings (D43).
 
@@ -73,13 +77,11 @@ One run per mode with gpt-5.6-luna on the DBR/VBF question, on a library copy.
 - Quick (25/10) and Detailed (100/40) limits held; full text filled 10 of 10 slots in Quick but 24 of 40 in Detailed, because 48 of 72 candidates had no PDF.
 - The model saw a median 41–46% of each read work's text chunks, and the second reading saw the same chunks as the first.
 - Answers cited only 3 of 23 and 4 of 70 works in their input.
-- Works dropped by the survey-title rule are wrongly labeled `not_screened_at_cutoff` in the answer input.
 
 ## Open work
 
 ### Left over from the clean start
 
-- Watch and the PRISMA-S method text still read fields of the old query compiler (`_source_routing`, `compiled_queries`).
 - The search stage can look finished while chain requests are still running, because those requests count toward screening.
 - Test gaps: the Playwright rate-limit cases do not match each failed OpenAlex request to its own row, and the fast-answer flow has no pause/resume test.
 
@@ -106,9 +108,9 @@ One run per mode with gpt-5.6-luna on the DBR/VBF question, on a library copy.
 
 ### Code
 
-- The re-extraction background reader is not tested in the matrix, and an open PDF viewer shows the old document after a restore.
+- The re-extraction background reader is not tested in the matrix.
 - UI: the sticky answer area in the queue grew to about 300 px at 1280×900, the selected tab may not scroll into view after a TR/EN switch, and report icon buttons on phones have no visible hint.
-- The first answer draft often breaks citation-anchor rules and repair adds 1–2 minutes per answer; there is no CI, and parallel tests fail now and then.
+- The first answer draft often breaks citation-anchor rules and repair adds 1–2 minutes per answer; CI runs on every push but is not required, and parallel tests fail now and then.
 
 ### Live findings (4–5 Oct)
 

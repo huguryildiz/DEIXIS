@@ -292,6 +292,9 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   // The file and its text are told apart (P12): a passage read from the PDF, or its loaded text, says there is text;
   // otherwise the stored extraction state of the file does. A kept file can have no text (no text layer, a failed read).
   const fileAsset = pdfAssetId ? row?.access.assets.find(item => item.id === pdfAssetId) ?? null : null
+  // A file restore swaps the PDF under the same URL; a viewer opened before it must load the restored file (D223).
+  const restored = fileAsset?.text_recovery?.latest_file_restore
+  const pdfRevision = restored?.lifecycle === 'completed' && restored.outcome === 'file_restored' ? restored.operation_id : ''
   const loadedText = (passage && !abstract) ? true : assetText ? assetText.passages.length > 0 : extra ? extra.passages.length > 0 : null
   const pdfText: 'text' | 'none' | 'pending' | null = loadedText === true ? 'text' : loadedText === false ? 'none' : textState(fileAsset) ?? (hasPdf ? 'pending' : null)
   const finding = Boolean(row && actions?.finding.includes(row.source_version_id))
@@ -533,7 +536,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
           {tab === 'pdf' && <div id="source-pdf-view" role="tabpanel" aria-labelledby="source-tab-pdf" className="source-pdf-view">
             {pdfAssetId ? <>
               {passage && <StoredPdfNotice occurrence={passage.occurrence} />}
-              <PdfViewer url={assetUrl(researchId, pdfAssetId)} initialPage={passage?.physical_page ?? initialPage} title={source.title} rendition={pdfRendition} />
+              <PdfViewer key={`${pdfAssetId}:${pdfRevision}`} url={assetUrl(researchId, pdfAssetId)} initialPage={passage?.physical_page ?? initialPage} title={source.title} rendition={pdfRendition} />
             </> : empty('pdf')}
           </div>}
           {/* Where the source came from (mockup `.foot-note`, P20), laid out as a provenance card. */}

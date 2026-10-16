@@ -122,7 +122,14 @@ class WatchStore:
     def units(self, research_id, kind, protocol=None):
         units = []
         if kind == "protocol_queries":
-            for index, query in enumerate(protocol["body"]["compiled_queries"]):
+            from deixis.workflow.fast_search import sent_plan
+            # A watch follows the dated queries the protocol sent; a semantic request ranks by meaning, not by date.
+            # A unit keeps its query's place in `compiled_queries`, so a saved cursor never passes to another query.
+            for query in sent_plan(protocol["body"]):
+                if not query["watchable"]:
+                    continue
+                index = query["compiled_index"]
+                query = {k: v for k, v in query.items() if k not in ("key", "arm", "watchable", "compiled_index")}
                 connector = registry.reading(query)
                 unit = dict(query, index=index, unit_key=f"query:{index}", kind=kind,
                     display_name=connector.display_name, page_size=min(connector.max_results, policy.WATCH_PER_PAGE),

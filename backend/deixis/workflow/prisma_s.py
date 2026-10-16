@@ -180,11 +180,12 @@ def _groups(store: Store, research_id: str, revision: int, until: str | None = N
 
 
 def _planned_queries(store: Store, research_id: str, revision: int, latest: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """The queries the latest frozen protocol planned, each marked by what the stored rows say happened to it.
+    """The requests the latest frozen protocol planned to send (`fast_search.sent_plan`), each marked by what the stored
+    rows say happened to it. A fast path plan's dropped queries are not planned requests and are not listed.
 
     The protocol is frozen before the first provider request and never edited, so it lists a query a stopped run never
-    sent. A step belongs to the protocol only through its run: the run whose `protocol` step names the record's hash. A step is matched to a planned query by its index in that run and, when it wrote a
-    `search_runs` row, by that row's provider and query text too. With no such run nothing is known: every query is
+    sent. A step belongs to the protocol only through its run: the run whose `protocol` step names the record's hash. A step is matched to a planned request by its step key in that run (any page of it) and,
+    when it wrote a `search_runs` row, by that row's provider and query text too. With no such run nothing is known: every query is
     `delivery_unknown`.
     - `sent`: a matching step succeeded, or failed with a recorded transport send count above zero.
     - `not_sent`: evidence on the query's own step only: it was skipped (`cancelled`), never started (`pending`), or
@@ -195,7 +196,9 @@ def _planned_queries(store: Store, research_id: str, revision: int, latest: dict
       a request was not on the network.
     `recorded` says whether a `search_runs` row of the query's own exists; a sent query without one is a gap.
     """
-    planned = (latest["body"].get("compiled_queries") if latest else None) or []
+    from deixis.workflow.fast_search import sent_plan
+    planned = sent_plan(latest["body"]) if latest else []
+    by_key = {query["key"]: index for index, query in enumerate(planned)}
     if not planned:
         return []
     linked = {row["run_id"]: dict(row) for row in store.conn.execute(
@@ -210,11 +213,8 @@ def _planned_queries(store: Store, research_id: str, revision: int, latest: dict
     seen: dict[int, set[str]] = {}
     recorded: set[int] = set()
     for row in rows:
-        found = re.fullmatch(r"search:(\d+)(?::page:\d+)?", row["operation_key"])
-        if not found:
-            continue
-        index = int(found.group(1))
-        if index >= len(planned):
+        index = by_key.get(re.sub(r":page:\d+$", "", row["operation_key"]))
+        if index is None:
             continue
         want = planned[index]
         if row["provider"] is not None and (row["provider"], row["query_text"]) != (want.get("provider_id"), want.get("query_text")):
@@ -245,7 +245,7 @@ def _planned_queries(store: Store, research_id: str, revision: int, latest: dict
         dispatch = ("sent" if "sent" in marks else "delivery_unknown" if "delivery_unknown" in marks
                     else "not_sent" if marks else "delivery_unknown")
         result.append({"index": index, "provider_id": query.get("provider_id"), "query_text": query.get("query_text"),
-                       "origin": query.get("origin"), "dispatch": dispatch,
+                       "origin": query.get("origin"), "arm": query["arm"], "dispatch": dispatch,
                        "recorded": index in recorded})
     return result
 

@@ -453,3 +453,28 @@ def item_ten(store, approval):
 def test_item_10_says_whether_a_person_reviewed_the_vocabulary(store):
     assert "no person reviewed: the search went on without asking" in item_ten(store, {"approved_by": "unattended"})
     assert item_ten(store, {"approved_by": "user"}).endswith("approved vocabulary.")
+
+
+def test_a_fast_path_plan_lists_the_requests_it_sends_by_their_step_keys_and_leaves_its_dropped_queries_out(store):
+    """The semantic and Semantic Scholar bulk requests are stored under their own keys, not `search:<index>`; a query
+    the fast plan dropped was never meant to be sent and is not a planned request."""
+    lib = Search(store)
+    compiled = [{"provider_id": "openalex", "query_text": "SYNTHETIC planned 0"},
+                {"provider_id": "crossref", "query_text": "SYNTHETIC planned 1"},
+                {"provider_id": "semantic_scholar", "query_text": "SYNTHETIC planned 2", "endpoint": "bulk", "sort": "x"}]
+    fast = {"version": 1, "semantic": {"provider_id": "openalex", "endpoint": "semantic",
+                                       "query_text": "SYNTHETIC planned S", "query_origin": "question"},
+            "keywords": [{"index": 0, "query": compiled[0]}], "s2_bulk": compiled[2], "s2_bulk_index": 2,
+            "dropped": [{"index": 1, "query": compiled[1], "reason": "openalex_only"}]}
+    record = store.freeze_protocol(lib.rid, 1, body(lib.field) | {"compiled_queries": compiled, "fast_path_search": fast},
+                                   reason="SYNTHETIC fast")
+    step = store.step(lib.run, "protocol", "protocol:freeze")
+    store.finish_step(step["id"], "succeeded", output={"protocol_hash": record["hash"]})
+    lib.page("search:fast:semantic", lib.records(1), query="SYNTHETIC planned S", stop="exhausted")
+    lib.page("search:0", lib.records(1), query="SYNTHETIC planned 0", stop="exhausted")
+    lib.page("search:fast:s2_bulk", lib.records(1), provider="semantic_scholar", query="SYNTHETIC planned 2",
+             stop="exhausted")
+    planned = item(lib.export(), 8)["values"]["planned_queries"]
+    assert [(q["arm"], q["query_text"][-1], q["dispatch"], q["recorded"]) for q in planned] == [
+        ("semantic", "S", "sent", True), ("keyword", "0", "sent", True), ("s2_bulk", "2", "sent", True)]
+    assert item(lib.export(), 8)["status"] == "reported"

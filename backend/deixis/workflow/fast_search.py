@@ -59,6 +59,34 @@ def seed_key(spec):
     return f"search:fast:semantic:seed:{spec['index']}"
 
 
+def sent_plan(body):
+    """The requests a frozen protocol body plans to send, each with the step key its pages are stored under.
+
+    A fast path body sends its `fast_path_search` plan: the semantic request, one per seed at version 2, the OpenAlex
+    keyword queries and, at Detailed depth, the Semantic Scholar bulk query. The plan's dropped queries are left out:
+    they stand in `compiled_queries` but were never meant to be sent. A body without the plan sends every compiled
+    query under `search:<index>`. `arm` says which kind of request it is; `watchable` that a watch can follow it by
+    date (a semantic request ranks by meaning, not by date); a watchable request names its `compiled_index`, the place in
+    `compiled_queries` a watch's saved units are keyed by."""
+    compiled = body.get("compiled_queries") or []
+    plan = body.get("fast_path_search")
+    if plan is None:
+        return [dict(q, key=f"search:{i}", arm="keyword", watchable=True, compiled_index=i) for i, q in enumerate(compiled)]
+    semantic = plan["semantic"]
+    sent = [{"provider_id": "openalex", "endpoint": "semantic", "query_text": semantic.get("query_text"),
+             "origin": semantic.get("query_origin"), "key": "search:fast:semantic", "arm": "semantic",
+             "watchable": False}]
+    sent += [{"provider_id": spec["provider_id"], "endpoint": "semantic", "query_text": spec["query_text"],
+              "origin": spec["origin"], "key": seed_key(spec), "arm": "seed_semantic", "watchable": False}
+             for spec in plan.get("seed_semantic") or []]
+    sent += [dict(compiled[item["index"]], key=f"search:{item['index']}", arm="keyword", watchable=True,
+                  compiled_index=item["index"]) for item in plan["keywords"]]
+    if plan.get("s2_bulk"):
+        sent.append(dict(plan["s2_bulk"], key="search:fast:s2_bulk", arm="s2_bulk", watchable=True,
+                         compiled_index=plan["s2_bulk_index"]))
+    return sent
+
+
 def frozen_body(store, run):
     """The protocol body this run froze, or None when its protocol step has not succeeded or names no record."""
     step = store.existing_step(run["id"], "protocol")

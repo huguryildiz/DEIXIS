@@ -14,6 +14,12 @@ from deixis.workflow.store import ACTIVE_RUN_STATUSES
 
 log = logging.getLogger("deixis.background_fetch")
 
+# Background fetches one completed run may have in flight when its frozen budget names no number.
+DEFAULT_BACKGROUND_SLOTS = 4
+# The lane turns when woken (a run ended, a fetch settled, a task was adopted); this turn catches anything that
+# changed without a wake.
+POLL_FALLBACK_SECONDS = 1.0
+
 
 class FetchSlots:
     """Process-wide work slots; queued foreground work takes priority."""
@@ -143,6 +149,7 @@ class BackgroundFetchLane:
         late_revision.advance(self.flow, run["research_id"])
         table_refresh.advance(self.store, run["research_id"])
         table_rows.advance(self.store, run["research_id"])
+        self.wake()  # the slot this fetch held is free for the next queued one
 
     async def _fetch(self, run: dict[str, Any], wid: str) -> None:
         # The fetch is the run's work, started after it ended: its provider requests are stored as the run's (D31).
@@ -185,7 +192,7 @@ class BackgroundFetchLane:
                 continue
             if run["status"] != "completed" or other_run_active(self.store, row["research_id"], run["id"]):
                 continue
-            if len(self.tasks) >= run["budget"]["fast_path"].get("background_fetch_slots", 4):
+            if len(self.tasks) >= run["budget"]["fast_path"].get("background_fetch_slots", DEFAULT_BACKGROUND_SLOTS):
                 break
             task = asyncio.create_task(self._fetch(run, row["work_id"]))
             self.adopt(run, row["work_id"], task)
@@ -199,7 +206,7 @@ class BackgroundFetchLane:
                     log.exception("background queue turn failed; retrying")
                 self.woken.clear()
                 try:
-                    await asyncio.wait_for(self.woken.wait(), timeout=0.1)
+                    await asyncio.wait_for(self.woken.wait(), timeout=POLL_FALLBACK_SECONDS)
                 except TimeoutError:
                     pass
         finally:

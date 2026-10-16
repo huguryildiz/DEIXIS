@@ -222,7 +222,7 @@ class EmbeddingService:
         job = self.job if self.owns_job() else self.read_job()
         size = await asyncio.to_thread(lambda: sum(_size(p) for p in (
             self.paths.env, self.paths.models_root, self.paths.uv_cache, self.paths.uv_python, self.paths.hf_home)))
-        uv = find_tool("uv")
+        uv = await asyncio.to_thread(find_tool, "uv")
         return {
             "status": state, "installed": self.paths.installed(), "available": self._usable(state),
             "last_full_check": self.integrity.last_full_check(), "job": job,
@@ -243,7 +243,7 @@ class EmbeddingService:
         import fcntl  # after the platform check: Windows has no fcntl
         if self.owns_job():
             raise ServiceError("install_running", "The built-in model is already being installed")
-        uv = find_tool("uv")
+        uv = await asyncio.to_thread(find_tool, "uv")
         if uv is None:
             raise ServiceError("uv_missing", "uv was not found on this computer's PATH")
         if self.paths.installed() and not self.paths.outdated() and self.integrity.available():

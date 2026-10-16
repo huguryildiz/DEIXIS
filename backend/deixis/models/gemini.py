@@ -7,6 +7,7 @@ instruction files and no CLI agent prompt. The Gemini CLI with a Google account 
 
 from __future__ import annotations
 
+import asyncio
 import os
 import time
 from typing import Any
@@ -66,7 +67,7 @@ class GeminiAdapter:
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         if self._health and not refresh and time.monotonic() - self._health[0] < 60:
             return self._health[1]
-        cli, key = find_tool("gemini"), api_key()
+        cli, key = await asyncio.to_thread(find_tool, "gemini"), api_key()
         status: dict[str, Any] = {"connection": "gemini", "ready": False, "installed": bool(cli), "key_configured": bool(key),
                                   "isolation": {"instruction_sources": 0, "live_mcp_servers": []}}
         if cli:

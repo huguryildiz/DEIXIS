@@ -106,7 +106,7 @@ class AccountSignIn:
         if self._view(tool)["state"] == "waiting":
             return self._view(tool)
         binary, args, name = TOOLS[tool]
-        exe = find_tool(binary)
+        exe = await asyncio.to_thread(find_tool, binary)
         if not exe:
             raise SignInError(409, f"{name} was not found on this computer; install it first")
         if tool == "codex":

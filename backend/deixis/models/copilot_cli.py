@@ -138,7 +138,7 @@ class CopilotCliAdapter:
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         if self._health and not refresh and time.monotonic() - self._health[0] < 60:
             return self._health[1]
-        cmd = self._command()
+        cmd = await asyncio.to_thread(self._command)
         status: dict[str, Any] = {"connection": self.connection, "installed": bool(cmd), "ready": False}
         if not cmd:
             status["reason"] = "GitHub Copilot CLI not found"
@@ -179,7 +179,7 @@ class CopilotCliAdapter:
 
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],
                        requested_model: str | None, reasoning_effort: str | None = None) -> ModelStepResult:
-        cmd = self._command()
+        cmd = await asyncio.to_thread(self._command)
         if not cmd or not requested_model:
             return ModelStepResult("unavailable", error="GitHub Copilot CLI not found" if not cmd else "no model requested",
                                    delivery_class="before_send")

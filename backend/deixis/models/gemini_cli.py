@@ -222,7 +222,7 @@ class GeminiCliAdapter:
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         if self._health and not refresh and time.monotonic() - self._health[0] < 60:
             return self._health[1]
-        cli = find_tool(CLI)
+        cli = await asyncio.to_thread(find_tool, CLI)
         status: dict[str, Any] = {
             "connection": self.connection, "installed": bool(cli), "ready": False, "catalogue": "fixed",
             # No `isolation` counts: the CLI cannot list the tools or context files it loaded, so none are claimed.
@@ -266,7 +266,7 @@ class GeminiCliAdapter:
 
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],
                        requested_model: str | None, reasoning_effort: str | None = None) -> ModelStepResult:
-        cli = find_tool(CLI)
+        cli = await asyncio.to_thread(find_tool, CLI)
         if not cli or not requested_model:
             return ModelStepResult("unavailable", error="Gemini CLI not found" if not cli else "no model requested",
                                    delivery_class="before_send")

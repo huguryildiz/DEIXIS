@@ -312,3 +312,33 @@ def test_a_job_cancelled_while_it_runs_is_not_left_running(tmp_path, runner):
         return job
     job = asyncio.run(asyncio.wait_for(scenario(), 30))
     assert job["status"] == "failed" and job["finished_at"]
+
+
+# ---- cancellation while the process is being started ------------------------------------------------
+
+@pytest.mark.parametrize("runner", [tesseract_run, tools_run, equation_run], ids=lambda r: r.__name__)
+def test_a_job_cancelled_while_its_process_is_being_created_is_not_left_running(tmp_path, monkeypatch, runner):
+    async def never(*args, **kwargs):
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", never)
+
+    async def scenario():
+        job, coroutine = runner(tmp_path / "bin" / "installer", tmp_path)
+        task = asyncio.create_task(coroutine)
+        await asyncio.sleep(0.1)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        return job
+    job = asyncio.run(asyncio.wait_for(scenario(), 30))
+    assert job["status"] == "failed" and job["finished_at"]
+
+
+def test_the_production_allowlist_has_no_test_prefix():
+    """tests/conftest.py widens it with FAKE_ for the fake tools; a fresh interpreter shows what ships."""
+    done = subprocess.run([sys.executable, "-c", "from deixis import child_env; print(child_env.OS_PREFIXES)"],
+                          env={"PYTHONPATH": str(Path(env_module.__file__).parents[1]), "PATH": "/usr/bin:/bin"},
+                          capture_output=True, text=True, check=True)
+    assert done.stdout.strip() == "('LC_',)"
+    assert "FAKE_" not in Path(env_module.__file__).read_text()

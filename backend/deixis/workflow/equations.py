@@ -1075,20 +1075,21 @@ class EquationService:
         for row in self.store.conn.execute("SELECT id FROM source_assets WHERE removed_at IS NULL AND extraction_status IN ('succeeded', 'partial')"):
             state = equation_state(self.store, row[0])["state"]
             states[state] = states.get(state, 0) + 1
-        uv = find_tool("uv")
+        uv = await asyncio.to_thread(find_tool, "uv")
         return {"installed": self.available(), "package": math_reader.MARKER_PACKAGE, "path": str(paths.env),
                 "size_bytes": env_size + models_size, "models_downloaded": models_size > 0,"disk_free_gb": round(shutil.disk_usage(Path.home()).free / 2**30),
                 "install": {"available": bool(uv), "unavailable_reason": None if uv else "uv was not found on this computer's PATH",
                             "url": "https://docs.astral.sh/uv/getting-started/installation/"},
                 "job": self.job, "reading": reading, "pdfs": states}
 
-    def install(self) -> dict[str, Any]:
+    def install(self, uv: str | None = None) -> dict[str, Any]:
+        """`uv` is the program found by the caller (off the event loop); without it the search is made here."""
         """Create the Marker environment, then start the reader once so its models download; runs in the background."""
         if self.installing():
             raise ValueError("The equation reader is already being installed")
         if self.available() and _size(self.reader.paths.models) > 0:
             raise ValueError("The equation reader is already installed")
-        uv = find_tool("uv")
+        uv = uv or find_tool("uv")
         if uv is None:
             raise ValueError("uv was not found on this computer's PATH")
         paths = self.reader.paths

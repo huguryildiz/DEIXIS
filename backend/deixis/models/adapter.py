@@ -120,7 +120,8 @@ class CodexAdapter:
         self.workspace.mkdir(parents=True, exist_ok=True)
         overrides, _ = isolation_overrides(config_path=self.codex_home / "config.toml")
         env = codex_environment(self.codex_home)
-        server = CodexAppServer([find_tool("codex") or "codex", "app-server", *overrides], cwd=str(self.workspace), env=env)
+        codex = await asyncio.to_thread(find_tool, "codex")
+        server = CodexAppServer([codex or "codex", "app-server", *overrides], cwd=str(self.workspace), env=env)
         await server.start()
         await server.initialize("deixis", "0.1.0")
         self._server = server
@@ -129,7 +130,7 @@ class CodexAdapter:
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         if self._health and not refresh and time.monotonic() - self._health[0] < 60:
             return self._health[1]
-        codex = find_tool("codex")
+        codex = await asyncio.to_thread(find_tool, "codex")
         status: dict[str, Any] = {"connection": "codex", "installed": bool(codex), "ready": False}
         if not codex:
             status["reason"] = "codex CLI not found"

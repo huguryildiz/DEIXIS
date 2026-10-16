@@ -27,6 +27,7 @@ from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_valida
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from deixis import account_signin, credentials, local_tools
+from deixis.tool_paths import find_tool
 from deixis.config import Settings, load_settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition
@@ -1546,7 +1547,7 @@ def create_app(
     @app.post("/api/equation-reader/install", status_code=202)
     async def install_equation_reader(request: Request) -> dict[str, Any]:
         try:
-            return {"job": request.app.state.equations.install()}
+            return {"job": request.app.state.equations.install(await asyncio.to_thread(find_tool, "uv"))}
         except ValueError as exc:
             raise HTTPException(409, str(exc)) from exc
 
@@ -2532,13 +2533,13 @@ def create_app(
     async def ocr_status() -> dict[str, Any]:
         """The local Tesseract: installed or not, its version, the languages it can read, and its install job (D51)."""
         status = await asyncio.to_thread(ocr.tesseract_status)
-        return status | {"can_install": tool_updates.brew() is not None, "job": tesseract_installer.job}
+        return status | {"can_install": await asyncio.to_thread(tool_updates.brew) is not None, "job": tesseract_installer.job}
 
     @app.post("/api/ocr/install", status_code=202)
     async def install_ocr() -> dict[str, Any]:
         """Install or update Tesseract and its language data with Homebrew; the panel polls `/api/ocr` for the step."""
         try:
-            return {"job": tesseract_installer.start()}
+            return {"job": tesseract_installer.start(await asyncio.to_thread(tool_updates.brew))}
         except RuntimeError as exc:
             raise HTTPException(409, str(exc)) from exc
         except LookupError as exc:

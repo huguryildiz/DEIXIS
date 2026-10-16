@@ -9,6 +9,7 @@ folder on it (`child_path`), so an npm launcher's `#!/usr/bin/env node` finds no
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
 import select
@@ -29,8 +30,13 @@ SHELLS = ("bash", "zsh", "sh")  # fish and nushell print PATH differently; they 
 SHELL_COMMAND = "printf '__DEIXIS_PATH__%s__END__' \"$PATH\""
 SHELL_PATH = re.compile(rb"__DEIXIS_PATH__((?:(?!__DEIXIS_PATH__).)*?)__END__", re.S)  # the last start marker before an end
 
+# What the shell is handed: no key, token or proxy setting of DEIXIS's environment reaches .zshrc and the scripts it runs.
+SHELL_VARIABLES = ("HOME", "USER", "LOGNAME", "SHELL", "LANG", "TMPDIR", "TERM")
+
 _shell_lock = threading.Lock()
 _shell_path: list[str] | None = None  # read once per process
+_warm_lock = threading.Lock()  # never held while the shell runs, so the event loop never waits on it
+_warming = False
 
 
 def _newest(pattern_root: Path, pattern: str) -> list[str]:
@@ -71,6 +77,14 @@ def _stop(proc: subprocess.Popen) -> None:
         pass
 
 
+def _shell_env() -> dict[str, str]:
+    """A minimal environment for the login shell, built here and not by `child_env`, which would look for node and so
+    come back into `find_tool`; PATH is the process's own, as the shell would start with it."""
+    env = {k: v for k, v in os.environ.items() if k in SHELL_VARIABLES or k.startswith("LC_")}
+    env["PATH"] = os.environ.get("PATH", "")
+    return env
+
+
 def _read_shell_path() -> list[str]:
     shell = os.environ.get("SHELL") or ""
     if sys.platform == "win32" or Path(shell).name not in SHELLS or not os.path.isabs(shell):
@@ -79,7 +93,8 @@ def _read_shell_path() -> list[str]:
         # Interactive and login, so both .zprofile and .zshrc (where nvm usually sits) run; a new session keeps the
         # shell away from the terminal DEIXIS may have been started from.
         proc = subprocess.Popen([shell, "-i", "-l", "-c", SHELL_COMMAND], stdin=subprocess.DEVNULL,
-                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True)
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True,
+                                env=_shell_env())
     except OSError:
         return []
     data = b""
@@ -107,9 +122,29 @@ def _read_shell_path() -> list[str]:
     return [d for d in found[-1].decode("utf-8", "replace").split(os.pathsep) if os.path.isabs(d)] if found else []
 
 
+def _on_event_loop() -> bool:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
 def login_shell_path() -> list[str]:
-    """The login shell's PATH folders, read at most once per process; empty when it cannot be read in time."""
-    global _shell_path
+    """The login shell's PATH folders, read at most once per process; empty when it cannot be read in time.
+
+    The first read takes up to SHELL_TIMEOUT. On the event loop it is never waited for: the read starts in a thread and
+    this call answers as if the shell had no more folders; async code calls `find_tool` with `asyncio.to_thread`, which
+    waits in the worker, so the answer is complete from the first call there."""
+    global _shell_path, _warming
+    if _shell_path is not None:
+        return _shell_path
+    if _on_event_loop():
+        with _warm_lock:
+            start, _warming = not _warming, True
+        if start:
+            threading.Thread(target=login_shell_path, daemon=True).start()
+        return []
     with _shell_lock:
         if _shell_path is None:
             _shell_path = _read_shell_path()

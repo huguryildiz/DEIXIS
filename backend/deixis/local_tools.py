@@ -240,11 +240,11 @@ class LocalTools:
                                   for t in data["tools"]]}
 
     async def _detect(self, tool: Tool) -> dict[str, Any]:
-        path = find_tool(tool.binary)
+        path = await asyncio.to_thread(find_tool, tool.binary)
         app = tool.app if tool.app and Path(tool.app).exists() else None
         probed = await probe([path, "--version"], env=child_env(tool=path)) if path else None
         version = _version_line(probed) if probed else None
-        manager = find_tool(tool.install[0])
+        manager = await asyncio.to_thread(find_tool, tool.install[0])
         models = await self._server_models(tool) if tool.kind == "server" else None
         status: dict[str, Any] = {
             # A server that answers counts as installed even when its binary is not on PATH.
@@ -319,7 +319,7 @@ class LocalTools:
                                self._install_mac_app)
         if current["installed"]:
             raise ToolError(409, f"{tool.name} is already installed")
-        manager = find_tool(tool.install[0])
+        manager = await asyncio.to_thread(find_tool, tool.install[0])
         if not manager:
             raise ToolError(422, current["install"]["unavailable_reason"])
         job = {"status": "running", "command": " ".join(tool.install), "started_at": now(), "finished_at": None, "output": ""}
@@ -334,9 +334,9 @@ class LocalTools:
             raise ToolError(404, f"'{tool_id}' is not updated from DEIXIS")
         if (self._jobs.get(tool_id) or {}).get("status") == "running":
             raise ToolError(409, f"{tool.name} is already being installed or updated")
-        path = find_tool(tool.binary)
+        path = await asyncio.to_thread(find_tool, tool.binary)
         real = os.path.realpath(path) if path else ""
-        brew = find_tool("brew")
+        brew = await asyncio.to_thread(find_tool, "brew")
         job: dict[str, Any] = {"status": "running", "started_at": now(), "finished_at": None, "output": "", "completed": 0, "total": 0,
                                "kind": "update"}
         if tool_id == "ollama" and brew and ("/Cellar/" in real or "/homebrew/" in real):
@@ -512,7 +512,7 @@ class LocalTools:
             return hashlib.sha256(response.content).hexdigest() != model.get("digest")
 
         released, *models = await asyncio.gather(latest(), *(changed(m) for m in tags))
-        path = find_tool("ollama")
+        path = await asyncio.to_thread(find_tool, "ollama")
         real = os.path.realpath(path) if path else ""
         how = "homebrew" if "/Cellar/" in real or "/homebrew/" in real else "app" if OLLAMA_MAC and OLLAMA_MAC_APP.exists() else None
         return {"version": version, "latest": released, "update_available": newer(released, version), "installed_with": how,
@@ -572,7 +572,7 @@ class LocalTools:
 
     async def start_lm_studio_server(self) -> None:
         """Start LM Studio's local server with its own CLI (`lms server start`, a fixed command)."""
-        lms = find_tool("lms") or str(Path.home() / ".lmstudio" / "bin" / "lms")
+        lms = await asyncio.to_thread(find_tool, "lms") or str(Path.home() / ".lmstudio" / "bin" / "lms")
         if not Path(lms).exists():
             raise ToolError(409, "LM Studio's command-line tool is not set up yet: open LM Studio once, then try again")
         try:
@@ -655,6 +655,9 @@ class LocalTools:
         except OSError as exc:
             job.update(status="failed", finished_at=now(), output=f"{type(exc).__name__}: {exc}")
             return
+        except asyncio.CancelledError:  # cancelled while the process was being started: the job does not stay "running"
+            job.update(status="failed", finished_at=now(), output="Stopped.")
+            raise
         self._procs[tool_id] = proc
         try:
             try:

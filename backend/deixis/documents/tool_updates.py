@@ -110,10 +110,11 @@ class TesseractInstaller:
         self.job: dict[str, Any] | None = None
         self._task: asyncio.Task | None = None
 
-    def start(self) -> dict[str, Any]:
+    def start(self, manager: str | None = None) -> dict[str, Any]:
+        """`manager` is the Homebrew found by the caller (off the event loop); without it the search is made here."""
         if self.job and self.job["status"] == "running":
             raise RuntimeError("Tesseract is already being installed")
-        manager = brew()
+        manager = manager or brew()
         if not manager:
             raise LookupError("Homebrew was not found on this computer")
         self.job = {"status": "running", "phase": "preparing", "started_at": now(), "finished_at": None, "output": ""}
@@ -141,6 +142,9 @@ class TesseractInstaller:
         except OSError as exc:
             job.update(status="failed", finished_at=now(), output=f"{type(exc).__name__}: {exc}")
             return
+        except asyncio.CancelledError:  # cancelled while the process was being started: the job does not stay "running"
+            job.update(status="failed", finished_at=now(), output="Stopped.")
+            raise
         try:
             code = await asyncio.wait_for(read(proc), INSTALL_TIMEOUT_SECONDS)
         except asyncio.TimeoutError:

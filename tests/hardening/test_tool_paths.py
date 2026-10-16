@@ -3,6 +3,7 @@
 Fake tools are small shell scripts; fake login shells are scripts named `zsh`. Passing shows where `find_tool` looks and
 how it reads the shell's PATH, not that a real Finder-started app finds a real Homebrew or nvm install."""
 
+import asyncio
 import os
 import subprocess
 import sys
@@ -173,6 +174,78 @@ def test_the_shell_runs_a_fixed_command_with_no_input(tmp_path, monkeypatch, sho
     assert tool_paths.login_shell_path() == []
     assert record.read_text().splitlines() == ["-i", "-l", "-c", tool_paths.SHELL_COMMAND]
     assert not (tmp_path / "stdin").exists()
+
+
+# ---- what the shell is handed, and the event loop -------------------------------------------------
+
+@posix_only
+def test_the_login_shell_gets_a_minimal_environment_and_no_key_or_proxy(tmp_path, monkeypatch, short_path):
+    seen = tmp_path / "env"
+    login = shell(tmp_path / "zsh", f"env > {seen}\nprintf '__DEIXIS_PATH__%s__END__' \"$PATH\"\n")
+    for name, value in {"OPENAI_API_KEY": "sk-shell-secret", "GITHUB_TOKEN": "ghp_shell-secret", "MATHPIX_CREDENTIALS": "m-secret",
+                        "HTTPS_PROXY": "http://user:pw@proxy:3128", "no_proxy": "x", "FOO": "bar"}.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("SHELL", str(login))
+    monkeypatch.setenv("LC_ALL", "C")
+    monkeypatch.setenv("PATH", "/usr/bin:/bin:/process/path")
+    tool_paths.login_shell_path()
+    given = dict(line.split("=", 1) for line in seen.read_text().splitlines() if "=" in line)
+    assert not {"OPENAI_API_KEY", "GITHUB_TOKEN", "MATHPIX_CREDENTIALS", "HTTPS_PROXY", "no_proxy", "FOO"} & set(given)
+    assert "secret" not in seen.read_text() and "proxy" not in seen.read_text().lower()
+    assert given["PATH"].startswith("/usr/bin:/bin:/process/path") and given["LC_ALL"] == "C" and given["SHELL"] == str(login)
+    assert {"HOME"} <= set(given)
+
+
+@posix_only
+def test_the_shells_environment_is_built_without_looking_for_tools(tmp_path, monkeypatch, short_path):
+    """Asking for node here would come back into find_tool and its lock."""
+    monkeypatch.setattr(tool_paths, "find_tool", lambda name: pytest.fail("find_tool was called for the shell's PATH"))
+    env = tool_paths._shell_env()
+    assert env["PATH"] == os.environ["PATH"]
+
+
+@posix_only
+def test_on_the_event_loop_the_first_shell_read_is_not_waited_for(tmp_path, monkeypatch, short_path):
+    fake = tool(tmp_path / "nvm" / "bin")
+    login = shell(tmp_path / "zsh", f"sleep 1.5\nprintf '__DEIXIS_PATH__%s__END__' '/bin:{fake.parent}'\n")
+    monkeypatch.setenv("SHELL", str(login))
+    monkeypatch.setattr(tool_paths, "_warming", False)
+
+    async def scenario():
+        started = time.monotonic()
+        first = tool_paths.find_tool("codex")  # called straight on the loop
+        waited = time.monotonic() - started
+        found = await asyncio.to_thread(tool_paths.find_tool, "codex")  # the way async code asks: the worker waits
+        return first, waited, found, tool_paths.find_tool("codex")
+    first, waited, found, later = asyncio.run(scenario())
+    assert first is None and waited < 0.5
+    assert found == str(fake) and later == str(fake)
+
+
+@posix_only
+def test_an_async_health_check_does_not_hold_up_the_loop_while_the_shell_is_read(tmp_path, monkeypatch, short_path):
+    from deixis.models import claude
+
+    login = shell(tmp_path / "zsh", "sleep 1.5\nprintf '__DEIXIS_PATH__/bin__END__'\n")
+    monkeypatch.setenv("SHELL", str(login))
+
+    async def scenario():
+        gaps, running = [], True
+
+        async def beat():
+            last = time.monotonic()
+            while running:
+                await asyncio.sleep(0.05)
+                now = time.monotonic()
+                gaps.append(now - last)
+                last = now
+        task = asyncio.create_task(beat())
+        status = await claude.ClaudeCodeAdapter(tmp_path).health(refresh=True)
+        running = False
+        await task
+        return status, max(gaps)
+    status, longest = asyncio.run(scenario())
+    assert status["installed"] is False and longest < 0.5
 
 
 # ---- the PATH a tool's children get ---------------------------------------------------------------

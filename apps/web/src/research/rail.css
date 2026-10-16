@@ -33,3 +33,19 @@
 /* The Usage box (RL8, S27): which run the calls belong to, and the time of the stored OpenAlex response. */
 .rail .rail-usage-note{margin:0;color:var(--muted);font-size:11.5px;line-height:1.4}
 .rail .rail-usage-budget{margin-top:4px}
+/* An artifact with versions: the row opens the newest; the chip at its end lists every version. */
+.rail .box>.vrow{display:flex;align-items:center;gap:4px;margin:0 -6px;border-radius:6px}
+.rail .box>.vrow:hover{background:var(--hover-surface)}
+.rail .vrow-main{display:flex;flex:1;align-items:center;gap:8px;min-width:0;padding:6px;border-radius:6px;color:var(--ink-2);font-size:13px;text-align:left}
+.rail .vrow-main>svg{flex:none}
+.rail .vrow-main span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rail .vrow>em{flex:none;padding-right:6px;color:var(--muted);font-size:12px;font-style:normal}
+.rail .vchip{display:inline-flex;flex:none;align-items:center;gap:2px;margin-right:3px;padding:2px 5px 2px 7px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums;line-height:1.4}
+.rail .vchip:hover,.rail .vchip[data-popup-open]{border-color:var(--strong-line);color:var(--ink)}
+.rail-versions [data-slot=dropdown-menu-item]{display:grid;grid-template-columns:30px minmax(0,1fr) 14px;align-items:center;gap:8px;font-size:12.5px}
+.rail-versions [data-slot=dropdown-menu-item] b{font-weight:500;color:var(--ink)}
+.rail-versions [data-slot=dropdown-menu-item] span{overflow:hidden;color:var(--muted);text-overflow:ellipsis;white-space:nowrap}
+.rail-versions [data-slot=dropdown-menu-item] svg{color:var(--accent)}
+/* The study table a running answer opens when it ends: a muted, unclickable row until the table exists. */
+.rail .box>.li.pending{display:flex;align-items:flex-start;gap:8px;margin:0 -6px;padding:6px;color:var(--muted);font-size:13px;line-height:1.35;cursor:default}
+.rail .box>.li.pending>svg{flex:none;margin-top:1px}

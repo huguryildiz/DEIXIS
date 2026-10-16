@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Clock, Copy, File, FileText, Lightbulb, ListChecks, MessageSquareQuote, Table2, type LucideIcon } from 'lucide-react'
+import { Check, ChevronDown, Clock, Copy, File, FileText, Lightbulb, ListChecks, MessageSquareQuote, Table2, type LucideIcon } from 'lucide-react'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, type Answer, type QueueRow, type ResearchView, type Run, type TableSummary } from '../api'
 import { collectionProgress } from '../BackgroundJobs'
 import { queueKindLabels, researchHeading, runKindLabels, tableTitle } from '../labels'
-import { t } from '../i18n'
+import { t, uiLocale } from '../i18n'
 import { useRailWide } from './railData'
 import { budgetAsOf, budgetFigure, useOpenAlexBudget, usageRun } from './usageData'
 
@@ -34,6 +35,38 @@ function Row({ icon: Icon, label, aside, ariaLabel, onClick }: { icon: LucideIco
   </button>
 }
 
+type Version = { id: string; tag: string; note?: string; at: string }
+
+const when = (iso: string) => new Date(iso).toLocaleString(uiLocale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+
+// One artifact, however many versions it has: the row opens the newest (versions[0]); the version chip lists every
+// version, newest first, and opens the one picked. A single version shows its tag without a menu.
+function VersionedRow({ icon: Icon, label, ariaLabel, versions, onOpen }: { icon: LucideIcon; label: string; ariaLabel?: string; versions: Version[]; onOpen: (id: string) => void }) {
+  const [latest] = versions
+  return <div className="li vrow">
+    <button type="button" className="vrow-main" aria-label={ariaLabel} title={ariaLabel} onClick={() => onOpen(latest.id)}>
+      <Icon size={16} strokeWidth={1.6} aria-hidden /><span>{label}</span>
+    </button>
+    {versions.length === 1
+      ? <em>{latest.tag}</em>
+      : <DropdownMenu>
+        <DropdownMenuTrigger render={<button type="button" className="vchip" aria-label={t('Versions of {name}', { name: ariaLabel ?? label })} />}>
+          {latest.tag}<ChevronDown size={12} strokeWidth={2} aria-hidden />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" sideOffset={6} className="rail-versions">
+          <DropdownMenuGroup>
+          <DropdownMenuLabel>{t('{n} versions', { n: versions.length })}</DropdownMenuLabel>
+          {versions.map((v, i) => <DropdownMenuItem key={v.id} onClick={() => onOpen(v.id)}>
+            <b className="tnum">{v.tag}</b>
+            <span>{i === 0 ? t('latest') : v.note ?? ''}{(i === 0 || v.note) && ' · '}<time dateTime={v.at}>{when(v.at)}</time></span>
+            {i === 0 && <Check size={14} aria-hidden />}
+          </DropdownMenuItem>)}
+          </DropdownMenuGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>}
+  </div>
+}
+
 type Reports = { answer: Answer; version: number; title: string }[]
 
 export function Rail({ view, researchId, cited, reports, tables, hidden, candidateCount, followupCount, openPanel, onOpenReport, onOpenEvidenceReport, onOpenTable }: {
@@ -59,7 +92,13 @@ export function Rail({ view, researchId, cited, reports, tables, hidden, candida
   // An emptied queue shows none of the rows read before it emptied, also while works wait for a PDF.
   const queueRows = queueCount > 0 && queue?.research === researchId ? queue.rows : []
 
-  const artifactCount = reports.length + view.reportRuns.length + (tables?.length ?? 0)
+  // Tables with one title are one artifact in versions, oldest V1; the evidence reports are one artifact too.
+  const byTitle = new Map<string, TableSummary[]>()
+  for (const table of [...(tables ?? [])].sort((a, b) => b.created_at.localeCompare(a.created_at))) byTitle.set(table.title, [...(byTitle.get(table.title) ?? []), table])
+  const tableGroups = [...byTitle.values()]
+  // The study table a running answer opens when it ends: shown as coming, not counted until it exists.
+  const pending = view.study_table_pending
+  const artifactCount = (reports.length > 0 ? 1 : 0) + tableGroups.length + (view.reportRuns.length > 0 ? 1 : 0)
   const funnel = counts.funnel
   // Reading depth is what the newest report's answer was given (its stored input), in works: a PDF or a list edit after
   // it does not rewrite it, and a file not read yet was not given.
@@ -91,18 +130,27 @@ export function Rail({ view, researchId, cited, reports, tables, hidden, candida
   return <aside className="rail research-rail" aria-labelledby="rail-artifacts-title" hidden={off}>
     <div className="box">
       <h5><span id="rail-artifacts-title">{t('Artifacts')} ({artifactCount})</span></h5>
-      {artifactCount === 0
+      {artifactCount === 0 && !pending
         ? <span className="rail-empty">{t('The report appears here when it is written.')}</span>
         : <>
-          {reports.map(({ answer, version, title }) => <Row key={answer.id} icon={MessageSquareQuote} label={title}
-            aside={`V${version}${answer.applicability !== 'current' || answer.late_revision_status?.status === 'published' ? ` · ${t('earlier')}` : ''}`} onClick={() => onOpenReport(answer.id)} />)}
-          {tables?.map(table => {
+          {reports.length > 0 && <VersionedRow icon={MessageSquareQuote} label={reports[0].title} onOpen={onOpenReport}
+            versions={reports.map(({ answer, version }) => ({ id: answer.id, tag: `V${version}`, at: answer.created_at,
+              note: answer.applicability !== 'current' || answer.late_revision_status?.status === 'published' ? t('earlier') : undefined }))} />}
+          {tableGroups.map(group => {
+            const [table] = group
             const label = t('Evidence table · {sources} · {columns}', {
               sources: t(table.rows === 1 ? '{n} source' : '{n} sources', { n: table.rows }), columns: t(table.columns === 1 ? '{n} column' : '{n} columns', { n: table.columns }) })
-            return <Row key={table.id} icon={Table2} label={label} ariaLabel={`${label} · ${tableTitle(table.title, researchHeading(view))}`} onClick={() => onOpenTable(table.id)} />
+            return <VersionedRow key={table.id} icon={Table2} label={label} ariaLabel={`${label} · ${tableTitle(table.title, researchHeading(view))}`} onOpen={onOpenTable}
+              versions={group.map((item, i) => ({ id: item.id, tag: `V${group.length - i}`, at: item.created_at,
+                note: t('{sources} · {columns}', { sources: t(item.rows === 1 ? '{n} source' : '{n} sources', { n: item.rows }), columns: t(item.columns === 1 ? '{n} column' : '{n} columns', { n: item.columns }) }) }))} />
           })}
-          {view.reportRuns.map(item => <Row key={item.id} icon={FileText} label={t('Evidence report')}
-            aside={item.status === 'valid' ? `V${item.report_version ?? ''}` : t(item.status === 'draft' ? 'draft' : 'being written')} onClick={() => onOpenEvidenceReport(item.id)} />)}
+          {view.reportRuns.length > 0 && <VersionedRow icon={FileText} label={t('Evidence report')} onOpen={onOpenEvidenceReport}
+            versions={view.reportRuns.map(item => ({ id: item.id, at: item.created_at,
+              tag: item.status === 'valid' ? `V${item.report_version ?? ''}` : t(item.status === 'draft' ? 'draft' : 'being written') }))} />}
+          {pending && <div className="li pending" title={t('Filled in after the answer is written')}>
+            <Table2 size={16} strokeWidth={1.6} aria-hidden />
+            <span>{t('Evidence table · {sources} · after the answer', { sources: t(pending.sources === 1 ? '{n} source' : '{n} sources', { n: pending.sources }) })}</span>
+          </div>}
         </>}
     </div>
 

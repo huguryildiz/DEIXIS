@@ -125,10 +125,13 @@ test.describe.serial('S11: the artifacts rail', () => {
     const aside = rail(page)
     await expect(aside).toBeVisible()
     const reports = view.answers.filter(a => a.status === 'structurally_valid').length
-    // Artifacts (n): every report version, the table, no evidence report; the rows read as the mockup's.
-    await expect(aside.locator('h5').first()).toHaveText(`Artifacts (${reports + 1})`)
+    // Artifacts (n): the report (one row, its versions behind the chip), the table, no evidence report.
+    await expect(aside.locator('h5').first()).toHaveText('Artifacts (2)')
     await expect(aside.getByRole('button', { name: /^Evidence table · 6 sources · 4 columns/ })).toBeVisible()
-    await expect(aside.locator('button.li').filter({ hasText: /V\d+$/ })).toHaveCount(reports)
+    await aside.locator('.vchip').first().click()
+    await expect(page.getByRole('menuitem')).toHaveCount(reports)
+    await expect(page.getByRole('menuitem').first()).toContainText(`V${reports}`)
+    await page.keyboard.press('Escape')
     // The amber box: one row per queue row, with what each asks; the queue's size is the topbar chip's too.
     const waiting = (view.counts.queue ?? 0) + (view.counts.look_again ?? 0)
     expect(waiting).toBeGreaterThan(0)
@@ -157,7 +160,7 @@ test.describe.serial('S11: the artifacts rail', () => {
     expect(view.run_total).toBeGreaterThanOrEqual(view.runs.length)
     await expect(box(page, 'Run').locator('button.li').first()).toContainText(`${view.run_total} runs`)
     await expect(box(page, 'Run').locator('button.li span')).toHaveText(['Activity', 'Candidates', 'Follow-up'])
-    await expect(page.locator('.rail .box h5')).toHaveText([`Artifacts (${reports + 1})`, 'Waiting for your decisionOpen', 'From search to answerOpen', 'How deeply sources were readOpen', 'Run', 'Usage'])
+    await expect(page.locator('.rail .box h5')).toHaveText(['Artifacts (2)', 'Waiting for your decisionOpen', 'From search to answerOpen', 'How deeply sources were readOpen', 'Run', 'Usage'])
     await shot(page, 's11-rail')
   })
 
@@ -239,8 +242,8 @@ test.describe.serial('S11: the artifacts rail', () => {
       await expect(rail(page)).toBeVisible()
       await expect(opener, `${name}: focus returns to the box`).toBeFocused()
     }
-    // A report version opens the report panel.
-    await rail(page).locator('button.li').filter({ hasText: /V\d+$/ }).first().click()
+    // The report row opens the newest report's panel.
+    await rail(page).locator('.vrow-main').first().click()
     await expect(reportPanel(page)).toBeVisible()
     await expect(rail(page)).toBeHidden()
   })

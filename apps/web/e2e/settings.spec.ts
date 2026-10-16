@@ -141,7 +141,7 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(page.getByRole('tab', { name: 'Usage' })).toBeFocused()
     await expect(shown).toHaveText(['Usage this month'])
     await page.keyboard.press('ArrowRight')
-    await expect(shown).toHaveText(['Profile', 'This computer', 'Language', 'Appearance', 'Research'])
+    await expect(shown).toHaveText(['Profile', 'This computer', 'Language', 'Appearance', 'Research', 'About'])
     await expect(page.locator('.data-location')).toBeVisible()
     await page.reload()
     await expect(page.getByRole('tab', { name: 'General' })).toHaveAttribute('aria-selected', 'true')
@@ -442,6 +442,25 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(page.locator('.settings-page h1')).toHaveText('Settings')
   })
 
+  test('About (F2, F5): version, licence, source, third-party licences, and a problem link that holds only version, OS and architecture', async () => {
+    await page.goto(server.url('#/settings/general'))
+    const about = page.locator('.set-about')
+    await expect(about).toContainText('AGPL-3.0-or-later')
+    await expect(about.getByRole('link', { name: 'Source code for this version' })).toHaveAttribute('href', 'https://github.com/huguryildiz/DEIXIS')
+    await expect(about.getByRole('link', { name: 'Open the list' })).toHaveAttribute('href', '/api/about/notices')
+    const url = new URL((await about.getByRole('link', { name: 'Report a problem on GitHub' }).getAttribute('href'))!)
+    expect(url.origin + url.pathname).toBe('https://github.com/huguryildiz/DEIXIS/issues/new')
+    expect([...url.searchParams.keys()].sort()).toEqual(['body', 'os', 'template', 'version'])
+    expect(url.searchParams.get('body')).toBe(`DEIXIS version: ${url.searchParams.get('version')}\nOS: ${url.searchParams.get('os')}`)
+    await expect(about).toContainText('GitHub issues are public')
+    await about.scrollIntoViewIfNeeded()
+    await shot(page, 'F2-about-desktop')
+    await page.getByRole('group', { name: 'Interface language' }).getByRole('button', { name: 'Türkçe' }).click()
+    await expect(page.getByRole('heading', { name: 'Hakkında' })).toBeVisible()
+    await expect(about.getByRole('link', { name: 'Bu sürümün kaynak kodu' })).toBeVisible()
+    await page.getByRole('group', { name: 'Arayüz dili' }).getByRole('button', { name: 'English' }).click()
+  })
+
   test('connection sheet: a key field never shows the stored key; Save and test, Remove key with its inline confirmation', async () => {
     const keychain = { available: true, name: 'SYNTHETIC keychain' }
     let configured = false
@@ -527,6 +546,21 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(account.locator('.way-head')).toContainText('checked')
     await sheet.getByRole('button', { name: 'Close' }).click()
     await expect(model.locator('option', { hasText: 'SYNTHETIC model B' })).toHaveCount(1)
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
+  })
+
+  test('the Marker install confirmation names the version-bound license (F2)', async () => {
+    const reader = { installed: false, package: 'marker-pdf==1.10.2', path: '/SYNTHETIC/tools/marker', size_bytes: 0, models_downloaded: false, disk_free_gb: 120,
+      install: { available: true, unavailable_reason: null, url: 'https://example.invalid/install' }, job: null, reading: null, pdfs: {} }
+    await page.route(url => url.pathname === '/api/equation-reader', route => route.fulfill({ json: reader }))
+    await page.goto(server.url('#/settings'))
+    await page.reload()
+    await page.getByRole('button', { name: /^Equation reader/ }).click()
+    await page.getByRole('dialog', { name: 'Equation reader (Marker)' }).getByRole('button', { name: 'Install', exact: true }).click()
+    const confirm = page.getByRole('dialog', { name: 'Install the equation reader?' })
+    await expect(confirm).toContainText('License of marker-pdf 1.10.2: the code is GPL-3.0-or-later. The model weights come with their own license, which limits commercial use.')
+    await expect(confirm.getByRole('link', { name: 'Marker’s license terms on GitHub' })).toHaveAttribute('href', 'https://github.com/datalab-to/marker')
+    await confirm.getByRole('button', { name: 'Cancel' }).click()
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
 

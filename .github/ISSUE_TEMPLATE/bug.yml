@@ -1,0 +1,43 @@
+name: Bug report
+description: Something in DEIXIS did not work as expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste API keys, passwords, your email address or private file paths here. GitHub issues are public.
+        If you attach a diagnostic zip, open it first and check what it contains.
+  - type: input
+    id: version
+    attributes:
+      label: DEIXIS version
+      description: Settings, General, About.
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and architecture
+      description: For example macOS arm64, Windows x86_64, Linux x86_64.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What you did, in order.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Remove keys, emails and file paths from any error text before you paste it.
+    validations:
+      required: true

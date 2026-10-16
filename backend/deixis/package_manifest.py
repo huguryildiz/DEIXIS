@@ -27,6 +27,7 @@ DATAS = (
     ("backend/deixis/documents/marker_runner.py", "deixis/documents"),
     ("backend/deixis/workflow/report/latex_names.json", "deixis/workflow/report"),
     ("backend/deixis/exports/deixis-mark.png", "deixis/exports"),
+    ("THIRD_PARTY_NOTICES", "."),  # api/about_routes.py; written by scripts/licenses/build_notices.py (F2)
 )
 BUILD_IDENTITY = "build_identity.json"
 

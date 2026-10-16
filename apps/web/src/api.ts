@@ -1573,6 +1573,12 @@ export type ProxySettings = {
 }
 export type ContactEmailSetting = { email: string | null; environment_set: boolean; source: 'setting' | 'environment' | null }
 
+// Settings → General → About (api/about_routes.py): the version, the licence, where this version's source is, and the
+// "Report a problem" link, which the server builds from the version, OS name and architecture only.
+export type About = {
+  version: string; license: string; repo_url: string; source_url: string; source_is_tag: boolean
+  notices_available: boolean; os: string; arch: string; report_url: string
+}
 export const shellApi = {
   profile: () => request<Profile>('/api/profile'),
   saveProfileName: (full_name: string | null) => request<Profile>('/api/profile', json('PUT', { full_name })),
@@ -1581,6 +1587,7 @@ export const shellApi = {
   testProxy: () => request<ProxySettings>('/api/institution-proxy/test', { method: 'POST' }),
   contactEmail: () => request<ContactEmailSetting>('/api/contact-email'),
   saveContactEmail: (email: string | null) => request<ContactEmailSetting>('/api/contact-email', json('PUT', { email })),
+  about: () => request<About>('/api/about'),
 }
 
 // Usage reads (api/usage_routes.py): model calls counted from stored sessions by Settings role, and OpenAlex's budget

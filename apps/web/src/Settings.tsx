@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Info, RotateCw } from 'lucide-react'
-import { api, preferencesApi, shellApi, usageApi, type ContactEmailSetting, type Effort, type EffortLimits, type PreferenceChange, type Preferences, type Profile, type Connections, type InstitutionalAccess, type ModelRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Usage, type UsageRole } from './api'
+import { api, preferencesApi, shellApi, usageApi, type About, type ContactEmailSetting, type Effort, type EffortLimits, type PreferenceChange, type Preferences, type Profile, type Connections, type InstitutionalAccess, type ModelRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Usage, type UsageRole } from './api'
 import { canRun, connectionModels, modelKey, type ConnectionModel } from './Home'
 import { defaultEffort, exposesEffortControl } from './modelEffort'
 import { ConnectionsTab } from './Connections'
@@ -262,8 +262,52 @@ export function SettingsPage({ dark, section, language, onLanguage, theme, onThe
 
     <ResearchPreferences />
 
+    <AboutSection />
+
     <footer className="settings-footer"><span>{t('© 2026 DEIXIS · Designed & built by')} <a href="https://huguryildiz.com" target="_blank" rel="noopener noreferrer">Hüseyin Uğur Yıldız</a><a className="footer-github" href="https://github.com/huguryildiz/DEIXIS" target="_blank" rel="noopener noreferrer" aria-label={t('DEIXIS on GitHub')} title={t('DEIXIS on GitHub')}><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z" /></svg></a></span></footer>
   </section>
+}
+
+// About (F2, F5): the version, the licence, this version's source, the third-party licence list and the problem link. The
+// problem link comes from the server, which builds it from the version, OS name and architecture only.
+function AboutSection() {
+  const [about, setAbout] = useState<About | null>(null)
+  const [failed, setFailed] = useState('')
+  useEffect(() => {
+    let live = true
+    shellApi.about().then(value => { if (live) setAbout(value) }, (e: Error) => { if (live) setFailed(e.message) })
+    return () => { live = false }
+  }, [])
+  const external = { target: '_blank', rel: 'noopener noreferrer' } as const
+  return <>
+    <h2 id="about" data-panel="general">{t('About')}</h2>
+    {failed && <Notice tone="attention" panel="general">{t('About could not be read: {message}', { message: failed })}</Notice>}
+    <div className="rows set-about" data-panel="general">
+      <div>
+        <b>{t('Version')}</b>
+        <p>{about ? `${about.version} · ${about.os} ${about.arch}` : t('Checking…')}</p>
+      </div>
+      <div>
+        <b>{t('License')}</b>
+        <p>{t('DEIXIS is free software under the GNU Affero General Public License, version 3 or later ({license}).', { license: about?.license ?? 'AGPL-3.0-or-later' })}</p>
+      </div>
+      <div>
+        <b>{t('Source code')}</b>
+        <p>{about ? <a href={about.source_url} {...external}>{t('Source code for this version')}</a> : t('Checking…')}
+          {about && !about.source_is_tag && <> {t('This version has no release tag yet, so the link opens the project page.')}</>}</p>
+      </div>
+      <div>
+        <b>{t('Third-party licenses')}</b>
+        <p>{about?.notices_available ? <a href="/api/about/notices" {...external}>{t('Open the list')}</a> : about ? t('The list is not part of this build.') : t('Checking…')}
+          {about?.notices_available && <> {t('The licenses of the software DEIXIS is built on.')}</>}</p>
+      </div>
+      <div>
+        <b>{t('Report a problem')}</b>
+        <p>{about ? <a href={about.report_url} {...external}>{t('Report a problem on GitHub')}</a> : t('Checking…')}{' '}
+          {t('The new issue has only the DEIXIS version, your operating system and its architecture filled in. If you have a diagnostic zip, attach it to the issue yourself by dragging it into the text box. Open the zip first and look at what it contains, because GitHub issues are public.')}</p>
+      </div>
+    </div>
+  </>
 }
 
 // Institutional access (plan ST6, §2.3). The proxy address is used only for links the person opens in the browser; Test

@@ -453,11 +453,15 @@ function EquationReaderDetails({ reader, dark, onChanged }: { reader: EquationRe
       {running && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" onClick={() => run(api.cancelEquationReaderInstall)} disabled={busy}>{t('Cancel installation')}</Button></div>}
     </>}
     {reader.installed && !running && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" onClick={() => setConfirm('remove')} disabled={busy || !!reader.reading} title={reader.reading ? t('It cannot be removed while a PDF is being read') : undefined}>{t('Remove')}</Button></div>}
-    <ConfirmDialog open={confirm === 'install'} dark={dark} title={t('Install the equation reader?')} description={t('This downloads Marker and its models (about 4.4 GB) into the DEIXIS data folder, which can take several minutes. Your stored PDFs are then read in the background, which can take hours for a large library.')} context={reader.path} confirmLabel={t('Install')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(api.installEquationReader)} onOpenChange={open => setConfirm(open ? 'install' : null)} />
+    <ConfirmDialog open={confirm === 'install'} dark={dark} title={t('Install the equation reader?')} description={t('This downloads Marker and its models (about 4.4 GB) into the DEIXIS data folder, which can take several minutes. Your stored PDFs are then read in the background, which can take hours for a large library.')} context={reader.path} confirmLabel={t('Install')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(api.installEquationReader)} onOpenChange={open => setConfirm(open ? 'install' : null)}>
+      <p className="confirm-dialog-license">{t('License of {package}: the code is GPL-3.0-or-later. The model weights come with their own license, which limits commercial use.', { package: reader.package.replace('==', ' ') })}{' '}
+        <a href={MARKER_LICENSE_URL} target="_blank" rel="noopener noreferrer">{t('Marker’s license terms on GitHub')}</a></p>
+    </ConfirmDialog>
     <ConfirmDialog open={confirm === 'remove'} dark={dark} title={t('Remove the equation reader?')} description={t('Marker and its models are deleted. Equations already read stay in the stored text; new PDFs are no longer read.')} confirmLabel={t('Remove')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(api.removeEquationReader)} onOpenChange={open => setConfirm(open ? 'remove' : null)} />
   </div>
 }
 
+const MARKER_LICENSE_URL = 'https://github.com/datalab-to/marker'
 const MATHPIX_PRIVACY_URL = 'https://mathpix.com/privacy-policy'
 
 // Mathpix (D40): an online reader for numbered display equations, off until the person saves a key pair and turns it on.

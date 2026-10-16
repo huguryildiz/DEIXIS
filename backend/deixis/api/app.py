@@ -1100,6 +1100,7 @@ def create_app(
     register_library_routes(app, settings)
     from deixis.api.data_location_routes import register_data_location_routes; register_data_location_routes(app, settings)
     from deixis.api.preference_routes import register_preference_routes; register_preference_routes(app)
+    from deixis.api.about_routes import register_about_routes; register_about_routes(app)
     register_screen_more_routes(app)
     from deixis.api.followup_turns_routes import register_followup_turns_routes; register_followup_turns_routes(app)
     from deixis.api.search_plan_routes import register_search_plan_routes; register_search_plan_routes(app)

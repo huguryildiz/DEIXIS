@@ -25,6 +25,21 @@ export function t(text: string, vars?: Record<string, string | number>): string 
 }
 
 const tr: Record<string, string> = {
+  'About': 'Hakkında',
+  'About could not be read: {message}': 'Hakkında bilgisi okunamadı: {message}',
+  'DEIXIS is free software under the GNU Affero General Public License, version 3 or later ({license}).': 'DEIXIS, GNU Affero Genel Kamu Lisansı’nın 3. sürümü ya da sonrası ({license}) altında özgür yazılımdır.',
+  'Source code': 'Kaynak kodu',
+  'Source code for this version': 'Bu sürümün kaynak kodu',
+  'This version has no release tag yet, so the link opens the project page.': 'Bu sürümün henüz yayın etiketi yok, bu yüzden bağlantı proje sayfasını açar.',
+  'Third-party licenses': 'Üçüncü taraf lisansları',
+  'Open the list': 'Listeyi aç',
+  'The licenses of the software DEIXIS is built on.': 'DEIXIS’in üzerine kurulduğu yazılımların lisansları.',
+  'The list is not part of this build.': 'Liste bu derlemede yok.',
+  'Report a problem': 'Sorun bildir',
+  'Report a problem on GitHub': 'GitHub’da sorun bildir',
+  'The new issue has only the DEIXIS version, your operating system and its architecture filled in. If you have a diagnostic zip, attach it to the issue yourself by dragging it into the text box. Open the zip first and look at what it contains, because GitHub issues are public.': 'Yeni sorun kaydında yalnız DEIXIS sürümü, işletim sisteminiz ve mimarisi önceden doldurulur. Elinizde bir tanı zip’i varsa, onu metin kutusuna sürükleyerek sorun kaydına kendiniz ekleyin. Önce zip’i açıp içinde ne olduğuna bakın, çünkü GitHub sorun kayıtları herkese açıktır.',
+  'License of {package}: the code is GPL-3.0-or-later. The model weights come with their own license, which limits commercial use.': '{package} lisansı: kod GPL-3.0-or-later. Model ağırlıkları kendi lisansıyla gelir ve ticari kullanımı sınırlar.',
+  'Marker’s license terms on GitHub': 'Marker’ın lisans koşulları (GitHub)',
   'Could not check semantic search: {message}': 'Anlamsal arama denetlenemedi: {message}',
   'Semantic search is off, so sources are ranked by their keywords only. The built-in model ranks them by meaning; it runs on this computer and needs no key.': 'Anlamsal arama kapalı, bu yüzden kaynaklar yalnız anahtar kelimelerine göre sıralanıyor. Yerleşik model onları anlamına göre sıralar; bu bilgisayarda çalışır ve anahtar istemez.',
   'It needs about {total} MB of disk, plus about {python} MB if Python 3.12 has to be downloaded, plus room for a download cache.': 'Yaklaşık {total} MB disk ister; Python 3.12’nin de indirilmesi gerekirse yaklaşık {python} MB daha ve bir indirme önbelleği için yer.',

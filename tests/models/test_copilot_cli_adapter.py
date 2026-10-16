@@ -95,7 +95,7 @@ def test_health_fails_isolation_when_the_deixis_home_configures_mcp_servers(tmp_
 
 
 def test_health_without_the_cli(tmp_path, monkeypatch):
-    monkeypatch.setattr(copilot_cli.shutil, "which", lambda name: None)
+    monkeypatch.setattr(copilot_cli, "find_tool", lambda name: None)
     status = asyncio.run(CopilotCliAdapter(home=tmp_path / "h", workspace=tmp_path / "w").health(refresh=True))
     assert status == {"connection": "copilot_cli", "installed": False, "ready": False, "reason": "GitHub Copilot CLI not found"}
 
@@ -148,9 +148,12 @@ def test_a_nonzero_exit_after_an_answer_is_a_failure_after_sending(tmp_path, mon
     assert result.status == "failed" and result.delivery_class == "after_send_unknown" and "rate limited" in result.error
 
 
-def test_copilot_environment_keeps_only_the_allowlist():
+def test_copilot_environment_keeps_only_the_allowlist(monkeypatch):
+    monkeypatch.setattr(copilot_cli, "find_tool", lambda name: None)
+    monkeypatch.setattr("deixis.tool_paths.find_tool", lambda name: None)  # no real copilot or node folder joins PATH
     env = copilot_environment(Path("/h"), {"PATH": "/bin", "LC_ALL": "C", "GITHUB_TOKEN": "x", "DEEPSEEK_API_KEY": "y"})
-    assert env == {"PATH": "/bin", "LC_ALL": "C", "COPILOT_HOME": "/h", "COPILOT_AUTO_UPDATE": "false", "NO_COLOR": "1"}
+    assert env == {"PATH": "/bin", "LC_ALL": "C", "COPILOT_HOME": "/h", "COPILOT_AUTO_UPDATE": "false", "NO_COLOR": "1",
+                   "NODE_USE_SYSTEM_CA": "1"}
 
 
 def test_native_binary_skips_the_npm_launcher(tmp_path, monkeypatch):

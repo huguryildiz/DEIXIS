@@ -37,8 +37,10 @@ from pathlib import Path
 from typing import Any
 
 from deixis import library_lock
+from deixis.child_env import UV_TLS, child_env
 from deixis.documents import arxiv_source, equation_regions, math_reader, mathpix, pdf
 from deixis.storage.db import new_id, now, transaction
+from deixis.tool_paths import find_tool
 from deixis.workflow import file_restore, recovery, text_retry
 from deixis.workflow.store import NotFound, RunInProgress, Store
 
@@ -49,6 +51,8 @@ MAX_ATTEMPTS = 3  # a failed read is tried again in the background until this ma
 RETRY_AFTER = timedelta(minutes=10)
 INSTALL_TIMEOUT_SECONDS = 60 * 60  # the models are about 3.3 GB
 OUTPUT_TAIL_CHARS = 4000
+OUTPUT_TAIL_BYTES = 4 * OUTPUT_TAIL_CHARS
+READ_CHUNK_BYTES = 64 * 1024
 OCR_SUFFIX = re.compile(r"\+ocr-.+?-v\d+(?=\+marker-|\+arxiv-latex-|\+mathpix-|$)")
 SOURCE_SUFFIX = "+" + arxiv_source.SOURCE_VERSION
 MATHPIX_SUFFIX = "+" + mathpix.VERSION
@@ -1071,7 +1075,7 @@ class EquationService:
         for row in self.store.conn.execute("SELECT id FROM source_assets WHERE removed_at IS NULL AND extraction_status IN ('succeeded', 'partial')"):
             state = equation_state(self.store, row[0])["state"]
             states[state] = states.get(state, 0) + 1
-        uv = shutil.which("uv")
+        uv = find_tool("uv")
         return {"installed": self.available(), "package": math_reader.MARKER_PACKAGE, "path": str(paths.env),
                 "size_bytes": env_size + models_size, "models_downloaded": models_size > 0,"disk_free_gb": round(shutil.disk_usage(Path.home()).free / 2**30),
                 "install": {"available": bool(uv), "unavailable_reason": None if uv else "uv was not found on this computer's PATH",
@@ -1084,7 +1088,7 @@ class EquationService:
             raise ValueError("The equation reader is already being installed")
         if self.available() and _size(self.reader.paths.models) > 0:
             raise ValueError("The equation reader is already installed")
-        uv = shutil.which("uv")
+        uv = find_tool("uv")
         if uv is None:
             raise ValueError("uv was not found on this computer's PATH")
         paths = self.reader.paths
@@ -1098,7 +1102,9 @@ class EquationService:
 
     async def _run_install(self, job: dict[str, Any], steps: list[list[str]]) -> None:
         output = bytearray()
-        env = {**os.environ, "MODEL_CACHE_DIR": str(self.reader.paths.models), "PYTHONUNBUFFERED": "1"}
+        # uv and the model download use the network; no keys reach them (E4).
+        env = child_env({"MODEL_CACHE_DIR": str(self.reader.paths.models), "PYTHONUNBUFFERED": "1", **UV_TLS}, network=True,
+                        tool=steps[0][0])
         try:
             async with asyncio.timeout(INSTALL_TIMEOUT_SECONDS):
                 for index, argv in enumerate(steps):
@@ -1115,8 +1121,10 @@ class EquationService:
                     finally:
                         child.done()
                     assert proc.stdout is not None
-                    async for chunk in proc.stdout:
+                    # In chunks, keeping only the tail (E18): a very long line neither stops the read nor grows memory.
+                    while chunk := await proc.stdout.read(READ_CHUNK_BYTES):
                         output.extend(chunk)
+                        del output[:-OUTPUT_TAIL_BYTES]
                         job["output"] = output[-OUTPUT_TAIL_CHARS:].decode("utf-8", "replace")
                     if await proc.wait() != 0:
                         job.update(status="failed", finished_at=now())
@@ -1126,9 +1134,18 @@ class EquationService:
             if self._install_proc:
                 self._install_proc.kill()
             job.update(status="failed", finished_at=now(), output=job["output"] + "\nStopped after 60 minutes.")
-        except OSError as exc:
+        except asyncio.CancelledError:  # DEIXIS is closing: the job does not stay "running" (E18)
+            if job["status"] == "running":  # a job that was cancelled has already said so
+                job.update(status="failed", finished_at=now(), output=job["output"] + "\nStopped.")
+            raise
+        except Exception as exc:  # noqa: BLE001 - any failure ends the job instead of leaving it running (E18)
             job.update(status="failed", finished_at=now(), output=job["output"] + f"\n{type(exc).__name__}: {exc}")
         finally:
+            if self._install_proc and self._install_proc.returncode is None:
+                try:
+                    self._install_proc.kill()
+                except ProcessLookupError:
+                    pass
             self._install_proc = None
 
     def cancel_install(self) -> dict[str, Any]:

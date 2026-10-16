@@ -21,6 +21,7 @@ import httpx
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
+from deixis.child_env import child_env
 from deixis.config import CONTACT_EMAIL_SETTING
 from deixis.documents import fetch
 from deixis.domain import proxy
@@ -107,7 +108,7 @@ def _id_name() -> str:
     if sys.platform != "darwin":
         return ""
     try:
-        done = subprocess.run(["id", "-F"], capture_output=True, text=True, timeout=2, check=False)
+        done = subprocess.run(["id", "-F"], capture_output=True, text=True, timeout=2, check=False, env=child_env())
     except (OSError, subprocess.SubprocessError):
         return ""
     return done.stdout.strip() if done.returncode == 0 else ""

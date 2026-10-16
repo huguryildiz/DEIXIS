@@ -1150,7 +1150,10 @@ async def read_source(data: bytes, pdf_path: Path, skip_pages: set[int], report:
     argv = [sys.executable, "-m", "deixis.documents.arxiv_source", str(pdf_path), json.dumps(sorted(skip_pages)),
             "report" if report else "placements", str(MAX_MEMORY_BYTES)]
     started = time.perf_counter()
-    result = await run_child(argv, data, env={"PYTHONPATH": str(Path(__file__).resolve().parents[2])}, max_memory=MAX_MEMORY_BYTES)
+    from deixis.child_env import child_env
+
+    env = child_env({"PYTHONPATH": str(Path(__file__).resolve().parents[2])}, bundled=True)
+    result = await run_child(argv, data, env=env, max_memory=MAX_MEMORY_BYTES)
     seconds = round(time.perf_counter() - started, 3)
     if result.failure:
         return {"content": "unreadable", "error": result.failure, "stderr": result.stderr_tail[-400:], "child_seconds": seconds}

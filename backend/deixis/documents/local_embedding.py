@@ -39,6 +39,7 @@ from typing import Any, Callable
 import httpx
 
 from deixis import library_lock
+from deixis.child_env import child_env
 
 REPOSITORY = "Qdrant/bge-small-en-v1.5-onnx-Q"
 REVISION = "aa8f8b060edb00e03bfdd08813a2949946c8ba55"
@@ -182,8 +183,8 @@ class BuiltinPaths:
 
     def runner_env(self) -> dict[str, str]:
         """Offline, with the data directory's own Hugging Face home: nothing is read from or written to ~/.cache."""
-        return {**os.environ, "HF_HUB_OFFLINE": "1", "HF_HOME": str(self.hf_home), "PYTHONUNBUFFERED": "1",
-                "TOKENIZERS_PARALLELISM": "false"}
+        return child_env({"HF_HUB_OFFLINE": "1", "HF_HOME": str(self.hf_home), "PYTHONUNBUFFERED": "1",
+                          "TOKENIZERS_PARALLELISM": "false"})
 
 
 def builtin_paths(data_dir: Path) -> BuiltinPaths:

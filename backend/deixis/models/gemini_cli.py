@@ -32,10 +32,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from deixis.child_env import NODE_TLS
 from deixis.models.adapter import ModelStepResult
 from deixis.models.cli_process import reap, spawn_options, stop_group_async, track
 from deixis.domain.limits import limit_kind, safe_error, service_error_kind
 from deixis import tool_probe
+from deixis.tool_paths import child_path, find_tool
 
 CLI = "gemini"
 # Concrete ids from Gemini CLI 0.60's VALID_GEMINI_MODELS (internal, Gemma and custom-tools variants left out).
@@ -129,6 +131,9 @@ def cli_environment(home: Path, credentials: Path, source: Mapping[str, str] | N
         "GOOGLE_APPLICATION_CREDENTIALS": str(credentials),
         # Without a sign-in, headless mode stops with an authentication error instead of opening a browser.
         "NO_BROWSER": "true",
+        # The CLI is a node script: node's folder must be on PATH when DEIXIS started with a short one.
+        "PATH": child_path(find_tool(CLI), env.get("PATH", "")),
+        **NODE_TLS,  # the system certificates, so a network that inspects TLS does not stop the CLI (F1)
     })
     return env
 
@@ -217,7 +222,7 @@ class GeminiCliAdapter:
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         if self._health and not refresh and time.monotonic() - self._health[0] < 60:
             return self._health[1]
-        cli = shutil.which(CLI)
+        cli = find_tool(CLI)
         status: dict[str, Any] = {
             "connection": self.connection, "installed": bool(cli), "ready": False, "catalogue": "fixed",
             # No `isolation` counts: the CLI cannot list the tools or context files it loaded, so none are claimed.
@@ -261,7 +266,7 @@ class GeminiCliAdapter:
 
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],
                        requested_model: str | None, reasoning_effort: str | None = None) -> ModelStepResult:
-        cli = shutil.which(CLI)
+        cli = find_tool(CLI)
         if not cli or not requested_model:
             return ModelStepResult("unavailable", error="Gemini CLI not found" if not cli else "no model requested",
                                    delivery_class="before_send")

@@ -65,7 +65,7 @@ def prepare(monkeypatch):
     FakeClient.messages = []
     FakeClient.options = []
     monkeypatch.setattr(claude, "ClaudeSDKClient", FakeClient)
-    monkeypatch.setattr(claude.shutil, "which", lambda name: "/SYNTHETIC/bin/claude")
+    monkeypatch.setattr(claude, "find_tool", lambda name: "/SYNTHETIC/bin/claude")
     async def version(argv, timeout=None, env=None):
         return tool_probe.Probe(0, "2.1.270 (Claude Code)")
 
@@ -245,7 +245,7 @@ def test_sdk_or_process_failure_is_not_model_verification(monkeypatch, tmp_path,
 
 def test_missing_cli_is_unavailable_without_starting_a_client(monkeypatch, tmp_path):
     prepare(monkeypatch)
-    monkeypatch.setattr(claude.shutil, "which", lambda name: None)
+    monkeypatch.setattr(claude, "find_tool", lambda name: None)
     adapter = claude.ClaudeCodeAdapter(tmp_path)
     status = asyncio.run(adapter.health(refresh=True))
     result = asyncio.run(adapter.run_step("BASE", "DEVELOPER", "MESSAGE", {}, "opus"))

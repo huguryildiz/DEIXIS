@@ -26,13 +26,17 @@ from typing import Any
 
 import httpx
 
+from deixis.child_env import NODE_TLS, UV_TLS, child_env
 from deixis.storage.db import now
+from deixis.tool_paths import find_tool
 from deixis.tool_probe import Probe, probe, probe_blocking
 
 CACHE_SECONDS = 30
 CATALOG_SECONDS = 24 * 60 * 60
 INSTALL_TIMEOUT_SECONDS = 20 * 60
 OUTPUT_TAIL_CHARS = 4000
+OUTPUT_TAIL_BYTES = 4 * OUTPUT_TAIL_CHARS  # a UTF-8 character is at most four bytes
+READ_CHUNK_BYTES = 64 * 1024
 # The model the Ollama card offers first when no embedding model is installed: a small one semantic search can use.
 OLLAMA_EMBEDDING_MODEL = "nomic-embed-text"
 # On macOS Ollama installs as the app from ollama.com (it runs the server in the menu bar), not Homebrew's bare CLI.
@@ -135,7 +139,7 @@ class ToolError(Exception):
 
 
 def _command_output(argv: list[str], timeout: float | None = None) -> str | None:
-    return _version_line(probe_blocking(argv, timeout))
+    return _version_line(probe_blocking(argv, timeout, child_env(tool=argv[0])))
 
 
 def _version_line(done: Probe) -> str | None:
@@ -160,19 +164,20 @@ def _copy_mac_app(dmg: Path, target: Path) -> None:
     """Mount the downloaded disk image, copy its app to target and unmount it."""
     mount = Path(tempfile.mkdtemp(prefix="deixis-ollama-mount-"))
     subprocess.run(["hdiutil", "attach", "-nobrowse", "-readonly", "-mountpoint", str(mount), str(dmg)],
-                   check=True, capture_output=True, text=True, timeout=120)
+                   check=True, capture_output=True, text=True, timeout=120, env=child_env())
     try:
         # Copied beside the target and then swapped in, so an update never leaves the older app's files inside the new bundle.
         fresh, old = target.with_name(f".{target.name}.new"), target.with_name(f".{target.name}.old")
         shutil.rmtree(fresh, ignore_errors=True)
-        subprocess.run(["ditto", str(mount / target.name), str(fresh)], check=True, capture_output=True, text=True, timeout=300)
+        subprocess.run(["ditto", str(mount / target.name), str(fresh)], check=True, capture_output=True, text=True, timeout=300,
+                       env=child_env())
         if target.exists():
             shutil.rmtree(old, ignore_errors=True)
             target.rename(old)
         fresh.rename(target)
         shutil.rmtree(old, ignore_errors=True)
     finally:
-        subprocess.run(["hdiutil", "detach", "-force", str(mount)], capture_output=True, timeout=60)
+        subprocess.run(["hdiutil", "detach", "-force", str(mount)], capture_output=True, timeout=60, env=child_env())
         shutil.rmtree(mount, ignore_errors=True)
 
 
@@ -186,12 +191,12 @@ def _mac_app(tool_id: str) -> tuple[Path, str, str] | None:
 
 
 def _open_mac_app(app: Path) -> None:
-    subprocess.run(["open", "-a", str(app)], check=True, capture_output=True, text=True, timeout=30)
+    subprocess.run(["open", "-a", str(app)], check=True, capture_output=True, text=True, timeout=30, env=child_env())
 
 
 def _quit_mac_app(app: Path) -> None:
     """Ask the app to quit so its files can be replaced; one that is not running is left as it is."""
-    subprocess.run(["osascript", "-e", f'quit app "{app.stem}"'], capture_output=True, timeout=30)
+    subprocess.run(["osascript", "-e", f'quit app "{app.stem}"'], capture_output=True, timeout=30, env=child_env())
     time.sleep(2)
 
 
@@ -235,11 +240,11 @@ class LocalTools:
                                   for t in data["tools"]]}
 
     async def _detect(self, tool: Tool) -> dict[str, Any]:
-        path = shutil.which(tool.binary)
+        path = find_tool(tool.binary)
         app = tool.app if tool.app and Path(tool.app).exists() else None
-        probed = await probe([path, "--version"]) if path else None
+        probed = await probe([path, "--version"], env=child_env(tool=path)) if path else None
         version = _version_line(probed) if probed else None
-        manager = shutil.which(tool.install[0])
+        manager = find_tool(tool.install[0])
         models = await self._server_models(tool) if tool.kind == "server" else None
         status: dict[str, Any] = {
             # A server that answers counts as installed even when its binary is not on PATH.
@@ -314,7 +319,7 @@ class LocalTools:
                                self._install_mac_app)
         if current["installed"]:
             raise ToolError(409, f"{tool.name} is already installed")
-        manager = shutil.which(tool.install[0])
+        manager = find_tool(tool.install[0])
         if not manager:
             raise ToolError(422, current["install"]["unavailable_reason"])
         job = {"status": "running", "command": " ".join(tool.install), "started_at": now(), "finished_at": None, "output": ""}
@@ -329,9 +334,9 @@ class LocalTools:
             raise ToolError(404, f"'{tool_id}' is not updated from DEIXIS")
         if (self._jobs.get(tool_id) or {}).get("status") == "running":
             raise ToolError(409, f"{tool.name} is already being installed or updated")
-        path = shutil.which(tool.binary)
+        path = find_tool(tool.binary)
         real = os.path.realpath(path) if path else ""
-        brew = shutil.which("brew")
+        brew = find_tool("brew")
         job: dict[str, Any] = {"status": "running", "started_at": now(), "finished_at": None, "output": "", "completed": 0, "total": 0,
                                "kind": "update"}
         if tool_id == "ollama" and brew and ("/Cellar/" in real or "/homebrew/" in real):
@@ -507,7 +512,7 @@ class LocalTools:
             return hashlib.sha256(response.content).hexdigest() != model.get("digest")
 
         released, *models = await asyncio.gather(latest(), *(changed(m) for m in tags))
-        path = shutil.which("ollama")
+        path = find_tool("ollama")
         real = os.path.realpath(path) if path else ""
         how = "homebrew" if "/Cellar/" in real or "/homebrew/" in real else "app" if OLLAMA_MAC and OLLAMA_MAC_APP.exists() else None
         return {"version": version, "latest": released, "update_available": newer(released, version), "installed_with": how,
@@ -567,11 +572,12 @@ class LocalTools:
 
     async def start_lm_studio_server(self) -> None:
         """Start LM Studio's local server with its own CLI (`lms server start`, a fixed command)."""
-        lms = shutil.which("lms") or str(Path.home() / ".lmstudio" / "bin" / "lms")
+        lms = find_tool("lms") or str(Path.home() / ".lmstudio" / "bin" / "lms")
         if not Path(lms).exists():
             raise ToolError(409, "LM Studio's command-line tool is not set up yet: open LM Studio once, then try again")
         try:
-            done = await asyncio.to_thread(subprocess.run, [lms, "server", "start"], capture_output=True, text=True, timeout=60)
+            done = await asyncio.to_thread(subprocess.run, [lms, "server", "start"], capture_output=True, text=True, timeout=60,
+                                           env=child_env(tool=lms))
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise ToolError(502, f"`lms server start` did not finish: {exc}") from exc
         self._cache = None
@@ -630,12 +636,16 @@ class LocalTools:
 
     async def _run(self, tool_id: str, job: dict[str, Any], argv: list[str]) -> None:
         output = bytearray()
-        env = {**os.environ, "HOMEBREW_NO_AUTO_UPDATE": "1", "NONINTERACTIVE": "1", "CI": "1"}
+        # No keys (E4): the package manager and the install scripts it runs see only the allowlisted environment.
+        env = child_env({"HOMEBREW_NO_AUTO_UPDATE": "1", "NONINTERACTIVE": "1", "CI": "1", **UV_TLS, **NODE_TLS}, network=True,
+                        tool=argv[0])
 
         async def read(proc: asyncio.subprocess.Process) -> int:
             assert proc.stdout is not None
-            async for line in proc.stdout:
-                output.extend(line)
+            # In chunks, keeping only the tail (E18): a very long line neither stops the read nor grows memory.
+            while chunk := await proc.stdout.read(READ_CHUNK_BYTES):
+                output.extend(chunk)
+                del output[:-OUTPUT_TAIL_BYTES]
                 job["output"] = output[-OUTPUT_TAIL_CHARS:].decode("utf-8", "replace")
             return await proc.wait()
 
@@ -650,10 +660,21 @@ class LocalTools:
             try:
                 code = await asyncio.wait_for(read(proc), INSTALL_TIMEOUT_SECONDS)
             except asyncio.TimeoutError:
-                proc.kill()
                 job.update(status="failed", finished_at=now(), output=job["output"] + "\nStopped after 20 minutes.")
+                return
+            except asyncio.CancelledError:  # DEIXIS is closing: the job does not stay "running" (E18)
+                if job["status"] == "running":  # a job that was cancelled has already said so
+                    job.update(status="failed", finished_at=now(), output=job["output"] + "\nStopped.")
+                raise
+            except Exception as exc:  # noqa: BLE001 - a failed read ends the job instead of leaving it running (E18)
+                job.update(status="failed", finished_at=now(), output=job["output"] + f"\n{type(exc).__name__}: {exc}")
                 return
             job.update(status="succeeded" if code == 0 else "failed", finished_at=now())
             self._cache = None
         finally:
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
             self._procs.pop(tool_id, None)

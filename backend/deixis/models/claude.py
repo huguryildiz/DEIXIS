@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
-import shutil
 import time
 from pathlib import Path
 from typing import Any
@@ -26,8 +26,10 @@ from claude_agent_sdk import (
     ToolUseBlock,
 )
 
+from deixis.child_env import NODE_TLS
 from deixis.models.adapter import ModelStepResult
 from deixis.domain.limits import limit_kind, service_error_kind, safe_error
+from deixis.tool_paths import child_path, find_tool
 from deixis.tool_probe import probe
 
 
@@ -69,6 +71,9 @@ class ClaudeCodeAdapter:
                 # The CLI inherits the app's environment, where a key saved for the Anthropic API connection lives;
                 # emptied here so this connection runs on the signed-in account, never on that key (D34).
                 "ANTHROPIC_API_KEY": "",
+                # An npm-installed CLI is a node script: node's folder must be on PATH when DEIXIS started with a short one.
+                "PATH": child_path(cli),
+                **NODE_TLS,  # an npm-installed CLI trusts the system certificates (F1)
             },
         }
         options.update(overrides)
@@ -77,12 +82,12 @@ class ClaudeCodeAdapter:
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         if self._health and not refresh and time.monotonic() - self._health[0] < 60:
             return self._health[1]
-        cli = shutil.which("claude")
+        cli = find_tool("claude")
         status: dict[str, Any] = {"connection": self.connection, "installed": bool(cli), "ready": False}
         if not cli:
             status["reason"] = "Claude Code CLI not found"
             return status
-        version = await probe([cli, "--version"])
+        version = await probe([cli, "--version"], env={**os.environ, "PATH": child_path(cli)})
         if version.error == "not_responding":
             status["reason_code"] = "timeout"
             status["reason"] = "Claude Code CLI is not responding"
@@ -133,7 +138,7 @@ class ClaudeCodeAdapter:
 
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],
                        requested_model: str | None, reasoning_effort: str | None = None) -> ModelStepResult:
-        cli = shutil.which("claude")
+        cli = find_tool("claude")
         if not cli or not requested_model:
             return ModelStepResult("unavailable", error="Claude Code CLI not found" if not cli else "no model requested",
                                    delivery_class="before_send")

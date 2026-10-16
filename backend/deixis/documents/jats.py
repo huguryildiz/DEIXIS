@@ -25,6 +25,8 @@ from xml.parsers import expat
 from dataclasses import dataclass
 from pathlib import Path
 
+from deixis.child_env import child_env
+
 MAX_XML_BYTES = 5 * 1024 * 1024
 RENDER_TIMEOUT_SECONDS = 60
 MAX_MEMORY_BYTES = 1024 * 1024 * 1024
@@ -78,7 +80,7 @@ def render_pdf(xml: bytes, *, timeout: float = RENDER_TIMEOUT_SECONDS, max_memor
                 [sys.executable, "-m", "deixis.documents.jats", str(source), str(target), str(max_memory),
                  str(max_pages), str(max_output)],
                 capture_output=True, timeout=timeout,
-                env={"PYTHONPATH": str(Path(__file__).resolve().parents[2])})
+                env=child_env({"PYTHONPATH": str(Path(__file__).resolve().parents[2])}, bundled=True))
         except subprocess.TimeoutExpired:
             return Rendition("jats_render_timeout")
         code = completed.returncode

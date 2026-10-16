@@ -85,7 +85,7 @@ def remote(request):
 def paths(monkeypatch):
     """Binaries on PATH by name. App bundles and the machine are faked, so the host computer does not leak in."""
     found = {}
-    monkeypatch.setattr(local_tools.shutil, "which", lambda name: found.get(name))
+    monkeypatch.setattr(local_tools, "find_tool", lambda name: found.get(name))
     monkeypatch.setattr(local_tools, "TOOLS", {k: dataclasses.replace(t, app=None) for k, t in local_tools.TOOLS.items()})
     monkeypatch.setattr(local_tools, "machine", lambda: {"chip": "SYNTHETIC chip", "memory_gb": 32, "disk_free_gb": 100, "disk_total_gb": 500})
     monkeypatch.setattr(local_tools, "OLLAMA_MAC", False)  # the macOS app installs have their own tests

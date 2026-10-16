@@ -17,6 +17,10 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(REPO / "tests"), str(REPO / "backend")]
 
+from deixis import child_env  # noqa: E402
+
+child_env.OS_PREFIXES = ("LC_", "FAKE_")  # as tests/conftest.py does: the fake runner reads FAKE_RUNNER
+
 
 def say(**fields) -> None:
     print(json.dumps(fields), flush=True)

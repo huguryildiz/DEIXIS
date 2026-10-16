@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import shlex
-import shutil
 import tempfile
 import subprocess
 import sys
@@ -18,6 +17,8 @@ import time
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
+
+from deixis.tool_paths import find_tool
 
 SIGNIN_TIMEOUT_SECONDS = 10 * 60
 CHECK_INTERVAL_SECONDS = 3.0
@@ -52,7 +53,7 @@ def _shell_line(exe: str, args: list[str], codex_home: Path | None) -> str:
 
 
 def build_launch(platform: str, exe: str, args: list[str], codex_home: Path | None,
-                 which: Callable[[str], str | None] = shutil.which, script_dir: Path | None = None) -> LaunchSpec:
+                 which: Callable[[str], str | None] = find_tool, script_dir: Path | None = None) -> LaunchSpec:
     """The command that opens a terminal window running `exe args`, with CODEX_HOME set when given."""
     if platform == "darwin":
         # Terminal.app opens a .command file through `open`, which needs no Automation permission (osascript
@@ -105,7 +106,7 @@ class AccountSignIn:
         if self._view(tool)["state"] == "waiting":
             return self._view(tool)
         binary, args, name = TOOLS[tool]
-        exe = shutil.which(binary)
+        exe = find_tool(binary)
         if not exe:
             raise SignInError(409, f"{name} was not found on this computer; install it first")
         if tool == "codex":

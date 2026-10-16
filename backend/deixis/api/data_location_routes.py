@@ -16,6 +16,7 @@ from fastapi import HTTPException, Request
 from pydantic import BaseModel, Field
 
 from deixis import config, data_location
+from deixis.child_env import child_env
 from deixis.config import Settings
 from deixis.storage import backup
 
@@ -129,7 +130,7 @@ def register_data_location_routes(app, settings: Settings) -> None:
             raise HTTPException(501, "No file browser to open on this system")
         if not last or not Path(last["path"]).exists():
             raise HTTPException(404, "The last backup is no longer there")
-        await asyncio.to_thread(subprocess.run, ["open", "-R", last["path"]], capture_output=True)
+        await asyncio.to_thread(subprocess.run, ["open", "-R", last["path"]], capture_output=True, env=child_env())
         return {"path": last["path"]}
 
     @app.post("/api/settings/data/clear-cache")
@@ -146,7 +147,8 @@ def register_data_location_routes(app, settings: Settings) -> None:
         if sys.platform != "darwin":
             raise HTTPException(501, "No folder chooser on this system")
         script = f'POSIX path of (choose folder with prompt "{CHOOSE_PROMPT}")'
-        result = await asyncio.to_thread(subprocess.run, ["osascript", "-e", script], capture_output=True, text=True)
+        result = await asyncio.to_thread(subprocess.run, ["osascript", "-e", script], capture_output=True, text=True,
+                                       env=child_env())
         if result.returncode != 0:  # 1 with error -128: the person cancelled
             if "-128" in result.stderr or result.returncode == 1:
                 return {"path": None}

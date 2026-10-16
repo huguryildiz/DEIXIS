@@ -29,6 +29,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
+from deixis.child_env import child_env
+
 try:
     import fcntl
 except ImportError:  # Windows
@@ -146,7 +148,7 @@ class Guard:
     def env(self, base: dict[str, str] | None = None) -> dict[str, str]:
         """The environment for the process call. The holder of a frozen onefile build outlives the parent that unpacked it, so
         it must not reuse the parent's unpacked files (PyInstaller: PYINSTALLER_RESET_ENVIRONMENT=1)."""
-        env = dict(os.environ if base is None else base)
+        env = dict(child_env() if base is None else base)  # never a copy of os.environ: no base means the allowlist
         if self._ready is not None and getattr(sys, "frozen", False):
             env["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
         return env

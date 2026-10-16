@@ -108,6 +108,28 @@ def no_registered_builtin_model(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def tools_only_on_path(monkeypatch):
+    """`find_tool` (A3) also looks in the usual install folders and the login shell's PATH; in tests only PATH counts, so
+    a test's fake tool (or its absence) is what the app sees, never a real CLI in /opt/homebrew/bin or ~/.local/bin.
+    The tests of those fallbacks patch them back in."""
+    from deixis import tool_paths
+
+    nothing = lambda: []  # noqa: E731
+    nothing.real = tool_paths.known_places  # for the test of the list itself
+    monkeypatch.setattr(tool_paths, "known_places", nothing)
+    monkeypatch.setattr(tool_paths, "_shell_path", [])
+
+
+@pytest.fixture(autouse=True)
+def fake_tools_see_their_switches(monkeypatch):
+    """The fake `uv`, runner and installer scripts of the tests read FAKE_* switches from their environment, which the
+    child allowlist (A5) would otherwise drop. A key or token never has that prefix."""
+    from deixis import child_env
+
+    monkeypatch.setattr(child_env, "OS_PREFIXES", ("LC_", "FAKE_"))
+
+
+@pytest.fixture(autouse=True)
 def memory_keychain(monkeypatch):
     """Tests never read or write the real system keychain."""
     previous, backend = keyring.get_keyring(), MemoryKeyring()

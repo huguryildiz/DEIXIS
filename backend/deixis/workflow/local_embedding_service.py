@@ -29,8 +29,10 @@ from typing import Any
 import httpx
 
 from deixis import library_lock
+from deixis.child_env import UV_TLS, child_env
 from deixis.documents import local_embedding
 from deixis.documents.local_embedding import BuiltinPaths, Integrity, LocalEmbedder, LocalEmbeddingError
+from deixis.tool_paths import find_tool
 
 log = logging.getLogger(__name__)
 INSTALL_TIMEOUT_SECONDS = 60 * 60
@@ -220,7 +222,7 @@ class EmbeddingService:
         job = self.job if self.owns_job() else self.read_job()
         size = await asyncio.to_thread(lambda: sum(_size(p) for p in (
             self.paths.env, self.paths.models_root, self.paths.uv_cache, self.paths.uv_python, self.paths.hf_home)))
-        uv = shutil.which("uv")
+        uv = find_tool("uv")
         return {
             "status": state, "installed": self.paths.installed(), "available": self._usable(state),
             "last_full_check": self.integrity.last_full_check(), "job": job,
@@ -241,7 +243,7 @@ class EmbeddingService:
         import fcntl  # after the platform check: Windows has no fcntl
         if self.owns_job():
             raise ServiceError("install_running", "The built-in model is already being installed")
-        uv = shutil.which("uv")
+        uv = find_tool("uv")
         if uv is None:
             raise ServiceError("uv_missing", "uv was not found on this computer's PATH")
         if self.paths.installed() and not self.paths.outdated() and self.integrity.available():
@@ -276,11 +278,13 @@ class EmbeddingService:
         self._task = asyncio.create_task(self._run(uv))
         return dict(self.job)
 
-    def _uv_env(self) -> dict[str, str]:
+    def _uv_env(self, uv: str) -> dict[str, str]:
         p = self.paths
-        return {**os.environ, "UV_CACHE_DIR": str(p.uv_cache), "UV_PYTHON_INSTALL_DIR": str(p.uv_python),
-                "UV_PYTHON_BIN_DIR": str(p.uv_python / "bin"), "UV_PYTHON_PREFERENCE": "only-managed",
-                "UV_NO_CONFIG": "1", "HF_HOME": str(p.hf_home), "PYTHONUNBUFFERED": "1"}
+        # uv downloads Python and packages; it gets the network settings and no keys (E4).
+        return child_env({"UV_CACHE_DIR": str(p.uv_cache), "UV_PYTHON_INSTALL_DIR": str(p.uv_python),
+                          "UV_PYTHON_BIN_DIR": str(p.uv_python / "bin"), "UV_PYTHON_PREFERENCE": "only-managed",
+                          "UV_NO_CONFIG": "1", "HF_HOME": str(p.hf_home), "PYTHONUNBUFFERED": "1", **UV_TLS},
+                         network=True, tool=uv)
 
     def _step(self, index: int) -> None:
         self.job.update(step=index + 1, step_name=STEP_NAMES[index])
@@ -291,10 +295,11 @@ class EmbeddingService:
 
     async def _command(self, argv: list[str]) -> None:
         self._proc = proc = await asyncio.create_subprocess_exec(
-            *argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=self._uv_env(),
+            *argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=self._uv_env(argv[0]),
             pass_fds=(self._install_fd, *library_lock.child_fds()))  # the install and folder locks outlive DEIXIS for as long as uv runs
         assert proc.stdout is not None
-        async for chunk in proc.stdout:
+        # In chunks (E18): a very long line neither stops the read nor grows memory; `_output` keeps the tail.
+        while chunk := await proc.stdout.read(64 * 1024):
             self._output(chunk.decode("utf-8", "replace"))
         code = await proc.wait()
         self._proc = None

@@ -38,6 +38,8 @@ import subprocess
 import sys
 import time
 
+from deixis.child_env import child_env
+
 WATCH_INTERVAL_SECONDS = 0.05
 WATCH_LOST_TURNS = 20
 GUARD_EXIT_CODE = 6
@@ -164,7 +166,8 @@ def start_guard(limit: int, lifetime: int, parent: tuple[int, str]) -> tuple[sub
         argv = [sys.executable, "-m", "deixis.documents.child_guard", str(os.getpid()), child.start,
                 str(parent[0]), parent[1], str(limit), str(time.monotonic() + lifetime + DEADLINE_MARGIN_SECONDS), str(write_fd)]
         proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                start_new_session=True, pass_fds=(write_fd,))
+                                start_new_session=True, pass_fds=(write_fd,),
+                                env=child_env({"PYTHONPATH": str(Path(__file__).resolve().parents[2])}, bundled=True))
         os.close(write_fd)
         write_fd = -1
         if not select.select([read_fd], [], [], READY_TIMEOUT_SECONDS)[0] or os.read(read_fd, 1) != b"R":

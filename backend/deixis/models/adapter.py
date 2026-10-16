@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-import shutil
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -21,6 +20,7 @@ from typing import Any, Protocol
 from deixis.models.codex_isolation import isolation_overrides
 from deixis.models.codex_rpc import CodexAppServer, RpcError
 from deixis.domain.limits import limit_kind, service_error_kind, safe_error
+from deixis.tool_paths import child_path, find_tool
 from deixis.tool_probe import probe
 
 # Variables the Codex app-server needs to run and reach the network. Provider keys and other
@@ -36,6 +36,7 @@ def codex_environment(codex_home: Path, source: Mapping[str, str] | None = None)
     source = os.environ if source is None else source
     env = {k: v for k, v in source.items() if k in CODEX_ENV_ALLOWLIST or k.startswith("LC_")}
     env["CODEX_HOME"] = str(codex_home)
+    env["PATH"] = child_path(find_tool("codex"), env.get("PATH", ""))
     return env
 
 
@@ -119,7 +120,7 @@ class CodexAdapter:
         self.workspace.mkdir(parents=True, exist_ok=True)
         overrides, _ = isolation_overrides(config_path=self.codex_home / "config.toml")
         env = codex_environment(self.codex_home)
-        server = CodexAppServer(["codex", "app-server", *overrides], cwd=str(self.workspace), env=env)
+        server = CodexAppServer([find_tool("codex") or "codex", "app-server", *overrides], cwd=str(self.workspace), env=env)
         await server.start()
         await server.initialize("deixis", "0.1.0")
         self._server = server
@@ -128,11 +129,12 @@ class CodexAdapter:
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         if self._health and not refresh and time.monotonic() - self._health[0] < 60:
             return self._health[1]
-        status: dict[str, Any] = {"connection": "codex", "installed": bool(shutil.which("codex")), "ready": False}
-        if not status["installed"]:
+        codex = find_tool("codex")
+        status: dict[str, Any] = {"connection": "codex", "installed": bool(codex), "ready": False}
+        if not codex:
             status["reason"] = "codex CLI not found"
             return status
-        version = await probe(["codex", "--version"])
+        version = await probe([codex, "--version"], env=codex_environment(self.codex_home))
         if version.error == "not_responding":
             status["reason_code"] = "timeout"
             status["reason"] = "Codex CLI is not responding"

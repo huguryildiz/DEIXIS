@@ -69,7 +69,7 @@ def codex(monkeypatch, tmp_path):
             return {}
 
     monkeypatch.setattr(adapter, "CodexAppServer", FakeServer)
-    monkeypatch.setattr(adapter.shutil, "which", lambda name: "/SYNTHETIC/bin/codex")
+    monkeypatch.setattr(adapter, "find_tool", lambda name: "/SYNTHETIC/bin/codex")
     async def version(argv, timeout=None, env=None):
         return tool_probe.Probe(0, "SYNTHETIC codex version")
 
@@ -83,7 +83,7 @@ def run_step(codex):
 
 def test_missing_cli_is_not_ready_and_fails_before_send(codex, monkeypatch):
     connection, server = codex
-    monkeypatch.setattr(adapter.shutil, "which", lambda name: None)
+    monkeypatch.setattr(adapter, "find_tool", lambda name: None)
     server.start_error = FileNotFoundError("codex CLI not found")
 
     assert asyncio.run(connection.health()) == {

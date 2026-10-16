@@ -88,7 +88,7 @@ def test_truncated_rejected_and_lost_answers_are_not_completed(monkeypatch):
 
 def test_health_tries_again_once_after_a_transport_error(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    monkeypatch.setattr(gemini.shutil, "which", lambda name: None)
+    monkeypatch.setattr(gemini, "find_tool", lambda name: None)
     calls = []
 
     def handler(request):

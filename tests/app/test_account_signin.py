@@ -47,7 +47,7 @@ class Clock:
 
 @pytest.fixture
 def served(tmp_path, monkeypatch):
-    monkeypatch.setattr(account_signin.shutil, "which", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(account_signin, "find_tool", lambda name: f"/usr/local/bin/{name}")
     launched = []
     clock = Clock()
     codex, claude = Health(), Health()
@@ -109,7 +109,7 @@ def test_linux_without_a_terminal_is_409():
 
 
 def test_the_route_returns_409_when_no_linux_terminal_exists(tmp_path, monkeypatch):
-    monkeypatch.setattr(account_signin.shutil, "which", lambda name: "/bin/codex" if name == "codex" else None)
+    monkeypatch.setattr(account_signin, "find_tool", lambda name: "/bin/codex" if name == "codex" else None)
     settings = Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1, search_query="code", fulltext_fetch="off")
     app = create_app(settings, adapters={"fake": FakeAdapter()}, start_worker=False, extra_hosts=("testserver",),
                      trusted_clients=("testclient",), signin_launcher=lambda spec: None, signin_platform="linux")
@@ -200,7 +200,7 @@ def test_an_idle_codex_server_is_closed_before_the_check_but_a_busy_one_is_not(s
 
 def test_a_missing_executable_is_409_with_a_clear_message(served, monkeypatch):
     _, client, launched, _, _, _ = served
-    monkeypatch.setattr(account_signin.shutil, "which", lambda name: None)
+    monkeypatch.setattr(account_signin, "find_tool", lambda name: None)
     response = client.post("/api/accounts/claude/sign-in")
     assert response.status_code == 409 and "Claude Code was not found" in response.json()["detail"]
     assert launched == []
@@ -231,7 +231,7 @@ def test_post_without_csrf_is_rejected_and_opens_nothing(served):
 
 
 def test_overlapping_checks_do_not_pile_up(tmp_path, monkeypatch):
-    monkeypatch.setattr(account_signin.shutil, "which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr(account_signin, "find_tool", lambda name: f"/bin/{name}")
     clock, calls, gate = Clock(), [], None
 
     async def scenario():

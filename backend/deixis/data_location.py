@@ -26,6 +26,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from deixis import config, library_lock
+from deixis.child_env import child_env
 
 POINTER_NAME = "location.json"
 # Entries of the old folder that stay where they are: the pointer itself (it lives in the platform default folder), the
@@ -133,7 +134,7 @@ def _mounts() -> list[tuple[str, str]] | None:
     """(mount point, filesystem type) of every mounted filesystem; None when the table cannot be read."""
     try:
         if sys.platform == "darwin":
-            out = subprocess.run(["/sbin/mount"], capture_output=True, text=True, timeout=10).stdout
+            out = subprocess.run(["/sbin/mount"], capture_output=True, text=True, timeout=10, env=child_env()).stdout
             return [(m.group(1), m.group(2)) for line in out.splitlines() if (m := re.match(r"^.+? on (.+) \(([^,)]+)", line))]
         with open("/proc/self/mounts", encoding="utf-8") as table:
             return [(fields[1].replace("\\040", " "), fields[2]) for line in table if len(fields := line.split()) >= 3]

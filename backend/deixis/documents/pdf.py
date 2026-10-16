@@ -52,6 +52,7 @@ from pathlib import Path
 
 import pymupdf
 
+from deixis.child_env import child_env
 from deixis.documents import child_guard, inline_math
 from deixis.documents.child_guard import _libproc, _resident_bytes  # re-export existing readers
 
@@ -443,7 +444,8 @@ def extract_pdf(path: Path, max_chars: int = MAX_TEXT_CHARS, max_memory: int = M
             with request:
                 json.dump(placements, request)
             argv.append(request.name)
-        completed = _run_watched(argv, {"PYTHONPATH": str(Path(__file__).resolve().parents[2])}, TIMEOUT_SECONDS, max_memory)
+        completed = _run_watched(argv, child_env({"PYTHONPATH": str(Path(__file__).resolve().parents[2])}, bundled=True),
+                                 TIMEOUT_SECONDS, max_memory)
     except subprocess.TimeoutExpired:
         return Extraction("failed", error="extraction timed out")
     except MemoryWatchLost:

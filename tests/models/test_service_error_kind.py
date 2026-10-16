@@ -99,7 +99,7 @@ def test_key_test_does_not_echo_body(code, kind):
 @pytest.mark.parametrize('connection', ['qwen'])
 def test_unreadable_catalogue_is_a_classified_health_failure(monkeypatch, connection):
     monkeypatch.setenv({'deepseek': 'DEEPSEEK_API_KEY', 'gemini': 'GEMINI_API_KEY', 'qwen': 'DASHSCOPE_API_KEY'}[connection], 'SYNTHETIC-private-key')
-    monkeypatch.setattr('deixis.models.gemini.shutil.which', lambda command: None)
+    monkeypatch.setattr('deixis.models.gemini.find_tool', lambda command: None)
     client = httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(200, text='not JSON')))
     adapter = {'deepseek': lambda: DeepSeekAdapter(client), 'gemini': lambda: GeminiAdapter(client),
                'qwen': lambda: OpenAICompatAdapter(QWEN, client)}[connection]()

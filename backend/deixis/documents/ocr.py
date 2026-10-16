@@ -14,7 +14,6 @@ import asyncio
 import json
 import os
 import re
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, replace
@@ -22,7 +21,9 @@ from pathlib import Path
 
 import pymupdf
 
+from deixis.child_env import child_env
 from deixis.documents import pdf
+from deixis.tool_paths import find_tool
 from deixis.tool_probe import Probe, probe
 
 LANGUAGES = ("eng", "tur")
@@ -41,16 +42,17 @@ class OcrPage:
     printed_label: str | None = None
 
 
-async def _ask_tesseract() -> list[Probe]:
-    return await asyncio.gather(probe(["tesseract", "--version"]), probe(["tesseract", "--list-langs"]))
+async def _ask_tesseract(tesseract: str) -> list[Probe]:
+    env = child_env(keep=("TESSDATA_PREFIX",), tool=tesseract)
+    return await asyncio.gather(probe([tesseract, "--version"], env=env), probe([tesseract, "--list-langs"], env=env))
 
 
 def tesseract_status(langs=LANGUAGES) -> dict:
     """Whether Tesseract is installed, its version, and which of `langs` have data. Call it off the event loop."""
     missing = {"available": False, "version": None, "languages": [], "missing_languages": list(langs)}
-    if shutil.which("tesseract") is None:
+    if (tesseract := find_tool("tesseract")) is None:
         return missing | {"reason": "Tesseract is not installed. Install it in Settings → On this computer → OCR."}
-    version, listed = asyncio.run(_ask_tesseract())
+    version, listed = asyncio.run(_ask_tesseract(tesseract))
     if failed := next((p for p in (version, listed) if p.error), None):
         problem = "it did not answer in time" if failed.error == "not_responding" else failed.stderr
         return missing | {"reason": f"Tesseract could not be run: {problem}"}
@@ -71,8 +73,8 @@ def read_page(path: Path, page: int, langs, timeout: float = TIMEOUT_SECONDS, ma
             capture_output=True,
             timeout=timeout,
             # PyMuPDF finds the Tesseract data through TESSDATA_PREFIX or by running `tesseract`, so the child needs both.
-            env={"PYTHONPATH": str(Path(__file__).resolve().parents[2])}
-            | {name: os.environ[name] for name in ("PATH", "TESSDATA_PREFIX") if name in os.environ},
+            env=child_env({"PYTHONPATH": str(Path(__file__).resolve().parents[2])}, keep=("TESSDATA_PREFIX",), bundled=True,
+                          tool=find_tool("tesseract")),
         )
     except subprocess.TimeoutExpired:
         return OcrPage(page, "failed", error="OCR timed out")

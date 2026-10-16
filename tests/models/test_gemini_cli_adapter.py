@@ -67,7 +67,7 @@ def creds(tmp_path):
 
 @pytest.fixture(autouse=True)
 def cli_on_path(monkeypatch):
-    monkeypatch.setattr(gemini_cli.shutil, "which", lambda name: "/usr/local/bin/gemini" if name == "gemini" else None)
+    monkeypatch.setattr(gemini_cli, "find_tool", lambda name: "/usr/local/bin/gemini" if name == "gemini" else None)
 
 
 @pytest.fixture(autouse=True)
@@ -222,7 +222,7 @@ def test_health_auth_error_with_a_sign_in_file(tmp_path, creds):
 
 
 def test_health_without_cli(tmp_path, creds, monkeypatch):
-    monkeypatch.setattr(gemini_cli.shutil, "which", lambda name: None)
+    monkeypatch.setattr(gemini_cli, "find_tool", lambda name: None)
     status = asyncio.run(adapter(tmp_path, creds, FakeCli()).health(refresh=True))
     assert (status["installed"], status["ready"]) == (False, False)
 

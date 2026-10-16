@@ -47,7 +47,7 @@ def test_tesseract_status_reports_the_tool_and_the_languages_it_lacks(monkeypatc
         assert status["available"] and status["version"]
         assert set(status["languages"]) | set(status["missing_languages"]) == {"eng", "tur"}
         assert not set(status["languages"]) & set(status["missing_languages"])
-    monkeypatch.setattr(ocr.shutil, "which", lambda name: None)
+    monkeypatch.setattr(ocr, "find_tool", lambda name: None)
     missing = ocr.tesseract_status(("eng", "tur"))
     assert (missing["available"], missing["languages"]) == (False, [])
     assert "Settings → On this computer → OCR" in missing["reason"]

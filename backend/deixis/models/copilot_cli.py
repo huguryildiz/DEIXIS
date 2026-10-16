@@ -15,7 +15,6 @@ import json
 import os
 import platform
 import re
-import shutil
 import signal
 import sys
 import time
@@ -23,9 +22,11 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from deixis.child_env import NODE_TLS
 from deixis.models.adapter import CODEX_ENV_ALLOWLIST, ModelStepResult
 from deixis.models.cli_process import reap, spawn_options, stop_group_async, track
 from deixis.domain.limits import safe_error, service_error_kind
+from deixis.tool_paths import child_path, find_tool
 from deixis.tool_probe import probe
 
 # A tool name Copilot does not have: with it as the only available tool, the model is offered none.
@@ -65,7 +66,8 @@ def copilot_environment(home: Path, source: Mapping[str, str] | None = None) -> 
     of another connection (D22)."""
     source = os.environ if source is None else source
     env = {k: v for k, v in source.items() if k in CODEX_ENV_ALLOWLIST or k.startswith("LC_")}
-    env.update(COPILOT_HOME=str(home), COPILOT_AUTO_UPDATE="false", NO_COLOR="1")
+    env.update(COPILOT_HOME=str(home), COPILOT_AUTO_UPDATE="false", NO_COLOR="1",
+               PATH=child_path(find_tool("copilot"), env.get("PATH", "")), **NODE_TLS)
     return env
 
 
@@ -84,7 +86,7 @@ class CopilotCliAdapter:
     def _command(self) -> list[str] | None:
         if self._cli is not None:
             return list(self._cli)
-        found = shutil.which("copilot")
+        found = find_tool("copilot")
         binary = native_binary(Path(found)) if found else None
         return [binary] if binary else None
 

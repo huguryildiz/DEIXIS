@@ -10,18 +10,17 @@ newer release reaches the user with a DEIXIS update, not in place.
 from __future__ import annotations
 
 import asyncio
-import os
 import re
-import shutil
 import subprocess
-from pathlib import Path
 from typing import Any
 from importlib.metadata import version as package_version
 
 import httpx
 
+from deixis.child_env import UV_TLS, child_env
 from deixis.documents import math_reader, ocr
 from deixis.storage.db import now
+from deixis.tool_paths import find_tool
 from deixis.tool_probe import probe_blocking
 
 TOOLS = ("tesseract", "marker", "pymupdf")
@@ -30,9 +29,10 @@ PYPI_URL = "https://pypi.org/pypi/{name}/json"
 TIMEOUT_SECONDS = 10
 # `brew install` also upgrades an outdated formula, so one command installs and updates; tesseract-lang adds Turkish.
 INSTALL_ARGS = ("install", "tesseract", "tesseract-lang")
-BREW_PLACES = ("/opt/homebrew/bin/brew", "/usr/local/bin/brew")  # a Finder-started app may not have them on PATH
 INSTALL_TIMEOUT_SECONDS = 20 * 60
 OUTPUT_TAIL_CHARS = 4000
+OUTPUT_TAIL_BYTES = 4 * OUTPUT_TAIL_CHARS
+READ_CHUNK_BYTES = 64 * 1024
 
 
 def _parts(text: str) -> tuple[int, ...]:
@@ -56,7 +56,8 @@ def marker_installed_version(paths: math_reader.RuntimePaths) -> str | None:
     """The marker-pdf version in DEIXIS's Marker environment, or None when it is not installed or cannot be asked."""
     if not paths.installed():
         return None
-    done = probe_blocking([str(paths.python), "-c", "from importlib.metadata import version; print(version('marker-pdf'))"])
+    done = probe_blocking([str(paths.python), "-c", "from importlib.metadata import version; print(version('marker-pdf'))"],
+                          env=child_env())
     return done.stdout.strip() or None if done.ok else None
 
 
@@ -90,7 +91,7 @@ async def check(tool: str, http: httpx.AsyncClient, marker_paths: math_reader.Ru
 
 
 def brew() -> str | None:
-    return shutil.which("brew") or next((p for p in BREW_PLACES if Path(p).is_file()), None)
+    return find_tool("brew")  # a Finder-started app may not have Homebrew on PATH; find_tool also looks where it installs
 
 
 def _phase(line: str) -> str | None:
@@ -121,14 +122,17 @@ class TesseractInstaller:
 
     async def _run(self, job: dict[str, Any], argv: list[str]) -> None:
         output = bytearray()
-        env = {**os.environ, "HOMEBREW_NO_AUTO_UPDATE": "1", "NONINTERACTIVE": "1", "CI": "1"}
+        # No keys reach Homebrew or the scripts it runs (E4).
+        env = child_env({"HOMEBREW_NO_AUTO_UPDATE": "1", "NONINTERACTIVE": "1", "CI": "1", **UV_TLS}, network=True, tool=argv[0])
 
         async def read(proc: asyncio.subprocess.Process) -> int:
             assert proc.stdout is not None
-            async for line in proc.stdout:
-                output.extend(line)
+            # In chunks, keeping only the tail (E18); the phase is the last step line in that tail.
+            while chunk := await proc.stdout.read(READ_CHUNK_BYTES):
+                output.extend(chunk)
+                del output[:-OUTPUT_TAIL_BYTES]
                 job["output"] = output[-OUTPUT_TAIL_CHARS:].decode("utf-8", "replace")
-                job["phase"] = _phase(line.decode("utf-8", "replace")) or job["phase"]
+                job["phase"] = next((p for line in reversed(job["output"].splitlines()) if (p := _phase(line))), job["phase"])
             return await proc.wait()
 
         try:
@@ -140,7 +144,19 @@ class TesseractInstaller:
         try:
             code = await asyncio.wait_for(read(proc), INSTALL_TIMEOUT_SECONDS)
         except asyncio.TimeoutError:
-            proc.kill()
             job.update(status="failed", finished_at=now(), output=job["output"] + "\nStopped after 20 minutes.")
             return
+        except asyncio.CancelledError:  # DEIXIS is closing: the job does not stay "running" (E18)
+            if job["status"] == "running":  # a job that was cancelled has already said so
+                job.update(status="failed", finished_at=now(), output=job["output"] + "\nStopped.")
+            raise
+        except Exception as exc:  # noqa: BLE001 - a failed read ends the job instead of leaving it running (E18)
+            job.update(status="failed", finished_at=now(), output=job["output"] + f"\n{type(exc).__name__}: {exc}")
+            return
+        finally:
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
         job.update(status="succeeded" if code == 0 else "failed", finished_at=now())

@@ -31,10 +31,8 @@ from __future__ import annotations
 import asyncio
 import html
 import json
-import os
 import re
 import shutil
-import subprocess
 import sys
 import unicodedata
 from collections import Counter
@@ -44,6 +42,8 @@ from pathlib import Path
 import pymupdf
 
 from deixis import library_lock
+from deixis.child_env import UV_TLS, child_env
+from deixis.tool_paths import find_tool
 
 MARKER_PACKAGE = "marker-pdf==1.10.2"
 PYTHON_VERSION = "3.12"
@@ -175,12 +175,13 @@ def runtime_paths(data_dir: Path) -> RuntimePaths:
 
 def install_runtime(paths: RuntimePaths) -> None:
     """Create the Marker environment with uv; models download on the first read. Raises on failure."""
-    uv = shutil.which("uv")
+    uv = find_tool("uv")
     if uv is None:
         raise MathReaderUnavailable("uv is not installed; see https://docs.astral.sh/uv/")
     paths.root.mkdir(parents=True, exist_ok=True)
-    library_lock.run([uv, "venv", "--python", PYTHON_VERSION, str(paths.env)])
-    library_lock.run([uv, "pip", "install", "--python", str(paths.python), MARKER_PACKAGE])
+    env = child_env(UV_TLS, network=True, tool=uv)
+    library_lock.run([uv, "venv", "--python", PYTHON_VERSION, str(paths.env)], env=env)
+    library_lock.run([uv, "pip", "install", "--python", str(paths.python), MARKER_PACKAGE], env=env)
 
 
 def remove_runtime(paths: RuntimePaths) -> None:
@@ -292,7 +293,8 @@ class MathReader:
     async def _start(self) -> None:
         if not self.available():
             raise MathReaderUnavailable("the equation reader (Marker) is not installed")
-        env = {**os.environ, "MODEL_CACHE_DIR": str(self.paths.models), "PYTHONUNBUFFERED": "1"}
+        # The first start downloads the models, so the network settings go along; no keys do (E4).
+        env = child_env({"MODEL_CACHE_DIR": str(self.paths.models), "PYTHONUNBUFFERED": "1"}, keep=("TORCH_DEVICE",), network=True)
         if sys.platform == "darwin":
             env.setdefault("TORCH_DEVICE", "mps")
         child = library_lock.guard([str(self.paths.python), str(RUNNER)])  # keeps the data folder busy while it runs (E1)

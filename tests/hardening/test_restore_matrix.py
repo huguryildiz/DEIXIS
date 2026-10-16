@@ -3,7 +3,7 @@ a restore cut half way; the schema guard for a library written by a newer DEIXIS
 model connection. SYNTHETIC records, a test-only FakeAdapter, no network and no real model.
 
 In-process. The real-process counterparts (F03 restore part, F10, a real launcher on a newer library, a restore killed
-half way) are in `tests/process/test_p9_restore_process.py`.
+half way) are in `tests/process/test_restore_process.py`.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from deixis.config import Settings
 from deixis.storage import backup as backup_module
 from deixis.storage import db
 from deixis.storage.backup import BackupError, MANIFEST, create_backup, restore_backup
-from p9_restore_compare import compare_states, library_state, sha256_file, tree_snapshot
+from restore_compare import compare_states, library_state, sha256_file, tree_snapshot
 
 REPO = Path(__file__).resolve().parents[2]
 

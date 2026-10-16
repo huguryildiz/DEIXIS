@@ -1,6 +1,6 @@
 """P9 H2: SIGKILL while a model step runs (F01) and a second process taking over the data directory (I06).
 
-Real processes, the production launcher (`p9_driver.py`), SYNTHETIC records, a scripted model. They show what the code does
+Real processes, the production launcher (`serve_driver.py`), SYNTHETIC records, a scripted model. They show what the code does
 after a kill on one shape each, in single runs; they say nothing about a real model, a real provider or power loss.
 
 The resume sends the cut step again. That is expected behavior, not a defect: the first send is recorded as an
@@ -12,7 +12,7 @@ from __future__ import annotations
 import time
 
 import pytest
-from p9_harness import (QUESTION, count, create_research, discovery_to_answer_ready, harness,  # noqa: F401
+from process_harness import (QUESTION, count, create_research, discovery_to_answer_ready, harness,  # noqa: F401
                         integrity_check, kind_count, rows, run_row, start_run, task_counts, wait_for, wait_run)
 
 pytestmark = pytest.mark.process

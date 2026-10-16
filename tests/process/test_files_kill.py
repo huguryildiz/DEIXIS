@@ -12,7 +12,7 @@ import hashlib
 import threading
 
 import pytest
-from p9_harness import (ASSET_COLUMNS, PASSAGE_COLUMNS, count, create_research, digest, discovery_to_answer_ready,  # noqa: F401
+from process_harness import (ASSET_COLUMNS, PASSAGE_COLUMNS, count, create_research, digest, discovery_to_answer_ready,  # noqa: F401
                         foreign_key_check, harness, integrity_check, papers_files, rows, sha256_file, start_run, upload,
                         wait_for, wait_run)
 from helpers import make_pdf

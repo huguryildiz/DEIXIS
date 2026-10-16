@@ -18,7 +18,7 @@ import pytest
 from deixis import config
 from deixis.storage import db
 from deixis.workflow.store import Store
-from test_p9_restore_matrix import add_versions, make_source_library, migrated_library, newer_code_migrations
+from test_restore_matrix import add_versions, make_source_library, migrated_library, newer_code_migrations
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "release_checks"))
 import upgrade_check as uc  # noqa: E402

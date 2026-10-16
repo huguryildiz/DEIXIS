@@ -19,10 +19,10 @@ import sys
 import time
 
 import pytest
-from p9_harness import HERE, child_env, descendants, harness, ident_of, is_same_and_live, wait_for, wait_gone  # noqa: F401
+from process_harness import HERE, child_env, descendants, harness, ident_of, is_same_and_live, wait_for, wait_gone  # noqa: F401
 
 pytestmark = pytest.mark.process
-PARENT = HERE / "p9_child_parent.py"
+PARENT = HERE / "child_parent.py"
 
 
 def run_parent(harness, tmp_path, args, env):

@@ -8,8 +8,8 @@ from urllib.parse import unquote, urlsplit
 
 import pytest
 
-from test_p9_restore_matrix import make_source_library
-from test_p9_upgrade_check import dirs, uc
+from test_restore_matrix import make_source_library
+from test_upgrade_check import dirs, uc
 
 
 @pytest.fixture(autouse=True)
@@ -155,7 +155,7 @@ def test_marker_links_are_refused_before_the_marker_is_read(dirs, monkeypatch, c
 
     monkeypatch.setattr(Path, "read_text", read_text)
     try:
-        with pytest.raises(uc.Refused, match="link at .p9-upgrade-copy"):
+        with pytest.raises(uc.Refused, match="link at .upgrade-check-copy"):
             uc.restore_copy(str(work))
         assert uc.main(["restore-copy", str(work)]) == 2
     finally:

@@ -71,22 +71,22 @@ ROWS: list[dict[str, Any]] = [
     {"id": "I03", "claim": "busy port: one clear message, exit 2, no second writer", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "empty library", "rule": ("install", "I03")},
     {"id": "I04", "claim": "no apps/web/dist: the API starts and warns", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "empty library", "rule": ("install", "I04")},
     {"id": "I05", "claim": "unwritable data directory: start fails, exit not 0, nothing left behind", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "empty library", "rule": ("install", "I05")},
-    {"id": "I06", "claim": "two processes on one data directory: second is not_owner, takes over when the owner is killed", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "synthetic records, scripted model", "rule": ("junit", [(PROC + "test_p9_crash", "test_i06*")])},
+    {"id": "I06", "claim": "two processes on one data directory: second is not_owner, takes over when the owner is killed", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "synthetic records, scripted model", "rule": ("junit", [(PROC + "test_crash", "test_i06*")])},
     {"id": "I07", "claim": "isolated environment: model connections show not ready with a reason", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "empty library", "rule": ("install", "I07")},
     {"id": "I08", "claim": "a clean macOS user account follows the README", "cls": "isteğe bağlı", "kind": "E", "execution": "by hand", "data": "real machine", "rule": ("static", "E row, not run by the script; not done in H1, so no second-user claim")},
     {"id": "install-keyring", "claim": "the install check's keychain isolation held (the real keychain was never read)", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "no data", "rule": ("install", "keyring")},
     {"id": "install-cleanup", "claim": "the install check left no process, port or work folder behind", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "no data", "rule": ("install", "cleanup")},
-    {"id": "F01", "claim": "SIGKILL during a model step: outcome_unknown, run paused, one resend, one published answer", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "synthetic records, scripted model", "rule": ("junit", [(PROC + "test_p9_crash", "test_f01*")])},
-    {"id": "F02", "claim": "SIGKILL during a PDF download or passage write: no half record", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "synthetic records, scripted model", "rule": ("junit", [(PROC + "test_p9_files", "test_f02*")])},
-    {"id": "F03", "claim": "SIGKILL while a backup is taken: before the manifest it is refused, after it restores equal", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "synthetic records", "rule": ("junit", [(PROC + "test_p9_backup_kill", "test_f03*"), (PROC + "test_p9_restore_process", "test_f03*")])},
-    {"id": "F04", "claim": "SIGTERM and Ctrl-C end the server within the bound, with a held model call or extraction", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "synthetic records, scripted model", "rule": ("junit", [(PROC + "test_p9_shutdown", "test_f04*")])},
+    {"id": "F01", "claim": "SIGKILL during a model step: outcome_unknown, run paused, one resend, one published answer", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "synthetic records, scripted model", "rule": ("junit", [(PROC + "test_crash", "test_f01*")])},
+    {"id": "F02", "claim": "SIGKILL during a PDF download or passage write: no half record", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "synthetic records, scripted model", "rule": ("junit", [(PROC + "test_files_kill", "test_f02*")])},
+    {"id": "F03", "claim": "SIGKILL while a backup is taken: before the manifest it is refused, after it restores equal", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "synthetic records", "rule": ("junit", [(PROC + "test_backup_kill", "test_f03*"), (PROC + "test_restore_process", "test_f03*")])},
+    {"id": "F04", "claim": "SIGTERM and Ctrl-C end the server within the bound, with a held model call or extraction", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "synthetic records, scripted model", "rule": ("junit", [(PROC + "test_shutdown", "test_f04*")])},
     {"id": "F04-orphan", "claim": "orphan extraction: SIGALRM lifetime and SIGKILL resident guard, negative controls and guard cleanup", "cls": "zorunlu", "kind": "G", "execution": "real processes, kqueue exit status", "data": "synthetic GIL-holding PDF", "rule": ("junit", [
-        (PROC + "test_p9_children", "test_extraction_child_is_ended_by_its_own_lifetime"),
-        (PROC + "test_p9_children", "test_extraction_child_lifetime_disabled_control"),
-        (PROC + "test_p9_children", "test_lifetime_observer_rejects_normal_completion"),
-        (PROC + "test_p9_children", "test_orphan_memory_guard_stops_gil_holding_pdf_by_sigkill"),
-        (PROC + "test_p9_children", "test_orphan_memory_guard_disabled_control"),
-        (PROC + "test_p9_children", "test_orphan_guard_parent_alive_preserves_pdf_memory_failure"),
+        (PROC + "test_children", "test_extraction_child_is_ended_by_its_own_lifetime"),
+        (PROC + "test_children", "test_extraction_child_lifetime_disabled_control"),
+        (PROC + "test_children", "test_lifetime_observer_rejects_normal_completion"),
+        (PROC + "test_children", "test_orphan_memory_guard_stops_gil_holding_pdf_by_sigkill"),
+        (PROC + "test_children", "test_orphan_memory_guard_disabled_control"),
+        (PROC + "test_children", "test_orphan_guard_parent_alive_preserves_pdf_memory_failure"),
         ("tests.hardening.test_child_guard", "test_guard_decisions[parent0-200-wait]"),
         ("tests.hardening.test_child_guard", "test_guard_decisions[None-200-kill]"),
         ("tests.hardening.test_child_guard", "test_guard_decisions[None-50-wait]"),
@@ -110,17 +110,17 @@ ROWS: list[dict[str, Any]] = [
         ("tests.hardening.test_child_guard", "test_guard_failure_is_a_clear_error_in_every_parent_api[ocr]"),
         ("tests.hardening.test_child_guard", "test_guard_failure_is_a_clear_error_in_every_parent_api[jats]"),
         ("tests.hardening.test_child_guard", "test_arxiv_guard_exit_maps_to_watch_loss")])},
-    {"id": "F05", "claim": "full disk: a clear refusal, the database is not damaged", "cls": "isteğe bağlı", "kind": "G", "execution": "real process on a 16 MiB disk image", "data": "synthetic records", "rule": ("junit", [(PROC + "test_disk_full", "test_*"), ("tests.hardening.test_p9_faults_documents", "test_o12*")])},
-    {"id": "F06", "claim": "damaged or truncated library and unknown migration: start refused, data unchanged", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "synthetic records", "rule": ("junit", [(PROC + "test_library_open_faults", "test_*"), ("tests.hardening.test_p9_faults_documents", "test_o8_*"), (PROC + "test_p9_restore_process", "test_b03*")])},
-    {"id": "F07", "claim": "provider timeout, 5xx, malformed or empty body, 429, slow answer, zero results: stored status and visible reason", "cls": "zorunlu", "kind": "S", "execution": "automatic test", "data": "mocked providers", "rule": ("junit", [("tests.hardening.test_p9_faults_providers", "test_p[1245]_*"), ("tests.providers.test_providers", "test_zero_results_is_distinct_from_failure"), ("tests.providers.test_providers", "test_short_rate_limit_is_retried_and_counted"), ("tests.providers.test_providers", "test_long_rate_limit_is_not_retried"), ("tests.candidates.test_candidate_flow", "test_d18_failures_continue_and_unknown_delivery_cannot_become_open")])},
-    {"id": "F08", "claim": "encrypted, zero-page, huge, corrupt PDF and over-limit upload: a code and a visible reason", "cls": "zorunlu", "kind": "S", "execution": "automatic test", "data": "synthetic PDFs", "rule": ("junit", [("tests.hardening.test_p9_faults_documents", "test_d*")])},
+    {"id": "F05", "claim": "full disk: a clear refusal, the database is not damaged", "cls": "isteğe bağlı", "kind": "G", "execution": "real process on a 16 MiB disk image", "data": "synthetic records", "rule": ("junit", [(PROC + "test_disk_full", "test_*"), ("tests.hardening.test_faults_documents", "test_o12*")])},
+    {"id": "F06", "claim": "damaged or truncated library and unknown migration: start refused, data unchanged", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "synthetic records", "rule": ("junit", [(PROC + "test_library_open_faults", "test_*"), ("tests.hardening.test_faults_documents", "test_o8_*"), (PROC + "test_restore_process", "test_b03*")])},
+    {"id": "F07", "claim": "provider timeout, 5xx, malformed or empty body, 429, slow answer, zero results: stored status and visible reason", "cls": "zorunlu", "kind": "S", "execution": "automatic test", "data": "mocked providers", "rule": ("junit", [("tests.hardening.test_faults_providers", "test_p[1245]_*"), ("tests.providers.test_providers", "test_zero_results_is_distinct_from_failure"), ("tests.providers.test_providers", "test_short_rate_limit_is_retried_and_counted"), ("tests.providers.test_providers", "test_long_rate_limit_is_not_retried"), ("tests.candidates.test_candidate_flow", "test_d18_failures_continue_and_unknown_delivery_cannot_become_open")])},
+    {"id": "F08", "claim": "encrypted, zero-page, huge, corrupt PDF and over-limit upload: a code and a visible reason", "cls": "zorunlu", "kind": "S", "execution": "automatic test", "data": "synthetic PDFs", "rule": ("junit", [("tests.hardening.test_faults_documents", "test_d*")])},
     {"id": "F09", "claim": "the production 1 GiB watcher stops an extraction that passes the limit", "cls": "zorunlu", "kind": "G", "execution": "real child process at the production limit", "data": "scaled synthetic input", "rule": ("junit", [("tests.documents.test_documents", "test_extraction_is_stopped_at_the_production_memory_limit"), ("tests.documents.test_arxiv_source_archive", "test_the_source_child_is_stopped_at_the_production_memory_limit")], ("f09",))},
-    {"id": "F10", "claim": "a backup taken while a run is held and a writer writes restores equal", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "synthetic records, scripted model", "rule": ("junit", [(PROC + "test_p9_restore_process", "test_f10*")])},
-    {"id": "B01", "claim": "backup into an empty folder restores every table, file and view equal", "cls": "zorunlu", "kind": "S+G", "execution": "automatic test, real process", "data": "synthetic records", "rule": ("junit", [("tests.hardening.test_p9_restore_matrix", "test_b01_*"), ("tests.hardening.test_p9_restore_matrix", "test_a_restored_library_shows_the_model_connection*")])},
-    {"id": "B01n", "claim": "negative restores (full target, wrong file, no manifest, ...) change nothing", "cls": "zorunlu", "kind": "S", "execution": "automatic test", "data": "synthetic records", "rule": ("junit", [("tests.hardening.test_p9_restore_matrix", "test_b01n_*")])},
+    {"id": "F10", "claim": "a backup taken while a run is held and a writer writes restores equal", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "synthetic records, scripted model", "rule": ("junit", [(PROC + "test_restore_process", "test_f10*")])},
+    {"id": "B01", "claim": "backup into an empty folder restores every table, file and view equal", "cls": "zorunlu", "kind": "S+G", "execution": "automatic test, real process", "data": "synthetic records", "rule": ("junit", [("tests.hardening.test_restore_matrix", "test_b01_*"), ("tests.hardening.test_restore_matrix", "test_a_restored_library_shows_the_model_connection*")])},
+    {"id": "B01n", "claim": "negative restores (full target, wrong file, no manifest, ...) change nothing", "cls": "zorunlu", "kind": "S", "execution": "automatic test", "data": "synthetic records", "rule": ("junit", [("tests.hardening.test_restore_matrix", "test_b01n_*")])},
     {"id": "B02", "claim": "today's code opens a restored copy of the owner's own library", "cls": "isteğe bağlı", "kind": "G", "execution": "real process on a copy", "data": "real library", "rule": ("static", "needs the owner's library and consent; not opened by this script (tooling tests run in the pytest stage)")},
-    {"id": "B03", "claim": "a library with an unknown migration id is refused before any write", "cls": "zorunlu", "kind": "G", "execution": "automatic test, real process", "data": "synthetic records", "rule": ("junit", [("tests.hardening.test_p9_restore_matrix", "test_b03_*"), (PROC + "test_p9_restore_process", "test_b03*")])},
-    {"id": "D01-D06", "claim": "the six daily-use defects of H7 stay closed", "cls": "isteğe bağlı", "kind": "S", "execution": "automatic test", "data": "synthetic records", "rule": ("junit", [("tests.hardening.test_p9_h7_run_line", "test_*"), ("tests.hardening.test_p9_h7_savepoint", "test_*"), ("tests.hardening.test_p9_h7_test_names", "test_*"), ("tests.hardening.test_p9_h7_torn_upload", "test_*"), ("tests.hardening.test_p9_h7_zotero_disk", "test_*")])},
+    {"id": "B03", "claim": "a library with an unknown migration id is refused before any write", "cls": "zorunlu", "kind": "G", "execution": "automatic test, real process", "data": "synthetic records", "rule": ("junit", [("tests.hardening.test_restore_matrix", "test_b03_*"), (PROC + "test_restore_process", "test_b03*")])},
+    {"id": "D01-D06", "claim": "the six daily-use defects of H7 stay closed", "cls": "isteğe bağlı", "kind": "S", "execution": "automatic test", "data": "synthetic records", "rule": ("junit", [("tests.hardening.test_run_line_model_stop", "test_*"), ("tests.hardening.test_savepoint_full_disk", "test_*"), ("tests.hardening.test_unique_test_names", "test_*"), ("tests.hardening.test_torn_upload", "test_*"), ("tests.hardening.test_zotero_full_disk", "test_*")])},
     {"id": "T14", "claim": "review results stay separate, inputs are immutable, stale reasons are shown, and only the user's checked apply save changes main text; candidates included", "cls": "zorunlu", "kind": "S", "execution": "automatic test, automatic browser test", "data": "synthetic records, scripted model", "rule": ("all",
         ("junit", [
             ("tests.review.test_review_snapshot", "test_*"),
@@ -532,7 +532,7 @@ class Run:
         self.args, self.out, self.stamp = args, out, stamp
         self.stages: dict[str, dict[str, Any]] = {}
         self.shims = out / "bin"
-        self.cap_out = REPO / ".local" / "p9-h5" / ("matrix-" + stamp)
+        self.cap_out = REPO / ".local" / "release-checks" / "capacity" / ("matrix-" + stamp)
         self.cap_root = Path("/tmp/h5-matrix-" + stamp)
         self.python = str(REPO / ".venv" / "bin" / "python")
         self.proc: Optional[subprocess.Popen] = None
@@ -751,7 +751,7 @@ def print_table(rows: list[dict[str, Any]]) -> None:
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="P9 acceptance matrix, one command")
-    p.add_argument("--out-dir", help="must not exist; default .local/p9-matrix/<stamp>")
+    p.add_argument("--out-dir", help="must not exist; default .local/release-checks/matrix/<stamp>")
     p.add_argument("--only", help="comma-separated stage names; the others give ölçülmedi")
     p.add_argument("--skip", help="comma-separated stage names to skip (their rows give ölçülmedi)")
     p.add_argument("--overlay-uncommitted", action="store_true", help="install stage: copy modified files over the exported commit")
@@ -866,7 +866,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.self_test:
         return self_test()
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    out = Path(args.out_dir).expanduser().resolve() if args.out_dir else REPO / ".local" / "p9-matrix" / stamp
+    out = Path(args.out_dir).expanduser().resolve() if args.out_dir else REPO / ".local" / "release-checks" / "matrix" / stamp
     tools = {name: shutil.which(name) for name in ("uv", "node", "npm")}
     busy = [p for p, _ in listeners(OWN_PORTS[0], OWN_PORTS[-1])] + [p for p, _ in listeners(PLAYWRIGHT_PORTS[0], PLAYWRIGHT_PORTS[-1])]
     busy += bind_busy(OWN_PORTS) + bind_busy(PLAYWRIGHT_PORTS)

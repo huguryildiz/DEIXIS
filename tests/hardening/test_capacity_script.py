@@ -250,7 +250,7 @@ def test_only_ports_8900_to_8920_are_allowed():
 
 
 def test_raw_output_must_stay_under_the_p9_h5_folder_and_a_repository_env_is_refused(tmp_path):
-    assert capacity.guard_out(REPO / ".local" / "p9-h5" / "x") == Path(os.path.realpath(REPO / ".local" / "p9-h5" / "x"))
+    assert capacity.guard_out(REPO / ".local" / "release-checks" / "capacity" / "x") == Path(os.path.realpath(REPO / ".local" / "release-checks" / "capacity" / "x"))
     for outside in (REPO / ".local" / "other", REPO / "docs", tmp_path):
         with pytest.raises(capacity.GuardError):
             capacity.guard_out(outside)

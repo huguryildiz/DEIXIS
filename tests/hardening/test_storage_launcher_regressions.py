@@ -7,7 +7,7 @@ import pytest
 from deixis import __main__ as launcher
 from deixis.config import Settings
 from deixis.storage import backup, db
-from test_p9_restore_matrix import (
+from test_restore_matrix import (
     fake_uvicorn, file_facts, folder_names, hand_backup,
     entry, library_with_id_only_in_the_wal, settings_for, write_manifest,
 )

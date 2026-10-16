@@ -4,8 +4,8 @@
 SYNTHETIC records, a scripted model, single runs on one machine; the kills are SIGKILL on one PID, not power loss.
 The B03 tests start the production launcher (`python -m deixis serve`), not the fixture driver, so they write no call log
 and the `no_network` check does not apply to them; what they show is that the process exits before it binds a port. The
-view-JSON part of B01 (research views, citation anchors) is the in-process test's (`tests/hardening/test_p9_restore_matrix.py`); the
-tests here compare every table and every file with `p9_restore_compare`.
+view-JSON part of B01 (research views, citation anchors) is the in-process test's (`tests/hardening/test_restore_matrix.py`); the
+tests here compare every table and every file with `restore_compare`.
 """
 
 from __future__ import annotations
@@ -24,14 +24,14 @@ from pathlib import Path
 
 import httpx
 import pytest
-from p9_harness import (RESTORE_DRIVER, child_env, count, create_research, discovery_to_answer_ready,  # noqa: F401
+from process_harness import (RESTORE_DRIVER, child_env, count, create_research, discovery_to_answer_ready,  # noqa: F401
                         foreign_key_check, free_port, harness, integrity_check, port_is_free, run_row, start_run, upload,
                         wait_for, wait_run)
 from deixis.__main__ import FORCED_EXIT_CODE
-from p9_restore_compare import compare_states, library_state, sha256_file, tree_snapshot
+from restore_compare import compare_states, library_state, sha256_file, tree_snapshot
 from helpers import make_pdf
-from test_p9_restore_matrix import CHILD, hand_backup, manifest_of
-from test_p9_backup_kill import backup_folders, start_backup
+from test_restore_matrix import CHILD, hand_backup, manifest_of
+from test_backup_kill import backup_folders, start_backup
 
 pytestmark = pytest.mark.process
 REPO = Path(__file__).resolve().parents[2]

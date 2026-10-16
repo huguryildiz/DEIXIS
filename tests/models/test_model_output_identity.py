@@ -21,7 +21,7 @@ from test_report_path_fix import Capture, REPLAY, patch, rebind, run_step, sessi
 from test_report_step_input import report_flow
 
 
-H9D = json.loads((Path(__file__).parent.parent / "fixtures/research/p9-rf6-h9d-replay.json").read_text())
+H9D = json.loads((Path(__file__).parent.parent / "fixtures/research/model-output-identity-replay.json").read_text())
 FOREIGN_ID = "sti_FOREIGNREQUEST01"
 
 

@@ -45,7 +45,7 @@ from deixis.config import Settings  # noqa: E402
 from deixis.storage import db  # noqa: E402
 from deixis.storage.backup import BackupError, _referenced_files, create_backup, restore_backup  # noqa: E402
 
-MARKER = ".p9-upgrade-copy"
+MARKER = ".upgrade-check-copy"
 COPY = "live-copy"
 BACKUP = "backup"
 RESTORED = "restored"
@@ -518,7 +518,7 @@ def _run_self_test_case(root: Path, with_wal: bool) -> None:
         holder = sqlite3.connect(live / "library.sqlite")
         holder.execute("PRAGMA journal_mode = WAL")
         holder.execute("PRAGMA wal_autocheckpoint = 0")
-        holder.execute("INSERT INTO app_settings (key, value_json, updated_at) VALUES ('p9_selftest', '1', 'now')")
+        holder.execute("INSERT INTO app_settings (key, value_json, updated_at) VALUES ('upgrade_check_selftest', '1', 'now')")
         holder.commit()
         assert non_empty(live / "library.sqlite-wal") and (live / "library.sqlite-shm").exists()
     before, names_before = _tree(live), sorted(p.relative_to(live).as_posix() for p in live.rglob("*"))
@@ -549,7 +549,7 @@ def self_test() -> int:
     """Two cases on SYNTHETIC folders in a temp directory: a live folder with a held-open WAL connection, and a clean one.
     The default data directory is replaced by another temp path for the whole run, and the consent flag is never passed."""
     original = config.default_data_dir
-    with tempfile.TemporaryDirectory(prefix="p9-upgrade-self-test-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="upgrade-check-self-test-") as tmp:
         root = Path(tmp)
         config.default_data_dir = lambda: root / "pretend-default-data-dir"
         saved = os.environ.pop("DEIXIS_DATA_DIR", None)

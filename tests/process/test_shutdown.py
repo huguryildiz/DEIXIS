@@ -19,7 +19,7 @@ import time
 import httpx
 import pytest
 from deixis import __main__ as deixis_main
-from p9_harness import (create_research, descendants, discovery_to_answer_ready, harness, is_same_and_live,  # noqa: F401
+from process_harness import (create_research, descendants, discovery_to_answer_ready, harness, is_same_and_live,  # noqa: F401
                         port_is_free, run_row, start_run, upload, wait_for)
 
 pytestmark = pytest.mark.process

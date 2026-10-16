@@ -2,7 +2,7 @@
 
 The migration folder is a temporary one injected through `db.MIGRATIONS_DIR`, never a real migration file, and the
 full disk is a connection stand-in that raises ENOSPC. They show the application's handling of those failures, not
-what a real full disk does to a real SQLite file (the SQLITE_FULL case is in test_p9_rr_a_storage).
+what a real full disk does to a real SQLite file (the SQLITE_FULL case is in test_storage_launcher_regressions).
 """
 
 import errno
@@ -16,7 +16,7 @@ from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.storage import db
 from fakes import FakeAdapter
-from test_p9_restore_matrix import fake_uvicorn, free_port, settings_for  # noqa: F401  (fake_uvicorn is a fixture)
+from test_restore_matrix import fake_uvicorn, free_port, settings_for  # noqa: F401  (fake_uvicorn is a fixture)
 
 FIRST = "CREATE TABLE first_table (value TEXT);\n"
 HALF_APPLIED = "CREATE TABLE half_table (value TEXT);\nINSERT INTO no_such_table VALUES (1);\n"

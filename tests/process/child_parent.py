@@ -1,7 +1,7 @@
 """P9 H2 parent helper: starts one production class that owns a child process, prints one JSON line, then waits.
 
 Not a test module. The test SIGKILLs this process and watches the child. Subcommands:
-  codex <mode>        `models.codex_rpc.CodexAppServer` on `p9_stand_in_codex.py <mode>`; prints {"child_pid": ...}
+  codex <mode>        `models.codex_rpc.CodexAppServer` on `stand_in_codex.py <mode>`; prints {"child_pid": ...}
   embedding <busy>    `documents.local_embedding.LocalEmbedder` on the fake runner (FAKE_RUNNER from the environment);
                       with `busy` one embed request is in flight; prints {"child_pid": ...}
   pdf <path>          `documents.pdf._run_watched` on the production extraction argv, 60 s parent clock; prints {"ready": true}
@@ -29,7 +29,7 @@ def say(**fields) -> None:
 async def codex(mode: str) -> None:
     from deixis.models.codex_rpc import CodexAppServer
 
-    stand_in = Path(__file__).with_name("p9_stand_in_codex.py")
+    stand_in = Path(__file__).with_name("stand_in_codex.py")
     server = CodexAppServer(argv=[sys.executable, str(stand_in), mode], cwd=os.getcwd())
     await server.start()
     await server.initialize("p9-test", "0")

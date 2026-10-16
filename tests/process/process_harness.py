@@ -9,7 +9,7 @@ Rules the tests rely on (plan section 4, closing rule 2):
 - the child environment is an allowlist; no model CLI is on its PATH and the working directory is a temp dir.
 - child output goes to a file, never to an unread pipe.
 
-Stated limit of the network guard (in `p9_driver.py`, read by `ServerProc.no_network`): it refuses a `socket.socket.connect`
+Stated limit of the network guard (in `serve_driver.py`, read by `ServerProc.no_network`): it refuses a `socket.socket.connect`
 to a non-loopback address and a `fetch_file` call. DNS resolution through `getaddrinfo` is outside it, so a name lookup
 that never connects would not be logged.
 """
@@ -35,9 +35,9 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
-DRIVER = HERE / "p9_driver.py"
-BACKUP_DRIVER = HERE / "p9_backup_driver.py"
-RESTORE_DRIVER = HERE / "p9_restore_driver.py"
+DRIVER = HERE / "serve_driver.py"
+BACKUP_DRIVER = HERE / "backup_driver.py"
+RESTORE_DRIVER = HERE / "restore_driver.py"
 REFUSED_PORTS = {8765, *range(8858, 8865)}
 QUESTION = "How is molecule release scheduling optimized?"
 

@@ -609,7 +609,7 @@ def test_f04_orphan_is_not_measured_when_any_one_named_guard_test_is_missing():
     process = ["test_extraction_child_is_ended_by_its_own_lifetime", "test_extraction_child_lifetime_disabled_control",
                "test_lifetime_observer_rejects_normal_completion", "test_orphan_memory_guard_stops_gil_holding_pdf_by_sigkill",
                "test_orphan_memory_guard_disabled_control", "test_orphan_guard_parent_alive_preserves_pdf_memory_failure"]
-    cases = [{"module": rm.PROC + "test_p9_children", "name": n, "status": "passed"} for n in process]
+    cases = [{"module": rm.PROC + "test_children", "name": n, "status": "passed"} for n in process]
     cases += [{"module": "tests.hardening.test_child_guard", "name": n, "status": "passed"} for n in GUARD_TESTS]
     assert rm.rule_junit(cases, patterns, "x")["result"] == PASS
     for i in range(len(cases)):

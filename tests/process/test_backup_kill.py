@@ -13,7 +13,7 @@ import signal
 import sys
 
 import pytest
-from p9_harness import (BACKUP_DRIVER, child_env, count, create_research, harness, integrity_check, papers_files,  # noqa: F401
+from process_harness import (BACKUP_DRIVER, child_env, count, create_research, harness, integrity_check, papers_files,  # noqa: F401
                         sha256_file, upload, wait_for)
 from helpers import make_pdf
 

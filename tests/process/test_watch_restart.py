@@ -11,7 +11,7 @@ import pytest
 
 from deixis.storage import db
 from deixis.workflow.store import Store
-from tests.process.p9_harness import (ServerProc, harness, wait_for, wait_run, rows, count, integrity_check, foreign_key_check)
+from tests.process.process_harness import (ServerProc, harness, wait_for, wait_run, rows, count, integrity_check, foreign_key_check)
 from tests.watch.watch_helpers import page, work
 
 pytestmark = pytest.mark.process

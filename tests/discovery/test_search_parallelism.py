@@ -6,7 +6,7 @@ Scholar bulk request on Deep), so the tests of hosts read side by side, of the h
 the evidence the sequential five-query round wrote (`tests/fixtures/search_parallelism/`) were removed with that round.
 What the fast path shares with it is tested here: a query's own request share (D89) ends its read, survives a retry,
 and pauses a run whose every share was spent before it asked. `Hosts`, `Session` and `run_discovery` stay for the
-provider-fault tests of tests/hardening/test_p9_faults_providers.py.
+provider-fault tests of tests/hardening/test_faults_providers.py.
 
 Records and provider answers are SYNTHETIC and every transport is mocked: passing shows workflow behavior — what is
 requested and what ends a read — not live provider timing or how often a real provider answers 429.

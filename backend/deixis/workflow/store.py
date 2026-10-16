@@ -19,7 +19,7 @@ from typing import Any, Callable, Sequence
 
 from deixis.domain.canonical import sha256_hex
 from deixis.documents.jats import RENDITION_SQL
-from deixis.domain.rules import RevisionConflict, apply_model_change, check_expected_version, role_model
+from deixis.domain.rules import RevisionConflict, apply_model_change, check_expected_version, effective_reviewer, role_model, step_model
 from deixis.storage.db import dumps, new_id, now, row_dict, transaction
 from deixis.workflow import links, recovery
 from deixis.workflow.source_keys import key_stem, suffixes
@@ -3666,18 +3666,24 @@ class Store:
                     " FROM provider_requests WHERE run_id = ? GROUP BY host", (run_id,))}
 
     def active_researches_using(self, connections: set[str], providers: set[str]) -> int:
-        """How many researches have a queued or running run (a pause requested still counts: its step is not over) whose scope
-        revision names one of these model connections in any role, or one of these sources. Paused runs and trashed
-        researches are not counted: nothing is sent for them until the person resumes (E13)."""
+        """How many researches have a queued or running run (a pause requested still counts: its step is not over) whose next
+        steps go to one of these model connections, or search one of these sources. The connections are the ones in effect
+        now: the scope read applies the person's model changes, and the reviewer is the one `effective_reviewer` names. Paused
+        runs and trashed researches are not counted: nothing is sent for them until the person resumes (E13)."""
         counted = set()
-        for row in self.conn.execute(
-            "SELECT DISTINCT r.research_id, s.model_connection, s.literature_connection, s.review_connection, s.providers_json"
-            " FROM runs r JOIN scope_revisions s ON s.research_id = r.research_id AND s.revision = r.scope_revision"
+        for research_id, revision in self.conn.execute(
+            "SELECT DISTINCT r.research_id, r.scope_revision FROM runs r"
             " JOIN researches x ON x.id = r.research_id AND x.trashed_at IS NULL"
             " WHERE r.status IN ('queued', 'running', 'pause_requested')"
-        ):
-            if connections & {row[1], row[2], row[3]} or providers & set(json.loads(row[4])):
-                counted.add(row[0])
+        ).fetchall():
+            if research_id in counted:
+                continue
+            scope = self.scope(research_id, revision)
+            used = {step_model(scope, "grounded_answer")[0], step_model(scope, "abstract_screening")[0]}
+            if reviewer := effective_reviewer(scope, self.setting("reviewer")):
+                used.add(reviewer[0])
+            if connections & used or providers & set(scope["providers"]):
+                counted.add(research_id)
         return len(counted)
 
     def run_exists(self, run_id: str) -> bool:

@@ -98,3 +98,47 @@ def test_the_app_installs_the_redaction_at_start(tmp_path, monkeypatch):
     from fakes import FakeAdapter
     create_app(Settings(data_dir=tmp_path / "data"), adapters={"fake": FakeAdapter()})
     assert getattr(logging.getLogRecordFactory(), "redacts_keys", False)
+
+
+def logged_through(formatter, level=logging.INFO):
+    """What `formatter` writes for an access-style record whose path carries a key, through a real handler."""
+    import io
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(formatter)
+    logger = logging.getLogger("deixis.test.access")
+    logger.setLevel(level)
+    logger.addHandler(handler)
+    try:
+        logger.info('%s - "%s %s HTTP/%s" %d', "127.0.0.1:50000", "GET", f"/api/x?api_key={SECRET}&q=1", "1.1", 200)
+    finally:
+        logger.removeHandler(handler)
+    return stream.getvalue()
+
+
+def test_a_masked_access_record_keeps_its_arguments_for_uvicorns_formatter():
+    from uvicorn.logging import AccessFormatter
+
+    written = logged_through(AccessFormatter('%(client_addr)s - "%(request_line)s" %(status_code)s', use_colors=False))
+    assert written.strip() == '127.0.0.1:50000 - "GET /api/x?api_key=<redacted>&q=1 HTTP/1.1" 200 OK'  # not lost to a TypeError
+    plain = logged_through(logging.Formatter("%(message)s"))
+    assert plain.strip() == '127.0.0.1:50000 - "GET /api/x?api_key=<redacted>&q=1 HTTP/1.1" 200'
+    assert SECRET not in written + plain
+
+
+def test_masking_keeps_the_tuple_shape_and_a_url_object_argument():
+    log = logging.getLogger("deixis.test.shape")
+    log.setLevel(logging.INFO)
+    records = []
+    handler = logging.Handler()
+    handler.emit = records.append
+    log.addHandler(handler)
+    try:
+        log.info('HTTP Request: %s %s "%s %d %s"', "GET", httpx.URL(f"https://x.org/a?api_key={SECRET}"), "HTTP/1.1", 200, "OK")
+        log.info("one %(url)s", {"url": f"https://x.org/a?apikey={SECRET}"})
+    finally:
+        log.removeHandler(handler)
+    assert isinstance(records[0].args, tuple) and len(records[0].args) == 5 and records[0].args[3] == 200
+    assert records[0].getMessage() == 'HTTP Request: GET https://x.org/a?api_key=<redacted> "HTTP/1.1 200 OK"'
+    assert records[1].getMessage() == "one https://x.org/a?apikey=<redacted>"
+    assert SECRET not in str(records[0].__dict__) + str(records[1].__dict__)

@@ -103,6 +103,31 @@ def test_a_connection_that_shares_a_key_is_counted_for_that_key(tmp_path, monkey
         wait_run(client, rid, run["id"], statuses=("cancelled",))
 
 
+def test_a_research_switched_to_another_connection_counts_for_the_new_key_only(tmp_path, monkeypatch, memory_keychain):
+    """The count follows the model change recorded for the research, not the connection it was created with."""
+    adapters = {"gemini": FakeAdapter(models=["fake-model"], delay=0.5), "openai": FakeAdapter(models=["fake-model"], delay=0.5)}
+    app = create_app(sw_settings(tmp_path), adapters=adapters, http_client=openalex_client(200), fetcher=fake_fetch,
+                     extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as client:
+        session(client)
+        rid = create(client, model_connection="gemini")
+        run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
+        wait_run(client, rid, run["id"], statuses=("running",))
+        assert (in_use(client, "GEMINI_API_KEY"), in_use(client, "OPENAI_API_KEY")) == (1, 0)
+        client.post(f"/api/runs/{run['id']}/pause")
+        wait_run(client, rid, run["id"], statuses=("paused",))
+        assert in_use(client, "GEMINI_API_KEY") == 0  # a paused run sends nothing
+        version = client.get(f"/api/researches/{rid}").json()["research"]["version"]
+        changed = client.put(f"/api/researches/{rid}/models", json={
+            "role": "answer", "connection": "openai", "model": "fake-model", "reasoning_effort": None, "expected_version": version})
+        assert changed.status_code == 200, changed.text
+        client.post(f"/api/runs/{run['id']}/resume")
+        wait_run(client, rid, run["id"], statuses=("running",))
+        assert (in_use(client, "GEMINI_API_KEY"), in_use(client, "OPENAI_API_KEY")) == (0, 1)
+        client.post(f"/api/runs/{run['id']}/cancel")
+        wait_run(client, rid, run["id"], statuses=("cancelled",))
+
+
 def answer_run(client, rid):
     return client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).json()
 

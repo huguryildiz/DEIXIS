@@ -21,6 +21,16 @@ def redact(text: str) -> str:
     return _QUERY_SECRET.sub(lambda m: m.group(1) + REDACTED, text) if "=" in text else text
 
 
+def _redact_arg(item):
+    if isinstance(item, str):
+        return redact(item)
+    try:
+        text = str(item)  # a URL object is logged through its text
+    except Exception:  # noqa: BLE001
+        return item
+    return clean if (clean := redact(text)) != text else item
+
+
 def _redacting_factory(inner):
     def make(*args, **kwargs) -> logging.LogRecord:
         record = inner(*args, **kwargs)
@@ -28,8 +38,20 @@ def _redacting_factory(inner):
             message = record.getMessage()
         except Exception:  # noqa: BLE001  a bad format string stays the logging module's business
             return record
-        if (clean := redact(message)) != message:
-            record.msg, record.args = clean, None
+        if redact(message) != message:
+            # Keep the arguments' shape: a formatter that unpacks them (uvicorn's access log) still finds them.
+            if isinstance(record.msg, str):
+                record.msg = redact(record.msg)
+            if isinstance(record.args, tuple):
+                record.args = tuple(_redact_arg(item) for item in record.args)
+            elif isinstance(record.args, dict):
+                record.args = {key: _redact_arg(item) for key, item in record.args.items()}
+            try:
+                still = record.getMessage()
+            except Exception:  # noqa: BLE001
+                still = message
+            if redact(still) != still or still == message:  # a shape this cannot redact in place: the cleaned text alone
+                record.msg, record.args = redact(message), ()
         if record.exc_info and record.exc_info[0] is not None and not record.exc_text:
             text = logging.Formatter().formatException(record.exc_info)
             if (clean := redact(text)) != text:

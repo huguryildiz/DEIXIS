@@ -323,7 +323,7 @@ def test_a_null_progress_answer_from_lm_studio_ends_the_job_and_frees_the_slot(m
     async def scenario():
         job = await local.lm_studio_pull("qwen/qwen3.5-9b")
         await local._lms_task
-        assert job["status"] == "failed" and "unexpectedly" in job["output"] and job["finished_at"]
+        assert job["status"] == "failed" and "[could_not_run]" in job["output"] and job["finished_at"]
         return await local.lm_studio_pull("qwen/qwen3.5-9b")  # not "already being downloaded"
     assert asyncio.run(scenario())["status"] == "succeeded"
 

@@ -8,6 +8,8 @@ like `extract_pdf`'s, watched from the parent; a child that passes a limit, cras
 callers treat as they treat a PDF MuPDF cannot read.
 
 Only the reads named in `CALLS` run here. Arguments and results go as JSON; bytes (a rendered picture) as base64.
+At most `MAX_CHILDREN` of these children run at once in the process (each may hold up to 1 GiB); a further read waits for
+one to end. `extract_pdf`, OCR and the arXiv source child are not counted.
 """
 
 from __future__ import annotations
@@ -18,6 +20,7 @@ import json
 import logging
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -34,10 +37,13 @@ CALLS = {
     "render_figure": ("deixis.documents.figures", "_render_figure"),
     "math_pages": ("deixis.documents.math_reader", "_math_pages"),
     "table_pages": ("deixis.documents.math_reader", "_table_pages"),
+    "check_equations": ("deixis.documents.math_reader", "_check_equations"),
     "detect": ("deixis.documents.equation_regions", "_detect"),
     "stamp_key": ("deixis.documents.arxiv_source", "_stamp_key"),
 }
 BYTES = "__bytes__"
+MAX_CHILDREN = 2
+_slots = threading.BoundedSemaphore(MAX_CHILDREN)  # callers run in worker threads (asyncio.to_thread), not on the loop
 
 
 class ChildFailed(Exception):
@@ -58,8 +64,9 @@ def run(name: str, *args: Any) -> Any:
     """`CALLS[name]` on `args` in a bounded child; its result, or ChildFailed."""
     argv = [sys.executable, "-m", "deixis.documents.pdf_child", name, json.dumps(args), str(MAX_MEMORY_BYTES)]
     try:
-        completed = pdf._run_watched(argv, child_env({"PYTHONPATH": str(Path(__file__).resolve().parents[2])}, bundled=True),
-                                     TIMEOUT_SECONDS, MAX_MEMORY_BYTES)
+        with _slots:
+            completed = pdf._run_watched(argv, child_env({"PYTHONPATH": str(Path(__file__).resolve().parents[2])}, bundled=True),
+                                         TIMEOUT_SECONDS, MAX_MEMORY_BYTES)
     except subprocess.TimeoutExpired:
         raise ChildFailed(f"{name} timed out") from None
     except pdf.MemoryWatchLost:

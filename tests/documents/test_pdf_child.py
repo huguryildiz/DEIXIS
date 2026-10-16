@@ -1,5 +1,10 @@
 """Figure and equation reads of a stored PDF run in a bounded child process, never in the server process."""
 
+import subprocess
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+
 import pymupdf
 import pytest
 
@@ -22,6 +27,7 @@ def test_figure_and_equation_reads_do_not_open_the_pdf_in_the_server_process(tmp
     assert math_reader.table_pages(path) == []
     assert equation_regions.detect(path) == []
     assert arxiv_source.stamp_key(path) is None
+    assert math_reader.check_equations(path, {0: [{"bbox": [100, 150, 400, 300], "latex": "z = 9"}]}) == []
 
 
 def test_an_equation_read_stopped_at_its_memory_limit_fails_like_an_unreadable_pdf(tmp_path, monkeypatch):
@@ -34,3 +40,24 @@ def test_an_equation_read_stopped_at_its_memory_limit_fails_like_an_unreadable_p
         math_reader.math_pages(path)
     with pytest.raises(pdf_child.ChildFailed):
         equation_regions.detect(path, set(), False)
+
+
+def test_no_more_than_two_pdf_children_run_at_once(monkeypatch):
+    from deixis.documents import pdf, pdf_child
+
+    running, most, lock = 0, 0, threading.Lock()
+
+    def child(argv, env, timeout, max_memory):
+        nonlocal running, most
+        with lock:
+            running += 1
+            most = max(most, running)
+        time.sleep(0.2)
+        with lock:
+            running -= 1
+        return subprocess.CompletedProcess(argv, 0, b'{"result": []}', b"")
+
+    monkeypatch.setattr(pdf, "_run_watched", child)
+    with ThreadPoolExecutor(6) as pool:
+        assert list(pool.map(lambda _: pdf_child.run("math_pages", "x.pdf"), range(6))) == [[]] * 6
+    assert most == 2

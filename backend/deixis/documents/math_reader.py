@@ -108,10 +108,14 @@ def latex_letters(latex: str) -> Counter:
 
 def check_equations(path: Path, equations: dict[int, list[dict]]) -> list[dict]:
     """Display equations whose LaTeX has a letter or digit that the PDF's text inside the equation's box does not have,
-    as {"page": 1-based, "latex": ...}. Pages without text in the box are not checked."""
+    as {"page": 1-based, "latex": ...}. Pages without text in the box are not checked. Read in a bounded child."""
+    return pdf_child.run("check_equations", str(path), sorted(equations.items()))  # [index, found] pairs: JSON keys are text
+
+
+def _check_equations(path: str, equations: list[list]) -> list[dict]:
     marked = []
     with pymupdf.open(path, filetype="pdf") as doc:
-        for index, found in sorted(equations.items()):
+        for index, found in equations:
             if not 0 <= index < doc.page_count:
                 continue
             words = doc[index].get_text("words")

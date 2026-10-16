@@ -2573,6 +2573,7 @@ def create_app(
         }
 
     figure_cache: dict[str, list[dict[str, Any]]] = {}  # by PDF sha256; figures are found again after a restart (D58)
+    figure_reads: dict[str, asyncio.Task] = {}  # by PDF sha256: the reads in progress
 
     async def asset_figures(research_id: str, asset_id: str, request: Request) -> tuple[Path, list[dict[str, Any]]]:
         store = store_of(request)
@@ -2585,15 +2586,23 @@ def create_app(
         path = (root / asset["storage_path"]).resolve()
         if not path.is_relative_to(root) or not path.exists():
             raise HTTPException(404, "File missing")
-        if asset["sha256"] not in figure_cache:
-            try:
-                found = await asyncio.to_thread(lambda: figures.find_figures(path) + figures.find_algorithms(path))
-            except Exception:  # noqa: BLE001 - a PDF MuPDF cannot read has no figures to show
-                found = []
-            if len(figure_cache) >= 64:
-                figure_cache.pop(next(iter(figure_cache)))
-            figure_cache[asset["sha256"]] = found
-        return path, figure_cache[asset["sha256"]]
+        sha = asset["sha256"]
+        if sha in figure_cache:
+            return path, figure_cache[sha]
+        if sha not in figure_reads:  # requests for the same PDF while it is read share that one read
+            task = figure_reads[sha] = asyncio.create_task(read_figures(sha, path))
+            task.add_done_callback(lambda done: figure_reads.pop(sha) if figure_reads.get(sha) is done else None)
+        return path, await asyncio.shield(figure_reads[sha])  # a request that goes away does not stop the others' read
+
+    async def read_figures(sha: str, path: Path) -> list[dict[str, Any]]:
+        try:
+            found = await asyncio.to_thread(lambda: figures.find_figures(path) + figures.find_algorithms(path))
+        except Exception:  # noqa: BLE001 - a PDF MuPDF cannot read has no figures to show
+            found = []
+        if len(figure_cache) >= 64:
+            figure_cache.pop(next(iter(figure_cache)))
+        figure_cache[sha] = found
+        return found
 
     @app.get("/api/researches/{research_id}/assets/{asset_id}/figures")
     async def get_asset_figures(research_id: str, asset_id: str, request: Request) -> dict[str, Any]:

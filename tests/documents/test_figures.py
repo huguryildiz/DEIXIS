@@ -1,5 +1,8 @@
 """Figure regions found from captions on synthetic PDF pages (D58)."""
 
+import time
+from concurrent.futures import ThreadPoolExecutor
+
 import pymupdf
 from fastapi.testclient import TestClient
 
@@ -93,6 +96,25 @@ def test_a_figure_on_a_huge_page_is_rendered_within_the_pixel_budget(tmp_path):
     assert [f["label"] for f in found] == ["1"]
     picture = pymupdf.Pixmap(figures.render_figure(path, 1, found[0]["bbox"]))
     assert picture.width * picture.height <= 4_000_000  # at 160 dpi it would be about 120 million pixels
+
+
+def test_two_listings_of_the_same_pdf_at_once_find_its_figures_once(tmp_path, monkeypatch):
+    calls = []
+
+    def slow_find(path):
+        calls.append(path)
+        time.sleep(0.5)
+        return []
+
+    monkeypatch.setattr(figures, "find_figures", slow_find)
+    with TestClient(app_for(tmp_path)) as raw:
+        client = session(raw)
+        rid = create(client, source_scope="attached")
+        uploaded = client.post(f"/api/researches/{rid}/uploads", files={"file": ("fig.pdf", figure_pdf(), "application/pdf")})
+        aid = uploaded.json()["sources"][0]["access"]["assets"][0]["id"]
+        with ThreadPoolExecutor(2) as pool:
+            listed = list(pool.map(lambda _: client.get(f"/api/researches/{rid}/assets/{aid}/figures").status_code, range(2)))
+    assert listed == [200, 200] and len(calls) == 1
 
 
 def test_a_figure_read_stopped_at_its_memory_limit_answers_like_an_unreadable_pdf(tmp_path, monkeypatch):

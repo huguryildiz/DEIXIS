@@ -262,6 +262,24 @@ def test_a_proposal_older_than_the_value_does_not_wait_or_block_the_re_read(tmp_
     assert [r["decision"] for r in view["revisions"] if r["kind"] == "model_proposal"] == ["superseded"]
 
 
+def test_an_older_proposal_left_after_the_latest_was_dismissed_does_not_wait_or_block_the_re_read(tmp_path):
+    lib = filled(tmp_path)
+    for _ in range(2):  # proposal A, then proposal B
+        assert execute(lib, recheck(lib, lib.preprint, cell(lib, lib.preprint)["version"]))["status"] == "completed"
+    a, b = [r["id"] for r in cell(lib, lib.preprint)["revisions"] if r["kind"] == "model_proposal"]
+    lib.tables.decide_proposal(lib.rid, lib.tid, lib.cid, lib.preprint, b, False, cell(lib, lib.preprint)["version"], None)
+    view = cell(lib, lib.preprint)
+    assert view["pending_proposal"] is None and lib.tables.table_view(lib.rid, lib.tid)["counts"]["pending_proposals"] == 0
+    assert [(r["id"], r["decision"]) for r in view["revisions"] if r["kind"] == "model_proposal"] == [(a, "superseded"), (b, "dismissed")]
+
+    lib.adapter.responder = citing("pdf")
+    arrive(lib, lib.preprint)
+    assert "newer_text_auto" in cell(lib, lib.preprint)["flags"]
+    (run,) = table_refresh.advance(lib.store)  # the sweep reads A as the view does: nothing waits
+    assert execute(lib, run)["status"] == "completed"
+    assert cell(lib, lib.preprint)["current"]["reading_depth"] == "selected_sections"
+
+
 def test_a_proposal_newer_than_the_value_still_waits(tmp_path):
     lib = filled(tmp_path)
     assert execute(lib, recheck(lib, lib.preprint, cell(lib, lib.preprint)["version"]))["status"] == "completed"

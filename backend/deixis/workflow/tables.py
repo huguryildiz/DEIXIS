@@ -52,8 +52,10 @@ AUTO_RUNS_SQL = ("SELECT ar.status FROM runs ar, json_each(ar.target_json, '$.so
                  " AND json_extract(asrc.value, '$.source_version_id') = {cell}.source_version_id"
                  " AND EXISTS (SELECT 1 FROM json_each(asrc.value, '$.column_ids') acol WHERE acol.value = {cell}.column_id)"
                  " AND ar.created_at >= " + NEWEST_TEXT_SQL)
-# A model proposal asked for after the cell's current revision `{revision}` and not yet decided.
-WAITING_SQL = ("EXISTS (SELECT 1 FROM cell_revisions q WHERE q.cell_id = {cell}.id AND q.kind = 'model_proposal'"
+# The cell's latest model proposal, saved after its current revision `{revision}` and not yet decided. Only the latest can
+# be decided; an earlier one, or one older than the current value, was overtaken (TableStore._pending_proposal agrees).
+WAITING_SQL = ("EXISTS (SELECT 1 FROM cell_revisions q WHERE q.id = (SELECT lp.id FROM cell_revisions lp WHERE lp.cell_id = {cell}.id"
+               " AND lp.kind = 'model_proposal' ORDER BY lp.created_at DESC, lp.rowid DESC LIMIT 1)"
                " AND q.rowid > {revision}.rowid AND NOT EXISTS (SELECT 1 FROM cell_revisions d WHERE d.based_on_revision_id = q.id"
                " AND d.kind IN ('accept_proposal', 'dismiss_proposal')))")
 # A cell an automatic re-read is due for (D52): its value may be replaced, newer PDF text exists, no proposal waits, and
@@ -606,6 +608,8 @@ class TableStore:
                 raise RevisionConflict("This proposal has already been decided")
             if self._latest_proposal(cell["id"])["id"] != proposal_id:
                 raise RevisionConflict("A newer proposal replaced this one")
+            if self._pending_proposal(cell) is None:
+                raise RevisionConflict("A newer value replaced this proposal")
             if not accept:
                 revision_id = self._insert_revision(cell, key, kind="dismiss_proposal", author="human", based_on_revision_id=proposal_id,
                                                     column_revision=proposal["column_revision"])

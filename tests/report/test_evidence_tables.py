@@ -369,6 +369,43 @@ def test_table_api_versions_idempotency_and_scope(tmp_path):
         assert client.get(f"{base}/{tid}").status_code == 404
 
 
+def test_a_superseded_proposal_is_refused_by_the_api_and_an_earlier_decision_replays(tmp_path):
+    app = app_for(tmp_path)
+    with TestClient(app) as raw:
+        client = session(raw)
+        rid = create(client, source_scope="attached")
+        upload(client, rid, "a.pdf", "SYNTHETIC packets of 128 bytes")
+        table = client.post(f"/api/researches/{rid}/tables", json={"title": "Packets"}).json()
+        tid = table["table"]["id"]
+        view = client.post(f"/api/researches/{rid}/tables/{tid}/columns", json=PACKET_SIZE | {"expected_version": table["table"]["version"]}).json()
+        cid, svid = view["columns"][0]["id"], view["rows"][0]["source_version_id"]
+        store = app.state.store
+        run = store.create_run(rid, "answer", {"max_model_calls": 4}, None)
+        (passage,) = [p["id"] for p in store.passages_for(svid)][:1]
+        lib = SimpleNamespace(store=store, tables=TableStore(store), rid=rid, tid=tid, cid=cid, published=svid, run_id=run["id"],
+                              step_id=store.step(run["id"], "cell", "model:cell_extraction")["id"])
+        url = f"/api/researches/{rid}/tables/{tid}/cells/{cid}/{svid}"
+
+        model_output(lib, passage=passage)
+        accepted_one = model_output(lib, recheck=True, passage=passage, at_version=1)
+        first = client.post(f"{url}/proposals/{accepted_one}/accept", json={"expected_version": 1}, headers={"Idempotency-Key": "d1"})
+        assert first.status_code == 200, first.text
+        older = model_output(lib, recheck=True, passage=passage, at_version=2)
+        version = client.put(url, json={"state": "not_verified", "value": {"number": 256, "unit": "byte"}, "expected_version": 2}).json()["version"]
+        # A value newer than the proposal supersedes it: deciding it now is a conflict, even at the cell's current version.
+        refused = client.post(f"{url}/proposals/{older}/accept", json={"expected_version": version})
+        assert refused.status_code == 409, refused.text
+        assert client.post(f"{url}/proposals/{older}/dismiss", json={"expected_version": version}).status_code == 409
+        after = client.get(url).json()
+        assert after["version"] == version and after["current"]["author"] == "human" and after["pending_proposal"] is None
+        # The earlier accepted decision still replays: same revision, nothing added.
+        count = len(after["revisions"])
+        replayed = client.post(f"{url}/proposals/{accepted_one}/accept", json={"expected_version": 1}, headers={"Idempotency-Key": "d1"})
+        assert replayed.status_code == 200, replayed.text
+        assert len(replayed.json()["revisions"]) == count
+        assert [r["id"] for r in replayed.json()["revisions"] if r["kind"] == "accept_proposal"] == [first.json()["current"]["id"]]
+
+
 def test_a_template_gives_its_columns_to_a_table_without_columns(tmp_path):
     with TestClient(app_for(tmp_path)) as raw:
         client = session(raw)

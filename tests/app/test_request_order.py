@@ -20,6 +20,13 @@ const first = order.start('gemini'), second = order.start('gemini');
 assert(order.settle('gemini', second));
 assert(!order.settle('gemini', first));
 
+// a single check starts, the read starts, the check answers while the read is pending: the older check is dropped
+order = createRequestOrder();
+const early1 = order.start('gemini');
+const bulk1 = order.start();
+assert(!order.settle('gemini', early1));
+assert(order.settle('gemini', bulk1));
+
 // the all-connections read starts first, a single check starts after it: the read must not cover the check
 order = createRequestOrder();
 const bulk = order.start();

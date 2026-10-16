@@ -47,11 +47,11 @@ class Server:
 
     async def __call__(self, request):
         self.requests += 1
-        tag = os.environ.get(self.env, "none")
+        tag, status = os.environ.get(self.env, "none"), self.status  # what is true when the request arrives
         if self.gate is not None and not self.gated_once:
             self.gated_once = True
             await self.gate.wait()
-        return httpx.Response(self.status, json=self.body(tag)) if self.status == 200 else httpx.Response(self.status, json={})
+        return httpx.Response(status, json=self.body(tag)) if status == 200 else httpx.Response(status, json={})
 
 
 def build(name, monkeypatch, key="aaa"):
@@ -97,7 +97,7 @@ def test_cached_answer_is_not_used_for_another_key(name, monkeypatch):
 
 
 @pytest.mark.parametrize("name", CASES)
-def test_a_failed_fresh_check_drops_the_old_ready(name, monkeypatch):
+def test_a_failed_fresh_check_replaces_the_old_ready(name, monkeypatch):
     adapter, server, env = build(name, monkeypatch)
 
     async def scenario():
@@ -106,8 +106,9 @@ def test_a_failed_fresh_check_drops_the_old_ready(name, monkeypatch):
         assert (await adapter.health(refresh=True))["ready"] is False
         server.status = 200
         before = server.requests
-        assert (await adapter.health())["ready"] is True
-        assert server.requests == before + 1  # not served from the old cache
+        assert (await adapter.health())["ready"] is False  # the failed answer is the cached one, not the old ready
+        assert server.requests == before
+        assert (await adapter.health(refresh=True))["ready"] is True
 
     asyncio.run(scenario())
 
@@ -137,3 +138,23 @@ def test_answers_carry_no_key_fingerprint(name, monkeypatch):
     adapter, _, _ = build(name, monkeypatch)
     status = asyncio.run(adapter.health(refresh=True))
     assert key_verification.fingerprint("aaa") not in repr(status) and "fingerprint" not in repr(status)
+
+
+@pytest.mark.parametrize("name", CASES)
+def test_a_slow_success_with_the_same_key_does_not_cover_a_newer_refusal(name, monkeypatch):
+    adapter, server, env = build(name, monkeypatch)
+
+    async def scenario():
+        server.gate = asyncio.Event()
+        slow = asyncio.create_task(adapter.health(refresh=True))  # a check that will say ready, held inside its request
+        while server.requests == 0:
+            await asyncio.sleep(0)
+        server.status = 401  # the key is refused; a newer check says so
+        assert (await adapter.health(refresh=True))["ready"] is False
+        server.gate.set()
+        assert (await slow)["ready"] is True  # the slow check still answers its caller
+        before = server.requests
+        assert (await adapter.health())["ready"] is False  # but the cache keeps the newer answer
+        assert server.requests == before
+
+    asyncio.run(scenario())

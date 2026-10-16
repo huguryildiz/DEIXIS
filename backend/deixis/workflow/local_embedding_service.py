@@ -290,6 +290,7 @@ class EmbeddingService:
                 raise ServiceError("job_record_failed", f"The install could not start: {exc.strerror or exc}") from exc
             raise
         self._task = asyncio.create_task(self._run(uv))
+        self._task.add_done_callback(self._task_ended)
         return dict(self.job)
 
     def _uv_env(self, uv: str) -> dict[str, str]:
@@ -405,6 +406,18 @@ class EmbeddingService:
                         log.exception("built-in model install: the job record could not be written")
             finally:
                 self._release_locks()
+
+    def _task_ended(self, task: asyncio.Task) -> None:
+        """A task cancelled before its first step never runs `_run`, so its `finally` never lets go of the locks: this does
+        (E9). When `_run` did run, its `finally` has released them already and nothing is left to do."""
+        if self._install_fd is None and self._in_use_fd is None:
+            return
+        self.job.update(status="cancelled" if task.cancelled() else "failed", finished_at=local_embedding.now_iso())
+        try:
+            self._write_job(self.job)
+        except OSError:
+            log.exception("built-in model install: the job record could not be written")
+        self._release_locks()
 
     def _release_locks(self) -> None:
         """Let go of the install and in-use locks and reopen the embedder; independent of any job-record write (E9)."""

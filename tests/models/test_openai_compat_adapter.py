@@ -500,3 +500,55 @@ def test_a_local_connection_sends_one_call_at_a_time_with_a_longer_limit(spec, m
     assert [r.status for r in asyncio.run(three())] == ["completed"] * 3 and state["most"] == 1
     hosted = openai_compat.OpenAICompatAdapter(openai_compat.CONNECTIONS["qwen"])
     assert hosted.turn_timeout == 300.0 and hosted._turns is None
+
+
+def test_a_slow_success_with_the_same_key_does_not_cover_a_newer_refusal(monkeypatch):
+    spec = KEYED[0]
+    set_key(spec, monkeypatch)
+    state = {"status": 200, "gate": None, "gated": False, "requests": 0}
+
+    async def handler(request):
+        state["requests"] += 1
+        if state["gate"] is not None and not state["gated"]:
+            state["gated"] = True
+            await state["gate"].wait()
+        return httpx.Response(state["status"], json={"data": [{"id": mid(spec, "a"), **SO}]})
+    connection = adapter(spec, handler)
+
+    async def scenario():
+        state["gate"] = asyncio.Event()
+        slow = asyncio.create_task(connection.health(refresh=True))
+        while state["requests"] == 0:
+            await asyncio.sleep(0)
+        state["status"] = 401
+        assert (await connection.health(refresh=True))["ready"] is False
+        state["gate"].set()
+        await slow
+        before = state["requests"]
+        assert (await connection.health())["ready"] is False and state["requests"] == before
+
+    asyncio.run(scenario())
+
+
+def test_a_check_begun_before_the_local_address_was_removed_does_not_bring_ready_back():
+    address = {"value": "http://127.0.0.1:8080/v1"}
+    state = {"gate": asyncio.Event(), "requests": 0}
+
+    async def handler(request):
+        state["requests"] += 1
+        await state["gate"].wait()
+        return httpx.Response(200, json={"data": [{"id": "llama-3"}]})
+    connection = openai_compat.OpenAICompatAdapter(openai_compat.LOCAL_SERVER, client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+                                                   base_url=lambda: address["value"])
+
+    async def scenario():
+        slow = asyncio.create_task(connection.health(refresh=True))
+        while state["requests"] == 0:
+            await asyncio.sleep(0)
+        address["value"] = None  # the address is deleted while the check is under way
+        state["gate"].set()
+        assert (await slow)["ready"] is True  # that check answers its own caller
+        again = await connection.health()  # a plain read: the old answer was not cached for "no address"
+        assert (again["ready"], again["reason_code"]) == (False, "needs_setup")
+
+    asyncio.run(scenario())

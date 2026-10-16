@@ -217,6 +217,14 @@ def machine() -> dict[str, Any]:
             "disk_free_gb": round(disk.free / 2**30), "disk_total_gb": round(disk.total / 2**30)}
 
 
+def _bytes(value: Any) -> int:
+    """A byte count a server reported; 0 (unknown) when it is not a number."""
+    try:
+        return max(int(value or 0), 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 class LocalTools:
     def __init__(self, client: httpx.AsyncClient):
         self._client = client
@@ -449,11 +457,11 @@ class LocalTools:
             await self._running_ollama()
             if job["status"] != "running":  # cancelled while Ollama was being looked for
                 raise ToolError(409, "It was stopped before it started")
+            self._pull_task = asyncio.create_task(self._run_pull(job))
         except BaseException:
             if self._pull is job:
                 self._pull = previous
             raise
-        self._pull_task = asyncio.create_task(self._run_pull(job))
         return job
 
     async def _run_pull(self, job: dict[str, Any]) -> None:
@@ -573,21 +581,21 @@ class LocalTools:
         job = {"status": "running", "model": model, "step": "", "completed": 0, "total": 0,
                "started_at": now(), "finished_at": None, "output": ""}
         previous, self._lms_pull = self._lms_pull, job
-        try:
+        try:  # whatever goes wrong until the download is followed gives the slot back (E17)
             started = await self._start_lm_studio_download(model)
             if job["status"] != "running":
                 raise ToolError(409, "It was stopped before it started")
+            job["total"] = _bytes(started.get("total_size_bytes"))
+            if started.get("status") == "already_downloaded":
+                job.update(status="succeeded", finished_at=now(), step="already_downloaded")
+            elif started.get("status") == "failed" or not started.get("job_id"):
+                job.update(status="failed", finished_at=now(), output=str(started)[:OUTPUT_TAIL_CHARS])
+            else:
+                self._lms_task = asyncio.create_task(self._follow_lm_studio(job, str(started["job_id"])))
         except BaseException:
             if self._lms_pull is job:
                 self._lms_pull = previous
             raise
-        job["total"] = int(started.get("total_size_bytes") or 0)
-        if started.get("status") == "already_downloaded":
-            job.update(status="succeeded", finished_at=now(), step="already_downloaded")
-        elif started.get("status") == "failed" or not started.get("job_id"):
-            job.update(status="failed", finished_at=now(), output=str(started)[:OUTPUT_TAIL_CHARS])
-        else:
-            self._lms_task = asyncio.create_task(self._follow_lm_studio(job, str(started["job_id"])))
         return job
 
     async def _start_lm_studio_download(self, model: str) -> dict[str, Any]:
@@ -601,7 +609,13 @@ class LocalTools:
             raise ToolError(409, "This LM Studio cannot download through its server; update LM Studio to 0.4 or later")
         if response.status_code != 200:
             raise ToolError(502, f"LM Studio answered {response.status_code}: {response.text[:300]}")
-        return response.json()
+        try:
+            started = response.json()
+        except ValueError as exc:
+            raise ToolError(502, "LM Studio answered with something that is not JSON") from exc
+        if not isinstance(started, dict):
+            raise ToolError(502, f"LM Studio answered unexpectedly: {str(started)[:300]}")
+        return started
 
     async def _follow_lm_studio(self, job: dict[str, Any], job_id: str) -> None:
         url = f"{TOOLS['lm_studio'].endpoint}/api/v1/models/download/status/{job_id}"

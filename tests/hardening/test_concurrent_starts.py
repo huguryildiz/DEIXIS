@@ -260,3 +260,51 @@ def test_a_refused_download_gives_the_slot_back(monkeypatch):
         return await local.pull_model("qwen3:8b"), await local.lm_studio_pull("qwen/qwen3.5-9b")
     ollama, lms = asyncio.run(scenario())
     assert ollama["status"] in ("running", "succeeded") and lms["status"] == "succeeded"
+
+
+def lm_studio_answering(monkeypatch, replies):
+    """A LocalTools with LM Studio running whose download endpoint gives the replies in turn."""
+    answers = iter(replies)
+    local = LocalTools(httpx.AsyncClient(transport=httpx.MockTransport(lambda request: next(answers))))
+
+    async def running(refresh=False):
+        return {"tools": [{"id": "lm_studio", "running": True}]}
+    monkeypatch.setattr(local, "snapshot", running)
+    return local
+
+
+def test_an_unreadable_size_from_lm_studio_does_not_leave_the_slot_taken(monkeypatch):
+    local = lm_studio_answering(monkeypatch, [
+        httpx.Response(200, json={"status": "already_downloaded", "total_size_bytes": "unknown"})])
+    job = asyncio.run(local.lm_studio_pull("qwen/qwen3.5-9b"))
+    assert job["status"] == "succeeded" and job["total"] == 0 and local._lms_pull is job
+
+
+@pytest.mark.parametrize("reply", [httpx.Response(200, content=b"not json"), httpx.Response(200, json=["x"])])
+def test_a_malformed_lm_studio_answer_gives_the_slot_back(monkeypatch, reply):
+    local = lm_studio_answering(monkeypatch, [reply, httpx.Response(200, json={"status": "already_downloaded"})])
+
+    async def scenario():
+        with pytest.raises(ToolError) as refused:
+            await local.lm_studio_pull("qwen/qwen3.5-9b")
+        assert refused.value.status == 502 and local._lms_pull is None
+        return await local.lm_studio_pull("qwen/qwen3.5-9b")  # not "already being downloaded" forever
+    assert asyncio.run(scenario())["status"] == "succeeded"
+
+
+def test_a_download_that_cannot_start_a_task_gives_the_slot_back(monkeypatch):
+    local = lm_studio_answering(monkeypatch, [httpx.Response(200, json={"job_id": "j", "total_size_bytes": 10}),
+                                              httpx.Response(200, json={"status": "already_downloaded"})])
+    real = asyncio.create_task
+
+    def failing(coro, **kwargs):
+        coro.close()
+        raise RuntimeError("SYNTHETIC: no task")
+    async def scenario():
+        monkeypatch.setattr(asyncio, "create_task", failing)
+        with pytest.raises(RuntimeError):
+            await local.lm_studio_pull("qwen/qwen3.5-9b")
+        monkeypatch.setattr(asyncio, "create_task", real)
+        assert local._lms_pull is None
+        return await local.lm_studio_pull("qwen/qwen3.5-9b")
+    assert asyncio.run(scenario())["status"] == "succeeded"

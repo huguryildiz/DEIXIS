@@ -61,6 +61,7 @@ class GeminiAdapter:
         self._owns_client = client is None
         self.turn_timeout = turn_timeout
         self._health: tuple[float, dict[str, Any], str] | None = None  # (time, answer, fingerprint of the key)
+        self._checks = 0  # health checks started, to order their answers
 
     def _http(self) -> httpx.AsyncClient:
         if self._client is None:
@@ -69,11 +70,19 @@ class GeminiAdapter:
 
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         key = api_key()
-        # A cached answer belongs to the key it was made with; a fresh check replaces it whatever it finds (E7).
+        # A cached answer belongs to the key it was made with. Checks are ordered: only the newest one to have started
+        # may write the cache, whatever it found, so a slow older check never covers a newer answer (E7).
         mine = key_verification.fingerprint(key or "")
         if self._health and not refresh and time.monotonic() - self._health[0] < 60 and self._health[2] == mine:
             return self._health[1]
-        self._health = None
+        self._checks += 1
+        check = self._checks
+        status = await self._check(key)
+        if check == self._checks and key_verification.fingerprint(api_key() or "") == mine:
+            self._health = (time.monotonic(), status, mine)
+        return status
+
+    async def _check(self, key: str | None) -> dict[str, Any]:
         cli = await asyncio.to_thread(find_tool, "gemini")
         status: dict[str, Any] = {"connection": "gemini", "ready": False, "installed": bool(cli), "key_configured": bool(key),
                                   "isolation": {"instruction_sources": 0, "live_mcp_servers": []}}
@@ -112,8 +121,6 @@ class GeminiAdapter:
             and not any(word in m["name"] for word in EXCLUDED_MODEL_WORDS)
         ]
         status["ready"] = True
-        if key_verification.fingerprint(api_key() or "") == mine:  # a key saved while this ran owns the cache now
-            self._health = (time.monotonic(), status, mine)
         return status
 
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],

@@ -81,6 +81,7 @@ class CopilotCliAdapter:
         self.turn_timeout = turn_timeout
         self._cli = cli  # tests pass a fake; otherwise `copilot` on PATH (copilot.cmd on Windows)
         self._health: tuple[float, dict[str, Any]] | None = None
+        self._checks = 0  # health checks started, to order their answers
         self._active: set[asyncio.subprocess.Process] = set()
 
     def _resolve(self) -> CliCommand:
@@ -144,7 +145,14 @@ class CopilotCliAdapter:
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         if self._health and not refresh and time.monotonic() - self._health[0] < 60:
             return self._health[1]
-        self._health = None  # a fresh check replaces the cached answer whatever it finds (E7)
+        self._checks += 1
+        check = self._checks
+        status = await self._check()
+        if check == self._checks:  # a check that started later owns the cache: only the newest may write it, whatever it found (E7)
+            self._health = (time.monotonic(), status)
+        return status
+
+    async def _check(self) -> dict[str, Any]:
         resolved = await asyncio.to_thread(self._resolve)
         cmd = resolved.argv
         status: dict[str, Any] = {"connection": self.connection, "installed": bool(resolved.found), "ready": False}
@@ -184,7 +192,6 @@ class CopilotCliAdapter:
             status["reason"] = "Copilot CLI lists no models for this account"
         else:
             status["ready"] = True
-        self._health = (time.monotonic(), status)
         return status
 
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],

@@ -746,3 +746,24 @@ def test_a_full_disk_at_the_last_job_write_still_releases_the_locks(setup):
             await service.install()
         return again.value.code
     assert asyncio.run(go()) == "already_installed"
+
+
+def test_a_cancel_before_the_install_task_first_runs_releases_the_locks(setup):
+    service, paths = service_of(setup), setup["paths"]
+
+    async def go():
+        await service.install()
+        service._task.cancel()  # before the task has had a turn: `_run` and its finally never start
+        try:
+            await service._task
+        except asyncio.CancelledError:
+            pass
+        assert service.embedder.installing is False and service._install_fd is None and service._in_use_fd is None
+        assert service.read_job()["status"] == "cancelled"
+        for lock in (paths.install_lock, paths.in_use_lock):
+            fd = local_embedding_service._try_lock(lock)
+            assert fd is not None
+            local_embedding_service._release(fd)
+        await service.install()  # it can be started again
+        return await until_done(service)
+    assert asyncio.run(go())["status"] == "succeeded"

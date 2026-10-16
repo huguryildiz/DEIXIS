@@ -140,7 +140,8 @@ class OpenAICompatAdapter:
         # One call at a time on a model this computer runs; hosted APIs take calls side by side.
         self._turns = asyncio.Semaphore(1) if local else None
         self._context_limits: dict[str, int | None] = {}
-        self._health: tuple[float, dict[str, Any], str] | None = None  # (time, answer, fingerprint of the key it was for)
+        self._health: tuple[float, dict[str, Any], tuple[str, str | None]] | None = None  # (time, answer, key and address it was for)
+        self._checks = 0  # health checks started, to order their answers
 
     def _key(self) -> str | None:
         return os.environ.get(self.spec.key_env) or None if self.spec.key_env else None
@@ -164,15 +165,28 @@ class OpenAICompatAdapter:
             self._client = loopback_client() if self.spec.key_env is None else httpx.AsyncClient()
         return self._client
 
+    def _identity(self, key: str | None) -> tuple[str, str | None]:
+        """What a cached answer was made for: the key and the address asked (a local server's address can be changed or removed)."""
+        return key_verification.fingerprint(key or ""), self._base()
+
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         key, spec = self._key(), self.spec
-        # A cached answer belongs to the key it was made with, and is not used once that key has been refused, by a step of this
-        # connection or of another that shares it.
-        mine = key_verification.fingerprint(key or "")
+        # A cached answer belongs to the key and address it was made with, and is not used once that key has been refused, by a
+        # step of this connection or of another that shares it. Checks are ordered: only the newest one to have started may
+        # write the cache, whatever it found, so a slow older check never covers a newer answer (E7).
+        mine = self._identity(key)
         if (self._health and not refresh and time.monotonic() - self._health[0] < 60 and self._health[2] == mine
                 and not (spec.key_env and key_verification.state_of(key) == "rejected")):
             return self._health[1]
-        self._health = None  # a fresh check replaces the cached answer whatever it finds (E7)
+        self._checks += 1
+        check = self._checks
+        status = await self._check(key)
+        if check == self._checks and self._identity(self._key()) == mine:
+            self._health = (time.monotonic(), status, mine)
+        return status
+
+    async def _check(self, key: str | None) -> dict[str, Any]:
+        spec = self.spec
         status: dict[str, Any] = {
             "connection": self.connection,
             "ready": False,
@@ -269,8 +283,6 @@ class OpenAICompatAdapter:
                 status["reason"] = f"The {spec.name} key is saved but not verified: the first step will try it"
                 return status
         status["ready"] = True
-        if key_verification.fingerprint(self._key() or "") == mine:  # a key saved while this ran owns the cache now
-            self._health = (time.monotonic(), status, mine)
         return status
 
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],
@@ -351,6 +363,7 @@ class OpenAICompatAdapter:
         if self.spec.key_env and key and (code == 200 or code in (401, 403)):
             key_verification.set_state(key, "verified" if code == 200 else "rejected")
             self._health = None
+            self._checks += 1  # a check that began before this step's answer no longer owns the cache
 
     async def _context_limit(self, root: str, model: str) -> int | None:
         """The model's own context length from Ollama's /api/show (model_info '<arch>.context_length'); None if unknown."""

@@ -727,7 +727,7 @@ test.describe.serial('Evidence table (P5 slice 1, D37/D38)', () => {
     await expect(page.locator('.evidence-col-head')).toHaveText([/Sample size/, /SYNTHETIC method/])
     await expect(page.locator('.evidence-suggestions')).toHaveCount(0)
 
-    const fill = page.getByRole('button', { name: /^Fill empty cells · 3 sources · up to 6 calls · fixture-model$/ })
+    const fill = page.getByRole('button', { name: /^Fill empty cells · 3 sources · up to 12 calls · fixture-model$/ })
     await fill.click()
     await expect(page.locator('[data-cell="0:0"]')).toContainText('128 byte', { timeout: 30000 })
     await expect(page.locator('[data-cell="0:0"]')).toContainText('Model · Abstract')

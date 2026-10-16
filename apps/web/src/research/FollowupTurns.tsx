@@ -99,7 +99,7 @@ export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTur
   const searchable = actions.canSearch && !turn.stale_scope && ['not_answered', 'partly_answered', 'no_passages'].includes(turn.status)
   const asked = splitQuotes(turn.question)
   return <section className="followup-turn">
-    <div className="followup-q">{asked.quotes.map((quote, i) => <blockquote className="followup-quote" key={i}>{quote}</blockquote>)}
+    <div className="followup-q">{asked.quotes.map((quote, i) => <blockquote className="followup-quote" key={i}><MathText text={quote} /></blockquote>)}
       <b><MessageSquare size={16} aria-hidden />{t('Question')}</b> <span>{asked.text}</span></div>
     <ol className="followup-steps">{steps(turn).map(line => <StepLine key={line.text} state={line.state} icon={line.icon}>{line.text}</StepLine>)}</ol>
     {turn.stale_scope && <p className="followup-note">{t('Asked under revision {n} of the question.', { n: turn.scope_revision })}</p>}

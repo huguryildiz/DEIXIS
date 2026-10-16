@@ -7,6 +7,29 @@ import { t } from '../i18n'
 
 const QUOTE_LIMIT = 800
 
+// The selected text with each KaTeX formula written back as its TeX source between $…$ ($$…$$ when displayed). The
+// selection's own text spells a formula out one character per line (KaTeX's MathML copy) and loses its structure.
+function selectionText(range: Range) {
+  const whole = range.cloneRange()
+  const formula = (node: Node) => (node instanceof Element ? node : node.parentElement)?.closest('.katex')
+  const first = formula(range.startContainer), last = formula(range.endContainer)
+  if (first) whole.setStartBefore(first.closest('.katex-display') ?? first)  // a formula is quoted whole or not at all
+  if (last) whole.setEndAfter(last.closest('.katex-display') ?? last)
+  const holder = document.createElement('div')
+  holder.style.cssText = 'position:fixed;left:-99999px;top:0;white-space:pre-line'
+  holder.append(whole.cloneContents())
+  holder.querySelectorAll('.katex').forEach(el => {
+    const tex = el.querySelector('annotation[encoding="application/x-tex"]')?.textContent?.trim()
+    const display = el.parentElement?.classList.contains('katex-display')
+    const target = display ? el.parentElement! : el
+    target.replaceWith(tex ? (display ? `\n$$${tex}$$\n` : `$${tex}$`) : (el.querySelector('.katex-html')?.textContent ?? ''))
+  })
+  document.body.append(holder)
+  const text = holder.innerText  // keeps the paragraph breaks a plain textContent drops
+  holder.remove()
+  return text
+}
+
 function selectedIn(root: HTMLElement) {
   const selection = window.getSelection()
   if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null
@@ -14,7 +37,7 @@ function selectedIn(root: HTMLElement) {
   const node = range.commonAncestorContainer
   const element = node instanceof Element ? node : node.parentElement
   if (!element || !root.contains(element) || element.closest('.followup-compose, input, textarea, [contenteditable="true"], .add-to-chat')) return null
-  const text = selection.toString().replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+  const text = selectionText(range).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
   if (!text) return null
   const rect = range.getBoundingClientRect()
   return { text: text.length > QUOTE_LIMIT ? `${text.slice(0, QUOTE_LIMIT).trimEnd()}…` : text, top: rect.top, left: rect.left + rect.width / 2 }

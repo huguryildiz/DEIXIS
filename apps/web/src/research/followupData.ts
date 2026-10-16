@@ -57,7 +57,8 @@ export function withQuotes(quotes: string[], question: string) {
 export function splitQuotes(question: string): { quotes: string[]; text: string } {
   const quotes: string[] = []
   const parts = question.split(/\n{2,}/)
-  while (parts.length > 1 && parts[0].split('\n').every(line => line.startsWith('> '))) {
+  // An empty quote line is stored as a bare '>': the backend drops trailing spaces on each line.
+  while (parts.length > 1 && parts[0].split('\n').every(line => line === '>' || line.startsWith('> '))) {
     quotes.push(parts.shift()!.split('\n').map(line => line.slice(2)).join('\n'))
   }
   return { quotes, text: parts.join('\n\n') }

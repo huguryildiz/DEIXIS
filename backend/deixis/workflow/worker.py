@@ -11,7 +11,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,7 +27,7 @@ except ImportError:  # Windows
 
 log = logging.getLogger("deixis.worker")
 PROCESS_STARTED_AT = datetime.now(timezone.utc).isoformat()
-RETRY_SECONDS = 1.0  # wait after a database or disk error before the next turn
+RETRY_SECONDS = 1.0  # wait after a failed turn (a database, disk or code error) before the next one
 
 
 class Worker:
@@ -122,8 +121,9 @@ class Worker:
             try:
                 await self._turn()
                 last_error = None
-            except (sqlite3.DatabaseError, OSError) as exc:
-                # A full disk or a locked library must not end the worker: no run would start again until a restart (P9 H3).
+            except Exception as exc:  # noqa: BLE001 - logged once per kind, then the next turn
+                # A full disk, a locked library or a code error in a sweep must not end the worker: no run would start
+                # again until a restart (P9 H3).
                 if type(exc) is not last_error:
                     log.exception("worker turn failed; trying again")
                 last_error = type(exc)

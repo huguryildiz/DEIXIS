@@ -11,7 +11,8 @@ turn's question, through the existing scope-revision route.
 Which passages a research holds for a follow-up (its pool):
 - `answer_input`: the latest answer of the turn's question revision froze its evidence (D253): each work's abstract
   and, for a work read in full, the pages of the file it was read from. A work the person has excluded or marked not
-  sure since then gives nothing, and one whose file the person marked wrong gives its abstract only. A work whose full
+  sure since then gives nothing, nor does one its late full text excluded (D255) unless the person included it, and
+  one whose file the person marked wrong gives its abstract only. A work whose full
   text was read and included after that answer's run started adds its abstract and pages too (D49): a follow-up reads
   the research as it has grown, not only as the answer saw it.
 - `included_works`: otherwise (an answer over attached files, or none yet), the text of each included work's
@@ -29,7 +30,7 @@ from deixis.domain import contracts
 from deixis.documents.jats import RENDITION_SQL
 from deixis.domain.rules import TEST_EFFORT_BUDGETS, RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, transaction
-from deixis.workflow import fast_answer, small_batch
+from deixis.workflow import fast_answer, late_revision, small_batch
 from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.evidence_deps import EVIDENCE_STATUS_SQL
 from deixis.workflow.late_revision import REVISION_INPUT
@@ -153,11 +154,17 @@ def pool(store: Any, research_id: str, scope_revision: int, flow: Any = None) ->
         # The person's choice is read on the work's head now, not the head the answer froze: a version published
         # since heads the work, and excluding or setting it pending takes the work's frozen passages out too.
         heads = store.work_heads(research_id)
+        late_excluded = late_revision.excluded_works(store, research_id, scope_revision)
         for item in frozen["plan"]["items"]:
             svid = item["source_version_id"]
             head = heads.get(item["work_id"], item.get("head"))
             state = selections.get(head) or humans.get(item["work_id"])
             if state in ("excluded", "pending"):
+                continue
+            # Late full text that found the work out (D255) takes it out unless the person included it, the rule a new
+            # answer reads it by (`fast_answer.input_plan`). As there, a code-rule selection is not read on its own: the
+            # code's decisions up to the cutoff are in the frozen input, and after it the late read is what drops a work.
+            if item["work_id"] in late_excluded and state != "included":
                 continue
             ids = list(item["abstract_ids"])
             if item["route"] == "fulltext" and state != "pdf_wrong":

@@ -648,3 +648,34 @@ def test_o12_worker_does_not_overwrite_a_run_cancelled_while_its_failure_was_wai
         await asyncio.wait_for(task, 2)
 
     asyncio.run(main())
+
+
+def test_worker_survives_a_code_error_in_a_turn(tmp_path, monkeypatch, caplog):
+    """W1: an exception that is not a database or disk error (a KeyError from the late-revision sweep, say) is logged
+    once, not every turn, and the loop goes on: the queued run still starts."""
+    path, store, (run_id,) = worker_library(tmp_path, monkeypatch)
+    caplog.set_level("INFO", logger="deixis.worker")
+    from deixis.workflow import late_revision
+    calls = []
+
+    def advance(flow, rid=None):
+        calls.append(1)
+        if len(calls) <= 3:
+            raise KeyError("SYNTHETIC code error")
+    monkeypatch.setattr(late_revision, "advance", advance)
+
+    async def script(flow, rid):
+        complete(flow, rid)
+
+    async def main():
+        flow = FakeFlow(store, script)
+        worker = Worker(store, flow, tmp_path / "lock")
+        task = asyncio.create_task(worker.run_forever())
+        await until(lambda: store.run(run_id)["status"] == "completed" or task.done())
+        assert not task.done(), task.exception()
+        await worker.stop()
+        await asyncio.wait_for(task, 2)
+        assert flow.executed == [run_id]
+
+    asyncio.run(main())
+    assert len([r for r in caplog.records if r.getMessage() == "worker turn failed; trying again"]) == 1

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 from typing import Any
 
 from deixis.storage.db import dumps, new_id, transaction
@@ -11,6 +12,7 @@ from deixis.workflow import adjudication, criterion_passages, fast_answer, fast_
 from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.flow import fuse_rankings
 
+log = logging.getLogger("deixis.late_revision")
 REVISION_INPUT = "fast_path:v1:revision_input"
 OPEN = ("waiting_fetch", "reading", "answering")
 # Full-text pages an upgraded work brings. A work already in the base answer replaces its abstract passage with two
@@ -58,6 +60,20 @@ def guard_reason(store: Any, row: dict[str, Any]) -> str | None:
             " AND run_id IS NOT ? LIMIT 1", (row["research_id"], row["base_answer_id"], row["answer_run_id"])).fetchone():
         return "newer_answer_exists"
     return None
+
+
+def held(store: Any, row: dict[str, Any]) -> bool:
+    """Whether a newer question revision opened from this row's one may still be withdrawn (D67). Then the row waits
+    with no event: withdrawn, the research is back on the row's revision and the row goes on; once work is done under
+    the new revision it is skipped for `scope_revised`. While a run of the research is active or paused that is not
+    known yet, so the row waits too. Only the sweep asks this; a late run that is running stops at its checkpoint."""
+    current = store.conn.execute(
+        "SELECT s.parent_revision FROM researches r JOIN scope_revisions s ON s.research_id = r.id"
+        " AND s.revision = r.current_scope_revision WHERE r.id = ?", (row["research_id"],)).fetchone()
+    if not current or current[0] != row["scope_revision"]:
+        return False
+    check = store.withdrawal(row["research_id"])
+    return check["allowed"] or check["reason"] == "run_active"
 
 
 def finish(store: Any, row: dict[str, Any], status: str, reason: str) -> None:
@@ -177,65 +193,70 @@ def advance(flow: Any, rid: str | None = None) -> None:
     if not rows:
         return
     for row in rows:
-        with transaction(store.conn):
-            reason = guard_reason(store, row)
-            if reason:
-                finish(store, row, "skipped", reason)
-                continue
-            if store.conn.execute("SELECT 1 FROM runs WHERE research_id = ?"
-                                  " AND status IN ('queued','running','pause_requested','paused')", (row["research_id"],)).fetchone():
-                continue
-            scope = store.scope(row["research_id"], row["scope_revision"])
-            ts = fast_path.timestamp(store.clock)
-            if row["status"] == "waiting_fetch":
-                if store.conn.execute("SELECT 1 FROM fast_path_background_fetches WHERE ledger_run_id = ?"
-                                      " AND status IN ('queued','running')", (row["ledger_run_id"],)).fetchone():
+        try:
+            with transaction(store.conn):
+                reason = guard_reason(store, row)
+                if reason == "scope_revised" and held(store, row):
                     continue
-                works = json.loads(row["works_json"])
-                if not check_candidates(flow, row, works):
-                    finish(store, row, "skipped", "source_changed")
+                if reason:
+                    finish(store, row, "skipped", reason)
                     continue
-                selections, humans = fast_answer.user_choices(store, row["research_id"])
-                pools = fast_answer.current_pools(store, row["research_id"])
-                works = [i for i in works if (selections.get(i["head"]) or humans.get(i["work_id"]) or {}).get("state") != "pdf_wrong"
-                         and any(p["kind"] == "pdf_page" for p in pools.get(i["source_version_id"], []))]
-                if not works:
-                    finish(store, row, "skipped", "no_new_fulltext")
+                if store.conn.execute("SELECT 1 FROM runs WHERE research_id = ?"
+                                      " AND status IN ('queued','running','pause_requested','paused')", (row["research_id"],)).fetchone():
                     continue
-                budget = adjudication.read_budget(scope["effort"]) | {"max_fulltext_reads": len(works), "max_model_calls": 2 * len(works)}
-                # A late read reads by its discovery's rule; a discovery queued before the rule existed keeps the old
-                # one (D76).
-                budget.pop("read_rule", None)
-                if rule := (store.run(row["ledger_run_id"])["budget"] or {}).get("read_rule"):
-                    budget["read_rule"] = rule
-                run = store.create_run(row["research_id"], "fulltext_adjudication", budget,
-                    f"fast_path:late_read:{row['ledger_run_id']}", target={"late_revision_id": row["id"],
-                    "discovery_run_id": row["ledger_run_id"], "heads": [i["head"] for i in works]})
-                store.conn.execute("UPDATE fast_path_late_revisions SET status = 'reading', read_run_id = ?, works_json = ?,"
-                                   " read_started_at = ?, updated_at = ? WHERE id = ?", (run["id"], dumps(works), ts, ts, row["id"]))
-                store._event(row["research_id"], "late_revision_queued", {"phase": "reading"}, run["id"])
-            elif row["status"] == "reading":
-                status = store.run(row["read_run_id"])["status"]
-                if status != "completed":
-                    finish(store, row, "failed" if status == "failed" else "skipped", f"read_run_{status}")
-                    continue
-                works = outcomes(flow, row)
-                store.conn.execute("UPDATE fast_path_late_revisions SET works_json = ? WHERE id = ?", (dumps(works), row["id"]))
-                if not check_candidates(flow, row, works):
-                    finish(store, row, "skipped", "source_changed")
-                    continue
-                if not any(i["late_outcome"] == "include" and i["late_asset_id"] for i in works):
-                    finish(store, row, "skipped", "no_fulltext_inclusion")
-                    continue
-                budget = fast_answer.answer_run_budget(store, row["research_id"], scope, discovery_id=row["ledger_run_id"])
-                budget |= {"trigger": "late_fulltext", "late_revision_id": row["id"]}
-                budget["fast_path"]["role"] = "late_revision"
-                run = store.create_run(row["research_id"], "answer", budget, f"fast_path:late_answer:{row['ledger_run_id']}")
-                store.conn.execute("UPDATE fast_path_late_revisions SET status = 'answering', answer_run_id = ?, updated_at = ?"
-                                   " WHERE id = ?", (run["id"], ts, row["id"]))
-            elif row["status"] == "answering":
-                status = store.run(row["answer_run_id"])["status"]
-                finish(store, row, "failed" if status != "cancelled" else "skipped", f"answer_run_{status}")
+                scope = store.scope(row["research_id"], row["scope_revision"])
+                ts = fast_path.timestamp(store.clock)
+                if row["status"] == "waiting_fetch":
+                    if store.conn.execute("SELECT 1 FROM fast_path_background_fetches WHERE ledger_run_id = ?"
+                                          " AND status IN ('queued','running')", (row["ledger_run_id"],)).fetchone():
+                        continue
+                    works = json.loads(row["works_json"])
+                    if not check_candidates(flow, row, works):
+                        finish(store, row, "skipped", "source_changed")
+                        continue
+                    selections, humans = fast_answer.user_choices(store, row["research_id"])
+                    pools = fast_answer.current_pools(store, row["research_id"])
+                    works = [i for i in works if (selections.get(i["head"]) or humans.get(i["work_id"]) or {}).get("state") != "pdf_wrong"
+                             and any(p["kind"] == "pdf_page" for p in pools.get(i["source_version_id"], []))]
+                    if not works:
+                        finish(store, row, "skipped", "no_new_fulltext")
+                        continue
+                    budget = adjudication.read_budget(scope["effort"]) | {"max_fulltext_reads": len(works), "max_model_calls": 2 * len(works)}
+                    # A late read reads by its discovery's rule; a discovery queued before the rule existed keeps the old
+                    # one (D76).
+                    budget.pop("read_rule", None)
+                    if rule := (store.run(row["ledger_run_id"])["budget"] or {}).get("read_rule"):
+                        budget["read_rule"] = rule
+                    run = store.create_run(row["research_id"], "fulltext_adjudication", budget,
+                        f"fast_path:late_read:{row['ledger_run_id']}", target={"late_revision_id": row["id"],
+                        "discovery_run_id": row["ledger_run_id"], "heads": [i["head"] for i in works]})
+                    store.conn.execute("UPDATE fast_path_late_revisions SET status = 'reading', read_run_id = ?, works_json = ?,"
+                                       " read_started_at = ?, updated_at = ? WHERE id = ?", (run["id"], dumps(works), ts, ts, row["id"]))
+                    store._event(row["research_id"], "late_revision_queued", {"phase": "reading"}, run["id"])
+                elif row["status"] == "reading":
+                    status = store.run(row["read_run_id"])["status"]
+                    if status != "completed":
+                        finish(store, row, "failed" if status == "failed" else "skipped", f"read_run_{status}")
+                        continue
+                    works = outcomes(flow, row)
+                    store.conn.execute("UPDATE fast_path_late_revisions SET works_json = ? WHERE id = ?", (dumps(works), row["id"]))
+                    if not check_candidates(flow, row, works):
+                        finish(store, row, "skipped", "source_changed")
+                        continue
+                    if not any(i["late_outcome"] == "include" and i["late_asset_id"] for i in works):
+                        finish(store, row, "skipped", "no_fulltext_inclusion")
+                        continue
+                    budget = fast_answer.answer_run_budget(store, row["research_id"], scope, discovery_id=row["ledger_run_id"])
+                    budget |= {"trigger": "late_fulltext", "late_revision_id": row["id"]}
+                    budget["fast_path"]["role"] = "late_revision"
+                    run = store.create_run(row["research_id"], "answer", budget, f"fast_path:late_answer:{row['ledger_run_id']}")
+                    store.conn.execute("UPDATE fast_path_late_revisions SET status = 'answering', answer_run_id = ?, updated_at = ?"
+                                       " WHERE id = ?", (run["id"], ts, row["id"]))
+                elif row["status"] == "answering":
+                    status = store.run(row["answer_run_id"])["status"]
+                    finish(store, row, "failed" if status != "cancelled" else "skipped", f"answer_run_{status}")
+        except Exception:  # noqa: BLE001 - one row must not hold up the worker, its queue or the other rows
+            log.exception("advancing late revision %s failed", row["id"])
 
 
 def revision_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:

@@ -293,8 +293,7 @@ def test_atomic_transition_rolls_back(tmp_path, monkeypatch):
         original(*args, **kwargs)
         raise RuntimeError("SYNTHETIC crash")
     monkeypatch.setattr(lib.store, "create_run", fail)
-    with pytest.raises(RuntimeError):
-        late_revision.advance(lib.flow)
+    late_revision.advance(lib.flow)  # the failure is logged for this row (W1); its transaction is rolled back
     assert row(lib)["status"] == "waiting_fetch" and row(lib)["read_run_id"] is None
     assert lib.store.conn.execute("SELECT COUNT(*) FROM runs WHERE kind = 'fulltext_adjudication'").fetchone()[0] == 0
 
@@ -446,3 +445,98 @@ def test_a_late_read_reads_by_its_discoverys_read_rule(tmp_path, rule):
     run = read_late(lib)
     plan = lib.store.existing_step(run["id"], f"late:{lib.discovery['id']}:adjudication_plan")["output"]
     assert run["budget"].get("read_rule") == rule and plan.get("read_rule") == rule
+
+
+def test_one_failing_late_row_holds_up_neither_the_other_rows_nor_the_queue(tmp_path, monkeypatch, caplog):
+    # A code error on one row (here a KeyError from its guard) is logged; the next row still moves on, and the worker
+    # still starts the run that row queued instead of ending its loop until a restart.
+    lib = prepared(tmp_path)
+    bad = row(lib)
+    good = bad | {"id": "late-synthetic-second", "ledger_run_id": lib.base_run["id"]}
+    lib.store.conn.execute(f"INSERT INTO fast_path_late_revisions ({', '.join(good)}) VALUES ({', '.join('?' * len(good))})",
+                           tuple(good.values()))
+    original = late_revision.guard_reason
+    def guard(store, late):
+        if late["id"] == bad["id"]:
+            raise KeyError("SYNTHETIC missing field")
+        return original(store, late)
+    monkeypatch.setattr(late_revision, "guard_reason", guard)
+    caplog.set_level("INFO")
+    late_revision.advance(lib.flow)
+    rows = {r["id"]: dict(r) for r in lib.store.conn.execute("SELECT * FROM fast_path_late_revisions")}
+    assert rows[bad["id"]]["status"] == "waiting_fetch" and rows[good["id"]]["status"] == "reading"
+    read_id = rows[good["id"]]["read_run_id"]
+    assert lib.store.run(read_id)["status"] == "queued"
+
+    async def execute(run_id):
+        lib.store.update_run(run_id, event="run_completed", status="completed")
+    monkeypatch.setattr(lib.flow, "execute", execute)
+
+    async def main():
+        worker = Worker(lib.store, lib.flow, tmp_path / "worker.lock")
+        task = asyncio.create_task(worker._run_forever())
+        deadline = asyncio.get_running_loop().time() + 5
+        while lib.store.run(read_id)["status"] != "completed" and not task.done():
+            assert asyncio.get_running_loop().time() < deadline, "the queued run never started"
+            await asyncio.sleep(0.01)
+        assert not task.done(), task.exception()
+        await worker.stop()
+        await asyncio.wait_for(task, 3)
+
+    asyncio.run(main())
+    assert lib.store.run(read_id)["status"] == "completed"
+    assert any(bad["id"] in r.getMessage() for r in caplog.records)
+
+
+def test_followup_pool_leaves_out_a_work_the_late_full_text_excluded(tmp_path):
+    # The answer froze the work from its abstract; its late full text then found the criterion not met. A follow-up
+    # must not read it again, as a new answer does not (`fast_answer.input_plan`).
+    from deixis.workflow import followup
+    from fakes import FakeAdapter, valid_response
+    lib = prepared(tmp_path, pdfs=2)
+    def respond(si):
+        output = json.loads(valid_response(si))
+        if si["task_type"] == "fulltext_adjudication":
+            for part in output["parts"]:
+                part.update(label="absent", quote="", passage_id=None)
+        return json.dumps(output)
+    lib.flow.deps.adapters["fake"] = FakeAdapter(respond)
+    base_items = lib.store.existing_step(lib.base_run["id"], fast_answer.INPUT)["output"]["items"]
+    before = followup.pool(lib.store, lib.rid, 1, lib.flow)
+    read_late(lib)
+    late_revision.advance(lib.flow)
+    excluded = late_revision.excluded_works(lib.store, lib.rid, 1)
+    gone = {i["source_version_id"] for i in base_items if i["work_id"] in excluded}
+    assert gone and gone <= set(before["sources"])
+    after = followup.pool(lib.store, lib.rid, 1, lib.flow)
+    assert not gone & set(after["sources"]), json.dumps(after["sources"])
+    assert not gone & set(after["reserve"]), json.dumps(after["reserve"])
+    kept = {i["source_version_id"] for i in base_items if i["work_id"] not in excluded}
+    assert kept <= set(after["sources"])
+
+
+def test_an_unused_question_revision_leaves_the_waiting_late_revision_open(tmp_path):
+    # D67: opening a revision and running nothing under it must not end the late revision of the one it was opened
+    # from, nor write an event that refuses the withdrawal; once it is withdrawn, the late revision goes on.
+    lib = prepared(tmp_path)
+    lib.store.revise_scope(lib.rid, lib.store.research(lib.rid)["version"], "SYNTHETIC another question", None)
+    asyncio.run(Worker(lib.store, lib.flow, tmp_path / "worker.lock")._turn())
+    assert row(lib)["status"] == "waiting_fetch" and row(lib)["skip_reason"] is None
+    assert lib.store.withdrawal(lib.rid)["allowed"], lib.store.withdrawal(lib.rid)
+    research = lib.store.research(lib.rid)
+    assert lib.store.withdraw_revision(lib.rid, research["version"], 2) == 1
+    late_revision.advance(lib.flow)
+    assert row(lib)["status"] == "reading"
+
+
+def test_a_used_question_revision_still_ends_the_late_revision(tmp_path):
+    lib = prepared(tmp_path)
+    lib.store.revise_scope(lib.rid, lib.store.research(lib.rid)["version"], "SYNTHETIC another question", None)
+    run = lib.store.create_run(lib.rid, "discovery", {}, None)
+    assert run["scope_revision"] == 2
+    late_revision.advance(lib.flow)
+    assert row(lib)["status"] == "waiting_fetch"  # whether the revision is used is not known while its run is queued
+    lib.store.update_run(run["id"], status="completed")
+    late_revision.advance(lib.flow)
+    assert row(lib)["status"] == "skipped" and row(lib)["skip_reason"] == "scope_revised"
+    assert lib.store.withdrawal(lib.rid)["allowed"] is False

@@ -9,6 +9,8 @@ is not read from the terminal; it is asked of the tool's own health check, at mo
 from __future__ import annotations
 
 import asyncio
+import base64
+import re
 import shlex
 import tempfile
 import subprocess
@@ -18,7 +20,7 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
-from deixis.tool_paths import find_tool
+from deixis.tool_paths import command_for, find_tool
 
 SIGNIN_TIMEOUT_SECONDS = 10 * 60
 CHECK_INTERVAL_SECONDS = 3.0
@@ -27,9 +29,8 @@ TOOLS = {"codex": ("codex", ["login"], "Codex CLI"), "claude": ("claude", ["auth
          "gemini_cli": ("gemini", [], "Gemini CLI")}
 LINUX_TERMINALS = ("x-terminal-emulator", "gnome-terminal", "konsole", "xterm")
 
-# What is handed to the process starter: an argument list, or on Windows one command-line string whose quoting
-# is already cmd.exe's own.
-LaunchSpec = list[str] | str
+# What is handed to the process starter: an argument list. Nothing is ever parsed by cmd.exe (A4).
+LaunchSpec = list[str]
 Launcher = Callable[[LaunchSpec], None]
 # Asks the tool's own health check whether it is signed in.
 Check = Callable[[str], Awaitable[bool]]
@@ -43,13 +44,32 @@ class SignInError(Exception):
 
 def start_process(spec: LaunchSpec) -> None:
     """Start the terminal launcher and let it go; its window belongs to the person from here on."""
+    if sys.platform == "win32":
+        # PowerShell is a console program: it gets a window of its own, which stays with the person.
+        subprocess.Popen(spec, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         creationflags=subprocess.CREATE_NEW_CONSOLE)
+        return
     subprocess.Popen(spec, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                     start_new_session=sys.platform != "win32")
+                     start_new_session=True)
 
 
 def _shell_line(exe: str, args: list[str], codex_home: Path | None) -> str:
     line = " ".join(shlex.quote(part) for part in (exe, *args))
     return f"CODEX_HOME={shlex.quote(str(codex_home))} {line}" if codex_home else line
+
+
+def powershell_quote(text: str) -> str:
+    """A PowerShell single-quoted string: nothing inside is expanded. A single quote is doubled, and so are the curly
+    ones PowerShell also reads as quotes (U+2018, U+2019, U+201A, U+201B)."""
+    return "'" + re.sub("([\u2018\u2019\u201a\u201b'])", r"\1\1", text) + "'"
+
+
+def codex_login_command(platform: str, codex_home: Path) -> str:
+    """The command a person pastes into their own terminal to sign in to the DEIXIS Codex home (B2)."""
+    if platform == "win32":
+        return f"$env:CODEX_HOME={powershell_quote(str(codex_home))}; codex login"
+    quoted = str(codex_home).replace("'", "'\\''")  # close the quote, an escaped quote, reopen
+    return f"CODEX_HOME='{quoted}' codex login"
 
 
 def build_launch(platform: str, exe: str, args: list[str], codex_home: Path | None,
@@ -66,11 +86,14 @@ def build_launch(platform: str, exe: str, args: list[str], codex_home: Path | No
         path.chmod(0o700)
         return ["open", "-a", "Terminal", str(path)]
     if platform == "win32":
-        # cmd.exe drops the first and last quote of the /k text, so the whole payload sits in one more pair.
-        payload = " ".join(f'"{part}"' if " " in part else part for part in (exe, *args))
+        # PowerShell runs a script it is handed encoded, so no path or argument passes through cmd.exe's parsing, and
+        # -NoExit keeps the window open for the person after the tool ends. exe is a native program or node.exe.
+        script = "$Host.UI.RawUI.WindowTitle = 'DEIXIS sign-in'; "
         if codex_home:
-            payload = f'set "CODEX_HOME={codex_home}"&& {payload}'
-        return f'cmd.exe /c start "DEIXIS sign-in" cmd.exe /k "{payload}"'
+            script += f"$env:CODEX_HOME = {powershell_quote(str(codex_home))}; "
+        script += "& " + " ".join(powershell_quote(part) for part in (exe, *args))
+        encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
+        return [which("powershell.exe") or "powershell.exe", "-NoLogo", "-NoProfile", "-NoExit", "-EncodedCommand", encoded]
     script = f"{_shell_line(exe, args, codex_home)}; printf '\\nPress Enter to close this window. '; read _"
     for terminal in LINUX_TERMINALS:
         path = which(terminal)
@@ -93,6 +116,9 @@ class AccountSignIn:
         self._state: dict[str, dict[str, Any]] = {}
         self._run: dict[str, dict[str, Any]] = {}  # deadline, last check time, whether a check is in flight
 
+    def codex_login_command(self) -> str:
+        return codex_login_command(self._platform, self._codex_home)
+
     def _view(self, tool: str) -> dict[str, Any]:
         return dict(self._state.get(tool) or {"state": "idle", "message": None})
 
@@ -113,12 +139,16 @@ class AccountSignIn:
         self._run[tool] = {"deadline": now + self._timeout, "last": now, "busy": True}
         try:
             binary, args, name = TOOLS[tool]
-            exe = await asyncio.to_thread(find_tool, binary)
-            if not exe:
+            found = await asyncio.to_thread(find_tool, binary)
+            if not found:
                 raise SignInError(409, f"{name} was not found on this computer; install it first")
+            command = command_for(binary, found)
+            if not command.argv:
+                raise SignInError(409, command.problem or f"{name} cannot be started on this computer")
             if tool == "codex":
                 self._codex_home.mkdir(parents=True, exist_ok=True, mode=0o700)
-            spec = build_launch(self._platform, exe, args, self._codex_home if tool == "codex" else None,
+            spec = build_launch(self._platform, command.argv[0], [*command.argv[1:], *args],
+                                self._codex_home if tool == "codex" else None,
                                 script_dir=self._codex_home.parent / "sign-in")
             try:
                 self._launcher(spec)

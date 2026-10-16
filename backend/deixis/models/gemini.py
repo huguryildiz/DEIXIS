@@ -17,7 +17,7 @@ import httpx
 from deixis import key_verification
 from deixis.models.adapter import ModelStepResult, broken_key_status, invalid_key_result
 from deixis.domain.limits import error_name, http_limit, service_error_kind, retry_at
-from deixis.tool_paths import child_path, find_tool
+from deixis.tool_paths import child_path, command_for, find_tool
 from deixis.tool_probe import probe
 
 API_URL = "https://generativelanguage.googleapis.com/v1beta"
@@ -73,8 +73,8 @@ class GeminiAdapter:
         cli, key = await asyncio.to_thread(find_tool, "gemini"), api_key()
         status: dict[str, Any] = {"connection": "gemini", "ready": False, "installed": bool(cli), "key_configured": bool(key),
                                   "isolation": {"instruction_sources": 0, "live_mcp_servers": []}}
-        if cli:
-            status["cli_version"] = (await probe([cli, "--version"], env={**os.environ, "PATH": child_path(cli)})).stdout.strip() or None
+        if argv := command_for("gemini", cli).argv:  # a Windows batch launcher is never started (A4)
+            status["cli_version"] = (await probe([*argv, "--version"], env={**os.environ, "PATH": child_path(cli)})).stdout.strip() or None
         if not key:
             status["reason_code"] = "needs_key"
             status["reason"] = "Add a Gemini API key in Settings to use the Gemini API"

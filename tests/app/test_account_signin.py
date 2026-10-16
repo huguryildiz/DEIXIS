@@ -7,6 +7,7 @@ with these commands, or what `codex login` and `claude auth login` ask.
 """
 
 import asyncio
+import base64
 import shlex
 from pathlib import Path
 
@@ -82,13 +83,13 @@ def test_mac_quotes_a_single_quote_in_a_path_for_the_shell(tmp_path):
     assert "\n/bin/claude auth login\n" in (tmp_path / "deixis-sign-in-claude.command").read_text()
 
 
-def test_windows_starts_a_titled_cmd_window_with_codex_home_set_inside_it():
+def test_windows_starts_powershell_with_codex_home_set_inside_it():
     home = Path("C:/Users/Jo Q/AppData/codex-home")
-    line = build_launch("win32", "C:\\Program Files\\nodejs\\codex.cmd", ["login"], home)
-    assert line == ('cmd.exe /c start "DEIXIS sign-in" cmd.exe /k '
-                    f'"set "CODEX_HOME={home}"&& "C:\\Program Files\\nodejs\\codex.cmd" login"')
-    assert build_launch("win32", "C:\\bin\\claude.cmd", ["auth", "login"], None) == \
-        'cmd.exe /c start "DEIXIS sign-in" cmd.exe /k "C:\\bin\\claude.cmd auth login"'
+    argv = build_launch("win32", "C:\\Program Files\\codex\\codex.exe", ["login"], home, which=lambda name: None)
+    assert argv[:4] == ["powershell.exe", "-NoLogo", "-NoProfile", "-NoExit"] and argv[4] == "-EncodedCommand"
+    script = base64.b64decode(argv[5]).decode("utf-16-le")
+    assert "$env:CODEX_HOME = 'C:/Users/Jo Q/AppData/codex-home'; & 'C:\\Program Files\\codex\\codex.exe' 'login'" in script
+    # More of this (the encoded script, hostile paths, no batch file) is in tests/hardening/test_windows_launch.py.
 
 
 def test_linux_picks_the_first_terminal_in_order_and_gnome_terminal_uses_a_double_dash():

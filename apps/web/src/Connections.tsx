@@ -1344,8 +1344,8 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   </>
   const checkButton = (key: string, label: string, run: () => Promise<unknown>, disabled = false, quiet = false) =>
     <button type="button" className={quiet ? 'ghost' : 'btn-pri'} disabled={disabled || checking !== null} onClick={() => runCheck(key, run)}>{checking === key ? <span className="spin" aria-hidden /> : <RotateCw aria-hidden />}{t(label)}</button>
-  // The Codex home this backend uses (DEIXIS_CODEX_HOME or the data folder's), single-quoted for a POSIX shell.
-  const codexLogin = data?.codex_home ? `CODEX_HOME='${data.codex_home.replaceAll("'", "'\\''")}' codex login` : null
+  // The Codex login command comes from the backend, written for this computer's shell (the Sign in button is the main way).
+  const codexLogin = data?.codex_login_command ?? null
   const signInCommandOf = (id: string) => id === 'codex' ? codexLogin : id === 'claude' ? 'claude auth login' : id === 'copilot_cli' ? 'copilot login' : id === 'gemini_cli' ? 'gemini' : null
   const copy = (text: string) => { writeClipboard(text).then(() => toast('success', t('Command copied.')), () => toast('error', t('Could not copy; select the command and copy it.'))) }
   // A way's head: its label and the state of its own connection.

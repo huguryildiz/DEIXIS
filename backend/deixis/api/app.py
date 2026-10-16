@@ -1161,6 +1161,8 @@ def create_app(
             # The Codex home this backend runs Codex with (DEIXIS_CODEX_HOME or the data folder's codex-home), so the
             # Settings sign-in command names the folder actually used. A local path, never a secret.
             "codex_home": str(settings.codex_home),
+            # The same sign-in as a command to paste in a terminal, written for this computer's shell (PowerShell on Windows).
+            "codex_login_command": request.app.state.account_signin.codex_login_command(),
             "providers": [
                 {"id": p, "implemented": True, "access_mode": c.access_mode(), "supplementary": c.supplementary,
                  "key_env": c.key_env, "key_broken": key_broken(c), "role": provider_role(c),

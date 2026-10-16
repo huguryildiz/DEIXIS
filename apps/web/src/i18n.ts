@@ -64,6 +64,7 @@ const tr: Record<string, string> = {
   '{service} had an error on its side.': '{service} kendi tarafında hata verdi.',
   'DEIXIS could not reach {service}.': 'DEIXIS {service} servisine ulaşamadı.',
   'Your network or computer did not accept the secure connection to {service}.': 'Ağınız ya da bilgisayarınız {service} servisiyle kurulan güvenli bağlantıyı kabul etmedi.',
+  '{service} is installed in a way DEIXIS cannot start on Windows. Install it again with its official Windows installer, then check the connection again.': '{service} Windows’ta DEIXIS’in başlatamayacağı bir biçimde kurulmuş. Resmî Windows yükleyicisiyle yeniden kurun, ardından bağlantıyı tekrar denetleyin.',
   '{service} did not complete the request.': '{service} isteği tamamlamadı.',
   'Retry suggested at {time}; recovery is not guaranteed.': 'Servisin önerdiği yeniden deneme zamanı {time}; o anda düzelmiş olacağı kesin değil.',
   'The service did not give a recovery time.': 'Servis ne zaman düzeleceğini bildirmedi.',

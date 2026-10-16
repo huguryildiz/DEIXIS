@@ -37,7 +37,7 @@ from deixis.models.adapter import ModelStepResult
 from deixis.models.cli_process import reap, spawn_options, stop_group_async, track
 from deixis.domain.limits import limit_kind, safe_error, service_error_kind
 from deixis import tool_probe
-from deixis.tool_paths import child_path, find_tool
+from deixis.tool_paths import child_path, command_for, find_tool
 
 CLI = "gemini"
 # Concrete ids from Gemini CLI 0.60's VALID_GEMINI_MODELS (internal, Gemma and custom-tools variants left out).
@@ -138,9 +138,9 @@ def cli_environment(home: Path, credentials: Path, source: Mapping[str, str] | N
     return env
 
 
-def cli_argv(cli: str, model: str) -> list[str]:
+def cli_argv(cli: str | list[str], model: str) -> list[str]:
     # The message goes on stdin; `-p ""` selects headless mode without adding text to it. `-e none` loads no extension.
-    return [cli, "-m", model, "-o", "stream-json", "-e", "none", "--approval-mode", "default", "-p", ""]
+    return [*([cli] if isinstance(cli, str) else cli), "-m", model, "-o", "stream-json", "-e", "none", "--approval-mode", "default", "-p", ""]
 
 
 def auth_failure(stderr: str) -> tuple[str, str] | None:
@@ -222,23 +222,27 @@ class GeminiCliAdapter:
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         if self._health and not refresh and time.monotonic() - self._health[0] < 60:
             return self._health[1]
-        cli = await asyncio.to_thread(find_tool, CLI)
+        found = command_for(CLI, await asyncio.to_thread(find_tool, CLI))
+        cli = found.argv
         status: dict[str, Any] = {
-            "connection": self.connection, "installed": bool(cli), "ready": False, "catalogue": "fixed",
+            "connection": self.connection, "installed": bool(found.found), "ready": False, "catalogue": "fixed",
             # No `isolation` counts: the CLI cannot list the tools or context files it loaded, so none are claimed.
             # The settings register none, and run_step refuses an answer with any tool event.
             "models": [{"id": model, "display_name": name, "is_default": False, "description": "",
                         "default_reasoning_effort": None, "reasoning_efforts": []} for model, name in MODELS],
         }
-        if not cli:
+        if not found.found:
             status["reason"] = "Gemini CLI not found"
+            return status
+        if found.problem:
+            status["reason_code"], status["reason"] = "unsupported_install", found.problem
             return status
         async with self._lock:
             # The version is shown only; a slow start (over 20 s measured on 15 Oct) must not fail the check. The probe
             # keeps that longer limit but is bounded in output like every tool probe (A3b).
             home = prepare_home(self.home, "")
             try:
-                version = await tool_probe.probe([cli, "--version"], 60, cli_environment(home, self.credentials()))
+                version = await tool_probe.probe([*cli, "--version"], 60, cli_environment(home, self.credentials()))
             finally:
                 shutil.rmtree(home, ignore_errors=True)
             status["cli_version"] = version.stdout.strip() or None
@@ -247,7 +251,7 @@ class GeminiCliAdapter:
                 return status
             # An empty prompt makes the CLI sign in and set up the account, then stop before any model request.
             try:
-                probe = await self._run([cli, "-o", "stream-json", "-e", "none", "-p", ""], "", "", 60)
+                probe = await self._run([*cli, "-o", "stream-json", "-e", "none", "-p", ""], "", "", 60)
             except (OSError, TimeoutError) as exc:
                 # TimeoutError carries no message; a first start that sets the CLI up can take over a minute.
                 status["reason"] = ("Gemini CLI did not answer within 60 s" if isinstance(exc, TimeoutError)
@@ -268,9 +272,10 @@ class GeminiCliAdapter:
 
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],
                        requested_model: str | None, reasoning_effort: str | None = None) -> ModelStepResult:
-        cli = await asyncio.to_thread(find_tool, CLI)
+        found = command_for(CLI, await asyncio.to_thread(find_tool, CLI))
+        cli = found.argv
         if not cli or not requested_model:
-            return ModelStepResult("unavailable", error="Gemini CLI not found" if not cli else "no model requested",
+            return ModelStepResult("unavailable", error=(found.problem or "Gemini CLI not found") if not cli else "no model requested",
                                    delivery_class="before_send")
         if not self.credentials().is_file():
             return ModelStepResult("unavailable", error="Not signed in to Gemini CLI", delivery_class="before_send",

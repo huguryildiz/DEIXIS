@@ -726,7 +726,7 @@ export type ModelHealth = {
   // The local server's saved address (D34, `local_server` only); null while none is saved.
   base_url?: string | null
 }
-export type Connections = { models: Record<string, ModelHealth>; codex_home?: string; providers: { id: string; implemented: boolean; access_mode: string | null; key_broken?: boolean; supplementary?: boolean; role?: string; note: string }[] }
+export type Connections = { models: Record<string, ModelHealth>; codex_home?: string; codex_login_command?: string; providers: { id: string; implemented: boolean; access_mode: string | null; key_broken?: boolean; supplementary?: boolean; role?: string; note: string }[] }
 export type Keychain = { available: boolean; name: string | null }
 export type KeyEntry = { env: string; group: 'model' | 'source'; service: string; configured: boolean; source: 'keychain' | 'dotenv' | 'environment' | null; testable: boolean; shell_fallback?: boolean; last4?: string | null
   // 'pending' is "saved, not verified"; null when no check ran in this session. `broken`: the saved item could not be read and was skipped (E2, E6).

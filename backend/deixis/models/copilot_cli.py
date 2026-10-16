@@ -26,7 +26,7 @@ from deixis.child_env import NODE_TLS
 from deixis.models.adapter import CODEX_ENV_ALLOWLIST, ModelStepResult
 from deixis.models.cli_process import reap, spawn_options, stop_group_async, track
 from deixis.domain.limits import safe_error, service_error_kind
-from deixis.tool_paths import child_path, find_tool
+from deixis.tool_paths import CliCommand, child_path, command_for, find_tool
 from deixis.tool_probe import probe
 
 # A tool name Copilot does not have: with it as the only available tool, the model is offered none.
@@ -83,12 +83,18 @@ class CopilotCliAdapter:
         self._health: tuple[float, dict[str, Any]] | None = None
         self._active: set[asyncio.subprocess.Process] = set()
 
-    def _command(self) -> list[str] | None:
+    def _resolve(self) -> CliCommand:
         if self._cli is not None:
-            return list(self._cli)
+            return CliCommand(self._cli[0], list(self._cli))
         found = find_tool("copilot")
         binary = native_binary(Path(found)) if found else None
-        return [binary] if binary else None
+        if found and binary is None and sys.platform != "win32":
+            return CliCommand(None)
+        # On Windows the launcher is copilot.cmd, never run: its native .exe, else node on the script it names (A4).
+        return command_for("copilot", binary or found)
+
+    def _command(self) -> list[str] | None:
+        return self._resolve().argv or None
 
     def _prepare(self) -> dict[str, str]:
         self.home.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -138,10 +144,13 @@ class CopilotCliAdapter:
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         if self._health and not refresh and time.monotonic() - self._health[0] < 60:
             return self._health[1]
-        cmd = await asyncio.to_thread(self._command)
-        status: dict[str, Any] = {"connection": self.connection, "installed": bool(cmd), "ready": False}
+        resolved = await asyncio.to_thread(self._resolve)
+        cmd = resolved.argv
+        status: dict[str, Any] = {"connection": self.connection, "installed": bool(resolved.found), "ready": False}
         if not cmd:
-            status["reason"] = "GitHub Copilot CLI not found"
+            status["reason"] = resolved.problem or "GitHub Copilot CLI not found"
+            if resolved.problem:
+                status["reason_code"] = "unsupported_install"
             return status
         env = self._prepare()
         try:
@@ -179,9 +188,10 @@ class CopilotCliAdapter:
 
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],
                        requested_model: str | None, reasoning_effort: str | None = None) -> ModelStepResult:
-        cmd = await asyncio.to_thread(self._command)
+        resolved = await asyncio.to_thread(self._resolve)
+        cmd = resolved.argv
         if not cmd or not requested_model:
-            return ModelStepResult("unavailable", error="GitHub Copilot CLI not found" if not cmd else "no model requested",
+            return ModelStepResult("unavailable", error=(resolved.problem or "GitHub Copilot CLI not found") if not cmd else "no model requested",
                                    delivery_class="before_send")
         env = self._prepare()
         if configured := self._configured_mcp_servers():

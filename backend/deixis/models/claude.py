@@ -29,7 +29,7 @@ from claude_agent_sdk import (
 from deixis.child_env import NODE_TLS
 from deixis.models.adapter import ModelStepResult
 from deixis.domain.limits import limit_kind, service_error_kind, safe_error
-from deixis.tool_paths import child_path, find_tool
+from deixis.tool_paths import child_path, command_for, find_tool
 from deixis.tool_probe import probe
 
 
@@ -82,11 +82,15 @@ class ClaudeCodeAdapter:
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         if self._health and not refresh and time.monotonic() - self._health[0] < 60:
             return self._health[1]
-        cli = await asyncio.to_thread(find_tool, "claude")
-        status: dict[str, Any] = {"connection": self.connection, "installed": bool(cli), "ready": False}
-        if not cli:
+        found = command_for("claude", await asyncio.to_thread(find_tool, "claude"))
+        status: dict[str, Any] = {"connection": self.connection, "installed": bool(found.found), "ready": False}
+        if not found.found:
             status["reason"] = "Claude Code CLI not found"
             return status
+        if found.problem:  # the SDK starts one executable and refuses a Windows batch launcher (A4)
+            status["reason_code"], status["reason"] = "unsupported_install", found.problem
+            return status
+        cli = found.argv[0]
         version = await probe([cli, "--version"], env={**os.environ, "PATH": child_path(cli)})
         if version.error == "not_responding":
             status["reason_code"] = "timeout"
@@ -138,9 +142,10 @@ class ClaudeCodeAdapter:
 
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],
                        requested_model: str | None, reasoning_effort: str | None = None) -> ModelStepResult:
-        cli = await asyncio.to_thread(find_tool, "claude")
+        found = command_for("claude", await asyncio.to_thread(find_tool, "claude"))
+        cli = found.argv[0] if found.argv else None
         if not cli or not requested_model:
-            return ModelStepResult("unavailable", error="Claude Code CLI not found" if not cli else "no model requested",
+            return ModelStepResult("unavailable", error=(found.problem or "Claude Code CLI not found") if not cli else "no model requested",
                                    delivery_class="before_send")
         options = self._options(
             cli,

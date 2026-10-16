@@ -210,7 +210,7 @@ def test_the_migration_marks_tables_made_from_the_included_sources(tmp_path, mon
                          " VALUES (?, ?, ?, 't', ?)", (tid, svid, added_by, "r" if added_by == "user" else None))
     conn.commit()
 
-    assert db.migrate(conn) == [19]
+    assert db.migrate(conn)[0] == 19  # the first one applied; later migrations follow it
     assert dict(conn.execute("SELECT id, follows_included FROM evidence_tables").fetchall()) == {
         "tbl_SYNTHincl0001": 1, "tbl_SYNTHhand0001": 0, "tbl_SYNTHnone0001": 0}
     assert [tuple(r) for r in conn.execute("SELECT table_id, added_by, created_at, removed_at FROM table_rows ORDER BY table_id")] == [

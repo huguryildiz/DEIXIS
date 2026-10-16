@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { Info, RotateCw } from 'lucide-react'
-import { api, preferencesApi, shellApi, usageApi, type About, type ContactEmailSetting, type Effort, type EffortLimits, type PreferenceChange, type Preferences, type Profile, type Connections, type InstitutionalAccess, type ModelRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Usage, type UsageRole } from './api'
+import { api, preferencesApi, shellApi, spendApi, usageApi, type About, type ContactEmailSetting, type Effort, type EffortLimits, type PreferenceChange, type Preferences, type Profile, type Connections, type InstitutionalAccess, type ModelRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Spending, type Usage, type UsageRole } from './api'
 import { canRun, connectionModels, modelKey, type ConnectionModel } from './Home'
 import { defaultEffort, exposesEffortControl } from './modelEffort'
 import { ConnectionsTab } from './Connections'
 import { useToast } from './Toast'
 import { t, uiLocale, type UiLanguage } from './i18n'
-import { connectionName, reasoningLabel } from './labels'
+import { connectionName, money, reasoningLabel } from './labels'
 import { Notice } from './Notice'
 import './research/kit.css'
 import './Settings.css'
@@ -238,6 +238,8 @@ export function SettingsPage({ dark, section, language, onLanguage, theme, onThe
 
     <UsageThisMonth />
 
+    <SpendingSettings />
+
     <h2 data-panel="general">{t('Language')}</h2>
     <div className="rows set-lang" data-panel="general">
       <div>
@@ -464,6 +466,59 @@ function UsageThisMonth() {
       </div>
     </div>
     {month.value?.since && <p className="foot-note set-usage-note" data-panel="usage">{t(b?.source === 'live' ? 'Model calls counted since {date}. The OpenAlex figure is read from OpenAlex when this page opens.' : 'Model calls counted since {date}. The OpenAlex figure comes from its last response, not a live reading.', { date: new Date(month.value.since).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'long' }) })}</p>}
+  </>
+}
+
+// Estimated spending (F4): what today's calls to models paid by API key are estimated to have cost, and an optional daily
+// threshold. Off by default. The threshold is an estimate, not a limit: a run pauses before its next paid call once the
+// estimate has reached it, and a call already sent finishes.
+function SpendingSettings() {
+  const [spending, setSpending] = useState<Spending | null>(null)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const toast = useToast()
+  const show = (value: Spending) => { setSpending(value); setDraft(value.daily_threshold_usd === null ? '' : String(value.daily_threshold_usd)) }
+  useEffect(() => {
+    let live = true
+    spendApi.get().then(value => { if (live) show(value) }, (e: Error) => { if (live) setError(e.message) })
+    return () => { live = false }
+  }, [])
+  const amount = draft.trim() === '' ? null : Number(draft.replace(',', '.'))
+  const valid = amount === null || (Number.isFinite(amount) && amount > 0 && amount <= 100000)
+  const changed = spending !== null && amount !== spending.daily_threshold_usd
+  const save = (next: number | null) => {
+    setBusy(true); setError('')
+    spendApi.setThreshold(next).then(value => {
+      show(value)
+      toast('success', t(next === null ? 'The spending threshold is off.' : 'The spending threshold is saved.'))
+    }).catch((e: Error) => setError(e.message)).finally(() => setBusy(false))
+  }
+  const today = spending?.today
+  return <>
+    <h2 data-panel="usage">{t('Estimated spending')}</h2>
+    <div className="rows set-spending" data-panel="usage">
+      <div data-role="spent-today">
+        <b>{t('Estimated today')}</b>
+        <p>{t('Models you pay for with an API key. Models on a subscription or on this computer cost nothing per call and are not counted.')}</p>
+        <p className="tnum">{today ? <>{money(today.estimated_usd)}
+          <small>{t(today.priced_calls === 1 ? 'from {n} call' : 'from {n} calls', { n: today.priced_calls.toLocaleString(uiLocale()) })}
+            {today.estimated_from_text_calls > 0 && ` · ${t('{n} of them estimated from text length because the provider sent no usage', { n: today.estimated_from_text_calls })}`}</small>
+          {today.unpriced_calls > 0 && <small>{t('Not counted: {n} calls on models with no listed price.', { n: today.unpriced_calls.toLocaleString(uiLocale()) })}</small>}</>
+          : t(error ? 'not known' : 'Checking…')}</p>
+      </div>
+      <form onSubmit={e => { e.preventDefault(); if (changed && valid) save(amount) }}>
+        <b><label htmlFor="spend-threshold">{t('Stop at an estimated amount per day')}</label></b>
+        <p>{t('Off by default. A research pauses before its next paid call once today’s estimate reaches this amount.')}
+          {error && <span className="key-form-error" role="alert"> {error}</span>}</p>
+        <input id="spend-threshold" className="field" type="text" inputMode="decimal" value={draft} disabled={spending === null || busy} placeholder={t('Off')} aria-invalid={!valid}
+          onChange={e => { setDraft(e.target.value); setError('') }} />
+        <button type="submit" className="ghost" disabled={busy || !changed || !valid}>{t(busy ? 'Saving…' : 'Save')}</button>
+        {spending?.daily_threshold_usd != null && <button type="button" className="ghost" disabled={busy} onClick={() => save(null)}>{t('Turn off')}</button>}
+        {!valid && <Notice tone="attention">{t('Enter an amount in US dollars, for example 5.')}</Notice>}
+      </form>
+    </div>
+    {spending && <p className="foot-note" data-panel="usage">{t('A call already sent finishes and is kept. Press Resume run to go on; raising the amount does not resume it. This is an estimate, not a limit.')} {t('Costs are estimated from the usage each provider reports and a price list dated {date}. The provider’s own bill is what counts.', { date: spending.prices.as_of })}</p>}
   </>
 }
 

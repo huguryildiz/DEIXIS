@@ -21,7 +21,7 @@ from deixis.domain.canonical import sha256_hex
 from deixis.documents.jats import RENDITION_SQL
 from deixis.domain.rules import RevisionConflict, apply_model_change, check_expected_version, effective_reviewer, role_model, step_model
 from deixis.storage.db import dumps, new_id, now, row_dict, transaction
-from deixis.workflow import links, recovery
+from deixis.workflow import links, recovery, spend
 from deixis.workflow.source_keys import key_stem, suffixes
 from deixis.workflow.evidence_deps import EVIDENCE_STATUS_SQL
 
@@ -1405,7 +1405,10 @@ class Store:
             self._event(research_id, "model_call_started", {"step_id": step_id, "connection": connection, "requested_model": requested_model}, run_id)
         return msid
 
-    def finish_model_session(self, session_id: str, *, accept: Callable[[], bool] | None = None, **fields: Any) -> bool:
+    def finish_model_session(self, session_id: str, *, accept: Callable[[], bool] | None = None,
+                             request_sent: bool | None = None, **fields: Any) -> bool:
+        """Store a session's result. `request_sent` is not a column: it says whether the call reached the provider
+        (`spend.request_sent`), for the day's spend ledger written in this same transaction (F4)."""
         encoded = {k: (dumps(v) if k.endswith("_json") and v is not None else v) for k, v in fields.items()}
         if fields.get("raw_output") is not None:
             encoded["output_sha256"] = _output_digest(fields["raw_output"])
@@ -1417,6 +1420,8 @@ class Store:
                     f"UPDATE model_sessions SET {', '.join(f'{k} = ?' for k in encoded)} WHERE id = ?",
                     (*encoded.values(), session_id),
                 )
+                if "status" in fields or "token_usage_json" in fields:
+                    spend.record_session(self.conn, session_id, spend.day_of(self.clock), request_sent)
         return accepted
 
     def model_session(self, step_input_id: str) -> dict[str, Any]:

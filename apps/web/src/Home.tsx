@@ -10,6 +10,7 @@ import { api, ApiError, homeApi, preferencesApi, type Connections, type Effort, 
 import { connectionName, fileRestoreNote, fileRestoreTone, reasoningLabel, scopeLabels, shownVersion } from './labels'
 import { t, uiLanguage, uiLocale } from './i18n'
 import { ZoteroDialog, type ZoteroChoice } from './ZoteroDialog'
+import { SpendEstimateNote } from './SpendEstimate'
 import { ConnectionIcon } from './connectionIcons'
 import { Notice } from './Notice'
 import { SemanticSetupNote } from './SemanticNotes'
@@ -526,6 +527,11 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
     { role: 'answer', summary: withEffort(modelName(model), efforts.some(e => e.id === reasoning) ? reasoning : null), note: notReady('answer') },
     { role: 'reviewer', summary: defaultName ? withEffort(defaultName, listedEffort(models, modelKey(defaults!.reviewer.model_connection, defaults!.reviewer.model!), defaults!.reviewer.reasoning_effort ?? null)) : t('no reviewer'), note: notReady('reviewer') },
   ]
+  // The model a role would run on, as the cost estimate asks for it; null until the role has one.
+  const roleChoice = (id: string, effort: string | null) => {
+    const option = models.find(m => m.id === id)
+    return option ? { connection: option.connection, model: option.model, reasoning_effort: listedEffort(models, id, effort) } : null
+  }
   const noModel = Boolean(connections) && !models.length
   const openModelSettings = () => { window.location.hash = '#/settings/models' }
 
@@ -599,6 +605,8 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
         {noGuide && <span className="guide-none" role="status">{t('Choose at least one PDF to guide the search.')}</span>}
       </div>}
     </form>
+    <SpendEstimateNote effort={effort} answer={roleChoice(model, reasoning)} literature={roleChoice(literature, literatureReasoning)}
+      reviewer={defaults?.reviewer.model ? { connection: defaults.reviewer.model_connection, model: defaults.reviewer.model, reasoning_effort: defaults.reviewer.reasoning_effort ?? null } : null} />
     <ZoteroDialog open={zoteroOpen} onOpenChange={setZoteroOpen} destination="home" busy={busy} initial={zotero} returnFocus={addButton}
       onImport={choice => { setZotero(choice); setZoteroOpen(false); if (scope === 'academic') setScope('attached_and_academic') }} />
     <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={e => { void addFiles(e.target.files); e.target.value = '' }} />

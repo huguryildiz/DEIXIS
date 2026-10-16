@@ -26,6 +26,7 @@ DATAS = (
     ("backend/deixis/documents/embedding_runner.py", "deixis/documents"),
     ("backend/deixis/documents/marker_runner.py", "deixis/documents"),
     ("backend/deixis/workflow/report/latex_names.json", "deixis/workflow/report"),
+    ("backend/deixis/models/model_prices.json", "deixis/models"),  # workflow/spend.py (F4)
     ("backend/deixis/exports/deixis-mark.png", "deixis/exports"),
     ("THIRD_PARTY_NOTICES", "."),  # api/about_routes.py; written by scripts/licenses/build_notices.py (F2)
 )

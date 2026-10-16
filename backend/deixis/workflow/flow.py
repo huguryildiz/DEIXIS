@@ -46,6 +46,7 @@ from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow import abstract_stage
 from deixis.workflow import small_batch
+from deixis.workflow import spend
 from deixis.workflow import fast_path
 from deixis.workflow import seed_match as seed_match_rules
 from deixis.workflow import adjudication
@@ -216,6 +217,11 @@ def turn_timed_out(result: ModelStepResult) -> bool:
     """
     return (result.status == "failed" and result.error == "client_timeout"
             and result.delivery_class == "after_send_unknown")
+
+
+def sent_to_provider(result: ModelStepResult) -> bool | None:
+    """Whether a call reached the provider, for the day's spend ledger (`spend.request_sent`, F4)."""
+    return spend.request_sent(result.status, result.delivery_class, result.http_status, bool(result.token_usage))
 
 
 class _ReadCutoff(Exception):
@@ -558,6 +564,17 @@ class ResearchFlow:
             raise RunStopped
         self.store.update_run(run_id, event="run_paused", status="paused", pause_reason=reason, error_json=detail)
         raise RunStopped
+
+    def _spend_gate(self, run_id: str, connection: str, before_pause: Callable[[], None] | None = None) -> None:
+        """Pause the run before a call is sent once the day's estimated spend has reached the person's threshold (F4).
+        Only a call that bills per call (a provider API key) is held; a call in flight is never cut, and its result is
+        already stored. Nothing resumes by itself when the threshold is raised: the person presses Resume, which asks
+        again here."""
+        if connection not in spend.API_KEY_CONNECTIONS or (over := spend.over_threshold(self.store)) is None:
+            return
+        if before_pause is not None:
+            before_pause()
+        self._pause(run_id, "spend_threshold", over)
 
     def _fail(self, run_id: str, reason: str, detail: Any = None) -> None:
         if self._hold(run_id, "fail", reason, detail):
@@ -5111,6 +5128,7 @@ class ResearchFlow:
                 session, status=result.status, resolved_model=result.resolved_model,
                 external_thread_id=result.external_thread_id, raw_output=result.raw_text,
                 token_usage_json=result.token_usage, tool_item_types_json=result.tool_item_types,
+                request_sent=sent_to_provider(result),
             )
             await limiter.reduce()
             self._checkpoint(run_id)
@@ -5120,6 +5138,7 @@ class ResearchFlow:
             self.store.service_waiting(run_id, connection, attempts, RATE_LIMIT_BACKOFF_SECONDS * attempts)
             await asyncio.sleep(RATE_LIMIT_BACKOFF_SECONDS * attempts)
             self._checkpoint(run_id)
+            self._spend_gate(run_id, connection)
             guard = getattr(self, "_small_batch_guard", None)
             if guard and guard["run_id"] == run_id and not self._model_calls_left(
                     self.store.run(run_id), len(guard.get("reserved_calls", set())) + 1):
@@ -5399,6 +5418,8 @@ class ResearchFlow:
                 self.store.finish_step(step["id"], "failed", error_code="budget_exhausted", **sent_output())
                 # Resume keeps the counter and ceiling: cancel and request a new preview to progress.
                 halt("budget_exhausted", {"limit": "model_calls"})
+            self._spend_gate(run_id, connection, lambda: self.store.finish_step(
+                step["id"], "cancelled", error_code="spend_threshold", **sent_output()))
             payload = step_input_builder(step["id"]) if step_input_builder is not None else self._step_input(run, scope, step["id"], task_type, candidate_rows or [], source_ids or [], passage_rows or [],
                                        claims or [], model, extraction_target, report_target, vocabulary_target,
                                        screening_target, adjudication_target, lineage_target, candidate_target)
@@ -5496,6 +5517,7 @@ class ResearchFlow:
             recorded: dict[str, Any] = {
                 "status": result.status, "resolved_model": result.resolved_model, "external_thread_id": result.external_thread_id,
                 "raw_output": result.raw_text, "token_usage_json": result.token_usage, "tool_item_types_json": result.tool_item_types,
+                "request_sent": sent_to_provider(result),
             }
             if result.status == "cutoff":
                 # Closed without a pause or a resend: the read window records the work as not read at its cutoff.

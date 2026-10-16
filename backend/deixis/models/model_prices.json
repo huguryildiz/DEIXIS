@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "as_of": "2026-10-16",
+  "unit": "US dollars per 1,000,000 tokens",
+  "note": "Read from each provider's public pricing page on the date above, short-prompt rates, no batch or priority tiers, no cache discounts beyond the cached_input and cache_write columns. Only models whose price was read are listed; any other model has no estimate. DeepSeek bills half as much off-peak; the peak rate is listed. Prices change: the provider's own bill is what counts.",
+  "models": {
+    "openai": {
+      "gpt-6-astra": {"input": 10.0, "cached_input": 1.0, "output": 50.0},
+      "gpt-6.1-sol": {"input": 2.0, "cached_input": 0.1, "output": 10.0},
+      "gpt-6-sol": {"input": 2.0, "cached_input": 0.2, "output": 10.0},
+      "gpt-6-luna": {"input": 0.1, "cached_input": 0.01, "output": 0.5},
+      "gpt-5.6-sol": {"input": 4.0, "cached_input": 0.4, "output": 20.0},
+      "gpt-5.6-terra": {"input": 2.0, "cached_input": 0.2, "output": 12.0},
+      "gpt-5.6-luna": {"input": 0.2, "cached_input": 0.02, "output": 1.2},
+      "gpt-5.5": {"input": 5.0, "cached_input": 0.5, "output": 30.0},
+      "gpt-5.4": {"input": 2.5, "cached_input": 0.25, "output": 15.0},
+      "gpt-5.4-mini": {"input": 0.75, "cached_input": 0.075, "output": 4.5},
+      "gpt-5.4-nano": {"input": 0.2, "cached_input": 0.02, "output": 1.25},
+      "gpt-5.2": {"input": 1.75, "cached_input": 0.175, "output": 14.0},
+      "gpt-5.1": {"input": 1.25, "cached_input": 0.125, "output": 10.0},
+      "gpt-5": {"input": 1.25, "cached_input": 0.125, "output": 10.0},
+      "gpt-5-mini": {"input": 0.25, "cached_input": 0.025, "output": 2.0},
+      "gpt-5-nano": {"input": 0.05, "cached_input": 0.005, "output": 0.4},
+      "gpt-4.1": {"input": 2.0, "cached_input": 0.5, "output": 8.0},
+      "gpt-4.1-mini": {"input": 0.4, "cached_input": 0.1, "output": 1.6},
+      "gpt-4.1-nano": {"input": 0.1, "cached_input": 0.025, "output": 0.4},
+      "gpt-4o": {"input": 2.5, "cached_input": 1.25, "output": 10.0},
+      "gpt-4o-mini": {"input": 0.15, "cached_input": 0.075, "output": 0.6}
+    },
+    "anthropic": {
+      "claude-opus-4-6": {"input": 5.0, "cached_input": 0.5, "cache_write": 6.25, "output": 25.0},
+      "claude-opus-4-5": {"input": 5.0, "cached_input": 0.5, "cache_write": 6.25, "output": 25.0},
+      "claude-sonnet-4-6": {"input": 3.0, "cached_input": 0.3, "cache_write": 3.75, "output": 15.0},
+      "claude-sonnet-4-5": {"input": 3.0, "cached_input": 0.3, "cache_write": 3.75, "output": 15.0},
+      "claude-haiku-4-5": {"input": 1.0, "cached_input": 0.1, "cache_write": 1.25, "output": 5.0}
+    },
+    "gemini": {
+      "gemini-2.5-pro": {"input": 1.25, "output": 10.0},
+      "gemini-2.5-flash": {"input": 0.3, "output": 2.5},
+      "gemini-2.5-flash-lite": {"input": 0.1, "output": 0.4},
+      "gemini-3.1-pro-preview": {"input": 2.0, "output": 12.0},
+      "gemini-3.1-flash-lite": {"input": 0.25, "output": 1.5},
+      "gemini-3-flash-preview": {"input": 0.5, "output": 3.0}
+    },
+    "deepseek": {
+      "deepseek-flash": {"input": 0.3, "cached_input": 0.006, "output": 1.2},
+      "deepseek-v4-flash": {"input": 0.3, "cached_input": 0.006, "output": 1.2},
+      "deepseek-v4-pro": {"input": 1.32, "cached_input": 0.044, "output": 3.96}
+    }
+  }
+}

@@ -301,6 +301,7 @@ const pauseReasons: Record<string, string> = {
   provider_failed: 'A scholarly provider search failed.',
   provider_parse_error: 'A scholarly provider returned a response DEIXIS could not read.',
   budget_exhausted: 'This run reached its call budget.',
+  spend_threshold: 'Today’s estimated spending reached your threshold, so this run paused before its next call.',
   invalid_model_output: 'The model output failed validation after one repair attempt.',
   no_included_sources: 'No source is included.',
   internal_error: 'An internal error stopped the run.',
@@ -346,6 +347,12 @@ export const pauseDetailText = (run: { pause_reason: string | null; error: unkno
       service: typeof error.provider === 'string' ? providerName(error.provider) : error.connection ? connectionName(String(error.connection)) : t('The selected service'),
       resetAt: error.reset_at ?? retryHeaderTime(error.retry_after), effect: run.status === 'paused' ? 'paused' : undefined })
     return [message.when, message.next]
+  }
+  if (run.pause_reason === 'spend_threshold') {
+    const usd = typeof error.estimated_usd === 'number' ? error.estimated_usd : null
+    const limit = typeof error.threshold_usd === 'number' ? error.threshold_usd : null
+    return [...(usd !== null && limit !== null ? [t('Today’s estimate is {spent}; your threshold is {limit}.', { spent: money(usd), limit: money(limit) })] : []),
+      t('The call that crossed it finished and is kept. To go on, raise or turn off the threshold in Settings, then press Resume run.')]
   }
   if (run.pause_reason === 'model_connection_not_ready') {
     return [t('Open Settings, connect it again, then resume this run.')]
@@ -412,6 +419,8 @@ export const providerName = (id: string) => providerNames[id] ?? id
 
 export const connectionNames: Record<string, string> = { codex: 'Codex', claude: 'Claude Code', copilot_cli: 'GitHub Copilot CLI', deepseek: 'DeepSeek', gemini: 'Gemini', gemini_cli: 'Gemini CLI', kimi: 'Kimi', grok: 'Grok', copilot: 'GitHub Copilot', glm: 'GLM', muse_spark: 'Muse Spark', muse_glimmer: 'Muse Glimmer', ollama: 'Ollama', qwen: 'Qwen', mistral: 'Mistral', anthropic: 'Anthropic API', openai: 'OpenAI API', openrouter: 'OpenRouter', mimo: 'Xiaomi MiMo', local_server: 'Local server' }
 export const connectionName = (id: string) => connectionNames[id] ?? id
+// Dollars for a person to read: whole dollars from ten up, cents below, "under $0.01" for a sliver.
+export const money = (usd: number) => usd === 0 ? '$0.00' : usd < 0.01 ? t('under $0.01') : `$${usd.toLocaleString(uiLocale(), usd >= 10 ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 export const localToolNames: Record<string, string> = { claude_code: 'Claude Code', codex: 'Codex CLI', gemini_cli: 'Gemini CLI', qwen_code: 'Qwen Code', kimi_cli: 'Kimi CLI', mistral_vibe: 'Mistral Vibe', copilot_cli: 'GitHub Copilot CLI', opencode: 'OpenCode', aider: 'Aider', goose: 'Goose', amp: 'Amp', cline: 'Cline', ollama: 'Ollama', lm_studio: 'LM Studio', zotero: 'Zotero' }
 // Brand marks exist only for a few tools; the other command-line tools get a neutral terminal glyph.

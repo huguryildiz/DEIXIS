@@ -81,6 +81,10 @@ class Worker:
             steps = conn.execute(
                 "UPDATE run_steps SET status = 'outcome_unknown', finished_at = ? WHERE status = 'running'", (now(),)
             ).rowcount
+            # A call out when the process stopped may have been billed: it counts as spent, estimated from what was sent (F4).
+            from deixis.workflow import spend
+            for row in conn.execute("SELECT id FROM model_sessions WHERE status = 'started'").fetchall():
+                spend.record_session(conn, row["id"], spend.day_of(self.store.clock), None)
             sessions = conn.execute(
                 "UPDATE model_sessions SET status = 'outcome_unknown', finished_at = ? WHERE status = 'started'", (now(),)
             ).rowcount

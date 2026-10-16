@@ -1015,7 +1015,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       </>}
     </div>
 
-    {run.status === 'paused' && <div className={`chat-note notice ${userPaused ? 'is-warning' : 'is-error'}`}>
+    {run.status === 'paused' && <div className={`chat-note notice ${userPaused || run.pause_reason === 'spend_threshold' ? 'is-warning' : 'is-error'}`}>
       {userPaused ? <Pause size={16} aria-hidden /> : <TriangleAlert size={16} aria-hidden />}
       <div className="notice-body">
         {userPaused

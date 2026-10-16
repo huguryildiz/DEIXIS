@@ -1946,3 +1946,28 @@ export const preferencesApi = {
   get: () => request<Preferences>('/api/settings/preferences'),
   set: (change: PreferenceChange) => request<Preferences>('/api/settings/preferences', json('PUT', change)),
 }
+
+// Estimated spending on paid-API models (api/spend_routes.py, F4). The threshold is an estimated-spend stopping threshold,
+// not a hard limit: a run pauses before its next paid call once today's estimate has reached it. `unpriced_calls` are
+// calls on a model with no listed price: they are not in `estimated_usd`, and they are never counted as zero dollars.
+export type SpendingToday = { day: string; estimated_usd: number; priced_calls: number; estimated_from_text_calls: number; unpriced_calls: number }
+export type Spending = { daily_threshold_usd: number | null; today: SpendingToday; prices: { version: number; as_of: string } }
+export type SpendRole = 'literature' | 'answer' | 'reviewer'
+export type SpendRoleChoice = { connection: string; model: string; reasoning_effort: string | null }
+// A range in US dollars [at least, at most]; `usd` is null when no role has a listed price. `complete` is false when a paid
+// role has no price and so is left out of the range. A role is `api` (paid per call), `subscription`, `local` or `none`.
+export type SpendEstimate = {
+  applies: boolean; effort: Effort; usd: [number, number] | null; complete: boolean
+  roles: { role: SpendRole; connection: string | null; model: string | null; kind: 'api' | 'subscription' | 'local' | 'none'; priced: boolean
+    usd: [number, number] | null; calls: [number, number] | null }[]
+  tasks: { task: string; role: SpendRole; calls: [number, number]; input_tokens: [number, number]; output_tokens: [number, number]; repairable: boolean; usd: [number, number] | null }[]
+  embedding: { provider: string; paid: boolean; included: false }
+  prices: { version: number; as_of: string }
+  assumptions: { chars_per_token: number; reasoning_tokens: Record<string, number>; reasoning_default: number }
+}
+export const spendApi = {
+  get: () => request<Spending>('/api/settings/spending'),
+  setThreshold: (usd: number | null) => request<Spending>('/api/settings/spending', json('PUT', { daily_threshold_usd: usd })),
+  estimate: (body: { effort: Effort; literature: SpendRoleChoice | null; answer: SpendRoleChoice | null; reviewer: SpendRoleChoice | null }) =>
+    request<SpendEstimate>('/api/spend/estimate', json('POST', body)),
+}

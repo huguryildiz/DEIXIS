@@ -54,6 +54,10 @@
 .app .settings-page .bar i{display:block;height:100%;background:var(--accent);transition:width .3s}
 .app .settings-page .set-usage p{flex:0 0 auto;min-width:0;text-align:right}
 .app .settings-page .set-usage p small{display:block;color:var(--muted);font-size:11.5px}
+.app .settings-page .set-spending p.tnum{flex:0 0 auto;min-width:0;text-align:right}
+.app .settings-page .set-spending p small{display:block;color:var(--muted);font-size:11.5px}
+.app .settings-page .set-spending .field{width:110px;max-width:100%;height:27px}
+.app .settings-page .set-spending form>.notice{flex:1 0 100%;margin:0}
 
 /* The language switch (mockup `.lang`). */
 .app .settings-page .lang{display:inline-flex;flex:none;overflow:hidden;border:1px solid var(--strong-line);border-radius:6px}

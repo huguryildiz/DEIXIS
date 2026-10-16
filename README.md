@@ -41,6 +41,29 @@ Quick, Standard and Detailed aim at about 3, 5 and 10 minutes. With a model runn
 
 Beyond the answer, you can build evidence tables with quoted values and revision history, and write reports and export them to LaTeX. Other tools draw a citation map from OpenAlex reference lists, trace development lines between sources and search against a claim you saved as a candidate. The library exports to BibTeX or RIS.
 
+## How PDFs are found
+
+DEIXIS only downloads open copies on its own. For each work it tries these routes in order and stops at the first PDF that passes the checks below:
+
+1. **The search record's own link.** The open PDF link OpenAlex, Crossref or arXiv gave with the record, used only when it is for the same version of the work (published, accepted or preprint).
+2. **Another version already in the research.** If an arXiv preprint or another version of the same work is in the source list and has a file, that one is used.
+3. **A lookup by DOI.** Unpaywall, then OpenAlex's list of locations, then Crossref's links, then CORE (with a CORE key). Every answer is stored, and the first candidate whose DOI and version match is downloaded.
+4. **Europe PMC.** For an open-access article with a PMCID, the full-text XML is rendered to a PDF.
+5. **A verified copy of another version.** If the published version has no open copy, an accepted manuscript or preprint is attached to its own version row and labelled as such, never as the published article.
+
+What these routes do not find goes on the waiting list. From there you can:
+
+- upload the PDF, or attach it from your Zotero library (matched by DOI or title)
+- press **Find PDF**, which adds a Google Scholar search through SerpApi (needs a key) and accepts only results whose title matches
+- confirm a candidate the code was not sure about; DEIXIS never attaches one by itself
+- open the work through your institution: with an institutional proxy set in Settings, the waiting list shows proxy links that you open in your own browser. DEIXIS does not download through the proxy.
+
+PDFs not read before the time budget runs out keep downloading in the background, a few at a time.
+
+**Checks on every download.** A file counts as a PDF only if its first bytes say so, whatever the server's content type. The limits are 30 MB, two minutes, five redirects and public addresses only, with one request at a time per host. After the download, the first page is compared with the work's DOI and title. A file that matches neither is kept but marked unconfirmed and is not read. Files you upload or confirm skip this comparison.
+
+arXiv papers can also take their equations from the authors' LaTeX source. That source only supplies equations; the text is still read from the PDF.
+
 ## Sources and models
 
 **Scholarly sources.** OpenAlex, Semantic Scholar, Crossref, arXiv, bioRxiv (through OpenAlex), PubMed, IEEE Xplore, Scopus, CORE and SerpApi have connectors. The research search itself only queries OpenAlex and Semantic Scholar; Crossref and Scopus fill in abstracts. The other connectors can be configured in Settings but the search does not call them. Some need an API key or an institutional entitlement.

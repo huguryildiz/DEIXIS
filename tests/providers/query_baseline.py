@@ -1,6 +1,6 @@
 """SYNTHETIC query freeze on e19a7f7; capture explicitly before production edits.
 
-PYTHONPATH=backend:. .venv/bin/python tests/query_baseline.py --write
+PYTHONPATH=backend:. .venv/bin/python tests/providers/query_baseline.py --write
 
 The entries of the SearchPlan v2 compiler (`compile_queries`, `_terms`, `_fit`, `_compact_openalex`) were taken out
 of the frozen file when that compiler was removed (clean start, slice 3a). When the pre-D93 `routed=False` compile was
@@ -23,7 +23,7 @@ import httpx
 
 from deixis.providers import facade, query_compiler as compiler, query_rules as rules, registry
 
-BASELINE = Path(__file__).parent / "fixtures/connectors/query_baseline.json"
+BASELINE = Path(__file__).parent.parent / "fixtures/connectors/query_baseline.json"
 TERMS = {
     "single": "alpha", "phrase": "body area networks", "hyphen": "on-body",
     "alphanumeric": "5G", "non_ascii": "naïve", "greek": "μ-wave",

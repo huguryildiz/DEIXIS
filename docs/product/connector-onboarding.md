@@ -40,7 +40,7 @@ synthetic fixtures (D201).
    `providers/registry.py:36,76,77`; `resolve_query_syntax` (`registry.py:142`)
    refuses missing declarations. Reuse pure kinds in `providers/query_rules.py:219`;
    construction checks their vocabularies and unused parameters (`query_rules.py:235`).
-   Add query freeze coverage in `tests/query_baseline.py:90` and
+   Add query freeze coverage in `tests/providers/query_baseline.py:95` and
    `tests/test_query_delegation.py:37`. `NAMES` is a compatibility dictionary,
    not an admission surface. Check compiler delegation/allocation
    (`providers/query_compiler.py:70,106,122`) and facade rendering/rules

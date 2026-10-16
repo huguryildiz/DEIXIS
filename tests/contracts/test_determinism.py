@@ -18,7 +18,7 @@ CONDITIONS = [(seed, shuffle) for seed in ("1", "2") for shuffle in (None, 1, 2)
 
 
 def digest(stage: str, hash_seed: str, shuffle: int | None) -> str:
-    command = [sys.executable, str(Path(__file__).parent.parent / "determinism_stages.py"), stage]
+    command = [sys.executable, str(Path(__file__).with_name("determinism_stages.py")), stage]
     if shuffle is not None:
         command += ["--shuffle", str(shuffle)]
     env = os.environ | {"PYTHONHASHSEED": hash_seed, "PYTHONPATH": f"{REPO_ROOT / 'backend'}:{REPO_ROOT / 'tests'}"}

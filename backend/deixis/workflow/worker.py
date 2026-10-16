@@ -14,6 +14,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
 from deixis.storage.db import describe_failure, now, transaction
 from deixis.workflow.flow import ResearchFlow
@@ -30,6 +31,11 @@ PROCESS_STARTED_AT = datetime.now(timezone.utc).isoformat()
 RETRY_SECONDS = 1.0  # wait after a failed turn (a database, disk or code error) before the next one
 
 
+def failure_identity(exc: BaseException) -> tuple[str, str]:
+    """What makes two failures the same for logging: their type and message."""
+    return type(exc).__name__, str(exc)
+
+
 class Worker:
     def __init__(self, store: Store, flow: ResearchFlow, lock_path: Path):
         self.store = store
@@ -42,6 +48,7 @@ class Worker:
         self._stop = asyncio.Event()
         self._failed: tuple[str, str, dict] | None = None  # (run id, pause reason, error) not yet written
         self._reconcile_errors: set[type[Exception]] = set()
+        self._sweep_errors: dict[str, tuple[str, str]] = {}  # sweep -> the failure last logged for it
         self._background_task: asyncio.Task | None = None
 
     def acquire(self) -> bool:
@@ -116,17 +123,17 @@ class Worker:
             self.flow.queue_person_readings()
         except Exception:  # noqa: BLE001 - the worker must still start
             log.exception("queueing waiting person readings at start failed")
-        last_error: type[BaseException] | None = None
+        last_error: tuple[str, str] | None = None
         while not self._stop.is_set():
             try:
                 await self._turn()
                 last_error = None
-            except Exception as exc:  # noqa: BLE001 - logged once per kind, then the next turn
-                # A full disk, a locked library or a code error in a sweep must not end the worker: no run would start
-                # again until a restart (P9 H3).
-                if type(exc) is not last_error:
+            except Exception as exc:  # noqa: BLE001 - logged once per failure, then the next turn
+                # A full disk, a locked library or a code error must not end the worker: no run would start again until
+                # a restart (P9 H3). The same failure every turn is logged once; a different one is logged again.
+                if failure_identity(exc) != last_error:
                     log.exception("worker turn failed; trying again")
-                last_error = type(exc)
+                last_error = failure_identity(exc)
                 try:
                     await asyncio.wait_for(self._stop.wait(), timeout=RETRY_SECONDS)
                 except TimeoutError:
@@ -138,9 +145,10 @@ class Worker:
         self.store.conn.execute("UPDATE worker_owner SET heartbeat_at = ? WHERE instance_id = ?", (now(), self.instance_id))
         await self.reconcile_recovery()
         from deixis.workflow import late_revision, table_refresh, table_rows
-        late_revision.advance(self.flow)
-        table_refresh.advance(self.store)  # after the late answer revision, so that one is queued first (D52)
-        table_rows.advance(self.store)
+        self._sweep("late_revision", lambda: late_revision.advance(self.flow))
+        # after the late answer revision, so that one is queued first (D52)
+        self._sweep("table_refresh", lambda: table_refresh.advance(self.store))
+        self._sweep("table_rows", lambda: table_rows.advance(self.store))
         run = self.store.next_queued_run()
         if run is None:
             self._wake.clear()
@@ -164,6 +172,18 @@ class Worker:
             self._write_failure()
         else:
             self._run_ended(run["id"])
+
+    def _sweep(self, name: str, advance: Callable[[], object]) -> None:
+        """Run one sweep that queues work; its failure is logged (once while it stays the same) and the turn goes on, so
+        a sweep that fails every turn does not keep the queued runs from starting."""
+        try:
+            advance()
+        except Exception as exc:  # noqa: BLE001 - one sweep must not hold up the queue
+            if self._sweep_errors.get(name) != failure_identity(exc):
+                log.exception("worker sweep %s failed; the turn goes on", name)
+            self._sweep_errors[name] = failure_identity(exc)
+        else:
+            self._sweep_errors.pop(name, None)
 
     async def reconcile_recovery(self) -> dict[str, int] | None:
         if self.store.recovery_dir is None:

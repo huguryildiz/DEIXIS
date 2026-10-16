@@ -540,3 +540,38 @@ def test_a_used_question_revision_still_ends_the_late_revision(tmp_path):
     late_revision.advance(lib.flow)
     assert row(lib)["status"] == "skipped" and row(lib)["skip_reason"] == "scope_revised"
     assert lib.store.withdrawal(lib.rid)["allowed"] is False
+
+
+def test_a_paused_run_keeps_the_parent_late_revision_open_until_it_settles(tmp_path):
+    # While a run of the research is paused the withdrawal cannot be decided (D67), so the late revision of the parent
+    # revision waits with no event; once the newer revision's run settles, that revision is used and the row is skipped.
+    lib = prepared(tmp_path)
+    lib.store.revise_scope(lib.rid, lib.store.research(lib.rid)["version"], "SYNTHETIC another question", None)
+    run = lib.store.create_run(lib.rid, "discovery", {}, None)
+    lib.store.update_run(run["id"], status="paused", pause_reason="user")
+    for _ in range(2):
+        late_revision.advance(lib.flow)
+    assert row(lib)["status"] == "waiting_fetch" and row(lib)["skip_reason"] is None
+    assert not lib.store.conn.execute("SELECT 1 FROM events WHERE research_id = ? AND type = 'late_revision_skipped'",
+                                      (lib.rid,)).fetchone()
+    lib.store.update_run(run["id"], status="completed")
+    late_revision.advance(lib.flow)
+    assert row(lib)["status"] == "skipped" and row(lib)["skip_reason"] == "scope_revised"
+
+
+def test_the_same_failing_row_is_logged_once_and_a_different_failure_again(tmp_path, monkeypatch, caplog):
+    lib = prepared(tmp_path)
+    late = row(lib)
+    message = ["SYNTHETIC first failure"]
+    def guard(store, row):
+        raise KeyError(message[0])
+    monkeypatch.setattr(late_revision, "guard_reason", guard)
+    caplog.set_level("INFO", logger="deixis.late_revision")
+    logged = lambda: len([r for r in caplog.records if late["id"] in r.getMessage()])
+    for _ in range(3):
+        late_revision.advance(lib.flow)
+    assert logged() == 1
+    message[0] = "SYNTHETIC second failure"
+    for _ in range(2):
+        late_revision.advance(lib.flow)
+    assert logged() == 2

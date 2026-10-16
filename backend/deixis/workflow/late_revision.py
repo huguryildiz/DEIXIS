@@ -13,6 +13,7 @@ from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.flow import fuse_rankings
 
 log = logging.getLogger("deixis.late_revision")
+_failures: dict[tuple[str, str], tuple[str, str]] = {}  # (operation, row id) -> the failure last logged for it
 REVISION_INPUT = "fast_path:v1:revision_input"
 OPEN = ("waiting_fetch", "reading", "answering")
 # Full-text pages an upgraded work brings. A work already in the base answer replaces its abstract passage with two
@@ -193,6 +194,7 @@ def advance(flow: Any, rid: str | None = None) -> None:
     if not rows:
         return
     for row in rows:
+        failure = None
         try:
             with transaction(store.conn):
                 reason = guard_reason(store, row)
@@ -255,8 +257,16 @@ def advance(flow: Any, rid: str | None = None) -> None:
                 elif row["status"] == "answering":
                     status = store.run(row["answer_run_id"])["status"]
                     finish(store, row, "failed" if status != "cancelled" else "skipped", f"answer_run_{status}")
-        except Exception:  # noqa: BLE001 - one row must not hold up the worker, its queue or the other rows
-            log.exception("advancing late revision %s failed", row["id"])
+        except Exception as exc:  # noqa: BLE001 - one row must not hold up the worker, its queue or the other rows
+            # The worker sweeps every turn: the same failure of a row is logged once, a different one again.
+            failure = (type(exc).__name__, str(exc))
+            if _failures.get(("advance", row["id"])) != failure:
+                log.exception("advancing late revision %s failed", row["id"])
+        finally:  # also after a `continue`
+            if failure:
+                _failures[("advance", row["id"])] = failure
+            else:
+                _failures.pop(("advance", row["id"]), None)
 
 
 def revision_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:

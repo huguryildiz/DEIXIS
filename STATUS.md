@@ -63,6 +63,8 @@ Most of this was tested with fake models and synthetic data only; "Not measured"
 - The UI moved to the mockup v24 design, and the 17 bugs found against the mockup are fixed (D5).
 - Post-parity cleanup and small features (P0–P5, D25–D33) are done: unused CSS removed, search-plan strike-through, request counts, stored thinking level, proxy name, "Try" for keyless sources.
 - Pre-P10 readiness is done in code: the packaged app finds its files, tools work when opened from the desktop, Windows CLIs start, a Linux fallback holds keys for the session, and cost estimates are shown.
+- The P9 upgrade check's 15 teardown errors are fixed (385b4511), and the arXiv source-archive test that used to fail now passes.
+- Answers no longer overuse "It has been reported that…": the phrasebank is gone, and a live check on 16 Oct found no formula openings (D43).
 
 ## Latest live check (16 Oct)
 
@@ -88,12 +90,12 @@ One run per mode with gpt-5.6-luna on the DBR/VBF question, on a library copy.
 3. Full text of paywalled papers cannot be read, so most engineering papers come in from the abstract.
 4. The value of survey papers is not measured, and papers with "survey" in the title are dropped.
 5. In Standard, 7 of 20 runs took over 5 minutes (cause not checked), Detailed citation accuracy was not re-measured after the fixes, and the sample is small (10 questions × 2).
-6. The free OpenAlex daily quota runs out after about 20 researches, and the answer call sometimes times out (1 in 21 runs).
+6. The free OpenAlex daily quota runs out after about 20 researches (the app now stops sending once it is used up, D173), and the answer call sometimes times out (1 in 21 runs).
 
 ### Not measured (needs a real model or real use)
 
 - Seed PDFs were measured only with the targets themselves as seeds, not with a real related paper the user has.
-- Report quality: in the one real report (H9e) most measures were out of range.
+- Report quality: in the one scored real report (H9e) most measures were out of range; on 16 Oct two live reports finished after one resume each, but nobody scored them.
 - Equations, lineage, kill-search finding the closest works, and crash recovery with real Codex; 5 of 18 report-edit actions; the owner's daily use.
 - Most features above (follow-up changes, table and report changes, new model connections, Mathpix, data move) have not been tried with a real model or provider.
 - Windows and Linux have not been run, the package has not been built with real PyInstaller, and OpenAI, Gemini and DeepSeek prices must be checked before release (P10 acceptance rows K1–K15).
@@ -104,15 +106,15 @@ One run per mode with gpt-5.6-luna on the DBR/VBF question, on a library copy.
 
 ### Code
 
-- The queue driver (K03) fails on prompt size, the re-extraction background reader is not tested in the matrix, and an open PDF viewer shows the old document after a restore.
-- UI: the sticky answer area in the queue grew to about 300 px at 1280×900, the selected tab may not scroll into view after a TR/EN switch, and report icon buttons on phones have no visible hint; one test in `tests/documents/test_arxiv_source_archive.py` already failed before the UI work.
-- The first answer draft often breaks citation-anchor rules and repair adds 1–2 minutes per answer; there is no CI, parallel tests fail now and then, and the P9 upgrade check has 15 known teardown errors.
+- The re-extraction background reader is not tested in the matrix, and an open PDF viewer shows the old document after a restore.
+- UI: the sticky answer area in the queue grew to about 300 px at 1280×900, the selected tab may not scroll into view after a TR/EN switch, and report icon buttons on phones have no visible hint.
+- The first answer draft often breaks citation-anchor rules and repair adds 1–2 minutes per answer; there is no CI, and parallel tests fail now and then.
 
 ### Live findings (4–5 Oct)
 
-- MDPI, SAGE and ScienceDirect PDFs return 403 from the ULAKBİM network, and answers overuse "It has been reported that…"; not rechecked on the fast path.
+- MDPI, SAGE and ScienceDirect PDFs return 403 from the ULAKBİM network; not rechecked on the fast path.
 
 ### Parked ideas (owner decides)
 
 - Use Jev (the TypeSafe classifier) to rank which sources get full-text slots; speed, price and accuracy not measured.
-- Example questions, "this source was included in research X" hints, classifying why open-access PDFs return 403, a landing page (after P10), fast answers reading equations from arXiv source, more kill-search signals, and a warning when two queries share most terms.
+- Fixed example questions (the home page only suggests questions from earlier answers), "this source was included in research X" hints, classifying why open-access PDFs return 403, a landing page (after P10), fast answers reading equations from arXiv source, more kill-search signals, and a warning when two queries share most terms.

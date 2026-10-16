@@ -14,7 +14,7 @@ from typing import Any
 import httpx
 
 from deixis.models.adapter import ModelStepResult
-from deixis.domain.limits import http_limit, service_error_kind, retry_at
+from deixis.domain.limits import error_name, http_limit, service_error_kind, retry_at
 from deixis.tool_paths import child_path, find_tool
 from deixis.tool_probe import probe
 
@@ -120,7 +120,7 @@ class GeminiAdapter:
             response = await self._http().post(f"{API_URL}/models/{requested_model}:generateContent", json=body,
                                                headers={"x-goog-api-key": key}, timeout=self.turn_timeout)
         except httpx.ConnectError as exc:
-            return ModelStepResult("unavailable", error=type(exc).__name__, delivery_class="before_send")
+            return ModelStepResult("unavailable", error=error_name(exc), delivery_class="before_send")
         except httpx.HTTPError as exc:  # the request may have been processed without an answer arriving
             return ModelStepResult("failed", error=type(exc).__name__, delivery_class="after_send_unknown")
         if response.status_code != 200:

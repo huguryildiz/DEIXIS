@@ -162,6 +162,7 @@ dependencies = [
     { name = "pymupdf" },
     { name = "python-multipart" },
     { name = "referencing" },
+    { name = "truststore" },
     { name = "uvicorn" },
 ]
 
@@ -182,6 +183,7 @@ requires-dist = [
     { name = "pymupdf", specifier = ">=1.26" },
     { name = "python-multipart", specifier = ">=0.0.20" },
     { name = "referencing", specifier = ">=0.35" },
+    { name = "truststore", specifier = ">=0.10" },
     { name = "uvicorn", specifier = ">=0.32" },
 ]
 

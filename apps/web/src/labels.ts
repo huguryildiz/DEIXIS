@@ -46,6 +46,7 @@ export const serviceErrors: Record<string, string> = {
   timeout: '{service} did not answer in time.',
   service_error: '{service} had an error on its side.',
   network: 'DEIXIS could not reach {service}.',
+  certificate: 'Your network or computer did not accept the secure connection to {service}.',
   unknown: '{service} did not complete the request.',
 }
 
@@ -54,6 +55,7 @@ export function serviceKind(code: unknown, httpStatus?: number | null, surface =
   if (['not_configured', 'missing_core_key', 'missing_serpapi_key', 'missing_contact_email'].includes(String(code))) return 'needs_key'
   if (['auth_required', 'entitlement_missing', 'email_rejected', 'authentication_failed'].includes(String(code))) return 'auth_failed'
   if (/timeout|timed out/i.test(String(code))) return 'timeout'
+  if (/CertificateError|CERTIFICATE_VERIFY_FAILED/i.test(String(code))) return 'certificate'
   if (/ConnectError|before_send|fetch_failed/i.test(String(code))) return 'network'
   if (code === 'fetch_blocked_url') return 'blocked'
   if (httpStatus === 402) return 'quota_exhausted'
@@ -78,6 +80,7 @@ export function serviceErrorText({ kind, service, resetAt, effect }: { kind?: un
     : code === 'bad_request' ? t('Report the problem with this request.')
     : code === 'blocked' || code === 'not_found' ? t('Open another copy or attach the PDF yourself.')
     : code === 'network' ? t('Check your internet connection before trying again.')
+    : code === 'certificate' ? t('Your network may be checking secure connections with a certificate this computer does not have. Ask your IT office to install it on this computer, or try another network.')
     : code === 'quota_exhausted' ? t('Check the service quota before trying again.')
     : t('Try again later; the request may still fail.')
   const next = effect === 'paused' ? t('Completed work is saved; the run is paused. Resume when the service is available.')

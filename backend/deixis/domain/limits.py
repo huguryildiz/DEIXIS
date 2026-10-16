@@ -5,6 +5,7 @@ import json
 import re
 import math
 import os
+import ssl
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
@@ -21,7 +22,26 @@ RATE_TEXT = re.compile(r"\b(?:429|rate.?limit(?:ed|ing|_error)?|too many request
                        r"resource has been exhausted)\b", re.I)
 
 SERVICE_ERROR_KINDS = frozenset({"quota_exhausted", "rate_limited", "needs_key", "auth_failed",
-    "bad_request", "model_unavailable", "not_found", "blocked", "timeout", "service_error", "network", "unknown"})
+    "bad_request", "model_unavailable", "not_found", "blocked", "timeout", "service_error", "network", "certificate", "unknown"})
+CERTIFICATE_TEXT = re.compile(r"CertificateError|CERTIFICATE_VERIFY_FAILED|certificate verify failed", re.I)
+
+
+def certificate_failure(exc: BaseException | None) -> bool:
+    """Whether the connection failed because the server's certificate was not trusted (a network that inspects TLS and
+    a root certificate the system does not have), not because the server could not be reached."""
+    seen: set[int] = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        if isinstance(exc, ssl.SSLCertVerificationError):
+            return True
+        exc = exc.__cause__ or exc.__context__
+    return False
+
+
+def error_name(exc: BaseException) -> str:
+    """The class name stored for a failed connection; an untrusted certificate is `CertificateError`, which
+    `service_error_kind` reads back as `certificate`."""
+    return "CertificateError" if certificate_failure(exc) else type(exc).__name__
 
 
 def service_error_kind(status: int | str | None = None, *, exc: Exception | None = None,
@@ -40,7 +60,9 @@ def service_error_kind(status: int | str | None = None, *, exc: Exception | None
         return "auth_failed"
     if status in {"fetch_blocked_url"}:
         return "blocked"
-    description = f"{type(exc).__name__ if exc else ''} {text} {status or ''}"
+    description = f"{error_name(exc) if exc else ''} {text} {status or ''}"
+    if CERTIFICATE_TEXT.search(description):
+        return "certificate"
     if re.search(r"timeout|timed out", description, re.I):
         return "timeout"
     if re.search(r"ConnectError|before_send|fetch_failed", description, re.I):

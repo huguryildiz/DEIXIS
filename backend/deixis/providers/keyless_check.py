@@ -14,6 +14,7 @@ from typing import Any, Callable
 import httpx
 
 from deixis.documents.fetch import user_agent
+from deixis.domain.limits import error_name
 from deixis.providers import arxiv, biorxiv, crossref, openalex, pubmed, semantic_scholar
 from deixis.providers.pacing import SEMANTIC_SCHOLAR_PACER
 from deixis.storage.db import now
@@ -54,7 +55,7 @@ async def check(client: httpx.AsyncClient, provider_id: str, email: str | None) 
     except httpx.TimeoutException as exc:
         return sent | {"answered": False, "http_status": None, "failure": "timeout", "error": type(exc).__name__, "checked_at": now()}
     except httpx.ConnectError as exc:
-        return sent | {"answered": False, "http_status": None, "failure": "connection", "error": type(exc).__name__, "checked_at": now()}
+        return sent | {"answered": False, "http_status": None, "failure": "connection", "error": error_name(exc), "checked_at": now()}
     except httpx.HTTPError as exc:
         return sent | {"answered": False, "http_status": None, "failure": "other", "error": type(exc).__name__, "checked_at": now()}
     return sent | {"answered": True, "http_status": status, "failure": None, "error": None, "checked_at": now()}

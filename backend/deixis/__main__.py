@@ -25,6 +25,7 @@ from deixis import data_location
 from deixis.data_location import PointerDamaged, Postponed, apply_pending_move, data_dir_problem, read_pointer
 from deixis.storage import backup, db
 from deixis.storage.db import SchemaCheckUnreadable, UnknownSchemaError, check_schema_known
+from deixis.system_trust import use_system_certificates
 
 
 SHUTDOWN_EXIT_SECONDS = 6.0
@@ -443,6 +444,7 @@ def main(argv: list[str] | None = None) -> int:
     retained = sub.add_parser("recovery-files", help="List unreferenced retained recovery files")
     retained.add_argument("--delete", action="store_true", help="Delete listed files through the guarded recovery unlink")
     args = parser.parse_args(argv)
+    use_system_certificates()  # before any HTTP client is built (F1)
     if args.command == "reextract" and bool(args.retry) != bool(args.expected_extraction):
         parser.error("--retry and --expected-extraction must be supplied together")
     try:

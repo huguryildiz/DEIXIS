@@ -10,7 +10,7 @@ import httpx
 
 from deixis.models.adapter import ModelStepResult
 from deixis.models.openai_compat import chat_tool_items
-from deixis.domain.limits import http_limit, service_error_kind, retry_at
+from deixis.domain.limits import error_name, http_limit, service_error_kind, retry_at
 
 API_URL = "https://api.deepseek.com"
 KEY_ENV = "DEEPSEEK_API_KEY"
@@ -114,7 +114,7 @@ class DeepSeekAdapter:
             response = await self._http().post(f"{API_URL}/chat/completions", json=body,
                                                headers={"Authorization": f"Bearer {key}"}, timeout=self.turn_timeout)
         except httpx.ConnectError as exc:
-            return ModelStepResult("unavailable", error=type(exc).__name__, delivery_class="before_send")
+            return ModelStepResult("unavailable", error=error_name(exc), delivery_class="before_send")
         except httpx.HTTPError as exc:
             return ModelStepResult("failed", error=type(exc).__name__,
                                    delivery_class="after_send_unknown")

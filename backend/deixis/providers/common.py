@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from deixis.providers.pacing import SEMANTIC_SCHOLAR_PACER
-from deixis.domain.limits import limit_kind, service_error_kind, retry_at
+from deixis.domain.limits import error_name, limit_kind, service_error_kind, retry_at
 
 MAX_RATE_LIMIT_RETRIES = 2
 MAX_RETRY_WAIT_SECONDS = 10.0  # a longer provider wait pauses the run instead of blocking it
@@ -273,7 +273,7 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
             pool_wait = True
             return finish(None, SearchOutcome("timeout", "after_send_unknown", description, access_mode, error=type(exc).__name__, retries=retries))
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
-            return finish(None, SearchOutcome("failed", "before_send", description, access_mode, error=type(exc).__name__, retries=retries))
+            return finish(None, SearchOutcome("failed", "before_send", description, access_mode, error=error_name(exc), retries=retries))
         except httpx.TimeoutException as exc:
             return finish(None, SearchOutcome("timeout", "after_send_unknown", description, access_mode, error=type(exc).__name__, retries=retries))
         except httpx.HTTPError as exc:

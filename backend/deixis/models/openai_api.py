@@ -18,7 +18,7 @@ from typing import Any
 
 import httpx
 
-from deixis.domain.limits import http_limit, retry_at, service_error_kind
+from deixis.domain.limits import error_name, http_limit, retry_at, service_error_kind
 from deixis.models.adapter import ModelStepResult, is_dated_snapshot
 
 API_URL = "https://api.openai.com/v1"
@@ -125,7 +125,7 @@ class OpenAIAdapter:
             response = await self._http().post(f"{API_URL}/responses", json=body, headers={"Authorization": f"Bearer {key}"},
                                                timeout=self.turn_timeout)
         except httpx.ConnectError as exc:
-            return ModelStepResult("unavailable", error=type(exc).__name__, delivery_class="before_send")
+            return ModelStepResult("unavailable", error=error_name(exc), delivery_class="before_send")
         except httpx.HTTPError as exc:
             return ModelStepResult("failed", error=type(exc).__name__, delivery_class="after_send_unknown")
         if response.status_code != 200:

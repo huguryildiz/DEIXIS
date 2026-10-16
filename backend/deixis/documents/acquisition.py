@@ -16,6 +16,7 @@ from urllib.parse import quote, urlsplit
 import httpx
 
 from deixis.documents import fetch, jats, pdf
+from deixis.domain.limits import error_name
 from deixis.providers import core, crossref
 from deixis.providers.common import ProviderRecord, begin_request, normalize_doi, settle_request
 from deixis.storage import db
@@ -206,7 +207,7 @@ async def _openalex_request(client: httpx.AsyncClient, doi: str, source_version:
         # Not sent: the connection never opened, or none came free from the pool.
         settle_request(begun, False, False, "before_send", None)
         return Lookup("timeout" if isinstance(exc, httpx.TimeoutException) else "failed", [],
-                      error_code="timeout" if isinstance(exc, httpx.TimeoutException) else type(exc).__name__)
+                      error_code="timeout" if isinstance(exc, httpx.TimeoutException) else error_name(exc))
     except httpx.TimeoutException:
         settle_request(begun, True, False, "after_send_unknown", None)
         return Lookup("timeout", [], error_code="timeout")

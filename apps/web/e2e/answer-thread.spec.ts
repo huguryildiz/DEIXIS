@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { nextPort } from './ports'
 import { PANEL_TITLES, panel, reportPanel, sourcePanel } from './panels'
+import { inTextCitation } from '../src/citations'
 
 // UI parity S10: the latest answer in the thread (mockup `answerBlock()`, R22-R29) and the empty research page (R32).
 // The card's counts, the prose with its citation chips, the Methods box, the action pills and the Next steps rows read
@@ -127,7 +128,8 @@ test.describe.serial('S10: the answer in the thread', () => {
     await expect(card).toHaveAccessibleName(/^Open report: /)
     await expect(card.locator('.report-artifact-meta')).toHaveText(`Report · V${answer.report_version} · ${plural(answer.claims.length, 'claim', 'claims')} · ${plural(cited, 'source', 'sources')}`)
     // R24/R25: the first sections as paragraphs, one chip per claim that cites, naming its first source and "+N" for
-    // the other sources it cites.
+    // the other sources it cites. The name is the in-text citation of the report's style (APA by default, "Zeng et al.,
+    // 2022"), else the source key.
     const sections: Claim[][] = []
     for (const claim of answer.claims) {
       const last = sections[sections.length - 1]
@@ -140,7 +142,8 @@ test.describe.serial('S10: the answer in the thread', () => {
     const chips = prose.locator('.cite-chip')
     const labels = shown.filter(c => c.evidence.length).map(c => {
       const others = new Set(c.evidence.map(e => e.source_version_id)).size - 1
-      return `${c.evidence[0].source_key}${others > 0 ? ` +${others}` : ''}`
+      const first = view.sources.find(s => s.source_version_id === c.evidence[0].source_version_id)
+      return `${(first && inTextCitation('apa', first)) || c.evidence[0].source_key}${others > 0 ? ` +${others}` : ''}`
     })
     await expect(chips).toHaveText(labels)
     // The chip opens the Citation panel (S12, P11); its first entry opens the first cited passage at its located anchor,

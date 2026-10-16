@@ -890,7 +890,7 @@ export type EditCheck = { id: string; created_at: string; checker_version: strin
   skipped_rules: { rule: string; section_id: string | null; claim_key: string | null; reason: string }[]; rules_run: string[]; not_checked: string[] }
 export type ReportSection = { section_id: string; status: string; word_count: number | null; draft: { text?: string; insufficient_evidence?: { reason: string }[] } | null
   validation: { issues?: { code?: string }[] } | null; claims: ReportClaim[]; evidence_changes: { open: { key: string; kind: string; via: string; source_version_id?: string; column_id?: string }[]; acknowledged_count: number; unresolved_refs: number } }
-export type ReportReview = { status: 'reviewed'; step_input_id: string; sections_reviewed: string[]; sections_not_reviewed: { section_id: string; reason: string }[]
+export type ReportReview = { status: 'reviewed'; step_input_id: string | null; step_input_ids?: string[]; sections_reviewed: string[]; sections_not_reviewed: { section_id: string; reason: string }[]
   findings: { claim_key: string | null; sentence_id: string | null; section_id: string | null; code: string; text: string }[]; notes: string
   reverted: { sentence_id: string; section_id: string }[]; not_reverted: { sentence_id: string; section_id: string; reason: string }[] }
   | { status: 'not_reviewed'; reason: string; detail: unknown; sections_reviewed: string[]; sections_not_reviewed: { section_id: string; reason: string }[]

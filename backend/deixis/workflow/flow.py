@@ -4941,6 +4941,11 @@ class ResearchFlow:
             allowlist |= {"column_ids": list(dict.fromkeys(columns)),
                           "cell_ids": [cell["cell_id"] for cell in cells],
                           "gap_ids": [gap["gap_id"] for gap in gaps]}
+            # D58: a cell whose page is not supplied keeps its quotes; its page id is listed but cannot be cited.
+            quote_only = [e["passage_id"] for cell in cells for e in cell["evidence"]
+                          if e["passage_id"] not in allowlist["passage_ids"]]
+            if quote_only:
+                allowlist["cell_evidence_passage_ids"] = list(dict.fromkeys(quote_only))
             if task_type == "report_section" and report.get("section_id") == "VII":
                 allowlist["gap_ids"] = [g["gap_id"] for g in (report.get("validation_context") or {}).get("accepted_gaps", [])]
         return review | target | {

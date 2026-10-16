@@ -2029,6 +2029,11 @@
         "column_ids": { "type": "array", "items": { "type": "string", "pattern": "^col_[0-9A-Za-z]{8,40}$" } },
         "cell_ids": { "type": "array", "items": { "type": "string", "pattern": "^cel_[0-9A-Za-z]{8,40}$" } },
         "gap_ids": { "type": "array", "items": { "type": "string", "pattern": "^gap[0-9]{1,3}$" } },
+        "cell_evidence_passage_ids": {
+          "type": "array",
+          "description": "Report steps only: evidence passages of cells whose page is not supplied. Listed so those cells' quotes validate; never citable as a passage.",
+          "items": { "$ref": "common.schema.json#/$defs/passage_id" }
+        },
         "phrases": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 200 } },
         "passage_ids": {
           "type": "array",

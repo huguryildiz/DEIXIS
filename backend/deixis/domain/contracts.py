@@ -575,6 +575,9 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
             issues.append(Issue("duplicate_report_cell", "/report_target/cells", "cell_id must be unique"))
         for missing in sorted(set(allow.get("cell_ids", [])) - cell_ids):
             issues.append(Issue("allowlist_without_record", "/allowlist/cell_ids", missing))
+        cell_evidence = {e["passage_id"] for cell in report_target["cells"] for e in cell["evidence"]}
+        for missing in sorted(set(allow.get("cell_evidence_passage_ids", [])) - cell_evidence):
+            issues.append(Issue("allowlist_without_record", "/allowlist/cell_evidence_passage_ids", missing))
         for i, cell in enumerate(report_target["cells"]):
             if cell["cell_id"] not in allow.get("cell_ids", []):
                 issues.append(Issue("report_cell_not_allowed", f"/report_target/cells/{i}/cell_id", cell["cell_id"]))
@@ -585,7 +588,8 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
                 issues.append(Issue("report_cell_column_not_allowed", f"/report_target/cells/{i}/column_id",
                                     cell["column_id"]))
             for j, evidence in enumerate(cell["evidence"]):
-                if evidence["passage_id"] not in allow["passage_ids"]:
+                # A quote-only cell's page is not supplied: its id is listed, not citable, so only the quote is evidence (D58).
+                if evidence["passage_id"] not in allow["passage_ids"] and evidence["passage_id"] not in allow.get("cell_evidence_passage_ids", []):
                     issues.append(Issue("report_cell_passage_not_allowed",
                                         f"/report_target/cells/{i}/evidence/{j}/passage_id",
                                         evidence["passage_id"]))
@@ -2459,7 +2463,8 @@ REPORT_INPUT_ID_FIELDS = (
     ("passages/*/passage_id", "psg_P"), ("passages/*/source_id", "srv_S"),
     ("sources/*/source_id", "srv_S"),
     *((f"allowlist/{field}/*", kind) for field, kind in (
-        ("passage_ids", "psg_P"), ("source_ids", "srv_S"), ("column_ids", "col_C"), ("cell_ids", "cel_L"))),
+        ("passage_ids", "psg_P"), ("source_ids", "srv_S"), ("column_ids", "col_C"), ("cell_ids", "cel_L"),
+        ("cell_evidence_passage_ids", "psg_P"))),
     ("report_target/columns/*/column_id", "col_C"),
     ("report_target/cells/*/cell_id", "cel_L"), ("report_target/cells/*/column_id", "col_C"),
     ("report_target/cells/*/source_version_id", "srv_S"),

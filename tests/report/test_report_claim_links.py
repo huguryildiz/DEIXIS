@@ -314,7 +314,7 @@ def test_insert_count_verification_and_event_failure_roll_back(report_with_secti
 CITATION_READERS = {
     ("workflow/report/assembly.py", "_links"), ("workflow/report/assembly.py", "_claim_depths"),
     ("workflow/report/assembly.py", "_check_gap_bases"), ("workflow/report/sections.py", "_prior_summaries"),
-    ("workflow/report/review.py", "_input"), ("workflow/report/store.py", "ReportStore.save_claims"),
+    ("workflow/report/review.py", "_read"), ("workflow/report/store.py", "ReportStore.save_claims"),
     ("workflow/report/store.py", "ReportStore.effective_links"), ("workflow/report/store.py", "ReportStore.removed_links"),
     ("workflow/report/store.py", "ReportStore.original_links"), ("workflow/store.py", "Store.purge_research"),
     ("workflow/store.py", "Store.cited_source_versions"), ("workflow/store.py", "Store.trash"),

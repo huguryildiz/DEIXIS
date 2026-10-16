@@ -349,7 +349,7 @@ def test_viii_failed_row_builder_sends_display_only_sources_and_review_count_bui
     count = {"numerator_source_ids": [failed_id], "denominator_source_ids": ["srv_SYNTHCOUNTEXTRA01"],
              "column_id": "col_SYNTHCOUNTEXTRA01"}
     store.conn.execute("UPDATE report_claims SET count_json = ? WHERE id = ?", (json.dumps(count), claim[0]))
-    target, passages, _, _ = _input(flow, reports, report_id)
+    target, passages = _input(flow, reports, report_id)[0][0]
     source_ids = list(dict.fromkeys([p["source_version_id"] for p in passages]
                                     + [c["source_version_id"] for c in target["cells"]]))
     review = flow._step_input(run, scope, "stp_SYNTHREVIEW01", "report_review", [], source_ids,

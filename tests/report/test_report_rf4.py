@@ -259,7 +259,8 @@ def test_vii_receives_accepted_vi_bases_without_widening_citations(tmp_path):
     call = next(c for c in adapter.calls if c["task_type"] == "report_section" and c["report_target"]["section_id"] == "VII")
     context = call["report_target"]["validation_context"]
     assert context["accepted_gaps"][0]["gap_id"] == "gap9"
-    assert context["basis_cells"] and context["basis_passages"]
+    # D58: a basis cell brings its stored quotes, not its pages; only a page a gap names directly is loaded.
+    assert context["basis_cells"] and context["basis_passages"] == []
     assert call["allowlist"]["gap_ids"] == ["gap9"]
     assert not {c["cell_id"] for c in context["basis_cells"]} & set(call["allowlist"]["cell_ids"])
 

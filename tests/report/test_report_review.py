@@ -66,7 +66,7 @@ def test_zero_review_budget_records_no_model_call(tmp_path, monkeypatch):
     assert saved["status"] == "valid" and saved["report_version"] == 1
     assert saved["review"]["status"] == "not_reviewed"
     assert saved["review"]["reason"] == "input_too_large"
-    assert saved["review"]["sections_not_reviewed"] == review._input(flow, reports, report_id)[3]
+    assert saved["review"]["sections_not_reviewed"] == review._input(flow, reports, report_id)[2]
     assert not [call for call in adapter.calls if call["task_type"] == "report_review"]
 
 
@@ -99,8 +99,9 @@ def test_unavailable_passages_keep_their_own_reason_when_nothing_can_be_read(tmp
 
     monkeypatch.setattr(report_sections, "run_report_review", skip_review)
     asyncio.run(run_report(flow, run, scope))
+    # A cell citation is read from the cell's stored quotes (D58), so only passage-cited claims stay.
     store.conn.execute("UPDATE report_claims SET report_section_id = ?"
-                       " WHERE id NOT IN (SELECT claim_id FROM report_citation_links)",
+                       " WHERE id NOT IN (SELECT claim_id FROM report_citation_links WHERE passage_id IS NOT NULL)",
                        (reports.section(report_id, "II")["id"],))
 
     def unavailable_passage(passage_id):
@@ -112,21 +113,24 @@ def test_unavailable_passages_keep_their_own_reason_when_nothing_can_be_read(tmp
 
     saved = reports.report(report_id)["review"]
     assert saved["status"] == "not_reviewed" and saved["reason"] == "nothing_to_review"
-    assert saved["sections_not_reviewed"] == review._input(flow, reports, report_id)[3]
+    assert saved["sections_not_reviewed"] == review._input(flow, reports, report_id)[2]
     assert any(item["reason"] == "passage_unavailable" for item in saved["sections_not_reviewed"])
     assert not [call for call in adapter.calls if call["task_type"] == "report_review"]
 
 
-def test_review_budget_omits_later_whole_sections(tmp_path, monkeypatch):
-    monkeypatch.setattr(review, "REVIEW_BUDGET_TOKENS", 500)
+def test_review_budget_omits_only_sections_with_a_claim_larger_than_one_batch(tmp_path, monkeypatch):
+    # SYNTHETIC claims without citations cost about 60 tokens; a cited claim with its support about 170 (D58).
+    monkeypatch.setattr(review, "REVIEW_BUDGET_TOKENS", 150)
     flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
     asyncio.run(run_report(flow, run, scope))
     saved = reports.report(report_id)["review"]
     assert saved["status"] == "reviewed"
-    assert saved["sections_reviewed"]
-    assert any(item["reason"] == "input_too_large" for item in saved["sections_not_reviewed"])
-    payload = store.step_input_payload(saved["step_input_id"])
-    assert [item["section_id"] for item in payload["report_target"]["review_sections"]] == saved["sections_reviewed"]
+    assert saved["sections_reviewed"] == ["abstract", "I", "VIII", "IX", "index_terms"]
+    assert {item["section_id"] for item in saved["sections_not_reviewed"] if item["reason"] == "input_too_large"} == {
+        "III", "IV", "V", "VI", "VII"}
+    assert len(saved["step_input_ids"]) > 1 and saved["step_input_id"] == saved["step_input_ids"][0]
+    scopes = [store.step_input_payload(sid)["report_target"]["review_scope"] for sid in saved["step_input_ids"]]
+    assert [section for scope in scopes for section in scope] == saved["sections_reviewed"]
 
 
 def test_optional_review_failure_keeps_valid_report(tmp_path):
@@ -239,7 +243,7 @@ def test_cancel_after_finalization_stops_before_review(tmp_path, monkeypatch):
 
 
 def test_replay_uses_stored_omission_reasons_after_claim_table_changes(tmp_path, monkeypatch):
-    monkeypatch.setattr(review, "REVIEW_BUDGET_TOKENS", 500)
+    monkeypatch.setattr(review, "REVIEW_BUDGET_TOKENS", 150)
     flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
     asyncio.run(run_report(flow, run, scope))
     first = reports.report(report_id)["review"]
@@ -256,11 +260,11 @@ def test_replay_uses_stored_omission_reasons_after_claim_table_changes(tmp_path,
                               (section["id"],)).fetchone() is None
     asyncio.run(review.run_report_review(flow, run, scope, reports, report_id))
     assert reports.report(report_id)["review"] == first
-    assert len([call for call in adapter.calls if call["task_type"] == "report_review"]) == 1
+    assert len([call for call in adapter.calls if call["task_type"] == "report_review"]) == stored["output"]["batch_count"]
 
 
 def test_successful_step_commits_coverage_before_interrupted_return(tmp_path, monkeypatch):
-    monkeypatch.setattr(review, "REVIEW_BUDGET_TOKENS", 500)
+    monkeypatch.setattr(review, "REVIEW_BUDGET_TOKENS", 150)
     flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path)
     original = store.complete_model_step
 
@@ -280,10 +284,11 @@ def test_successful_step_commits_coverage_before_interrupted_return(tmp_path, mo
     monkeypatch.setattr(store, "complete_model_step", original)
     asyncio.run(review.run_report_review(flow, run, scope, reports, report_id))
     assert reports.report(report_id)["review"]["sections_not_reviewed"] == step["output"]["sections_not_reviewed"]
-    assert len([call for call in adapter.calls if call["task_type"] == "report_review"]) == 1
+    # Batch 0 is not sent again; the later batches are sent once each.
+    assert len([call for call in adapter.calls if call["task_type"] == "report_review"]) == step["output"]["batch_count"]
 
 
-def test_unavailable_exact_passage_omits_the_whole_section(tmp_path, monkeypatch):
+def test_unavailable_exact_passage_omits_the_section_citing_it_but_not_a_cell_quoting_it(tmp_path, monkeypatch):
     flow, store, reports, _, run, scope, report_id = report_flow(tmp_path)
     asyncio.run(run_report(flow, run, scope))
     missing = reports.snapshot(report_id)["cells"][0]["evidence"][0]["passage_id"]
@@ -294,6 +299,8 @@ def test_unavailable_exact_passage_omits_the_whole_section(tmp_path, monkeypatch
             raise NotFound(passage_id)
         return original(passage_id)
     monkeypatch.setattr(store, "passage", passage_by_id)
-    target, _, _, omitted = review._input(flow, reports, report_id)
-    assert "IV" not in target["review_scope"]
-    assert {item["section_id"] for item in omitted if item["reason"] == "passage_unavailable"} >= {"IV"}
+    (target, _), = review._input(flow, reports, report_id)[0]
+    omitted = review._input(flow, reports, report_id)[2]
+    # III cites the page as a passage; IV cites a cell whose stored quotes are its support (D58).
+    assert "III" not in target["review_scope"] and "IV" in target["review_scope"]
+    assert {item["section_id"] for item in omitted if item["reason"] == "passage_unavailable"} == {"III"}

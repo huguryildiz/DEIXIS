@@ -33,6 +33,7 @@ ROUNDS: tuple[tuple[str, ...], ...] = (
 )
 ORDINALS = {"abstract": 0, "I": 1, "II": 2, "III": 3, "IV": 4, "V": 5, "VI": 6,
             "VII": 7, "VIII": 8, "IX": 9, "index_terms": 10}
+MAX_BASIS_PASSAGE_CHARS = 150000
 _DEPTH_ORDER = {"metadata": 0, "abstract": 1, "selected_sections": 2, "full_text": 3}
 
 
@@ -113,9 +114,10 @@ def _validation_context(flow: ResearchFlow, report_id: str, snapshot: dict, sect
                             {name: basis[name] for name in ("basis_claim_keys", "basis_passage_ids", "basis_cell_ids")})
     cell_ids = {cid for gap in accepted for cid in gap["basis_cell_ids"]}
     basis_cells = [c for c in snapshot["cells"] if c["cell_id"] in cell_ids]
+    # D58: a basis cell carries its stored quotes; only pages a gap names directly are loaded, up to a cap. A page past
+    # the cap stays named by id in its gap's basis_passage_ids.
     passage_ids = {pid for gap in accepted for pid in gap["basis_passage_ids"]}
-    passage_ids.update(e["passage_id"] for c in basis_cells for e in c["evidence"])
-    basis_passages = []
+    basis_passages, shown_chars = [], 0
     for pid in sorted(passage_ids):
         row = flow.store.conn.execute("SELECT * FROM passages WHERE id = ?", (pid,)).fetchone()
         if row is None:
@@ -126,6 +128,10 @@ def _validation_context(flow: ResearchFlow, report_id: str, snapshot: dict, sect
             "locator": {"kind": p["kind"], "physical_page": p["physical_page"], "printed_label": p["printed_label"]},
             "abstract_origin": p["abstract_origin"], "text_source": None if p["kind"] == "abstract" else p["text_source"], "text": p["text"]}
             | equation_fallback_field(flow.store, p))
+        shown_chars += len(json.dumps(basis_passages[-1], ensure_ascii=False, sort_keys=True))
+        if shown_chars > MAX_BASIS_PASSAGE_CHARS:
+            basis_passages.pop()
+            break
     return {"source_ids": evidence_row_ids(snapshot), "column_ids": [c["column_id"] for c in snapshot["columns"]],
             "cells": [{name: c[name] for name in ("cell_id", "source_version_id", "column_id", "state", "value", "reading_depth")} for c in snapshot["cells"]],
             "accepted_gaps": accepted, "basis_cells": basis_cells, "basis_passages": basis_passages}

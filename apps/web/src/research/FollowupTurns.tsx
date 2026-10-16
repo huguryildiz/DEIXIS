@@ -1,12 +1,12 @@
 import { BookOpen, Copy, MessageSquare, Pause, PencilLine, Play, RotateCw, Search, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { type Claim, type FollowupTurn, type Source } from '../api'
+import { type Claim, type FollowupTurn, type FollowupWorkGroups, type Source } from '../api'
 import { locatorText, pauseReasonText, versionText } from '../labels'
 import { MathText } from '../MathText'
 import { useToast } from '../Toast'
 import { t } from '../i18n'
 import { writeClipboard } from '../clipboard'
-import { followupClaim, splitQuotes } from './followupData'
+import { followupClaim, followupGroupClaims, splitQuotes, workTitle } from './followupData'
 
 // Follow-up questions in the thread (mockup `turnHtml()`, R31, UI parity S22b). Each turn is one stored `followup_answer`
 // run (D11): the "Question" bubble, its two step lines, then the short answer with its citation chips. Everything shown is
@@ -69,14 +69,33 @@ export type FollowupTurnActions = {
   onAskAgain: (question: string) => void
 }
 
+// What a grouping's count covers (D66), on screen and in the copied text alike.
+const coverageText = (groups: FollowupWorkGroups) => [
+  t('Counted by DEIXIS: {classified} of the {sent} works whose passages were sent are in a group; this research includes {included}.', { classified: groups.classified_works, sent: groups.sent_works, included: groups.included_works }),
+  groups.groups.reduce((n, g) => n + g.count, 0) > groups.classified_works ? t('A work can be in more than one group, so the counts add up to more.') : '',
+].filter(Boolean).join(' ')
+const GROUP_GAPS = [['ambiguous', 'Not settled by their passages'], ['insufficient_evidence', 'Their passages say nothing about this'],
+  ['unclassified', 'Sent but not placed in a group'], ['table_not_sent', 'In the evidence table, but their passages were not sent to this answer']] as const
+const groupsText = (groups: FollowupWorkGroups) => [
+  ...groups.groups.flatMap(g => ['', `${g.label}: ${t('{n} works', { n: g.count })}`, ...g.works.map(w => `- ${workTitle(w)}${
+    w.inference || w.citations.some(c => c.support_type !== 'source_stated') ? ` [${t('interpretation')}]` : ''}${
+    w.citations.length ? ` (${w.citations.map(c => `"${c.anchor_text}"`).join('; ')})` : ''}${w.note ? ` — ${w.note}` : ''}`)]),
+  '', coverageText(groups),
+  ...GROUP_GAPS.filter(([part]) => groups[part].length > 0).flatMap(([part, heading]) => ['', `${t(heading)}:`,
+    ...groups[part].map(w => `- ${workTitle(w)}${'note' in w && w.note ? ` — ${w.note}` : ''}`)]),
+]
+
 export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTurn; sources: Source[]; actions: FollowupTurnActions }) {
   const toast = useToast()
   const live = turn.status === 'pending' && ACTIVE.has(turn.run.status)
   const answer = turn.answer
   const claims = answer ? answer.claims.map(c => followupClaim(turn, c, sources)) : []
+  // The works of each group (D66), each with its own chip into the Citation panel.
+  const groupClaims = new Map(followupGroupClaims(turn).map(c => [c.label, followupClaim(turn, c, sources)]))
+  const groups = answer?.work_groups ?? null
   // The chip names its first source by its key, else the numbers of the turn's cited passages in order.
   const numbers = new Map<string, number>()
-  claims.forEach(c => c.evidence.forEach(e => { if (!numbers.has(e.passage_id)) numbers.set(e.passage_id, numbers.size + 1) }))
+  ;[...claims, ...groupClaims.values()].forEach(c => c.evidence.forEach(e => { if (!numbers.has(e.passage_id)) numbers.set(e.passage_id, numbers.size + 1) }))
   const chip = (claim: Claim) => {
     if (!claim.evidence.length) return null
     const first = claim.evidence[0]
@@ -89,6 +108,7 @@ export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTur
   const copy = async () => {
     const text = [`${t('Question')}: ${turn.question}`, '',
       ...claims.map(c => `${c.text}${c.evidence.length ? ` (${c.evidence.map(e => `${e.title}, ${locatorText(e)}`).join('; ')})` : ''}`),
+      ...(groups ? groupsText(groups) : []),
       ...(answer?.unanswered_aspects.length ? ['', `${t('Not answered by these passages')}:`, ...answer.unanswered_aspects.map(a => `- ${a}`)] : [])].join('\n')
     try { await writeClipboard(text); toast('success', t('Follow-up answer copied to clipboard.')) }
     catch { toast('error', t('Could not copy to the clipboard.')) }
@@ -133,6 +153,18 @@ export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTur
       {claims.length > 0 && <div className="prose followup-prose"><p>{claims.map(claim => <span className="claim" key={claim.id}><MathText text={claim.text} />
         {claim.support_type === 'analyst_inference' && <span className="support-badge">{t('interpretation')}</span>}
         {chip(claim)}</span>)}</p></div>}
+      {groups && <div className="followup-groups">
+        {groups.groups.map((group, g) => <div className="followup-group" key={group.label}>
+          <p className="followup-group-head"><b>{group.label}</b> · {t('{n} works', { n: group.count })}</p>
+          <ul>{group.works.map(work => { const claim = groupClaims.get(`g${g + 1}:${work.work_id}`)
+            return <li key={work.work_id}><MathText text={workTitle(work)} />
+              {claim?.support_type === 'analyst_inference' && <span className="support-badge">{t('interpretation')}</span>} {claim && chip(claim)}
+              {work.note && <> — <MathText text={work.note} /></>}</li> })}</ul>
+        </div>)}
+        <p className="followup-note">{coverageText(groups)}</p>
+        {GROUP_GAPS.filter(([part]) => groups[part].length > 0).map(([part, heading]) => <div className="followup-gaps" key={part}><p>{t(heading)}</p>
+            <ul>{groups[part].map(work => <li key={work.work_id}><MathText text={workTitle(work)} />{'note' in work && work.note ? <> — <MathText text={work.note} /></> : null}</li>)}</ul></div>)}
+      </div>}
       {answer.unanswered_aspects.length > 0 && <div className="followup-gaps"><p>{t('Not answered by these passages')}</p>
         <ul>{answer.unanswered_aspects.map(a => <li key={a}><MathText text={a} /></li>)}</ul></div>}
       {turn.report_change && <p className="followup-note">{turn.report_change.run_id
@@ -145,8 +177,8 @@ export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTur
           : turn.report_change.not_started === 'nothing_included' ? 'This asked for a change to the report, but no source is included; the report was not changed.'
           : 'This asked for a change to the report, but another run was active; the report was not changed. Ask again when it ends.')}</p>}
     </>}
-    {!live && turn.status !== 'pending' && claims.length > 0 && <div className="followup-acts">
-      {claims.length > 0 && <Button variant="ghost" size="icon-sm" className="answer-ib" aria-label={t('Copy follow-up answer')} title={t('Copy follow-up answer')} onClick={() => { void copy() }}><Copy size={16} aria-hidden /></Button>}
+    {!live && turn.status !== 'pending' && (claims.length > 0 || groups) && <div className="followup-acts">
+      {(claims.length > 0 || groups) && <Button variant="ghost" size="icon-sm" className="answer-ib" aria-label={t('Copy follow-up answer')} title={t('Copy follow-up answer')} onClick={() => { void copy() }}><Copy size={16} aria-hidden /></Button>}
     </div>}
   </section>
 }

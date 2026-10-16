@@ -55,7 +55,7 @@ import { RESEARCH_PANEL_EVENT, type ResearchPanelRequest } from './Shortcuts'
 import { FollowupComposer, type FollowupFill } from './research/FollowupComposer'
 import { AddToChat } from './research/AddToChat'
 import { FollowupTurnView } from './research/FollowupTurns'
-import { followupClaim, followupClaimId, useFollowupTurns } from './research/followupData'
+import { followupClaim, followupClaimId, followupGroupClaims, useFollowupTurns } from './research/followupData'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 // Rechecks a person starts from the table; short enough to start and end between two reads of the research.
@@ -656,7 +656,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const reportVersions = reports.map(r => ({ id: r.answer.id, version: r.version })).sort((a, b) => a.version - b.version)
   // The Citation panel shows a claim of the shown answer or of a follow-up turn; a claim that is no longer there closes it.
   const citeClaim = !citeClaimId ? null : answer?.claims.find(c => c.id === citeClaimId) ?? (() => {
-    for (const turn of followups.turns) for (const c of turn.answer?.claims ?? []) if (followupClaimId(turn, c) === citeClaimId) return followupClaim(turn, c, view.sources)
+    for (const turn of followups.turns) for (const c of [...(turn.answer?.claims ?? []), ...followupGroupClaims(turn)]) if (followupClaimId(turn, c) === citeClaimId) return followupClaim(turn, c, view.sources)
     return null
   })()
   // The report's version select shows another version in the same panel: its stack entry is renamed in place, so the

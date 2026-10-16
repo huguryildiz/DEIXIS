@@ -13,7 +13,7 @@ import { panel } from './panels'
 // expected value is read from the stored turn or research, never by position.
 //
 // Every record is SYNTHETIC and the model is the fixture's script ([fu-hold], [fu-not], [fu-invalid] in the follow-up
-// question); a passing case shows how the page behaves, not how well a model answers a follow-up.
+// question, [fu-count] for a counting turn, D66); a passing case shows how the page behaves, not how well a model answers a follow-up.
 
 const REPO = path.resolve(process.cwd(), '..', '..')
 const PYTHON = path.join(REPO, '.venv', 'bin', 'python')
@@ -49,10 +49,12 @@ class FixtureServer {
 }
 
 type Citation = { passage_id: string; title: string }
+type GroupWork = { work_id: string; title: string; note: string | null; inference: boolean; citations: Citation[] }
+type WorkGroups = { groups: { label: string; count: number; works: GroupWork[] }[]; ambiguous: { work_id: string }[]; classified_works: number; sent_works: number }
 type Turn = {
   id: string; question: string; status: string; scope_revision: number; passages_given: number | null
   run: { id: string; status: string }; progress: { passages_selected: number | null; answer_step: string | null }
-  answer: { outcome: string; claims: { label: string; text: string; citations: Citation[] }[]; unanswered_aspects: string[] } | null
+  answer: { outcome: string; claims: { label: string; text: string; citations: Citation[] }[]; unanswered_aspects: string[]; work_groups?: WorkGroups | null } | null
   issues: { code: string; path: string }[]
 }
 type View = { research: { current_scope_revision: number }; scope: { question: string }; runs: Array<{ id: string; kind: string; status: string }> }
@@ -277,6 +279,51 @@ test.describe.serial('S22b: follow-up questions in the thread', () => {
     expect(view.research.current_scope_revision).toBe(stored!.scope_revision)
     expect(view.scope.question).not.toBe(question)
     await shot(page, 's22b-not-answered')
+  })
+
+  test('a turn that counts works shows the groups the application counted, its bounds, and copies them', async () => {
+    const question = '[fu-count] How many SYNTHETIC studies compare release schedules?'
+    await visit(page, research())
+    await ask(page, question)
+    const turn = turnOn(page, question)
+    await expect(turn.locator('.followup-group-head')).toHaveCount(1, { timeout: 30_000 })
+    const groups = (await turnFor(api, rid, question))!.answer!.work_groups!
+    const [group] = groups.groups
+    await expect(turn.locator('.followup-group-head')).toHaveText(`${group.label} · ${group.count} works`)
+    const items = turn.locator('.followup-group li')
+    await expect(items).toHaveCount(group.count)
+    // The membership the model inferred carries the interpretation mark and its note; the other does not.
+    const inferred = group.works.find(w => w.inference)!
+    await expect(items.filter({ has: page.locator('.support-badge') })).toHaveCount(1)
+    await expect(items.filter({ has: page.locator('.support-badge') })).toContainText(`${inferred.title}`)
+    await expect(items.filter({ has: page.locator('.support-badge') })).toContainText(inferred.note!)
+    await expect(turn.locator('.followup-note').filter({ hasText: 'Counted by DEIXIS' }))
+      .toContainText(`${groups.classified_works} of the ${groups.sent_works} works`)
+    await expect(turn.locator('.followup-gaps li')).toHaveCount(groups.ambiguous.length)
+    await turn.locator('.followup-groups').scrollIntoViewIfNeeded()
+    await shot(page, 'd66-counted-groups')
+    // The same block at a phone width in the dark theme, then back.
+    const size = page.viewportSize()!
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.emulateMedia({ colorScheme: 'dark' })
+    await turn.locator('.followup-groups').scrollIntoViewIfNeeded()
+    await shot(page, 'd66-counted-groups-narrow-dark')
+    await page.setViewportSize(size)
+    await page.emulateMedia({ colorScheme: 'light' })
+    await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+    await turn.getByRole('button', { name: 'Copy follow-up answer' }).click()
+    const copied = await page.evaluate(() => navigator.clipboard.readText())
+    expect(copied).toContain(`${group.label}: ${group.count} works`)
+    expect(copied).toContain('[interpretation]')
+    expect(copied).toContain(inferred.note!)
+    expect(copied).toContain('Counted by DEIXIS')
+    expect(copied).toContain('Not settled by their passages:')
+    // A work's chip opens its passage in the Citation panel, as a claim's does.
+    await items.first().locator('.cite-chip').click()
+    const cite = panel(page, 'Citation')
+    await expect(cite).toBeVisible()
+    await expect(cite.locator('.cite-entry h3')).toHaveText(group.works[0].citations.map(c => c.title))
+    await page.keyboard.press('Escape')
   })
 
   test('a research with no passage to give answers with no model call and says so', async () => {

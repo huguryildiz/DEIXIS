@@ -16,10 +16,11 @@
     "citation_anchors",
     "unanswered_aspects",
     "more_queries",
-    "report_change_requested"
+    "report_change_requested",
+    "work_classifications"
   ],
   "properties": {
-    "schema_version": { "type": "string", "const": "deixis.followup_answer.v3" },
+    "schema_version": { "type": "string", "const": "deixis.followup_answer.v4" },
     "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
     "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
     "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
@@ -75,6 +76,36 @@
     "report_change_requested": {
       "type": "boolean",
       "description": "true when the follow-up asks for the research's report itself to change (add, remove, extend, shorten, restructure or rewrite part of it), not only for an answer in the conversation. The application then writes a new report version that follows the request; this answer is still written. false for a question that only asks to be answered."
+    },
+    "work_classifications": {
+      "type": "array",
+      "maxItems": 48,
+      "description": "Only for a follow-up that counts, lists, groups or sorts works into categories: one record per work, identified by a passage of that work from this StepInput. A classified record puts the work in one or more groups (at most 6 distinct groups across the answer), each membership with an exact anchor in a passage of the same source. ambiguous and insufficient_evidence records carry no membership and say why in note. The application counts the works per group; never write a count in a claim. Empty for any other question.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["passage_id", "status", "memberships", "note"],
+        "properties": {
+          "passage_id": { "$ref": "common.schema.json#/$defs/passage_id" },
+          "status": { "type": "string", "enum": ["classified", "ambiguous", "insufficient_evidence"] },
+          "memberships": {
+            "type": "array",
+            "maxItems": 6,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["group", "passage_id", "quote", "support_type"],
+              "properties": {
+                "group": { "type": "string", "minLength": 1, "maxLength": 80 },
+                "passage_id": { "$ref": "common.schema.json#/$defs/passage_id" },
+                "quote": { "type": "string", "minLength": 12, "maxLength": 600 },
+                "support_type": { "type": "string", "enum": ["source_stated", "analyst_inference"] }
+              }
+            }
+          },
+          "note": { "type": ["string", "null"], "maxLength": 300 }
+        }
+      }
     },
     "more_queries": {
       "type": "array",

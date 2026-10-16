@@ -32,6 +32,15 @@ export function useFollowupTurns(researchId: string, eventCursor: number) {
 // A follow-up claim in the shape the Citation panel reads (P11): each citation keeps its stored passage, version, locator
 // and backend-located anchor. Its id names the turn, so it never collides with a claim of the answer.
 export const followupClaimId = (turn: FollowupTurn, claim: FollowupClaim) => `${turn.id}:${claim.label}`
+// Each work of a group (D66) as a claim of its own, so its chip opens the Citation panel like a claim's: labelled by
+// group and work, its text the work's title.
+export const followupGroupClaims = (turn: FollowupTurn): FollowupClaim[] =>
+  (turn.answer?.work_groups?.groups ?? []).flatMap((group, g) => group.works.map(work => ({
+    label: `g${g + 1}:${work.work_id}`, text: `${group.label}: ${workTitle(work)}`, citations: work.citations,
+    // A membership the model inferred, not one its passage states, is shown as an interpretation, as a claim is.
+    support_type: !work.inference && work.citations.every(c => c.support_type === 'source_stated') ? 'source_stated' as const : 'analyst_inference' as const })))
+export const workTitle = (work: { title: string | null; year: number | null }) =>
+  `${work.title ?? ''}${work.year ? ` (${work.year})` : ''}`
 export function followupClaim(turn: FollowupTurn, claim: FollowupClaim, sources: Source[]): Claim {
   return {
     id: followupClaimId(turn, claim), label: claim.label, section: null, text: claim.text, support_type: claim.support_type,

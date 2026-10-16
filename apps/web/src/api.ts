@@ -1844,11 +1844,22 @@ export type FollowupCitation = {
   version_label: string | null; reading_depth: 'abstract' | 'selected_sections'
   locator: { kind: string; physical_page: number | null; printed_label: string | null }
   anchor_text: string; anchor_match: 'exact' | 'normalized' | 'fuzzy'
+  support_type: 'source_stated' | 'analyst_inference'  // the claim's, or a grouped work's membership (D66)
   // As on the answer's Evidence: the file or extraction the quote was read from may since be removed, replaced or
   // superseded; the source may since be removed from this research; Europe PMC text drawn as a PDF by DEIXIS.
   evidence_status: EvidenceStatus; text_source: Evidence['text_source']; removed_from_research: boolean; rendition: boolean
 }
 export type FollowupClaim = { label: string; text: string; support_type: 'source_stated' | 'analyst_inference'; citations: FollowupCitation[] }
+// A follow-up that grouped works (D66): the counts the application made from the model's per-work records, frozen when
+// the turn was published. A work can be in two groups; the works sent but not classified, left open by their passages,
+// and named by the evidence table without being sent are listed apart.
+export type FollowupWork = { work_id: string; title: string | null; year: number | null }
+export type FollowupWorkGroups = {
+  groups: { label: string; count: number; works: (FollowupWork & { note: string | null; inference: boolean; citations: FollowupCitation[] })[] }[]
+  ambiguous: (FollowupWork & { note: string | null })[]; insufficient_evidence: (FollowupWork & { note: string | null })[]
+  unclassified: FollowupWork[]; table_not_sent: FollowupWork[]
+  classified_works: number; sent_works: number; included_works: number
+}
 export type FollowupTurn = {
   id: string; research_id: string; scope_revision: number; question: string; status: FollowupTurnStatus
   created_at: string; published_at: string | null
@@ -1863,6 +1874,7 @@ export type FollowupTurn = {
   answer: {
     answer_language: string; outcome: 'answered' | 'partly_answered' | 'not_answered'
     claims: FollowupClaim[]; unanswered_aspects: string[]
+    work_groups: FollowupWorkGroups | null
     warnings: ValidationIssue[]  // stored validation warnings (math, several sources), as the answer's `validation.warnings`
   } | null
   // The turn asked for the report to change (D57): the answer run it queued for the next report version, or why none was.

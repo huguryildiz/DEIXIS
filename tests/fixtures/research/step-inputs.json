@@ -267,7 +267,7 @@
    "followup.md"
   ],
   "output_schema_versions": [
-   "deixis.followup_answer.v3"
+   "deixis.followup_answer.v4"
   ],
   "question": {
    "text": "SYNTHETIC follow-up: which binary variables do the release scheduling models use?",

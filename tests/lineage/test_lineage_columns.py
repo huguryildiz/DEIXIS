@@ -293,5 +293,6 @@ def test_skill_package_hash_unchanged_by_l1():
     # L1 leaves runtime instructions alone; D243 changes the shared answer and review rules. The clean start (slice 6,
     # new D1) removes the term-advice and term-suggestion files and rewords search-query.md and evidence-table.md;
     # UI parity S5a adds the comparison frame rule to evidence-table.md; S22a adds followup.md and its SKILL.md routing line;
-    # D51 adds four report writing rules to report.md; followup.md then asks for $…$ around LaTeX.
-    assert load_skill_package().package_hash == "sha256:5fce958ff3b70f14ffec954b9670d8e29dc148fadf992f96453bfb185d4c0fe5"
+    # D51 adds four report writing rules to report.md; followup.md then asks for $…$ around LaTeX, and D66 for one
+    # record per work when a follow-up counts works.
+    assert load_skill_package().package_hash == "sha256:0831f4e9f23bd95469d1e1551dfac21455db72749e14b79c2f903416b711450c"

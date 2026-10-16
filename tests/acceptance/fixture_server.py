@@ -46,6 +46,8 @@ StepInput): "[fu-not]" (the follow-up answer says the passages do not answer it:
 closest passage and one SYNTHETIC unanswered aspect), "[fu-invalid]" (every follow-up call answers text that is not JSON,
 its repair included, so the turn is an unverified draft), "[fu-hold]" (a follow-up call waits for `followup-release`
 in the fixture data directory, failing after 60 s, so the page can see and pause a live turn).
+"[fu-count]" (D66: the follow-up classifies the works sent, two in one group, one of them as an interpretation, the rest
+left open, and writes no claim).
 "[clarify]" (parity plan S0) is not provided: no backend path stores an answer with status `clarification`, so the
 state cannot be reached without a backend change.
 
@@ -933,6 +935,26 @@ class ScriptedCodex:
                 elif "visiting hours" in candidate["title"] and "[queue]" in question:
                     # Case J / M's off-topic work (DEIXIS_FIXTURE_AUDIT): both runs leave it out of scope.
                     record.update(label="out_of_scope", rationale="SYNTHETIC: hospital wards are not the question's setting.")
+        elif si["task_type"] == "followup_answer" and "[fu-count]" in question:
+            # SYNTHETIC (D66): the follow-up counts works, so it writes no claim and one record per source sent, by its
+            # first passage: the first in a group as its passage states, the second in the same group as an
+            # interpretation with a note, the rest left open.
+            output["claims"], output["citation_anchors"] = [], []
+            first = {}
+            for p in si["passages"]:
+                first.setdefault(p["source_id"], p)
+            records = []
+            for n, p in enumerate(first.values()):
+                quote = " ".join(p["text"].split())[:120]
+                if n < 2:
+                    records.append({"passage_id": p["passage_id"], "status": "classified",
+                                    "note": None if n == 0 else "SYNTHETIC: the passage implies it.",
+                                    "memberships": [{"group": "SYNTHETIC release schedule", "passage_id": p["passage_id"],
+                                                     "quote": quote, "support_type": "source_stated" if n == 0 else "analyst_inference"}]})
+                else:
+                    records.append({"passage_id": p["passage_id"], "status": "ambiguous", "memberships": [],
+                                    "note": "SYNTHETIC: the passage names no schedule."})
+            output["work_classifications"] = records
         elif si["task_type"] == "followup_answer" and "[fu-not]" in question:
             # SYNTHETIC: the passages do not answer the follow-up; the one claim reports what the closest passage states.
             output["outcome"] = "not_answered"

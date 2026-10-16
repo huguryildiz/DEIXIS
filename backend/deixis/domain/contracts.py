@@ -55,7 +55,7 @@ SCHEMA_FILES = {
 SCHEMA_VERSIONS = {
     "OwnerReview": "deixis.owner_review.v1",
     "GroundedAnswerDraft": "deixis.grounded_answer_draft.v3",
-    "FollowupAnswer": "deixis.followup_answer.v3",
+    "FollowupAnswer": "deixis.followup_answer.v4",
     "AnswerReview": "deixis.answer_review.v1",
     "EvidenceCellDraft": "deixis.evidence_cell_draft.v1",
     "TableColumnProposal": "deixis.table_column_proposal.v1",
@@ -2404,15 +2404,93 @@ def _check_followup(allow: dict[str, set[str]], step_input: dict[str, Any], draf
     passages leave open. A `not_answered` outcome may still report, with anchors, what the closest passages state.
     """
     _check_cited_claims(step_input, allow, draft, report)
-    if draft["outcome"] != "not_answered" and not draft["claims"]:
+    classified = _check_work_classifications(step_input, allow, draft, report)
+    if draft["outcome"] != "not_answered" and not draft["claims"] and not classified:
         report.issues.append(Issue("followup_answer_without_claims", "/claims",
-                                   f"outcome {draft['outcome']!r} needs at least one cited claim"))
+                                   f"outcome {draft['outcome']!r} needs at least one cited claim or classified work"))
     if draft["outcome"] != "answered" and not draft["unanswered_aspects"]:
         report.issues.append(Issue("followup_unanswered_without_aspect", "/unanswered_aspects",
                                    f"outcome {draft['outcome']!r} needs what the given passages do not say"))
     fields = [(f"/claims/{i}/text", c["text"]) for i, c in enumerate(draft["claims"])]
     fields += [(f"/unanswered_aspects/{i}", text) for i, text in enumerate(draft["unanswered_aspects"])]
+    for i, work in enumerate(draft["work_classifications"]):
+        fields += [(f"/work_classifications/{i}/memberships/{j}/group", m["group"]) for j, m in enumerate(work["memberships"])]
+        if work["note"]:
+            fields.append((f"/work_classifications/{i}/note", work["note"]))
     _check_math(step_input, draft, report, fields=fields)
+
+
+MAX_WORK_GROUPS = 6  # distinct groups one follow-up answer may put works in (D66)
+
+
+def work_group_key(label: str) -> str:
+    """A group label as groups are compared and counted: case and spacing do not make another group."""
+    return " ".join(label.casefold().split())
+
+
+def _check_work_classifications(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any],
+                                report: ValidationReport) -> int:
+    """A follow-up's per-work classification (D66): each record names one work by a passage of it; a classified
+    record puts it in groups, each membership with a located anchor in a passage of the same work (any of its
+    versions); the other statuses carry no membership and a note. One membership per group and record, a non-empty
+    group label, at most MAX_WORK_GROUPS groups. Two records of one work (its versions, say) are not refused: the
+    application merges them when it counts, and a warning says so. Returns the number of classified records."""
+    passages = {p["passage_id"]: p for p in step_input["passages"]}
+    work_of = {s["source_id"]: s.get("work_id") or s["source_id"] for s in step_input.get("sources", [])}
+
+    def work_id_of(pid: str) -> str:
+        source = passages[pid]["source_id"]
+        return work_of.get(source, source)
+    seen_works: set[str] = set()
+    groups: set[str] = set()
+    classified = 0
+    for i, work in enumerate(draft["work_classifications"]):
+        path = f"/work_classifications/{i}"
+        if work["passage_id"] not in allow["passage_ids"]:
+            report.issues.append(Issue("unknown_passage_id", f"{path}/passage_id", work["passage_id"]))
+            continue
+        record_work = work_id_of(work["passage_id"])
+        if record_work in seen_works:
+            report.warnings.append(Issue("work_records_merged", f"{path}/passage_id",
+                                         f"{record_work}: a second record of this work is merged with the first"))
+        seen_works.add(record_work)
+        if work["status"] == "classified":
+            classified += 1
+            if not work["memberships"]:
+                report.issues.append(Issue("classified_work_without_group", f"{path}/memberships",
+                                           "a classified work needs at least one group with an anchor"))
+        else:
+            if work["memberships"]:
+                report.issues.append(Issue("unclassified_work_with_group", f"{path}/memberships",
+                                           f"a {work['status']} record carries no group"))
+            if not (work["note"] or "").strip():
+                report.issues.append(Issue("unclassified_work_without_note", f"{path}/note",
+                                           f"say why the work is {work['status']}"))
+        own: set[str] = set()
+        for j, item in enumerate(work["memberships"]):
+            mpath = f"{path}/memberships/{j}"
+            key = work_group_key(item["group"])
+            if not key:
+                report.issues.append(Issue("empty_work_group", f"{mpath}/group", "name the group"))
+                continue
+            if key in own:
+                report.issues.append(Issue("duplicate_work_group", f"{mpath}/group", item["group"]))
+            own.add(key)
+            groups.add(key)
+            if item["passage_id"] not in allow["passage_ids"]:
+                report.issues.append(Issue("unknown_passage_id", f"{mpath}/passage_id", item["passage_id"]))
+                continue
+            if work_id_of(item["passage_id"]) != record_work:
+                report.issues.append(Issue("membership_passage_other_work", f"{mpath}/passage_id",
+                                           "cite a passage of the same work as the record"))
+                continue
+            if locate_citation_anchor({"passage_id": item["passage_id"], "quote": item["quote"]}, passages) is None:
+                report.issues.append(Issue("anchor_not_in_passage", f"{mpath}/quote",
+                                           f"{item['passage_id']}: the quoted sentence was not found in the cited passage"))
+    if len(groups) > MAX_WORK_GROUPS:
+        report.issues.append(Issue("too_many_work_groups", "/work_classifications",
+                                   f"{len(groups)} groups; use at most {MAX_WORK_GROUPS}"))
+    return classified
 
 
 def _check_cited_claims(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any],
@@ -3023,6 +3101,16 @@ def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict
     for anchor in anchors if isinstance(anchors, list) else []:
         if isinstance(anchor, dict) and isinstance(anchor.get("passage_id"), str):
             anchor["passage_id"] = real(anchor["passage_id"])
+    works = data.get("work_classifications")
+    for work in works if isinstance(works, list) else []:
+        if not isinstance(work, dict):
+            continue
+        if isinstance(work.get("passage_id"), str):
+            work["passage_id"] = real(work["passage_id"])
+        memberships = work.get("memberships")
+        for item in memberships if isinstance(memberships, list) else []:
+            if isinstance(item, dict) and isinstance(item.get("passage_id"), str):
+                item["passage_id"] = real(item["passage_id"])
     records = data.get("records")
     for record in records if isinstance(records, list) else []:
         if isinstance(record, dict) and isinstance(record.get("candidate_id"), str):

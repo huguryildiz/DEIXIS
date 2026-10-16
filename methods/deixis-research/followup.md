@@ -77,3 +77,14 @@ works. Still return a complete answer from the passages you have. Leave
    outside these delimiters is rejected.
 7. Write in the language of the follow-up question; set `answer_language` to
    it. Leave `unanswered_aspects` empty only when the outcome is `answered`.
+8. Only when the follow-up asks to count, list or group works by category:
+   put one record per work sent in `work_classifications`, named by one of
+   its passages, and write no count or list of works in a claim; the
+   application counts and shows them. Group a work by what the question asks
+   about the work itself, usually the approach it proposes or uses: a work that
+   only compares or reviews approaches is not in their groups (`ambiguous`,
+   with why in `note`), and a work whose own method combines two is in both.
+   `classified` gives each group (one short label used for every work in it,
+   at most six) with an exact `quote` as in step 5 from a passage of that work;
+   `ambiguous` and `insufficient_evidence` give only `note`. Leave
+   `work_classifications` empty for any other question.

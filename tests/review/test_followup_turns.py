@@ -1210,3 +1210,176 @@ def test_question_keeps_quote_lines():
     # "Add to chat" quotes come as Markdown quote blocks ahead of the question; their line breaks must survive the cleanup.
     assert followup._clean("  > quoted  line\n> second\n\n\n\nWhy   is that?  ") == "> quoted line\n> second\n\nWhy is that?"
     assert followup._clean("plain   question") == "plain question"
+
+
+def classify_all(si):
+    """SYNTHETIC: a follow-up output that classifies every source sent by its first passage (D66). A source whose
+    first passage names "depth" is depth-based, "vector" vector-based, both both (as an interpretation); another is
+    ambiguous."""
+    draft = json.loads(valid_response(si))
+    draft["claims"], draft["citation_anchors"] = [], []
+    first: dict[str, dict] = {}
+    for p in si["passages"]:
+        first.setdefault(p["source_id"], p)
+    records = []
+    for p in first.values():
+        quote = " ".join(p["text"].split())[:120]
+        groups = [g for g, word in (("Depth-based", "depth"), ("Vector-based", "vector")) if word in p["text"]]
+        records.append({"passage_id": p["passage_id"], "status": "classified" if groups else "ambiguous",
+                        "memberships": [{"group": g, "passage_id": p["passage_id"], "quote": quote,
+                                         "support_type": "analyst_inference" if len(groups) > 1 else "source_stated"}
+                                        for g in groups],
+                        "note": None if groups else "SYNTHETIC: the passage names neither."})
+    draft["work_classifications"] = records
+    return json.dumps(draft)
+
+
+def test_a_counting_follow_up_is_counted_by_the_application_with_a_citation_per_work(tmp_path):
+    """D66 end to end: the model classifies works; the application counts the distinct works per group, a hybrid in
+    both, shows each work with its citation and the ambiguous one by its note, and a later turn reads the counts as
+    context. SYNTHETIC records and the fake adapter."""
+    files = (("a.pdf", ["SYNTHETIC. The protocol forwards by depth toward the surface sinks."]),
+             ("b.pdf", ["SYNTHETIC. The protocol forwards inside a vector pipe from source to sink."]),
+             ("c.pdf", ["SYNTHETIC. A hybrid uses depth and a vector pipe together for forwarding."]),
+             ("d.pdf", ["SYNTHETIC. The bibliography lists unrelated works on acoustic modems."]))
+    adapter = FakeAdapter(lambda si: classify_all(si) if "How many" in si["question"]["text"] else valid_response(si))
+    app = app_for(tmp_path, adapter)
+    with TestClient(app) as client:
+        session(client)
+        rid, _ = research(client, files)
+        turn = answered(client, rid, "How many works are depth-based and how many vector-based?")
+        assert turn["status"] == "answered", turn.get("validation")
+        groups = {g["label"]: g for g in turn["answer"]["work_groups"]["groups"]}
+        assert {label: g["count"] for label, g in groups.items()} == {"Depth-based": 2, "Vector-based": 2}
+        assert all(w["citations"] and w["citations"][0]["anchor_text"] for g in groups.values() for w in g["works"])
+        # The hybrid's memberships are interpretations: marked on the work and on its citation, the others not.
+        marked = {w["title"]: (w["inference"], w["citations"][0]["support_type"]) for w in groups["Depth-based"]["works"]}
+        assert sorted(marked.values()) == [(False, "source_stated"), (True, "analyst_inference")]
+        summary = turn["answer"]["work_groups"]
+        assert [w["note"] for w in summary["ambiguous"]] == ["SYNTHETIC: the passage names neither."]
+        assert summary["classified_works"] == 3 and summary["sent_works"] == 4 and summary["included_works"] == 4
+        assert summary["unclassified"] == [] and summary["table_not_sent"] == []
+        later = answered(client, rid)
+        (payload, *_) = step_inputs(app, later["run"]["id"])
+        lines = payload["conversation"]["earlier_turns"][-1]["answer"]
+        assert lines[0].startswith("Depth-based: 2 works (") and lines[1].startswith("Vector-based: 2 works (")
+        assert lines[0].count(" [interpretation]") == 1 and lines[1].count(" [interpretation]") == 1
+        assert lines[2].startswith("Not settled by their passages: ") and \
+            lines[2].endswith(" - SYNTHETIC: the passage names neither.")
+        assert lines[3] == ("Counted by the application from the passages sent: 3 of 4 works sent are in a group, of 4"
+                            " included; 1 not settled by their passages; a work can be in more than one group.")
+
+
+def test_work_groups_count_a_work_once_across_its_versions_and_name_table_works_not_sent(tmp_path, monkeypatch):
+    """D66: two versions of one work in a group are one work; a work the table names but whose passages were not
+    sent, and a sent work with no record, are listed apart. SYNTHETIC records."""
+    from test_evidence_tables import make_lib
+    lib = make_lib(tmp_path)  # one work in two versions: published and preprint
+    other = lib.store.create_upload_source("SYNTHETIC other work")
+    unsent = lib.store.create_upload_source("SYNTHETIC unsent work")
+    with followup.transaction(lib.conn):
+        extra = lib.store._insert_passage(other, None, "abstract", None, None, "provider", None, None, "SYNTHETIC other.")
+    work = {sv: lib.store.source(sv)["work_id"] for sv in (lib.published, other, unsent)}
+    monkeypatch.setattr(followup, "_table_works", lambda store, rid: [work[unsent], work[other]])
+    payload = {"passages": [{"passage_id": lib.abstracts[lib.published], "source_id": lib.published},
+                            {"passage_id": lib.abstracts[lib.preprint], "source_id": lib.preprint},
+                            {"passage_id": extra, "source_id": other}]}
+
+    def record(pid):
+        return {"passage_id": pid, "status": "classified", "note": None,
+                "memberships": [{"group": "Packets", "passage_id": pid, "quote": "x" * 12, "support_type": "source_stated"}]}
+    frozen = followup.work_groups(lib.store, lib.rid, payload, {"work_classifications": [
+        record(lib.abstracts[lib.published]), record(lib.abstracts[lib.preprint])]})
+    (group,) = frozen["groups"]
+    assert group["count"] == 1 and group["works"][0]["labels"] == ["w1.1", "w2.1"]
+    assert frozen["unclassified"] == [work[other]] and frozen["table_not_sent"] == [work[unsent]]
+    assert frozen["sent_works"] == 2 and frozen["classified_works"] == 1
+    assert followup.work_groups(lib.store, lib.rid, payload, {"work_classifications": []}) is None
+    # One version grouped, the other left open: the work is in the group and not listed as left open.
+    open_version = {"passage_id": lib.abstracts[lib.preprint], "status": "ambiguous", "memberships": [], "note": "SYNTHETIC."}
+    mixed = followup.work_groups(lib.store, lib.rid, payload, {"work_classifications": [
+        record(lib.abstracts[lib.published]), open_version]})
+    assert mixed["groups"][0]["count"] == 1 and mixed["ambiguous"] == []
+    assert mixed["groups"][0]["works"][0]["note"] == "SYNTHETIC."  # the open version's note stays with the work
+
+
+def test_merged_records_give_the_same_summary_in_any_order_and_keep_notes_and_interpretations(tmp_path):
+    """D66: a work's records merge without regard to their order (ambiguous wins over no evidence, every note is
+    kept), and a membership the model inferred stays marked in the frozen summary and in the next turn's context
+    lines. SYNTHETIC records."""
+    from test_evidence_tables import make_lib
+    lib = make_lib(tmp_path)  # one work in two versions: published and preprint
+    pub, pre = lib.abstracts[lib.published], lib.abstracts[lib.preprint]
+    payload = {"passages": [{"passage_id": pub, "source_id": lib.published}, {"passage_id": pre, "source_id": lib.preprint}]}
+    vague = {"passage_id": pub, "status": "ambiguous", "memberships": [], "note": "SYNTHETIC compares both."}
+    silent = {"passage_id": pre, "status": "insufficient_evidence", "memberships": [], "note": "SYNTHETIC says nothing."}
+    one = followup.work_groups(lib.store, lib.rid, payload, {"work_classifications": [vague, silent]})
+    other = followup.work_groups(lib.store, lib.rid, payload, {"work_classifications": [silent, vague]})
+    assert one == other and one["insufficient_evidence"] == [] and len(one["ambiguous"]) == 1
+    assert set(one["ambiguous"][0]["note"].split(" / ")) == {"SYNTHETIC compares both.", "SYNTHETIC says nothing."}
+
+    inferred = {"passage_id": pub, "status": "classified", "note": None, "memberships": [
+        {"group": "Packets", "passage_id": pub, "quote": "x" * 12, "support_type": "analyst_inference"}]}
+    frozen = followup.work_groups(lib.store, lib.rid, payload, {"work_classifications": [inferred, silent]})
+    (work,) = frozen["groups"][0]["works"]
+    assert work["inference"] is True and work["note"] == "SYNTHETIC says nothing."
+    (line, _) = followup.work_groups_lines(frozen, lambda w: "SYNTHETIC title")
+    assert line == "Packets: 1 works (SYNTHETIC title [interpretation] - SYNTHETIC says nothing.)"
+    left_open = followup.work_groups(lib.store, lib.rid, payload, {"work_classifications": [vague]})
+    assert left_open["classified_works"] == 0
+    assert followup.work_groups_lines(left_open, lambda w: "SYNTHETIC title")[0] == \
+        "Not settled by their passages: SYNTHETIC title - SYNTHETIC compares both."
+
+
+def test_table_works_include_rows_without_a_value_and_leave_removed_ones_out(tmp_path):
+    """D66: a work the evidence table has a row for counts as named by the table even when its cells are empty; a
+    removed row and a trashed table give none. SYNTHETIC records."""
+    from test_evidence_tables import make_lib
+    lib = make_lib(tmp_path)  # the table has rows for both versions of one work, no value yet
+    work = lib.store.source(lib.published)["work_id"]
+    assert followup._table_works(lib.store, lib.rid) == [work]
+    lib.conn.execute("UPDATE evidence_tables SET trashed_at = '2026-10-16' WHERE id = ?", (lib.tid,))
+    assert followup._table_works(lib.store, lib.rid) == []
+
+
+def test_grouped_records_of_one_work_give_the_same_summary_in_any_order_and_versions_that_disagree_count_in_none(tmp_path):
+    """D66: grouped records in either order, with the label spelt two ways, give the same summary but for the
+    membership labels, and each label still names its own record's passage; two versions of one work that give
+    different groups are counted in neither and left open with a note naming both. SYNTHETIC records."""
+    from test_evidence_tables import make_lib
+    lib = make_lib(tmp_path)  # one work in two versions: published and preprint
+    other = lib.store.create_upload_source("SYNTHETIC other work")
+    with followup.transaction(lib.conn):
+        extra = lib.store._insert_passage(other, None, "abstract", None, None, "provider", None, None, "SYNTHETIC other.")
+    pub, pre = lib.abstracts[lib.published], lib.abstracts[lib.preprint]
+    payload = {"passages": [{"passage_id": pid, "source_id": sv, "text": "SYNTHETIC " + "x" * 20}
+                            for pid, sv in ((pub, lib.published), (pre, lib.preprint), (extra, other))]}
+
+    def record(pid, *groups):
+        return {"passage_id": pid, "status": "classified", "note": None, "memberships": [
+            {"group": g, "passage_id": pid, "quote": "x" * 12, "support_type": "source_stated"} for g in groups]}
+    one = [record(pub, "Depth"), record(pre, "depth "), record(extra, "Vector")]
+    forward = followup.work_groups(lib.store, lib.rid, payload, {"work_classifications": one})
+    backward = followup.work_groups(lib.store, lib.rid, payload, {"work_classifications": one[::-1]})
+
+    def without_labels(frozen):
+        return [[g["label"], g["count"], [{k: v for k, v in w.items() if k != "labels"} for w in g["works"]]]
+                for g in frozen["groups"]]
+    assert without_labels(forward) == without_labels(backward)
+    assert [(g["label"], g["count"]) for g in forward["groups"]] == [("Depth", 1), ("Vector", 1)]
+    for records, frozen in ((one, forward), (one[::-1], backward)):
+        passage_of = {link["claim_label"]: link["passage_id"]
+                      for link in followup.classification_links(payload, {"work_classifications": records})}
+        for g in frozen["groups"]:
+            for w in g["works"]:
+                assert {lib.store.source(next(p["source_id"] for p in payload["passages"] if p["passage_id"] == passage_of[label]))["work_id"]
+                        for label in w["labels"]} == {w["work_id"]}
+
+    split = [record(pub, "Depth"), record(pre, "Vector"), record(extra, "Vector")]
+    for records in (split, split[::-1]):
+        frozen = followup.work_groups(lib.store, lib.rid, payload, {"work_classifications": records})
+        assert [(g["label"], g["count"]) for g in frozen["groups"]] == [("Vector", 1)]
+        assert frozen["classified_works"] == 1
+        (left,) = frozen["ambiguous"]
+        assert left["work_id"] == lib.store.source(lib.published)["work_id"]
+        assert left["note"] == "Its records disagree: Depth; Vector"

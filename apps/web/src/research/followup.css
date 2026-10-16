@@ -58,3 +58,9 @@
 .followup-quote-chip>button{display:grid;place-items:center;flex:none;width:20px;height:20px;padding:0;border:0;border-radius:5px;background:none;color:var(--muted);cursor:pointer}
 .followup-quote-chip>button:hover{background:var(--paper);color:var(--ink)}
 .followup-quote{margin:0 0 8px;padding:2px 0 2px 10px;border-left:3px solid var(--accent);color:var(--muted);font-size:13.5px;white-space:pre-wrap}
+
+/* A follow-up that grouped works (D66): one block per group, its count, the works with a chip each. */
+.followup-groups{display:grid;gap:10px}
+.followup-group-head{margin:0;font-size:13.5px;color:var(--ink-2)}
+.followup-group ul{margin:4px 0 0;padding-left:18px;list-style:disc;font-size:13.5px;line-height:1.55}
+.followup-group li .cite-chip{margin-left:4px}

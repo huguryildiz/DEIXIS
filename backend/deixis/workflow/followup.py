@@ -387,13 +387,16 @@ def conversation(store: Any, research_id: str, question: str, turn: dict[str, An
         "SELECT text FROM claims WHERE answer_id = ? ORDER BY ordinal LIMIT ?",
         (answer["id"], MAX_CONTEXT_CLAIMS))] if answer else []
     rows = store.conn.execute(
-        f"SELECT question, draft_json FROM followup_turns WHERE research_id = ? AND id != ? AND created_at <= ?"
+        f"SELECT question, draft_json, work_groups_json FROM followup_turns WHERE research_id = ? AND id != ? AND created_at <= ?"
         f" AND status IN ({', '.join('?' * len(PUBLISHED))}) ORDER BY created_at DESC, rowid DESC LIMIT ?",
         (research_id, turn["id"], turn["created_at"], *PUBLISHED, MAX_EARLIER_TURNS)).fetchall()
     earlier = []
     for row in reversed(rows):
         draft = json.loads(row["draft_json"] or "{}")
         claims = [c["text"] for c in draft.get("claims", []) if isinstance(c, dict) and isinstance(c.get("text"), str)]
+        # The counts the application made from a turn that grouped works (D66), as one line each.
+        if row["work_groups_json"]:
+            claims = work_groups_lines(json.loads(row["work_groups_json"]), lambda w: _work_title(store, w)) + claims
         earlier.append({"question": row["question"], "answer": claims[:MAX_CONTEXT_CLAIMS]})
     # The values the follow-up's selection chose and stored with it (D53); without them, the tables in their order.
     if values is None:
@@ -594,7 +597,7 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
         return
     payload = store.step_input_payload(output["step_input_id"])
     result = output["result"]
-    links = contracts.derive_evidence_links(payload, result)
+    links = contracts.derive_evidence_links(payload, result) + classification_links(payload, result)
     if any(link["anchor_text"] is None for link in links):
         # Validation locates every anchor; one that does not locate now is never published as a citation.
         publish(flow, run, turn, frozen_pool, "unverified_draft", considered=considered, given=len(passages), step_id=step["id"],
@@ -604,7 +607,169 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
         return
     publish(flow, run, turn, frozen_pool, result["outcome"], considered=considered, given=len(passages), step_id=step["id"],
             step_input_id=output["step_input_id"], draft=result,
-            validation={"ok": True, "issues": [], "warnings": output.get("warnings", [])}, links=links)
+            validation={"ok": True, "issues": [], "warnings": output.get("warnings", [])}, links=links,
+            work_groups=work_groups(store, run["research_id"], payload, result))
+
+
+def _work_title(store: Any, work_id: str) -> str:
+    row = store.conn.execute("SELECT title, year FROM source_versions WHERE work_id = ? ORDER BY created_at LIMIT 1",
+                             (work_id,)).fetchone()
+    return f"{row['title']} ({row['year']})" if row and row["year"] else (row["title"] if row else work_id)
+
+
+def _table_works(store: Any, research_id: str) -> list[str]:
+    """The works the research's evidence tables hold a row for, filled or not, in table and row order: a trashed table,
+    a removed row and a row whose source left the research give none."""
+    return list(dict.fromkeys(r[0] for r in store.conn.execute(
+        "SELECT v.work_id FROM table_rows tr JOIN evidence_tables t ON t.id = tr.table_id AND t.research_id = ?"
+        "  AND t.trashed_at IS NULL"
+        " JOIN corpus_memberships m ON m.research_id = t.research_id AND m.source_version_id = tr.source_version_id"
+        "  AND m.removed_at IS NULL"
+        " JOIN source_versions v ON v.id = tr.source_version_id WHERE tr.removed_at IS NULL"
+        " ORDER BY t.created_at, tr.created_at", (research_id,))))
+
+
+def work_groups_lines(frozen: dict[str, Any], title: Any) -> list[str]:
+    """A grouping as lines of text that keep its bounds (D66): each group with its count and works (an interpretation
+    marked, a note kept), the works left open with their notes, then what the count covers. The next turn reads these
+    as context; `title` names a work id."""
+    def named(w: dict[str, Any]) -> str:
+        return (title(w["work_id"]) + (" [interpretation]" if w.get("inference") else "")
+                + (f" - {w['note']}" if w.get("note") else ""))
+    lines = [f"{g['label']}: {g['count']} works ({'; '.join(named(w) for w in g['works'])})" for g in frozen["groups"]]
+    for key, words in (("ambiguous", "Not settled by their passages"), ("insufficient_evidence", "Without evidence")):
+        if frozen[key]:
+            lines.append(f"{words}: {'; '.join(named(w) for w in frozen[key])}")
+    note = (f"Counted by the application from the passages sent: {frozen['classified_works']} of "
+            f"{frozen['sent_works']} works sent are in a group, of {frozen['included_works']} included")
+    for key, words in (("ambiguous", "not settled by their passages"), ("insufficient_evidence", "without evidence"),
+                       ("unclassified", "sent but not grouped"), ("table_not_sent", "in the evidence table but not sent")):
+        if frozen[key]:
+            note += f"; {len(frozen[key])} {words}"
+    if sum(g["count"] for g in frozen["groups"]) > frozen["classified_works"]:
+        note += "; a work can be in more than one group"
+    return lines + [note + "."]
+
+
+def _work_groups_view(store: Any, row: dict[str, Any], cited: dict[str, list[dict[str, Any]]]) -> dict[str, Any] | None:
+    """The frozen counts of a turn that grouped works (D66), each work with its title and the citations of its
+    memberships; the works without a citation are named by title only."""
+    if not row.get("work_groups_json"):
+        return None
+    frozen = json.loads(row["work_groups_json"])
+    ids = {w["work_id"] for g in frozen["groups"] for w in g["works"]} | {
+        o["work_id"] for part in ("ambiguous", "insufficient_evidence") for o in frozen[part]} | set(
+        frozen["unclassified"]) | set(frozen["table_not_sent"])
+    titled: dict[str, dict[str, Any]] = {}
+    for r in store.conn.execute(
+            f"SELECT work_id, title, year FROM source_versions WHERE work_id IN ({', '.join('?' * len(ids))})"
+            " ORDER BY created_at", tuple(ids)):
+        titled.setdefault(r["work_id"], {"title": r["title"], "year": r["year"]})
+
+    def named(work_id: str) -> dict[str, Any]:
+        return {"work_id": work_id, **titled.get(work_id, {"title": None, "year": None})}
+    return {"groups": [{"label": g["label"], "count": g["count"],
+                        "works": [named(w["work_id"]) | {"note": w.get("note"), "inference": bool(w.get("inference")),
+                                                         "citations": [c for label in w["labels"] for c in cited.get(label, [])]}
+                                  for w in g["works"]]} for g in frozen["groups"]],
+            "ambiguous": [named(o["work_id"]) | {"note": o["note"]} for o in frozen["ambiguous"]],
+            "insufficient_evidence": [named(o["work_id"]) | {"note": o["note"]} for o in frozen["insufficient_evidence"]],
+            "unclassified": [named(w) for w in frozen["unclassified"]],
+            "table_not_sent": [named(w) for w in frozen["table_not_sent"]],
+            "classified_works": frozen["classified_works"], "sent_works": frozen["sent_works"],
+            "included_works": frozen["included_works"]}
+
+
+def membership_label(record: int, membership: int) -> str:
+    """The link label of one work's membership in a group (D66): `w<record>.<membership>`, both from 1."""
+    return f"w{record}.{membership}"
+
+
+def classification_links(payload: dict[str, Any], result: dict[str, Any]) -> list[dict[str, Any]]:
+    """One evidence link per group membership of a classified work (D66), as a claim's link: source and locator from
+    the StepInput passage, the anchor located by the backend."""
+    passages = {p["passage_id"]: p for p in payload["passages"]}
+    links = []
+    for i, work in enumerate(result.get("work_classifications", []), start=1):
+        for j, item in enumerate(work["memberships"], start=1):
+            p = passages[item["passage_id"]]
+            anchor = contracts.locate_anchor(item["quote"], p["text"])
+            links.append({"claim_label": membership_label(i, j), "passage_id": p["passage_id"], "source_id": p["source_id"],
+                          "support_type": item["support_type"], "anchor_text": anchor.text if anchor else None,
+                          "anchor_match": anchor.kind if anchor else None})
+    return links
+
+
+def work_groups(store: Any, research_id: str, payload: dict[str, Any], result: dict[str, Any]) -> dict[str, Any] | None:
+    """What the application counts from a classification (D66), frozen with the turn: per group the distinct works
+    (two versions of one work count once) with their membership labels and whether any membership is an
+    interpretation; the works left ambiguous or without evidence; the works whose passages were sent but that got no
+    record; the works the evidence tables name whose passages were not sent; and how many works were sent and are
+    included. A work's records merge without regard to their order: a work in any group is not also left open, an open
+    work is ambiguous when any of its records is, and every record's note is kept (in source order). None without
+    records."""
+    records = result.get("work_classifications", [])
+    if not records:
+        return None
+    source_of = {p["passage_id"]: p["source_id"] for p in payload["passages"]}
+    sent_sources = list(dict.fromkeys(p["source_id"] for p in payload["passages"]))
+    work_of = {r[0]: r[1] for r in store.conn.execute(
+        f"SELECT id, work_id FROM source_versions WHERE id IN ({', '.join('?' * len(sent_sources))})", tuple(sent_sources))}
+    groups: dict[str, dict[str, Any]] = {}
+    statuses: dict[str, set[str]] = {}
+    sources: dict[str, set[str]] = {}
+    notes: dict[str, set[tuple[str, str]]] = {}
+    group_sets: dict[str, set[frozenset[str]]] = {}
+    for i, work in enumerate(records, start=1):
+        source = source_of[work["passage_id"]]
+        work_id = work_of[source]
+        statuses.setdefault(work_id, set()).add(work["status"])
+        sources.setdefault(work_id, set()).add(source)
+        if work.get("note"):
+            notes.setdefault(work_id, set()).add((source, work["note"].strip()))
+        if work["status"] == "classified":
+            group_sets.setdefault(work_id, set()).add(frozenset(contracts.work_group_key(m["group"]) for m in work["memberships"]))
+        for j, item in enumerate(work["memberships"], start=1):
+            group = groups.setdefault(contracts.work_group_key(item["group"]), {"labels": set(), "works": {}})
+            group["labels"].add(item["group"].strip())
+            entry = group["works"].setdefault(work_id, {"work_id": work_id, "sources": set(), "labels": [], "inference": False})
+            entry["sources"].add(source)
+            entry["labels"].append(membership_label(i, j))
+            entry["inference"] = entry["inference"] or item["support_type"] != "source_stated"
+
+    # Records of one work that put it in different groups disagree; that is not a work whose own method combines
+    # two, so it is counted in none and left open, saying which groups its records gave.
+    disagree = {w for w, sets in group_sets.items() if len(sets) > 1}
+    for work_id in disagree:
+        named = sorted(min(g["labels"]) for g in groups.values() if work_id in g["works"])
+        notes.setdefault(work_id, set()).add(("", "Its records disagree: " + "; ".join(named)))
+        statuses[work_id].add("ambiguous")
+        for g in groups.values():
+            g["works"].pop(work_id, None)
+    groups = {key: g for key, g in groups.items() if g["works"]}
+
+    def note_of(work_id: str) -> str | None:
+        return " / ".join(dict.fromkeys(n for _, n in sorted(notes.get(work_id, ())))) or None
+    grouped = {w for g in groups.values() for w in g["works"]}
+    others: dict[str, list[dict[str, Any]]] = {"ambiguous": [], "insufficient_evidence": []}
+    for work_id in sorted(statuses):
+        if work_id not in grouped:
+            part = "ambiguous" if "ambiguous" in statuses[work_id] else "insufficient_evidence"
+            others[part].append({"work_id": work_id, "source_version_id": min(sources[work_id]), "note": note_of(work_id)})
+    sent_works = list(dict.fromkeys(work_of[s] for s in sent_sources))
+    table_works = _table_works(store, research_id)
+    # Groups by size, then label, and works by id: the same records in another order give the same summary, except
+    # the membership labels, which name the records' positions.
+    return {"groups": sorted(({"label": min(g["labels"]), "count": len(g["works"]),
+                               "works": [{"work_id": w["work_id"], "source_version_id": min(w["sources"]),
+                                          "labels": w["labels"], "inference": w["inference"], "note": note_of(w["work_id"])}
+                                         for _, w in sorted(g["works"].items())]}
+                              for g in groups.values()), key=lambda g: (-g["count"], g["label"])),
+            "ambiguous": others["ambiguous"], "insufficient_evidence": others["insufficient_evidence"],
+            "unclassified": [w for w in sent_works if w not in statuses],
+            "table_not_sent": [w for w in table_works if w not in set(sent_works)],
+            "classified_works": len(grouped), "sent_works": len(sent_works),
+            "included_works": len(store.included_works(research_id))}
 
 
 def _language_tag(value: Any) -> str | None:
@@ -616,7 +781,7 @@ def _language_tag(value: Any) -> str | None:
 def publish(flow: Any, run: dict[str, Any], turn: dict[str, Any], frozen_pool: dict[str, Any], status: str, *,
             considered: int, given: int, validation: dict[str, Any], step_id: str | None = None,
             step_input_id: str | None = None, draft: dict[str, Any] | None = None,
-            links: list[dict[str, Any]] | None = None) -> None:
+            links: list[dict[str, Any]] | None = None, work_groups: dict[str, Any] | None = None) -> None:
     """The turn's answer and its evidence links in one transaction; a turn already published is left as it is.
 
     The frozen pool is checked inside the same transaction, so nothing a person changed can slip in between the check
@@ -627,10 +792,11 @@ def publish(flow: Any, run: dict[str, Any], turn: dict[str, Any], frozen_pool: d
         updated = 0 if reason else store.conn.execute(
             "UPDATE followup_turns SET status = ?, step_id = ?, step_input_id = ?, answer_language = ?, draft_json = ?,"
             " validation_json = ?, passages_considered = ?, passages_given = ?, selection_revision = ?,"
-            " user_signature = ?, published_at = ? WHERE id = ? AND status = 'pending'",
+            " user_signature = ?, published_at = ?, work_groups_json = ? WHERE id = ? AND status = 'pending'",
             (status, step_id, step_input_id, _language_tag((draft or {}).get("answer_language")),
              dumps(draft) if draft is not None else None, dumps(validation), considered, given,
-             frozen_pool["selection_revision"], frozen_pool["user_signature"], now(), turn["id"]),
+             frozen_pool["selection_revision"], frozen_pool["user_signature"], now(),
+             dumps(work_groups) if work_groups is not None else None, turn["id"]),
         ).rowcount
         if updated:
             for link in links or []:
@@ -717,12 +883,13 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
                 "locator": {"kind": link["kind"], "physical_page": link["physical_page"],
                             "printed_label": link["printed_label"]},
                 "anchor_text": link["anchor_text"], "anchor_match": link["anchor_match"],
-                "evidence_status": link["evidence_status"], "text_source": link["text_source"],
+                "support_type": link["support_type"], "evidence_status": link["evidence_status"], "text_source": link["text_source"],
                 "removed_from_research": link["source_version_id"] in removed, "rendition": bool(link["rendition"])})
         answer = {"answer_language": draft["answer_language"], "outcome": draft["outcome"],
                   "claims": [{"label": c["claim_label"], "text": c["text"], "support_type": c["support_type"],
                               "citations": cited.get(c["claim_label"], [])} for c in draft["claims"]],
-                  "unanswered_aspects": draft["unanswered_aspects"]}
+                  "unanswered_aspects": draft["unanswered_aspects"],
+                  "work_groups": _work_groups_view(store, row, cited)}
     validation = json.loads(row["validation_json"]) if row["validation_json"] else None
     # The turn's live steps (UI parity S22b) from its stored step rows: how many passages the stored selection sends
     # (the call's allowlist, never an estimate) once that step has succeeded, and the state of the answer's model step.

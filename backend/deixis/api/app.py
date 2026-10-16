@@ -1174,6 +1174,8 @@ def create_app(
             "codex_home": str(settings.codex_home),
             # The same sign-in as a command to paste in a terminal, written for this computer's shell (PowerShell on Windows).
             "codex_login_command": request.app.state.account_signin.codex_login_command(),
+            # Sign-ins DEIXIS started and has not forgotten, so a page opened again picks a running one up (E20).
+            "sign_ins": request.app.state.account_signin.views(),
             "providers": [
                 {"id": p, "implemented": True, "access_mode": c.access_mode(), "supplementary": c.supplementary,
                  "key_env": c.key_env, "key_broken": key_broken(c), "role": provider_role(c),
@@ -1198,6 +1200,13 @@ def create_app(
     async def account_sign_in_state(tool: str, request: Request) -> dict[str, Any]:
         try:
             return await request.app.state.account_signin.state(tool)
+        except account_signin.SignInError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @app.post("/api/accounts/{tool}/sign-in/cancel")
+    async def cancel_account_sign_in(tool: str, request: Request) -> dict[str, Any]:
+        try:
+            return request.app.state.account_signin.cancel(tool)
         except account_signin.SignInError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
 

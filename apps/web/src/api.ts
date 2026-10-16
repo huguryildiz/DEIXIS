@@ -731,7 +731,7 @@ export type ModelHealth = {
   // Models a failed research step hid from the lists (D59): 404 from the provider, or answered by another model.
   hidden_models?: { id: string; reason: 'not_served' | 'answered_as'; answered_as?: string; at: string | null }[]
 }
-export type Connections = { models: Record<string, ModelHealth>; codex_home?: string; codex_login_command?: string; providers: { id: string; implemented: boolean; access_mode: string | null; key_broken?: boolean; supplementary?: boolean; role?: string; note: string }[] }
+export type Connections = { models: Record<string, ModelHealth>; codex_home?: string; codex_login_command?: string; sign_ins?: Record<string, AccountSignIn>; providers: { id: string; implemented: boolean; access_mode: string | null; key_broken?: boolean; supplementary?: boolean; role?: string; note: string }[] }
 // `available`: a system keychain exists. `mode`: where a saved key lives (E5, A6): that keychain, the unencrypted file the person chose, or this run's memory.
 // `file_error`: the key file exists and cannot be read; it is left alone and no key changes until it is fixed.
 export type Keychain = { available: boolean; name: string | null; mode: 'keychain' | 'file' | 'session'; file_error?: boolean }
@@ -1412,6 +1412,7 @@ export const api = {
   cancelLocalToolInstall: (id: string) => request<{ job: LocalToolJob }>(`/api/local-tools/${id}/cancel`, { method: 'POST' }),
   startAccountSignIn: (tool: string) => request<AccountSignIn>(`/api/accounts/${tool}/sign-in`, { method: 'POST' }),
   accountSignIn: (tool: string) => request<AccountSignIn>(`/api/accounts/${tool}/sign-in`),
+  cancelAccountSignIn: (tool: string) => request<AccountSignIn>(`/api/accounts/${tool}/sign-in/cancel`, { method: 'POST' }),
   semanticSearch: () => request<SemanticSearch>('/api/semantic-search'),
   saveSemanticSearch: (provider: SemanticSearchProvider, model: string | null) =>
     request<SemanticSearch>('/api/semantic-search', json('PUT', { provider, model })),

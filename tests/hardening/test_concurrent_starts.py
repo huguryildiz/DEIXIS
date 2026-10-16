@@ -186,7 +186,7 @@ def test_the_health_check_does_not_run_before_the_terminal_is_open(tmp_path, mon
     clock = [1000.0]
     monkeypatch.setattr(account_signin, "find_tool", lambda name: (time.sleep(0.2), "/bin/codex")[1])
     monkeypatch.setattr(account_signin, "build_launch", lambda *a, **k: ["terminal"])
-    signin = AccountSignIn(tmp_path / "h", check, launcher=lambda spec: None, platform="linux", interval=0, clock=lambda: clock[0])
+    signin = AccountSignIn(tmp_path / "h", check, launcher=lambda spec: None, platform="linux", clock=lambda: clock[0])
 
     async def scenario():
         starting = asyncio.create_task(signin.start("codex"))

@@ -1068,6 +1068,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const [checkFailed, setCheckFailed] = useState<Record<string, string>>({})
   // The sign-in DEIXIS started for a tool (D21); it is polled while the person finishes it in the terminal window that opened.
   const [signInRun, setSignInRun] = useState<{ tool: string; run: AccountSignIn } | null>(null)
+  const signInSeen = useRef(false)
   // The last answer to each keyless source's Test; shown only while its check's time is (the same check's answer).
   const [providerTests, setProviderTests] = useState<Record<string, ProviderTest>>({})
   const [showOthers, setShowOthers] = useState(false)
@@ -1091,6 +1092,13 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
       const taken = new Set(Object.keys(result.models).filter(id => order.current.settle(id, ticket)))
       setData(old => ({ ...result, models: Object.fromEntries(Object.entries(result.models).map(([id, health]) => [id, taken.has(id) ? health : old?.models[id] ?? health])) }))
       setError('')
+      // A sign-in still running on the backend when this page opened again: picked up from the first read only, and
+      // polling carries on from there. Later reads never bring back one that was cancelled or finished.
+      if (!signInSeen.current) {
+        signInSeen.current = true
+        const running = Object.entries(result.sign_ins ?? {}).find(([, run]) => run.state === 'waiting')
+        if (running) setSignInRun(current => current ?? { tool: running[0], run: running[1] })
+      }
     })
       .catch((e: Error) => { if (n === seq.current.connections) setError(t('Connections could not be read: {message}', { message: e.message })) })
   }, [])
@@ -1196,6 +1204,10 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
       setSignInRun({ tool, run: { state: 'failed', message: e.message } })
       toast('error', t('Could not start the sign-in: {message}', { message: e.message }))
     })
+  }
+  const cancelSignIn = (tool: string) => {
+    api.cancelAccountSignIn(tool).then(run => setSignInRun(current => current && current.tool !== tool ? current : run.state === 'idle' ? null : { tool, run }),
+      (e: Error) => toast('error', t('Could not cancel the sign-in: {message}', { message: e.message })))
   }
   const signInTool = signInRun?.run.state === 'waiting' ? signInRun.tool : null
   useEffect(() => {
@@ -1442,8 +1454,9 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
       </div>
       {ownRun?.state === 'waiting' && <p className="foot-note signin-wait" role="status">
         <span className="spin" aria-hidden />{t('A terminal window opened. Finish signing in there; this updates by itself.')}
+        <button type="button" className="ghost" onClick={() => cancelSignIn(accountId)}>{t('Cancel')}</button>
       </p>}
-      {ownRun && (ownRun.state === 'failed' || ownRun.state === 'timed_out') && ownRun.message && <p className="foot-note warn-t" role="alert">{ownRun.message}</p>}
+      {ownRun && (ownRun.state === 'failed' || ownRun.state === 'timed_out') && ownRun.message && <p className="foot-note warn-t" role="alert">{t(ownRun.message)}</p>}
       {ownRun && (ownRun.state === 'failed' || ownRun.state === 'timed_out') && signInCommand && <div className="signin-cmd">
         <p className="foot-note">{t('Run this in a terminal, then test the connection:')}</p>
         <div className="cmd-row"><code className="field mono">{signInCommand}</code><button type="button" className="ghost" onClick={() => copy(signInCommand)}><Copy aria-hidden />{t('Copy')}</button></div>

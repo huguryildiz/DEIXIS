@@ -628,3 +628,21 @@ def test_coverage_stays_with_its_decision_and_comes_back_with_an_undo(library):
     assert decisions.current(rid, svid, "fulltext")["read_coverage"] is None
     restored = decisions.undo_human(rid, svid, "fulltext")
     assert restored["step_id"] == step["id"] and json.loads(restored["read_coverage"]) == shown
+
+
+def test_a_quote_found_on_another_shown_page_is_stored_with_that_page_and_its_passage():
+    """The model named page 1's passage but the quote stands on page 3: the stored passage is the one on page 3."""
+    parts = [{"name": "irrigation", "definition": ON}]
+    other = "SYNTHETIC drip irrigation was scheduled twice a day on page three of the tomato study."
+    shown = {"psg_SYNTHP0001": {"physical_page": 1}, "psg_SYNTHP0003": {"physical_page": 3}}
+    pages = {1: PAGE, 3: other}
+    found = adjudication.proposals_of(
+        parts, [{"part": "irrigation", "label": "present", "quote": other[:60], "passage_id": "psg_SYNTHP0001"}],
+        shown, pages, 12)["irrigation"]
+    assert found["quote_verified"] is True and found["page"] == 3
+    assert found["passage_id"] == "psg_SYNTHP0003"
+
+    named = adjudication.proposals_of(
+        parts, [{"part": "irrigation", "label": "present", "quote": PAGE[:60], "passage_id": "psg_SYNTHP0001"}],
+        shown, pages, 12)["irrigation"]
+    assert named["page"] == 1 and named["passage_id"] == "psg_SYNTHP0001"

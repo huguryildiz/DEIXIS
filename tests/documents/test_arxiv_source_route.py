@@ -230,11 +230,11 @@ def test_rule_three_states_from_stored_rows(tmp_path, clock):
     for status in ("version_mismatch", "too_large", "unreadable"):
         conn.execute("UPDATE arxiv_sources SET status = ?, content = NULL WHERE arxiv_key = ?", (status, KEY))
         assert equations.equation_state(store, aid) == {"state": "no_source", "reason": status, "route": "arxiv_source"}
-    equations.reading = {"asset_id": aid, "pages": 2, "started_at": "now"}
+    svc.reading = {"asset_id": aid, "pages": 2, "started_at": "now"}
     try:
         assert equations.equation_state(store, aid)["state"] == "reading"
     finally:
-        equations.reading = None
+        svc.reading = None
 
 
 def test_a_person_retry_resets_an_exhausted_source(tmp_path, clock):

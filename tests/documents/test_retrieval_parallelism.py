@@ -339,3 +339,29 @@ def test_a_pause_lets_the_works_in_flight_finish_and_the_resumed_run_ends_like_a
     # The resumed run asked nothing twice and reports what an uninterrupted run reports.
     assert calls == whole_calls == sorted(urls)
     assert summary == uninterrupted
+
+
+def test_the_background_lane_waits_for_a_wake_rather_than_polling_and_picks_at_once_when_woken():
+    """No busy loop: idle, the lane turns once per fallback interval; a wake makes it turn straight away."""
+    from types import SimpleNamespace
+
+    from deixis.workflow import background_fetch
+
+    async def run():
+        lane = background_fetch.BackgroundFetchLane(SimpleNamespace(store=None))
+        turns = []
+        lane.pick = lambda: turns.append(asyncio.get_running_loop().time())
+        task = asyncio.create_task(lane.run_forever())
+        await asyncio.sleep(0.5)
+        idle = len(turns)
+        woken_at = asyncio.get_running_loop().time()
+        lane.wake()
+        await asyncio.sleep(0.05)
+        after = [t for t in turns if t >= woken_at]
+        lane.stop()
+        await task
+        return idle, after, woken_at
+
+    idle, after, woken_at = asyncio.run(run())
+    assert idle == 1 and background_fetch.POLL_FALLBACK_SECONDS > 0.5
+    assert after and after[0] - woken_at < 0.05

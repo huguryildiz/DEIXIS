@@ -348,6 +348,44 @@ def test_redirect_to_a_private_address_is_blocked(monkeypatch):
     assert result.status == "blocked_url" and result.final_url == "http://intranet.example/secret.pdf"
 
 
+def test_a_pdf_timeout_after_a_redirect_names_the_url_it_was_reading(monkeypatch):
+    resolve, _ = resolver({"papers.example": ["93.184.216.34"], "cdn.example": ["93.184.216.35"]})
+    monkeypatch.setattr(fetch, "_resolve", resolve)
+
+    def handler(request):
+        if request.headers["host"] == "papers.example":
+            return httpx.Response(302, headers={"location": "https://cdn.example/b.pdf"})
+        raise httpx.ReadTimeout("SYNTHETIC slow host", request=request)
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch.fetch_pdf("https://papers.example/a.pdf", client)
+
+    result = asyncio.run(run())
+    assert (result.status, result.final_url) == ("timeout", "https://cdn.example/b.pdf")
+
+
+def test_a_pdf_fetch_has_one_deadline_for_the_whole_transfer(monkeypatch):
+    resolve, _ = resolver({"papers.example": ["93.184.216.34"]})
+    monkeypatch.setattr(fetch, "_resolve", resolve)
+
+    async def trickle():
+        yield b"%PDF-1.4 SYNTHETIC"
+        while True:  # each chunk arrives inside the per-read timeout; only the whole-fetch deadline ends it
+            await asyncio.sleep(0.02)
+            yield b" more"
+
+    def handler(request):
+        return httpx.Response(200, content=trickle())
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await fetch.fetch_pdf("https://papers.example/a.pdf", client, deadline=0.3)
+
+    result = asyncio.run(run())
+    assert (result.status, result.error, result.final_url) == ("timeout", "deadline", "https://papers.example/a.pdf")
+
+
 def test_lines_mostly_unmapped_glyphs_become_one_marker():
     # SYNTHETIC: an algorithm block whose symbol font has no Unicode map, as MuPDF reports it (U+FFFD).
     block = {"bbox": (50, 300, 500, 400), "size": 10.0, "chars": 120, "lines": [

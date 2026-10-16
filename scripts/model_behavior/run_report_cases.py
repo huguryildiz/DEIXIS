@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from deixis.config import load_settings
-from deixis.domain import contracts
+from deixis.domain import contracts, wording
 from deixis.domain.skill import load_skill_package
 from deixis.models import prompt
 from deixis.models.adapter import CodexAdapter, is_rate_limited
@@ -24,8 +24,9 @@ from deixis.workflow.flow import HANDLE_TASKS
 FIXTURES = REPO_ROOT / "tests/fixtures/research/step-inputs.json"
 CASES = REPO_ROOT / "tests/model_behavior/report_cases.json"
 SEEDED_RS_CASES = tuple(f"RS{i:02d}" for i in range(2, 13))  # RS01 (repair drops a negation) went with the repair step, D43
+WRITING_CASES = tuple(f"RW{i:02d}" for i in range(1, 5))  # D51 report writing rules
 CASE_IDS = tuple([f"RB{i:02d}" for i in range(1, 6)] +
-                 list(SEEDED_RS_CASES) + ["RC01"])
+                 list(SEEDED_RS_CASES) + ["RC01"] + list(WRITING_CASES))
 COL = "col_SYNTHR0001"
 SOURCE_IDS = [f"srv_SYNTHR{i:08d}" for i in range(1, 5)]
 PASSAGE_IDS = [f"psg_SYNTHR{i:08d}" for i in range(1, 5)]
@@ -215,6 +216,50 @@ def _behavior_case(case_id: str, si: dict[str, Any]) -> None:
     si["allowlist"]["passage_ids"] = [p["passage_id"] for p in si["passages"]]
 
 
+WRITING_TEXT = {
+    "RW01": ["SYNTHETIC. Source A schedules relay wake-up times with a mixed-integer program that minimizes total energy "
+             "subject to a per-packet delay bound of 2 seconds in a 50-node simulated network.",
+             "SYNTHETIC. Source B replaces the mixed-integer program with a greedy heuristic that keeps the same 2-second "
+             "delay bound and reports 8 percent higher energy use than the exact schedule in the same simulated network."],
+    "RW02": ["SYNTHETIC. Source A reports a 30 percent delivery-ratio gain over DBR at 200 nodes in simulation.",
+             "SYNTHETIC. Source B reports a 12 percent delivery-ratio gain over DBR at 500 nodes in simulation.",
+             "SYNTHETIC. Source C reports no delivery-ratio gain over DBR at 100 nodes in simulation.",
+             "SYNTHETIC. Source D reports a 45 percent delivery-ratio gain over DBR."],
+    "RW03": ["SYNTHETIC. Source A evaluates its protocol in NS-3 simulations of 200 nodes and reports a 20 percent lower "
+             "delay; it does not report a field trial.",
+             "SYNTHETIC. Source B evaluates its protocol with MATLAB simulations under an assumed sound speed of 1500 m/s "
+             "and reports 15 percent lower energy use."],
+    "RW04": ["SYNTHETIC. Source A proves that its relay selection converges to the optimal schedule for static "
+             "terrestrial networks with known topology.",
+             "SYNTHETIC. Source B adapts Source A's relay selection to mobile underwater networks and reports simulation "
+             "results only; it gives no convergence proof."],
+}
+
+
+def _writing_case(case_id: str, si: dict[str, Any]) -> None:
+    """D51: one IV section over two to three allowlisted sources; RW02 adds a fourth seen only in validation_context."""
+    texts = WRITING_TEXT[case_id]
+    cited = 3 if case_id == "RW02" else 2
+    target = si["report_target"]
+    target["section_id"] = "IV"
+    target["plan"]["glossary"] = []
+    target["plan"]["axes"] = []
+    si["question"]["text"] = "SYNTHETIC: Compare how the sources evaluate their routing methods and what they report."
+    si["sources"] = [{"source_id": SOURCE_IDS[i], "work_id": f"wrk_SYNTHR{i + 1:08d}", "title": f"SYNTHETIC Source {'ABCD'[i]}",
+                      "year": 2024, "version_label": "synthetic", "access_level": "pdf_available"} for i in range(cited)]
+    si["passages"] = [_passage(i, texts[i]) for i in range(cited)]
+    target["cells"] = [_cell(i, texts[i], texts[i].removeprefix("SYNTHETIC. ")) for i in range(cited)]
+    if case_id == "RW02":
+        outside = _cell(3, texts[3], texts[3].removeprefix("SYNTHETIC. "))
+        target["validation_context"] = {
+            "source_ids": SOURCE_IDS, "column_ids": [COL],
+            "cells": [{k: c[k] for k in ("cell_id", "source_version_id", "column_id", "state", "value", "reading_depth")}
+                      for c in [*target["cells"], outside]],
+            "accepted_gaps": [], "basis_cells": [], "basis_passages": []}
+    si["allowlist"].update({"source_ids": SOURCE_IDS[:cited], "passage_ids": PASSAGE_IDS[:cited],
+                            "cell_ids": CELL_IDS[:cited], "gap_ids": []})
+
+
 def build_input(case_id: str, fixtures: dict[str, Any], package_hash: str, model: str) -> dict[str, Any]:
     if case_id not in CASE_IDS:
         raise ValueError(case_id)
@@ -227,6 +272,8 @@ def build_input(case_id: str, fixtures: dict[str, Any], package_hash: str, model
     si["model"] = {"connection": "codex", "requested_model": model}
     if case_id.startswith(("RS", "RC")):
         _review_case(case_id, si)
+    elif case_id.startswith("RW"):
+        _writing_case(case_id, si)
     else:
         _behavior_case(case_id, si)
     issues = contracts.check_step_input(si)
@@ -348,6 +395,8 @@ def automatic_checks(case: dict[str, Any], output: dict[str, Any] | None,
     if output is None:
         return {}, {}
     case_id = case["id"]
+    if case_id.startswith("RW"):
+        return _writing_checks(case_id, output, si)
     if case_id.startswith("RB"):
         prose = _all_claim_text(output)
         low = prose.lower()
@@ -399,9 +448,44 @@ def automatic_checks(case: dict[str, Any], output: dict[str, Any] | None,
                     "control_findings": len(findings) if case_id == "RC01" else 0}
 
 
+NEGATED = re.compile(r"\b(?:no|not|never|without|lacks?|none|only|rather than|instead of)\b", re.IGNORECASE)
+
+
+def _writing_checks(case_id: str, output: dict[str, Any], si: dict[str, Any]) -> tuple[dict[str, bool], dict[str, int]]:
+    """Screens for D51's four rules; keyword and overlap screens, so a human still reads the failures."""
+    allowed = set(si["allowlist"]["source_ids"] + si["allowlist"]["passage_ids"] + si["allowlist"]["cell_ids"])
+    checks = {"no_outside_id_in_citation_fields": _citation_ids(output) <= allowed}
+    claims = output["claims"]
+    source_of = {p["passage_id"]: p["source_id"] for p in si["passages"]}
+    source_of |= {c["cell_id"]: c["source_version_id"] for c in si["report_target"]["cells"]}
+    anchors = {c["claim_key"]: [a for a in output["citation_anchors"] if a["claim_key"] == c["claim_key"]] for c in claims}
+    sentences = [s for c in claims for s in wording.sentences(c["text"])]
+    if case_id == "RW01":
+        runs = [max((wording.copied_run(c["text"], a["quote"]) for a in anchors[c["claim_key"]]), default=0) for c in claims]
+        checks["no_claim_copies_its_anchor"] = all(r < wording.COPIED_RUN_WORDS for r in runs)
+        return checks, {"longest_copied_run": max(runs, default=0)}
+    if case_id == "RW02":
+        related = [c for c in claims
+                   if len({source_of.get(a["passage_id"] or a["cell_id"]) for a in anchors[c["claim_key"]]}) >= 2]
+        checks["a_claim_relates_two_sources"] = bool(related)
+        checks["outside_source_not_used"] = not re.search(r"\b45\b|Source D", _all_claim_text(output))
+        return checks, {"multi_source_claims": len(related), "claims": len(claims)}
+    if case_id == "RW03":
+        named = [s for s in sentences if wording.experiment_phrases(s, "en") and not NEGATED.search(s)]
+        assumed = [s for s in sentences if "1500" in s]
+        checks["no_experiment_wording"] = not named
+        checks["assumed_value_kept_assumed"] = all(re.search(r"assum", s, re.IGNORECASE) for s in assumed)
+        return checks, {"experiment_sentences": len(named)}
+    transferred = [s for s in sentences
+                   if re.search(r"converge|optimal|guarantee|prov(?:e|es|en|ed)\b", s, re.IGNORECASE)
+                   and re.search(r"underwater|mobile|Source B|adapt", s, re.IGNORECASE) and not NEGATED.search(s)]
+    checks["guarantee_not_transferred"] = not transferred
+    return checks, {"transferred_sentences": len(transferred)}
+
+
 def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
     families: dict[str, Any] = {}
-    for family in ("RB", "RS", "RC"):
+    for family in ("RB", "RS", "RC", "RW"):
         rows = [r for r in results if r["family"] == family]
         families[family] = {
             "cases": len(rows),

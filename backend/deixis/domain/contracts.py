@@ -1069,6 +1069,7 @@ def _semantic_checks(step_input: dict[str, Any], output_type: str, result: dict[
     elif output_type == "ReportSectionDraft":
         _check_report_section(step_input, allow, result, report)
         _check_phrasing(step_input, result, report)
+        _check_report_writing(step_input, result, report)
         _check_math(step_input, result, report, fields=_report_math_fields(result))
     elif output_type == "ReportReview":
         _check_report_review(step_input, result, report)
@@ -1365,6 +1366,29 @@ def _check_phrasing(step_input: dict[str, Any], draft: dict[str, Any], report: V
             findings.append(Issue("plural_sources_for_one_source", f"/claims/{i}/text",
                                        f"{phrase!r} speaks of several sources, but this claim cites one source; "
                                        "use a frame for reporting what one source states"))
+
+
+def _check_report_writing(step_input: dict[str, Any], draft: dict[str, Any], report: ValidationReport) -> None:
+    """D51's report writing rules, as warnings: a claim that keeps a long run of its anchor's words, and a claim naming
+    an experiment or trial while every text it cites describes a simulation and names none."""
+    language = wording.checked_language(wording.question_language(step_input)) or "en"
+    passages = {p["passage_id"]: p.get("text") or "" for p in step_input["passages"]}
+    cells = {c["cell_id"]: c for c in (step_input.get("report_target") or {}).get("cells", [])}
+    for i, claim in enumerate(draft["claims"]):
+        anchors = [a for a in draft["citation_anchors"] if a["claim_key"] == claim["claim_key"]]
+        text = _without_math(claim["text"])
+        quotes = [a["quote"] for a in anchors if isinstance(a.get("quote"), str)]
+        longest = max((wording.copied_run(text, q) for q in quotes), default=0)
+        if longest >= wording.COPIED_RUN_WORDS:
+            report.warnings.append(Issue("claim_copies_anchor", f"/claims/{i}/text",
+                                         f"{longest} consecutive words are the anchor's own; write the claim as a new sentence"))
+        cited = [passages[a["passage_id"]] for a in anchors if a.get("passage_id") in passages]
+        cited += [e.get("quote") or "" for a in anchors if a.get("cell_id") in cells
+                  for e in cells[a["cell_id"]].get("evidence") or []]
+        named = wording.experiment_phrases(text, language)
+        if named and cited and wording.simulation_only(cited, language):
+            report.warnings.append(Issue("experiment_wording_for_simulation", f"/claims/{i}/text",
+                                         f"{named[0]!r} names an experiment or trial, but the cited text describes a simulation"))
 
 
 def _check_review(step_input: dict[str, Any], review: dict[str, Any], report: ValidationReport) -> None:

@@ -105,7 +105,7 @@ def _finding(key: str | None, code: str = "other") -> dict:
 
 def test_case_registry_matches_builder_and_fixture() -> None:
     assert [case["id"] for case in CASES] == list(runner.CASE_IDS)
-    assert len(CASES) == 17
+    assert len(CASES) == 21
     assert all(case["fixture"] in FIXTURES for case in CASES)
     assert all(case["fixture"] == ("C_report_review" if case["id"].startswith(("RS", "RC"))
                                    else "C_report_section_IV") for case in CASES)
@@ -376,7 +376,7 @@ def test_rb03_input_holds_no_stated_limitation_passage() -> None:
     assert not si["report_target"]["cells"] and not si["report_target"]["gap_candidates"]
 
 
-@pytest.mark.parametrize("case", CASES[5:], ids=lambda c: c["id"])
+@pytest.mark.parametrize("case", CASES[5:17], ids=lambda c: c["id"])
 def test_review_catch_miss_false_positive_and_control(case: dict) -> None:
     si = _input(case)
     cid = case["id"]
@@ -572,3 +572,43 @@ def test_not_ready_writes_only_timestamped_reason(tmp_path, monkeypatch: pytest.
     assert len(files) == 1
     assert json.loads(files[0].read_text()) == {
         "model": "fixture-model", "not_ready_reason": "Codex not ready: SYNTHETIC unavailable"}
+
+
+def _writing_output(si: dict, claims: list[tuple[str, list[int]]]) -> dict:
+    """A IV draft whose claims cite the given source positions by their cells, quoting each cell's stored quote."""
+    cells = si["report_target"]["cells"]
+    return {"claims": [{"claim_key": f"IV.{i}", "text": text, "passage_ids": [], "cell_ids": [cells[s]["cell_id"] for s in cited]}
+                       for i, (text, cited) in enumerate(claims, 1)],
+            "citation_anchors": [{"claim_key": f"IV.{i}", "passage_id": None, "cell_id": cells[s]["cell_id"],
+                                  "quote": cells[s]["evidence"][0]["quote"]}
+                                 for i, (_, cited) in enumerate(claims, 1) for s in cited],
+            "subsections": [], "gaps": [], "insufficient_evidence": []}
+
+
+WRITING = {case["id"]: case for case in CASES if case["id"].startswith("RW")}
+
+
+@pytest.mark.parametrize("cid,good,bad", [
+    ("RW01", [("Source A plans relay wake-ups exactly, while Source B trades 8 percent more energy for a faster heuristic.", [0, 1])],
+     [(runner.WRITING_TEXT["RW01"][0].removeprefix("SYNTHETIC. "), [0])]),
+    ("RW02", [("Gains over DBR shrink as networks grow, from 30 percent at 200 nodes to none at 100 nodes in another setting.", [0, 2])],
+     [("Source D reports the largest gain, 45 percent.", [0])]),
+    ("RW03", [("Both evaluations are simulation-based rather than field trials; Source B assumes a sound speed of 1500 m/s.", [0, 1])],
+     [("A field trial showed a 20 percent lower delay.", [0])]),
+    ("RW04", [("Source A's convergence proof covers static terrestrial networks; Source B gives no such proof underwater.", [0, 1])],
+     [("Source B's adapted relay selection converges to the optimal schedule underwater.", [1])]),
+])
+def test_writing_screens_pass_a_good_output_and_fail_a_bad_one(cid: str, good: list, bad: list) -> None:
+    case = WRITING[cid]
+    si = _input(case)
+    good_checks, _ = runner.automatic_checks(case, _writing_output(si, good), si)
+    bad_checks, _ = runner.automatic_checks(case, _writing_output(si, bad), si)
+    assert all(good_checks.values()), good_checks
+    assert not all(bad_checks.values()), bad_checks
+
+
+def test_rw02_puts_the_fourth_source_only_in_validation_context() -> None:
+    si = _input(WRITING["RW02"])
+    outside = runner.CELL_IDS[3]
+    assert outside not in si["allowlist"]["cell_ids"] and runner.SOURCE_IDS[3] not in si["allowlist"]["source_ids"]
+    assert outside in {c["cell_id"] for c in si["report_target"]["validation_context"]["cells"]}

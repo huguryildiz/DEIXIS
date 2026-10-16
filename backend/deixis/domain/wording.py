@@ -58,3 +58,46 @@ def own_work_phrases(text: str, language: str) -> list[str]:
     """Phrases in `text` that name the writer's own work, such as "this study" or "bu çalışma"."""
     pattern = _OWN_WORK.get(language)
     return pattern.findall(text) if pattern else []
+
+
+# D51: a claim reworded from its source, and the kind of evidence it names. Both are warnings only.
+COPIED_RUN_WORDS = 12  # the two D51 live reports: median 3 words in common with an anchor, at most 12 once
+_EXPERIMENT = {
+    "en": re.compile(r"\b(?:experiment(?:s|al|ally)?|field (?:trials?|tests?|deployments?)|sea (?:trials?|tests?)|"
+                     r"testbeds?|real-world deployments?|prototypes?)\b", re.IGNORECASE),
+    "tr": re.compile(r"\b(?:deney(?:sel)?[^\W\d_]*|saha (?:deneme|test|uygulama)[^\W\d_]*|deniz (?:deneme|test)[^\W\d_]*|"
+                     r"prototip[^\W\d_]*)", re.IGNORECASE),
+}
+_SIMULATION = re.compile(r"\b(?:simulat\w*|simülasyon\w*|benzetim\w*)", re.IGNORECASE)
+# "Simulation experiments", "numerical experiments", "benzetim deneyleri" describe a simulation, not a physical test.
+_COMPUTED_EXPERIMENT = re.compile(r"\b(?:simulat\w*|numerical|computational|simülasyon\w*|benzetim\w*|sayısal)\s+"
+                                  r"(?:experiment\w*|deney\w*)", re.IGNORECASE)
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"\w+", text.casefold())
+
+
+def copied_run(text: str, quote: str) -> int:
+    """The longest run of consecutive words `text` shares with `quote`."""
+    a, b = _words(text), _words(quote)
+    best, previous = 0, [0] * (len(b) + 1)
+    for x in a:
+        current = [0] * (len(b) + 1)
+        for j, y in enumerate(b, 1):
+            if x == y:
+                current[j] = previous[j - 1] + 1
+                best = max(best, current[j])
+        previous = current
+    return best
+
+
+def experiment_phrases(text: str, language: str) -> list[str]:
+    """Phrases naming a physical experiment or trial, such as "field trial" or "deneysel"."""
+    pattern = _EXPERIMENT.get(language)
+    return [m.group(0) for m in pattern.finditer(_COMPUTED_EXPERIMENT.sub(" ", text))] if pattern else []
+
+
+def simulation_only(texts: list[str], language: str) -> bool:
+    """True when the cited texts describe a simulation and none of them names an experiment or trial."""
+    return any(_SIMULATION.search(t) for t in texts) and not any(experiment_phrases(t, language) for t in texts)

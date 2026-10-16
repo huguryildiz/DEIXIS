@@ -11,7 +11,9 @@ turn's question, through the existing scope-revision route.
 Which passages a research holds for a follow-up (its pool):
 - `answer_input`: the latest answer of the turn's question revision froze its evidence (D253): each work's abstract
   and, for a work read in full, the pages of the file it was read from. A work the person has excluded or marked not
-  sure since then gives nothing, and one whose file the person marked wrong gives its abstract only.
+  sure since then gives nothing, and one whose file the person marked wrong gives its abstract only. A work whose full
+  text was read and included after that answer's run started adds its abstract and pages too (D49): a follow-up reads
+  the research as it has grown, not only as the answer saw it.
 - `included_works`: otherwise (an answer over attached files, or none yet), the text of each included work's
   answer version (D48), as the attached-file answer reads it.
 Only passages still current are used: an active source of the research and the extraction of the file in use.
@@ -28,6 +30,7 @@ from deixis.documents.jats import RENDITION_SQL
 from deixis.domain.rules import TEST_EFFORT_BUDGETS, RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow import fast_answer, small_batch
+from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.evidence_deps import EVIDENCE_STATUS_SQL
 from deixis.workflow.late_revision import REVISION_INPUT
 
@@ -35,10 +38,13 @@ TASK = "followup_answer"
 POOL_KEY = "followup:pool"
 SEMANTIC_KEY = "followup_semantic"
 SELECTION_KEY = "followup:passages"
+CONVERSATION_KEY = "followup:conversation"
 CALLS = 2  # the call and its one schema repair; the turn's own budget, apart from the research's runs
 MAX_QUESTION_CHARS = 2000
 PUBLISHED = ("answered", "partly_answered", "not_answered")
 MAX_TERMS = 40
+MAX_EARLIER_TURNS = 3  # the published turns before this one that the model reads as conversation context
+MAX_CONTEXT_CLAIMS = 12  # claim texts kept from the latest answer and from each earlier turn
 # Why a follow-up stops unpublished when what its pool was frozen from changed (the run fails; the person asks again).
 SELECTION_CHANGED = "followup_selection_changed"
 SOURCES_CHANGED = "followup_sources_changed"
@@ -122,9 +128,10 @@ def _current(store: Any, research_id: str) -> dict[str, list[str]]:
     return {svid: [p["id"] for p in rows] for svid, rows in fast_answer.current_pools(store, research_id).items()}
 
 
-def pool(store: Any, research_id: str, scope_revision: int) -> dict[str, Any]:
+def pool(store: Any, research_id: str, scope_revision: int, flow: Any = None) -> dict[str, Any]:
     """The passages this research holds for a follow-up, by source in order (see the module text), frozen with the
-    selection state it was read under: what `changed` compares at the send, at a resume and at publication."""
+    selection state it was read under: what `changed` compares at the send, at a resume and at publication. `flow`
+    checks that a full text read after the answer was read on the file still in use; without it none is added."""
     current = _current(store, research_id)
     sources: dict[str, list[str]] = {}
     base = {"selection_revision": store.selection_revision(research_id),
@@ -148,6 +155,39 @@ def pool(store: Any, research_id: str, scope_revision: int) -> dict[str, Any]:
             kept = [pid for pid in dict.fromkeys(ids) if pid in have and pid not in sources.get(svid, [])]
             if kept:
                 sources.setdefault(svid, []).extend(kept)
+        # The research kept growing after that answer (D49): a work whose full text was read since the answer's run
+        # started gives its abstract and the pages it was read from, the rule the answer view counts its "new full
+        # texts" by (`fulltext_read_since`). The read must be on the file still in use (`fast_answer.read_file`), so
+        # a replaced or re-extracted file gives nothing unread; a read that found the criterion not met counts only
+        # when the person included the work, as in the answer (`fast_answer.apply_user`).
+        if flow is not None:
+            records, pools = fast_answer.reading_records(store, research_id), fast_answer.current_pools(store, research_id)
+            for row in store.conn.execute(
+                    "SELECT d.*, v.work_id FROM stage_decisions d JOIN runs r ON r.id = ?"
+                    " JOIN source_versions v ON v.id = d.source_version_id WHERE d.research_id = r.research_id"
+                    " AND d.stage = 'fulltext' AND d.decided_by IN ('model_agreement', 'human')"
+                    " AND d.outcome IN ('include', 'criterion_not_met') AND d.superseded_at IS NULL"
+                    " AND d.created_at > r.created_at ORDER BY d.created_at, d.rowid", (frozen["run_id"],)):
+                svid = row["source_version_id"]
+                state = selections.get(heads.get(row["work_id"], svid)) or humans.get(row["work_id"])
+                if state in ("excluded", "pending", "pdf_wrong") or (row["outcome"] != "include" and state != "included"):
+                    continue
+                asset = fast_answer.read_file(flow, dict(row), svid, records)
+                if not asset and row["decided_by"] == "human":
+                    # A person's queue decision carries no reading of its own: the latest current reading before it
+                    # gives the file, as in the answer (`fast_answer.cutoff_snapshot`).
+                    decisions = DecisionStore(store)
+                    for previous in reversed(records["history"].get(svid, [])):
+                        if previous["stage"] == "fulltext" and not decisions.is_stale(previous):
+                            if asset := fast_answer.read_file(flow, previous, svid, records):
+                                break
+                if not asset:
+                    continue
+                read = [p["id"] for p in pools.get(svid, [])
+                        if p["kind"] == "abstract" or p["asset_id"] == asset]
+                kept = [pid for pid in read if pid not in sources.get(svid, [])]
+                if kept:
+                    sources.setdefault(svid, []).extend(kept)
         return base | {"basis": "answer_input", "answer_run_id": frozen["run_id"], "sources": sources}
     for head in store.included_works(research_id):
         svid = store.answer_version(research_id, head)
@@ -190,10 +230,36 @@ def _code_step(flow: Any, run: dict[str, Any], key: str, kind: str, build: Any) 
     return output
 
 
+def conversation(store: Any, research_id: str, question: str, turn: dict[str, Any]) -> dict[str, Any]:
+    """What the conversation so far says, so the model reads the follow-up in its context (D49): the research question,
+    the claim texts of the research's latest valid answer, and the last published turns asked before this one. It is
+    context, never evidence: the texts carry no passage, and a claim may cite only the passages of this StepInput."""
+    answer = store.conn.execute(
+        "SELECT id FROM answers WHERE research_id = ? AND status = 'structurally_valid'"
+        " ORDER BY created_at DESC, rowid DESC LIMIT 1", (research_id,)).fetchone()
+    latest = [r["text"] for r in store.conn.execute(
+        "SELECT text FROM claims WHERE answer_id = ? ORDER BY ordinal LIMIT ?",
+        (answer["id"], MAX_CONTEXT_CLAIMS))] if answer else []
+    rows = store.conn.execute(
+        f"SELECT question, draft_json FROM followup_turns WHERE research_id = ? AND id != ? AND created_at <= ?"
+        f" AND status IN ({', '.join('?' * len(PUBLISHED))}) ORDER BY created_at DESC, rowid DESC LIMIT ?",
+        (research_id, turn["id"], turn["created_at"], *PUBLISHED, MAX_EARLIER_TURNS)).fetchall()
+    earlier = []
+    for row in reversed(rows):
+        draft = json.loads(row["draft_json"] or "{}")
+        claims = [c["text"] for c in draft.get("claims", []) if isinstance(c, dict) and isinstance(c.get("text"), str)]
+        earlier.append({"question": row["question"], "answer": claims[:MAX_CONTEXT_CLAIMS]})
+    return {"research_question": question, "latest_answer": latest, "earlier_turns": earlier}
+
+
 async def _selection(flow: Any, run: dict[str, Any], scope: dict[str, Any], question: str,
                      frozen_pool: dict[str, Any]) -> dict[str, Any]:
-    """The passages sent: the pool ranked against the question (lexical and semantic, fused by RRF), then the rest of
-    the pool breadth-first by source, under a per-source cap, up to the research's answer passage limit."""
+    """The passages sent: the pool ranked against the question read with the research question (lexical and semantic,
+    fused by RRF), then the rest of the pool breadth-first by source, under a per-source cap, up to the research's
+    answer passage limit. A follow-up such as "write a report from the full texts" names no topic of its own, so the
+    research question gives the ranking one (D49): it is part of the semantic query, and its words rank the pool
+    lexically only when the follow-up's own words match nothing and no semantic ranking came back. A specific
+    follow-up in another language than the passages is then not outranked by the research question's words."""
     saved = flow.store.existing_step(run["id"], SELECTION_KEY)
     if saved and saved["status"] == "succeeded":
         return saved["output"]
@@ -202,13 +268,20 @@ async def _selection(flow: Any, run: dict[str, Any], scope: dict[str, Any], ques
     sources = frozen_pool["sources"]
     svids = list(sources)
     ids = {pid for pid_list in sources.values() for pid in pid_list}
-    words = terms(question)
-    fts = " OR ".join(f'"{t}"' for t in words)
     everything = sum(len(store.passages_for(svid)) for svid in svids)
-    lexical = [p for p in store.search_passages(svids, fts, max(everything, 1)) if p["id"] in ids]
-    semantic = await flow._semantic_ranking(run, scope, svids, query_text=question, key=SEMANTIC_KEY,
-                                            query_origin="followup", only=ids)
+
+    def matches(words: list[str]) -> list[dict[str, Any]]:
+        fts = " OR ".join(f'"{t}"' for t in words)
+        return [p for p in store.search_passages(svids, fts, max(everything, 1)) if p["id"] in ids] if words else []
+    words = terms(question)
+    lexical = matches(words)
+    semantic = await flow._semantic_ranking(run, scope, svids, query_text=f"{question}\n{scope['question']}",
+                                            key=SEMANTIC_KEY, query_origin="followup", only=ids)
     semantic = [p for p in semantic or [] if p["id"] in ids]
+    if not lexical and not semantic:
+        # Neither ranking has a topic: the research question's words rank the pool, not the fill's source order.
+        words = terms(scope["question"])
+        lexical = matches(words)
     ranked = fuse_rankings(lexical, semantic) if semantic else lexical
     # A reference-list passage goes to the end: a misread one is ranked lower, not lost.
     ranked = sorted(ranked, key=lambda p: _reference_list(p["text"]))
@@ -249,7 +322,7 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
     flow._checkpoint(run_id, run["scope_revision"])
     store.update_run(run_id, stage="answer")
     frozen_pool = _code_step(flow, run, POOL_KEY, "code:followup_pool",
-                             lambda: pool(store, run["research_id"], turn["scope_revision"]))
+                             lambda: pool(store, run["research_id"], turn["scope_revision"], flow))
     _guard(flow, run, frozen_pool)  # a resumed run: the person's choices or the files may have changed meanwhile
     considered = sum(len(v) for v in frozen_pool["sources"].values())
     if not considered:
@@ -262,9 +335,16 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
     flow._checkpoint(run_id, run["scope_revision"])
     passages = [store.passage(pid) for pid in selected["passage_ids"]]
     source_ids = list(dict.fromkeys(p["source_version_id"] for p in passages))
+    context = _code_step(flow, run, CONVERSATION_KEY, "code:followup_conversation",
+                         lambda: conversation(store, run["research_id"], scope["question"], turn))
+
+    def step_input(step_id: str) -> dict[str, Any]:
+        from deixis.workflow.flow import step_model
+        return flow._step_input(run, scope, step_id, TASK, [], source_ids, passages, [], step_model(scope, TASK)) | {
+            "conversation": context}
     # The send gate runs right before each call is built and sent, the repair's included.
     output = await flow._model_step(run, scope, TASK, TASK, source_ids=source_ids, passage_rows=passages,
-                                    send_gate=lambda: _guard(flow, run, frozen_pool))
+                                    send_gate=lambda: _guard(flow, run, frozen_pool), step_input_builder=step_input)
     # No await from this check to the publication: a pause, cancel or newer question revision stops it unpublished,
     # and `publish` checks the frozen pool again inside its transaction.
     flow._checkpoint(run_id, run["scope_revision"])

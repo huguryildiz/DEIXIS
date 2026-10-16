@@ -210,7 +210,7 @@ def test_no_search_or_provider_request_is_started(tmp_path):
         assert run["budget"]["max_provider_requests"] == 0
         assert store.conn.execute("SELECT COUNT(*) FROM search_runs").fetchone()[0] == 0
         assert {r[0] for r in store.conn.execute("SELECT DISTINCT kind FROM run_steps WHERE run_id = ?", (run["id"],))} == {
-            "code:followup_pool", "code:followup_passages", "model:followup_answer"}
+            "code:followup_pool", "code:followup_passages", "code:followup_conversation", "model:followup_answer"}
 
 
 def test_pause_during_the_call_publishes_on_resume_without_a_second_call(tmp_path):
@@ -384,7 +384,7 @@ def test_semantic_ranking_over_the_pool_is_fused_with_the_lexical_one(tmp_path, 
         assert selection["semantic_step"] == "succeeded"
         pool = {p["text"] for p in app.state.store.passages_for(svid)}
         assert {text for kind, text in embedded if kind == "RETRIEVAL_DOCUMENT"} <= pool
-        assert ("RETRIEVAL_QUERY", "Semboller arası girişim nasıl sınırlanıyor?") in embedded
+        assert ("RETRIEVAL_QUERY", "Semboller arası girişim nasıl sınırlanıyor?\nHow is molecule release scheduling optimized?") in embedded
 
 
 def exclude(store, rid, svid, state="excluded"):
@@ -721,3 +721,92 @@ def test_an_invalid_answer_language_is_not_written_to_the_typed_column(tmp_path)
                                                (turn["id"],)).fetchone()
             # The column holds a language tag or nothing; the raw value stays in the stored draft.
             assert row["answer_language"] is None and json.loads(row["draft_json"])["answer_language"] == value
+
+
+def test_a_follow_up_is_read_with_the_research_question_and_the_earlier_turns(tmp_path):
+    """D49: a request that names no topic of its own ("a report from the full texts") is sent with the research
+    question, the earlier turns and their answers, and its passages are ranked with the research question's words."""
+    app = app_for(tmp_path, FakeAdapter())
+    with TestClient(app) as client:
+        session(client)
+        rid, _ = research(client)
+        first = answered(client, rid)
+        assert first["status"] == "answered"
+        second = answered(client, rid, "Prepare a short report from the full texts that were read")
+        (payload,) = step_inputs(app, second["run"]["id"])
+        assert payload["question"]["text"] == "Prepare a short report from the full texts that were read"
+        context = payload["conversation"]
+        assert context["research_question"] == "How is molecule release scheduling optimized?"
+        assert context["latest_answer"] == []
+        (earlier,) = context["earlier_turns"]
+        assert earlier["question"] == QUESTION
+        assert earlier["answer"] == [c["text"] for c in first["answer"]["claims"]]
+        # The research question's words rank the page about the release schedule first.
+        selection = app.state.store.existing_step(second["run"]["id"], followup.SELECTION_KEY)["output"]
+        assert "release" in selection["terms"] and selection["lexical_matches"] > 0
+        assert "release schedule" in payload["passages"][0]["text"]
+        # The first turn saw no earlier turn, and its own conversation step is stored for a resume.
+        (first_payload,) = step_inputs(app, first["run"]["id"])
+        assert first_payload["conversation"]["earlier_turns"] == []
+        assert app.state.store.existing_step(second["run"]["id"], followup.CONVERSATION_KEY)["output"] == context
+
+
+def test_the_conversation_carries_the_latest_answers_claims_as_text_only(tmp_path):
+    from test_fast_path_answer import answer_run, cutoff, setup
+    lib = setup(tmp_path, n=3)
+    cutoff(lib)
+    run = answer_run(lib)
+    asyncio.run(fast_answer.answer(lib.flow, run, lib.store.scope(lib.rid)))
+    texts = [r[0] for r in lib.store.conn.execute(
+        "SELECT c.text FROM claims c JOIN answers a ON a.id = c.answer_id WHERE a.research_id = ?"
+        " AND a.status = 'structurally_valid' ORDER BY c.ordinal", (lib.rid,))]
+    assert texts
+    context = followup.conversation(lib.store, lib.rid, "SYNTHETIC research question", {"id": "none", "created_at": "9999"})
+    assert context == {"research_question": "SYNTHETIC research question", "latest_answer": texts, "earlier_turns": []}
+
+
+def test_a_step_input_for_another_task_may_not_carry_a_conversation():
+    from test_followup_contract import STEP_INPUTS
+    si = STEP_INPUTS["K_followup_answer"]
+    assert not contracts.check_step_input(si)
+    without = {k: v for k, v in si.items() if k != "conversation"}
+    assert any(i.code == "conversation_mismatch" for i in contracts.check_step_input(without))
+
+
+def test_a_full_text_read_after_the_answer_joins_the_follow_up_pool(tmp_path):
+    """D49: the research grew after its answer. A work whose full text was read and included since the answer's run
+    started gives its pages to a follow-up; excluding it takes them out, and a file extracted again since the read
+    gives no page nobody read."""
+    from test_fast_path_answer import answer_run, cutoff, inspected_pdf, setup, user
+    lib = setup(tmp_path, pdf=True)
+    cutoff(lib)
+    run = answer_run(lib)
+    asyncio.run(fast_answer.answer(lib.flow, run, lib.store.scope(lib.rid)))
+    pdf = lib.sources[-1]
+    pages = {p["id"] for p in lib.store.passages_for(pdf) if p["kind"] == "pdf_page"}
+    assert pages and not pages & set(followup.pool(lib.store, lib.rid, 1, lib.flow)["sources"].get(pdf, []))
+    user(lib, pdf, "included")  # the fixture's file starts as the person's "not sure", which keeps a work out
+    _, item = inspected_pdf(lib)
+    decision = lib.store.conn.execute(
+        "SELECT outcome, decided_by FROM stage_decisions WHERE source_version_id = ? AND stage = 'fulltext'"
+        " AND superseded_at IS NULL", (pdf,)).fetchone()
+    assert tuple(decision) == ("include", "model_agreement")
+    frozen = followup.pool(lib.store, lib.rid, 1, lib.flow)
+    assert frozen["basis"] == "answer_input" and pages <= set(frozen["sources"][pdf])
+    # A person's queue answer supersedes the model's decision and carries no reading; the reading before it counts.
+    from deixis.workflow.decisions import DecisionStore
+    DecisionStore(lib.store).record(lib.rid, pdf, "human_include")
+    assert lib.store.conn.execute(
+        "SELECT decided_by FROM stage_decisions WHERE source_version_id = ? AND stage = 'fulltext'"
+        " AND superseded_at IS NULL", (pdf,)).fetchone()[0] == "human"
+    assert pages <= set(followup.pool(lib.store, lib.rid, 1, lib.flow)["sources"][pdf])
+    # Without the flow the read cannot be checked against the file in use, and nothing later is added.
+    assert not pages & set(followup.pool(lib.store, lib.rid, 1)["sources"].get(pdf, []))
+    lib.store.conn.execute("UPDATE source_assets SET extraction_version = 'SYNTHETIC new extraction' WHERE id = ?",
+                           (item["asset_id"],))
+    assert not pages & set(followup.pool(lib.store, lib.rid, 1, lib.flow)["sources"].get(pdf, []))
+    lib.store.conn.execute("UPDATE source_assets SET extraction_version = ? WHERE id = ?",
+                           (lib.store.passage(next(iter(pages)))["extraction_version"], item["asset_id"]))
+    assert pages <= set(followup.pool(lib.store, lib.rid, 1, lib.flow)["sources"][pdf])
+    user(lib, pdf, "excluded")
+    assert pdf not in followup.pool(lib.store, lib.rid, 1, lib.flow)["sources"]

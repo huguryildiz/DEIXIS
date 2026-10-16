@@ -1413,6 +1413,29 @@
         }
       }
     },
+    "conversation": {
+      "type": "object",
+      "description": "followup_answer steps only: the conversation the follow-up question belongs to, so it is read in context. research_question is the research's own question; latest_answer holds the claim texts of the research's latest valid answer; earlier_turns are the last published follow-ups before this one, oldest first. Context only, never evidence: none of it carries a passage, and claims cite only this StepInput's passages.",
+      "additionalProperties": false,
+      "required": ["research_question", "latest_answer", "earlier_turns"],
+      "properties": {
+        "research_question": { "type": "string", "minLength": 1 },
+        "latest_answer": { "type": "array", "maxItems": 12, "items": { "type": "string" } },
+        "earlier_turns": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["question", "answer"],
+            "properties": {
+              "question": { "type": "string", "minLength": 1 },
+              "answer": { "type": "array", "maxItems": 12, "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    },
     "screening_target": {
       "type": "object",
       "description": "abstract_screening steps only: how many independent runs read this batch and which of them this call is. The two runs get the same records and the same instructions; nothing else distinguishes them.",

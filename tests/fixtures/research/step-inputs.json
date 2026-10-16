@@ -391,7 +391,14 @@
    "connection": "fake",
    "requested_model": null
   },
-  "created_at": "2026-09-14T12:05:00Z"
+  "created_at": "2026-09-14T12:05:00Z",
+  "conversation": {
+   "research_question": "SYNTHETIC. How is the molecule release schedule decided?",
+   "latest_answer": [
+    "SYNTHETIC. A binary variable per time slot decides the release."
+   ],
+   "earlier_turns": []
+  }
  },
  "C_report_plan": {
   "step_input_id": "sti_SYNTHR0001",

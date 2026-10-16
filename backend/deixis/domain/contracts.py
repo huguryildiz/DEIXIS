@@ -529,6 +529,8 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
             issues.append(Issue("duplicate_vocabulary_phrase", "/vocabulary_target/phrases", "phrase must be unique"))
         if sorted(set(allow.get("phrases", []))) != sorted(set(phrases)):
             issues.append(Issue("phrase_allowlist_mismatch", "/allowlist/phrases", "the allowlist is the phrase list"))
+    if ("conversation" in step_input) != (step_input["task_type"] == "followup_answer"):
+        issues.append(Issue("conversation_mismatch", "/conversation", step_input["task_type"]))
     screening_target = step_input.get("screening_target")
     if (screening_target is not None) != (step_input["task_type"] in SCREENING_TARGET_TASKS):
         issues.append(Issue("screening_target_mismatch", "/screening_target", step_input["task_type"]))

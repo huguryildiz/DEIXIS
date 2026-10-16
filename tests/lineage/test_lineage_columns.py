@@ -293,4 +293,4 @@ def test_skill_package_hash_unchanged_by_l1():
     # L1 leaves runtime instructions alone; D243 changes the shared answer and review rules. The clean start (slice 6,
     # new D1) removes the term-advice and term-suggestion files and rewords search-query.md and evidence-table.md;
     # UI parity S5a adds the comparison frame rule to evidence-table.md; S22a adds followup.md and its SKILL.md routing line.
-    assert load_skill_package().package_hash == "sha256:02db41f833cf593c72ba67171281522d8a9261313aec378e55eb74dda018ad91"
+    assert load_skill_package().package_hash == "sha256:7d0c3d6fcad5cf1baa61dc2720116e58cec09625abd925a1786ccdb45d74d545"

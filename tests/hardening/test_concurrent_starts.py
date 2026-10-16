@@ -12,9 +12,10 @@ import time
 import httpx
 import pytest
 
-from deixis import account_signin, local_tools
-from deixis.account_signin import AccountSignIn, SignInError
-from deixis.local_tools import LocalTools, ToolError
+from deixis.keys import account_signin
+from deixis.tools import local_tools
+from deixis.keys.account_signin import AccountSignIn, SignInError
+from deixis.tools.local_tools import LocalTools, ToolError
 
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="the fake installers are shell scripts")
 

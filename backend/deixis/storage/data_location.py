@@ -25,8 +25,9 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from deixis import config, library_lock
-from deixis.child_env import child_env
+from deixis import config
+from deixis.storage import library_lock
+from deixis.tools.child_env import child_env
 
 POINTER_NAME = "location.json"
 # Entries of the old folder that stay where they are: the pointer itself (it lives in the platform default folder), the

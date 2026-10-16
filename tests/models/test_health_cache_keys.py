@@ -8,7 +8,7 @@ import os
 import httpx
 import pytest
 
-from deixis import key_verification
+from deixis.keys import key_verification
 from deixis.models import anthropic_api, deepseek, gemini, openai_api
 
 

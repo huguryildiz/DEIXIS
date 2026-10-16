@@ -7,7 +7,7 @@ import asyncio
 
 import httpx
 
-from deixis import local_catalog as catalog
+from deixis.tools import local_catalog as catalog
 
 
 def chip(text: str) -> str:

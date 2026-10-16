@@ -34,8 +34,8 @@ synthetic fixtures (D201).
    policy in `Connector.retry` (`registry.py:72`), using the provider's constants;
    `facade.descriptor_for` reads `common.send` defaults and merges those overrides
    without provider branches. Add managed keys if needed in
-   `backend/deixis/credentials.py:39`; source keys remain `testable=False`
-   (`credentials.py:36`). Do not emulate unsupported remote operations.
+   `backend/deixis/keys/credentials.py:39`; source keys remain `testable=False`
+   (`keys/credentials.py:36`). Do not emulate unsupported remote operations.
 3. Declare a display name and default/endpoint `query_syntax` in
    `providers/registry.py:36,76,77`; `resolve_query_syntax` (`registry.py:142`)
    refuses missing declarations. Reuse pure kinds in `providers/query_rules.py:219`;

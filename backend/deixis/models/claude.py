@@ -26,11 +26,11 @@ from claude_agent_sdk import (
     ToolUseBlock,
 )
 
-from deixis.child_env import NODE_TLS
+from deixis.tools.child_env import NODE_TLS
 from deixis.models.adapter import ModelStepResult
 from deixis.domain.limits import limit_kind, service_error_kind, safe_error
-from deixis.tool_paths import child_path, command_for, find_tool
-from deixis.tool_probe import probe
+from deixis.tools.tool_paths import child_path, command_for, find_tool
+from deixis.tools.tool_probe import probe
 
 
 def _model_matches(actual: str | None, expected: str) -> bool:

@@ -12,9 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from deixis import child_env as env_module
-from deixis import local_tools, tool_paths
-from deixis.child_env import NODE_TLS, UV_TLS, child_env
+from deixis.tools import child_env as env_module
+from deixis.tools import local_tools, tool_paths
+from deixis.tools.child_env import NODE_TLS, UV_TLS, child_env
 from deixis.documents import math_reader, tool_updates
 from deixis.workflow import equations, local_embedding_service
 from builtin_helpers import fake_embedder
@@ -106,7 +106,7 @@ def test_outside_a_bundle_the_persons_own_library_path_is_kept(monkeypatch):
 
 def test_no_child_process_is_started_with_the_whole_environment():
     """A grep over the sources: `os.environ` is never copied whole into a child's env (the model CLIs use their own lists)."""
-    root = Path(env_module.__file__).parent
+    root = Path(env_module.__file__).parents[1]
     offenders = [f"{p.relative_to(root)}:{n}" for p in root.rglob("*.py")
                  for n, line in enumerate(p.read_text().splitlines(), 1)
                  if "**os.environ" in line and p.name not in {"claude.py", "gemini.py"}]  # --version probes of the CLIs
@@ -115,7 +115,7 @@ def test_no_child_process_is_started_with_the_whole_environment():
 
 @posix_only
 def test_the_sources_of_pdf_jats_ocr_arxiv_and_the_guard_use_it():
-    root = Path(env_module.__file__).parent / "documents"
+    root = Path(env_module.__file__).parents[1] / "documents"
     for name in ("pdf.py", "jats.py", "ocr.py", "arxiv_source.py", "child_guard.py"):
         assert "child_env(" in (root / name).read_text(), name
 
@@ -338,8 +338,8 @@ def test_a_job_cancelled_while_its_process_is_being_created_is_not_left_running(
 
 def test_the_production_allowlist_has_no_test_prefix():
     """tests/conftest.py widens it with FAKE_ for the fake tools; a fresh interpreter shows what ships."""
-    done = subprocess.run([sys.executable, "-c", "from deixis import child_env; print(child_env.OS_PREFIXES)"],
-                          env={"PYTHONPATH": str(Path(env_module.__file__).parents[1]), "PATH": "/usr/bin:/bin"},
+    done = subprocess.run([sys.executable, "-c", "from deixis.tools import child_env; print(child_env.OS_PREFIXES)"],
+                          env={"PYTHONPATH": str(Path(env_module.__file__).parents[2]), "PATH": "/usr/bin:/bin"},
                           capture_output=True, text=True, check=True)
     assert done.stdout.strip() == "('LC_',)"
     assert "FAKE_" not in Path(env_module.__file__).read_text()

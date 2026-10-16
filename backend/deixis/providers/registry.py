@@ -17,7 +17,7 @@ from types import MappingProxyType
 from typing import Any, Awaitable, Callable, Mapping
 from urllib.parse import urlsplit
 
-from deixis import key_verification
+from deixis.keys import key_verification
 from deixis.providers import arxiv, biorxiv, core, crossref, ieee_xplore, openalex, pacing, pubmed, scopus, semantic_scholar, serpapi
 from deixis.providers import common, lookup
 from deixis.providers.common import SearchOutcome

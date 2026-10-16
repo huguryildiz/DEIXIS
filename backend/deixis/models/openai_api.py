@@ -18,7 +18,7 @@ from typing import Any
 
 import httpx
 
-from deixis import key_verification
+from deixis.keys import key_verification
 from deixis.domain.limits import error_name, http_limit, retry_at, service_error_kind
 from deixis.models.adapter import ModelStepResult, broken_key_status, invalid_key_result, is_dated_snapshot
 

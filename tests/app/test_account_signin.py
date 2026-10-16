@@ -19,8 +19,8 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from deixis import account_signin
-from deixis.account_signin import SignInError, build_launch
+from deixis.keys import account_signin
+from deixis.keys.account_signin import SignInError, build_launch
 from deixis.api.app import create_app
 from deixis.config import Settings
 from fakes import FakeAdapter

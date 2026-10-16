@@ -10,7 +10,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from deixis import credentials
+from deixis.keys import credentials
 from deixis.domain.limits import SERVICE_ERROR_KINDS, retry_at, service_error_kind
 from deixis.models.adapter import ModelStepResult
 from deixis.models.deepseek import DeepSeekAdapter

@@ -22,7 +22,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from deixis import key_verification
+from deixis.keys import key_verification
 from deixis.domain.limits import error_name, http_limit, service_error_kind, retry_at
 from deixis.models.adapter import ModelStepResult, broken_key_status, invalid_key_result
 from deixis.models.schema_subset import portable_schema

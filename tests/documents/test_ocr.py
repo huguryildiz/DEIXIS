@@ -54,7 +54,7 @@ def test_tesseract_status_reports_the_tool_and_the_languages_it_lacks(monkeypatc
 
 
 def test_a_tesseract_that_cannot_run_gives_a_code_and_its_own_words_stay_in_the_log(monkeypatch, caplog):
-    from deixis.tool_probe import Probe
+    from deixis.tools.tool_probe import Probe
 
     async def fails(tesseract):
         return [Probe(1, "", "SYNTHETIC dyld: Library not loaded: /private/path/libtesseract.dylib", "failed"), Probe(0, "tesseract 5.5.2", "")]

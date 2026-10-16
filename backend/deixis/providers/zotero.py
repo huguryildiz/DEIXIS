@@ -28,7 +28,7 @@ from urllib.request import url2pathname
 
 import httpx
 
-from deixis import key_verification
+from deixis.keys import key_verification
 from deixis.documents.fetch import FetchResult
 from deixis.providers.common import ProviderRecord, SearchOutcome, normalize_doi, send, year_of
 

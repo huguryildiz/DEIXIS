@@ -7,7 +7,7 @@ from deixis.models.adapter import codex_environment
 
 def test_codex_environment_keeps_runtime_variables_and_drops_secrets(monkeypatch):
     monkeypatch.setattr("deixis.models.adapter.find_tool", lambda name: None)
-    monkeypatch.setattr("deixis.tool_paths.find_tool", lambda name: None)  # no real codex or node folder joins PATH
+    monkeypatch.setattr("deixis.tools.tool_paths.find_tool", lambda name: None)  # no real codex or node folder joins PATH
     source = {
         "PATH": "/usr/bin", "HOME": "/Users/someone", "LC_ALL": "C", "HTTPS_PROXY": "http://proxy.local:3128",
         "OPENALEX_API_KEY": "secret", "DEEPSEEK_API_KEY": "secret", "DEIXIS_CONTACT_EMAIL": "someone@example.org",

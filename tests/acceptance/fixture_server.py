@@ -1094,7 +1094,7 @@ def fake_builtin(data_dir: Path):
     os.environ.setdefault("FAKE_UV_RECORD", str(tools / "calls.jsonl"))
     os.environ.setdefault("FAKE_UV_SLEEP", "1.5")  # each uv step takes a moment, so the steps can be seen
     os.environ.setdefault("FAKE_RUNNER", "ok")
-    from deixis import child_env
+    from deixis.tools import child_env
     child_env.OS_PREFIXES = ("LC_", "FAKE_")  # the fake uv and runner read these switches; real children never see them
 
     failing: set[bool] = set()

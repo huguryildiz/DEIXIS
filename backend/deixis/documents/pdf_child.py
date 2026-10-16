@@ -26,7 +26,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from deixis.child_env import child_env
+from deixis.tools.child_env import child_env
 from deixis.documents import child_guard, pdf
 
 log = logging.getLogger("deixis.pdf")

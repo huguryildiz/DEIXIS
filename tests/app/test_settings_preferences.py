@@ -5,7 +5,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from deixis import config, data_location
+from deixis import config
+from deixis.storage import data_location
 from deixis.api.app import create_app
 from deixis.config import Settings
 from fakes import FakeAdapter

@@ -150,7 +150,7 @@ def test_a_nonzero_exit_after_an_answer_is_a_failure_after_sending(tmp_path, mon
 
 def test_copilot_environment_keeps_only_the_allowlist(monkeypatch):
     monkeypatch.setattr(copilot_cli, "find_tool", lambda name: None)
-    monkeypatch.setattr("deixis.tool_paths.find_tool", lambda name: None)  # no real copilot or node folder joins PATH
+    monkeypatch.setattr("deixis.tools.tool_paths.find_tool", lambda name: None)  # no real copilot or node folder joins PATH
     env = copilot_environment(Path("/h"), {"PATH": "/bin", "LC_ALL": "C", "GITHUB_TOKEN": "x", "DEEPSEEK_API_KEY": "y"})
     assert env == {"PATH": "/bin", "LC_ALL": "C", "COPILOT_HOME": "/h", "COPILOT_AUTO_UPDATE": "false", "NO_COLOR": "1",
                    "NODE_USE_SYSTEM_CA": "1"}
@@ -257,5 +257,5 @@ def test_a_child_left_holding_the_pipes_is_stopped_with_the_group(tmp_path, monk
 
 def test_copilot_cli_has_the_terminal_sign_in():
     """D21's Sign in button opens a terminal with `copilot login`; the adapter's health says when it is done."""
-    from deixis import account_signin
+    from deixis.keys import account_signin
     assert account_signin.TOOLS["copilot_cli"] == ("copilot", ["login"], "GitHub Copilot CLI")

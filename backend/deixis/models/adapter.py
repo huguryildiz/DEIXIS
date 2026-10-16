@@ -20,8 +20,8 @@ from typing import Any, Protocol
 from deixis.models.codex_isolation import isolation_overrides
 from deixis.models.codex_rpc import CodexAppServer, RpcError
 from deixis.domain.limits import limit_kind, service_error_kind, safe_error
-from deixis.tool_paths import child_path, command_for, find_tool
-from deixis.tool_probe import probe
+from deixis.tools.tool_paths import child_path, command_for, find_tool
+from deixis.tools.tool_probe import probe
 
 # The version in the app-server's `userAgent` ("deixis/0.160.0 (...)") and in `codex --version` ("codex-cli 0.160.0").
 USER_AGENT_VERSION = re.compile(r"[^/\s]+/(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)")

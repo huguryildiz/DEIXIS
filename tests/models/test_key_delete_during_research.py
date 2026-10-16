@@ -16,7 +16,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from deixis import credentials
+from deixis.keys import credentials
 from deixis.api.app import create_app
 from deixis.models import gemini
 from fakes import FakeAdapter

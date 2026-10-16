@@ -22,12 +22,12 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from deixis.child_env import NODE_TLS
+from deixis.tools.child_env import NODE_TLS
 from deixis.models.adapter import CODEX_ENV_ALLOWLIST, ModelStepResult
 from deixis.models.cli_process import reap, spawn_options, stop_group_async, track
 from deixis.domain.limits import safe_error, service_error_kind
-from deixis.tool_paths import CliCommand, child_path, command_for, find_tool
-from deixis.tool_probe import probe
+from deixis.tools.tool_paths import CliCommand, child_path, command_for, find_tool
+from deixis.tools.tool_probe import probe
 
 # A tool name Copilot does not have: with it as the only available tool, the model is offered none.
 NO_TOOL = "deixis_no_tool"

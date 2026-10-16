@@ -15,7 +15,7 @@ from keyring.backend import KeyringBackend
 from keyring.backends import fail
 from keyring.errors import KeyringLocked, PasswordSetError
 
-from deixis import credentials
+from deixis.keys import credentials
 from test_keychain_queue import (  # noqa: F401  (fixtures)
     KEY, V1, client, entry, no_keychain, no_redetection, no_shell_keys, only_while_a_test_uses_them)
 
@@ -74,7 +74,7 @@ CAUSES = [
 def test_a_refused_keychain_change_names_its_cause_and_no_exception(code, make, client, caplog):
     keyring.set_keyring(Scripted(make()))
     credentials._found_cache = None
-    with caplog.at_level("WARNING", logger="deixis.credentials"):
+    with caplog.at_level("WARNING", logger="deixis.keys.credentials"):
         saved = client.put(f"/api/credentials/{KEY}", json={"value": V1})
         removed = client.delete(f"/api/credentials/{KEY}")
     for response in (saved, removed):
@@ -93,7 +93,7 @@ def test_a_key_file_that_cannot_be_written_is_not_a_dotenv_or_an_exception(error
     def refuse():
         raise error
 
-    with caplog.at_level("WARNING", logger="deixis.credentials"):
+    with caplog.at_level("WARNING", logger="deixis.keys.credentials"):
         with monkeypatch.context() as refusing:
             refusing.setattr(credentials, "_write_file_store", refuse)
             chosen = client.put("/api/credentials/file-store", json={"enabled": True})

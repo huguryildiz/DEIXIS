@@ -41,10 +41,10 @@ from pathlib import Path
 
 import pymupdf
 
-from deixis import library_lock
-from deixis.child_env import UV_TLS, child_env
+from deixis.storage import library_lock
+from deixis.tools.child_env import UV_TLS, child_env
 from deixis.documents import pdf_child
-from deixis.tool_paths import find_tool
+from deixis.tools.tool_paths import find_tool
 
 MARKER_PACKAGE = "marker-pdf==1.10.2"
 PYTHON_VERSION = "3.12"

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from deixis import tool_paths
+from deixis.tools import tool_paths
 
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="the fake tools and shells are shell scripts")
 
@@ -272,7 +272,7 @@ def test_a_tool_is_found_by_the_name_a_person_would_type(tmp_path, monkeypatch, 
 
 
 def test_no_module_looks_for_a_tool_with_shutil_which_any_more():
-    root = Path(tool_paths.__file__).parent
+    root = Path(tool_paths.__file__).parents[1]
     offenders = [str(p.relative_to(root)) for p in root.rglob("*.py")
                  if p.name != "tool_paths.py" and "shutil.which" in p.read_text()]
     assert offenders == []

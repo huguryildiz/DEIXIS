@@ -13,7 +13,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from deixis import credentials, key_verification
+from deixis.keys import credentials, key_verification
 from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.documents import mathpix

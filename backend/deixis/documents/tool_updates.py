@@ -20,12 +20,12 @@ from importlib.metadata import version as package_version
 
 import httpx
 
-from deixis.child_env import UV_TLS, child_env
+from deixis.tools.child_env import UV_TLS, child_env
 from deixis.documents import math_reader, ocr
-from deixis.job_failure import failure_line
+from deixis.tools.job_failure import failure_line
 from deixis.storage.db import now
-from deixis.tool_paths import find_tool
-from deixis.tool_probe import probe_blocking
+from deixis.tools.tool_paths import find_tool
+from deixis.tools.tool_probe import probe_blocking
 
 TOOLS = ("tesseract", "marker", "pymupdf")
 TESSERACT_URL = "https://formulae.brew.sh/api/formula/tesseract.json"

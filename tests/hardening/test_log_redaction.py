@@ -11,7 +11,7 @@ import logging
 import httpx
 import pytest
 
-from deixis import credentials, log_redaction
+from deixis.keys import credentials, log_redaction
 from deixis.api import usage_routes
 
 SECRET = "SYNTHETICkey0123456789abcdef"

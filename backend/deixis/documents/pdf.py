@@ -54,7 +54,7 @@ from pathlib import Path
 
 import pymupdf
 
-from deixis.child_env import child_env
+from deixis.tools.child_env import child_env
 from deixis.documents import child_guard, inline_math
 from deixis.documents.child_guard import _libproc, _resident_bytes  # re-export existing readers
 

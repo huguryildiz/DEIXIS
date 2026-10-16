@@ -30,11 +30,11 @@ from typing import Any
 
 import httpx
 
-from deixis.child_env import NODE_TLS, UV_TLS, child_env
-from deixis.job_failure import failure_line
+from deixis.tools.child_env import NODE_TLS, UV_TLS, child_env
+from deixis.tools.job_failure import failure_line
 from deixis.storage.db import now
-from deixis.tool_paths import command_for, find_tool, find_tools
-from deixis.tool_probe import Probe, probe, probe_blocking
+from deixis.tools.tool_paths import command_for, find_tool, find_tools
+from deixis.tools.tool_probe import Probe, probe, probe_blocking
 
 CACHE_SECONDS = 30
 CATALOG_SECONDS = 24 * 60 * 60
@@ -788,7 +788,7 @@ class LocalTools:
     async def suggested(self, tool_id: str, http: httpx.AsyncClient) -> dict[str, Any]:
         """Suggested research models read from the tool's catalog and sized for this computer's memory, kept for a day;
         the fixed list when the catalog cannot be read. Embedding suggestions always come from the fixed list."""
-        from deixis import local_catalog
+        from deixis.tools import local_catalog
 
         fixed = OLLAMA_SUGGESTED if tool_id == "ollama" else LMSTUDIO_SUGGESTED
         kept = self._catalogs.get(tool_id)

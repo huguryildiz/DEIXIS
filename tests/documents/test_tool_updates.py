@@ -10,7 +10,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from deixis import tool_paths
+from deixis.tools import tool_paths
 from deixis.api.app import create_app
 from deixis.documents import ocr, tool_updates
 from test_api_flow import fake_fetch, session, sw_settings

@@ -256,7 +256,7 @@ import httpx
 from deixis.documents import local_embedding
 import builtin_helpers
 from deixis.workflow.local_embedding_service import EmbeddingService
-from deixis import child_env
+from deixis.tools import child_env
 
 child_env.OS_PREFIXES = ("LC_", "FAKE_")  # as tests/conftest.py does: the fake uv reads its FAKE_* switches
 

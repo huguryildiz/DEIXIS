@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from deixis import tool_probe
+from deixis.tools import tool_probe
 from deixis.models import gemini_cli
 from deixis.models.gemini_cli import CliRun, GeminiCliAdapter
 
@@ -278,5 +278,5 @@ def test_a_sign_in_refusal_after_the_init_event_is_not_sent():
 
 def test_gemini_cli_has_the_terminal_sign_in():
     """D21's Sign in button opens a terminal running `gemini`, where the person chooses Sign in with Google."""
-    from deixis import account_signin
+    from deixis.keys import account_signin
     assert account_signin.TOOLS["gemini_cli"] == ("gemini", [], "Gemini CLI")

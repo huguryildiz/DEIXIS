@@ -26,8 +26,9 @@ from keyring.errors import KeyringError
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from deixis import account_signin, credentials, key_verification, local_tools, log_redaction
-from deixis.tool_paths import find_tool, is_bundled
+from deixis.keys import account_signin, credentials, key_verification, log_redaction
+from deixis.tools import local_tools
+from deixis.tools.tool_paths import find_tool, is_bundled
 from deixis.config import Settings, load_settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition

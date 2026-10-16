@@ -15,8 +15,9 @@ from typing import Any
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, Field
 
-from deixis import config, data_location
-from deixis.child_env import child_env
+from deixis import config
+from deixis.storage import data_location
+from deixis.tools.child_env import child_env
 from deixis.config import Settings
 from deixis.storage import backup
 

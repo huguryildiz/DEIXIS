@@ -14,7 +14,7 @@ import sys
 import httpx
 import pytest
 
-from deixis import local_tools
+from deixis.tools import local_tools
 
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="the fake programs are shell scripts")
 

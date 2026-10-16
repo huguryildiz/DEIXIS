@@ -3,7 +3,7 @@ import asyncio
 import pytest
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
 
-from deixis import tool_probe
+from deixis.tools import tool_probe
 from deixis.models import claude
 
 

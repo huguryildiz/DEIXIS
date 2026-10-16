@@ -36,12 +36,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from deixis import credentials, library_lock
-from deixis.child_env import UV_TLS, child_env
+from deixis.keys import credentials
+from deixis.storage import library_lock
+from deixis.tools.child_env import UV_TLS, child_env
 from deixis.documents import arxiv_source, equation_regions, math_reader, mathpix, pdf
-from deixis.job_failure import failure_line
+from deixis.tools.job_failure import failure_line
 from deixis.storage.db import new_id, now, transaction
-from deixis.tool_paths import find_tool
+from deixis.tools.tool_paths import find_tool
 from deixis.workflow import file_restore, recovery, text_retry
 from deixis.workflow.store import NotFound, RunInProgress, Store
 

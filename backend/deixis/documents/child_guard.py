@@ -38,7 +38,7 @@ import subprocess
 import sys
 import time
 
-from deixis.child_env import child_env
+from deixis.tools.child_env import child_env
 
 WATCH_INTERVAL_SECONDS = 0.05
 WATCH_LOST_TURNS = 20

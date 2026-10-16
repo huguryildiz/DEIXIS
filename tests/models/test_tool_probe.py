@@ -9,7 +9,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from deixis import tool_probe
+from deixis.tools import tool_probe
 from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.documents import ocr

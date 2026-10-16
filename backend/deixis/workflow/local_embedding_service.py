@@ -28,12 +28,12 @@ from typing import Any
 
 import httpx
 
-from deixis import library_lock
-from deixis.child_env import UV_TLS, child_env
+from deixis.storage import library_lock
+from deixis.tools.child_env import UV_TLS, child_env
 from deixis.documents import local_embedding
 from deixis.documents.local_embedding import BuiltinPaths, Integrity, LocalEmbedder, LocalEmbeddingError
-from deixis.job_failure import COULD_NOT_RUN, failure_line
-from deixis.tool_paths import find_tool
+from deixis.tools.job_failure import COULD_NOT_RUN, failure_line
+from deixis.tools.tool_paths import find_tool
 
 log = logging.getLogger(__name__)
 INSTALL_TIMEOUT_SECONDS = 60 * 60

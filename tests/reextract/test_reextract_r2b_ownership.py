@@ -295,9 +295,9 @@ def test_lock_directory_resolution_never_splits_namespace_new_contract(tmp_path)
 
 def test_only_restore_driver_places_active_library_hash_paths_static_guard():
     root = Path(__file__).resolve().parents[2] / "backend" / "deixis"
-    allow = {"workflow/file_restore.py", "storage/backup.py", "credentials.py", "documents/local_embedding.py",
+    allow = {"workflow/file_restore.py", "storage/backup.py", "keys/credentials.py", "documents/local_embedding.py",
              "documents/arxiv_source.py", "workflow/local_embedding_service.py",
-             "data_location.py"}  # D32: moves the whole data folder at startup, before the library is opened
+             "storage/data_location.py"}  # D32: moves the whole data folder at startup, before the library is opened
     for path in root.rglob("*.py"):
         tree = ast.parse(path.read_text())
         calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)

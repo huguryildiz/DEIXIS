@@ -18,11 +18,13 @@ from uuid import uuid4
 
 import uvicorn
 
-from deixis import config, library_lock, log_redaction
+from deixis import config
+from deixis.keys import log_redaction
+from deixis.storage import library_lock
 from deixis.api.app import create_app
 from deixis.config import Settings, load_settings
-from deixis import data_location
-from deixis.data_location import PointerDamaged, Postponed, apply_pending_move, data_dir_problem, read_pointer
+from deixis.storage import data_location
+from deixis.storage.data_location import PointerDamaged, Postponed, apply_pending_move, data_dir_problem, read_pointer
 from deixis.storage import backup, db
 from deixis.storage.db import SchemaCheckUnreadable, UnknownSchemaError, check_schema_known
 from deixis.system_trust import use_system_certificates

@@ -15,7 +15,8 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from deixis import credentials, local_tools, tool_probe
+from deixis.keys import credentials
+from deixis.tools import local_tools, tool_probe
 from deixis.api.app import create_app
 from deixis.config import Settings
 from fakes import FakeAdapter
@@ -911,7 +912,7 @@ def test_an_ollama_that_does_not_answer_a_delete_gives_a_code_not_a_class_name(c
 
     monkeypatch.setattr(local_tools.LocalTools, "_running_ollama", running)
     monkeypatch.setattr(httpx.AsyncClient, "request", down)  # the app's own client; the test client is a sync one
-    with caplog.at_level("WARNING", logger="deixis.local_tools"):
+    with caplog.at_level("WARNING", logger="deixis.tools.local_tools"):
         refused = client.post("/api/local-tools/ollama/delete", json={"model": "qwen3:8b"})
     assert refused.status_code == 502 and refused.json() == {"detail": "Ollama did not answer", "code": "server_not_answering"}
     assert "ConnectError" not in refused.text and "ConnectError" in caplog.text

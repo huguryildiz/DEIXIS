@@ -10,7 +10,7 @@ import pytest
 from keyring.backend import KeyringBackend
 from keyring.errors import PasswordDeleteError
 
-from deixis import credentials, key_verification
+from deixis.keys import credentials, key_verification
 
 
 class MemoryKeyring(KeyringBackend):
@@ -91,7 +91,7 @@ def no_real_platform_data_dir(monkeypatch, tmp_path_factory):
 def no_held_folder_locks():
     """A `serve` or command line run inside a test takes its data folder's shared lock for the process (E1); it is
     let go after the test so no descriptor outlives it."""
-    from deixis import library_lock
+    from deixis.storage import library_lock
 
     yield
     library_lock.release_all()
@@ -111,7 +111,7 @@ def tools_only_on_path(monkeypatch):
     """`find_tool` (A3) also looks in the usual install folders and the login shell's PATH; in tests only PATH counts, so
     a test's fake tool (or its absence) is what the app sees, never a real CLI in /opt/homebrew/bin or ~/.local/bin.
     The tests of those fallbacks patch them back in."""
-    from deixis import tool_paths
+    from deixis.tools import tool_paths
 
     nothing = lambda: []  # noqa: E731
     nothing.real = tool_paths.known_places  # for the test of the list itself
@@ -120,7 +120,7 @@ def tools_only_on_path(monkeypatch):
 
     # The same for the places an installer puts an app (B1): only the tool's own `app` field counts (None in most tests),
     # never the Applications, Program Files or Flatpak folders of the computer running the tests.
-    from deixis import local_tools
+    from deixis.tools import local_tools
 
     only_app = lambda tool: [Path(tool.app)] if tool.app else []  # noqa: E731
     only_app.real = local_tools.app_locations
@@ -131,7 +131,7 @@ def tools_only_on_path(monkeypatch):
 def fake_tools_see_their_switches(monkeypatch):
     """The fake `uv`, runner and installer scripts of the tests read FAKE_* switches from their environment, which the
     child allowlist (A5) would otherwise drop. A key or token never has that prefix."""
-    from deixis import child_env
+    from deixis.tools import child_env
 
     monkeypatch.setattr(child_env, "OS_PREFIXES", ("LC_", "FAKE_"))
 

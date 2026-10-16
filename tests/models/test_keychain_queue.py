@@ -22,7 +22,7 @@ from keyring.backends import fail
 from keyring.compat import properties
 from keyring.errors import PasswordDeleteError, PasswordSetError
 
-from deixis import credentials
+from deixis.keys import credentials
 from deixis.api.app import create_app
 from deixis.config import Settings
 from fakes import FakeAdapter

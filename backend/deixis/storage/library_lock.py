@@ -29,7 +29,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from deixis.child_env import child_env
+from deixis.tools.child_env import child_env
 
 try:
     import fcntl

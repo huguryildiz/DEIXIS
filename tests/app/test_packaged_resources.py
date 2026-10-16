@@ -20,7 +20,8 @@ from pathlib import Path
 
 import pytest
 
-from deixis import config, credentials, package_manifest, paths
+from deixis import config, package_manifest, paths
+from deixis.keys import credentials
 from deixis.domain import skill
 
 REPO = Path(__file__).resolve().parents[2]

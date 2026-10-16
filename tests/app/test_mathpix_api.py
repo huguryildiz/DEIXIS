@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from keyring.errors import KeyringError
 
 from arxiv_helpers import no_network  # noqa: F401
-from deixis import credentials
+from deixis.keys import credentials
 from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.documents import mathpix

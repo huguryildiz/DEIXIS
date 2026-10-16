@@ -24,7 +24,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from deixis import __main__ as cli
-from deixis import config, data_location, library_lock
+from deixis import config
+from deixis.storage import data_location, library_lock
 from deixis.api.app import create_app
 from deixis.config import Settings
 from fakes import FakeAdapter
@@ -170,7 +171,7 @@ def test_serve_moves_before_it_opens_the_library(default, tmp_path, monkeypatch)
 # ---- the folder lock (E1) ------------------------------------------------------------------------------------------
 
 
-HOLDER = ("import sys; from pathlib import Path; from deixis import library_lock; "
+HOLDER = ("import sys; from pathlib import Path; from deixis.storage import library_lock; "
           "assert library_lock.hold_shared(Path(sys.argv[1])); print('ready', flush=True); sys.stdin.read()")
 
 
@@ -180,7 +181,7 @@ def holder():
     started = []
 
     def hold(folder):
-        env = {**os.environ, "PYTHONPATH": str(Path(library_lock.__file__).parents[1])}
+        env = {**os.environ, "PYTHONPATH": str(Path(library_lock.__file__).parents[2])}
         proc = subprocess.Popen([sys.executable, "-c", HOLDER, str(folder)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, env=env, text=True)
         started.append(proc)
         assert proc.stdout.readline().strip() == "ready"
@@ -521,7 +522,7 @@ WORKER_ONLY = ("import fcntl, os, sys; fd = os.open(sys.argv[1], os.O_RDWR | os.
 
 def old_build(folder):
     """A DEIXIS from before the folder lock: it holds only worker.lock, exclusively, for its whole life."""
-    env = {**os.environ, "PYTHONPATH": str(Path(library_lock.__file__).parents[1])}
+    env = {**os.environ, "PYTHONPATH": str(Path(library_lock.__file__).parents[2])}
     proc = subprocess.Popen([sys.executable, "-c", WORKER_ONLY, str(folder / "worker.lock")], stdin=subprocess.PIPE,
                             stdout=subprocess.PIPE, env=env, text=True)
     assert proc.stdout.readline().strip() == "ready"
@@ -702,7 +703,7 @@ def test_the_helpers_flush_files_and_folders_and_windows_skips_folders(tmp_path,
 @pytest.fixture
 def windows_children(monkeypatch):
     monkeypatch.setattr(library_lock, "_inherits", lambda: False)
-    return {**os.environ, "PYTHONPATH": str(Path(library_lock.__file__).parents[1])}
+    return {**os.environ, "PYTHONPATH": str(Path(library_lock.__file__).parents[2])}
 
 
 def test_a_windows_child_takes_its_own_lock_before_the_parent_goes_on_and_outlives_the_parent(default, tmp_path, windows_children):

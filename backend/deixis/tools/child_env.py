@@ -16,7 +16,7 @@ import os
 from collections.abc import Iterable, Mapping
 
 from deixis.paths import is_frozen
-from deixis.tool_paths import child_path
+from deixis.tools.tool_paths import child_path
 
 OS_VARIABLES = frozenset({
     "HOME", "USER", "LOGNAME", "TMPDIR", "LANG",  # POSIX; LC_* is added by prefix

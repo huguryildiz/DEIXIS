@@ -13,7 +13,7 @@ def default_data_dir() -> Path:
     """DEIXIS_DATA_DIR, else the folder chosen in Settings (the pointer file, D32), else the platform default."""
     if env := os.environ.get("DEIXIS_DATA_DIR"):
         return Path(env).expanduser()
-    from deixis import data_location
+    from deixis.storage import data_location
 
     if (chosen := data_location.pointer_path()) is not None:
         return chosen
@@ -143,7 +143,7 @@ def load_dotenv(path: Path) -> set[str]:
 def load_settings() -> Settings:
     from deixis.paths import RESOURCE_ROOT, is_frozen
 
-    from deixis import credentials
+    from deixis.keys import credentials
 
     # Only a run from the repository reads `.env` (A2): a packaged app never reads or writes its install folder.
     if not is_frozen():

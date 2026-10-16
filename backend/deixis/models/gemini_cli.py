@@ -32,12 +32,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from deixis.child_env import NODE_TLS
+from deixis.tools.child_env import NODE_TLS
 from deixis.models.adapter import ModelStepResult
 from deixis.models.cli_process import reap, spawn_options, stop_group_async, track
 from deixis.domain.limits import limit_kind, safe_error, service_error_kind
-from deixis import tool_probe
-from deixis.tool_paths import child_path, command_for, find_tool
+from deixis.tools import tool_probe
+from deixis.tools.tool_paths import child_path, command_for, find_tool
 
 CLI = "gemini"
 # Concrete ids from Gemini CLI 0.60's VALID_GEMINI_MODELS (internal, Gemma and custom-tools variants left out).

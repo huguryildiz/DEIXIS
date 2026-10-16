@@ -25,7 +25,7 @@ from xml.parsers import expat
 from dataclasses import dataclass
 from pathlib import Path
 
-from deixis.child_env import child_env
+from deixis.tools.child_env import child_env
 
 MAX_XML_BYTES = 5 * 1024 * 1024
 RENDER_TIMEOUT_SECONDS = 60

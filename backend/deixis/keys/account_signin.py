@@ -27,7 +27,7 @@ from typing import Any
 
 from deixis.models.claude import TELEMETRY_OFF as CLAUDE_TELEMETRY_OFF
 from deixis.models.codex_isolation import TELEMETRY_OVERRIDES
-from deixis.tool_paths import command_for, find_tool
+from deixis.tools.tool_paths import command_for, find_tool
 
 log = logging.getLogger(__name__)
 

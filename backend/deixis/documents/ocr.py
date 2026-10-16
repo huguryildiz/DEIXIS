@@ -22,10 +22,10 @@ from pathlib import Path
 
 import pymupdf
 
-from deixis.child_env import child_env
+from deixis.tools.child_env import child_env
 from deixis.documents import pdf
-from deixis.tool_paths import find_tool, is_bundled
-from deixis.tool_probe import Probe, probe
+from deixis.tools.tool_paths import find_tool, is_bundled
+from deixis.tools.tool_probe import Probe, probe
 
 log = logging.getLogger(__name__)
 

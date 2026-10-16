@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from deixis import tool_probe
+from deixis.tools import tool_probe
 from deixis.config import Settings
 from deixis.domain import skill
 from deixis.models import adapter

@@ -14,11 +14,11 @@ from typing import Any
 
 import httpx
 
-from deixis import key_verification
+from deixis.keys import key_verification
 from deixis.models.adapter import ModelStepResult, broken_key_status, invalid_key_result
 from deixis.domain.limits import error_name, http_limit, service_error_kind, retry_at
-from deixis.tool_paths import child_path, command_for, find_tool
-from deixis.tool_probe import probe
+from deixis.tools.tool_paths import child_path, command_for, find_tool
+from deixis.tools.tool_probe import probe
 
 API_URL = "https://generativelanguage.googleapis.com/v1beta"
 KEY_ENV = "GEMINI_API_KEY"

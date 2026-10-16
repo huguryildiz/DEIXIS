@@ -10,11 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from deixis import account_signin, tool_paths
-from deixis.account_signin import AccountSignIn, SignInError, build_launch, codex_login_command, powershell_quote
+from deixis.keys import account_signin
+from deixis.tools import tool_paths
+from deixis.keys.account_signin import AccountSignIn, SignInError, build_launch, codex_login_command, powershell_quote
 from deixis.models import adapter, claude, copilot_cli, gemini_cli
-from deixis.tool_paths import command_for
-from deixis import tool_probe
+from deixis.tools.tool_paths import command_for
+from deixis.tools import tool_probe
 
 HOSTILE = "a&b %x% ^c (d) !e"  # cmd.exe metacharacters and a space in one folder name
 

@@ -42,7 +42,7 @@ from keyring.backends import fail
 from keyring.backends.chainer import ChainerBackend
 from keyring.errors import KeyringError, KeyringLocked, PasswordDeleteError
 
-from deixis import key_verification
+from deixis.keys import key_verification
 from deixis.models.anthropic_api import API_URL as ANTHROPIC_API_URL, KEY_ENV as ANTHROPIC_KEY_ENV, headers as anthropic_headers
 from deixis.models.gemini import API_URL as GEMINI_API_URL
 from deixis.models.openai_compat import BY_KEY_ENV as COMPAT_BY_KEY_ENV

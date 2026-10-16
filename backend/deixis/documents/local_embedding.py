@@ -38,8 +38,8 @@ from typing import Any, Callable
 
 import httpx
 
-from deixis import library_lock
-from deixis.child_env import child_env
+from deixis.storage import library_lock
+from deixis.tools.child_env import child_env
 
 REPOSITORY = "Qdrant/bge-small-en-v1.5-onnx-Q"
 REVISION = "aa8f8b060edb00e03bfdd08813a2949946c8ba55"

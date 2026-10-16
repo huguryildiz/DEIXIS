@@ -71,7 +71,7 @@ KEYRING_STAGE1 = (
 )
 KEYRING_STAGE2 = (
     "import sys, json\n"
-    "import deixis.config as config, deixis.credentials as credentials\n"
+    "import deixis.config as config, deixis.keys.credentials as credentials\n"
     "config.load_settings()\n"
     "print(json.dumps({'keychain_name': credentials.keychain_name(),\n"
     "                  'macos_modules': sorted(m for m in sys.modules if m.startswith('keyring.backends.macOS'))}))\n"

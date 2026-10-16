@@ -23,7 +23,7 @@ from array import array
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from deixis import key_verification
+from deixis.keys import key_verification
 from deixis.documents import local_embedding
 
 import httpx

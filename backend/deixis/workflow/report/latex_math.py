@@ -6,6 +6,7 @@ scientific meaning. Compatibility warnings do not establish compilability.
 
 import hashlib
 import json
+import logging
 import re
 import unicodedata
 from collections.abc import Callable
@@ -18,6 +19,8 @@ from deixis.documents.arxiv_source import katex_known
 from deixis.domain.contracts import _is_escaped, _math_spans
 from deixis.workflow.report.latex_preamble import PREAMBLE_SHA256
 from deixis.workflow.report.latex_text import Unmapped, escape_text, is_unmapped, symbol_math, symbol_text
+
+log = logging.getLogger(__name__)
 
 COMMAND_DENY = frozenset({
     # Definitions, expansion and grouping can change the closed vocabulary.
@@ -383,6 +386,7 @@ def classify(span: str, *, cell: bool = False) -> MathSpan:
         return MathSpan(span, kind, kind in {"display_aligned", "display_gathered", "display_plain"},
                         body, class_b, tuple(notes))
     except Exception:
+        log.exception("LaTeX math conversion failed; the span is exported as plain text")
         return _plain(span, "unexpected conversion error")
 
 

@@ -67,7 +67,7 @@ const basisLabels: Record<string, string> = { metadata_only: 'metadata only', ti
 function phaseOf(kind: string): PhaseKey | null {
   if (kind === 'model:owner_review') return 'review'
   if (kind === 'model:report_plan') return 'plan'
-  if (kind === 'model:report_section' || kind === 'model:report_phrase_repair') return 'sections'
+  if (kind === 'model:report_section') return 'sections'
   if (kind === 'model:report_review') return 'assembly'
   if (kind === 'model:search_plan' || kind === 'model:search_query') return 'plan'
   // An sw run plans its search in code before it searches; those steps are its plan phase.

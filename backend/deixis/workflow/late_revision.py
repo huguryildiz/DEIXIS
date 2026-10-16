@@ -13,6 +13,10 @@ from deixis.workflow.flow import fuse_rankings
 
 REVISION_INPUT = "fast_path:v1:revision_input"
 OPEN = ("waiting_fetch", "reading", "answering")
+# Full-text pages an upgraded work brings. A work already in the base answer replaces its abstract passage with two
+# pages and a new work adds one, so each upgrade grows the input by about one passage (the plan's `limit`).
+BASE_WORK_PAGES = 2
+NEW_WORK_PAGES = 1
 
 
 def available(store: Any) -> bool:
@@ -235,7 +239,8 @@ def revision_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict
     if saved and saved["status"] == "succeeded":
         return saved["output"]
     row = row_for_run(store, run)
-    assert row is not None
+    if row is None:
+        flow._fail(run["id"], "late_revision_unavailable")
     checkpoint(flow, run)
     base = base_plan(store, row)
     fast_answer.check_input(flow, run["id"], base)
@@ -269,7 +274,7 @@ def revision_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict
             ordered = list({p["id"]: p for p in [*ranked, *pages]}.values())
             if formulas:
                 ordered = formula_passages.bring_forward(ordered)
-            chosen = [p["id"] for p in ordered][:2 if wid in base_work_ids else 1]
+            chosen = [p["id"] for p in ordered][:BASE_WORK_PAGES if wid in base_work_ids else NEW_WORK_PAGES]
             if not chosen:
                 flow._pause(run["id"], "source_changed")
             item |= {"route": "fulltext", "decision_id": upgrade["late_decision_id"], "asset_id": upgrade["late_asset_id"],

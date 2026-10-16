@@ -136,8 +136,6 @@ const plainEventTexts: Record<string, string> = {
   report_section_created: 'Report section added',
   report_section_saved: 'Report section saved',
   report_claims_saved: 'Claims in a report section saved',
-  report_phrase_repair_saved: 'A wording fix in the report was applied',
-  report_phrase_repair_rejected: 'A wording fix in the report was not used',
   report_finalized: 'Report finished',
   report_review_saved: 'Report check saved',
   report_gaps_saved: 'Gaps in the report saved',

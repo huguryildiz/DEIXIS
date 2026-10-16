@@ -266,6 +266,7 @@ export const reportChangeViaLabels: Record<string, string> = { body_ref: '(throu
 const pauseReasons: Record<string, string> = {
   answer_cutoff_missing: 'The frozen read cutoff is missing. Start a new search before answering.',
   answer_unavailable: 'The stored answer is unavailable for review.',
+  late_revision_unavailable: 'The late full-text revision this answer belonged to is no longer available.',
   followup_selection_changed: 'Your source selection changed while this follow-up was being answered. Ask it again.',
   followup_sources_changed: 'A source or its PDF changed while this follow-up was being answered. Ask it again.',
   no_provider_read: 'No provider read succeeded.',
@@ -458,7 +459,6 @@ export const stepLabel = (kind: string, key: string, candidate = false) => {
   if (kind === 'model:research_title') return t('Research title (model)')
   if (kind === 'model:report_plan') return t('Report outline (model)')
   if (kind === 'model:report_section') return t('Writing a report section (model)')
-  if (kind === 'model:report_phrase_repair') return t('Fixing report wording (model)')
   if (kind === 'model:report_section_anchor_repair') return t('Fixing report citations (model)')
   if (kind === 'model:report_review') return t('Checking the report (model)')
   if (kind === 'model:search_query') return t('Search query (model)')

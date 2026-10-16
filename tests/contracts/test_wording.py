@@ -187,3 +187,15 @@ def test_latex_outside_dollar_delimiters_is_a_validation_issue():
 ])
 def test_latex_outside_math_forms(text, flagged):
     assert bool(contracts.LATEX_OUTSIDE_MATH.search(contracts.MATH.sub(" ", text))) is flagged
+
+
+@pytest.mark.parametrize("language, text, expected", [
+    ("en", "Previous studies and several authors agree.", ["Previous studies", "several authors"]),
+    ("en", "A number of investigations report it.", ["A number of investigations"]),
+    ("en", "The study reports it; prior work is cited.", []),
+    ("tr", "Önceki çalışmalarda ve bazı araştırmacılar bunu bildirir.", ["Önceki çalışmalarda", "bazı araştırmacılar"]),
+    ("tr", "Bu kaynak bunu bildirir.", []),
+    ("de", "Frühere Studien berichten das.", []),  # no pattern for this language
+])
+def test_plural_source_phrases_finds_several_source_wording_by_language(language, text, expected):
+    assert wording.plural_source_phrases(text, language) == expected

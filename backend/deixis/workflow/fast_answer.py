@@ -17,6 +17,8 @@ INPUT = "fast_path:v1:answer_input"
 VERSION_FIELDS = ("work_id", "title", "abstract", "doi", "version_label", "year")
 # A screened work whose abstract stage left it to its full text, and no reading of that text by the cutoff (D60).
 UNRESOLVED_WITHOUT_FULLTEXT = "unresolved_without_fulltext"
+# One review call plus one bounded schema repair.
+ANSWER_REVIEW_MODEL_CALLS = 2
 
 
 def human_choice(human: dict[str, Any]) -> dict[str, Any]:
@@ -51,6 +53,13 @@ def formula_request(store: Any, scope: dict[str, Any], patterns: list[tuple[str,
     return {"on": on, "reason": reason, **formula_passages.THRESHOLDS}
 
 
+def current_members(store: Any, rid: str) -> dict[str, dict[str, Any]]:
+    """Source versions currently in the research's corpus, by ID."""
+    return {r["id"]: dict(r) for r in store.conn.execute(
+        "SELECT v.* FROM source_versions v JOIN corpus_memberships m ON m.source_version_id = v.id"
+        " WHERE m.research_id = ? AND m.removed_at IS NULL", (rid,))}
+
+
 def current_pools(store: Any, rid: str) -> dict[str, list[dict[str, Any]]]:
     pools: dict[str, list[dict[str, Any]]] = {}
     for row in store.conn.execute(
@@ -69,7 +78,9 @@ def answer_run_budget(store: Any, rid: str, scope: dict[str, Any], *, discovery_
         budget = small_batch.answer_budget(store, rid, scope["revision"], budget)
     else:
         discovery = store.run(discovery_id)
-        assert (discovery["research_id"], discovery["scope_revision"], discovery["status"]) == (rid, scope["revision"], "completed")
+        if (discovery["research_id"], discovery["scope_revision"], discovery["status"]) != (rid, scope["revision"], "completed"):
+            raise ValueError(f"answer_discovery_mismatch: run {discovery_id} is not a completed discovery of this "
+                             f"research's scope revision {scope['revision']}")
         listing = store.existing_step(discovery_id, small_batch.LIST_KEY)
         binding = {"policy": small_batch.POLICY, "list_run_id": discovery_id,
                    "answer_allocation_version": small_batch.ANSWER_ALLOCATION_VERSION}
@@ -288,9 +299,7 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
         for row in rows:
             if row["work_id"] in late_excluded and not row["reason"] and not row["user_priority"]:
                 row["reason"] = "fulltext_excluded_after_cutoff"
-    members = {r["id"]: dict(r) for r in store.conn.execute(
-        "SELECT v.* FROM source_versions v JOIN corpus_memberships m ON m.source_version_id = v.id"
-        " WHERE m.research_id = ? AND m.removed_at IS NULL", (rid,))}
+    members = current_members(store, rid)
     pools = current_pools(store, rid)
     for row in rows:
         svid = row["source_version_id"]
@@ -346,9 +355,7 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
 def check_input(flow: Any, run_id: str, plan: dict[str, Any]) -> None:
     store = flow.store
     rid = store.run(run_id)["research_id"]
-    members = {r["id"]: dict(r) for r in store.conn.execute(
-        "SELECT v.* FROM source_versions v JOIN corpus_memberships m ON m.source_version_id = v.id"
-        " WHERE m.research_id = ? AND m.removed_at IS NULL", (rid,))}
+    members = current_members(store, rid)
     pools = current_pools(store, rid)
     selected = set(plan["passage_ids"])
     late = store.run(run_id)["budget"].get("late_revision_id")
@@ -431,7 +438,7 @@ def after_answer(flow: Any, run: dict[str, Any]) -> None:
     row = store.conn.execute("SELECT id FROM answers WHERE run_id = ? AND status = 'structurally_valid'", (run["id"],)).fetchone()
     if not row:
         return
-    store.create_run(run["research_id"], "answer_review", {"max_model_calls": 2, "max_provider_requests": 0},
+    store.create_run(run["research_id"], "answer_review", {"max_model_calls": ANSWER_REVIEW_MODEL_CALLS, "max_provider_requests": 0},
                      f"answer_review:{row['id']}", target={"answer_id": row["id"], "answer_run_id": run["id"]})
 
 

@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from deixis.models.adapter import ModelStepResult
-from deixis.models.cli_process import reap, spawn_options, stop_group, track
+from deixis.models.cli_process import reap, spawn_options, stop_group_async, track
 from deixis.domain.limits import limit_kind, safe_error, service_error_kind
 from deixis import tool_probe
 
@@ -177,13 +177,13 @@ async def run_cli(argv: list[str], env: Mapping[str, str], cwd: Path, stdin: str
         out, err = await asyncio.wait_for(proc.communicate(stdin.encode("utf-8")), timeout)
     except BaseException:
         # A timeout or a cancelled step: stop the group (the CLI relaunches itself as a child) and wait, bounded.
-        stop_group(proc)
+        await stop_group_async(proc)
         await reap(proc)
         raise
     finally:
         if active is not None:
             active.discard(proc)
-        stop_group(proc)  # anything the CLI started and left running
+        await stop_group_async(proc)  # anything the CLI started and left running
     return CliRun(proc.returncode, out.decode("utf-8", "replace"), err.decode("utf-8", "replace"))
 
 
@@ -319,7 +319,7 @@ class GeminiCliAdapter:
     async def cancel(self) -> bool:
         active = tuple(self._active)
         for proc in active:
-            stop_group(proc, signal.SIGTERM)
+            await stop_group_async(proc, signal.SIGTERM)
         return bool(active)
 
     async def close(self) -> None:

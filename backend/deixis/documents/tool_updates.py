@@ -56,8 +56,7 @@ def marker_installed_version(paths: math_reader.RuntimePaths) -> str | None:
     """The marker-pdf version in DEIXIS's Marker environment, or None when it is not installed or cannot be asked."""
     if not paths.installed():
         return None
-    done = probe_blocking([str(paths.python), "-c", "from importlib.metadata import version; print(version('marker-pdf'))"],
-                          TIMEOUT_SECONDS)
+    done = probe_blocking([str(paths.python), "-c", "from importlib.metadata import version; print(version('marker-pdf'))"])
     return done.stdout.strip() or None if done.ok else None
 
 

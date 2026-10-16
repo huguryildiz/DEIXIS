@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from deixis.models.adapter import CODEX_ENV_ALLOWLIST, ModelStepResult
-from deixis.models.cli_process import reap, spawn_options, stop_group, track
+from deixis.models.cli_process import reap, spawn_options, stop_group_async, track
 from deixis.domain.limits import safe_error, service_error_kind
 from deixis.tool_probe import probe
 
@@ -130,7 +130,7 @@ class CopilotCliAdapter:
                 await call(1, "initialize", {"protocolVersion": 1, "clientCapabilities": {}})
                 return await call(2, "session/new", {"cwd": str(self.workspace), "mcpServers": []})
         finally:
-            stop_group(proc)
+            await stop_group_async(proc)
             await reap(proc)
 
     async def health(self, refresh: bool = False) -> dict[str, Any]:
@@ -201,23 +201,23 @@ class CopilotCliAdapter:
         try:
             out, err = await asyncio.wait_for(proc.communicate(prompt.encode()), self.turn_timeout)
         except TimeoutError:
-            stop_group(proc)
+            await stop_group_async(proc)
             await reap(proc)
             return ModelStepResult("failed", error="Copilot CLI turn timed out", delivery_class="after_send_unknown")
         except BaseException:
             # The caller stopped waiting (cancelled): stop the run too, so it does not go on unseen.
-            stop_group(proc)
+            await stop_group_async(proc)
             await reap(proc)
             raise
         finally:
             self._active.discard(proc)
-            stop_group(proc)  # anything the binary started and left running
+            await stop_group_async(proc)  # anything the binary started and left running
         return parse_events(out.decode(errors="replace"), err.decode(errors="replace"), proc.returncode, requested_model)
 
     async def cancel(self) -> bool:
         active = tuple(self._active)
         for proc in active:
-            stop_group(proc, signal.SIGTERM)
+            await stop_group_async(proc, signal.SIGTERM)
         return bool(active)
 
     async def close(self) -> None:

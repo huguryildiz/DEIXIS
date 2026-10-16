@@ -22,9 +22,16 @@ WINDOWS = sys.platform == "win32"
 _JOBS: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
+# Windows process creation flags and job limits (winbase.h, winnt.h); named here because Python defines only some.
+CREATE_SUSPENDED, CREATE_NEW_PROCESS_GROUP = 0x00000004, 0x00000200
+JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 0x00002000, 9
+PROCESS_ACCESS = 0x0001 | 0x0100 | 0x0800  # PROCESS_TERMINATE | PROCESS_SET_QUOTA | PROCESS_SUSPEND_RESUME
+
+
 def spawn_options() -> dict[str, Any]:
+    """Every process started with these must be passed to track() at once: on Windows it starts suspended."""
     if WINDOWS:
-        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+        return {"creationflags": CREATE_NEW_PROCESS_GROUP | CREATE_SUSPENDED}
     return {"start_new_session": True}
 
 
@@ -35,6 +42,7 @@ def _kernel32() -> Any:
     k = ctypes.WinDLL("kernel32", use_last_error=True)
     k.CreateJobObjectW.restype = k.OpenProcess.restype = ctypes.c_void_p
     k.CreateJobObjectW.argtypes = (ctypes.c_void_p, ctypes.c_wchar_p)
+    k.SetInformationJobObject.argtypes = (ctypes.c_void_p, ctypes.c_int, ctypes.c_void_p, ctypes.c_uint32)
     k.OpenProcess.argtypes = (ctypes.c_uint32, ctypes.c_int, ctypes.c_uint32)
     k.AssignProcessToJobObject.argtypes = (ctypes.c_void_p, ctypes.c_void_p)
     k.TerminateJobObject.argtypes = (ctypes.c_void_p, ctypes.c_uint)
@@ -42,28 +50,74 @@ def _kernel32() -> Any:
     return k
 
 
+@functools.cache
+def _ntdll() -> Any:
+    import ctypes
+
+    n = ctypes.WinDLL("ntdll")
+    n.NtResumeProcess.argtypes = (ctypes.c_void_p,)
+    n.NtResumeProcess.restype = ctypes.c_long
+    return n
+
+
+def _kill_on_close() -> Any:
+    """JOBOBJECT_EXTENDED_LIMIT_INFORMATION with KILL_ON_JOB_CLOSE: closing the last job handle, DEIXIS's crash included,
+    ends every process in the job."""
+    import ctypes
+
+    class Basic(ctypes.Structure):
+        _fields_ = [("PerProcessUserTimeLimit", ctypes.c_int64), ("PerJobUserTimeLimit", ctypes.c_int64),
+                    ("LimitFlags", ctypes.c_uint32), ("MinimumWorkingSetSize", ctypes.c_size_t),
+                    ("MaximumWorkingSetSize", ctypes.c_size_t), ("ActiveProcessLimit", ctypes.c_uint32),
+                    ("Affinity", ctypes.c_size_t), ("PriorityClass", ctypes.c_uint32), ("SchedulingClass", ctypes.c_uint32)]
+
+    class Extended(ctypes.Structure):
+        _fields_ = [("BasicLimitInformation", Basic), ("IoInfo", ctypes.c_uint64 * 6),
+                    ("ProcessMemoryLimit", ctypes.c_size_t), ("JobMemoryLimit", ctypes.c_size_t),
+                    ("PeakProcessMemoryUsed", ctypes.c_size_t), ("PeakJobMemoryUsed", ctypes.c_size_t)]
+
+    info = Extended()
+    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    return info
+
+
 def track(proc: asyncio.subprocess.Process) -> None:
-    """Windows: puts a just-started CLI in a job object, so stop_group also ends what it started after the CLI itself
-    has exited (taskkill /T finds a child only through its running parent). POSIX needs nothing: the process group
-    outlives its leader. The CLI is assigned before it has loaded far enough to start a child of its own."""
+    """Windows: puts the CLI started by spawn_options() in a job object, then lets it run. stop_group then ends the
+    CLI and everything it started, also after the CLI itself has exited (taskkill /T finds a child only through its
+    running parent). POSIX needs nothing: the process group outlives its leader.
+
+    Why suspended: a process's children join its job only if it is in the job when it creates them, so the CLI is
+    created with CREATE_SUSPENDED (no code of its own has run, it cannot have started a child or exited, so its pid
+    is still its own), assigned to the job and only then resumed. Popen keeps no thread handle to ResumeThread, so
+    the whole process is resumed with NtResumeProcess, an ntdll export long used for this. If the job cannot be made,
+    the CLI still runs, untracked (stop_group falls back to taskkill); if it cannot even be resumed, it is killed."""
     if not WINDOWS:
         return
+    import ctypes
+
+    k, handle, job = _kernel32(), None, None
     try:
-        k = _kernel32()
+        handle = k.OpenProcess(PROCESS_ACCESS, False, proc.pid)
+        if not handle:
+            raise OSError("OpenProcess failed")
         job = k.CreateJobObjectW(None, None)
-        if not job:
-            return
-        handle = k.OpenProcess(0x0001 | 0x0100, False, proc.pid)  # PROCESS_TERMINATE | PROCESS_SET_QUOTA
-        assigned = bool(handle) and bool(k.AssignProcessToJobObject(job, handle))
+        info = _kill_on_close()
+        if job and k.SetInformationJobObject(job, JOB_OBJECT_EXTENDED_LIMIT_INFORMATION, ctypes.byref(info),
+                                             ctypes.sizeof(info)) and k.AssignProcessToJobObject(job, handle):
+            _JOBS[proc] = job
+            weakref.finalize(proc, k.CloseHandle, job)
+        elif job:
+            k.CloseHandle(job)
+        if _ntdll().NtResumeProcess(handle) != 0:
+            raise OSError("NtResumeProcess failed")
+    except (OSError, AttributeError):
+        try:
+            proc.kill()  # left suspended it would hold its caller until the timeout
+        except (ProcessLookupError, OSError):
+            pass
+    finally:
         if handle:
             k.CloseHandle(handle)
-        if not assigned:
-            k.CloseHandle(job)
-            return
-        _JOBS[proc] = job
-        weakref.finalize(proc, k.CloseHandle, job)
-    except (OSError, AttributeError):
-        pass
 
 
 def stop_group(proc: asyncio.subprocess.Process, sig: int = KILL) -> None:

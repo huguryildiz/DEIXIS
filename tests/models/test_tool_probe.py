@@ -88,22 +88,50 @@ def test_windows_taskkill_fallback_runs_off_the_event_loop(monkeypatch):
     assert ran == [["taskkill", "/T", "/F", "/PID", "4242"]]
 
 
-def test_windows_job_kills_the_children_of_a_launcher_that_already_exited(monkeypatch):
+def windows(monkeypatch, **answers):
+    """Windows with stand-ins for kernel32 and ntdll that record each call; the real Windows ABI cannot run here."""
     monkeypatch.setattr(cli_process, "WINDOWS", True)
+    monkeypatch.setattr(cli_process.subprocess, "run", lambda *a, **k: pytest.fail("taskkill was used despite the job"))
+    answers = {"OpenProcess": 9, "CreateJobObjectW": 7, "NtResumeProcess": 0} | answers
     calls = []
 
-    class Kernel:
+    class Library:
         def __getattr__(self, name):
-            return lambda *args: calls.append((name, *args)) or {"CreateJobObjectW": 7, "OpenProcess": 9}.get(name, 1)
+            return lambda *args: calls.append((name, *args)) or answers.get(name, 1)
 
-    monkeypatch.setattr(cli_process, "_kernel32", Kernel)
-    monkeypatch.setattr(cli_process.subprocess, "run", lambda *a, **k: pytest.fail("taskkill was used despite the job"))
+    monkeypatch.setattr(cli_process, "_kernel32", Library)
+    monkeypatch.setattr(cli_process, "_ntdll", Library)
+    return calls
+
+
+def test_windows_cli_starts_suspended_and_joins_a_kill_on_close_job_before_it_runs(monkeypatch):
+    calls = windows(monkeypatch)
+    flags = cli_process.spawn_options()["creationflags"]
+    assert flags & cli_process.CREATE_SUSPENDED and flags & cli_process.CREATE_NEW_PROCESS_GROUP
     proc = FakeProc()
     cli_process.track(proc)
-    assert ("AssignProcessToJobObject", 7, 9) in calls
+    names = [c[0] for c in calls]
+    assert names.index("AssignProcessToJobObject") < names.index("NtResumeProcess")
+    assert ("AssignProcessToJobObject", 7, 9) in calls and ("NtResumeProcess", 9) in calls
+    limits = next(c for c in calls if c[0] == "SetInformationJobObject")
+    assert limits[1:3] == (7, cli_process.JOB_OBJECT_EXTENDED_LIMIT_INFORMATION)
+    assert limits[3]._obj.BasicLimitInformation.LimitFlags & cli_process.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    assert proc.returncode is None  # resumed, not killed
     proc.returncode = 0  # the launcher is gone; what it started is still in the job
     asyncio.run(cli_process.stop_group_async(proc))
     assert calls[-1] == ("TerminateJobObject", 7, 1)
+
+
+def test_windows_cli_runs_untracked_when_the_job_fails_and_is_killed_when_it_cannot_resume(monkeypatch):
+    calls = windows(monkeypatch, AssignProcessToJobObject=0)
+    proc = FakeProc()
+    cli_process.track(proc)
+    assert ("NtResumeProcess", 9) in calls and ("CloseHandle", 7) in calls and proc not in cli_process._JOBS
+    assert proc.returncode is None
+    windows(monkeypatch, OpenProcess=None)
+    stuck = FakeProc()
+    cli_process.track(stuck)
+    assert stuck.returncode == -9  # left suspended it would hold its caller until the timeout
 
 
 def test_output_is_decoded_with_replacement_and_bounded(tmp_path):

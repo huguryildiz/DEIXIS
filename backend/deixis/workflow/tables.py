@@ -54,6 +54,12 @@ AUTO_RUNS_SQL = ("SELECT ar.status FROM runs ar, json_each(ar.target_json, '$.so
 WAITING_SQL = ("EXISTS (SELECT 1 FROM cell_revisions q WHERE q.cell_id = {cell}.id AND q.kind = 'model_proposal'"
                " AND q.rowid > {revision}.rowid AND NOT EXISTS (SELECT 1 FROM cell_revisions d WHERE d.based_on_revision_id = q.id"
                " AND d.kind IN ('accept_proposal', 'dismiss_proposal')))")
+# A cell an automatic re-read is due for (D52): its value may be replaced, newer PDF text exists, no proposal waits, and
+# no automatic re-read planned it since that text. The sweep's candidate query and the refresh plan share it, so cells an
+# earlier run covered (failed, paused, or left unanswered) are skipped and a table with more due sources than one run
+# reads moves on to the next ones.
+DUE_SQL = ("(" + REFRESHABLE_SQL + " AND " + NEWER_TEXT_SQL + " AND NOT " + WAITING_SQL
+           + " AND NOT EXISTS (" + AUTO_RUNS_SQL + "))")
 SOURCE_ACTIVE_SQL = ("EXISTS (SELECT 1 FROM corpus_memberships m JOIN evidence_tables et ON et.research_id = m.research_id"
                      " WHERE et.id = t.table_id AND m.source_version_id = t.source_version_id AND m.removed_at IS NULL)")
 
@@ -714,7 +720,8 @@ class TableStore:
         or citing passages no longer given to a model (a removed or replaced PDF, an earlier extraction).
 
         With refresh (D52) only the cells an automatic re-read may replace: a value a model or the system made from the
-        abstract or metadata, made before PDF text of its source was stored, with no proposal waiting.
+        abstract or metadata, made before PDF text of its source was stored, with no proposal waiting and not planned by
+        an earlier automatic re-read since that text (DUE_SQL).
 
         Rows are taken in table order up to MAX_FILL_SOURCES sources. A source without stored text needs no model call.
         """
@@ -728,15 +735,14 @@ class TableStore:
                 # A proposal asked for after the current value and not yet decided: asking again would only repeat it.
                 f" {WAITING_SQL.format(cell='c', revision='r')} AS waiting,"
                 f" {NEWER_TEXT_SQL.format(cell='c', revision='r')} AS newer_text,"
-                f" COALESCE({REFRESHABLE_SQL.format(revision='r')}, 0) AS refreshable"
+                f" COALESCE({DUE_SQL.format(cell='c', revision='r')}, 0) AS due"
                 " FROM evidence_cells c LEFT JOIN cell_revisions r"
                 " ON r.id = c.current_revision_id WHERE c.table_id = ? AND c.source_version_id = ?", (table_id, svid)
             )}
             # Stale: made under an earlier column revision, citing a file or extraction no longer in use (D45), or made
             # before PDF text of its source was stored.
             if refresh:
-                targets = [c["id"] for c in columns if c["id"] in cells and cells[c["id"]]["refreshable"]
-                           and cells[c["id"]]["newer_text"] and not cells[c["id"]]["waiting"]]
+                targets = [c["id"] for c in columns if c["id"] in cells and cells[c["id"]]["due"]]
             else:
                 targets = [c["id"] for c in columns if c["id"] not in cells or cells[c["id"]]["column_revision"] is None
                            or (include_stale and not cells[c["id"]]["waiting"]

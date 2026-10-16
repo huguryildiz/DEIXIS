@@ -15,7 +15,7 @@ from fakes import valid_response
 from helpers import make_pdf
 from test_api_flow import app_for, create, session, wait_run
 from test_asset_replacement import PAGES, extraction, replace
-from test_table_extraction import add_pdf, cell, execute, fill, library
+from test_table_extraction import add_pdf, cell, execute, fill, library, table_version
 
 CHUNK = lambda text: [(0, len(text), text)]  # noqa: E731
 
@@ -194,6 +194,30 @@ def test_the_sweep_queues_one_run_waits_for_other_runs_and_does_not_retry_a_fail
     assert "newer_text_auto" in cell(lib, lib.preprint)["flags"]
     (second,) = table_refresh.advance(lib.store)
     assert second["id"] != first["id"] and runs(lib) == count + 2
+
+
+def test_a_table_with_more_due_sources_than_one_run_reads_moves_on_after_a_failed_run(tmp_path, monkeypatch):
+    lib = library(tmp_path)
+    extra = [lib.store.create_upload_source(f"D SYNTHETIC scanned report {n:02d}") for n in range(26)]
+    for svid in extra:
+        lib.store.add_to_corpus(lib.rid, svid, "user_upload", selection_state="included", selection_origin="user")
+    lib.tables.add_rows(lib.rid, lib.tid, extra, table_version(lib))
+    while lib.tables.fill_plan(lib.rid, lib.tid)["sources"]:  # 29 rows: two fills of at most 25 sources
+        assert execute(lib, fill(lib))["status"] == "completed"
+    time.sleep(0.005)
+    due = [lib.no_text, *extra]
+    for n, svid in enumerate(due):  # 27 placeholders get their PDF text
+        add_pdf(lib.store, svid, [f"SYNTHETIC scanned report {n}: packets of {n} bytes."], f"{n + 16:064x}")
+
+    (first,) = table_refresh.advance(lib.store)
+    planned = [s["source_version_id"] for s in first["target"]["sources"]]
+    assert len(planned) == 25
+    lib.store.update_run(first["id"], status="failed")
+    (second,) = table_refresh.advance(lib.store)  # the next sources, not the 25 the failed run covered
+    assert sorted(s["source_version_id"] for s in second["target"]["sources"]) == sorted(set(due) - set(planned))
+    lib.store.update_run(second["id"], status="failed")
+    count, made = runs(lib), plans(monkeypatch)
+    assert table_refresh.advance(lib.store) == [] and made == [] and runs(lib) == count  # nothing new: no plan at all
 
 
 def test_a_person_who_edits_the_cell_before_the_re_read_is_saved_gets_a_proposal(tmp_path):

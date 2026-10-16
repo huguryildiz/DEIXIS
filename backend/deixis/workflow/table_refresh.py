@@ -16,7 +16,7 @@ import logging
 from typing import Any
 
 from deixis.storage.db import dumps, transaction
-from deixis.workflow.tables import AUTO_RUNS_SQL, NEWER_TEXT_SQL, REFRESHABLE_SQL, WAITING_SQL, TableStore
+from deixis.workflow.tables import DUE_SQL, TableStore
 
 log = logging.getLogger("deixis.table_refresh")
 BUSY = ("queued", "running", "pause_requested", "paused")
@@ -42,15 +42,14 @@ def _key(store: Any, scope_revision: int, plan: dict[str, Any]) -> str:
 
 def advance(store: Any, rid: str | None = None) -> list[dict[str, Any]]:
     """Queue the automatic re-reads that are due; returns the runs it queued."""
-    # A first pass in one query, run about once a second by an idle worker: tables holding a cell that qualifies, has
-    # no proposal waiting and was not already planned by an automatic re-read since its newest PDF text. An idle
-    # library finds none. The plan then applies the remaining rules (active rows and columns, sources in the research).
+    # A first pass in one query, run about once a second by an idle worker: tables holding a due cell (DUE_SQL, the
+    # same rule the refresh plan applies). An idle library finds none. The plan then applies the remaining rules
+    # (active rows and columns, sources in the research, at most MAX_FILL_SOURCES sources per run).
     candidates = store.conn.execute(
         "SELECT DISTINCT et.research_id, et.id FROM evidence_tables et JOIN researches rs ON rs.id = et.research_id"
         " JOIN evidence_cells c ON c.table_id = et.id JOIN cell_revisions r ON r.id = c.current_revision_id"
-        f" WHERE et.trashed_at IS NULL AND rs.trashed_at IS NULL AND {REFRESHABLE_SQL.format(revision='r')}"
-        f" AND {NEWER_TEXT_SQL.format(cell='c', revision='r')} AND NOT {WAITING_SQL.format(cell='c', revision='r')}"
-        f" AND NOT EXISTS ({AUTO_RUNS_SQL.format(cell='c')})" + (" AND et.research_id = ?" if rid else "")
+        f" WHERE et.trashed_at IS NULL AND rs.trashed_at IS NULL AND {DUE_SQL.format(cell='c', revision='r')}"
+        + (" AND et.research_id = ?" if rid else "")
         + " ORDER BY et.created_at", (rid,) if rid else ()).fetchall()
     tables, queued = TableStore(store), []
     for research_id, table_id in candidates:

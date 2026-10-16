@@ -7,7 +7,8 @@ review agents, and any automated maintenance performed in this checkout.
 
 Before changing code:
 
-1. Read this file completely.
+1. Read this file completely, then `CLAUDE.md` for commands, the code map,
+   and test layout.
 2. Inspect the relevant implementation, tests, and current Git status.
 3. Read `.impeccable.md` before any interface or UX change.
 4. Read `docs/decisions.md` for durable product decisions that affect the task.

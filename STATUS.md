@@ -45,6 +45,7 @@ Most of this was tested with fake models and synthetic data only; "Not measured"
 - A table cell gets a "Check the number" flag when its number appears in none of its quotes (D54).
 - Report sections follow new writing rules (no synonym paraphrase, link sources, no simulation called an experiment), with two non-blocking warnings that check them (D51, D55).
 - Report versions go up only when the person asks; the app's own updates show as V1.1 (D57).
+- The model instructions were checked against the code with GPT Astra High: wrong or missing references were fixed (index terms, future-work citations, answer title length, follow-up second pass), and every instruction file is still in use.
 - Report sections see every table cell, drop the lowest-priority column instead of rows when over budget, and are reviewed in 30k-token chunks (D58).
 - A table opened from included sources adds a row when a source is included later (D63).
 - A report section gets a second repair before the report pauses (D65).

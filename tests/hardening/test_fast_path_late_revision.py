@@ -575,3 +575,32 @@ def test_the_same_failing_row_is_logged_once_and_a_different_failure_again(tmp_p
     for _ in range(2):
         late_revision.advance(lib.flow)
     assert logged() == 2
+
+
+def test_two_unused_revisions_in_a_row_leave_the_late_revision_open(tmp_path):
+    # Revisions 1 -> 2 -> 3, nothing run under 2 or 3: withdrawing 3 and then 2 brings revision 1 back, so its late
+    # revision waits with no event, and goes on once the research is back on it.
+    lib = prepared(tmp_path)
+    for question in ("SYNTHETIC second question", "SYNTHETIC third question"):
+        lib.store.revise_scope(lib.rid, lib.store.research(lib.rid)["version"], question, None)
+    assert lib.store.scope(lib.rid)["revision"] == 3 and lib.store.scope(lib.rid)["parent_revision"] == 2
+    late_revision.advance(lib.flow)
+    assert row(lib)["status"] == "waiting_fetch" and row(lib)["skip_reason"] is None
+    for revision in (3, 2):
+        assert lib.store.withdrawal(lib.rid)["allowed"], lib.store.withdrawal(lib.rid)
+        lib.store.withdraw_revision(lib.rid, lib.store.research(lib.rid)["version"], revision)
+        late_revision.advance(lib.flow)
+        assert row(lib)["status"] == ("waiting_fetch" if revision == 3 else "reading")
+    assert lib.store.research(lib.rid)["current_scope_revision"] == 1
+
+
+def test_a_used_revision_between_ends_the_late_revision(tmp_path):
+    # 1 -> 2 (a search run under it) -> 3 (unused): withdrawing 3 would leave the research on 2, which stays, so
+    # revision 1's late revision is skipped as before.
+    lib = prepared(tmp_path)
+    lib.store.revise_scope(lib.rid, lib.store.research(lib.rid)["version"], "SYNTHETIC second question", None)
+    run = lib.store.create_run(lib.rid, "discovery", {}, None)
+    lib.store.update_run(run["id"], status="completed")
+    lib.store.revise_scope(lib.rid, lib.store.research(lib.rid)["version"], "SYNTHETIC third question", None)
+    late_revision.advance(lib.flow)
+    assert row(lib)["status"] == "skipped" and row(lib)["skip_reason"] == "scope_revised"

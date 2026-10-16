@@ -64,17 +64,25 @@ def guard_reason(store: Any, row: dict[str, Any]) -> str | None:
 
 
 def held(store: Any, row: dict[str, Any]) -> bool:
-    """Whether a newer question revision opened from this row's one may still be withdrawn (D67). Then the row waits
+    """Whether withdrawing the newer question revisions one after another (D67) may still bring the research back to
+    this row's revision: each one from the current one down was opened from the next and is unused. Then the row waits
     with no event: withdrawn, the research is back on the row's revision and the row goes on; once work is done under
-    the new revision it is skipped for `scope_revised`. While a run of the research is active or paused that is not
-    known yet, so the row waits too. Only the sweep asks this; a late run that is running stops at its checkpoint."""
+    any of them it is skipped for `scope_revised`. While a run of the research is active or paused that is not known
+    yet, so the row waits too. Only the sweep asks this; a late run that is running stops at its checkpoint."""
     current = store.conn.execute(
-        "SELECT s.parent_revision FROM researches r JOIN scope_revisions s ON s.research_id = r.id"
+        "SELECT s.revision FROM researches r JOIN scope_revisions s ON s.research_id = r.id"
         " AND s.revision = r.current_scope_revision WHERE r.id = ?", (row["research_id"],)).fetchone()
-    if not current or current[0] != row["scope_revision"]:
+    if not current:
         return False
-    check = store.withdrawal(row["research_id"])
-    return check["allowed"] or check["reason"] == "run_active"
+    revision, after = current[0], ()
+    while revision > row["scope_revision"]:  # a revision is always opened from a lower one
+        check = store.withdrawal(row["research_id"], revision, after)
+        if check["reason"] == "run_active":
+            return True
+        if not check["allowed"]:
+            return False
+        revision, after = check["parent_revision"], (*after, revision)
+    return revision == row["scope_revision"]
 
 
 def finish(store: Any, row: dict[str, Any], status: str, reason: str) -> None:

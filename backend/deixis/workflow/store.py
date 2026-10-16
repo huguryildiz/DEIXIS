@@ -700,16 +700,18 @@ class Store:
                 c[1] for c in self.conn.execute(f"PRAGMA table_info({t})")}]
         return self._revision_table_names
 
-    def withdrawal(self, research_id: str) -> dict[str, Any]:
+    def withdrawal(self, research_id: str, revision: int | None = None, after: tuple[int, ...] = ()) -> dict[str, Any]:
         """Whether the current question revision can be withdrawn (D67), and if not, why: the first reason found.
+        `revision` asks it of an earlier one as if the revisions `after` it, opened one from another, were withdrawn
+        first (`late_revision.held`).
 
         A revision can be withdrawn while it is the current one, was opened from another, no run of the research is
         active or paused, and nothing was made under it but a completed research-title run (with its step inputs), the
         English sentence copied with it, and a person's selection decisions. Anything else (a search, an answer, a
         follow-up, a model's decision, a table or link edit, a requested file, a watch) means work was done under the
         question, and it stays."""
-        research = self.research(research_id)
-        revision = research["current_scope_revision"]
+        if revision is None:
+            revision = self.research(research_id)["current_scope_revision"]
         row = self.conn.execute("SELECT parent_revision, title_before FROM scope_revisions WHERE research_id = ? AND revision = ?",
                                 (research_id, revision)).fetchone()
         base = {"revision": revision, "parent_revision": row["parent_revision"], "restores_title": row["title_before"] is not None}
@@ -744,11 +746,12 @@ class Store:
         # A person's edits that name no revision (a table, a column, a cell, a note, a file) show in the research's
         # events: after the revision was opened, only the title run's events and a person's selection, decision, title
         # and English-sentence events leave it unused.
-        # A later revision that was itself withdrawn was unused too (D67): its title run and its withdrawal are not work.
+        # A later revision that was itself withdrawn (or is taken as withdrawn, `after`) was unused too (D67): its title
+        # run and its withdrawal are not work.
         unused_runs = set(title_runs) | {r[0] for r in self.conn.execute(
             "SELECT r.id FROM runs r JOIN scope_revisions s ON s.research_id = r.research_id AND s.revision = r.scope_revision"
-            " WHERE r.research_id = ? AND r.kind = 'research_title' AND r.status = 'completed' AND s.withdrawn_at IS NOT NULL",
-            (research_id,))}
+            " WHERE r.research_id = ? AND r.kind = 'research_title' AND r.status = 'completed'"
+            f" AND (s.withdrawn_at IS NOT NULL OR s.revision IN ({','.join('?' * len(after))}))", (research_id, *after))}
         for kind, run_id in self.conn.execute("SELECT type, run_id FROM events WHERE research_id = ? AND rowid > ?"
                                               " ORDER BY rowid", (research_id, self._opened_at(research_id, revision))):
             if run_id not in unused_runs and kind not in WITHDRAWABLE_EVENTS:

@@ -12,7 +12,6 @@ import asyncio
 import os
 import re
 import shutil
-import subprocess
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -22,6 +21,7 @@ from typing import Any, Protocol
 from deixis.models.codex_isolation import isolation_overrides
 from deixis.models.codex_rpc import CodexAppServer, RpcError
 from deixis.domain.limits import limit_kind, service_error_kind, safe_error
+from deixis.tool_probe import probe
 
 # Variables the Codex app-server needs to run and reach the network. Provider keys and other
 # settings loaded from .env are deliberately not passed on.
@@ -132,7 +132,12 @@ class CodexAdapter:
         if not status["installed"]:
             status["reason"] = "codex CLI not found"
             return status
-        status["cli_version"] = subprocess.run(["codex", "--version"], capture_output=True, text=True).stdout.strip()
+        version = await probe(["codex", "--version"])
+        if version.error == "not_responding":
+            status["reason_code"] = "timeout"
+            status["reason"] = "Codex CLI is not responding"
+            return status
+        status["cli_version"] = version.stdout.strip() or None
         try:
             async with self._lock:
                 server = await self._ensure_server_locked()

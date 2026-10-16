@@ -22,6 +22,7 @@ import httpx
 
 from deixis.documents import math_reader, ocr
 from deixis.storage.db import now
+from deixis.tool_probe import probe_blocking
 
 TOOLS = ("tesseract", "marker", "pymupdf")
 TESSERACT_URL = "https://formulae.brew.sh/api/formula/tesseract.json"
@@ -55,12 +56,9 @@ def marker_installed_version(paths: math_reader.RuntimePaths) -> str | None:
     """The marker-pdf version in DEIXIS's Marker environment, or None when it is not installed or cannot be asked."""
     if not paths.installed():
         return None
-    try:
-        done = subprocess.run([str(paths.python), "-c", "from importlib.metadata import version; print(version('marker-pdf'))"],
-                              capture_output=True, text=True, timeout=TIMEOUT_SECONDS)
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    return done.stdout.strip() or None if done.returncode == 0 else None
+    done = probe_blocking([str(paths.python), "-c", "from importlib.metadata import version; print(version('marker-pdf'))"],
+                          TIMEOUT_SECONDS)
+    return done.stdout.strip() or None if done.ok else None
 
 
 async def _latest(http: httpx.AsyncClient, tool: str) -> str:

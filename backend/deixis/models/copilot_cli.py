@@ -26,6 +26,7 @@ from typing import Any
 from deixis.models.adapter import CODEX_ENV_ALLOWLIST, ModelStepResult
 from deixis.models.cli_process import reap, spawn_options, stop_group
 from deixis.domain.limits import safe_error, service_error_kind
+from deixis.tool_probe import probe
 
 # A tool name Copilot does not have: with it as the only available tool, the model is offered none.
 NO_TOOL = "deixis_no_tool"
@@ -141,14 +142,10 @@ class CopilotCliAdapter:
             return status
         env = self._prepare()
         try:
-            done = await asyncio.create_subprocess_exec(*cmd, "--version", stdout=asyncio.subprocess.PIPE,
-                                                        stderr=asyncio.subprocess.DEVNULL, env=env,
-                                                        **spawn_options())
-            try:
-                out, _ = await asyncio.wait_for(done.communicate(), 15)
-            finally:
-                stop_group(done)
-            version = re.search(r"\d+(?:\.\d+)+", out.decode(errors="replace"))
+            done = await probe([*cmd, "--version"], env=env)
+            if done.error == "not_responding":
+                raise TimeoutError("GitHub Copilot CLI is not responding")
+            version = re.search(r"\d+(?:\.\d+)+", done.stdout)
             status["cli_version"] = version.group(0) if version else None
             session = await self._acp_catalogue(cmd, env)
         except (OSError, RuntimeError, TimeoutError) as exc:

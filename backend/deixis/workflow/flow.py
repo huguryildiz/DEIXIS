@@ -2483,7 +2483,7 @@ class ResearchFlow:
 
         base.extraction_version = recovery.text_base(self.store.asset(asset_id)["extraction_version"])
         try:
-            read = ocr.merge(base, pages, langs)
+            read = await asyncio.to_thread(ocr.merge, base, pages, langs)  # it asks Tesseract for its version
         except ValueError as exc:  # the extractor changed since the pages were found
             self.store.finish_step(step["id"], "failed", error_code="ocr_pages_changed", error={"error": str(exc)})
             self._fail(run_id, "ocr_pages_changed", {"error": str(exc)})

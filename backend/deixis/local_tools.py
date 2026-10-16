@@ -27,6 +27,7 @@ from typing import Any
 import httpx
 
 from deixis.storage.db import now
+from deixis.tool_probe import probe_blocking
 
 CACHE_SECONDS = 30
 CATALOG_SECONDS = 24 * 60 * 60
@@ -133,13 +134,11 @@ class ToolError(Exception):
         self.status = status
 
 
-def _command_output(argv: list[str]) -> str | None:
-    try:
-        done = subprocess.run(argv, capture_output=True, text=True, timeout=15)
-    except (subprocess.TimeoutExpired, OSError):
-        return None
+def _command_output(argv: list[str], timeout: float | None = None) -> str | None:
+    """The line of a tool's output that names its version; None when it fails or does not answer (A3b, E16)."""
+    done = probe_blocking(argv, timeout)
     lines = [line.strip() for line in (done.stdout or done.stderr).strip().splitlines()]
-    if done.returncode != 0 or not lines:
+    if not done.ok or not lines:
         return None
     # `ollama --version` warns first when its server is not running and names the version on a later line.
     line = next((line for line in lines if re.search(r"\d+\.\d+", line)), lines[0])
@@ -334,7 +333,7 @@ class LocalTools:
 
             async def run(tool_id: str, job: dict[str, Any]) -> None:
                 await self._run(tool_id, job, [brew, "upgrade", "ollama"])
-                services = await asyncio.to_thread(_command_output, [brew, "services", "list"]) or ""
+                services = await asyncio.to_thread(_command_output, [brew, "services", "list"], 15) or ""
                 if job["status"] == "succeeded" and any(line.split()[:2] == ["ollama", "started"] for line in services.splitlines()):
                     job["status"] = "running"
                     await self._run(tool_id, job, [brew, "services", "restart", "ollama"])

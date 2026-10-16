@@ -12,7 +12,6 @@ import asyncio
 import json
 import re
 import shutil
-import subprocess
 import time
 from pathlib import Path
 from typing import Any
@@ -29,6 +28,7 @@ from claude_agent_sdk import (
 
 from deixis.models.adapter import ModelStepResult
 from deixis.domain.limits import limit_kind, service_error_kind, safe_error
+from deixis.tool_probe import probe
 
 
 def _model_matches(actual: str | None, expected: str) -> bool:
@@ -82,14 +82,18 @@ class ClaudeCodeAdapter:
         if not cli:
             status["reason"] = "Claude Code CLI not found"
             return status
+        version = await probe([cli, "--version"])
+        if version.error == "not_responding":
+            status["reason_code"] = "timeout"
+            status["reason"] = "Claude Code CLI is not responding"
+            return status
+        status["cli_version"] = version.stdout.strip() or None
         try:
-            done = await asyncio.to_thread(subprocess.run, [cli, "--version"], capture_output=True, text=True, timeout=15)
-            status["cli_version"] = done.stdout.strip() or None
             async with self._lock:
                 async with ClaudeSDKClient(self._options(cli, system_prompt="DEIXIS model catalogue probe.")) as client:
                     info = await client.get_server_info() or {}
                     mcp = await client.get_mcp_status()
-        except (ClaudeSDKError, OSError, subprocess.TimeoutExpired, TimeoutError) as exc:
+        except (ClaudeSDKError, OSError, TimeoutError) as exc:
             status["reason"] = f"Claude Code SDK error: {safe_error(str(exc))[:200]}"
             status["reason_code"] = service_error_kind(exc=exc)
             return status

@@ -1,9 +1,9 @@
 import asyncio
-from types import SimpleNamespace
 
 import pytest
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
 
+from deixis import tool_probe
 from deixis.models import claude
 
 
@@ -66,7 +66,10 @@ def prepare(monkeypatch):
     FakeClient.options = []
     monkeypatch.setattr(claude, "ClaudeSDKClient", FakeClient)
     monkeypatch.setattr(claude.shutil, "which", lambda name: "/SYNTHETIC/bin/claude")
-    monkeypatch.setattr(claude.subprocess, "run", lambda *a, **k: SimpleNamespace(stdout="2.1.270 (Claude Code)"))
+    async def version(argv, timeout=None, env=None):
+        return tool_probe.Probe(0, "2.1.270 (Claude Code)")
+
+    monkeypatch.setattr(claude, "probe", version)
 
 
 def test_health_reads_account_scoped_models_and_efforts_from_sdk(monkeypatch, tmp_path):

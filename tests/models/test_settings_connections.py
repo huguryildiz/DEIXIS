@@ -508,6 +508,23 @@ def test_version_is_the_output_line_that_names_one(tmp_path):
     assert local_tools._command_output([str(tool), "--version"]) == "client version is 0.34.0"
 
 
+def test_one_broken_cli_does_not_hide_the_others_in_the_inventory(client, paths, tmp_path, monkeypatch):
+    """E16/A3b: undecodable version bytes and a CLI that never answers each affect only their own card."""
+    from deixis import tool_probe
+    monkeypatch.setattr(tool_probe, "PROBE_TIMEOUT", 1.0)
+    for name, body in {"qwen": b"#!/bin/sh\nprintf 'qwen S\\374r\\374m 1.4.0 \\376\\375\\n'\n",
+                       "aider": b"#!/bin/sh\nsleep 600\n", "amp": b"#!/bin/sh\necho 0.9.1\n"}.items():
+        (tmp_path / name).write_bytes(body)
+        (tmp_path / name).chmod(0o755)
+        paths[name] = str(tmp_path / name)
+    started = time.monotonic()
+    tools = {t["id"]: t for t in client.get("/api/local-tools?refresh=true").json()["tools"]}
+    assert time.monotonic() - started < 4  # the probes run side by side, each bounded
+    assert tools["qwen_code"]["installed"] and tools["qwen_code"]["version"] == "qwen S�r�m 1.4.0 ��"
+    assert (tools["aider"]["installed"], tools["aider"]["version"]) == (True, None)
+    assert tools["amp"]["version"] == "0.9.1"
+
+
 def test_the_ollama_card_downloads_only_the_fixed_embedding_model_and_reports_progress(tmp_path, paths):
     sent = []
 
@@ -686,7 +703,7 @@ def test_ollama_from_homebrew_updates_with_brew_upgrade_and_restarts_its_service
         job.update(status="succeeded", finished_at="SYNTHETIC")
 
     monkeypatch.setattr(local_tools.LocalTools, "_run", run)
-    monkeypatch.setattr(local_tools, "_command_output", lambda argv: "Name   Status  User\nollama started SYNTHETIC")
+    monkeypatch.setattr(local_tools, "_command_output", lambda argv, timeout=None: "Name   Status  User\nollama started SYNTHETIC")
     paths.update(ollama="/opt/homebrew/bin/ollama", brew="/opt/homebrew/bin/brew")
     assert client.post("/api/local-tools/ollama/update").status_code == 202
     for _ in range(50):

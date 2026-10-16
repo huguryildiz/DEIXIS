@@ -22,6 +22,7 @@ from pathlib import Path
 import pymupdf
 
 from deixis.documents import pdf
+from deixis.tool_probe import probe_blocking
 
 LANGUAGES = ("eng", "tur")
 DPI = 300
@@ -44,11 +45,10 @@ def tesseract_status(langs=LANGUAGES) -> dict:
     missing = {"available": False, "version": None, "languages": [], "missing_languages": list(langs)}
     if shutil.which("tesseract") is None:
         return missing | {"reason": "Tesseract is not installed. Install it in Settings → On this computer → OCR."}
-    try:
-        version = subprocess.run(["tesseract", "--version"], capture_output=True, text=True, timeout=10)
-        listed = subprocess.run(["tesseract", "--list-langs"], capture_output=True, text=True, timeout=10)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return missing | {"reason": f"Tesseract could not be run: {exc}"}
+    version, listed = probe_blocking(["tesseract", "--version"]), probe_blocking(["tesseract", "--list-langs"])
+    if failed := next((p for p in (version, listed) if p.error), None):
+        problem = "it did not answer in time" if failed.error == "not_responding" else failed.stderr
+        return missing | {"reason": f"Tesseract could not be run: {problem}"}
     match = re.search(r"tesseract v?(\d+(?:\.\d+)*)", version.stdout + version.stderr)
     installed = set(listed.stdout.split()[1:] if listed.returncode == 0 else [])  # the first line is a header
     languages = [lang for lang in langs if lang in installed]

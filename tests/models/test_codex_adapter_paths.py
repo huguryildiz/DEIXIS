@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from deixis import tool_probe
 from deixis.config import Settings
 from deixis.domain import skill
 from deixis.models import adapter
@@ -69,7 +70,10 @@ def codex(monkeypatch, tmp_path):
 
     monkeypatch.setattr(adapter, "CodexAppServer", FakeServer)
     monkeypatch.setattr(adapter.shutil, "which", lambda name: "/SYNTHETIC/bin/codex")
-    monkeypatch.setattr(adapter.subprocess, "run", lambda *a, **k: SimpleNamespace(stdout="SYNTHETIC codex version"))
+    async def version(argv, timeout=None, env=None):
+        return tool_probe.Probe(0, "SYNTHETIC codex version")
+
+    monkeypatch.setattr(adapter, "probe", version)
     return adapter.CodexAdapter(tmp_path / "home", tmp_path / "workspace"), FakeServer
 
 

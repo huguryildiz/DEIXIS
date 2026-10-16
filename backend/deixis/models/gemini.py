@@ -7,10 +7,8 @@ instruction files and no CLI agent prompt. The Gemini CLI with a Google account 
 
 from __future__ import annotations
 
-import asyncio
 import os
 import shutil
-import subprocess
 import time
 from typing import Any
 
@@ -18,6 +16,7 @@ import httpx
 
 from deixis.models.adapter import ModelStepResult
 from deixis.domain.limits import http_limit, service_error_kind, retry_at
+from deixis.tool_probe import probe
 
 API_URL = "https://generativelanguage.googleapis.com/v1beta"
 KEY_ENV = "GEMINI_API_KEY"
@@ -71,11 +70,7 @@ class GeminiAdapter:
         status: dict[str, Any] = {"connection": "gemini", "ready": False, "installed": bool(cli), "key_configured": bool(key),
                                   "isolation": {"instruction_sources": 0, "live_mcp_servers": []}}
         if cli:
-            try:
-                done = await asyncio.to_thread(subprocess.run, [cli, "--version"], capture_output=True, text=True, timeout=15)
-                status["cli_version"] = done.stdout.strip() or None
-            except (subprocess.TimeoutExpired, OSError):
-                status["cli_version"] = None
+            status["cli_version"] = (await probe([cli, "--version"])).stdout.strip() or None
         if not key:
             status["reason_code"] = "needs_key"
             status["reason"] = "Add a Gemini API key in Settings to use the Gemini API"

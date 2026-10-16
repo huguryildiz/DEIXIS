@@ -76,6 +76,7 @@ Most of this was tested with fake models and synthetic data only; "Not measured"
 ### Code audit (16 Oct)
 
 - GPT Astra (high) audited the code read-only and found five defects; all five are fixed, each with a test that fails without the fix, and Sol reviewed them in two rounds. A table run's completion and the next run of its chain are now one write, so a crash between them cannot stop the chain. Every answer, not only the fast path's, checks the question revision just before it is published. A Gemini answer with a tool part (a function call) is refused as an isolation violation. A PDF link whose host resolves to any non-public address (for example 100.64.0.0/10) is refused. Overlapping reloads of a research page never show an older view, and a failed newer reload falls back to the older one it held. Full pytest 15,763 passed; the browser test for the reloads passed, the full Playwright suite was not run.
+- A second read-only audit by Claude (four areas Astra did not cover) found 15 defects; the ten high and medium ones are fixed, each with a test that fails without the fix, and Sol reviewed them in four rounds. A PDF link's size limit now counts decoded bytes and refuses stacked encodings; a malformed URL or redirect is refused instead of failing the run. Figure and equation reads of stored PDFs run in the bounded child process, at most two at once, with figure pictures capped at 4 million pixels. One failing late full-text row or sweep no longer stops the worker queue, and a repeated failure is logged once. Follow-ups leave out works the late full-text read excluded. Unused question revisions, even several in a row, leave the earlier revision's late full-text update open so Undo still works. A failed D68 retry keeps the first call's cell value as not verified, and only a proposal newer than a cell's value waits (an older one is refused with 409). The match upload, PDF replacement and reference import check their size before reading the body.
 
 ## Latest live check (16 Oct)
 
@@ -87,9 +88,9 @@ One run per mode with gpt-5.6-luna on the DBR/VBF question, on a library copy.
 
 ## Open work
 
-### Claude code audit (16 Oct, not fixed yet)
+### Claude code audit (16–17 Oct, low findings left)
 
-- A second read-only audit by Claude (four areas Astra did not cover) found 15 defects, none fixed yet; the table with file, line and failure scenario is in `.local/audit-2026-10-16/claude-audit.md`. The most serious: a PDF link sent gzip twice over can take gigabytes of the server's memory before the size limit applies; figure rendering runs on untrusted PDFs inside the server with no size limit; one unexpected error in the late full-text step stops the worker, so no queued run starts until a restart; a failed D68 retry can drop the first call's cell value; follow-ups still read works the late full-text read excluded.
+- Five low findings of the Claude audit are not fixed: the stale-cell recheck estimate stops at 25 sources, the study-table chain can run out of rounds after a failed source without saying so, section VI gap candidates need a reading depth that is never stored, follow-up context can take an answer of an earlier question revision, and follow-up table values include removed sources.
 
 ### Left over from the clean start
 

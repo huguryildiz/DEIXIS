@@ -10,8 +10,10 @@ patching the mount table and the free space.
 from __future__ import annotations
 
 import errno
+import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -880,67 +882,113 @@ def cross_disk_and_windows(monkeypatch):
     monkeypatch.setattr(data_location.os, "rename", cross_disk)
 
 
-def test_on_windows_the_originals_stay_until_a_later_start_has_opened_the_new_library(default, tmp_path, monkeypatch):
+def windows_move(default, tmp_path, monkeypatch):
     library(default)
+    (default / "papers" / "sub").mkdir()
+    (default / "papers" / "sub" / "b.pdf").write_bytes(b"%PDF SYNTHETIC 2")
     new = tmp_path / "new"
     data_location.write_pointer(new, default)
     cross_disk_and_windows(monkeypatch)
     assert data_location.apply_pending_move(new) is None
+    return new
+
+
+def test_on_windows_the_old_copy_is_never_deleted_by_a_start_and_is_recorded_with_digests(default, tmp_path, monkeypatch):
+    new = windows_move(default, tmp_path, monkeypatch)
     assert (new / "library.sqlite").read_text() == "old" and (default / "library.sqlite").read_text() == "old"  # both
-    pointer = json.loads((default / "location.json").read_text())
-    assert pointer["phase"] == "placed_pending_cleanup" and pointer["path"] == str(new) and "opened" not in pointer
-    assert config.default_data_dir() == new
-    assert data_location.apply_pending_move(new) is None and (default / "papers" / "a.pdf").exists()  # a start in between moves nothing
-    assert data_location.finish_cleanup(new) is None  # the first start that opened the new library: it is marked, nothing deleted
-    assert json.loads((default / "location.json").read_text())["opened"] is True and (default / "library.sqlite").exists()
-    assert data_location.finish_cleanup(new) is None  # the next one deletes the originals
-    assert sorted(p.name for p in default.iterdir()) == ["library.lock", "location.json", "worker.lock"]
-    assert json.loads((default / "location.json").read_text()) == {"path": str(new)}
-    assert (new / "library.sqlite").read_text() == "old" and (new / "papers" / "a.pdf").exists()
-
-
-def test_a_copy_that_differs_in_size_keeps_the_original_and_says_so(default, tmp_path, monkeypatch):
-    library(default)
-    new = tmp_path / "new"
-    data_location.write_pointer(new, default)
-    cross_disk_and_windows(monkeypatch)
-    assert data_location.apply_pending_move(new) is None
-    data_location.finish_cleanup(new)
-    (new / "library.sqlite").write_text("truncated?")
-    message = data_location.finish_cleanup(new)
-    assert "library.sqlite" in message and str(default) in message
-    assert (default / "library.sqlite").read_text() == "old" and "placed_pending_cleanup" in (default / "location.json").read_text()
-
-
-def test_the_old_copies_wait_while_another_deixis_uses_the_old_folder(default, tmp_path, monkeypatch, holder):
-    library(default)
-    new = tmp_path / "new"
-    data_location.write_pointer(new, default)
-    cross_disk_and_windows(monkeypatch)
-    data_location.apply_pending_move(new)
-    data_location.finish_cleanup(new)
-    other = holder(default)
-    assert data_location.finish_cleanup(new) is None and (default / "library.sqlite").exists()
-    stop(other)
-    assert data_location.finish_cleanup(new) is None and not (default / "library.sqlite").exists()
-
-
-def test_serve_runs_the_cleanup_only_after_the_library_opened(default, tmp_path, monkeypatch):
-    new = tmp_path / "new"
-    new.mkdir()
-    data_location.write_pointer(new, default, ["papers"], phase="placed_pending_cleanup")
-    order = []
-
-    class Stop(Exception):
-        pass
-
+    assert json.loads((default / "location.json").read_text()) == {"path": str(new)}  # the move itself is finished
+    (record,) = data_location.read_leftovers()
+    assert record["path"] == str(default) and record["target"] == str(new) and record["size_bytes"] > 0
+    assert set(record["digests"]) == {"library.sqlite", "library.sqlite-wal", "papers/a.pdf", "papers/sub/b.pdf"}
+    assert record["digests"]["papers/a.pdf"] == hashlib.sha256(b"%PDF SYNTHETIC").hexdigest()
     monkeypatch.setattr(cli, "port_available", lambda host, port: True)
-    monkeypatch.setattr(cli.db, "open_problem", lambda path: order.append("open") or None)
-    monkeypatch.setattr(cli.data_location, "finish_cleanup", lambda path: order.append(("cleanup", path)))
-    monkeypatch.setattr(cli, "create_app", lambda *a, **k: (_ for _ in ()).throw(Stop()))
-    with pytest.raises(Stop):
-        cli.serve(Settings(data_dir=new), False, ())
-    assert order == ["open", ("cleanup", new)]
+    monkeypatch.setattr(cli, "create_app", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("stop after the library opened")))
+    monkeypatch.setattr(cli.db, "open_problem", lambda path: None)
+    monkeypatch.setattr(cli, "schema_problem", lambda path: None)
+    for _ in range(3):  # several restarts, each one opening the new library
+        assert data_location.apply_pending_move(new) is None
+        with pytest.raises(RuntimeError):
+            cli.serve(Settings(data_dir=new), False, ())
+        library_lock.release_all()
+    assert (default / "library.sqlite").read_text() == "old" and (default / "papers" / "sub" / "b.pdf").exists()
+    assert data_location.read_leftovers() == [record]
+
+
+def test_the_old_copy_is_deleted_on_request_when_every_digest_matches(default, tmp_path, monkeypatch):
+    new = windows_move(default, tmp_path, monkeypatch)
+    assert data_location.leftovers() == [{"path": str(default), "size_bytes": data_location.read_leftovers()[0]["size_bytes"]}]
+    assert data_location.delete_leftover(str(default), new) is None
+    assert sorted(p.name for p in default.iterdir()) == ["library.lock", "location.json", "worker.lock"]
+    assert data_location.read_leftovers() == []
+    assert (new / "library.sqlite").read_text() == "old" and (new / "papers" / "sub" / "b.pdf").exists()
+
+
+def test_a_same_size_file_with_other_content_keeps_the_old_copy(default, tmp_path, monkeypatch):
+    new = windows_move(default, tmp_path, monkeypatch)
+    (default / "library.sqlite").write_text("new")  # three bytes like "old": the old folder was reused and changed
+    reason = data_location.delete_leftover(str(default), new)
+    assert reason and "library.sqlite" in reason and "not the same" in reason
+    assert (default / "papers" / "a.pdf").exists() and (default / "library.sqlite").read_text() == "new"  # nothing deleted at all
+    assert len(data_location.read_leftovers()) == 1
+    (default / "library.sqlite").write_text("old")
+    (default / "papers" / "extra.pdf").write_bytes(b"added later")
+    assert "added" in data_location.delete_leftover(str(default), new) and (default / "papers" / "a.pdf").exists()
+
+
+def test_a_busy_old_folder_keeps_the_old_copy(default, tmp_path, monkeypatch, holder):
+    new = windows_move(default, tmp_path, monkeypatch)
+    other = holder(default)
+    assert "using that folder" in data_location.delete_leftover(str(default), new)
+    assert (default / "library.sqlite").exists()
+    stop(other)
+    assert data_location.delete_leftover(str(default), new) is None and not (default / "library.sqlite").exists()
+
+
+def test_only_a_listed_folder_that_is_not_the_current_one_can_be_deleted(default, tmp_path, monkeypatch):
+    new = windows_move(default, tmp_path, monkeypatch)
+    assert "not in the list" in data_location.delete_leftover(str(tmp_path), new)
+    assert "uses now" in data_location.delete_leftover(str(default), default)  # the live folder is never offered
+    assert (default / "library.sqlite").exists()
+
+
+def test_a_later_location_change_keeps_the_leftover_and_adds_its_own(default, tmp_path, monkeypatch):
+    first = windows_move(default, tmp_path, monkeypatch)
+    third = tmp_path / "third"
+    data_location.write_pointer(third, first)  # the person changes the location again from Settings
+    assert [r["path"] for r in data_location.read_leftovers()] == [str(default)]
+    assert data_location.apply_pending_move(third) is None
+    assert [r["path"] for r in data_location.read_leftovers()] == [str(default), str(first)]
+    assert (third / "library.sqlite").read_text() == "old"
+    data_location.write_pointer(default, None)  # back to the default folder: the pointer goes, the records stay
+    assert len(data_location.read_leftovers()) == 2
+
+
+def test_a_leftover_whose_folder_is_gone_is_cleared_silently(default, tmp_path, monkeypatch):
+    windows_move(default, tmp_path, monkeypatch)
+    shutil.rmtree(default / "papers")
+    for name in ("library.sqlite", "library.sqlite-wal"):
+        (default / name).unlink()
+    assert data_location.leftovers() == [] and data_location.read_leftovers() == []  # nothing left to offer, nothing said
+
+
+def test_the_view_lists_leftovers_and_the_delete_route_keeps_or_deletes_them(default, tmp_path, monkeypatch):
+    windows_move(default, tmp_path, monkeypatch)
+    live = tmp_path / "live"  # the folder this app runs in; the old copy is in `default`
+    app = create_app(Settings(data_dir=live, port=8765, model_concurrency=1), adapters={"fake": FakeAdapter()},
+                     start_worker=False, extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as client:
+        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
+        shown = client.get("/api/settings/data-location").json()["leftovers"]
+        assert [l["path"] for l in shown] == [str(default)] and shown[0]["size_bytes"] > 0
+        (default / "library.sqlite").write_text("new")
+        kept = client.post("/api/settings/data-location/delete-old-copy", json={"path": str(default)})
+        assert kept.status_code == 409 and "The old copy was kept" in kept.json()["detail"] and (default / "papers").exists()
+        other = client.post("/api/settings/data-location/delete-old-copy", json={"path": str(tmp_path)})
+        assert other.status_code == 409 and "not in the list" in other.json()["detail"]
+        (default / "library.sqlite").write_text("old")
+        done = client.post("/api/settings/data-location/delete-old-copy", json={"path": str(default)})
+        assert done.status_code == 200 and done.json()["leftovers"] == [] and not (default / "papers").exists()
+    library_lock.release_all()
 
 
 def test_a_stop_after_a_copy_took_its_name_flushes_the_target_before_the_original_goes(default, tmp_path, monkeypatch):
@@ -987,7 +1035,7 @@ def test_a_new_target_folder_and_its_new_parents_are_flushed_into_their_parents(
 def test_the_first_start_with_no_pointer_and_no_folder_still_works(default, tmp_path, monkeypatch):
     fresh = tmp_path / "fresh" / "DEIXIS"
     monkeypatch.setenv("DEIXIS_DATA_DIR", str(fresh))
-    assert data_location.apply_pending_move(fresh) is None and data_location.finish_cleanup(fresh) is None
+    assert data_location.apply_pending_move(fresh) is None
     seen = []
     monkeypatch.setattr(cli, "port_available", lambda host, port: True)
     monkeypatch.setattr(cli, "schema_problem", lambda path: seen.append(path) or "stop here")

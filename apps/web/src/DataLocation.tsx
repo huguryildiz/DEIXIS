@@ -20,6 +20,7 @@ export function DataLocationCard({ dark }: { dark: boolean }) {
   const [view, setView] = useState<DataLocation | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [oldCopy, setOldCopy] = useState<string | null>(null)  // the old folder whose deletion is being confirmed
   const [typed, setTyped] = useState<string | null>(null)  // the path field, when this system has no folder chooser
   const [confirm, setConfirm] = useState<{ path: string; hasLibrary: boolean; sync: string | null; unchecked: boolean } | null>(null)
   useEffect(() => {
@@ -76,6 +77,12 @@ export function DataLocationCard({ dark }: { dark: boolean }) {
       .catch((e: Error) => setError(e.message)).finally(() => setBusy(false))
   }
 
+  const deleteOldCopy = (path: string) => {
+    setBusy(true); setError('')
+    dataLocationApi.deleteOldCopy(path).then(v => { setView(v); toast('success', t('The old copy was deleted.')) })
+      .catch((e: Error) => setError(e.message)).finally(() => { setBusy(false); setOldCopy(null) })
+  }
+
   const parts = view?.breakdown.filter(p => p.bytes > 0) ?? []
   return <div className="data-location" data-group="data-location" data-panel="general">
     <div className="dl-head">
@@ -96,6 +103,8 @@ export function DataLocationCard({ dark }: { dark: boolean }) {
         : t('Restart DEIXIS to use {path}.', { path: view.pending_path })}{' '}
         <button type="button" className="link" disabled={busy} onClick={() => save(view.path)}>{t('Keep current location')}</button></Notice>}
       {blocked && <p className="dl-reason">{blocked}</p>}
+      {view.leftovers.map(l => <Notice key={l.path} tone="attention">{t('The previous library folder is still on disk: {path}, {size}.', { path: l.path, size: size(l.size_bytes) })}{' '}
+        <button type="button" className="link" disabled={busy} onClick={() => setOldCopy(l.path)}>{t('Delete old copy')}</button></Notice>)}
     </>}
     {view && <div className="dl-actions">
       <div>
@@ -122,6 +131,10 @@ export function DataLocationCard({ dark }: { dark: boolean }) {
       <button type="button" className="link" disabled={busy} onClick={() => setTyped(null)}>{t('Cancel')}</button>
     </form>}
     {error && <Notice tone="error">{error}</Notice>}
+    <ConfirmDialog open={oldCopy !== null} dark={dark} title={t('Delete the old copy of the library?')}
+      description={t('DEIXIS checks that every file in the old folder is still the same as the copy it moved, then deletes them. If anything differs, or another DEIXIS is using the folder, nothing is deleted.')}
+      context={oldCopy ?? undefined} confirmLabel={t('Delete old copy')} cancelLabel={t('Cancel')} busy={busy}
+      onConfirm={() => oldCopy && deleteOldCopy(oldCopy)} onOpenChange={open => { if (!open) setOldCopy(null) }} />
     <ConfirmDialog open={confirm !== null} dark={dark} neutral title={t('Change where DEIXIS keeps its library?')}
       description={confirm?.hasLibrary ? t('That folder already has a DEIXIS library. DEIXIS will open it next time and leave the current one where it is.')
         : t('DEIXIS will move your library to {path} the next time it starts.', { path: confirm?.path ?? '' })}

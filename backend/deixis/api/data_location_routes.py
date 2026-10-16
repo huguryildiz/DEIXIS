@@ -25,6 +25,10 @@ ACTIVE_RUN_STATUSES = ("queued", "running", "pause_requested")
 CHOOSE_PROMPT = "Choose where DEIXIS keeps its library"
 
 
+class LeftoverDelete(BaseModel):
+    path: str = Field(min_length=1, max_length=4096)  # one of the folders the list offered, never an arbitrary path
+
+
 class LocationChange(BaseModel):
     path: str = Field(min_length=1, max_length=4096)
     check: bool = False  # validate and say whether the folder already holds a library; write nothing
@@ -56,6 +60,8 @@ def register_data_location_routes(app, settings: Settings) -> None:
                 # The move this start postponed because another process held a folder (E1): {path, busy}, else None.
                 "move_postponed": postponed if (postponed := getattr(request.app.state, "move_postponed", None))
                 and pending and postponed["path"] == str(pending) else None,
+                # Windows: old folders whose copies a move left on disk (never deleted by DEIXIS on its own): [{path, size_bytes}].
+                "leftovers": [r for r in await asyncio.to_thread(data_location.leftovers) if Path(r["path"]) != current],
                 **sizes, "running_runs": running_runs(request), "last_backup": request.app.state.store.setting(LAST_BACKUP_SETTING),
                 "cache_bytes": await asyncio.to_thread(data_location.cache_size, current)}
 
@@ -94,6 +100,13 @@ def register_data_location_routes(app, settings: Settings) -> None:
                     # True when this computer could not tell whether the folder is on a network drive (the library does not work on one)
                     "network_unchecked": await asyncio.to_thread(data_location.network_unchecked, target)}
         data_location.write_pointer(target, current)
+        return await view(request)
+
+    @app.post("/api/settings/data-location/delete-old-copy")
+    async def delete_old_copy(body: LeftoverDelete, request: Request) -> dict[str, Any]:
+        """Deletes an old copy a move left behind, only when nothing uses its folder and every file is still the one that was copied."""
+        if reason := await asyncio.to_thread(data_location.delete_leftover, body.path, current):
+            raise HTTPException(409, f"The old copy was kept. {reason}")
         return await view(request)
 
     @app.post("/api/settings/data/backup")

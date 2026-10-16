@@ -1887,6 +1887,7 @@ export type DataLocation = {
   size_bytes: number; breakdown: DataLocationPart[]; free_bytes: number | null; running_runs: number
   last_backup: { path: string; at: string } | null; cache_bytes: number
   move_postponed: { path: string; busy: string } | null  // this start left the move for later: another process used `busy`
+  leftovers: { path: string; size_bytes: number }[]  // old folders a move left on disk (Windows); deleted only on request
 }
 export const dataLocationApi = {
   get: () => request<DataLocation>('/api/settings/data-location'),
@@ -1896,6 +1897,7 @@ export const dataLocationApi = {
   backup: () => request<DataLocation>('/api/settings/data/backup', { method: 'POST' }),
   revealBackup: () => request<{ path: string }>('/api/settings/data/backup/reveal', { method: 'POST' }),
   clearCache: () => request<DataLocation>('/api/settings/data/clear-cache', { method: 'POST' }),
+  deleteOldCopy: (path: string) => request<DataLocation>('/api/settings/data-location/delete-old-copy', json('POST', { path })),
 }
 
 // Settings → General → Research (api/preference_routes.py): stored values come before the ones DEIXIS started with.

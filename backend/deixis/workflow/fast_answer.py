@@ -7,7 +7,7 @@ from collections import Counter
 from typing import Any
 
 from deixis.domain.rules import TEST_EFFORT_BUDGETS
-from deixis.workflow import fast_path, small_batch, criterion_passages
+from deixis.workflow import english_question, fast_path, formula_passages, small_batch, criterion_passages
 from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.flow import MAX_PASSAGES_PER_SOURCE, fuse_rankings
 
@@ -35,6 +35,17 @@ def user_choices(store: Any, rid: str) -> tuple[dict[str, Any], dict[str, Any]]:
             " ORDER BY d.created_at, d.rowid", (rid,)):
         humans[row["work_id"]] = human_choice(dict(row))
     return selections, humans
+
+
+def formula_request(store: Any, scope: dict[str, Any], patterns: list[tuple[str, Any]] | None) -> dict[str, Any]:
+    """Whether full-text sources bring their most formula-dense passage forward, and why (D56)."""
+    if english_question.is_english(scope["question"], scope.get("language_hint")):
+        question = scope["question"]
+    else:
+        question = (store.english_question(scope["research_id"], scope["revision"]) or {}).get("text")
+    on = formula_passages.asks_for_formulas([question or "", *(phrase for phrase, _ in patterns or [])])
+    reason = "asked" if on else "no_english_question" if question is None else "not_asked"
+    return {"on": on, "reason": reason, **formula_passages.THRESHOLDS}
 
 
 def current_pools(store: Any, rid: str) -> dict[str, list[dict[str, Any]]]:
@@ -296,6 +307,7 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
     rows.sort(key=lambda row: not row["user_priority"])
     patterns = flow._criterion_phrases(run, scope)
     fts = " OR ".join(f'"{term}"' for term in flow._topic_terms(rid, scope))
+    formulas = formula_request(store, scope, patterns)
     queues = []
     for row in rows:
         ids = row["fulltext_ids"] if row["route"] == "fulltext" else row["abstract_ids"]
@@ -304,7 +316,10 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
             topic = [p for p in store.search_passages([row["source_version_id"]], fts, len(ids)) if p["id"] in ids]
             criterion = criterion_passages.criterion_order(pages, patterns or [])
             ranked = fuse_rankings(topic, criterion) if criterion else topic
-            pages = list({p["id"]: p for p in [*ranked, *pages]}.values())[:MAX_PASSAGES_PER_SOURCE]
+            pages = list({p["id"]: p for p in [*ranked, *pages]}.values())
+            if formulas["on"]:
+                pages = formula_passages.bring_forward(pages)
+            pages = pages[:MAX_PASSAGES_PER_SOURCE]
         queues.append(pages)
     breadth = len(rows)
     limit = max(run["budget"]["max_answer_passages"], breadth + sum(r["route"] == "fulltext" for r in rows))
@@ -316,7 +331,7 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
         "user_signature": small_batch.user_signature(store, rid), "items": rows,
         "excluded": excluded, "excluded_reasons": dict(Counter(r["reason"] for r in excluded)),
         "passage_ids": [p["id"] for p in passages], "limit": limit, "breadth": breadth,
-        "semantic_retrieval": "skipped: fast_path_lexical"})
+        "semantic_retrieval": "skipped: fast_path_lexical", "formula_passages": formulas})
 
 
 def check_input(flow: Any, run_id: str, plan: dict[str, Any]) -> None:

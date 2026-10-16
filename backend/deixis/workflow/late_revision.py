@@ -7,7 +7,7 @@ import json
 from typing import Any
 
 from deixis.storage.db import dumps, new_id, transaction
-from deixis.workflow import adjudication, criterion_passages, fast_answer, fast_path, small_batch
+from deixis.workflow import adjudication, criterion_passages, fast_answer, fast_path, formula_passages, small_batch
 from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.flow import fuse_rankings
 
@@ -243,6 +243,9 @@ def revision_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict
     if not upgrades:
         flow._fail(run["id"], "no_fulltext_inclusion")
     patterns = flow._criterion_phrases(run, scope)
+    # A revision follows its base answer's rule; a base input from before D56 has none, so it is decided here.
+    formula_rule = base.get("formula_passages") or fast_answer.formula_request(store, scope, patterns)
+    formulas = formula_rule["on"]
     fts = " OR ".join(f'"{term}"' for term in flow._topic_terms(run["research_id"], scope))
     pools = fast_answer.current_pools(store, run["research_id"])
     items = []
@@ -260,7 +263,10 @@ def revision_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict
             topic = [p for p in store.search_passages([svid], fts, len(ids)) if p["id"] in ids]
             criterion = criterion_passages.criterion_order(pages, patterns or [])
             ranked = fuse_rankings(topic, criterion) if criterion else topic
-            chosen = list(dict.fromkeys(p["id"] for p in [*ranked, *pages]))[:2 if wid in base_work_ids else 1]
+            ordered = list({p["id"]: p for p in [*ranked, *pages]}.values())
+            if formulas:
+                ordered = formula_passages.bring_forward(ordered)
+            chosen = [p["id"] for p in ordered][:2 if wid in base_work_ids else 1]
             if not chosen:
                 flow._pause(run["id"], "source_changed")
             item |= {"route": "fulltext", "decision_id": upgrade["late_decision_id"], "asset_id": upgrade["late_asset_id"],
@@ -292,7 +298,8 @@ def revision_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict
         "base_input_step_id": row["base_input_step_id"], "read_run_id": row["read_run_id"], "scope_revision": run["scope_revision"],
         "base_selection_revision": base["selection_revision"], "selection_revision": store.selection_revision(run["research_id"]),
         "user_signature": base["user_signature"], "items": items, "upgraded": list(upgrades), "late_excluded": sorted(excluded),
-        "passage_ids": passages, "limit": len(base["passage_ids"]) + len(upgrades), "breadth": len(items)})
+        "passage_ids": passages, "limit": len(base["passage_ids"]) + len(upgrades), "breadth": len(items),
+        "formula_passages": formula_rule})
 
 
 def published(store: Any, run: dict[str, Any], aid: str, status: str) -> None:

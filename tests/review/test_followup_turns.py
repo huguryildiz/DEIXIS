@@ -1119,3 +1119,9 @@ def test_a_report_change_whose_answer_is_not_valid_opens_no_version(tmp_path):
         assert done["answer_status"] in (None, "unverified_draft") and done["report_version"] is None
         assert [a["report_version"] for a in client.get(f"/api/researches/{rid}").json()["answers"]
                 if a["status"] == "structurally_valid"] == [1]
+
+
+def test_question_keeps_quote_lines():
+    # "Add to chat" quotes come as Markdown quote blocks ahead of the question; their line breaks must survive the cleanup.
+    assert followup._clean("  > quoted  line\n> second\n\n\n\nWhy   is that?  ") == "> quoted line\n> second\n\nWhy is that?"
+    assert followup._clean("plain   question") == "plain question"

@@ -63,7 +63,10 @@ class FollowupRefused(Exception):
 
 
 def _clean(question: str) -> str:
-    return " ".join(question.split())
+    # Spaces inside a line are collapsed, but line breaks stay (at most one blank line in a row): text quoted with "Add to
+    # chat" comes as Markdown quote blocks ahead of the question and must reach the model and the turn as separate lines.
+    lines = [" ".join(line.split()) for line in question.strip().splitlines()]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
 def request_turn(store: Any, research_id: str, question: str, expected_scope_revision: int,

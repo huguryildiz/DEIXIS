@@ -292,5 +292,6 @@ def test_skill_package_hash_unchanged_by_l1():
     # D198 changes the envelope instructions while preserving the L1 column contract; D225 adds the abstract-number rule, D228 the comparison criterion rule, D232 the term-advice file, D233 its information-only wording.
     # L1 leaves runtime instructions alone; D243 changes the shared answer and review rules. The clean start (slice 6,
     # new D1) removes the term-advice and term-suggestion files and rewords search-query.md and evidence-table.md;
-    # UI parity S5a adds the comparison frame rule to evidence-table.md; S22a adds followup.md and its SKILL.md routing line.
-    assert load_skill_package().package_hash == "sha256:876bc91668e026b5f4a0bd205c444d62c0204a6ccf68201d99d93cf48d3acccf"
+    # UI parity S5a adds the comparison frame rule to evidence-table.md; S22a adds followup.md and its SKILL.md routing line;
+    # D51 adds four report writing rules to report.md.
+    assert load_skill_package().package_hash == "sha256:f1288e88c819b20a4a6fdeee8f45be4f9940abb7f55fbe58b7acdc2d30a1e78e"

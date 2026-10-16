@@ -59,6 +59,18 @@ given to you as rows and cited cells, and you discuss it — you do not restate 
 - Write `claims[].text` and `insufficient_evidence[].reason` as plain academic prose in the answer's language,
   following Phrasing in [source-grounded-answer.md](source-grounded-answer.md): no fixed reporting formula at the
   start of every sentence, and no sentence opening repeated across claims.
+- Write each claim's `text` as a new sentence that serves this paragraph's point; do not keep the source's sentence
+  structure and swap in synonyms. This applies to claim text only: every citation anchor's `quote` is still copied
+  exactly from the passage text or from one of the cell's stored evidence quotes, never from the cell's value and
+  never reworded.
+- Give each paragraph one purpose and connect its claims to it. When several sources bear on a point, say how they
+  relate (same result, different condition, different method, a narrower or wider scope) instead of describing one
+  source per claim in a row. Relate only the records this section may cite (its allowlist); a source seen only in
+  `validation_context` is not one of them.
+- Keep the source's own kind of evidence in the wording: a simulation is not an experiment or a field trial, and a
+  conditional calculation or an assumed parameter is not a measured value.
+- A method adapted to a different setting does not carry its original guarantees or objectives with it; state what
+  the source showed for its own setting only.
 
 For a cell-anchor patch, return only the requested patch: choose a numbered stored quote of that same cell
 or drop the anchor with `quote_number: null`. Rewrite a claim only as far as the chosen quotes support it.

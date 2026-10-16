@@ -1392,6 +1392,11 @@ def create_app(
     async def shell_key(request: Request, exc: credentials.KeySourceConflict) -> JSONResponse:
         return JSONResponse(status_code=409, content={"code": "shell_key", "detail": str(exc)})
 
+    @app.exception_handler(local_tools.ToolError)
+    async def tool_error(request: Request, exc: local_tools.ToolError) -> JSONResponse:
+        # `code` is a reason the page words in its own language (B3); a plain refusal has only its sentence.
+        return JSONResponse(status_code=exc.status, content={"detail": str(exc), **({"code": exc.code} if exc.code else {})})
+
     @app.exception_handler(credentials.KeychainNotResponding)
     async def keychain_not_responding(request: Request, exc: credentials.KeychainNotResponding) -> JSONResponse:
         return JSONResponse(status_code=503, content={"code": "keychain_not_responding", "detail":
@@ -1423,7 +1428,7 @@ def create_app(
 
     def managed_key(env: str) -> credentials.ManagedKey:
         if env not in credentials.MANAGED_KEYS:
-            raise HTTPException(404, f"{env} is not a key DEIXIS manages")
+            raise HTTPException(404, "This is not a key DEIXIS manages")
         if credentials.MANAGED_KEYS[env].pair:
             raise UsePairRoute()
         return credentials.MANAGED_KEYS[env]
@@ -1539,9 +1544,9 @@ def create_app(
     async def test_credential(env: str, request: Request) -> dict[str, Any]:
         key, value = managed_key(env), os.environ.get(env)
         if not key.testable:
-            raise HTTPException(422, f"{env} is not tested in advance; access is recorded with each request")
+            return JSONResponse(status_code=422, content={"code": "not_testable", "detail": "This key is not tested in advance; access is recorded with each request."})
         if not value:
-            raise HTTPException(422, f"{env} is not set")
+            return JSONResponse(status_code=422, content={"code": "key_not_set", "detail": "No key is saved for this connection."})
         result = await credentials.test(request.app.state.http, env, value)
         key_verification.set_state(value, result["verification"])
         return result
@@ -1552,70 +1557,41 @@ def create_app(
 
     @app.post("/api/local-tools/{tool_id}/install", status_code=202)
     async def install_local_tool(tool_id: str, request: Request) -> dict[str, Any]:
-        try:
-            return {"job": await request.app.state.local_tools.install(tool_id)}
-        except local_tools.ToolError as exc:
-            if exc.code:
-                return JSONResponse(status_code=exc.status, content={"code": exc.code, "detail": str(exc)})
-            raise HTTPException(exc.status, str(exc)) from exc
+        return {"job": await request.app.state.local_tools.install(tool_id)}
 
     @app.post("/api/local-tools/ollama/pull-embedding-model", status_code=202)
     async def pull_ollama_embedding_model(request: Request) -> dict[str, Any]:
-        try:
-            return {"job": await request.app.state.local_tools.pull_embedding_model()}
-        except local_tools.ToolError as exc:
-            raise HTTPException(exc.status, str(exc)) from exc
+        return {"job": await request.app.state.local_tools.pull_embedding_model()}
 
     @app.post("/api/local-tools/ollama/pull", status_code=202)
     async def pull_ollama_model(body: OllamaModelBody, request: Request) -> dict[str, Any]:
-        try:
-            return {"job": await request.app.state.local_tools.pull_model(body.model)}
-        except local_tools.ToolError as exc:
-            raise HTTPException(exc.status, str(exc)) from exc
+        return {"job": await request.app.state.local_tools.pull_model(body.model)}
 
     @app.post("/api/local-tools/ollama/pull/cancel")
     async def cancel_ollama_pull(request: Request) -> dict[str, Any]:
-        try:
-            return {"job": request.app.state.local_tools.cancel_pull()}
-        except local_tools.ToolError as exc:
-            raise HTTPException(exc.status, str(exc)) from exc
+        return {"job": request.app.state.local_tools.cancel_pull()}
 
     @app.post("/api/local-tools/ollama/delete")
     async def delete_ollama_model(body: OllamaModelBody, request: Request) -> dict[str, Any]:
-        try:
-            await request.app.state.local_tools.delete_model(body.model)
-        except local_tools.ToolError as exc:
-            raise HTTPException(exc.status, str(exc)) from exc
+        await request.app.state.local_tools.delete_model(body.model)
         return {"deleted": body.model}
 
     @app.post("/api/local-tools/{tool_id}/update", status_code=202)
     async def update_local_tool(tool_id: str, request: Request) -> dict[str, Any]:
-        try:
-            return {"job": await request.app.state.local_tools.update(tool_id)}
-        except local_tools.ToolError as exc:
-            raise HTTPException(exc.status, str(exc)) from exc
+        return {"job": await request.app.state.local_tools.update(tool_id)}
 
     @app.get("/api/local-tools/ollama/updates")
     async def ollama_updates(request: Request) -> dict[str, Any]:
         """A newer Ollama release and changed models: one GitHub request and one ollama.com request per installed model."""
-        try:
-            return await request.app.state.local_tools.ollama_updates(request.app.state.http)
-        except local_tools.ToolError as exc:
-            raise HTTPException(exc.status, str(exc)) from exc
+        return await request.app.state.local_tools.ollama_updates(request.app.state.http)
 
     @app.post("/api/local-tools/lm_studio/pull", status_code=202)
     async def pull_lm_studio_model(body: OllamaModelBody, request: Request) -> dict[str, Any]:
-        try:
-            return {"job": await request.app.state.local_tools.lm_studio_pull(body.model)}
-        except local_tools.ToolError as exc:
-            raise HTTPException(exc.status, str(exc)) from exc
+        return {"job": await request.app.state.local_tools.lm_studio_pull(body.model)}
 
     @app.post("/api/local-tools/lm_studio/start-server")
     async def start_lm_studio_server(request: Request) -> dict[str, Any]:
-        try:
-            await request.app.state.local_tools.start_lm_studio_server()
-        except local_tools.ToolError as exc:
-            raise HTTPException(exc.status, str(exc)) from exc
+        await request.app.state.local_tools.start_lm_studio_server()
         return {"started": True}
 
     @app.get("/api/local-tools/lm_studio/updates")
@@ -1630,10 +1606,7 @@ def create_app(
 
     @app.post("/api/local-tools/{tool_id}/cancel")
     async def cancel_local_tool_install(tool_id: str, request: Request) -> dict[str, Any]:
-        try:
-            return {"job": request.app.state.local_tools.cancel(tool_id)}
-        except local_tools.ToolError as exc:
-            raise HTTPException(exc.status, str(exc)) from exc
+        return {"job": request.app.state.local_tools.cancel(tool_id)}
 
     @app.get("/api/equation-reader")
     async def equation_reader_status(request: Request) -> dict[str, Any]:
@@ -2639,7 +2612,7 @@ def create_app(
         except RuntimeError as exc:
             raise HTTPException(409, str(exc)) from exc
         except LookupError as exc:
-            raise HTTPException(422, str(exc)) from exc
+            return JSONResponse(status_code=422, content={"code": "manager_missing", "detail": str(exc)})
 
     @app.get("/api/pdf-reader")
     async def pdf_reader_status() -> dict[str, Any]:

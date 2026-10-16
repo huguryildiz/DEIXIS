@@ -217,11 +217,12 @@ def failure_code(exc: BaseException) -> str:
         return "file_write_failed"  # the key file in the data folder (or .env in a repository run)
     if _WINDOWS_BAD_BLOB in numbers or any(word in text for word in _TOO_LARGE_WORDS):
         return "keychain_too_large"
-    if any(isinstance(e, KeyringLocked) for e in chain) or any(word in text for word in _LOCKED_WORDS):
-        return "keychain_locked"
+    # A refusal is checked before a lock: macOS keyring raises KeyringLocked for the person's own "Deny" (-128, cancelled).
     if any(isinstance(e, PermissionError) or getattr(e, "errno", None) in (errno.EACCES, errno.EPERM) for e in chain) \
             or any(word in text for word in _DENIED_WORDS):
         return "keychain_denied"
+    if any(isinstance(e, KeyringLocked) for e in chain) or any(word in text for word in _LOCKED_WORDS):
+        return "keychain_locked"
     return "keychain_unavailable"
 
 
@@ -883,7 +884,7 @@ async def test(client: httpx.AsyncClient, env: str, value: str) -> dict[str, Any
             response = await client.post(f"{OPENAI_API_URL}/embeddings", json={"model": "text-embedding-3-small", "input": ["test"]},
                                          headers={"Authorization": f"Bearer {value}"}, timeout=20)
     except (httpx.HTTPError, UnicodeEncodeError) as exc:
-        return {"status": "failed", "verification": "pending", "detail": f"Could not reach the API: {type(exc).__name__}", "checked_at": now(),
+        return {"status": "failed", "verification": "pending", "detail": "Could not reach the API.", "checked_at": now(),
                 "kind": service_error_kind(exc=exc), "http_status": None, "reset_at": None}
     code = response.status_code
     metadata = http_limit(response)

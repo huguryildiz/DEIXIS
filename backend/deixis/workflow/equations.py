@@ -39,6 +39,7 @@ from typing import Any
 from deixis import credentials, library_lock
 from deixis.child_env import UV_TLS, child_env
 from deixis.documents import arxiv_source, equation_regions, math_reader, mathpix, pdf
+from deixis.job_failure import failure_line
 from deixis.storage.db import new_id, now, transaction
 from deixis.tool_paths import find_tool
 from deixis.workflow import file_restore, recovery, text_retry
@@ -1142,7 +1143,7 @@ class EquationService:
                 job.update(status="failed", finished_at=now(), output=job["output"] + "\nStopped.")
             raise
         except Exception as exc:  # noqa: BLE001 - any failure ends the job instead of leaving it running (E18)
-            job.update(status="failed", finished_at=now(), output=job["output"] + f"\n{type(exc).__name__}: {exc}")
+            job.update(status="failed", finished_at=now(), output=job["output"] + "\n" + failure_line(exc, "The equation reader install"))
         finally:
             if self._install_proc and self._install_proc.returncode is None:
                 try:

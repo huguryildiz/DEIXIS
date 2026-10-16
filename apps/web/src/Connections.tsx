@@ -8,7 +8,7 @@ import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinEmbed
 import { useToast } from './Toast'
 import { ocrLanguagesText } from './ocr'
 import { t, uiLocale } from './i18n'
-import { serviceErrorSentence, healthReasonText, installReasonText, credentialFailureText, keychainLabel, localToolIcon, localToolNames, providerRole, reasoningLabel } from './labels'
+import { serviceErrorSentence, healthReasonText, installReasonText, toolActionError, credentialFailureText, keychainLabel, localToolIcon, localToolNames, providerRole, reasoningLabel } from './labels'
 import { ConnectionIcon } from './connectionIcons'
 import { writeClipboard } from './clipboard'
 import { Notice } from './Notice'
@@ -189,7 +189,7 @@ function keyHome(keychain: Keychain) {
 // The keychain's refusals come as a cause code; the person reads it in their language, with the keychain named for their system.
 function keychainError(e: Error, keychain: Keychain): string {
   if (!(e instanceof ApiError)) return e.message
-  return credentialFailureText(e.code, keychainLabel(keychain.kind), e.message)
+  return e.code ? credentialFailureText(e.code, keychainLabel(keychain.kind)) : e.message
 }
 
 // With no system keychain a key lives in memory for this run; the person can choose an unencrypted file instead (A6).
@@ -230,7 +230,7 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
   // A key saved here replaces one from the shell; removing it brings the shell key back.
   const fromShell = entry.source === 'environment'
   // D29: with no system keychain a shell key keeps its note and cannot be replaced, though other keys can be kept for the session.
-  if (fromShell && !keychain.available) return <p className="foot-note">t('This key is set outside DEIXIS; change or remove it where it was set.')</p>
+  if (fromShell && !keychain.available) return <p className="foot-note">{t('This key is set outside DEIXIS; change or remove it where it was set.')}</p>
   const inDotenv = entry.source === 'dotenv'
   const home = keyHome(keychain)
   const where = inDotenv ? '' : fromShell ? t('set outside DEIXIS') : home.where
@@ -247,7 +247,7 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
     api.testCredential(env).then(result => {
       toast(result.status === 'ok' ? 'success' : 'warning', result.status === 'ok' ? t('The key works.') : notVerifiedSentence(result))
       onSaved()
-    }).catch((e: Error) => setFormError(e.message)).finally(() => setBusy(false))
+    }).catch((e: Error) => setFormError(keychainError(e, keychain))).finally(() => setBusy(false))
   }
   function save() {
     setBusy(true); setFormError('')
@@ -293,11 +293,13 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
 }
 
 // A refused install that names the missing program by code reads in the person's language; any other refusal keeps its own line.
-const installError = (e: Error, tool: LocalTool) => e instanceof ApiError && e.code ? installReasonText(e.code, tool.install.manager) || e.message : e.message
+const installError = (e: Error, tool: LocalTool) => e instanceof ApiError ? toolActionError(e, tool.install.manager) : e.message
 
 // Warnings are left out: brew prints them for unrelated taps, so they rarely explain a failed install.
 function errorLines(output: string): string[] {
-  return output.split('\n').map(line => line.trim()).filter(line => /\berror\b|fatal|npm err!|permission denied|could not|not found/i.test(line)).slice(0, 3)
+  // A failed install that could not run carries a marker line, never the exception; it reads in the person's language.
+  const marker = output.includes('[could_not_run]') ? [t('The install stopped before it finished. Check the free disk space and your network connection, then try again.')] : []
+  return [...marker, ...output.split('\n').map(line => line.trim()).filter(line => /\berror\b|fatal|npm err!|permission denied|could not|not found/i.test(line)).slice(0, 3)]
 }
 
 function LocalToolDetails({ tool, dark, onChanged, refresh = true, chip = true }: { tool: LocalTool; dark: boolean; onChanged: () => Promise<void>; refresh?: boolean; chip?: boolean }) {
@@ -684,7 +686,7 @@ function LocalModels({ tool, dark, memoryGb, onChanged, onDone }: { tool: LocalT
   function start(model: string) {
     setBusy(true)
     const pulled = lms ? api.pullLmStudioModel(model) : api.pullOllamaModel(model)
-    pulled.then(() => { setName(''); return onChanged() }).catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
+    pulled.then(() => { setName(''); return onChanged() }).catch((e: Error) => toast('error', e instanceof ApiError ? toolActionError(e) : e.message)).finally(() => setBusy(false))
   }
   const [cancelling, setCancelling] = useState(false)
   function cancelPull() {
@@ -694,7 +696,7 @@ function LocalModels({ tool, dark, memoryGb, onChanged, onDone }: { tool: LocalT
   function remove() {
     if (!removing) return
     setBusy(true)
-    api.deleteOllamaModel(removing).then(() => { setRemoving(null); return onChanged() }).catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
+    api.deleteOllamaModel(removing).then(() => { setRemoving(null); return onChanged() }).catch((e: Error) => toast('error', e instanceof ApiError ? toolActionError(e) : e.message)).finally(() => setBusy(false))
   }
   return <>
     {updating
@@ -855,7 +857,7 @@ function OcrToolDetails({ tool, onChanged }: { tool: OcrTool; onChanged: () => P
   const update = useToolUpdate('tesseract', tool.version)
   function install() {
     setBusy(true)
-    api.installOcr().then(() => onChanged()).catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
+    api.installOcr().then(() => onChanged()).catch((e: Error) => toast('error', e instanceof ApiError ? toolActionError(e, 'brew') : e.message)).finally(() => setBusy(false))
   }
   const phase = { preparing: 'Preparing…', downloading: 'Downloading…', installing: 'Installing…' }[job?.phase ?? 'preparing']
   const upToDate = ready && update && !update.update_available

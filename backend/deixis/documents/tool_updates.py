@@ -19,6 +19,7 @@ import httpx
 
 from deixis.child_env import UV_TLS, child_env
 from deixis.documents import math_reader, ocr
+from deixis.job_failure import failure_line
 from deixis.storage.db import now
 from deixis.tool_paths import find_tool
 from deixis.tool_probe import probe_blocking
@@ -140,7 +141,7 @@ class TesseractInstaller:
             proc = await asyncio.create_subprocess_exec(*argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                                         stderr=subprocess.STDOUT, env=env)
         except OSError as exc:
-            job.update(status="failed", finished_at=now(), output=f"{type(exc).__name__}: {exc}")
+            job.update(status="failed", finished_at=now(), output=failure_line(exc, "The Tesseract install"))
             return
         except asyncio.CancelledError:  # cancelled while the process was being started: the job does not stay "running"
             job.update(status="failed", finished_at=now(), output="Stopped.")
@@ -155,7 +156,7 @@ class TesseractInstaller:
                 job.update(status="failed", finished_at=now(), output=job["output"] + "\nStopped.")
             raise
         except Exception as exc:  # noqa: BLE001 - a failed read ends the job instead of leaving it running (E18)
-            job.update(status="failed", finished_at=now(), output=job["output"] + f"\n{type(exc).__name__}: {exc}")
+            job.update(status="failed", finished_at=now(), output=job["output"] + "\n" + failure_line(exc, "The Tesseract install"))
             return
         finally:
             if proc.returncode is None:

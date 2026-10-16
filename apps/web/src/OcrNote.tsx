@@ -1,6 +1,6 @@
 import { LoaderCircle, ScanText } from 'lucide-react'
 import { t } from './i18n'
-import { ocrLanguagesText, type OcrOffer } from './ocr'
+import { ocrLanguagesText, ocrReasonText, type OcrOffer } from './ocr'
 
 // One sentence under the source: what OCR would read, why it is off, or how far the run is.
 export function OcrNote({ offer }: { offer: OcrOffer }) {
@@ -14,7 +14,7 @@ export function OcrNote({ offer }: { offer: OcrOffer }) {
   const englishOnly = !offer.tool.languages.includes('tur')
   return <span className="proposal ocr-note"><ScanText size={13} aria-hidden /><span>
     {t(offer.pages === 1 ? '{n} page has no text. OCR reads it on this computer if it is a scanned image ({languages}); blank pages are skipped.' : '{n} pages have no text. OCR reads the scanned ones on this computer ({languages}); blank pages are skipped.', { n: offer.pages, languages: ocrLanguagesText(offer.tool.languages) })}
-    {englishOnly && ` ${t('Turkish characters may be wrong. {reason}', { reason: offer.tool.reason ?? '' })}`}
+    {englishOnly && ` ${t('Turkish characters may be wrong. {reason}', { reason: offer.tool.reason ? ocrReasonText(offer.tool) : '' })}`}
   </span></span>
 }
 

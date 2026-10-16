@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, BookOpen, ChevronRight, Clock, Ellipsis, FileText, FileUp, Funnel, Inbox, Lightbulb, ListMinus, MessageSquareQuote, PencilLine, Search, Sparkles, Table2, Trash2, Waypoints } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { api, ApiError, followupApi, libraryApi, subscribe, type ActivityEvent, type Answer, type AssetImpact, type ResearchView, type Run, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ZoteroSource } from './api'
+import { api, ApiError, followupApi, libraryApi, subscribe, type ActivityEvent, type Answer, type AssetImpact, type ResearchView, type Run, type OcrReason, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ZoteroSource } from './api'
+import { ocrReasonText } from './ocr'
 import { serviceErrorSentence, serviceKind, fileRestoreNote, fileRestoreText, fileRestoreTone, pauseReasonText, providerName, runKindLabels, runStatusLabels, scopeLabels, researchHeading, seedSkipText, seedUseText, shownVersion, tableTitle } from './labels'
 import { PassageSheet } from './PassageSheet'
 import { TextRecoveryContext } from './TextRecoveryContext'
@@ -475,7 +476,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     if (reextraction.outcome === 'rejected') toast('warning', t('The new extraction was not used: {reason}. The earlier text stays in use.', { reason: reextraction.rejection_reason ?? '' }))
     else toast('success', t(reextraction.outcome === 'unchanged' ? 'This text already comes from the current extractor.' : 'Text extracted again. Later answers and cells read the new text; earlier evidence still opens the text it cited.'))
   })
-  const readWithOcr = (source: Source, assetId: string) => act(() => api.readWithOcr(id, source.source_version_id, assetId))
+  // A refusal because Tesseract cannot be used comes as a code; it reads in the person's language.
+  const readWithOcr = (source: Source, assetId: string) => act(() => api.readWithOcr(id, source.source_version_id, assetId).catch(e => {
+    throw e instanceof ApiError && e.code?.startsWith('tesseract_') ? new Error(ocrReasonText({ reason: e.code as OcrReason, missing_languages: ocrTool?.missing_languages ?? [] })) : e
+  }))
   const rereadEquations = (source: Source, assetId: string) => act(async () => {
     await api.rereadEquations(id, source.source_version_id, assetId)
     toast('success', t('The equations of this PDF are being read again in the background.'))

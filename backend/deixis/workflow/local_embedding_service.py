@@ -32,6 +32,7 @@ from deixis import library_lock
 from deixis.child_env import UV_TLS, child_env
 from deixis.documents import local_embedding
 from deixis.documents.local_embedding import BuiltinPaths, Integrity, LocalEmbedder, LocalEmbeddingError
+from deixis.job_failure import COULD_NOT_RUN, failure_line
 from deixis.tool_paths import find_tool
 
 log = logging.getLogger(__name__)
@@ -386,10 +387,10 @@ class EmbeddingService:
         except TimeoutError:
             self._output("\nStopped after 60 minutes.")
         except (LocalEmbeddingError, local_embedding.DownloadError, RuntimeError, OSError, ValueError) as exc:
-            self._output(f"\n{type(exc).__name__}: {exc}")
+            self._output("\n" + failure_line(exc, "The built-in model install"))
         except Exception as exc:  # noqa: BLE001 - shown to the person as the failed step's output
             log.exception("built-in model install failed")
-            self._output(f"\n{type(exc).__name__}: {exc}")
+            self._output("\n" + COULD_NOT_RUN)
         finally:
             try:
                 try:

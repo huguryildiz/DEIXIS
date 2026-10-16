@@ -292,7 +292,8 @@ def test_a_read_that_fails_ends_the_job_failed_and_stops_the_process(tmp_path, m
     monkeypatch.setattr(asyncio, "create_subprocess_exec", start)
     job, coroutine = runner(tmp_path / "bin" / "installer", tmp_path)
     asyncio.run(coroutine)
-    assert job["status"] == "failed" and "the pipe broke" in job["output"] and job["finished_at"]
+    assert job["status"] == "failed" and job["output"].endswith("[could_not_run]") and job["finished_at"]
+    assert "the pipe broke" not in job["output"] and "BrokenPipe" not in job["output"]  # the exception goes to the log (B3)
     assert proc.killed
 
 

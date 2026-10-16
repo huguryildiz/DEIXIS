@@ -366,7 +366,7 @@ def test_a_launcher_that_cannot_start_is_409(served):
         raise FileNotFoundError("open")
     app.state.account_signin._launcher = broken
     response = client.post("/api/accounts/codex/sign-in")
-    assert response.status_code == 409 and "FileNotFoundError" in response.json()["detail"]
+    assert response.status_code == 409 and response.json()["detail"] == "A terminal window could not be opened"
     assert client.get("/api/accounts/codex/sign-in").json()["state"] == "idle"
 
 

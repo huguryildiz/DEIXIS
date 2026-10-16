@@ -877,3 +877,40 @@ def test_a_missing_installer_is_a_reason_code_not_a_sentence(client, paths, monk
     assert builtin["uv"]["available"] is False and builtin["uv"]["reason"] == "uv_missing"
     for body in (tools, reader, builtin):
         assert "was not found" not in str(body)
+
+
+def test_a_failed_install_job_carries_a_marker_not_the_exception_or_a_path(client, paths, monkeypatch, caplog):
+    """B3: the page words a job that could not run in its own language; the exception and the path stay in the log."""
+    import asyncio
+
+    async def cannot_start(*args, **kwargs):
+        raise OSError(13, "SYNTHETIC denied at /private/SYNTHETIC/uv")
+
+    paths["uv"] = "/SYNTHETIC/bin/uv"
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", cannot_start)
+    with caplog.at_level("WARNING", logger="deixis.jobs"):
+        assert client.post("/api/local-tools/kimi_cli/install").status_code == 202
+        job = None
+        for _ in range(100):
+            job = next(t for t in client.get("/api/local-tools").json()["tools"] if t["id"] == "kimi_cli")["job"]
+            if job["status"] != "running":
+                break
+            time.sleep(0.05)
+    assert job["status"] == "failed" and job["output"] == "[could_not_run]"
+    assert "SYNTHETIC" not in str(job) and "OSError" not in str(job) and "PermissionError" not in str(job)
+    assert "PermissionError" in caplog.text and "/private/SYNTHETIC/uv" in caplog.text
+
+
+def test_an_ollama_that_does_not_answer_a_delete_gives_a_code_not_a_class_name(client, paths, monkeypatch, caplog):
+    async def running(self):
+        return {"models": [{"id": "qwen3:8b"}]}
+
+    async def down(self, *args, **kwargs):
+        raise httpx.ConnectError("SYNTHETIC refused")
+
+    monkeypatch.setattr(local_tools.LocalTools, "_running_ollama", running)
+    monkeypatch.setattr(httpx.AsyncClient, "request", down)  # the app's own client; the test client is a sync one
+    with caplog.at_level("WARNING", logger="deixis.local_tools"):
+        refused = client.post("/api/local-tools/ollama/delete", json={"model": "qwen3:8b"})
+    assert refused.status_code == 502 and refused.json() == {"detail": "Ollama did not answer", "code": "server_not_answering"}
+    assert "ConnectError" not in refused.text and "ConnectError" in caplog.text

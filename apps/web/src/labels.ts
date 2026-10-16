@@ -101,8 +101,8 @@ export const healthReasonText = (health: { connection: string; reason_code?: str
 const keychainNames: Record<string, string> = { macos: 'the Keychain', windows: 'the Credential Manager', linux: 'the system keyring' }
 export const keychainLabel = (kind?: string | null) => t(keychainNames[kind ?? ''] ?? 'the system keychain')
 
-// Why a key could not be saved or removed, by the cause the backend names (E14). Unknown codes keep the backend's English line.
-export function credentialFailureText(code: string | null, keychain: string, fallback: string): string {
+// Why a key could not be saved, removed or tested, by the cause the backend names (E14). A code not known here reads as a generic sentence.
+export function credentialFailureText(code: string | null, keychain: string): string {
   const v = { keychain }
   switch (code) {
     case 'keychain_unavailable': return t('The key was not changed: {keychain} could not be used. Try again in Settings or restart DEIXIS.', v)
@@ -116,7 +116,9 @@ export function credentialFailureText(code: string | null, keychain: string, fal
     case 'file_store_unavailable': return t('A system keychain is available, so keys are kept there.')
     case 'shell_key_stays': return t('This key is set outside DEIXIS and no system keychain can hold a replacement. Change it where it was set.')
     case 'shell_key': return t('This key is set outside DEIXIS; change or remove it where it was set.')
-    default: return fallback
+    case 'not_testable': return t('This key is not tested in advance; access is recorded with each request.')
+    case 'key_not_set': return t('No key is saved for this connection.')
+    default: return t('The key was not changed. Try again in Settings or restart DEIXIS.')  // a code this page does not know
   }
 }
 
@@ -124,8 +126,12 @@ export function credentialFailureText(code: string | null, keychain: string, fal
 export function installReasonText(code: string | null | undefined, manager?: string): string {
   return code === 'uv_missing' ? t('uv is needed for this and was not found on this computer. Install it, then restart DEIXIS.')
     : code === 'manager_missing' ? t('{manager} is needed for this and was not found on this computer. Install it, then restart DEIXIS.', { manager: manager ?? '' })
-    : ''
+    : code === 'server_not_answering' ? t('Ollama did not answer. Check that it is running, then try again.')
+    : t('This cannot be done from here right now. Restart DEIXIS and try again.')  // a code this page does not know
 }
+
+// The sentence for a refused tool action: a refusal with a code reads from the code, a plain refusal keeps its own line.
+export const toolActionError = (e: Error & { code?: string | null }, manager?: string) => e.code ? installReasonText(e.code, manager) : e.message
 export const serviceWaitingText = (service: string, attempt: number) => t('Waiting for {service} before retry {n}.', { service, n: attempt })
 export const serviceWaitRecordText = (service: string, attempt: number, seconds: number) => t('Rate-limit wait for {service} before retry {n}: {seconds} s.', { service, n: attempt, seconds })
 export const providerRetryText = (count: number) => t('Retried {n} times after a rate limit.', { n: count })

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import re
 import shlex
 import tempfile
@@ -24,6 +25,8 @@ from pathlib import Path
 from typing import Any
 
 from deixis.tool_paths import command_for, find_tool
+
+log = logging.getLogger(__name__)
 
 SIGNIN_TIMEOUT_SECONDS = 10 * 60
 TIMED_OUT = "The sign-in was not completed within 10 minutes."
@@ -222,7 +225,8 @@ class AccountSignIn:
             try:
                 reserved["handle"] = self._launcher(spec)
             except OSError as exc:
-                raise SignInError(409, f"A terminal window could not be opened: {type(exc).__name__}") from exc
+                log.warning("A terminal window could not be opened: %s: %s", type(exc).__name__, exc)
+                raise SignInError(409, "A terminal window could not be opened") from exc
         except BaseException:
             for table, old in ((self._state, previous[0]), (self._run, previous[1])):
                 if old is None:

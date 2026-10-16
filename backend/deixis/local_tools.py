@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import platform
 import plistlib
@@ -27,6 +28,7 @@ from typing import Any
 import httpx
 
 from deixis.child_env import NODE_TLS, UV_TLS, child_env
+from deixis.job_failure import failure_line
 from deixis.storage.db import now
 from deixis.tool_paths import find_tool
 from deixis.tool_probe import Probe, probe, probe_blocking
@@ -130,6 +132,9 @@ TOOLS = {t.id: t for t in (
     Tool("zotero", "Zotero", "app", "zotero", ("brew", "install", "--cask", "zotero"), "https://www.zotero.org/download/",
          role="imports", app="/Applications/Zotero.app", endpoint="http://127.0.0.1:23119"),
 )}
+
+
+log = logging.getLogger(__name__)
 
 
 class ToolError(Exception):
@@ -434,8 +439,7 @@ class LocalTools:
             await asyncio.to_thread(_open_mac_app, app)
             job.update(status="succeeded", finished_at=now())
         except (httpx.HTTPError, OSError, subprocess.SubprocessError) as exc:
-            detail = (getattr(exc, "stderr", None) or "").strip()
-            job.update(status="failed", finished_at=now(), output=f"{type(exc).__name__}: {exc}" + (f"\n{detail}" if detail else ""))
+            job.update(status="failed", finished_at=now(), output=failure_line(exc, "The app install"))
         finally:
             shutil.rmtree(folder, ignore_errors=True)
             self._cache = None
@@ -500,7 +504,7 @@ class LocalTools:
             if job["status"] == "running":
                 job.update(status="failed", output="Ollama ended the download without reporting success.")
         except Exception as exc:  # noqa: BLE001 - any failure ends the job, so the slot is never left taken (E17)
-            job.update(status="failed", output=f"{type(exc).__name__}: {exc}"[-OUTPUT_TAIL_CHARS:])
+            job.update(status="failed", output=failure_line(exc, "The model download"))
         finally:
             if job["status"] == "running":  # cancelled while DEIXIS closes
                 job.update(status="failed", output=job["output"] or "Stopped.")
@@ -527,7 +531,8 @@ class LocalTools:
         try:
             response = await self._client.request("DELETE", f"{TOOLS['ollama'].endpoint}/api/delete", json={"model": model}, timeout=30)
         except httpx.HTTPError as exc:
-            raise ToolError(502, f"Ollama did not answer: {type(exc).__name__}") from exc
+            log.warning("Ollama did not answer: %s: %s", type(exc).__name__, exc)
+            raise ToolError(502, "Ollama did not answer", "server_not_answering") from exc
         finally:
             self._cache = None
         if response.status_code != 200:
@@ -639,9 +644,9 @@ class LocalTools:
                 if state.get("status") == "completed":
                     job["status"] = "succeeded"
                 elif state.get("status") == "failed":
-                    job.update(status="failed", output=str(state)[:OUTPUT_TAIL_CHARS])
+                    job.update(status="failed", output="LM Studio reported the download as failed.")
         except Exception as exc:  # noqa: BLE001 - any failure ends the job, so the slot is never left taken (E17)
-            job.update(status="failed", output=f"{type(exc).__name__}: {exc}"[-OUTPUT_TAIL_CHARS:])
+            job.update(status="failed", output=failure_line(exc, "The model download"))
         finally:
             if job["status"] == "running":  # cancelled while DEIXIS closes
                 job.update(status="failed", output=job["output"] or "Stopped.")
@@ -732,7 +737,7 @@ class LocalTools:
             proc = await asyncio.create_subprocess_exec(*argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                                         stderr=subprocess.STDOUT, env=env)
         except OSError as exc:
-            job.update(status="failed", finished_at=now(), output=f"{type(exc).__name__}: {exc}")
+            job.update(status="failed", finished_at=now(), output=failure_line(exc, "The install"))
             return
         except asyncio.CancelledError:  # cancelled while the process was being started: the job does not stay "running"
             job.update(status="failed", finished_at=now(), output="Stopped.")
@@ -749,7 +754,7 @@ class LocalTools:
                     job.update(status="failed", finished_at=now(), output=job["output"] + "\nStopped.")
                 raise
             except Exception as exc:  # noqa: BLE001 - a failed read ends the job instead of leaving it running (E18)
-                job.update(status="failed", finished_at=now(), output=job["output"] + f"\n{type(exc).__name__}: {exc}")
+                job.update(status="failed", finished_at=now(), output=job["output"] + "\n" + failure_line(exc, "The install"))
                 return
             job.update(status="succeeded" if code == 0 else "failed", finished_at=now())
             self._cache = None

@@ -61,6 +61,7 @@ CAUSES = [
     ("keychain_too_large", lambda: PasswordSetError("password too long for this keychain")),
     ("keychain_too_large", windows_size_error),
     ("keychain_locked", lambda: KeyringLocked("Failed to unlock the collection!")),
+    ("keychain_denied", lambda: KeyringLocked("User canceled the operation. (-128)")),  # macOS: the person's own "Deny", wrapped as locked
     ("keychain_locked", lambda: PasswordSetError("Cannot create an item in a locked collection")),
     ("keychain_denied", lambda: PermissionError(13, "Permission denied")),
     ("keychain_denied", lambda: PasswordSetError("Access denied by the user")),
@@ -135,7 +136,7 @@ def test_the_page_words_every_cause_code_in_both_languages():
 
     root = Path(__file__).resolve().parents[2]
     codes = sorted(set(credentials.FAILURES) | {"keychain_not_responding", "keychain_busy", "file_store_damaged", "file_store_unavailable",
-                                                "shell_key_stays", "shell_key"})
+                                                "shell_key_stays", "shell_key", "not_testable", "key_not_set"})
     script = r"""
 const fs = require('fs'), ts = require('typescript'), assert = require('assert');
 require.extensions['.ts'] = (module, file) => module._compile(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
@@ -150,13 +151,17 @@ for (const language of ['en', 'tr']) {
   for (const kind of ['macos', 'windows', 'linux', null]) {
     const keychain = labels.keychainLabel(kind);
     for (const code of codes) {
-      const sentence = labels.credentialFailureText(code, keychain, 'FALLBACK');
-      assert(sentence !== 'FALLBACK' && !sentence.includes('{') && !/DEIXIS_|_API_KEY|terminal that started|\.env/.test(sentence), code);
+      const sentence = labels.credentialFailureText(code, keychain);
+      assert(!sentence.includes('{') && !/DEIXIS_|_API_KEY|terminal that started|\.env/.test(sentence), code);
       if (language === 'tr') assert(sentence !== seen.en[kind + code], code + ' has no Turkish');
       seen[language][kind + code] = sentence;
     }
   }
-  assert.strictEqual(labels.credentialFailureText('something_new', 'x', 'FALLBACK'), 'FALLBACK');
+  // A code this page does not know reads as a generic sentence in the language, never as backend text.
+  const unknown = labels.credentialFailureText('something_new', 'x'), unknownInstall = labels.installReasonText('something_new', 'brew');
+  assert(unknown && unknownInstall && !/something_new|FALLBACK/.test(unknown + unknownInstall));
+  if (language === 'tr') { assert(unknown !== seen.en.unknown && unknownInstall !== seen.en.unknownInstall); }
+  seen[language].unknown = unknown; seen[language].unknownInstall = unknownInstall;
   for (const code of ['uv_missing', 'manager_missing']) {
     const sentence = labels.installReasonText(code, 'brew');
     assert(sentence && !sentence.includes('{') && (code === 'uv_missing' || sentence.includes('brew')), code);
@@ -177,3 +182,32 @@ assert.deepStrictEqual(['macos', 'windows', 'linux'].map(labels.keychainLabel), 
 """
     result = subprocess.run(["node", "-e", script, "--", __import__("json").dumps(codes)], cwd=root / "apps/web", capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_a_key_that_cannot_be_tested_is_refused_by_code_without_naming_the_variable(client):
+    assert client.post("/api/credentials/GEMINI_API_KEY/test").json()["code"] == "key_not_set"
+    refused = client.post("/api/credentials/S2_API_KEY/test")  # no model list to test against
+    for response in (client.post("/api/credentials/GEMINI_API_KEY/test"), refused, client.delete("/api/credentials/NOT_A_KEY")):
+        assert response.status_code in (404, 422) and "_API_KEY" not in response.text and "NOT_A_KEY" not in response.text
+    assert refused.json()["code"] in ("not_testable", "key_not_set")
+
+
+def test_a_key_test_that_cannot_reach_the_api_does_not_name_the_exception(client, monkeypatch):
+    class Down(httpx.AsyncClient):
+        async def post(self, *args, **kwargs):
+            raise httpx.ConnectError("SYNTHETIC unreachable")
+
+        async def get(self, *args, **kwargs):
+            raise httpx.ConnectError("SYNTHETIC unreachable")
+
+    import asyncio
+    result = asyncio.run(credentials.test(Down(), "OPENAI_API_KEY", "openai-source-good-key"))
+    assert result["status"] == "failed" and "ConnectError" not in str(result) and "SYNTHETIC" not in str(result)
+
+
+def test_the_first_run_text_names_the_built_in_model_only_where_it_is_offered():
+    from pathlib import Path
+
+    home = (Path(__file__).resolve().parents[2] / "apps/web/src/Home.tsx").read_text()
+    assert "builtinOffered &&" in home and "unsupported_platform" in home
+    assert "Semantic search also has a built-in model" not in home.split("{builtinOffered &&")[0].split("Not connected. Use a Codex")[1]

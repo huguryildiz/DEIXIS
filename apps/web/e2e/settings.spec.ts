@@ -893,6 +893,7 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(page.getByText('Semantic search setting saved.')).toHaveCount(0)
     await shot(page, 'F3-where-your-data-goes')
     await page.unrouteAll({ behavior: 'ignoreErrors' })
+  })
 
   test('leaving Settings cancels its reads; a read that never answers ends with "did not answer"; a save started before leaving still completes (E25)', async ({ context }) => {
     // A hung read: the page clock jumps past the 20 s limit, and the section says so instead of waiting for ever.

@@ -136,7 +136,7 @@ A research runs as a sequence of stored steps. Each step is saved with its input
 
 Before an answer is published, code checks the cited source IDs, reading depth, passage IDs and the exact quoted anchor in the passage text. An answer that fails these checks stays an unverified draft.
 
-[`docs/layout.md`](docs/layout.md) says where each kind of file belongs, [`docs/search-architecture.md`](docs/search-architecture.md) maps the search pipeline, and [`docs/decisions.md`](docs/decisions.md) records the decisions in force. [`AGENTS.md`](AGENTS.md) is the working agreement for contributors, human or AI.
+[`docs/layout.md`](docs/layout.md) says where each kind of file belongs, [`docs/search-architecture.md`](docs/search-architecture.md) maps the search pipeline, and [`docs/decisions.md`](docs/decisions.md) records the decisions in force. [`CLAUDE.md`](CLAUDE.md) is the working agreement for contributors, human or AI.
 
 ## Scope and limits
 

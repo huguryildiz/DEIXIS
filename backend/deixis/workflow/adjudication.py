@@ -410,7 +410,8 @@ def proposals_of(parts: list[dict[str, Any]], records: list[dict[str, Any]], sho
     part, a part named twice (both copies, because nothing says which the model meant), a missing part, a
     `present` with no quote, and a `passage_id` that was not shown. An unverified quote does not flip the label:
     the part stays `present` and `quote_verified` is false, which is what makes two agreeing include-runs
-    `include_quote_unverified` rather than included.
+    `include_quote_unverified` rather than included. A quote verified on another shown page than the named
+    passage's is stored with the passage on that page, so the passage and page of a proposal always agree.
     """
     expected = [part["name"] for part in parts]
     known = set(expected)
@@ -432,6 +433,10 @@ def proposals_of(parts: list[dict[str, Any]], records: list[dict[str, Any]], sho
         if label == "present":
             named = shown[passage_id].get("physical_page")
             checked = verify(quote, pages, named if isinstance(named, int) else None, min_chars)
+            if checked["page"] is not None and checked["page"] != named:
+                # The quote stands on another shown page: the passage stored is the one it was located in.
+                passage_id = next((pid for pid, row in shown.items() if row.get("physical_page") == checked["page"]),
+                                  passage_id)
             found[name] = {"label": "present", "quote": quote, "quote_verified": checked["verified"],
                            "passage_id": passage_id, "page": checked["page"]}
         elif label in ("absent", "unclear"):

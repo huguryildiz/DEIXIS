@@ -67,8 +67,12 @@ NOTHING_PLACED = "nothing_placed"
 OFFSETS_UNRESOLVED = "offsets_unresolved"
 RECORD_VERSION_CHANGED = "record_version_changed"
 EXTRACTION_FAILED = "extraction_failed"  # the PDF's text layer could not be extracted again with the placements
-# The PDF Marker is reading now, for views: {"asset_id", "title", "pages", "started_at"}. One reader serves the process.
-reading: dict[str, Any] | None = None
+
+
+def _reading(store: Store) -> dict[str, Any] | None:
+    """The PDF the store's equation service is reading now, for views: {"asset_id", "title", "pages", "started_at"}
+    and, off the Marker route, "route". A store with no service reads nothing."""
+    return getattr(getattr(store, "equation_route", None), "reading", None)
 
 
 def target_version(current: str | None = None) -> str:
@@ -247,6 +251,7 @@ def _mathpix_read(store: Store, asset: dict[str, Any]) -> dict[str, Any]:
 def _mathpix_state(store: Store, asset: dict[str, Any]) -> dict[str, Any]:
     """The Mathpix route's states, from stored rows only (no PDF is opened)."""
     route = {"route": mathpix.ENGINE}
+    reading = _reading(store)
     if reading and reading["asset_id"] == asset["id"] and reading.get("route") == mathpix.ENGINE:
         return {"state": "reading", "pages": reading["pages"], "started_at": reading["started_at"]} | route
     row = store.conn.execute(
@@ -274,6 +279,7 @@ def _mathpix_state(store: Store, asset: dict[str, Any]) -> dict[str, Any]:
 def _source_state(store: Store, asset: dict[str, Any]) -> dict[str, Any]:
     """Rule 3's table, from stored rows only (no PDF is opened)."""
     route = {"route": arxiv_source.ENGINE}
+    reading = _reading(store)
     if reading and reading["asset_id"] == asset["id"] and reading.get("route") != mathpix.ENGINE:
         return {"state": "reading", "pages": reading["pages"], "started_at": reading["started_at"]} | route
     target = source_target_version(asset["extraction_version"])
@@ -319,6 +325,7 @@ def _marker_state(store: Store, asset: dict[str, Any]) -> dict[str, Any]:
         row = store.conn.execute("SELECT math_json FROM asset_extractions WHERE asset_id = ? AND outcome = 'current'", (asset_id,)).fetchone()
         to_check = json.loads(row["math_json"] or "{}").get("equations_to_check", []) if row else []
         return {"state": "read", "to_check": sorted({e["page"] for e in to_check}), "equations_to_check": len(to_check)}
+    reading = _reading(store)
     if reading and reading["asset_id"] == asset_id:
         return {"state": "reading", "pages": reading["pages"], "started_at": reading["started_at"]}
     row = store.conn.execute(
@@ -363,6 +370,7 @@ class EquationService:
         self._waiting = 0  # runs and requests waiting for a read; the background reader gives way to them
         self._background_reading = False
         self._preempted = False
+        self.reading: dict[str, Any] | None = None  # the PDF this service reads now (`_reading`)
 
     def configure_arxiv_source(self, mode: str, data_dir: Path, fetch_file: Any = None) -> None:
         self.arxiv_mode = mode
@@ -407,7 +415,7 @@ class EquationService:
             return await self._read(asset_id, run_id, retry, background)
         self._waiting += 1
         try:
-            if self._background_reading and not (reading and reading["asset_id"] == asset_id):
+            if self._background_reading and not (self.reading and self.reading["asset_id"] == asset_id):
                 self._preempted = True
                 await self.reader.close()
             return await self._read(asset_id, run_id, retry, background)
@@ -431,18 +439,21 @@ class EquationService:
                     await asyncio.shield(task)
                 except asyncio.CancelledError:
                     continue
+                except (KeyboardInterrupt, SystemExit):
+                    raise
                 except BaseException:
                     break
             try:
                 task.result()
             except asyncio.CancelledError:
                 pass
+            except (KeyboardInterrupt, SystemExit):
+                raise
             except BaseException:
                 log.exception("Equation read failed while draining cancellation")
             raise
 
     async def _read(self, asset_id: str, run_id: str | None, retry: bool, background: bool) -> dict[str, Any]:
-        global reading
         async with self._lock:
             state = equation_state(self.store, asset_id)
             if state.get("route") == arxiv_source.ENGINE:
@@ -475,7 +486,7 @@ class EquationService:
                         self._record_without_passages(asset, version, NO_MATH, attempts + 1)
                         return equation_state(self.store, asset_id)
                     title = self.store.conn.execute("SELECT title FROM source_versions WHERE id = ?", (asset["source_version_id"],)).fetchone()
-                    reading = {"asset_id": asset_id, "title": title[0] if title else None, "pages": len(selected), "started_at": now()}
+                    self.reading = {"asset_id": asset_id, "title": title[0] if title else None, "pages": len(selected), "started_at": now()}
                     self._background_reading, self._preempted = background, False
                     try:
                         read = await self.reader.read(path, selected)
@@ -483,9 +494,7 @@ class EquationService:
                         read = None
                         if not (background and self._preempted):  # a stopped background read is not a failure
                             self._record_without_passages(asset, version, f"equation reading failed: {exc}"[:400], attempts + 1)
-                    except Exception:
-                        raise
-                    except BaseException:
+                    except (asyncio.CancelledError, KeyboardInterrupt, SystemExit):
                         # A cancelled reader request may still be touching the PDF; drain it before unlocking.
                         try:
                             await self._drain(self.reader.close())
@@ -495,7 +504,7 @@ class EquationService:
                             log.exception("Could not close the equation reader while unwinding")
                         raise
                     finally:
-                        reading, self._background_reading, self._preempted = None, False, False
+                        self.reading, self._background_reading, self._preempted = None, False, False
                     if read is None:
                         return equation_state(self.store, asset_id)
                     # OCR pages have no text layer to check an equation against.
@@ -559,7 +568,6 @@ class EquationService:
 
     async def _read_source(self, asset_id: str, run_id: str | None, retry: bool, state: dict[str, Any]) -> dict[str, Any]:
         """One PDF through the route. Every outcome returns the PDF's state; RunInProgress propagates."""
-        global reading
         asset = self.store.asset(asset_id)
         if not self.route_active():
             return state
@@ -603,7 +611,7 @@ class EquationService:
                 path = self.papers_dir / asset["storage_path"]
                 ocr_pages = self._ocr_pages(asset) if OCR_SUFFIX.search(start_version or "") else {}
                 title = self.store.conn.execute("SELECT title FROM source_versions WHERE id = ?", (asset["source_version_id"],)).fetchone()
-                reading = {"asset_id": asset_id, "title": title[0] if title else None, "pages": asset["page_count"], "started_at": now(),
+                self.reading = {"asset_id": asset_id, "title": title[0] if title else None, "pages": asset["page_count"], "started_at": now(),
                            "route": arxiv_source.ENGINE}
                 base = None
                 try:
@@ -614,7 +622,7 @@ class EquationService:
                     if found["content"] == "tex" and found["placements"]:
                         base = await text_retry.drained_thread(lambda: pdf.extract_pdf(path, placements=found["placements"]))
                 finally:
-                    reading = None
+                    self.reading = None
                 if found["content"] != "tex":
                     return equation_state(self.store, asset_id)
                 arxiv_id, number = arxiv_source.split_key(key)
@@ -773,7 +781,6 @@ class EquationService:
         sending does not throw away what was answered: the read places those, and the crops left unsent are refused
         `budget_reached`; a PDF at its budget is read again from stored answers alone. Any other stop writes nothing.
         Every outcome returns the PDF's state; RunInProgress propagates."""
-        global reading
         asset = self.store.asset(asset_id)
         attempts = state.get("attempts", MAX_ATTEMPTS) if state["state"] == "failed" else 0
         cached = state["state"] == "budget_reached" and mathpix_answered(self.store, asset_id)
@@ -797,7 +804,7 @@ class EquationService:
                 ocr_pages = self._ocr_pages(asset) if OCR_SUFFIX.search(start_version or "") else {}
                 self._forget_failure(asset_id, target)
                 title = self.store.conn.execute("SELECT title FROM source_versions WHERE id = ?", (asset["source_version_id"],)).fetchone()
-                reading = {"asset_id": asset_id, "title": title[0] if title else None, "pages": asset["page_count"], "started_at": now(),
+                self.reading = {"asset_id": asset_id, "title": title[0] if title else None, "pages": asset["page_count"], "started_at": now(),
                            "route": mathpix.ENGINE}
                 answers: dict[tuple[int, str], dict[str, Any]] = {}
                 unsent: list[dict[str, Any]] = []  # crops a budget kept from being sent; stored answers still count
@@ -817,7 +824,7 @@ class EquationService:
                             break
                         answers[(crop["page"], crop["n"])] = result
                 finally:
-                    reading = None
+                    self.reading = None
                 if stop is not None:
                     if stop["reason"] in ("rate_limited", "network", "server_error"):
                         self._record_mathpix(asset, target, "mathpix_failed", {"reason": stop["reason"], "attempts": attempts + 1})
@@ -926,7 +933,7 @@ class EquationService:
                 "keys_rejected": mathpix_keys_rejected(self.store, pair), "switch": "on" if mathpix_switch(self.store) else "off",
                 "monthly_budget": counts["budget"], "month_requests": counts["month"], "per_pdf_limit": MAX_ASSET_REQUESTS,
                 "marker_present": self.marker_present(), "pdfs": states,
-                "reading": reading if reading and reading.get("route") == mathpix.ENGINE else None}
+                "reading": self.reading if self.reading and self.reading.get("route") == mathpix.ENGINE else None}
 
     async def mathpix_estimate(self) -> dict[str, Any]:
         """Before the switch is turned on: how many PDFs Mathpix would read and an upper bound of requests (the detector's
@@ -1083,7 +1090,7 @@ class EquationService:
                 "size_bytes": env_size + models_size, "models_downloaded": models_size > 0,"disk_free_gb": round(shutil.disk_usage(Path.home()).free / 2**30),
                 "install": {"available": bool(uv), "unavailable_reason": None if uv else "uv_missing",
                             "url": "https://docs.astral.sh/uv/getting-started/installation/"},
-                "job": self.job, "reading": reading, "pdfs": states}
+                "job": self.job, "reading": self.reading, "pdfs": states}
 
     def install(self, uv: str | None = None) -> dict[str, Any]:
         """`uv` is the program found by the caller (off the event loop); without it the search is made here."""
@@ -1164,7 +1171,7 @@ class EquationService:
 
     async def remove(self) -> None:
         """Delete the Marker environment and models. Equations already read stay in the stored text."""
-        if self.installing() or reading:
+        if self.installing() or self.reading:
             raise ValueError("The equation reader is busy; remove it when it has finished")
         async with self._lock:
             await self.reader.close()

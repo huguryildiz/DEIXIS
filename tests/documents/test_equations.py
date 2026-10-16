@@ -9,6 +9,7 @@ import sys
 import time
 from datetime import timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 
 from deixis.api.app import create_app
@@ -308,3 +309,43 @@ def test_a_run_stops_a_background_read_which_stays_pending(tmp_path, monkeypatch
     first, stopped = asyncio.run(scenario())
     assert first["state"] == "read" and stopped["state"] == "pending"
     assert equations.equation_state(store, background_aid)["state"] == "pending" and service.next_asset() == background_aid
+
+
+class ParkedReader(FakeReader):
+    """Reads until cancelled; counts the closes the cancel drains."""
+
+    def __init__(self):
+        super().__init__()
+        self.entered, self.closed = asyncio.Event(), 0
+
+    async def read(self, path, pages):
+        self.calls.append((path.name, pages))
+        self.entered.set()
+        await asyncio.Event().wait()
+
+    async def close(self):
+        self.closed += 1
+
+
+def test_a_read_cancelled_mid_way_closes_the_reader_and_leaves_the_pdf_pending(tmp_path, monkeypatch):
+    store, _, aid, papers = stored_pdf(tmp_path, ["SYNTHETIC formula page."])
+    monkeypatch.setattr(math_reader, "math_pages", lambda path: [0])
+    reader = ParkedReader()
+    other = equations.EquationService(store, FakeReader(), papers)
+    service = equations.EquationService(store, reader, papers)  # the store's route: views read its reading
+
+    async def scenario():
+        task = asyncio.create_task(service.read_asset(aid))
+        await asyncio.wait_for(reader.entered.wait(), 5)
+        during = equations.equation_state(store, aid)["state"]
+        # The reading belongs to the service that runs it, not to every service of the process.
+        seen_by_other = other.reading
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        return during, seen_by_other
+
+    during, seen_by_other = asyncio.run(scenario())
+    assert during == "reading" and seen_by_other is None
+    assert reader.closed == 1 and service.reading is None
+    assert equations.equation_state(store, aid)["state"] == "pending" and service.next_asset() == aid

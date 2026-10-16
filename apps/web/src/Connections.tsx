@@ -1067,8 +1067,12 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const [checked, setChecked] = useState<Record<string, number>>({})
   const [checkFailed, setCheckFailed] = useState<Record<string, string>>({})
   // The sign-in DEIXIS started for a tool (D21); it is polled while the person finishes it in the terminal window that opened.
-  const [signInRun, setSignInRun] = useState<{ tool: string; run: AccountSignIn } | null>(null)
+  const [signInRuns, setSignInRuns] = useState<Record<string, AccountSignIn>>({})
   const signInSeen = useRef(false)
+  // One counter per tool, moved on by every start and cancel: an answer to an earlier request that arrives after a
+  // later one began (a poll that was in flight when the person cancelled) is dropped, never shown.
+  const signInVersion = useRef<Record<string, number>>({})
+  const nextSignIn = (tool: string) => (signInVersion.current[tool] = (signInVersion.current[tool] ?? 0) + 1)
   // The last answer to each keyless source's Test; shown only while its check's time is (the same check's answer).
   const [providerTests, setProviderTests] = useState<Record<string, ProviderTest>>({})
   const [showOthers, setShowOthers] = useState(false)
@@ -1096,8 +1100,8 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
       // polling carries on from there. Later reads never bring back one that was cancelled or finished.
       if (!signInSeen.current) {
         signInSeen.current = true
-        const running = Object.entries(result.sign_ins ?? {}).find(([, run]) => run.state === 'waiting')
-        if (running) setSignInRun(current => current ?? { tool: running[0], run: running[1] })
+        const running = Object.entries(result.sign_ins ?? {}).filter(([, run]) => run.state === 'waiting')
+        if (running.length) setSignInRuns(current => ({ ...Object.fromEntries(running), ...current }))
       }
     })
       .catch((e: Error) => { if (n === seq.current.connections) setError(t('Connections could not be read: {message}', { message: e.message })) })
@@ -1192,31 +1196,41 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
       .finally(() => setChecking(current => current === key ? null : current))
   }
   const refreshModel = (id: string) => readModel(id).catch((e: Error) => { toast('error', t('Check failed: {message}', { message: e.message })); throw e })
-  const settleSignIn = useCallback((tool: string, run: AccountSignIn) => {
-    setSignInRun(current => current && current.tool !== tool ? current : { tool, run })
+  const settleSignIn = useCallback((tool: string, run: AccountSignIn, version: number) => {
+    if (signInVersion.current[tool] !== version) return
+    setSignInRuns(current => ({ ...current, [tool]: run }))
     if (run.state !== 'succeeded') return
     toast('success', t('Signed in to {name}.', { name: ACCOUNT_TOOLS[tool]?.name ?? tool }))
     void readModel(tool).catch(() => undefined)
     void loadTools(true)
   }, [toast, loadTools, readModel])
   const startSignIn = (tool: string) => {
-    api.startAccountSignIn(tool).then(run => settleSignIn(tool, run), (e: Error) => {
-      setSignInRun({ tool, run: { state: 'failed', message: e.message } })
+    const version = nextSignIn(tool)
+    api.startAccountSignIn(tool).then(run => settleSignIn(tool, run, version), (e: Error) => {
+      if (signInVersion.current[tool] !== version) return
+      setSignInRuns(current => ({ ...current, [tool]: { state: 'failed', message: e.message } }))
       toast('error', t('Could not start the sign-in: {message}', { message: e.message }))
     })
   }
   const cancelSignIn = (tool: string) => {
-    api.cancelAccountSignIn(tool).then(run => setSignInRun(current => current && current.tool !== tool ? current : run.state === 'idle' ? null : { tool, run }),
-      (e: Error) => toast('error', t('Could not cancel the sign-in: {message}', { message: e.message })))
+    const version = nextSignIn(tool)
+    api.cancelAccountSignIn(tool).then(run => {
+      if (signInVersion.current[tool] !== version) return
+      setSignInRuns(({ [tool]: _gone, ...rest }) => run.state === 'idle' ? rest : { ...rest, [tool]: run })
+    }, (e: Error) => toast('error', t('Could not cancel the sign-in: {message}', { message: e.message })))
   }
-  const signInTool = signInRun?.run.state === 'waiting' ? signInRun.tool : null
+  const waitingSignIns = Object.keys(signInRuns).filter(tool => signInRuns[tool].state === 'waiting').sort().join(',')
   useEffect(() => {
-    if (!signInTool) return
+    if (!waitingSignIns) return
+    const tools = waitingSignIns.split(',')
     const timer = window.setInterval(() => {
-      api.accountSignIn(signInTool).then(run => settleSignIn(signInTool, run), () => undefined)
+      for (const tool of tools) {
+        const version = signInVersion.current[tool] ?? 0
+        api.accountSignIn(tool).then(run => settleSignIn(tool, run, version), () => undefined)
+      }
     }, 2000)
     return () => window.clearInterval(timer)
-  }, [signInTool, settleSignIn])
+  }, [waitingSignIns, settleSignIn])
   const show = (item: Selected) => { setSelected(item); setOpen(true) }
   // A link to one provider's sheet (`#/settings/openalex`) opens it once the providers are read.
   const opened = useRef(false)
@@ -1437,7 +1451,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     const model = data?.models[accountId]
     const tool = toolOf(ACCOUNT_TOOLS[accountId].tool)
     const key = `account:${accountId}`
-    const ownRun = signInRun?.tool === accountId ? signInRun.run : null
+    const ownRun = signInRuns[accountId] ?? null
     const signInCommand = signInCommandOf(accountId)
     const status = accountStatus(accountId)
     const toolName = ACCOUNT_TOOLS[accountId].name

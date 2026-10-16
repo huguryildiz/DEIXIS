@@ -668,6 +668,52 @@ test.describe.serial('S24: the Settings page', () => {
     await sheet.getByRole('button', { name: 'Close' }).click()
   })
 
+  test('a poll still in flight when a sign-in is cancelled never brings the waiting state back (E20 review)', async () => {
+    let release: () => void = () => {}
+    const held = new Promise<void>(resolve => { release = resolve })
+    let polls = 0
+    await page.route(url => url.pathname === '/api/accounts/codex/sign-in', async route => {
+      if (route.request().method() === 'POST') return route.fulfill({ json: { state: 'waiting', message: null } })
+      polls++
+      await held  // the answer to this poll comes after the cancel
+      return route.fulfill({ json: { state: 'waiting', message: null } })
+    })
+    await page.route(url => url.pathname === '/api/accounts/codex/sign-in/cancel', route => route.fulfill({ json: { state: 'idle', message: null } }))
+    await page.goto(server.url('#/settings/connections'))
+    await page.reload()
+    await page.locator('.co-card').filter({ hasText: /^ChatGPT/ }).click()
+    const sheet = page.getByRole('dialog', { name: 'ChatGPT' })
+    await sheet.getByRole('button', { name: /^Sign in( again)?$/ }).click()
+    await expect(sheet.getByText('A terminal window opened.')).toBeVisible()
+    await expect.poll(() => polls).toBeGreaterThan(0)
+    await sheet.getByRole('button', { name: 'Cancel' }).click()
+    await expect(sheet.getByText('A terminal window opened.')).toHaveCount(0)
+    release()
+    await page.waitForTimeout(500)
+    await expect(sheet.getByText('A terminal window opened.')).toHaveCount(0)
+    await expect(sheet.getByRole('button', { name: /^Sign in( again)?$/ })).toBeEnabled()
+    await sheet.getByRole('button', { name: 'Close' }).click()
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
+  })
+
+  test('a reloaded page picks up every sign-in still running, not only the first (E20 review)', async () => {
+    await page.route(url => url.pathname === '/api/connections', async route => {
+      const response = await route.fetch()
+      const body = await response.json()
+      return route.fulfill({ response, json: { ...body, sign_ins: { codex: { state: 'waiting', message: null }, claude: { state: 'waiting', message: null } } } })
+    })
+    await page.route(url => /^\/api\/accounts\/(codex|claude)\/sign-in$/.test(url.pathname), route => route.fulfill({ json: { state: 'waiting', message: null } }))
+    await page.goto(server.url('#/settings/connections'))
+    await page.reload()
+    for (const name of [/^ChatGPT/, /^Claude/]) {
+      await page.locator('.co-card').filter({ hasText: name }).first().click()
+      const sheet = page.getByRole('dialog').first()
+      await expect(sheet.getByText('A terminal window opened.')).toBeVisible()
+      await sheet.getByRole('button', { name: 'Close' }).click()
+    }
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
+  })
+
   test('a keyless source\'s Test says only whether the service answered: HTTP code or why not; a failed test shows no old answer (P5)', async () => {
     // Crossref goes to the fixture server's mocked transport, which answers HTTP 200; the fixture has no contact email.
     await page.goto(server.url('#/settings/sources'))

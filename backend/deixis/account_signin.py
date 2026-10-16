@@ -26,9 +26,26 @@ from typing import Any
 from deixis.tool_paths import command_for, find_tool
 
 SIGNIN_TIMEOUT_SECONDS = 10 * 60
+TIMED_OUT = "The sign-in was not completed within 10 minutes."
 TOOLS = {"codex": ("codex", ["login"], "Codex CLI"), "claude": ("claude", ["auth", "login"], "Claude Code"),
          "copilot_cli": ("copilot", ["login"], "GitHub Copilot CLI"),
          "gemini_cli": ("gemini", [], "Gemini CLI")}
+# `gemini` has no login command: the sign-in happens inside its interactive session, and a session that ends with exit 0
+# says nothing about it. What it does leave is its credentials file, rewritten when a sign-in completes; that file's
+# change stamp is the only sign-in-specific evidence there is. The file is also rewritten when the CLI refreshes an
+# expiring token, so the evidence is "something signed in or refreshed", never "this account is new" (no identity is
+# compared). Without a change the result is the uncertain one.
+def gemini_credentials_stamp() -> object:
+    from deixis.models.gemini_cli import user_credentials
+
+    try:
+        stat = user_credentials().stat()
+    except OSError:
+        return None
+    return (stat.st_mtime_ns, stat.st_size)
+
+
+EVIDENCE: dict[str, Callable[[], object]] = {"gemini_cli": gemini_credentials_stamp}
 LINUX_TERMINALS = ("x-terminal-emulator", "gnome-terminal", "konsole", "xterm")
 
 # What is handed to the process starter: an argument list. Nothing is ever parsed by cmd.exe (A4).
@@ -144,13 +161,14 @@ def read_exit_code(path: Path) -> Any:
 class AccountSignIn:
     def __init__(self, codex_home: Path, check: Check, launcher: Launcher | None = None, platform: str | None = None,
                  timeout: float = SIGNIN_TIMEOUT_SECONDS, clock: Callable[[], float] = time.monotonic,
-                 on_succeeded: Callable[[str], None] | None = None):
+                 on_succeeded: Callable[[str], None] | None = None, evidence: dict[str, Callable[[], object]] | None = None):
         self._codex_home = codex_home
         self._check = check
         self._launcher = launcher or start_process
         self._platform = platform or sys.platform
         self._timeout, self._clock = timeout, clock
         self._on_succeeded = on_succeeded
+        self._evidence = EVIDENCE if evidence is None else evidence
         self._state: dict[str, dict[str, Any]] = {}
         # Per tool: deadline, whether a start or a check is in flight, this attempt's status file and terminal handle.
         self._run: dict[str, dict[str, Any]] = {}
@@ -193,7 +211,8 @@ class AccountSignIn:
         now = self._clock()
         status_dir = self._codex_home.parent / "sign-in"
         status = status_dir / f"status-{tool}-{uuid.uuid4().hex}.exit"  # one per attempt; holds an exit code only
-        reserved = {"deadline": now + self._timeout, "busy": True, "starting": True, "status": status, "handle": None}
+        reserved = {"deadline": now + self._timeout, "busy": True, "starting": True, "status": status, "handle": None,
+                    "evidence": self._stamp(tool)}
         self._state[tool] = {"state": "waiting", "message": None}
         self._run[tool] = reserved
         try:
@@ -227,6 +246,10 @@ class AccountSignIn:
         reserved.update(deadline=now + self._timeout, busy=False, starting=False)
         return self._view(tool)
 
+    def _stamp(self, tool: str) -> object:
+        read = self._evidence.get(tool)
+        return read() if read else None
+
     def cancel(self, tool: str) -> dict[str, Any]:
         """Stop waiting for a running sign-in and put the connection back as it was: idle, whatever session it had stays."""
         self._known(tool)
@@ -244,10 +267,22 @@ class AccountSignIn:
                 pass
         return self._view(tool)
 
-    async def _not_completed(self, tool: str) -> str:
+    async def _ask(self, tool: str, run: dict[str, Any]) -> bool:
+        """The tool's health check, for no longer than the attempt has left. Raises TimeoutError when that runs out."""
+        try:
+            async with asyncio.timeout(max(run["deadline"] - self._clock(), 0)) as limit:
+                return await self._check(tool)
+        except TimeoutError:
+            if limit.expired():
+                raise
+            raise RuntimeError("the health check itself timed out") from None  # a failed check, not the end of the wait
+
+    async def _not_completed(self, tool: str, run: dict[str, Any]) -> str:
         """The sign-in did not finish. Says whether an earlier session is still in place, as the tool itself reports it."""
         try:
-            still_signed_in = await self._check(tool)
+            still_signed_in = await self._ask(tool, run)
+        except TimeoutError:
+            raise
         except Exception:
             still_signed_in = False
         return ("The sign-in was not completed; the existing session is still signed in." if still_signed_in
@@ -261,7 +296,7 @@ class AccountSignIn:
         if not record or record["state"] != "waiting" or run is None or run["busy"]:
             return self._view(tool)
         if self._clock() >= run["deadline"]:
-            self._finish(tool, "timed_out", "The sign-in was not completed within 10 minutes.")
+            self._finish(tool, "timed_out", TIMED_OUT)
             return self._view(tool)
         code = read_exit_code(run["status"])
         if code is None:
@@ -275,17 +310,26 @@ class AccountSignIn:
         run["busy"] = True
         try:
             if code is UNREADABLE:
-                message = await self._not_completed(tool)
-                outcome = ("failed", message)
+                outcome = ("failed", await self._not_completed(tool, run))
             elif code != 0:
                 outcome = ("failed", "The sign-in command ended with an error.")
             else:
                 try:
-                    signed_in = await self._check(tool)
+                    signed_in = await self._ask(tool, run)
+                except TimeoutError:
+                    raise
                 except Exception:  # a health check that cannot answer is not a sign-in
                     signed_in = False
-                outcome = (("succeeded", None) if signed_in else
-                           ("failed", "The sign-in command finished, but the tool does not show a signed-in account yet."))
+                if not signed_in:
+                    outcome = ("failed", "The sign-in command finished, but the tool does not show a signed-in account yet.")
+                elif tool in self._evidence and self._stamp(tool) == run["evidence"]:
+                    outcome = ("failed", "The command finished, but a new sign-in could not be confirmed.")
+                else:
+                    outcome = ("succeeded", None)
+            if self._clock() >= run["deadline"]:  # the answer came after the time was up: it is not a sign-in either
+                outcome = ("timed_out", TIMED_OUT)
+        except TimeoutError:  # the health check was still running when the time ran out
+            outcome = ("timed_out", TIMED_OUT)
         finally:
             run["busy"] = False
         if self._run.get(tool) is run and self._state.get(tool) is record:  # not cancelled or restarted meanwhile

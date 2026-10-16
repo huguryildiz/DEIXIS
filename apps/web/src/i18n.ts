@@ -4722,6 +4722,7 @@ const tr: Record<string, string> = {
   'The sign-in was not completed within 10 minutes.': 'Oturum açma 10 dakika içinde tamamlanmadı.',
   'The sign-in was not completed.': 'Oturum açma tamamlanmadı.',
   'The sign-in was not completed; the existing session is still signed in.': 'Oturum açma tamamlanmadı; mevcut oturum hâlâ açık.',
+  'The command finished, but a new sign-in could not be confirmed.': 'Komut bitti, ancak yeni bir oturum açıldığı doğrulanamadı.',
   'The sign-in command ended with an error.': 'Oturum açma komutu bir hatayla bitti.',
   'The sign-in command finished, but the tool does not show a signed-in account yet.': 'Oturum açma komutu bitti, ancak araç henüz oturum açılmış bir hesap göstermiyor.',
   'Works without a key. A free key from openalex.org gives DEIXIS its own daily budget.': 'Anahtarsız da çalışır. openalex.org’dan alınan ücretsiz bir anahtar DEIXIS’e kendi günlük bütçesini verir.',

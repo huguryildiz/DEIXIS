@@ -426,3 +426,73 @@ def test_a_cancel_during_the_final_check_wins(tmp_path, monkeypatch):
         return await pending
 
     assert asyncio.run(scenario()) == {"state": "idle", "message": None}
+
+
+# --- review fixes (E8, E20) ------------------------------------------------------------------------------------
+
+def _gemini_signin(tmp_path, monkeypatch, signed_in=True):
+    monkeypatch.setattr(account_signin, "find_tool", lambda name: f"/bin/{name}")
+    monkeypatch.setenv("GEMINI_CLI_HOME", str(tmp_path / "user"))
+    creds = tmp_path / "user" / ".gemini" / "oauth_creds.json"
+    creds.parent.mkdir(parents=True)
+    creds.write_text("{}")  # the old session; DEIXIS never opens this file, it only looks at its change stamp
+
+    async def check(tool):
+        return signed_in
+    return account_signin.AccountSignIn(tmp_path / "home", check, lambda spec: None, "darwin"), creds
+
+
+def test_gemini_closing_with_exit_0_and_an_old_session_is_not_a_sign_in(tmp_path, monkeypatch):
+    signin, creds = _gemini_signin(tmp_path, monkeypatch)
+    asyncio.run(signin.start("gemini_cli"))
+    signin._run["gemini_cli"]["status"].write_text("0")  # `gemini` ended normally; nothing signed in
+    done = asyncio.run(signin.state("gemini_cli"))
+    assert done == {"state": "failed", "message": "The command finished, but a new sign-in could not be confirmed."}
+
+
+def test_gemini_counts_only_when_its_credentials_file_changed_during_the_attempt(tmp_path, monkeypatch):
+    signin, creds = _gemini_signin(tmp_path, monkeypatch)
+    asyncio.run(signin.start("gemini_cli"))
+    creds.write_text('{"signed": "in again"}')
+    signin._run["gemini_cli"]["status"].write_text("0")
+    assert asyncio.run(signin.state("gemini_cli"))["state"] == "succeeded"
+    # No health, no success, whatever the file did.
+    signin, creds = _gemini_signin(tmp_path / "b", monkeypatch, signed_in=False)
+    asyncio.run(signin.start("gemini_cli"))
+    creds.write_text('{"x": 1}')
+    signin._run["gemini_cli"]["status"].write_text("0")
+    assert asyncio.run(signin.state("gemini_cli"))["state"] == "failed"
+
+
+def test_tools_with_a_real_login_command_need_no_credentials_evidence():
+    assert set(account_signin.EVIDENCE) == {"gemini_cli"}
+
+
+def test_a_health_check_that_hangs_past_the_deadline_ends_the_attempt_as_timed_out(tmp_path, monkeypatch):
+    monkeypatch.setattr(account_signin, "find_tool", lambda name: f"/bin/{name}")
+
+    async def scenario():
+        async def check(tool):
+            await asyncio.Event().wait()  # never answers
+        signin = account_signin.AccountSignIn(tmp_path / "home", check, lambda spec: None, "darwin", timeout=0.3)
+        await signin.start("claude")
+        signin._run["claude"]["status"].write_text("0")
+        view = await asyncio.wait_for(signin.state("claude"), 5)
+        return view, signin
+    view, signin = asyncio.run(scenario())
+    assert view["state"] == "timed_out" and "10 minutes" in view["message"]
+    assert "claude" not in signin._run
+
+
+def test_a_health_check_that_answers_signed_in_after_the_deadline_is_not_a_success(tmp_path, monkeypatch):
+    monkeypatch.setattr(account_signin, "find_tool", lambda name: f"/bin/{name}")
+    clock = Clock()
+
+    async def check(tool):
+        clock.now += 700  # the answer arrives after the ten minutes
+        return True
+    signin = account_signin.AccountSignIn(tmp_path / "home", check, lambda spec: None, "darwin", clock=clock,
+                                          on_succeeded=lambda t: pytest.fail("a late answer succeeded"))
+    asyncio.run(signin.start("claude"))
+    signin._run["claude"]["status"].write_text("0")
+    assert asyncio.run(signin.state("claude"))["state"] == "timed_out"

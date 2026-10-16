@@ -3271,19 +3271,11 @@ class ResearchFlow:
             if undecided([]) is None or not self._file_holds(items[job.head]):
                 submitted -= f"fulltext_adjudication:{job.head}:{job.run_no}" not in answered
                 return {"human_decided": True}
-            try:
-                output = await self._adjudication_call(run, scope, plan, job, self.deps.limiter, undecided)
-                if output is not None and output.get("cutoff"):
-                    cutoff_heads.add(job.head)
-                    return None
-                return output
-            except RunStopped:
-                raise
-            except Exception:
-                if (run["budget"].get("inspection") or {}).get("runner_version", 1) >= 4:
-                    raise
-                # One work's unexpected failure is recorded by not deciding it. The rest of the run continues (D18).
+            output = await self._adjudication_call(run, scope, plan, job, self.deps.limiter, undecided)
+            if output is not None and output.get("cutoff"):
+                cutoff_heads.add(job.head)
                 return None
+            return output
 
         def close_ready(completed: list[tuple[dict[str, Any] | None, _AdjudicationJob]]) -> None:
             for output, job in completed:
@@ -3300,16 +3292,9 @@ class ResearchFlow:
                     # decision was taken back since. Read from the stored steps, as a resumed run reads them.
                     closed.add(head)
                     continue
-                try:
-                    self._checkpoint(run_id, revision)
-                    self._close_adjudication(run, items[head], plan,
-                                             [collected[head][run_no] for run_no in range(1, FULLTEXT_RUNS + 1)])
-                except RunStopped:
-                    raise
-                except Exception:
-                    if (run["budget"].get("inspection") or {}).get("runner_version", 1) >= 4:
-                        raise
-                    pass
+                self._checkpoint(run_id, revision)
+                self._close_adjudication(run, items[head], plan,
+                                         [collected[head][run_no] for run_no in range(1, FULLTEXT_RUNS + 1)])
                 closed.add(head)
 
         stop = await self._send_through_limiter(run, jobs(), call, close_ready)

@@ -861,3 +861,45 @@ def test_coverage_is_the_union_of_both_calls_and_a_replayed_close_adds_nothing(t
     assert coverage["parts_shown"] == 15 and coverage["all_parts_shown"] and sent["n"] == 2
     assert replayed == (before, decision["id"])
     assert legacy["id"] == decision["id"] and legacy["read_coverage"] is None and after == before
+
+
+@pytest.mark.parametrize("where", ["call", "close"])
+def test_an_unexpected_error_in_a_reading_run_without_an_inspection_block_fails_the_run(tmp_path, monkeypatch, where):
+    """A reading run queued for a person's file or a late revision has no inspection block in its budget. An
+    unexpected error in one work's call or close fails the run; it is not swallowed into a completed run."""
+    from deixis.storage.db import now, transaction
+    from deixis.workflow.flow import ResearchFlow
+
+    works, fetcher = papers(1)
+    app = app_for(tmp_path, monkeypatch, Transport(works), fetcher, reading="off")
+    client = client_of(app)
+    try:
+        rid, _, _, _ = discover(client)
+        wait_fetch(client, rid)
+
+        async def broken_call(self, *args, **kwargs):
+            raise RuntimeError("SYNTHETIC broken reading call")
+
+        def broken_close(self, *args, **kwargs):
+            raise RuntimeError("SYNTHETIC broken reading close")
+
+        if where == "call":
+            monkeypatch.setattr(ResearchFlow, "_adjudication_call", broken_call)
+        else:
+            monkeypatch.setattr(ResearchFlow, "_close_adjudication", broken_close)
+        store = app.state.store
+        # The discovery's own reading decided the work; that decision is set aside so this run reads it again.
+        with transaction(store.conn):
+            store.conn.execute("UPDATE stage_decisions SET superseded_at = ? WHERE research_id = ? AND stage = 'fulltext'"
+                               " AND superseded_at IS NULL", (now(), rid))
+        run_id = store.create_run(rid, "fulltext_adjudication",
+                                  adjudication.read_budget(store.scope(rid)["effort"]), None)["id"]
+        app.state.worker.wake()
+        _, run = wait(client, rid, run_id)
+        plan = step_output(app.state.store, run_id, "adjudication_plan")
+        stored = app.state.store.run(run_id)
+    finally:
+        client.__exit__(None, None, None)
+    assert "inspection" not in stored["budget"]
+    assert plan["works"], plan
+    assert run["status"] == "failed" and stored["pause_reason"] == "internal_error"

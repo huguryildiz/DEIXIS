@@ -26,7 +26,7 @@ from keyring.errors import KeyringError
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from deixis import account_signin, credentials, key_verification, local_tools
+from deixis import account_signin, credentials, key_verification, local_tools, log_redaction
 from deixis.tool_paths import find_tool
 from deixis.config import Settings, load_settings
 from deixis.documents import fetch as fetch_module
@@ -793,6 +793,7 @@ def create_app(
     signin_launcher: account_signin.Launcher | None = None,
     signin_platform: str | None = None,
 ) -> FastAPI:
+    log_redaction.install()  # a key in a URL query never reaches a log line (E27)
     settings = settings or load_settings()
     ports = {settings.port}
     allowed_hosts = {f"{h}:{p}" for h in ("127.0.0.1", "localhost") for p in ports} | set(extra_hosts)
@@ -805,7 +806,11 @@ def create_app(
         if issues := skill.integrity_issues():
             raise RuntimeError(f"method package integrity failed: {issues}")
         conn = db.connect(settings.db_path)
-        db.migrate(conn)
+        try:
+            db.migrate(conn)
+        except db.MigrationFailed:  # reported under its own code and sentence (E24); the library is as it was before that file
+            conn.close()
+            raise
         store = Store(conn, clock=clock)
         store.recovery_dir = settings.recovery_dir
         store.study_table = settings.study_table
@@ -1539,6 +1544,16 @@ def create_app(
             raise CredentialFailure(credentials.failure_code(exc)) from exc
         key_changed(request, env)
         return {"key": credentials.status(env)}
+
+    @app.get("/api/credentials/{env}/in-use")
+    async def credential_in_use(env: str, request: Request) -> dict[str, Any]:
+        """How many researches have a queued or running run with a model connection or a source that reads this key (E13); the
+        delete confirmation shows it. Nothing blocks the delete: a step already sent finishes with the key it was sent with,
+        and the next step finds the key gone (or the shell's key back) and the run pauses there, saying so in its timeline."""
+        key = managed_key(env)
+        connections = {key.service, *(c.id for c in COMPAT_CONNECTIONS.values() if c.key_env == env)} if key.group == "model" else set()
+        providers = {p for p, c in CONNECTORS.items() if c.key_env == env}
+        return {"env": env, "running_researches": store_of(request).active_researches_using(connections, providers)}
 
     @app.post("/api/credentials/{env}/test")
     async def test_credential(env: str, request: Request) -> dict[str, Any]:

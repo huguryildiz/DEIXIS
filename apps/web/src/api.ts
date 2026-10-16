@@ -1382,6 +1382,8 @@ export const api = {
   saveCredential: (env: string, value: string) => request<{ key: KeyEntry; test: KeyTest | null }>(`/api/credentials/${env}`, json('PUT', { value })),
   setFileStore: (enabled: boolean) => request<Credentials>('/api/credentials/file-store', json('PUT', { enabled })),
   removeCredential: (env: string) => request<{ key: KeyEntry }>(`/api/credentials/${env}`, { method: 'DELETE' }),
+  // How many researches have a queued or running run that uses this key: the number the remove confirmation shows (E13).
+  credentialInUse: (env: string) => request<{ env: string; running_researches: number }>(`/api/credentials/${env}/in-use`),
   testCredential: (env: string) => request<KeyTest>(`/api/credentials/${env}/test`, { method: 'POST' }),
   testProvider: (id: string) => request<ProviderTest>(`/api/providers/${encodeURIComponent(id)}/test`, { method: 'POST' }),
   equationReader: () => request<EquationReader>('/api/equation-reader'),

@@ -89,7 +89,7 @@ def test_the_rebuild_keeps_rows_rowids_fts_references_triggers_and_indexes(tmp_p
 def test_a_failure_inside_the_migration_rolls_back_to_a_working_0013_library(tmp_path, monkeypatch):
     conn, store, svid, aid, passage = library_at_0013(tmp_path, monkeypatch, extra="INSERT INTO no_such_table VALUES (1);")
     rows, objects = snapshot(conn)
-    with pytest.raises(sqlite3.OperationalError, match="no_such_table"):
+    with pytest.raises(db.MigrationFailed, match="no_such_table"):
         db.migrate(conn)
     assert max(r[0] for r in conn.execute("SELECT version FROM schema_migrations")) == 13
     assert snapshot(conn) == (rows, objects)

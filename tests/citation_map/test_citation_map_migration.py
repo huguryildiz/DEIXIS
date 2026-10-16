@@ -94,7 +94,7 @@ def test_a_failure_inside_the_migration_leaves_0014_working(tmp_path, monkeypatc
     conn = library_at_0014(tmp_path, monkeypatch, extra="INSERT INTO runs (id) VALUES ('run_broken');")
     before = snapshot(conn)
     runs_sql = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'runs'").fetchone()[0]
-    with pytest.raises(sqlite3.IntegrityError, match="NOT NULL"):
+    with pytest.raises(db.MigrationFailed, match="NOT NULL"):
         db.migrate(conn)
     assert snapshot(conn) == before
     assert conn.execute("SELECT sql FROM sqlite_master WHERE name = 'runs'").fetchone()[0] == runs_sql

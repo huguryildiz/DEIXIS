@@ -4696,6 +4696,8 @@ const tr: Record<string, string> = {
   'A new key is tested with one short request before it is saved.': 'Yeni bir anahtar kaydedilmeden önce kısa bir istekle denenir.',
   'Remove key': 'Anahtarı kaldır',
   'Remove the key for {name}?': '{name} anahtarı kaldırılsın mı?',
+  '{n} research is running with this key. A step already sent finishes with it. Later steps use a key set outside DEIXIS, or none.': '{n} araştırma bu anahtarla çalışıyor. Gönderilmiş bir adım onunla biter. Sonraki adımlar DEIXIS dışında ayarlanmış bir anahtar varsa onu kullanır, yoksa anahtarsız gider.',
+  '{n} researches are running with this key. A step already sent finishes with it. Later steps use a key set outside DEIXIS, or none.': '{n} araştırma bu anahtarla çalışıyor. Gönderilmiş bir adım onunla biter. Sonraki adımlar DEIXIS dışında ayarlanmış bir anahtar varsa onu kullanır, yoksa anahtarsız gider.',
   'While this field is empty, DEIXIS sends the email that was set when it started.': 'Bu alan boşken DEIXIS, başlatılırken ayarlanan e-postayı gönderir.',
   'Without an email, OpenAlex and Crossref answer more slowly at busy times. Searches still run.': 'E-posta olmadan OpenAlex ve Crossref yoğun saatlerde daha yavaş cevap verir. Aramalar yine çalışır.',
   'Without a key, DEIXIS uses the daily budget OpenAlex gives to requests without a key. When it runs out, requests wait until it resets, and a run can pause.': 'Anahtar yoksa DEIXIS, OpenAlex’in anahtarsız isteklere verdiği günlük bütçeyi kullanır. Bütçe bitince istekler sıfırlanmasını bekler ve araştırma duraklayabilir.',

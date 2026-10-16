@@ -39,6 +39,34 @@ class SchemaCheckUnreadable(RuntimeError):
     """The library could not be read well enough to compare its migrations with the packaged ones."""
 
 
+class MigrationFailed(RuntimeError):
+    """A schema migration did not apply (E24). Its transaction was rolled back, so the library is as it was before that file;
+    files that had already finished stay applied. `code` is the startup code the launcher and the API report it under."""
+
+    code = "migration_failed"
+
+    def __init__(self, name: str, cause: BaseException):
+        self.name, self.cause = name, cause
+        failure = describe_failure(cause)
+        self.disk_full = failure is not None and failure[0] == "disk_full"
+        self.reason = "database or disk is full" if self.disk_full and isinstance(cause, OSError) else (str(cause) or type(cause).__name__)
+        super().__init__(self.sentence())
+
+    def sentence(self, path: Path | None = None) -> str:
+        advice = ("Free some disk space and start DEIXIS again." if self.disk_full
+                  else "Restore the latest backup (move this library aside, then run `deixis restore <backup folder>` for a folder "
+                       "made by `deixis backup`), or open the library with the DEIXIS version that made it.")
+        return (f"The library{f' file {path}' if path else ''} could not be updated to this version: migration {self.name} failed "
+                f"({self.reason}), so DEIXIS did not start. That step was undone and the library is as it was before it; "
+                f"a schema migration that had already finished stays applied. {advice}")
+
+
+class StartupProblem(str):
+    """One sentence for a library that cannot be opened; `code` names the class when the launcher needs it (else None)."""
+
+    code: str | None = None
+
+
 def packaged_versions() -> set[int]:
     return {int(path.name.split("_", 1)[0]) for path in MIGRATIONS_DIR.glob("*.sql")}
 
@@ -203,12 +231,16 @@ _STARTUP_ADVICE = {
 
 def open_problem(path: Path) -> str | None:
     """Open the library as the app will (connect, migrate, close). One sentence if that fails in a way
-    `describe_failure` names, None if it opens. A missing file is a first run, not a problem. Any other exception
-    (a failing migration, an unwritable folder) is not caught."""
+    `describe_failure` names or a migration fails (its `code` is `migration_failed`), None if it opens. A missing file
+    is a first run, not a problem. Any other exception (an unwritable folder) is not caught."""
     conn = None
     try:
         conn = connect(path)
         migrate(conn)
+    except MigrationFailed as exc:
+        problem = StartupProblem(exc.sentence(path))
+        problem.code = exc.code
+        return problem
     except (sqlite3.DatabaseError, OSError) as exc:
         failure = describe_failure(exc)
         if failure is None:
@@ -233,25 +265,28 @@ def migrate(conn: sqlite3.Connection) -> list[int]:
         version = int(path.name.split("_", 1)[0])
         if version in applied:
             continue
-        script = path.read_text(encoding="utf-8")
-        # Rebuilding a table that other tables reference needs foreign keys off (SQLite's documented 12-step procedure).
-        # The pragma cannot change inside a transaction, and the check runs before the commit.
-        keys_off = script.startswith(FOREIGN_KEYS_OFF)
-        if keys_off:
-            conn.execute("PRAGMA foreign_keys = OFF")
         try:
-            with transaction(conn):
-                for statement in _split_sql(script):
-                    conn.execute(statement)
-                if keys_off and conn.execute("PRAGMA foreign_key_check").fetchall():
-                    raise RuntimeError(f"foreign key check failed in {path.name}")
-                conn.execute(
-                    "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
-                    (version, path.name, now()),
-                )
-        finally:
+            script = path.read_text(encoding="utf-8")
+            # Rebuilding a table that other tables reference needs foreign keys off (SQLite's documented 12-step procedure).
+            # The pragma cannot change inside a transaction, and the check runs before the commit.
+            keys_off = script.startswith(FOREIGN_KEYS_OFF)
             if keys_off:
-                conn.execute("PRAGMA foreign_keys = ON")
+                conn.execute("PRAGMA foreign_keys = OFF")
+            try:
+                with transaction(conn):
+                    for statement in _split_sql(script):
+                        conn.execute(statement)
+                    if keys_off and conn.execute("PRAGMA foreign_key_check").fetchall():
+                        raise RuntimeError(f"foreign key check failed in {path.name}")
+                    conn.execute(
+                        "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+                        (version, path.name, now()),
+                    )
+            finally:
+                if keys_off:
+                    conn.execute("PRAGMA foreign_keys = ON")
+        except (sqlite3.Error, OSError, RuntimeError) as exc:  # the transaction has rolled this file back (E24)
+            raise MigrationFailed(path.name, exc) from exc
         done.append(version)
     if conn.execute("PRAGMA foreign_key_check").fetchall():
         raise RuntimeError("foreign key check failed after migration")

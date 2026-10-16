@@ -18,7 +18,7 @@ from uuid import uuid4
 
 import uvicorn
 
-from deixis import config, library_lock
+from deixis import config, library_lock, log_redaction
 from deixis.api.app import create_app
 from deixis.config import Settings, load_settings
 from deixis import data_location
@@ -75,6 +75,7 @@ def schema_problem(db_path: Path) -> str | None:
 
 
 LOCATION_ATTEMPTS = 5
+EXIT_MIGRATION_FAILED = 4  # the start-up code for a schema migration that did not apply (E24); every other refusal exits 2
 
 
 def location_changed(wanted: Path, postponed: Postponed | None) -> Path | str | None:
@@ -159,10 +160,10 @@ def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...], re
         return 2
     # P9 H3: a library that cannot be opened is one sentence and exit 2, not a traceback. H4's read-only precheck above
     # runs first because this block's db.connect creates -wal/-shm files and switches the journal mode. A failing
-    # migration is not caught.
+    # migration is its own case (E24): exit 4, a sentence that points at the backup.
     if (problem := db.open_problem(settings.db_path)) is not None:
         print(problem, file=sys.stderr)
-        return 2
+        return EXIT_MIGRATION_FAILED if getattr(problem, "code", None) == db.MigrationFailed.code else 2
     if not settings.web_dist.exists():
         print("UI build not found (apps/web/dist). The API will run; build the UI with `npm run build` in apps/web.")
     # Open event streams would otherwise hold graceful shutdown (and the port) until the browser disconnects.
@@ -445,6 +446,7 @@ def main(argv: list[str] | None = None) -> int:
     retained.add_argument("--delete", action="store_true", help="Delete listed files through the guarded recovery unlink")
     args = parser.parse_args(argv)
     use_system_certificates()  # before any HTTP client is built (F1)
+    log_redaction.install()  # E27
     if args.command == "reextract" and bool(args.retry) != bool(args.expected_extraction):
         parser.error("--retry and --expected-extraction must be supplied together")
     try:

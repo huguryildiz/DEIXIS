@@ -3665,5 +3665,20 @@ class Store:
                     "SELECT host, SUM(sends) AS sent, SUM(refusals) AS refused, SUM(unknown) AS unknown"
                     " FROM provider_requests WHERE run_id = ? GROUP BY host", (run_id,))}
 
+    def active_researches_using(self, connections: set[str], providers: set[str]) -> int:
+        """How many researches have a queued or running run (a pause requested still counts: its step is not over) whose scope
+        revision names one of these model connections in any role, or one of these sources. Paused runs and trashed
+        researches are not counted: nothing is sent for them until the person resumes (E13)."""
+        counted = set()
+        for row in self.conn.execute(
+            "SELECT DISTINCT r.research_id, s.model_connection, s.literature_connection, s.review_connection, s.providers_json"
+            " FROM runs r JOIN scope_revisions s ON s.research_id = r.research_id AND s.revision = r.scope_revision"
+            " JOIN researches x ON x.id = r.research_id AND x.trashed_at IS NULL"
+            " WHERE r.status IN ('queued', 'running', 'pause_requested')"
+        ):
+            if connections & {row[1], row[2], row[3]} or providers & set(json.loads(row[4])):
+                counted.add(row[0])
+        return len(counted)
+
     def run_exists(self, run_id: str) -> bool:
         return self.conn.execute("SELECT 1 FROM runs WHERE id = ?", (run_id,)).fetchone() is not None

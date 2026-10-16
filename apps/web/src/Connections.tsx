@@ -224,6 +224,7 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
   const [busy, setBusy] = useState(false)
   const [formError, setFormError] = useState('')
   const [asking, setAsking] = useState(false)
+  const [running, setRunning] = useState(0)  // researches running with this key, asked when the remove question opens (E13)
   const toast = useToast()
   if (!entry) return null
   const id = `key-${env}`
@@ -260,6 +261,10 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
       ? t('The key was not saved.') + ' ' + (keyRefusal(service, env, e.details?.http_status) ?? serviceErrorSentence({ kind: e.details?.kind, service, resetAt: e.details?.reset_at, effect: 'settings' }))
       : keychainError(e, keychain))).finally(() => setBusy(false))
   }
+  function ask() {
+    setRunning(0); setAsking(true)
+    api.credentialInUse(env).then(result => setRunning(result.running_researches)).catch(() => {})
+  }
   function remove() {
     setBusy(true); setFormError('')
     api.removeCredential(env).then(() => { setAsking(false); onSaved(); toast('success', t('Key removed.')) })
@@ -285,10 +290,11 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
     {formError && <Notice tone="error"><p id={`${id}-error`}>{formError}</p></Notice>}
     <div className="acts">
       {primary && <button type="submit" className="btn-pri" disabled={busy}>{busy ? <span className="spin" aria-hidden /> : typed ? <Save aria-hidden /> : <CircleCheck aria-hidden />}{t(busy ? (typed ? (entry.testable ? 'Testing and saving…' : 'Saving…') : 'Testing…') : primary)}</button>}
-      {entry.configured && !fromShell && !asking && <button type="button" className="ghost" disabled={busy} onClick={() => setAsking(true)}>{t(plain ? 'Remove ID' : 'Remove key')}</button>}
+      {entry.configured && !fromShell && !asking && <button type="button" className="ghost" disabled={busy} onClick={ask}>{t(plain ? 'Remove ID' : 'Remove key')}</button>}
     </div>
     {asking && <RemoveNotice busy={busy} onRemove={remove} onKeep={() => setAsking(false)}
-      text={t(plain ? 'Remove the ID for {name}?' : 'Remove the key for {name}?', { name: service }) + ' ' + (entry.shell_fallback ? t('DEIXIS goes back to the key that is set outside it.') : removeEffect)} />}
+      text={t(plain ? 'Remove the ID for {name}?' : 'Remove the key for {name}?', { name: service }) + ' ' + (entry.shell_fallback ? t('DEIXIS goes back to the key that is set outside it.') : removeEffect)
+        + (running > 0 ? ' ' + t(running === 1 ? '{n} research is running with this key. A step already sent finishes with it. Later steps use a key set outside DEIXIS, or none.' : '{n} researches are running with this key. A step already sent finishes with it. Later steps use a key set outside DEIXIS, or none.', { n: running }) : '')} />}
   </form>
 }
 

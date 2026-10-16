@@ -1,4 +1,4 @@
-"""P9 H4, row B02 tooling: `scripts/p9/upgrade_check.py` on SYNTHETIC folders only.
+"""P9 H4, row B02 tooling: `scripts/release_checks/upgrade_check.py` on SYNTHETIC folders only.
 
 Every test replaces the default data directory with a temp path and clears DEIXIS_DATA_DIR (or sets it to another temp
 path); nothing here names, computes or opens the real `~/Library/Application Support/DEIXIS`. The consent flag appears in
@@ -20,7 +20,7 @@ from deixis.storage import db
 from deixis.workflow.store import Store
 from test_p9_restore_matrix import add_versions, make_source_library, migrated_library, newer_code_migrations
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "p9"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "release_checks"))
 import upgrade_check as uc  # noqa: E402
 
 

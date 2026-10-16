@@ -9,8 +9,8 @@ an unwritable data directory each end with an understandable message, and nothin
 No model call, no provider call. The live service on port 8765, the live data directory and the real keychain are
 never touched. Standard library only; runs on Python 3.9 or newer, arm64 macOS only (plan section 2).
 
-    python3 scripts/p9/install_check.py --port 8871
-    python3 scripts/p9/install_check.py --self-test
+    python3 scripts/release_checks/install_check.py --port 8871
+    python3 scripts/release_checks/install_check.py --self-test
 
 Exit codes: 0 every mandatory row passed, 1 a row failed, 2 refused (environment, port, directory), 4 keychain
 isolation failed. Raw output goes to --out-dir (default .local/p9-h1/<stamp>/, ignored by Git).
@@ -869,7 +869,7 @@ class Audit:
 
     def shell_check(self) -> Dict[str, Any]:
         shot = self.work / "home-screen.png"
-        argv = [str(self.bin / "node"), str(REPO / "scripts/p9/shell_check.mjs"), str(self.export), self.url + "/", str(shot)]
+        argv = [str(self.bin / "node"), str(REPO / "scripts/release_checks/shell_check.mjs"), str(self.export), self.url + "/", str(shot)]
         result = self.run_step("shell-check", argv, self.export, self.env("shell"), LIMITS["shell"])
         try:
             parsed = json.loads(result["stdout"].strip().splitlines()[-1])

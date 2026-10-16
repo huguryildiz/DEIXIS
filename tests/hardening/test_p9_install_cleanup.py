@@ -6,7 +6,7 @@ import pytest
 
 
 def load_install():
-    spec = importlib.util.spec_from_file_location("install_check", Path(__file__).resolve().parents[2] / "scripts/p9/install_check.py")
+    spec = importlib.util.spec_from_file_location("install_check", Path(__file__).resolve().parents[2] / "scripts/release_checks/install_check.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod

@@ -97,7 +97,7 @@ def test_embedding_runner_ends_by_itself_and_frees_its_lock(harness, tmp_path, r
 def pdf_case(tmp_path, lifetime="60", guard=True, limit=250 * 1024**2):
     """Native start-time readers and kqueue, independent of ps and without adopting the child."""
     from deixis.documents import child_guard as cg
-    from scripts.p9 import memory_probe
+    from scripts.release_checks import memory_probe
     from test_child_guard import wait_for as native_wait, log_rows
 
     big, ready, gate, log = [tmp_path / name for name in ("big.pdf", "ready.json", "gate", "guard.jsonl")]
@@ -213,7 +213,7 @@ def test_orphan_memory_guard_disabled_control(tmp_path):
 @pytest.mark.skipif(sys.platform != "darwin", reason="real topology and kqueue evidence requires macOS")
 def test_orphan_guard_parent_alive_preserves_pdf_memory_failure(tmp_path):
     from deixis.documents import pdf
-    from scripts.p9 import memory_probe
+    from scripts.release_checks import memory_probe
     big = tmp_path / "big.pdf"
     memory_probe.build_pdf(big, 67 * 1024**2)
     result = pdf.extract_pdf(big, max_memory=250 * 1024**2)

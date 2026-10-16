@@ -576,7 +576,7 @@ def test_memory_kill_followed_by_buffered_stdout_over_the_production_cap_keeps_f
                     reason="F09 for the arXiv source child takes about 30 s; set DEIXIS_P9_PRODUCTION_THRESHOLD=1")
 def test_the_source_child_is_stopped_at_the_production_memory_limit(tmp_path):
     # ~200 MiB of decoded page content in a PDF of about 200 KB makes the matching step grow past 1 GiB (D159).
-    sys.path.insert(0, str(REPO / "scripts" / "p9"))
+    sys.path.insert(0, str(REPO / "scripts" / "release_checks"))
     import memory_probe
 
     path = tmp_path / "expands-past-1gib.pdf"

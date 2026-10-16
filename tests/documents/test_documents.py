@@ -298,7 +298,7 @@ def test_a_lost_memory_watch_is_reported_as_a_failed_extraction(tmp_path, monkey
 @pytest.mark.skipif(os.environ.get("DEIXIS_P9_PRODUCTION_THRESHOLD") != "1", reason="F09 at the production limit takes about 30 s; set DEIXIS_P9_PRODUCTION_THRESHOLD=1")
 def test_extraction_is_stopped_at_the_production_memory_limit(tmp_path):
     # ~200 MiB of decoded page content in a file of about 200 KB makes the extraction child grow past 1 GiB (D138).
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "p9"))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "release_checks"))
     import memory_probe
 
     path = tmp_path / "expands-past-1gib.pdf"

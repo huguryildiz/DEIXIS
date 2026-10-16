@@ -16,7 +16,7 @@ summarize/table/limits: rep files are merged by point name (--out first, then ea
 
 Every library is synthetic: SYNTHETIC titles, no answers, reports, evidence tables, model steps or model sessions.
 Measure with the repository's venv python (native arm64), for example
-  PYTHONPATH=backend:. .venv/bin/python scripts/p9/capacity.py measure ...
+  PYTHONPATH=backend:. .venv/bin/python scripts/release_checks/capacity.py measure ...
 The script starts only the processes it records as (pid, lstart, command) and re-checks that record before it signals one.
 """
 
@@ -1405,9 +1405,9 @@ def limits_table(measured: dict[str, Any] | None = None) -> list[dict[str, Any]]
         {"limit": "Model concurrency", "kind": "configurable default", "raw": concurrency, "value": f"{concurrency} calls (DEIXIS_MODEL_CONCURRENCY)",
          "source": where(backend / "config.py", r"\s+model_concurrency:\s*int\s*="), "measured": "not measured, needs a model"},
         {"limit": "Server RSS peak", "kind": "measured only", "raw": 2_000_000_000, "value": "no limit in code; K03a threshold below 2,000,000,000 bytes (S7)",
-         "source": "scripts/p9/capacity.py FROZEN K03a", "measured": rss_text},
+         "source": "scripts/release_checks/capacity.py FROZEN K03a", "measured": rss_text},
         {"limit": "Works in one research", "kind": "measured only", "raw": None, "value": "no limit in code",
-         "source": "scripts/p9/capacity.py FROZEN K01d", "measured": works_text},
+         "source": "scripts/release_checks/capacity.py FROZEN K01d", "measured": works_text},
     ]
 
 

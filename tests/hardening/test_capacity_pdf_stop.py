@@ -8,7 +8,7 @@ import pytest
 
 @pytest.mark.parametrize("stage", ["pdf_first_page", "pdf_jump"])
 def test_pdf_stop_waits_for_delayed_image_completion(stage):
-    script = Path(os.environ.get("RR_B_BROWSER_SCRIPT", Path(__file__).resolve().parents[2] / "scripts/p9/capacity_browser.mjs"))
+    script = Path(os.environ.get("RR_B_BROWSER_SCRIPT", Path(__file__).resolve().parents[2] / "scripts/release_checks/capacity_browser.mjs"))
     code = r"""
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
 const source = fs.readFileSync(process.argv[1], 'utf8');

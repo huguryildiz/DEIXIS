@@ -20,7 +20,7 @@ from deixis.workflow.store import Store
 from deixis.workflow.views import research_view
 
 REPO = Path(__file__).resolve().parents[2]
-_spec = importlib.util.spec_from_file_location("capacity", REPO / "scripts" / "p9" / "capacity.py")
+_spec = importlib.util.spec_from_file_location("capacity", REPO / "scripts" / "release_checks" / "capacity.py")
 capacity = importlib.util.module_from_spec(_spec)
 sys.modules["capacity"] = capacity
 _spec.loader.exec_module(capacity)

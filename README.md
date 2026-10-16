@@ -68,7 +68,7 @@ arXiv papers can also take their equations from the authors' LaTeX source. That 
 
 **Scholarly sources.** OpenAlex, Semantic Scholar, Crossref, arXiv, bioRxiv (through OpenAlex), PubMed, IEEE Xplore, Scopus, CORE and SerpApi have connectors. The research search itself only queries OpenAlex and Semantic Scholar; Crossref and Scopus fill in abstracts. The other connectors can be configured in Settings but the search does not call them. Some need an API key or an institutional entitlement.
 
-**Model connections.** Codex (ChatGPT account), Claude Code, GitHub Copilot CLI and Gemini CLI run through their own sign-in. Gemini, DeepSeek, Anthropic, OpenAI, Qwen, Kimi, Mistral, Grok, GLM, Meta Muse, Xiaomi MiMo and OpenRouter take an API key. Ollama, LM Studio and any OpenAI-compatible server on `localhost` run models on your computer. Codex is the connection used for most live runs; many of the others have been tested only with fake responses.
+**Model connections.** Claude Code (Claude Pro or Max account), Codex CLI (ChatGPT account), GitHub Copilot CLI (Copilot subscription) and Gemini CLI (Google account) run through their own sign-in. Gemini, DeepSeek, Anthropic, OpenAI, Qwen, Kimi, Mistral, Grok, GLM, Meta Muse, Xiaomi MiMo and OpenRouter take an API key. Ollama, LM Studio and any OpenAI-compatible server on `localhost` run models on your computer. Codex is the connection used for most live runs; many of the others have been tested only with fake responses.
 
 Every model step is sent with no tools, a fixed JSON schema and an allowlist of record IDs. Output from a model other than the one requested is recorded but not used, and there is no silent fallback to another model.
 
@@ -86,7 +86,7 @@ PYTHONPATH=backend uv run python -m deixis serve
 
 The app opens at <http://127.0.0.1:8765/>. If that port already serves DEIXIS, open that instance instead of starting another. The app starts without any model connection; you need one only to run a research.
 
-**Connect a model and sources.** Open Settings in the app. Keys entered there normally go into the system keychain. Keys found in an untracked `.env` at startup are moved there only after the keychain write is verified; if that fails, they stay in `.env`. The `.env` file is a development-mode convenience for a run from this repository; an installed app never reads it and keeps keys in the system keychain only. [`docs/product/providers.env.example`](docs/product/providers.env.example) lists the variable names. Codex signs in to its own home folder inside the data directory, separate from your normal Codex setup.
+**Connect a model and sources.** Open Settings in the app. Keys entered there normally go into the system keychain. Keys found in an untracked `.env` at startup are moved there only after the keychain write is verified; if that fails, they stay in `.env`. The `.env` file is a development-mode convenience for a run from this repository; an installed app never reads it and keeps keys in the system keychain only. [`providers.env.example`](providers.env.example) lists the variable names. Codex signs in to its own home folder inside the data directory, separate from your normal Codex setup.
 
 **Where data lives.** The library, PDFs, provider responses and model homes are stored in `~/Library/Application Support/DEIXIS`, never in the repository. Set `DEIXIS_DATA_DIR` to use another folder, for example a throwaway one for experiments. Settings → This computer can move the library to another folder. Libraries written before the clean start of 10 October 2026 do not open.
 
@@ -121,7 +121,7 @@ A backup holds a consistent database snapshot, the PDFs in use, provider respons
 
 `reextract` re-reads the PDFs in use whose stored text came from an older extractor version; `--dry-run` only reports what would change. `equations install` adds the optional Marker equation reader (about 4.4 GB); without it, arXiv papers take their equations from the authors' LaTeX source, and Mathpix can be switched on in Settings.
 
-Two release checks live in `scripts/p9/`. `install_check.py --port 8871` installs `HEAD` into a temporary folder and starts it with its own port, data directory and keychain. `run_matrix.sh` runs the whole model-free acceptance matrix (30 to 50 minutes, including the parity check, so it needs the mockup too) and refuses to start while a `.env` exists. Both leave a running instance and your library alone.
+Two release checks live in `scripts/release_checks/`. `install_check.py --port 8871` installs `HEAD` into a temporary folder and starts it with its own port, data directory and keychain. `run_matrix.sh` runs the whole model-free acceptance matrix (30 to 50 minutes, including the parity check, so it needs the mockup too) and refuses to start while a `.env` exists. Both leave a running instance and your library alone.
 
 ## Architecture
 

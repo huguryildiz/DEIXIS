@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """P9 H8: the whole automatic acceptance matrix (every S, G and A row of plan section 4) in one command.
 
-    scripts/p9/run_matrix.sh                       # all stages, then the table
-    scripts/p9/run_matrix.sh --only pytest,process # a partial run; the other rows print "ölçülmedi"
-    scripts/p9/run_matrix.sh --self-test           # checks of the row mapping, no stage is started
+    scripts/release_checks/run_matrix.sh                       # all stages, then the table
+    scripts/release_checks/run_matrix.sh --only pytest,process # a partial run; the other rows print "ölçülmedi"
+    scripts/release_checks/run_matrix.sh --self-test           # checks of the row mapping, no stage is started
 
 Stages, in order: preflight, f09 (H0b, H0c), process (H2, H3, H4), install (H1), pytest, web (build and lint), playwright (A to G,
 X01 to X06), capacity (H5). The wall-clock stages (f09, process, capacity) first wait up to 10 minutes for a 1-minute load below QUIET_LOAD and
@@ -814,7 +814,7 @@ def run_stages(args: argparse.Namespace, run: Run, meta: dict[str, Any], out: Pa
         gate(run, meta, "process")
         run.stage("process", [(run.pytest_cmd(out / "process.xml", "-m", "process", "-n", "0"), run.env(), REPO)])
     if run.wanted("install"):
-        cmd = [run.python, "scripts/p9/install_check.py", "--port", "8950", "--out-dir", str(out / "install"), "--work-dir", str(run.install_work)]
+        cmd = [run.python, "scripts/release_checks/install_check.py", "--port", "8950", "--out-dir", str(out / "install"), "--work-dir", str(run.install_work)]
         if args.overlay_uncommitted:
             cmd.append("--overlay-uncommitted")
         env = run.env()
@@ -845,7 +845,7 @@ def run_stages(args: argparse.Namespace, run: Run, meta: dict[str, Any], out: Pa
     if run.wanted("capacity"):
         gate(run, meta, "capacity")
         env = run.env(P9_CAPACITY_PORT_FIRST="8950")
-        cap = [run.python, "scripts/p9/capacity.py"]
+        cap = [run.python, "scripts/release_checks/capacity.py"]
         root, cout = str(run.cap_root), str(run.cap_out)
         normal, pdf_out, control = [str(run.cap_out / name) for name in ("normal", "pdf", "control")]
         merge = ["--out", cout, "--also", normal, pdf_out, control]

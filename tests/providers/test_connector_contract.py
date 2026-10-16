@@ -470,7 +470,7 @@ def test_missing_fixture_is_named(monkeypatch):
 
 
 def test_pending_and_existing_evidence():
-    ledger = (ROOT / "docs/product/connector-onboarding.md").read_text()
+    ledger = (ROOT / "tests/providers/connector-onboarding.md").read_text()
     rows = {line.split("|")[1].strip().split(".")[0]: line.split("|")[-2].strip()
             for line in ledger.splitlines() if line.startswith("| ")}
     assert rows["option_types"] == "B3a fixed (D179)"

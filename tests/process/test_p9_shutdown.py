@@ -111,7 +111,7 @@ def test_f04_model_call_in_flight(harness, tmp_path, sig):
 
 @pytest.mark.parametrize("sig", SIGNALS)
 def test_f04_extraction_in_flight(harness, tmp_path, sig):
-    from scripts.p9 import memory_probe
+    from scripts.release_checks import memory_probe
 
     big = tmp_path / "big.pdf"
     memory_probe.build_pdf(big, 60 * 1024 * 1024)

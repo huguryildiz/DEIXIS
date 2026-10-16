@@ -1,4 +1,4 @@
-"""P9 H8: the row mapping of `scripts/p9/run_matrix.py`. Pure functions on synthetic junit and Playwright files; no stage is run
+"""P9 H8: the row mapping of `scripts/release_checks/run_matrix.py`. Pure functions on synthetic junit and Playwright files; no stage is run
 and nothing is started except one `pytest --collect-only` listing, used to prove every test pattern in the row table matches a real test."""
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "scripts" / "p9"))
+sys.path.insert(0, str(REPO / "scripts" / "release_checks"))
 import run_matrix as rm  # noqa: E402
 
 PASS, FAIL, NOT = rm.PASS, rm.FAIL, rm.NOT
@@ -321,7 +321,7 @@ def test_empty_all_rule_is_not_a_pass():
 
 
 def test_the_capacity_port_variable_moves_the_range_and_refuses_a_live_port():
-    code = "import sys; sys.path.insert(0, 'scripts/p9'); import capacity; print(capacity.PORTS[0], capacity.PORTS[-1])"
+    code = "import sys; sys.path.insert(0, 'scripts/release_checks'); import capacity; print(capacity.PORTS[0], capacity.PORTS[-1])"
     ok = subprocess.run([sys.executable, "-c", code], cwd=str(REPO), stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True,
                         env=dict(__import__("os").environ, P9_CAPACITY_PORT_FIRST="8950", PYTHONPATH="backend:."))
     assert ok.stdout.split() == ["8950", "8970"], ok.stderr

@@ -9,7 +9,7 @@ The owner is checking the app by eye, and the problems they find get fixed in or
 ## Next
 
 1. The owner's visual check and the fixes it turns up.
-2. P10: the macOS package (plan in `.local/p10-plan.md`), then the search work listed under "Search" below.
+2. P10: the macOS package (plan in `.local/plans/p10-plan.md`), then the search work listed under "Search" below.
 
 ## Done
 
@@ -96,7 +96,7 @@ One run per mode with gpt-5.6-luna on the DBR/VBF question, on a library copy.
 
 ### Answer coverage (grounding audit, 16 Oct)
 
-A model-free check of the 8 stored answers found all 171 citation links sound: each anchor sits word for word in a passage of that answer's own input. The gap is coverage, not integrity (`.local/grounding-audit-2026-10-16.md`).
+A model-free check of the 8 stored answers found all 171 citation links sound: each anchor sits word for word in a passage of that answer's own input. The gap is coverage, not integrity (`.local/plans/grounding-audit-2026-10-16.md`).
 
 1. The latest DBR/VBF answer cites 14 of 20 full-text works and none of 24 abstract-only works. Relevant works go uncited, for example "Light-weight depth-based routing" and the Q-learning DBR paper (both full text), and "Adaptive Holding time and DBR" (abstract only, though the question asks for holding-time formulas).
 2. Target: every input work with a passage that answers the question is cited, or the answer says why it is left out. Not every input work: surveys, MAC and security papers are in the input too. Rough guess for this question: 20–25 such works against about 14 cited (not measured).
@@ -112,6 +112,7 @@ A model-free check of the 8 stored answers found all 171 citation links sound: e
 4. The value of survey papers is not measured, and papers with "survey" in the title are dropped.
 5. In Standard, 7 of 20 runs took over 5 minutes (cause not checked), Detailed citation accuracy was not re-measured after the fixes, and the sample is small (10 questions × 2).
 6. The free OpenAlex daily quota runs out after about 20 researches (the app now stops sending once it is used up, D173), and the answer call sometimes times out (1 in 21 runs).
+7. The full-text limits (10/20/40 works for Quick/Standard/Detailed) were never chosen by measurement; the 16 Oct check only showed they hold. Raising them is unlikely to help yet: Detailed filled 24 of 40 slots for lack of PDFs, and answers cite few of the works they already get. Measure after the answer-coverage work.
 
 ### Not measured (needs a real model or real use)
 

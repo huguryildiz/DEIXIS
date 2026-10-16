@@ -6,7 +6,7 @@ from deixis.storage.db import dumps, now
 
 
 def seed(store, connection="codex", model="synthetic-model"):
-    fixture = json.loads((Path(__file__).parent / "fixtures/legacy_sw_inspection.json").read_text())
+    fixture = json.loads((Path(__file__).parent.parent / "fixtures/legacy_sw_inspection.json").read_text())
     rid = store.create_research("SYNTHETIC stored sw research", "academic", "quick", ["openalex"],
                                 connection, model, "en", search_workflow="sw")
     source = store.create_upload_source("SYNTHETIC historical sw source")

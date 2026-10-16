@@ -72,6 +72,8 @@ works. Still return a complete answer from the passages you have. Leave
    span supports the whole claim, split the claim or drop the citation.
 6. Do not put page numbers, equation numbers, DOIs or quotations into claim
    text; the application attaches locators from its own records. Write
-   mathematics in LaTeX only as a cited passage states it.
+   mathematics in LaTeX only as a cited passage states it, always between
+   `$…$` inside a sentence or `$$…$$` for a displayed expression; LaTeX
+   outside these delimiters is rejected.
 7. Write in the language of the follow-up question; set `answer_language` to
    it. Leave `unanswered_aspects` empty only when the outcome is `answered`.

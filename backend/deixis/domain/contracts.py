@@ -1080,6 +1080,7 @@ def _semantic_checks(step_input: dict[str, Any], output_type: str, result: dict[
 
 
 MATH = re.compile(r"\$\$.+?\$\$|\$[^$\n]+\$", re.DOTALL)
+LATEX_OUTSIDE_MATH = re.compile(r"\\(?:[A-Za-z]{2,}|[_^{}])|[_^]\{")
 
 # Shared by section validation and final assembly; physical band/energy gaps are exempt.
 REPORT_BANNED = re.compile(
@@ -1308,6 +1309,10 @@ def _check_math(step_input: dict[str, Any], draft: dict[str, Any], report: Valid
             findings = report.issues if step_input["task_type"] == "report_section" else report.warnings
             findings.append(Issue("math_not_well_formed", path,
                                          "math delimiters, braces or environments are not balanced"))
+        if match := LATEX_OUTSIDE_MATH.search(MATH.sub(" ", text)):
+            # Undelimited LaTeX reaches the reader as raw source; repair wraps it in $…$ before the answer is stored.
+            report.issues.append(Issue("math_without_delimiters", path,
+                                       f"{match.group(0)!r} is LaTeX outside $…$; wrap the expression in $…$ or $$…$$"))
 
     passages = {p["passage_id"]: p for p in step_input["passages"]}
     for i, claim in enumerate(draft["claims"]):

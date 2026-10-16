@@ -164,3 +164,11 @@ def test_plain_sentence_without_a_frame_gets_no_warning():
     draft["limitations"][1]["text"] = "The published version of A3 was not inspected; the preprint passage may not reflect it."
     report = contracts.validate_model_output(STEP_INPUTS["A_answer"], draft)
     assert report.ok and report.warnings == []
+
+
+def test_latex_outside_dollar_delimiters_is_a_validation_issue():
+    draft = json.loads(json.dumps(next(c for c in CASES if c["name"] == "answer_valid")["output"]))
+    draft["claims"][0]["text"] = r"The holding time is f(d) = \frac{2\tau}{\delta} \cdot (R - d)."
+    draft["claims"][0]["passage_ids"] = ["psg_SYNA1pg003"]
+    report = contracts.validate_model_output(STEP_INPUTS["A_answer"], anchored(draft))
+    assert [i.path for i in report.issues if i.code == "math_without_delimiters"] == ["/claims/0/text"]

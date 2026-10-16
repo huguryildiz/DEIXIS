@@ -1,96 +1,118 @@
-# DEIXIS durumu
+# DEIXIS status
 
-**Son güncelleme:** 16 Ekim 2026. Ayrıntılı kararlar [docs/decisions.md](docs/decisions.md) içinde; eski D numaraları git'teki eski kayda gider (commit 26c8214).
+**Last updated:** 16 October 2026. Decisions are in [docs/decisions.md](docs/decisions.md); old D numbers point to the old log in Git (commit 26c8214).
 
-## Şu an
+## Now
 
-- Temiz başlangıç bitti (10–11 Eki): hızlı yol tek arama yolu, eski arama/cevap yolları ve eski veri desteği silindi, şema tek baseline'dan başlıyor. Bugünkü yapı yeni başlangıç noktası. Temizlikten sonra testler ve tarayıcı testleri geçiyor. Canlı kontrol (11 Eki, gpt-5.6-luna, gerçek OpenAlex, boş veri klasörü): irs2021 ve dbr_vbf, Hızlı 2,8 / 1,7 dk, Standart 4,2 / 3,0 dk; dört cevap da yapısal kontrolden geçti (`structurally_valid`). Her biri tek koşu; kaynakların iddiaları gerçekten desteklediği puanlanmadı.
-- Tohum PDF artık aramayı yönlendiriyor (11 Eki, D2): PDF OpenAlex'te bulunursa atıf zincirinin ilk tohumu olur, benzer makale araması ve sorgu yazımı PDF'i de okur, sıralama onu doğru tanır. Sahte verili testlerle doğrulandı; gerçek sorularda faydası ölçülmedi.
-- Yalnız eklenen PDF'lerle cevap artık PDF'leri geniş okuyor (11 Eki, D4): önce her PDF'ten en çok 6 pasaj gidiyordu, şimdi 48 pasajlık sınır PDF'ler arasında bölünüyor ve kaynakça parçaları sona kalıyor. Dört canlı koşuda (gpt-5.6-luna, her biri tek koşu) dört cevap da yapısal kontrolden geçti; iddiaları insan kontrol etmedi.
-- Birden çok tohum PDF ve Zotero (11 Eki, D3): en çok 5 PDF birlikte aramayı yönlendiriyor; yüklenen PDF'ler ve Zotero PDF'leri aynı yoldan geçiyor, yalnız Zotero koleksiyonuyla başlanınca da arama kendiliğinden başlıyor. Zotero kaydının DOI'si, kapağı boş PDF'lerin de eşleşmesini sağlıyor. Araştırma sayfası her PDF için ne işe yaradığını yazıyor. Canlı ölçüm (11 Eki, 3 soru, tek koşu): PDF'ler 10'da 9 doğru makaleyle eşleşti, yanlış yok; 1 tohum hedefleri biraz öne taşıdı, 2–3 tohum iki soruda geriletti. Dondurulmuş kurala göre "yardımı gösterilemedi"; aynı ölçümde OpenAlex'in 1.500 karakter sınırı hatası bulunup düzeltildi.
-- Tohumlar artık soruyu bastırmıyor (11 Eki, D6, kod): soru OpenAlex'e tohumsuzdaki gibi kendi isteğiyle gidiyor, her tohum ayrı bir benzer-makale isteğiyle yeni aday getiriyor. Zincirin ilk tohumları yalnız sorunun kendi sonuçlarından seçiliyor. Sıralamada tohum PDF'leri soruya göre seçilen tohumların yerini almıyor, birden çok tohuma yakın olmak fazladan puan getirmiyor. Tohumsuz arama ve eski kuralla donmuş koşular değişmedi. Canlı ölçüm (11–12 Eki, 3 soru, her kol 2 koşu, kural önceden donmuş): 1 tohumda hedeflerin ilk 50'deki payı 0,51 (tohumsuz 0,42), 3 tohumda 0,47 (0,39); battery_soh'ta ikisi de bir hedef geride. Karar: 1 tohum "zarar yok, yardım işareti", 3 tohum "zarar yok". Tohumlar hedeflerin kendisi (sızıntılı test), örneklem küçük. Ölçümde OpenAlex'in uzunluğu UTF-16 ile saydığı bulunup düzeltildi.
-- OpenAlex benzer-makale istekleri artık üst üste gidiyor (12 Eki, D10): istekler 1,5 sn arayla başlıyor, cevaplar birbirini beklemiyor; tohum istekleri yine tohum sırasıyla yazılıyor. Beklerken kota biterse ya da arama süresi dolarsa istek gönderilmiyor ve istek hakkından düşmüyor. Sayfa başına kayıt sınırı 100 (OpenAlex 200'ü kaldırıyor). 1,5 sn tek canlı denemeden (6 istek: 1,0 sn'de bir 429, 1,25 ve 1,5 sn'de hiç); tohumlu koşuda kazanılan süre canlı ölçülmedi.
-- Arayüz yeni tasarıma geçti (11 Eki, D5): mockup v24'ün görünümü 7 parçada uygulamaya taşındı (renkler ve yazı tipleri, sol menü, ana sayfa ve yazma kutusu, araştırma sayfası, yan paneller, kaynaklar/kuyruk/kanıt tablosu, kütüphane/ayarlar/çöp). Yapı ve davranış aynı; arkasında backend olmayan mockup düğmeleri eklenmedi. Mockup ile ekran görüntüsü kıyası 17 hata buldu, hepsi düzeltildi; 39 karar maddesinden 14'ü mockup'a uyarlandı, 25'i bilerek bırakıldı (`.local/design/port-visual-diff.md`). Tarayıcı testleri 210/210; her parçayı Sol inceledi. Ertelenen: sağ sütun, kütüphanenin üç bölmeli düzeni, ilk kurulum kartı.
-- Anahtarsız kullanıcıya yerleşik model (11 Eki, D7): Ayarlar'da seçim yoksa ve Gemini anahtarı yoksa, indirilmiş yerleşik model kendiliğinden kullanılıyor; önce anlamsal arama kapalı kalıyordu. Ana sayfada, anlamsal arama yalnız bu yüzden kapalıysa tek tıkla indirme notu çıkıyor; açıkça "Kapalı" seçen kullanıcıya çıkmıyor. Araştırma kaydı artık sıralamanın dondurduğu modeli yazıyor. Testlerle ve anahtarsız bir test sunucusunda gerçek indirmeyle doğrulandı; yerleşik modelin Gemini'ye göre sıralama kalitesi ölçülmedi.
-- Ayarlar ve modeller (14 Eki, D19, D20, D22, ortak commit): API anahtarları artık sistemin anahtar deposunda (macOS Keychain, Windows Credential Locker); `.env`'deki anahtarlar açılışta oraya taşınıyor ve arayüzde `.env` geçmiyor. Grok, GitHub Copilot, GLM, Muse Spark, Muse Glimmer ve Ollama araştırma adımlarını çalıştırabiliyor; "planlanan" grubu kalktı. Yerleşik embedding modelinin paketleri hash'le sabitlendi. Ana sayfadaki model seçici geri geldi, başlangıç modeli yalnız hazır bağlantılardan seçiliyor. Testler sahte istemcilerle; altı yeni model bağlantısına canlı istek gönderilmedi.
-- Zotero ve TypeSafe anahtarları da Keychain'e taşınıyor (14 Eki, D19 eki): `ZOTERO_API_KEY`, `ZOTERO_LIBRARY_ID` ve `TYPESAFE_API_KEY` açılışta `.env`'den alınıyor. zotero.org anahtarı ve kullanıcı kimliği Ayarlar → Zotero kartından giriliyor; TypeSafe'in kartı yok. Grup kitaplığı için `ZOTERO_LIBRARY_TYPE=group` hâlâ ortamdan.
-- Veri konumu (15 Eki, D32): Ayarlar → Bu bilgisayar'da kütüphanenin klasörü, diskteki boyutu (veritabanı, PDF'ler, sağlayıcı yanıtları, araçlar), diskte kalan yer ve "Konumu değiştir" var. Yeni klasör bir sonraki açılışta kullanılıyor; taşıma açılışta, veritabanı açılmadan yapılıyor. Klasörde zaten kütüphane varsa o açılıyor, eskisi yerinde kalıyor. Testler geçici klasörlerle; gerçek harici diske taşıma ve macOS klasör seçici denenmedi.
-- Parite sonrası altı iş (14–15 Eki): eski arayüzün kullanılmayan CSS sınıfları, bileşeni, renk token'ları ve okunmayan 418 metin anahtarı silindi (P0). Arama planı, gönderilen sorgunun taşımadığı kelimeyi üstü çizili ve nedeniyle gösteriyor (P1, D26). Kullanım kutusu koşunun OpenAlex ve Semantic Scholar'a gönderdiği istekleri kayıtlı satırlardan sayıyor; bilinmeyen "bilinmiyor" (P2, D31). Her model çağrısı gönderilen düşünme düzeyini saklıyor, model satırı tahmin göstermiyor (P3, D25). Ayarlar'da proxy için kenar çubuğu adı alanı (P4). Anahtarsız kaynaklar için "Dene": tek istek, yalnız "cevap verdi / vermedi" (P5, D33). Hepsi sahte veriyle test edildi; canlı sağlayıcı ve gerçek modelle ölçülmedi.
-- Aynı gece diğer oturumlardan: geri çekilen makaleler "Geri çekildi" işaretli (D27), cevap yazım kuralları (D28), Codex/Claude Code için Ayarlar'dan "Sign in" (D21), Copilot CLI (D24) ve Gemini CLI (D23; sahibin ücretsiz Google hesabını Google reddediyor, uygulama bunu hata olarak gösteriyor), Ayarlar dört sekmede (D30, mockup tek sayfa kalıyor), Ayarlar'da kaydedilen anahtar terminaldekini eziyor (D29, D19'un o maddesini değiştirir), Zotero kartında anahtar ve kullanıcı kimliği, siyah-beyaz bağlantı ikonları. Toplu test (29f83fb): pytest 13.975/13.976, Playwright 601/603 (biri test seçicisi, düzeldi; biri yük kaynaklı, tek başına geçti).
-- Ayarlar › Modeller yeni düzende (15 Eki, D34): her şirketin tek kartı var, kartın panelinde iki yol duruyor: hesapla oturum açma ve API anahtarı. Üstte Claude, ChatGPT, Gemini, GitHub Copilot, Grok ve Mistral; Grok ve Mistral'in hesap yolu "Yakında". "Diğer modeller" katlı: OpenRouter, Muse, MiMo, Qwen, GLM, DeepSeek. Yerelde Ollama, LM Studio ve adresi girilen yerel sunucu; en altta belge okuma araçları. Yeni bağlantılar: Claude ve OpenAI API anahtarıyla araştırma adımları, OpenRouter, Xiaomi MiMo, yalnız bu bilgisayarı kabul eden yerel sunucu. Yerel istekler (modeller, embedding, araç kontrolleri, Zotero yerel API) artık proxy'den geçmiyor; modelin araç çağrısı her OpenAI uyumlu bağlantıda adımı durduruyor. Politika: Claude Code ve Gemini CLI hesap yolları kalıyor (resmî sayfalar 15 Eki'de okundu), Gemini'de anahtar önerilen yol. Claude Code'un kayıtlı API anahtarı varken hesapla çalıştığı canlı doğrulandı. Diğer canlı denemeler yapılamadı: OpenAI hesabında kredi yok (429), Anthropic/OpenRouter/MiMo anahtarı yok, Ollama kapalıydı. pytest 14.974/14.976 (2 atlandı); Sol inceledi.
-- Ollama kartı (15 Eki): Ollama kapalıyken kart "Ollama uygulamasını kur" düğmesi gösteriyor; macOS'ta uygulama ollama.com'dan iniyor, Uygulamalar'a kopyalanıp açılıyor (yalnız Homebrew'un komut satırı sürümü varken de çıkıyor, çünkü o tek başına sunucu başlatmıyor). Çalışırken yüklü modeller silinebiliyor, önerilen 8 araştırma modeli (Qwen, Gemma, GLM, gpt-oss, Mistral) boyut ve bellek ihtiyacıyla kart olarak, 3 gömme modeli ayrı satırda tek tıkla iniyor, başka model adla indirilebiliyor. Ollama'nın boş model listesine (`data: null`) çöken bağlantı kontrolü düzeldi. Testler sahte cevaplarla; gerçek indirme yalnız nomic-embed-text ile denendi, uygulama kurulumu canlı denenmedi.
-- Ollama ve LM Studio kartları (15 Eki, ikinci adım): Ollama kartı yeni sürümü (GitHub'daki son sürüm) ve ollama.com'da değişen modelleri (model parmak izi karşılaştırması) gösteriyor; değişen modelin yanında "Güncelle", süren indirmede "İptal" var. LM Studio kartı aynı düzende: kurulu değilse uygulama lmstudio.ai'den kuruluyor, sunucusu kapalıysa `lms server start` ile başlatılıyor, açıksa 8 araştırma modeli kart olarak LM Studio'nun REST arayüzünden (`/api/v1/models/download`) iniyor; sürüm kontrolü var, model güncellemesi ve silme yok (LM Studio vermiyor). Canlı: Ollama 0.34.0 → 0.40.4 doğru göründü; LM Studio bu bilgisayarda kurulu değil, model kartları ve kurulum yalnız sahte cevaplarla test edildi.
-- Yerel modeller çalışıyor (15 Eki): Ollama ve LM Studio çağrıları artık sırayla gidiyor ve çağrı başına 20 dk sınırı var; Ollama kendi `/api/chat` arayüzünden düşünme kapalı, adımın şeması zorunlu ve girdiye göre ayarlanan bağlam penceresiyle çağrılıyor, modelin bağlamına sığmayan girdi gönderilmeden açık hatayla duruyor. Canlı: qwen3.5:9b ile Hızlı araştırma baştan sona bitti (planlama 10/10 çağrı, 5 iddialı ve 5 kaynaklı cevap, 41 dk); önceki denemede 10 çağrıdan 1'i geçmişti. Özet tarama Hızlı modun 60 sn okuma payında kesildi; yerel modelde okuma ve cevap aşamalarının süre sınırı kalktı (D39): aynı deneme özet taramayı da tamamladı (2/2 geçerli), cevap 5 iddia ve 3 kaynakla, toplam ~32 dk.
-- Formüller Marker'sız (15 Eki, D36, D40): arXiv PDF'leri numaralı formüllerini artık varsayılan olarak yazarların LaTeX kaynağından alıyor. Ayarlar → Belge okuma'da isteğe bağlı Mathpix kutucuğu var: anahtar çifti ve ayrı bir açma anahtarı açıksa, Marker kurulu değilken her numaralı formülün yalnız görüntüsü Mathpix'e gidiyor; dönen LaTeX harf, üs/indis, işaret ve kesir kontrolünden geçerse PDF metnine "Mathpix" etiketiyle yerleşiyor. Aylık istek sınırı (varsayılan 500) ve PDF başına 60 istek var. Ölçüm (`.local/equation-ocr-2026-10-15/`, 178 arXiv formülü): Pix2Text %67, RapidLaTeXOCR %37, PDF metni + Luna %48 doğruya yakın; üçü de Marker'ın yerine konmadı. Mathpix canlı denenmedi (anahtar yok), doğruluğu ölçülmedi; testler sahte cevaplarla. Plan ve kod Sol ile üç tur incelendi.
-- Atıf haritası (15–16 Eki, D42, migration 0015): araştırmanın ⋯ menüsünden ve Kaynaklar panelinden açılan panel, kaynakları yayın yılına ya da ağ düzenine göre çiziyor; bağlar OpenAlex'in kaynakça kayıtlarından geliyor, model çağrılmıyor. Seçilen kaynağın andığı ve onu anan kaynaklar, araştırmanın çekirdeği ve araştırmada olmayan ama en az iki kaynağın andığı işler listeleniyor; bunlardan biri "Adaylara ekle" ile Kararsız kaynak olarak eklenebiliyor (Geri al var). Eksik kaynakçalar ve yüklenen PDF'lerin OpenAlex kaydı yalnız "Kaynakçaları oku" düğmesiyle, istek sayısı gösterilerek isteniyor. Canlı deneme (kütüphane kopyası, Zeng 2022 tek PDF'li araştırma): kaynakçadaki 38 iş eşleşti, 34'ünün başlığı tek istekte geldi, 4 kimliği OpenAlex boş döndürdü (artık yeniden sorulmuyor). Kalan testler sahte veriyle; büyük araştırmada (669 iş) görünüm yalnız sahte veriyle denendi. Her dilimi Sol inceledi.
-- Takip soruları sohbetin içinde (16 Eki, D49, D50, D53): takip sorusu artık araştırma sorusunu, son cevabı, önceki takip sorularını ve kanıt tablosunun değerlerini bağlam olarak okuyor; cevabın ve tablonun dayandığı pasajlar öne alınıyor; cevaptan sonra okunan tam metinler de havuza giriyor. Pasajlar yetmezse model en çok 3 arama ifadesi önerebiliyor, uygulama bunlarla araştırmanın tüm pasajlarını yeniden sıralayıp ikinci bir tur soruyor; dış arama yok, "Bunun için yeni çalışma ara" düğmesi duruyor. Kanıt tablosundan artık ilk 60 değer değil, sorunun ilgili olduğu üç sütunun (tablolar arasında) en fazla 120 değeri ve pasajları gidiyor. Sahte modelle test edildi, Sol üç tur inceledi; gerçek modelle denenmedi.
-- Rapor yazım kuralları (16 Eki, D51): rapor bölümleri kaynağın cümlesini eş anlamlılarla kopyalamıyor (alıntılar yine birebir), bir paragraftaki kaynakları birbirine bağlıyor, simülasyonu deney gibi, varsayılan değeri ölçülmüş gibi yazmıyor. DBR/VBF araştırmasında Luna ile birer canlı rapor karşılaştırıldı: birden çok kaynağa dayanan iddia oranı %17'den %24'e çıktı, kopyalama zaten düşüktü ve değişmedi. Tek çift rapor kalite ölçümü sayılmaz; rapor akışı eski kurallarla da her seferinde tamamlanmıyor (2 koşudan 1'i).
-- D51 kurallarının denetimi (16 Eki, D55): rapor bölümünde iki uyarı var, ikisi de reddetmiyor: iddia alıntısının 12+ ardışık kelimesini tekrarlıyorsa, ya da yalnızca simülasyon anlatan kaynağa "deney/saha denemesi" diyorsa. Her kural için bir yapay davranış vakası (RW01–RW04) Luna ile kuralsız ve kurallı 3'er kez koşuldu, sonuçlar elle okundu: kopyalama 0/3 → 1/3, kaynakları bağlama 3/3 → 2/3, simülasyon/deney 3/3 → 3/3, garanti taşımama 3/3 → 3/3. Model 3. ve 4. kurala zaten uyuyor; teknik ifadeleri iki durumda da kopyalıyor; bu boyutta D51'in ölçülebilir etkisi yok.
-- Kurulum dosyası öncesi hazırlık kodda bitti (16 Eki, plan `.local/pre-p10-readiness.md`): A1–A6, A3b, B1–B3, B5'in ilk açılış metni, C1/C3/C4/C5, E1–E27 (E10 P10 kabul satırları olarak) ve F1–F5 main'de; her adımı Sol inceledi, her biri tam test takımından geçti (son koşu 15.716). Öne çıkanlar: paketli uygulama kendi dosyalarını buluyor, masaüstünden açılınca araçlar bulunuyor, Windows'ta CLI'lar .cmd olmadan başlıyor, Linux'ta anahtarlık yoksa anahtar oturum boyunca tutuluyor, veri klasörü taşıma kilitli, anahtar durumu üç değerli (doğrulandı / ilk adımda denenecek / reddedildi), mesajlar arayüz dilinde, Hakkında + lisanslar + Sorun bildir, "Verileriniz nereye gidiyor", anahtarlı modellerde tahmini maliyet ve günlük durdurma eşiği. Ölçülmeyen: Windows ve Linux'ta hiçbir şey çalıştırılmadı, paket gerçek PyInstaller derlemesiyle yapılmadı, gerçek anahtarlık/sağlayıcı/kurum ağı denenmedi; fiyat tablosundaki OpenAI, Gemini, DeepSeek fiyatları yayından önce doğrulanmalı. Bunlar P10'da (kabul satırları K1–K15).
-- Sahip uygulamayı gözle kontrol ediyor; bulduğu sorunlar sırayla düzeltilir. P10 (macOS paketi) bu kontrol bitene kadar bekliyor.
-- Kanıt tablosunda sayı kontrolü (16 Eki, D54): modelin yazdığı bir değerdeki sayı, alıntılarının hiçbirinde geçmiyorsa hücre "Sayıyı kontrol et" işareti alıyor; Excel dışa aktarımı da uyarıyı yazıyor. Reddetmiyor, yalnız işaretliyor: modelin yaptığı sayım ve birim çevirileri de işaret alır. Okuma/tablo/rapor denetiminin (16 Eki) ilk maddesi; sıradakiler rapor bütçesinin satır düşürmesi, tam metin etiketi, geç gelen PDF'lerin okunması. Testlerle doğrulandı, Sol 6 tur inceledi; gerçek bir tabloda kaç hücrenin işaret aldığı ölçülmedi.
-- Özetten ve tam metinden okuma artık görünüyor (16 Eki, D52): cevabın üstündeki satır, atıf yapılan kaynaklardan kaçının tam metinden, kaçının yalnız özetinden okunduğunu söylüyor; raporda özete dayanan atıfın yanında kitap işareti var. Kanıt tablosunda modelin özetten doldurduğu hücreler, kaynağın PDF metni sonradan gelince kendiliğinden yeniden okunuyor: yeni okuma PDF'e dayanıyorsa hücrenin değeri oluyor, dayanmıyorsa öneri olarak bekliyor. Sahibin düzelttiği ya da onayladığı hücreler eskisi gibi yalnız öneri alıyor. Sahte modelli testlerle doğrulandı. İlk turu Sol inceledi (3 ciddi bulgu, düzeltildi); ikinci turu Sol'un istek sınırı yüzünden Opus inceledi (1 ciddi bulgu, düzeltildi); son hâlini Sol iki turda inceledi: 25'ten fazla kaynaklı tabloda sonraki satırların hiç yeniden okunmaması hatası düzeltildi, sonra "hazır". Cevap satırı iki gerçek araştırmada görüldü; tablo notları tarayıcıda görülmedi.
-- Rapor sürümleri yalnız kişinin isteğiyle artıyor (16 Eki, D57, migration 0017): yeni soru, yeni arama, kişinin başlattığı cevap ya da raporun değişmesini isteyen bir takip sorusu yeni sürüm (V2, V3) açıyor. Uygulamanın kendi güncellemesi (sonradan gelen tam metin) numarayı korur ve V1.1 olarak görünür. Takip sorusunda model "rapor değişsin mi" kararını da veriyor; evet derse kişinin cümlesi talimat olarak verilip yeni sürüm yazılıyor, başlatılamazsa tur nedenini söylüyor. Kanıt tabloları açıldıkları cevabın numarasını taşıyor; Çıktılar listesinde her belge tek satır, sürümler V-çipinin menüsünde. Sahte modelle test edildi; modelin rapor değişikliği isteğini doğru tanıdığı gerçek modelle denenmedi.
-- Rapor tablonun tamamını görüyor (16 Eki, D58): rapor bölümleri önce tablonun bütün hücrelerini alıntılarıyla alıyor, sayfalar bütçe kalırsa sonra geliyor; bütçe aşılırsa satır değil en az öncelikli sütun düşüyor; rapor incelemesi 30 bin tokenlık parçalara bölünüyor, böylece hiçbir bölüm boyut yüzünden incelenmeden kalmıyor. Kütüphane kopyasında 31 satırlık dört tabloda literatür bölümü (IV) önce 2–4 satır, 12–15 hücre görüyordu; şimdi 31 satırın hepsini, 217–248 hücre. Sahte modelle testler geçti, Sol 3 tur inceledi; canlı rapor denemesi (gpt-5.6-luna) henüz yapılmadı, modelin gerçekten daha çok satır andığı ölçülmedi.
-- Okuma aşaması sayıları ve tam metin hakları (16 Eki, D60): özeti olmayan ya da iki okumada kararsız kalan bir eserin PDF'i kesimden sonra gelirse artık geç okumada okunuyor; kimlik kontrolünü geçemeyen PDF tam metin hakkını sıradaki esere bırakıyor; "taranan" sayısı model taraması, kodun karar verdiği, özeti olmayan ve model bütçesi yüzünden okunmayan olarak ayrılıyor. Sahte modelle testler, Sol 6 tur; canlı koşuda ölçülmedi. D58'in canlı denemesi (gpt-5.6-luna, kütüphane kopyası): rapor ilk denemede geçerli, IV 31 satırın hepsini gördü ve 15 satır andı. Kalan: tablo sonradan dahil edilen kaynakları eklemiyor, bu yüzden res_Ui3g'de rapor şu an açılmıyor (2 satır eksik); tam metin etiketi (eser başına kaç parça okundu) sırada.
-- Formül sorusunda formül sayfaları cevaba giriyor (16 Eki, D56): soru formül, denklem, türetme ya da "nasıl hesaplanır" diye soruyorsa, tam metni okunan her kaynaktan en çok formül içeren sayfa cevap girdisinde ikinci sıraya çıkıyor. DBR/VBF araştırmasında formül sayfası gönderilen kaynak 20'de 3'ten 20'de 13'e çıktı (kütüphane kopyası, tek araştırma). Gerçek kütüphanedeki ana cevap bu değişiklikle yeniden üretilmedi.
-- Bağlantılar (16 Eki, D59): GitHub Models'i GitHub 30 Temmuz'da kapattığı için GitHub Copilot artık yalnız hesapla (Copilot CLI) bağlanıyor; anahtar yolu kalktı. Sağlayıcı API'sinde 404 alan ya da başka bir modelle cevap veren model 30 gün model listelerinden çıkıyor (Gemini'de 2.5-flash 404, 3.5-flash 3.6-flash olarak cevap veriyordu); Ayarlar'da her anahtarın altında gizlenen modeller nedeni ve tarihiyle listeleniyor, "Yeniden göster" ile geri geliyor. CLI'lar, OpenRouter ve yerel sunucular öğrenmiyor. Adım sözleşmesi artık her bağlantıyı tanıyor (Anthropic API'li araştırmanın "arama sorgusunu yazamadı" hatası buydu). Canlı bağlantı kontrolü: Codex, Claude Code, Copilot CLI, Anthropic API ve Gemini çalışıyor; OpenAI (429) ve DeepSeek (402) kotası dolu; Gemini CLI ücretsiz hesabı kabul etmiyor. Gizleme ve geri getirme sahte adaptörle ve kütüphane kopyasında tarayıcıda denendi; gerçek bir Gemini adımıyla denenmedi.
-- Cevapta ham LaTeX kalmıyor (16 Eki, D61): cevap, takip sorusu ve rapor bölümünde `$…$` dışında kalan LaTeX (komut, `_{`, `^{`, `\(`, `\[`) adımı onarıma gönderiyor; takip sorusu yöntem metni her formülü `$…$` içinde istiyor. Kütüphane kopyasında 242 iddiada kural yalnız değişiklikten önceki takip sorusunun 7 ham LaTeX metnini yakaladı, yanlış alarm yok. Aynı soru gerçek kütüphanede Opus ile yeniden soruldu: 8 iddianın 8'inde formüller `$…$` içinde, onarıma gerek kalmadı. "Sohbete ekle" seçilen formülü harf harf değil TeX kaynağıyla alıntılıyor ve turdaki alıntı formülü gösteriyor; çip metni tarayıcıda doğrulandı, alıntılı soru gönderilmedi.
-- Tam metin etiketi dürüst (16 Eki, D62, migration 0018): her tam metin kararı, iki okumada modele PDF'in kaç metin parçasının ve kaç sayfanın gösterildiğini saklıyor; Kaynaklar panelinde "tam metin · 40 metin parçasının 12'si okundu, 15 sayfanın 7'sinden" ya da "hepsi okundu" yazıyor. Raporun yöntem ve sınırlılıklar bölümü kaynakları bütünü / bir kısmı okunan / kayıt yok diye sayıyor; rapor adımlarındaki erişim etiketi artık gönderilen pasajlardan çıkıyor. Cevaptaki "tam metinden okundu" satırı ve tablo hücresi etiketleri değişmedi; 0018 öncesi kararlarda bilgi yok. Sahte modelle testler, Sol plan 4 + kod 2 tur; canlı koşuda ölçülmedi.
-- Kanıt tablosu dahil edilen kaynakları izliyor (16 Eki, D63, migration 0019): "dahil edilenlerden" açılan tablo (çalışma tablosu dahil), sonradan dahil edilen kaynağa kendiliğinden satır açıyor ve boş hücrelerini normal doldurma ile dolduruyor; kişinin sildiği satır geri gelmiyor, elle seçilen kaynaklardan açılan tablo izlemiyor. Sonradan hariç tutulan kaynağın satırı kalıyor, "rapora girmez" yazıyor ve rapor anlık görüntüsü onu ayrıca kaydediyor. Duraklatılmış bir çalışma bu işi bekletmiyor. Kütüphane kopyasında res_Ui3g'nin dört tablosuna eksik 2 kaynak eklendi, tablo başına 16 boş hücre planlandı; doldurma çalıştırılmadı, raporun açıldığı ölçülmedi. Sahte modelle testler.
-- Canlı kontrol (16 Eki, gpt-5.6-luna, kütüphane kopyası, DBR/VBF sorusu, her mod tek koşu): Hızlı 25/10, Detaylı 100/40 sınırları tutuyor; modelin taradığı 17/25 ve 77/100, gerisi kod kuralı. Tam metin hakkı Hızlı'da 10/10, Detaylı'da 24/40 doldu (72 adayın 48'inin PDF'i yok, `fulltext_unavailable`). Okunan eserlerde modele metin parçalarının ortanca %41–46'sı gösterildi; iki okuma aynı en çok 12 parçayı görüyor, ikinci okuma kapsamı artırmıyor. Cevaplar girdideki 23 eserden 3'ünü, 70 eserden 4'ünü andı. Survey başlık kuralıyla ayrılan eserler cevap girdisinde yanlışlıkla `not_screened_at_cutoff` etiketli. res_Ui3g'de D63 iki satırı 4 tabloya ekledi; yeni satırın doldurması 2 tabloda alıntı hatasıyla düştü ve rapor elle Doldur'a basılana kadar açılmadı, sonra 11 bölüm geçerli bitti.
+The owner is checking the app by eye, and the problems they find get fixed in order. P10 (the macOS package) waits until that check is done.
 
-## Sıradaki
+## Next
 
-1. Sahibin gözle kontrolü ve bulduğu düzeltmeler.
-2. P10: macOS paketi (plan yerelde, `.local/p10-plan.md`); ardından arama işi (aşağıda "Arama").
+1. The owner's visual check and the fixes it turns up.
+2. P10: the macOS package (plan in `.local/p10-plan.md`), then the search work listed under "Search" below.
 
-## Baseline (10 Eki)
+## Done
 
-- **Arama:** OpenAlex anlam ve kelime araması, OpenAlex atıf zinciri; Derin ayarda ek Semantic Scholar bulk araması. Hızlı/Standart/Derin yaklaşık 3/5/10 dk, en çok 25/50/100 makale taranır.
-- **Okuma:** ilk N makalenin özeti iki model okumasıyla taranır; en çok 10/20/40 makale tam metne gider, kalan PDF'ler arka planda iner.
-- **Cevap ve atıf:** cevap, okuma kesimindeki kanıttan kendiliğinden yazılır; her iddia kendi pasajına bağlı, çapası kodla bulunur. Geç gelen tam metin bir yeni cevap sürümü üretebilir; ayrı bir model incelemesi koşar. Yalnız ekli PDF'lerden cevap da çalışıyor.
-- **Rapor ve fikir araçları:** kanıt tablosu, kaynak bağlı rapor, LaTeX, rapor düzenleme; gelişim çizgileri (lineage), aday fikir ve kill-search, yayın takibi (watch).
-- **Sağlayıcılar ve modeller:** OpenAlex, Semantic Scholar, Crossref, arXiv, bioRxiv, PubMed, IEEE Xplore, Scopus, SerpApi, CORE, Zotero; Codex, Claude Code, Gemini, DeepSeek. Anahtarlar Ayarlar'da ya da `.env`'de; model adı her adımda kaydedilir. Bir servis durunca hangisinin, neden durduğu ve ne zaman tekrar denenebileceği Türkçe/İngilizce yazılır.
-- **Son ölçüm (10 Eki):** 10 soru × 2, Standart: cevap puanı 90,7, katı atıf 0,92, süre ortancası 4,7 dk. Etiketler iki modelin kör etiketi; insan bakmadı.
+Most of this was tested with fake models and synthetic data only; "Not measured" below lists what still needs a real model or real use.
 
-## Açık işler
-### Temiz başlangıçtan kalan
+### Search and seed PDFs
 
-- Watch ve PRISMA-S yöntem metni hâlâ eski sorgu derleyicisinin alanlarını (`_source_routing`, `compiled_queries`) okuyor; hızlı aramaya uyarlanacak.
-- Zincir istekleri tarama aşamasında sayıldığı için arama sürerken arama aşaması bitmiş görünebilir.
-- Test boşlukları: Playwright hız sınırı vakaları her başarısız OpenAlex isteğini kendi satırıyla eşlemiyor; hızlı cevap akış özetinin duraklat/sürdür testi yok.
+- Clean start (10–11 Oct): the fast path is the only search path, the old search and answer paths and old data support are gone, and the schema starts from one baseline.
+- Seed PDFs steer the search (D2, D3, D6): up to 5 uploaded or Zotero PDFs feed the citation chain and similar-paper requests without pushing out the question's own results.
+- OpenAlex similar-paper requests now overlap, starting 1.5 s apart with 100 records per page (D10).
+- Citation map (D42): a panel draws the sources by year or as a network from OpenAlex reference lists, and a work cited by two or more sources can be added as a candidate.
 
-### Arama (P10'dan sonra)
+### Reading and answers
 
-1. Geniş sorularda bilinen önemli makaleler üstte değil (battery_soh'ta ilk 50'de 15 hedeften 3'ü); cevap puanı bunu ölçmüyor. Ölçüt: hedeflerin ilk 50'ye girme oranı.
-2. dbr_vbf en zayıf soru (69–79): cevap insan değerlendirmesi gibi boyutları kapsamıyor; Hızlı ayarda kilit makale Maulana 2019 bulunmuyor.
-3. Ücretli makalelerin tam metni okunamıyor; mühendislik makalelerinin çoğu özetten giriyor.
-4. Derleme (survey) makalelerin cevaba katkısı ölçülmedi; başlığında derleme kelimesi geçen makale listeden çıkıyor.
-5. Standart'ta 20 koşudan 7'si 5 dakikayı geçti (nedenine bakılmadı); Derin ayarda atıf doğruluğu düzeltmelerden sonra yeniden ölçülmedi; örneklem küçük (10 soru × 2).
-6. Ortam: OpenAlex günlük ücretsiz kotası ~20 araştırmada bitiyor; cevap çağrısı ara sıra zaman aşımıyla araştırmayı cevapsız bırakıyor (21 denemede 1).
+- An answer over attached PDFs only now spreads its 48-passage limit across all PDFs instead of taking 6 from each (D4).
+- The reading stage reads late PDFs of undecided works, passes a failed PDF's full-text slot to the next work, and splits the "screened" count by reason (D60).
+- The line above the answer says how many cited sources were read in full and how many from the abstract only, and table cells filled from an abstract are re-read when the PDF arrives (D52).
+- The full-text label says how many text chunks and pages the model actually saw (D62).
+- Formula questions put each source's most formula-heavy page into the answer input (D56).
+- Raw LaTeX outside `$…$` in answers, follow-ups and report sections sends the step to repair (D61).
 
-### Ölçülmedi (gerçek model ya da gerçek kullanım gerekiyor)
+### Follow-up questions
 
-- Tohum PDF (D2, D3, D6): tohumlar hedeflerin kendisiyken ölçüldü; kullanıcının elindeki gerçek bir ilgili makaleyle katkı ölçülmedi. Eski (D2/D3) koşularda soru BMP dışı harf içerirse sayfa tohumu "kullanıldı" gösterebilir (Sol, orta). OpenAlex `related_works` denemesi sırada.
-- Rapor kalitesi: tek gerçek raporda (H9e) çoğu ölçüt aralık dışında; tablo hücreleri bölüm girdisinde kesiliyor, çok parçalı iddiada çapa tek parçayı taşıyor.
-- Denklem, soy zinciri, kill-search'ün en yakın işleri bulması ve gerçek Codex ile çökme kurtarma ölçülmedi; rapor düzenlemede 18 işlemden 5'i ölçüldü; sahibin günlük kullanım kaydı yok. Yayımlanmış bir makalenin fikri aday diye verilince kill-search'ün onu bulup bulmadığı denenmedi.
+- Follow-ups read the question, the last answer, earlier follow-ups and the evidence table, and can run a second pass over the research's own passages with up to 3 search phrases (D49, D50, D53).
+- A follow-up gives one passage per work named in the table before the rest, so cross-work questions reach more works (D64).
+- A follow-up that counts or groups works has the model classify each work with a quote, and the app does the counting (D66).
+- A follow-up no longer opens a new question revision, and an unused revision can be withdrawn (D67).
 
-### Ortam ve platform
+### Evidence tables and reports
 
-- Kurulu ikinci kullanıcı, ekran okuyucu, sessiz makinede kapasite, elektrik kesintisi ve disk dolu durumu ölçülmedi; eski macOS, Intel, Linux ve Windows desteklenmiyor.
+- A table cell gets a "Check the number" flag when its number appears in none of its quotes (D54).
+- Report sections follow new writing rules (no synonym paraphrase, link sources, no simulation called an experiment), with two non-blocking warnings that check them (D51, D55).
+- Report versions go up only when the person asks; the app's own updates show as V1.1 (D57).
+- Report sections see every table cell, drop the lowest-priority column instead of rows when over budget, and are reviewed in 30k-token chunks (D58).
+- A table opened from included sources adds a row when a source is included later (D63).
+- A report section gets a second repair before the report pauses (D65).
+- Table cells that fail their quote check no longer stop a report; they are retried once and otherwise marked not verified (D68).
 
-### Kod
+### Models and settings
 
-- Kuyruk sürücüsü (K03) prompt boyutunda düşüyor; yeniden çıkarımın arka plan okuyucusu matriste sınanmıyor; geri yüklemeden sonra açık PDF görüntüleyici eski belgeyi gösteriyor.
-- Arayüz: kuyrukta yapışkan cevap alanı tam genişlik düğmelerle büyüdü (1280×900'de ~300 px), kısa ekranda odak örtülmesi sınanmadı; TR/EN değişiminde seçili sekme şeritte görünür kaydırılmayabilir; telefonda rapor ikon düğmelerinin görünür ipucu yok. `tests/documents/test_arxiv_source_archive.py` içinde 1 test arayüz işinden önce de düşüyor.
-- İlk cevap taslağı atıf çapası kurallarını sık bozuyor; onarım cevap başına 1–2 dk ekliyor. CI yok; paralel testlerde ara sıra hata; P9 yükseltme kontrolünde 15 bilinen teardown hatası.
+- API keys, including Zotero and TypeSafe, live in the system keychain, and `.env` keys move there on startup (D19, D29).
+- Settings › Models has one card per company with both account sign-in and API key, plus new connections such as Claude and OpenAI API, OpenRouter and MiMo (D20–D24, D34).
+- Ollama and LM Studio cards install the app, start the server and download recommended models, and local models finish a full Quick research (qwen3.5:9b, about 32 min) (D39).
+- Users without a key get the downloaded built-in embedding model automatically (D7).
+- arXiv formulas come from the authors' LaTeX source by default, with Mathpix as an option (D36, D40).
+- Models that return 404 or answer as another model are hidden for 30 days, and GitHub Copilot connects only through the account (D59).
+- Settings › This computer shows the library folder and its size and can move it (D32).
 
-### Canlı deneme bulguları (4–5 Eki)
+### App
 
-- MDPI/SAGE/ScienceDirect PDF'leri ULAKBİM çıkışında 403; cevapta "It has been reported that…" kalıbı çok tekrarlanıyor. Hızlı yolda yeniden bakılmadı.
+- The UI moved to the mockup v24 design, and the 17 bugs found against the mockup are fixed (D5).
+- Post-parity cleanup and small features (P0–P5, D25–D33) are done: unused CSS removed, search-plan strike-through, request counts, stored thinking level, proxy name, "Try" for keyless sources.
+- Pre-P10 readiness is done in code: the packaged app finds its files, tools work when opened from the desktop, Windows CLIs start, a Linux fallback holds keys for the session, and cost estimates are shown.
 
-### Ertelenmiş fikirler (sahip kararı bekler)
+## Latest live check (16 Oct)
 
-- Jev (TypeSafe sınıflandırıcısı) ile tam metin hakkının hangi kaynaklara gideceğini sıralamak: her özet için kritere uyma olasılığı; karar yine modelde kalır. Hız, fiyat ve isabet ölçülmedi; dondurulmuş sorularda Jev'li/Jev'siz kıyasla denenir. Anahtar Keychain'de (`TYPESAFE_API_KEY`).
-- Örnek sorular; kütüphaneden "bu kaynak X araştırmasına dahil edilmişti" ipuçları; 403 dönen açık erişim PDF'lerinin nedenini sınıflandırmak; tanıtım sayfası (P10 sonrası); hızlı cevabın denklemleri arXiv kaynağından okuması; kill-search için ek sinyaller; iki sorgunun terimleri büyük ölçüde örtüşünce uyarı.
+One run per mode with gpt-5.6-luna on the DBR/VBF question, on a library copy.
+
+- Quick (25/10) and Detailed (100/40) limits held; full text filled 10 of 10 slots in Quick but 24 of 40 in Detailed, because 48 of 72 candidates had no PDF.
+- The model saw a median 41–46% of each read work's text chunks, and the second reading saw the same chunks as the first.
+- Answers cited only 3 of 23 and 4 of 70 works in their input.
+- Works dropped by the survey-title rule are wrongly labeled `not_screened_at_cutoff` in the answer input.
+
+## Open work
+
+### Left over from the clean start
+
+- Watch and the PRISMA-S method text still read fields of the old query compiler (`_source_routing`, `compiled_queries`).
+- The search stage can look finished while chain requests are still running, because those requests count toward screening.
+- Test gaps: the Playwright rate-limit cases do not match each failed OpenAlex request to its own row, and the fast-answer flow has no pause/resume test.
+
+### Search (after P10)
+
+1. In broad questions, known key papers are not near the top (battery_soh: 3 of 15 targets in the top 50), and the answer score does not measure this.
+2. dbr_vbf is the weakest question (69–79): the answer misses aspects a human reviewer would cover, and Quick misses the key paper Maulana 2019.
+3. Full text of paywalled papers cannot be read, so most engineering papers come in from the abstract.
+4. The value of survey papers is not measured, and papers with "survey" in the title are dropped.
+5. In Standard, 7 of 20 runs took over 5 minutes (cause not checked), Detailed citation accuracy was not re-measured after the fixes, and the sample is small (10 questions × 2).
+6. The free OpenAlex daily quota runs out after about 20 researches, and the answer call sometimes times out (1 in 21 runs).
+
+### Not measured (needs a real model or real use)
+
+- Seed PDFs were measured only with the targets themselves as seeds, not with a real related paper the user has.
+- Report quality: in the one real report (H9e) most measures were out of range.
+- Equations, lineage, kill-search finding the closest works, and crash recovery with real Codex; 5 of 18 report-edit actions; the owner's daily use.
+- Most features above (follow-up changes, table and report changes, new model connections, Mathpix, data move) have not been tried with a real model or provider.
+- Windows and Linux have not been run, the package has not been built with real PyInstaller, and OpenAI, Gemini and DeepSeek prices must be checked before release (P10 acceptance rows K1–K15).
+
+### Platform
+
+- Not measured: a second installed user, screen readers, capacity on a quiet machine, power loss and a full disk; older macOS, Intel, Linux and Windows are not supported.
+
+### Code
+
+- The queue driver (K03) fails on prompt size, the re-extraction background reader is not tested in the matrix, and an open PDF viewer shows the old document after a restore.
+- UI: the sticky answer area in the queue grew to about 300 px at 1280×900, the selected tab may not scroll into view after a TR/EN switch, and report icon buttons on phones have no visible hint; one test in `tests/documents/test_arxiv_source_archive.py` already failed before the UI work.
+- The first answer draft often breaks citation-anchor rules and repair adds 1–2 minutes per answer; there is no CI, parallel tests fail now and then, and the P9 upgrade check has 15 known teardown errors.
+
+### Live findings (4–5 Oct)
+
+- MDPI, SAGE and ScienceDirect PDFs return 403 from the ULAKBİM network, and answers overuse "It has been reported that…"; not rechecked on the fast path.
+
+### Parked ideas (owner decides)
+
+- Use Jev (the TypeSafe classifier) to rank which sources get full-text slots; speed, price and accuracy not measured.
+- Example questions, "this source was included in research X" hints, classifying why open-access PDFs return 403, a landing page (after P10), fast answers reading equations from arXiv source, more kill-search signals, and a warning when two queries share most terms.

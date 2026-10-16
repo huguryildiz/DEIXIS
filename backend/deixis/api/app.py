@@ -1150,6 +1150,10 @@ def create_app(
         # The checks run side by side: each waits on its own CLI or HTTP probe, and one after another took ~19 s.
         adapters = request.app.state.adapters
         models = dict(zip(adapters, await asyncio.gather(*(a.health(refresh=refresh) for a in adapters.values()))))
+
+        def key_broken(c) -> bool:
+            # The variable holds a key no header can carry, or the keychain item was unreadable or invalid and skipped at startup.
+            return c.key_broken() or bool(c.key_env in credentials.MANAGED_KEYS and credentials.status(c.key_env)["broken"])
         return {
             "models": models,
             # The Codex home this backend runs Codex with (DEIXIS_CODEX_HOME or the data folder's codex-home), so the
@@ -1157,10 +1161,11 @@ def create_app(
             "codex_home": str(settings.codex_home),
             "providers": [
                 {"id": p, "implemented": True, "access_mode": c.access_mode(), "supplementary": c.supplementary,
-                 "key_env": c.key_env, "key_broken": c.key_broken(), "role": provider_role(c),
+                 "key_env": c.key_env, "key_broken": key_broken(c), "role": provider_role(c),
                  "contract_id": descriptors[p].contract_id, "adapter_revision": descriptors[p].adapter_revision,
                  "capabilities": sorted(descriptors[p].capabilities),
-                 "note": "The saved key is broken and was not used: enter it again below." if c.key_broken()
+                 "note": "The saved key is broken and was not used: enter it again below."
+                 if key_broken(c)
                  else "Add a key below to use this source." if c.access_mode() == "not_configured"
                  else "New researches use this source."}
                 for p, c in CONNECTORS.items()

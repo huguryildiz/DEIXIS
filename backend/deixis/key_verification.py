@@ -17,23 +17,23 @@ def is_valid_key(value: str) -> bool:
     return _VALID_KEY.fullmatch(value) is not None
 
 
-def _fingerprint(value: str) -> str:
+def fingerprint(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8", "replace")).hexdigest()
 
 
 def set_state(value: str, state: str) -> None:
     """A request with this key was answered (or a test was): the answer is the state."""
-    _state[_fingerprint(value)] = state
+    _state[fingerprint(value)] = state
 
 
 def settle(value: str, state: str) -> str:
     """The state a model-list answer may give: it never lifts a refusal (a step's 401 can land while the list request is in
     flight). There is no `await` between reading and writing, so this check is not interleaved with another task's."""
-    if _state.get(_fingerprint(value)) == "rejected":
+    if _state.get(fingerprint(value)) == "rejected":
         return "rejected"
-    _state[_fingerprint(value)] = state
+    _state[fingerprint(value)] = state
     return state
 
 
 def state_of(value: str | None) -> str | None:
-    return _state.get(_fingerprint(value)) if value else None
+    return _state.get(fingerprint(value)) if value else None

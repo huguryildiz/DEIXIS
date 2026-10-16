@@ -144,7 +144,7 @@ class OpenAICompatAdapter:
         # One call at a time on a model this computer runs; hosted APIs take calls side by side.
         self._turns = asyncio.Semaphore(1) if local else None
         self._context_limits: dict[str, int | None] = {}
-        self._health: tuple[float, dict[str, Any]] | None = None
+        self._health: tuple[float, dict[str, Any], str] | None = None  # (time, answer, fingerprint of the key it was for)
 
     def _key(self) -> str | None:
         return os.environ.get(self.spec.key_env) or None if self.spec.key_env else None
@@ -170,8 +170,10 @@ class OpenAICompatAdapter:
 
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         key, spec = self._key(), self.spec
-        # A cached answer is not used once the key has been refused, by a step of this connection or of another that shares it.
-        if (self._health and not refresh and time.monotonic() - self._health[0] < 60
+        # A cached answer belongs to the key it was made with, and is not used once that key has been refused, by a step of this
+        # connection or of another that shares it.
+        mine = key_verification.fingerprint(key or "")
+        if (self._health and not refresh and time.monotonic() - self._health[0] < 60 and self._health[2] == mine
                 and not (spec.key_env and key_verification.state_of(key) == "rejected")):
             return self._health[1]
         status: dict[str, Any] = {
@@ -270,7 +272,7 @@ class OpenAICompatAdapter:
                 status["reason"] = f"The {spec.name} key is saved but not verified: the first step will try it"
                 return status
         status["ready"] = True
-        self._health = (time.monotonic(), status)
+        self._health = (time.monotonic(), status, mine)
         return status
 
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],

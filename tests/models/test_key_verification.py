@@ -430,6 +430,30 @@ def test_a_list_answer_that_lands_after_a_refusal_does_not_lift_it(monkeypatch):
     asyncio.run(go())
 
 
+def test_a_cached_answer_is_not_served_to_a_different_key(monkeypatch):
+    monkeypatch.setenv("MISTRAL_API_KEY", "old-key-0123456789")
+    list_started, release = asyncio.Event(), asyncio.Event()
+
+    async def handler(request):
+        if request.headers["authorization"] == "Bearer old-key-0123456789":
+            list_started.set()
+            await release.wait()  # the old key's list request is in flight while the key is changed
+            return httpx.Response(200, json={"data": [{"id": "m-1"}]})
+        return httpx.Response(401)
+
+    adapter = adapter_for(MISTRAL, handler)
+
+    async def go():
+        old = asyncio.create_task(adapter.health(refresh=True))
+        await list_started.wait()
+        monkeypatch.setenv("MISTRAL_API_KEY", "new-key-0123456789")
+        assert (await adapter.health())["ready"] is False
+        release.set()
+        assert (await old)["ready"] is True  # the answer was right for the key it was asked with
+        assert (await adapter.health())["ready"] is False  # but it is cached for that key only
+    asyncio.run(go())
+
+
 def test_connections_that_share_a_key_share_its_refusal(monkeypatch):
     monkeypatch.setenv("MODEL_API_KEY", "meta-key-0123456789")
     glimmer_spec, spark_spec = openai_compat.MUSE_GLIMMER, openai_compat.MUSE_SPARK
@@ -460,6 +484,15 @@ def test_a_source_card_says_when_its_saved_key_is_broken(client, monkeypatch):
     assert providers["semantic_scholar"]["access_mode"] != "api_key"  # run without the key
     monkeypatch.setenv("S2_API_KEY", "s2-key-0123456789")
     assert {p["id"]: p for p in client.get("/api/connections").json()["providers"]}["semantic_scholar"]["key_broken"] is False
+
+
+def test_a_source_card_also_says_so_for_a_keychain_item_skipped_at_startup(client, memory_keychain, monkeypatch):
+    monkeypatch.delenv("S2_API_KEY", raising=False)
+    memory_keychain.set_password("DEIXIS", "S2_API_KEY", "s2-ş-key-0123456")
+    credentials.load_into_environment()
+    assert not os.environ.get("S2_API_KEY")  # skipped, so the variable holds nothing
+    card = {p["id"]: p for p in client.get("/api/connections").json()["providers"]}["semantic_scholar"]
+    assert card["key_broken"] is True and "broken" in card["note"]
 
 
 BAD_SHELL_KEY = "key-ş-0123456789"  # as if it came from the shell or .env

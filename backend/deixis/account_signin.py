@@ -20,10 +20,12 @@ import subprocess
 import sys
 import time
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Any
 
+from deixis.models.claude import TELEMETRY_OFF as CLAUDE_TELEMETRY_OFF
+from deixis.models.codex_isolation import TELEMETRY_OVERRIDES
 from deixis.tool_paths import command_for, find_tool
 
 log = logging.getLogger(__name__)
@@ -38,6 +40,12 @@ TOOLS = {"codex": ("codex", ["login"], "Codex CLI"), "claude": ("claude", ["auth
 # either). For these tools exit 0 plus a health check that says signed in is reported as its own outcome,
 # "session_confirmed": signed in, but not known to be a new sign-in. No account identity is compared.
 NO_LOGIN_COMMAND = ("gemini_cli",)
+# The telemetry switches of the same tools the model runs use (F3), set on the sign-in window too: Claude Code takes its
+# environment variables, Codex's `login` takes `-c`. The Gemini CLI window is an ordinary session in the person's own
+# Gemini settings, and no documented environment variable switches its usage statistics off, so it gets none; the
+# Copilot CLI has no documented switch.
+SIGNIN_ENV = {"claude": CLAUDE_TELEMETRY_OFF}
+SIGNIN_ARGS = {"codex": [part for override in TELEMETRY_OVERRIDES for part in ("-c", override)]}
 SESSION_CONFIRMED = "Gemini CLI is signed in. DEIXIS cannot tell a new sign-in from the existing session."
 LINUX_TERMINALS = ("x-terminal-emulator", "gnome-terminal", "konsole", "xterm")
 
@@ -68,9 +76,10 @@ def start_process(spec: LaunchSpec) -> Any:
     return None
 
 
-def _shell_line(exe: str, args: list[str], codex_home: Path | None) -> str:
+def _shell_line(exe: str, args: list[str], codex_home: Path | None, env: Mapping[str, str] | None = None) -> str:
     line = " ".join(shlex.quote(part) for part in (exe, *args))
-    return f"CODEX_HOME={shlex.quote(str(codex_home))} {line}" if codex_home else line
+    pairs = ([("CODEX_HOME", str(codex_home))] if codex_home else []) + list((env or {}).items())
+    return " ".join([*(f"{name}={shlex.quote(value)}" for name, value in pairs), line])
 
 
 def powershell_quote(text: str) -> str:
@@ -97,16 +106,16 @@ def _posix_status_line(status_file: Path | None) -> str:
 
 def build_launch(platform: str, exe: str, args: list[str], codex_home: Path | None,
                  which: Callable[[str], str | None] = find_tool, script_dir: Path | None = None,
-                 status_file: Path | None = None) -> LaunchSpec:
-    """The command that opens a terminal window running `exe args`, with CODEX_HOME set when given. With a status
-    file, the script writes the command's exit code there when the command ends (E8)."""
+                 status_file: Path | None = None, env: Mapping[str, str] | None = None) -> LaunchSpec:
+    """The command that opens a terminal window running `exe args`, with CODEX_HOME and the variables in `env` set when
+    given. With a status file, the script writes the command's exit code there when the command ends (E8)."""
     if platform == "darwin":
         # Terminal.app opens a .command file through `open`, which needs no Automation permission (osascript
         # driving Terminal does, and timed out while macOS waited on that prompt). The file removes itself.
         script_dir = script_dir or Path(tempfile.gettempdir())
         script_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         path = script_dir / f"deixis-sign-in-{Path(exe).name}.command"
-        path.write_text(f"#!/bin/sh\nrm -f \"$0\"\n{_shell_line(exe, args, codex_home)}\n{_posix_status_line(status_file)}"
+        path.write_text(f"#!/bin/sh\nrm -f \"$0\"\n{_shell_line(exe, args, codex_home, env)}\n{_posix_status_line(status_file)}"
                         "printf '\\nYou can close this window.\\n'\n")
         path.chmod(0o700)
         return ["open", "-a", "Terminal", str(path)]
@@ -116,6 +125,8 @@ def build_launch(platform: str, exe: str, args: list[str], codex_home: Path | No
         script = "$Host.UI.RawUI.WindowTitle = 'DEIXIS sign-in'; "
         if codex_home:
             script += f"$env:CODEX_HOME = {powershell_quote(str(codex_home))}; "
+        for name, value in (env or {}).items():
+            script += f"$env:{name} = {powershell_quote(value)}; "
         script += "& " + " ".join(powershell_quote(part) for part in (exe, *args))
         if status_file:
             tmp = powershell_quote(str(status_file) + ".tmp")
@@ -125,7 +136,7 @@ def build_launch(platform: str, exe: str, args: list[str], codex_home: Path | No
         encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
         return [which("powershell.exe") or "powershell.exe", "-NoLogo", "-NoProfile", "-NoExit", "-EncodedCommand", encoded]
     save = _posix_status_line(status_file).replace("\n", "; ")
-    script = f"{_shell_line(exe, args, codex_home)}; {save}printf '\\nPress Enter to close this window. '; read _"
+    script = f"{_shell_line(exe, args, codex_home, env)}; {save}printf '\\nPress Enter to close this window. '; read _"
     for terminal in LINUX_TERMINALS:
         path = which(terminal)
         if path:
@@ -219,9 +230,9 @@ class AccountSignIn:
             status_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
             for stale in status_dir.glob(f"status-{tool}-*"):  # left by an attempt that never cleaned up
                 stale.unlink(missing_ok=True)
-            spec = build_launch(self._platform, command.argv[0], [*command.argv[1:], *args],
+            spec = build_launch(self._platform, command.argv[0], [*command.argv[1:], *args, *SIGNIN_ARGS.get(tool, [])],
                                 self._codex_home if tool == "codex" else None,
-                                script_dir=status_dir, status_file=status)
+                                script_dir=status_dir, status_file=status, env=SIGNIN_ENV.get(tool))
             try:
                 reserved["handle"] = self._launcher(spec)
             except OSError as exc:

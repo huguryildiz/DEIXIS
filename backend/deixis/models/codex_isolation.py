@@ -35,6 +35,10 @@ DISABLED_FEATURES = (
     "workspace_dependencies",
 )
 
+# Documented config keys (Codex config reference): analytics for this profile off, /feedback submission off. The sign-in
+# window (account_signin.py) takes the same two (F3).
+TELEMETRY_OVERRIDES = ("analytics.enabled=false", "feedback.enabled=false")
+
 BASE_OVERRIDES = (
     'approval_policy="never"',
     'sandbox_mode="read-only"',
@@ -47,9 +51,7 @@ BASE_OVERRIDES = (
     "include_apps_instructions=false",
     'history.persistence="none"',
     "notify=[]",
-    # Documented config keys (Codex config reference): analytics for this profile off, /feedback submission off.
-    "analytics.enabled=false",
-    "feedback.enabled=false",
+    *TELEMETRY_OVERRIDES,
 )
 
 

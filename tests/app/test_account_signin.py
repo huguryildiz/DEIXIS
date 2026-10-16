@@ -162,10 +162,31 @@ def test_codex_launch_waits_then_succeeds_only_after_the_command_exits_0_and_hea
 def test_claude_launch_runs_auth_login_and_succeeds(served):
     app, client, launched, _, _, tools = served
     client.post("/api/accounts/claude/sign-in")
-    assert "\n/usr/local/bin/claude auth login\n" in Path(launched[0][3]).read_text()
+    assert ("\nDISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 "
+            "/usr/local/bin/claude auth login\n") in Path(launched[0][3]).read_text()
     tools["claude"].signed_in = True
     finish(app, "claude")
     assert client.get("/api/accounts/claude/sign-in").json()["state"] == "succeeded"
+
+
+def test_sign_in_windows_carry_the_telemetry_switches_where_the_tool_can_take_them(served):
+    # F3: Codex's `login` takes -c, Claude Code takes its environment variables; Gemini CLI and Copilot CLI get none.
+    _, client, launched, _, _, _ = served
+    for tool in ("codex", "claude", "copilot_cli", "gemini_cli"):
+        client.post(f"/api/accounts/{tool}/sign-in")
+    scripts = {Path(spec[3]).name.split("-")[-1].removesuffix(".command"): Path(spec[3]).read_text() for spec in launched}
+    assert " login -c analytics.enabled=false -c feedback.enabled=false\n" in scripts["codex"]
+    assert "DISABLE_TELEMETRY=1 " in scripts["claude"] and "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 " in scripts["claude"]
+    for other in ("copilot", "gemini"):
+        assert "DISABLE_TELEMETRY" not in scripts[other] and "analytics" not in scripts[other]
+
+
+def test_windows_and_linux_sign_in_launches_set_the_same_variables():
+    env = {"DISABLE_TELEMETRY": "1"}
+    win = build_launch("win32", "C:\\bin\\claude.exe", ["auth", "login"], None, which=lambda name: None, env=env)
+    assert "$env:DISABLE_TELEMETRY = '1'; & 'C:\\bin\\claude.exe' 'auth' 'login'" in base64.b64decode(win[5]).decode("utf-16-le")
+    linux = build_launch("linux", "/bin/claude", ["auth", "login"], None, {"xterm": "/usr/bin/xterm"}.get, env=env)
+    assert "DISABLE_TELEMETRY=1 /bin/claude auth login" in linux[-1]
 
 
 def test_an_old_session_and_a_terminal_closed_at_once_is_not_a_success(served):

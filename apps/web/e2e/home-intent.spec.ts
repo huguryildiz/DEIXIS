@@ -173,7 +173,7 @@ test.describe.serial('S5b: Home intent chips, cards, setup card and guide rows',
     await page.reload()
     const setup = page.locator('.home-setup')
     await expect(setup.getByRole('heading', { name: /Set up DEIXIS/ })).toBeVisible()
-    await expect(setup).toContainText('Nothing leaves this computer except the searches and the model calls you set up.')
+    await expect(setup).toContainText('What is sent where is listed in Settings › General › Where your data goes.')
     const rows = setup.locator('.home-setup-row')
     await expect(rows).toHaveCount(3)
     await expect(rows.nth(0)).toContainText('Answer and literature models')

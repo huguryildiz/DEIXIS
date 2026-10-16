@@ -1103,9 +1103,17 @@ class EquationService:
             async with asyncio.timeout(INSTALL_TIMEOUT_SECONDS):
                 for index, argv in enumerate(steps):
                     job["step"] = index + 1
-                    self._install_proc = proc = await asyncio.create_subprocess_exec(
-                        *argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
-                        pass_fds=library_lock.child_fds())  # keeps the data folder busy while it runs (E1)
+                    child = library_lock.guard(argv)  # keeps the data folder busy while it runs (E1)
+                    try:
+                        self._install_proc = proc = await asyncio.create_subprocess_exec(
+                            *child.argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
+                            **child.kwargs)
+                        await asyncio.to_thread(child.wait_ready)
+                    except library_lock.ChildLockFailed:
+                        proc.kill()
+                        raise
+                    finally:
+                        child.done()
                     assert proc.stdout is not None
                     async for chunk in proc.stdout:
                         output.extend(chunk)

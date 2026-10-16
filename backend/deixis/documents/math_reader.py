@@ -179,8 +179,8 @@ def install_runtime(paths: RuntimePaths) -> None:
     if uv is None:
         raise MathReaderUnavailable("uv is not installed; see https://docs.astral.sh/uv/")
     paths.root.mkdir(parents=True, exist_ok=True)
-    subprocess.run([uv, "venv", "--python", PYTHON_VERSION, str(paths.env)], check=True, pass_fds=library_lock.child_fds())
-    subprocess.run([uv, "pip", "install", "--python", str(paths.python), MARKER_PACKAGE], check=True, pass_fds=library_lock.child_fds())
+    library_lock.run([uv, "venv", "--python", PYTHON_VERSION, str(paths.env)])
+    library_lock.run([uv, "pip", "install", "--python", str(paths.python), MARKER_PACKAGE])
 
 
 def remove_runtime(paths: RuntimePaths) -> None:
@@ -295,16 +295,19 @@ class MathReader:
         env = {**os.environ, "MODEL_CACHE_DIR": str(self.paths.models), "PYTHONUNBUFFERED": "1"}
         if sys.platform == "darwin":
             env.setdefault("TORCH_DEVICE", "mps")
-        self.process = await asyncio.create_subprocess_exec(
-            str(self.paths.python), str(RUNNER), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.DEVNULL, env=env, limit=64 * 1024 * 1024,
-            pass_fds=library_lock.child_fds(),  # keeps the data folder busy while it runs (E1)
-        )
+        child = library_lock.guard([str(self.paths.python), str(RUNNER)])  # keeps the data folder busy while it runs (E1)
         try:
+            self.process = await asyncio.create_subprocess_exec(
+                *child.argv, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL, env=env, limit=64 * 1024 * 1024, **child.kwargs,
+            )
+            await asyncio.to_thread(child.wait_ready)
             ready = json.loads(await asyncio.wait_for(self.process.stdout.readline(), READY_TIMEOUT_SECONDS))
-        except (asyncio.TimeoutError, json.JSONDecodeError) as exc:
+        except (asyncio.TimeoutError, json.JSONDecodeError, library_lock.ChildLockFailed) as exc:
             await self.close()
             raise MathReaderUnavailable("the equation reader did not start") from exc
+        finally:
+            child.done()
         self.marker_version = ready.get("marker_version")
 
     async def read(self, path: Path, pages: list[int]) -> Reading:

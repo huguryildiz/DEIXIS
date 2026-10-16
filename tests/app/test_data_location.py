@@ -15,6 +15,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -380,9 +381,11 @@ def test_the_view_reports_the_folder_its_parts_and_free_space(client, default):
     assert view["size_bytes"] == sum(parts.values()) and view["free_bytes"] > 0 and view["running_runs"] == 0
 
 
-def test_a_change_is_recorded_for_the_next_start_and_can_be_cancelled(client, default, tmp_path):
+def test_a_change_is_recorded_for_the_next_start_and_can_be_cancelled(client, default, tmp_path, monkeypatch):
+    monkeypatch.setattr(data_location, "_mounts", lambda: [("/", "apfs")])
     target = tmp_path / "elsewhere"
-    assert client.post("/api/settings/data-location", json={"path": str(target), "check": True}).json() == {"path": str(target), "has_library": False, "sync_service": None}
+    assert client.post("/api/settings/data-location", json={"path": str(target), "check": True}).json() == {
+        "path": str(target), "has_library": False, "sync_service": None, "network_unchecked": False}
     assert not (default / "location.json").exists()
     view = client.post("/api/settings/data-location", json={"path": str(target)}).json()
     assert view["pending_path"] == str(target) and not view["pending_has_library"]
@@ -505,3 +508,297 @@ def test_the_view_says_why_a_move_waits(client, default, tmp_path):
     assert client.get("/api/settings/data-location").json()["move_postponed"] == {"path": str(new), "busy": str(default)}
     data_location.write_pointer(default, None)  # cancelled: nothing waits any more
     assert client.get("/api/settings/data-location").json()["move_postponed"] is None
+
+
+# ---- review round 1: older builds, the start race, a missing source, durability, Windows ---------------------------------
+
+
+WORKER_ONLY = ("import fcntl, os, sys; fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT); "
+               "fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB); print('ready', flush=True); sys.stdin.read()")
+
+
+def old_build(folder):
+    """A DEIXIS from before the folder lock: it holds only worker.lock, exclusively, for its whole life."""
+    env = {**os.environ, "PYTHONPATH": str(Path(library_lock.__file__).parents[1])}
+    proc = subprocess.Popen([sys.executable, "-c", WORKER_ONLY, str(folder / "worker.lock")], stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE, env=env, text=True)
+    assert proc.stdout.readline().strip() == "ready"
+    return proc
+
+
+@pytest.mark.parametrize("busy", ["old", "new"])
+def test_an_older_build_holding_only_the_worker_lock_blocks_the_move(default, tmp_path, busy):
+    library(default)
+    new = tmp_path / "new"
+    new.mkdir()
+    data_location.write_pointer(new, default)
+    other = old_build(default if busy == "old" else new)
+    try:
+        result = data_location.apply_pending_move(new)
+        assert isinstance(result, data_location.Postponed) and result.busy == (default if busy == "old" else new)
+        assert (default / "library.sqlite").read_text() == "old" and not (new / "library.sqlite").exists()
+    finally:
+        stop(other)
+    assert data_location.apply_pending_move(new) is None and (new / "library.sqlite").read_text() == "old"
+
+
+def test_a_move_finished_by_another_deixis_between_reading_settings_and_the_lock_reopens_the_new_location(default, tmp_path, monkeypatch):
+    """The settings name the old folder; before this DEIXIS holds its lock another one moves the library away."""
+    library(default)
+    new = tmp_path / "new"
+    settings = Settings(data_dir=default)  # what load_settings returned a moment earlier
+    real_hold, opened = library_lock.hold_shared, []
+
+    def move_then_hold(folder):
+        if folder == default and not opened:
+            opened.append("moved")
+            data_location.write_pointer(new, default)
+            assert data_location.apply_pending_move(new) is None  # the other DEIXIS's whole move
+        return real_hold(folder)
+
+    monkeypatch.setattr(library_lock, "hold_shared", move_then_hold)
+    seen = []
+    monkeypatch.setattr(cli, "port_available", lambda host, port: True)
+    monkeypatch.setattr(cli, "schema_problem", lambda path: seen.append(path) or "stop here")
+    assert cli.serve(settings, False, (), reread_location=True) == 2
+    assert seen == [new / "library.sqlite"] and (new / "library.sqlite").read_text() == "old"
+    assert default not in library_lock._held and new in library_lock._held  # the lock on the folder it left was let go
+
+
+def test_a_command_started_just_before_a_move_finishes_uses_the_new_location(default, tmp_path, monkeypatch):
+    library(default)
+    new = tmp_path / "new"
+    real_hold = library_lock.hold_shared
+
+    def move_then_hold(folder):
+        if folder == default:
+            data_location.write_pointer(new, default)
+            assert data_location.apply_pending_move(new) is None
+        return real_hold(folder)
+
+    monkeypatch.setattr(library_lock, "hold_shared", move_then_hold)
+    held = cli.hold_current_folder(Settings(data_dir=default))
+    assert isinstance(held, Settings) and held.data_dir == new and default not in library_lock._held
+
+
+def test_a_pointer_damaged_between_reading_and_locking_stops_the_start(default, tmp_path, monkeypatch, capsys):
+    library(default)
+    real_hold = library_lock.hold_shared
+
+    def damage_then_hold(folder):
+        (default / "location.json").write_text("{not json")
+        return real_hold(folder)
+
+    monkeypatch.setattr(library_lock, "hold_shared", damage_then_hold)
+    monkeypatch.setattr(cli, "port_available", lambda host, port: True)
+    monkeypatch.setattr(cli, "schema_problem", lambda path: pytest.fail("the library must not be opened"))
+    assert cli.serve(Settings(data_dir=default), False, (), reread_location=True) == 2
+    assert "did not open an empty library" in capsys.readouterr().err and not library_lock._held
+
+
+@pytest.mark.parametrize("phase", ["moving", None])
+def test_a_missing_source_stops_the_start_and_names_both_folders(default, tmp_path, monkeypatch, capsys, phase):
+    """An unplugged drive must not look like a finished move: no empty library opens and the record stays."""
+    unplugged, new = tmp_path / "usb" / "DEIXIS", tmp_path / "new"
+    (new / "papers").mkdir(parents=True)  # what the interrupted move had copied so far
+    data_location.write_pointer(new, unplugged, [], phase=phase)
+    message = data_location.apply_pending_move(new)
+    assert isinstance(message, str) and str(unplugged) in message and str(new) in message
+    assert json.loads((default / "location.json").read_text())["move_from"] == str(unplugged)
+    monkeypatch.setattr(cli, "port_available", lambda host, port: True)
+    monkeypatch.setattr(cli, "create_app", lambda *a, **k: pytest.fail("no library may be opened"))
+    assert cli.main(["serve", "--no-browser"]) == 2
+    err = capsys.readouterr().err
+    assert str(unplugged) in err and str(new) in err and not (new / "library.sqlite").exists()
+
+
+def test_a_source_that_is_missing_after_the_library_was_found_in_the_target_is_cleared(default, tmp_path):
+    new = tmp_path / "new"
+    new.mkdir()
+    (new / "library.sqlite").write_text("kept")
+    data_location.write_pointer(new, tmp_path / "gone")
+    assert data_location.apply_pending_move(new) is None and not (default / "location.json").read_text().count("move_from")
+
+
+def test_nothing_is_deleted_from_the_source_before_the_copy_and_its_record_are_on_disk(default, tmp_path, monkeypatch):
+    library(default)
+    (default / "papers" / "sub").mkdir()
+    (default / "papers" / "sub" / "b.pdf").write_bytes(b"%PDF SYNTHETIC 2")
+    new = tmp_path / "new"
+    data_location.write_pointer(new, default)
+    events = []
+    real = {name: getattr(data_location, name) for name in ("_remove", "write_pointer", "_fsync_tree", "_fsync_path", "_sync_dir")}
+    real_replace = os.replace
+
+    def logged(name, label):
+        def call(path, *args, **kwargs):
+            events.append((label, Path(path).name, Path(path).parent.name))
+            return real[name](path, *args, **kwargs)
+        return call
+
+    def replace(src, dst):
+        events.append(("replace", Path(dst).name, Path(dst).parent.name))
+        real_replace(src, dst)
+
+    def write_pointer(path, move_from, moved=None, phase=None, placing=None):
+        real["write_pointer"](path, move_from, moved, phase, placing)
+        events.append(("pointer", tuple(moved or ()), phase))
+
+    def cross_disk(src, dst):
+        raise OSError(errno.EXDEV, "cross-device link")
+
+    monkeypatch.setattr(data_location.os, "rename", cross_disk)
+    monkeypatch.setattr(data_location.os, "replace", replace)
+    monkeypatch.setattr(data_location, "write_pointer", write_pointer)
+    monkeypatch.setattr(data_location, "_remove", logged("_remove", "remove"))
+    monkeypatch.setattr(data_location, "_fsync_tree", logged("_fsync_tree", "tree"))
+    monkeypatch.setattr(data_location, "_fsync_path", logged("_fsync_path", "file"))
+    monkeypatch.setattr(data_location, "_sync_dir", logged("_sync_dir", "dir"))
+    assert data_location.apply_pending_move(new) is None
+
+    def at(*event):
+        return events.index(event)
+
+    for name in ("papers", "library.sqlite-wal", "library.sqlite"):
+        staged = data_location.MOVING_PREFIX + name
+        copied, placed = at("tree", staged, "new"), at("replace", name, "new")
+        entries_flushed = next(i for i, e in enumerate(events) if i > placed and e[:2] == ("dir", "new"))
+        recorded = next(i for i, e in enumerate(events) if e[0] == "pointer" and name in e[1] and i > placed)
+        deleted = at("remove", name, "pretend-default")
+        assert copied < placed < entries_flushed < recorded < deleted, (name, events)
+        # the record itself: its file flushed, renamed over the pointer, and the pointer's folder flushed, all before the deletion
+        record = events[:recorded]
+        renamed = max(i for i, e in enumerate(record) if e[:2] == ("replace", "location.json"))
+        assert ("file", "location.json.tmp", "pretend-default") in record[:renamed]
+        assert any(e[:2] == ("dir", "pretend-default") for e in record[renamed:])
+    # the copy of a folder is flushed as a whole: its nested file is covered by the one tree call
+    assert (new / "papers" / "sub" / "b.pdf").read_bytes() == b"%PDF SYNTHETIC 2"
+
+
+def test_the_helpers_flush_files_and_folders_and_windows_skips_folders(tmp_path, monkeypatch):
+    (tmp_path / "t" / "d").mkdir(parents=True)
+    (tmp_path / "t" / "a.bin").write_bytes(b"1")
+    (tmp_path / "t" / "d" / "b.bin").write_bytes(b"2")
+    flushed = []
+    real_fsync = os.fsync
+    monkeypatch.setattr(data_location.os, "fsync", lambda fd: (flushed.append(os.fstat(fd).st_mode), real_fsync(fd)))
+    data_location._fsync_tree(tmp_path / "t")
+    import stat
+    assert sum(stat.S_ISREG(m) for m in flushed) == 2 and sum(stat.S_ISDIR(m) for m in flushed) == 3  # t, t/d, and t's parent
+    flushed.clear()
+    monkeypatch.setattr(data_location.sys, "platform", "win32")
+    data_location._sync_dir(tmp_path)
+    assert flushed == []  # Windows cannot open a folder to flush it
+    data_location._fsync_path(tmp_path / "t" / "a.bin")
+    assert [stat.S_ISREG(m) for m in flushed] == [True]  # a file is flushed through a writable handle (FlushFileBuffers)
+
+
+# The Windows holder runs here on POSIX locks: `_inherits` is patched off so a child is started through `python -m deixis
+# hold-folder`, the real module and the real handshake. msvcrt, the job object and a real Windows computer are not tested.
+
+
+@pytest.fixture
+def windows_children(monkeypatch):
+    monkeypatch.setattr(library_lock, "_inherits", lambda: False)
+    return {**os.environ, "PYTHONPATH": str(Path(library_lock.__file__).parents[1])}
+
+
+def test_a_windows_child_takes_its_own_lock_before_the_parent_goes_on_and_outlives_the_parent(default, tmp_path, windows_children):
+    library(default)
+    new = tmp_path / "new"
+    data_location.write_pointer(new, default)
+    assert library_lock.hold_shared(default)
+    marker = tmp_path / "started"
+    child = library_lock.guard([sys.executable, "-c", f"import sys; open({str(marker)!r}, 'w').close(); sys.stdin.read()"])
+    assert child.kwargs == {} and child.argv[1:4] == ["-m", "deixis", "hold-folder"] and str(default) in child.argv
+    process = subprocess.Popen(child.argv, stdin=subprocess.PIPE, env=windows_children)
+    try:
+        child.wait_ready()
+        library_lock.release(default)  # the parent goes away; the holder still has the folder
+        assert isinstance(data_location.apply_pending_move(new), data_location.Postponed)
+        for _ in range(100):  # the real command starts only after the lock is held
+            if marker.exists():
+                break
+            time.sleep(0.05)
+        assert marker.exists()
+    finally:
+        process.stdin.close()
+        process.wait(timeout=10)
+        child.done()
+    assert process.returncode == 0 and not child._ready.exists()
+    assert data_location.apply_pending_move(new) is None and (new / "library.sqlite").exists()
+
+
+@pytest.fixture
+def named_folder(default):
+    """The folder counts as held (`guard` names it for the holder) without this test process owning its lock."""
+    fd = os.open(os.devnull, os.O_RDONLY)
+    library_lock._held[default] = fd
+    yield default
+    library_lock._held.pop(default, None)
+    os.close(fd)
+
+
+def test_a_windows_child_is_not_started_while_a_move_holds_the_folder(named_folder, tmp_path, windows_children):
+    default = named_folder
+    library(default)
+    marker = tmp_path / "started"
+    child = library_lock.guard([sys.executable, "-c", f"open({str(marker)!r}, 'w').close()"])
+    with library_lock.exclusive(default):
+        process = subprocess.Popen(child.argv, env=windows_children)
+        with pytest.raises(library_lock.ChildLockFailed, match="being moved"):
+            child.wait_ready()
+        assert process.wait(timeout=10) == 3
+    child.done()
+    assert not marker.exists()
+
+
+def test_a_windows_child_whose_holder_never_answers_is_reported(named_folder, windows_children):
+    child = library_lock.guard(["never-started"])
+    with pytest.raises(library_lock.ChildLockFailed, match="did not answer"):
+        child.wait_ready(timeout=0.2)
+    child.done()
+
+
+def test_posix_children_inherit_the_descriptor_and_a_command_with_no_folder_held_is_left_alone(default):
+    assert library_lock.guard(["x"]).argv == ["x"]
+    assert library_lock.hold_shared(default)
+    child = library_lock.guard(["x"])
+    assert child.argv == ["x"] and child.kwargs == {"pass_fds": library_lock.child_fds()} and child.kwargs["pass_fds"]
+    child.wait_ready()
+
+
+# ---- network detection (E21) ---------------------------------------------------------------------------------------
+
+
+def test_windows_extended_length_paths_are_classified_by_the_drive_they_name(monkeypatch):
+    monkeypatch.setattr(data_location.sys, "platform", "win32")
+    roots = []
+    monkeypatch.setattr(data_location, "_drive_type", lambda root: roots.append(root) or (4 if root == "Z:\\" else 3))
+    assert data_location.network_drive(Path("\\\\?\\E:\\DEIXIS")) is None and roots == ["E:\\"]
+    assert data_location.network_drive(Path("\\\\?\\Z:\\DEIXIS")) == "mapped network drive"
+    assert data_location.network_drive(Path("\\\\?\\UNC\\server\\share\\DEIXIS")) == "network share"
+    assert data_location.network_drive(Path("\\\\.\\E:\\DEIXIS")) is None
+    assert data_location.network_drive(Path("\\\\server\\share\\DEIXIS")) == "network share"
+    assert not data_location.network_unchecked(Path("\\\\?\\E:\\DEIXIS"))
+
+
+def test_a_drive_that_cannot_be_examined_is_reported_not_passed_silently(client, tmp_path, monkeypatch):
+    monkeypatch.setattr(data_location, "_mounts", lambda: None)
+    assert data_location.network_drive(tmp_path / "x") is None and data_location.network_unchecked(tmp_path / "x")
+    answer = client.post("/api/settings/data-location", json={"path": str(tmp_path / "x"), "check": True})
+    assert answer.status_code == 200 and answer.json()["network_unchecked"] is True
+    monkeypatch.setattr(data_location, "_mounts", lambda: [("/", "apfs")])
+    assert client.post("/api/settings/data-location", json={"path": str(tmp_path / "x"), "check": True}).json()["network_unchecked"] is False
+    monkeypatch.setattr(data_location.sys, "platform", "win32")
+    monkeypatch.setattr(data_location, "_drive_type", lambda root: (_ for _ in ()).throw(OSError("no kernel32")))
+    assert data_location.network_unchecked(Path("E:\\DEIXIS"))
+
+
+def test_an_unreadable_mount_table_is_none_not_an_empty_list(monkeypatch):
+    def fail(*args, **kwargs):
+        raise OSError("no mount")
+
+    monkeypatch.setattr(data_location.subprocess, "run", fail)
+    monkeypatch.setattr(data_location.sys, "platform", "darwin")
+    assert data_location._mounts() is None

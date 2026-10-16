@@ -90,7 +90,9 @@ def register_data_location_routes(app, settings: Settings) -> None:
             raise HTTPException(422, f"That folder {problem}.")
         has_library = (target / "library.sqlite").exists()
         if body.check:
-            return {"path": str(target), "has_library": has_library, "sync_service": data_location.sync_service(target)}
+            return {"path": str(target), "has_library": has_library, "sync_service": data_location.sync_service(target),
+                    # True when this computer could not tell whether the folder is on a network drive (the library does not work on one)
+                    "network_unchecked": await asyncio.to_thread(data_location.network_unchecked, target)}
         data_location.write_pointer(target, current)
         return await view(request)
 

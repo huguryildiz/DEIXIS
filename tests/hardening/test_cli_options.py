@@ -16,7 +16,7 @@ def settings_of(argv, monkeypatch, tmp_path):
     monkeypatch.setenv("DEIXIS_DATA_DIR", str(tmp_path))
     seen = {}
 
-    def record(settings, open_browser, dev_hosts):
+    def record(settings, open_browser, dev_hosts, **options):
         seen["settings"] = settings
         return 0
 
@@ -53,7 +53,7 @@ def test_obsolete_workflow_env_warns_once_and_does_not_block_commands(monkeypatc
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", "legacy")
     monkeypatch.setenv("DEIXIS_DATA_DIR", str(tmp_path / "data"))
     called = []
-    monkeypatch.setattr(cli, "serve", lambda *args: called.append("serve") or 0)
+    monkeypatch.setattr(cli, "serve", lambda *args, **options: called.append("serve") or 0)
     monkeypatch.setattr(cli.backup, "create_backup", lambda *args: called.append("backup") or tmp_path / "backup")
     monkeypatch.setattr(cli.backup, "restore_backup", lambda *args: called.append("restore") or {"researches": 0, "files": 0})
     args = ["serve", "--no-browser"] if command == "serve" else [command, str(tmp_path / "backup")]

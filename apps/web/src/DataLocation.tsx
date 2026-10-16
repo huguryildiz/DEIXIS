@@ -21,7 +21,7 @@ export function DataLocationCard({ dark }: { dark: boolean }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [typed, setTyped] = useState<string | null>(null)  // the path field, when this system has no folder chooser
-  const [confirm, setConfirm] = useState<{ path: string; hasLibrary: boolean; sync: string | null } | null>(null)
+  const [confirm, setConfirm] = useState<{ path: string; hasLibrary: boolean; sync: string | null; unchecked: boolean } | null>(null)
   useEffect(() => {
     let live = true
     dataLocationApi.get().then(v => { if (live) setView(v) }, (e: Error) => { if (live) setError(e.message) })
@@ -34,7 +34,7 @@ export function DataLocationCard({ dark }: { dark: boolean }) {
 
   const check = (path: string) => {
     setBusy(true); setError('')
-    dataLocationApi.check(path).then(r => { setTyped(null); setConfirm({ path: r.path, hasLibrary: r.has_library, sync: r.sync_service }) })
+    dataLocationApi.check(path).then(r => { setTyped(null); setConfirm({ path: r.path, hasLibrary: r.has_library, sync: r.sync_service, unchecked: r.network_unchecked }) })
       .catch((e: Error) => setError(e.message)).finally(() => setBusy(false))
   }
   const choose = () => {
@@ -127,6 +127,7 @@ export function DataLocationCard({ dark }: { dark: boolean }) {
         : t('DEIXIS will move your library to {path} the next time it starts.', { path: confirm?.path ?? '' })}
       context={confirm?.path} confirmLabel={t('Change location')} cancelLabel={t('Cancel')} busy={busy}
       onConfirm={() => confirm && save(confirm.path)} onOpenChange={open => { if (!open) setConfirm(null) }}>
+      {confirm?.unchecked && <Notice tone="attention">{t('DEIXIS could not tell whether this folder is on a network drive. The library does not work on a network drive; choose a folder on this computer if you are not sure.')}</Notice>}
       {confirm?.sync && <Notice tone="attention">{t('{service} syncs this folder. DEIXIS can keep its library here, but syncing may copy the library while it is being written. This warning is no guarantee of safety, and the library must never be open on two computers at once.', { service: confirm.sync })}</Notice>}
     </ConfirmDialog>
   </div>

@@ -3,7 +3,8 @@
 A change takes effect at the next start; the open SQLite library is never moved while DEIXIS runs. When the pointer
 carries `move_from`, `apply_pending_move` moves the old folder's entries into the new one before anything opens them,
 holding both folders' exclusive locks (`library_lock`, E1). The pointer records the move's phase before each step that
-changes a folder (E22), so a start after an interruption finishes the step that was cut short.
+changes a folder (E22), so a start after an interruption finishes the step that was cut short. Nothing is deleted from
+the old folder before the copy, its directory entries and the record of it are on disk (`_fsync_tree`, `_sync_dir`).
 """
 
 from __future__ import annotations
@@ -90,7 +91,9 @@ def write_pointer(path: Path, move_from: Path | None, moved: list[str] | None = 
             | ({"phase": phase} if phase else {}) | ({"placing": placing} if placing else {}))
     temporary = target.with_name(POINTER_NAME + ".tmp")
     temporary.write_text(json.dumps(data), encoding="utf-8")
+    _fsync_path(temporary)  # the record is on disk before it takes the pointer's name, and the name before anything is deleted
     os.replace(temporary, target)
+    _sync_dir(target.parent)
 
 
 def data_dir_problem(path: Path) -> str | None:
@@ -121,8 +124,8 @@ def _existing(path: Path) -> Path:
     return path
 
 
-def _mounts() -> list[tuple[str, str]]:
-    """(mount point, filesystem type) of every mounted filesystem; empty when the table cannot be read."""
+def _mounts() -> list[tuple[str, str]] | None:
+    """(mount point, filesystem type) of every mounted filesystem; None when the table cannot be read."""
     try:
         if sys.platform == "darwin":
             out = subprocess.run(["/sbin/mount"], capture_output=True, text=True, timeout=10).stdout
@@ -130,7 +133,7 @@ def _mounts() -> list[tuple[str, str]]:
         with open("/proc/self/mounts", encoding="utf-8") as table:
             return [(fields[1].replace("\\040", " "), fields[2]) for line in table if len(fields := line.split()) >= 3]
     except (OSError, subprocess.SubprocessError):
-        return []
+        return None
 
 
 def _drive_type(root: str) -> int:
@@ -139,21 +142,44 @@ def _drive_type(root: str) -> int:
     return ctypes.windll.kernel32.GetDriveTypeW(root)  # type: ignore[attr-defined]
 
 
-def network_drive(path: Path) -> str | None:
-    """What kind of network drive holds `path`, or None for a local disk (or when it cannot be told)."""
+def _network_kind(path: Path) -> tuple[str | None, bool]:
+    """(kind of network drive holding `path` or None, whether the drive could be examined at all)."""
     if sys.platform == "win32":
         text = str(path)
+        if text[:8].upper() == "\\\\?\\UNC\\":  # \\?\UNC\server\share
+            return "network share", True
+        if text[:4] in ("\\\\?\\", "\\\\.\\"):  # \\?\E:\… names a local drive; drop the prefix
+            text = text[4:]
         if text.startswith(("\\\\", "//")):
-            return "network share"
+            return "network share", True
         drive = ntpath.splitdrive(text)[0]
-        return "mapped network drive" if drive and _drive_type(drive + "\\") == 4 else None  # 4: DRIVE_REMOTE
+        if not drive:
+            return None, False
+        try:
+            return ("mapped network drive" if _drive_type(drive + "\\") == 4 else None), True  # 4: DRIVE_REMOTE
+        except (OSError, AttributeError):
+            return None, False
+    mounts = _mounts()
+    if not mounts:
+        return None, False
     resolved = _existing(path).resolve()
     best = None
-    for mount, fstype in _mounts():
+    for mount, fstype in mounts:
         point = Path(mount)
         if (point == resolved or point in resolved.parents) and (best is None or len(mount) > len(best[0])):
             best = (mount, fstype)
-    return best[1] if best and best[1].lower() in NETWORK_FILESYSTEMS else None
+    return (best[1] if best and best[1].lower() in NETWORK_FILESYSTEMS else None), True
+
+
+def network_drive(path: Path) -> str | None:
+    """What kind of network drive holds `path`, or None for a local disk (or when it cannot be told: see `network_unchecked`)."""
+    return _network_kind(path)[0]
+
+
+def network_unchecked(path: Path) -> bool:
+    """True when this computer would not tell whether `path` is on a network drive (the mount table or drive type could not
+    be read). The caller warns instead of letting the folder pass as local."""
+    return not _network_kind(path)[1]
 
 
 def _sync_roots() -> list[tuple[Path, str]]:
@@ -235,6 +261,46 @@ def _remove(path: Path) -> None:
     shutil.rmtree(path) if path.is_dir() and not path.is_symlink() else path.unlink()
 
 
+def _fsync_path(path: Path) -> None:
+    """Force a file's contents to disk (Windows: FlushFileBuffers through `os.fsync`, which needs a writable handle)."""
+    if path.is_symlink():
+        return
+    windows = sys.platform == "win32"
+    try:
+        fd = os.open(path, (os.O_RDWR if windows else os.O_RDONLY) | getattr(os, "O_BINARY", 0))
+    except PermissionError:
+        if windows:  # a read-only file cannot be flushed through a handle that may not write
+            return
+        raise
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _sync_dir(path: Path) -> None:
+    """Force a folder's entries (new names, removed names) to disk. POSIX only: Windows cannot open a folder this way."""
+    if sys.platform == "win32":
+        return
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _fsync_tree(path: Path) -> None:
+    """Every file and folder under `path` (or the one file), then `path`'s parent folder, on disk."""
+    if path.is_dir() and not path.is_symlink():
+        for folder, dirs, files in os.walk(path):
+            for name in files:
+                _fsync_path(Path(folder, name))
+            _sync_dir(Path(folder))
+    else:
+        _fsync_path(path)
+    _sync_dir(path.parent)
+
+
 @dataclass(frozen=True)
 class Postponed:
     """A move that did not start because another process holds one of the two folders (E1); nothing moved."""
@@ -262,6 +328,13 @@ def apply_pending_move(data_dir: Path) -> str | Postponed | None:
     if Path(data["path"]) != data_dir:
         return None
     old, phase = Path(data["move_from"]), data.get("phase")
+    if old != data_dir and not old.is_dir() and phase != "relinking" and not (phase is None and (data_dir / "library.sqlite").exists()):
+        # The old folder is out of reach (an unplugged drive, a renamed folder): opening the new one now would open an
+        # incomplete or empty library, and clearing the record would forget where the rest is.
+        return (f"The library is being moved from {old} to {data_dir}, but {old} cannot be found. Reconnect it and start DEIXIS "
+                f"again; DEIXIS did not open {data_dir}, which may hold only part of the library." if phase else
+                f"The library is to be moved from {old} to {data_dir}, but {old} cannot be found. Reconnect it and start DEIXIS "
+                f"again; DEIXIS did not open {data_dir}, which holds no library yet.")
     if old == data_dir or not old.is_dir():
         if phase and (data_dir / "tools").is_dir():
             _relink(data_dir / "tools", old, data_dir)
@@ -316,11 +389,15 @@ def _move(data: dict, old: Path, data_dir: Path) -> str | None:
                     shutil.copytree(entry, staged, symlinks=True)
                 else:
                     shutil.copy2(entry, staged, follow_symlinks=False)
+                _fsync_tree(staged)  # every copied byte and its name on disk before the record or the original is touched
                 write_pointer(data_dir, old, moved, phase="moving", placing=entry.name)  # before the copy takes its name
                 os.replace(staged, final)
+                _sync_dir(data_dir)
                 moved.append(entry.name)
-                write_pointer(data_dir, old, moved, phase="moving")  # recorded before the original is deleted, so a retry never deletes the copy
+                write_pointer(data_dir, old, moved, phase="moving")  # on disk before the original is deleted, so a retry never deletes the copy
                 _remove(entry)
+            _sync_dir(data_dir)
+            _sync_dir(old)  # the renames: both folders' entries on disk before the record moves on
             write_pointer(data_dir, old, moved, phase="relinking")
         if (data_dir / "tools").is_dir():
             _relink(data_dir / "tools", old, data_dir)

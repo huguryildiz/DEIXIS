@@ -1890,7 +1890,7 @@ export type DataLocation = {
 }
 export const dataLocationApi = {
   get: () => request<DataLocation>('/api/settings/data-location'),
-  check: (path: string) => request<{ path: string; has_library: boolean; sync_service: string | null }>('/api/settings/data-location', json('POST', { path, check: true })),
+  check: (path: string) => request<{ path: string; has_library: boolean; sync_service: string | null; network_unchecked: boolean }>('/api/settings/data-location', json('POST', { path, check: true })),
   change: (path: string) => request<DataLocation>('/api/settings/data-location', json('POST', { path })),
   choose: () => request<{ path: string | null }>('/api/settings/data-location/choose', { method: 'POST' }),
   backup: () => request<DataLocation>('/api/settings/data/backup', { method: 'POST' }),

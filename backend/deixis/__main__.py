@@ -18,9 +18,10 @@ from uuid import uuid4
 
 import uvicorn
 
-from deixis import library_lock
+from deixis import config, library_lock
 from deixis.api.app import create_app
 from deixis.config import Settings, load_settings
+from deixis import data_location
 from deixis.data_location import PointerDamaged, Postponed, apply_pending_move, data_dir_problem, read_pointer
 from deixis.storage import backup, db
 from deixis.storage.db import SchemaCheckUnreadable, UnknownSchemaError, check_schema_known
@@ -72,7 +73,46 @@ def schema_problem(db_path: Path) -> str | None:
     return None
 
 
-def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...]) -> int:
+LOCATION_ATTEMPTS = 5
+
+
+def location_changed(wanted: Path, postponed: Postponed | None) -> Path | str | None:
+    """Under the folder lock: None when the location is still what this start read, else the folder to start again with,
+    or one sentence when the pointer is now damaged. `wanted` is the folder the start was after; `postponed` is the move
+    it left for later, which must still be the pending one."""
+    try:
+        now = config.default_data_dir()
+        pointer = None if data_location.set_outside_app() else read_pointer()
+    except PointerDamaged as exc:
+        return str(exc)
+    if postponed is None:
+        return None if now == wanted else now
+    if now == wanted and pointer and pointer.get("move_from") == str(postponed.old) and not pointer.get("phase"):
+        return None
+    return now
+
+
+def hold_current_folder(settings: Settings) -> Settings | str:
+    """The shared folder lock for a command that does not move anything: the settings, with the folder re-read under the lock
+    (as `serve` does), or one sentence when the folder is being moved. A folder that cannot hold a lock file is left to the command."""
+    for _ in range(LOCATION_ATTEMPTS):
+        try:
+            if not library_lock.hold_shared(settings.data_dir):
+                return f"Another DEIXIS is moving the library in {settings.data_dir}. Try again when it has finished."
+        except OSError:
+            return settings  # no lock file can be made in this folder; the command reports its own error about it
+        if (changed := location_changed(settings.data_dir, None)) is None:
+            return settings
+        library_lock.release(settings.data_dir)
+        if isinstance(changed, str):
+            return changed
+        settings = dataclasses.replace(settings, data_dir=changed)
+    return "The data location kept changing while DEIXIS started. Try again."
+
+
+def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...], reread_location: bool = False) -> int:
+    """`reread_location`: the settings came from `load_settings`, so the location is read again under the folder lock (a caller
+    that builds its own settings has no location to read)."""
     url = f"http://{settings.host}:{settings.port}/"
     if settings.host not in ("127.0.0.1", "localhost"):
         print("DEIXIS binds to loopback only; set DEIXIS_HOST=127.0.0.1.", file=sys.stderr)
@@ -83,29 +123,36 @@ def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...]) ->
         return 2
     # A location chosen in Settings (D32) is moved into before anything opens the library, under both folders'
     # exclusive locks (E1). A DEIXIS on another port, or a child it started, holds its folder's shared lock: the move
-    # is then postponed and this DEIXIS opens the old folder, saying why in Settings.
-    postponed = None
-    if isinstance(message := apply_pending_move(settings.data_dir), Postponed):
-        postponed = message
-        print(postponed.message(), file=sys.stderr)
-        settings = dataclasses.replace(settings, data_dir=postponed.old)
-    elif message is not None:
-        print(message, file=sys.stderr)
-        return 2
-    if problem := data_dir_problem(settings.data_dir):
-        print(f"Cannot use the data directory {settings.data_dir}: it {problem}. "
-              "Set DEIXIS_DATA_DIR to a folder you can write to.", file=sys.stderr)
-        return 2
-    # The folder's shared lock is held from here, before the library is opened, until this process ends.
-    if not library_lock.hold_shared(settings.data_dir):
-        print(f"Another DEIXIS is moving the library in {settings.data_dir}. Start DEIXIS again when it has finished.", file=sys.stderr)
-        return 2
-    if postponed is not None:
-        pointer = read_pointer()
-        if not pointer or pointer.get("move_from") != str(postponed.old) or pointer.get("phase"):
-            library_lock.release(settings.data_dir)  # another DEIXIS moved the library meanwhile
-            print(f"Another DEIXIS has just moved the library to {postponed.new}. Start DEIXIS again.", file=sys.stderr)
+    # is then postponed and this DEIXIS opens the old folder, saying why in Settings. Another DEIXIS may finish a move
+    # between reading the location and taking the lock, so the location is read again under the lock and, when it
+    # changed, the lock is let go and the start begins again with the new one.
+    for _ in range(LOCATION_ATTEMPTS):
+        wanted, postponed = settings.data_dir, None
+        if isinstance(message := apply_pending_move(wanted), Postponed):
+            postponed = message
+            print(postponed.message(), file=sys.stderr)
+            settings = dataclasses.replace(settings, data_dir=postponed.old)
+        elif message is not None:
+            print(message, file=sys.stderr)
             return 2
+        if problem := data_dir_problem(settings.data_dir):
+            print(f"Cannot use the data directory {settings.data_dir}: it {problem}. "
+                  "Set DEIXIS_DATA_DIR to a folder you can write to.", file=sys.stderr)
+            return 2
+        # The folder's shared lock is held from here, before the library is opened, until this process ends.
+        if not library_lock.hold_shared(settings.data_dir):
+            print(f"Another DEIXIS is moving the library in {settings.data_dir}. Start DEIXIS again when it has finished.", file=sys.stderr)
+            return 2
+        if not reread_location or (changed := location_changed(wanted, postponed)) is None:
+            break
+        library_lock.release(settings.data_dir)
+        if isinstance(changed, str):
+            print(changed, file=sys.stderr)
+            return 2
+        settings = dataclasses.replace(settings, data_dir=changed)
+    else:
+        print("The data location kept changing while DEIXIS started. Start DEIXIS again.", file=sys.stderr)
+        return 2
     if (message := schema_problem(settings.db_path)) is not None:
         print(message, file=sys.stderr)
         return 2
@@ -374,6 +421,9 @@ def recovery_files(settings: Settings, delete: bool) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    given = sys.argv[1:] if argv is None else argv
+    if given[:1] == ["hold-folder"]:  # the Windows holder of a child's folder lock (library_lock.holder_main); not a user command
+        return library_lock.holder_main(given[1:])
     parser = argparse.ArgumentParser(prog="deixis")
     sub = parser.add_subparsers(dest="command", required=True)
     run = sub.add_parser("serve", help="Start the local API, worker and UI")
@@ -400,13 +450,11 @@ def main(argv: list[str] | None = None) -> int:
     except PointerDamaged as exc:  # E23: never an empty default library in place of the one the pointer named
         print(str(exc), file=sys.stderr)
         return 2
-    if args.command != "serve":
-        try:  # every process that opens the library holds its folder's shared lock (E1); `serve` takes it after a move
-            if not library_lock.hold_shared(settings.data_dir):
-                print(f"Another DEIXIS is moving the library in {settings.data_dir}. Try again when it has finished.", file=sys.stderr)
-                return 2
-        except OSError:
-            pass  # no lock file can be made in this folder; the command reports its own error about it
+    if args.command != "serve":  # every process that opens the library holds its folder's shared lock (E1); `serve` takes it after a move
+        if isinstance(held := hold_current_folder(settings), str):
+            print(held, file=sys.stderr)
+            return 2
+        settings = held
     if args.command == "recovery-files":
         return recovery_files(settings, args.delete)
     if args.command == "equations":
@@ -429,7 +477,7 @@ def main(argv: list[str] | None = None) -> int:
         # and concurrency requested by the environment (slice 13 smoke run).
         settings = dataclasses.replace(settings, port=args.port)
     dev_hosts = ("127.0.0.1:5178", "localhost:5178") if args.dev else ()
-    return serve(settings, not args.no_browser, dev_hosts)
+    return serve(settings, not args.no_browser, dev_hosts, reread_location=True)
 
 
 if __name__ == "__main__":

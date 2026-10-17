@@ -34,6 +34,7 @@ Most of this was tested with fake models and synthetic data only; "Not measured"
 - Formula questions put each source's most formula-heavy page into the answer input (D56).
 - Works the survey title rule set aside are labeled `code_decided` in the answer input, not `not_screened_at_cutoff` (D69).
 - Raw LaTeX outside `$…$` in answers, follow-ups and report sections sends the step to repair (D61).
+- Every work given to an answer is cited or left out with a reason (D80). One answer call left the reason list empty (29 of 41 works without a reason), so a valid answer with unaccounted works gets one coverage rewrite that keeps its claims (D83). Live on the DBR/VBF question, 3 runs: 0 unaccounted, cited works 12 → 27–28, 12–13 of 13 content-bearing works cited and the rest left out with a confirmed reason; the answer takes about 100 s instead of 22 s and the rewrite's output is 13–15k tokens against a 16k limit (`.local/plans/evidence-ledger-acceptance-2026-10-17.md`).
 
 ### Follow-up questions
 
@@ -111,7 +112,8 @@ One run per mode with gpt-5.6-luna on the DBR/VBF question, on a library copy.
 
 All 171 citation links in 8 stored answers are sound; the gap is coverage: answers leave relevant input works uncited.
 
-- [ ] Before/after run on one frozen answer input. 17 Oct: 10 of 40 given works cited, 0 of 23 abstracts; length was not the limit.
+- [x] Before/after run on one frozen answer input: done 17 Oct (D80 + D83, see Done).
+- [ ] Every D83 run hit the 30-claim limit; 12–13 works per run are left out under `claim_limit`. Not measured on other questions.
 - [ ] Chain of Ideas–style idea generation waits for this, with its own contract (premises cited, speculation marked unsourced).
 
 ### Search (after P10)

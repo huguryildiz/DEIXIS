@@ -68,6 +68,7 @@ Most of this was tested with fake models and synthetic data only; "Not measured"
 
 - The UI moved to the mockup v24 design, and the 17 bugs found against the mockup are fixed (D5).
 - Mockup v25 (D77): the question shows its scope as a chip, the four evidence counts sit in one strip, and each run phase has a ringed icon on a rail with its details in a panel. The citation line no longer says "N of N" (only located anchors are stored), and the chain rows say "kept after the term filter". The mockup parity check and the mockup itself are removed (D79); the shipped screens are the reference.
+- Run card (D82): each run is one card; the step panels show the two abstract readings that disagreed, why each passed work was not read in full text (with Add PDFs), and how each citation anchor matched; a "No full text" badge marks a run that read none. Not tried on a live run yet.
 - Post-parity cleanup and small features (P0–P5, D25–D33) are done: unused CSS removed, search-plan strike-through, request counts, stored thinking level, proxy name, "Try" for keyless sources.
 - Pre-P10 readiness is done in code: the packaged app finds its files, tools work when opened from the desktop, Windows CLIs start, a Linux fallback holds keys for the session, and cost estimates are shown.
 - An open PDF viewer now loads the restored file after a file restore.

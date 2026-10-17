@@ -13,6 +13,7 @@ from deixis.domain.rules import FULLTEXT_RUNS, effective_reviewer, result_applic
 from deixis.workflow import english_question as english_question_rules
 from deixis.workflow import approval as approval_rules
 from deixis.workflow import flow_counts as flow_rules
+from deixis.workflow import run_card
 from deixis.workflow import overrides as override_rules
 from deixis.workflow import probes as probe_rules
 from deixis.workflow import screen_more
@@ -555,6 +556,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         "SELECT run_id, payload_json FROM events WHERE research_id = ? AND type = 'service_waiting' ORDER BY id",
         (research_id,))}
     runs = []
+    # The research-wide rows the run cards read, loaded once and shared by every run (`run_card.Facts`).
+    card_facts = run_card.Facts(store, research_id)
     # The ten latest runs, plus the runs the latest answer and the latest discovery belong to: the transcript draws an
     # answer inside its own run, so later full-text reads and table fills must not push it out of the list.
     for row in conn.execute(
@@ -602,6 +605,9 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         run["chain_requests"] = request_outcomes(run["steps"]) if run["kind"] == "discovery" else None
         # Where the person's confirmed works stood in this run's keyword ranking, descriptively (slice 19).
         run["signals"] = probe_rules.signal_table(store, run["id"], probe) if run["kind"] == "discovery" else None
+        # What the two abstract passes said, and why a work that passed was not read in full (null where not asked).
+        run["screening_passes"] = run_card.screening_passes(store, run, card_facts)
+        run["fulltext_gaps"] = run_card.fulltext_gaps(store, run, card_facts, (run.get("fast_path") or {}).get("read"))
         run["screening_notes"] = [
             {"step_id": r["id"], "text": note} for r in store.conn.execute(
                 "SELECT id, output_json FROM run_steps WHERE run_id = ? AND kind = 'model:screening' AND status = 'succeeded'"
@@ -639,7 +645,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         claims = []
         for c in conn.execute("SELECT * FROM claims WHERE answer_id = ? ORDER BY ordinal", (a["id"],)):
             rows = conn.execute(
-                "SELECT l.passage_id, l.source_version_id, s.work_id, l.anchor_text, p.kind, p.physical_page, p.printed_label, p.text_source, s.title, s.version_label,"
+                "SELECT l.passage_id, l.source_version_id, s.work_id, l.anchor_text, l.anchor_match, p.kind, p.physical_page, p.printed_label, p.text_source, s.title, s.version_label,"
                 " p.text AS passage_text, (SELECT w.source_key FROM works w WHERE w.id = s.work_id) AS source_key,"
                 f" {EVIDENCE_STATUS_SQL} AS evidence_status, {RENDITION_SQL} AS rendition FROM evidence_links l"
                 " JOIN passages p ON p.id = l.passage_id JOIN source_versions s ON s.id = l.source_version_id"
@@ -651,7 +657,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
                  "source_key": e["source_key"], "kind": e["kind"],
                  "physical_page": e["physical_page"], "printed_label": e["printed_label"],
                  "reading_depth": "abstract" if e["kind"] == "abstract" else "selected_sections", "title": e["title"],
-                 "version_label": e["version_label"], "anchor_text": e["anchor_text"], "evidence_status": e["evidence_status"],
+                 "version_label": e["version_label"], "anchor_text": e["anchor_text"], "anchor_match": e["anchor_match"],
+                 "evidence_status": e["evidence_status"],
                  "text_source": e["text_source"], "removed_from_research": e["source_version_id"] in removed,
                  # Europe PMC's text drawn as a PDF: its page is DEIXIS's, not the publisher's (SW21).
                  "rendition": bool(e["rendition"])}

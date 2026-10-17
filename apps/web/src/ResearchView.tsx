@@ -841,9 +841,11 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         onChooseCodeQuery={async target => { await act(() => api.chooseCodeQuery(target.id), t('The run searches with the query built from the question’s words.')) }}
         onGiveKeyTerms={() => reviseQuestion('terms')}
         queueCount={queueCount} onOpenQueue={showQueue} onOpenPdfs={() => openPanel('pdfs')} onOpenFunnel={() => openPanel('funnel')}
+        onOpenSource={svid => setPdfTarget({ assetId: null, sourceVersionId: svid, view: 'text' })}
         onControlRun={controlRun} onRewrite={rewriteAndSearch} busy={busy}
         onChooseModel={(target, role, opener, review) => setChooseModel({ run: target, role, opener, review })}
         onEditPlan={hasAcademic ? opener => openPanel('plan', { opener }) : undefined}
+        onOpenPassage={openPassage}
         emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
         latestAnswer={answer ? <><AnswerThread thread={answerThread} eventCursor={view.last_event_id} review={answerReview} researchId={id} title={answer.report_title ?? heading} version={answerVersion} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={(passageId, highlightText) => setPassageTarget({ passageId, highlightText, fromCitation: true })} onAttachPdf={chooseSourcePdf}
           versions={reportVersions} latestVersion={latestVersion} onVersion={switchReport} changes={answer.status === 'structurally_valid' ? reportChanges(answer) : undefined} />{tableCards}</> : null} />

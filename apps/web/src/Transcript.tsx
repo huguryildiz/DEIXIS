@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowDown, BookOpen, Check, ChevronDown, ChevronRight, Cpu, FileText, ListChecks, LoaderCircle, Minus, Pause, PencilLine, Play, RotateCw, ScanText, Search, ShieldCheck, Sparkles, TriangleAlert, Waypoints, type LucideIcon } from 'lucide-react'
-import { api, type ModelRole, type ResearchView, type Run, type Verdict, type ReviewCard, type ReviewTargetKind, type SearchRun } from './api'
+import { ArrowDown, BookOpen, Check, ChevronDown, ChevronRight, Cpu, FileText, List, ListChecks, LoaderCircle, Minus, Pause, PencilLine, Play, RotateCw, ScanText, Search, ShieldCheck, Sparkles, TriangleAlert, Upload, Waypoints, type LucideIcon } from 'lucide-react'
+import { api, type FulltextGapReason, type ModelRole, type ResearchView, type Run, type Verdict, type ReviewCard, type ReviewTargetKind, type SearchRun } from './api'
 import { ocrLanguagesText as ocrLanguages } from './ocr'
 import { serviceWaitRecordText, providerRetryText, serviceErrorSentence, serviceKind, connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, approvedByText, runStatusLabels, searchQueryTriesLeft, seedUseText, stepLabel, verdictLabels, wordLeftOutText } from './labels'
 import { ConnectionIcon } from './connectionIcons'
@@ -92,6 +92,19 @@ function phaseOf(kind: string): PhaseKey | null {
   return null
 }
 
+// A step table lists this many rows; the rest are counted.
+const SHOWN_ROWS = 5
+const GAP_REASONS: FulltextGapReason[] = ['no_open_pdf', 'outside_read_limit', 'not_reached_before_cutoff', 'fetch_failed', 'deferred', 'identity_unconfirmed', 'reading_failed', 'unknown']
+const gapReasonLabels: Record<FulltextGapReason, string> = { no_open_pdf: 'No open PDF', outside_read_limit: 'Outside the reading limit',
+  not_reached_before_cutoff: 'Not reached before the cutoff', fetch_failed: 'Download failed', deferred: 'Postponed by the source limit', reading_failed: 'Reading failed', identity_unconfirmed: 'PDF not confirmed as this work', unknown: 'Reason not recorded' }
+const anchorMatchLabels = { exact: 'exact', normalized: 'normalized', fuzzy: 'close match' } as const
+const screeningLabels: Record<string, string> = { candidate: 'Passed', out_of_scope: 'Out of scope', unresolved: 'Unclear', include: 'Included', criterion_not_met: 'Criterion not met' }
+// One reading or decision of a work at the abstract stage, as a pill; a reading that was not stored says so.
+function Verdict({ label }: { label: string | null }) {
+  if (!label) return <span className="step-pill">{t('not stored')}</span>
+  const tone = label === 'candidate' || label === 'include' ? ' is-ok' : label === 'unresolved' ? ' is-warn' : ' is-bad'
+  return <span className={`step-pill${tone}`}>{t(screeningLabels[label] ?? label)}</span>
+}
 const durationText = (seconds: number) => (seconds < 60 ? t('{s} s', { s: seconds }) : t('{m} min {s} s', { m: Math.floor(seconds / 60), s: seconds % 60 }))
 // When the run started: the clock alone for today, with the day for anything older, so the wait between runs is visible.
 function startedText(iso: string) {
@@ -118,7 +131,7 @@ const troubled = (s: Step) => s.status === 'failed' || s.status === 'outcome_unk
 const plural = (n: number, one: string, many: string, vars: Record<string, string | number> = {}) => t(n === 1 ? one : many, { n, ...vars })
 const compact = (n: number) => new Intl.NumberFormat(uiLocale(), { notation: 'compact', maximumFractionDigits: 1 }).format(n)
 const tally = (values: string[]) => { const counts = new Map<string, number>(); values.forEach(v => counts.set(v, (counts.get(v) ?? 0) + 1)); return [...counts] }
-export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, queueCount = 0, onOpenQueue, onOpenPdfs, onOpenFunnel, onEditPlan, onControlRun, onChooseModel, onRewrite, busy = false }: {
+export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, queueCount = 0, onOpenQueue, onOpenPdfs, onOpenFunnel, onEditPlan, onControlRun, onChooseModel, onRewrite, onOpenPassage, onOpenSource, busy = false }: {
   view: ResearchView; emptyText: string; latestAnswer: ReactNode; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
   // Resume run and Cancel run of the notice under a stopped run's steps (R18); Pause stays in the topbar.
@@ -129,8 +142,11 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   // The reading step's "Get more full text" link opens the PDFs panel; the screening step's "N not read" the Search funnel.
   onOpenPdfs?: () => void
   onOpenFunnel?: () => void
+  onOpenSource?: (sourceVersionId: string) => void
   // The current question's plan step: "Edit plan" opens the Search plan panel (S23b).
   onEditPlan?: (opener: HTMLElement) => void
+  // An anchor row of the citation check opens its stored passage with the anchor marked (Source details).
+  onOpenPassage?: (passageId: string, anchor: string | null) => void
   busy?: boolean
   // The way out of a `key_terms_needed` stop: the revision form in the question bubble, on its key-terms field.
   onGiveKeyTerms?: () => void
@@ -169,7 +185,7 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   <div className={`chat${runs.length ? '' : ' is-empty'}`}>
     {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} keepOpen={run.id === latestAnswerRun || run.id === latestDiscovery}
       modelText={modelText} onRetryFailedSearches={onRetryFailedSearches} onGiveKeyTerms={onGiveKeyTerms} onChooseCodeQuery={onChooseCodeQuery}
-      onControlRun={onControlRun} onChooseModel={onChooseModel} onRewrite={onRewrite} onOpenPdfs={onOpenPdfs} onOpenFunnel={onOpenFunnel} onEditPlan={onEditPlan} busy={busy}
+      onControlRun={onControlRun} onChooseModel={onChooseModel} onRewrite={onRewrite} onOpenPdfs={onOpenPdfs} onOpenFunnel={onOpenFunnel} onEditPlan={onEditPlan} onOpenPassage={onOpenPassage} onOpenSource={onOpenSource} busy={busy}
       queueLine={run.id === (latestDiscovery ?? lastReading) && queueCount > 0 && onOpenQueue ? { count: queueCount, open: onOpenQueue } : null}>
       {view.answers[0]?.run_id === run.id ? latestAnswer : null}
     </RunTurn>)}
@@ -180,7 +196,7 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   </>
 }
 
-function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, onControlRun, onChooseModel, onRewrite, onOpenPdfs, onOpenFunnel, onEditPlan, busy, queueLine = null, children }: {
+function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, onControlRun, onChooseModel, onRewrite, onOpenPdfs, onOpenFunnel, onEditPlan, onOpenPassage, onOpenSource, busy, queueLine = null, children }: {
   run: Run; view: ResearchView; now: number; latest: boolean; keepOpen: boolean; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
   onGiveKeyTerms?: () => void
@@ -190,7 +206,9 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   onRewrite?: (question: string, keyTerms: string | null) => Promise<void>
   onOpenPdfs?: () => void
   onOpenFunnel?: () => void
+  onOpenSource?: (sourceVersionId: string) => void
   onEditPlan?: (opener: HTMLElement) => void
+  onOpenPassage?: (passageId: string, anchor: string | null) => void
   busy: boolean
   queueLine?: { count: number; open: () => void } | null; children: ReactNode
 }) {
@@ -199,6 +217,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   // Each phase reads as one line; what it found (plan text, concepts, queries, counts) opens under it on request.
   const [openPhases, setOpenPhases] = useState<Partial<Record<PhaseKey, boolean>>>({})
   const [usageOpen, setUsageOpen] = useState(false)
+  // The panel tables that show every row, not only the first ones.
+  const [allRows, setAllRows] = useState<Record<string, boolean>>({})
   const [ownerReview, setOwnerReview] = useState<{ card: ReviewCard; kind: ReviewTargetKind } | null>(null)
   const reviewLookup = useRef<{
     identity: string
@@ -881,11 +901,21 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       const limits = run.approval?.chaining
       // How the chain picks its seeds and which works it keeps, with the arrival cutoff (fast_chain_v1), as the approval
       // record said it before S9.
-      if (limits) parts.push(<div key="rule">{t('OpenAlex only. While the search runs, OpenAlex is asked for the works that the first {seeds} works of its semantic search cite, and for the works that cite them; when that search gives fewer works, the ranking fills the list. Works you verified are not used as seeds. A new work is kept when a setting or task term stands in its title or abstract and its reply arrives a few seconds before the ranking stage ends; the run says how many seeds it used once the search is done.', { seeds: limits.seeds })}</div>)
-      // Seed PDFs come first (fast_chain.pdf_seeds, D2/D3): each one matched to an OpenAlex work is a seed before the search's.
-      if (limits) parts.push(<div key="seed-pdfs">{t('Seed PDFs matched to an OpenAlex work are used as the first seeds, before the works of the semantic search.')}</div>)
-      if (limits) parts.push(<div key="limits">{t('Up to {backward} reference requests and {forward} citing requests · up to {cap} citing works per request · at most {attempts} attempts with retries', { backward: limits.backward_requests, forward: limits.forward_requests, cap: limits.citing_cap, attempts: limits.attempt_limit })}</div>)
+      // The rule prose folds under one disclosure, so the panel reads as its counts first.
+      if (limits) parts.push(<details key="how" className="step-how"><summary>{t('How the chain chooses and keeps works')}</summary>
+        <p>{t('OpenAlex only. While the search runs, OpenAlex is asked for the works that the first {seeds} works of its semantic search cite, and for the works that cite them; when that search gives fewer works, the ranking fills the list. Works you verified are not used as seeds. A new work is kept when a setting or task term stands in its title or abstract and its reply arrives a few seconds before the ranking stage ends; the run says how many seeds it used once the search is done.', { seeds: limits.seeds })}</p>
+        {/* Seed PDFs come first (fast_chain.pdf_seeds, D2/D3): each one matched to an OpenAlex work is a seed before the search's. */}
+        <p>{t('Seed PDFs matched to an OpenAlex work are used as the first seeds, before the works of the semantic search.')}</p>
+        <p>{t('Up to {backward} reference requests and {forward} citing requests · up to {cap} citing works per request · at most {attempts} attempts with retries', { backward: limits.backward_requests, forward: limits.forward_requests, cap: limits.citing_cap, attempts: limits.attempt_limit })}</p>
+      </details>)
     }
+    const sourceTitle = (svid: string, title: string) => onOpenSource
+      ? <button type="button" className="step-table-link" title={title} onClick={() => onOpenSource(svid)}>{title}</button>
+      : <span className="step-table-link" title={title}>{title}</span>
+    const shown = <T,>(table: string, rows: T[], first = SHOWN_ROWS) => allRows[`${run.id}:${table}`] ? rows : rows.slice(0, first)
+    const more = (table: string, total: number, first = SHOWN_ROWS) => total > first && !allRows[`${run.id}:${table}`]
+      ? <p key={`${table}-more`} className="step-table-more"><button type="button" className="step-link" onClick={() => setAllRows(o => ({ ...o, [`${run.id}:${table}`]: true }))}>{t('Show {n} more', { n: total - first })}</button></p>
+      : null
     if (key === 'screen' && run.kind === 'discovery') {
       if (readTwice) parts.push(<div key="twice">{t('Each batch is read twice by the literature model. An abstract alone never includes a work.')}</div>)
       if (funnel) {
@@ -893,6 +923,23 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         const notReadText = notScreened === null ? '' : t('{n} not read', { n: notScreened.toLocaleString(uiLocale()) })
         parts.push(row(top, notScreened && onOpenFunnel ? <button type="button" className="step-link" onClick={onOpenFunnel}>{notReadText}</button> : notReadText, 'top'))
         parts.push(row(t('Passed the abstract stage'), funnel.candidates.toLocaleString(uiLocale()), 'passed'))
+      }
+      // The two readings per work as stored (model_proposals), and the decision that followed; only the works whose two
+      // readings did not agree are listed.
+      const passes = run.screening_passes
+      if (passes?.read) {
+        // This run's readings, not the revision's funnel above: a later run on the same revision reads other works.
+        parts.push(row(t('Both readings agreed in this run'), t('{agreed} of {read}', { agreed: passes.agreed, read: passes.read }), 'agreed'))
+        if (passes.rows.length) parts.push(<div key="passes" className="step-table-wrap">
+          <table className="step-table"><caption className="sr-only">{t('Abstract readings that did not agree')}</caption>
+            <thead><tr><th scope="col">{t('Readings that did not agree')}</th><th scope="col">{t('1st → 2nd = decision')}</th></tr></thead>
+            <tbody>{shown('passes', passes.rows).map(p => <tr key={p.source_version_id}>
+              <td>{sourceTitle(p.source_version_id, p.title)}</td>
+              <td className="step-verdicts"><Verdict label={p.first} /><span aria-hidden>→</span><Verdict label={p.second} /><span aria-hidden>=</span><Verdict label={p.final} /></td>
+            </tr>)}</tbody>
+          </table>
+          {more('passes', passes.rows.length)}
+        </div>)
       }
     }
     // The works awaiting a person, named once on the run that read them: under its screening, or under its reading when
@@ -903,6 +950,23 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       const { done, notRead } = readingWorks(group)
       parts.push(row(t('Full text read (selected pages)'), done, 'read'))
       if (notRead) parts.push(row(t('Not read: a call failed or its outcome is unknown'), notRead, 'not-read'))
+    }
+    // Why the works that passed the abstract stage were not read in full text, each from its stored record.
+    const gaps = run.fulltext_gaps
+    if (key === 'pdf' && run.kind === 'discovery' && gaps && gaps.not_read > 0) {
+      const reasons = GAP_REASONS.filter(r => gaps.reasons[r] > 0)
+      parts.push(<div key="gaps" className="step-gaps">
+        <div className="step-gaps-head">{t('{n} of {passed} works that passed the abstract stage were not read in full text', { n: gaps.not_read, passed: gaps.passed })}</div>
+        <div className="step-bar" aria-hidden>{reasons.map(r => <i key={r} className={`gap-${r}`} style={{ width: `${(100 * gaps.reasons[r]) / gaps.not_read}%` }} />)}</div>
+        <ul className="step-legend">{reasons.map(r => <li key={r}><i className={`gap-${r}`} aria-hidden />{t(gapReasonLabels[r])} <b>{gaps.reasons[r]}</b></li>)}</ul>
+      </div>)
+      shown('gaps', gaps.rows, 3).forEach(g => parts.push(row(sourceTitle(g.source_version_id, g.title), g.http_status ? `${t(gapReasonLabels[g.reason])} · ${g.http_status}` : t(gapReasonLabels[g.reason]), `gap-${g.source_version_id}`)))
+      const gapMore = more('gaps', gaps.rows.length, 3)
+      if (gapMore) parts.push(gapMore)
+      if (onOpenPdfs || onOpenFunnel) parts.push(<div key="gap-actions" className="step-actions">
+        {onOpenPdfs && <Button size="sm" onClick={onOpenPdfs}><Upload size={13} aria-hidden />{t('Add PDFs')}</Button>}
+        {onOpenFunnel && <Button size="sm" variant="outline" onClick={onOpenFunnel}><List size={13} aria-hidden />{t('Open the funnel')}</Button>}
+      </div>)
     }
     if (key === 'pdf' && run.kind === 'discovery') {
       if (fiveCounts) parts.push(row(t('Passed the abstract stage, full text not tried'), <>{fiveCounts.not_read_not_tried}{onOpenPdfs && fiveCounts.not_read_not_tried > 0 && <> · <button type="button" className="step-link" onClick={onOpenPdfs}>{t('Get more full text')}</button></>}</>, 'not-tried'))
@@ -920,6 +984,26 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       const review = answer.review
       parts.push(row(review?.model?.resolved_model ? t('Claim review by {model}', { model: review.model.resolved_model }) : t('Claim review'),
         !review ? t('Not recorded for this answer') : review.status !== 'completed' ? t('No usable review') : tally(review.reviews.map(r => r.verdict)).map(([verdict, n]) => `${n} ${t(verdictLabels[verdict as Verdict])}`).join(' · '), 'review'))
+    }
+    // Where each anchor was found and how (evidence_links.anchor_match): exact after whitespace collapse, normalized after
+    // case and punctuation folding, fuzzy at a ratio of 0.9 or more. Shown whether or not a reviewer model also ran.
+    if (key === 'review' && run.kind === 'answer' && answer?.status === 'structurally_valid') {
+      const anchors = answer.claims.flatMap(c => c.evidence.map((e, i) => ({ key: `${c.id}:${i}`, claim: c.label, e })))
+      if (anchors.length) parts.push(<div key="anchor-table" className="step-table-wrap">
+        <table className="step-table"><caption className="sr-only">{t('Located anchors')}</caption>
+          <thead><tr><th scope="col">{t('Claim and where its anchor was found')}</th><th scope="col">{t('Match')}</th></tr></thead>
+          <tbody>{shown('anchors', anchors).map(({ key: k, claim, e }) => {
+            const where = `${e.kind === 'abstract' ? t('abstract') : t('p. {page}', { page: e.printed_label ?? e.physical_page ?? '?' })} · ${e.title}`
+            return <tr key={k}>
+              <td><span className="step-table-cite"><code>{claim}</code>{onOpenPassage
+                ? <button type="button" className="step-table-link" title={e.title} onClick={() => onOpenPassage(e.passage_id, e.anchor_text)}>{where}</button>
+                : <span className="step-table-link" title={e.title}>{where}</span>}</span></td>
+              <td>{e.anchor_match ? <span className="step-pill is-ok">{t(anchorMatchLabels[e.anchor_match])}</span> : <span className="step-pill">{t('match not recorded')}</span>}</td>
+            </tr>
+          })}</tbody>
+        </table>
+        {more('anchors', anchors.length)}
+      </div>)
     }
     if (note) parts.push(<div key="note" className="chat-step-note">{note}</div>)
     if (seconds !== null && state !== 'running') parts.push(row(t('Time taken'), durationText(seconds), 'time'))
@@ -973,6 +1057,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
           const Icon = phaseIcons[key]
           // A search that did not complete belongs to the search line itself, in the attention colour, not to a paragraph after the run (D18).
           const missed = key === 'search' ? failedProviders : []
+          // No work read in full text although some passed the abstract stage: the answer can lean on abstracts only.
+          const noFullText = key === 'pdf' && run.kind === 'discovery' && !active && !!run.fulltext_gaps && run.fulltext_gaps.read_any === 0 && run.fulltext_gaps.passed > 0
           return <li key={key} className={`chat-step step is-${state}${detailsOpen ? ' open' : ''}${state === 'attention' ? ' att' : ''}`}>
             <button type="button" className="chat-step-line" disabled={!details} aria-expanded={details ? detailsOpen : undefined}
               onClick={() => setOpenPhases(phases => ({ ...phases, [key]: !detailsOpen }))}>
@@ -986,6 +1072,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
                   return serviceErrorSentence({ kind: serviceKind(failure?.error?.service_kind ?? failure?.error?.error_kind ?? failure?.status, failure?.error?.http_status),
                     service: name, resetAt: failure?.error?.reset_at, effect: run.status === 'completed' ? 'continued' : undefined })
                 }).join(' ')}</em></>}</span>
+              {noFullText && <span className="step-flag"><TriangleAlert size={11} aria-hidden />{t('No full text')}</span>}
             </button>
             {detailsOpen && <div className="chat-step-detail step-detail">{details}</div>}
           </li>

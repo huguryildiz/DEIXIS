@@ -224,6 +224,23 @@ export type Run = {
   // Where the person's confirmed works stood in this discovery run's keyword ranking, descriptively (slice 19); null
   // for another run kind, or a run that ranked nothing.
   signals?: SignalTable | null
+  // A discovery run's two abstract readings per work (model_proposals, run_no 1/2) and the stored decision; rows are
+  // only the works whose two readings did not agree. null for other run kinds.
+  screening_passes?: ScreeningPasses | null
+  // The works that passed the abstract stage but were not read in full text in this fast-path discovery run, each
+  // with the reason its stored records give ('unknown' when none does). null for other runs.
+  fulltext_gaps?: FulltextGaps | null
+}
+export type ScreeningLabel = 'candidate' | 'out_of_scope' | 'unresolved'
+export type ScreeningPasses = {
+  read: number; agreed: number; disagreed: number; unresolved: number
+  rows: { source_version_id: string; work_id: string | null; title: string; first: ScreeningLabel | null; second: ScreeningLabel | null; final: string | null; reason_code: string | null }[]
+}
+export type FulltextGapReason = 'no_open_pdf' | 'fetch_failed' | 'outside_read_limit' | 'not_reached_before_cutoff' | 'deferred' | 'reading_failed' | 'identity_unconfirmed' | 'unknown'
+export type FulltextGaps = {
+  passed: number; read: number; read_any: number; not_read: number
+  reasons: Record<FulltextGapReason, number>
+  rows: { source_version_id: string; work_id: string | null; title: string; reason: FulltextGapReason; http_status: number | null }[]
 }
 export type SourceCounts = {
   counted: boolean
@@ -512,6 +529,9 @@ export type Evidence = {
   // work_id: the work the cited version belongs to, kept for a source since removed from the research (it is not in `sources`).
   passage_id: string; source_version_id: string; work_id: string; source_key: string | null; kind: 'abstract' | 'pdf_page' | 'section'; physical_page: number | null
   printed_label: string | null; reading_depth: string; title: string; version_label: string | null; anchor_text: string | null
+  // How the anchor was located in its passage (contracts.locate_anchor): exact after whitespace collapse, normalized
+  // after case and punctuation folding, fuzzy at a ratio of 0.9 or more.
+  anchor_match?: 'exact' | 'normalized' | 'fuzzy' | null
   evidence_status: EvidenceStatus
   // null for abstracts; 'ocr' text was not checked against the page (D51); 'latex_source' holds the authors' LaTeX of
   // numbered display equations matched to the page by their numbers, from the arXiv source of this version (D104).

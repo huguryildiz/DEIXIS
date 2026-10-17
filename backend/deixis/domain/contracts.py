@@ -1109,10 +1109,9 @@ MATH = re.compile(r"\$\$.+?\$\$|\$[^$\n]+\$", re.DOTALL)
 # (D61). A regex escape such as \bword or a Windows path also matches; neither occurred in the measured outputs.
 LATEX_OUTSIDE_MATH = re.compile(r"\\(?:[A-Za-z]{2,}|[_^{}(\[])|[_^]\{")
 
-# Shared by section validation and final assembly; physical band/energy gaps are exempt. A field name such as
-# gap_candidates or gap_refs is caught too (D87): `\b` alone sees no word end before the underscore.
+# Shared by section validation and final assembly; physical band/energy gaps are exempt.
 REPORT_BANNED = re.compile(
-    r"\b(?:gaps?(?:_\w+)?|open problems?|open questions?"
+    r"\b(?:gaps?|open problems?|open questions?"
     r"|novel|novelty|first-ever|the first (?:study|work|paper|survey|review|attempt|to|time)"
     r"|first of its kind|for the first time|araştırma boşluğ\w*"
     r"|boşluk|boşluğ\w*|açık problem\w*|açık soru\w*|özgün\w*|yenilik\w*"
@@ -2283,28 +2282,41 @@ def report_section_repair_issues(failed: Any, repaired: Any, restore: bool = Fal
             issues.append(Issue("repair_dropped_claim", "/claims", key + (
                 "\nKeep this claim or record it in insufficient_evidence: " + json.dumps(dropped, ensure_ascii=False)
                 if restore else "")))
-    # Old entries are matched one-to-one to repaired ones (each repaired entry kept once). An entry is kept unchanged,
-    # except that its reason may be reworded under the same context to a non-empty reason without a banned word when
-    # the old reason holds a banned word, or when the failed draft was over its word budget and the new reason is
-    # shorter: the validator rejects the old text, so an exact-reason rule could never pass (D87).
+    # Old entries are matched one-to-one to repaired ones (each repaired entry keeps at most one). A repaired entry keeps
+    # an old one with the same context and the same reason; or with a non-empty reason without a banned word when the
+    # old reason holds a banned word, or when the failed draft was over its word budget and the new reason is shorter:
+    # the validator rejects the old text, so an exact-reason rule could never pass (D87).
     over_budget = max_words is not None and report_section_words(failed) > max_words
-    unused = list(new_entries)
-    dropped_entries = []
-    for entry in old_entries:
-        match = next((r for r in unused if r.get("context") == entry["context"] and r.get("reason") == entry["reason"]),
-                     None)
-        if match is None:
-            dropped_entries.append(entry)
-        else:
-            unused.remove(match)
-    for entry in dropped_entries:
-        banned = bool(report_banned_words(entry["reason"]))
-        match = None if not (banned or over_budget) else next((
-            r for r in unused if r.get("context") == entry["context"] and isinstance(r.get("reason"), str)
-            and r["reason"].strip() and not report_banned_words(r["reason"])
-            and (banned or len(r["reason"].split()) < len(entry["reason"].split()))), None)
-        if match is not None:
-            unused.remove(match)
+
+    def keeps(old: dict[str, Any], new: dict[str, Any]) -> bool:
+        if new.get("context") != old["context"]:
+            return False
+        if new.get("reason") == old["reason"]:
+            return True
+        reason = new.get("reason")
+        if not isinstance(reason, str) or not reason.strip() or report_banned_words(reason):
+            return False
+        return bool(report_banned_words(old["reason"])) or (
+            over_budget and len(reason.split()) < len(old["reason"].split()))
+
+    # A maximum one-to-one matching (augmenting paths), so the result does not depend on the order of the entries.
+    edges = [[j for j, new in enumerate(new_entries) if keeps(old, new)] for old in old_entries]
+    owner: dict[int, int] = {}
+
+    def assign(i: int, seen: set[int]) -> bool:
+        for j in edges[i]:
+            if j not in seen:
+                seen.add(j)
+                if j not in owner or assign(owner[j], seen):
+                    owner[j] = i
+                    return True
+        return False
+
+    for i in range(len(old_entries)):
+        assign(i, set())
+    matched = set(owner.values())
+    for i, entry in enumerate(old_entries):
+        if i in matched:
             continue
         issues.append(Issue("repair_dropped_insufficient_evidence", "/insufficient_evidence", entry["context"] + (
             "\nRestore this entry exactly (reword its reason only to remove a banned word, or shorten it when the"

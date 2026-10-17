@@ -337,7 +337,7 @@ def test_d87_full_repair_guidance_allows_rewording_only_a_banned_reason():
     assert "Keep every insufficient_evidence entry of the failed output unchanged" not in guidance
     assert "context unchanged" in guidance and "reason exactly" in guidance
     # Sol round 2: a banned word is reworded even when no issue reports it; an over-budget section may shorten.
-    assert "whether or not an issue reports it" in guidance and "gap_candidates" in guidance
+    assert "whether or not an issue reports it" in guidance and "gap_candidates" not in guidance
     assert "over its word budget" in guidance and "shorten a reason" in guidance
 
 
@@ -363,8 +363,22 @@ def test_d87_a_reason_may_be_shortened_when_the_failed_draft_was_over_its_word_b
                                            "insufficient_evidence": None}) == 2
 
 
-def test_d87_gap_field_names_are_banned_words_and_band_gaps_stay_exempt():
-    words = contracts.report_banned_words
-    assert words("No gap_candidates were supplied.") == ["gap_candidates"]
-    assert words("gap_refs and gaps_list name gap_ids.") == ["gap_refs", "gaps_list", "gap_ids"]
-    assert words("The band gap is 1.1 eV; the gapless phase differs.") == []
+def test_d87_matching_is_order_independent():
+    """Sol round 3: one context, old reasons of 10 and 6 words, repaired reasons of 5 and 9, budget 15. Only
+    5 -> 10 and 5 -> 6 or 9 -> 10 are shorter; a maximum matching keeps both old entries in every order."""
+    check = contracts.report_section_repair_issues
+    entry = lambda n: {"context": "SYNTHETIC same", "reason": " ".join(["SYNTHETIC"] + ["w"] * (n - 1))}
+    old, new = [entry(10), entry(6)], [entry(5), entry(9)]
+    assert contracts.report_section_words({"insufficient_evidence": old}) == 16
+    for old_order in (old, old[::-1]):
+        for new_order in (new, new[::-1]):
+            assert check({"insufficient_evidence": old_order}, {"insufficient_evidence": new_order}, max_words=15) == []
+    # Within budget nothing may be reworded, in any order.
+    for new_order in (new, new[::-1]):
+        assert len(check({"insufficient_evidence": old}, {"insufficient_evidence": new_order}, max_words=16)) == 2
+    # An exact copy and a banned-word rewording also combine in any order.
+    a = {"context": "SYNTHETIC same", "reason": "SYNTHETIC: no candidate was supplied."}
+    g = {"context": "SYNTHETIC same", "reason": "SYNTHETIC: no gap was supplied."}
+    for old_order in ([a, g], [g, a]):
+        assert check({"insufficient_evidence": old_order}, {"insufficient_evidence": [a, a]}) == []
+        assert len(check({"insufficient_evidence": old_order}, {"insufficient_evidence": [a]})) == 1

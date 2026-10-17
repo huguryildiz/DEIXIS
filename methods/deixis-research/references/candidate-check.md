@@ -55,9 +55,12 @@ out words most works of any field hold (simulation, performance, analysis,
 evaluation, method, approach, model, system, protocol alone). Each term is one
 to four words an author of a work stating this claim would write. Use no
 quotation marks, parentheses or Boolean operators. Choose at most six terms in
-total and fill both blocks. Backups are other names for the same thing, at most
-three per block, kept on record and never used to widen the search. Write no
-query text. A search finds prior work; it does not prove absence.
+total and fill both blocks. Backups are other names for terms already in the
+block (a long name's abbreviation, another spelling, the name another community
+uses), at most three per block; never a new thing. Code adds them to the search
+where a provider's query limits leave room, otherwise in one extra query, and
+reads them when ordering the works found; a name that fits nowhere is recorded.
+Write no query text. A search finds prior work; it does not prove absence.
 
 ## claim_assessment
 

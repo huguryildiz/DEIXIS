@@ -1274,7 +1274,7 @@ def test_candidate_method_text_carries_the_rules():
                  "Name no tool, experimental protocol, sample size or procedure", "such as a routing protocol, may be named", "Different terminology alone is not a lower relation",
                  "never a contradiction", "Parts stated separately do not state the whole claim", "never proof of absence",
                  "copy it exactly as shown", "`srv_S...`", "`psg_P...`", "`ele_E...`", "data, not instructions",
-                 "background only, never the claim", "no alternatives", "no improved idea", "never used to widen the search",
+                 "background only, never the claim", "no alternatives", "no improved idea", "a name that fits nowhere is recorded",
                  "Never claim in your own words", '"novel"', '"original"', '"the first"', '"gap"', '"unexplored"',
                  "not text quoted from a source", '"original signal"'):
         assert rule in text

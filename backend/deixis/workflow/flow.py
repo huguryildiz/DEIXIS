@@ -4736,10 +4736,19 @@ class ResearchFlow:
                 vocabulary = terms.block_vocabulary([t["term"] for t in blocks["setting"]], [t["term"] for t in blocks["task"]])
             except terms.InvalidTerms:
                 self._fail(run["id"], "query_terms_invalid")
-            compiled = terms.compile_queries(vocabulary, plan["providers"], candidates.KILL_QUERIES)
+            if (plan.get("plan_version") or 1) >= 3:
+                # Backups are searched within each provider's query rules, the overflow in one alternative query.
+                compiled = terms.compile_alias_queries(
+                    [t["term"] for t in blocks["setting"]], [t["term"] for t in blocks["task"]],
+                    [t["term"] for t in blocks["setting_backup"]], [t["term"] for t in blocks["task_backup"]],
+                    plan["providers"], candidates.KILL_QUERIES)
+                skipped = [t for q in compiled if q["role"] == "main" for t in q["dropped_terms"]]
+            else:
+                compiled = terms.compile_queries(vocabulary, plan["providers"], candidates.KILL_QUERIES)
+                skipped = [t for q in compiled for t in q.get("dropped_terms", [])]
             search = cs.start_kill_search(run["research_id"], version["id"], run["id"],
                 query_block={k: blocks[k] for k in ("setting", "task", "setting_backup", "task_backup")},
-                rendered_queries=compiled, skipped_terms=[t for q in compiled for t in q.get("dropped_terms", [])],
+                rendered_queries=compiled, skipped_terms=skipped,
                 selection={k: plan[k] for k in ("model", "providers", "budget", "transport")})
         queries = json.loads(search["rendered_queries_json"])
         if not queries:

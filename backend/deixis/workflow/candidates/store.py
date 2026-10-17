@@ -15,7 +15,7 @@ from typing import Any
 from deixis.domain.contracts import GAP_KINDS
 from deixis.domain.rules import RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, rollback_savepoint, transaction
-from deixis.workflow.candidates.hits import merge_and_cut, rank_and_cut
+from deixis.workflow.candidates.hits import merge_and_cut, rank_and_cut, rank_concepts_and_cut
 from deixis.workflow.candidates.status import STATUSES, SUPPORT_RELATIONS, derive_status
 from deixis.workflow.store import ACTIVE_RUN_STATUSES, NotFound, Store
 
@@ -425,16 +425,20 @@ class CandidateStore:
         """The merge this search's plan version makes from its persisted query records.
 
         Plan version 1 (and a run without one) is the provider round-robin. Plan version 2 ranks the merged works
-        locally against the claim version and the chosen terms before the cut; the stored titles and abstracts are
+        locally against the claim version and the chosen terms before the cut; version 3 counts concepts and reads
+        the backups too (`rank_concepts_and_cut`); the stored titles and abstracts are
         read today, so a stored plan step stays the authority once it exists.
         """
         search = self.kill_search(kill_search_id)
         per_query = self.query_records(kill_search_id)
-        if ((self.store.run(search["run_id"])["target"] or {}).get("plan_version") or 1) < 2:
+        plan_version = (self.store.run(search["run_id"])["target"] or {}).get("plan_version") or 1
+        if plan_version < 2:
             return merge_and_cut(per_query, keep=keep)
         version = self.version(search["candidate_version_id"])
         block = json.loads(search["query_block_json"])
-        chosen = {name: [t["term"] if isinstance(t, dict) else t for t in block.get(name, [])] for name in ("setting", "task")}
+        # Plan version 3 also reads the backups, as further names of their block's concepts.
+        names = ("setting", "task", "setting_backup", "task_backup") if plan_version >= 3 else ("setting", "task")
+        chosen = {name: [t["term"] if isinstance(t, dict) else t for t in block.get(name, [])] for name in names}
         text = " ".join([version["claim_statement"], *json.loads(version["conditions_json"]),
                          *(e["text"] for e in version["elements"])])
         svids = sorted({r["source_version_id"] for records in per_query for r in records})
@@ -446,7 +450,8 @@ class CandidateStore:
                     " AND p.kind = 'abstract') AS abstract FROM source_versions v"
                     f" WHERE v.id IN ({','.join('?' * len(chunk))})", chunk):
                 documents[row["id"]] = {"title": row["title"], "abstract": row["abstract"]}
-        return rank_and_cut(per_query, documents, {"text": text, **chosen}, keep=keep)
+        cut = rank_concepts_and_cut if plan_version >= 3 else rank_and_cut
+        return cut(per_query, documents, {"text": text, **chosen}, keep=keep)
 
     def record_query(self, kill_search_id, *, position, provider, query_text, status, records,
                      error_code=None, raw_payload_path=None, payload_sha256=None, step_id=None) -> list[dict]:

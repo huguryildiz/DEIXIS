@@ -13,7 +13,7 @@ from deixis.domain.rules import MAX_RATE_LIMIT_MODEL_RETRIES, MAX_TRANSIENT_NETW
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES
 from deixis.providers.registry import CONNECTORS, reading, search_providers
 from deixis.storage.db import transaction
-from deixis.workflow.candidates.hits import RANK_VERSION
+from deixis.workflow.candidates.hits import CONCEPT_RANK_VERSION
 from deixis.workflow.candidates.store import CandidateStore, InvalidCandidateInput
 from deixis.workflow.store import NotFound, Store
 
@@ -25,7 +25,11 @@ BASIS_TEXT_CHARS = 1_500
 ABSTRACT_CHARS = 2_500
 PAGE_PASSAGES = 6
 PAGE_TEXT_CHARS = 4_000
-PLAN_VERSION = 2  # 2: one window per provider (its single-request maximum) and a ranked cut (hits.rank_and_cut)
+# 2: one window per provider (its single-request maximum) and a ranked cut (hits.rank_and_cut). 3: backups are
+# searched (at most one alternative query per provider, charged in the transport plan) and the cut counts concepts
+# (hits.rank_concepts_and_cut).
+PLAN_VERSION = 3
+QUERIES_PER_PROVIDER = 2  # plan version 3: the main query and at most one alternative of other names
 
 
 class CandidateRunInput(InvalidCandidateInput):
@@ -57,13 +61,16 @@ def decompose_budget() -> dict:
     return {"max_model_calls": attempts("claim_decomposition"), "max_provider_requests": 0}
 
 
-def transport_plan(providers: list[str]) -> dict:
+def transport_plan(providers: list[str], queries_per_provider: int = 1) -> dict:
+    """Each provider's whole possible HTTP cost per logical query, and the run's ceiling. A plan allowing more than
+    one query per provider names that count on each row and charges it in the ceiling."""
     rows = [{"provider": pid, "requests_per_search": CONNECTORS[pid].requests_per_search,
              "rate_limit_retries": MAX_RATE_LIMIT_RETRIES,
              "transient_attempts": 1 + MAX_TRANSIENT_NETWORK_RETRIES,
              "per_query": CONNECTORS[pid].requests_per_search * (1 + MAX_RATE_LIMIT_RETRIES)
-             * (1 + MAX_TRANSIENT_NETWORK_RETRIES)} for pid in providers]
-    return {"providers": rows, "max_provider_requests": sum(r["per_query"] for r in rows)}
+             * (1 + MAX_TRANSIENT_NETWORK_RETRIES)}
+            | ({"queries": queries_per_provider} if queries_per_provider != 1 else {}) for pid in providers]
+    return {"providers": rows, "max_provider_requests": sum(r["per_query"] * queries_per_provider for r in rows)}
 
 
 def record_window(provider: str) -> int:
@@ -216,7 +223,7 @@ class KillSearchPlanner:
             providers = eligible_providers(scope)
             if not providers:
                 raise CandidateRunInput("no_searchable_provider")
-            transport = transport_plan(providers)
+            transport = transport_plan(providers, QUERIES_PER_PROVIDER)
             windows = {pid: record_window(pid) for pid in providers}
             budget = {"max_model_calls": attempts("kill_search_query") + KILL_KEEP * attempts("claim_assessment"),
                       "max_provider_requests": transport["max_provider_requests"],
@@ -226,8 +233,8 @@ class KillSearchPlanner:
                     "scope_revision": revision, "providers": providers,
                     "model": {t: list(step_model(scope, t)) for t in ("kill_search_query", "claim_assessment")},
                     "budget": budget, "transport": transport,
-                    "limits": {"queries": KILL_QUERIES, "records": max(windows.values()), "records_by_provider": windows,
-                               "rank": RANK_VERSION, "keep": KILL_KEEP,
+                    "limits": {"queries": KILL_QUERIES * QUERIES_PER_PROVIDER, "records": max(windows.values()),
+                               "records_by_provider": windows, "rank": CONCEPT_RANK_VERSION, "keep": KILL_KEEP,
                                "max_message_chars": MAX_MESSAGE_CHARS, "basis_items": BASIS_ITEMS,
                                "basis_text_chars": BASIS_TEXT_CHARS, "abstract_chars": ABSTRACT_CHARS,
                                "page_passages": PAGE_PASSAGES, "page_text_chars": PAGE_TEXT_CHARS},

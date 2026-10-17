@@ -357,6 +357,7 @@ def test_terminal_failed_search_resume_carries_exact_persisted_code(lib, monkeyp
     package = lib.flow.deps.package
     if failure_code == "no_query_compiled":
         monkeypatch.setattr(terms, "compile_queries", lambda *args: [])
+        monkeypatch.setattr(terms, "compile_alias_queries", lambda *args: [])  # plan version 3
     elif failure_code == "candidate_evidence_unlocated":
         lib.adapter.responder = lambda si: supported(si) if si["task_type"] == "claim_assessment" else valid_response(si)
         monkeypatch.setattr(contracts, "claim_assessment_evidence", lambda *args: None)

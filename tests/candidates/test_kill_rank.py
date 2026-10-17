@@ -80,9 +80,10 @@ def test_window_is_each_providers_single_request_maximum_and_transport_is_unchan
         endpoint = connector.sw_query.get("endpoint")
         assert planning.record_window(pid) == (connector.endpoints[endpoint].max_results if endpoint else connector.max_results)
     plan = lib.planner.preview(lib.rid, queue_kill(lib)["target"]["candidate_id"])
-    assert plan["plan_version"] == planning.PLAN_VERSION == 2
+    assert plan["plan_version"] == planning.PLAN_VERSION == 3
     assert plan["limits"]["records_by_provider"] == {pid: expected[pid] for pid in plan["providers"]}
-    assert plan["transport"] == planning.transport_plan(plan["providers"])
+    # Plan version 3 charges one alternative query per provider (test_kill_rank_concepts); the per-query cost is unchanged.
+    assert plan["transport"] == planning.transport_plan(plan["providers"], 2)
 
 
 def test_flow_sends_one_request_per_provider_with_its_window_and_keeps_a_rank_18_target(lib):

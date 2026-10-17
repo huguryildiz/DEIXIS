@@ -5,15 +5,17 @@ the requests or answers the way the mocks do.
 """
 
 import asyncio
+import hashlib
 import json
 
 import httpx
+from jsonschema import Draft202012Validator
 import pytest
 
 from deixis.domain import contracts
 from deixis.models import anthropic_api
 from deixis.models.adapter import is_rate_limited
-from deixis.models.schema_subset import UNSUPPORTED_KEYS, portable_schema
+from deixis.models.schema_subset import ANTHROPIC_TRANSFORM_VERSION, UNSUPPORTED_KEYS, anthropic_schema, schema_digest
 
 
 def adapter(handler, **kwargs):
@@ -114,21 +116,20 @@ def test_run_step_sends_the_schema_as_output_format_no_tools_and_the_effort(monk
     assert body["stream"] is True and body["max_tokens"] == 64000
     assert body["model"] == "claude-opus-5-5" and body["system"] == "BASE\n\nDEV"
     assert body["messages"] == [{"role": "user", "content": "MSG"}]
-    assert body["output_config"] == {"format": {"type": "json_schema", "schema": portable_schema(schema)}, "effort": "high"}
+    assert body["output_config"] == {"format": {"type": "json_schema", "schema": anthropic_schema(schema)}, "effort": "high"}
     # No tools, no tool choice, no server-side fallback model, no thinking override.
     assert not {"tools", "tool_choice", "fallbacks", "thinking"} & body.keys()
 
 
-def test_the_sent_schema_has_no_keyword_the_api_rejects_and_keeps_names_and_patterns():
+def test_the_sent_schema_has_no_keyword_the_api_rejects_and_keeps_names_and_patterns_as_descriptions():
     for key, schema in contracts.model_transport_schemas().items():
-        text = json.dumps(portable_schema(schema))
-        sent = portable_schema(schema)
+        sent = anthropic_schema(schema)
 
         def walk(node, in_names=False):
             if isinstance(node, dict):
                 for k, v in node.items():
                     if not in_names:
-                        assert k not in UNSUPPORTED_KEYS, f"{key}: {k}"
+                        assert k not in UNSUPPORTED_KEYS | {"pattern"}, f"{key}: {k}"
                         if k == "minItems":
                             assert v <= 1, key
                     walk(v, in_names=k in ("properties", "$defs") and not in_names)
@@ -137,10 +138,91 @@ def test_the_sent_schema_has_no_keyword_the_api_rejects_and_keeps_names_and_patt
                     walk(v)
 
         walk(sent)
-        assert text.count('"pattern"') == json.dumps(schema).count('"pattern"'), key
+        # Every pattern of the step schema is still in front of the model, as a sentence of the field's description.
+        for pattern in set(_patterns(schema)):
+            sentence = json.dumps(f"Must match the regular expression {pattern}", ensure_ascii=False)[1:-1]
+            assert sentence in json.dumps(sent, ensure_ascii=False), (key, pattern)
     named = {"type": "object", "properties": {"maxLength": {"type": "string", "maxLength": 3}}, "required": ["maxLength"],
              "additionalProperties": False}
-    assert portable_schema(named)["properties"] == {"maxLength": {"type": "string"}}
+    assert anthropic_schema(named)["properties"] == {"maxLength": {"type": "string"}}
+
+
+def _patterns(node):
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if k == "pattern" and isinstance(v, str):
+                yield v
+            elif k not in ("enum", "const", "required", "default"):
+                yield from _patterns(v)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _patterns(v)
+
+
+def test_a_nullable_field_the_answer_left_out_comes_back_as_null(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    schema = {"type": "object", "additionalProperties": False, "required": ["a", "b"], "properties": {
+        "a": {"type": "string"}, "b": {"anyOf": [{"type": "string"}, {"type": "null"}]}}}
+    sent = []
+    result = asyncio.run(adapter(lambda r: sent.append(json.loads(r.content)) or answer(text='{"a": "x"}')).run_step(
+        "b", "d", "m", schema, "claude-opus-5-5"))
+    assert sent[0]["output_config"]["format"]["schema"]["required"] == ["a"]
+    assert (result.status, json.loads(result.raw_text)) == ("completed", {"a": "x", "b": None})
+    # Nothing left out: the text is passed on exactly as it came.
+    result = asyncio.run(adapter(lambda r: answer(text='{"a": "x",  "b": "y"}')).run_step("b", "d", "m", schema, "claude-opus-5-5"))
+    assert result.raw_text == '{"a": "x",  "b": "y"}'
+
+
+NULLABLE = {"type": "object", "additionalProperties": False, "required": ["a", "b"], "properties": {
+    "a": {}, "b": {"anyOf": [{"type": "string"}, {"type": "null"}]}}}
+
+
+@pytest.mark.parametrize("text", ['{"a": 1' + "0" * 5000 + "}", '{"a": ' + "[" * 200000 + "]" * 200000 + "}"])
+def test_an_answer_past_the_decoder_limits_is_passed_on_unchanged(monkeypatch, text):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    result = asyncio.run(adapter(lambda r: answer(text=text)).run_step("b", "d", "m", NULLABLE, "claude-opus-5-5"))
+    assert (result.status, result.raw_text) == ("completed", text)
+    assert "filled_nulls" not in result.transport
+
+
+def test_a_filled_answer_is_written_back_in_ascii_so_a_lone_surrogate_stays_storable(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    text = '{"a": "\\ud800 caf\u00e9"}'
+    result = asyncio.run(adapter(lambda r: answer(text=text)).run_step("b", "d", "m", NULLABLE, "claude-opus-5-5"))
+    assert result.status == "completed" and result.raw_text.isascii()
+    result.raw_text.encode("utf-8")  # no lone surrogate reaches storage
+    assert json.loads(result.raw_text) == {"a": "\ud800 caf\u00e9", "b": None}
+    assert result.transport["filled_nulls"] == ["/b"]
+    assert result.transport["received_sha256"] == "sha256:" + hashlib.sha256(text.encode()).hexdigest()
+
+
+def test_the_result_names_the_sent_schema_by_digest_and_transform_version(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    sent = []
+    schema = contracts.model_output_schema("table_columns")
+    result = asyncio.run(adapter(lambda r: sent.append(json.loads(r.content)) or answer()).run_step(
+        "b", "d", "m", schema, "claude-opus-5-5"))
+    body_schema = sent[0]["output_config"]["format"]["schema"]
+    assert result.transport == {"schema_transform": ANTHROPIC_TRANSFORM_VERSION, "sent_schema_sha256": schema_digest(body_schema)}
+    assert body_schema == anthropic_schema(schema)
+
+
+@pytest.mark.parametrize("value", [{"text": "SYNTHETIC answer text"}, {"answer": "no"}, {"option_ids": ["o1"]},
+                                   {"number": 3}, {"number": 3, "unit": "dB"}, {"number": 3, "as_stated": "3 dB"}, None])
+def test_each_cell_extraction_value_shape_comes_back_valid_for_the_full_schema(monkeypatch, value):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    schema = contracts.model_output_schema("cell_extraction")
+    cell = {"column_id": "col_SYNTHETIC1", "state": "value" if value else "unknown", "note": "SYNTHETIC note",
+            "evidence": [{"passage_id": "psg_SYNTHETIC1", "quote": "SYNTHETIC quoted passage text"}]}
+    if value is not None:
+        cell["value"] = value
+    text = json.dumps({"schema_version": "deixis.evidence_cell_draft.v1", "step_input_id": "sti_SYNTHETIC1",
+                       "scope_revision": 1, "cells": [cell]})
+    result = asyncio.run(adapter(lambda r: answer(text=text)).run_step("b", "d", "m", schema, "claude-opus-5-5"))
+    output = json.loads(result.raw_text)
+    assert [e.message for e in Draft202012Validator(schema).iter_errors(output)] == []
+    expected = {"unit": None, "as_stated": None, **value} if value and "number" in value else value
+    assert output["cells"][0]["value"] == expected
 
 
 def test_run_step_without_effort_leaves_the_api_default(monkeypatch):

@@ -62,6 +62,9 @@ class ModelStepResult:
     error_kind: str | None = None
     http_status: int | None = None
     retry_after: str | None = None
+    # What the adapter sent in place of the step schema and changed in the answer text, when it does either (D93);
+    # stored with the validation record.
+    transport: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if self.status in {"failed", "unavailable"} and self.error_kind is None:

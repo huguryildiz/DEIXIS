@@ -2,8 +2,8 @@
 
 The Claude Code CLI signed in with a Claude account is a separate connection (`claude.py`). This one calls the
 Messages API directly: one stateless request per step, no tools, the step schema sent as a structured-output format
-(`output_config.format`, in the subset the API accepts: `schema_subset.py`), and the answering model reported as
-`resolved_model` so the flow's mismatch check applies. No server-side fallback model is requested: a decline ends the
+(`output_config.format`, in the subset the API accepts: `schema_subset.anthropic_schema`), and the answering model
+reported as `resolved_model` so the flow's mismatch check applies. No server-side fallback model is requested: a decline ends the
 step as failed instead of another model answering. Raw HTTP through the shared httpx client, as the Gemini and
 DeepSeek connections do, so tests inject a mocked transport. The answer is streamed (server-sent events, D85) and put
 back together here into the same result a single response gave.
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import codecs
+import hashlib
 import json
 import os
 import re
@@ -25,7 +26,7 @@ import httpx
 from deixis.keys import key_verification
 from deixis.domain.limits import error_name, http_limit, retry_at, service_error_kind
 from deixis.models.adapter import ModelStepResult, broken_key_status, invalid_key_result, is_dated_snapshot
-from deixis.models.schema_subset import portable_schema
+from deixis.models.schema_subset import ANTHROPIC_TRANSFORM_VERSION, anthropic_schema, fill_omitted_nulls, schema_digest
 
 API_URL = "https://api.anthropic.com/v1"
 API_VERSION = "2023-06-01"
@@ -136,7 +137,9 @@ class AnthropicAdapter:
                                    delivery_class="before_send", error_kind="needs_key" if not key else "unknown")
         if not key_verification.is_valid_key(key):  # a header cannot carry it; nothing is sent
             return invalid_key_result()
-        output_config: dict[str, Any] = {"format": {"type": "json_schema", "schema": portable_schema(output_schema)}}
+        sent_schema = anthropic_schema(output_schema)
+        transport: dict[str, Any] = {"schema_transform": ANTHROPIC_TRANSFORM_VERSION, "sent_schema_sha256": schema_digest(sent_schema)}
+        output_config: dict[str, Any] = {"format": {"type": "json_schema", "schema": sent_schema}}
         if reasoning_effort:
             output_config["effort"] = reasoning_effort
         body = {"model": requested_model, "max_tokens": MAX_TOKENS, "system": f"{base}\n\n{developer}",
@@ -161,7 +164,8 @@ class AnthropicAdapter:
         resolved = stream.message.get("model") or None
         common: dict[str, Any] = {"resolved_model": resolved, "external_thread_id": stream.message.get("id"),
                                   "token_usage": stream.usage or None, "tool_item_types": tools,
-                                  "requested_model_verified": is_dated_snapshot(requested_model, resolved)}
+                                  "requested_model_verified": is_dated_snapshot(requested_model, resolved),
+                                  "transport": transport}
         if broken is not None:
             return ModelStepResult("failed", raw_text=text or None, error=broken, delivery_class="after_send_unknown",
                                    **common)
@@ -180,6 +184,14 @@ class AnthropicAdapter:
         stop = stream.stop_reason
         if stop != "end_turn" or not text:
             return ModelStepResult("failed", raw_text=text or None, error=f"finish reason {stop}", **common)
+        # A required nullable field was sent optional (`anthropic_schema`, D93): the nulls it left out are put back here,
+        # so every reader of the answer sees the step schema's shape. Text with nothing left out is passed on as it came.
+        filled, changes = fill_omitted_nulls(output_schema, text)
+        if changes:
+            # ASCII escapes, so an escaped lone surrogate in the answer stays an escape and the text stays storable.
+            transport["filled_nulls"] = [c["path"] for c in changes]
+            transport["received_sha256"] = "sha256:" + hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
+            text = json.dumps(filled, ensure_ascii=True)
         return ModelStepResult("completed", raw_text=text, **common)
 
     async def cancel(self) -> bool:

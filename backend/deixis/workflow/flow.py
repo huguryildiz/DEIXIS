@@ -5936,6 +5936,8 @@ class ResearchFlow:
                                          "normalised": normalised_changes}
             if patch_record is not None:
                 recorded["validation_json"]["anchor_patch"] = patch_record
+            if result.transport:  # D93: which schema the adapter sent and what it filled back into the answer
+                recorded["validation_json"]["transport"] = result.transport
             if split_relabel:
                 recorded["validation_json"]["relabelled"] = dict(split_relabel)
             if ledger_split is not None:

@@ -306,9 +306,12 @@ def test_an_oversized_body_is_refused_before_it_is_read_and_csrf_is_required(mak
 
 
 AUTHOR_BIB = b"""@article{sj, title = {Two authors}, author = {Smith, Ann and Jones, Bo}, year = {2022}}
-@article{sjb, title = {Three authors}, author = {Smith, Cy and Jones, Di and Brown, Ed}, year = {2023}}
+@article{sjb, title = {Three authors}, author = {Smith, Cy and Jones, Dan and Brown, Ed}, year = {2023}}
 @article{vdb, title = {Particle surname}, author = {van der Berg, Anna}, year = {2022}}
 @article{solo, title = {One author}, author = {Kim, Jae}, year = {2020}}
+@article{berg, title = {Plain Berg}, author = {Berg, Anna}, year = {2024}}
+@article{vries, title = {Plain Vries}, author = {Vries, Jan}, year = {2025}}
+@article{svb, title = {Smith and Van Berg}, author = {Smith, Ann and Van Berg, Bo}, year = {2026}}
 """
 
 
@@ -326,6 +329,13 @@ AUTHOR_BIB = b"""@article{sj, title = {Two authors}, author = {Smith, Ann and Jo
     ("(Kim, 2020)", "planned"),
     ("(Smith, Jones, and Brown, 2023)", "planned"),
     ("(Jones et al., 2023)", "ambiguous"),     # et al. keeps the first author first
+    # Sol round 2: a partial phrase or a dropped capitalised particle.
+    ("Smith and Van Berg (2024)", "ambiguous"),  # not the single-author `Anna Berg`
+    ("Smith and Van Berg (2026)", "planned"),
+    ("(Smith & Van Berg, 2026)", "planned"),
+    ("De Vries (2025)", "ambiguous"),            # `De Vries` is not `Vries`
+    ("Vries (2025)", "planned"),
+    ("(De Vries, 2025)", "ambiguous"),
 ])
 def test_author_year_names_the_whole_author_list_unless_it_says_et_al(make, citation, status):
     app, _ = make()

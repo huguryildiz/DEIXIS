@@ -320,7 +320,7 @@ _IGNORED_BRACKETS = {"sic", "...", "…", "x", "X", " ", ""}
 _YEAR = r"(?:1[5-9]\d\d|20\d\d)"
 PARTICLES = ("van", "von", "de", "der", "den", "del", "della", "di", "da", "du", "des", "le", "la", "dos", "das", "ten",
              "ter", "al", "el", "bin", "ibn")
-_NAME = rf"(?:(?:{'|'.join(PARTICLES)})\s+)*[^\W\d_][\w'’\-]*"
+_NAME = rf"(?:(?i:{'|'.join(PARTICLES)})\s+)*[^\W\d_][\w'’\-]*"  # `Van Berg` and `van Berg` are one surname
 _NAMES = (rf"(?P<names>{_NAME}(?:\s*,\s*{_NAME})*(?:\s*,?\s*(?:and|&)\s+{_NAME})?)"
           r"(?P<etal>\s+et\s+al\.?)?")
 _ITEM = re.compile(rf"^{_NAMES}\s*,?\s+(?P<years>{_YEAR}[a-z]?(?:\s*,\s*{_YEAR}[a-z]?)*)"
@@ -331,6 +331,25 @@ _PREFIX = re.compile(r"^\s*(?:(?:e\.g\.|i\.e\.|see also|see|cf\.)\s*,?\s*)", re.
 _PAREN = re.compile(r"\(([^()\n]{1,300})\)")
 _YEARS_ONLY = re.compile(rf"\(\s*({_YEAR}[a-z]?(?:\s*,\s*{_YEAR}[a-z]?)*)\s*\)")
 _NARRATIVE_NAMES = re.compile(rf"{_NAMES}\s*$")
+# Capitalised words that may stand right before a narrative citation's names without being one of them.
+_LEAD_WORDS = {"in", "as", "by", "see", "following", "unlike", "like", "per", "from", "with", "both", "while", "whereas",
+               "then", "also", "thus", "hence", "here", "recently", "similarly", "however", "later", "earlier", "but",
+               "for", "when", "after", "before", "since", "although", "though", "yet", "so", "the", "this",
+               "that", "these", "those", "our", "their", "his", "her", "its", "we", "they", "it"}
+
+
+def _unclear_lead(before: str) -> bool:
+    """Whether the word right before a narrative citation's names could belong to the author phrase: a connector
+    (`and`, `&`, `et`, a trailing comma), a particle in any case, or a capitalised word that is not a common sentence
+    opener. Then the parsed names may be only the tail of the phrase (`Smith and Van Berg` read as `Berg`)."""
+    word = re.search(r"(\S+)\s*$", before)
+    if word is None:
+        return False
+    token = word.group(1)
+    bare = token.rstrip(".,;:").casefold()
+    if token.endswith(",") or bare in ("and", "&", "et", "und") or bare in PARTICLES:
+        return True
+    return token[:1].isupper() and bare not in _LEAD_WORDS
 
 
 def _capitalised(names: list[str]) -> bool:
@@ -338,7 +357,7 @@ def _capitalised(names: list[str]) -> bool:
 
 
 def _split_names(text: str) -> list[str]:
-    return [n.strip() for n in re.split(r"\s*,\s*|\s+(?:and|&)\s+", text.strip()) if n.strip()]
+    return [n.strip() for n in re.split(r"\s*,?\s*(?<![^\s,])(?:and|&)\s+|\s*,\s*", text.strip()) if n.strip()]
 
 
 def _year_targets(names: list[str], et_al: bool, years: str, value_names: str) -> list[Target]:
@@ -436,7 +455,8 @@ def _author_year(text: str, markers: _Markers) -> None:
             continue
         found = _split_names(names.group("names"))
         start = match.start() - (len(before) - names.start())
-        if names.start() == 0 and match.start() > len(before):  # the names may begin before the look-back window
+        # The names may begin before the look-back window, or the word before them may be part of the phrase.
+        if (names.start() == 0 and match.start() > len(before)) or _unclear_lead(before[:names.start()]):
             markers.append(Marker(start, match.end(), text[start:match.end()], "author_year", "unrecognized"))
             continue
         markers.append(Marker(start, match.end(), text[start:match.end()], "author_year", "recognized",
@@ -527,15 +547,16 @@ def _fold(word: str) -> str:
 
 def surname_key(name: str) -> str:
     """The surname of a name with its particles, accents and case folded, letters only: the last word, and the
-    particles (`PARTICLES`) right before it. A particle that is the name's first word stays only when it is written in
-    lower case, so `van der Berg` gives `van der berg`, `Anna van der Berg` gives `van der berg`, `Van Morrison`
-    gives `morrison`, and `Berg` or `A. Berg` give `berg`."""
+    particles (`PARTICLES`, in any case) right before it. `van der Berg`, `Anna van der Berg` and `Van der Berg` give
+    `van der berg`, `De Vries` gives `de vries`, and `Berg` or `A. Berg` give `berg`. The same function reads both the
+    draft and the bibliography, so a given name that looks like a particle (`Van Morrison`) misses a match rather
+    than making a wrong one."""
     words = [w for w in re.split(r"\s+", name.strip()) if w and not _INITIALS.fullmatch(w)]
     if not words:
         return ""
     surname = [words[-1]]
     for i in range(len(words) - 2, -1, -1):
-        if words[i].casefold() not in PARTICLES or (i == 0 and not words[i].islower()):
+        if words[i].casefold() not in PARTICLES:
             break
         surname.insert(0, words[i])
     return " ".join(f for f in (_fold(w) for w in surname) if f)

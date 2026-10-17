@@ -215,7 +215,8 @@ def test_narrative_names_cut_by_the_look_back_window_are_unrecognized():
 
 
 @pytest.mark.parametrize("name, key", [("van der Berg", "van der berg"), ("Anna van der Berg", "van der berg"),
-                                       ("Berg", "berg"), ("A. Berg", "berg"), ("Van Morrison", "morrison"),
+                                       ("Berg", "berg"), ("A. Berg", "berg"), ("Van Morrison", "van morrison"),
+                                       ("De Vries", "de vries"), ("Van der Berg", "van der berg"),
                                        ("Ludwig van Beethoven", "van beethoven"), ("Müller", "muller"),
                                        ("al Farsi", "al farsi")])
 def test_surnames_keep_their_particles(name, key):
@@ -232,3 +233,21 @@ def test_too_many_markers_are_refused_while_they_are_found(monkeypatch):
     monkeypatch.setattr(draft_parse, "_author_year", lambda *_: pytest.fail("the scan went on past the cap"))
     with pytest.raises(DraftRefused):
         parse_draft("md", "A [1]. B [2]. C [3]. D [4].")
+
+
+@pytest.mark.parametrize("text, names", [
+    # Sol round 2: the narrative match started at the tail of the author phrase.
+    ("Smith and Van Berg (2022) found it.", ("Smith", "Van Berg")),
+    ("As De Vries (2022) found.", ("De Vries",)),
+    ("As shown by Zeng (2022) here.", ("Zeng",)),
+    ("In Zeng (2022), it holds.", ("Zeng",)),
+])
+def test_narrative_names_take_the_whole_phrase(text, names):
+    [marker] = parse_draft("md", text).markers
+    assert (marker.status, marker.targets[0].names) == ("recognized", names)
+
+
+@pytest.mark.parametrize("text", ["Anna Berg (2022) found it.", "results and Berg (2022) found it.",
+                                  "data, Berg (2022) found it.", "results & Berg (2022) found it."])
+def test_a_narrative_phrase_with_an_unclear_start_is_unrecognized(text):
+    assert [(m.status, m.targets) for m in parse_draft("md", text).markers] == [("unrecognized", [])]

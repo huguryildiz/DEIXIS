@@ -8,7 +8,7 @@ import logging
 from typing import Any
 
 from deixis.storage.db import dumps, new_id, transaction
-from deixis.workflow import adjudication, criterion_passages, fast_answer, fast_path, formula_passages, small_batch
+from deixis.workflow import adjudication, criterion_passages, fast_answer, fast_path, result_passages, small_batch
 from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.flow import fuse_rankings
 
@@ -298,6 +298,10 @@ def revision_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict
     # A revision follows its base answer's rule; a base input from before D56 has none, so it is decided here.
     formula_rule = base.get("formula_passages") or fast_answer.formula_request(store, scope, patterns)
     formulas = formula_rule["on"]
+    # The same for outcome terms: a base input from before D84 has no record, so the research's terms are read here.
+    result_rule = {k: v for k, v in (base.get("result_passages") or fast_answer.result_request(store, scope)).items() if k != "moved"}
+    outcome_patterns = result_passages.compile_terms(result_rule["outcome_terms"])
+    moved = 0
     fts = " OR ".join(f'"{term}"' for term in flow._topic_terms(run["research_id"], scope))
     pools = fast_answer.current_pools(store, run["research_id"])
     items = []
@@ -316,8 +320,8 @@ def revision_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict
             criterion = criterion_passages.criterion_order(pages, patterns or [])
             ranked = fuse_rankings(topic, criterion) if criterion else topic
             ordered = list({p["id"]: p for p in [*ranked, *pages]}.values())
-            if formulas:
-                ordered = formula_passages.bring_forward(ordered)
+            ordered, first = result_passages.order(ordered, outcome_patterns, formulas)
+            moved += first
             chosen = [p["id"] for p in ordered][:BASE_WORK_PAGES if wid in base_work_ids else NEW_WORK_PAGES]
             if not chosen:
                 flow._pause(run["id"], "source_changed")
@@ -351,7 +355,7 @@ def revision_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict
         "base_selection_revision": base["selection_revision"], "selection_revision": store.selection_revision(run["research_id"]),
         "user_signature": base["user_signature"], "items": items, "upgraded": list(upgrades), "late_excluded": sorted(excluded),
         "passage_ids": passages, "limit": len(base["passage_ids"]) + len(upgrades), "breadth": len(items),
-        "formula_passages": formula_rule})
+        "formula_passages": formula_rule, "result_passages": {**result_rule, "moved": moved}})
 
 
 def published(store: Any, run: dict[str, Any], aid: str, status: str) -> None:

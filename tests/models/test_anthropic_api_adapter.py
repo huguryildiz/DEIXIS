@@ -16,14 +16,44 @@ from deixis.models.adapter import is_rate_limited
 from deixis.models.schema_subset import UNSUPPORTED_KEYS, portable_schema
 
 
-def adapter(handler):
-    return anthropic_api.AnthropicAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+def adapter(handler, **kwargs):
+    return anthropic_api.AnthropicAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), **kwargs)
+
+
+def sse(*events):
+    """A server-sent event body: each event as `event:` and `data:` lines and a blank line."""
+    return "".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in events).encode()
+
+
+def stream_events(model="claude-opus-5-5", text='{"claims": []}', stop="end_turn", content=None, end=True):
+    """SYNTHETIC events of one streamed answer: thinking then text by default, the text split over two deltas."""
+    blocks = content if content is not None else [{"type": "thinking", "thinking": "", "signature": ""}, {"type": "text", "text": text}]
+    events = [{"type": "message_start", "message": {"id": "msg_1", "type": "message", "role": "assistant", "model": model,
+                                                    "content": [], "stop_reason": None,
+                                                    "usage": {"input_tokens": 5, "output_tokens": 1}}},
+              {"type": "ping"}]
+    for i, block in enumerate(blocks):
+        if block["type"] == "text":
+            events.append({"type": "content_block_start", "index": i, "content_block": {"type": "text", "text": ""}})
+            half = len(block["text"]) // 2
+            for part in (block["text"][:half], block["text"][half:]):
+                events.append({"type": "content_block_delta", "index": i, "delta": {"type": "text_delta", "text": part}})
+        elif block["type"] == "thinking":
+            events.append({"type": "content_block_start", "index": i, "content_block": {"type": "thinking", "thinking": "", "signature": ""}})
+            events.append({"type": "content_block_delta", "index": i, "delta": {"type": "thinking_delta", "thinking": "SYNTHETIC"}})
+            events.append({"type": "content_block_delta", "index": i, "delta": {"type": "signature_delta", "signature": "s"}})
+        else:
+            events.append({"type": "content_block_start", "index": i, "content_block": block})
+        events.append({"type": "content_block_stop", "index": i})
+    events.append({"type": "message_delta", "delta": {"stop_reason": stop, "stop_sequence": None}, "usage": {"output_tokens": 3}})
+    if end:
+        events.append({"type": "message_stop"})
+    return events
 
 
 def answer(model="claude-opus-5-5", text='{"claims": []}', stop="end_turn", content=None):
-    blocks = content if content is not None else [{"type": "thinking", "thinking": "", "signature": "s"}, {"type": "text", "text": text}]
-    return httpx.Response(200, json={"id": "msg_1", "type": "message", "role": "assistant", "model": model, "content": blocks,
-                                     "stop_reason": stop, "usage": {"input_tokens": 5, "output_tokens": 3}})
+    return httpx.Response(200, headers={"content-type": "text/event-stream"},
+                          content=sse(*stream_events(model, text, stop, content)))
 
 
 def model_entry(model_id, structured=True, efforts=("low", "medium", "high")):
@@ -80,6 +110,7 @@ def test_run_step_sends_the_schema_as_output_format_no_tools_and_the_effort(monk
     assert (result.status, result.raw_text, result.resolved_model, result.external_thread_id) == (
         "completed", '{"claims": []}', "claude-opus-5-5", "msg_1")
     body = sent[0]
+    assert body["stream"] is True and body["max_tokens"] == 64000
     assert body["model"] == "claude-opus-5-5" and body["system"] == "BASE\n\nDEV"
     assert body["messages"] == [{"role": "user", "content": "MSG"}]
     assert body["output_config"] == {"format": {"type": "json_schema", "schema": portable_schema(schema)}, "effort": "high"}
@@ -182,3 +213,62 @@ def test_transport_errors_are_reported_without_retrying(monkeypatch, exception, 
 
     result = asyncio.run(adapter(handler).run_step("b", "d", "m", {}, "claude-opus-5-5"))
     assert (result.status, result.delivery_class) == (status, delivery)
+
+
+def test_a_streamed_answer_joins_its_text_deltas_and_merges_usage(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    result = asyncio.run(adapter(lambda r: answer(text='{"claims": [1, 2]}')).run_step("b", "d", "m", {}, "claude-opus-5-5"))
+    assert (result.status, result.raw_text, result.tool_item_types) == ("completed", '{"claims": [1, 2]}', [])
+    # message_start gives input tokens, message_delta the final output count
+    assert result.token_usage == {"input_tokens": 5, "output_tokens": 3}
+
+
+def test_a_max_tokens_stop_keeps_the_cut_text(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    result = asyncio.run(adapter(lambda r: answer(text='{"cla', stop="max_tokens")).run_step("b", "d", "m", {}, "claude-opus-5-5"))
+    assert (result.status, result.raw_text, result.error, result.token_usage["output_tokens"]) == (
+        "failed", '{"cla', "finish reason max_tokens", 3)
+
+
+def test_an_error_event_mid_stream_fails_after_send(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    events = stream_events(end=False)[:4] + [{"type": "error", "error": {"type": "overloaded_error", "message": "SYNTHETIC"}}]
+    result = asyncio.run(adapter(lambda r: httpx.Response(200, content=sse(*events))).run_step("b", "d", "m", {}, "claude-opus-5-5"))
+    assert (result.status, result.delivery_class, result.error) == ("failed", "after_send_unknown", "stream error overloaded_error")
+    assert result.external_thread_id == "msg_1"
+
+
+def test_a_stream_cut_before_message_stop_fails_after_send(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    events = stream_events(end=False)
+    result = asyncio.run(adapter(lambda r: httpx.Response(200, content=sse(*events))).run_step("b", "d", "m", {}, "claude-opus-5-5"))
+    assert (result.status, result.delivery_class, result.error) == ("failed", "after_send_unknown", "Incomplete stream")
+
+
+def test_a_broken_event_fails_after_send(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    body = sse(*stream_events()[:2]) + b"data: {not json\n\n"
+    result = asyncio.run(adapter(lambda r: httpx.Response(200, content=body)).run_step("b", "d", "m", {}, "claude-opus-5-5"))
+    assert (result.status, result.delivery_class) == ("failed", "after_send_unknown")
+
+
+def test_a_rate_limit_answer_keeps_its_retry_after(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    response = httpx.Response(429, headers={"retry-after": "30"},
+                              json={"type": "error", "error": {"type": "rate_limit_error", "message": "SYNTHETIC"}})
+    result = asyncio.run(adapter(lambda r: response).run_step("b", "d", "m", {}, "claude-opus-5-5"))
+    assert (result.status, result.http_status, result.retry_after, is_rate_limited(result)) == ("failed", 429, "30", True)
+
+
+def test_the_turn_limit_bounds_the_whole_stream_not_each_read(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    async def pings():
+        yield sse(*stream_events()[:1])
+        while True:  # every read answers quickly, the turn never ends
+            await asyncio.sleep(0.02)
+            yield sse({"type": "ping"})
+
+    result = asyncio.run(adapter(lambda r: httpx.Response(200, content=pings()), turn_timeout=0.2).run_step(
+        "b", "d", "m", {}, "claude-opus-5-5"))
+    assert (result.status, result.delivery_class, result.error) == ("failed", "after_send_unknown", "TimeoutError")

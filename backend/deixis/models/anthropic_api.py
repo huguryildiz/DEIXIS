@@ -5,11 +5,14 @@ Messages API directly: one stateless request per step, no tools, the step schema
 (`output_config.format`, in the subset the API accepts: `schema_subset.py`), and the answering model reported as
 `resolved_model` so the flow's mismatch check applies. No server-side fallback model is requested: a decline ends the
 step as failed instead of another model answering. Raw HTTP through the shared httpx client, as the Gemini and
-DeepSeek connections do, so tests inject a mocked transport.
+DeepSeek connections do, so tests inject a mocked transport. The answer is streamed (server-sent events, D85) and put
+back together here into the same result a single response gave.
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 import time
 from typing import Any
@@ -25,8 +28,9 @@ API_URL = "https://api.anthropic.com/v1"
 API_VERSION = "2023-06-01"
 KEY_ENV = "ANTHROPIC_API_KEY"
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
-# Above this a non-streamed request risks the HTTP timeout; thinking counts against it too.
-MAX_TOKENS = 16000
+# Thinking counts against it too. The answer is streamed, so a long turn does not hit a single-response HTTP timeout;
+# `turn_timeout` still bounds the whole stream (D85).
+MAX_TOKENS = 64000
 # Content blocks that are the model's own text; any other block is a tool or server-tool item.
 TEXT_BLOCKS = frozenset({"text", "thinking", "redacted_thinking"})
 
@@ -134,37 +138,122 @@ class AnthropicAdapter:
             output_config["effort"] = reasoning_effort
         body = {"model": requested_model, "max_tokens": MAX_TOKENS, "system": f"{base}\n\n{developer}",
                 "messages": [{"role": "user", "content": message}], "output_config": output_config}
+        body["stream"] = True
         try:
-            response = await self._http().post(f"{API_URL}/messages", json=body, headers=headers(key), timeout=self.turn_timeout)
+            async with asyncio.timeout(self.turn_timeout):
+                async with self._http().stream("POST", f"{API_URL}/messages", json=body, headers=headers(key),
+                                               timeout=self.turn_timeout) as response:
+                    if response.status_code != 200:
+                        await response.aread()
+                        return ModelStepResult("failed", error=f"HTTP {response.status_code}: API request failed",
+                                               **http_limit(response))
+                    stream = await _read_stream(response)
         except httpx.ConnectError as exc:
             return ModelStepResult("unavailable", error=error_name(exc), delivery_class="before_send")
-        except httpx.HTTPError as exc:  # the request may have been processed without an answer arriving
+        except (httpx.HTTPError, TimeoutError) as exc:  # the request may have been processed without an answer arriving
             return ModelStepResult("failed", error=type(exc).__name__, delivery_class="after_send_unknown")
-        if response.status_code != 200:
-            return ModelStepResult("failed", error=f"HTTP {response.status_code}: API request failed", **http_limit(response))
-        try:
-            data = response.json()
-        except ValueError:
-            return ModelStepResult("failed", error="Invalid JSON response", delivery_class="after_send_unknown")
-        blocks = [b for b in data.get("content") or [] if isinstance(b, dict)]
-        text = "".join(b.get("text") or "" for b in blocks if b.get("type") == "text")
-        tools = [str(b.get("type")) for b in blocks if b.get("type") not in TEXT_BLOCKS]
-        resolved = data.get("model") or None
-        common: dict[str, Any] = {"resolved_model": resolved, "external_thread_id": data.get("id"),
-                                  "token_usage": data.get("usage"), "tool_item_types": tools,
+        text, tools = stream.text(), stream.tool_types()
+        resolved = stream.message.get("model") or None
+        common: dict[str, Any] = {"resolved_model": resolved, "external_thread_id": stream.message.get("id"),
+                                  "token_usage": stream.usage or None, "tool_item_types": tools,
                                   "requested_model_verified": is_dated_snapshot(requested_model, resolved)}
+        if stream.error is not None:
+            etype = str(stream.error.get("type") or "error")
+            return ModelStepResult("failed", raw_text=text or None, error=f"stream error {etype}",
+                                   delivery_class="after_send_unknown",
+                                   error_kind=service_error_kind(payload={"error": stream.error}, text=etype, surface="model"),
+                                   **common)
+        if not stream.stopped:
+            return ModelStepResult("failed", raw_text=text or None, error="Incomplete stream",
+                                   delivery_class="after_send_unknown", **common)
         if tools:
             return ModelStepResult("isolation_violation", raw_text=text or None,
                                    error="Anthropic API returned a tool item", **common)
-        stop = data.get("stop_reason")
+        stop = stream.stop_reason
         if stop != "end_turn" or not text:
             return ModelStepResult("failed", raw_text=text or None, error=f"finish reason {stop}", **common)
         return ModelStepResult("completed", raw_text=text, **common)
 
     async def cancel(self) -> bool:
-        return False  # one blocking request per step; a pause takes effect after it returns
+        return False  # one streamed request per step; a pause takes effect after it returns
 
     async def close(self) -> None:
         if self._owns_client and self._client is not None:
             await self._client.aclose()
             self._client = None
+
+
+class _Stream:
+    """What a streamed Messages answer said, event by event (D85)."""
+
+    def __init__(self) -> None:
+        self.message: dict[str, Any] = {}
+        self.usage: dict[str, Any] = {}
+        self.blocks: dict[int, dict[str, Any]] = {}  # index -> {"type", "text"}
+        self.stop_reason: str | None = None
+        self.stopped = False  # message_stop arrived
+        self.error: dict[str, Any] | None = None
+
+    def text(self) -> str:
+        return "".join(b["text"] for _, b in sorted(self.blocks.items()) if b["type"] == "text")
+
+    def tool_types(self) -> list[str]:
+        return [b["type"] for _, b in sorted(self.blocks.items()) if b["type"] not in TEXT_BLOCKS]
+
+    def _merge_usage(self, usage: Any) -> None:
+        if isinstance(usage, dict):
+            self.usage.update({k: v for k, v in usage.items() if v is not None})
+
+    def event(self, data: dict[str, Any]) -> None:
+        kind = data.get("type")
+        if kind == "message_start":
+            message = data.get("message") if isinstance(data.get("message"), dict) else {}
+            self.message = {"id": message.get("id"), "model": message.get("model")}
+            self._merge_usage(message.get("usage"))
+        elif kind == "content_block_start":
+            block = data.get("content_block") if isinstance(data.get("content_block"), dict) else {}
+            self.blocks[int(data.get("index") or 0)] = {"type": str(block.get("type")),
+                                                        "text": str(block.get("text") or "") if block.get("type") == "text" else ""}
+        elif kind == "content_block_delta":
+            delta = data.get("delta") if isinstance(data.get("delta"), dict) else {}
+            block = self.blocks.setdefault(int(data.get("index") or 0), {"type": "text", "text": ""})
+            if block["type"] == "text" and delta.get("type") == "text_delta":
+                block["text"] += str(delta.get("text") or "")
+        elif kind == "message_delta":
+            delta = data.get("delta") if isinstance(data.get("delta"), dict) else {}
+            if delta.get("stop_reason") is not None:
+                self.stop_reason = delta["stop_reason"]
+            self._merge_usage(data.get("usage"))
+        elif kind == "message_stop":
+            self.stopped = True
+        elif kind == "error":
+            self.error = data.get("error") if isinstance(data.get("error"), dict) else {"type": "error"}
+        # ping, content_block_stop and event types added later carry nothing this result needs
+
+
+async def _read_stream(response: httpx.Response) -> _Stream:
+    """Read server-sent events until the message stops, an error event arrives or the body ends."""
+    stream, data_lines = _Stream(), []
+
+    def dispatch() -> None:
+        if not data_lines:
+            return
+        payload = "\n".join(data_lines)
+        data_lines.clear()
+        try:
+            data = json.loads(payload)
+        except ValueError:
+            stream.error = {"type": "invalid_event"}
+            return
+        if isinstance(data, dict):
+            stream.event(data)
+
+    async for line in response.aiter_lines():
+        if line == "":
+            dispatch()
+        elif line.startswith("data:"):
+            data_lines.append(line[5:].removeprefix(" "))
+        if stream.stopped or stream.error is not None:
+            return stream
+    dispatch()
+    return stream

@@ -89,7 +89,7 @@ The pairs show each claim's current anchors and which are failing. A claim left 
 For a kept claim use removed: false, context: null and reason: null; text: null keeps its text unchanged.
 Do not write identifiers or claims that are not asked for. Code applies your choices; it never chooses a quote or writes claim prose."""
 
-REPORT_SECTION_FULL_REPAIR_GUIDANCE = """Keep every claim's claim_key; change only what the issues require. A claim you remove must be named by its claim_key in an insufficient_evidence entry whose context starts with exactly <claim_key>: followed by a space and a non-empty explanation. Keep every insufficient_evidence entry of the failed output unchanged."""
+REPORT_SECTION_FULL_REPAIR_GUIDANCE = """Keep every claim's claim_key; change only what the issues require. A claim you remove must be named by its claim_key in an insufficient_evidence entry whose context starts with exactly <claim_key>: followed by a space and a non-empty explanation. Keep every insufficient_evidence entry of the failed output, each as its own entry with its context unchanged; keep its reason exactly, with two exceptions: reword a reason that contains a banned word (such as gap, gap_candidates, novel or first), whether or not an issue reports it, so it no longer does; and when the section is over its word budget, you may shorten a reason."""
 
 
 LEDGER_HINTS_HEADING = ("Not blocking: these notes on excluded_sources do not make the output invalid. "

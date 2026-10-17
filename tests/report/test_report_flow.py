@@ -9,6 +9,7 @@ import pytest
 
 from deixis.config import Settings
 from deixis.domain import contracts, skill
+from deixis.models import prompt
 from deixis.models.adapter import ModelStepResult
 from deixis.storage import db
 from deixis.storage.db import dumps, new_id
@@ -780,6 +781,72 @@ def _repair_messages(store, run, section_id):
     step = store.step(run["id"], f"report_section:{section_id}", "model:report_section")
     return [row["message"] for row in store.conn.execute(
         "SELECT user_message AS message FROM step_inputs WHERE step_id = ? ORDER BY attempt", (step["id"],))]
+
+
+@pytest.mark.parametrize("section_id", ["IV", "VI"])
+def test_a_repair_that_rewords_a_banned_insufficient_evidence_reason_passes(tmp_path, section_id):
+    # D87, the live VI loop: the first draft's reason says "gap" (banned_word); the repair keeps the context and
+    # rewords the reason. Under the old exact-reason rule this failed as repair_dropped_insufficient_evidence.
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path, section_repairs=2)
+    ordinary, sent = adapter.responder, []
+    context = f"SYNTHETIC {section_id} candidates"
+    kept = {"context": "SYNTHETIC limitations", "reason": "SYNTHETIC: no limitations passage was supplied."}
+
+    def respond(step_input):
+        text = ordinary(step_input)
+        if step_input["task_type"] != "report_section" or step_input["report_target"]["section_id"] != section_id:
+            return text
+        sent.append(step_input)
+        draft = json.loads(text)
+        word = "gap" if len(sent) == 1 else "candidate"
+        draft["insufficient_evidence"] += [{"context": context, "reason": f"SYNTHETIC: no {word} was supplied."}, kept]
+        return json.dumps(draft)
+    adapter.responder = respond
+
+    asyncio.run(run_report(flow, run, scope))
+
+    assert len(sent) == 2
+    assert store.run(run["id"])["pause_reason"] is None
+    section = reports.section(report_id, section_id)
+    assert section["status"] == "valid"
+    entries = section["draft"]["insufficient_evidence"]
+    assert [e["reason"] for e in entries if e["context"] == context] == ["SYNTHETIC: no candidate was supplied."]
+    assert kept in entries
+    # The repair message tells the model to reword only the reason with the reported banned word.
+    repair = _repair_messages(store, run, section_id)[1]
+    assert prompt.REPORT_SECTION_FULL_REPAIR_GUIDANCE in repair and "banned_word" in repair
+
+
+def test_a_repair_that_shortens_a_reason_of_an_over_budget_section_passes(tmp_path):
+    # D87, the live dbr_vbf index_terms loop: the first draft is over its word budget through a long reason; the
+    # repair shortens that reason. Under an exact-reason rule this failed as repair_dropped_insufficient_evidence.
+    flow, store, reports, adapter, run, scope, report_id = report_flow(tmp_path, section_repairs=2)
+    ordinary, sent = adapter.responder, []
+    context, short = "SYNTHETIC IV terms", "SYNTHETIC: no passage can be cited."
+
+    def respond(step_input):
+        text = ordinary(step_input)
+        if step_input["task_type"] != "report_section" or step_input["report_target"]["section_id"] != "IV":
+            return text
+        sent.append(step_input)
+        draft = json.loads(text)
+        over = contracts.report_section_max_words(step_input) - contracts.report_section_words(draft) + 1
+        reason = " ".join(["SYNTHETIC"] + ["word"] * over) if len(sent) == 1 else short
+        draft["insufficient_evidence"].append({"context": context, "reason": reason})
+        return json.dumps(draft)
+    adapter.responder = respond
+
+    asyncio.run(run_report(flow, run, scope))
+
+    assert len(sent) == 2
+    assert store.run(run["id"])["pause_reason"] is None
+    section = reports.section(report_id, "IV")
+    assert section["status"] == "valid"
+    assert [e["reason"] for e in section["draft"]["insufficient_evidence"] if e["context"] == context] == [short]
+    step = store.step(run["id"], "report_section:IV", "model:report_section")
+    first = store.conn.execute("SELECT validation_json FROM model_sessions WHERE step_id = ? ORDER BY started_at",
+                               (step["id"],)).fetchone()[0]
+    assert "section_word_count_over_budget" in first
 
 
 def test_a_section_that_fails_its_first_repair_passes_on_the_second_and_the_report_finishes(tmp_path):

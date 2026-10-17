@@ -5916,7 +5916,9 @@ class ResearchFlow:
                     # this draft, which lacks it.
                     seen_issues: set[tuple[str, str, str]] = set()
                     for base in failed_sections or [patch_base]:
-                        for issue in contracts.report_section_repair_issues(base, output_text, restore=max_repairs > 1):
+                        for issue in contracts.report_section_repair_issues(
+                                base, output_text, restore=max_repairs > 1,
+                                max_words=contracts.report_section_max_words(payload)):
                             if (key := (issue.code, issue.path, issue.message)) not in seen_issues:
                                 seen_issues.add(key)
                                 report.issues.append(issue)

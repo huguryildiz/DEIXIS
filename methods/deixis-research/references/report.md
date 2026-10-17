@@ -129,8 +129,10 @@ that section, in fixed-skeleton order, and do not invent a section this report d
   `gap_candidates` is empty and no limitations cell or passage and no comparable V conflict was given, write
   no gap and record one `insufficient_evidence` entry saying which of these was missing.
   Every gap text ends with the sentence
-  that it is a candidate and no kill-search was run; never use "gap", "open problem", "novel" or "first" (or
-  their Turkish equivalents) anywhere, including implicitly restating them in other words.
+  that it is a candidate and no kill-search was run. Never use "gap", "open problem", "novel" or "first" (or
+  their Turkish equivalents) in gap text, claim text or any `insufficient_evidence` reason, not even to name the
+  `gaps` field or a field such as `gap_candidates` or `gap_refs` (say "candidate"), and never restate them
+  implicitly in other words.
 - **VII (Future Directions):** every claim has a non-empty `gap_refs` pointing at an accepted VI gap, OR
   anchors to a cell of the plan's `future_work_column_id` column. A future-work claim drawn from a source's own
   stated proposal is `source_stated`, anchors to that cell (a passage may add support), and is written as the

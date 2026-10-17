@@ -109,7 +109,10 @@ def test_a3_full_repair_checks_exact_markers_and_preserved_evidence_independentl
     old = {"claims": None, "insufficient_evidence": [{"context": "x", "reason": "y"}, 4, {}]}
     assert [i.code for i in check(old, {})] == ["repair_dropped_insufficient_evidence"]
     assert check(old, {"insufficient_evidence": [{"context": "x", "reason": "y"}]}) == []
-    assert [i.code for i in check(old, {"insufficient_evidence": [{"context": "x", "reason": "changed"}]})] == ["repair_dropped_insufficient_evidence"]
+    # D87: a reason without a banned word stays exact; rewording it, or emptying it, drops the entry.
+    for reason in ["changed", "", " \t", None, 4]:
+        assert [i.code for i in check(old, {"insufficient_evidence": [{"context": "x", "reason": reason}]})] == [
+            "repair_dropped_insufficient_evidence"]
     assert [i.code for i in check({"claims": [{"claim_key": "V.1"}], "insufficient_evidence": None}, {})] == ["repair_dropped_claim"]
 
 
@@ -274,3 +277,94 @@ def test_a10_direct_full_repair_form_preserves_old_form_without_failed_output():
     for task in ["grounded_answer", "cell_extraction"]:
         other = si | {"task_type": task}
         assert prompt.repair_message(other, problem, failed_output=text) == old_repair_message(other, problem)
+
+
+def test_d87_an_insufficient_evidence_reason_reworded_after_a_banned_word_is_kept():
+    """D87, the live VI loop (rpt_vsatdCmoIhnxjTKAyBJX): the first draft's reason held "gap" (banned_word), the
+    repair reworded it, and the old exact-reason rule then demanded the banned text back, so no repair could pass."""
+    check = contracts.report_section_repair_issues
+    first = {"claims": [], "insufficient_evidence": [
+        {"context": "VI gap candidates: corpus_absence",
+         "reason": "SYNTHETIC: No corpus-absence candidate was supplied in the gap candidates, "
+                   "so no such gap could be written."},
+        {"context": "VI stated limitations", "reason": "SYNTHETIC: no limitations cell was allowlisted."}]}
+    assert contracts.report_banned_words(first["insufficient_evidence"][0]["reason"]) == ["gap", "gap"]
+    reworded = copy.deepcopy(first)
+    reworded["insufficient_evidence"][0]["reason"] = (
+        "SYNTHETIC: No corpus-absence candidate was supplied, so no such candidate could be written.")
+    assert contracts.report_banned_words(reworded["insufficient_evidence"][0]["reason"]) == []
+    assert check(first, reworded) == [] and check(first, reworded, restore=True) == []
+    dropped = copy.deepcopy(reworded)
+    del dropped["insufficient_evidence"][0]
+    issues = check(first, dropped, restore=True)
+    assert [(i.code, i.message.split("\n")[0]) for i in issues] == [
+        ("repair_dropped_insufficient_evidence", "VI gap candidates: corpus_absence")]
+    assert "reword its reason only to remove a banned word" in issues[0].message
+    moved = copy.deepcopy(reworded)
+    moved["insufficient_evidence"][0]["context"] = "VI candidates: corpus_absence"
+    assert [i.message for i in check(first, moved)] == ["VI gap candidates: corpus_absence"]
+    # The rewording must remove the banned word, and only a reason holding one may change.
+    still = copy.deepcopy(reworded)
+    still["insufficient_evidence"][0]["reason"] = "SYNTHETIC: no candidate gaps were supplied."
+    assert [i.message for i in check(first, still)] == ["VI gap candidates: corpus_absence"]
+    unrelated = copy.deepcopy(reworded)
+    unrelated["insufficient_evidence"][1]["reason"] = "SYNTHETIC: the source was outside the date range."
+    assert [i.message for i in check(first, unrelated)] == ["VI stated limitations"]
+
+
+def test_d87_entries_are_matched_one_to_one_so_duplicate_contexts_keep_both_reasons():
+    check = contracts.report_section_repair_issues
+    a = {"context": "SYNTHETIC same", "reason": "SYNTHETIC: no limitations passage was supplied."}
+    b = {"context": "SYNTHETIC same", "reason": "SYNTHETIC: no conflict claim was supplied."}
+    old = {"insufficient_evidence": [a, b]}
+    assert check(old, {"insufficient_evidence": [b, a]}) == []
+    assert [i.message for i in check(old, {"insufficient_evidence": [a]})] == ["SYNTHETIC same"]
+    assert [i.message for i in check(old, {"insufficient_evidence": [a, a]})] == ["SYNTHETIC same"]
+    # Two banned reasons under one context need two reworded entries; one reworded entry keeps only one of them.
+    g1 = {"context": "SYNTHETIC same", "reason": "SYNTHETIC: no gap was supplied."}
+    g2 = {"context": "SYNTHETIC same", "reason": "SYNTHETIC: the gap list was empty."}
+    fixed = {"context": "SYNTHETIC same", "reason": "SYNTHETIC: no candidate was supplied."}
+    assert check({"insufficient_evidence": [g1, g2]}, {"insufficient_evidence": [fixed, fixed]}) == []
+    assert [i.message for i in check({"insufficient_evidence": [g1, g2]}, {"insufficient_evidence": [fixed]})] == [
+        "SYNTHETIC same"]
+    # A reworded entry cannot also stand in for a clean entry it was matched against exactly.
+    assert [i.message for i in check({"insufficient_evidence": [a, g1]}, {"insufficient_evidence": [a]})] == [
+        "SYNTHETIC same"]
+
+
+def test_d87_full_repair_guidance_allows_rewording_only_a_banned_reason():
+    guidance = prompt.REPORT_SECTION_FULL_REPAIR_GUIDANCE
+    assert "Keep every insufficient_evidence entry of the failed output unchanged" not in guidance
+    assert "context unchanged" in guidance and "reason exactly" in guidance
+    # Sol round 2: a banned word is reworded even when no issue reports it; an over-budget section may shorten.
+    assert "whether or not an issue reports it" in guidance and "gap_candidates" in guidance
+    assert "over its word budget" in guidance and "shorten a reason" in guidance
+
+
+def test_d87_a_reason_may_be_shortened_when_the_failed_draft_was_over_its_word_budget():
+    """D87, the live dbr_vbf index_terms loop: 55 words over a budget of 50, all in one clean reason; the repair
+    shortened it and the exact-reason rule then demanded the long reason back."""
+    check = contracts.report_section_repair_issues
+    long = " ".join(["SYNTHETIC"] + ["word"] * 54)
+    short = "SYNTHETIC: no passage or cell can be cited."
+    failed = {"claims": [], "insufficient_evidence": [{"context": "index_terms claims", "reason": long}]}
+    repaired = {"claims": [], "insufficient_evidence": [{"context": "index_terms claims", "reason": short}]}
+    assert contracts.report_section_words(failed) == 55
+    assert check(failed, repaired, max_words=50) == []
+    assert [i.code for i in check(failed, repaired)] == ["repair_dropped_insufficient_evidence"]
+    assert [i.code for i in check(failed, repaired, max_words=55)] == ["repair_dropped_insufficient_evidence"]
+    for reason in [long + " more", " ".join(["SYNTHETIC"] + ["other"] * 54), "SYNTHETIC: no gap passage.", " "]:
+        bad = {"insufficient_evidence": [{"context": "index_terms claims", "reason": reason}]}
+        assert [i.code for i in check(failed, bad, max_words=50)] == ["repair_dropped_insufficient_evidence"]
+    moved = {"insufficient_evidence": [{"context": "index_terms", "reason": short}]}
+    assert [i.code for i in check(failed, moved, max_words=50)] == ["repair_dropped_insufficient_evidence"]
+    # Claim words count toward the budget too, and malformed rows count nothing.
+    assert contracts.report_section_words({"claims": [{"text": "a b"}, 4, {"text": None}],
+                                           "insufficient_evidence": None}) == 2
+
+
+def test_d87_gap_field_names_are_banned_words_and_band_gaps_stay_exempt():
+    words = contracts.report_banned_words
+    assert words("No gap_candidates were supplied.") == ["gap_candidates"]
+    assert words("gap_refs and gaps_list name gap_ids.") == ["gap_refs", "gaps_list", "gap_ids"]
+    assert words("The band gap is 1.1 eV; the gapless phase differs.") == []

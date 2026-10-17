@@ -1109,9 +1109,10 @@ MATH = re.compile(r"\$\$.+?\$\$|\$[^$\n]+\$", re.DOTALL)
 # (D61). A regex escape such as \bword or a Windows path also matches; neither occurred in the measured outputs.
 LATEX_OUTSIDE_MATH = re.compile(r"\\(?:[A-Za-z]{2,}|[_^{}(\[])|[_^]\{")
 
-# Shared by section validation and final assembly; physical band/energy gaps are exempt.
+# Shared by section validation and final assembly; physical band/energy gaps are exempt. A field name such as
+# gap_candidates or gap_refs is caught too (D87): `\b` alone sees no word end before the underscore.
 REPORT_BANNED = re.compile(
-    r"\b(?:gaps?|open problems?|open questions?"
+    r"\b(?:gaps?(?:_\w+)?|open problems?|open questions?"
     r"|novel|novelty|first-ever|the first (?:study|work|paper|survey|review|attempt|to|time)"
     r"|first of its kind|for the first time|araştırma boşluğ\w*"
     r"|boşluk|boşluğ\w*|açık problem\w*|açık soru\w*|özgün\w*|yenilik\w*"
@@ -2237,9 +2238,25 @@ def apply_report_section_anchor_patch(step_input: dict[str, Any], draft: dict[st
     return merged, changes
 
 
-def report_section_repair_issues(failed: Any, repaired: Any, restore: bool = False) -> list[Issue]:
-    """Check key coverage and kept evidence records, including readable parts of invalid drafts. With `restore`, an
-    issue's message also carries the dropped claim or entry, for a further repair whose failed output lacks it (D65)."""
+def report_section_max_words(step_input: dict[str, Any]) -> int | None:
+    target = step_input["report_target"]
+    return (target.get("plan") or {}).get("section_budgets", {}).get(target["section_id"], {}).get("max_words")
+
+
+def report_section_words(draft: dict[str, Any]) -> int:
+    """The words a section budget counts: claim texts and insufficient-evidence reasons (non-strings count 0)."""
+    def words(rows: Any, field: str) -> int:
+        rows = rows if isinstance(rows, list) else []
+        return sum(len(r[field].split()) for r in rows if isinstance(r, dict) and isinstance(r.get(field), str))
+    return words(draft.get("claims"), "text") + words(draft.get("insufficient_evidence"), "reason")
+
+
+def report_section_repair_issues(failed: Any, repaired: Any, restore: bool = False,
+                                 max_words: int | None = None) -> list[Issue]:
+    """Check key coverage and kept insufficient-evidence contexts, including readable parts of invalid drafts. With
+    `restore`, an issue's message also carries the dropped claim or entry, for a further repair whose failed output
+    lacks it (D65). `max_words` is the section's word budget, which a failed draft over it lets a repair shorten
+    reasons to meet (D87)."""
     def obj(value: Any) -> dict[str, Any]:
         if isinstance(value, str):
             try:
@@ -2266,11 +2283,34 @@ def report_section_repair_issues(failed: Any, repaired: Any, restore: bool = Fal
             issues.append(Issue("repair_dropped_claim", "/claims", key + (
                 "\nKeep this claim or record it in insufficient_evidence: " + json.dumps(dropped, ensure_ascii=False)
                 if restore else "")))
+    # Old entries are matched one-to-one to repaired ones (each repaired entry kept once). An entry is kept unchanged,
+    # except that its reason may be reworded under the same context to a non-empty reason without a banned word when
+    # the old reason holds a banned word, or when the failed draft was over its word budget and the new reason is
+    # shorter: the validator rejects the old text, so an exact-reason rule could never pass (D87).
+    over_budget = max_words is not None and report_section_words(failed) > max_words
+    unused = list(new_entries)
+    dropped_entries = []
     for entry in old_entries:
-        if not any(r.get("context") == entry["context"] and r.get("reason") == entry["reason"] for r in new_entries):
-            issues.append(Issue("repair_dropped_insufficient_evidence", "/insufficient_evidence", entry["context"] + (
-                "\nRestore this entry exactly: " + json.dumps({"context": entry["context"], "reason": entry["reason"]},
-                                                              ensure_ascii=False) if restore else "")))
+        match = next((r for r in unused if r.get("context") == entry["context"] and r.get("reason") == entry["reason"]),
+                     None)
+        if match is None:
+            dropped_entries.append(entry)
+        else:
+            unused.remove(match)
+    for entry in dropped_entries:
+        banned = bool(report_banned_words(entry["reason"]))
+        match = None if not (banned or over_budget) else next((
+            r for r in unused if r.get("context") == entry["context"] and isinstance(r.get("reason"), str)
+            and r["reason"].strip() and not report_banned_words(r["reason"])
+            and (banned or len(r["reason"].split()) < len(entry["reason"].split()))), None)
+        if match is not None:
+            unused.remove(match)
+            continue
+        issues.append(Issue("repair_dropped_insufficient_evidence", "/insufficient_evidence", entry["context"] + (
+            "\nRestore this entry exactly (reword its reason only to remove a banned word, or shorten it when the"
+            " section is over its word budget): "
+            + json.dumps({"context": entry["context"], "reason": entry["reason"]}, ensure_ascii=False)
+            if restore else "")))
     return issues
 
 
@@ -2310,8 +2350,8 @@ def _check_report_section(step_input: dict[str, Any], allow: dict[str, set[str]]
     keys = set()
     for field, text in _report_phrasing_fields(draft) + [(f"/subsections/{i}/heading", s["heading"]) for i, s in enumerate(draft["subsections"])] + [(f"/gaps/{i}/text", g["text"]) for i, g in enumerate(draft["gaps"])]:
         report.issues.extend(Issue("banned_word", field, repr(word)) for word in report_banned_words(text))
-    words = sum(len(c["text"].split()) for c in draft["claims"]) + sum(len(e["reason"].split()) for e in draft["insufficient_evidence"])
-    maximum = (target.get("plan") or {}).get("section_budgets", {}).get(section_id, {}).get("max_words")
+    words = report_section_words(draft)
+    maximum = report_section_max_words(step_input)
     if maximum is not None and words > maximum:
         report.issues.append(Issue("section_word_count_over_budget", "/claims", f"{words} words exceed budget {maximum}"))
     # As in the answer path: every anchor names a claim of this draft and one of that claim's own passages or cells,

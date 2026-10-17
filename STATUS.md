@@ -59,6 +59,8 @@ Most of this was tested with fake models and synthetic data only; "Not measured"
 - A table opened from included sources adds a row when a source is included later (D63).
 - A report section gets a second repair before the report pauses (D65).
 - Table cells that fail their quote check no longer stop a report; they are retried once and otherwise marked not verified (D68).
+- Reports work on the Anthropic API: the section schema no longer gets HTTP 400 (D93), and a repair may reword an insufficient-evidence reason to drop a banned word or meet the word budget, so section VI and index terms no longer loop to `section_failed` (D87). 17 Oct: five reports on the five evaluation questions, all valid.
+- D68 cell retry measured on 7 live table fills with Sonnet 5.5 (17 Oct): 15 of 608 cells failed first, the older whole-call repair fixed 14, the D68 retry ran once and fixed it. Kept; no fix rate can be given from one case.
 
 ### Models and settings
 
@@ -134,7 +136,8 @@ All 171 citation links in 8 stored answers are sound; the gap is coverage: answe
 - [ ] Broad questions: known key papers are not near the top (battery_soh: 3 of 15 targets in the top 50), and the answer score does not measure it.
 - [ ] dbr_vbf is the weakest question (69–79); Quick misses the key paper Maulana 2019.
 - [ ] Paywalled full text cannot be read, so most engineering papers come in from the abstract.
-- [ ] Survey papers are dropped by title; their value is not measured.
+- [x] Survey papers as citation-chain sources: measured offline 17 Oct on 10 runs, no checkable target reachable only through survey references; as extra ranking seeds recall@50 fell 57 → 53. Not adopted.
+- [x] Joint-signal weight ×2/×3 in the 21–500 ranking: 14 runs, J3 +6 relevant in the top 50, all from DBR/VBF; it loses on uwsn and clinical_imaging. Not adopted (17 Oct). Maulana 2019 is found but ranks ~147.
 - [ ] Standard: 7 of 20 runs took over 5 minutes (cause not checked); Detailed citation accuracy not re-measured after the fixes.
 - [ ] Free OpenAlex daily quota runs out after about 20 researches (D173 stops sending); the answer call times out in about 1 of 21 runs.
 - [ ] Full-text limits (10/20/40) were never chosen by measurement; measure after the answer-coverage work.
@@ -143,8 +146,10 @@ All 171 citation links in 8 stored answers are sound; the gap is coverage: answe
 
 ### Not measured (needs a real model or real use)
 
-- [ ] Seed PDFs with a real related paper, not the targets themselves.
-- [ ] Report quality: the one scored report (H9e) was mostly out of range; two 16 Oct live reports were never scored.
+- [x] Seed PDF with a real related paper (Kulla & Elmazi 2023, owner's library), 17 Oct: same 3 of 4 targets given and cited as without seed; only order improved (Hakim 2018 141 → 83). Found: an uploaded seed that is already a library record is read twice; that run's table_columns proposed 9 columns (bound now in the Anthropic schema description, D93).
+- [ ] Report quality: evaluation set of five fixed questions and a 6-criterion rubric (`.local/plans/report-eval-set.md`); 17 Oct reports scored by GPT-6.1 Sol high (model score, not a human score): totals 15–20 of 30, overall 2–6 of 10; weakest writing (2 everywhere) and coverage on battery_soh and higher_ed_ai, whose tables hold one full-text include each. Owner score not taken.
+- [ ] Evidence table rows are full-text includes only, while the answer cites abstract-read works: with little full text (battery_soh, higher_ed_ai) the report rests on one source. Product decision.
+- [ ] review_mode "off" in the create body still ran answer_review on all five 17 Oct researches; not looked into.
 - [ ] Equations, lineage, kill search, crash recovery with real Codex, 5 of 18 report-edit actions, and the owner's daily use.
 - [ ] Follow-up, table and report changes, new model connections, Mathpix and data move with a real model or provider.
 - [ ] Windows, Linux and a real PyInstaller build; OpenAI, Gemini and DeepSeek prices before release (P10 rows K1–K15).

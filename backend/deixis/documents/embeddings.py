@@ -1,9 +1,11 @@
 """Passage embeddings for semantic passage retrieval (D27, D29).
 
 The question and the text of included sources' passages are embedded by the provider chosen in Settings: the Gemini
-API, the built-in model on this computer (slice 21, D103; Qwen3-Embedding-0.6B), the OpenAI API, the Voyage API, the Cohere API, or an
-embedding model on a local Ollama or LM Studio server. Without a saved choice, Gemini is used when its key is set (D27),
-else the built-in model when it is downloaded and checked (D7); Voyage and Cohere are used only when chosen. Vectors are stored per passage and model at unit length, so a passage is embedded once per model. Similarity
+API, a built-in model on this computer (one of `builtin_catalog`'s GGUF models, run by llama.cpp), the OpenAI API, the
+Voyage API, the Cohere API, or an embedding model on a local Ollama or LM Studio server. Without a saved choice, Gemini
+is used when its key is set (D27), else the first built-in model in catalog order that is downloaded and checked (D7);
+Voyage and Cohere are used only when chosen. A built-in choice is `(builtin, catalog id)`; one saved for an earlier
+built-in model is never mapped to a catalog model: its runs fail with `builtin_model_changed` until the person picks one. Vectors are stored per passage and model at unit length, so a passage is embedded once per model. Similarity
 only orders passages and records; it does not show that a passage supports a claim.
 
 The workflow sends one batch per call and writes it before the next (slice 21). An HTTP 429 is waited out, a bounded
@@ -24,7 +26,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from deixis.keys import key_verification
-from deixis.documents import local_embedding
+from deixis.documents import builtin_catalog, local_embedding
 
 import httpx
 
@@ -54,7 +56,6 @@ COHERE_BATCH = 96  # the API's own limit
 LOCAL_URLS = {"ollama": "http://127.0.0.1:11434/v1", "lm_studio": "http://127.0.0.1:1234/v1"}
 KEY_ENVS = {"gemini": "GEMINI_API_KEY", "openai": "OPENAI_API_KEY", "voyage": "VOYAGE_API_KEY", "cohere": "COHERE_API_KEY"}
 PROVIDERS = ("gemini", "builtin", "openai", "voyage", "cohere", "ollama", "lm_studio", "off")
-BUILTIN_MODEL = local_embedding.MODEL_ID
 BATCH = 100
 MAX_CHARS = 20_000  # passages are page chunks or abstracts, far below the model's 8,192-token input limit
 EMBED_RATE_LIMIT_RETRIES = 3  # 429 waits per batch
@@ -352,32 +353,59 @@ def client_for(provider: str, deps: Any) -> httpx.AsyncClient:
 
 
 def chosen(setting: dict[str, Any] | None) -> tuple[str, str | None]:
-    """The provider and model semantic search uses: the saved choice, else Gemini when its key is set, else the
-    built-in model when it is downloaded and its files check out (D7), else off. Downloading it is the person's act;
-    nothing here downloads it."""
+    """The provider and model semantic search uses: the saved choice, else Gemini when its key is set, else the first
+    built-in model in catalog order that is downloaded and checked (D7), else off. A saved built-in choice keeps its
+    model as saved, a catalog id or an earlier model's identity (never remapped; `NO_MODEL` when none was saved).
+    Downloading is the person's act; nothing here downloads or chooses a model."""
     if setting:
         if setting["provider"] == "builtin":
-            # The built-in model is the one this DEIXIS ships: a choice saved for an earlier one (bge-small) stays the
-            # built-in choice, under the new model's identity, so its stored vectors are never read as these.
-            return "builtin", BUILTIN_MODEL
+            return "builtin", setting.get("model") or builtin_catalog.NO_MODEL
         return setting["provider"], setting.get("model")
     if os.environ.get(KEY_ENVS["gemini"]):
         return "gemini", MODEL
-    return ("builtin", BUILTIN_MODEL) if local_embedding.builtin_available() else ("off", None)
+    ready = next((m.id for m in builtin_catalog.of_kind("embedding") if local_embedding.model_available(m.id)), None)
+    return ("builtin", ready) if ready else ("off", None)
+
+
+def builtin_model(model: str | None) -> builtin_catalog.Model | None:
+    """The catalog embedding model a built-in choice or stored identity names; None for an earlier built-in model."""
+    return builtin_catalog.resolve(model, "embedding")
+
+
+def english_only(embedder: "Embedder") -> bool:
+    """Whether this embedder reads English queries only (the Qwen3 models' English instruction); bge-m3 does not."""
+    if embedder.provider != "builtin":
+        return False
+    model = builtin_model(embedder.model)
+    return bool(model and model.english_query_required)
+
+
+def builtin_ready(embedder: "Embedder") -> bool:
+    """Whether the built-in model of this embedder was downloaded and checked now (recorded on its step)."""
+    model = builtin_model(embedder.model)
+    local = embedder.local
+    return bool(model and local is not None and hasattr(local, "available") and local.available(model.id))
 
 
 @dataclass(frozen=True)
 class Embedder:
     provider: str
     model: str
-    local: Any = field(default=None, compare=False)  # documents.local_embedding.LocalEmbedder for "builtin"
+    local: Any = field(default=None, compare=False)  # documents.local_embedding.LocalModels for "builtin"
 
     @property
     def stored_model(self) -> str:
         # Gemini rows written before D29 are stored under the bare model name. Voyage's and Cohere's carry their output
-        # dimension.
+        # dimension. A built-in catalog id is stored as its full identity (file, context, cut, pooling, instruction,
+        # preprocessing and runtime numerics), with the thread suffix a discovery run adds.
         if self.provider == "gemini":
             return self.model
+        if self.provider == "builtin":
+            base, threads = builtin_catalog.split_threads(self.model)
+            model = builtin_catalog.get(base)
+            if model is not None and model.kind == "embedding":
+                base = builtin_catalog.identity(model)
+            return f"builtin:{base}" + (f":threads={threads}" if threads is not None else "")
         dimensions = {"voyage": VOYAGE_DIMENSIONS, "cohere": COHERE_DIMENSIONS}.get(self.provider)
         return f"{self.provider}:{self.model}@{dimensions}" if dimensions else f"{self.provider}:{self.model}"
 
@@ -403,14 +431,17 @@ class Embedder:
         if self.provider == "builtin":
             if self.local is None:
                 raise EmbeddingError("builtin_unavailable: the built-in model is not set up in this process")
-            if self.model.split(":threads=", 1)[0] != local_embedding.MODEL_ID:
-                # A step frozen with an earlier built-in model (bge-small): its vectors are not these, so nothing is
-                # embedded under its name (the next run embeds with the current model).
-                raise EmbeddingError("builtin_model_changed: this step used an earlier built-in model; run it again")
-            threads = self.model.rsplit(":threads=", 1)[1] if ":threads=" in self.model else None
+            model = builtin_model(self.model)
+            if model is None:
+                # An earlier built-in model (bge-small, the D88 PyTorch Qwen3) or an identity no catalog entry has now:
+                # its vectors are not any current model's, so nothing is embedded under its name, and it is never
+                # routed to another model's server.
+                raise EmbeddingError("builtin_model_changed: this step or choice names a built-in model this DEIXIS "
+                                     "no longer runs; choose a built-in model in Settings and run it again")
+            _, threads = builtin_catalog.split_threads(self.model)
             token = local_embedding.RUNNER_THREADS.set(int(threads)) if threads is not None else None
             try:
-                vectors = await self.local.embed(texts, "query" if task_type == "RETRIEVAL_QUERY" else "document", report)
+                vectors = await self.local.embed(model.id, texts, "query" if task_type == "RETRIEVAL_QUERY" else "document", report)
             except local_embedding.LocalEmbeddingError as exc:
                 raise EmbeddingError(str(exc)) from exc
             finally:
@@ -433,22 +464,28 @@ class Embedder:
         return await embed_openai_compatible(client, LOCAL_URLS[self.provider], None, self.model, texts, budget, stop, on_sent)
 
 
-def builtin_option(state: dict[str, Any] | None) -> dict[str, Any]:
-    """The built-in model as a choice: available only when installed and its files passed the last full check and
-    have not changed since (`EmbeddingService.option`)."""
-    state = state or {"available": False, "reason": "Not downloaded", "reason_code": "not_installed",
-                      "last_full_check": None}
-    return {"provider": "builtin", "models": [BUILTIN_MODEL], **state}
+def builtin_options(states: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Each built-in catalog embedding model as a choice of its own: available only when downloaded and its file
+    passed the last full check and has not changed since (`LocalModelService.options`)."""
+    found = {s["model"]: s for s in states or []}
+    result = []
+    for model in builtin_catalog.of_kind("embedding"):
+        state = found.get(model.id) or {"available": False, "reason": "Not downloaded", "reason_code": "not_installed",
+                                        "last_full_check": None}
+        result.append({"provider": "builtin", "model": model.id, "name": model.name, "models": [model.id],
+                       **{k: v for k, v in state.items() if k not in ("model", "name")}})
+    return result
 
 
-def options(local_tools: dict[str, Any], builtin: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    """Each provider with the models it offers now and, when it cannot be chosen, why. Order: Gemini, the built-in
-    model, OpenAI, Voyage, Cohere, Ollama, LM Studio, off (slice 21: Off stays last)."""
+def options(local_tools: dict[str, Any], builtin: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+    """Each provider with the models it offers now and, when it cannot be chosen, why; each built-in catalog model is
+    an entry of its own. Order: Gemini, the built-in models, OpenAI, Voyage, Cohere, Ollama, LM Studio, off (slice 21:
+    Off stays last)."""
     servers = {t["id"]: t for t in local_tools["tools"]}
     result = [
         {"provider": "gemini", "models": [MODEL], "available": bool(os.environ.get(KEY_ENVS["gemini"])),
          "reason": None if os.environ.get(KEY_ENVS["gemini"]) else "Add a Gemini API key"},
-        builtin_option(builtin),
+        *builtin_options(builtin),
         {"provider": "openai", "models": [OPENAI_MODEL], "available": bool(os.environ.get(KEY_ENVS["openai"])),
          "reason": None if os.environ.get(KEY_ENVS["openai"]) else "Add an OpenAI API key"},
         {"provider": "voyage", "models": [VOYAGE_MODEL], "available": bool(os.environ.get(KEY_ENVS["voyage"])),

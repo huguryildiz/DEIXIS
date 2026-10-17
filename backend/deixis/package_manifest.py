@@ -19,11 +19,9 @@ DATAS = (
     ("methods/deixis-research", "methods/deixis-research"),  # domain/skill.py, checked at startup
     ("apps/web/dist", "apps/web/dist"),  # config.Settings.web_dist; built by `npm run build` first
     ("backend/deixis/storage/migrations/*.sql", "deixis/storage/migrations"),
-    ("backend/deixis/documents/embedding-requirements.txt", "deixis/documents"),
     ("backend/deixis/documents/katex_commands.json", "deixis/documents"),
     ("backend/deixis/documents/latex_kernel_names.json", "deixis/documents"),
-    # Scripts run by another Python (the built-in model's and the equation reader's own environments), so read as files.
-    ("backend/deixis/documents/embedding_runner.py", "deixis/documents"),
+    # A script run by another Python (the equation reader's own environment), so read as a file.
     ("backend/deixis/documents/marker_runner.py", "deixis/documents"),
     ("backend/deixis/workflow/report/latex_names.json", "deixis/workflow/report"),
     ("backend/deixis/models/model_prices.json", "deixis/models"),  # workflow/spend.py (F4)

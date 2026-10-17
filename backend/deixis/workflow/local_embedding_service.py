@@ -1,17 +1,22 @@
-"""Installing, checking and removing the built-in embedding model from Settings (slice 21, D103).
+"""Downloading, checking and removing the built-in local models from Settings, one catalog model at a time.
 
-The install is a four-step background job: (1) the environment (`uv venv`, Python 3.12), (2) `uv pip sync` of
-`embedding-requirements.txt` (PyTorch's CPU wheels, Transformers and every dependency pinned with hashes, D20),
-(3) the Qwen3 embedding and reranker files from their pinned revisions, each checked against the manifest, (4) a start
-check: the runner says ready, embeds a known sentence into one 1,024-dimension unit vector and reranks two texts. `installed.json` is written last; an
-environment without it is half-built and is built again. `uv` runs with its cache and its Python under the data
-directory and `UV_PYTHON_PREFERENCE=only-managed`, so the system's Python and `~/.cache` are never touched.
+An install is a three-step background job for one model: (1) the llama.cpp runtime, when it is not in place or its
+server binary does not match its record (`documents/llama_runtime.py`), (2) the model's GGUF file from its pinned
+revision, checked for its byte count and sha256 (a file already in place is checked in full instead of downloaded
+again), (3) a start check: the model's own `llama-server` starts, answers the authenticated probe and is stopped. The
+file's full check is recorded on disk only after the start check passed.
 
-The job lives on disk (`tools/embedding-job.json`, written atomically) and is owned by an OS lock
-(`tools/embedding-install.lock`, `fcntl.flock`), held for the whole job and inherited by the `uv` children, so a DEIXIS
-that dies mid-install leaves the lock held until its last child ends. Only the lock's owner writes the job file. A
-second lock, `tools/embedding-in-use.lock`, is held shared by every runner of every DEIXIS process; install and
-removal take it exclusively and give up (409) when they cannot. The PID in the job file is shown, never trusted.
+One job at a time. It lives on disk (`tools/local-models-job.json`, written atomically) and is owned by an OS lock
+(`tools/local-models-install.lock`, `fcntl.flock`) that covers the runtime and every model file; under it what is
+present is checked again before anything is downloaded, and the leftovers of a stopped install (`*.part`, temporary
+folders) are removed. Each model has an in-use lock (`tools/locks/<id>.lock`) that its servers hold shared; install and
+removal take it exclusively and give up (409) when they cannot. The runtime has one too and is never removed while a
+model file is in place. Nothing here changes a saved choice: Settings stores `(provider, model)` and only the person's
+"Use" changes it.
+
+The earlier PyTorch built-in model (D88: `tools/embedding`, `embedding-models`, `embedding-hf-home`, `uv-python`,
+`uv-cache`) is reported with its measured size and removed only on request.
+
 POSIX only in this slice.
 """
 
@@ -22,58 +27,34 @@ import json
 import logging
 import os
 import shutil
-import subprocess
-from pathlib import Path
 from typing import Any
 
 import httpx
 
-from deixis.storage import library_lock
-from deixis.tools.child_env import UV_TLS, child_env
-from deixis.documents import local_embedding
-from deixis.documents.local_embedding import BuiltinPaths, Integrity, LocalEmbedder, LocalEmbeddingError
+from deixis.documents import builtin_catalog, llama_runtime, local_embedding
+from deixis.documents.builtin_catalog import Model
+from deixis.documents.local_embedding import (BuiltinPaths, LlamaServer, LocalEmbeddingError, LocalModels,
+                                              ModelIntegrity, try_lock)
 from deixis.tools.job_failure import COULD_NOT_RUN, failure_line
-from deixis.tools.tool_paths import find_tool
 
 log = logging.getLogger(__name__)
-INSTALL_TIMEOUT_SECONDS = 60 * 60
+INSTALL_TIMEOUT_SECONDS = 4 * 60 * 60  # the 8 GB reranker on a slow line
 OUTPUT_TAIL_CHARS = 4000
-STEP_NAMES = ("environment", "package", "model_files", "start_check")
+STEP_NAMES = ("runtime", "model_file", "start_check")
 STOPPED = "stopped when DEIXIS closed"
+UNSUPPORTED = "The built-in models are not available on this platform yet"
+REASONS = {"not_installed": "Not downloaded", "failed": "Download failed", "installing": "Downloading",
+           "installing_elsewhere": "Downloading", "files_do_not_match": "Files do not match",
+           "not_checked": "Not checked", "runtime_missing": "llama.cpp is missing", "removing": "Being removed",
+           "remove_failed": "Removal did not finish", "unsupported_platform": UNSUPPORTED}
 
 
 class ServiceError(Exception):
-    """A request the service refuses, with its code (409 in the API)."""
+    """A request the service refuses, with its code (409 in the API; `unknown_model` is 404)."""
 
     def __init__(self, code: str, message: str):
         super().__init__(message)
         self.code = code
-
-
-def _flock(fd: int, flags: int) -> bool:
-    import fcntl
-
-    try:
-        fcntl.flock(fd, flags)
-    except OSError:
-        return False
-    return True
-
-
-def _open_lock(path: Path) -> int:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    return os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
-
-
-def _try_lock(path: Path, exclusive: bool = True) -> int | None:
-    """An open descriptor holding the lock, or None when another holder has it."""
-    import fcntl
-
-    fd = _open_lock(path)
-    if _flock(fd, (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) | fcntl.LOCK_NB):
-        return fd
-    os.close(fd)
-    return None
 
 
 def _release(fd: int | None) -> None:
@@ -82,11 +63,8 @@ def _release(fd: int | None) -> None:
 
 
 async def _to_completion(function: Any, *args: Any) -> Any:
-    """Run a deleting `function` in a worker thread and wait for it to end, even when the caller is cancelled.
-
-    A thread cannot be stopped: were the caller's cancel let through at once, its `finally` would release the install
-    and in-use locks while the thread still deletes, and a new install could start on files being deleted. The cancel
-    is held until the thread has finished, then raised."""
+    """Run a deleting `function` in a worker thread and wait for it to end, even when the caller is cancelled: were
+    the cancel let through at once, the locks would be released while the thread still deletes."""
     future = asyncio.ensure_future(asyncio.to_thread(function, *args))
     cancelled = False
     while not future.done():
@@ -99,26 +77,33 @@ async def _to_completion(function: Any, *args: Any) -> Any:
     return future.result()
 
 
-def _size(root: Path) -> int:
-    total = 0
-    for folder, _, files in os.walk(root):
-        for name in files:
-            try:
-                total += os.lstat(os.path.join(folder, name)).st_size
-            except OSError:
-                pass
-    return total
+async def wait_exclusive(path, seconds: float = 3.0) -> int | None:
+    """LOCK_EX on `path`, waiting a moment for this process's own stopped server to finish exiting; None when another
+    holder keeps it."""
+    loop = asyncio.get_running_loop()
+    ends = loop.time() + seconds
+    while True:
+        fd = try_lock(path, exclusive=True)
+        if fd is not None or loop.time() >= ends:
+            return fd
+        await asyncio.sleep(0.05)
 
 
-class EmbeddingService:
-    def __init__(self, paths: BuiltinPaths, embedder: LocalEmbedder, http: httpx.AsyncClient | None = None):
-        self.paths, self.embedder, self.http = paths, embedder, http
-        self.integrity: Integrity = embedder.integrity
+def _machine() -> dict[str, Any]:
+    from deixis.tools.local_tools import machine
+
+    found = machine()
+    return {"memory_gb": found.get("memory_gb"), "chip": found.get("chip")}
+
+
+class LocalModelService:
+    def __init__(self, paths: BuiltinPaths, models: LocalModels, http: httpx.AsyncClient | None = None):
+        self.paths, self.models, self.http = paths, models, http
         self.job: dict[str, Any] | None = None  # the job this process owns, mirrored in the job file
         self._task: asyncio.Task | None = None
-        self._proc: asyncio.subprocess.Process | None = None
         self._install_fd: int | None = None
-        self._in_use_fd: int | None = None
+        self._model_fd: int | None = None
+        self._checker: LlamaServer | None = None
         self._starting = False  # an install request is between its check and its job: a second one is turned away
 
     # ---- the job file: written only by the install lock's owner ----------------------------
@@ -130,181 +115,175 @@ class EmbeddingService:
 
     def read_job(self) -> dict[str, Any] | None:
         try:
-            return json.loads(self.paths.job_file.read_text())
+            job = json.loads(self.paths.job_file.read_text())
         except (OSError, ValueError):
             return None
+        return job if isinstance(job, dict) else None
 
     def owns_job(self) -> bool:
         return self._task is not None and not self._task.done()
 
-    # ---- start: recovery and the full check ------------------------------------------------
-    async def start(self) -> None:
-        """Clean up after an install a closed DEIXIS left running, then check the files in full (the startup check)."""
-        if not local_embedding.supported():
-            return
-        await asyncio.to_thread(self._recover)
-        if self.paths.installed():
-            await asyncio.to_thread(self.integrity.check_now)
+    @staticmethod
+    def _model(model_id: str | None) -> Model:
+        model = builtin_catalog.get(model_id)
+        if model is None:
+            raise ServiceError("unknown_model", f"'{model_id}' is not a built-in model of this DEIXIS")
+        return model
 
-    def _recover(self, install_fd: int | None = None) -> None:
-        """With the install lock (taken here, or held by the caller) and the in-use lock both free: a job file that says
-        running is marked failed, `*.part` files and a half-built environment are removed. Otherwise nothing is deleted
-        and the job file is left as it is; recovery runs again at the next start or install."""
-        own = install_fd is None
-        fd = _try_lock(self.paths.install_lock) if own else install_fd
+    # ---- start: recovery -------------------------------------------------------------------------
+    async def start(self) -> None:
+        """Clean up after an install a closed DEIXIS left running. The models' last full checks are on disk."""
+        if local_embedding.supported():
+            await asyncio.to_thread(self._recover)
+
+    def _recover(self) -> None:
+        """With the install lock free: a job file that says running is marked failed, `*.part` files and temporary
+        runtime folders are removed. Otherwise nothing is touched; recovery runs again at the next start or install."""
+        fd = try_lock(self.paths.install_lock, exclusive=True)
         if fd is None:
-            return  # another process (or a uv child a dead one left) is installing
+            return  # another process is installing
         try:
+            self._clean()
             job = self.read_job()
-            in_use = _try_lock(self.paths.in_use_lock)
-            if in_use is None:
-                return  # a check runner of a dead install may still hold it: nothing is deleted
-            try:
-                local_embedding.remove_parts(self.paths.models)
-                if job and job.get("status") == "running":
-                    job.update(status="failed", finished_at=local_embedding.now_iso(),
-                               output=((job.get("output") or "") + f"\n{STOPPED}").strip())
-                    self._write_job(job)
-                if self.paths.env.exists() and not self.paths.installed_marker.is_file():
-                    shutil.rmtree(self.paths.env, ignore_errors=True)
-            finally:
-                _release(in_use)
+            if job and job.get("status") == "running":
+                job.update(status="failed", finished_at=llama_runtime.now_iso(),
+                           output=((job.get("output") or "") + f"\n{STOPPED}").strip())
+                self._write_job(job)
         finally:
-            if own:
-                _release(fd)
+            _release(fd)
+
+    def _clean(self) -> None:
+        local_embedding.remove_parts(self.paths)
+        llama_runtime.clean_leftovers(self.paths.runtime)
 
     def _installing_elsewhere(self) -> bool:
         """Whether another process holds the install lock: probed without blocking and released at once."""
         if self.owns_job():
             return False
-        fd = _try_lock(self.paths.install_lock)
+        fd = try_lock(self.paths.install_lock, exclusive=True)
         if fd is None:
             return True
         _release(fd)
         return False
 
     # ---- what Settings shows -----------------------------------------------------------------
-    def option(self) -> dict[str, Any]:
-        """The built-in choice for `embeddings.options`: available, else why not."""
+    def state(self, model_id: str) -> str:
+        model = self._model(model_id)
         if not local_embedding.supported():
-            return {"available": False, "reason": "The built-in model is not available on Windows yet",
-                    "reason_code": "unsupported_platform", "last_full_check": None}
-        state = self._state()
-        reasons = {"not_installed": "Not downloaded", "failed": "Download failed", "installing": "Downloading",
-                   "installing_elsewhere": "Downloading", "files_do_not_match": "Files do not match",
-                   "removing": "Being removed", "remove_failed": "Removal did not finish"}
-        available = self._usable(state)
-        return {"available": available, "reason": None if available else reasons.get(state, "Not downloaded"),
-                "reason_code": None if available else state, "last_full_check": self.integrity.last_full_check()}
-
-    def _state(self) -> str:
-        if self.owns_job():
+            return "unsupported_platform"
+        if self.owns_job() and (self.job or {}).get("model") == model.id:
             return "installing"
-        if self.embedder.removing:
+        if self.models.busy.get(model.id) == "removing":
             return "removing"
-        if self._installing_elsewhere():
+        job = self.read_job() or {}
+        if job.get("model") == model.id and job.get("status") == "running" and self._installing_elsewhere():
             return "installing_elsewhere"
-        if self.paths.installed():
-            if self.paths.outdated():
-                return "update_available"  # D20: shown before a file mismatch, since the update downloads the files too
-            return "ready" if self.integrity.available() else "files_do_not_match"
-        job = self.read_job()
-        if job and job.get("status") == "remove_failed":
-            return "remove_failed"
-        return "failed" if job and job.get("status") == "failed" else "not_installed"
+        if self.paths.installed(model):
+            if self.models.available(model.id):
+                return "ready"
+            if job.get("model") == model.id and job.get("status") in ("failed", "cancelled"):
+                return "failed"
+            if ModelIntegrity(self.paths, model).available():
+                return "runtime_missing"
+            return "files_do_not_match" if ModelIntegrity(self.paths, model).last_full_check() else "not_checked"
+        if job.get("model") == model.id and job.get("status") in ("failed", "remove_failed"):
+            return job["status"]
+        return "not_installed"
 
-    def _usable(self, state: str) -> bool:
-        """An outdated copy stays in use while its files still match: only the package list may have changed."""
-        return state == "ready" or (state == "update_available" and self.integrity.available())
+    def option(self, model_id: str) -> dict[str, Any]:
+        """One catalog model as a choice in `embeddings.options` / `rerankers.options`: available, else why not."""
+        model = self._model(model_id)
+        state = self.state(model.id)
+        available = state == "ready"
+        return {"available": available, "reason": None if available else REASONS.get(state, "Not downloaded"),
+                "reason_code": None if available else state,
+                "last_full_check": ModelIntegrity(self.paths, model).last_full_check()}
+
+    def options(self, kind: str) -> list[dict[str, Any]]:
+        return [{"model": m.id, "name": m.name, **self.option(m.id)} for m in builtin_catalog.of_kind(kind)]
 
     async def status(self) -> dict[str, Any]:
-        if not local_embedding.supported():
-            return {"status": "unsupported_platform"}
-        state = self._state()
+        machine = await asyncio.to_thread(_machine)
+        recommended = builtin_catalog.recommended(machine["memory_gb"])
+        legacy = self.paths.legacy()
+        legacy_bytes = await asyncio.to_thread(lambda: sum(local_embedding.tree_size(p) for p in legacy))
         job = self.job if self.owns_job() else self.read_job()
-        size = await asyncio.to_thread(lambda: sum(_size(p) for p in (
-            self.paths.env, self.paths.models_root, self.paths.uv_cache, self.paths.uv_python, self.paths.hf_home)))
-        uv = await asyncio.to_thread(find_tool, "uv")
+        supported = local_embedding.supported()
+        runtime = self.paths.runtime
+        models = []
+        for model in builtin_catalog.CATALOG:
+            option = self.option(model.id)
+            on_disk = await asyncio.to_thread(local_embedding.tree_size, self.paths.model_dir(model.id))
+            models.append({**model.card(), "state": self.state(model.id), **option,
+                           "recommended": recommended[model.kind] == model.id,
+                           "may_not_fit": bool(machine["memory_gb"] and model.memory_gb > machine["memory_gb"] * 0.5),
+                           "bytes_on_disk": on_disk,
+                           "job": job if job and job.get("model") == model.id else None})
+        pinned = llama_runtime.asset()
         return {
-            "status": state, "installed": self.paths.installed(), "available": self._usable(state),
-            "last_full_check": self.integrity.last_full_check(), "job": job,
-            "model": {"name": local_embedding.MODEL_NAME, "id": local_embedding.MODEL_ID,
-                      "repository": local_embedding.REPOSITORY, "revision": local_embedding.REVISION,
-                      "package": local_embedding.PACKAGE, "files": local_embedding.manifest(),
-                      "device": local_embedding.DEVICE, "max_tokens": local_embedding.LOCAL_MAX_TOKENS},
-            "reranker": {"name": local_embedding.RERANKER_NAME, "id": local_embedding.RERANKER_ID,
-                         "repository": local_embedding.RERANKER_REPOSITORY, "revision": local_embedding.RERANKER_REVISION,
-                         "max_tokens": local_embedding.RERANK_MAX_TOKENS},
-            "sizes": {"runtime_bytes": local_embedding.RUNTIME_BYTES_ESTIMATE, "model_bytes": local_embedding.MODEL_DISK_BYTES,
-                      "python_bytes": local_embedding.PYTHON_BYTES_ESTIMATE},
-            "path": str(self.paths.root), "size_bytes": size,
-            "uv": {"available": bool(uv), "reason": None if uv else "uv_missing",
-                   "url": "https://docs.astral.sh/uv/getting-started/installation/"},
+            "supported": supported, "status": None if supported else "unsupported_platform",
+            "runtime": {"name": "llama.cpp", "tag": llama_runtime.TAG, "installed": runtime.installed(),
+                        "asset": pinned.name if pinned else None, "download_bytes": pinned.bytes if pinned else None,
+                        "bytes": await asyncio.to_thread(runtime.size) if runtime.root.exists() else 0},
+            "models": models, "machine": machine,
+            "recommended": recommended | {"rule": f"the largest Qwen3 model whose estimated memory is at most "
+                                                  f"{int(builtin_catalog.RECOMMEND_SHARE * 100)}% of this computer's "
+                                                  "memory; a starting value, not measured"},
+            "legacy": {"present": bool(legacy), "bytes": legacy_bytes, "paths": [str(p) for p in legacy]},
+            "job": job, "path": str(self.paths.root),
         }
 
     # ---- install --------------------------------------------------------------------------------
-    async def install(self) -> dict[str, Any]:
+    async def install(self, model_id: str) -> dict[str, Any]:
+        model = self._model(model_id)
         if not local_embedding.supported():
-            raise ServiceError("unsupported_platform", "The built-in model is not available on Windows yet")
+            raise ServiceError("unsupported_platform", UNSUPPORTED)
         if self.owns_job() or self._starting:
-            raise ServiceError("install_running", "The built-in model is already being installed")
+            raise ServiceError("install_running", "A built-in model is already being downloaded")
         self._starting = True  # before the first await, so two requests at once start one install
         try:
-            return await self._begin_install()
+            return await self._begin_install(model)
         finally:
             self._starting = False
 
-    async def _begin_install(self) -> dict[str, Any]:
-        import fcntl  # Windows has no fcntl; install() has already refused that platform
-        uv = await asyncio.to_thread(find_tool, "uv")
-        if uv is None:
-            raise ServiceError("uv_missing", "uv was not found on this computer's PATH")
-        if self.paths.installed() and not self.paths.outdated() and self.integrity.available():
-            raise ServiceError("already_installed", "The built-in model is already installed")
-        install_fd = _try_lock(self.paths.install_lock)
+    async def _begin_install(self, model: Model) -> dict[str, Any]:
+        if self.models.available(model.id):
+            raise ServiceError("already_installed", f"{model.name} is already downloaded")
+        install_fd = try_lock(self.paths.install_lock, exclusive=True)
         if install_fd is None:
             raise ServiceError("in_use_by_another_process", "in use by another DEIXIS process")
-        # New requests are turned away and this process's own runner closes once its request has ended, so its shared
-        # hold on the in-use lock is released before the exclusive one is asked for.
-        self.embedder.installing = True
+        # New requests to this model are turned away and this process's own server stops once its request has ended,
+        # so its shared hold on the model's lock is gone before the exclusive one is asked for.
+        self.models.busy[model.id] = "installing"
         try:
-            await self.embedder.close()
-            in_use_fd = _open_lock(self.paths.in_use_lock)
-            if not _flock(in_use_fd, fcntl.LOCK_EX | fcntl.LOCK_NB):
-                os.close(in_use_fd)
+            await self.models.close(model.id)
+            model_fd = await wait_exclusive(self.paths.model_lock(model.id))
+            if model_fd is None:
                 raise ServiceError("in_use_by_another_process", "in use by another DEIXIS process")
         except BaseException:
-            self.embedder.installing = False
+            self.models.busy.pop(model.id, None)
             _release(install_fd)
             raise
-        self._install_fd, self._in_use_fd = install_fd, in_use_fd
+        self._install_fd, self._model_fd = install_fd, model_fd
         try:
-            # A job a closed DEIXIS left running is recovered here, under both locks.
             job = self.read_job()
-            if job and job.get("status") == "running":
-                job.update(status="failed", finished_at=local_embedding.now_iso(),
+            if job and job.get("status") == "running":  # left by a closed DEIXIS: recovered here, under the lock
+                job.update(status="failed", finished_at=llama_runtime.now_iso(),
                            output=((job.get("output") or "") + f"\n{STOPPED}").strip())
                 self._write_job(job)
-            self.job = {"status": "running", "step": 0, "steps": len(STEP_NAMES), "step_name": None,
-                        "started_at": local_embedding.now_iso(), "finished_at": None, "pid": os.getpid(),
-                        "bytes_done": 0, "bytes_total": local_embedding.model_bytes(), "output": ""}
+            runtime_bytes = 0 if self.paths.runtime.installed() else llama_runtime.asset().bytes
+            self.job = {"status": "running", "model": model.id, "step": 0, "steps": len(STEP_NAMES), "step_name": None,
+                        "started_at": llama_runtime.now_iso(), "finished_at": None, "pid": os.getpid(),
+                        "bytes_done": 0, "bytes_total": model.bytes + runtime_bytes, "output": ""}
             self._write_job(self.job)
-        except BaseException as exc:  # a full disk must not leave the locks held and the install stuck (E9)
+        except BaseException as exc:  # a full disk must not leave the locks held and the install stuck
             self._release_locks()
             if isinstance(exc, OSError):
-                raise ServiceError("job_record_failed", f"The install could not start: {exc.strerror or exc}") from exc
+                raise ServiceError("job_record_failed", f"The download could not start: {exc.strerror or exc}") from exc
             raise
-        self._task = asyncio.create_task(self._run(uv))
+        self._task = asyncio.create_task(self._run(model))
         self._task.add_done_callback(self._task_ended)
         return dict(self.job)
-
-    def _uv_env(self, uv: str) -> dict[str, str]:
-        p = self.paths
-        # uv downloads Python and packages; it gets the network settings and no keys (E4).
-        return child_env({"UV_CACHE_DIR": str(p.uv_cache), "UV_PYTHON_INSTALL_DIR": str(p.uv_python),
-                          "UV_PYTHON_BIN_DIR": str(p.uv_python / "bin"), "UV_PYTHON_PREFERENCE": "only-managed",
-                          "UV_NO_CONFIG": "1", "HF_HOME": str(p.hf_home), "PYTHONUNBUFFERED": "1", **UV_TLS},
-                         network=True, tool=uv)
 
     def _step(self, index: int) -> None:
         self.job.update(step=index + 1, step_name=STEP_NAMES[index])
@@ -313,106 +292,78 @@ class EmbeddingService:
     def _output(self, text: str) -> None:
         self.job["output"] = (self.job["output"] + text)[-OUTPUT_TAIL_CHARS:]
 
-    async def _command(self, argv: list[str]) -> None:
-        self._proc = proc = await asyncio.create_subprocess_exec(
-            *argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=self._uv_env(argv[0]),
-            pass_fds=(self._install_fd, *library_lock.child_fds()))  # the install and folder locks outlive DEIXIS for as long as uv runs
-        assert proc.stdout is not None
-        # In chunks (E18): a very long line neither stops the read nor grows memory; `_output` keeps the tail.
-        while chunk := await proc.stdout.read(64 * 1024):
-            self._output(chunk.decode("utf-8", "replace"))
-        code = await proc.wait()
-        self._proc = None
-        if code != 0:
-            raise RuntimeError(f"{Path(argv[0]).name} {argv[1]} ended with exit code {code}")
-
-    async def _run(self, uv: str) -> None:
+    async def _run(self, model: Model) -> None:
         import fcntl
 
-        p = self.paths
         status = "failed"
+        http = self.http or httpx.AsyncClient()
+        base = 0
+
+        def progress(done: int) -> None:
+            self.job["bytes_done"] = base + done
+
         try:
             async with asyncio.timeout(INSTALL_TIMEOUT_SECONDS):
-                p.root.mkdir(parents=True, exist_ok=True)
-
-                def clean() -> None:  # off the event loop: a half-built environment can be large
-                    local_embedding.remove_parts(p.models)
-                    if p.env.exists() and not p.installed_marker.is_file():
-                        shutil.rmtree(p.env, ignore_errors=True)  # half-built: built again
-                    p.installed_marker.unlink(missing_ok=True)  # "installed" again only once this job has passed
-                await _to_completion(clean)
+                await _to_completion(self._clean)
                 self._step(0)
-                await self._command([uv, "venv", "--allow-existing", "--python", local_embedding.PYTHON_VERSION, str(p.env)])
+                runtime = self.paths.runtime
+                if not (runtime.installed() and await asyncio.to_thread(runtime.server_matches)):
+                    runtime_fd = try_lock(self.paths.runtime_lock, exclusive=True)
+                    if runtime_fd is None:
+                        raise RuntimeError("llama.cpp is in use by another model's server and does not match its "
+                                           "record; close DEIXIS's other windows and try again")
+                    try:
+                        await _to_completion(llama_runtime.clean_leftovers, runtime)
+                        await llama_runtime.install(http, runtime, progress)
+                    finally:
+                        _release(runtime_fd)
+                    self._output(f"llama.cpp {llama_runtime.TAG} in place\n")
+                    base = self.job["bytes_done"]
                 self._step(1)
-                await self._command([uv, "pip", "sync", "--python", str(p.python), "--torch-backend",
-                                     local_embedding.TORCH_BACKEND, str(local_embedding.REQUIREMENTS)])
-                self._step(2)
-
-                def progress(done: int, total: int) -> None:
-                    self.job.update(bytes_done=done, bytes_total=total)
-
-                http = self.http or httpx.AsyncClient()
-                try:
-                    await local_embedding.download_model(http, p.models, progress)
-                finally:
-                    if self.http is None:
-                        await http.aclose()
+                integrity = ModelIntegrity(self.paths, model)
+                integrity.reset()  # "checked" again only once this job has passed
+                target = self.paths.model_file(model)
+                if target.is_file() and await asyncio.to_thread(
+                        llama_runtime.file_matches, target, model.bytes, model.sha256):
+                    self._output(f"{model.file} already in place and whole\n")
+                else:
+                    await llama_runtime.download(http, model.url, target, model.bytes, model.sha256, progress)
+                self.job["bytes_done"] = self.job["bytes_total"]
                 self._write_job(self.job)
-                self._step(3)
-                # The files are written: the exclusive hold goes down to shared, and the check runner inherits it.
-                fcntl.flock(self._in_use_fd, fcntl.LOCK_SH)
-                checker = LocalEmbedder(p, self.integrity, runner=self.embedder.runner, python=self.embedder.python)
+                self._step(2)
+                # The file is written: the exclusive hold goes down to shared, and the check server inherits it.
+                fcntl.flock(self._model_fd, fcntl.LOCK_SH)
+                self._checker = LlamaServer(self.paths, model, self.models.client)
                 try:
-                    await checker.start(lock_fd=self._in_use_fd)
-                    info = checker.ready_info or {}
-                    self._output(f"runner ready: torch {info.get('torch')}, transformers {info.get('transformers')}, "
-                                 f"device {info.get('device')}\n")
-                    (vector,) = await checker.embed([local_embedding.CHECK_SENTENCE], "query")
-                    norm = sum(v * v for v in vector) ** 0.5
-                    if abs(norm - 1.0) > 1e-3:
-                        raise RuntimeError(f"the check sentence's vector has length {norm:.4f}, not 1")
-                    # Only that the reranker loads and answers with two probabilities; its quality is not checked.
-                    scores, _ = await checker.rerank(local_embedding.CHECK_SENTENCE, [local_embedding.CHECK_SENTENCE, "ready"],
-                                                     local_embedding.SECONDS_PER_BATCH_LIMIT)
-                    self._output(f"reranker ready: {len(scores)} scores\n")
+                    await self._checker.start(lock_fd=self._model_fd)
+                    self._output(f"llama-server answered the {'embedding' if model.kind == 'embedding' else 'rerank'} probe\n")
                 finally:
-                    await checker.close()
-                if not await asyncio.to_thread(self.integrity.check_now):
-                    raise RuntimeError("the model files do not match after the install")
-                marker = {"model": local_embedding.MODEL_ID, "reranker": local_embedding.RERANKER_ID,
-                          "repository": local_embedding.REPOSITORY, "revision": local_embedding.REVISION,
-                          "reranker_repository": local_embedding.RERANKER_REPOSITORY,
-                          "reranker_revision": local_embedding.RERANKER_REVISION, "package": local_embedding.PACKAGE,
-                          "requirements": local_embedding.requirements_digest(),
-                          "torch": info.get("torch"), "transformers": info.get("transformers"), "device": info.get("device"),
-                          "installed_at": local_embedding.now_iso()}
-                partial = p.installed_marker.with_suffix(".json.tmp")
-                partial.write_text(json.dumps(marker))
-                os.replace(partial, p.installed_marker)  # the last file an install writes
-                for old in p.models_root.iterdir():  # an earlier revision's files, left by an update (D20)
-                    if old.is_dir() and old != p.models:
-                        await _to_completion(shutil.rmtree, old, True)
+                    await self._checker.stop()
+                    self._checker = None
+                integrity.record(True)  # the download (or the full check above) hashed the file in full
                 status = "succeeded"
         except asyncio.CancelledError:
             status = "cancelled"
             self._output("\nCancelled.")
         except TimeoutError:
-            self._output("\nStopped after 60 minutes.")
-        except (LocalEmbeddingError, local_embedding.DownloadError, RuntimeError, OSError, ValueError) as exc:
-            self._output("\n" + failure_line(exc, "The built-in model install"))
-        except Exception as exc:  # noqa: BLE001 - shown to the person as the failed step's output
+            self._output(f"\nStopped after {INSTALL_TIMEOUT_SECONDS // 3600} hours.")
+        except (LocalEmbeddingError, llama_runtime.DownloadError, llama_runtime.UnsafeArchive, RuntimeError, OSError,
+                ValueError) as exc:
+            self._output("\n" + failure_line(exc, "The built-in model download"))
+        except Exception:  # noqa: BLE001 - shown to the person as the failed step's output
             log.exception("built-in model install failed")
             self._output("\n" + COULD_NOT_RUN)
         finally:
             try:
                 try:
-                    if self._proc and self._proc.returncode is None:
-                        self._proc.kill()
-                        await self._proc.wait()
-                    self._proc = None
-                    await _to_completion(local_embedding.remove_parts, p.models)
+                    if self._checker is not None:
+                        await self._checker.kill()
+                        self._checker = None
+                    if self.http is None:
+                        await http.aclose()
+                    await _to_completion(local_embedding.remove_parts, self.paths)
                 finally:
-                    self.job.update(status=status, finished_at=local_embedding.now_iso())
+                    self.job.update(status=status, finished_at=llama_runtime.now_iso())
                     try:
                         self._write_job(self.job)
                     except OSError:  # a full disk: the locks below are still released
@@ -421,11 +372,11 @@ class EmbeddingService:
                 self._release_locks()
 
     def _task_ended(self, task: asyncio.Task) -> None:
-        """A task cancelled before its first step never runs `_run`, so its `finally` never lets go of the locks: this does
-        (E9). When `_run` did run, its `finally` has released them already and nothing is left to do."""
-        if self._install_fd is None and self._in_use_fd is None:
+        """A task cancelled before its first step never runs `_run`, so its `finally` never lets go of the locks: this
+        does. When `_run` did run, its `finally` has released them already."""
+        if self._install_fd is None and self._model_fd is None:
             return
-        self.job.update(status="cancelled" if task.cancelled() else "failed", finished_at=local_embedding.now_iso())
+        self.job.update(status="cancelled" if task.cancelled() else "failed", finished_at=llama_runtime.now_iso())
         try:
             self._write_job(self.job)
         except OSError:
@@ -433,28 +384,28 @@ class EmbeddingService:
         self._release_locks()
 
     def _release_locks(self) -> None:
-        """Let go of the install and in-use locks and reopen the embedder; independent of any job-record write (E9)."""
-        _release(self._in_use_fd)
+        _release(self._model_fd)
         _release(self._install_fd)
-        self._install_fd = self._in_use_fd = None
-        self.embedder.installing = False
+        self._install_fd = self._model_fd = None
+        if self.job:
+            self.models.busy.pop(self.job.get("model"), None)
 
-    async def check(self) -> dict[str, Any]:
-        """Check for updates (D20): compare the installed copy with what this DEIXIS pins and hash its files again.
-        Nothing is fetched online; a newer model or package list arrives with a newer DEIXIS."""
+    async def check(self, model_id: str) -> dict[str, Any]:
+        """Check files: hash the model file in full against its pin and the runtime's server against its record.
+        Nothing is fetched online; a newer model arrives with a newer DEIXIS."""
+        model = self._model(model_id)
         if not local_embedding.supported():
-            raise ServiceError("unsupported_platform", "The built-in model is not available on Windows yet")
-        if self.owns_job() or self.embedder.removing or not self.paths.installed():
-            raise ServiceError("not_installed", "The built-in model is not installed")
-        await asyncio.to_thread(self.integrity.check_now)
+            raise ServiceError("unsupported_platform", UNSUPPORTED)
+        if (self.owns_job() and (self.job or {}).get("model") == model.id) or model.id in self.models.busy \
+                or not self.paths.installed(model):
+            raise ServiceError("not_installed", f"{model.name} is not downloaded")
+        await asyncio.to_thread(ModelIntegrity(self.paths, model).check_now)
         return await self.status()
 
     async def cancel(self) -> dict[str, Any]:
         if not local_embedding.supported():
-            raise ServiceError("unsupported_platform", "The built-in model is not available on Windows yet")
+            raise ServiceError("unsupported_platform", UNSUPPORTED)
         if self.owns_job():
-            if self._proc and self._proc.returncode is None:
-                self._proc.kill()
             self._task.cancel()
             try:
                 await self._task
@@ -462,52 +413,95 @@ class EmbeddingService:
                 pass
             return dict(self.job)
         if self._installing_elsewhere():
-            raise ServiceError("in_use_by_another_process", "The install runs in another DEIXIS process")
-        raise ServiceError("no_install_running", "The built-in model is not being installed")
+            raise ServiceError("in_use_by_another_process", "The download runs in another DEIXIS process")
+        raise ServiceError("no_install_running", "No built-in model is being downloaded")
 
     # ---- remove ---------------------------------------------------------------------------------
-    async def remove(self) -> None:
-        """Delete the environment and the model files. Similarities and vectors already stored stay (D29).
-
-        A file that cannot be deleted is not hidden: the job file says `remove_failed` with what stayed, Settings shows
-        it, and the request fails with 409 `remove_incomplete`."""
+    async def remove(self, model_id: str) -> None:
+        """Delete one model's file. Similarities, vectors and scores already stored stay (D29). The runtime goes too
+        when no model file is left. A file that cannot be deleted is not hidden: the job file says `remove_failed`."""
+        model = self._model(model_id)
         if not local_embedding.supported():
-            raise ServiceError("unsupported_platform", "The built-in model is not available on Windows yet")
-        import fcntl  # after the platform check: Windows has no fcntl
+            raise ServiceError("unsupported_platform", UNSUPPORTED)
         if self.owns_job():
-            raise ServiceError("install_running", "The built-in model is being installed")
-        install_fd = _try_lock(self.paths.install_lock)
+            raise ServiceError("install_running", "A built-in model is being downloaded")
+        install_fd = try_lock(self.paths.install_lock, exclusive=True)
         if install_fd is None:
             raise ServiceError("in_use_by_another_process", "in use by another DEIXIS process")
-        # Before any await: from here every new request is turned away without a lock or a process.
-        self.embedder.removing = True
-        in_use_fd = None
+        self.models.busy[model.id] = "removing"  # before any await: new requests are turned away from here
+        model_fd = None
         try:
-            await self.embedder.close()
-            in_use_fd = _open_lock(self.paths.in_use_lock)
-            if not _flock(in_use_fd, fcntl.LOCK_EX | fcntl.LOCK_NB):
+            await self.models.close(model.id)
+            model_fd = await wait_exclusive(self.paths.model_lock(model.id))
+            if model_fd is None:
                 raise ServiceError("in_use_by_another_process", "in use by another DEIXIS process")
-            self.integrity.reset()
-            self.job = None
-            left = await _to_completion(local_embedding.remove_files, self.paths)
+            left = await _to_completion(local_embedding.remove_model_files, self.paths, model)
             if left:
-                self._write_job({"status": "remove_failed", "step": 0, "steps": len(STEP_NAMES), "step_name": None,
-                                 "started_at": None, "finished_at": local_embedding.now_iso(), "pid": os.getpid(),
-                                 "output": "Could not delete:\n" + "\n".join(left[:20])})
+                self._write_job({"status": "remove_failed", "model": model.id, "step": 0, "steps": len(STEP_NAMES),
+                                 "step_name": None, "started_at": None, "finished_at": llama_runtime.now_iso(),
+                                 "pid": os.getpid(), "output": "Could not delete:\n" + "\n".join(left[:20])})
                 raise ServiceError("remove_incomplete", f"{len(left)} file(s) could not be deleted, for example {left[0]}")
-            self.paths.job_file.unlink(missing_ok=True)
+            job = self.read_job()
+            if job and job.get("model") == model.id:
+                self.paths.job_file.unlink(missing_ok=True)
+            if not any(self.paths.installed(m) for m in builtin_catalog.CATALOG):
+                await self._remove_runtime()
         finally:
-            self.embedder.removing = False
+            self.models.busy.pop(model.id, None)
+            _release(model_fd)
+            _release(install_fd)
+
+    async def _remove_runtime(self) -> None:
+        """The runtime goes with the last model, unless a server still holds it (it is then left for next time)."""
+        runtime_fd = try_lock(self.paths.runtime_lock, exclusive=True)
+        if runtime_fd is None:
+            return
+        try:
+            await _to_completion(shutil.rmtree, self.paths.runtime.root, True)
+        finally:
+            _release(runtime_fd)
+
+    async def remove_legacy(self) -> dict[str, Any]:
+        """Delete what the earlier PyTorch built-in model (D88) left, on the person's request only. Its locks are
+        taken exclusively first, so an older DEIXIS still running it is not pulled from under its feet."""
+        if not local_embedding.supported():
+            raise ServiceError("unsupported_platform", UNSUPPORTED)
+        root = self.paths.root
+        install_fd = try_lock(root / "embedding-install.lock", exclusive=True) if (root / "embedding-install.lock").exists() else None
+        in_use_fd = try_lock(root / "embedding-in-use.lock", exclusive=True) if (root / "embedding-in-use.lock").exists() else None
+        busy = ((root / "embedding-install.lock").exists() and install_fd is None) or \
+               ((root / "embedding-in-use.lock").exists() and in_use_fd is None)
+        try:
+            if busy:
+                raise ServiceError("in_use_by_another_process", "the earlier built-in model is in use by another DEIXIS")
+            failed: list[str] = []
+
+            def delete() -> None:
+                for path in self.paths.legacy():
+                    if path.name.endswith(".lock"):
+                        continue
+                    if path.is_dir() and not path.is_symlink():
+                        shutil.rmtree(path, onexc=lambda _f, p, _e: failed.append(str(p)))
+                    else:
+                        try:
+                            path.unlink()
+                        except OSError:
+                            failed.append(str(path))
+            await _to_completion(delete)
+            if failed:
+                raise ServiceError("remove_incomplete", f"{len(failed)} file(s) could not be deleted, for example {failed[0]}")
+        finally:
             _release(in_use_fd)
             _release(install_fd)
+        for name in ("embedding-install.lock", "embedding-in-use.lock"):
+            (root / name).unlink(missing_ok=True)
+        return await self.status()
 
     async def stop(self) -> None:
         if self.owns_job():
-            if self._proc and self._proc.returncode is None:
-                self._proc.kill()
             self._task.cancel()
             try:
                 await self._task
             except asyncio.CancelledError:
                 pass
-        await self.embedder.close()
+        await self.models.close()

@@ -147,7 +147,7 @@ def child_env(home: Path, **extra: str) -> dict[str, str]:
     env = {"PATH": path, "HOME": str(home), "PYTHONPATH": f"{REPO / 'backend'}:{REPO}",
            "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring"}
     for name, value in extra.items():
-        assert name.startswith("P9_") or name in ("DEIXIS_DATA_DIR", "FAKE_RUNNER", "DEIXIS_CHILD_LIFETIME_SECONDS"), name
+        assert name.startswith("P9_") or name in ("DEIXIS_DATA_DIR", "FAKE_LLAMA", "DEIXIS_CHILD_LIFETIME_SECONDS"), name
         env[name] = value
     return env
 

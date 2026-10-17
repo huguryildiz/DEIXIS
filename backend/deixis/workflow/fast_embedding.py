@@ -39,8 +39,7 @@ class Consumer:
             self.identity = flow._identity(self.embedder, origin) | {"threads": run["budget"]["fast_path"]["embedding_threads"]}
             # Whether the built-in model was installed and its files checked when this step ran: the transcript
             # reads it from the step, never from what Settings say later (D103, decision 5).
-            integrity = getattr(self.embedder.local, "integrity", None)
-            self.identity["model_installed"] = bool(integrity and integrity.available())
+            self.identity["model_installed"] = embeddings.builtin_ready(self.embedder)
         self.identity |= {"fast_path_queue": 1, "embedding_off_reason":
                           "embedding_off" if self.embedder is None else english_question.MISSING if self.query is None else None}
         if self.step is None:

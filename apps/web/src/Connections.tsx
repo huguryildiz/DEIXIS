@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
 import { DataLocationCard } from './DataLocation'
-import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinEmbedding, type Connections, type Credentials, type KeyEntry, type KeyTest, type Keychain, type EquationReader, type LocalTool, type Mathpix, type OllamaUpdates, type OcrTool, type PdfReader, type ToolUpdate, type LocalTools, type ProviderTest, type ModelHealth, type ReferenceImport, type Reranking, type RerankProvider, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
+import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinModel, type BuiltinModels, type Connections, type Credentials, type KeyEntry, type KeyTest, type Keychain, type EquationReader, type LocalTool, type Mathpix, type OllamaUpdates, type OcrTool, type PdfReader, type ToolUpdate, type LocalTools, type ProviderTest, type ModelHealth, type ReferenceImport, type Reranking, type RerankProvider, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
 import { useToast } from './Toast'
 import { ocrLanguagesText } from './ocr'
 import { t, uiLocale } from './i18n'
@@ -930,79 +930,177 @@ function ModelCatalogue({ model }: { model: ModelHealth }) {
   </>
 }
 
-// The built-in embedding model (slice 21): disk sizes before the download, the job's steps while it runs, then ready
-// with the time of the last full file check. Downloaded, checked and ready are told apart; sizes are disk sizes.
+// The built-in models (llama.cpp, a catalog of GGUF files): one card per catalog model of a kind, laid out like the
+// Ollama sheet's suggested models, and one sheet per model with its files (download, progress, check, remove) and the
+// button that chooses it. The recommendation is the backend's starting rule from this computer's memory, not measured.
 const builtinSteps: Record<string, string> = {
-  environment: 'Creating its Python environment…', package: 'Installing PyTorch and Transformers…',
-  model_files: 'Downloading the model files…', start_check: 'Checking that the model starts and answers…',
+  runtime: 'Downloading llama.cpp…', model_file: 'Downloading the model file…', start_check: 'Checking that the model starts and answers…',
+}
+const builtinStateText: Record<string, string> = {
+  not_installed: 'Not downloaded', installing: 'Downloading', installing_elsewhere: 'Downloading', ready: 'Ready', failed: 'Download failed',
+  files_do_not_match: 'Files do not match', not_checked: 'Not checked', runtime_missing: 'llama.cpp is missing', removing: 'Being removed',
+  remove_failed: 'Removal did not finish', unsupported_platform: 'Not available on this platform',
 }
 const aboutMb = (bytes: number) => Math.round(bytes / 1e6)
 // A translated template whose {name} placeholders are identifiers (model IDs, package names), shown in mono.
 const withCode = (template: string, vars: Record<string, string>): ReactNode =>
   template.split(/\{(\w+)\}/).map((part, i) => i % 2 ? <code key={i} className="model-id">{vars[part] ?? part}</code> : part)
+const lastLines = (output: string) => output.split('\n').map(line => line.trim()).filter(Boolean).slice(-3)
+const builtinProgress = (m: BuiltinModel) => {
+  const job = m.job
+  return job?.bytes_total ? Math.min(100, Math.round((job.bytes_done ?? 0) / job.bytes_total * 100)) : undefined
+}
+// The card's pill: "In use" only when the saved provider and model are both this one.
+function builtinPill(m: BuiltinModel, inUse: boolean): [Tone, string] {
+  if (m.state === 'installing' && m.job?.bytes_total) return ['no', t('Downloading {done} of {total} MB', { done: aboutMb(m.job.bytes_done ?? 0), total: aboutMb(m.job.bytes_total) })]
+  if (m.state === 'ready') return ['ok', t(inUse ? 'In use' : 'Ready')]
+  if (m.state === 'failed' || m.state === 'files_do_not_match' || m.state === 'remove_failed' || m.state === 'runtime_missing') return ['warn', t(builtinStateText[m.state])]
+  return ['no', t(builtinStateText[m.state] ?? 'Not downloaded')]
+}
 
-function BuiltinEmbeddingPanel({ builtin, dark, onChanged }: { builtin: BuiltinEmbedding; dark: boolean; onChanged: () => Promise<void> }) {
+function BuiltinCatalog({ builtin, kind, inUse, onOpen }: { builtin: BuiltinModels; kind: BuiltinModel['kind']; inUse: string | null; onOpen: (id: string) => void }) {
+  const memory = builtin.machine.memory_gb
+  return <ul className="ollama-cards builtin-cards" data-kind={kind}>{builtin.models.filter(m => m.kind === kind).map(m => {
+    const [tone, pill] = builtinPill(m, m.id === inUse)
+    const percent = m.state === 'installing' ? builtinProgress(m) : undefined
+    return <li key={m.id}>
+      <button type="button" className={`ollama-card builtin-card${m.may_not_fit ? ' is-tight' : ''}${m.id === inUse ? ' on' : ''}`} onClick={() => onOpen(m.id)}>
+        <span className="ollama-card-head"><b><code className="model-id">{m.name}</code></b><span className="ollama-card-param">{m.params}</span></span>
+        <small title={m.file}>{m.maker} · <code className="model-id">{m.file}</code></small>
+        {(m.recommended || !m.official) && <span className="builtin-tags">
+          {m.recommended && <span className="st rec" title={t('Picked from this computer’s memory by a starting rule, not measured.')}>{t('Recommended for this computer')}</span>}
+          {!m.official && <span className="builtin-tag">{t('Community conversion')}</span>}
+        </span>}
+        <span className="ollama-card-foot">
+          <span className="ollama-card-size">{m.may_not_fit ? <TriangleAlert size={12} aria-hidden /> : <MemoryStick size={12} aria-hidden />}{t('{size} · about {need} GB memory', { size: formatBytes(m.bytes), need: m.memory_gb })}</span>
+          {memory != null && <span className="ollama-card-meter" aria-hidden><span style={{ width: `${Math.min(100, m.memory_gb / memory * 100)}%` }} /></span>}
+          {m.may_not_fit && <span className="builtin-fit">{t('May not fit in this computer’s {memory} GB of memory', { memory: memory ?? '' })}</span>}
+          {percent != null && <span className="install-progress-bar is-determinate" aria-hidden><span style={{ width: `${percent}%` }} /></span>}
+          <span className={`st ${tone}`}>{pill}</span>
+        </span>
+      </button>
+    </li>
+  })}</ul>
+}
+
+// A model's sheet: what it is, its files and the section that chooses it (given by the semantic search or reranking section).
+function BuiltinModelSheet({ builtin, model, dark, use, onClose, onChanged }: {
+  builtin: BuiltinModels; model: BuiltinModel | null; dark: boolean; use: ReactNode; onClose: () => void; onChanged: () => Promise<void>
+}) {
+  return <Sheet open={!!model} onOpenChange={next => { if (!next) onClose() }}>
+    <SheetContent className={`detail-sheet connection-sheet ${dark ? 'dark' : ''}`}>
+      {model && <>
+        <SheetHeader className="sheet-head">
+          <span className="sheet-mark" aria-hidden>{settingsIcon('builtin')}</span>
+          <div className="sheet-head-text">
+            <SheetTitle>{model.name}</SheetTitle>
+            <SheetDescription>{t(model.kind === 'embedding' ? 'Semantic search' : 'Reranking')}</SheetDescription>
+          </div>
+        </SheetHeader>
+        <div className="connection-body mk pad detail">
+          <p className="foot-note is-ink">{model.kind === 'embedding'
+            ? (model.english_query_required
+              ? withCode(t('{model} · reads English; for a question in another language it asks for one English sentence'), { model: model.name })
+              : withCode(t('{model} · reads questions in many languages'), { model: model.name }))
+            : withCode(t('{model} · runs on this computer; no text leaves it'), { model: model.name })}</p>
+          <BuiltinModelFiles builtin={builtin} model={model} dark={dark} onChanged={onChanged} />
+          {use}
+        </div>
+      </>}
+    </SheetContent>
+  </Sheet>
+}
+
+function BuiltinModelFiles({ builtin, model: m, dark, onChanged }: { builtin: BuiltinModels; model: BuiltinModel; dark: boolean; onChanged: () => Promise<void> }) {
   const [confirm, setConfirm] = useState<'install' | 'remove' | null>(null)
   const [busy, setBusy] = useState(false)
-  const [upToDate, setUpToDate] = useState(false)
   const toast = useToast()
   function run(action: () => Promise<unknown>) {
     setBusy(true)
     action().then(() => { setConfirm(null); return onChanged() }).catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
   }
-  if (builtin.status === 'unsupported_platform') return <p className="way-desc">{t('The built-in model is not available on Windows yet')}</p>
-  const { sizes, job } = builtin
-  const running = builtin.status === 'installing'
-  const failed = !running && job?.status === 'failed' && builtin.status !== 'ready'
-  const sizeVars = { total: aboutMb(sizes.runtime_bytes + sizes.model_bytes), runtime: aboutMb(sizes.runtime_bytes), model: aboutMb(sizes.model_bytes), python: aboutMb(sizes.python_bytes) }
-  const checked = builtin.last_full_check ? new Date(builtin.last_full_check.at).toLocaleString(uiLocale(), { dateStyle: 'medium', timeStyle: 'short' }) : null
-  const canDownload = !running && builtin.status !== 'ready' && builtin.status !== 'installing_elsewhere' && builtin.status !== 'removing'
+  const job = m.job
+  const state = m.state
+  const running = state === 'installing'
+  const installed = m.bytes_on_disk > 0 || ['ready', 'not_checked', 'files_do_not_match', 'runtime_missing'].includes(state)
+  const otherRunning = builtin.models.some(o => o.id !== m.id && (o.state === 'installing' || o.state === 'installing_elsewhere'))
+  const canDownload = ['not_installed', 'failed', 'files_do_not_match', 'runtime_missing'].includes(state)
+  const runtime = builtin.runtime
+  const checked = m.last_full_check ? new Date(m.last_full_check.at).toLocaleString(uiLocale(), { dateStyle: 'medium', timeStyle: 'short' }) : null
   const stepName = job ? t(builtinSteps[job.step_name ?? ''] ?? '') : ''
-  // Laid out like a connection way in the Models sheets: a head with the state, then what is installed and the actions.
-  const [tone, state]: [Tone, string] = builtin.status === 'ready' ? ['ok', t('Ready')] : builtin.status === 'update_available' ? ['warn', t('Update available')]
-    : running ? ['no', t('Downloading…')] : ['no', t('Not downloaded')]
-  return <section className={`way semantic-builtin ${builtin.status === 'ready' ? 'is-on' : ''}`} aria-label={t('Model files')}>
-    <div className="way-head"><h3>{t('Model files')}</h3><span className={`st ${tone}`}>{state}</span></div>
-    {builtin.status === 'ready' && <p className="way-desc">{checked ? t('Files checked {time}, at install and each time the model starts.', { time: checked }) : t('Files checked at install and each time the model starts.')}</p>}
-    {builtin.status === 'ready' && upToDate && <p className="way-desc" role="status">{t('No update: you have the model this version of DEIXIS uses. Updates come with new versions of DEIXIS.')}</p>}
-    {builtin.status === 'update_available' && <>
-      <p className="way-desc">{builtin.available
-        ? t('This version of DEIXIS uses a newer copy of the model. The installed copy stays in use until you update.')
-        : t('This version of DEIXIS uses a newer copy of the model. The installed copy is not used until you update.')}</p>
-    </>}
-    {(builtin.status === 'ready' || builtin.status === 'update_available') && <p className="way-desc">{withCode(t('Installed: the {model} model, {package} and a Python 3.12 of its own, in the DEIXIS data folder.'), { model: 'Qwen3-Embedding-0.6B + Qwen3-Reranker-0.6B', package: 'PyTorch, Transformers' })}</p>}
-    {builtin.status === 'files_do_not_match' && <p className="local-tool-error">{t('The model files do not match the checked copy, so the model is not used. Download them again.')}</p>}
-    {builtin.status === 'installing_elsewhere' && <p className="way-desc">{t('Another running copy of DEIXIS is downloading it.')}</p>}
-    {builtin.status === 'removing' && <p className="way-desc">{t('Being removed…')}</p>}
-    {builtin.status === 'remove_failed' && <>
+  const [tone, pill] = builtinPill(m, false)
+  const runtimeExtra = !runtime.installed && runtime.download_bytes ? runtime.download_bytes : 0
+  const memory = builtin.machine.memory_gb
+  if (state === 'unsupported_platform') return <section className="way semantic-builtin" aria-label={t('Model files')}>
+    <div className="way-head"><h3>{t('Model files')}</h3><span className="st no">{t(builtinStateText[state])}</span></div>
+    <p className="way-desc">{t('The built-in models are not available on this platform yet.')}</p>
+  </section>
+  return <section className={`way semantic-builtin ${state === 'ready' ? 'is-on' : ''}`} aria-label={t('Model files')}>
+    <div className="way-head"><h3>{t('Model files')}</h3><span className={`st ${tone}`}>{pill}</span></div>
+    {m.recommended && <p className="way-desc builtin-rec"><span className="st rec">{t('Recommended for this computer')}</span> {t('Picked from this computer’s memory by a starting rule, not measured.')}</p>}
+    {state === 'ready' && <p className="way-desc">{checked ? t('Files checked {time}, at install and with Check files.', { time: checked }) : t('Files checked at install and with Check files.')}</p>}
+    {state === 'not_checked' && <p className="way-desc">{t('The file is in place but has not been checked yet. Check files reads it in full.')}</p>}
+    {state === 'files_do_not_match' && <p className="local-tool-error">{t('The model file does not match its pinned copy, so the model is not used. Download it again.')}</p>}
+    {state === 'runtime_missing' && <p className="local-tool-error">{t('llama.cpp, which runs the model, is missing or changed. Download again to put it back; the model file is kept if it is whole.')}</p>}
+    {state === 'installing_elsewhere' && <p className="way-desc">{t('Another running copy of DEIXIS is downloading it.')}</p>}
+    {state === 'removing' && <p className="way-desc">{t('Being removed…')}</p>}
+    {state === 'remove_failed' && <>
       <p className="local-tool-error">{t('Removal did not finish: some files could not be deleted.')}</p>
       {(job?.output ?? '').split('\n').filter(Boolean).slice(0, 4).map((line, i) => <p key={i} className="local-tool-error">{line}</p>)}
     </>}
-    {canDownload && builtin.status !== 'update_available' && <p className="way-desc">{t('Needs about {total} MB of disk, plus about {python} MB if Python 3.12 has to be downloaded, plus room for a download cache.', sizeVars)}</p>}
-    {running && job && <p className="way-desc local-tool-progress-head" role="status"><LoaderCircle size={14} className="chat-spin" aria-hidden />
-      {t('Step {step} of {steps}: {what}', { step: job.step, steps: job.steps, what: stepName })}
-      {job.step_name === 'model_files' && job.bytes_total ? ` ${t('{done} of {total} MB', { done: aboutMb(job.bytes_done ?? 0), total: aboutMb(job.bytes_total) })}` : ''}</p>}
-    {failed && job && <>
+    {running && job && <InstallProgress percent={builtinProgress(m)} label={t('Step {step} of {steps}: {what}', { step: job.step, steps: job.steps, what: stepName })
+      + (job.bytes_total && job.step_name !== 'start_check' ? ` ${t('{done} of {total} MB', { done: aboutMb(job.bytes_done ?? 0), total: aboutMb(job.bytes_total) })}` : '')} />}
+    {state === 'failed' && job && <>
       <p className="local-tool-error">{t('Download failed at step {step} of {steps}: {what}', { step: job.step, steps: job.steps, what: stepName })}</p>
-      {errorLines(job.output).map((line, i) => <p key={i} className="local-tool-error">{line}</p>)}
+      {lastLines(job.output).map((line, i) => <p key={i} className="local-tool-error">{line}</p>)}
     </>}
-    {!running && job?.status === 'cancelled' && builtin.status !== 'ready' && <p className="way-desc">{t('Download cancelled.')}</p>}
-    {job?.output && (failed || running) && <details className="local-tool-details"><summary>{t('Show full output')}</summary><pre className="local-tool-output">{job.output}</pre></details>}
-    {canDownload && (builtin.uv.available
-      ? <div className="actions"><button type="button" className="btn-pri" disabled={busy} onClick={() => setConfirm('install')}>{builtin.status === 'update_available' ? <RefreshCw aria-hidden /> : <Download aria-hidden />}{t(builtin.status === 'update_available' ? 'Update' : failed || builtin.status === 'files_do_not_match' ? 'Try again' : 'Download')}</button>
-        {builtin.status === 'update_available' && <button type="button" className="ghost" disabled={busy} onClick={() => setConfirm('remove')}>{t('Remove')}</button>}</div>
-      : <p className="way-desc">{installReasonText(builtin.uv.reason)}<br /><a href={builtin.uv.url} target="_blank" rel="noopener noreferrer">{t('Installation instructions')}</a></p>)}
-    {running && <div className="actions"><button type="button" className="ghost" disabled={busy} onClick={() => run(api.cancelBuiltinEmbedding)}>{t('Cancel download')}</button></div>}
-    {builtin.status === 'ready' && <div className="actions"><button type="button" className="btn-pri" disabled={busy} onClick={() => run(async () => { await api.checkBuiltinEmbedding(); setUpToDate(true) })}><RotateCw aria-hidden />{t('Check for updates')}</button>
+    {!running && job?.status === 'cancelled' && state !== 'ready' && <p className="way-desc">{t('Download cancelled.')}</p>}
+    {job?.output && (state === 'failed' || running) && <details className="local-tool-details"><summary>{t('Show full output')}</summary><pre className="local-tool-output">{job.output}</pre></details>}
+    <dl className="builtin-facts">
+      <dt>{t('Size')}</dt><dd>{formatBytes(m.bytes)}</dd>
+      <dt>{t('Memory')}</dt><dd>{t('about {need} GB (estimated)', { need: m.memory_gb })}{memory != null && <> · {t('this computer has {memory} GB', { memory })}</>}{m.may_not_fit && <span className="builtin-fit"><TriangleAlert size={12} aria-hidden />{t('May not fit in this computer’s {memory} GB of memory', { memory: memory ?? '' })}</span>}</dd>
+      <dt>{t('File')}</dt><dd><code className="model-id">{m.file}</code></dd>
+      <dt>{t('Source')}</dt><dd><a href={`https://huggingface.co/${m.repo}`} target="_blank" rel="noopener noreferrer">{m.repo}</a>{!m.official && <> · {t('Community conversion')}</>}</dd>
+      <dt>{t('License')}</dt><dd>{m.license}</dd>
+      <dt>{t('Runtime')}</dt><dd>{withCode(t('llama.cpp {tag}'), { tag: runtime.tag })}{runtime.installed ? '' : runtime.download_bytes ? ` · ${t('{size}, downloaded with the first model', { size: formatBytes(runtime.download_bytes) })}` : ''}</dd>
+    </dl>
+    {canDownload && <div className="actions"><button type="button" className="btn-pri" disabled={busy || otherRunning} aria-describedby={otherRunning ? `builtin-wait-${m.id}` : undefined} onClick={() => setConfirm('install')}><Download aria-hidden />{t(state === 'not_installed' ? 'Download' : 'Download again')}</button>
+      {installed && <button type="button" className="ghost" disabled={busy} onClick={() => setConfirm('remove')}>{t('Remove')}</button>}</div>}
+    {canDownload && otherRunning && <p className="way-desc" id={`builtin-wait-${m.id}`}>{t('Another built-in model is being downloaded; one download runs at a time.')}</p>}
+    {running && <div className="actions"><button type="button" className="ghost" disabled={busy} onClick={() => run(api.cancelBuiltinModel)}>{t('Cancel download')}</button></div>}
+    {(state === 'ready' || state === 'not_checked') && <div className="actions"><button type="button" className="btn-pri" disabled={busy} onClick={() => run(() => api.checkBuiltinModel(m.id))}>{busy ? <span className="spin" aria-hidden /> : <RotateCw aria-hidden />}{t('Check files')}</button>
       <button type="button" className="ghost" disabled={busy} onClick={() => setConfirm('remove')}>{t('Remove')}</button></div>}
-    {(builtin.status === 'remove_failed' || (builtin.status === 'update_available' && !builtin.uv.available)) && <div className="actions"><button type="button" className="ghost" disabled={busy} onClick={() => setConfirm('remove')}>{t('Remove')}</button></div>}
-    <ConfirmDialog open={confirm === 'install'} dark={dark} neutral title={t('Download the built-in model?')}
-      description={t('The model is downloaded once from Hugging Face and takes about {total} MB in the DEIXIS data folder, plus about {python} MB if Python 3.12 has to be downloaded. After that, semantic search sends no text off this computer.', sizeVars)}
-      context={builtin.path} confirmLabel={t('Download')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(api.installBuiltinEmbedding)} onOpenChange={open => setConfirm(open ? 'install' : null)} />
-    <ConfirmDialog open={confirm === 'remove'} dark={dark} title={t('Remove the built-in model?')}
-      description={t('Its files are deleted. Scores it already gave are kept; sources not yet scored are ranked without it until you download it again.')}
-      confirmLabel={t('Remove')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(api.removeBuiltinEmbedding)} onOpenChange={open => setConfirm(open ? 'remove' : null)} />
+    {state === 'remove_failed' && <div className="actions"><button type="button" className="ghost" disabled={busy} onClick={() => setConfirm('remove')}>{t('Remove')}</button></div>}
+    <ConfirmDialog open={confirm === 'install'} dark={dark} neutral title={t('Download {model}?', { model: m.name })}
+      description={(runtimeExtra
+        ? t('The model file ({size}) is downloaded once from Hugging Face, with llama.cpp ({runtime}) from GitHub to run it, into the DEIXIS data folder.', { size: formatBytes(m.bytes), runtime: formatBytes(runtimeExtra) })
+        : t('The model file ({size}) is downloaded once from Hugging Face into the DEIXIS data folder.', { size: formatBytes(m.bytes) }))
+        + ' ' + t('After that, it runs on this computer and sends no text off it.')}
+      context={builtin.path} confirmLabel={t('Download')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(() => api.installBuiltinModel(m.id))} onOpenChange={open => setConfirm(open ? 'install' : null)} />
+    <ConfirmDialog open={confirm === 'remove'} dark={dark} title={t('Remove {model}?', { model: m.name })}
+      description={t('Its file is deleted. Scores it already gave are kept; sources not yet scored are ranked without it until you download it again.')}
+      confirmLabel={t('Remove')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(() => api.removeBuiltinModel(m.id))} onOpenChange={open => setConfirm(open ? 'remove' : null)} />
   </section>
+}
+
+// The earlier PyTorch built-in model (D88): its measured size, removed only when the person asks.
+function BuiltinLegacy({ builtin, dark, onChanged }: { builtin: BuiltinModels; dark: boolean; onChanged: () => Promise<void> }) {
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const toast = useToast()
+  if (!builtin.legacy.present) return null
+  const remove = () => {
+    setBusy(true)
+    api.removeBuiltinLegacy().then(() => { setOpen(false); toast('success', t('The earlier built-in model was removed.')); return onChanged() })
+      .catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
+  }
+  return <div className="builtin-legacy">
+    <span><HardDrive size={14} aria-hidden />{t('Earlier built-in model (PyTorch) · {size}', { size: formatBytes(builtin.legacy.bytes) })}</span>
+    <button type="button" className="ghost" disabled={busy} onClick={() => setOpen(true)}><Trash2 size={14} aria-hidden />{t('Remove')}</button>
+    <ConfirmDialog open={open} dark={dark} title={t('Remove the earlier built-in model?')}
+      description={t('The PyTorch model files and the Python environment the earlier version of DEIXIS used are deleted ({size}). The current built-in models do not use them. Scores it already gave are kept.', { size: formatBytes(builtin.legacy.bytes) })}
+      context={builtin.path} confirmLabel={t('Remove')} cancelLabel={t('Cancel')} busy={busy} onConfirm={remove} onOpenChange={setOpen} />
+  </div>
 }
 
 // Turns the bare site addresses in a settings sentence (openalex.org, zotero.org/settings/keys) into links.
@@ -1019,11 +1117,12 @@ function CheckButton({ id, label, run, checking, start, disabled = false, quiet 
   return <button type="button" className={quiet ? 'ghost' : 'btn-pri'} disabled={disabled || checking !== null} onClick={() => start(id, run)}>{checking === id ? <span className="spin" aria-hidden /> : <RotateCw aria-hidden />}{t(label)}</button>
 }
 
-// Reranking (Qwen3 built-in or Voyage): off until turned on; reorders the first records of the fused order (the papers a
+// Reranking (a built-in catalog reranker or an API one): off until turned on; reorders the first records of the fused order (the papers a
 // run reads times the pool factor) before they are read, so it decides which records fall above the read cutoff. It never includes or excludes, and the person's own included records stay first.
-function RerankingSettings({ refresh, dark, keyField, builtinPanel }: { refresh: string; dark: boolean; keyField: (env: string, service: string) => ReactNode; builtinPanel: ReactNode }) {
+function RerankingSettings({ refresh, dark, keyField, builtin, onBuiltinChanged }: { refresh: string; dark: boolean; keyField: (env: string, service: string) => ReactNode; builtin: BuiltinModels | null; onBuiltinChanged: () => Promise<void> }) {
   const [state, setState] = useState<Reranking | null>(null)
-  const [draft, setDraft] = useState<{ enabled: boolean; provider: RerankProvider | null; factor: string; timeout: string } | null>(null)
+  const [draft, setDraft] = useState<{ enabled: boolean; provider: RerankProvider | null; model: string | null; factor: string; timeout: string } | null>(null)
+  const [modelSheet, setModelSheet] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [sheet, setSheet] = useState<'off' | RerankProvider | null>(null)
@@ -1032,17 +1131,20 @@ function RerankingSettings({ refresh, dark, keyField, builtinPanel }: { refresh:
     api.reranking().then(result => { setState(result); setError('') }).catch((e: Error) => { if (!isLeft(e)) setError(e.message) })
   }, [refresh])
   if (!state) return error ? <Notice tone="error" panel="search">{error}</Notice> : null
-  const shown = draft ?? { enabled: state.enabled, provider: state.provider, factor: String(state.pool_factor), timeout: String(state.timeout_seconds) }
+  const shown = draft ?? { enabled: state.enabled, provider: state.provider, model: state.model, factor: String(state.pool_factor), timeout: String(state.timeout_seconds) }
   const option = (p: RerankProvider) => state.options.find(o => o.provider === p)
+  const builtinOption = (id: string) => state.options.find(o => o.provider === 'builtin' && o.model === id)
+  // A built-in reranker is in use only when the saved provider and model are both it.
+  const builtinInUse = shown.enabled && shown.provider === 'builtin' ? shown.model : null
   const changed = draft !== null
   const save = (next: typeof shown) => {
     setBusy(true); setError('')
-    api.saveReranking({ enabled: next.enabled, provider: next.provider, pool_factor: Number(next.factor), timeout_seconds: Number(next.timeout) })
+    api.saveReranking({ enabled: next.enabled, provider: next.provider, model: next.provider === 'builtin' ? next.model : null, pool_factor: Number(next.factor), timeout_seconds: Number(next.timeout) })
       .then(result => { setState(result); setDraft(null); toast('success', t('Reranking setting saved.')) })
       .catch((e: Error) => setError(t('Could not save: {message}', { message: e.message })))
       .finally(() => setBusy(false))
   }
-  const sends = shown.provider ? option(shown.provider)?.sends : null
+  const sends = shown.provider && shown.provider !== 'builtin' ? option(shown.provider)?.sends : null
   // One card per reranker, grouped like the model cards (on this computer, then APIs); a card opens its sheet, where it
   // is chosen. Choosing saves at once, with the limits as they stand.
   // API rerankers: where the key comes from and what each sends; the model name comes from the server's options.
@@ -1053,8 +1155,6 @@ function RerankingSettings({ refresh, dark, keyField, builtinPanel }: { refresh:
     ['zeroentropy', t('ZeroEntropy reranker'), 'zerank-2', 'ZEROENTROPY_API_KEY', 'ZeroEntropy', 'dashboard.zeroentropy.dev'],
   ] as const
   const rows: { id: 'off' | RerankProvider; local: boolean | null; label: string; model: string; desc: ReactNode; key?: { env: string; service: string; site: string } }[] = [
-    { id: 'builtin', local: true, label: t('This computer · built-in'), model: 'Qwen3-Reranker-0.6B',
-      desc: withCode(t('{model} · downloaded with the built-in embedding model; no text leaves the computer'), { model: 'Qwen3-Reranker-0.6B' }) },
     ...apis.map(([id, label, fallback, env, service, site]) => ({ id, local: false, label, model: option(id)?.model ?? fallback,
       desc: withCode(t('{model} · sends the question and titles and abstracts to {service}', { service }), { model: option(id)?.model ?? fallback }),
       key: { env, service, site } })),
@@ -1065,7 +1165,7 @@ function RerankingSettings({ refresh, dark, keyField, builtinPanel }: { refresh:
     const checked = id === 'off' ? !shown.enabled : shown.enabled && shown.provider === id
     const available = id === 'off' || !!o?.available
     // A card's pill stays short ("Key needed"); the sheet's key section says which key and where to get it.
-    const need = available ? null : id === 'builtin' ? t(o?.reason ?? 'Not downloaded') : t('Key needed')
+    const need = available ? null : t('Key needed')
     return { o, checked, available, status: need ?? (checked ? t('In use') : t('Not in use')) }
   }
   const card = (row: (typeof rows)[number]) => {
@@ -1075,13 +1175,17 @@ function RerankingSettings({ refresh, dark, keyField, builtinPanel }: { refresh:
   }
   const open = rows.find(r => r.id === sheet)
   const openState = open ? stateOf(open.id) : null
+  const openModel = builtin?.models.find(m => m.id === modelSheet && m.kind === 'reranker') ?? null
+  const openModelOption = openModel ? builtinOption(openModel.id) : undefined
+  const openModelInUse = !!openModel && builtinInUse === openModel.id
   return <>
     <h2 id="reranking-title" data-panel="search">{t('Reranking')}</h2>
     <p className="foot-note" data-panel="search">{t('Reorders the top of the ranking by reading the question with each title and abstract, before records are read, so it decides which papers fall within the reading limit. Only the record order is reranked; passages for answers are not. A reranker score never includes or excludes a record, and records you included stay first.')}</p>
     {error && <Notice tone="error" panel="search">{error}</Notice>}
+    {state.builtin_model_changed && <Notice tone="attention" panel="search">{t('The built-in reranker chosen earlier is not available in this version of DEIXIS. Pick a reranker below; DEIXIS does not switch to another one by itself.')}</Notice>}
     <div className="choice-groups" data-panel="search" data-group="reranking" aria-busy={busy || undefined}>
       <h3 className="choice-head">{t('Local models')}</h3>
-      <div className="co-grid">{rows.filter(r => r.local === true).map(card)}</div>
+      {builtin && <BuiltinCatalog builtin={builtin} kind="reranker" inUse={builtinInUse} onOpen={setModelSheet} />}
       <h3 className="choice-head">{t('API models')}</h3>
       <div className="co-grid">{rows.filter(r => r.local === false).map(card)}</div>
       <div className="co-grid choice-off">{rows.filter(r => r.local === null).map(card)}</div>
@@ -1091,7 +1195,7 @@ function RerankingSettings({ refresh, dark, keyField, builtinPanel }: { refresh:
         <dt><label htmlFor="rerank-factor">{t('Records reranked (× papers read)')}</label></dt><dd>
           <input id="rerank-factor" className="field mathpix-budget" type="number" min={1} max={4} step={0.5} inputMode="decimal" value={shown.factor} disabled={busy}
             onChange={e => setDraft({ ...shown, factor: e.target.value })} />
-          <small className="foot-note">{t('At 2 the reranker sees twice the papers a run reads (Standard: 100 for 50 read), so a paper just below the cutoff can move in. At most {max} records. 2 is a starting value, not a measured best.', { max: state.max_candidates })}</small></dd>
+          <small className="foot-note">{t('At 4 the reranker sees four times the papers a run reads (Standard: 200 for 50 read), so a paper well below the cutoff can move in. At most {max} records. On 100 biomedical questions 4 helped more than 2; the built-in model then takes about 1–2 minutes per search.', { max: state.max_candidates })}</small></dd>
         <dt><label htmlFor="rerank-timeout">{t('Time limit (seconds)')}</label></dt><dd>
           <input id="rerank-timeout" className="field mathpix-budget" type="number" min={10} max={900} step={1} inputMode="numeric" value={shown.timeout} disabled={busy}
             onChange={e => setDraft({ ...shown, timeout: e.target.value })} />
@@ -1101,6 +1205,17 @@ function RerankingSettings({ refresh, dark, keyField, builtinPanel }: { refresh:
     {sends && shown.enabled && <p className="foot-note semantic-privacy" data-panel="search">{t(sends)}</p>}
     {changed && <div className="actions" data-panel="search"><Button variant="outline" size="sm" disabled={busy} onClick={() => save(shown)}>{t('Save')}</Button>
       <Button variant="ghost" size="sm" disabled={busy} onClick={() => { setDraft(null); setError('') }}>{t('Cancel')}</Button></div>}
+    {builtin && <BuiltinModelSheet builtin={builtin} model={openModel} dark={dark} onClose={() => setModelSheet(null)} onChanged={onBuiltinChanged}
+      use={openModel && <section className={`way ${openModelInUse ? 'is-on' : ''}`} aria-label={t('Reranking')}>
+        <div className="way-head"><h3>{t('Reranking')}</h3><span className={`st ${openModelInUse && openModelOption?.available ? 'ok' : 'no'}`}>{openModelInUse ? t('In use') : openModelOption?.available ? t('Not in use') : t(openModelOption?.reason ?? 'Not downloaded')}</span></div>
+        <p className="way-desc">{t('No text leaves the computer.')}</p>
+        {!openModelInUse && <div className="actions">
+          <button type="button" className="btn-pri" disabled={!openModelOption?.available || busy} aria-describedby={!openModelOption?.available ? 'builtin-rerank-why' : undefined}
+            onClick={() => { save({ ...shown, enabled: true, provider: 'builtin', model: openModel.id }); setModelSheet(null) }}>
+            {busy ? <span className="spin" aria-hidden /> : <CircleCheck aria-hidden />}{t('Use this reranker')}</button>
+          {!openModelOption?.available && <span className="sr-only" id="builtin-rerank-why">{t('Download the model first.')}</span>}
+        </div>}
+      </section>} />}
     <Sheet open={!!open} onOpenChange={next => { if (!next) setSheet(null) }}>
       <SheetContent className={`detail-sheet connection-sheet ${dark ? 'dark' : ''}`}>
         {open && openState && <>
@@ -1113,7 +1228,6 @@ function RerankingSettings({ refresh, dark, keyField, builtinPanel }: { refresh:
           </SheetHeader>
           <div className="connection-body mk pad detail">
             <p className="foot-note is-ink">{open.desc}</p>
-            {open.id === 'builtin' && builtinPanel}
             {open.key && <section className={`way ${openState.available ? 'is-on' : ''}`} aria-label={t('With an API key')}>
               <div className="way-head"><h3>{t('With an API key')}</h3><span className={`st ${openState.available ? 'ok' : 'no'}`}>{openState.available ? t('Ready') : t('No key entered')}</span></div>
               <p className="way-desc">{linkify(t('Get the key at {site}.', { site: open.key.site }))}</p>
@@ -1210,7 +1324,8 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const [semantic, setSemantic] = useState<SemanticSearch | null>(null)
   const [semError, setSemError] = useState('')
   const [pending, setPending] = useState<{ provider: SemanticSearchProvider; model: string | null } | null>(null)
-  const [builtin, setBuiltin] = useState<BuiltinEmbedding | null>(null)
+  const [builtin, setBuiltin] = useState<BuiltinModels | null>(null)
+  const [builtinSheet, setBuiltinSheet] = useState<string | null>(null)  // the built-in embedding model whose sheet is open
   // What this sheet checked itself, and when the answer came: "checked HH:MM" belongs to that answer only.
   const [checking, setChecking] = useState<string | null>(null)
   const [showing, setShowing] = useState<string | null>(null)  // the hidden model being offered again
@@ -1282,14 +1397,14 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     return api.semanticSearch(leaving()).then(result => { if (!current()) return false; setSemantic(result); setSemError(''); return true })
       .catch((e: Error) => { if (current() && !isLeft(e)) setSemError(e.message); if (strict) throw e; return false })
   }, [leaving])
-  const loadBuiltin = useCallback(() => api.builtinEmbedding(leaving()).then(setBuiltin).catch((e: Error) => { if (!isLeft(e)) setSemError(e.message) }), [leaving])
+  const loadBuiltin = useCallback(() => api.builtinModels(leaving()).then(setBuiltin).catch((e: Error) => { if (!isLeft(e)) setSemError(e.message) }), [leaving])
   useEffect(() => { void load(false) }, [load])
   useEffect(() => { loadCredentials() }, [loadCredentials])
   useEffect(() => { void loadTools(false) }, [loadTools])
   useEffect(() => { void loadSemantic() }, [loadSemantic])
   useEffect(() => { void loadBuiltin() }, [loadBuiltin])
   useEffect(() => {
-    if (builtin?.status !== 'installing' && builtin?.status !== 'installing_elsewhere' && builtin?.status !== 'removing') return
+    if (!builtin?.models.some(m => m.state === 'installing' || m.state === 'installing_elsewhere' || m.state === 'removing')) return
     const timer = window.setInterval(() => { void loadBuiltin().then(() => loadSemantic()) }, 1500)
     return () => window.clearInterval(timer)
   }, [builtin, loadBuiltin, loadSemantic])
@@ -1523,7 +1638,6 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     if (row === 'openai') return option('openai')?.available ? null : t('Needs an OpenAI key')
     if (row === 'voyage') return option('voyage')?.available ? null : t('Needs a Voyage AI key')
     if (row === 'cohere') return option('cohere')?.available ? null : t('Needs a Cohere key')
-    if (row === 'builtin') { const o = option('builtin'); return o && !o.available ? t(o.reason ?? 'Not downloaded') : null }
     if (row === 'server') return serverChoices.length ? null : serverOptions.some(o => /lists no embedding model/.test(o.reason ?? '')) ? t('Needs an embedding model') : t('Needs a local server')
     return null
   }
@@ -1541,12 +1655,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     { id: 'cohere', providers: ['cohere'], label: t('Cohere embeddings'), local: false, model: option('cohere')?.models[0] ?? 'embed-v5.0-fast',
       desc: withCode(t('{model} · sends titles, abstracts and passage text to Cohere'), { model: option('cohere')?.models[0] ?? 'embed-v5.0-fast' }),
       apiKey: { env: 'COHERE_API_KEY', site: 'dashboard.cohere.com/api-keys', service: 'Cohere' } },
-    { id: 'builtin', providers: ['builtin'], label: t('This computer · built-in'), local: true, model: 'Qwen3-Embedding-0.6B',
-      desc: withCode(t('{model} · reads English; for a question in another language it asks for one English sentence'), { model: 'Qwen3-Embedding-0.6B' }),
-      body: <>
-        {builtin && <BuiltinEmbeddingPanel builtin={builtin} dark={dark} onChanged={async () => { await loadBuiltin(); await loadSemantic() }} />}
-      </> },
-    // Local model servers are no longer offered (the built-in Qwen3 model covers keyless use); a saved Ollama or LM Studio
+    // Local model servers are no longer offered (the built-in models cover keyless use); a saved Ollama or LM Studio
     // choice still shows its row, so it is never switched away without the person choosing another.
     ...(semantic && SERVER_IDS.includes(semantic.provider)
       ? [{ id: 'server', providers: ['ollama', 'lm_studio'] as SemanticSearchProvider[], label: t('Local model server'), local: true, model: 'Ollama · LM Studio', desc: t('An embedding model on Ollama or LM Studio') }] : []),
@@ -1571,6 +1680,14 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     else chooseSemantic(row.providers[0], null)
   }
   const semanticRow = selected?.kind === 'semantic' ? semanticRows.find(r => r.id === selected.id) : undefined
+  // The built-in embedding models: one choice per catalog model, in use only when the provider and the model are both it.
+  const builtinOption = (id: string) => semantic?.options.find(o => o.provider === 'builtin' && o.model === id)
+  const builtinChosen = chosen?.provider === 'builtin' ? chosen.model : null
+  const builtinModel = builtin?.models.find(m => m.id === builtinSheet && m.kind === 'embedding') ?? null
+  const builtinModelOption = builtinModel ? builtinOption(builtinModel.id) : undefined
+  const builtinModelChosen = !!builtinModel && builtinChosen === builtinModel.id
+  const builtinReady = !!builtinModel && !!builtinModelOption?.available
+  const builtinChanged = async () => { await loadBuiltin(); await loadSemantic() }
 
   // ---- the connection sheet ----
   const sel = selected
@@ -1973,23 +2090,35 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     <h2 data-panel="search">{t('Semantic search')}</h2>
     <p className="foot-note" data-panel="search">{t('Ranks search results by meaning, not only by shared words. Changing the provider scores the passages again; earlier scores are kept.')}</p>
     {semError && <Notice tone="error" panel="search">{semError}</Notice>}
-    {semantic?.builtin_model_changed && <Notice tone="attention" panel="search">{t('The built-in model is now Qwen3-Embedding-0.6B. Scores stored with the earlier model are kept but not reused: the next run scores its sources again with the new model, after you download it below.')}</Notice>}
+    {semantic?.builtin_model_changed && <Notice tone="attention" panel="search">{t('The built-in model chosen earlier is not available in this version of DEIXIS, so semantic search does not run with it. Pick a built-in model below; DEIXIS does not switch to another one by itself. Scores stored with the earlier model are kept but not reused.')}</Notice>}
     <div className="choice-groups" data-panel="search" data-group="semantic" aria-busy={saving || undefined}>
       {([[true, t('Local models')], [false, t('API models')], [null, null]] as const).map(([local, head]) => <Fragment key={String(local)}>
         {head && <h3 className="choice-head">{head}</h3>}
-        <div className={`co-grid ${local === null ? 'choice-off' : ''}`}>{semanticRows.filter(row => row.local === local).map(row => {
+        {local === true && builtin && <BuiltinCatalog builtin={builtin} kind="embedding" inUse={builtinChosen} onOpen={setBuiltinSheet} />}
+        {semanticRows.some(row => row.local === local) && <div className={`co-grid ${local === null ? 'choice-off' : ''}`}>{semanticRows.filter(row => row.local === local).map(row => {
           const { isChosen, need, status } = semanticState(row)
           return <CompanyCard key={row.id} mark={companyMark(undefined, undefined, settingsIcon(row.id))} name={row.label}
             maker={row.local === null || row.id === 'server' ? row.model ?? '' : <code className="model-id">{row.model}</code>}
             ready={isChosen && !need} status={status} active={isChosen} compact onClick={() => show({ kind: 'semantic', id: row.id })} />
-        })}</div>
+        })}</div>}
+        {local === true && builtin && <BuiltinLegacy builtin={builtin} dark={dark} onChanged={builtinChanged} />}
       </Fragment>)}
     </div>
+    {builtin && <BuiltinModelSheet builtin={builtin} model={builtinModel} dark={dark} onClose={() => setBuiltinSheet(null)} onChanged={builtinChanged}
+      use={builtinModel && <section className={`way ${builtinModelChosen && builtinReady ? 'is-on' : ''}`} aria-label={t('Semantic search')}>
+        {wayHead(t('Semantic search'), [builtinModelChosen && builtinReady ? 'ok' : 'no', builtinModelChosen ? (builtinReady ? t('In use') : t(builtinModelOption?.reason ?? 'Not downloaded')) : builtinReady ? t('Not in use') : t(builtinModelOption?.reason ?? 'Not downloaded')])}
+        <p className="way-desc">{privacyOf('builtin')}</p>
+        {(!builtinModelChosen || (semantic && !semantic.explicit)) && <div className="actions">
+          <button type="button" className="btn-pri" disabled={!builtinReady || saving} aria-describedby={!builtinReady ? 'builtin-semantic-why' : undefined} onClick={() => chooseSemantic('builtin', builtinModel.id)}>
+            {saving ? <span className="spin" aria-hidden /> : <CircleCheck aria-hidden />}{t('Use for semantic search')}</button>
+          {!builtinReady && <span className="sr-only" id="builtin-semantic-why">{t('Download the model first.')}</span>}
+        </div>}
+      </section>} />}
     {privacy && <p className="foot-note semantic-privacy" data-panel="search">{privacy}</p>}
-    <RerankingSettings dark={dark} builtinPanel={builtin ? <BuiltinEmbeddingPanel builtin={builtin} dark={dark} onChanged={async () => { await loadBuiltin(); await loadSemantic() }} /> : null} keyField={(env, service) => credentials ? <KeyField key={env} env={env} entry={keyEntry(env)} keychain={credentials.keychain} label={t('Key')} service={service}
+    <RerankingSettings dark={dark} builtin={builtin} onBuiltinChanged={builtinChanged} keyField={(env, service) => credentials ? <KeyField key={env} env={env} entry={keyEntry(env)} keychain={credentials.keychain} label={t('Key')} service={service}
       removeEffect={env === 'VOYAGE_API_KEY' ? t('Semantic search and reranking with Voyage stop until you add a key again.')
         : env === 'COHERE_API_KEY' ? t('Semantic search and reranking with Cohere stop until you add a key again.') : t('Reranking with {service} stops until you add a key again.', { service })}
-      onSaved={reloadAfterKeyChange} /> : null} refresh={`${builtin?.status ?? ''}|${['VOYAGE_API_KEY', 'COHERE_API_KEY', 'JINA_API_KEY', 'ZEROENTROPY_API_KEY'].map(env => keyEntry(env)?.configured ?? '').join('|')}`} />
+      onSaved={reloadAfterKeyChange} /> : null} refresh={`${builtin?.models.map(m => m.state).join(',') ?? ''}|${['VOYAGE_API_KEY', 'COHERE_API_KEY', 'JINA_API_KEY', 'ZEROENTROPY_API_KEY'].map(env => keyEntry(env)?.configured ?? '').join('|')}`} />
 
     <section className="doc-readers" data-panel="documents" aria-labelledby="document-reading">
       <div className="co-group-head"><h2 id="document-reading">{t('Document reading')}</h2><p className="co-note">{t('Tools that take the text out of PDFs.')}</p></div>

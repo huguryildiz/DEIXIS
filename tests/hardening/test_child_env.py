@@ -16,8 +16,7 @@ from deixis.tools import child_env as env_module
 from deixis.tools import local_tools, tool_paths
 from deixis.tools.child_env import NODE_TLS, UV_TLS, child_env
 from deixis.documents import math_reader, tool_updates
-from deixis.workflow import equations, local_embedding_service
-from builtin_helpers import fake_embedder
+from deixis.workflow import equations
 
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="the fake tools are shell scripts")
 
@@ -194,17 +193,24 @@ def test_the_marker_environment_is_made_without_any_key(tmp_path, monkeypatch, s
 
 
 @posix_only
-def test_the_built_in_model_installer_and_runner_never_see_a_key(tmp_path, secrets):
-    from deixis.documents import local_embedding
+def test_the_built_in_model_server_never_sees_a_key_or_a_network_setting(tmp_path, secrets, monkeypatch):
+    from deixis.documents import builtin_catalog, local_embedding
+    from builtin_helpers import install_runtime
 
+    monkeypatch.setenv("HTTPS_PROXY", "http://proxy.invalid:1")
     paths = local_embedding.builtin_paths(tmp_path / "data")
-    service = local_embedding_service.EmbeddingService(paths, fake_embedder(paths))
-    install = service._uv_env("/opt/uv/bin/uv")
-    runner = paths.runner_env()
-    for env in (install, runner):
-        assert not set(SECRETS) & set(env)
-    assert install["UV_NATIVE_TLS"] == "1" and install["UV_NO_CONFIG"] == "1" and install["PATH"].startswith("/opt/uv/bin")
-    assert runner["HF_HUB_OFFLINE"] == "1" and "HTTPS_PROXY" not in runner  # offline: no network settings at all
+    install_runtime(paths)
+    seen = {}
+
+    async def capture(*argv, **kwargs):
+        seen.update(kwargs["env"])
+        raise OSError("SYNTHETIC: not started")
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", capture)
+    server = local_embedding.LlamaServer(paths, builtin_catalog.get("qwen3-embedding-0.6b"), None)
+    with pytest.raises(local_embedding.LocalEmbeddingError):
+        asyncio.run(server.start())
+    assert_clean(seen)
+    assert "HTTPS_PROXY" not in seen  # loopback only: no network settings at all
 
 
 def test_the_model_clis_get_the_node_system_certificate_switch(tmp_path):

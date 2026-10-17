@@ -428,6 +428,40 @@
 .connection-sheet .ollama-card.is-tight .ollama-card-size,.connection-sheet .ollama-card.is-tight .ollama-card-size svg{color:var(--warn-ink)}
 .connection-sheet .ollama-card.is-tight .ollama-card-meter span{background:var(--warn-ink)}
 .connection-sheet .ollama-other{margin-top:10px}
+/* The built-in models' catalog on Search & ranking: the suggested-model cards above, one button per model that opens its sheet. */
+.app .settings-page .builtin-cards{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.app .settings-page .builtin-cards li{display:flex;min-width:0}
+.app .settings-page .builtin-card{display:flex;flex-direction:column;gap:3px;width:100%;padding:12px 12px 11px;min-width:0;border:1px solid var(--line);border-radius:10px;background:none;color:var(--ink);font:inherit;font-size:12.5px;line-height:1.45;text-align:left;cursor:pointer;transition:border-color .15s,background-color .15s}
+.app .settings-page .builtin-card:hover{border-color:var(--accent-line);background:color-mix(in srgb,var(--accent-tint) 45%,var(--paper))}
+.app .settings-page .builtin-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.app .settings-page .builtin-card.on{border-color:var(--accent-line);background:var(--accent-tint)}
+.app .settings-page .builtin-card .ollama-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:6px;min-width:0}
+.app .settings-page .builtin-card b{min-width:0;overflow-wrap:anywhere;font-size:13.5px;font-weight:600;line-height:1.3;color:var(--ink)}
+.app .settings-page .builtin-card .ollama-card-param{flex:none;padding:1px 6px;border-radius:6px;background:var(--accent-tint);color:var(--accent);font-size:11px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.5}
+.app .settings-page .builtin-card.on .ollama-card-param{background:var(--paper)}
+.app .settings-page .builtin-card small{display:block;color:var(--muted);font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.app .settings-page .builtin-card small code{font-size:11px;color:var(--muted)}
+.app .settings-page .builtin-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+.app .settings-page .st.rec,.connection-sheet .builtin-rec .st.rec{background:var(--accent-tint);color:var(--accent)}
+.app .settings-page .builtin-card.on .st.rec{background:var(--paper)}
+.app .settings-page .builtin-tag{padding:1px 7px;border:1px solid var(--line);border-radius:99px;color:var(--ink-2);font-size:11px;line-height:1.5}
+.app .settings-page .builtin-card .ollama-card-foot{display:grid;justify-items:start;gap:7px;width:100%;margin-top:auto;padding-top:10px}
+.app .settings-page .builtin-card .ollama-card-size{display:inline-flex;align-items:center;gap:5px;color:var(--ink-2);font-size:12px;font-variant-numeric:tabular-nums}
+.app .settings-page .builtin-card .ollama-card-size svg{flex:none;color:var(--muted)}
+.app .settings-page .builtin-card .ollama-card-meter,.app .settings-page .builtin-card .install-progress-bar{position:relative;width:100%;height:4px;overflow:hidden;border-radius:99px;background:color-mix(in srgb,var(--ink),transparent 92%)}
+.app .settings-page .builtin-card .ollama-card-meter span{position:absolute;inset:0 auto 0 0;border-radius:99px;background:var(--accent)}
+.app .settings-page .builtin-card.is-tight .ollama-card-size,.app .settings-page .builtin-card.is-tight .ollama-card-size svg,.app .settings-page .builtin-fit{color:var(--warn-ink)}
+.app .settings-page .builtin-card.is-tight .ollama-card-meter span{background:var(--warn-ink)}
+.builtin-fit{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--warn-ink)}
+.connection-sheet .builtin-facts{display:grid;grid-template-columns:max-content minmax(0,1fr);gap:4px 14px;margin:10px 0 0;font-size:12.5px}
+.connection-sheet .builtin-facts dt,.connection-sheet .builtin-facts dd{margin:0}
+.connection-sheet .builtin-facts dt{color:var(--muted)}
+.connection-sheet .builtin-facts dd{margin:0;min-width:0;overflow-wrap:anywhere;color:var(--ink-2)}
+.connection-sheet .builtin-facts .builtin-fit{display:flex;margin-top:2px}
+.app .settings-page .builtin-legacy{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:8px 12px;border:1px solid var(--line);border-radius:8px;color:var(--ink-2);font-size:12.5px}
+.app .settings-page .builtin-legacy > span{display:inline-flex;align-items:center;gap:7px;min-width:0}
+.app .settings-page .builtin-legacy svg{flex:none;color:var(--muted)}
+.app .settings-page .builtin-legacy button{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;font-size:12px}
 .connection-sheet .ollama-update{padding:10px 12px;border:1px solid var(--accent-line);border-radius:10px;background:var(--accent-tint);color:var(--ink)}
 .connection-sheet .ollama-update code{font-size:12px}
 .connection-sheet div.ollama-update{display:flex;align-items:center;justify-content:space-between;gap:12px}

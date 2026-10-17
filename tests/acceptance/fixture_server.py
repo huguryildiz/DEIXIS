@@ -1104,8 +1104,10 @@ def late_pdf_answer(si: dict[str, Any]) -> str:
 
 
 def fake_builtin(data_dir: Path):
-    """Case N (slice 21): a fake uv on PATH, SYNTHETIC model files behind the pinned revision's address, the fake
-    runner, and Gemini's embedding endpoint; every other request goes to the OpenAlex mock."""
+    """Case N: the built-in models' catalog with SYNTHETIC GGUF files behind their pinned addresses, a SYNTHETIC
+    llama.cpp archive whose `llama-server` is the fake server, and Gemini's embedding endpoint; every other request
+    goes to the OpenAlex mock. The status route serves the real shape (catalog, runtime, machine, recommendation,
+    legacy) over this synthetic data."""
     import builtin_helpers
     from deixis.documents import local_embedding
 
@@ -1113,21 +1115,18 @@ def fake_builtin(data_dir: Path):
         def setattr(self, target, name, value):
             setattr(target, name, value)
 
-    bodies = builtin_helpers.fake_manifest(Patch())
-    tools = data_dir.parent / f"{data_dir.name}-fake-uv"
-    builtin_helpers.write_fake_uv(tools)
-    os.environ["PATH"] = f"{tools}:{os.environ.get('PATH', '')}"
-    os.environ.setdefault("FAKE_UV_RECORD", str(tools / "calls.jsonl"))
-    os.environ.setdefault("FAKE_UV_SLEEP", "1.5")  # each uv step takes a moment, so the steps can be seen
-    os.environ.setdefault("FAKE_RUNNER", "ok")
+    bodies = builtin_helpers.fake_catalog(Patch())
+    archive = builtin_helpers.tarball()
+    builtin_helpers.pin_tarball(Patch(), archive)
+    downloads = builtin_helpers.Downloads(archive, bodies)
     from deixis.tools import child_env
-    child_env.OS_PREFIXES = ("LC_", "FAKE_")  # the fake uv and runner read these switches; real children never see them
+    child_env.OS_PREFIXES = ("LC_", "FAKE_")  # the fake server reads these switches; real children never see them
 
     failing: set[bool] = set()
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.host == "huggingface.co":
-            return httpx.Response(200, content=bodies[builtin_helpers.manifest_name(request.url)])
+        if request.url.host in ("huggingface.co", "github.com"):
+            return downloads(request)
         if request.url.host == "generativelanguage.googleapis.com":
             rows = json.loads(request.content)["requests"]
             # `[embed-fails]` in the question: once its query is embedded, document batches answer HTTP 500.
@@ -1139,7 +1138,7 @@ def fake_builtin(data_dir: Path):
         return openalex(request)
 
     paths = local_embedding.builtin_paths(data_dir)
-    return handler, builtin_helpers.fake_embedder(paths)
+    return handler, local_embedding.LocalModels(paths)
 
 
 def fake_arxiv_source() -> None:

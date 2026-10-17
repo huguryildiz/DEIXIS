@@ -827,8 +827,10 @@ test.describe.serial('S24: the Settings page', () => {
     let serpapi = 'not_configured'
     let email: string | null = null
     const option = (provider: string, models: string[] = []) => ({ provider, models, available: true, reason: null })
-    const semantic = (provider: string) => ({ provider, model: null, explicit: true,
-      options: [option('builtin'), option('openai', ['text-embedding-3-small']), option('gemini'), option('ollama'), option('lm_studio'), option('off')] })
+    // The built-in models are one option per catalog model, each with its id.
+    const builtinOption = { ...option('builtin', ['qwen3-embedding-0.6b']), model: 'qwen3-embedding-0.6b', name: 'Qwen3-Embedding-0.6B' }
+    const semantic = (provider: string) => ({ provider, model: provider === 'builtin' ? 'qwen3-embedding-0.6b' : null, explicit: true,
+      options: [builtinOption, option('openai', ['text-embedding-3-small']), option('gemini'), option('ollama'), option('lm_studio'), option('off')] })
     let provider = 'builtin'
     await page.route(url => url.pathname === '/api/connections', async route => {
       const response = await route.fetch()
@@ -866,8 +868,8 @@ test.describe.serial('S24: the Settings page', () => {
     const models = () => page.getByRole('tab', { name: 'Language models' }).click()
     const search = () => page.getByRole('tab', { name: 'Search & ranking' }).click()
     // A semantic search card opens its sheet; the sheet button chooses it and saves at once.
-    const pickSemanticCard = async (name: string) => {
-      await page.locator('div.choice-groups[data-group="semantic"] .co-card').filter({ has: page.locator('.co-name b', { hasText: new RegExp(`^${name}$`) }) }).click()
+    const pickSemanticCard = async (name: string, builtin = false) => {
+      await page.locator(`div.choice-groups[data-group="semantic"] ${builtin ? '.builtin-card' : '.co-card'}`).filter({ has: page.locator(builtin ? 'b' : '.co-name b', { hasText: new RegExp(`^${name}$`) }) }).click()
       const sheet = page.getByRole('dialog', { name, exact: true })
       await sheet.getByRole('button', { name: 'Use for semantic search' }).click()
       await expect(page.getByText('Semantic search setting saved.')).toBeVisible()
@@ -919,7 +921,8 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(row('Optional services')).toContainText('none is found, the work’s title is sent to SerpApi')
     // Back to the built-in model: the line comes back.
     await search()
-    await pickSemanticCard('This computer · built-in')
+    // The saved built-in model is in use; picking another catalog model shows its own button. Here OpenAI is in use.
+    await pickSemanticCard('Qwen3-Embedding-0.6B', true)
     await general()
     await expect(row('Semantic search')).toContainText('Not sent anywhere.')
     await page.getByRole('heading', { name: 'Where your data goes' }).evaluate(el => el.scrollIntoView({ block: 'start' }))

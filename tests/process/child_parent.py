@@ -2,8 +2,8 @@
 
 Not a test module. The test SIGKILLs this process and watches the child. Subcommands:
   codex <mode>        `models.codex_rpc.CodexAppServer` on `stand_in_codex.py <mode>`; prints {"child_pid": ...}
-  embedding <busy>    `documents.local_embedding.LocalEmbedder` on the fake runner (FAKE_RUNNER from the environment);
-                      with `busy` one embed request is in flight; prints {"child_pid": ...}
+  embedding <busy>    `documents.local_embedding.LocalModels` on the fake llama-server (FAKE_LLAMA from the environment);
+                      with `busy` one embed request is in flight; prints {"child_pid": ...} (the server's)
   pdf <path>          `documents.pdf._run_watched` on the production extraction argv, 60 s parent clock; prints {"ready": true}
 DEIXIS_DATA_DIR (embedding) is a temp directory made by the test.
 """
@@ -19,7 +19,7 @@ sys.path[:0] = [str(REPO / "tests"), str(REPO / "tests" / "support"), str(REPO /
 
 from deixis.tools import child_env  # noqa: E402
 
-child_env.OS_PREFIXES = ("LC_", "FAKE_")  # as tests/conftest.py does: the fake runner reads FAKE_RUNNER
+child_env.OS_PREFIXES = ("LC_", "FAKE_")  # as tests/conftest.py does: the fake llama-server reads FAKE_LLAMA
 
 
 def say(**fields) -> None:
@@ -47,14 +47,21 @@ async def embedding(busy: bool) -> None:
     import builtin_helpers
     from deixis.documents import local_embedding
 
-    builtin_helpers.fake_manifest(Shim)  # otherwise the runner answers files_do_not_match
+    record = Path(os.environ["DEIXIS_DATA_DIR"]) / "fake-llama.jsonl"
+    os.environ["FAKE_LLAMA_RECORD"] = str(record)
     paths = local_embedding.builtin_paths(Path(os.environ["DEIXIS_DATA_DIR"]))
-    builtin_helpers.install_fake(paths)
-    embedder = builtin_helpers.fake_embedder(paths)
-    await embedder.start()
-    task = asyncio.create_task(embedder.embed(["alpha beta"], "document")) if busy else None
+    builtin_helpers.ready(paths, Shim, "qwen3-embedding-0.6b")
+    models = local_embedding.LocalModels(paths)
+    task = None
+    if busy:  # the request is in flight when the parent dies (FAKE_LLAMA slow:S holds the reply)
+        task = asyncio.create_task(models.embed("qwen3-embedding-0.6b", ["alpha beta"], "document"))
+        while record.read_text().count('"/v1/embeddings"') < 2 if record.exists() else True:
+            await asyncio.sleep(0.05)
+    else:
+        await models.embed("qwen3-embedding-0.6b", ["alpha"], "document")
     await asyncio.sleep(0.3)
-    say(child_pid=embedder.process.pid)
+    started = [json.loads(line) for line in record.read_text().splitlines() if '"argv"' in line]
+    say(child_pid=started[-1]["pid"])
     await asyncio.sleep(3600)
     del task
 

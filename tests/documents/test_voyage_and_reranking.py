@@ -13,11 +13,13 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from deixis.documents import embeddings, local_embedding, rerankers
+from deixis.documents import builtin_catalog, embeddings, local_embedding, rerankers
 from deixis.keys import credentials
 from deixis.workflow import small_batch
 from deixis.workflow.flow import RunStopped
 from test_builtin_embedding_flow import BUILTIN, FakeLocal, Session
+
+RER = "qwen3-reranker-0.6b"
 
 KEY = "SYNTHETIC-voyage-key"
 
@@ -128,17 +130,17 @@ def test_voyage_without_a_key_sends_nothing(monkeypatch):
 def test_each_provider_model_and_dimension_is_its_own_stored_identity():
     stored = {embeddings.Embedder(p, m).stored_model for p, m in [
         ("gemini", embeddings.MODEL), ("openai", embeddings.OPENAI_MODEL), ("voyage", embeddings.VOYAGE_MODEL),
-        ("builtin", local_embedding.MODEL_ID), ("builtin", "bge-small-en-v1.5@aa8f8b0:256")]}
+        ("builtin", "qwen3-embedding-0.6b"), ("builtin", "bge-small-en-v1.5@aa8f8b0:256")]}
     assert len(stored) == 5
     assert embeddings.Embedder("voyage", embeddings.VOYAGE_MODEL).stored_model == "voyage:voyage-4-lite@1024"
     rebuilt = embeddings.Embedder.from_identity("voyage", "voyage:voyage-4-lite@1024")
     assert (rebuilt.provider, rebuilt.model) == ("voyage", "voyage-4-lite")
 
 
-def test_a_saved_earlier_built_in_choice_stays_built_in_under_the_new_identity_and_voyage_is_never_chosen_by_itself(monkeypatch):
+def test_a_saved_earlier_built_in_choice_stays_as_saved_and_voyage_is_never_chosen_by_itself(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("VOYAGE_API_KEY", KEY)
-    assert embeddings.chosen({"provider": "builtin", "model": "bge-small-en-v1.5@aa8f8b0:256"}) == ("builtin", local_embedding.MODEL_ID)
+    assert embeddings.chosen({"provider": "builtin", "model": "bge-small-en-v1.5@aa8f8b0:256"}) == ("builtin", "bge-small-en-v1.5@aa8f8b0:256")
     assert embeddings.chosen(None)[0] != "voyage"  # a key alone turns on nothing
     assert embeddings.chosen({"provider": "voyage", "model": "voyage-4-lite"}) == ("voyage", "voyage-4-lite")
 
@@ -182,13 +184,14 @@ def test_reranking_is_off_unless_turned_on():
     assert rerankers.chosen(None) is None
     assert rerankers.chosen({"enabled": False, "provider": "voyage"}) is None
     choice = rerankers.chosen({"enabled": True, "provider": "builtin"})
-    assert (choice.provider, choice.model, choice.pool_factor) == ("builtin", local_embedding.RERANKER_ID, 2.0)
+    assert (choice.provider, choice.model, choice.pool_factor) == ("builtin", builtin_catalog.NO_MODEL, 4.0)
+    assert rerankers.chosen({"enabled": True, "provider": "builtin", "model": RER}).model == RER
     assert rerankers.chosen({"enabled": True, "provider": "voyage", "pool_factor": 3}).model == "rerank-3-lite"
 
 
 def test_the_rerank_pool_is_the_papers_read_times_the_factor_so_the_cutoff_can_move():
     choice = rerankers.chosen({"enabled": True, "provider": "builtin"})
-    assert [choice.pool_size(n) for n in (25, 50, 100)] == [50, 100, 200]  # quick, standard, detailed
+    assert [choice.pool_size(n) for n in (25, 50, 100)] == [100, 200, 400]  # quick, standard, detailed
     assert rerankers.chosen({"enabled": True, "provider": "builtin", "pool_factor": 1.5}).pool_size(25) == 38
     assert rerankers.chosen({"enabled": True, "provider": "builtin", "pool_factor": 4}).pool_size(150) == rerankers.MAX_CANDIDATES
 
@@ -226,11 +229,12 @@ def test_voyage_rerank_maps_scores_back_to_input_order_and_refuses_a_wrong_reply
 
 def test_the_built_in_rerank_goes_to_the_local_runner_and_maps_its_errors():
     class Local:
-        async def rerank(self, query, documents, seconds):
+        async def rerank(self, model_id, query, documents, seconds):
+            assert model_id == RER
             if documents == ["slow"]:
                 raise local_embedding.LocalEmbeddingError("builtin_timeout", "SYNTHETIC")
             return [0.2, 0.8], [1]
-    choice = rerankers.chosen({"enabled": True, "provider": "builtin"})
+    choice = rerankers.chosen({"enabled": True, "provider": "builtin", "model": RER})
     result = asyncio.run(rerankers.rerank(choice, None, Local(), "q", ["a", "b"]))
     assert result == {"scores": [0.2, 0.8], "truncated": 1, "provider_tokens": None}
     with pytest.raises(rerankers.RerankError) as timeout:
@@ -257,7 +261,7 @@ def fixed_replay(monkeypatch):
 
 
 def applied(candidates, scores):
-    return {"status": "applied", "provider": "builtin", "model": local_embedding.RERANKER_ID,
+    return {"status": "applied", "provider": "builtin", "model": RER,
             "candidate_ids": candidates, "scores": scores, "error_code": None}
 
 
@@ -343,10 +347,10 @@ def test_the_rerank_step_scores_the_first_records_the_person_did_not_include_wit
     seen = []
 
     class Local:
-        async def rerank(self, query, documents, seconds):
+        async def rerank(self, model_id, query, documents, seconds):
             seen.append((query, documents))
             return [0.1, 0.9], []
-    flow, store, _ = rerank_flow(monkeypatch, {"enabled": True, "provider": "builtin", "pool_factor": 2}, Local())
+    flow, store, _ = rerank_flow(monkeypatch, {"enabled": True, "provider": "builtin", "model": RER, "pool_factor": 2}, Local())
     asyncio.run(small_batch.rerank_list(flow, RUN, SCOPE, {}))
     step = store.steps[small_batch.RERANK_KEY]
     assert seen == [("SYNTHETIC research question", ["SYNTHETIC title a\n\nSYNTHETIC abstract a",
@@ -371,12 +375,12 @@ def test_off_writes_no_step_and_calls_nothing(monkeypatch):
 
 def test_a_failed_rerank_is_recorded_with_the_fused_order_as_its_fallback_and_no_other_reranker(monkeypatch):
     class Local:
-        async def rerank(self, query, documents, seconds):
+        async def rerank(self, model_id, query, documents, seconds):
             raise local_embedding.LocalEmbeddingError("builtin_unavailable", "SYNTHETIC not installed")
     sent = []
     http = voyage(lambda r: sent.append(r) or httpx.Response(200))
     monkeypatch.setenv("VOYAGE_API_KEY", KEY)
-    flow, store, _ = rerank_flow(monkeypatch, {"enabled": True, "provider": "builtin"}, Local(), http)
+    flow, store, _ = rerank_flow(monkeypatch, {"enabled": True, "provider": "builtin", "model": RER}, Local(), http)
     asyncio.run(small_batch.rerank_list(flow, RUN, SCOPE, {}))
     step = store.steps[small_batch.RERANK_KEY]
     assert step["status"] == "failed" and step["error_code"] == "reranker_failed"
@@ -388,13 +392,13 @@ def test_a_rerank_past_its_time_limit_is_stopped_and_recorded_as_a_timeout(monke
     cancelled = []
 
     class Local:
-        async def rerank(self, query, documents, seconds):
+        async def rerank(self, model_id, query, documents, seconds):
             try:
                 await asyncio.sleep(60)
             except asyncio.CancelledError:
                 cancelled.append(True)
                 raise
-    flow, store, _ = rerank_flow(monkeypatch, {"enabled": True, "provider": "builtin"}, Local())
+    flow, store, _ = rerank_flow(monkeypatch, {"enabled": True, "provider": "builtin", "model": RER}, Local())
     monkeypatch.setattr(small_batch.fast_path, "stage_deadline",
                         lambda *args: __import__("datetime").datetime(2026, 1, 1, 0, 0, 1))
     store.clock = SimpleNamespace(now=lambda: __import__("datetime").datetime(2026, 1, 1, 0, 0, 0, 700_000))
@@ -407,14 +411,14 @@ def test_a_pause_during_the_rerank_stops_it_and_the_run_and_the_step_is_asked_ag
     cancelled, paused = [], []
 
     class Local:
-        async def rerank(self, query, documents, seconds):
+        async def rerank(self, model_id, query, documents, seconds):
             paused.append(True)
             try:
                 await asyncio.sleep(60)
             except asyncio.CancelledError:
                 cancelled.append(True)
                 raise
-    flow, store, stopped = rerank_flow(monkeypatch, {"enabled": True, "provider": "builtin"}, Local(),
+    flow, store, stopped = rerank_flow(monkeypatch, {"enabled": True, "provider": "builtin", "model": RER}, Local(),
                                        stop=lambda: bool(paused))
     with pytest.raises(RunStopped):
         asyncio.run(asyncio.wait_for(small_batch.rerank_list(flow, RUN, SCOPE, {}), 5))
@@ -430,7 +434,7 @@ class RerankingLocal(FakeLocal):
         super().__init__(**kwargs)
         self.fail, self.reranked = fail, []
 
-    async def rerank(self, query, documents, seconds):
+    async def rerank(self, model_id, query, documents, seconds):
         self.reranked.append(documents)
         if self.fail:
             raise local_embedding.LocalEmbeddingError("builtin_timeout", "SYNTHETIC no reply")
@@ -441,7 +445,7 @@ class RerankingLocal(FakeLocal):
 def test_a_discovery_run_reranks_its_list_or_keeps_the_fused_order_and_says_so(tmp_path, monkeypatch, fail):
     local = RerankingLocal(fail=fail)
     s = Session(tmp_path, monkeypatch, local=local, setting=BUILTIN)
-    s.store.set_setting(rerankers.SETTING, {"enabled": True, "provider": "builtin", "pool_factor": 2, "timeout_seconds": 60})
+    s.store.set_setting(rerankers.SETTING, {"enabled": True, "provider": "builtin", "model": RER, "pool_factor": 2, "timeout_seconds": 60})
     try:
         rid, run_id, view, run = s.discover()
         listing = s.store.existing_step(run_id, small_batch.LIST_KEY)["output"]
@@ -476,11 +480,11 @@ def test_the_reranking_setting_is_off_by_default_and_refuses_a_reranker_that_can
         monkeypatch.setenv("VOYAGE_API_KEY", KEY)
         saved = s.client.put("/api/reranking", json={"enabled": True, "provider": "voyage", "pool_factor": 3}).json()
         too_many = s.client.put("/api/reranking", json={"enabled": True, "provider": "voyage", "pool_factor": 5})
-        builtin = s.client.put("/api/reranking", json={"enabled": True, "provider": "builtin"})
+        builtin = s.client.put("/api/reranking", json={"enabled": True, "provider": "builtin", "model": RER})
         semantic = s.client.get("/api/semantic-search").json()
     finally:
         s.close()
-    assert (view["enabled"], view["provider"], view["pool_factor"], view["applies_to"]) == (False, None, 2.0, ["record_order"])
+    assert (view["enabled"], view["provider"], view["pool_factor"], view["applies_to"]) == (False, None, 4.0, ["record_order"])
     assert refused.status_code == 422 and refused.json()["detail"] == "Add a Voyage API key"
     assert (saved["enabled"], saved["provider"], saved["pool_factor"]) == (True, "voyage", 3.0)
     assert too_many.status_code == 422
@@ -494,5 +498,5 @@ def test_settings_say_when_a_saved_built_in_choice_was_for_the_earlier_model(tmp
         view = s.client.get("/api/semantic-search").json()
     finally:
         s.close()
-    assert (view["provider"], view["model"]) == ("builtin", local_embedding.MODEL_ID)
-    assert view["builtin_model_changed"] == {"from": "bge-small-en-v1.5@aa8f8b0:256", "to": local_embedding.MODEL_ID}
+    assert (view["provider"], view["model"]) == ("builtin", "bge-small-en-v1.5@aa8f8b0:256")  # never remapped
+    assert view["builtin_model_changed"] == {"from": "bge-small-en-v1.5@aa8f8b0:256", "to": None}

@@ -873,11 +873,9 @@ def test_a_missing_installer_is_a_reason_code_not_a_sentence(client, paths, monk
     assert refused.status_code == 422 and refused.json()["code"] == "uv_missing" and "PATH" not in refused.text
     assert client.post("/api/local-tools/cline/install").json()["code"] == "manager_missing"
     monkeypatch.setattr("deixis.workflow.equations.find_tool", lambda name: None)
-    monkeypatch.setattr("deixis.workflow.local_embedding_service.find_tool", lambda name: None)
-    reader, builtin = client.get("/api/equation-reader").json(), client.get("/api/semantic-search/builtin").json()
+    reader = client.get("/api/equation-reader").json()
     assert reader["install"]["available"] is False and reader["install"]["unavailable_reason"] == "uv_missing"
-    assert builtin["uv"]["available"] is False and builtin["uv"]["reason"] == "uv_missing"
-    for body in (tools, reader, builtin):
+    for body in (tools, reader):
         assert "was not found" not in str(body)
 
 

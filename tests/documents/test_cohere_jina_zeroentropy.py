@@ -91,7 +91,7 @@ def test_cohere_has_its_own_stored_identity_with_its_dimension_and_is_never_chos
     assert embedder.batch == 96
     monkeypatch.setenv("COHERE_API_KEY", KEY)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    monkeypatch.setattr(embeddings.local_embedding, "builtin_available", lambda: False)
+    monkeypatch.setattr(embeddings.local_embedding, "model_available", lambda model_id: False)
     assert embeddings.chosen(None) == ("off", None)
 
 
@@ -173,13 +173,14 @@ def test_zeroentropy_requests_are_split_by_its_byte_count():
 def test_api_rerankers_are_offered_only_with_their_keys_and_say_where_text_goes(monkeypatch):
     for env in rerankers.KEY_ENVS.values():
         monkeypatch.delenv(env, raising=False)
-    options = {o["provider"]: o for o in rerankers.options(False, None)}
-    assert list(options) == ["builtin", "voyage", "cohere", "jina", "zeroentropy"]
+    offered = rerankers.options(None)
+    assert [o["provider"] for o in offered] == ["builtin"] * 4 + ["voyage", "cohere", "jina", "zeroentropy"]
+    options = {o["provider"]: o for o in offered}
     assert [options[p]["reason"] for p in ("voyage", "cohere", "jina", "zeroentropy")] == [
         "Add a Voyage API key", "Add a Cohere API key", "Add a Jina API key", "Add a ZeroEntropy API key"]
     assert options["jina"]["sends"] == "The question and the title and abstract of each reranked record, to Jina AI"
     monkeypatch.setenv("JINA_API_KEY", KEY)
-    assert {o["provider"]: o for o in rerankers.options(False, None)}["jina"]["available"] is True
+    assert {o["provider"]: o for o in rerankers.options(None)}["jina"]["available"] is True
 
 
 # ---- keys ------------------------------------------------------------------------------------------------

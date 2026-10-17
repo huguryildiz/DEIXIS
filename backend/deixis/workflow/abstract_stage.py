@@ -43,7 +43,8 @@ UNREAD_CODES = ("abstract_not_proposed", "abstract_not_read")
 # ---- what code alone settles -------------------------------------------------------------------
 
 
-def code_outcome(record: dict[str, Any], blocks: dict[str, list[str]], links: Iterable[str]) -> str | None:
+def code_outcome(record: dict[str, Any], blocks: dict[str, list[str]], links: Iterable[str],
+                 lexical_exclusion: bool = True) -> str | None:
     """The abstract-stage code this one record asks for without a model, or None when the model may read it.
 
     `record` carries the record's own fields (`id`, `title`, `abstract`, `doi`, `version_label`) and `decision`,
@@ -70,7 +71,9 @@ def code_outcome(record: dict[str, Any], blocks: dict[str, list[str]], links: It
         return "blocks_in_title"
     # "Both missing" needs two blocks to be missing from. With one searched block, the record that lacks it is the
     # record SW9.2 leaves to the model ("one missing block does not close"), not one code may put out of scope.
-    if (record.get("abstract") and all(forms[name] for name in GATE_BLOCKS)
+    # A snowball round turns this off (`lexical_exclusion=False`): its works came from chosen seeds' citations, and a
+    # paper naming the topic in other words would otherwise be closed without being read.
+    if (lexical_exclusion and record.get("abstract") and all(forms[name] for name in GATE_BLOCKS)
             and not blocks_in(forms, f"{record['title'] or ''} {record['abstract']}")):
         return "both_blocks_missing"
     return None

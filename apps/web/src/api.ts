@@ -185,7 +185,7 @@ export type Step = {
     // The full-text reading plan: the works it froze.
     works?: unknown[] } | null
 }
-export type RunKind = 'discovery' | 'answer' | 'answer_review' | 'followup_answer' | 'report' | 'review' | 'watch_check' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search' | 'screen_more' | 'table_column_recheck' | 'citation_map'
+export type RunKind = 'discovery' | 'answer' | 'answer_review' | 'followup_answer' | 'report' | 'review' | 'watch_check' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search' | 'screen_more' | 'table_column_recheck' | 'citation_map' | 'snowball'
 // What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
 export type RunTarget = {
   plan?: { groups: ReviewGroup[] }
@@ -1879,8 +1879,49 @@ export type UnscreenedPage = {
 export const screenMoreApi = {
   unscreened: (id: string, offset = 0, limit = 50) =>
     request<UnscreenedPage>(`/api/researches/${encodeURIComponent(id)}/unscreened?offset=${offset}&limit=${limit}`),
-  screenMore: (id: string, idempotencyKey: string) =>
-    request<Run>(`/api/researches/${encodeURIComponent(id)}/screen-more`, { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } }),
+  // With `snowballRunId`, the next works of that round's frozen list (lexical exclusion stays off).
+  screenMore: (id: string, idempotencyKey: string, snowballRunId?: string) =>
+    request<Run>(`/api/researches/${encodeURIComponent(id)}/screen-more${snowballRunId ? `?snowball_run_id=${encodeURIComponent(snowballRunId)}` : ''}`,
+      { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey } }),
+}
+
+// Citation snowballing (api/snowball_routes.py). A series of rounds the person starts from chosen works; each round
+// reads backward and forward links from OpenAlex, writes what was new as search candidates and screens up to
+// `limits.screen_limit` of them. Nothing is included by a round. Counts stay apart: `admissions` counts identities by
+// what they became (new, seen again, already held, ambiguous, no record in a complete answer, unresolved).
+export type SnowballSummary = {
+  round: number; seeds: number; unusable_seeds: number; seeds_without_list: number
+  backward_ids: number; held: number; ambiguous_planned: number; not_requested: number; forward_seeds_not_requested: number
+  requests: { index: number; direction: 'backward' | 'forward'; status: string; seed: string | null; page: number | null; asked: number; returned: number; provider_total: number | null }[]
+  unsent: Record<string, number>; admissions: Partial<Record<'new' | 'seen' | 'existing' | 'ambiguous' | 'no_record' | 'unresolved', number>>
+  new_works: number; planned_for_screening: number; not_screened_limit: number
+  // How far the planned works' screening got: planning a work is not reading it.
+  screening: Record<'model_read' | 'code' | 'no_abstract' | 'not_read', number>; reason_codes: Record<string, number>; candidates: string[]
+}
+export type SnowballItem = {
+  work_id: string; source_version_id: string | null; title: string | null; year: number | null; position: number; seeds: number
+  directions: ('backward' | 'forward')[]; planned_in_round: boolean; candidate: boolean; removed: boolean
+  screening: 'model_read' | 'code' | 'no_abstract' | 'not_read' | 'person'
+  person_state: 'included' | 'excluded' | 'uncertain' | 'pending' | null
+}
+export type SnowballRound = {
+  run_id: string; round: number; status: RunStatus; pause_reason: string | null; error: unknown
+  directions: ('backward' | 'forward')[]; sort: string; seeds: string[]
+  dois: { doi: string; status: string; openalex_id?: string; source_version_id?: string }[] | null
+  summary: SnowballSummary | null; items: SnowballItem[]
+}
+export type SnowballSeries = { series_id: string; scope_revision: number; stale: boolean; rounds: SnowballRound[]; can_continue: boolean; suggested_seeds: string[] }
+export type SnowballSeedOption = { source_version_id: string; work_id: string; title: string | null; year: number | null; state: string | null; decided_by_person: boolean; has_openalex_id: boolean }
+export type SnowballView = {
+  available: boolean; unavailable_reason: 'no_approved_search' | null; signals_note: string
+  limits: { max_seeds: number; backward_requests: number; forward_requests: number; forward_pages: number; page_size: number; screen_limit: number; max_rounds: number; sort: string }
+  seed_options: SnowballSeedOption[]; series: SnowballSeries[]
+}
+export const snowballApi = {
+  view: (id: string) => request<SnowballView>(`/api/researches/${encodeURIComponent(id)}/snowball`),
+  start: (id: string, body: { seeds: string[]; dois: string[]; directions: ('backward' | 'forward')[]; series_id?: string | null }, idempotencyKey: string) =>
+    request<Run>(`/api/researches/${encodeURIComponent(id)}/snowball`, { method: 'POST', body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey } }),
 }
 // Works an answer read only because a Screen more run made them candidates after the read cutoff: abstract-based
 // evidence (`evidence_basis: 'abstract_screening'`), to be labelled "screened after the cutoff (abstract screening)".

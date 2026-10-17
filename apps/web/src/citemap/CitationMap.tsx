@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
-import { Check, FileText, Maximize, Plus, Search, TriangleAlert, ZoomIn, ZoomOut } from 'lucide-react'
+import { Check, FileText, Maximize, Plus, Search, GitFork, TriangleAlert, ZoomIn, ZoomOut } from 'lucide-react'
 import { api, ApiError, type CitationMap as MapData, type CitationMapPlan, type Run } from '../api'
 import { ConnectionIcon } from '../connectionIcons'
 import { Notice } from '../Notice'
@@ -137,9 +137,11 @@ function layoutNet(nodes: MapNode[], links: [string, string][]): Layout {
 
 const radius = (indeg: number) => Math.min(26, 6 + Math.sqrt(indeg) * 3.2)
 
-export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChanged }: {
+export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChanged, onSnowball }: {
   researchId: string; eventCursor: number; run: Run | undefined
   onOpenSource: (sourceVersionId: string) => void; onChanged: () => Promise<unknown>
+  // Opens the snowballing panel with this source chosen as a seed.
+  onSnowball?: (sourceVersionId: string, opener: HTMLElement) => void
 }) {
   const toast = useToast()
   const [map, setMap] = useState<MapData | null>(null)
@@ -464,7 +466,7 @@ export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChan
     <div className="cm-stage">
       <div className="cm-mapbox">{zoomBar}{svg ?? <p className="cm-none">{t('No source matches the filters.')}</p>}{legend}</div>
       <div className="cm-detail">{node ? <Detail node={node} graph={graph} budgetStop={budgetStop} added={node.openalexId !== null && added.has(node.openalexId)}
-        adding={adding !== null} describable={describable} onSelect={select} onOpen={onOpenSource} onAdd={add} /> : <p className="meta">{t('Choose a source on the map.')}</p>}</div>
+        adding={adding !== null} describable={describable} onSelect={select} onOpen={onOpenSource} onAdd={add} onSnowball={onSnowball} /> : <p className="meta">{t('Choose a source on the map.')}</p>}</div>
     </div>
     <div className="cm-cols">
       {!single && <section><h3>{t('The core of this research')}</h3><p className="sub">{t('The sources this research’s sources cite most.')}</p>{core.length ? core.map(row) : <p className="sub">{t('None.')}</p>}</section>}
@@ -480,9 +482,10 @@ export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChan
   </div>
 }
 
-function Detail({ node, graph, budgetStop, added, adding, describable, onSelect, onOpen, onAdd }: {
+function Detail({ node, graph, budgetStop, added, adding, describable, onSelect, onOpen, onAdd, onSnowball }: {
   node: MapNode; graph: Graph; budgetStop: boolean; added: boolean; adding: boolean; describable: boolean
   onSelect: (key: string) => void; onOpen: (sourceVersionId: string) => void; onAdd: (node: MapNode) => void
+  onSnowball?: (sourceVersionId: string, opener: HTMLElement) => void
 }) {
   const byYear = (a: MapNode, b: MapNode) => (b.year ?? 0) - (a.year ?? 0)
   const cites = graph.links.filter(([a]) => a === node.key).map(([, b]) => graph.byKey.get(b)).filter((n): n is MapNode => Boolean(n)).sort(byYear)
@@ -511,6 +514,7 @@ function Detail({ node, graph, budgetStop, added, adding, describable, onSelect,
         ? added ? <span className="cm-pill"><span className="dot d-included" />{t('In the candidate list')}</span>
           : <button type="button" className="btn-pri" disabled={adding} onClick={() => onAdd(node)}><Plus size={16} aria-hidden />{t('Add to candidates')}</button>
         : node.sourceVersionId && <button type="button" className="btn-pri" onClick={() => onOpen(node.sourceVersionId!)}><FileText size={16} aria-hidden />{t('Open source')}</button>}
+      {!outside && node.sourceVersionId && onSnowball && <button type="button" className="ghost" onClick={e => onSnowball(node.sourceVersionId!, e.currentTarget)}><GitFork size={16} aria-hidden />{t('Snowball from here')}</button>}
       {node.doi && <a className="ghost" href={`https://doi.org/${node.doi.replace(/^https?:\/\/(dx\.)?doi\.org\//, '')}`} target="_blank" rel="noreferrer"><ConnectionIcon id="doi" />DOI</a>}
     </div>
     <div className="cm-lst"><h4>{t('Works it cites')} · {cites.length}</h4>{outside ? <p>{t('Reference lists of works outside this research are not read.')}</p> : list(cites)}</div>

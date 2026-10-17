@@ -1,0 +1,24 @@
+/* Citation snowballing panel (research/SnowballPanel.tsx): the kit's fields, notes and pills, hairline sections. */
+.mk.snowball .sb-form,.mk.snowball .sb-series{display:grid;gap:10px;padding-top:14px;border-top:1px solid var(--line)}
+.mk.snowball .sb-round{display:grid;gap:8px;padding:12px 0 0;border-top:1px solid var(--line)}
+.mk.snowball .sb-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.mk.snowball .sb-head h3,.mk.snowball .sb-head h4{display:flex;align-items:center;gap:8px;margin-right:auto;font-size:14px;font-weight:600}
+.mk.snowball .sb-live{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12.5px}
+.mk.snowball .sb-q{position:relative;display:block}
+.mk.snowball .sb-q svg{position:absolute;top:50%;left:10px;color:var(--faint);transform:translateY(-50%)}
+.mk.snowball .sb-q .field{padding-left:30px}
+.mk.snowball .sb-seeds{display:grid;gap:2px;max-height:260px;overflow:auto;padding:4px;border:1px solid var(--line);border-radius:8px;list-style:none}
+.mk.snowball .sb-seeds label{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px;padding:4px 6px;border-radius:6px;font-size:13px;cursor:pointer}
+.mk.snowball .sb-seeds label:hover{background:var(--hover-surface)}
+.mk.snowball .sb-seeds label[aria-disabled]{cursor:default}
+.mk.snowball .sb-seeds .sb-t{flex:1;min-width:0;color:var(--ink)}
+.mk.snowball .sb-dirs label{display:flex;align-items:center;gap:6px;color:var(--ink-2);font-size:13px}
+.mk.snowball .sb-counts{display:grid;gap:4px;margin:0}
+.mk.snowball .sb-counts div{display:grid;grid-template-columns:minmax(120px,170px) 1fr;gap:10px;font-size:12.5px}
+.mk.snowball .sb-counts dt{margin:0;color:var(--muted)}
+.mk.snowball .sb-counts dd{margin:0;color:var(--ink-2)}
+.mk.snowball .sb-items{display:grid;gap:8px;margin:0;padding-left:20px}
+.mk.snowball .sb-items li{display:grid;gap:2px}
+.mk.snowball .sb-items .sb-t{text-align:left;font-size:13.5px;line-height:1.45}
+.mk.snowball .sb-tags{display:flex;gap:6px}
+@media (max-width:760px){.mk.snowball .sb-counts div{grid-template-columns:1fr;gap:0}}

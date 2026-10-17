@@ -1178,6 +1178,7 @@ def create_app(
     from deixis.api.research_model_routes import register_research_model_routes
     from deixis.api.table_routes import register_table_routes
     from deixis.api.screen_more_routes import register_screen_more_routes
+    from deixis.api.snowball_routes import register_snowball_routes
     from deixis.api.shell_routes import register_shell_routes
     from deixis.api.usage_routes import register_usage_routes
     from deixis.api.watch_routes import register_watch_routes
@@ -1196,6 +1197,7 @@ def create_app(
     from deixis.api.about_routes import register_about_routes; register_about_routes(app)
     from deixis.api.spend_routes import register_spend_routes; register_spend_routes(app)
     register_screen_more_routes(app)
+    register_snowball_routes(app)
     from deixis.api.followup_turns_routes import register_followup_turns_routes; register_followup_turns_routes(app)
     from deixis.api.search_plan_routes import register_search_plan_routes; register_search_plan_routes(app)
     from deixis.api.scope_routes import register_scope_routes; register_scope_routes(app)

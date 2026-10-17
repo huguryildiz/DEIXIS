@@ -453,6 +453,9 @@ class ResearchFlow:
             elif run["kind"] == "citation_map":
                 from deixis.workflow import citation_map_run
                 await citation_map_run.execute(self, run, scope)
+            elif run["kind"] == "snowball":
+                from deixis.workflow import snowball
+                await snowball.execute(self, run, scope)
             else:
                 self._fail(run_id, "unknown_run_kind", {"kind": run["kind"]})
         except RunStopped:
@@ -1412,7 +1415,7 @@ class ResearchFlow:
                               order: list[str], *,
                               batch_key: str | None = None, read_limit: int | None = None,
                               frozen_plan: dict[str, Any] | None = None,
-                              cutoff: Callable[[], bool] | None = None) -> None:
+                              cutoff: Callable[[], bool] | None = None, lexical_exclusion: bool = True) -> None:
         """Classify every record by code, then ask the model twice about the works code left open (K3, D81).
 
         Nothing is included here: the abstract stage has no `include` outcome (SW1.2). A work is included only by
@@ -1431,7 +1434,8 @@ class ResearchFlow:
         run_id, revision = run["id"], run["scope_revision"]
         prefix = f"{batch_key}:abstract_screening" if batch_key else "abstract_screening"
         plan = frozen_plan if frozen_plan is not None else self._abstract_code_stage(
-            run, scope, vocabulary, order, batch_key=batch_key, read_limit=read_limit)
+            run, scope, vocabulary, order, batch_key=batch_key, read_limit=read_limit,
+            lexical_exclusion=lexical_exclusion)
         self._wake_fetch(run_id)  # the code's decisions are written: more works may be certain now (slice 17a)
         batches, runs = plan["batches"], plan["runs"]
         by_svid = {c["source_version_id"]: c for c in self.store.candidates(run["research_id"])}
@@ -1646,8 +1650,11 @@ class ResearchFlow:
 
     def _abstract_code_stage(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
                              order: list[str], *,
-                             batch_key: str | None = None, read_limit: int | None = None) -> dict[str, Any]:
-        """Write what code decides about every record, then freeze the read plan in this step's output."""
+                             batch_key: str | None = None, read_limit: int | None = None,
+                             lexical_exclusion: bool = True) -> dict[str, Any]:
+        """Write what code decides about every record, then freeze the read plan in this step's output. Without
+        `lexical_exclusion` (a snowball round) code never closes a record for naming neither gate block; the plan
+        records that."""
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
         key = f"{batch_key}:abstract_stage" if batch_key else "abstract_stage"
         step = self.store.step(run_id, key, f"code:{key}")
@@ -1686,7 +1693,7 @@ class ResearchFlow:
             for version in sorted(by_work[versions[svid]["work_id"]], key=lambda v: v["id"]):
                 held = current.get(version["id"])
                 record = dict(version, decision=held["reason_code"] if held else None)
-                code = abstract_stage.code_outcome(record, blocks, links)
+                code = abstract_stage.code_outcome(record, blocks, links, lexical_exclusion)
                 stale = bool(held) and decisions.is_stale(held, stale_key)
                 if batch_key and held and held["decided_by"] != "human" and not stale:
                     changed = (held["reason_code"] in abstract_stage.MODEL_CODES
@@ -1716,6 +1723,8 @@ class ResearchFlow:
         output = {"decisions": written, "limit": limit, "batch": ABSTRACT_BATCH, "runs": ABSTRACT_RUNS,
                   "batches": plan["batches"], "not_read": len(plan["not_read"]),
                   "works_needing_model": sum(len(batch) for batch in plan["batches"]) + len(plan["not_read"])}
+        if not lexical_exclusion:
+            output["lexical_exclusion"] = False
         self.store.finish_step(step["id"], "succeeded", output=output)
         return output
 

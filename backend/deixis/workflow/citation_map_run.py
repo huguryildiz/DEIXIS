@@ -267,10 +267,10 @@ def _id_send(flow: Any, ids: list[str]) -> Callable[[], Awaitable[Any]]:
 
 
 async def _request(flow: Any, run: dict[str, Any], key: str, send: Callable[[], Awaitable[Any]],
-                   apply: Callable[[Any, dict[str, Any]], dict[str, Any]]) -> None:
+                   apply: Callable[[Any, dict[str, Any]], dict[str, Any]], kind: str = REQUEST_KIND) -> None:
     """One OpenAlex request as its own step: sent once, its answer applied in the transaction that ends the step."""
     store, run_id = flow.store, run["id"]
-    step = store.step(run_id, key, REQUEST_KIND)
+    step = store.step(run_id, key, kind)
     if step["status"] == "succeeded":
         return
     flow._checkpoint(run_id, run["scope_revision"])

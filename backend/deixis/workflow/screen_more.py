@@ -184,7 +184,20 @@ def budget(count: int) -> dict[str, Any]:
                             "runs": ABSTRACT_RUNS, "reads": reads}}
 
 
-def request(store: Any, rid: str, idempotency_key: str | None) -> dict[str, Any]:
+def snowball_list(store: Any, rid: str, run_id: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    """(snowball round, its frozen list) for a completed round of the current question revision. The round's
+    approved discovery stays the vocabulary's source, and its lexical exclusion stays off."""
+    run = store.run(run_id)
+    if (run is None or run["research_id"] != rid or run["kind"] != "snowball" or run["status"] != "completed"
+            or run["scope_revision"] != store.research(rid)["current_scope_revision"]):
+        raise NothingToScreen("no_completed_round", "No completed snowball round of this question with this id")
+    step = store.existing_step(run_id, "snowball:list")
+    if step is None or step["status"] != "succeeded":
+        raise NothingToScreen("no_completed_round", "This round froze no list")
+    return run, step["output"]
+
+
+def request(store: Any, rid: str, idempotency_key: str | None, snowball_run_id: str | None = None) -> dict[str, Any]:
     """F13: queue a `screen_more` run for the next `SIZE` screenable works of the frozen list, planned here.
 
     Refused while another run of the research is active (RevisionConflict, 409), and when there is no completed
@@ -206,16 +219,24 @@ def request(store: Any, rid: str, idempotency_key: str | None) -> dict[str, Any]
             (rid, *ACTIVE_RUN_STATUSES)).fetchone()
         if active:
             raise RevisionConflict(f"run {active['id']} is still active")
-        found = frozen_list(store, rid)
-        if found is None:
-            raise NothingToScreen("no_completed_discovery", "This research has no completed search with a ranked list")
-        discovery, listing = found
+        extra: dict[str, Any] = {}
+        if snowball_run_id:
+            # A snowball round's list: the vocabulary still comes from the round's approved discovery, and code does
+            # not close a work for naming neither gate block, as in the round itself.
+            source, listing = snowball_list(store, rid, snowball_run_id)
+            discovery = store.run(source["target"]["discovery_run_id"])
+            extra = {"source_run_id": source["id"], "lexical_exclusion": False}
+        else:
+            found = frozen_list(store, rid)
+            if found is None:
+                raise NothingToScreen("no_completed_discovery", "This research has no completed search with a ranked list")
+            discovery, listing = found
         picked = [row for row in _unscreened(store, rid, listing) if row["screenable"]][:SIZE]
         if not picked:
             raise NothingToScreen("nothing_left", "Every work of the ranked list that has an abstract was screened")
         target = {"discovery_run_id": discovery["id"], "manifest_hash": listing["manifest_hash"],
                   "heads": [row["head"] for row in picked], "work_ids": [row["item"]["work_id"] for row in picked],
-                  "positions": [row["item"]["position"] for row in picked]}
+                  "positions": [row["item"]["position"] for row in picked]} | extra
         return store.create_run(rid, KIND, budget(len(picked)), key, target)
 
 
@@ -254,14 +275,15 @@ def mark_answer(store: Any, run: dict[str, Any]) -> None:
 
 
 def answer_candidates(store: Any, rid: str, scope_revision: int) -> dict[str, dict[str, Any]]:
-    """Current abstract-stage candidates the two model reads of a `screen_more` run of this question revision wrote,
-    by record: the decision, its step and its run."""
+    """Current abstract-stage candidates the two model reads of a `screen_more` or `snowball` run of this question
+    revision wrote, by record: the decision, its step and its run. A snowball round's candidates reach an answer the
+    same way, only once the person includes them (`answer_admissions`)."""
     decisions = DecisionStore(store)
     key = decisions.staleness_key(rid)
     found = {}
     for row in store.conn.execute(
             "SELECT d.*, s.run_id AS screen_run_id FROM stage_decisions d JOIN run_steps s ON s.id = d.step_id"
-            " JOIN runs r ON r.id = s.run_id WHERE r.research_id = ? AND r.kind = 'screen_more' AND r.scope_revision = ?"
+            " JOIN runs r ON r.id = s.run_id WHERE r.research_id = ? AND r.kind IN ('screen_more', 'snowball') AND r.scope_revision = ?"
             " AND d.stage = 'abstract' AND d.outcome = 'candidate' AND d.decided_by = 'model_agreement'"
             " AND d.superseded_at IS NULL", (rid, scope_revision)):
         decision = dict(row)
@@ -368,7 +390,8 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None
     # Every batch close publishes its decisions and the selection-revision move in one transaction.
     flow._abstract_close_hooks[run_id] = lambda: mark_answer(store, run)
     try:
-        await flow._abstract_stage(run, scope, vocabulary, order=heads, batch_key=BATCH_KEY, read_limit=len(heads))
+        await flow._abstract_stage(run, scope, vocabulary, order=heads, batch_key=BATCH_KEY, read_limit=len(heads),
+                                   lexical_exclusion=target.get("lexical_exclusion", True))
     finally:
         flow._abstract_close_hooks.pop(run_id, None)
     flow._checkpoint(run_id, revision)

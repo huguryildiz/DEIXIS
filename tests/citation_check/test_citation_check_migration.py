@@ -32,7 +32,7 @@ def test_a_library_made_by_0001_alone_takes_0002_and_keeps_its_rows(tmp_path, mo
     conn.close()
 
     conn = db.connect(path)
-    assert db.migrate(conn) == [2]
+    assert db.migrate(conn)[0] == 2  # later migrations follow it
     assert conn.execute("SELECT kind FROM researches WHERE id = 'res_1'").fetchone()[0] == "research"
     assert [tuple(r) for r in conn.execute("SELECT id, kind, status FROM runs")] == [("run_1", "citation_map", "completed")]
     conn.execute("INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
@@ -41,7 +41,7 @@ def test_a_library_made_by_0001_alone_takes_0002_and_keeps_its_rows(tmp_path, mo
     assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     conn.execute("DELETE FROM runs WHERE id = 'run_2'")
     fresh = db.connect(tmp_path / "fresh.sqlite")
-    assert db.migrate(fresh) == [1, 2]
+    assert db.migrate(fresh)[:2] == [1, 2]
     assert schema(conn) == schema(fresh)
 
 

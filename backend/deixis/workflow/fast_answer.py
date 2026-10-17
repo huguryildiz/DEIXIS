@@ -304,6 +304,32 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
                            abstract_ids=found["abstract_ids"], screened_after_cutoff=found["run_id"],
                            evidence_basis="abstract_screening",
                            **({"head_after_cutoff": found["current_head"]} if found["current_head"] != row["head"] else {}))
+        # A snowball round's candidate is a work the discovery never listed, so it has no cutoff row to update. It
+        # joins the answer as abstract-based evidence only once the person included the work's head (plan
+        # .local/plans/snowballing-plan.md): two model reads that agree propose it, the person decides.
+        present = {row["work_id"] for row in rows}
+        position = max((row["position"] for row in rows), default=0)
+        for work_id, found in sorted(later.items()):
+            screened_by = store.run(found["run_id"])
+            # A round's own screening, or Screen more reading on from a round's list.
+            if work_id in present or not (screened_by["kind"] == "snowball"
+                                          or (screened_by["target"] or {}).get("source_run_id")):
+                continue
+            head = found["current_head"]
+            user = selections.get(head)
+            if not user or user["state"] != "included":
+                continue
+            read = found["source_version_id"]
+            source = store.source(read)
+            position += 1
+            row = {"work_id": work_id, "head": head, "position": position, "source_version_id": read,
+                   "route": "abstract", "decision_id": found["decision_id"], "abstract_decision_id": found["decision_id"],
+                   "fulltext_decision_id": None, "asset_id": None, "abstract_ids": found["abstract_ids"],
+                   "fulltext_ids": [], "reason": None, "base_reason": None, "base_route": "abstract",
+                   "file_unverified": False, "version": {k: source.get(k) for k in VERSION_FIELDS},
+                   "screened_after_cutoff": found["run_id"], "evidence_basis": "abstract_screening"}
+            apply_user(row, user)
+            rows.append(row)
     # Late full text that excluded a work (D255) outranks the abstract screening that admitted it at the cutoff.
     if not run["budget"].get("late_revision_id"):
         from deixis.workflow import late_revision

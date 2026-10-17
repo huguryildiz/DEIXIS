@@ -483,7 +483,7 @@ class Store:
                           "model_proposals", "record_signal_ranks", "record_flags", "chain_links", "scope_english_questions"):
                 self.conn.execute(f"DELETE FROM {table} WHERE research_id = ?", (research_id,))
             self.conn.execute("DELETE FROM run_steps WHERE run_id IN (SELECT id FROM runs WHERE research_id = ?)", (research_id,))
-            for table in ("provider_requests", "provider_requests_unrecorded_runs"):
+            for table in ("provider_requests", "provider_requests_unrecorded_runs", "snowball_admissions"):
                 self.conn.execute(f"DELETE FROM {table} WHERE run_id IN (SELECT id FROM runs WHERE research_id = ?)", (research_id,))
             for table in ("runs", "scope_revisions"):
                 self.conn.execute(f"DELETE FROM {table} WHERE research_id = ?", (research_id,))
@@ -1153,7 +1153,7 @@ class Store:
                      "research_title": "intake", "lineage_links": "synthesis",
                      "claim_decomposition": "candidate", "kill_search": "candidate", "review": "claim_check",
                      "watch_check": "discovery", "screen_more": "screening",
-                     "citation_map": "synthesis"}.get(kind, "extraction")
+                     "citation_map": "synthesis", "snowball": "screening"}.get(kind, "extraction")
             self.conn.execute(
                 "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, idempotency_key, target_json,"
                 " created_at, updated_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)",
@@ -3302,6 +3302,9 @@ class Store:
             # A chain link names a record twice: the seed it came from and the record the linked work became (D95).
             self.conn.execute(f"DELETE FROM chain_links WHERE research_id = ? AND (source_version_id IN ({marks})"
                               f" OR seed_source_version_id IN ({marks}))", (research_id, *chosen, *chosen))
+            # A snowball round's admission row names the record an identity became; the row stays as history, without it.
+            self.conn.execute(f"UPDATE snowball_admissions SET source_version_id = NULL WHERE source_version_id IN ({marks})"
+                              " AND run_id IN (SELECT id FROM runs WHERE research_id = ?)", (*chosen, research_id))
             self.conn.execute("DELETE FROM research_purge_authorizations WHERE research_id = ?", (research_id,))
             orphan_files: list[str] = []
             for svid in chosen:

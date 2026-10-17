@@ -257,6 +257,7 @@ export const runKindLabels: Record<RunKind, string> = {
   screen_more: 'Abstract screening of more works',
   table_column_recheck: 'Column recheck',
   citation_map: 'Reference list reading',
+  snowball: 'Citation snowballing round',
 }
 
 export const reportSupportLabels: Record<string, string> = { source_stated: 'Stated by the source', analyst_inference: 'Analyst inference' }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, BookOpen, ChevronRight, Clock, Ellipsis, FileText, FileUp, Funnel, Inbox, Lightbulb, ListMinus, MessageSquareQuote, PencilLine, Search, Sparkles, Table2, Trash2, Waypoints } from 'lucide-react'
+import { ArrowUpRight, BookOpen, ChevronRight, Clock, Ellipsis, FileText, FileUp, Funnel, Inbox, Lightbulb, ListMinus, MessageSquareQuote, PencilLine, GitFork, Search, Sparkles, Table2, Trash2, Waypoints } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, ApiError, followupApi, libraryApi, subscribe, type ActivityEvent, type Answer, type AssetImpact, type ResearchView, type Run, type OcrReason, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ZoteroSource } from './api'
@@ -41,6 +41,7 @@ import { CitationPanel, type CitationOpen } from './research/CitationPanel'
 import { ActivityPanel } from './research/ActivityPanel'
 import { PlanPanel } from './research/PlanPanel'
 import { CitationMap } from './citemap/CitationMap'
+import { SnowballPanel } from './research/SnowballPanel'
 import { PendingArtifacts, TableCard } from './research/ArtifactsTab'
 import { Rail } from './research/Rail'
 import { useRailWide } from './research/railData'
@@ -94,6 +95,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // `ask` counts the requests to focus a field while the form is open.
   const [revising, setRevising] = useState<false | { focus: 'question' | 'terms'; revision: number; ask: number }>(false)
   const [savingRevision, setSavingRevision] = useState(false)
+  // The seed the citation map passed when it opened the snowballing panel; null from the ⋯ menu.
+  const [snowballSeed, setSnowballSeed] = useState<string | null>(null)
   const [error, setError] = useState('')
   const toast = useToast()
   // The tabs became a side panel beside the thread (R10): the URL's last segment names the open panel, old tab names included.
@@ -816,6 +819,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
             {hasAcademic && <DropdownMenuItem className="research-menu-placement" onClick={() => { rowChosen.current = true; openPanel('plan', { opener: moreButton.current }) }}><PencilLine size={15} aria-hidden /><span>{t('Search plan')}</span></DropdownMenuItem>}
             {/* The citation map (D42): the works, their reference links and the often-cited works outside the research. */}
             <DropdownMenuItem className="research-menu-placement" onClick={() => { rowChosen.current = true; openPanel('citemap', { opener: moreButton.current }) }}><Waypoints size={15} aria-hidden /><span>{t('Source citation map')}</span></DropdownMenuItem>
+            {hasAcademic && <DropdownMenuItem className="research-menu-placement" onClick={() => { rowChosen.current = true; setSnowballSeed(null); openPanel('snowball', { opener: moreButton.current }) }}><GitFork size={15} aria-hidden /><span>{t('Citation snowballing…')}</span></DropdownMenuItem>}
             {answer && <DropdownMenuItem className="research-menu-placement" disabled={busy || active || !(included || answersWithoutInclude)} onClick={() => { void startAnswer() }}><Sparkles size={15} aria-hidden /><span>{t('Generate a new answer')}</span></DropdownMenuItem>}
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" disabled={busy || active} onClick={() => { void moveToTrash() }}><Trash2 size={15} aria-hidden />{t('Move to Trash')}</DropdownMenuItem>
@@ -1004,6 +1008,12 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     {/* The citation map (D42): opened from the ⋯ menu and the Sources panel; a source's "Open source" stacks Source details on it. */}
     <StackPanel name="citemap" title={t('Source citation map')} icon={Waypoints} className="citemap-panel-box">
       <CitationMap researchId={id} eventCursor={view.last_event_id} run={view.runs.find(r => r.kind === 'citation_map')}
+        onOpenSource={svid => setPdfTarget({ assetId: null, sourceVersionId: svid, view: 'text' })} onChanged={async () => { await load(); onChanged() }}
+        onSnowball={(svid, opener) => { setSnowballSeed(svid); openPanel('snowball', { opener }) }} />
+    </StackPanel>
+    {/* Citation snowballing: opened from the ⋯ menu and from a source on the citation map (seeded with it). */}
+    <StackPanel name="snowball" title={t('Citation snowballing')} icon={GitFork}>
+      <SnowballPanel researchId={id} eventCursor={view.last_event_id} initialSeed={snowballSeed}
         onOpenSource={svid => setPdfTarget({ assetId: null, sourceVersionId: svid, view: 'text' })} onChanged={async () => { await load(); onChanged() }} />
     </StackPanel>
     <StackPanel name="plan" title={t('Search plan')} icon={PencilLine}>

@@ -24,9 +24,10 @@ def register_screen_more_routes(app):
 
     @app.post("/api/researches/{research_id}/screen-more", status_code=202)
     async def screen_more_run(research_id: str, request: Request,
-                              idempotency_key: str | None = Header(default=None, max_length=200)):
+                              idempotency_key: str | None = Header(default=None, max_length=200),
+                              snowball_run_id: str | None = Query(None, max_length=200)):
         try:
-            run = screen_more.request(request.app.state.store, research_id, idempotency_key)
+            run = screen_more.request(request.app.state.store, research_id, idempotency_key, snowball_run_id)
         except screen_more.NothingToScreen as exc:
             return JSONResponse({"detail": exc.detail, "code": exc.code}, status_code=422)
         request.app.state.worker.wake()

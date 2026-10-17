@@ -35,6 +35,7 @@ Most of this was tested with fake models and synthetic data only; "Not measured"
 - Works the survey title rule set aside are labeled `code_decided` in the answer input, not `not_screened_at_cutoff` (D69).
 - Raw LaTeX outside `$…$` in answers, follow-ups and report sections sends the step to repair (D61).
 - Every work given to an answer is cited or left out with a reason (D80). One answer call left the reason list empty (29 of 41 works without a reason), so a valid answer with unaccounted works gets one coverage rewrite that keeps its claims (D83). Live on the DBR/VBF question, 3 runs: 0 unaccounted, cited works 12 → 27–28, 12–13 of 13 content-bearing works cited and the rest left out with a confirmed reason; the answer takes about 100 s instead of 22 s and the rewrite's output is 13–15k tokens against a 16k limit (`.local/plans/evidence-ledger-acceptance-2026-10-17.md`).
+- A full text's first answer-input slot goes to its most result-dense passage, formula passages keep the second, reference lists go last (D84). On the DBR/VBF copy, content-bearing works in the input rose 13 → 15 of 41; with D83, 15/15 were cited in two of three runs (8/15 in the third, where a repair wrote the ledger). Tuned on one research; outcome terms match only as the vocabulary writes them.
 
 ### Follow-up questions
 
@@ -56,6 +57,7 @@ Most of this was tested with fake models and synthetic data only; "Not measured"
 
 ### Models and settings
 
+- The Anthropic API connection streams its answer, so a call may write up to 64,000 tokens, thinking included; the whole turn is still bounded by 300 s (D85). Before it, three answer calls on 17 Oct stopped at the old 16,000 limit and two of those runs paused with no answer; in the three runs after it, a 19,240-token repair completed.
 - API keys, including Zotero and TypeSafe, live in the system keychain, and `.env` keys move there on startup (D19, D29).
 - Settings › Models has one card per company with both account sign-in and API key, plus new connections such as Claude and OpenAI API, OpenRouter and MiMo (D20–D24, D34).
 - Ollama and LM Studio cards install the app, start the server and download recommended models, and local models finish a full Quick research (qwen3.5:9b, about 32 min) (D39).

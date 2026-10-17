@@ -306,3 +306,32 @@ def test_cr_only_line_ends_are_read(monkeypatch):
     body = sse(*stream_events()).replace(b"\n", b"\r")
     result = asyncio.run(adapter(lambda r: httpx.Response(200, content=body)).run_step("b", "d", "m", {}, "claude-opus-5-5"))
     assert (result.status, result.raw_text) == ("completed", '{"claims": []}')
+
+
+def _head():
+    """The start of a stream up to its first text delta, which carries '{"claim'."""
+    return sse(*stream_events(text='{"claims": []}')[:8])
+
+
+@pytest.mark.parametrize("tail", [b"data: {\"x\": \"\xc3", b"data: \xff\xfe\n\n"], ids=["eof_inside_a_character", "invalid_utf8"])
+def test_bytes_that_are_not_utf8_fail_after_send_and_keep_the_text_so_far(monkeypatch, tail):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    async def chunks():
+        yield _head()
+        yield tail
+
+    result = asyncio.run(adapter(lambda r: httpx.Response(200, content=chunks())).run_step("b", "d", "m", {}, "claude-opus-5-5"))
+    assert (result.status, result.delivery_class, result.error) == ("failed", "after_send_unknown", "UnicodeDecodeError")
+    assert result.raw_text == '{"claim' and result.external_thread_id == "msg_1"
+
+
+def test_an_unexpected_error_mid_stream_fails_after_send_and_keeps_the_text_so_far(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    async def chunks():
+        yield _head()
+        raise RuntimeError("SYNTHETIC transport failure")
+
+    result = asyncio.run(adapter(lambda r: httpx.Response(200, content=chunks())).run_step("b", "d", "m", {}, "claude-opus-5-5"))
+    assert (result.status, result.delivery_class, result.error, result.raw_text) == (
+        "failed", "after_send_unknown", "RuntimeError", '{"claim')

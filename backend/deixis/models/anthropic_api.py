@@ -142,6 +142,7 @@ class AnthropicAdapter:
         body = {"model": requested_model, "max_tokens": MAX_TOKENS, "system": f"{base}\n\n{developer}",
                 "messages": [{"role": "user", "content": message}], "output_config": output_config}
         body["stream"] = True
+        stream, broken = _Stream(), None
         try:
             async with asyncio.timeout(self.turn_timeout):
                 async with self._http().stream("POST", f"{API_URL}/messages", json=body, headers=headers(key),
@@ -150,16 +151,20 @@ class AnthropicAdapter:
                         await response.aread()
                         return ModelStepResult("failed", error=f"HTTP {response.status_code}: API request failed",
                                                **http_limit(response))
-                    stream = await _read_stream(response)
+                    await _read_stream(response, stream)
         except httpx.ConnectError as exc:
             return ModelStepResult("unavailable", error=error_name(exc), delivery_class="before_send")
-        except (httpx.HTTPError, TimeoutError) as exc:  # the request may have been processed without an answer arriving
-            return ModelStepResult("failed", error=type(exc).__name__, delivery_class="after_send_unknown")
+        except Exception as exc:  # noqa: BLE001 - once sent, a transport error, a timeout, bytes that are not UTF-8 or
+            # anything else that breaks the stream is a failed call that may have been processed; none escapes
+            broken = type(exc).__name__
         text, tools = stream.text(), stream.tool_types()
         resolved = stream.message.get("model") or None
         common: dict[str, Any] = {"resolved_model": resolved, "external_thread_id": stream.message.get("id"),
                                   "token_usage": stream.usage or None, "tool_item_types": tools,
                                   "requested_model_verified": is_dated_snapshot(requested_model, resolved)}
+        if broken is not None:
+            return ModelStepResult("failed", raw_text=text or None, error=broken, delivery_class="after_send_unknown",
+                                   **common)
         if stream.error is not None:
             etype = str(stream.error.get("type") or "error")
             return ModelStepResult("failed", raw_text=text or None, error=f"stream error {etype}",
@@ -256,9 +261,10 @@ async def _sse_lines(response: httpx.Response) -> AsyncIterator[str]:
         yield line
 
 
-async def _read_stream(response: httpx.Response) -> _Stream:
-    """Read server-sent events until the message stops, an error event arrives or the body ends."""
-    stream, data_lines = _Stream(), []
+async def _read_stream(response: httpx.Response, stream: _Stream) -> None:
+    """Read server-sent events into `stream` until the message stops, an error event arrives or the body ends; what was
+    read stays in `stream` when reading raises."""
+    data_lines: list[str] = []
 
     def dispatch() -> None:
         if not data_lines:
@@ -279,6 +285,5 @@ async def _read_stream(response: httpx.Response) -> _Stream:
         elif line.startswith("data:"):
             data_lines.append(line[5:].removeprefix(" "))
         if stream.stopped or stream.error is not None:
-            return stream
+            return
     dispatch()
-    return stream

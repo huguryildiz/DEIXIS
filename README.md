@@ -104,7 +104,7 @@ PYTHONPATH=backend uv run pytest -m process -n 0                       # process
 (cd apps/web && DEIXIS_ACCEPTANCE_DIR=/tmp/deixis-acceptance npm run test:acceptance -- --project acceptance)
 ```
 
-The Vite proxy expects the backend on port 8765. Playwright also has a `parity` project that compares the app with the design mockup; it needs that mockup, which is not in the repository, through `DEIXIS_PARITY_MOCKUP`.
+The Vite proxy expects the backend on port 8765.
 
 The pytest suite and the Playwright browser suite use fake models, mocked providers and synthetic records. Passing them shows that the workflow behaves as designed. It says nothing about model quality or live provider access.
 

@@ -23,7 +23,7 @@ Python 3.12, native arm64. Runtime data lives in `DEIXIS_DATA_DIR` (default `~/L
 - `contracts/research/*.schema.json` + `domain/contracts.py`: step I/O and semantic checks. A schema change also updates `tests/fixtures/research/*` and `tests/support/fakes.py::valid_response`.
 - `methods/deixis-research/`: instructions loaded into model steps; editing them changes `skill_package_hash`.
 - `providers/registry.py`: scholarly sources. `storage/migrations/`: one new numbered file per schema change; never edit an applied one.
-- UI: read [.impeccable.md](.impeccable.md) first. Mockup v24 (`.local/design/elicit-style-mockup/`) is the visual spec; declared differences live in `apps/web/e2e/parity/exceptions.ts`.
+- UI: read [.impeccable.md](.impeccable.md) first. Mockup v25 (`.local/design/elicit-style-mockup/`) is the visual reference, not a test gate (D79).
 
 ## Evidence
 

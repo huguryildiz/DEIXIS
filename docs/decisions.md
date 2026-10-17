@@ -4,6 +4,12 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D79 — The mockup parity check is removed; the mockup stays as a reference
+Status: accepted · Date: 2026-10-17 · Writer: Claude · Supersedes the gate part of D8
+Context: The parity check compared 487 element pairs of the app with the mockup in light and dark at two widths and took about 40 minutes. On 17 Oct nine surfaces (report-panel, report-changes, detail-panel, queue-panel, table-panel, cell-panel, ereport-panel, library, settings) failed with the same messages before and after D77, so it no longer guarded anything, while every visual change had to update the mockup, the pair map and the exception list. The owner asked for it to go.
+Decision: `apps/web/e2e/parity/` and the `parity` Playwright project are deleted. Mockup v25 stays in `.local/design/elicit-style-mockup/` as the visual reference; a deliberate change to a mockup screen updates the mockup in the same work. Behaviour stays covered by the acceptance specs and pytest. The `[parity]` fixture research and the "UI parity S…" slice names in spec comments are kept: they name fixture data and history, not the check.
+Limits: Visual drift from the mockup is now caught only by eye and by the screenshots the acceptance specs write.
+
 ## D78 — Settings → Usage shows spend and subscription limits per model connection, not call counts
 Status: accepted · Date: 2026-10-17 · Writer: Claude · Reviewer: Sol (gpt-6.1-sol)
 Context: The Usage box counted model calls per role since the month began, with each bar the role's share of all calls. The owner found that this says nothing they can act on: a model has no call limit, so 187 calls is neither much nor little.

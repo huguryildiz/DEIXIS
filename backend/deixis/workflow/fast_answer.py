@@ -155,6 +155,47 @@ def read_file(flow: Any, decision: dict[str, Any] | None, svid: str, records: di
     return None
 
 
+def version_text(flow: Any, decisions: Any, facts: dict[str, Any], readings: dict[str, Any],
+                 pools: dict[str, list[dict[str, Any]]], wid: str, svid: str) -> dict[str, Any]:
+    """What one version of a work can give an answer: its first abstract passage, and the pages of the file a current
+    reading read (`read_file`), with the decisions they stand on. Without a flow no reading can be checked against the
+    file in use, so no page is given."""
+    fresh = [d for d in facts["decisions"].get(wid, []) if not decisions.is_stale(d, facts["stale_key"])]
+    full = next((d for d in reversed(fresh) if d["stage"] == "fulltext"
+                 and d["source_version_id"] == svid), None)
+    inspected = full
+    asset = read_file(flow, inspected, svid, readings) if flow is not None else None
+    if flow is not None and not asset and full and full["decided_by"] == "human":
+        for previous in reversed(readings["history"].get(svid, [])):
+            if previous["stage"] == "fulltext" and not decisions.is_stale(previous, facts["stale_key"]):
+                asset = read_file(flow, previous, svid, readings)
+                if asset:
+                    inspected = previous
+                    break
+    # Only a screened version supplies its abstract. Another version is not corroboration.
+    abstract = next((d for d in reversed(fresh) if d["stage"] == "abstract"
+                     and d["source_version_id"] == svid and d["outcome"] == "candidate"), None)
+    passages = pools.get(svid, [])
+    return {"fresh": fresh, "full": full, "inspected": inspected, "asset": asset, "abstract": abstract,
+            "abstract_ids": [p["id"] for p in passages if p["kind"] == "abstract"][:1],
+            "fulltext_ids": [p["id"] for p in passages if p["kind"] == "pdf_page" and p["asset_id"] == asset] if asset else []}
+
+
+def text_row(store: Any, item: dict[str, Any], svid: str, text: dict[str, Any], route: str,
+             reason: str | None) -> dict[str, Any]:
+    """An answer input row for one work read from `svid`, before the person's choice is applied (`apply_user`)."""
+    full, abstract, asset = text["full"], text["abstract"], text["asset"]
+    source = store.source(svid)
+    return {"work_id": item["work_id"], "head": item["head"], "position": item["position"], "source_version_id": svid,
+            "route": route, "decision_id": (full if route == "fulltext" else abstract or {}).get("id"),
+            "abstract_decision_id": (abstract or {}).get("id"),
+            "fulltext_decision_id": text["inspected"]["id"] if asset else None,
+            "asset_id": asset, "abstract_ids": text["abstract_ids"], "fulltext_ids": text["fulltext_ids"],
+            "reason": reason, "base_reason": reason, "base_route": route,
+            "file_unverified": bool(full and not asset),
+            "version": {k: source.get(k) for k in VERSION_FIELDS}}
+
+
 def cutoff_snapshot(flow: Any, run: dict[str, Any], listing: dict[str, Any], closure: dict[str, Any]) -> dict[str, Any]:
     store, rid = flow.store, run["research_id"]
     decisions = DecisionStore(store)
@@ -175,21 +216,8 @@ def cutoff_snapshot(flow: Any, run: dict[str, Any], listing: dict[str, Any], clo
         user = selections.get(head) or humans.get(wid)
         outcome = decisions.work_outcome(rid, wid, facts)
         svid = versions.get(head) or head
-        fresh = [d for d in facts["decisions"].get(wid, []) if not decisions.is_stale(d, facts["stale_key"])]
-        full = next((d for d in reversed(fresh) if d["stage"] == "fulltext"
-                     and d["source_version_id"] == svid), None)
-        inspected = full
-        asset = read_file(flow, inspected, svid, readings)
-        if not asset and full and full["decided_by"] == "human":
-            for previous in reversed(readings["history"].get(svid, [])):
-                if previous["stage"] == "fulltext" and not decisions.is_stale(previous, facts["stale_key"]):
-                    asset = read_file(flow, previous, svid, readings)
-                    if asset:
-                        inspected = previous
-                        break
-        # Only a screened version supplies its abstract. Another version is not corroboration.
-        abstract = next((d for d in reversed(fresh) if d["stage"] == "abstract"
-                         and d["source_version_id"] == svid and d["outcome"] == "candidate"), None)
+        text = version_text(flow, decisions, facts, readings, pools, wid, svid)
+        fresh, full, asset, abstract = text["fresh"], text["full"], text["asset"], text["abstract"]
         route = "fulltext" if asset and full["outcome"] == "include" else "abstract"
         # A PDF the person attached and the model read stays in the answer whatever the new ranking says.
         uploaded = bool(asset) and store.conn.execute(
@@ -214,20 +242,9 @@ def cutoff_snapshot(flow: Any, run: dict[str, Any], listing: dict[str, Any], clo
                             and reason_code(d["reason_code"]).next_step == "seed_pool" for d in fresh)
             reason = (UNRESOLVED_WITHOUT_FULLTEXT if routed and unread_text else
                       CODE_DECIDED if set_aside else "not_screened_at_cutoff")
-        passages = pools.get(svid, [])
-        abstract_ids = [p["id"] for p in passages if p["kind"] == "abstract"][:1]
-        full_ids = [p["id"] for p in passages if p["kind"] == "pdf_page" and p["asset_id"] == asset] if asset else []
-        source = store.source(svid)
-        row = {"work_id": wid, "head": head, "position": item["position"], "source_version_id": svid,
-               "route": route, "decision_id": (full if route == "fulltext" else abstract or {}).get("id"),
-               "abstract_decision_id": (abstract or {}).get("id"),
-               "fulltext_decision_id": inspected["id"] if asset else None,
-               "asset_id": asset, "abstract_ids": abstract_ids, "fulltext_ids": full_ids,
-               "reason": reason, "base_reason": reason, "base_route": route,
-               "file_unverified": bool(full and not asset),
-               "version": {k: source.get(k) for k in VERSION_FIELDS}}
+        row = text_row(store, item, svid, text, route, reason)
         apply_user(row, user)
-        if not row["reason"] and not (full_ids if row["route"] == "fulltext" else abstract_ids):
+        if not row["reason"] and not (row["fulltext_ids"] if row["route"] == "fulltext" else row["abstract_ids"]):
             row["reason"] = "no_text_at_cutoff"
         if row["reason"]:
             excluded[row["reason"]] += 1
@@ -265,6 +282,39 @@ def apply_user(row: dict[str, Any], user: dict[str, Any] | None) -> None:
         row["reason"] = None if row["fulltext_ids"] or row["abstract_ids"] else "user_included_no_text"
     if row["route"] == "abstract" and row["base_route"] == "fulltext":
         row["decision_id"] = row.get("abstract_decision_id")
+
+
+def included_heads(store: Any, rid: str) -> dict[str, str]:
+    """Each work whose current head carries the person's own selection `included`, by work: only that selection row
+    counts. Another state of it, a choice on another version or a queue decision alone adds nothing."""
+    selections, _ = user_choices(store, rid)
+    return {wid: head for wid, head in store.work_heads(rid).items()
+            if (selections.get(head) or {}).get("state") == "included"}
+
+
+def after_cutoff_rows(store: Any, flow: Any, rid: str,
+                      works: dict[str, str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Answer input rows for works the person included that the read cutoff holds no row for (a work a follow-up
+    search found, or one added by hand): one row per work, read from the head's answer version (D48), its full text
+    when a current reading read the file in use, else its abstract, then the person's choice. A work with no text
+    version gives no row and is listed as `no_text_version`. Without a flow no page is given (`version_text`)."""
+    decisions = DecisionStore(store)
+    facts = decisions.facts(rid)
+    selections, _ = user_choices(store, rid)
+    pools = current_pools(store, rid)
+    readings = reading_records(store, rid)
+    rows, missing = [], []
+    for wid, head in works.items():
+        svid = store.answer_version(rid, head)
+        if svid is None:
+            missing.append({"work_id": wid, "source_version_id": head, "reason": "no_text_version"})
+            continue
+        text = version_text(flow, decisions, facts, readings, pools, wid, svid)
+        row = text_row(store, {"work_id": wid, "head": head, "position": None}, svid, text,
+                       "fulltext" if text["asset"] else "abstract", None)
+        apply_user(row, selections.get(head))
+        rows.append(row | {"added_after_cutoff": True, "head_after_cutoff": head})
+    return rows, missing
 
 
 def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
@@ -330,6 +380,17 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
                    "screened_after_cutoff": found["run_id"], "evidence_basis": "abstract_screening"}
             apply_user(row, user)
             rows.append(row)
+    # A work the person included that the cutoff holds no row for (a follow-up search found it, or it was added by
+    # hand) is read too, one row per work: the cutoff's works are matched by the work each of their records belongs to
+    # now, so a record that has since merged into another work never gives that work a second row.
+    no_text = []
+    if run["budget"].get("trigger") is None and not run["budget"].get("late_revision_id"):
+        held = {row["work_id"] for row in rows} | set(store.work_ids(
+            list({svid for row in rows for svid in (row["head"], row["source_version_id"])})).values())
+        works = {wid: head for wid, head in included_heads(store, rid).items() if wid not in held}
+        if works:
+            added, no_text = after_cutoff_rows(store, flow, rid, works)
+            rows += added
     # Late full text that excluded a work (D255) outranks the abstract screening that admitted it at the cutoff.
     if not run["budget"].get("late_revision_id"):
         from deixis.workflow import late_revision
@@ -358,7 +419,7 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
             if not row["reason"] and not (row["fulltext_ids"] if row["route"] == "fulltext" else row["abstract_ids"]):
                 row["reason"] = "no_text_at_cutoff"
     excluded = [{"work_id": r["work_id"], "source_version_id": r["source_version_id"], "reason": r["reason"]}
-                for r in rows if r["reason"]]
+                for r in rows if r["reason"]] + no_text
     rows = [row for row in rows if not row["reason"]]
     rows.sort(key=lambda row: not row["user_priority"])
     patterns = flow._criterion_phrases(run, scope)
@@ -401,11 +462,18 @@ def check_input(flow: Any, run_id: str, plan: dict[str, Any]) -> None:
     pools = current_pools(store, rid)
     selected = set(plan["passage_ids"])
     late = store.run(run_id)["budget"].get("late_revision_id")
-    versions = store.answer_versions(rid) if late else {}
-    heads = store.work_heads(rid) if late else {}
+    added = any(row.get("added_after_cutoff") for row in plan["items"])
+    versions = store.answer_versions(rid) if late or added else {}
+    heads = store.work_heads(rid) if late or added else {}
     for row in plan["items"]:
         svid = row["source_version_id"]
-        if late and row.get("screened_after_cutoff"):
+        if row.get("added_after_cutoff"):
+            # A row the person's inclusion added after the cutoff is held, in every answer that reads it, to the head
+            # it was added under, that head's answer version and, read in full, the file still in use.
+            if (heads.get(row["work_id"]) != row["head_after_cutoff"] or versions.get(row["head_after_cutoff"]) != svid
+                    or row["route"] == "fulltext" and flow._current_asset(svid) != row["asset_id"]):
+                flow._pause(run_id, "source_changed")
+        elif late and row.get("screened_after_cutoff"):
             # UI parity S20: a row admitted after the cutoff reads the version Screen more read, which need not be the
             # work's answer version; it is held to the head it was admitted under. Membership, metadata and passage
             # checks below still apply to the version it reads.
@@ -420,6 +488,21 @@ def check_input(flow: Any, run_id: str, plan: dict[str, Any]) -> None:
         owned = set(row["abstract_ids"]) | set(row["fulltext_ids"])
         if (selected & owned) - current:
             flow._pause(run_id, "source_changed")
+
+
+def added_after_cutoff_view(store: Any, answer_run_id: str | None) -> list[dict[str, Any]]:
+    """The works an answer read because the person included them after the read cutoff, for the answer view to label
+    "Included by you after the search"."""
+    from deixis.workflow.late_revision import REVISION_INPUT
+
+    if answer_run_id is None:
+        return []
+    step = store.existing_step(answer_run_id, REVISION_INPUT) or store.existing_step(answer_run_id, INPUT)
+    if step is None or step["status"] != "succeeded" or not step["output"]:
+        return []
+    return [{"work_id": row["work_id"], "source_version_id": row["source_version_id"],
+             "head_after_cutoff": row["head_after_cutoff"], "route": row["route"]}
+            for row in step["output"].get("items", []) if row.get("added_after_cutoff")]
 
 
 async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:

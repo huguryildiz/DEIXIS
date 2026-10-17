@@ -298,8 +298,11 @@ def test_0003_keeps_every_run_and_accepts_the_snowball_kind(tmp_path, monkeypatc
         conn.execute("INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
                      " VALUES ('run_2', 'res_1', 1, 'snowball', 'queued', 'screening', '{}', 'now', 'now')")
     conn.close()
-    conn = db.connect(path)
-    assert db.migrate(conn) == [3]
+    shutil.copy(db.MIGRATIONS_DIR / "0003_snowball.sql", first_two)  # later migrations (0004 on) are their own tests
+    with monkeypatch.context() as patch:
+        patch.setattr(db, "MIGRATIONS_DIR", first_two)
+        conn = db.connect(path)
+        assert db.migrate(conn) == [3]
     assert [tuple(r) for r in conn.execute("SELECT id, kind FROM runs")] == [("run_1", "citation_check")]
     conn.execute("INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
                  " VALUES ('run_2', 'res_1', 1, 'snowball', 'queued', 'screening', '{}', 'now', 'now')")

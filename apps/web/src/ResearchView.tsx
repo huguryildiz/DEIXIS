@@ -681,6 +681,19 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       return false
     } finally { setAsking(false) }
   }
+  // A turn's search for new works (D92): one idempotency key per press; a refusal says why and the list is read again.
+  const searchFollowup = async (turnId: string) => {
+    if (asking) return
+    setAsking(true)
+    try {
+      await followupApi.search(id, turnId, view.research.current_scope_revision, crypto.randomUUID())
+      await followups.reload()
+      onChanged()
+    } catch (e) {
+      if (e instanceof ApiError && (e.status === 409 || e.status === 422)) { toast('warning', t('Not applied: {message}. The page now shows the latest state.', { message: e.message })); await Promise.all([load(), followups.reload()]) }
+      else toast('error', t('The search was not started: {error}', { error: errorText(e) }))
+    } finally { setAsking(false) }
+  }
   // The latest answer in the thread (S10): the run writing its next version, the earlier version of the same question
   // revision, a claim review still running, and the panels its pills and Next steps rows open.
   const answerRun = run && run.kind === 'answer' && active && answer && run.id !== answer.run_id ? run : null
@@ -913,7 +926,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         actions={{ busy: busy || asking, locked: anyActive, citing: citeClaimId, onCite: claim => setCiteClaimId(claim.id),
           // Resume hands focus to the run's chip in the topbar, as a resumed run of the thread does (controlRun).
           onControl: (runId, action) => { const target = view.runs.find(r => r.id === runId); if (target) controlRun(target, action); else void act(() => api.controlRun(runId, action)) },
-          onAskAgain: question => { void askFollowup(question, crypto.randomUUID()) } }} />)}</div>}
+          onAskAgain: question => { void askFollowup(question, crypto.randomUUID()) },
+          onSearch: turnId => { void searchFollowup(turnId) },
+          onShowCandidates: opener => { setSourceFocus(null); setSourceFilter('passed'); openPanel('sources', { opener }) } }} />)}</div>}
       <FollowupComposer disabledReason={anyActive ? t('Wait for the current run to finish before asking a follow-up.') : null} sending={asking}
         depthIcon={EffortIcon} depthLabel={t(effortLabels[view.scope.effort])} fill={followupFill} quote={followupQuote} onSend={askFollowup}
         onAddPdfs={opener => openPanel('pdfs', { opener })} />
@@ -962,7 +977,18 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         </div></div>
       {zoteroOpen && <ZoteroPanel busy={busy} onImport={importZotero} onClose={() => setZoteroOpen(false)} />}
       <EnglishQuestion researchId={id} view={view} busy={busy} onSaved={next => { setView(next); toast('success', t('English sentence saved for this question revision.')) }} />
-      {view.search_runs.length > 0 && <details className="search-summary"><summary><span><Search size={14} aria-hidden />{t('Search details')}<ChevronRight size={13} aria-hidden className="search-summary-chevron" /></span><small>{t(view.search_runs.length === 1 ? '{n} provider search' : '{n} provider searches', { n: view.search_runs.length })}</small></summary><div className="search-summary-list">{view.search_runs.map(s => <div key={s.id}><span>“{s.query_text}”</span><small>{providerName(s.provider)} · {['completed', 'zero_results'].includes(s.status) ? t(s.status.replace('_', ' ')) : serviceErrorSentence({ kind: serviceKind(s.error?.service_kind ?? s.error?.error_kind ?? s.status, s.error?.http_status), service: providerName(s.provider), resetAt: s.error?.reset_at, effect: view.runs.find(r => r.id === s.run_id)?.status === 'completed' ? 'continued' : undefined })} · {t('{count} of {total} records', { count: s.result_count, total: s.provider_total ?? '?' })} · {t(s.access_mode)}{s.scope_revision !== view.research.current_scope_revision ? ` ${t('· for question revision {n}', { n: s.scope_revision })}` : ''}</small></div>)}</div></details>}
+      {/* The first search's requests and each follow-up search's (D92, run_kind 'followup_search') are listed apart. */}
+      {view.search_runs.length > 0 && (() => {
+        const followupRuns = view.search_runs.filter(s => s.run_kind === 'followup_search')
+        const firstRuns = view.search_runs.filter(s => s.run_kind !== 'followup_search')
+        const row = (s: typeof view.search_runs[number]) => <div key={s.id}><span>“{s.query_text}”</span><small>{providerName(s.provider)} · {['completed', 'zero_results'].includes(s.status) ? t(s.status.replace('_', ' ')) : serviceErrorSentence({ kind: serviceKind(s.error?.service_kind ?? s.error?.error_kind ?? s.status, s.error?.http_status), service: providerName(s.provider), resetAt: s.error?.reset_at, effect: view.runs.find(r => r.id === s.run_id)?.status === 'completed' ? 'continued' : undefined })} · {t('{count} of {total} records', { count: s.result_count, total: s.provider_total ?? '?' })} · {t(s.access_mode)}{s.scope_revision !== view.research.current_scope_revision ? ` ${t('· for question revision {n}', { n: s.scope_revision })}` : ''}</small></div>
+        const counted = [firstRuns.length > 0 && t(firstRuns.length === 1 ? '{n} provider search' : '{n} provider searches', { n: firstRuns.length }),
+          followupRuns.length > 0 && t(followupRuns.length === 1 ? '{n} for a follow-up question' : '{n} for follow-up questions', { n: followupRuns.length })].filter(Boolean).join(' · ')
+        return <details className="search-summary"><summary><span><Search size={14} aria-hidden />{t('Search details')}<ChevronRight size={13} aria-hidden className="search-summary-chevron" /></span><small>{counted}</small></summary><div className="search-summary-list">
+          {firstRuns.map(row)}
+          {followupRuns.length > 0 && <><p className="flow-head">{t('Follow-up searches')}</p>{followupRuns.map(row)}</>}
+        </div></details>
+      })()}
       {view.counts.removed > 0 && <p className="removed-summary"><ListMinus size={14} aria-hidden /><span>{t(view.counts.removed === 1 ? 'You removed {n} source from this research.' : 'You removed {n} sources from this research.', { n: view.counts.removed })}
         {view.counts.removed_found_again > 0 && ` ${t(view.counts.removed_found_again === 1 ? '{n} of them was found again by a later search and is not listed.' : '{n} of them were found again by a later search and are not listed.', { n: view.counts.removed_found_again })}`}</span>
         <a href="#/trash">{t('Show in Trash')}</a></p>}

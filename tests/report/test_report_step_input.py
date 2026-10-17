@@ -154,8 +154,8 @@ def test_non_report_tasks_keep_the_original_step_input_shape(tmp_path):
     }
     for task_type in sorted(set(contracts.TASK_OUTPUTS) - set(contracts.REPORT_TASKS)):
         target = extraction_target if task_type in contracts.EXTRACTION_TASKS else None
-        # A follow-up's question comes from its run's target (S22a); every other task reads the scope's.
-        task_run = run | {"target": {"turn_id": "fut_SYNTH0001", "question": "SYNTHETIC follow-up?"}} if task_type == "followup_answer" else run
+        # A follow-up's question comes from its run's target (S22a, D92); every other task reads the scope's.
+        task_run = run | {"target": {"turn_id": "fut_SYNTH0001", "question": "SYNTHETIC follow-up?"}} if task_type in ("followup_answer", "followup_search_query") else run
         step_input = flow._step_input(
             task_run, scope, "stp_SYNTH0001", task_type, [], [source_id], [passage], [],
             ("fake", "fake-model", None), extraction_target=target,

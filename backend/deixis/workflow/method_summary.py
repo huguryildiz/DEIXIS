@@ -33,15 +33,49 @@ def method_summary(store: Store, research_id: str, answer_id: str) -> dict[str, 
         raise UnknownAnswer(answer_id)
     revision = answer["scope_revision"]
     with queue._snapshot(conn):
+        snapshot = _start_snapshot(store, answer)
         return {
             "answer_id": answer_id, "scope_revision": revision,
-            "search": _search(store, research_id, revision, answer["created_at"]),
-            "selection": _selection(store, research_id, answer, revision),
+            "search": _search(store, research_id, revision, answer["created_at"])
+            # The follow-up searches completed before this answer started (D92), from its start snapshot only; None when
+            # the snapshot did not record them (an older answer), never read from today's runs.
+            | {"followup_searches": (snapshot or {}).get("followup_searches")},
+            "selection": _selection(store, research_id, answer, revision, snapshot),
             "extraction": _extraction(store, research_id, answer_id),
             "limitations": _limitations(store, answer),
-            "evidence_base": _evidence_base(store, answer_id),
+            "evidence_base": _evidence_base(store, answer),
             "not_measured": list(NOT_MEASURED),
         }
+
+
+def _start_snapshot(store: Store, answer: Any) -> dict[str, Any] | None:
+    step = store.existing_step(answer["run_id"], "answer_start_snapshot")
+    return step["output"] if step and step["status"] == "succeeded" and step["output"] else None
+
+
+def start_counts(store: Store, research_id: str, revision: int) -> dict[str, int]:
+    """The Method box's reading counts over the rows stored now. The answer start snapshot stores them (D92, R3.5), so a
+    later run or a work merge never changes an earlier answer's box; nothing recomputes them for an answer later."""
+    conn = store.conn
+
+    def count(sql: str, *tail: Any) -> int:
+        return conn.execute(sql, (research_id, revision, *tail)).fetchone()[0]
+
+    proposals = ("SELECT COUNT(DISTINCT v.work_id) FROM model_proposals p JOIN run_steps s ON s.id = p.step_id"
+                 " JOIN runs r ON r.id = s.run_id JOIN source_versions v ON v.id = p.source_version_id"
+                 " WHERE p.research_id = ? AND r.scope_revision = ? AND p.stage = ?")
+    return {
+        "screened": count("SELECT COUNT(DISTINCT v.work_id) FROM stage_decisions d JOIN source_versions v"
+                          " ON v.id = d.source_version_id WHERE d.research_id = ? AND d.scope_revision = ?"
+                          " AND d.stage = 'abstract'"),
+        "abstract_read": count(proposals, "abstract"),
+        "full_text_attempted": count("SELECT COUNT(DISTINCT s.operation_key) FROM run_steps s JOIN runs r ON r.id = s.run_id"
+                                     " WHERE r.research_id = ? AND r.scope_revision = ?"
+                                     " AND s.operation_key LIKE 'fulltext_work:%' AND s.status IN ('succeeded', 'failed')"),
+        "full_text_read": count(proposals, "fulltext"),
+        "person_decisions": count("SELECT COUNT(DISTINCT source_version_id) FROM stage_decisions WHERE research_id = ?"
+                                  " AND scope_revision = ? AND decided_by = 'human'"),
+    }
 
 
 def _protocol(store: Store, research_id: str, revision: int, until: str) -> dict[str, Any] | None:
@@ -71,38 +105,23 @@ def _search(store: Store, research_id: str, revision: int, until: str) -> dict[s
     }
 
 
-def _selection(store: Store, research_id: str, answer: Any, revision: int) -> dict[str, Any]:
-    conn = store.conn
+def _selection(store: Store, research_id: str, answer: Any, revision: int,
+               snapshot: dict[str, Any] | None) -> dict[str, Any]:
     until = answer["created_at"]
-    step = store.existing_step(answer["run_id"], "answer_start_snapshot")
-    snapshot = step["output"] if step and step["status"] == "succeeded" and step["output"] else None
     flow = (snapshot or {}).get("flow")
     body = ((_protocol(store, research_id, revision, until) or {}).get("body")) or {}
     approval = body.get("approval") or {}
-
-    def works(sql: str, *args: Any) -> int:
-        return conn.execute(sql, (research_id, revision, until, *args)).fetchone()[0]
-
-    # Everything below counts rows stored before this answer, so a later run never changes an earlier answer's box.
-    screened = works("SELECT COUNT(DISTINCT v.work_id) FROM stage_decisions d JOIN source_versions v ON v.id = d.source_version_id"
-                     " WHERE d.research_id = ? AND d.scope_revision = ? AND d.created_at <= ? AND d.stage = 'abstract'")
-    proposals = "SELECT COUNT(DISTINCT v.work_id) FROM model_proposals p JOIN run_steps s ON s.id = p.step_id" \
-                " JOIN runs r ON r.id = s.run_id JOIN source_versions v ON v.id = p.source_version_id" \
-                " WHERE p.research_id = ? AND r.scope_revision = ? AND p.created_at <= ? AND p.stage = ?"
-    attempts = conn.execute(
-        "SELECT COUNT(DISTINCT s.operation_key) FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE r.research_id = ?"
-        " AND r.scope_revision = ? AND s.operation_key LIKE 'fulltext_work:%' AND s.status IN ('succeeded', 'failed')"
-        " AND s.finished_at <= ?", (research_id, revision, until)).fetchone()[0]
-    person = works("SELECT COUNT(DISTINCT source_version_id) FROM stage_decisions WHERE research_id = ?"
-                   " AND scope_revision = ? AND created_at <= ? AND decided_by = 'human'")
+    # The counts the answer's start snapshot stored (D92, R3.5). An answer whose snapshot predates them gets None (not
+    # recorded): counting today's rows would let a later work merge change an old answer's box.
+    counts = (snapshot or {}).get("method_counts") or {}
     return {
         "snapshot": flow is not None,
         "works_found": flow["works"] if flow else None,
-        "screened": screened,
-        "abstract_read": works(proposals, "abstract"),
-        "full_text_attempted": attempts,
-        "full_text_read": works(proposals, "fulltext"),
-        "person_decisions": person,
+        "screened": counts.get("screened"),
+        "abstract_read": counts.get("abstract_read"),
+        "full_text_attempted": counts.get("full_text_attempted"),
+        "full_text_read": counts.get("full_text_read"),
+        "person_decisions": counts.get("person_decisions"),
         "included": flow["five"]["included"] if flow else None,
         "not_met": flow["five"]["not_met"] if flow else None,
         "waiting_for_pdf": flow["five"]["waiting_for_pdf"] if flow else None,
@@ -149,11 +168,17 @@ def _limitations(store: Store, answer: Any) -> dict[str, Any]:
             "access_limitations": sum(1 for item in limits if item.get("kind") == "access")}
 
 
-def _evidence_base(store: Store, answer_id: str) -> dict[str, Any]:
+def _evidence_base(store: Store, answer: Any) -> dict[str, Any]:
+    """Cited works by the work each cited version had in the answer's own StepInput (D92, R3.5), so a later merge does
+    not change the count; a version the StepInput names without a work id falls back to its record today."""
+    given = store.step_input_payload(answer["step_input_id"]) if answer["step_input_id"] else None
+    frozen = {s["source_id"]: s for s in (given or {}).get("sources") or [] if s.get("work_id")}
     rows = store.conn.execute(
-        "SELECT v.work_id, v.year FROM evidence_links l JOIN claims c ON c.id = l.claim_id"
-        " JOIN source_versions v ON v.id = l.source_version_id WHERE c.answer_id = ?", (answer_id,)).fetchall()
-    works = {r["work_id"] for r in rows}
-    years = [r["year"] for r in rows if r["year"] is not None]
+        "SELECT l.source_version_id, v.work_id, v.year FROM evidence_links l JOIN claims c ON c.id = l.claim_id"
+        " JOIN source_versions v ON v.id = l.source_version_id WHERE c.answer_id = ?", (answer["id"],)).fetchall()
+    cited = [(frozen[r["source_version_id"]]["work_id"], frozen[r["source_version_id"]].get("year"))
+             if r["source_version_id"] in frozen else (r["work_id"], r["year"]) for r in rows]
+    works = {work for work, _ in cited}
+    years = [year for _, year in cited if year is not None]
     return {"cited_sources": len(works), "year_min": min(years) if years else None,
             "year_max": max(years) if years else None}

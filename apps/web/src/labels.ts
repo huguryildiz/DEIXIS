@@ -255,6 +255,7 @@ export const runKindLabels: Record<RunKind, string> = {
   followup_answer: 'Follow-up answer',
   discovery: 'Search & screening', answer: 'Answer', report: 'Evidence report', pdf_collection: 'PDF collection', pdf_ocr: 'OCR reading', fulltext_fetch: 'Full-text retrieval', fulltext_adjudication: 'Full-text reading', table_fill: 'Table fill', cell_recheck: 'Cell recheck', table_columns: 'Column suggestions', research_title: 'Research title', lineage_links: 'Development links', claim_decomposition: 'Claim breakdown', kill_search: 'Prior-art search for a claim',
   screen_more: 'Abstract screening of more works',
+  followup_search: 'Search for new works from a follow-up',
   table_column_recheck: 'Column recheck',
   citation_map: 'Reference list reading',
   snowball: 'Citation snowballing round',
@@ -269,6 +270,11 @@ const pauseReasons: Record<string, string> = {
   answer_cutoff_missing: 'The frozen read cutoff is missing. Start a new search before answering.',
   answer_unavailable: 'The stored answer is unavailable for review.',
   late_revision_unavailable: 'The late full-text revision this answer belonged to is no longer available.',
+  criterion_changed: 'The inclusion criterion changed during the search, so its screening was not recorded. Search again.',
+  followup_query_budget: 'The search terms used up their model calls.',
+  followup_query_invalid: 'The search terms did not pass validation, so nothing was searched.',
+  followup_no_query: 'No usable query could be built from the search terms, so nothing was searched.',
+  followup_search_failed: 'No provider search succeeded, so nothing was added.',
   followup_selection_changed: 'Your source selection changed while this follow-up was being answered. Ask it again.',
   followup_sources_changed: 'A source or its PDF changed while this follow-up was being answered. Ask it again.',
   no_provider_read: 'No provider read succeeded.',
@@ -441,6 +447,8 @@ export const stepLabel = (kind: string, key: string, candidate = false) => {
   if (kind === 'watch_complete') return t('Recording follow-up results')
   if (kind === 'model:claim_decomposition') return t('Claim breakdown (model)')
   if (kind === 'model:kill_search_query') return t('Search terms (model)')
+  if (kind === 'model:followup_search_query') return t('Search terms (model)')
+  if (kind.startsWith('code:followup_search')) return t('Follow-up search step (code)')
   if (kind === 'model:claim_assessment') return t('Claim assessment (model)')
   if (kind === 'claim_decomposition_summary') return t('Claim breakdown summary (code)')
   if (kind === 'kill_search_plan') return t('Frozen claim assessment plan (code)')

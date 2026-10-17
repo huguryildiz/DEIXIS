@@ -47,6 +47,7 @@ SCHEMA_FILES = {
     "LineageLinksDraft": "lineage-links-draft.schema.json",
     "ClaimDecomposition": "claim-decomposition.schema.json",
     "KillSearchQuery": "kill-search-query.schema.json",
+    "FollowupSearchQuery": "followup-search-query.schema.json",
     "ClaimAssessment": "claim-assessment.schema.json",
     "ReportSectionAnchorRepair": "report-section-anchor-repair.schema.json",
     # Not a model output: a search plan a person saved (UI parity S23a, F18), checked by `check_user_search_plan`.
@@ -55,7 +56,7 @@ SCHEMA_FILES = {
 SCHEMA_VERSIONS = {
     "OwnerReview": "deixis.owner_review.v1",
     "GroundedAnswerDraft": "deixis.grounded_answer_draft.v4",
-    "FollowupAnswer": "deixis.followup_answer.v4",
+    "FollowupAnswer": "deixis.followup_answer.v5",
     "AnswerReview": "deixis.answer_review.v1",
     "EvidenceCellDraft": "deixis.evidence_cell_draft.v1",
     "TableColumnProposal": "deixis.table_column_proposal.v1",
@@ -71,6 +72,7 @@ SCHEMA_VERSIONS = {
     "LineageLinksDraft": "deixis.lineage_links_draft.v1",
     "ClaimDecomposition": "deixis.claim_decomposition.v1",
     "KillSearchQuery": "deixis.kill_search_query.v1",
+    "FollowupSearchQuery": "deixis.followup_search_query.v1",
     "ClaimAssessment": "deixis.claim_assessment.v1",
     "ReportSectionAnchorRepair": "deixis.report_section_anchor_repair.v1",
     "UserSearchPlan": "deixis.user_search_plan.v1",
@@ -96,6 +98,7 @@ TASK_OUTPUTS = {
     "lineage_links": ("LineageLinksDraft",),
     "claim_decomposition": ("ClaimDecomposition",),
     "kill_search_query": ("KillSearchQuery",),
+    "followup_search_query": ("FollowupSearchQuery",),
     "claim_assessment": ("ClaimAssessment",),
 }
 EXTRACTION_TASKS = ("cell_extraction", "table_columns")
@@ -548,6 +551,11 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
             issues.append(Issue("phrase_allowlist_mismatch", "/allowlist/phrases", "the allowlist is the phrase list"))
     if ("conversation" in step_input) != (step_input["task_type"] == "followup_answer"):
         issues.append(Issue("conversation_mismatch", "/conversation", step_input["task_type"]))
+    if ("followup_search_context" in step_input) != (step_input["task_type"] == "followup_search_query"):
+        issues.append(Issue("followup_search_context_mismatch", "/followup_search_context", step_input["task_type"]))
+    if step_input["task_type"] == "followup_search_query" and (step_input["sources"] or step_input["passages"]):
+        # The query reads the follow-up and the research's context card only, never a record (D92).
+        issues.append(Issue("followup_search_query_no_records", "/sources", "the query reads only its context"))
     screening_target = step_input.get("screening_target")
     if (screening_target is not None) != (step_input["task_type"] in SCREENING_TARGET_TASKS):
         issues.append(Issue("screening_target_mismatch", "/screening_target", step_input["task_type"]))
@@ -1079,7 +1087,7 @@ def _semantic_checks(step_input: dict[str, Any], output_type: str, result: dict[
         _check_vocabulary_labels(allow, result, report)
     elif output_type == "CriterionProposal":
         _check_criterion_proposal(step_input, result, report)
-    elif output_type in ("SearchQuery", "KillSearchQuery"):
+    elif output_type in ("SearchQuery", "KillSearchQuery", "FollowupSearchQuery"):
         _check_search_query(result, report)
     elif output_type == "AbstractScreening":
         _check_abstract_screening(allow, result, report)

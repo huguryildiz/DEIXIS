@@ -31,6 +31,12 @@ def test_a_library_made_by_0001_alone_takes_0002_and_keeps_its_rows(tmp_path, mo
                      " VALUES ('run_2', 'res_1', 1, 'citation_check', 'queued', 'intake', '{}', 'now', 'now')")
     conn.close()
 
+    # 0002 alone, as a later migration (0003) would rebuild `runs` again and is tested on its own.
+    up_to_second = tmp_path / "migrations-0002"
+    up_to_second.mkdir()
+    for name in ("0001_schema.sql", "0002_citation_check.sql"):
+        shutil.copy(db.MIGRATIONS_DIR / name, up_to_second)
+    monkeypatch.setattr(db, "MIGRATIONS_DIR", up_to_second)
     conn = db.connect(path)
     assert db.migrate(conn)[0] == 2  # later migrations follow it
     assert conn.execute("SELECT kind FROM researches WHERE id = 'res_1'").fetchone()[0] == "research"

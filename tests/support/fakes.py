@@ -50,6 +50,13 @@ def valid_response(si: dict[str, Any]) -> str:
             "task": [{"term": "bounded delay", "kind": "other", "why": "SYNTHETIC outcome"}],
             "setting_backup": [], "task_backup": [],
         })
+    if task == "followup_search_query":
+        # SYNTHETIC terms for a follow-up's search for new works (D92); they say nothing about a model's choice.
+        return json.dumps(envelope(si, "deixis.followup_search_query.v1") | {
+            "setting": [{"term": "synthetic channel", "kind": "topic", "why": "SYNTHETIC setting"}],
+            "task": [{"term": "release schedule", "kind": "method", "why": "SYNTHETIC task"}],
+            "setting_backup": [], "task_backup": [],
+        })
     if task == "claim_assessment":
         return json.dumps(envelope(si, "deixis.claim_assessment.v1") | {
             "work_relevance": "unrelated", "states_whole_claim": False, "whole_claim_evidence": [],
@@ -208,7 +215,7 @@ def valid_response(si: dict[str, Any]) -> str:
         # SYNTHETIC: one claim quoting the first passage sent, so the anchor always locates. It says nothing about
         # whether a model would find the passages answer the question.
         first = si["passages"][0]
-        return json.dumps(envelope(si, "deixis.followup_answer.v4") | {
+        return json.dumps(envelope(si, "deixis.followup_answer.v5") | {
             "answer_language": "en", "outcome": "answered",
             "claims": [{"claim_label": "c1", "text": "It has been reported that the first passage supports this fake claim.",
                         "support_type": "source_stated", "passage_ids": [first["passage_id"]]}],
@@ -217,6 +224,8 @@ def valid_response(si: dict[str, Any]) -> str:
             "unanswered_aspects": [], "more_queries": [],
             # SYNTHETIC: a question carrying the marker asks for the report to change (D57).
             "report_change_requested": "[report-change]" in si["question"]["text"],
+            # SYNTHETIC: a question carrying the marker asks for works the research does not hold (D92).
+            "new_works_requested": "[new-works]" in si["question"]["text"],
             "work_classifications": [],
         })
     first = si["passages"][0]

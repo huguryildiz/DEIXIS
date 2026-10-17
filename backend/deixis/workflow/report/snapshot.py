@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from deixis.workflow.flow_counts import FOLLOWUP_KIND, followup_brief, followup_runs
 from deixis.workflow.store import Store
 from deixis.workflow.tables import TableStore
 
@@ -137,9 +138,10 @@ def build_snapshot(store: Store, research_id: str, table_id: str) -> dict[str, A
                      "reading_depth": max(depths, key=depth_order.__getitem__) if depths else None})
 
     revision = store.research(research_id)["current_scope_revision"]
+    # The search's records are the discovery runs'; a follow-up search (D92) is kept apart below.
     found = store.conn.execute(
         "SELECT COALESCE(SUM(s.result_count), 0) FROM search_runs s JOIN runs r ON r.id = s.run_id"
-        " WHERE s.research_id = ? AND COALESCE(s.scope_revision, r.scope_revision) = ?"
+        " WHERE s.research_id = ? AND COALESCE(s.scope_revision, r.scope_revision) = ? AND r.kind = 'discovery'"
         " AND s.status IN ('completed', 'zero_results')", (research_id, revision),
     ).fetchone()[0]
     unique = store.conn.execute(
@@ -150,10 +152,10 @@ def build_snapshot(store: Store, research_id: str, table_id: str) -> dict[str, A
         (research_id, revision, research_id),
     ).fetchone()[0]
     screened = store.conn.execute(
-        "SELECT COUNT(DISTINCT json_extract(candidate.value, '$.candidate_id')) FROM step_inputs i,"
-        " json_each(i.payload_json, '$.candidates') candidate"
-        " WHERE i.research_id = ? AND i.scope_revision = ? AND i.task_type IN (?, ?)",
-        (research_id, revision, *SCREENING_TASKS),
+        "SELECT COUNT(DISTINCT json_extract(candidate.value, '$.candidate_id')) FROM step_inputs i"
+        " JOIN runs r ON r.id = i.run_id, json_each(i.payload_json, '$.candidates') candidate"
+        " WHERE i.research_id = ? AND i.scope_revision = ? AND i.task_type IN (?, ?) AND r.kind != ?",
+        (research_id, revision, *SCREENING_TASKS, FOLLOWUP_KIND),
     ).fetchone()[0]
     result = {
         "table_revision": table["version"],
@@ -177,4 +179,9 @@ def build_snapshot(store: Store, research_id: str, table_id: str) -> dict[str, A
     if left_out:
         result["left_out_rows"] = left_out
     result["basis"] = reading_basis(store, rows, cells, result["columns"])
+    # The follow-up searches of this question completed before the snapshot (D92): date, requests and new works from
+    # each run's frozen found step. Written only when there are some; an older snapshot has none.
+    followups = [followup_brief(run) for run in followup_runs(store.conn, research_id, revision, ("completed",))]
+    if followups:
+        result["followup_searches"] = followups
     return result

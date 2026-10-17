@@ -185,7 +185,7 @@ export type Step = {
     // The full-text reading plan: the works it froze.
     works?: unknown[] } | null
 }
-export type RunKind = 'discovery' | 'answer' | 'answer_review' | 'followup_answer' | 'report' | 'review' | 'watch_check' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search' | 'screen_more' | 'table_column_recheck' | 'citation_map' | 'snowball'
+export type RunKind = 'discovery' | 'answer' | 'answer_review' | 'followup_answer' | 'report' | 'review' | 'watch_check' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search' | 'screen_more' | 'table_column_recheck' | 'citation_map' | 'snowball' | 'followup_search'
 // What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
 export type RunTarget = {
   plan?: { groups: ReviewGroup[] }
@@ -349,6 +349,8 @@ export type SearchRun = {
   // The run step that sent the request; its operation key names the query kind (semantic, seed, keyword n).
   step_id: string
   result_count: number; provider_total: number | null; page_limit: number; retrieved_at: string; error: { error: string | null; http_status: number | null; service_kind?: string; error_kind?: string; reset_at?: string | null; retries?: number } | null
+  // The kind of run that sent it: a follow-up search's requests (D92) are not the research's search.
+  run_kind?: RunKind
 }
 export type Asset = {
   text_recovery?: TextRecoveryCapability | null
@@ -524,7 +526,12 @@ export type Source = {
   // What code and the model runs decided about the work, current decisions only, a person's left out (UI parity S13);
   // null on other versions. `passed_abstract`: a current abstract-stage `candidate`, the funnel's rule.
   screening: { stage: 'abstract' | 'fulltext' | null; outcome: string | null; reason_code: string | null; decided_by: 'code' | 'model_agreement' | null; source_version_id: string | null; next_step: string | null; stale: boolean; passed_abstract: boolean; read_coverage: ReadCoverage | null } | null
+  // The follow-up searches that found this work (D92), from each run's frozen found step, mapped to the work as it is
+  // now; one entry per run, every version of the work carries the same list.
+  followup_searches?: SourceFollowupSearch[]
 }
+export type FollowupFoundState = 'new' | 'already_here' | 'removed_before'
+export type SourceFollowupSearch = { run_id: string; turn_id: string | null; state: FollowupFoundState }
 export type Evidence = {
   // work_id: the work the cited version belongs to, kept for a source since removed from the research (it is not in `sources`).
   passage_id: string; source_version_id: string; work_id: string; source_key: string | null; kind: 'abstract' | 'pdf_page' | 'section'; physical_page: number | null
@@ -554,6 +561,8 @@ export type Answer = {
   late_revision_status?: { status: 'waiting_fetch' | 'reading' | 'answering' | 'published' | 'skipped' | 'failed'; skip_reason: string | null; revision_answer_id: string | null; late_excluded: number }
   abstract_only_sources?: number
   screened_after_cutoff?: ScreenedAfterCutoff[]
+  // Works this answer read because the person included them after the read cutoff (D92).
+  added_after_cutoff?: { work_id: string; source_version_id: string; head_after_cutoff: string; route: string }[]
   id: string; run_id: string; status: 'structurally_valid' | 'unverified_draft' | 'clarification' | 'no_evidence'
   scope_revision: number; applicability: 'current' | 'stale_scope' | 'stale_selection'; answer_language: string | null; created_at: string
   report_version: number | null; report_revision: number | null; report_title: string | null
@@ -592,7 +601,21 @@ export type FlowCounts = {
   look_again_in_answer: number; queue_by_reason: Record<string, number>
 }
 export type FlowBoxes = { flow_status: 'incomplete_no_human_screening'; revision: number
-  boxes: { key: string; count: number | null; flow_status: 'incomplete_no_human_screening' }[] }
+  boxes: { key: string; count: number | null; flow_status: 'incomplete_no_human_screening' }[]
+  // Each follow-up search of the revision (D92), from its frozen found and summary steps; null: not written yet.
+  followup_searches?: FollowupSearchBox[]
+  // Works only a follow-up search brought; the funnel leaves them out of the first search's numbers.
+  followup_only_works?: string[] }
+export type FollowupSearchBox = {
+  run_id: string; turn_id: string | null; created_at: string; status: RunStatus
+  records: number | null; new: number | null; already_here: number | null; removed_before: number | null
+  code_decided: number | null; sent_to_model: number | null; model_result: unknown; candidates: number | null
+}
+// One completed follow-up search as a snapshot stored it (answer start, report snapshot).
+export type FollowupSearchBrief = {
+  run_id: string; turn_id: string | null; created_at: string; completed_at: string | null
+  requests: number | null; requests_sent: number | null; records: number | null; new_works: number | null
+}
 export type OverrideClass = 'overruled' | 'agreed' | 'settled_open' | 'time_unknown'
 export type Overrides = {
   decisions: number; changed: number; changed_by: { code: number; model_agreement: number }
@@ -603,8 +626,14 @@ export type Overrides = {
 export type AnswerStartSnapshot = {
   scope_revision: number; selection_revision: number; flow: FlowCounts; included: number
   included_without_answer_text: number; included_state_changed: boolean
+  // D92: stored at the answer's start; absent on an older answer (not recorded).
+  method_counts?: { screened: number; abstract_read: number; full_text_attempted: number; full_text_read: number; person_decisions: number }
+  followup_searches?: FollowupSearchBrief[]
 }
 export type Counts = {
+  // `found`: records of the research's discovery runs only. `found_followup`: records of follow-up searches;
+  // `followup_new_works`: new works their frozen found steps counted (D92).
+  found_followup?: number; followup_new_works?: number
   found: number; unique: number; included: number; excluded: number; pending: number; inspected: number; cited: number
   // Works the user removed from this research, and those of them a later search found again; neither is listed (D50).
   removed: number; removed_found_again: number
@@ -618,7 +647,8 @@ export type Counts = {
   // Slice 20: the flow buckets, the PRISMA 2020-style boxes and the override count.
   flow?: FlowCounts | null; flow_boxes?: FlowBoxes | null; overrides?: Overrides | null
   // The search step's funnel for the current revision (D233). A candidate passed the abstract stage; nothing here is "relevant".
-  funnel?: { retrieved: number; chained: number; unique: number; abstracts_read: number; candidates: number; included: number } | null
+  // `unique` and `candidates` leave out works only a follow-up search brought; `unique_in_research` is every work (D92).
+  funnel?: { retrieved: number; chained: number; unique: number; abstracts_read: number; candidates: number; included: number; unique_in_research?: number } | null
 }
 // The audit sample of an sw research (slice 20, decisions 5–7): F1 / F2 answered here, A1 / A2 for viewing only.
 export type AuditAnswer = 'include' | 'criterion_not_met' | 'not_sure' | 'pdf_wrong'
@@ -1607,8 +1637,11 @@ export const api = {
 export type AnswerMethod = {
   answer_id: string; scope_revision: number
   search: { queries: { provider: string; query: string; records_read: number; provider_total: number | null; date: string; complete: boolean; origin: string | null }[]
-    records_read: number; planned: number; planned_not_sent: number; chaining: { ran: boolean; requests: number; records_read: number } }
-  selection: { snapshot: boolean; works_found: number | null; screened: number; abstract_read: number; full_text_attempted: number; full_text_read: number; person_decisions: number; included: number | null; not_met: number | null
+    records_read: number; planned: number; planned_not_sent: number; chaining: { ran: boolean; requests: number; records_read: number }
+    // Follow-up searches completed before the answer started (D92), from its start snapshot; null: not recorded.
+    followup_searches?: FollowupSearchBrief[] | null }
+  // The reading counts come from the answer's start snapshot (D92); null on an older answer that did not store them.
+  selection: { snapshot: boolean; works_found: number | null; screened: number | null; abstract_read: number | null; full_text_attempted: number | null; full_text_read: number | null; person_decisions: number | null; included: number | null; not_met: number | null
     waiting_for_pdf: number | null; not_read: number | null; criterion: string | null
     vocabulary_review: { reviewed_by_person: boolean | null; approved_by: string | null; edited: boolean | null } }
   extraction: { table: boolean; columns: string[]; columns_accepted_automatically: number }
@@ -1997,7 +2030,27 @@ export type FollowupTurn = {
   report_change: { run_id: string | null; run_status: RunStatus | null; answer_status: Answer['status'] | null; report_version: number | null
     not_started: 'scope_revised' | 'nothing_included' | 'run_active' | null } | null
   issues: { code: string; path: string; message: string }[]
+  // The turn's search for works outside the research (D92): offered once the turn is published under the current
+  // question, `suggested` when the model said the question asks for new works. Each run's progress reads its stored steps;
+  // its summary counts what was found (new / already here / removed before) and what the abstract screening did.
+  // Nothing it finds is included: new works stay candidates for the person.
+  search: FollowupSearch
 }
+export type FollowupSearchRequest = { position: number; provider_id: string; endpoint: string | null; origin: string | null; query_text: string
+  status: string; provider_status: string | null; records: number; admitted: boolean; reason: string | null
+  sent: boolean  // the request may have reached the provider; a refusal closed before sending was not sent
+}
+export type FollowupSearchRun = {
+  run_id: string; attempt: number; status: RunStatus; stage: string; pause_reason: string | null; error: unknown
+  progress: { query: string | null; requests_planned: number | null; requests_sent: number | null; found: boolean; screen_planned: number | null; summary: boolean }
+  summary: { requests: FollowupSearchRequest[]
+    counts: { records: number; new: number; already_here: number; removed_before: number; screen_planned: number; code_decided: number
+      sent_to_model: number; model_result: number; candidates: number; not_screened: number }
+    not_screened: { work_id: string; reason: string }[] }
+}
+export type FollowupSearch = { emphasis: 'suggested' | 'quiet'; offered: boolean; attempt: number
+  not_offered_reason: 'not_current_revision' | 'turn_not_published' | 'searched' | 'attempts_used' | 'no_completed_discovery' | null
+  runs: FollowupSearchRun[] }
 
 export const followupApi = {
   list: (researchId: string) =>
@@ -2008,6 +2061,10 @@ export const followupApi = {
   ask: (researchId: string, question: string, expectedScopeRevision: number, idempotencyKey: string) =>
     request<FollowupTurn>(`/api/researches/${encodeURIComponent(researchId)}/followup-turns`,
       json('POST', { question, expected_scope_revision: expectedScopeRevision }, { 'Idempotency-Key': idempotencyKey })),
+  // Starts the turn's search (D92); a refusal answers 422 with its `code`, a newer revision or an active run 409.
+  search: (researchId: string, turnId: string, expectedScopeRevision: number, idempotencyKey: string) =>
+    request<FollowupTurn & { search_run_id: string }>(`/api/researches/${encodeURIComponent(researchId)}/followup-turns/${encodeURIComponent(turnId)}/search`,
+      json('POST', { expected_scope_revision: expectedScopeRevision }, { 'Idempotency-Key': idempotencyKey })),
 }
 
 // The search plan panel (S23a; api/search_plan_routes.py). The person edits the words of each block, the criterion

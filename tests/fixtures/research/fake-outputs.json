@@ -3483,8 +3483,9 @@
    "expect_ok": true,
    "expect_codes": [],
    "output": {
-    "schema_version": "deixis.followup_answer.v4",
+    "schema_version": "deixis.followup_answer.v5",
     "report_change_requested": false,
+    "new_works_requested": false,
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -3518,8 +3519,9 @@
    "expect_ok": true,
    "expect_codes": [],
    "output": {
-    "schema_version": "deixis.followup_answer.v4",
+    "schema_version": "deixis.followup_answer.v5",
     "report_change_requested": false,
+    "new_works_requested": false,
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -3555,8 +3557,9 @@
    "expect_ok": true,
    "expect_codes": [],
    "output": {
-    "schema_version": "deixis.followup_answer.v4",
+    "schema_version": "deixis.followup_answer.v5",
     "report_change_requested": false,
+    "new_works_requested": false,
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -3579,8 +3582,9 @@
     "followup_answer_without_claims"
    ],
    "output": {
-    "schema_version": "deixis.followup_answer.v4",
+    "schema_version": "deixis.followup_answer.v5",
     "report_change_requested": false,
+    "new_works_requested": false,
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -3601,8 +3605,9 @@
     "followup_unanswered_without_aspect"
    ],
    "output": {
-    "schema_version": "deixis.followup_answer.v4",
+    "schema_version": "deixis.followup_answer.v5",
     "report_change_requested": false,
+    "new_works_requested": false,
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -3638,8 +3643,9 @@
     "unknown_passage_id"
    ],
    "output": {
-    "schema_version": "deixis.followup_answer.v4",
+    "schema_version": "deixis.followup_answer.v5",
     "report_change_requested": false,
+    "new_works_requested": false,
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -3669,8 +3675,9 @@
     "locator_in_claim_text"
    ],
    "output": {
-    "schema_version": "deixis.followup_answer.v4",
+    "schema_version": "deixis.followup_answer.v5",
     "report_change_requested": false,
+    "new_works_requested": false,
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -3706,8 +3713,9 @@
     "anchor_not_in_passage"
    ],
    "output": {
-    "schema_version": "deixis.followup_answer.v4",
+    "schema_version": "deixis.followup_answer.v5",
     "report_change_requested": false,
+    "new_works_requested": false,
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -3743,8 +3751,9 @@
     "missing_citation_anchor"
    ],
    "output": {
-    "schema_version": "deixis.followup_answer.v4",
+    "schema_version": "deixis.followup_answer.v5",
     "report_change_requested": false,
+    "new_works_requested": false,
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -3774,8 +3783,9 @@
     "source_stated_several_sources"
    ],
    "output": {
-    "schema_version": "deixis.followup_answer.v4",
+    "schema_version": "deixis.followup_answer.v5",
     "report_change_requested": false,
+    "new_works_requested": false,
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -3817,8 +3827,9 @@
     "envelope_mismatch"
    ],
    "output": {
-    "schema_version": "deixis.followup_answer.v4",
+    "schema_version": "deixis.followup_answer.v5",
     "report_change_requested": false,
+    "new_works_requested": false,
     "step_input_id": "sti_SYNTHK0003",
     "scope_revision": 2,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",

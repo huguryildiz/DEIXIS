@@ -137,6 +137,13 @@ def test_a_later_run_or_protocol_does_not_change_an_earlier_answer(store):
     assert before["selection"]["criterion"] == "SYNTHETIC the paper states both parts."
 
 
+def started(store, lib, run_id, flow=None):
+    """The answer's start snapshot as the answer run writes it now: the Method box counts over the rows stored so far."""
+    snap = store.step(run_id, "answer_start_snapshot", "code:answer_start_snapshot")
+    store.finish_step(snap["id"], "succeeded", output={"method_counts": method_summary.start_counts(store, lib.rid, 1)}
+                      | ({"flow": flow} if flow else {}))
+
+
 def test_counts_come_from_records_not_from_a_plan_or_the_flow_total(store):
     lib = Search(store, "channels")
     first, second = lib.work(), lib.work()
@@ -146,8 +153,7 @@ def test_counts_come_from_records_not_from_a_plan_or_the_flow_total(store):
     work = store.step(run, f"fulltext_work:{first}", "code:fulltext_work")
     store.finish_step(work["id"], "succeeded", output={})
     aid, run_id = answered(lib, first, second)
-    snap = store.step(run_id, "answer_start_snapshot", "code:answer_start_snapshot")
-    store.finish_step(snap["id"], "succeeded", output={"flow": {"works": 500, "five": {"included": 1, "not_met": 0, "waiting_for_pdf": 0, "not_read": 0}}})
+    started(store, lib, run_id, {"works": 500, "five": {"included": 1, "not_met": 0, "waiting_for_pdf": 0, "not_read": 0}})
     sel = method_summary.method_summary(store, lib.rid, aid)["selection"]
     assert sel["works_found"] == 500 and sel["screened"] == 0  # found is the flow total; screened needs a decision row
     assert sel["full_text_attempted"] == 1  # one attempt ran, two were planned
@@ -156,7 +162,8 @@ def test_counts_come_from_records_not_from_a_plan_or_the_flow_total(store):
 def test_model_and_person_readings_are_zero_when_nothing_is_recorded(store):
     lib = Probe(store, "channels")
     first, second = lib.work(), lib.work()
-    aid, _ = answered(lib, first, second)
+    aid, run_id = answered(lib, first, second)
+    started(store, lib, run_id)
     sel = method_summary.method_summary(store, lib.rid, aid)["selection"]
     assert (sel["abstract_read"], sel["full_text_read"], sel["person_decisions"]) == (0, 0, 0)
 
@@ -170,6 +177,51 @@ def test_person_decisions_and_model_readings_are_counted(store):
     lib.include(second)
     store.conn.execute("UPDATE stage_decisions SET decided_by = 'human' WHERE source_version_id = ?", (second,))
     store.conn.commit()
-    aid, _ = answered(lib, first, second)
+    aid, run_id = answered(lib, first, second)
+    started(store, lib, run_id)
     sel = method_summary.method_summary(store, lib.rid, aid)["selection"]
     assert sel["abstract_read"] == 1 and sel["person_decisions"] == 1
+
+
+READINGS = ("screened", "abstract_read", "full_text_attempted", "full_text_read", "person_decisions")
+
+
+def test_an_older_answer_without_stored_counts_shows_them_as_not_recorded_and_a_merge_leaves_them(store):
+    """An answer whose start snapshot predates `method_counts` is not recounted from today's rows: a later work merge
+    would otherwise change its box (two works read at the abstract, merged into one, read 2, then 1)."""
+    lib = Search(store, "channels")
+    first, second = lib.work(), lib.work()
+    step = store.step(lib.run, "abstract:x", "model:abstract")
+    store.finish_step(step["id"], "succeeded", output={})
+    for svid in (first, second):
+        DecisionStore(store).add_proposal(lib.rid, svid, "abstract", step["id"], 1, "candidate")
+    aid, run_id = answered(lib, first, second)
+    snap = store.step(run_id, "answer_start_snapshot", "code:answer_start_snapshot")
+    store.finish_step(snap["id"], "succeeded", output={"flow": {"works": 2, "five": {
+        "included": 2, "not_met": 0, "waiting_for_pdf": 0, "not_read": 0}}})
+    before = method_summary.method_summary(store, lib.rid, aid)
+    assert all(before["selection"][key] is None for key in READINGS)
+    assert method_summary.start_counts(store, lib.rid, 1)["abstract_read"] == 2
+    store.conn.execute("UPDATE source_versions SET work_id = (SELECT work_id FROM source_versions WHERE id = ?)"
+                       " WHERE id = ?", (first, second))
+    store.conn.commit()
+    assert method_summary.start_counts(store, lib.rid, 1)["abstract_read"] == 1  # today's rows did change
+    # Only the selection counts: this StepInput names no work ids, so its evidence base reads the record today.
+    assert method_summary.method_summary(store, lib.rid, aid)["selection"] == before["selection"]
+
+
+def test_a_later_merge_does_not_change_the_counts_an_answer_stored(store):
+    lib = Search(store, "channels")
+    first, second = lib.work(), lib.work()
+    step = store.step(lib.run, "abstract:x", "model:abstract")
+    store.finish_step(step["id"], "succeeded", output={})
+    for svid in (first, second):
+        DecisionStore(store).add_proposal(lib.rid, svid, "abstract", step["id"], 1, "candidate")
+    aid, run_id = answered(lib, first, second)
+    started(store, lib, run_id)
+    before = method_summary.method_summary(store, lib.rid, aid)
+    assert before["selection"]["abstract_read"] == 2
+    store.conn.execute("UPDATE source_versions SET work_id = (SELECT work_id FROM source_versions WHERE id = ?)"
+                       " WHERE id = ?", (first, second))
+    store.conn.commit()
+    assert method_summary.method_summary(store, lib.rid, aid)["selection"] == before["selection"]

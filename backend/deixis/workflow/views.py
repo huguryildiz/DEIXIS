@@ -17,7 +17,7 @@ from deixis.workflow import flow_counts as flow_rules
 from deixis.workflow import run_card
 from deixis.workflow import overrides as override_rules
 from deixis.workflow import probes as probe_rules
-from deixis.workflow import screen_more
+from deixis.workflow import fast_answer as answer_input, screen_more
 from deixis.workflow.chaining import QUERY_PREFIX as CHAIN_PREFIX, policy as chain_policy, request_outcomes
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.equations import chunk_numbers, equation_state, equations_to_check, latex_numbers
@@ -619,15 +619,17 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
 
     search_runs = [
         {**{k: r[k] for k in ("id", "run_id", "step_id", "scope_revision", "provider", "query_text", "access_mode", "status", "result_count", "provider_total", "page_limit", "retrieved_at",
-                              "page_number", "read_limit", "read_total", "stop_reason", "unread_count")},
+                              "page_number", "read_limit", "read_total", "stop_reason", "unread_count", "run_kind")},
          "error": _json(r["error_json"])}
-        for r in conn.execute("SELECT * FROM search_runs WHERE research_id = ? ORDER BY retrieved_at", (research_id,))
+        # `run_kind`: a follow-up search's requests (D92) are listed with their run's kind, never as the search's own.
+        for r in conn.execute("SELECT sr.*, r.kind AS run_kind FROM search_runs sr JOIN runs r ON r.id = sr.run_id"
+                              " WHERE sr.research_id = ? ORDER BY sr.retrieved_at", (research_id,))
     ]
     # What a paged query left unread is the count on its last stopped page; a page read again replaces the earlier
     # row rather than adding to it, and an unknown provider total is skipped instead of counted as zero (slice 04c).
     last_stopped: dict[tuple[str, str, str], dict[str, Any]] = {}
     for row in search_runs:
-        if row["stop_reason"] is None:
+        if row["stop_reason"] is None or row["run_kind"] != "discovery":
             continue
         key = (row["run_id"], row["provider"], row["query_text"])
         order = (row["page_number"] or 0, row["retrieved_at"], row["id"])
@@ -701,6 +703,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             # Works this answer read only because a person's Screen more run made them candidates after the read
             # cutoff: abstract-based evidence, screened after the cutoff (UI parity S20).
             "screened_after_cutoff": screen_more.answer_view(store, a["run_id"]),
+            # Works this answer read because the person included them after the read cutoff (D92).
+            "added_after_cutoff": answer_input.added_after_cutoff_view(store, a["run_id"]),
             "limitations": (draft or {}).get("limitations", []) if a["status"] == "structurally_valid" else [],
             "unanswered_aspects": (draft or {}).get("unanswered_aspects", []) if a["status"] == "structurally_valid" else [],
             "capability_notice": (draft or {}).get("capability_notice") if a["status"] == "structurally_valid" else None,
@@ -870,12 +874,40 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     # Versions of one work are not independent: unique, included, given and cited count works.
     work_of = {s["source_version_id"]: s["work_id"] for s in sources}
 
+    # The follow-up searches that found each work (D92), from each run's frozen found step: a stored version id is
+    # mapped to the work it belongs to now, so a later merge shows the merged work once per run.
+    followup_runs = flow_rules.followup_runs(conn, research_id)
+    found_by: dict[str, dict[str, dict[str, Any]]] = {}
+    stored = sorted({svid for run in followup_runs for work in (run["found"] or {}).get("works") or []
+                     for svid in work.get("versions") or []} - set(work_of))
+    current_work = dict(work_of)
+    for i in range(0, len(stored), 500):
+        chunk = stored[i:i + 500]
+        current_work |= dict(conn.execute(f"SELECT id, work_id FROM source_versions WHERE id IN ({','.join('?' * len(chunk))})",
+                                          chunk).fetchall())
+    for run in followup_runs:
+        for work in (run["found"] or {}).get("works") or []:
+            state = work.get("state")
+            for work_id in {current_work[svid] for svid in work.get("versions") or [] if svid in current_work}:
+                entry = found_by.setdefault(work_id, {}).setdefault(
+                    run["run_id"], {"run_id": run["run_id"], "turn_id": run["turn_id"], "state": state})
+                order = flow_rules.FOLLOWUP_STATE_ORDER
+                if state in order and (entry["state"] not in order or order.index(state) < order.index(entry["state"])):
+                    entry["state"] = state
+    for s in sources:
+        s["followup_searches"] = list(found_by.get(s["work_id"], {}).values())
+
     def works(ids: Any) -> int:
         return len({work_of.get(i, i) for i in ids})
 
     latest_given = next((a["inputs_given"] for a in answers if a["inputs_given"]), None)
     counts = {
-        "found": sum(s["result_count"] for s in search_runs),
+        # The search's records: discovery runs only, every revision; a follow-up search's are `found_followup` (D92).
+        "found": sum(s["result_count"] for s in search_runs if s["run_kind"] == "discovery"),
+        "found_followup": sum(s["result_count"] for s in search_runs if s["run_kind"] == flow_rules.FOLLOWUP_KIND),
+        # New works as each completed follow-up search froze them in its found step; later merges do not change them.
+        "followup_new_works": sum(((run["found"] or {}).get("counts") or {}).get("new") or 0
+                                  for run in followup_runs if run["status"] == "completed"),
         "unread": sum(s["unread_count"] or 0 for s in last_stopped.values()),
         "unique": works(work_of),
         # A work's selection is its head's; other versions follow it (D48).

@@ -33,6 +33,7 @@ RUNTIME_FILES = {
     "lineage_links": ("SKILL.md", "references/synthesis.md"),
     "claim_decomposition": ("SKILL.md", "references/candidate-check.md"),
     "kill_search_query": ("SKILL.md", "references/candidate-check.md"),
+    "followup_search_query": ("SKILL.md", "references/followup-search.md"),
     "claim_assessment": ("SKILL.md", "references/candidate-check.md"),
 }
 PROVENANCE_REQUIRED = (

@@ -16,7 +16,7 @@ CASES = {c["name"]: c for c in json.loads((FIXTURES / "fake-outputs.json").read_
 
 def test_the_followup_contract_is_registered_and_its_step_input_is_valid():
     assert contracts.SCHEMA_FILES["FollowupAnswer"] == "followup-answer.schema.json"
-    assert contracts.SCHEMA_VERSIONS["FollowupAnswer"] == "deixis.followup_answer.v4"
+    assert contracts.SCHEMA_VERSIONS["FollowupAnswer"] == "deixis.followup_answer.v5"
     assert contracts.TASK_OUTPUTS["followup_answer"] == ("FollowupAnswer",)
     Draft202012Validator.check_schema(contracts.load_schema("FollowupAnswer"))
     assert contracts.strict_compatibility_issues(contracts.model_output_schema("followup_answer")) == []

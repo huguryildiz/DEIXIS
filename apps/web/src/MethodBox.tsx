@@ -33,19 +33,24 @@ export function MethodBox({ researchId, answer, reviewPending, onShowFunnel, inR
   const found = selection.works_found
   // An answer over attached PDFs only: nothing was searched or screened, so one sentence says so instead of three "not recorded".
   const pdfOnly = queries === 0 && selection.abstract_read === 0 && selection.full_text_read === 0
+  // An older answer's start snapshot kept no reading counts (D92): they are not recounted from today's rows.
+  const readingsUnknown = selection.abstract_read === null
+  const followups = search.followup_searches
   return <section className="methods" aria-labelledby={`methods-${answerId}`}>
     <h4 id={`methods-${answerId}`}><FileText size={16} aria-hidden />{t('Methods')}</h4>
     <p>
       {pdfOnly ? t('This answer was made only from the PDFs you attached; no search was run.')
         : <>{queries === 0 ? t('No search was recorded for this question revision.')
         : <>{t(queries === 1 ? 'One search was sent to {providers}' : '{n} searches were sent to {providers}', { n: num(queries), providers: providers.join(', ') })}{search.chaining.ran ? t(', and citation chaining ran.') : t('; citation chaining did not run.')}</>}{' '}
-      {selection.abstract_read > 0
+      {followups && followups.length > 0 && <>{t(followups.length === 1 ? 'One follow-up search ran before this answer.' : '{n} follow-up searches ran before this answer.', { n: num(followups.length) })}{' '}</>}
+      {readingsUnknown ? t('How many abstracts and full texts the model read was not recorded when this answer started.')
+        : <>{selection.abstract_read !== null && selection.abstract_read > 0
         ? <>{found !== null ? t('The model read the abstracts of {read} of {found} works against the criterion', { read: num(selection.abstract_read), found: num(found) }) : t('The model read the abstracts of {read} works against the criterion', { read: num(selection.abstract_read) })}
           {found !== null && found > selection.abstract_read && onShowFunnel && <> (<button type="button" className="link" onClick={e => onShowFunnel(e.currentTarget)}>{t('see what was not read')}</button>)</>}.</>
         : t('No model reading of abstracts is recorded.')}{' '}
-      {selection.full_text_read > 0
+      {selection.full_text_read !== null && selection.full_text_read > 0
         ? <>{t(selection.full_text_read === 1 ? '{n} work was read in its full text (selected pages)' : '{n} works were read in their full text (selected pages)', { n: num(selection.full_text_read) })}{selection.included !== null ? t('; included when the answer started: {n}.', { n: num(selection.included) }) : '.'}</>
-        : t('No model reading of full texts is recorded.')}</>}{' '}
+        : t('No model reading of full texts is recorded.')}</>}</>}{' '}
       {abstractOnly > 0 && <>{t(abstractOnly === 1 ? '{n} work was given to the answer from its abstract only; where cited it is labelled “From abstract”.' : '{n} works were given to the answer from their abstracts only; where cited they are labelled “From abstract”.', { n: num(abstractOnly) })}{' '}</>}
       <span className="ok">{t('Every citation resolves to a stored passage given to this step.')}</span>{' '}
       {answer.review?.status === 'completed' ? t('Claim support was reviewed by the reviewer model.')
@@ -57,7 +62,7 @@ export function MethodBox({ researchId, answer, reviewPending, onShowFunnel, inR
     <div className="method-detail">
       <section>
         <p className="flow-head">{t('Approach')}</p>
-        <p className="method-text">{pdfOnly ? t('This answer was made only from the PDFs you attached; no search was run.') : <>{providers.length ? t('{providers} searched.', { providers: providers.join(', ') }) : t('No provider was searched.')} {selection.abstract_read > 0 ? t('A model read {n} abstracts.', { n: num(selection.abstract_read) }) : t('No model reading of abstracts is recorded.')} {selection.full_text_read > 0 ? t('A model read selected passages from the full text of {n} works.', { n: num(selection.full_text_read) }) : t('No model reading of full texts is recorded.')}</>} {selection.person_decisions > 0 ? t('You decided {n} works yourself.', { n: num(selection.person_decisions) }) : pdfOnly ? '' : t('No decision by you is recorded.')}</p>
+        <p className="method-text">{pdfOnly ? t('This answer was made only from the PDFs you attached; no search was run.') : <>{providers.length ? t('{providers} searched.', { providers: providers.join(', ') }) : t('No provider was searched.')} {readingsUnknown ? t('The model’s readings and your own decisions were not recorded when this answer started.') : <>{selection.abstract_read !== null && selection.abstract_read > 0 ? t('A model read {n} abstracts.', { n: num(selection.abstract_read) }) : t('No model reading of abstracts is recorded.')} {selection.full_text_read !== null && selection.full_text_read > 0 ? t('A model read selected passages from the full text of {n} works.', { n: num(selection.full_text_read) }) : t('No model reading of full texts is recorded.')}</>}</>} {readingsUnknown ? '' : selection.person_decisions !== null && selection.person_decisions > 0 ? t('You decided {n} works yourself.', { n: num(selection.person_decisions) }) : pdfOnly ? '' : t('No decision by you is recorded.')}</p>
         <p className="flow-note">{t('This is not a PRISMA-compliant review.')}</p>
       </section>
       <section>
@@ -68,14 +73,19 @@ export function MethodBox({ researchId, answer, reviewPending, onShowFunnel, inR
         </li>)}</ul> : <p className="flow-note">{t('No search was recorded for this question revision.')}</p>}
         {search.planned_not_sent > 0 && <p className="flow-note">{t('{n} of {total} planned queries were not recorded as sent.', { n: num(search.planned_not_sent), total: num(search.planned) })}</p>}
         <p className="flow-note">{search.chaining.ran ? t('Citation chaining ran: {n} requests read {records} records.', { n: num(search.chaining.requests), records: num(search.chaining.records_read) }) : t('Citation chaining did not run.')}</p>
+        {followups === null ? <p className="flow-note">{t('Follow-up searches before this answer: not recorded.')}</p>
+          : followups && followups.length > 0 && <ul className="flow-list method-queries">{followups.map(f => <li key={f.run_id}>
+            <span>{t('Follow-up search on {date}', { date: f.created_at.slice(0, 10) })}</span>
+            <strong>{f.new_works === null ? t('not recorded') : t(f.new_works === 1 ? '{n} new work' : '{n} new works', { n: num(f.new_works) })}</strong>
+          </li>)}</ul>}
       </section>
       <section>
         <p className="flow-head">{t('Study selection')}</p>
         <ul className="flow-list">
           <li><span>{t('Works found')}</span><strong>{maybe(selection.works_found)}</strong></li>
-          <li><span>{t('Screened (abstract-stage decision)')}</span><strong>{num(selection.screened)}</strong></li>
-          <li><span>{t('Abstract read by the model')}</span><strong>{num(selection.abstract_read)}</strong></li>
-          <li><span>{t('Full-text attempts that ran')}</span><strong>{num(selection.full_text_attempted)}</strong></li>
+          <li><span>{t('Screened (abstract-stage decision)')}</span><strong>{maybe(selection.screened)}</strong></li>
+          <li><span>{t('Abstract read by the model')}</span><strong>{maybe(selection.abstract_read)}</strong></li>
+          <li><span>{t('Full-text attempts that ran')}</span><strong>{maybe(selection.full_text_attempted)}</strong></li>
           <li><span>{t('Criterion not met')}</span><strong>{maybe(selection.not_met)}</strong></li>
           <li><span>{t('Included')}</span><strong>{maybe(selection.included)}</strong></li>
         </ul>

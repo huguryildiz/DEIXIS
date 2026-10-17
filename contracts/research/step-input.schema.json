@@ -935,7 +935,8 @@
         "claim_decomposition",
         "kill_search_query",
         "claim_assessment",
-        "owner_review"
+        "owner_review",
+        "followup_search_query"
       ]
     },
     "scope_revision": {
@@ -1427,6 +1428,20 @@
             }
           ]
         }
+      }
+    },
+    "followup_search_context": {
+      "type": "object",
+      "description": "followup_search_query steps only (D92): what the research already holds, so the query looks for what the follow-up asks that it does not. research_question is the research's own question; unanswered_aspects and answer_claims are the follow-up turn's (empty when no model answered it); searched_queries are the query texts the research's search sent; included_works are the works the person or the screening included, as title (year), newest inclusion first, and included_works_total counts them all. Context only: it carries no record and no passage.",
+      "additionalProperties": false,
+      "required": ["research_question", "unanswered_aspects", "answer_claims", "searched_queries", "included_works", "included_works_total"],
+      "properties": {
+        "research_question": { "type": "string", "minLength": 1 },
+        "unanswered_aspects": { "type": "array", "maxItems": 5, "items": { "type": "string" } },
+        "answer_claims": { "type": "array", "maxItems": 8, "items": { "type": "string" } },
+        "searched_queries": { "type": "array", "maxItems": 12, "items": { "type": "string" } },
+        "included_works": { "type": "array", "maxItems": 80, "items": { "type": "string" } },
+        "included_works_total": { "type": "integer", "minimum": 0 }
       }
     },
     "conversation": {

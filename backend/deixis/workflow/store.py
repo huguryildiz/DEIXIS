@@ -1152,7 +1152,7 @@ class Store:
                      "fulltext_fetch": "inspection", "fulltext_adjudication": "inspection",
                      "research_title": "intake", "lineage_links": "synthesis",
                      "claim_decomposition": "candidate", "kill_search": "candidate", "review": "claim_check",
-                     "watch_check": "discovery", "screen_more": "screening",
+                     "watch_check": "discovery", "screen_more": "screening", "followup_search": "discovery",
                      "citation_map": "synthesis", "snowball": "screening"}.get(kind, "extraction")
             self.conn.execute(
                 "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, idempotency_key, target_json,"
@@ -2746,12 +2746,14 @@ class Store:
     # ---- research corpus -------------------------------------------------------------
     def record_search(self, search_fields: dict[str, Any], provider: str, records: list[Any], payload_path: str | None,
                       step_id: str, step_status: str, step_output: dict[str, Any] | None = None, first_rank: int = 0,
-                      keep_found: bool = False, **step_fields: Any) -> str:
+                      keep_found: bool = False, keep_candidate: bool = False, **step_fields: Any) -> str:
         """Commit the search run, normalized sources, candidates and the step outcome together.
 
         `first_rank` is how many records the query read on its earlier pages: a candidate's rank is its place in the
         query, not in the page it arrived on (slice 04c). An unpaged search leaves it at 0. With `keep_found` the
         step output names the source versions this request wrote, before any is sent to its work's candidate (D6).
+        `keep_candidate` (a follow-up search, D92) leaves a candidate of the same question revision as it was: its rank
+        and search are the first search's.
         """
         with transaction(self.conn):
             srid = self.add_search_run(**search_fields)
@@ -2761,7 +2763,8 @@ class Store:
                 found.append(svid)
                 # A version of a work that already has a candidate here is found again as that candidate (D46).
                 record_svid = self._work_candidate(search_fields["research_id"], svid) or svid
-                self.add_to_corpus(search_fields["research_id"], record_svid, "search", srid, rank, scope_revision=search_fields["scope_revision"])
+                self.add_to_corpus(search_fields["research_id"], record_svid, "search", srid, rank,
+                                   scope_revision=search_fields["scope_revision"], keep_candidate=keep_candidate)
                 if record_svid != svid:
                     self.add_to_corpus(search_fields["research_id"], svid, "search", srid, candidate=False)
                 for other in self.other_version_ids(provider, record):  # kept with the record, not screened as separate candidates
@@ -2834,15 +2837,17 @@ class Store:
         request and no version with a hit from any other search. Empty for a research that never chained.
 
         A research older than D93 has no keyword hits in `candidate_hits`, so the search a candidate row names counts
-        as a hit too: a keyword work the chain later reached is still a keyword work."""
+        as a hit too: a keyword work the chain later reached is still a keyword work. A follow-up search's hits (D92) are
+        not the search's, so they never turn a chain-only work into a keyword work."""
         found: dict[str, bool] = {}
+        own = " AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.id = sr.run_id AND r.kind = 'followup_search')"
         for row in self.conn.execute(
             "SELECT v.work_id, sr.query_text LIKE 'chain:%' AS chained FROM candidate_hits h"
             " JOIN search_runs sr ON sr.id = h.search_run_id JOIN source_versions v ON v.id = h.source_version_id"
-            " WHERE h.research_id = ? AND h.scope_revision = ?"
+            " WHERE h.research_id = ? AND h.scope_revision = ?" + own +
             " UNION ALL SELECT v.work_id, sr.query_text LIKE 'chain:%' FROM candidates c"
             " JOIN search_runs sr ON sr.id = c.search_run_id JOIN source_versions v ON v.id = c.source_version_id"
-            " WHERE c.research_id = ? AND c.scope_revision = ?",
+            " WHERE c.research_id = ? AND c.scope_revision = ?" + own,
             (research_id, scope_revision, research_id, scope_revision)):
             found[row["work_id"]] = found.get(row["work_id"], True) and bool(row["chained"])
         return {work_id for work_id, only in found.items() if only}
@@ -3120,7 +3125,7 @@ class Store:
 
     def add_to_corpus(self, research_id: str, svid: str, added_by: str, search_run_id: str | None = None,
                       rank: int | None = None, selection_state: str = "pending", selection_origin: str = "default",
-                      scope_revision: int | None = None, candidate: bool = True) -> None:
+                      scope_revision: int | None = None, candidate: bool = True, keep_candidate: bool = False) -> None:
         ts = now()
         with transaction(self.conn):
             membership = self.conn.execute(
@@ -3142,9 +3147,13 @@ class Store:
                 # Found again: it stays removed, and the Sources summary counts it (D50).
                 self.conn.execute("UPDATE corpus_memberships SET found_again_at = ? WHERE research_id = ? AND source_version_id = ?",
                                   (ts, research_id, svid))
-            if added_by == "search" and candidate:
+            same_revision = keep_candidate and self.conn.execute(
+                "SELECT 1 FROM candidates WHERE research_id = ? AND source_version_id = ? AND scope_revision = ?",
+                (research_id, svid, scope_revision)).fetchone() is not None
+            if added_by == "search" and candidate and not same_revision:
                 # A record found again under a newer question revision becomes a candidate of that revision; found again
                 # under the same revision (another query or provider), it keeps its best rank and the search that gave it.
+                # A follow-up search (`keep_candidate`, D92) never moves a candidate of its own revision.
                 self.conn.execute(
                     "INSERT INTO candidates (id, research_id, search_run_id, source_version_id, rank, scope_revision, created_at)"
                     " VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (research_id, source_version_id) DO UPDATE SET"
@@ -3154,6 +3163,7 @@ class Store:
                     " THEN candidates.rank ELSE excluded.rank END, scope_revision = excluded.scope_revision",
                     (new_id("cnd"), research_id, search_run_id, svid, rank, scope_revision, ts),
                 )
+            if added_by == "search" and candidate:
                 if search_run_id is not None and scope_revision is not None:
                     # Every search that found the candidate is kept, not only the one the row names (D93).
                     self.conn.execute(

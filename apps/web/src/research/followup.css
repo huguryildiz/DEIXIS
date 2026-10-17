@@ -30,6 +30,12 @@
 .followup-acts [data-slot=button].answer-pill{height:30px;gap:6px;padding-inline:10px;border:1px solid var(--strong-line);border-radius:999px;background:var(--paper);color:var(--ink-2);font-size:13px;font-weight:400}
 .followup-acts [data-slot=button].answer-pill:hover{background:var(--hover-surface)}
 .followup-turn .chat-note{margin:0}
+/* A turn's search for new works (D92): the offer under the answer, then its own step lines with the run's rail. */
+.followup-search-offer{display:grid;gap:8px;justify-items:start}
+.followup-turn .followup-search-offer p{margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}
+.followup-search{display:grid;gap:8px;padding-top:14px;border-top:1px solid var(--line)}
+.followup-turn .followup-search-head{display:flex;align-items:center;gap:6px;margin:0;color:var(--ink-2);font-size:13px;font-weight:500}
+.followup-search-failed{margin:0;padding-left:18px;color:var(--muted);font-size:12.5px;line-height:1.5;list-style:disc}
 
 /* The composer sticks to the foot of the thread; the thread's 56px end space gives way to it, and the thread keeps a
    focused control above it when scrolling (scroll padding = the composer's height, set by the composer). */

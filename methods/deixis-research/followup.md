@@ -35,6 +35,15 @@ follow-up as usual all the same. Set it to false for a question that only asks
 to be answered ("which work reports the highest delivery ratio?"), even when
 the answer would be useful in the report.
 
+Set `new_works_requested` to true when the follow-up asks for works beyond the
+ones supplied: other or newer studies, more papers, work that also covers
+something the supplied works do not ("are there other studies on this that
+also measure energy?", "find more recent papers on X"). The application then
+offers the person a search for new works; it does not start one, and you still
+answer from the supplied passages. Set it to false when the follow-up asks
+about the supplied works themselves ("which of these reports the highest
+delivery ratio?", "compare the two approaches").
+
 When `conversation.more_queries_allowed` is true and the passages do not answer
 the question fully, put up to three short search phrases in `more_queries`: the
 words a passage that answers the missing part would contain, in the language of

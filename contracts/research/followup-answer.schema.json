@@ -17,10 +17,11 @@
     "unanswered_aspects",
     "more_queries",
     "report_change_requested",
+    "new_works_requested",
     "work_classifications"
   ],
   "properties": {
-    "schema_version": { "type": "string", "const": "deixis.followup_answer.v4" },
+    "schema_version": { "type": "string", "const": "deixis.followup_answer.v5" },
     "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
     "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
     "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
@@ -76,6 +77,10 @@
     "report_change_requested": {
       "type": "boolean",
       "description": "true when the follow-up asks for the research's report itself to change (add, remove, extend, shorten, restructure or rewrite part of it), not only for an answer in the conversation. The application then writes a new report version that follows the request; this answer is still written. false for a question that only asks to be answered."
+    },
+    "new_works_requested": {
+      "type": "boolean",
+      "description": "true when the follow-up asks for works, studies or sources beyond the ones supplied (other studies, more or newer papers, work that also covers something the supplied works do not). The application then offers the person a search for new works; it starts nothing by itself. false when the follow-up asks about the supplied works."
     },
     "work_classifications": {
       "type": "array",

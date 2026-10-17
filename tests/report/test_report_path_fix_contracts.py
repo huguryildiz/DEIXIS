@@ -18,6 +18,15 @@ def template(task):
     for si in STEP_INPUTS.values():
         if isinstance(si, dict) and si.get("task_type") == task:
             return copy.deepcopy(si)
+    if task == "followup_search_query":
+        # The follow-up search's query (D92) reads a context card and no record, as the claim search's query does.
+        si = copy.deepcopy(STEP_INPUTS["J_kill_search_query"])
+        del si["candidate_target"]
+        si.update(task_type=task, skill_files=["SKILL.md", "references/followup-search.md"],
+                  output_schema_versions=["deixis.followup_search_query.v1"],
+                  followup_search_context={"research_question": "SYNTHETIC: bounded queues.", "unanswered_aspects": [],
+                                           "answer_claims": [], "searched_queries": [], "included_works": [], "included_works_total": 0})
+        return si
     si = copy.deepcopy(STEP_INPUTS["A_answer"])
     si["task_type"] = task
     if task == "answer_review":

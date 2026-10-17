@@ -85,7 +85,7 @@ CAPABILITIES = {
 MAX_DOWNLOADS_PER_RUN = 8
 # Steps whose repairs are counted from their stored sessions across a stop and a resume (D249), so an output already
 # judged invalid twice is recovered without a new call. The follow-up answer joined in S22a.
-STORED_REPAIR_TASKS = ("grounded_answer", "followup_answer")
+STORED_REPAIR_TASKS = ("grounded_answer", "followup_answer", "followup_search_query")
 RESPLIT_KEY = "grounded_answer_resplit"  # D249: the one extra repair of an answer that fails only on D247's rule
 INFERENCE_CAP_KEY = "grounded_answer_inference_cap"  # D260: one rewrite of a valid answer that is mostly analyst inference
 LEDGER_COVERAGE_KEY = "grounded_answer_ledger_coverage"  # D83: one rewrite of a valid answer that leaves given works unaccounted
@@ -322,6 +322,7 @@ class ResearchFlow:
         self._quota_out: dict[str, set[str]] = {}
         self._openalex_budget: dict[str, acquisition.OpenAlexBudget] = {}
         self._abstract_close_hooks: dict[str, Callable[[], None]] = {}  # per run; see `_close_abstract_batch`
+        self._run_gates: dict[str, Callable[[], None]] = {}  # per run; read by `_checkpoint` (D92)
         from deixis.workflow.background_fetch import BackgroundFetchLane, FetchSlots
         if getattr(deps, "fetch_slots", None) is None:
             deps.fetch_slots = FetchSlots()
@@ -450,6 +451,9 @@ class ResearchFlow:
             elif run["kind"] == "followup_answer":
                 from deixis.workflow import followup
                 await followup.answer(self, run, scope)
+            elif run["kind"] == "followup_search":
+                from deixis.workflow import followup_search  # D92
+                await followup_search.execute(self, run, scope)
             elif run["kind"] == "citation_map":
                 from deixis.workflow import citation_map_run
                 await citation_map_run.execute(self, run, scope)
@@ -516,6 +520,8 @@ class ResearchFlow:
                 raise RunStopped
             return
         run = self.store.run(run_id)
+        if (extra := getattr(self, "_run_gates", {}).get(run_id)) is not None:
+            extra()  # a run's own stop rule (D92: the follow-up search's frozen criterion), read at every checkpoint
         if (run.get("target") or {}).get("late_revision_id") or run["budget"].get("late_revision_id"):
             from deixis.workflow import late_revision
             late_revision.checkpoint(self, run)
@@ -2438,11 +2444,17 @@ class ResearchFlow:
         self.store.start_step(step["id"])
         ctx = human_queue.context(self.store, rid)
         flow = flow_counts.flow_counts(ctx, probe_rules.probe_set(ctx))
+        from deixis.workflow import method_summary
         self.store.finish_step(step["id"], "succeeded", output={
             "scope_revision": run["scope_revision"], "selection_revision": selection_revision,
             "flow": flow, "included": len(heads),
             # Included works whose only text is the person's file not read yet: they give the answer nothing (D100).
-            "included_without_answer_text": sum(1 for head in heads if self.store.answer_version(rid, head) is None)})
+            "included_without_answer_text": sum(1 for head in heads if self.store.answer_version(rid, head) is None),
+            # The Method box's counts and the follow-up searches completed by now (D92, R3.5): read from here, so a
+            # later search or work merge leaves this answer's box as it was.
+            "method_counts": method_summary.start_counts(self.store, rid, run["scope_revision"]),
+            "followup_searches": [flow_counts.followup_brief(r) for r in flow_counts.followup_runs(
+                self.store.conn, rid, run["scope_revision"], ("completed",))]})
 
     def _criterion_phrases(self, run: dict[str, Any], scope: dict[str, Any]) -> list[tuple[str, re.Pattern[str]]]:
         """The approved cue phrases this answer run orders criterion passages with, compiled (D84, SW12.3).
@@ -4596,12 +4608,20 @@ class ResearchFlow:
     async def _kill_search_request(self, run: dict, query: dict) -> tuple[SearchOutcome | facade.Dispatched, dict]:
         """One logical query, no paging/enrichment; reservations survive uncertain delivery."""
         from deixis.workflow.candidates.run import KILL_RECORDS
+        return await self._bounded_search_request(run, query, lambda: self._candidate_send_gate(run), KILL_RECORDS)
+
+    async def _bounded_search_request(self, run: dict, query: dict, gate: Callable[[], None],
+                                      limit: int) -> tuple[SearchOutcome | facade.Dispatched, dict]:
+        """One logical query, no paging or enrichment, under the run's frozen transport plan (`target.transport`):
+        the whole possible HTTP attempt is reserved and charged before each send, never refunded, so a resumed run
+        cannot send past its budget; `gate` runs before every send. Kill search and the follow-up search (D92) use it,
+        each with its own gate and record limit."""
         connector = CONNECTORS[query["provider_id"]]
         transport = next(t for t in run["target"]["transport"]["providers"] if t["provider"] == connector.provider_id)
         reserve = transport["requests_per_search"] * (1 + transport["rate_limit_retries"])
         record: dict = {}
         for attempt in range(transport["transient_attempts"]):
-            self._candidate_send_gate(run)
+            gate()
             key = connector.api_key()
             if connector.key_required and not key:
                 return SearchOutcome("not_configured", "before_send",
@@ -4612,7 +4632,7 @@ class ResearchFlow:
                     return SearchOutcome("transport_budget", "before_send", "unsent: transport budget", "api_key" if key else "keyless"), record
                 # Conservatively charge the whole possible HTTP attempt, never refund it.
                 self.store.add_usage(run["id"], "provider_requests", reserve)
-            dispatched = await facade.dispatch_search(connector.provider_id, self.deps.http, query["query_text"], KILL_RECORDS,
+            dispatched = await facade.dispatch_search(connector.provider_id, self.deps.http, query["query_text"], limit,
                 key, self.deps.settings.contact_email, **endpoint_options(query))
             outcome = dispatched.outcome
             actual = sum(entry["attempts"] for entry in dispatched.transport)
@@ -5130,9 +5150,9 @@ class ResearchFlow:
         } | equation_fallback_field(self.store, p) for p in passage_rows]
         language = scope["language_hint"] if scope["language_hint"] and re.fullmatch(r"[a-z]{2,3}(-[A-Za-z0-9]{2,8})*", scope["language_hint"]) else None
         question = scope["question"]
-        if task_type == "followup_answer":
-            # The turn's question replaces the research question for this task only (S22a); the research's language
-            # hint belongs to its own question, so the follow-up's language is read from its own text.
+        if task_type in ("followup_answer", "followup_search_query"):
+            # The turn's question replaces the research question for this task only (S22a, D92); the research's
+            # language hint belongs to its own question, so the follow-up's language is read from its own text.
             question, language = run["target"]["question"], None
         review = {"claims_under_review": claims} if task_type == "answer_review" else {}
         target = {}

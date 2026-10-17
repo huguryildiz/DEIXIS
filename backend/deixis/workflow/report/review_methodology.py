@@ -103,6 +103,21 @@ def _chain_sentence(total: dict[str, int], language: str) -> str:
     return text + f" {was(total['kept'], 'returned record was', 'returned records were')} kept by the gate-term filter."
 
 
+def followup_sentence(followups: list[dict[str, Any]], language: str) -> str:
+    """One line for the follow-up searches the report snapshot stored (D92): how many, their dates and the new works
+    their frozen found steps counted. A run whose found step held no count adds nothing to the sum and is counted apart."""
+    dates = ", ".join(sorted({(f.get("completed_at") or f["created_at"])[:10] for f in followups}))
+    known = [f["new_works"] for f in followups if f.get("new_works") is not None]
+    unknown = len(followups) - len(known)
+    n = len(followups)
+    if language.startswith("tr"):
+        text = f" Takip soruları için {n} ek arama yapıldı ({dates}); bunlar {sum(known)} yeni eser ekledi."
+        return text + (f" {unknown} aramanın yeni eser sayısı kaydedilmedi." if unknown else "")
+    text = (f" {n} follow-up {'search' if n == 1 else 'searches'} ({dates}) added {sum(known)} new "
+            f"{'work' if sum(known) == 1 else 'works'}.")
+    return text + (f" The new works of {unknown} of them were not recorded." if unknown else "")
+
+
 def render_review_methodology(numbers: dict[str, Any], language: str, *, providers: str, queries: str,
                               compiler_versions: str, screening_models: str,
                               screening_criteria: str, chain_provenance: str) -> str:
@@ -112,8 +127,10 @@ def render_review_methodology(numbers: dict[str, Any], language: str, *, provide
         providers=providers, queries=queries, compiler_versions=compiler_versions,
         screening_models=screening_models, screening_criteria=screening_criteria,
     ) + (reading_sentence(numbers["reading"], numbers["corpus"]["included"], language) if "reading" in numbers else "") \
-        + chain_provenance + (_ROW_TEMPLATES["tr" if language.startswith("tr") else "en"].format(**numbers["rows"])
-                            if "rows" in numbers else "")
+        + chain_provenance + (followup_sentence(numbers["followup_searches"], language)
+                              if numbers.get("followup_searches") else "") \
+        + (_ROW_TEMPLATES["tr" if language.startswith("tr") else "en"].format(**numbers["rows"])
+           if "rows" in numbers else "")
 
 
 def render_limitations(numbers: dict[str, Any], language: str) -> str:
@@ -305,6 +322,9 @@ def write_review_methodology(store: Store, reports: ReportStore, report_id: str,
         numbers["reading"] = dict(snapshot["reading"])
     if snapshot.get("failed_rows"):
         numbers["rows"] = dict(snapshot["row_counts"])
+    # From the snapshot only (D92): an older snapshot has no follow-up searches and prints none.
+    if snapshot.get("followup_searches"):
+        numbers["followup_searches"] = [dict(item) for item in snapshot["followup_searches"]]
     text = render_review_methodology(
         numbers, language, providers=providers, queries=queries, compiler_versions=compiler_versions,
         screening_models=screening_models, screening_criteria=screening_criteria,

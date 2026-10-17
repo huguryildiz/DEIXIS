@@ -195,6 +195,12 @@
    "derived_from": [],
    "date": "2026-10-16",
    "change": "Package review with GPT Astra High: SKILL.md routes every task_type through one table (research_title was missing) and no longer asks a step to put a clarification question to the user; capability_notice is named only for grounded_answer, whose schema has it. report.md: index_terms no longer cite a 'D44 concept vocabulary list' no step receives, VII future work anchors to the plan's future_work_column_id cell, and the source-grounded rules are scoped to report_section, the only report step that receives that file. source-grounded-answer.md rule 12 points to SKILL.md instead of repeating the availability list. followup.md says a second call happens only when the more_queries ranking changes the selected passages. Schema descriptions for the answer title (12-15 words) and the report plan glossary now match validation. No real-model measurement."
+  },
+  {
+   "deixis_file": "references/followup-search.md",
+   "derived_from": [],
+   "date": "2026-10-17",
+   "change": "Written for DEIXIS, not upstream text. Loaded only for followup_search_query: setting and task terms for a search started from a follow-up question, aimed at what the works already in the research do not cover. followup.md now says when to set new_works_requested; SKILL.md routes the new task_type. No real-model measurement."
   }
  ],
  "phrasebank": {

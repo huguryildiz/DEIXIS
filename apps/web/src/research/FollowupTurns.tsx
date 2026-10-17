@@ -1,7 +1,7 @@
 import { BookOpen, Copy, MessageSquare, Pause, PencilLine, Play, RotateCw, Search, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { type Claim, type FollowupTurn, type FollowupWorkGroups, type Source } from '../api'
-import { locatorText, pauseReasonText, versionText } from '../labels'
+import { type Claim, type FollowupSearchRequest, type FollowupSearchRun, type FollowupTurn, type FollowupWorkGroups, type Source } from '../api'
+import { locatorText, pauseReasonText, providerName, serviceErrorSentence, serviceKind, versionText } from '../labels'
 import { MathText } from '../MathText'
 import { useToast } from '../Toast'
 import { t } from '../i18n'
@@ -67,6 +67,79 @@ export type FollowupTurnActions = {
   onCite: (claim: Claim, opener: HTMLElement) => void
   onControl: (runId: string, action: 'resume' | 'cancel') => void
   onAskAgain: (question: string) => void
+  onSearch: (turnId: string) => void
+  onShowCandidates: (opener: HTMLElement) => void
+}
+
+// The turn's search for works outside the research (D92): its step lines read the run's stored steps and summary.
+function searchSteps(run: FollowupSearchRun) {
+  const live = ACTIVE.has(run.status)
+  const p = run.progress, c = run.summary.counts
+  const lines: { state: StepState; icon: typeof BookOpen; text: string }[] = []
+  if (p.query !== 'succeeded') {
+    lines.push(live ? { state: 'running', icon: PencilLine, text: t('Writing search terms') } : { state: 'attention', icon: PencilLine, text: t('No search terms were written') })
+    return lines
+  }
+  lines.push({ state: 'done', icon: PencilLine, text: t('Wrote search terms') })
+  if (p.requests_planned === null) return lines
+  if (!p.found) {
+    if (live) lines.push({ state: 'running', icon: Search, text: t('Searching providers ({sent} of {n} queries)', { sent: p.requests_sent ?? 0, n: p.requests_planned }) })
+    // Stopped before its count: what the answered requests already added is in the research, so it is shown as such.
+    else lines.push(c.records ? { state: 'attention', icon: Search, text: t('The search stopped after {sent} of {n} queries. It had found {works} works in {records} records: {new} new, {already} already in this research', { sent: p.requests_sent ?? 0, n: p.requests_planned, works: c.new + c.already_here + c.removed_before, records: c.records, new: c.new, already: c.already_here }) }
+      : { state: 'attention', icon: Search, text: t('The search stopped after {sent} of {n} queries; nothing was added', { sent: p.requests_sent ?? 0, n: p.requests_planned }) })
+    return lines
+  }
+  lines.push({ state: 'done', icon: Search, text: [t('Found {works} works in {records} records: {new} new, {already} already in this research', { works: c.new + c.already_here + c.removed_before, records: c.records, new: c.new, already: c.already_here }),
+    c.removed_before ? t('{n} removed before', { n: c.removed_before }) : ''].filter(Boolean).join(', ') })
+  if (!p.screen_planned) return lines
+  const screened = c.code_decided + c.model_result
+  lines.push(p.summary ? { state: c.not_screened ? 'attention' : 'done', icon: BookOpen, text: t('Screened {screened} of {n} new works: {candidates} passed the abstract', { screened, n: p.screen_planned, candidates: c.candidates }) }
+    : live ? { state: 'running', icon: BookOpen, text: t('Screening {n} new works', { n: p.screen_planned }) }
+      : { state: 'attention', icon: BookOpen, text: t('Screened {screened} of {n} new works', { screened, n: p.screen_planned }) })
+  return lines
+}
+
+// A request that did not succeed: the app's own refusals in its words, a provider's failure as the Search details say it.
+const requestFailure: Record<string, string> = {
+  openalex_budget_exhausted: 'OpenAlex daily budget used up; not sent', outcome_unknown: 'Sent, but no reply came back; not sent again',
+  not_sent: 'Not sent', cancelled: 'Cancelled',
+}
+const failureText = (r: FollowupSearchRequest) => {
+  const code = r.reason ?? r.status
+  return requestFailure[code] ? `${providerName(r.provider_id)}: ${t(requestFailure[code])}` : serviceErrorSentence({ kind: serviceKind(code), service: providerName(r.provider_id) })
+}
+
+function FollowupSearchView({ turn, actions }: { turn: FollowupTurn; actions: FollowupTurnActions }) {
+  const search = turn.search
+  const last = search.runs[search.runs.length - 1]
+  const offer = search.offered && <div className={`followup-search-offer${search.emphasis === 'suggested' ? ' is-suggested' : ''}`}>
+    {search.emphasis === 'suggested' && <p>{t('This asks for works outside this research. A search adds what it finds as candidates; nothing is included until you include it.')}</p>}
+    <Button size="sm" variant={search.emphasis === 'suggested' ? 'default' : 'outline'} disabled={actions.busy || actions.locked} onClick={() => actions.onSearch(turn.id)}>
+      {search.attempt > 1 ? <RotateCw size={14} aria-hidden /> : <Search size={14} aria-hidden />}{t(search.attempt > 1 ? 'Try the search again' : 'Search for new works')}</Button>
+  </div>
+  if (!last) return offer || null
+  const live = ACTIVE.has(last.status)
+  const userPaused = last.status === 'paused' && last.pause_reason === 'user_requested'
+  const failed = last.summary.requests.filter(r => r.status !== 'succeeded')
+  return <div className="followup-search">
+    <p className="followup-search-head"><Search size={14} aria-hidden />{t('Search for new works')}</p>
+    <ol className="followup-steps">{searchSteps(last).map(line => <StepLine key={line.text} state={line.state} icon={line.icon}>{line.text}</StepLine>)}</ol>
+    {failed.length > 0 && !live && <ul className="followup-search-failed">{failed.map(r => <li key={r.position}>{failureText(r)}</li>)}</ul>}
+    {last.status === 'completed' && last.summary.counts.candidates > 0 && <p className="followup-note">
+      <button type="button" className="link" onClick={e => actions.onShowCandidates(e.currentTarget)}>{t('Review the new candidates in Sources')}</button></p>}
+    {!live && last.status !== 'completed' && <div className={`chat-note notice followup-notice ${userPaused ? 'is-warning' : 'is-error'}`}>
+      {userPaused ? <Pause size={16} aria-hidden /> : <TriangleAlert size={16} aria-hidden />}
+      <div className="notice-body">
+        <p><b>{last.status === 'cancelled' ? t('The search was cancelled. Nothing it found was included.') : userPaused ? t('Paused after the current call.')
+          : pauseReasonText(last.pause_reason, last.error) || t('The search stopped before it finished.')}</b></p>
+        {last.status === 'paused' && <div className="notice-actions">
+          <Button size="sm" disabled={actions.busy || actions.locked} onClick={() => actions.onControl(last.run_id, 'resume')}><Play size={14} aria-hidden />{t('Resume run')}</Button>
+          <Button variant="outline" size="sm" className="notice-ghost" disabled={actions.busy} onClick={() => actions.onControl(last.run_id, 'cancel')}>{t('Cancel run')}</Button>
+        </div>}
+      </div>
+    </div>}
+    {!live && offer}
+  </div>
 }
 
 // What a grouping's count covers (D66), on screen and in the copied text alike.
@@ -180,5 +253,6 @@ export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTur
     {!live && turn.status !== 'pending' && (claims.length > 0 || groups) && <div className="followup-acts">
       {(claims.length > 0 || groups) && <Button variant="ghost" size="icon-sm" className="answer-ib" aria-label={t('Copy follow-up answer')} title={t('Copy follow-up answer')} onClick={() => { void copy() }}><Copy size={16} aria-hidden /></Button>}
     </div>}
+    {!live && turn.status !== 'pending' && <FollowupSearchView turn={turn} actions={actions} />}
   </section>
 }

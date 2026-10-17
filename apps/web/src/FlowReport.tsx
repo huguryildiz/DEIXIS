@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { ChevronRight, Download, Info, Workflow } from 'lucide-react'
-import { api, prismaSUrl, type Answer, type Counts, type EffortLimits, type FlowBucket, type FlowCounts, type Overrides, type ResearchView } from './api'
+import { api, prismaSUrl, type Answer, type Counts, type EffortLimits, type FlowBucket, type FlowCounts, type FollowupSearchBox, type Overrides, type ResearchView } from './api'
 import { SCREEN_MORE_SIZE, useScreenMore, useUnscreened } from './research/unscreened'
-import { flowBoxLabels, flowBucketLabels, shownVersion } from './labels'
+import { flowBoxLabels, flowBucketLabels, runStatusLabels, shownVersion } from './labels'
 import { effortLabels } from './Home'
 import { useToast } from './Toast'
 import { t, uiLocale } from './i18n'
@@ -53,7 +53,10 @@ function FlowBlock({ researchId, counts }: { researchId: string; counts: Counts 
           <span>{t(flowBoxLabels[box.key] ?? box.key)}</span><strong>{box.count === null ? t('not counted') : count(box.count)}</strong>
         </li>)}</ul>
         <p className="flow-note">{t('Incomplete: code and model runs did the screening, and you looked only at your queue and the audit sample. The counts are not added up.')}</p>
+        {(counts.flow_boxes.followup_searches?.length ?? 0) > 0 && <p className="flow-note">{t('The records returned, the works a search found and the abstracts the model read count the first search only; each follow-up search is shown below. The other boxes count the whole question revision.')}</p>}
+        {(counts.flow_boxes.followup_only_works?.length ?? 0) > 0 && <p className="flow-note">{t(counts.flow_boxes.followup_only_works!.length === 1 ? '{n} work came only from a follow-up search: it is in the whole-revision boxes, not in the first search\'s.' : '{n} works came only from follow-up searches: they are in the whole-revision boxes, not in the first search\'s.', { n: count(counts.flow_boxes.followup_only_works!.length) })}</p>}
       </div>}
+      {counts.flow_boxes?.followup_searches?.map(search => <FollowupSearchBlock key={search.run_id} search={search} />)}
       <span className="export-links flow-report" role="group" aria-label={t('Search report (PRISMA-S)')}>
         <span className="export-links-label"><Download size={15} aria-hidden />{t('Search report (PRISMA-S)')}</span>
         <span className="export-formats">
@@ -63,6 +66,20 @@ function FlowBlock({ researchId, counts }: { researchId: string; counts: Counts 
       </span>
     </div>
   </details>
+}
+
+// One follow-up search (D92) after the first search's boxes, from its own frozen steps; a value it has not written is not
+// recorded, never 0.
+function FollowupSearchBlock({ search }: { search: FollowupSearchBox }) {
+  const rows: [string, number | null][] = [['Records', search.records], ['New works', search.new], ['Already here', search.already_here],
+    ['Removed before', search.removed_before], ['Candidates', search.candidates]]
+  return <div>
+    <p className="flow-head">{t('Follow-up search on {date}', { date: search.created_at.slice(0, 10) })}</p>
+    <ul className="flow-list">{rows.map(([label, n]) => <li key={label}>
+      <span>{t(label)}</span><strong>{n === null ? t('not recorded') : count(n)}</strong>
+    </li>)}</ul>
+    {search.status !== 'completed' && <p className="flow-note">{t(runStatusLabels[search.status])}</p>}
+  </div>
 }
 
 // Under an sw answer: where the flow stood when its run started, and what was given to the model, on separate lines.

@@ -30,7 +30,7 @@ from deixis.domain import contracts
 from deixis.documents.jats import RENDITION_SQL
 from deixis.domain.rules import TEST_EFFORT_BUDGETS, RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, transaction
-from deixis.workflow import fast_answer, late_revision, small_batch
+from deixis.workflow import fast_answer, followup_search, late_revision, small_batch
 from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.evidence_deps import EVIDENCE_STATUS_SQL
 from deixis.workflow.late_revision import REVISION_INPUT
@@ -146,6 +146,18 @@ def pool(store: Any, research_id: str, scope_revision: int, flow: Any = None) ->
     checks that a full text read after the answer was read on the file still in use; without it none is added."""
     current = _current(store, research_id)
     sources: dict[str, list[str]] = {}
+    chosen: dict[str, str] = {}  # work -> the one version `sources` holds for it (R2.9)
+
+    def give(work_id: str, svid: str, ids: list[str]) -> None:
+        # One version per work: a work already given under another version gains nothing; under the same version
+        # the passages it does not hold yet are appended (R3.4).
+        if chosen.get(work_id, svid) != svid:
+            return
+        kept = [pid for pid in dict.fromkeys(ids) if pid not in sources.get(svid, [])]
+        if kept:
+            chosen[work_id] = svid
+            sources.setdefault(svid, []).extend(kept)
+
     base = {"selection_revision": store.selection_revision(research_id),
             "user_signature": small_batch.user_signature(store, research_id)}
     frozen = _answer_input(store, research_id, scope_revision)
@@ -155,6 +167,8 @@ def pool(store: Any, research_id: str, scope_revision: int, flow: Any = None) ->
         # since heads the work, and excluding or setting it pending takes the work's frozen passages out too.
         heads = store.work_heads(research_id)
         late_excluded = late_revision.excluded_works(store, research_id, scope_revision)
+        # Works are matched by the work each record belongs to now: two frozen records merged since give one work.
+        work_of = store.work_ids([item["source_version_id"] for item in frozen["plan"]["items"]])
         for item in frozen["plan"]["items"]:
             svid = item["source_version_id"]
             head = heads.get(item["work_id"], item.get("head"))
@@ -170,9 +184,7 @@ def pool(store: Any, research_id: str, scope_revision: int, flow: Any = None) ->
             if item["route"] == "fulltext" and state != "pdf_wrong":
                 ids += item["fulltext_ids"]
             have = set(current.get(svid, []))
-            kept = [pid for pid in dict.fromkeys(ids) if pid in have and pid not in sources.get(svid, [])]
-            if kept:
-                sources.setdefault(svid, []).extend(kept)
+            give(work_of.get(svid, item["work_id"]), svid, [pid for pid in ids if pid in have])
         # The research kept growing after that answer (D49): a work whose full text was read since the answer's run
         # started gives its abstract and the pages it was read from, the rule the answer view counts its "new full
         # texts" by (`fulltext_read_since`). The read must be on the file still in use (`fast_answer.read_file`), so
@@ -201,11 +213,20 @@ def pool(store: Any, research_id: str, scope_revision: int, flow: Any = None) ->
                                 break
                 if not asset:
                     continue
-                read = [p["id"] for p in pools.get(svid, [])
-                        if p["kind"] == "abstract" or p["asset_id"] == asset]
-                kept = [pid for pid in read if pid not in sources.get(svid, [])]
-                if kept:
-                    sources.setdefault(svid, []).extend(kept)
+                give(row["work_id"], svid, [p["id"] for p in pools.get(svid, [])
+                                            if p["kind"] == "abstract" or p["asset_id"] == asset])
+        # A work the person included that the frozen input holds no row for (a follow-up search found it after the
+        # cutoff, or it was added by hand) gives what a new answer's row for it would (`fast_answer.after_cutoff_rows`):
+        # its answer version's abstract and the pages of the file a current reading read, never unread pages.
+        held = {item["work_id"] for item in frozen["plan"]["items"]} | set(work_of.values())
+        later = {wid: head for wid, head in fast_answer.included_heads(store, research_id).items()
+                 if wid not in held and wid not in chosen}
+        if later:
+            rows, _ = fast_answer.after_cutoff_rows(store, flow, research_id, later)
+            for row in rows:
+                svid = row["source_version_id"]
+                ids = row["abstract_ids"] + (row["fulltext_ids"] if row["route"] == "fulltext" else [])
+                give(row["work_id"], svid, [pid for pid in ids if pid in set(current.get(svid, []))])
         return _with_reserve(store, research_id, current, base | {
             "basis": "answer_input", "answer_run_id": frozen["run_id"], "sources": sources})
     return _with_reserve(store, research_id, current, base | {
@@ -229,8 +250,14 @@ def _with_reserve(store: Any, research_id: str, current: dict[str, list[str]], f
     current values cite; they go first in the selection, so the follow-up starts from what the answer and the table
     stand on. The table's own passages are chosen per follow-up with its values (`table_choice`, D53)."""
     given = {pid for ids in frozen["sources"].values() for pid in ids}
+    # A work `sources` already gives under any version has no reserve: one version per work (R2.9).
+    included = _included(store, research_id, current)
+    work_of = store.work_ids([*frozen["sources"], *included])
+    present = {work_of.get(svid, svid) for svid in frozen["sources"]}
     reserve = {}
-    for svid, ids in _included(store, research_id, current).items():
+    for svid, ids in included.items():
+        if work_of.get(svid, svid) in present:
+            continue
         rest = [pid for pid in ids if pid not in given]
         if rest:
             reserve[svid] = rest
@@ -943,6 +970,9 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
         "run": {"id": run["id"], "status": run["status"], "stage": run["stage"], "pause_reason": run["pause_reason"],
                 "error": run["error"]},
         "answer": answer, "report_change": report_change,
+        # The turn's search for new works (D92): offered on the person's click, never started by the model's flag.
+        "search": followup_search.view(store, row, (json.loads(row["draft_json"] or "{}").get("new_works_requested")
+                                                     if row["status"] in PUBLISHED and row["draft_json"] else None)),
         "issues": validation["issues"] if row["status"] == "unverified_draft" and validation else [],
     }
 

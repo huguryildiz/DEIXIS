@@ -44,6 +44,7 @@ one; `report_section` also gets the source-grounded answer file.
 | `vocabulary_labels` | [vocabulary labels](references/vocabulary-labels.md) | Sort the phrases the application extracted into concept blocks; propose none of your own. |
 | `criterion_proposal` | [criterion proposal](references/criterion-proposal.md) | State from the question alone what an included paper must contain, and the words its authors would write. |
 | `search_query` | [search query](references/search-query.md) | Choose the terms of the two keyword blocks, with backups; the application counts them and writes the query. |
+| `followup_search_query` | [follow-up search](references/followup-search.md) | Choose the terms of the two keyword blocks for what a follow-up asks that the research does not hold yet. |
 | `abstract_screening` | [abstract screening](references/abstract-screening.md) | Say whether each record's abstract is worth reading in full; decide no inclusion. |
 | `fulltext_adjudication` | [full-text reading](references/fulltext-adjudication.md) | For each part of one inclusion criterion, say whether the shown passages state that the paper contains it; decide no inclusion. |
 | `cell_extraction`, `table_columns` | [evidence table](references/evidence-table.md) | Answer evidence-table columns for one source, or suggest columns; do not answer the question. |

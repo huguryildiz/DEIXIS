@@ -129,7 +129,9 @@ def _groups(store: Store, research_id: str, revision: int, until: str | None = N
         "SELECT sr.id, sr.run_id, sr.provider, sr.query_text, sr.request_description, sr.status, sr.result_count,"
         " sr.provider_total, sr.read_limit, sr.read_total, sr.unread_count, sr.stop_reason, sr.retrieved_at,"
         " sr.page_number, sr.rowid AS row_order, st.operation_key FROM search_runs sr"
-        " JOIN run_steps st ON st.id = sr.step_id WHERE sr.research_id = ? AND sr.scope_revision = ?"
+        " JOIN run_steps st ON st.id = sr.step_id JOIN runs r ON r.id = sr.run_id"
+        # The search is the discovery runs; follow-up searches (D92) have their own subsection (`_followup_searches`).
+        " WHERE sr.research_id = ? AND sr.scope_revision = ? AND r.kind = 'discovery'"
         + (" AND sr.retrieved_at <= ?" if until else ""),
         (research_id, revision, *((until,) if until else ())))]
     # A group's pages in page order: its end state is its highest page's, whatever the clock said when each page was
@@ -477,8 +479,56 @@ def _export(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, 
         "planned_queries": planned,
         "search_table": [{key: value for key, value in g.items() if key != "request_description"}
                          | {"request_description": g["request_description"]} for g in groups],
+        # The same databases searched again for a follow-up question (D92): listed apart, not as an "other method".
+        "followup_searches": _followup_searches(store, research_id, revision),
         "flow": {"counts": flow, "boxes": flow_rules.flow_boxes(ctx, flow)},
     }
+
+
+def _followup_searches(store: Store, research_id: str, revision: int) -> list[dict[str, Any]]:
+    """Each follow-up search of the revision (D92) with every request its send steps hold, so a request that was sent
+    and never admitted is still reported. A request's provider, query, status and records come from the run's summary
+    when it wrote one, else from the send step itself; its date is when its step ended (else started)."""
+    conn = store.conn
+    result = []
+    for run in flow_rules.followup_runs(conn, research_id, revision):
+        turn = conn.execute("SELECT question FROM followup_turns WHERE id = ?", (run["turn_id"],)).fetchone() \
+            if run["turn_id"] else None
+        summary = {r.get("position"): r for r in (run["summary"] or {}).get("requests") or []}
+        requests = []
+        for step in conn.execute(
+                "SELECT id, operation_key, status, output_json, started_at, finished_at FROM run_steps"
+                " WHERE run_id = ? AND operation_key LIKE ? ORDER BY rowid",
+                (run["run_id"], flow_rules.FOLLOWUP_SEND_PREFIX + "%")):
+            tail = step["operation_key"][len(flow_rules.FOLLOWUP_SEND_PREFIX):]
+            if not tail.isdigit():
+                continue
+            position = int(tail)
+            output = json.loads(step["output_json"]) if step["output_json"] else {}
+            output = output if isinstance(output, dict) else {}
+            line = summary.get(position) or {}
+            records = output.get("records")
+            requests.append({
+                "position": position, "step_id": step["id"], "date": step["finished_at"] or step["started_at"],
+                "provider": line.get("provider_id", output.get("provider_id")),
+                "endpoint": line.get("endpoint", output.get("endpoint")),
+                "query_text": line.get("query_text", output.get("query_text")),
+                "status": line.get("status") or output.get("status") or step["status"],
+                "records": line["records"] if "records" in line else len(records) if isinstance(records, list) else None,
+                "reason": line.get("reason", output.get("reason"))})
+        # A request the summary lists that has no send step of its own (never sent) is still reported.
+        stepped = {r["position"] for r in requests}
+        requests += [{"position": position, "step_id": None, "date": None, "provider": line.get("provider_id"),
+                      "endpoint": line.get("endpoint"), "query_text": line.get("query_text"),
+                      "status": line.get("status"), "records": line.get("records"), "reason": line.get("reason")}
+                     for position, line in summary.items() if position not in stepped]
+        requests.sort(key=lambda r: (r["position"] is None, r["position"] or 0))
+        kept = [r["records"] for r in requests if r["records"] is not None]
+        result.append({"run_id": run["run_id"], "turn_id": run["turn_id"], "question": turn["question"] if turn else None,
+                       "created_at": run["created_at"], "status": run["status"], "requests": requests,
+                       "records_kept": sum(kept) if kept else (0 if not requests else None),
+                       "new_works": ((run["found"] or {}).get("counts") or {}).get("new")})
+    return result
 
 
 def _dedup(store: Store, research_id: str, revision: int, groups: list[dict[str, Any]]) -> dict[str, Any]:
@@ -488,19 +538,23 @@ def _dedup(store: Store, research_id: str, revision: int, groups: list[dict[str,
     works = conn.execute(
         "SELECT COUNT(DISTINCT v.work_id) FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
         " WHERE m.research_id = ? AND m.removed_at IS NULL", (research_id,)).fetchone()[0]
-    hits = conn.execute("SELECT COUNT(*) FROM candidate_hits WHERE research_id = ? AND scope_revision = ?",
-                        (research_id, revision)).fetchone()[0]
+    # Hits of the discovery runs only: a follow-up search's hits (D92) are not this search's.
+    hits = conn.execute("SELECT COUNT(*) FROM candidate_hits h JOIN search_runs sr ON sr.id = h.search_run_id"
+                        " JOIN runs r ON r.id = sr.run_id WHERE h.research_id = ? AND h.scope_revision = ?"
+                        " AND r.kind = 'discovery'", (research_id, revision)).fetchone()[0]
     # A page that returned records and kept no hit row is from before D93: the hits were not counted, which is not 0.
     counted = conn.execute(
-        "SELECT 1 FROM search_runs WHERE research_id = ? AND scope_revision = ? AND status = 'completed'"
-        " AND result_count > 0 AND id NOT IN (SELECT search_run_id FROM candidate_hits WHERE research_id = ?"
+        "SELECT 1 FROM search_runs sr JOIN runs r ON r.id = sr.run_id WHERE sr.research_id = ? AND sr.scope_revision = ?"
+        " AND r.kind = 'discovery' AND sr.status = 'completed'"
+        " AND sr.result_count > 0 AND sr.id NOT IN (SELECT search_run_id FROM candidate_hits WHERE research_id = ?"
         " AND scope_revision = ?) LIMIT 1", (research_id, revision, research_id, revision)).fetchone() is None
     link_filter = ("closed_at IS NULL AND (source_version_id IN (active members) OR other_source_version_id IN "
                    "(active members))")
     member_sql = ("SELECT source_version_id FROM corpus_memberships WHERE research_id = ? AND removed_at IS NULL")
     aggregates = [{"table": "corpus_memberships", "filter": "research_id = <research> AND removed_at IS NULL",
                    "count": members},
-                  {"table": "candidate_hits", "filter": "research_id = <research> AND scope_revision = <revision>",
+                  {"table": "candidate_hits", "filter": "research_id = <research> AND scope_revision = <revision>"
+                                                        " AND search_run_id IN (discovery runs' search_runs)",
                    "count": hits}]
     for row in conn.execute(
             f"SELECT link_kind, rule, merged, COUNT(*) AS n FROM record_links WHERE closed_at IS NULL AND"
@@ -593,6 +647,18 @@ def markdown(data: dict[str, Any]) -> str:
                   "| # | Provider | Origin | Query | Dispatch |", "|---|---|---|---|---|"]
         lines += [f"| {q['index']} | {_cell(q['provider_id'])} | {_cell(q['origin'])} | {_cell(q['query_text'])} | "
                   f"{q['dispatch']} |" for q in data["planned_queries"]]
+    if data.get("followup_searches"):
+        lines += ["", "## Follow-up searches", "",
+                  "The same databases were searched again for follow-up questions. These searches are listed apart and "
+                  "are not counted in the search above.", ""]
+        for run in data["followup_searches"]:
+            lines += [f"### {run['created_at']}: {_cell(run['question'])}", "",
+                      f"Run `{run['run_id']}`, status {run['status']}; records kept: {_cell(run['records_kept'])}; "
+                      f"new works: {_cell(run['new_works'])}.", "",
+                      "| # | Date | Provider | Query | Status | Records kept |", "|---|---|---|---|---|---|"]
+            lines += [f"| {_cell(r['position'])} | {_cell(r['date'])} | {_cell(r['provider'])} | {_cell(r['query_text'])} | "
+                      f"{_cell(r['status'])} | {_cell(r['records'])} |" for r in run["requests"]]
+            lines.append("")
     boxes = data["flow"]["boxes"]
     lines += ["", "## Flow counts", "", f"Every count below is marked `{boxes['flow_status']}`: the screening was "
               "done by code and model runs. The counts are not added up.", ""]

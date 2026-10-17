@@ -132,6 +132,98 @@ def flow_counts(ctx: Any, probe: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# A follow-up search (D92) is a run of its own under the same question revision. "The search" is the research's
+# `discovery` runs; follow-up searches are counted apart and never added to the first search's numbers.
+FOLLOWUP_KIND = "followup_search"
+FOLLOWUP_FOUND = "followup_search:found"
+FOLLOWUP_SUMMARY = "followup_search:summary"
+FOLLOWUP_SEND_PREFIX = "followup_search:search:"
+# The search funnel's model readings: proposals of these runs (a follow-up search's screening is in its own block).
+SEARCH_SCREENING_KINDS = ("discovery", "screen_more")
+# A request status in a follow-up search summary that says the request never left DEIXIS.
+NOT_SENT = ("not_sent", "pending", "cancelled", "skipped")
+# A work found by a follow-up search over all its versions: one held before wins over removed, removed over new (R2.6).
+FOLLOWUP_STATE_ORDER = ("already_here", "removed_before", "new")
+
+
+def followup_runs(conn: Any, research_id: str, revision: int | None = None,
+                  statuses: tuple[str, ...] | None = None) -> list[dict[str, Any]]:
+    """The research's follow-up search runs, oldest first, each with its frozen `found` and `summary` step outputs
+    (None while that step has not succeeded). Nothing is recounted: these are the counts the run stored."""
+    sql = ("SELECT id, scope_revision, status, created_at, updated_at, json_extract(target_json, '$.turn_id') AS turn_id"
+           " FROM runs WHERE research_id = ? AND kind = ?")
+    args: list[Any] = [research_id, FOLLOWUP_KIND]
+    if revision is not None:
+        sql += " AND scope_revision = ?"
+        args.append(revision)
+    if statuses is not None:
+        sql += f" AND status IN ({','.join('?' * len(statuses))})"
+        args += statuses
+    runs = [dict(row) for row in conn.execute(sql + " ORDER BY created_at, rowid", args)]
+    steps: dict[tuple[str, str], Any] = {}
+    if runs:
+        ids = [run["id"] for run in runs]
+        for row in conn.execute(
+                f"SELECT run_id, operation_key, output_json FROM run_steps WHERE run_id IN ({','.join('?' * len(ids))})"
+                " AND operation_key IN (?, ?) AND status = 'succeeded' AND output_json IS NOT NULL",
+                (*ids, FOLLOWUP_FOUND, FOLLOWUP_SUMMARY)):
+            steps[(row["run_id"], row["operation_key"])] = json.loads(row["output_json"])
+    from deixis.workflow import followup_search
+
+    # A run that stopped before its found step (cancelled or failed after some admissions) is read from those
+    # admissions, marked `found_partial`: its records are in the research and must not count as the first search's.
+    return [{"run_id": run["id"], "turn_id": run["turn_id"], "scope_revision": run["scope_revision"],
+             "status": run["status"], "created_at": run["created_at"],
+             "completed_at": run["updated_at"] if run["status"] == "completed" else None,
+             "found": steps.get((run["id"], FOLLOWUP_FOUND)) or followup_search.found_from(conn, research_id, run["id"]),
+             "found_partial": (run["id"], FOLLOWUP_FOUND) not in steps,
+             "summary": steps.get((run["id"], FOLLOWUP_SUMMARY))}
+            for run in runs]
+
+
+def followup_brief(run: dict[str, Any]) -> dict[str, Any]:
+    """What a stored snapshot keeps of one completed follow-up search: its date, requests sent and new works."""
+    requests = (run["summary"] or {}).get("requests")
+    found = (run["found"] or {}).get("counts") or {}
+    return {"run_id": run["run_id"], "turn_id": run["turn_id"], "created_at": run["created_at"],
+            "completed_at": run["completed_at"],
+            "requests": len(requests) if requests is not None else None,
+            # The summary says per request whether it may have reached the provider (D92); a refusal closed before
+            # sending (a spent OpenAlex budget, a missing key) was not sent.
+            "requests_sent": sum(1 for r in requests if r.get("sent", r.get("status") not in NOT_SENT)) if requests is not None else None,
+            "records": found.get("records"), "new_works": found.get("new")}
+
+
+def followup_block(conn: Any, research_id: str, revision: int) -> list[dict[str, Any]]:
+    """The follow-up searches of this question revision, each from its own frozen steps; a value a run has not
+    written yet (no found or summary step) is None, never zero."""
+    block = []
+    for run in followup_runs(conn, research_id, revision):
+        found = (run["found"] or {}).get("counts") or {}
+        summary = (run["summary"] or {}).get("counts") or {}
+
+        def value(key: str) -> Any:
+            return found[key] if key in found else summary.get(key)
+        block.append({"run_id": run["run_id"], "turn_id": run["turn_id"], "created_at": run["created_at"],
+                      "status": run["status"], "records": value("records"), "new": value("new"),
+                      "already_here": value("already_here"), "removed_before": value("removed_before"),
+                      "code_decided": summary.get("code_decided"), "sent_to_model": summary.get("sent_to_model"),
+                      "model_result": summary.get("model_result"), "candidates": summary.get("candidates")})
+    return block
+
+
+def followup_only_works(conn: Any, research_id: str, revision: int, work_of: dict[str, str],
+                        discovery_found: set[str]) -> set[str]:
+    """Works a follow-up search of this revision brought as new (its frozen found step) that no discovery search hit:
+    the first search's funnel leaves them out. A version id maps to the work it belongs to now (`work_of`)."""
+    brought: set[str] = set()
+    for run in followup_runs(conn, research_id, revision):
+        for work in (run["found"] or {}).get("works") or []:
+            if work.get("state") == "new":
+                brought |= {work_of[svid] for svid in work.get("versions") or [] if svid in work_of}
+    return brought - discovery_found
+
+
 def funnel(ctx: Any, flow: dict[str, Any], boxes: dict[str, Any]) -> dict[str, Any]:
     """The search step's funnel of the current revision (D233), one pool of works from the unique works down.
 
@@ -139,13 +231,21 @@ def funnel(ctx: Any, flow: dict[str, Any], boxes: dict[str, Any]) -> dict[str, A
     the keyword searches brought `unique - chained` works and every later stage is a subset of `unique`. None of the
     counts is "found" or "relevant". `abstracts_read` counts works a model read, not the ones queued. `candidates` are
     works with a current, not stale abstract-stage decision `candidate`, whatever a person or the full text did with them
-    afterwards. `included` is the works whose head record's selection is included, the same count the lists show."""
+    afterwards. `included` is the works whose head record's selection is included, the same count the lists show.
+
+    Follow-up searches (D92) are not this search: `unique` and `candidates` leave out the works only a follow-up
+    search brought (`followup_only` in the boxes), and `unique_in_research` is every work of the revision. `included`
+    stays research-wide, as the lists count it."""
     box = {row["key"]: row["count"] for row in boxes["boxes"]}
     heads = ctx.facts["heads"]
-    candidates = sum(1 for work_id in heads if passed_abstract(ctx, work_id))
+    followup_only = set(boxes.get("followup_only_works") or ())
+    pool = [work_id for work_id in heads if work_id not in followup_only]
+    candidates = sum(1 for work_id in pool if passed_abstract(ctx, work_id))
     included = sum(1 for work_id, head in heads.items() if (ctx.selections.get(head) or {}).get("state") == "included")
-    return {"retrieved": box["rows_returned"], "chained": len(ctx.chained & set(heads)), "unique": box["works"],
-            "abstracts_read": box["abstract_read_by_model"], "candidates": candidates, "included": included}
+    return {"retrieved": box["rows_returned"], "chained": len(ctx.chained & set(heads)),
+            "unique": box["works"] - len(followup_only & set(heads)),
+            "abstracts_read": box["abstract_read_by_model"], "candidates": candidates, "included": included,
+            "unique_in_research": box["works"]}
 
 
 def passed_abstract(ctx: Any, work_id: str) -> bool:
@@ -188,9 +288,10 @@ def flow_boxes(ctx: Any, flow: dict[str, Any]) -> dict[str, Any]:
     store, rid, revision = ctx.store, ctx.rid, ctx.revision
     conn = store.conn
     buckets = flow["buckets"]
+    # The search is the research's discovery runs; a follow-up search (D92) is counted in its own block below.
     searches = [dict(row) for row in conn.execute(
-        "SELECT id, status, result_count, query_text FROM search_runs WHERE research_id = ? AND scope_revision = ?",
-        (rid, revision))]
+        "SELECT sr.id, sr.status, sr.result_count, sr.query_text FROM search_runs sr JOIN runs r ON r.id = sr.run_id"
+        " WHERE sr.research_id = ? AND sr.scope_revision = ? AND r.kind = 'discovery'", (rid, revision))]
     keyword = [s for s in searches if not s["query_text"].startswith(CHAIN_PREFIX)]
     chain = [s for s in searches if s["query_text"].startswith(CHAIN_PREFIX)]
     work_of = {row[0]: row[1] for row in conn.execute(
@@ -198,8 +299,9 @@ def flow_boxes(ctx: Any, flow: dict[str, Any]) -> dict[str, Any]:
         " WHERE m.research_id = ? AND m.removed_at IS NULL", (rid,))}
     hit_searches: set[str] = set()
     found: set[str] = set()
-    for row in conn.execute("SELECT source_version_id, search_run_id FROM candidate_hits"
-                            " WHERE research_id = ? AND scope_revision = ?", (rid, revision)):
+    for row in conn.execute("SELECT h.source_version_id, h.search_run_id FROM candidate_hits h"
+                            " JOIN search_runs sr ON sr.id = h.search_run_id JOIN runs r ON r.id = sr.run_id"
+                            " WHERE h.research_id = ? AND h.scope_revision = ? AND r.kind = 'discovery'", (rid, revision)):
         hit_searches.add(row[1])
         if row[0] in work_of:
             found.add(work_of[row[0]])
@@ -208,8 +310,9 @@ def flow_boxes(ctx: Any, flow: dict[str, Any]) -> dict[str, Any]:
                       for s in searches)
     abstract_read = {work_of[row[0]] for row in conn.execute(
         "SELECT DISTINCT p.source_version_id FROM model_proposals p JOIN run_steps s ON s.id = p.step_id"
-        " JOIN runs r ON r.id = s.run_id WHERE p.research_id = ? AND p.stage = 'abstract' AND r.scope_revision = ?",
-        (rid, revision)) if row[0] in work_of}
+        " JOIN runs r ON r.id = s.run_id WHERE p.research_id = ? AND p.stage = 'abstract' AND r.scope_revision = ?"
+        f" AND r.kind IN ({','.join('?' * len(SEARCH_SCREENING_KINDS))})",
+        (rid, revision, *SEARCH_SCREENING_KINDS)) if row[0] in work_of}
     sought: set[str] = set()
     for row in conn.execute(
             "SELECT s.output_json FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE r.research_id = ?"
@@ -237,4 +340,8 @@ def flow_boxes(ctx: Any, flow: dict[str, Any]) -> dict[str, Any]:
         ("included", flow["five"]["included"]),
     ]
     return {"flow_status": FLOW_STATUS, "revision": revision,
-            "boxes": [{"key": key, "count": count, "flow_status": FLOW_STATUS} for key, count in rows]}
+            "boxes": [{"key": key, "count": count, "flow_status": FLOW_STATUS} for key, count in rows],
+            # Each follow-up search of the revision from its own frozen steps (D92), apart from the boxes above.
+            "followup_searches": followup_block(conn, rid, revision),
+            # Works only a follow-up search brought: the funnel leaves them out of the first search's numbers.
+            "followup_only_works": sorted(followup_only_works(conn, rid, revision, work_of, found))}

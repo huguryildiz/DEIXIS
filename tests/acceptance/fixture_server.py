@@ -92,6 +92,12 @@ in a second lineage run, after a selection change makes the target eligible agai
 "[citemap]" serves the six development-line works with B and C also citing one outside work, W979. Its record is
 answered by an OpenAlex id lookup only once the file `citemap-describe` exists in the data directory, so discovery's
 citation chain never takes it in and the citation map's reading run is the request that describes it (D42).
+"[snowball]" (D91) serves the six development-line works with A also citing two works outside the research, W1001 and
+W1002, besides B. Once the file `snowball-open` exists in the data directory, an OpenAlex id lookup answers exactly the
+asked records and `filter=cites:W971` answers C plus two more outside works, W1003 and W1004; before it, discovery's own
+chaining gets the base works back, as in "[citemap]". The scripted abstract screening puts the two works whose title
+says "off-scope" out of scope and leaves the other two candidates, so a round on seed A has one held reference, one
+citing work already here, four new works, two candidates and two out of scope.
 "[candidate]" drives claim breakdown and a bounded claim search; "[candidate-access]" also returns a work
 without usable text. These markers affect only candidate-task calls and the distinct candidate query term.
 """
@@ -253,6 +259,44 @@ for record in CITEMAP_WORKS[1:3]:
 CITEMAP_OUTSIDE = work('W979', 'SYNTHETIC outside pulse spacing model cited by two sources', 'SYNTHETIC an earlier pulse spacing model.',
                        'publishedVersion', doi='https://doi.org/10.5555/citemap-outside')
 CITEMAP_OUTSIDE.update(publication_year=2008, authorships=[{'author': {'display_name': 'Olga Outis'}}], referenced_works=[])
+
+
+# "[snowball]" (D91): the base works again, A citing B (held) and the outside works W1001, W1002; W1003 and W1004 cite A,
+# as C does. Every title and abstract is SYNTHETIC. The outside works answer only after `snowball-open` exists.
+SNOWBALL_MODE = False
+SNOWBALL_WORKS = deepcopy(LINEAGE_WORKS)
+SNOWBALL_WORKS[0]['referenced_works'] = [f'https://openalex.org/{wid}' for wid in ('W972', 'W1001', 'W1002')]
+
+
+def snowball_work(wid: str, title: str, abstract: str, year: int) -> dict[str, Any]:
+    record = work(wid, title, abstract, 'publishedVersion', doi=f'https://doi.org/10.5555/snowball-{wid.lower()}')
+    record.update(publication_year=year, authorships=[{'author': {'display_name': 'Sam Snow'}}], referenced_works=[])
+    return record
+
+
+SNOWBALL_OUTSIDE = [
+    snowball_work('W1001', 'SYNTHETIC snowball backward pulse timing study', 'SYNTHETIC a pulse timing study for relay channels.', 2005),
+    snowball_work('W1002', 'SYNTHETIC snowball backward off-scope soil survey', 'SYNTHETIC a survey of soil moisture in fields.', 2006),
+    snowball_work('W1003', 'SYNTHETIC snowball forward pulse spacing extension', 'SYNTHETIC an extension of pulse spacing to relays.', 2020),
+    snowball_work('W1004', 'SYNTHETIC snowball forward off-scope bird count', 'SYNTHETIC a count of birds near a lake.', 2021),
+]
+
+
+def snowball_lookup(request: httpx.Request) -> httpx.Response | None:
+    """Once `snowball-open` exists: an id lookup answers exactly the asked records; `cites:W971` answers C, W1003 and
+    W1004 in one page (no next cursor); any other `cites:` filter answers nothing."""
+    works_filter = request.url.params.get('filter', '')
+    if request.url.host != 'api.openalex.org' or FLIP_DIR is None or not (FLIP_DIR / 'snowball-open').exists():
+        return None
+    pool = [*SNOWBALL_WORKS, *SNOWBALL_OUTSIDE]
+    if works_filter.startswith('openalex:'):
+        asked = set(works_filter.removeprefix('openalex:').split('|'))
+        found = [w for w in pool if w['id'].rsplit('/', 1)[-1] in asked]
+    elif works_filter.startswith('cites:'):
+        found = [SNOWBALL_WORKS[2], *SNOWBALL_OUTSIDE[2:]] if works_filter == 'cites:W971' else []
+    else:
+        return None
+    return httpx.Response(200, json={'meta': {'count': len(found), 'next_cursor': None}, 'results': found})
 
 
 def citemap_lookup(request: httpx.Request) -> httpx.Response | None:
@@ -556,9 +600,9 @@ def reset_markers() -> None:
     global PARITY_MODE, OA_QUOTA_MODE, OA_QUOTA_FIRST_MODE, NO_PASSAGES_MODE, JOBS_MODE
     RATE_LIMIT_MODE = LINEAGE_MODE = LINEAGE_REJECT_MODE = False
     PARITY_MODE = OA_QUOTA_MODE = OA_QUOTA_FIRST_MODE = NO_PASSAGES_MODE = JOBS_MODE = False
-    global OA_FLIP_MODE, CITEMAP_MODE
+    global OA_FLIP_MODE, CITEMAP_MODE, SNOWBALL_MODE
     OA_FLIP_MODE = None
-    CITEMAP_MODE = False
+    CITEMAP_MODE = SNOWBALL_MODE = False
     PROBE_MODE = None
     PARITY_ROLES.clear()
 
@@ -620,7 +664,9 @@ def openalex(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("SYNTHETIC: connection refused", request=request)
     if CITEMAP_MODE and (answer := citemap_lookup(request)) is not None:
         return answer
-    works = (CITEMAP_WORKS if CITEMAP_MODE else LINEAGE_REJECT_WORKS if LINEAGE_REJECT_MODE else LINEAGE_WORKS if LINEAGE_MODE else QUEUE_WORKS if QUEUE_MODE
+    if SNOWBALL_MODE and (answer := snowball_lookup(request)) is not None:
+        return answer
+    works = (SNOWBALL_WORKS if SNOWBALL_MODE else CITEMAP_WORKS if CITEMAP_MODE else LINEAGE_REJECT_WORKS if LINEAGE_REJECT_MODE else LINEAGE_WORKS if LINEAGE_MODE else QUEUE_WORKS if QUEUE_MODE
              else NO_PASSAGE_WORKS if NO_PASSAGES_MODE else JOBS_WORKS if JOBS_MODE else WORKS)
     return httpx.Response(200, json={"meta": {"count": len(works)}, "results": works})
 
@@ -727,8 +773,9 @@ class ScriptedCodex:
         global LINEAGE_MODE, LINEAGE_REJECT_MODE
         LINEAGE_REJECT_MODE = '[lineage-reject]' in question
         LINEAGE_MODE = '[lineage]' in question or LINEAGE_REJECT_MODE
-        global CITEMAP_MODE
+        global CITEMAP_MODE, SNOWBALL_MODE
         CITEMAP_MODE = '[citemap]' in question
+        SNOWBALL_MODE = '[snowball]' in question
         global PARITY_MODE, OA_QUOTA_MODE, OA_QUOTA_FIRST_MODE, NO_PASSAGES_MODE, JOBS_MODE
         PARITY_MODE, OA_QUOTA_MODE, OA_QUOTA_FIRST_MODE = "[parity]" in question, "[oa-quota]" in question, "[oa-quota-first]" in question
         global OA_FLIP_MODE
@@ -935,6 +982,9 @@ class ScriptedCodex:
                 elif "visiting hours" in candidate["title"] and "[queue]" in question:
                     # Case J / M's off-topic work (DEIXIS_FIXTURE_AUDIT): both runs leave it out of scope.
                     record.update(label="out_of_scope", rationale="SYNTHETIC: hospital wards are not the question's setting.")
+                elif "off-scope" in candidate["title"] and "[snowball]" in question:
+                    # "[snowball]": both runs leave the two off-scope round works out of scope.
+                    record.update(label="out_of_scope", rationale="SYNTHETIC: this work is outside the question's setting.")
         elif si["task_type"] == "followup_answer" and "[fu-count]" in question:
             # SYNTHETIC (D66): the follow-up counts works, so it writes no claim and one record per source sent, by its
             # first passage: the first in a group as its passage states, the second in the same group as an

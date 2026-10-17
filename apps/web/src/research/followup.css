@@ -3,16 +3,21 @@
    `.prose` measures. Class names stay apart from the run steps (`.chat-step`) so the run's lists keep their own counts. */
 .followup-turns{display:grid;gap:36px;margin:18px 0 0}
 .followup-turn{display:grid;gap:18px;font-size:14px;line-height:1.5}
-.followup-q{justify-self:end;max-width:min(540px,100%);padding:12px 14px;border-radius:12px;background:var(--bubble);color:var(--ink);font-size:14.5px;line-height:1.5;overflow-wrap:anywhere}
-.followup-q>b{color:var(--accent);font-weight:500}
-/* The icon sits in the text line, so the label shares the question's baseline (an inline-flex label rode above it). */
-.followup-q>b>svg{display:inline;margin-right:5px;vertical-align:-3px}
+.followup-q{justify-self:end;max-width:min(540px,100%);padding:12px 16px 13px;border-radius:12px 12px 4px 12px;background:var(--bubble);color:var(--ink);font-size:14.5px;line-height:1.5;overflow-wrap:anywhere}
+/* v25 (D77): the scope chip of the research question bubble. */
+.followup-q>b{display:flex;align-items:center;width:fit-content;margin-bottom:6px;padding:1px 8px 1px 6px;border-radius:6px;background:var(--accent-tint);color:var(--accent);font-size:13px;font-weight:500}
+.followup-q>b>svg{flex:none;margin-right:5px}
 .followup-q>span{white-space:pre-wrap}
 .followup-turn .followup-steps{display:grid;gap:2px;list-style:none;margin:0;padding:0;color:inherit}
-.followup-step{list-style:none;margin:0}
-.followup-step-line{display:flex;gap:10px;align-items:flex-start;width:100%;padding:5px 0;color:var(--muted);font-size:13px;line-height:1.45}
+/* v25 (D77): the research run's ringed phase icons on a rail. */
+.followup-step{position:relative;list-style:none;margin:0}
+.followup-step:has(+ .followup-step)::before{content:"";position:absolute;left:12px;top:29px;bottom:-5px;width:1px;background:var(--line)}
+.followup-step-line{display:flex;gap:12px;align-items:flex-start;width:100%;padding:3px 0;color:var(--muted);font-size:13px;line-height:1.45}
 .followup-step.is-attention .followup-step-line{color:var(--tone-uncertain)}
-.followup-step-icon{display:grid;place-items:center;flex:none;width:18px;padding-top:1px}
+.followup-step-icon{position:relative;z-index:1;display:grid;place-items:center;flex:none;width:24px;height:24px;border:1px solid var(--line);border-radius:999px;background:var(--paper)}
+.followup-step-icon svg{width:13px;height:13px}
+.followup-step-line>span:last-child{padding-top:2px}
+.followup-step.is-attention .followup-step-icon{border-color:var(--warn-surface);background:var(--warn-surface)}
 .followup-turn .followup-note,.followup-turn .followup-outcome{margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}
 .followup-turn .followup-outcome{color:var(--ink-2);font-size:13px}
 .followup-prose{color:var(--ink);font-size:15px;line-height:1.68}

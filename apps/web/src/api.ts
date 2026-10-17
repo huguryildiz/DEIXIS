@@ -524,6 +524,8 @@ export type Claim = {
   evidence_basis?: 'abstract' | 'full_text' | 'mixed' | null
   id: string; label: string; section: string | null; text: string; support_type: 'source_stated' | 'analyst_inference'; semantic_review: string; evidence: Evidence[]
   review: { verdict: Verdict; reason: string } | null
+  // Measured values (a number with % or a unit) a cited passage also states, as [start, end) offsets into text.
+  quoted_measures?: [number, number][]
 }
 export type Limitation = { kind: string; text: string; source_ids: string[] }
 export type ValidationIssue = { code: string; path: string; message: string }

@@ -4,6 +4,12 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D81 — Measured values a cited passage states are set in bold in the answer
+Status: accepted · Date: 2026-10-17 · Writer: Claude
+Context: The owner asked whether the answer should bold its important parts. Letting the model choose would make bold a model verdict on importance, which the evidence rules forbid, and on conflicting sources it would take a side.
+Decision: The research view gives each claim `quoted_measures`: spans of a number followed by a percent sign or a unit (`450 J`, `25%`, `5 m/s`) whose number one of the claim's cited passages states (`deixis.domain.numbers.quoted_measures`, the same exact-decimal comparison as D54's table check). The thread sets these spans in bold with the tooltip "This value appears in the cited passage". Years, counts and labels carry no unit and stay plain; a claim with LaTeX math gets none.
+Limits: It matches the number, not its meaning or unit: a passage saying `450 kJ` or using 25 for something else still marks `25%`. Only the thread answer uses it; the report panel, follow-up answers and exports do not.
+
 ## D80 — Every work given to an answer is cited or left out with a reason
 Status: accepted · Date: 2026-10-17 · Writer: Claude · Reviewer: Sol (gpt-6.1-sol)
 Context: On 17 Oct, one Standard run of the DBR/VBF question (Sonnet 5.5 medium) gave the answer 40 works: 17 with PDF passages, 23 with abstracts. The answer cited 10, all of them PDF works. It used 12 claims, though the instructions allow 30, so length did not stop it. 25 uncited works had no number or formula for the question, but 5 did (4 of them abstracts), and nothing said why any work was left out (`.local/plans/answer-coverage-2026-10-17.md`).

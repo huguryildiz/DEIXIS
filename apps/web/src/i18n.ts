@@ -2094,6 +2094,7 @@ const tr: Record<string, string> = {
   'This answer was produced for revision {n} of the question and is not applied to the current revision.': 'Bu yanıt sorunun {n}. revizyonu için üretildi ve güncel revizyona uygulanmıyor.',
   'Your source selection changed after this answer was generated. It is kept, but it may cite sources you have since excluded or miss ones you added.': 'Bu yanıt üretildikten sonra kaynak seçiminiz değişti. Yanıt saklanır, ancak sonradan hariç tuttuğunuz kaynaklara atıf yapıyor veya eklediklerinizi içermiyor olabilir.',
   'interpretation': 'yorum',
+  'This value appears in the cited passage': 'Bu değer atıf yapılan pasajda geçiyor',
   'Reviewer: {reason}': 'İnceleyici: {reason}',
   'No claim could be linked to the passages given to the model.': 'Hiçbir iddia modele verilen pasajlara bağlanamadı.',
   'Not answered by the inspected passages': 'İncelenen pasajların yanıtlamadıkları',

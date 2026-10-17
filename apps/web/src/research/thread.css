@@ -97,6 +97,7 @@
 .answer-paragraph{margin:0 0 18px;line-height:1.7}
 .report-content .answer-paragraph{font-family:var(--font-sans);font-size:18px;line-height:1.72;color:var(--ink)}
 .answer-paragraph .claim+.claim::before{content:' '}
+.quoted-measure{font-weight:600;color:var(--ink)}
 .answer-paragraph .review-reason{display:block}
 .math-display{display:block;margin:10px 0;overflow-x:auto;overflow-y:hidden}
 .phrasing-note summary{cursor:pointer}

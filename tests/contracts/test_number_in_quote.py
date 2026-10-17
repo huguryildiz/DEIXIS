@@ -63,3 +63,12 @@ def test_the_table_flags_a_model_value_whose_number_is_in_no_quote(tmp_path):
 
     assert flagged(2, "packets of 128 bytes") is False
     assert flagged(1, "SYNTHETIC text layer page") is True
+
+
+def test_quoted_measures_marks_values_with_a_unit_that_a_passage_states():
+    from deixis.domain.numbers import quoted_measures
+    text = "A 2025 benchmark used 450 J, 25% less than VBF, 18 % less than DBR, over 3 months at 5 m/s."
+    spans = quoted_measures(text, ["SYNTHETIC: 450 J; a gain of 25 percent; 3 trials; 5 m/s"])
+    assert [text[a:b] for a, b in spans] == ["450 J", "25%", "5 m/s"]
+    assert quoted_measures("a $25\\%$ gain", ["25 %"]) == []
+    assert quoted_measures("25% more", []) == []

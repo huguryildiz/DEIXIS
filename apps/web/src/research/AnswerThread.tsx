@@ -104,6 +104,22 @@ export type AnswerReviewControl = { surface: ReviewSurfaceState; revision: numbe
 // changes: the answer diff of this version's report (P4, S21): whether it is shown, the stored version it is compared
 // with (answerDiff.comparisonBase) and the head's Show/Hide changes.
 export type AnswerChanges = { on: boolean; base: ComparisonBase; onToggle: () => void }
+
+// A claim's text with the measured values its cited passages also state set in bold; the backend finds them by number,
+// so bold says "this value is in the cited passage", not that the model thought it important.
+function ClaimText({ claim }: { claim: Claim }) {
+  const spans = claim.quoted_measures ?? []
+  if (!spans.length) return <MathText text={claim.text} />
+  const parts: ReactNode[] = []
+  let last = 0
+  for (const [start, end] of spans) {
+    if (start > last) parts.push(claim.text.slice(last, start))
+    parts.push(<strong key={start} className="quoted-measure" title={t('This value appears in the cited passage')}>{claim.text.slice(start, end)}</strong>)
+    last = end
+  }
+  if (last < claim.text.length) parts.push(claim.text.slice(last))
+  return <>{parts}</>
+}
 export function AnswerThread({ researchId, title, version, answer, sources, busy, dark, reportOpen, onReportOpenChange, showCard = true, onOpen, onAttachPdf, eventCursor, thread, review, reviewPending = false, versions = [], latestVersion = version, onVersion, changes }: { researchId: string; title: string; version: number; answer: Answer; sources: Source[]; busy: boolean; dark: boolean; reportOpen: boolean; onReportOpenChange: (open: boolean) => void; showCard?: boolean; onOpen: (passageId: string, highlightText: string | null) => void; onAttachPdf: (source: Source) => void; eventCursor: number; thread?: AnswerThreadContext; review: AnswerReviewControl; reviewPending?: boolean; versions?: ReportVersion[]; latestVersion?: number; onVersion?: (answerId: string) => void; changes?: AnswerChanges }) {
   const modelText = useModelText()
   const [style, chooseStyle] = useCitationStyle()
@@ -209,13 +225,13 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
     {/* A section is one paragraph (D230) under its numbered heading (mockup `.report h2`); its label names a topic. */}
     {figures.length > 0 && <section className="key-figures" aria-label={t('Key figures')}>
       {figures.map(({ value, claim }) => <button type="button" key={claim.id} className="key-figure" onClick={() => onOpen(claim.evidence[0].passage_id, claim.evidence[0].anchor_text)}>
-        <strong>{value}</strong><span><MathText text={claim.text} /></span>
+        <strong>{value}</strong><span><ClaimText claim={claim} /></span>
       </button>)}
     </section>}
     {sections.map(({ heading, claims }, index) => <section className="answer-section" key={index}>
       {heading && <h2><span className="section-num">{++headed}.</span> {heading}</h2>}
       <p className="answer-paragraph">{claims.map(claim => { const change = diff?.claims.get(claim.id); return <span className="claim" key={claim.id}>
-        {change?.added ? <ins><span className="sr-only">{t('Added:')} </span><MathText text={claim.text} /></ins> : <MathText text={claim.text} />}
+        {change?.added ? <ins><span className="sr-only">{t('Added:')} </span><ClaimText claim={claim} /></ins> : <ClaimText claim={claim} />}
         {claim.evidence.map(e => {
           const chipButton = <button key={e.passage_id} className={`cite-chip${e.kind === 'abstract' ? ' is-abstract' : ''}`} title={[e.title, versionText(e.version_label), locatorText(e), e.text_source === 'ocr' && t(OCR_LABEL), e.text_source === 'latex_source' && t('arXiv source'), e.text_source === 'equation_ocr' && t('equations read by Mathpix'), e.removed_from_research && t('Removed from this research')].filter(Boolean).join(' · ')} onClick={() => onOpen(e.passage_id, e.anchor_text)}>{citeLabel(claim, e) ?? `[${refs.get(e.passage_id)?.n}]`}{e.kind === 'abstract' && <span className="cite-chip-origin"><BookOpenText size={10} aria-hidden /><span className="sr-only">{t('abstract')}</span></span>}{e.text_source === 'latex_source' && <span className="cite-chip-origin"><Sigma size={10} aria-hidden /><span className="sr-only">{t('arXiv source')}</span></span>}</button>
           return change?.addedPassages.has(e.passage_id) ? <ins key={e.passage_id} className="cite-ins"><span className="sr-only">{t('Added citation:')} </span>{chipButton}</ins> : chipButton
@@ -321,7 +337,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
       </button>}
     {basis && sections.length > 0 && <p className="foot-note answer-basis">{basis}</p>}
     {sections.length > 0 && <div className="prose answer-prose">{sections.slice(0, PROSE_SECTIONS).map(({ claims }, index) => <p key={index}>
-      {claims.map(claim => <span className="claim" key={claim.id}><MathText text={claim.text} />
+      {claims.map(claim => <span className="claim" key={claim.id}><ClaimText claim={claim} />
         {claim.support_type === 'analyst_inference' && <span className="support-badge">{t('interpretation')}</span>}
         {claim.evidence_basis === 'abstract' && <span className="support-badge">{t('From abstract')}</span>}
         {chip(claim)}</span>)}

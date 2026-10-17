@@ -65,3 +65,21 @@ def unquoted_numbers(value: Any, quotes: list[str | None]) -> list[Decimal]:
         return []
     quoted = set().union(set(), *(numbers_in(q) for q in quotes if q))
     return sorted(n for n in stated if n not in quoted)
+
+
+# A measured value in answer prose: a number with a percent sign or a unit right after it. Years, counts and labels
+# carry neither, so `2025` or `Fig. 3` is never marked.
+_UNITS = ("%|dBm|dBi|dB|kWh|Wh|mJ|kJ|J|mW|kW|W|GHz|MHz|kHz|Hz|Gbps|Mbps|kbps|bps|ms|µs|μs|us|ns|s|km/h|m/s|km|cm|mm|m"
+          "|°C|mV|V|mA|A|×")
+_MEASURE = re.compile(rf"(?<![\w.])({_NUMBER.pattern})\s?(?:{_UNITS})(?![\w/])")
+
+
+def quoted_measures(text: str, passages: list[str]) -> list[tuple[int, int]]:
+    """Spans of measured values in the text whose number a passage states, in order; none for text with math.
+
+    The same number comparison as `unquoted_numbers`: `25%` matches a passage saying `25 %` or `25 percent`. It shows
+    the number is in a cited passage, not that the passage gives it the same meaning or unit."""
+    if "$" in text or "\\(" in text:
+        return []
+    stated = set().union(set(), *(numbers_in(p) for p in passages))
+    return [match.span() for match in _MEASURE.finditer(text) if _as_decimal(match.group(1)) in stated]

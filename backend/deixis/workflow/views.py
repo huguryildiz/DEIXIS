@@ -8,6 +8,7 @@ from typing import Any
 from deixis.documents import embeddings, local_embedding, pdf
 from deixis.documents.jats import RENDITION_SQL
 from deixis.domain.contracts import locate_anchor, name_sources_in_prose
+from deixis.domain.numbers import quoted_measures
 from deixis.domain.rules import FULLTEXT_RUNS, effective_reviewer, result_applicability
 from deixis.workflow import english_question as english_question_rules
 from deixis.workflow import approval as approval_rules
@@ -135,6 +136,11 @@ def source_counts(store: Store, run_id: str, probe: dict[str, Any] | None = None
         # Beside D93's rows, not inside them: their fields and meaning stay exactly as D93 wrote them.
         counts["arms"] = probe_rules.arm_counts(store, run_id, searches, works, card, probe)
     return counts
+
+
+def _utf16_len(text: str) -> int:
+    """The text's length as a browser string counts it, so offsets land on the same characters in the UI."""
+    return len(text.encode("utf-16-le")) // 2
 
 
 def _json(value: str | None) -> Any:
@@ -632,6 +638,14 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         draft = _json(a["draft_json"])
         claims = []
         for c in conn.execute("SELECT * FROM claims WHERE answer_id = ? ORDER BY ordinal", (a["id"],)):
+            rows = conn.execute(
+                "SELECT l.passage_id, l.source_version_id, s.work_id, l.anchor_text, p.kind, p.physical_page, p.printed_label, p.text_source, s.title, s.version_label,"
+                " p.text AS passage_text, (SELECT w.source_key FROM works w WHERE w.id = s.work_id) AS source_key,"
+                f" {EVIDENCE_STATUS_SQL} AS evidence_status, {RENDITION_SQL} AS rendition FROM evidence_links l"
+                " JOIN passages p ON p.id = l.passage_id JOIN source_versions s ON s.id = l.source_version_id"
+                " LEFT JOIN source_assets a ON a.id = p.asset_id"
+                " WHERE l.claim_id = ? ORDER BY l.rowid", (c["id"],)
+            ).fetchall()
             evidence = [
                 {"passage_id": e["passage_id"], "source_version_id": e["source_version_id"], "work_id": e["work_id"],
                  "source_key": e["source_key"], "kind": e["kind"],
@@ -641,19 +655,16 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
                  "text_source": e["text_source"], "removed_from_research": e["source_version_id"] in removed,
                  # Europe PMC's text drawn as a PDF: its page is DEIXIS's, not the publisher's (SW21).
                  "rendition": bool(e["rendition"])}
-                for e in conn.execute(
-                    "SELECT l.passage_id, l.source_version_id, s.work_id, l.anchor_text, p.kind, p.physical_page, p.printed_label, p.text_source, s.title, s.version_label,"
-                    " (SELECT w.source_key FROM works w WHERE w.id = s.work_id) AS source_key,"
-                    f" {EVIDENCE_STATUS_SQL} AS evidence_status, {RENDITION_SQL} AS rendition FROM evidence_links l"
-                    " JOIN passages p ON p.id = l.passage_id JOIN source_versions s ON s.id = l.source_version_id"
-                    " LEFT JOIN source_assets a ON a.id = p.asset_id"
-                    " WHERE l.claim_id = ? ORDER BY l.rowid", (c["id"],)
-                )
+                for e in rows
             ]
             if not answers:
                 cited_sources.update(e["source_version_id"] for e in evidence)
             claims.append({"id": c["id"], "label": c["label"], "section": c["section"], "text": c["text"], "support_type": c["support_type"],
-                           "semantic_review": c["semantic_review"], "evidence": evidence})
+                           "semantic_review": c["semantic_review"], "evidence": evidence,
+                           # Measured values the claim states that one of its cited passages states too, as UTF-16
+                           # offsets for the UI to set in bold; the number match is the backend's, never the model's.
+                           "quoted_measures": [[_utf16_len(c["text"][:start]), _utf16_len(c["text"][:end])]
+                                               for start, end in quoted_measures(c["text"], [e["passage_text"] for e in rows])]})
         fast_answer = fast_path.enforces(store.run(a["run_id"])["budget"], "answer")
         if fast_answer:
             for claim in claims:

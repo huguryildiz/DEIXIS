@@ -40,9 +40,9 @@ def candidate(store, rid, name, abstract, *codes):
     decisions.derive_selection(rid, store.source(svid)["work_id"])
     return svid
 
-def setup(tmp_path, n=1, codes=("runs_agree_candidate",), pdf=False):
+def setup(tmp_path, n=1, codes=("runs_agree_candidate",), pdf=False, abstract="SYNTHETIC exercise improves fatigue."):
     store, rid = library(tmp_path)
-    sources = [candidate(store, rid, str(i), "SYNTHETIC exercise improves fatigue.", *codes) for i in range(n)]
+    sources = [candidate(store, rid, str(i), abstract, *codes) for i in range(n)]
     if pdf:
         sources += [page_source(store, rid, "pdf", [TOPIC_PAGE] * 3, "SYNTHETIC exercise.", included=False)]
         DecisionStore(store).record(rid, sources[-1], "runs_agree_candidate")
@@ -656,3 +656,16 @@ def test_d48_answer_reads_one_version_per_work_and_cites_the_version_it_read(tmp
     for e in evidence:
         assert e["passage_id"] in given and e["kind"] == "pdf_page"
         assert e["anchor_text"] and e["anchor_text"] in store.passage(e["passage_id"])["text"]
+
+
+def test_view_marks_measured_values_the_cited_passage_states(tmp_path):
+    lib = setup(tmp_path, abstract="SYNTHETIC exercise used 450 J and cut fatigue by 25 % in 2025.")
+    cutoff(lib)
+    run = answer_run(lib)
+    asyncio.run(lib.flow.execute(run["id"]))
+    claim_id = lib.store.conn.execute("SELECT claim_id FROM evidence_links LIMIT 1").fetchone()[0]
+    with transaction(lib.store.conn):
+        lib.store.conn.execute("UPDATE claims SET text = ? WHERE id = ?",
+                               ("In 2025 a method used 450 J, 25% less, and 18% vs DBR.", claim_id))
+    claim = next(c for c in views.research_view(lib.store, lib.rid)["answers"][0]["claims"] if c["id"] == claim_id)
+    assert [claim["text"][a:b] for a, b in claim["quoted_measures"]] == ["450 J", "25%"]

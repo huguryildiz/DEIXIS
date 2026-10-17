@@ -13,7 +13,7 @@ from deixis.config import Settings
 from deixis.domain import skill
 from deixis.models import prompt
 from deixis.storage import db
-from deixis.workflow.flow import INFERENCE_CAP_KEY, RESPLIT_KEY, FlowDeps, ResearchFlow
+from deixis.workflow.flow import INFERENCE_CAP_KEY, LEDGER_COVERAGE_KEY, RESPLIT_KEY, FlowDeps, ResearchFlow
 from deixis.workflow.store import Store
 from fakes import FakeAdapter, valid_response
 
@@ -108,9 +108,11 @@ def answer_of(store, rid, flow, run_id):
 
 
 def sessions(store):
+    """The answer's sessions, without the D83 coverage rewrite."""
     return [json.loads(r[0]) for r in store.conn.execute(
         "SELECT m.validation_json FROM model_sessions m JOIN step_inputs i ON i.id = m.step_input_id"
-        " WHERE i.task_type = 'grounded_answer' AND m.validation_json IS NOT NULL ORDER BY m.rowid")]
+        " JOIN run_steps s ON s.id = i.step_id WHERE i.task_type = 'grounded_answer' AND m.validation_json IS NOT NULL"
+        " AND s.operation_key != ? ORDER BY m.rowid", (LEDGER_COVERAGE_KEY,))]
 
 
 def given(store, answer):
@@ -123,6 +125,14 @@ def ledger(answer):
 
 def hint_block(message):
     return message[message.index(prompt.LEDGER_HINTS_HEADING):].split("\n\n")[0]
+
+
+COVERAGE_LINE = "are neither cited by a claim nor listed in excluded_sources"
+
+
+def answer_calls(adapter):
+    """Calls other than the D83 coverage rewrite, which every valid answer that leaves a work unaccounted also gets."""
+    return sum(COVERAGE_LINE not in message for message in adapter.messages)
 
 
 def save_fails_once(store):
@@ -142,13 +152,15 @@ def test_an_incomplete_ledger_publishes_the_answer_and_names_the_source_with_no_
     try:
         answer = answer_of(store, rid, flow, run_id)
         ids = given(store, answer)
-        assert answer["status"] == "structurally_valid" and len(adapter.calls) == 1
+        assert answer["status"] == "structurally_valid" and answer_calls(adapter) == 1
+        # D83: the coverage rewrite repeats the same ledger, so the first answer stands.
+        assert json.loads(answer["validation_json"])["ledger_coverage"]["outcome"] == "kept_first"
         record = ledger(answer)
         assert record["cited"] == [ids[0]] and [e["source_id"] for e in record["excluded"]] == [ids[1]]
         assert record["unaccounted"] == [ids[2]] and record["complete"] is False and record["split"] == []
         assert json.loads(answer["draft_json"])["excluded_sources"] == [entry(ids[1])]  # what the model wrote, as IDs
         again = answer_of(store, rid, flow, run_id)  # resumed after the answer is saved: one row, the same ledger
-        assert again["id"] == answer["id"] and ledger(again) == record and len(adapter.calls) == 1
+        assert again["id"] == answer["id"] and ledger(again) == record and len(adapter.calls) == 2
         assert store.conn.execute("SELECT count(*) FROM answers WHERE run_id = ?", (run_id,)).fetchone()[0] == 1
     finally:
         store.conn.close()
@@ -177,7 +189,7 @@ def test_a_repair_for_a_blocking_issue_carries_ledger_hints_outside_the_issues(t
 
 def outcome(store, answer, adapter):
     validation = json.loads(answer["validation_json"])
-    return (answer["status"], len(adapter.calls), validation.get("extra_repair"), validation.get("issues"),
+    return (answer["status"], answer_calls(adapter), validation.get("extra_repair"), validation.get("issues"),
             [sorted({i["code"] for i in s["issues"]}) for s in sessions(store)],
             [r[0] for r in store.conn.execute("SELECT label FROM claims WHERE answer_id = ? ORDER BY ordinal", (answer["id"],))])
 
@@ -267,7 +279,7 @@ def test_the_saved_ledger_reads_the_split_of_the_output_that_is_saved(tmp_path, 
             with pytest.raises(RuntimeError):
                 answer_of(store, rid, flow, run_id)
         answer = answer_of(store, rid, flow, run_id)
-        assert answer["status"] == "structurally_valid" and len(sent) == len(shapes)  # a resume sends nothing again
+        assert answer["status"] == "structurally_valid" and answer_calls(adapter) == len(shapes)  # a resume sends nothing again
         validation = json.loads(answer["validation_json"])
         if case == "resplit":
             assert validation["extra_repair"]["outcome"] == "published"
@@ -303,7 +315,7 @@ def test_malformed_ledgers_through_the_whole_pipeline_never_stop_the_answer(tmp_
     store, flow, adapter, rid, run_id, sent = setup(tmp_path, [lambda si: draft(si, SHAPES["one"], ledger=value)])
     try:
         answer = answer_of(store, rid, flow, run_id)
-        assert answer["status"] == "structurally_valid" and len(adapter.calls) == 1
+        assert answer["status"] == "structurally_valid" and answer_calls(adapter) == 1
         record = ledger(answer)
         assert [d["code"] for d in record["split"]] == expected and record["excluded"] == []
         ids = given(store, answer)
@@ -321,7 +333,7 @@ def test_split_diagnostics_survive_the_anchor_salvage(tmp_path):
     store, flow, adapter, rid, run_id, sent = setup(tmp_path, [salvaged])
     try:
         answer = answer_of(store, rid, flow, run_id)
-        assert answer["status"] == "structurally_valid" and len(adapter.calls) == 1
+        assert answer["status"] == "structurally_valid" and answer_calls(adapter) == 1
         (session,) = sessions(store)
         assert session["ok"] is True and any(w["code"] == "citation_anchor_salvaged" for w in session["warnings"])
         assert [d["path"] for d in session["ledger"]] == ["/excluded_sources/0"]

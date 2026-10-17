@@ -135,6 +135,27 @@ def inference_cap_message(step_input: dict[str, Any], valid_output: str, labels:
     )
 
 
+def ledger_coverage_message(step_input: dict[str, Any], valid_output: str, missing: list[str]) -> str:
+    """D83: one rewrite of a valid answer whose ledger leaves given sources unaccounted. `missing` lines name each
+    such source by its citation handle and stored title; the answer is quoted in the handles the model was shown."""
+    return (
+        step_message(step_input)
+        + f"\n\nThe previous output for this StepInput is valid, but {len(missing)} given sources are neither cited by a "
+        "claim nor listed in excluded_sources:\n" + "\n".join(f"- {m}" for m in missing)
+        + "\n\nPrevious output (as received):\n" + valid_output
+        + "\n\nGo through these sources one by one and read their passages. A source answers part of the question when "
+        "its passages state any one thing the question asks for: a result, number or formula of the kind asked, for any "
+        "method in the class the question names, a variant or a single method included, and an abstract counts. Such a "
+        "source gets a source_stated claim that cites only its passages, with a new unused claim_label and its own "
+        "citation anchors, in the section it fits; when it cannot stand beside the question's comparison, say the setting "
+        "in the claim. Stay within thirty claims in all; past that, list it under claim_limit. Use no_answering_content or "
+        "off_topic only for a source whose passages state none of what the question asks. List every source you do not "
+        "cite once in excluded_sources as rule 14 says, with a note of one short sentence. Do not change or drop any existing claim, citation, "
+        "quote or excluded_sources entry, and do not add identifiers that are not in the allowlist. Return the complete "
+        "corrected JSON object."
+    )
+
+
 def repair_message(step_input: dict[str, Any], issues: list[dict[str, str]],
                    anchor_context: list[dict[str, Any]] | None = None,
                    failed_output: str | None = None, *, anchor_patch: bool = False,

@@ -88,6 +88,7 @@ MAX_DOWNLOADS_PER_RUN = 8
 STORED_REPAIR_TASKS = ("grounded_answer", "followup_answer")
 RESPLIT_KEY = "grounded_answer_resplit"  # D249: the one extra repair of an answer that fails only on D247's rule
 INFERENCE_CAP_KEY = "grounded_answer_inference_cap"  # D260: one rewrite of a valid answer that is mostly analyst inference
+LEDGER_COVERAGE_KEY = "grounded_answer_ledger_coverage"  # D83: one rewrite of a valid answer that leaves given works unaccounted
 # The reason an sw answer records when neither included works nor eligible abstracts are available (D234).
 NO_INCLUDABLE_SOURCE = "no_includable_source"
 MAX_ABSTRACT_CHARS = 2500
@@ -535,7 +536,8 @@ class ResearchFlow:
         self.store.update_run(run_id, event="run_paused", status="paused", pause_reason=reason, error_json=detail)
         raise RunStopped
 
-    def _spend_gate(self, run_id: str, connection: str, before_pause: Callable[[], None] | None = None) -> None:
+    def _spend_gate(self, run_id: str, connection: str, before_pause: Callable[[], None] | None = None,
+                    skip: bool = False) -> None:
         """Pause the run before a call is sent once the day's estimated spend has reached the person's threshold (F4).
         Only a call that bills per call (a provider API key) is held; a call in flight is never cut, and its result is
         already stored. Nothing resumes by itself when the threshold is raised: the person presses Resume, which asks
@@ -544,6 +546,8 @@ class ResearchFlow:
             return
         if before_pause is not None:
             before_pause()
+        if skip:  # D83: a step the run can finish without is skipped instead of pausing the run
+            raise OptionalStepFailed("spend_threshold", over)
         self._pause(run_id, "spend_threshold", over)
 
     def _fail(self, run_id: str, reason: str, detail: Any = None) -> None:
@@ -2370,9 +2374,10 @@ class ResearchFlow:
                         extra_repair["relabelled"] = stored["resplit"]["relabelled"]
                 else:
                     extra_repair = {"labels": labels, "outcome": "skipped_budget"}
-        inference_cap = None
+        inference_cap = coverage = None
         if not output.get("invalid"):
             output, key, inference_cap = await self._cap_inference(run, scope, output, key)
+            output, key, coverage = await self._cover_ledger(run, scope, output, key)
         step = self.store.step(run_id, key, "model:grounded_answer")
         # Every answer, not only the fast path's: an answer to an earlier question revision is never published. No await
         # follows before `save_answer`, so nothing can revise the question in between.
@@ -2391,14 +2396,15 @@ class ResearchFlow:
             return
         payload = self.store.step_input_payload(output["step_input_id"])
         links = contracts.derive_evidence_links(payload, output["result"])
-        # D80: built once, on the output that is saved (after D244, D249 and D260), with that attempt's own split
+        # D80: built once, on the output that is saved (after D244, D249, D260 and D83), with that attempt's own split
         # diagnostics; a resumed run reads the same stored step output.
         ledger = contracts.answer_ledger(payload, output["result"], links, output.get("ledger_split", []))
         answer_id = self.store.save_answer(rid, run_id, step["id"], output["step_input_id"], run["scope_revision"], "structurally_valid",
                                            output["result"], {"ok": True, "issues": [], "warnings": output.get("warnings", []),
                                                               "evidence_ledger": ledger}
                                            | ({"extra_repair": extra_repair} if extra_repair else {})
-                                           | ({"inference_cap": inference_cap} if inference_cap else {}), links,
+                                           | ({"inference_cap": inference_cap} if inference_cap else {})
+                                           | ({"ledger_coverage": coverage} if coverage else {}), links,
                                            selection_revision=step_selection)
         for _, task in self._clock_tasks.get(run_id, {}).values():
             task.cancel()
@@ -5255,6 +5261,77 @@ class ResearchFlow:
             if resend is not None and not resend():
                 return None, result
 
+    async def _cover_ledger(self, run: dict[str, Any], scope: dict[str, Any], output: dict[str, Any],
+                            key: str) -> tuple[dict[str, Any], str, dict[str, Any] | None]:
+        """D83: a valid answer whose ledger leaves given sources unaccounted gets one coverage rewrite call.
+
+        Built like D260: the same frozen StepInput, the run's model, optional, a short budget or a spend threshold
+        skips it, and a resumed run gets the stored step back, so nothing is sent twice. The rewrite is published only
+        when it is valid, leaves fewer sources unaccounted, still cites every source the first answer cited, keeps
+        everything the first answer said (`contracts.coverage_changed_path`) and is not over the D260 inference
+        share; otherwise the first answer stands. It never pauses a run or makes an answer unpublished.
+        """
+        frozen = self.store.step_input_payload(output["step_input_id"])
+        links = contracts.derive_evidence_links(frozen, output["result"])
+        first = contracts.answer_ledger(frozen, output["result"], links, output.get("ledger_split", []))
+        if not first["unaccounted"]:
+            return output, key, None
+        run_id = run["id"]
+        record = {"unaccounted_before": len(first["unaccounted"]), "cited_before": len(first["cited"]),
+                  "excluded_before": len(first["excluded"])}
+        if (self.store.existing_step(run_id, LEDGER_COVERAGE_KEY) is None
+                and self.store.run(run_id)["usage"].get("model_calls", 0) >= run["budget"]["max_model_calls"]):
+            self._checkpoint(run_id, run["scope_revision"])
+            return output, key, record | {"outcome": "skipped_budget"}  # checked before the connection is touched
+        # Named by the handles the model was shown and the titles of the stored records.
+        handles = contracts.citation_handles(frozen)
+        titles = {s["source_id"]: s["title"] for s in frozen["sources"]}
+        missing = [f"{handles.get(s, s)}: {titles.get(s, '')}" for s in first["unaccounted"]]
+        seed = {"kind": "ledger_coverage", "labels": [], "missing": missing,
+                "raw_output": contracts.answer_with_handles(frozen, output["result"]), "step_input_id": output["step_input_id"],
+                "issues": [{"code": "ledger_incomplete", "path": "/excluded_sources",
+                            "message": f"{len(missing)} given sources are neither cited nor listed in excluded_sources"}]}
+        connection, requested, effort = step_model(scope, "grounded_answer")
+        if frozen["model"]["requested_model"] is not None:
+            connection, requested, effort = self._run_model(
+                run, scope, "grounded_answer", (frozen["model"]["connection"], frozen["model"]["requested_model"], effort))
+
+        def same_input(step_id: str, frozen=frozen, sent=(connection, requested)) -> dict[str, Any]:
+            # The answer's passages, allowlist and handles; the model is the one this call goes to (S17).
+            return copy.deepcopy(frozen) | {"step_input_id": new_id("sti"), "step_id": step_id, "created_at": now(),
+                                            "model": frozen["model"] | {"connection": sent[0], "requested_model": sent[1]}}
+        try:
+            # Optional, and a spend threshold skips it instead of pausing the run: the answer is already valid. A
+            # stop or a newer scope revision still stops the run.
+            second = await self._model_step(run, scope, LEDGER_COVERAGE_KEY, "grounded_answer", step_input_builder=same_input,
+                                            model=(connection, requested, effort), optional=True,
+                                            selection_revision=self.store.step_input_selection_revision(output["step_input_id"]),
+                                            budget_short="skip", spend_short="skip", resplit=seed)
+        except OptionalStepFailed as failed:
+            self._checkpoint(run_id, run["scope_revision"])  # a question changed meanwhile stops the run, not publishes
+            if failed.reason == "spend_threshold":
+                return output, key, record | {"outcome": "skipped_spend"}
+            return output, key, record | {"outcome": "call_failed", "reason": failed.reason}
+        self._checkpoint(run_id, run["scope_revision"])
+        if second.get("repair_skipped"):
+            return output, key, record | {"outcome": "skipped_budget"}
+        if second.get("invalid"):
+            return output, key, record | {"outcome": "kept_first", "reason": "invalid"}
+        payload = self.store.step_input_payload(second["step_input_id"])
+        after = contracts.answer_ledger(payload, second["result"], contracts.derive_evidence_links(payload, second["result"]),
+                                        second.get("ledger_split", []))
+        record["after"] = {"unaccounted": len(after["unaccounted"]), "cited": len(after["cited"]),
+                           "excluded": len(after["excluded"]), "claims": len(second["result"]["claims"])}
+        if len(after["unaccounted"]) >= len(first["unaccounted"]):
+            return output, key, record | {"outcome": "kept_first", "reason": "not_fewer_unaccounted"}
+        if not set(first["cited"]) <= set(after["cited"]):
+            return output, key, record | {"outcome": "kept_first", "reason": "dropped_cited_source"}
+        if (path := contracts.coverage_changed_path(output["result"], second["result"], set(after["cited"]))) is not None:
+            return output, key, record | {"outcome": "kept_first", "reason": "changed_existing", "path": path}
+        if contracts.over_inference_share(second["result"]):
+            return output, key, record | {"outcome": "kept_first", "reason": "over_inference_share"}
+        return second, LEDGER_COVERAGE_KEY, record | {"outcome": "published"}
+
     async def _cap_inference(self, run: dict[str, Any], scope: dict[str, Any], output: dict[str, Any],
                              key: str) -> tuple[dict[str, Any], str, dict[str, Any] | None]:
         """D260: a valid answer whose claims are mostly analyst_inference gets one rewrite call.
@@ -5334,7 +5411,7 @@ class ResearchFlow:
                           report_target: dict[str, Any] | None = None, vocabulary_target: dict[str, Any] | None = None,
                           screening_target: dict[str, Any] | None = None,
                           adjudication_target: dict[str, Any] | None = None,
-                          limiter: ModelCallLimiter | None = None, budget_short: str = "pause",
+                          limiter: ModelCallLimiter | None = None, budget_short: str = "pause", spend_short: str = "pause",
                           recheck: Callable[[list[dict[str, Any]]], list[dict[str, Any]] | None] | None = None,
                           step_output_extra: dict[str, Any] | None = None,
                           lineage_target: dict[str, Any] | None = None,
@@ -5350,7 +5427,9 @@ class ResearchFlow:
         """Run one model step on the model chosen for its role. An optional step raises OptionalStepFailed instead of
         pausing or failing the run; a user pause or cancel still stops the run. `budget_short="skip"` is the sw
         stages' rule (D86): a call the budget no longer holds is closed and returned as invalid instead of pausing
-        the run, because those stages count what the budget did not reach and a later run reads it."""
+        the run, because those stages count what the budget did not reach and a later run reads it. `spend_short="skip"`
+        (D83) closes the step at the spend threshold and raises OptionalStepFailed("spend_threshold") instead of
+        pausing the run."""
         if report_target is not None:
             report_target = {"limitations_core": None, "review_sections": None, "validation_context": None, **report_target}
         run_id, rid = run["id"], run["research_id"]
@@ -5433,8 +5512,8 @@ class ResearchFlow:
         def resplit_meta(outcome: str) -> dict[str, Any]:
             if resplit is None:
                 return {}
-            if resplit.get("kind") == "inference_cap" and outcome == "published":
-                outcome = "valid"  # D260: whether the rewrite replaces the answer is decided by _cap_inference
+            if resplit.get("kind") in ("inference_cap", "ledger_coverage") and outcome == "published":
+                outcome = "valid"  # D260, D83: whether the rewrite replaces the answer is decided by its caller
             return {resplit.get("kind", "resplit"): {"labels": resplit["labels"], "outcome": outcome}
                     | ({"relabelled": split_relabel} if split_relabel else {})}
         extra = step_output_extra or {}
@@ -5530,7 +5609,7 @@ class ResearchFlow:
                 # Resume keeps the counter and ceiling: cancel and request a new preview to progress.
                 halt("budget_exhausted", {"limit": "model_calls"})
             self._spend_gate(run_id, connection, lambda: self.store.finish_step(
-                step["id"], "cancelled", error_code="spend_threshold", **sent_output()))
+                step["id"], "cancelled", error_code="spend_threshold", **sent_output()), skip=spend_short == "skip")
             payload = step_input_builder(step["id"]) if step_input_builder is not None else self._step_input(run, scope, step["id"], task_type, candidate_rows or [], source_ids or [], passage_rows or [],
                                        claims or [], model, extraction_target, report_target, vocabulary_target,
                                        screening_target, adjudication_target, lineage_target, candidate_target)
@@ -5567,7 +5646,7 @@ class ResearchFlow:
                         pair["cell_id"] = handles[pair["cell_id"]]
                 shown_issues = contracts.issues_with_handles(payload, repair_issues) if shown is not payload else repair_issues
                 hints = None
-                if task_type == "grounded_answer" and invalid_raw and (resplit or {}).get("kind") != "inference_cap":
+                if task_type == "grounded_answer" and invalid_raw and (resplit or {}).get("kind") not in ("inference_cap", "ledger_coverage"):
                     # D80: ledger notes, rebuilt from the stored failed output on every repair (a resumed step too);
                     # they never join the issues, which decide D249 and what is stored as failed.
                     hinted_input = self.store.step_input_payload(invalid_input)
@@ -5575,6 +5654,8 @@ class ResearchFlow:
                     hints = [h["message"] for h in contracts.issues_with_handles(payload, [{"message": h} for h in found])]
                 if resplit is not None and resplit.get("kind") == "inference_cap":
                     message = prompt.inference_cap_message(shown, resplit["raw_output"], resplit["labels"], resplit["claim_count"])
+                elif resplit is not None and resplit.get("kind") == "ledger_coverage":
+                    message = prompt.ledger_coverage_message(shown, resplit["raw_output"], resplit["missing"])
                 elif resplit is not None:
                     message = prompt.resplit_message(shown, shown_issues, resplit["raw_output"], resplit["labels"], hints=hints)
                 elif task_type == "report_section":

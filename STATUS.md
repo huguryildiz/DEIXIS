@@ -24,6 +24,7 @@ Most of this was tested with fake models and synthetic data only; "Not measured"
 - OpenAlex similar-paper requests now overlap, starting 1.5 s apart with 100 records per page (D10).
 - PRISMA-S, the Method box and Watch now read the requests the fast plan really sends, including its semantic and Semantic Scholar requests, and Watch keeps each query's saved position.
 - Citation map (D42): a panel draws the sources by year or as a network from OpenAlex reference lists, and a work cited by two or more sources can be added as a candidate.
+- Verify Citations V1 (D86): a draft's citations and bibliography are read by code and resolved on OpenAlex; no model call yet. V2–V5 (plan `.local/plans/verify-citations-plan.md`) are open.
 
 ### Reading and answers
 
@@ -117,6 +118,11 @@ All 171 citation links in 8 stored answers are sound; the gap is coverage: answe
 - [x] Before/after run on one frozen answer input: done 17 Oct (D80 + D83, see Done).
 - [ ] Every D83 run hit the 30-claim limit; 12–13 works per run are left out under `claim_limit`. Not measured on other questions.
 - [ ] Chain of Ideas–style idea generation waits for this, with its own contract (premises cited, speculation marked unsourced).
+
+### Consensus-style modes
+
+- [ ] Citation snowballing: start from chosen papers and follow references and citing works for more than one round (today one chain round runs inside every search). Plan being written in its own session.
+- [ ] Reverse citation search: paste a statement and get works whose passages support or challenge it; waits for Verify Citations V3, whose claim-vs-passage step it reuses.
 
 ### Search (after P10)
 

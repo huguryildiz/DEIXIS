@@ -166,7 +166,6 @@ All 171 citation links in 8 stored answers are sound; the gap is coverage: answe
 
 ### Parked ideas (owner decides)
 
-- [ ] Rank full-text slots with Jev (the TypeSafe classifier); speed, price and accuracy not measured.
 - [ ] Fixed example questions on the home page and "included in research X" hints.
 - [ ] Classify why open-access PDFs return 403.
 - [ ] Landing page (after P10).

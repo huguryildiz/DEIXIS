@@ -157,9 +157,12 @@ class Deixis:
     """An isolated DEIXIS server (never port 8765) and read-only access to its library."""
 
     def __init__(self, base, data_dir):
+        self.base, self.data_dir, self.payloads = base, Path(data_dir), {}
+        if base is None:  # library reads only
+            return
         if base.rstrip('/').endswith(':8765'):
             raise SystemExit('refusing port 8765: it may be the owner\'s library')
-        self.base, self.data_dir = base.rstrip('/'), Path(data_dir)
+        self.base, self.data_dir, self.payloads = base.rstrip('/'), Path(data_dir), {}
         self.http = httpx.Client(base_url=self.base, timeout=60)
         token = self.http.get('/api/session').json()['csrf_token']
         self.http.headers['x-deixis-csrf'] = token
@@ -191,28 +194,35 @@ class Deixis:
 
     def records(self, order):
         with closing(self.db()) as conn:
-            rows = []
-            for svid in order:
-                v = conn.execute('SELECT title, year, doi, provider_payload_path FROM source_versions WHERE id=?',
-                                 (svid,)).fetchone()
-                work = conn.execute("SELECT value FROM identifier_mappings WHERE source_version_id=? AND "
-                                    "scheme='openalex'", (svid,)).fetchone()
-                rows.append({'svid': svid, 'title': v['title'], 'year': v['year'], 'doi': v['doi'],
-                             'pmid': self.pmid(v['provider_payload_path'], work[0] if work else None)})
-        return rows
+            marks = ','.join('?' * len(order))
+            versions = {r['id']: r for r in conn.execute(
+                f'SELECT id, title, year, doi, provider_payload_path FROM source_versions WHERE id IN ({marks})', order)}
+            works = dict(conn.execute(f"SELECT source_version_id, value FROM identifier_mappings WHERE scheme='openalex' "
+                                      f"AND source_version_id IN ({marks})", order).fetchall())
+        return [{'svid': svid, 'title': versions[svid]['title'], 'year': versions[svid]['year'],
+                 'doi': versions[svid]['doi'], 'pmid': self.pmid(versions[svid]['provider_payload_path'], works.get(svid))}
+                for svid in order]
 
     def pmid(self, path, work):
         """OpenAlex's ids.pmid from the stored raw payload; the library itself keeps no PMID mapping."""
         if not (path and work):
             return None
-        try:
-            payload = json.loads((self.data_dir / 'provider-payloads' / path).read_text())
-        except (OSError, ValueError):
-            return None
-        for item in payload.get('results', []):
-            if str(item.get('id', '')).endswith(work):
-                return bioasq.pmid_of((item.get('ids') or {}).get('pmid'))
-        return None
+        if path not in self.payloads:
+            try:
+                payload = json.loads((self.data_dir / 'provider-payloads' / path).read_text())
+            except (OSError, ValueError):
+                payload = {}
+            self.payloads[path] = {str(item.get('id', '')).rsplit('/', 1)[-1]:
+                                   bioasq.pmid_of((item.get('ids') or {}).get('pmid'))
+                                   for item in payload.get('results', [])}
+        return self.payloads[path].get(work.rsplit('/', 1)[-1])
+
+    def failed_steps(self, run_id, keys=('source_similarity',)):
+        """Steps whose failure changes the ranking (the embedding signal); such a question is not scored."""
+        with closing(self.db()) as conn:
+            return [r[0] for r in conn.execute(
+                f"SELECT operation_key FROM run_steps WHERE run_id=? AND status='failed' AND operation_key IN "
+                f"({','.join('?' * len(keys))})", (run_id, *keys))]
 
 
 def run_deixis(args):
@@ -233,7 +243,9 @@ def run_deixis(args):
             row |= {'research_id': research['id'], 'run_id': run['id']}
             order, row['error'] = server.wait_list(run['id'], args.timeout)
             server.http.post(f"/api/runs/{run['id']}/cancel")  # the list is frozen; reading PDFs is not measured
-            if order is not None:
+            if failed := server.failed_steps(run['id']):
+                row['error'] = f"failed: {', '.join(failed)}"
+            if order is not None and not row['error']:
                 row['pool'] = len(order)
                 row['records'] = server.records(order[:args.keep])
         except Exception as exc:
@@ -244,6 +256,33 @@ def run_deixis(args):
         with out.open('a') as f:
             f.write(json.dumps(row) + '\n')
         print(q['id'], row.get('error') or f"pool {row['pool']}, {row['seconds']} s")
+
+
+def loss(args):
+    """Where DEIXIS lost each gold paper: top 200, deeper in the frozen list, cut by the year filter, or never found."""
+    questions = json.loads((HOME / 'sample.json').read_text())['questions']
+    meta = json.loads((HOME / 'gold_meta.json').read_text())
+    rows = {r['id']: r for r in read_jsonl(HOME / 'runs/deixis.jsonl')}
+    library = Deixis(None, args.data_dir)
+    counts = dict.fromkeys(('top200', 'deeper_in_list', 'after_question_year', 'not_in_list'), 0)
+    with closing(library.db()) as conn:
+        for q in questions:
+            row = rows.get(q['id'])
+            if not row or row.get('error'):
+                continue
+            step = conn.execute("SELECT output_json FROM run_steps WHERE run_id=? AND "
+                                "operation_key='small_batch:v1:list'", (row['run_id'],)).fetchone()
+            listed = library.records(json.loads(step[0])['order'])
+            timed = [r for r in listed if bioasq.in_time(r, q['year'])]
+            gold = {p: meta.get(p, {}) for p in q['gold']}
+            top, deeper, everything = (bioasq.matched(gold, timed[:200]), bioasq.matched(gold, timed),
+                                       bioasq.matched(gold, listed))
+            for p in gold:
+                key = ('top200' if p in top else 'deeper_in_list' if p in deeper else
+                       'after_question_year' if p in everything else 'not_in_list')
+                counts[key] += 1
+    print(json.dumps(counts))
+    (HOME / 'loss.json').write_text(json.dumps(counts, indent=1))
 
 
 def score(args):
@@ -293,6 +332,9 @@ def main():
     d.add_argument('--timeout', type=int, default=900)
     d.set_defaults(fn=run_deixis)
     sub.add_parser('score').set_defaults(fn=score)
+    lo = sub.add_parser('loss')
+    lo.add_argument('--data-dir', required=True)
+    lo.set_defaults(fn=loss)
     args = parser.parse_args()
     args.fn(args)
 

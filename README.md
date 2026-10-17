@@ -140,6 +140,18 @@ Before an answer is published, code checks the cited source IDs, reading depth, 
 
 [`docs/layout.md`](docs/layout.md) says where each kind of file belongs, [`docs/search-architecture.md`](docs/search-architecture.md) maps the search pipeline, and [`docs/decisions.md`](docs/decisions.md) records the decisions in force. [`CLAUDE.md`](CLAUDE.md) is the working agreement for contributors, human or AI.
 
+## Benchmark
+
+On 100 BioASQ biomedical questions, using expert-chosen papers and Elicit's evaluation method, DEIXIS found this share of the expert papers in its first k results (macro-recall):
+
+| System | @10 | @20 | @50 | @100 | @200 |
+|---|---|---|---|---|---|
+| DEIXIS, Standard | 0.352 | 0.423 | 0.545 | 0.635 | 0.729 |
+| OpenAlex keyword, same 100 questions | 0.281 | 0.364 | 0.489 | 0.607 | 0.674 |
+| Elicit, as published (5,486 questions) | 0.390 | 0.483 | 0.603 | 0.670 | 0.708 |
+
+DEIXIS beats a plain OpenAlex keyword search clearly at 10 and 200 results; at 20 to 100 the paired interval reaches zero. With 100 questions it can't be told apart from Elicit's published figures. About a quarter of all expert papers never entered DEIXIS's candidate list, which makes three in four misses a search loss rather than a ranking loss. This covers biomedical questions and the candidate list only. Method, intervals and limits are in [`docs/benchmark-bioasq.md`](docs/benchmark-bioasq.md).
+
 ## Scope and limits
 
 - A search covers what OpenAlex and Semantic Scholar return within a time and request budget. Not finding a paper is not evidence that it does not exist, and DEIXIS never reports a question or idea as novel.

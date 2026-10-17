@@ -1931,16 +1931,27 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   } else if (sel?.kind === 'local' && sel.id === 'lm_studio') {
     const status: [Tone, string] = lmStudioInUse && localServer ? modelStatus(localServer) : !lmStudio ? (toolsError ? unknown : loading)
       : lmStudio.running ? ['no', t('Running')] : lmStudio.installed ? ['no', t('Not running')] : ['no', t('Not installed')]
+    const address = lmStudio?.running ? lmStudio.endpoint?.replace(/^https?:\/\//, '') : undefined
+    // `lms --version` names a CLI commit, not the app's version, so only a version number is shown.
+    const version = lmStudio?.version?.match(/\d+(\.\d+)+/)?.[0]
     body = <>
-      {dmeta('local:lm_studio', status, undefined, lmStudioInUse && localServer && !localServer.ready ? healthReasonText(localServer) : undefined)}
+      <section className="server-status" aria-label={t('Status')}>
+        <div className="server-status-head">
+          {dmeta('local:lm_studio', status, undefined, lmStudioInUse && localServer && !localServer.ready ? healthReasonText(localServer) : undefined)}
+          <CheckButton {...checkProps} id="local:lm_studio" label="Test" run={() => localCheck(lmStudioInUse ? 'local_server' : null)} quiet />
+        </div>
+        {lmStudio?.installed && <dl className="server-facts">
+          {address && <div><dt>{t('Address')}</dt><dd><code>{address}</code></dd></div>}
+          {version && <div><dt>{t('Version')}</dt><dd>{version}</dd></div>}
+          <div><dt>{t('Research steps')}</dt><dd>{t(lmStudioInUse ? 'In use' : 'Not in use')}</dd></div>
+        </dl>}
+      </section>
       <p className="foot-note is-ink">{t('LM Studio runs models on this computer. Research steps reach it through its local server address; semantic search can use one of its embedding models.')}</p>
       {serverError && <Notice tone="error"><p>{serverError}</p></Notice>}
-      <div className="acts">
-        <CheckButton {...checkProps} id="local:lm_studio" label="Test" run={() => localCheck(lmStudioInUse ? 'local_server' : null)} />
-        {lmStudioUrl && lmStudio?.installed && !lmStudioInUse && <button type="button" className="ghost" disabled={serverBusy || !lmStudio?.running} onClick={() => saveLocalServer(lmStudioUrl)}
-          title={lmStudio?.running ? undefined : t('Start LM Studio’s local server first')}>{t('Use for research steps')}</button>}
-      </div>
-      {lmStudioInUse && <p className="foot-note">{t('Research steps use LM Studio at {address}.', { address: lmStudioUrl ?? '' })}</p>}
+      {lmStudioUrl && lmStudio?.installed && !lmStudioInUse && <div className="acts">
+        <button type="button" className="btn-pri" disabled={serverBusy || !lmStudio?.running} onClick={() => saveLocalServer(lmStudioUrl)}
+          title={lmStudio?.running ? undefined : t('Start LM Studio’s local server first')}>{t('Use for research steps')}</button>
+      </div>}
       {lmStudio?.running && <section className="server-block" aria-label="LM Studio">
         <LocalModels tool={lmStudio} dark={dark} memoryGb={machine?.memory_gb ?? null} onChanged={reloadTools} onDone={() => { void localCheck(lmStudioInUse ? 'local_server' : null) }} />
       </section>}

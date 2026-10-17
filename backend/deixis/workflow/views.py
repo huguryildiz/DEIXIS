@@ -1127,7 +1127,7 @@ def library_view(store: Store) -> dict[str, Any]:
         " m.removed_at,"
         f" {_HAS_PDF_TEXT} AS has_pdf_text, {_HAS_ABSTRACT} AS has_abstract"
         " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
-        " JOIN researches r ON r.id = m.research_id WHERE r.trashed_at IS NULL"
+        " JOIN researches r ON r.id = m.research_id WHERE r.trashed_at IS NULL AND r.kind = 'research'"
         " ORDER BY v.created_at DESC, r.updated_at DESC"
     ).fetchall()
     # Saved items join with no research: one held only by the Library, or by a trashed research, still lists.
@@ -1216,7 +1216,7 @@ def library_view(store: Store) -> dict[str, Any]:
     entries.sort(key=lambda e: (e["newest_source_at"], e["first_research_id"] or ""), reverse=True)
     # Every active research, including ones with no source yet, so each can be a group and a drop target.
     researches = [dict(r) for r in conn.execute(
-        "SELECT id, title, updated_at FROM researches WHERE trashed_at IS NULL ORDER BY updated_at DESC"
+        "SELECT id, title, updated_at FROM researches WHERE trashed_at IS NULL AND kind = 'research' ORDER BY updated_at DESC"
     )]
     return {
         "entries": entries,
@@ -1249,7 +1249,7 @@ def library_work_view(store: Store, work_id: str) -> dict[str, Any] | None:
         f" v.created_at AS source_created_at, {_HAS_PDF_TEXT} AS has_pdf_text, {_HAS_ABSTRACT} AS has_abstract"
         " FROM source_versions v WHERE v.work_id = ?"
         " AND (EXISTS (SELECT 1 FROM corpus_memberships m JOIN researches r ON r.id = m.research_id"
-        "  WHERE m.source_version_id = v.id AND r.trashed_at IS NULL)"
+        "  WHERE m.source_version_id = v.id AND r.trashed_at IS NULL AND r.kind = 'research')"
         "  OR EXISTS (SELECT 1 FROM library_items i WHERE i.source_version_id = v.id))"
         " ORDER BY v.created_at DESC", (work_id,)
     ).fetchall()
@@ -1270,7 +1270,8 @@ def library_work_view(store: Store, work_id: str) -> dict[str, Any] | None:
         ).fetchone()
         members = conn.execute(
             "SELECT r.id, r.title, r.updated_at FROM corpus_memberships m JOIN researches r ON r.id = m.research_id"
-            " WHERE m.source_version_id = ? AND m.removed_at IS NULL AND r.trashed_at IS NULL ORDER BY r.updated_at DESC", (svid,)
+            " WHERE m.source_version_id = ? AND m.removed_at IS NULL AND r.trashed_at IS NULL AND r.kind = 'research'"
+            " ORDER BY r.updated_at DESC", (svid,)
         ).fetchall()
         for member in members:
             researches.setdefault(member["id"], {"id": member["id"], "title": member["title"],
@@ -1294,7 +1295,7 @@ def library_work_view(store: Store, work_id: str) -> dict[str, Any] | None:
             # No research holds this version now, but the one it was removed from still opens its stored text (D50).
             "removed_research_id": None if members else (removed["id"] if (removed := conn.execute(
                 "SELECT r.id FROM corpus_memberships m JOIN researches r ON r.id = m.research_id"
-                " WHERE m.source_version_id = ? AND m.removed_at IS NOT NULL AND r.trashed_at IS NULL"
+                " WHERE m.source_version_id = ? AND m.removed_at IS NOT NULL AND r.trashed_at IS NULL AND r.kind = 'research'"
                 " ORDER BY m.removed_at DESC LIMIT 1", (svid,)).fetchone()) else None),
         })
 

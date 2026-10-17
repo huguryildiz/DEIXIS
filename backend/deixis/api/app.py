@@ -41,6 +41,7 @@ from deixis.documents import pdf, pdf_child
 from deixis.documents import tool_updates
 from deixis.documents import equation_regions, mathpix
 from deixis.documents import upload_record
+from deixis.documents import draft_parse
 from deixis.domain import proxy, skill
 from deixis.imports import bibtex_ris
 from deixis.workflow import abstract_stage
@@ -115,6 +116,8 @@ INSTITUTIONAL_ACCESS_TTL_SECONDS = 600
 INSTITUTIONAL_ACCESS_RETRY_SECONDS = 30
 
 REPLACE_ASSET_PATH = re.compile(r"/api/researches/[^/]+/sources/[^/]+/assets/[^/]+")
+# A research's routes and its trash routes; an internal research (D86) is not found on any of them.
+RESEARCH_ROUTE = re.compile(r"/api/(?:researches|trash)/([^/]+)")
 
 
 def upload_limit(method: str, path: str) -> tuple[int, str, str] | None:
@@ -129,6 +132,9 @@ def upload_limit(method: str, path: str) -> tuple[int, str, str] | None:
         return MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD_BYTES, "upload_too_large", "PDF larger than 50 MB"
     if method == "POST" and path == "/api/library/reference-imports":
         return bibtex_ris.MAX_FILE_BYTES + MULTIPART_OVERHEAD_BYTES, "import_too_large", "Reference file larger than 5 MB"
+    if method == "POST" and path == "/api/citation-checks":
+        return (draft_parse.MAX_DRAFT_BYTES + bibtex_ris.MAX_FILE_BYTES + 2 * MULTIPART_OVERHEAD_BYTES, "draft_too_large",
+                "Draft larger than 10 MB or reference file larger than 5 MB")
     return None
 
 
@@ -1044,6 +1050,9 @@ def create_app(
                                         status_code=411)
                 if int(length) > limit[0]:
                     return JSONResponse({"detail": limit[2], "code": limit[1]}, status_code=413)
+        if (route := RESEARCH_ROUTE.match(request.url.path)) and (store := getattr(request.app.state, "store", None)) \
+                and store.is_internal_research(route.group(1)):
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
@@ -1179,6 +1188,7 @@ def create_app(
     from deixis.api.search_plan_routes import register_search_plan_routes; register_search_plan_routes(app)
     from deixis.api.scope_routes import register_scope_routes; register_scope_routes(app)
     from deixis.api.activity_routes import register_activity_routes; register_activity_routes(app)
+    from deixis.api.citation_check_routes import register_citation_check_routes; register_citation_check_routes(app, settings)
     from deixis.api.provider_test_routes import register_provider_test_routes
     register_provider_test_routes(app, lambda: settings.contact_email)  # the rebound settings: the email set in Settings
 

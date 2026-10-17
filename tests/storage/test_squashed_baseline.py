@@ -29,15 +29,27 @@ def versions(conn):
     return [tuple(row) for row in conn.execute("SELECT version, name FROM schema_migrations ORDER BY version")]
 
 
+def squashed_only(tmp_path):
+    """A migrations folder holding 0001_schema.sql alone: the files after it (0002 on) change the schema further."""
+    folder = tmp_path / "squashed"
+    folder.mkdir()
+    shutil.copy(db.MIGRATIONS_DIR / db.SQUASHED_INTO, folder)
+    return folder
+
+
+def later_versions():
+    return sorted(v for v in db.packaged_versions() if v > 1)
+
+
 def test_the_old_files_are_the_ones_the_fold_names():
     assert {path.name for path in OLD.glob("*.sql")} == set(db.SQUASHED.values())
-    assert [path.name for path in db.MIGRATIONS_DIR.glob("*.sql")] == [db.SQUASHED_INTO]
+    assert sorted(path.name for path in db.MIGRATIONS_DIR.glob("*.sql"))[0] == db.SQUASHED_INTO
+    assert not set(db.SQUASHED.values()) & {path.name for path in db.MIGRATIONS_DIR.glob("*.sql")}
 
 
 def test_the_squashed_file_gives_the_schema_the_old_files_gave(tmp_path, monkeypatch):
     old = library(tmp_path / "old.sqlite", OLD, monkeypatch)
-    new = db.connect(tmp_path / "new.sqlite")
-    db.migrate(new)
+    new = library(tmp_path / "new.sqlite", squashed_only(tmp_path), monkeypatch)
     assert schema(old) == schema(new)
     assert [v for v, _ in versions(old)] == list(db.SQUASHED) and versions(new) == [(1, db.SQUASHED_INTO)]
 
@@ -52,11 +64,12 @@ def test_a_library_that_ran_the_old_files_is_folded_once_and_keeps_its_rows(tmp_
 
     db.check_schema_known(path)
     conn = db.connect(path)
-    assert db.migrate(conn) == []
-    assert versions(conn) == [(1, db.SQUASHED_INTO)]
+    # Folded into 0001, then the files after it apply as to any library made by 0001.
+    assert db.migrate(conn) == later_versions()
+    assert versions(conn)[0] == (1, db.SQUASHED_INTO) and [v for v, _ in versions(conn)] == [1, *later_versions()]
     assert schema(conn) == schema(fresh)
     assert [tuple(row) for row in conn.execute("SELECT id, title FROM researches")] == [("r_1", "SYNTHETIC")]
-    assert db.migrate(conn) == [] and versions(conn) == [(1, db.SQUASHED_INTO)]
+    assert db.migrate(conn) == [] and [v for v, _ in versions(conn)] == [1, *later_versions()]
 
 
 @pytest.mark.parametrize("ran", [1, 21])

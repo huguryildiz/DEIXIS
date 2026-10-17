@@ -26,6 +26,8 @@ from deixis.workflow.source_keys import key_stem, suffixes
 from deixis.workflow.evidence_deps import EVIDENCE_STATUS_SQL
 
 ACTIVE_RUN_STATUSES = ("queued", "running", "pause_requested")
+# Research rows a feature owns for its run machinery (D86): never listed, searched or opened as a research.
+INTERNAL_RESEARCH_KINDS = ("citation_check",)
 DISCOVERY_RUN_KINDS = ("discovery", "fulltext_fetch", "fulltext_adjudication")
 ENDED_RUN_STATUSES = ("completed", "failed", "cancelled")
 TEXT_RETRY_REFUSALS = ("asset_removed", "no_holding_research", "membership_changed", "asset_replaced",
@@ -307,6 +309,20 @@ class Store:
             self._event(rid, "research_created", {"scope_revision": 1})
         return rid
 
+    def create_internal_research(self, kind: str, title: str) -> str:
+        """A research row a feature owns (D86): no scope revision, no event, no run. Nothing starts discovery, a scope
+        plan or a title call for it; the lists and research routes leave it out (`is_internal_research`)."""
+        if kind not in INTERNAL_RESEARCH_KINDS:
+            raise ValueError(f"not an internal research kind: {kind!r}")
+        rid, ts = new_id("res"), now()
+        with transaction(self.conn):
+            self.conn.execute("INSERT INTO researches (id, title, created_at, updated_at, kind) VALUES (?, ?, ?, ?, ?)",
+                              (rid, title, ts, ts, kind))
+        return rid
+
+    def is_internal_research(self, research_id: str) -> bool:
+        return self.conn.execute("SELECT 1 FROM researches WHERE id = ? AND kind <> 'research'", (research_id,)).fetchone() is not None
+
     def research(self, research_id: str) -> dict[str, Any]:
         row = self.conn.execute("SELECT * FROM researches WHERE id = ? AND trashed_at IS NULL", (research_id,)).fetchone()
         if row is None:
@@ -331,7 +347,8 @@ class Store:
         A trashed research's tables and removed sources are not listed on their own: they go and come back with it.
         """
         researches = [dict(r) for r in self.conn.execute(
-            "SELECT id, title, trashed_at FROM researches WHERE trashed_at IS NOT NULL ORDER BY trashed_at DESC"
+            "SELECT id, title, trashed_at FROM researches WHERE trashed_at IS NOT NULL AND kind = 'research'"
+            " ORDER BY trashed_at DESC"
         )]
         tables = [dict(r) for r in self.conn.execute(
             "SELECT t.id, t.title, t.research_id, r.title AS research_title, t.version, t.trashed_at,"
@@ -357,7 +374,7 @@ class Store:
             "  UNION SELECT 1 FROM report_citation_links WHERE source_version_id = m.source_version_id"
             "  UNION SELECT 1 FROM followup_turn_links WHERE source_version_id = m.source_version_id) AS cited"
             " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id JOIN researches r ON r.id = m.research_id"
-            " WHERE m.removed_at IS NOT NULL AND r.trashed_at IS NULL ORDER BY m.removed_at DESC, v.title"
+            " WHERE m.removed_at IS NOT NULL AND r.trashed_at IS NULL AND r.kind = 'research' ORDER BY m.removed_at DESC, v.title"
         )]
         templates = [dict(r) for r in self.conn.execute(
             "SELECT id, name, trashed_at, json_array_length(columns_json) AS columns FROM table_templates"
@@ -538,7 +555,7 @@ class Store:
             " (SELECT COUNT(*) FROM answers WHERE research_id = r.id AND status = 'structurally_valid') AS answer_count,"
             " (SELECT COUNT(*) FROM watch_items WHERE research_id = r.id AND status = 'new' AND kind = 'new_record') AS followup_new"
             " FROM researches r JOIN scope_revisions s ON s.research_id = r.id AND s.revision = r.current_scope_revision"
-            " WHERE r.trashed_at IS NULL"
+            " WHERE r.trashed_at IS NULL AND r.kind = 'research'"
             " ORDER BY r.updated_at DESC"
         ).fetchall()
         return [dict(r) for r in rows]
@@ -548,13 +565,13 @@ class Store:
         researches = self.conn.execute(
             "SELECT r.id, r.title, s.question, r.updated_at FROM researches r"
             " JOIN scope_revisions s ON s.research_id = r.id AND s.revision = r.current_scope_revision"
-            " WHERE r.trashed_at IS NULL AND (instr(lower(r.title), lower(?)) > 0 OR instr(lower(s.question), lower(?)) > 0)"
+            " WHERE r.trashed_at IS NULL AND r.kind = 'research' AND (instr(lower(r.title), lower(?)) > 0 OR instr(lower(s.question), lower(?)) > 0)"
             " ORDER BY r.updated_at DESC LIMIT ?", (text, text, limit)
         ).fetchall()
         sources = self.conn.execute(
             "SELECT v.id AS source_version_id, v.title, v.year, v.version_label, m.research_id, r.title AS research_title"
             " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id JOIN researches r ON r.id = m.research_id"
-            " WHERE r.trashed_at IS NULL AND m.removed_at IS NULL AND instr(lower(v.title), lower(?)) > 0 ORDER BY r.updated_at DESC, v.title LIMIT ?", (text, limit * 2)
+            " WHERE r.trashed_at IS NULL AND r.kind = 'research' AND m.removed_at IS NULL AND instr(lower(v.title), lower(?)) > 0 ORDER BY r.updated_at DESC, v.title LIMIT ?", (text, limit * 2)
         ).fetchall()
         return {"researches": [dict(r) for r in researches], "sources": [dict(r) for r in sources]}
 

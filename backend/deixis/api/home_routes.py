@@ -25,7 +25,7 @@ def suggestions(store: Store, limit: int = MAX_SUGGESTIONS) -> list[dict[str, An
         "SELECT a.id, a.research_id, a.draft_json, a.created_at, a.scope_revision, a.selection_revision, a.step_input_id,"
         " r.title, r.current_scope_revision, r.selection_revision AS research_selection_revision FROM answers a"
         " JOIN researches r ON r.id = a.research_id"
-        " WHERE r.trashed_at IS NULL AND a.status = 'structurally_valid' AND a.scope_revision = r.current_scope_revision"
+        " WHERE r.trashed_at IS NULL AND r.kind = 'research' AND a.status = 'structurally_valid' AND a.scope_revision = r.current_scope_revision"
         " AND a.rowid = (SELECT b.rowid FROM answers b WHERE b.research_id = a.research_id"
         " AND b.status = 'structurally_valid' ORDER BY b.created_at DESC, b.rowid DESC LIMIT 1)"
         " ORDER BY a.created_at DESC, a.rowid DESC").fetchall()

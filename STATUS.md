@@ -8,6 +8,8 @@ The owner is checking the app by eye, and the problems they find get fixed in or
 
 İkinci tam metin okuması artık ilk okumanın görmediği bölümleri okuyor (D76); modelsiz tekrar oynatmada makalelerin gösterilen bölüm payı %32'den %65'e çıktı, canlı Luna kabul testi (17 Eki, aynı 16 makale) test edilebilen dört koşulu geçti: kapsam ×1,77, negatiflerde yeni dahil yok, kısa makaleler değişmedi, çağrı ve token aynı; ama ilk 12 parçanın kaçırdığı ana kanıtı yakalama amacı bu sette ölçülemedi ve dışlama zorlaştı (bir negatif kuyruğa düştü).
 
+17 Ekim kalite işleri (kickoff 1–7) bitti; açık karar: rapor tablosu yalnız tam metni okunan kaynakları alıyor, cevap ise özetten okunanları da atıflıyor, bu yüzden az tam metinli sorularda (pil, yükseköğretim) rapor tek kaynağa dayanıyor — özet kaynaklar da tabloya girsin mi, sahip karar verecek.
+
 ## Next
 
 1. The owner's visual check and the fixes it turns up.

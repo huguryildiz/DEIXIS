@@ -12,9 +12,12 @@ back together here into the same result a single response gave.
 from __future__ import annotations
 
 import asyncio
+import codecs
 import json
 import os
+import re
 import time
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
@@ -231,6 +234,28 @@ class _Stream:
         # ping, content_block_stop and event types added later carry nothing this result needs
 
 
+_LINE_END = re.compile(r"\r\n|\r|\n")
+
+
+async def _sse_lines(response: httpx.Response) -> AsyncIterator[str]:
+    """The body's lines split only on CR, LF or CRLF, as SSE defines them; httpx's `aiter_lines` also splits on U+2028,
+    U+2029 and U+0085, which JSON text may carry unescaped. Bytes are decoded incrementally, so a character split
+    across chunks stays whole, and a CR at a chunk's end waits for the next chunk in case an LF follows."""
+    decoder, buffer = codecs.getincrementaldecoder("utf-8")(), ""
+    async for chunk in response.aiter_bytes():
+        buffer += decoder.decode(chunk)
+        start = 0
+        for end in _LINE_END.finditer(buffer):
+            if end.group() == "\r" and end.end() == len(buffer):
+                break  # maybe the first half of a CRLF
+            yield buffer[start:end.start()]
+            start = end.end()
+        buffer = buffer[start:]
+    buffer += decoder.decode(b"", final=True)
+    for line in _LINE_END.split(buffer):
+        yield line
+
+
 async def _read_stream(response: httpx.Response) -> _Stream:
     """Read server-sent events until the message stops, an error event arrives or the body ends."""
     stream, data_lines = _Stream(), []
@@ -248,7 +273,7 @@ async def _read_stream(response: httpx.Response) -> _Stream:
         if isinstance(data, dict):
             stream.event(data)
 
-    async for line in response.aiter_lines():
+    async for line in _sse_lines(response):
         if line == "":
             dispatch()
         elif line.startswith("data:"):

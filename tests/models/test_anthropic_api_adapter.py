@@ -20,9 +20,10 @@ def adapter(handler, **kwargs):
     return anthropic_api.AnthropicAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), **kwargs)
 
 
-def sse(*events):
-    """A server-sent event body: each event as `event:` and `data:` lines and a blank line."""
-    return "".join(f"event: {e['type']}\ndata: {json.dumps(e)}\n\n" for e in events).encode()
+def sse(*events, raw=False):
+    """A server-sent event body: each event as `event:` and `data:` lines and a blank line; `raw` sends non-ASCII
+    characters unescaped, as UTF-8."""
+    return "".join(f"event: {e['type']}\ndata: {json.dumps(e, ensure_ascii=not raw)}\n\n" for e in events).encode()
 
 
 def stream_events(model="claude-opus-5-5", text='{"claims": []}', stop="end_turn", content=None, end=True):
@@ -272,3 +273,36 @@ def test_the_turn_limit_bounds_the_whole_stream_not_each_read(monkeypatch):
     result = asyncio.run(adapter(lambda r: httpx.Response(200, content=pings()), turn_timeout=0.2).run_step(
         "b", "d", "m", {}, "claude-opus-5-5"))
     assert (result.status, result.delivery_class, result.error) == ("failed", "after_send_unknown", "TimeoutError")
+
+
+@pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\u0085"])
+def test_unicode_line_separators_inside_text_are_kept(monkeypatch, separator):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    text = f'{{"claims": ["a{separator}b"]}}'
+    body = sse(*stream_events(text=text), raw=True)  # sent unescaped, which SSE allows inside a line
+    assert separator.encode() in body
+    result = asyncio.run(adapter(lambda r: httpx.Response(200, content=body)).run_step("b", "d", "m", {}, "claude-opus-5-5"))
+    assert (result.status, result.raw_text) == ("completed", text)
+
+
+def test_chunk_boundaries_inside_a_character_and_a_crlf_keep_the_text(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    text = '{"claims": ["ölçü — 2\u2028"]}'
+    body = sse(*stream_events(text=text), raw=True).replace(b"\n", b"\r\n")
+    multi = body.index("ö".encode()) + 1  # inside the two-byte ö
+    crlf = body.index(b"\r\n") + 1  # between CR and LF
+
+    async def chunks():
+        cuts = sorted({0, multi, crlf, len(body)})
+        for a, b in zip(cuts, cuts[1:]):
+            yield body[a:b]
+
+    result = asyncio.run(adapter(lambda r: httpx.Response(200, content=chunks())).run_step("b", "d", "m", {}, "claude-opus-5-5"))
+    assert (result.status, result.raw_text) == ("completed", text)
+
+
+def test_cr_only_line_ends_are_read(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    body = sse(*stream_events()).replace(b"\n", b"\r")
+    result = asyncio.run(adapter(lambda r: httpx.Response(200, content=body)).run_step("b", "d", "m", {}, "claude-opus-5-5"))
+    assert (result.status, result.raw_text) == ("completed", '{"claims": []}')

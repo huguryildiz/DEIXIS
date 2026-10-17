@@ -178,7 +178,7 @@ def test_kill_search_end_to_end_freezes_and_assesses_without_touching_discovery(
     assert frozen["outcome"] == "completed"
     assert json.loads(frozen["selection_json"]) == {k: run["target"][k] for k in ("model", "providers", "budget", "transport")}
     assert len(json.loads(frozen["rendered_queries_json"])) == len(lib.requests) == 1
-    assert lib.requests[0][2:] == (20, {})
+    assert lib.requests[0][2:] == (100, {})  # OpenAlex's single-request window (plan version 2)
     assert lib.candidate_store.hits(frozen["id"])[0]["assessment_state"] == "assessed"
     assert status(lib, run)["status"] == "open"
     assert summary(lib, run)["hits"][0]["outcome"] == "assessed"
@@ -697,7 +697,8 @@ def test_endpoint_options_are_forwarded_but_paging_probe_and_enrichment_are_abse
     execute(lib, run)
     queries = json.loads(search(lib, run)["rendered_queries_json"])
     assert lib.requests[0][3] == {k: queries[0][k] for k in ("endpoint", "sort")}
-    assert lib.requests[0][2] == 20
+    # Plan version 2: the bulk endpoint's one-call batch is the window, still one request.
+    assert len(lib.requests) == 1 and lib.requests[0][2] == run["target"]["limits"]["records_by_provider"]["semantic_scholar"] == 1000
 
 
 def test_real_openalex_connector_through_mocked_http_makes_only_one_request(lib):
@@ -713,7 +714,7 @@ def test_real_openalex_connector_through_mocked_http_makes_only_one_request(lib)
     run = queue_kill(lib)
     assert execute(lib, run)["status"] == "completed"
     assert len(calls) == 1 and "cursor" not in calls[0].url.params
-    assert int(calls[0].url.params["per_page"]) == 20
+    assert int(calls[0].url.params["per_page"]) == run["target"]["limits"]["records_by_provider"]["openalex"] == 100
     assert status(lib, run)["status"] == "open"
 
 

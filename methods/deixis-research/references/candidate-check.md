@@ -34,13 +34,30 @@ elements were derived.
 
 ## kill_search_query
 
-Write from the claim version only. `setting` is the field, system or condition;
-`task` is the mechanism or result. Each term is one to four words an author of a
-work stating this claim would write. Use no quotation marks, parentheses or
-Boolean operators. Choose at most six terms in total and fill both blocks.
-Backups are other names for the same thing, at most three per block, kept on
-record and never used to widen the search. Write no query text. A search finds
-prior work; it does not prove absence.
+Write from the claim version only. A work is found when its title or abstract
+holds at least one term of each block:
+
+    (setting terms, joined by OR) AND (task terms, joined by OR)
+
+So any one setting term with any one task term must on its own describe a work
+worth reading against this claim.
+
+- `setting`: the system or field the claim is about, named as its authors name
+  it. Put its most common name first, in the block itself, never only in a
+  backup; add its usual other names or abbreviation beside it.
+- `task`: the mechanisms, methods or objects the claim states something about,
+  by their own names (for a comparison, each compared item). A reported
+  quantity or metric (delivery ratio, energy, accuracy, delay) is never a term:
+  it is read from the works found.
+
+Every term in a block names the same kind of thing as the others in it. Leave
+out words most works of any field hold (simulation, performance, analysis,
+evaluation, method, approach, model, system, protocol alone). Each term is one
+to four words an author of a work stating this claim would write. Use no
+quotation marks, parentheses or Boolean operators. Choose at most six terms in
+total and fill both blocks. Backups are other names for the same thing, at most
+three per block, kept on record and never used to widen the search. Write no
+query text. A search finds prior work; it does not prove absence.
 
 ## claim_assessment
 

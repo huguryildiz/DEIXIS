@@ -11,13 +11,13 @@ from collections.abc import Callable
 
 from deixis.domain.rules import MAX_RATE_LIMIT_MODEL_RETRIES, MAX_TRANSIENT_NETWORK_RETRIES, RevisionConflict, schema_repairs, step_model
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES
-from deixis.providers.registry import CONNECTORS, search_providers
+from deixis.providers.registry import CONNECTORS, reading, search_providers
 from deixis.storage.db import transaction
+from deixis.workflow.candidates.hits import RANK_VERSION
 from deixis.workflow.candidates.store import CandidateStore, InvalidCandidateInput
 from deixis.workflow.store import NotFound, Store
 
 KILL_QUERIES = 6
-KILL_RECORDS = 20
 KILL_KEEP = 8
 MAX_MESSAGE_CHARS = 48_000
 BASIS_ITEMS = 24
@@ -25,7 +25,7 @@ BASIS_TEXT_CHARS = 1_500
 ABSTRACT_CHARS = 2_500
 PAGE_PASSAGES = 6
 PAGE_TEXT_CHARS = 4_000
-PLAN_VERSION = 1
+PLAN_VERSION = 2  # 2: one window per provider (its single-request maximum) and a ranked cut (hits.rank_and_cut)
 
 
 class CandidateRunInput(InvalidCandidateInput):
@@ -64,6 +64,12 @@ def transport_plan(providers: list[str]) -> dict:
              "per_query": CONNECTORS[pid].requests_per_search * (1 + MAX_RATE_LIMIT_RETRIES)
              * (1 + MAX_TRANSIENT_NETWORK_RETRIES)} for pid in providers]
     return {"providers": rows, "max_provider_requests": sum(r["per_query"] for r in rows)}
+
+
+def record_window(provider: str) -> int:
+    """The most records one request of this provider's compiled query returns, without paging: the connector's
+    declared maximum for the endpoint the query names (Semantic Scholar's bulk batch, OpenAlex's per_page, ...)."""
+    return reading({"provider_id": provider, **CONNECTORS[provider].sw_query}).max_results
 
 
 def eligible_providers(scope: dict) -> list[str]:
@@ -211,6 +217,7 @@ class KillSearchPlanner:
             if not providers:
                 raise CandidateRunInput("no_searchable_provider")
             transport = transport_plan(providers)
+            windows = {pid: record_window(pid) for pid in providers}
             budget = {"max_model_calls": attempts("kill_search_query") + KILL_KEEP * attempts("claim_assessment"),
                       "max_provider_requests": transport["max_provider_requests"],
                       "steps": {"kill_search_query": attempts("kill_search_query"),
@@ -219,7 +226,8 @@ class KillSearchPlanner:
                     "scope_revision": revision, "providers": providers,
                     "model": {t: list(step_model(scope, t)) for t in ("kill_search_query", "claim_assessment")},
                     "budget": budget, "transport": transport,
-                    "limits": {"queries": KILL_QUERIES, "records": KILL_RECORDS, "keep": KILL_KEEP,
+                    "limits": {"queries": KILL_QUERIES, "records": max(windows.values()), "records_by_provider": windows,
+                               "rank": RANK_VERSION, "keep": KILL_KEEP,
                                "max_message_chars": MAX_MESSAGE_CHARS, "basis_items": BASIS_ITEMS,
                                "basis_text_chars": BASIS_TEXT_CHARS, "abstract_chars": ABSTRACT_CHARS,
                                "page_passages": PAGE_PASSAGES, "page_text_chars": PAGE_TEXT_CHARS},

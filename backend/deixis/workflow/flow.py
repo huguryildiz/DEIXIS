@@ -4607,8 +4607,10 @@ class ResearchFlow:
 
     async def _kill_search_request(self, run: dict, query: dict) -> tuple[SearchOutcome | facade.Dispatched, dict]:
         """One logical query, no paging/enrichment; reservations survive uncertain delivery."""
-        from deixis.workflow.candidates.run import KILL_RECORDS
-        return await self._bounded_search_request(run, query, lambda: self._candidate_send_gate(run), KILL_RECORDS)
+        # Plan version 1 froze one window for every provider; version 2 freezes each provider's single-request maximum.
+        limits = run["target"]["limits"]
+        window = limits.get("records_by_provider", {}).get(query["provider_id"], limits["records"])
+        return await self._bounded_search_request(run, query, lambda: self._candidate_send_gate(run), window)
 
     async def _bounded_search_request(self, run: dict, query: dict, gate: Callable[[], None],
                                       limit: int) -> tuple[SearchOutcome | facade.Dispatched, dict]:
@@ -4699,7 +4701,7 @@ class ResearchFlow:
             self._fail(run["id"], failure_code)
 
     async def _kill_search(self, run: dict, scope: dict) -> None:
-        from deixis.workflow.candidates import hits, run as candidates, terms
+        from deixis.workflow.candidates import run as candidates, terms
         from deixis.workflow.candidates.store import CandidateStore
         self._candidate_send_gate(run)
         cs = CandidateStore(self.store)
@@ -4761,7 +4763,7 @@ class ResearchFlow:
             if stored_plan and stored_plan["status"] == "succeeded":
                 assessment_plan = stored_plan["output"]
             else:
-                merged = hits.merge_and_cut(cs.query_records(search["id"]), keep=candidates.KILL_KEEP)
+                merged = cs.merge(search["id"], keep=candidates.KILL_KEEP)
                 entries = []
                 for hit in merged["kept"]:
                     svid = hit["source_version_id"]

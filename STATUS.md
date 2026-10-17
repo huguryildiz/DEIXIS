@@ -24,6 +24,7 @@ Most of this was tested with fake models and synthetic data only; "Not measured"
 - OpenAlex similar-paper requests now overlap, starting 1.5 s apart with 100 records per page (D10).
 - PRISMA-S, the Method box and Watch now read the requests the fast plan really sends, including its semantic and Semantic Scholar requests, and Watch keeps each query's saved position.
 - Citation map (D42): a panel draws the sources by year or as a network from OpenAlex reference lists, and a work cited by two or more sources can be added as a candidate.
+- Reranker on BioASQ (D88, 17 Oct, 100 questions, stored candidate lists, title + abstract): Qwen3 and Voyage rerank-3-lite both raise recall@50 from 0.545, by about +0.03 reranking the first 100 and about +0.06 reranking the first 200 (every interval above zero, none reaching the +0.10 bar). The pool default is now 4× the papers read; the reranker stays off until turned on. Only record order was measured, not full product runs or answers (`.local/rerank-trial-2026-10-17/qwen-voyage-results.md`).
 - Verify Citations V1 (D86): a draft's citations and bibliography are read by code and resolved on OpenAlex; no model call yet. V2–V5 (plan `.local/plans/verify-citations-plan.md`) are open.
 
 ### Reading and answers

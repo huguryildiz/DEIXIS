@@ -9,20 +9,20 @@ its 5,486 questions.
 Recall@k is the share of a question's expert-chosen papers found in the first k results, averaged over questions
 (macro-recall). The 95% intervals come from 10,000 bootstrap resamples of questions.
 
-| System | @10 | @20 | @50 | @100 | @200 | Questions |
-|---|---|---|---|---|---|---|
-| DEIXIS, Standard | **0.352** | **0.423** | **0.545** | **0.635** | **0.729** | 100 |
-| 95% interval | 0.28–0.42 | 0.35–0.49 | 0.47–0.62 | 0.57–0.70 | 0.67–0.79 | |
-| OpenAlex keyword | 0.281 | 0.364 | 0.489 | 0.607 | 0.674 | 99 of 100 |
-| DEIXIS − OpenAlex | **+0.073** | +0.063 | +0.061 | +0.034 | **+0.061** | 100, paired |
-| 95% interval | +0.02 to +0.13 | −0.00 to +0.13 | −0.00 to +0.13 | −0.02 to +0.09 | +0.01 to +0.12 | |
-| Elicit, as published | 0.390 | 0.483 | 0.603 | 0.670 | 0.708 | 5,486 |
+| System | @10 | @20 | @50 | @100 | Questions |
+|---|---|---|---|---|---|
+| DEIXIS, Standard | **0.352** | **0.423** | **0.545** | **0.635** | 100 |
+| 95% interval | 0.28–0.42 | 0.35–0.49 | 0.47–0.62 | 0.57–0.70 | |
+| OpenAlex keyword | 0.281 | 0.364 | 0.489 | 0.607 | 99 of 100 |
+| DEIXIS − OpenAlex | **+0.073** | +0.063 | +0.061 | +0.034 | 100, paired |
+| 95% interval | +0.02 to +0.13 | −0.00 to +0.13 | −0.00 to +0.13 | −0.02 to +0.09 | |
+| Elicit, as published | 0.390 | 0.483 | 0.603 | 0.670 | 5,486 |
 
 DEIXIS finds more of the expert papers than a plain OpenAlex keyword search on the same questions at every depth. The
-gap is clear at 10 and 200 results. At 20 and 50 the interval just touches zero, and at 100 there is no measurable
+gap is clear at 10 results. At 20 and 50 the interval just touches zero, and at 100 there is no measurable
 difference.
 
-DEIXIS's numbers are below Elicit's published ones at 10 to 100 results and above them at 200. Elicit's figures fall
+DEIXIS's numbers are below Elicit's published ones at every depth. Elicit's figures fall
 inside DEIXIS's 95% intervals at every depth, so 100 questions can't tell the two systems apart. Elicit's figures come
 from all 5,486 questions and ours from a sample, so this is not a paired comparison.
 
@@ -36,13 +36,13 @@ question:
 
 | Where the paper ended up | Papers | Share |
 |---|---|---|
-| In the first 200 | 690 | 63% |
-| In the list, below position 200 | 108 | 10% |
+| In the first 100 | 561 | 51% |
+| In the list, below position 100 | 237 | 22% |
 | Never in the list | 300 | 27% |
 | Dropped by the year cut | 0 | 0% |
 
-Most of the loss comes from search, not ranking. The search queries DEIXIS writes never brought in about a quarter of
-the expert papers. All 1,096 distinct gold papers are indexed in OpenAlex (checked by PMID), so the loss is not a
+The loss splits between ranking and search. About a fifth of the expert papers were in the list but below position
+100, and the search queries DEIXIS writes never brought in about a quarter of them. All 1,096 distinct gold papers are indexed in OpenAlex (checked by PMID), so the loss is not a
 coverage gap. The median candidate list held 1,008 works.
 
 ## Method

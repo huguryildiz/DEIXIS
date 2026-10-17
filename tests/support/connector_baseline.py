@@ -7,6 +7,8 @@ import argparse
 import asyncio
 import json
 import socket
+import threading
+import time
 from contextlib import ExitStack, contextmanager
 from dataclasses import asdict
 from pathlib import Path
@@ -135,20 +137,30 @@ def recorded_outcome(outcome):
 
 @contextmanager
 def fake_clock():
-    """Isolate provider pacing and retry waits without sleeping or changing replay behavior."""
+    """Isolate provider pacing and retry waits without sleeping or changing replay behavior.
+
+    asyncio.sleep and time.monotonic are process-wide, so only this thread gets the fake ones: a background thread an
+    earlier test left running keeps the real ones instead of spinning on a sleep that returns at once."""
     waits = []
     now = [1000.0]
+    owner = threading.get_ident()
+    real_sleep, real_monotonic = asyncio.sleep, time.monotonic
 
-    async def sleep(seconds):
+    async def sleep(seconds, *args, **kwargs):
+        if threading.get_ident() != owner:
+            return await real_sleep(seconds, *args, **kwargs)
         waits.append(seconds)
         now[0] += seconds
+
+    def monotonic():
+        return now[0] if threading.get_ident() == owner else real_monotonic()
 
     with ExitStack() as stack:
         stack.enter_context(patch.object(openalex.SEMANTIC_PACER, "_next", 0.0))
         for module in (common, arxiv, pacing):
             stack.enter_context(patch.object(module.asyncio, "sleep", sleep))
-        stack.enter_context(patch.object(arxiv.time, "monotonic", lambda: now[0]))
-        stack.enter_context(patch.object(pacing.time, "monotonic", lambda: now[0]))
+        stack.enter_context(patch.object(arxiv.time, "monotonic", monotonic))
+        stack.enter_context(patch.object(pacing.time, "monotonic", monotonic))
         stack.enter_context(patch.object(arxiv, "_last_request", 0.0))
         stack.enter_context(patch.object(pacing.SEMANTIC_SCHOLAR_PACER, "_last_finished", 0.0))
         yield waits

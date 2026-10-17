@@ -668,3 +668,36 @@ def test_connections_projection(tmp_path):
             assert p["capabilities"] == sorted(descriptor.capabilities)
             assert p["capabilities"] == sorted({"search"} | set(conformance.FIXTURES[p["id"]].get("capability_cases", {})))
             assert {"implemented", "access_mode", "supplementary", "key_env", "role", "note"} <= p.keys()
+
+
+
+def test_fake_clock_counts_only_the_sleeps_of_its_own_thread():
+    """fake_clock replaces the process-wide asyncio.sleep and time.monotonic. A thread an earlier test left behind (a
+    background worker that retries every 60 s) must keep the real ones: with the fake sleep it spun and filled this
+    test's waits with 60s, which made dispatch equivalence fail only when such a worker shared the xdist process."""
+    import threading
+    import time
+
+    stop, inside, spun = threading.Event(), threading.Event(), threading.Event()
+
+    def leftover():
+        async def loop():
+            while not stop.is_set():
+                if inside.is_set():
+                    await asyncio.sleep(0.05)
+                    spun.set()
+                else:
+                    time.sleep(0.001)
+        asyncio.run(loop())
+
+    thread = threading.Thread(target=leftover, daemon=True)
+    thread.start()
+    try:
+        with baseline.fake_clock() as waits:
+            inside.set()
+            spun.wait(5)
+            asyncio.run(asyncio.sleep(3.0))
+    finally:
+        stop.set()
+        thread.join(5)
+    assert spun.is_set() and waits == [3.0]

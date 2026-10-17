@@ -4002,6 +4002,8 @@ const tr: Record<string, string> = {
   'Answer V{v} is the latest.': 'En son yanıt V{v}.',
   'V{n} is kept.': 'V{n} korunur.',
   'Writing answer V{n}…': 'V{n} yanıtı yazılıyor…',
+  'Appears once papers start to be cited': 'Makaleler atıf almaya başlayınca burada görünür',
+  'Appears once sources are included': 'Kaynaklar dahil edilince burada görünür',
   'Reading the full texts that arrived late · V{v} stays available': 'Geç gelen tam metinler okunuyor · V{v} erişilebilir kalır',
   'V{v} stays available': 'V{v} erişilebilir kalır',
   '{n} claim': '{n} iddia',

@@ -41,7 +41,7 @@ import { CitationPanel, type CitationOpen } from './research/CitationPanel'
 import { ActivityPanel } from './research/ActivityPanel'
 import { PlanPanel } from './research/PlanPanel'
 import { CitationMap } from './citemap/CitationMap'
-import { TableCard } from './research/ArtifactsTab'
+import { PendingArtifacts, TableCard } from './research/ArtifactsTab'
 import { Rail } from './research/Rail'
 import { useRailWide } from './research/railData'
 import { ExportLinks, ExportMenu } from './research/ExportMenu'
@@ -863,6 +863,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         latestAnswer={answer ? <><AnswerThread thread={answerThread} eventCursor={view.last_event_id} review={answerReview} researchId={id} title={answer.report_title ?? heading} version={answerVersion} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={openAnswerPassage} onAttachPdf={chooseSourcePdf}
           versions={reportVersions} latestVersion={latestVersion} onVersion={switchReport} changes={answer.status === 'structurally_valid' ? reportChanges(answer) : undefined} />{tableCards}</> : null} />
       {!answer && tableCards}
+      {/* A search or answer still working: the report and table it will make stand as skeletons until they exist. */}
+      {view.runs.some(r => ACTIVE.has(r.status) && (r.kind === 'discovery' || r.kind === 'answer')) && <PendingArtifacts report={!answer} table={!!tables && !tables.length} />}
       {view.reportRuns[0] && <button type="button" className="report-artifact" onClick={() => setOpenEvidenceReportId(view.reportRuns[0].id)} aria-label={t('Open evidence report')}>
         <span className="report-artifact-preview" aria-hidden="true"><strong>{heading}</strong></span>
         <span className="report-artifact-copy"><span className="report-artifact-meta"><FileText size={13} aria-hidden />{view.reportRuns[0].status === 'valid' ? t('Evidence report · V{n}', { n: view.reportRuns[0].report_version ?? '' }) : view.reportRuns[0].status === 'draft' ? t('Evidence report · draft') : t('Evidence report · being written')}</span><strong>{heading}</strong>{view.reportRuns[0].status === 'in_progress' && <small role="status">{t(latestEvidenceReportRun?.status === 'paused' ? 'Report paused' : 'The report is being written.')}</small>}</span>

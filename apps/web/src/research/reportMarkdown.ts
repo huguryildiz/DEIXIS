@@ -1,15 +1,62 @@
 import { downloadName } from '../downloadName'
-import { type Answer, type Evidence, type Limitation, type Source, type Verdict } from '../api'
+import { type Answer, type Evidence, type EvidenceLedger, type LedgerReason, type LedgerWork, type Limitation, type Source, type Verdict } from '../api'
 import { locatorText, pageLocator, verdictLabels } from '../labels'
 import { formatReferenceText, inTextCitation, type CitationStyle } from '../citations'
 import { OCR_LABEL } from '../ocr'
-import { t } from '../i18n'
+import { t, uiLocale } from '../i18n'
 
 // The report of a valid answer as parts and as a Markdown file. The report panel (Copy, Download) and the topbar Export
 // menu (UI parity S8) write the same file. Split from AnswerBlock.tsx.
 
 // A claim review's tone (mockup `.badge-s`): supported green, partly supported amber, not supported red, cannot assess plain.
 export const verdictTones: Record<Verdict, string> = { supported: 'ok', partially_supported: 'part', not_supported: 'bad', cannot_assess: 'plain' }
+
+// The evidence ledger (D80) in words, as the report, the thread and the Markdown file write it (exports/answer.py too).
+// Cited counts come from the answer's evidence links; a reason is the model's, checked only for its shape and quote.
+const LEDGER_REASONS: Record<LedgerReason, string> = {
+  no_answering_content: 'Its given passages do not answer the question',
+  off_topic: 'Not about the subject of the question',
+  same_finding_as_cited: 'Same finding as a cited work',
+  different_conditions: 'Answers part of the question under other conditions',
+  claim_limit: 'Left out to stay within the 30-claim limit',
+}
+const ledgerCount = (n: number) => new Intl.NumberFormat(uiLocale()).format(n)
+export function ledgerLine(ledger: EvidenceLedger) {
+  const line = t('{c} of {m} given works cited · {k} left out with a reason', { c: ledgerCount(ledger.cited.length), m: ledgerCount(ledger.given.length), k: ledgerCount(ledger.excluded.length) })
+  return ledger.unaccounted.length ? `${line} · ${t('{u} with no reason recorded', { u: ledgerCount(ledger.unaccounted.length) })}` : line
+}
+// The works given and not cited, in the ledger's order: those with a reason, then those with none. `reason` is in
+// words; `sameAs` is the stored title of the cited work a same-finding entry names.
+export type LedgerRow = { work: LedgerWork; passageId: string | null; anchorText: string | null; reason: string; sameAs: string | null; note: string | null }
+export function ledgerRows(ledger: EvidenceLedger): LedgerRow[] {
+  return [
+    ...ledger.excluded.map(e => ({ work: e, passageId: e.passage_id, anchorText: e.anchor_text, note: e.note, reason: t(LEDGER_REASONS[e.reason]),
+      sameAs: e.reason === 'same_finding_as_cited' ? e.same_as?.title ?? null : null })),
+    ...ledger.unaccounted.map(u => ({ work: u, passageId: u.passage_id, anchorText: null, note: null, sameAs: null, reason: t('No reason was recorded for this work.') })),
+  ]
+}
+// Whether a ledger read from the view has its lists and fields and its counts add up (given splits into disjoint cited,
+// excluded and unaccounted works); anything else is not shown, rather than miscounted (exports/answer.py `ledger_ok`).
+export function ledgerOk(ledger: unknown): ledger is EvidenceLedger {
+  const record = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+  const work = (v: unknown): v is Record<string, unknown> => record(v) && typeof v.source_version_id === 'string' && (v.title === null || typeof v.title === 'string')
+  if (!record(ledger)) return false
+  const { given, cited, excluded, unaccounted } = ledger
+  if (!Array.isArray(given) || !Array.isArray(cited) || !Array.isArray(excluded) || !Array.isArray(unaccounted)) return false
+  if (!given.every(work) || !unaccounted.every(work) || !cited.every(s => typeof s === 'string')) return false
+  if (!excluded.every(e => work(e) && typeof e.reason === 'string' && Object.hasOwn(LEDGER_REASONS, e.reason) && typeof e.note === 'string'
+    && (e.same_as === null || e.same_as === undefined || work(e.same_as)))) return false
+  const ids = given.map(g => g.source_version_id as string)
+  const parts = [...cited as string[], ...excluded.map(e => e.source_version_id as string), ...unaccounted.map(u => u.source_version_id as string)]
+  return new Set(ids).size === ids.length && new Set(parts).size === parts.length && parts.length === ids.length && parts.every(p => ids.includes(p))
+}
+// Ledger text in the Markdown file is data: Markdown and HTML characters are escaped, and a note's line breaks stay
+// inside its one list item (hard breaks, indented), so a note cannot open a heading, a link, a tag or a section.
+function markdownText(text: string) {
+  return text.split(/\r\n|\r|\n/).map(line => line.trim()).filter(Boolean)
+    .map(line => line.replace(/[\\`*_{}[\]()<>#|~&!=]/g, '\\$&').replace(/^([+-])/, '\\$1').replace(/^(\d+)([.)])/, '$1\\$2'))
+    .join('  \n  ')
+}
 
 function reportFilename(title: string, version: number) {
   return downloadName(title, [`V${version}`], 'md', 'Report')
@@ -69,6 +116,12 @@ export function reportMarkdown(answer: Answer, sources: Source[], title: string,
   })
   if (!answer.claims.length) lines.push(t('No claim could be linked to the passages given to the model.'), '')
   if (answer.unanswered_aspects.length) lines.push(`## ${t('Not answered by the inspected passages')}`, '', ...answer.unanswered_aspects.map(item => `- ${item}`), '')
+  if (ledgerOk(answer.evidence_ledger)) {
+    const rows = ledgerRows(answer.evidence_ledger)
+    lines.push(`## ${t('Works given but not cited')}`, '', ledgerLine(answer.evidence_ledger), '')
+    if (rows.length) lines.push(...rows.map(r => `- ${[markdownText(r.work.title ?? r.work.source_version_id), r.sameAs ? `${r.reason}: ${markdownText(r.sameAs)}` : r.reason,
+      r.note && t('Note from the model: {note}', { note: markdownText(r.note) })].filter(Boolean).join(' · ')}`), '')
+  }
   if (limits.length) lines.push(`## ${t('Limits')}`, '', ...limits.map(limit => `- **${t(limit.kind.replace('_', ' '))}:** ${limit.text}`), '')
   if (refs.size) {
     lines.push(`## ${t('Cited passages')}`, '')

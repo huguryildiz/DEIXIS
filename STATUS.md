@@ -111,7 +111,6 @@ One run per mode with gpt-5.6-luna on the DBR/VBF question, on a library copy.
 
 All 171 citation links in 8 stored answers are sound; the gap is coverage: answers leave relevant input works uncited.
 
-- [ ] Show D80's `excluded_sources` (each given work cited or left out with a reason) in the answer view and exports; backend done.
 - [ ] Before/after run on one frozen answer input. 17 Oct: 10 of 40 given works cited, 0 of 23 abstracts; length was not the limit.
 - [ ] Chain of Ideas–style idea generation waits for this, with its own contract (premises cited, speculation marked unsourced).
 

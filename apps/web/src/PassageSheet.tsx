@@ -318,7 +318,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   const selectionText = { included: 'Included', excluded: 'Excluded', pending: 'Undecided' } as const
   const originText: Record<Source['selection']['origin'], string | null> = { user: 'your decision', model_proposal: 'model proposal', code_rule: 'code rule', default: null }
   const isOpen = openPassageId !== null || openAssetId !== null || detailsOnly
-  const description = passage ? t('Cited passage: {locator}', { locator: locatorText(passage) }) : assetText ? t('PDF source') : detailsOnly ? t('Source') : t(error ? 'Unavailable' : 'Loading passage…')
+  const description = passage ? (citationLabels?.heading ? `${citationLabels.heading}: ${locatorText(passage)}` : t('Cited passage: {locator}', { locator: locatorText(passage) })) : assetText ? t('PDF source') : detailsOnly ? t('Source') : t(error ? 'Unavailable' : 'Loading passage…')
   const choose = (next: Tab) => { setTab(next); if (next === 'pdf' && hasPdf) setFull(true) }
   const pages = (doc: AssetText) => new Set(doc.passages.map(item => item.physical_page)).size
   const citedClaims = row && latestAnswer ? latestAnswer.claims.filter(c => c.evidence.some(e => e.source_version_id === row.source_version_id)).length : null
@@ -399,7 +399,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
     ? shownDocument !== null ? <>
       {shownDocument ? <PdfTextDocument researchId={researchId} assetId={shownDocument.asset.id} passages={shownDocument.passages} showNotes={showNotes} sourceTitle={shownDocument.source.title} citation={citation} comparison={comparing} suppressFigurePictures={earlier && !comparing} rendition={textRendition} nav={nav} label={<>{t('Extracted PDF text')}{notesToggle(shownDocument)}</>} /> : <><h3 className="source-section">{t('Extracted PDF text')}</h3><p>{t('Loading PDF text…')}</p></>}
     </> : <>
-      <h3 className="source-section">{t('Cited passage · {locator}', { locator: locatorText(passage) })}</h3>
+      <h3 className="source-section">{citationLabels?.heading ? `${citationLabels.heading} · ${locatorText(passage)}` : t('Cited passage · {locator}', { locator: locatorText(passage) })}</h3>
       {expectHighlight && !highlightAvailable && <div className="citation-highlight-note">{citationLabels?.unmarked ?? t('This saved citation has no exact text anchor, so it cannot be highlighted. Generate a new answer to repair its citation anchors.')}</div>}
       <p className="passage-text"><HighlightedPassageText passage={passage} highlightTexts={highlights} markLabel={citationLabels?.mark} /></p>
     </>
@@ -415,6 +415,8 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
     {abstract && expectHighlight && !highlightAvailable && <div className="citation-highlight-note">{citationLabels?.unmarked ?? t('This saved citation has no exact text anchor, so it cannot be highlighted. Generate a new answer to repair its citation anchors.')}</div>}
     <p className="passage-text abstract"><HighlightedPassageText passage={abstractShown} highlightTexts={abstract ? highlights : []} markLabel={citationLabels?.mark} /></p>
     {abstract && highlightAvailable && <p className="foot-note">{citationLabels?.marked ?? t('Highlighted: the exact text cited in the answer.')}</p>}
+    {/* Opened for something other than a citation with nothing to mark (a left-out work with no quote, D80): say so. */}
+    {abstract && !expectHighlight && !highlightAvailable && citationLabels?.heading && <p className="foot-note">{citationLabels.marked}</p>}
   </> : needsAbstract ? <p>{t('Loading passage…')}</p>
     : <p className="source-notice"><Info size={15} aria-hidden />{t('No abstract is stored for this source.')}</p>
 

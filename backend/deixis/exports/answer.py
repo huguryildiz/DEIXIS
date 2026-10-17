@@ -15,12 +15,65 @@ from typing import Any
 
 from deixis.exports import ooxml
 from deixis.exports.text import OCR_LABEL, VERDICTS, CitationStyle, Language, download_name, locator_text, page_locator, \
-    in_text_citation, reference_text, translator
+    in_text_citation, number_text, reference_text, translator
 
 
 def filename(title: str, version: int, revision: int = 0) -> str:
     # An update the application wrote over a version (D57) is named V2.1, V2.2, so its file never takes V2's name.
     return download_name(title, f"V{version}" + (f".{revision}" if revision else ""), extension="docx", fallback="Report")
+
+
+# reportMarkdown.ts `LEDGER_REASONS`: the evidence ledger's reasons (D80) in words.
+LEDGER_REASONS = {
+    "no_answering_content": "Its given passages do not answer the question",
+    "off_topic": "Not about the subject of the question",
+    "same_finding_as_cited": "Same finding as a cited work",
+    "different_conditions": "Answers part of the question under other conditions",
+    "claim_limit": "Left out to stay within the 30-claim limit",
+}
+
+
+def ledger_ok(ledger: Any) -> bool:
+    """reportMarkdown.ts `ledgerOk`: the view's ledger has its lists and fields, and given splits into disjoint cited,
+    excluded and unaccounted works. Anything else is left out of the file rather than miscounted."""
+    def work(item: Any) -> bool:
+        return isinstance(item, dict) and isinstance(item.get("source_version_id"), str) and "title" in item \
+            and isinstance(item["title"], (str, type(None)))
+
+    if not isinstance(ledger, dict):
+        return False
+    given, cited, excluded, unaccounted = (ledger.get(k) for k in ("given", "cited", "excluded", "unaccounted"))
+    if not all(isinstance(v, list) for v in (given, cited, excluded, unaccounted)):
+        return False
+    if not (all(map(work, given)) and all(map(work, unaccounted)) and all(isinstance(s, str) for s in cited) and all(
+            work(e) and isinstance(e.get("reason"), str) and e["reason"] in LEDGER_REASONS and isinstance(e.get("note"), str)
+            and (e.get("same_as") is None or work(e["same_as"])) for e in excluded)):
+        return False
+    ids = [g["source_version_id"] for g in given]
+    parts = [*cited, *(e["source_version_id"] for e in excluded), *(u["source_version_id"] for u in unaccounted)]
+    return len(set(ids)) == len(ids) and len(set(parts)) == len(parts) and set(parts) == set(ids)
+
+
+def ledger_blocks(ledger: dict[str, Any], t: Any, language: Language) -> list[ooxml.Block]:
+    """reportMarkdown.ts: the count line and the works given but not cited (title · reason · the model's note)."""
+    def n(value: int) -> str:
+        return number_text(value, language)
+
+    line = t("{c} of {m} given works cited · {k} left out with a reason",
+             c=n(len(ledger["cited"])), m=n(len(ledger["given"])), k=n(len(ledger["excluded"])))
+    if ledger["unaccounted"]:
+        line += f" · {t('{u} with no reason recorded', u=n(len(ledger['unaccounted'])))}"
+    rows = []
+    for entry in ledger["excluded"]:
+        reason = t(LEDGER_REASONS[entry["reason"]])
+        if entry["reason"] == "same_finding_as_cited" and (entry.get("same_as") or {}).get("title"):
+            reason += f": {entry['same_as']['title']}"
+        rows.append([entry["title"] or entry["source_version_id"], reason, t("Note from the model: {note}", note=entry["note"])])
+    rows += [[u["title"] or u["source_version_id"], t("No reason was recorded for this work.")] for u in ledger["unaccounted"]]
+    out: list[ooxml.Block] = [ooxml.heading(2, t("Works given but not cited")), ooxml.paragraph(line)]
+    if rows:
+        out.append(ooxml.bullets([" · ".join(row)] for row in rows))
+    return out
 
 
 def blocks(answer: dict[str, Any], sources: list[dict[str, Any]], *, title: str, version: int | str,
@@ -99,6 +152,8 @@ def blocks(answer: dict[str, Any], sources: list[dict[str, Any]], *, title: str,
     if answer.get("unanswered_aspects"):
         out += [ooxml.heading(2, t("Not answered by the inspected passages")),
                 ooxml.bullets(ooxml.with_math(item) for item in answer["unanswered_aspects"])]
+    if ledger_ok(answer.get("evidence_ledger")):
+        out += ledger_blocks(answer["evidence_ledger"], t, language)
     if limits:
         out += [ooxml.heading(2, t("Limits")),
                 ooxml.bullets([ooxml.Run(f"{t(item['kind'].replace('_', ' ', 1))}:", bold=True), *ooxml.with_math(f" {item['text']}")]

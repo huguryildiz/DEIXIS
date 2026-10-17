@@ -58,7 +58,10 @@ type Answer = {
   claims: Claim[]; inputs_given: { depth?: { pdf: number; abstract: number; metadata: number } } | null
   validation: { reason?: string; issues?: { code: string; path: string }[] }; start_snapshot: { included: number } | null
   review: unknown; clarification: unknown; unanswered_aspects: string[]
+  evidence_ledger: Ledger | null
 }
+type LedgerWork = { source_version_id: string; title: string | null; passage_id: string | null; anchor_text: string | null }
+type Ledger = { given: LedgerWork[]; cited: string[]; excluded: (LedgerWork & { reason: string; note: string; same_as: unknown })[]; unaccounted: LedgerWork[] }
 type Source = { source_version_id: string; work_id: string; title: string; version_role: string; selection: { state: string; version: number }; cited_in_latest_answer: boolean; access: { assets: { id: string }[] } }
 type View = {
   research: { current_scope_revision: number }
@@ -189,6 +192,120 @@ test.describe.serial('S10: the answer in the thread', () => {
     await page.keyboard.press('Escape')
     await chooseStyle(/^APA/)
     await expect(chips).toHaveText(labels)
+  })
+
+  test('the evidence ledger: how many given works are cited or left out, and why each one is left out (D80)', async () => {
+    const view = await viewOf(api, rid)
+    const answer = view.answers[0]
+    // The fixture's [parity] answer: 12 works cited, the next one left out under different conditions with a located
+    // quote, the one after as the same finding as a cited work, the last with no entry, the rest with no quote.
+    const ledger = answer.evidence_ledger!
+    expect(ledger).not.toBeNull()
+    expect(ledger.cited).toHaveLength(12)
+    expect(ledger.unaccounted).toHaveLength(1)
+    const [conditions, same] = ledger.excluded
+    expect(conditions.reason).toBe('different_conditions')
+    expect(conditions.anchor_text).toBeTruthy()
+    expect(same.reason).toBe('same_finding_as_cited')
+    const line = (cited: number) => `${cited} of ${ledger.given.length} given works cited · ${ledger.excluded.length} left out with a reason · ${ledger.unaccounted.length} with no reason recorded`
+    await visit(page, research())
+    // The thread's foot-note gives the counts only; the list is in the report.
+    await expect(thread(page).locator('.foot-note.answer-ledger')).toHaveText(line(12))
+    await expect(thread(page).locator('.answer-ledger-list')).toHaveCount(0)
+    await page.locator('#research-answer').click()
+    const report = reportPanel(page)
+    await expect(report.locator('p.answer-ledger')).toHaveText(line(12))
+    // The list is closed; the keyboard opens it from its summary.
+    const list = report.locator('details.answer-ledger-list')
+    const summary = list.locator('summary')
+    await expect(summary).toHaveText(`Works left out (${ledger.excluded.length + ledger.unaccounted.length})`)
+    await expect(list).toHaveJSProperty('open', false)
+    await expect(list.locator('li').first()).toBeHidden()
+    await summary.focus()
+    await page.keyboard.press('Enter')
+    await expect(list).toHaveJSProperty('open', true)
+    const rows = list.locator('li')
+    await expect(rows).toHaveCount(ledger.excluded.length + ledger.unaccounted.length)
+    // Each row: the stored title, the reason in words, the note labelled as the model's; the unaccounted work last.
+    await expect(rows.nth(0).locator('button')).toHaveText(conditions.title!)
+    await expect(rows.nth(0).locator('.answer-ledger-reason')).toHaveText('Answers part of the question under other conditions')
+    await expect(rows.nth(0).locator('.answer-ledger-note')).toHaveText(`Note from the model: ${conditions.note}`)
+    await expect(rows.nth(1).locator('.answer-ledger-reason')).toHaveText(/^Same finding as a cited work: .+/)
+    await expect(rows.nth(2).locator('.answer-ledger-reason')).toHaveText('Its given passages do not answer the question')
+    const unaccounted = rows.last()
+    await expect(unaccounted.locator('button')).toHaveText(ledger.unaccounted[0].title!)
+    await expect(unaccounted.locator('.answer-ledger-reason')).toHaveText('No reason was recorded for this work.')
+    await expect(unaccounted.locator('.answer-ledger-note')).toHaveCount(0)
+    await summary.blur()
+    await shot(page, 's10-answer-ledger')
+    // The title opens Source details on the passage the backend located the quote in, marking only that span, named as
+    // the quote given for leaving the work out, never as cited text.
+    const opened = page.waitForRequest(r => new URL(r.url()).pathname === `/api/researches/${rid}/passages/${conditions.passage_id}`)
+    await rows.nth(0).locator('button').click()
+    await opened
+    const source = sourcePanel(page)
+    await expect(source).toBeVisible()
+    const squash = (text: string) => text.replace(/\s+/g, ' ').trim()
+    const mark = source.locator('mark.citation-highlight').first()
+    await expect(mark).toBeVisible()
+    expect(squash(await mark.innerText())).toBe(squash(conditions.anchor_text!))
+    await expect(mark).toHaveAttribute('aria-label', 'Quote given for leaving this work out')
+    await expect(source).toContainText(/the quote the model gave for leaving this work out|Quote given for leaving this work out/)
+    await expect(source).not.toContainText('Cited passage')
+    await expect(source).not.toContainText('Exact text cited')
+    // A row with no quote opens the work's first given passage unmarked, with no citation repair warning.
+    await page.locator('[data-split-panel] .split-panel-head').getByRole('button', { name: 'Back', exact: true }).click()
+    await expect(report).toBeVisible()
+    if (!(await list.evaluate(e => (e as HTMLDetailsElement).open))) await summary.click()
+    const plainOpen = page.waitForRequest(r => new URL(r.url()).pathname === `/api/researches/${rid}/passages/${ledger.unaccounted[0].passage_id}`)
+    await rows.last().locator('button').click()
+    await plainOpen
+    await expect(source).toContainText('No quote was given for leaving this work out.')
+    await expect(source.locator('mark.citation-highlight')).toHaveCount(0)
+    await expect(source).not.toContainText('repair its citation anchors')
+    await expect(source).not.toContainText('Cited passage')
+    await page.keyboard.press('Escape')
+    await expect(page.locator('[data-split-panel]')).toHaveCount(0)
+    // SYNTHETIC: a valid answer with no claim still shows its counts (patched view). The 12 cited works move to the
+    // left-out bucket, so the buckets stay disjoint and together are the given works.
+    const zero: Ledger = { ...ledger, cited: [], excluded: [...ledger.excluded, ...ledger.given.filter(g => ledger.cited.includes(g.source_version_id))
+      .map(g => ({ ...g, passage_id: null, anchor_text: null, reason: 'no_answering_content', note: 'SYNTHETIC: moved from cited.', same_as: null }))] }
+    const ids = (works: { source_version_id: string }[]) => works.map(w => w.source_version_id)
+    const buckets = [...zero.cited, ...ids(zero.excluded), ...ids(zero.unaccounted)]
+    expect(new Set(buckets).size).toBe(buckets.length)
+    expect([...buckets].sort()).toEqual(ids(zero.given).sort())
+    await page.route(`**/api/researches/${rid}`, async route => {
+      if (route.request().method() !== 'GET') return route.fallback()
+      const response = await route.fetch()
+      const body = await response.json() as View
+      body.answers[0] = { ...body.answers[0], claims: [], evidence_ledger: zero }
+      await route.fulfill({ response, json: body })
+    })
+    await visit(page, research())
+    const zeroLine = `0 of ${zero.given.length} given works cited · ${zero.excluded.length} left out with a reason · ${zero.unaccounted.length} with no reason recorded`
+    await expect(thread(page).locator('.foot-note.answer-ledger')).toHaveText(zeroLine)
+    await page.locator('#research-answer').click()
+    await expect(reportPanel(page).locator('p.answer-ledger')).toHaveText(zeroLine)
+    await expect(reportPanel(page).locator('details.answer-ledger-list summary')).toHaveText(`Works left out (${zero.given.length})`)
+    await expect(reportPanel(page)).toContainText('No claim could be linked to the passages given to the model.')
+    await page.keyboard.press('Escape')
+    await page.unroute(`**/api/researches/${rid}`)
+    // SYNTHETIC: an answer saved before the ledger existed shows no line and no list, not "0 left out".
+    await page.route(`**/api/researches/${rid}`, async route => {
+      if (route.request().method() !== 'GET') return route.fallback()
+      const response = await route.fetch()
+      const body = await response.json() as View
+      body.answers[0] = { ...body.answers[0], evidence_ledger: null }
+      await route.fulfill({ response, json: body })
+    })
+    await visit(page, research())
+    await expect(thread(page).locator('.answer-prose')).toBeVisible()
+    await expect(thread(page).locator('.answer-ledger')).toHaveCount(0)
+    await page.locator('#research-answer').click()
+    await expect(reportPanel(page).locator('.answer-basis')).toBeVisible()
+    await expect(reportPanel(page).locator('.answer-ledger, .answer-ledger-list')).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await page.unroute(`**/api/researches/${rid}`)
   })
 
   test('every IEEE number names its own passage and source version, in the report and in its Word file', async () => {

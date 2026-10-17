@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+from functools import cache
 from typing import Any
 
 from deixis.documents import embeddings, local_embedding, pdf
 from deixis.documents.jats import RENDITION_SQL
-from deixis.domain.contracts import locate_anchor, name_sources_in_prose
+from deixis.domain.contracts import locate_anchor, name_sources_in_prose, step_output_schema
 from deixis.domain.numbers import quoted_measures
 from deixis.domain.rules import FULLTEXT_RUNS, effective_reviewer, result_applicability
 from deixis.workflow import english_question as english_question_rules
@@ -716,6 +717,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             "inputs_given": {"sources": len(given["sources"]), "passages": len(given["passages"]),
                              "source_ids": [s["source_id"] for s in given["sources"]],
                              "depth": _given_depth(given)} if given else None,
+            # Why each given work the answer does not cite is left out (D80); null for an answer saved without a ledger.
+            "evidence_ledger": _ledger_view(store, given, validation.get("evidence_ledger")),
             # Where the flow stood when this answer's run started (slice 20); null for an answer whose run kept none,
             # never today's counts in its place. Beside `inputs_given`, not instead of it.
             "start_snapshot": _start_snapshot(store, a),
@@ -970,6 +973,66 @@ def _given_depth(given: dict[str, Any]) -> dict[str, int]:
         kinds.setdefault(work, set()).add("abstract" if (passage.get("locator") or {}).get("kind") == "abstract" else "pdf")
     return {"pdf": sum("pdf" in k for k in kinds.values()), "abstract": sum(k == {"abstract"} for k in kinds.values()),
             "metadata": sum(not k for k in kinds.values())}
+
+
+@cache
+def _ledger_reasons() -> frozenset[str]:
+    """The ledger's reason codes, read from the answer schema."""
+    return frozenset(step_output_schema("grounded_answer")["properties"]["excluded_sources"]["items"]["properties"]["reason"]["enum"])
+
+
+def _ledger_shape_ok(ledger: Any) -> bool:
+    """Whether a stored evidence ledger has the shape `contracts.answer_ledger` writes and its counts add up: given is
+    split into disjoint cited, excluded and unaccounted sources. Anything else is not shown, rather than miscounted."""
+    if not isinstance(ledger, dict) or not isinstance(ledger.get("complete"), bool):
+        return False
+    lists = [ledger.get(k) for k in ("given", "cited", "excluded", "unaccounted")]
+    if not all(isinstance(v, list) for v in lists):
+        return False
+    given, cited, excluded, unaccounted = lists
+    reasons = _ledger_reasons()
+    optional = ("passage_id", "same_as_source_id", "anchor_text")
+    if not all(isinstance(s, str) for s in [*given, *cited, *unaccounted]) or not all(
+            isinstance(e, dict) and isinstance(e.get("source_id"), str) and isinstance(e.get("reason"), str) and e["reason"] in reasons
+            and isinstance(e.get("note"), str) and all(isinstance(e.get(k), (str, type(None))) for k in optional)
+            and (not e.get("anchor_text") or isinstance(e.get("passage_id"), str))  # a located quote names its passage
+            for e in excluded):
+        return False
+    parts = [*cited, *(e["source_id"] for e in excluded), *unaccounted]
+    return len(set(given)) == len(given) and len(set(parts)) == len(parts) and set(parts) == set(given)
+
+
+def _ledger_view(store: Store, given: dict[str, Any] | None, ledger: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The answer's evidence ledger (D80) as the screen and the exports read it; None for an answer stored without one.
+
+    Titles and keys come from the stored source records, never from the model's note. Each left-out row names the
+    passage to open: the passage where the backend located the entry's quote, else that source's first given passage.
+    """
+    if not given or not _ledger_shape_ok(ledger):
+        return None
+    ids = list(dict.fromkeys([*ledger["given"], *(e["same_as_source_id"] for e in ledger["excluded"] if e.get("same_as_source_id"))]))
+    records = {r["id"]: r for r in store.conn.execute(
+        "SELECT s.id, s.work_id, s.title, (SELECT w.source_key FROM works w WHERE w.id = s.work_id) AS source_key"
+        f" FROM source_versions s WHERE s.id IN ({','.join('?' * len(ids))})", ids)}
+    first: dict[str, str] = {}
+    for passage in given["passages"]:
+        if isinstance(passage, dict) and passage.get("source_id"):
+            first.setdefault(passage["source_id"], passage.get("passage_id"))
+
+    def work(svid: str) -> dict[str, Any]:
+        record = records.get(svid)
+        return {"source_version_id": svid, "work_id": record["work_id"] if record else None,
+                "source_key": record["source_key"] if record else None, "title": record["title"] if record else None}
+
+    return {
+        "complete": ledger["complete"], "given": [work(s) for s in ledger["given"]], "cited": ledger["cited"],
+        "excluded": [work(e["source_id"]) | {
+            "reason": e["reason"], "note": e["note"],
+            "same_as": work(e["same_as_source_id"]) if e.get("same_as_source_id") else None,
+            "passage_id": e["passage_id"] if e.get("anchor_text") else first.get(e["source_id"]),
+            "anchor_text": e.get("anchor_text")} for e in ledger["excluded"]],
+        "unaccounted": [work(s) | {"passage_id": first.get(s), "anchor_text": None} for s in ledger["unaccounted"]],
+    }
 
 
 def _fulltext_read_works(store: Store, research_id: str, revision: int) -> int:

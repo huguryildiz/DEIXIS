@@ -25,7 +25,7 @@ Parity-harness markers (compare the app with the UI mockup; `test_parity_markers
 page of 50, the keyword query's cursor pages for the rest, no chaining), the two abstract-screening runs agree on the
 first 34 titles they see and leave the rest of the 50 out of scope, the first three PDFs fetched carry case J's queue
 scripts (choose_run, confirm_quote, find_part) and the other 17 of the 20 read are agreeing includes, and the answer
-cites 12 sources. "[oa-quota]": the keyword query's first page answers with a next cursor and every later keyword
+cites 12 sources and leaves the rest out with SYNTHETIC ledger reasons, the last with none (`parity_ledger`). "[oa-quota]": the keyword query's first page answers with a next cursor and every later keyword
 page is refused as a spent OpenAlex daily budget (429, `x-ratelimit-remaining-usd: 0`), so the run completes on the
 searches that answered. "[oa-quota-net]" and "[oa-net-quota]": OpenAlex's semantic request is refused as a spent
 budget (or its connection is refused) until `oa-flip` exists in the data directory, then the other way round, so a
@@ -978,11 +978,37 @@ class ScriptedCodex:
             output["claims"] = claims
             output["citation_anchors"] = anchors
             if "[parity]" in question:
+                self.parity_ledger(si, output)
                 # Two notes of what the passages did not cover, as the mockup's two "Suggested" cards on Home (S5b).
                 output["unanswered_aspects"] = list(PARITY_UNANSWERED)
                 if self.parity_first_answer.setdefault(si["research_id"], si["run_id"]) != si["run_id"]:
                     self.parity_revision(si, output)
         return output
+
+    @staticmethod
+    def parity_ledger(si: dict[str, Any], output: dict[str, Any]) -> None:
+        """"[parity]": the evidence ledger (D80) of the works past PARITY_CITED. The first is left out under different
+        conditions with a quote of its first passage, the second as the same finding as the first cited work (quoted
+        too), the last gets no entry (unaccounted), the others need no quote. SYNTHETIC reasons, not model behaviour."""
+        cited = {pid for c in output["claims"] for pid in c["passage_ids"]}
+        cited_sources = [s["source_id"] for s in si["sources"] if any(p["passage_id"] in cited and p["source_id"] == s["source_id"] for p in si["passages"])]
+        left = [s for s in si["sources"] if s["source_id"] not in cited_sources]
+        first_passage = {}
+        for p in si["passages"]:
+            first_passage.setdefault(p["source_id"], p)
+        entries = []
+        for i, source in enumerate(left[:-1]):
+            passage = first_passage.get(source["source_id"])
+            quoted = {"passage_id": passage["passage_id"], "quote": " ".join(passage["text"].split())[:200]} if passage else None
+            entry = {"source_id": source["source_id"], "reason": "no_answering_content", "passage_id": None, "quote": None,
+                     "same_as_source_id": None, "note": "SYNTHETIC: its passages say nothing about lifetime."}
+            if i == 0 and quoted:
+                entry |= quoted | {"reason": "different_conditions", "note": "SYNTHETIC: it models a mobile sink, not a static one."}
+            elif i == 1 and quoted and cited_sources:
+                entry |= quoted | {"reason": "same_finding_as_cited", "same_as_source_id": cited_sources[0],
+                                   "note": "SYNTHETIC: it repeats the first cited work's lifetime result."}
+            entries.append(entry)
+        output["excluded_sources"] = entries
 
     @staticmethod
     def parity_revision(si: dict[str, Any], output: dict[str, Any]) -> None:

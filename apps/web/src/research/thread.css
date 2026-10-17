@@ -344,6 +344,17 @@
 .cite-chip.is-abstract{box-shadow:inset 0 0 0 1px var(--line);background:transparent}
 /* The answer's reading depth over its cited works, above the prose. */
 .answer-basis{margin:6px 0 2px;color:var(--muted);font-size:12.5px;line-height:1.5}
+/* The evidence ledger (D80) under the basis line: how many given works are cited or left out, then the left-out list. */
+.answer-ledger{margin:2px 0;color:var(--muted);font-size:12.5px;line-height:1.5}
+.report-content .answer-basis:has(+.answer-ledger){margin-bottom:4px}
+.report-content p.answer-ledger{margin:0 0 6px;font-size:12px}
+.answer-ledger-list{margin:2px 0 10px;color:var(--muted);font-size:12.5px;line-height:1.5}
+.answer-ledger-list summary{width:fit-content;cursor:pointer}
+.answer-ledger-list summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+.answer-ledger-list ul{display:grid;gap:8px;margin:8px 0 0;padding-left:18px}
+.answer-ledger-list li>*{display:block}
+.answer-ledger-list .link{padding:0;border:0;background:none;color:var(--accent);font:inherit;font-weight:500;text-align:left;cursor:pointer}
+.answer-ledger-list .answer-ledger-reason{color:var(--ink-2)}
 .support-badge{margin-left:8px;padding:1px 6px;border:1px solid var(--line);border-radius:4px;font-size:10px;color:var(--muted);letter-spacing:.3px;vertical-align:middle}
 .review-badge{--tone:var(--muted);display:inline-flex;align-items:center;gap:4px;margin-left:6px;padding:1px 7px;border-radius:999px;background:color-mix(in srgb,var(--tone),transparent 88%);color:color-mix(in srgb,var(--tone),var(--ink) 25%);font-size:10px;letter-spacing:.2px;line-height:1.6;vertical-align:middle}
 .review-badge.is-supported{--tone:var(--tone-include)}

@@ -564,11 +564,22 @@ export type Answer = {
   model: { connection: string; requested_model: string | null; resolved_model: string | null; token_usage: unknown } | null
   // What the answer was given, from its stored input; `depth` counts works given PDF pages, only an abstract, or no passage.
   inputs_given: { sources: number; passages: number; source_ids: string[]; depth?: { pdf: number; abstract: number; metadata: number } } | null
+  // Why each given work the answer does not cite is left out (D80); null for an answer saved without a ledger.
+  evidence_ledger?: EvidenceLedger | null
   source_text_changed: boolean  // a file or extraction this answer read is no longer in use (D46)
   fulltext_read_since: number  // works whose full text was read and decided on after this answer's run started
   // Where the flow stood when this answer's run started (slice 20); null when that run kept none.
   start_snapshot: AnswerStartSnapshot | null
   review: AnswerReview | null
+}
+// A given work as the ledger names it: title and key from the stored record. `passage_id` is the passage to open (where
+// the backend located the entry's quote, else the work's first given passage); `anchor_text` is that located span.
+export type LedgerWork = { source_version_id: string; work_id: string | null; source_key: string | null; title: string | null }
+export type LedgerReason = 'no_answering_content' | 'off_topic' | 'same_finding_as_cited' | 'different_conditions' | 'claim_limit'
+export type EvidenceLedger = {
+  complete: boolean; given: LedgerWork[]; cited: string[]
+  excluded: (LedgerWork & { reason: LedgerReason; note: string; same_as: LedgerWork | null; passage_id: string | null; anchor_text: string | null })[]
+  unaccounted: (LedgerWork & { passage_id: string | null; anchor_text: null })[]
 }
 // Slice 20, decision 1: every work of the revision in one bucket, from the person's decisions first.
 export type FlowBucket = 'confirmed' | 'person_not_met' | 'person_excluded' | 'look_again' | 'included' | 'not_met' | 'queued'

@@ -329,3 +329,73 @@ def test_split_diagnostics_survive_the_anchor_salvage(tmp_path):
         assert record["split"] == session["ledger"] and record["unaccounted"] == [given(store, answer)[1]]
     finally:
         store.conn.close()
+
+
+def test_the_view_names_left_out_works_from_their_records_and_null_for_an_answer_without_a_ledger(tmp_path):
+    from deixis.workflow import views
+
+    # Source two left out with a located quote and a note naming another title; source three with no entry.
+    def quoted(si):
+        two = next(p for p in si["passages"] if p["source_id"] == si["sources"][1]["source_id"])
+        return draft(si, SHAPES["one"], ledger=[entry(two["source_id"], "different_conditions", passage_id=two["passage_id"],
+                                                      quote=two["text"].removeprefix("SYNTHETIC ").rstrip("."),
+                                                      note="SYNTHETIC: unlike “Some other title”.")])
+    store, flow, adapter, rid, run_id, sent = setup(tmp_path, [quoted])
+    try:
+        answer = answer_of(store, rid, flow, run_id)
+        ids = given(store, answer)
+        passages = store.step_input_payload(answer["step_input_id"])["passages"]
+        first = {p["source_id"]: p["passage_id"] for p in reversed(passages)}
+        text = {p["passage_id"]: p["text"] for p in passages}
+        records = {r["id"]: {"source_version_id": r["id"], "work_id": r["work_id"], "source_key": r["source_key"], "title": r["title"]}
+                   for r in store.conn.execute("SELECT s.id, s.work_id, s.title, w.source_key FROM source_versions s"
+                                               " LEFT JOIN works w ON w.id = s.work_id")}
+        view = views.research_view(store, rid)["answers"][0]["evidence_ledger"]
+        assert view["complete"] is False and view["cited"] == [ids[0]]
+        assert view["given"] == [records[s] for s in ids]
+        assert sorted(r["title"] for r in view["given"]) == ["SYNTHETIC source one", "SYNTHETIC source three", "SYNTHETIC source two"]
+        # The title is the stored record's, not the note's; the row opens the passage where the quote was located.
+        assert view["excluded"] == [records[ids[1]] | {
+            "reason": "different_conditions", "note": "SYNTHETIC: unlike “Some other title”.", "same_as": None,
+            "passage_id": first[ids[1]], "anchor_text": text[first[ids[1]]].removeprefix("SYNTHETIC ").rstrip(".")}]
+        # No entry: the source's first given passage, with nothing to mark.
+        assert view["unaccounted"] == [records[ids[2]] | {"passage_id": first[ids[2]], "anchor_text": None}]
+        # An answer saved before the ledger existed has none: the view says null, not "0 left out".
+        store.conn.execute("UPDATE answers SET validation_json = json_remove(validation_json, '$.evidence_ledger') WHERE id = ?",
+                           (answer["id"],))
+        assert views.research_view(store, rid)["answers"][0]["evidence_ledger"] is None
+    finally:
+        store.conn.close()
+
+
+def test_a_stored_ledger_of_the_wrong_shape_or_with_counts_that_do_not_add_up_is_not_shown(tmp_path):
+    from deixis.workflow import views
+
+    store, flow, adapter, rid, run_id, sent = setup(tmp_path, [lambda si: draft(si, SHAPES["one"])])
+    try:
+        answer = answer_of(store, rid, flow, run_id)
+        good = ledger(answer)
+        a, b, c = good["given"]
+        broken = [
+            {"given": [a]},  # lists missing
+            good | {"excluded": None},
+            good | {"excluded": [{"source_id": b}]},  # entry without reason or note
+            good | {"excluded": [good["excluded"][0] | {"reason": "made_up"}, good["excluded"][1]]},
+            good | {"cited": [a, b]},  # b both cited and excluded
+            good | {"excluded": good["excluded"][:1]},  # c given but in no bucket
+            good | {"complete": "yes"},
+            good | {"excluded": [good["excluded"][0] | {"reason": []}, good["excluded"][1]]},
+            good | {"excluded": [good["excluded"][0] | {"reason": {}}, good["excluded"][1]]},
+            good | {"excluded": [good["excluded"][0] | {"anchor_text": "SYNTHETIC located words", "passage_id": None}, good["excluded"][1]]},
+            "not a ledger",
+        ]
+        for value in broken:
+            store.conn.execute("UPDATE answers SET validation_json = json_set(validation_json, '$.evidence_ledger', json(?)) WHERE id = ?",
+                               (json.dumps(value), answer["id"]))
+            assert views.research_view(store, rid)["answers"][0]["evidence_ledger"] is None, value
+        store.conn.execute("UPDATE answers SET validation_json = json_set(validation_json, '$.evidence_ledger', json(?)) WHERE id = ?",
+                           (json.dumps(good), answer["id"]))
+        shown = views.research_view(store, rid)["answers"][0]["evidence_ledger"]
+        assert shown["cited"] == [a] and [e["source_version_id"] for e in shown["excluded"]] == [b, c]
+    finally:
+        store.conn.close()

@@ -324,6 +324,113 @@ def test_answer_docx_carries_the_changed_source_text_notice_where_the_screen_sho
     assert SOURCE_TEXT_CHANGED[lang] in quoted
 
 
+def _ledger_work(svid, title):
+    return {"source_version_id": svid, "work_id": f"w{svid}", "source_key": None, "title": title}
+
+
+# The view's evidence ledger (D80): s1 and s2 cited, s3 and s4 left out with a reason, s5 with none. SYNTHETIC.
+SYNTHETIC_LEDGER = {
+    "complete": False, "cited": ["s1", "s2"],
+    "given": [_ledger_work(s, f"SYNTHETIC work {s}") for s in ("s1", "s2", "s3", "s4", "s5")],
+    "excluded": [
+        _ledger_work("s3", "SYNTHETIC work s3") | {"reason": "different_conditions", "note": "SYNTHETIC: a mobile sink.",
+                                                   "same_as": None, "passage_id": "p30", "anchor_text": "located words"},
+        _ledger_work("s4", "SYNTHETIC work s4") | {"reason": "same_finding_as_cited", "note": "SYNTHETIC: repeats s1.",
+                                                   "same_as": _ledger_work("s1", "SYNTHETIC work s1"), "passage_id": "p40",
+                                                   "anchor_text": None}],
+    "unaccounted": [_ledger_work("s5", "SYNTHETIC work s5") | {"passage_id": "p50", "anchor_text": None}],
+}
+LEDGER_LINES = {
+    "en": ["Works given but not cited", "2 of 5 given works cited · 2 left out with a reason · 1 with no reason recorded",
+           "SYNTHETIC work s3 · Answers part of the question under other conditions · Note from the model: SYNTHETIC: a mobile sink.",
+           "SYNTHETIC work s4 · Same finding as a cited work: SYNTHETIC work s1 · Note from the model: SYNTHETIC: repeats s1.",
+           "SYNTHETIC work s5 · No reason was recorded for this work."],
+    "tr": ["Verilen ama atıf yapılmayan eserler",
+           "Verilen 5 eserden 2 tanesine atıf yapıldı · 2 tanesi gerekçeyle dışarıda bırakıldı · 1 tanesi için gerekçe kaydedilmedi",
+           "SYNTHETIC work s3 · Sorunun bir kısmını başka koşullarda yanıtlıyor · Modelin notu: SYNTHETIC: a mobile sink.",
+           "SYNTHETIC work s4 · Atıf yapılan bir eserle aynı bulgu: SYNTHETIC work s1 · Modelin notu: SYNTHETIC: repeats s1.",
+           "SYNTHETIC work s5 · Bu eser için gerekçe kaydedilmedi."],
+}
+
+
+@pytest.mark.parametrize("lang", ["en", "tr"])
+def test_answer_exports_list_the_works_given_but_not_cited(lang):
+    answer = SYNTHETIC_ANSWER | {"evidence_ledger": SYNTHETIC_LEDGER}
+    markdown = browser_exports(lang=lang, style="apa", sources=SYNTHETIC_SOURCES, answer=answer, title="T", version=3)["markdown"]
+    items = [item.split("\n")[0] for item in docx_items(ooxml.docx(answer_export.blocks(
+        answer, SYNTHETIC_SOURCES, title="T", version=3, language=lang, style="apa")))]
+    # The Markdown and the Word file list the same lines, after "Not answered" and before Limits.
+    assert [line for line in items if line != ACCESS_LIMIT[lang]] == _plain_markdown(markdown)
+    at = items.index(LEDGER_LINES[lang][0])
+    assert items[at:at + 5] == LEDGER_LINES[lang]
+    assert items[at - 1] == "SYNTHETIC gap ğ" and items[at + 5] == ("Limits" if lang == "en" else "Sınırlılıklar")
+    # An answer saved without a ledger has no such section in either file.
+    plain = browser_exports(lang=lang, style="apa", sources=SYNTHETIC_SOURCES, answer=SYNTHETIC_ANSWER | {"evidence_ledger": None},
+                            title="T", version=3)["markdown"]
+    assert LEDGER_LINES[lang][0] not in plain
+    assert LEDGER_LINES[lang][0] not in docx_items(ooxml.docx(answer_export.blocks(
+        SYNTHETIC_ANSWER | {"evidence_ledger": None}, SYNTHETIC_SOURCES, title="T", version=3, language=lang, style="apa")))
+
+
+FORGING_NOTE = ("SYNTHETIC first line\n\n## Cited passages\n\n[999] FORGED RECORD — PDF p. 1\n"
+                "[a link](https://example.test) <script>alert(1)</script> <b>bold</b> & *star* `code`\n1. not a list\nFORGED RECORD\n===")
+
+
+@pytest.mark.parametrize("lang", ["en", "tr"])
+def test_a_ledger_note_stays_text_inside_its_one_list_item(lang):
+    excluded = [dict(SYNTHETIC_LEDGER["excluded"][0], note=FORGING_NOTE, title="SYNTHETIC <i>title</i> [x](y)")]
+    answer = SYNTHETIC_ANSWER | {"evidence_ledger": SYNTHETIC_LEDGER | {"excluded": excluded,
+                                                                        "unaccounted": SYNTHETIC_LEDGER["unaccounted"] + [SYNTHETIC_LEDGER["excluded"][1] | {"passage_id": None, "anchor_text": None}]}}
+    markdown = browser_exports(lang=lang, style="apa", sources=SYNTHETIC_SOURCES, answer=answer, title="T", version=3)["markdown"]
+    plain = browser_exports(lang=lang, style="apa", sources=SYNTHETIC_SOURCES, answer=SYNTHETIC_ANSWER, title="T", version=3)["markdown"]
+    lines = markdown.splitlines()
+    # The same headings as without a ledger plus its own; no line starts a record or a block from the note.
+    headings = [line for line in lines if line.startswith("#")]
+    assert sorted(headings) == sorted([line for line in plain.splitlines() if line.startswith("#")] + [f"## {LEDGER_LINES[lang][0]}"])
+    assert not any(line.lstrip().startswith(("[999]", "<", "1.")) for line in lines)
+    # The note's lines continue its list item (indented hard breaks); nothing in it starts a block of its own.
+    at = next(i for i, line in enumerate(lines) if line.startswith("- SYNTHETIC \\<i\\>title"))
+    item = [lines[at]]
+    while lines[at + len(item)].startswith("  "):
+        item.append(lines[at + len(item)])
+    assert len(item) == 7 and all(line.endswith("  ") for line in item[:-1])
+    body = "\n".join(item)
+    for raw in ("<script>", "<b>", "<i>", "[999]", "[a link](", "## Cited", "*star*", "`code`"):
+        assert raw not in body
+    for escaped in ("\\<script\\>", "\\[999\\]", "\\[a link\\]\\(https://example.test\\)", "\\#\\# Cited passages", "\\*star\\*",
+                    "\\`code\\`", "\\&", "1\\. not a list", "  \\=\\=\\=", "SYNTHETIC \\<i\\>title\\</i\\> \\[x\\]\\(y\\)"):
+        assert escaped in body
+    # Word writes the text as text (XML-escaped by the writer) with the note's line breaks inside one bullet.
+    items = docx_items(ooxml.docx(answer_export.blocks(answer, SYNTHETIC_SOURCES, title="T", version=3, language=lang, style="apa")))
+    (bullet,) = [item for item in items if item.startswith("SYNTHETIC <i>title</i>")]
+    assert "\n## Cited passages\n" in bullet and "<script>alert(1)</script>" in bullet
+
+
+BROKEN_LEDGERS = [
+    {}, {"given": None, "cited": [], "excluded": [], "unaccounted": []},
+    {"cited": [], "excluded": [], "unaccounted": []},
+    SYNTHETIC_LEDGER | {"excluded": [{"source_version_id": "s3"}]},
+    SYNTHETIC_LEDGER | {"excluded": [None]},
+    SYNTHETIC_LEDGER | {"cited": ["s1", "s3"]},  # s3 both cited and excluded
+    SYNTHETIC_LEDGER | {"unaccounted": []},  # s5 given but in no bucket
+    SYNTHETIC_LEDGER | {"excluded": [SYNTHETIC_LEDGER["excluded"][0] | {"reason": "made_up"}, SYNTHETIC_LEDGER["excluded"][1]]},
+    SYNTHETIC_LEDGER | {"excluded": [SYNTHETIC_LEDGER["excluded"][0] | {"reason": []}, SYNTHETIC_LEDGER["excluded"][1]]},
+    SYNTHETIC_LEDGER | {"excluded": [SYNTHETIC_LEDGER["excluded"][0] | {"reason": {}}, SYNTHETIC_LEDGER["excluded"][1]]},
+    SYNTHETIC_LEDGER | {"unaccounted": [{"source_version_id": "s5", "passage_id": "p50", "anchor_text": None}]},  # no title
+    "not a ledger", [],
+]
+
+
+@pytest.mark.parametrize("ledger", BROKEN_LEDGERS)
+def test_a_malformed_ledger_is_left_out_of_both_exports_without_counts(ledger):
+    answer = SYNTHETIC_ANSWER | {"evidence_ledger": ledger}
+    for lang in ("en", "tr"):
+        markdown = browser_exports(lang=lang, style="apa", sources=SYNTHETIC_SOURCES, answer=answer, title="T", version=3)["markdown"]
+        items = docx_items(ooxml.docx(answer_export.blocks(answer, SYNTHETIC_SOURCES, title="T", version=3, language=lang, style="apa")))
+        assert LEDGER_LINES[lang][0] not in markdown and LEDGER_LINES[lang][0] not in items
+        assert not any("given works cited" in item or "eserden" in item for item in items)
+
+
 def test_answer_docx_route_names_refusals_and_content(tmp_path):
     with TestClient(app_for(tmp_path)) as raw:
         client = session(raw)

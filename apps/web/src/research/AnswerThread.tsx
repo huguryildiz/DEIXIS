@@ -22,7 +22,7 @@ import { MethodBox } from '../MethodBox'
 import { ExportLinks } from './ExportMenu'
 import { ChangesBox, ReportPanel, type ReportVersion } from './ReportPanel'
 import { BASIS_BADGES, diffAnswers, type ComparisonBase } from './answerDiff'
-import { downloadReportMarkdown, reportMarkdown, reportParts, verdictTones } from './reportMarkdown'
+import { downloadReportMarkdown, ledgerLine, ledgerOk, ledgerRows, reportMarkdown, reportParts, verdictTones } from './reportMarkdown'
 import { printReport } from './printPanel'
 
 const PERCENT = /%\s?\d+(?:[.,]\d+)?|\d+(?:[.,]\d+)?\s?%/g
@@ -120,7 +120,7 @@ function ClaimText({ claim }: { claim: Claim }) {
   if (last < claim.text.length) parts.push(claim.text.slice(last))
   return <>{parts}</>
 }
-export function AnswerThread({ researchId, title, version, answer, sources, busy, dark, reportOpen, onReportOpenChange, showCard = true, onOpen, onAttachPdf, eventCursor, thread, review, reviewPending = false, versions = [], latestVersion = version, onVersion, changes }: { researchId: string; title: string; version: number; answer: Answer; sources: Source[]; busy: boolean; dark: boolean; reportOpen: boolean; onReportOpenChange: (open: boolean) => void; showCard?: boolean; onOpen: (passageId: string, highlightText: string | null) => void; onAttachPdf: (source: Source) => void; eventCursor: number; thread?: AnswerThreadContext; review: AnswerReviewControl; reviewPending?: boolean; versions?: ReportVersion[]; latestVersion?: number; onVersion?: (answerId: string) => void; changes?: AnswerChanges }) {
+export function AnswerThread({ researchId, title, version, answer, sources, busy, dark, reportOpen, onReportOpenChange, showCard = true, onOpen, onAttachPdf, eventCursor, thread, review, reviewPending = false, versions = [], latestVersion = version, onVersion, changes }: { researchId: string; title: string; version: number; answer: Answer; sources: Source[]; busy: boolean; dark: boolean; reportOpen: boolean; onReportOpenChange: (open: boolean) => void; showCard?: boolean; onOpen: (passageId: string, highlightText: string | null, context?: 'ledger') => void; onAttachPdf: (source: Source) => void; eventCursor: number; thread?: AnswerThreadContext; review: AnswerReviewControl; reviewPending?: boolean; versions?: ReportVersion[]; latestVersion?: number; onVersion?: (answerId: string) => void; changes?: AnswerChanges }) {
   const modelText = useModelText()
   const [style, chooseStyle] = useCitationStyle()
   const toast = useToast()
@@ -177,6 +177,10 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
   }
   const { refs, citeLabel, sections, suggestion, limits } = reportParts(answer, sources, style)
   const basis = basisLine(answer)
+  // The evidence ledger (D80): shown also for an answer with no citation; an answer saved without one, or a ledger whose
+  // counts do not add up, shows nothing.
+  const ledger = ledgerOk(answer.evidence_ledger) ? answer.evidence_ledger : null
+  const leftOut = ledger ? ledgerRows(ledger) : []
   const sample = [...refs.values()].map(({ e }) => sources.find(s => s.source_version_id === e.source_version_id)).find(s => !!s?.authors.length)
   const numeric = style === 'ieee'
   const markdown = () => reportMarkdown(answer, sources, title, version, style)
@@ -219,6 +223,18 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
     {((answer.applicability !== 'current' && answer.applicability !== 'stale_selection') || answer.late_revision) && <div className="section-label">{t('Source-linked answer')}{answer.applicability === 'stale_scope' ? ` · ${t('earlier question revision')}` : answer.applicability === 'stale_selection' ? ` · ${t('earlier source selection')}` : ''}</div>}
     {answer.late_revision && <p className="legacy-mini-note"><span className="support-badge">{t(LATE_REVISION_LABEL)}</span> {answer.late_revision.base_report_version !== null && t(LATE_REVISION_DETAIL, { n: answer.late_revision.upgraded_sources, v: answer.late_revision.base_report_version })}</p>}
     {basis && <p className="legacy-mini-note answer-basis">{basis}</p>}
+    {ledger && <p className="answer-ledger">{ledgerLine(ledger)}</p>}
+    {/* Each title opens Source details on the passage the view names, as the ledger's quote (not a citation), marked
+        only where the backend located it; a row with no quote opens unmarked, with no repair warning. */}
+    {leftOut.length > 0 && <details className="answer-ledger-list">
+      <summary>{t('Works left out ({n})', { n: count(leftOut.length) })}</summary>
+      <ul>{leftOut.map(row => { const name = row.work.title ?? row.work.source_version_id
+        return <li key={row.work.source_version_id}>
+          {row.passageId ? <button type="button" className="link" onClick={() => onOpen(row.passageId!, row.anchorText, 'ledger')}>{name}</button> : <span>{name}</span>}
+          <span className="answer-ledger-reason">{row.sameAs ? `${row.reason}: ${row.sameAs}` : row.reason}</span>
+          {row.note && <span className="answer-ledger-note">{t('Note from the model: {note}', { note: row.note })}</span>}
+        </li> })}</ul>
+    </details>}
     {answer.applicability === 'stale_scope' && <Notice tone="attention">{t('This answer was produced for revision {n} of the question and is not applied to the current revision.', { n: answer.scope_revision })}</Notice>}
     {answer.source_text_changed && <Notice tone="attention">{t('A PDF this answer read was replaced, removed or had its text extracted again after the answer was generated. Its quotes still open the text that was read; generate a new answer to read the current text.')}</Notice>}
     {answer.capability_notice && <Notice tone="info">{answer.capability_notice}</Notice>}
@@ -336,6 +352,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
           <span className="report-artifact-meta">{t('Report')} · V{version} · {t(answer.claims.length === 1 ? '{n} claim' : '{n} claims', { n: count(answer.claims.length) })} · {t(cited === 1 ? '{n} source' : '{n} sources', { n: count(cited) })}</span></span>
       </button>}
     {basis && sections.length > 0 && <p className="foot-note answer-basis">{basis}</p>}
+    {ledger && <p className="foot-note answer-ledger">{ledgerLine(ledger)}</p>}
     {sections.length > 0 && <div className="prose answer-prose">{sections.slice(0, PROSE_SECTIONS).map(({ claims }, index) => <p key={index}>
       {claims.map(claim => <span className="claim" key={claim.id}><ClaimText claim={claim} />
         {claim.support_type === 'analyst_inference' && <span className="support-badge">{t('interpretation')}</span>}

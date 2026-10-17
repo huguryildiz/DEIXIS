@@ -110,7 +110,8 @@ function AlgorithmBox({ id, caption, lines, picture, cited, markLabel }: { id: s
 // The strip's two sentences and the mark's name, for a text opened for something other than an answer's citation (the
 // human queue). Such a text is marked exactly or not at all: a span that would widen to a formula, or that falls in a
 // title, heading, table or figure, is left unmarked rather than marked beyond what the backend found (slice 17).
-export type CitationLabels = { marked: string; unmarked: string; mark: string }
+// heading and go: the card's name and its button, when the text is opened for something other than a citation (D80).
+export type CitationLabels = { marked: string; unmarked: string; mark: string; heading?: string; go?: string }
 
 // "Cited passage i of N" in the cited-passage card: which marked place the reader is at, the exact text marked there
 // (read back from the marks on the page, never composed), and how to step to another place.
@@ -182,7 +183,7 @@ export function PdfTextDocument({ researchId, assetId, passages, showNotes, sour
     {citation && <div className={`pdf-text-citation${unmarked ? ' is-unmarked' : ''}${comparison ? ' is-comparison' : ''}`}>
       {!comparison && <div className="cite-head">
         {unmarked ? <TriangleAlert size={15} aria-hidden /> : <Quote size={15} aria-hidden />}
-        <span className="cite-label">{t('Cited passage')}</span>
+        <span className="cite-label">{citation.labels?.heading ?? t('Cited passage')}</span>
         <span className="cite-meta">{nav && nav.count > 0 && !unmarked ? `${nav.at + 1} / ${nav.count} · ${locator}` : locator}</span>
         <span className="cite-spacer" />
         {nav && nav.count > 0 && <>
@@ -191,7 +192,7 @@ export function PdfTextDocument({ researchId, assetId, passages, showNotes, sour
       </div>}
       {quoted && <p className="cite-quote">“{nav!.quote}”</p>}
       {noted && <p className="cite-note">{cardBody}</p>}
-      {(marks?.first || citedPage) && <div className="cite-foot"><button type="button" className="cite-go" onClick={goToCitation}>{t(comparison ? 'Go to page' : marks?.first ? 'Go to cited text' : 'Go to cited page')}</button></div>}
+      {(marks?.first || citedPage) && <div className="cite-foot"><button type="button" className="cite-go" onClick={goToCitation}>{!comparison && citation.labels?.go ? citation.labels.go : t(comparison ? 'Go to page' : marks?.first ? 'Go to cited text' : 'Go to cited page')}</button></div>}
     </div>}
     {label && <h3 className="source-section sd-label"><span className="sd-label-title">{label}</span><span className="sd-label-meta">{meta}</span></h3>}
     {doc.headings.length >= 3 && <details className="pdf-text-contents">
@@ -236,7 +237,7 @@ export function PdfTextDocument({ researchId, assetId, passages, showNotes, sour
       </div>}
       {doc.pages.length > 1 && <div className="sd-rail-block sd-map">
         <h4 className="sd-rail-label">{t('Citation map')}</h4>
-        <div className="sd-map-grid">{doc.pages.map(({ head }) => <button key={head.id} type="button" className={`sd-map-cell${outline.citedPages.has(head.id) ? ' is-cited' : ''}`} title={pageName(head.physical_page)} aria-label={`${pageName(head.physical_page)}${outline.citedPages.has(head.id) ? ` · ${t('Cited passage')}` : ''}`} onClick={() => jump(head.id)} />)}</div>
+        <div className="sd-map-grid">{doc.pages.map(({ head }) => <button key={head.id} type="button" className={`sd-map-cell${outline.citedPages.has(head.id) ? ' is-cited' : ''}`} title={pageName(head.physical_page)} aria-label={`${pageName(head.physical_page)}${outline.citedPages.has(head.id) ? ` · ${citation?.labels?.heading ?? t('Cited passage')}` : ''}`} onClick={() => jump(head.id)} />)}</div>
         <p className="sd-map-note">{t('Each box is a PDF page. Yellow: a page with a cited passage.')}</p>
       </div>}
     </aside>}

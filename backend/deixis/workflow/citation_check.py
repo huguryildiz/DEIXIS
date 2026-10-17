@@ -416,12 +416,43 @@ def _settle(store: Store, entry: dict[str, Any], svid: str, origin: str, note: s
              checked["extraction_version"] if checked else None, entry["id"]))
 
 
-def entry_identity(entry: dict[str, Any]) -> dict[str, Any] | None:
-    """The identity result of the entry's current text, as a plan freezes it."""
-    if entry["text_identity"] is None:
+CONFIRMED = ("doi", "title")
+NOT_APPLICABLE = "not_applicable"  # the text read is an abstract: there is no file to identify
+
+
+def recheck_identity(store: Store, entry: dict[str, Any]) -> dict[str, Any]:
+    """`identity.check` on the entry's text as it is now, stored on the entry and returned, as a revision freezes it.
+    Never copied from an earlier result: a stored result may belong to another file or extraction. An abstract-only
+    text has none to check (`not_applicable`)."""
+    svid = entry["text_source_version_id"]
+    checked = pdf_identity(store, svid, entry["resolved_source_version_id"])
+    with transaction(store.conn):
+        store.conn.execute("UPDATE citation_bib_entries SET text_identity = ?, text_identity_asset_id = ?,"
+                           " text_identity_extraction = ? WHERE id = ?",
+                           (checked["result"] if checked else None, checked["asset_id"] if checked else None,
+                            checked["extraction_version"] if checked else None, entry["id"]))
+    return checked or {"result": NOT_APPLICABLE, "source_version_id": svid}
+
+
+def revision_identity_confirmed(store: Store, pair: dict[str, Any]) -> bool | None:
+    """Whether a frozen revision's identity result confirms the file its passages come from; None when the pair reads
+    no text (`no_text`, `unresolved`). Fail-closed: a missing result, an unknown one, or one whose file or extraction
+    is not the one the given passages were cut from never confirms."""
+    if pair["status"] not in ("planned", "out_of_cap"):
         return None
-    return {"result": entry["text_identity"], "source_version_id": entry["text_source_version_id"],
-            "asset_id": entry["text_identity_asset_id"], "extraction_version": entry["text_identity_extraction"]}
+    checked = json.loads(pair["plan_identity_json"]) if pair["plan_identity_json"] else None
+    if not checked or checked.get("result") not in (*CONFIRMED, NOT_APPLICABLE):
+        return False
+    plan = json.loads(pair["passage_plan_json"]) if pair["passage_plan_json"] else None
+    for passage_id in (plan or {}).get("passage_ids") or []:
+        row = store.conn.execute("SELECT kind, asset_id, extraction_version FROM passages WHERE id = ?",
+                                 (passage_id,)).fetchone()
+        if row is None:
+            return False
+        if row["kind"] == "pdf_page" and (checked.get("result") == NOT_APPLICABLE or row["asset_id"] != checked.get("asset_id")
+                                          or row["extraction_version"] != checked.get("extraction_version")):
+            return False
+    return True
 
 
 def _pending(store: Store, entry_id: str, note: str) -> None:
@@ -469,6 +500,19 @@ async def acquire(store: Store, http: httpx.AsyncClient, settings: Any, fetcher:
         " AND resolved_source_version_id IS NOT NULL"
         " AND id IN (SELECT bib_entry_id FROM citation_pairs WHERE draft_id = ? AND bib_entry_id IS NOT NULL)"
         " ORDER BY ordinal", (draft_id, draft_id))]
+    for unchecked in store.conn.execute(
+            "SELECT * FROM citation_bib_entries WHERE draft_id = ? AND text_status = 'settled'"
+            " AND available_text = 'full_text' AND text_identity IS NULL AND text_source_version_id IS NOT NULL",
+            (draft_id,)).fetchall():
+        recheck_identity(store, dict(unchecked))  # settled before identity was stored: read now, nothing sent
+    for unchecked in store.conn.execute(
+            "SELECT id, upload_source_version_id, resolved_source_version_id FROM citation_bib_entries WHERE draft_id = ?"
+            " AND upload_source_version_id IS NOT NULL AND upload_identity IS NULL AND resolved_source_version_id IS NOT NULL",
+            (draft_id,)).fetchall():
+        checked = pdf_identity(store, unchecked["upload_source_version_id"], unchecked["resolved_source_version_id"])
+        with transaction(store.conn):
+            store.conn.execute("UPDATE citation_bib_entries SET upload_identity = ? WHERE id = ?",
+                               (checked["result"] if checked else "unconfirmed", unchecked["id"]))
     budget = acquisition.OpenAlexBudget()
     run: dict[str, Any] | None = None
     reset_at: str | None = None
@@ -675,9 +719,9 @@ def freeze_plan(store: Store, draft_id: str, refreeze: bool = False) -> dict[str
             elif svid is None or available_text(store, svid) == "metadata_only":
                 status = "no_text"
             elif planned >= MAX_PAIRS_TO_MODEL:
-                status, checked = "out_of_cap", entry_identity(entry)
+                status, checked = "out_of_cap", recheck_identity(store, entry)
             else:
-                status, planned, checked = "planned", planned + 1, entry_identity(entry)
+                status, planned, checked = "planned", planned + 1, recheck_identity(store, entry)
                 plan = _plan_for(store, svid, cited_sentence(draft["text"], markers[pair["marker_id"]], spans), revision, ts)
             # The identity result is the revision's own: a later upload or acquisition never changes its warning.
             conn.execute("UPDATE citation_pairs SET status = ?, passage_plan_json = ?, plan_revision = ?,"
@@ -701,8 +745,11 @@ def _stale(store: Store, pair: dict[str, Any], entry: dict[str, Any] | None) -> 
         return pair["status"] == "no_text" and entry["available_text"] != "metadata_only"
     if entry["text_source_version_id"] != plan["source_version_id"] or entry["available_text"] != plan["available_text"]:
         return True
-    if text_fingerprint(store.passages_for(plan["source_version_id"])) != plan["fingerprint"]:
-        return True
+    if plan.get("fingerprint") is None or text_fingerprint(store.passages_for(plan["source_version_id"])) != plan["fingerprint"]:
+        return True  # a plan frozen before fingerprints existed cannot show it read the same text
+    checked = json.loads(pair["plan_identity_json"] or "null")
+    if revision_identity_confirmed(store, pair) is False and (not checked or checked.get("result") != "unconfirmed"):
+        return True  # no identity result kept, or one read on another file or extraction than the given passages
     for passage_id, sha in zip(plan["passage_ids"], plan["passage_sha256"]):
         row = store.conn.execute("SELECT text FROM passages WHERE id = ?", (passage_id,)).fetchone()
         if row is None or hashlib.sha256(row["text"].encode("utf-8")).hexdigest() != sha:
@@ -710,13 +757,13 @@ def _stale(store: Store, pair: dict[str, Any], entry: dict[str, Any] | None) -> 
     return False
 
 
-def pair_flags(pair: dict[str, Any], entry_flags: list[str], entry: dict[str, Any] | None) -> list[str]:
+def pair_flags(store: Store, pair: dict[str, Any], entry_flags: list[str], entry: dict[str, Any] | None) -> list[str]:
     """A pair's flags: the entry's record flags, and `identity_unconfirmed` from the identity its frozen revision read
-    (from the entry's current text before any freeze). The entry's current PDF never decides a frozen pair's warning."""
+    (from the entry's current text before any freeze). The entry's current PDF never decides a frozen pair's warning,
+    and a missing or mismatched revision result is unconfirmed, never clean."""
     flags = [f for f in entry_flags if f != "identity_unconfirmed"]
     if pair["plan_revision"] is not None:
-        checked = json.loads(pair["plan_identity_json"]) if pair["plan_identity_json"] else None
-        unconfirmed = bool(checked and checked["result"] == "unconfirmed")
+        unconfirmed = revision_identity_confirmed(store, pair) is False
     else:
         unconfirmed = "identity_unconfirmed" in entry_flags
     return flags + ["identity_unconfirmed"] if unconfirmed else flags
@@ -787,8 +834,10 @@ def record_flags(store: Store, entry: dict[str, Any] | None) -> list[str]:
             flags.append("title_mismatch")
         if stored["is_retracted"]:
             flags.append("retracted")
-    if entry["text_identity"] == "unconfirmed" or (
-            entry["upload_source_version_id"] is not None and entry["upload_identity"] == "unconfirmed"):
+    missing = entry["text_status"] == "settled" and entry["available_text"] == "full_text" and entry["text_identity"] is None
+    if entry["text_identity"] == "unconfirmed" or missing or (
+            entry["upload_source_version_id"] is not None and entry["upload_identity"] != "doi"
+            and entry["upload_identity"] != "title"):
         flags.append("identity_unconfirmed")  # a PDF this entry reads or was given does not name the work
     return flags
 
@@ -819,7 +868,7 @@ def preview(store: Store, draft_id: str, choice: dict[str, Any] | None) -> dict[
                 "marker_ordinal": pair["marker_ordinal"], "sentence": pair["sentence"], "target": pair["target"],
                 "bib_entry_id": pair["bib_entry_id"],
                 "source": _source_summary(store, entry["resolved_source_version_id"] if entry else None),
-                "flags": pair_flags(pair, record_flags(store, entry), entry)}
+                "flags": pair_flags(store, pair, record_flags(store, entry), entry)}
         if pair["status"] == "out_of_cap":
             beyond.append(item)
             continue
@@ -884,7 +933,7 @@ def view(store: Store, draft_id: str) -> dict[str, Any]:
             "id": row["id"], "ordinal": row["ordinal"], "target": row["target"], "status": row["status"],
             "result": check["result"] if check else None, "depth": check["depth"] if check else None,
             "bib_entry_id": row["bib_entry_id"], "source": entry["source"] if entry else None,
-            "flags": pair_flags(dict(row), entry["flags"], entry_rows.get(row["bib_entry_id"])) if entry else [],
+            "flags": pair_flags(store, dict(row), entry["flags"], entry_rows.get(row["bib_entry_id"])) if entry else [],
             "plan": None if row["plan_revision"] is None else {
                 "revision": row["plan_revision"], "depth": plan["depth"] if plan else None,
                 "passage_ids": plan["passage_ids"] if plan else [],

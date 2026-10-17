@@ -458,6 +458,92 @@ def test_a_busy_file_leaves_the_entry_pending_for_the_next_acquisition(make, mon
         assert entry(view, "b")["text"]["origin"] == "open_access"
 
 
+# ---- review round 2 (Sol): a missing or mismatched identity result never reads as confirmed
+
+
+def confirmed_draft(client):
+    """A draft whose `a` reads the person's confirmed PDF, acquired."""
+    view = start(client)
+    upload(client, view, "a", A_PAGES)
+    return client.post(f"/api/citation-checks/{view['id']}/acquire").json()
+
+
+def test_an_entry_settled_before_identity_was_stored_is_unconfirmed_until_the_next_acquire_checks_it(make):
+    app, net, _ = make()
+    with TestClient(app) as raw:
+        client = session(raw)
+        view = confirmed_draft(client)
+        store = app.state.store
+        with store.conn:  # as a library migrated to 0006 holds it: the columns exist and are empty
+            store.conn.execute("UPDATE citation_bib_entries SET text_identity = NULL, text_identity_asset_id = NULL,"
+                               " text_identity_extraction = NULL, upload_identity = NULL WHERE draft_id = ?", (view["id"],))
+        view = client.get(f"/api/citation-checks/{view['id']}").json()
+        assert "identity_unconfirmed" in entry(view, "a")["flags"]
+        assert pair_flags_of(view, "a") == [["identity_unconfirmed"], ["identity_unconfirmed"]]
+        sent = len(net.seen)
+        view = client.post(f"/api/citation-checks/{view['id']}/acquire").json()
+        assert entry(view, "a")["text"]["identity"] == "doi" and len(net.seen) == sent  # read again, nothing sent
+        assert entry(view, "a")["upload"]["identity"] == "doi" and entry(view, "a")["flags"] == []
+
+
+def test_a_revision_without_an_identity_result_reads_unconfirmed_and_a_refreeze_checks_again(make):
+    app, _, _ = make()
+    with TestClient(app) as raw:
+        client = session(raw)
+        view = confirmed_draft(client)
+        frozen(client, view["id"])
+        store = app.state.store
+        with store.conn:
+            store.conn.execute("UPDATE citation_pairs SET plan_identity_json = NULL WHERE draft_id = ?", (view["id"],))
+            store.conn.execute("UPDATE citation_bib_entries SET text_identity = NULL, text_identity_asset_id = NULL,"
+                               " text_identity_extraction = NULL WHERE draft_id = ?", (view["id"],))
+        view = client.get(f"/api/citation-checks/{view['id']}").json()
+        assert pair_flags_of(view, "a") == [["identity_unconfirmed"], ["identity_unconfirmed"]]
+        preview = client.get(f"/api/citation-checks/{view['id']}/preview").json()
+        a = [i for i in preview["selected"] if i["target"] == "a"]
+        assert [(i["flags"], i["stale"], i["identity"]) for i in a] == [(["identity_unconfirmed"], True, None)] * 2
+        # A re-freeze over an entry with no stored result checks the selected passages' file itself.
+        frozen(client, view["id"], refreeze=True)
+        preview = client.get(f"/api/citation-checks/{view['id']}/preview").json()
+        a = [i for i in preview["selected"] if i["target"] == "a"]
+        assert [(i["flags"], i["stale"], i["identity"]["result"]) for i in a] == [([], False, "doi")] * 2
+
+
+def test_a_stored_result_of_another_extraction_is_never_copied_into_a_plan(make):
+    app, _, _ = make()
+    with TestClient(app) as raw:
+        client = session(raw)
+        view = confirmed_draft(client)
+        store = app.state.store
+        with store.conn:  # b's current text checks unconfirmed; a stale `title` result of another file is stored
+            store.conn.execute("UPDATE citation_bib_entries SET text_identity = 'title', text_identity_asset_id = 'ast_old',"
+                               " text_identity_extraction = 'old' WHERE draft_id = ? AND entry_key = 'b'", (view["id"],))
+        frozen(client, view["id"])
+        item = next(i for i in client.get(f"/api/citation-checks/{view['id']}/preview").json()["selected"] if i["target"] == "b")
+        assert (item["flags"], item["identity"]["result"], item["stale"]) == (["identity_unconfirmed"], "unconfirmed", False)
+        # A revision whose kept result names another file than its passages' is unconfirmed and stale.
+        with store.conn:
+            store.conn.execute("UPDATE citation_pairs SET plan_identity_json = ? WHERE draft_id = ? AND target = 'a'",
+                               ('{"result": "doi", "asset_id": "ast_old", "extraction_version": "old"}', view["id"]))
+        a = [i for i in client.get(f"/api/citation-checks/{view['id']}/preview").json()["selected"] if i["target"] == "a"]
+        assert [(i["flags"], i["stale"]) for i in a] == [(["identity_unconfirmed"], True)] * 2
+
+
+def test_a_plan_frozen_before_fingerprints_reads_stale_instead_of_failing(make):
+    app, _, _ = make()
+    with TestClient(app) as raw:
+        client = session(raw)
+        view = confirmed_draft(client)
+        frozen(client, view["id"])
+        store = app.state.store
+        with store.conn:
+            store.conn.execute("UPDATE citation_pairs SET passage_plan_json = json_remove(passage_plan_json, '$.fingerprint')"
+                               " WHERE draft_id = ? AND passage_plan_json IS NOT NULL", (view["id"],))
+        response = client.get(f"/api/citation-checks/{view['id']}")
+        assert response.status_code == 200
+        assert all(p["plan"]["stale"] for _, p in pair_rows(response.json()) if p["status"] == "planned")
+
+
 def test_text_counters_name_entries_and_unique_records_apart(make):
     app, _, _ = make()
     bib = BIB + b"@article{b2, title = {Void avoidance in sparse acoustic networks}, author = {Kim, Jae}, year = {2021},"\

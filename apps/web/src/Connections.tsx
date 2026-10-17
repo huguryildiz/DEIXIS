@@ -1121,7 +1121,7 @@ function CheckButton({ id, label, run, checking, start, disabled = false, quiet 
 // run reads times the pool factor) before they are read, so it decides which records fall above the read cutoff. It never includes or excludes, and the person's own included records stay first.
 function RerankingSettings({ refresh, dark, keyField, builtin, onBuiltinChanged }: { refresh: string; dark: boolean; keyField: (env: string, service: string) => ReactNode; builtin: BuiltinModels | null; onBuiltinChanged: () => Promise<void> }) {
   const [state, setState] = useState<Reranking | null>(null)
-  const [draft, setDraft] = useState<{ enabled: boolean; provider: RerankProvider | null; model: string | null; factor: string; timeout: string } | null>(null)
+  const [timeout, setTimeout_] = useState<string | null>(null)
   const [modelSheet, setModelSheet] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -1131,20 +1131,45 @@ function RerankingSettings({ refresh, dark, keyField, builtin, onBuiltinChanged 
     api.reranking().then(result => { setState(result); setError('') }).catch((e: Error) => { if (!isLeft(e)) setError(e.message) })
   }, [refresh])
   if (!state) return error ? <Notice tone="error" panel="search">{error}</Notice> : null
-  const shown = draft ?? { enabled: state.enabled, provider: state.provider, model: state.model, factor: String(state.pool_factor), timeout: String(state.timeout_seconds) }
+  const shown = { enabled: state.enabled, provider: state.provider, model: state.model, factor: state.pool_factor, timeout: state.timeout_seconds }
   const option = (p: RerankProvider) => state.options.find(o => o.provider === p)
   const builtinOption = (id: string) => state.options.find(o => o.provider === 'builtin' && o.model === id)
   // A built-in reranker is in use only when the saved provider and model are both it.
   const builtinInUse = shown.enabled && shown.provider === 'builtin' ? shown.model : null
-  const changed = draft !== null
   const save = (next: typeof shown) => {
     setBusy(true); setError('')
-    api.saveReranking({ enabled: next.enabled, provider: next.provider, model: next.provider === 'builtin' ? next.model : null, pool_factor: Number(next.factor), timeout_seconds: Number(next.timeout) })
-      .then(result => { setState(result); setDraft(null); toast('success', t('Reranking setting saved.')) })
+    api.saveReranking({ enabled: next.enabled, provider: next.provider, model: next.provider === 'builtin' ? next.model : null, pool_factor: next.factor, timeout_seconds: next.timeout })
+      .then(result => { setState(result); setTimeout_(null); toast('success', t('Reranking setting saved.')) })
       .catch((e: Error) => setError(t('Could not save: {message}', { message: e.message })))
       .finally(() => setBusy(false))
   }
-  const sends = shown.provider && shown.provider !== 'builtin' ? option(shown.provider)?.sends : null
+  // The limits of the reranker in use, folded under Advanced in its sheet; each change is saved at once.
+  const saveTimeout = () => {
+    const value = Number(timeout)
+    if (timeout === null || !Number.isInteger(value) || value < 10 || value > 900 || value === shown.timeout) { setTimeout_(null); return }
+    save({ ...shown, timeout: value })
+  }
+  const limits = <details className="way-more rerank-limits">
+    <summary><ChevronRight size={14} aria-hidden />{t('Advanced')}</summary>
+    <div className="rerank-limit">
+      <span id="rerank-factor-label">{t('Records reranked')}</span>
+      <span className="seg" role="group" aria-labelledby="rerank-factor-label">
+        {[1, 2, 4].map(f => <button key={f} type="button" className={shown.factor === f ? 'on' : ''} aria-pressed={shown.factor === f} disabled={busy}
+          onClick={() => { if (shown.factor !== f) save({ ...shown, factor: f }) }}>{f === 4 ? t('{n}× (recommended)', { n: f }) : `${f}×`}</button>)}
+      </span>
+    </div>
+    <p className="foot-note">{t('× the papers a run reads. On Standard, 200 records are reranked for 50 read.')}</p>
+    <div className="rerank-limit">
+      <label htmlFor="rerank-timeout">{t('Time limit')}</label>
+      <span className="rerank-timeout">
+        <input id="rerank-timeout" className="field" type="number" min={10} max={900} step={1} inputMode="numeric" value={timeout ?? String(shown.timeout)} disabled={busy}
+          onChange={e => setTimeout_(e.target.value)} onBlur={saveTimeout} onKeyDown={e => { if (e.key === 'Enter') saveTimeout() }} />
+        <span>{t('s')}</span>
+        <span className="info-tip" tabIndex={0} role="img" aria-label={t('When the reranker fails or runs out of time, the run keeps the fused order and says so; no other reranker is used.')}
+          title={t('When the reranker fails or runs out of time, the run keeps the fused order and says so; no other reranker is used.')}><Info size={14} aria-hidden /></span>
+      </span>
+    </div>
+  </details>
   // One card per reranker, grouped like the model cards (on this computer, then APIs); a card opens its sheet, where it
   // is chosen. Choosing saves at once, with the limits as they stand.
   // API rerankers: where the key comes from and what each sends; the model name comes from the server's options.
@@ -1190,21 +1215,6 @@ function RerankingSettings({ refresh, dark, keyField, builtin, onBuiltinChanged 
       <div className="co-grid">{rows.filter(r => r.local === false).map(card)}</div>
       <div className="co-grid choice-off">{rows.filter(r => r.local === null).map(card)}</div>
     </div>
-    {shown.enabled && <section className="tool-facts" data-panel="search" aria-label={t('Reranking limits')}>
-      <dl>
-        <dt><label htmlFor="rerank-factor">{t('Records reranked (× papers read)')}</label></dt><dd>
-          <input id="rerank-factor" className="field mathpix-budget" type="number" min={1} max={4} step={0.5} inputMode="decimal" value={shown.factor} disabled={busy}
-            onChange={e => setDraft({ ...shown, factor: e.target.value })} />
-          <small className="foot-note">{t('At 4 the reranker sees four times the papers a run reads (Standard: 200 for 50 read), so a paper well below the cutoff can move in. At most {max} records. On 100 biomedical questions 4 helped more than 2; the built-in model then takes about 1–2 minutes per search.', { max: state.max_candidates })}</small></dd>
-        <dt><label htmlFor="rerank-timeout">{t('Time limit (seconds)')}</label></dt><dd>
-          <input id="rerank-timeout" className="field mathpix-budget" type="number" min={10} max={900} step={1} inputMode="numeric" value={shown.timeout} disabled={busy}
-            onChange={e => setDraft({ ...shown, timeout: e.target.value })} />
-          <small className="foot-note">{t('When the reranker fails or runs out of time, the run keeps the fused order and says so; no other reranker is used.')}</small></dd>
-      </dl>
-    </section>}
-    {sends && shown.enabled && <p className="foot-note semantic-privacy" data-panel="search">{t(sends)}</p>}
-    {changed && <div className="actions" data-panel="search"><Button variant="outline" size="sm" disabled={busy} onClick={() => save(shown)}>{t('Save')}</Button>
-      <Button variant="ghost" size="sm" disabled={busy} onClick={() => { setDraft(null); setError('') }}>{t('Cancel')}</Button></div>}
     {builtin && <BuiltinModelSheet builtin={builtin} model={openModel} dark={dark} onClose={() => setModelSheet(null)} onChanged={onBuiltinChanged}
       use={openModel && <section className={`way ${openModelInUse ? 'is-on' : ''}`} aria-label={t('Reranking')}>
         <div className="way-head"><h3>{t('Reranking')}</h3><span className={`st ${openModelInUse && openModelOption?.available ? 'ok' : 'no'}`}>{openModelInUse ? t('In use') : openModelOption?.available ? t('Not in use') : t(openModelOption?.reason ?? 'Not downloaded')}</span></div>
@@ -1215,6 +1225,7 @@ function RerankingSettings({ refresh, dark, keyField, builtin, onBuiltinChanged 
             {busy ? <span className="spin" aria-hidden /> : <CircleCheck aria-hidden />}{t('Use this reranker')}</button>
           {!openModelOption?.available && <span className="sr-only" id="builtin-rerank-why">{t('Download the model first.')}</span>}
         </div>}
+        {openModelInUse && limits}
       </section>} />}
     <Sheet open={!!open} onOpenChange={next => { if (!next) setSheet(null) }}>
       <SheetContent className={`detail-sheet connection-sheet ${dark ? 'dark' : ''}`}>
@@ -1241,6 +1252,7 @@ function RerankingSettings({ refresh, dark, keyField, builtin, onBuiltinChanged 
                   onClick={() => { save({ ...shown, enabled: open.id !== 'off', provider: open.id === 'off' ? shown.provider : open.id }); setSheet(null) }}>
                   {busy ? <span className="spin" aria-hidden /> : <CircleCheck aria-hidden />}{open.id === 'off' ? t('Turn reranking off') : t('Use this reranker')}</button>
               </div>}
+              {openState.checked && open.id !== 'off' && limits}
             </section>
           </div>
         </>}

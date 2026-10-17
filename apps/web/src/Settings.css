@@ -505,3 +505,16 @@
 .connection-sheet .tool-facts-foot.is-update{justify-content:space-between;gap:12px;background:var(--accent-tint)}
 .connection-sheet .tool-facts-foot.is-update>span{display:inline-flex;align-items:center;gap:7px;color:var(--ink)}
 .connection-sheet .tool-facts-foot.is-update svg{color:var(--accent)}
+/* Reranking limits under Advanced in the chosen reranker's sheet: a 1×/2×/4× switch and a short time field. */
+.connection-sheet .rerank-limit{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;color:var(--ink)}
+.connection-sheet .rerank-limits .foot-note{margin:-4px 0 4px}
+.connection-sheet .seg{display:inline-flex;flex:none;overflow:hidden;border:1px solid var(--strong-line);border-radius:6px}
+.connection-sheet .seg button{padding:3px 10px;border:0;border-left:1px solid var(--line);background:none;color:var(--muted);font:inherit;font-size:12px;line-height:1.5;cursor:pointer}
+.connection-sheet .seg button:first-child{border-left:0}
+.connection-sheet .seg button.on{background:var(--selected-surface);color:var(--ink);font-weight:600}
+.connection-sheet .seg button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.connection-sheet .seg button:disabled{cursor:default;opacity:.55}
+.connection-sheet .rerank-timeout{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12.5px}
+.connection-sheet .rerank-timeout input{width:72px;height:28px;padding:2px 8px;font-variant-numeric:tabular-nums}
+.connection-sheet .info-tip{display:inline-flex;color:var(--muted);cursor:help}
+.connection-sheet .info-tip:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:50%}

@@ -214,6 +214,17 @@ test.describe.serial('N: the built-in embedding model', () => {
     await expect(page.getByText('Reranking setting saved.')).toBeVisible()
     await expect(modelCard(rerank, 'Qwen3-Reranker-0.6B').locator('.ollama-card-foot .st')).toHaveText('In use')
     await expect(modelCard(rerank, 'Qwen3-Reranker-0.6B')).toHaveClass(/\bon\b/)
+    // The limits live under Advanced in the sheet of the reranker in use; a pick is saved at once.
+    const inUse = await openModel(page, rerank, 'Qwen3-Reranker-0.6B')
+    await inUse.getByText('Advanced').click()
+    await expect(inUse.getByRole('button', { name: '4× (recommended)' })).toHaveAttribute('aria-pressed', 'true')
+    for (const [name, factor] of [['2×', 2], ['4× (recommended)', 4]] as const) {
+      const limit = page.waitForRequest(request => request.method() === 'PUT' && new URL(request.url()).pathname === '/api/reranking')
+      await inUse.getByRole('button', { name, exact: true }).click()
+      expect((await limit).postDataJSON()).toMatchObject({ provider: 'builtin', model: 'qwen3-reranker-0.6b', pool_factor: factor, timeout_seconds: 180 })
+      await expect(inUse.getByRole('button', { name, exact: true })).toHaveAttribute('aria-pressed', 'true')
+    }
+    await page.keyboard.press('Escape')
   })
 
   test('a Turkish question asks for one English sentence in the Sources panel, and the line shows it once saved', async () => {

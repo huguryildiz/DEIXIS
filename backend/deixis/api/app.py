@@ -1208,7 +1208,8 @@ def create_app(
     from deixis.api.search_plan_routes import register_search_plan_routes; register_search_plan_routes(app)
     from deixis.api.scope_routes import register_scope_routes; register_scope_routes(app)
     from deixis.api.activity_routes import register_activity_routes; register_activity_routes(app)
-    from deixis.api.citation_check_routes import register_citation_check_routes; register_citation_check_routes(app, settings)
+    from deixis.api.citation_check_routes import register_citation_check_routes; register_citation_check_routes(
+        app, settings, unlink=lambda store, files, payloads: unlink_orphans(store, files, payloads))
     from deixis.api.provider_test_routes import register_provider_test_routes
     register_provider_test_routes(app, lambda: settings.contact_email)  # the rebound settings: the email set in Settings
 

@@ -108,9 +108,12 @@ def test_a_latex_draft_with_bibtex_maps_keys_and_author_year_and_never_guesses(m
                 counters["occurrences_unrecognized"]) == (6, 3, 2, 1)
         # zeng2022 is cited twice (two pairs) but is one source.
         assert (counters["sources_unique"], counters["sources_resolved"], counters["pairs"]) == (2, 0, 6)
-        assert counters["pairs_by_status"]["planned"] == 3 and counters["sources_with_text"] is None
+        assert counters["pairs_by_status"]["planned"] == 3
+        # Nothing resolved, so no source has a text yet; no plan is frozen; V3's counts stay null, not zero (D96).
+        assert counters["sources_with_text"] == {"full_text": 0, "abstract": 0, "metadata_only": 0, "pending": 0}
+        assert counters["pairs_in_plan"] is None and counters["pairs_to_send"] is None
         assert (counters["pairs_sent_to_model"], counters["pairs_done"], counters["pairs_found"],
-                counters["pairs_could_not_check"]) == (0, 0, 0, 0)
+                counters["pairs_could_not_check"]) == (None, None, None, None)
         park = next(e for e in view["entries"] if e["key"] == "park2019")
         assert park["as_written"]["arxiv_id"] == "1901.00001" and park["source"] is None
 
@@ -263,7 +266,7 @@ def test_deleting_a_draft_removes_everything_read_from_it_and_its_research(make)
                                   (view["id"],)).fetchone()[0]
         store.conn.execute("INSERT INTO citation_checks (id, pair_id, status, error_json, created_at)"
                            " VALUES ('chk_1', ?, 'could_not_check', '\"repair_exhausted\"', 'now')", (pair,))
-        assert client.delete(f"/api/citation-checks/{view['id']}").json() == {"deleted": True}
+        assert client.delete(f"/api/citation-checks/{view['id']}").json() == {"deleted": True, "files_not_removed": []}
         assert client.get(f"/api/citation-checks/{view['id']}").status_code == 404
         assert store.conn.execute("SELECT COUNT(*) FROM researches WHERE id = ?", (view["research_id"],)).fetchone()[0] == 0
         for table in CHILD_TABLES:

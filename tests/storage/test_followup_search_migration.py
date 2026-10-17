@@ -32,6 +32,12 @@ def test_0004_adds_the_followup_search_kind_and_keeps_runs_triggers_and_index(tm
         conn.execute(RUN, ("run_2", "followup_search"))
     conn.close()
 
+    # 0004 alone, as later migrations (0005 on) are their own tests.
+    up_to_fourth = tmp_path / "migrations-0004"
+    up_to_fourth.mkdir()
+    for name in ("0001_schema.sql", "0002_citation_check.sql", "0003_snowball.sql", "0004_followup_search.sql"):
+        shutil.copy(db.MIGRATIONS_DIR / name, up_to_fourth)
+    monkeypatch.setattr(db, "MIGRATIONS_DIR", up_to_fourth)
     conn = db.connect(path)
     assert db.migrate(conn) == [4]
     assert [tuple(r) for r in conn.execute("SELECT id, kind FROM runs")] == [("run_1", "snowball")]

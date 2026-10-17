@@ -38,11 +38,13 @@ CHANGE = re.compile(r"\b(?:higher|lower|better|worse|improv\w*|reduc\w*|increas\
 SETTING = re.compile(r"\b(?:initial(?:ly)? energy|(?:is|are|was|were) set\b|set (?:to|as|at)\b|configured|deployed|deployment"
                      r"|simulation parameters?|parameter settings?|area of|transmission range (?:of|is)"
                      r"|range of (?:one-hop )?transmission)\b", re.IGNORECASE)
-# A sentence ends before a capital, a bracket or a number; before a number, not after `Fig.`, `Eq.` and the like.
+# A sentence ends at `.!?;` and whitespace before a capital or a bracket, at a blank line, and at `.!?;` and
+# whitespace before a number unless the token before a period is an abbreviation (`approx. 20%`, `Fig. 7`, `U.S. 5`).
 # A decimal (12.5) has no space after its point and a PDF line wrap is a single line break, so neither splits.
-SENTENCE = re.compile(r"(?<=[.!?;])\s+(?=[A-Z(\[])"
-                      r"|(?<=[.!?;])(?<!\bFig\.)(?<!\bEq\.)(?<!\bNo\.)(?<!\bvol\.)(?<!\bpp\.)(?<!\bSec\.)\s+(?=\d)"
-                      r"|\n\s*\n")
+BOUNDARY = re.compile(r"[.!?;]\s+(?=[A-Z(\[\d])|\n\s*\n")
+ABBREVIATIONS = frozenset({"approx", "ca", "e.g", "i.e", "cf", "vs", "resp", "al", "fig", "figs", "eq", "eqs", "no", "nos",
+                           "vol", "pp", "sec", "tab", "ref", "refs", "max", "min", "avg"})
+_INITIALS = re.compile(r"(?:[a-z]\.)*[a-z]")  # one letter, or dotted initials such as U.S
 CITATION = re.compile(r"\[\d+(?:\s*[,–-]\s*\d+)*\]|\bet al\.|\bvol\.|\bpp\.", re.IGNORECASE)
 MIN_SCORE = 2  # one value alone is too often a stray figure in an introduction; see D84
 REFERENCE_HITS = 6  # citation marks that make a passage with no outcome term a reference list
@@ -57,7 +59,16 @@ def compile_terms(outcome_terms: list[str]) -> list[tuple[str, re.Pattern[str]]]
 def _sentences(text: str) -> list[str]:
     # A PDF text layer breaks lines inside a sentence; a single line break is a space, a blank line ends a sentence.
     text = unicodedata.normalize("NFKC", text)
-    return [re.sub(r"\s*\n\s*", " ", part) for part in SENTENCE.split(text) if part.strip()]
+    parts, start = [], 0
+    for mark in BOUNDARY.finditer(text):
+        if mark.group(0)[0] == "." and text[mark.end()].isdigit():
+            token = re.split(r"[\s(\[]", text[start:mark.start()])[-1].lower()
+            if token in ABBREVIATIONS or _INITIALS.fullmatch(token):
+                continue
+        parts.append(text[start:mark.end()])
+        start = mark.end()
+    parts.append(text[start:])
+    return [re.sub(r"\s*\n\s*", " ", part).strip() for part in parts if part.strip()]
 
 
 def score(text: str, patterns: list[tuple[str, re.Pattern[str]]]) -> int:

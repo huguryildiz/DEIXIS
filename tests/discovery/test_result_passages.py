@@ -128,3 +128,20 @@ def test_a_reference_list_titled_with_equations_is_never_the_formula_passage():
     assert rp.reference_list(refs, OUTCOMES) and fp.score(refs) > fp.score(real) >= fp.MIN_SCORE
     ranked = [passage("topic", TOPIC), passage("refs", refs), passage("formula", real), passage("result", RESULT)]
     assert [p["id"] for p in rp.order(ranked, OUTCOMES, True)[0]] == ["result", "formula", "topic", "refs"]
+
+
+# Sol code review round 2: a period after an abbreviation, a single letter or dotted initials does not end a sentence.
+APPROX = "Energy consumption is approx. 20% lower than DBR and 15% lower than VBF."
+
+
+def test_an_abbreviation_before_a_number_does_not_end_the_sentence():
+    assert rp.score(APPROX, OUTCOMES) == 2
+    for before in ("approx.", "ca.", "e.g.", "i.e.", "cf.", "vs.", "resp.", "Figs.", "Eq.", "Tab.", "avg.", "x.", "U.S."):
+        text = f"Energy consumption is lower than DBR, {before} 20% and 15% lower than VBF."
+        assert rp.score(text, OUTCOMES) == 2, before
+    assert rp.score(MERGED, OUTCOMES) == 0  # round 1: a plain word before the period still ends the sentence
+
+
+def test_an_abbreviated_result_still_takes_the_first_slot():
+    ranked = [passage("topic", TOPIC), passage("formula", FORMULA), passage("result", APPROX)]
+    assert [p["id"] for p in rp.order(ranked, OUTCOMES, True)[0][:2]] == ["result", "formula"]

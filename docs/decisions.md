@@ -9,6 +9,7 @@ Status: accepted · Date: 2026-10-17 · Writer: Claude · Supersedes the gate pa
 Context: The parity check compared 487 element pairs of the app with the mockup in light and dark at two widths and took about 40 minutes. On 17 Oct nine surfaces (report-panel, report-changes, detail-panel, queue-panel, table-panel, cell-panel, ereport-panel, library, settings) failed with the same messages before and after D77, so it no longer guarded anything, while every visual change had to update the mockup, the pair map and the exception list. The owner asked for it to go.
 Decision: `apps/web/e2e/parity/` and the `parity` Playwright project are deleted. Mockup v25 stays in `.local/design/elicit-style-mockup/` as the visual reference; a deliberate change to a mockup screen updates the mockup in the same work. Behaviour stays covered by the acceptance specs and pytest. The `[parity]` fixture research and the "UI parity S…" slice names in spec comments are kept: they name fixture data and history, not the check.
 Limits: Visual drift from the mockup is now caught only by eye and by the screenshots the acceptance specs write.
+Note (17 Oct, later): at the owner's request the mockup itself (`.local/design/`, never in Git) was deleted as well. The shipped screens are the visual reference; `.impeccable.md` §2 says so. Older entries that name mockup v24 or v25 describe history.
 
 ## D78 — Settings → Usage shows spend and subscription limits per model connection, not call counts
 Status: accepted · Date: 2026-10-17 · Writer: Claude · Reviewer: Sol (gpt-6.1-sol)

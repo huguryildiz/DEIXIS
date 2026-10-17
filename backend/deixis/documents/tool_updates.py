@@ -116,7 +116,7 @@ def brew() -> str | None:
 
 def _phase(line: str) -> str | None:
     """The step a Homebrew output line starts: downloading, then installing."""
-    if re.match(r"==> (Fetching|Downloading)", line):
+    if re.match(r"==> (Fetching|Downloading)|Fetching: ", line):
         return "downloading"
     if re.match(r"==> (Pouring|Installing|Upgrading)", line):
         return "installing"
@@ -137,7 +137,8 @@ class TesseractInstaller:
         manager = manager or brew()
         if not manager:
             raise LookupError("Homebrew was not found on this computer")
-        self.job = {"status": "running", "phase": "preparing", "started_at": now(), "finished_at": None, "output": ""}
+        self.job = {"status": "running", "phase": "preparing", "started_at": now(), "finished_at": None, "output": "",
+                    "packages_done": 0, "packages_total": None}
         self._task = asyncio.create_task(self._run(self.job, [manager, *INSTALL_ARGS]))
         return self.job
 
@@ -146,10 +147,28 @@ class TesseractInstaller:
         # No keys reach Homebrew or the scripts it runs (E4).
         env = child_env({"HOMEBREW_NO_AUTO_UPDATE": "1", "NONINTERACTIVE": "1", "CI": "1", **UV_TLS}, network=True, tool=argv[0])
 
+        packages: list[str] = []
+        fetched: set[str] = set()
+        partial = b""
+
+        def count(line: str) -> None:
+            # Homebrew names the packages it will fetch in one "Fetching: a, b" line, then ticks off each bottle.
+            if line.startswith("Fetching: "):
+                packages[:] = [name.strip() for name in line[len("Fetching: "):].split(",") if name.strip()]
+                job["packages_total"] = len(packages)
+            elif (m := re.match(r"\S+ Bottle (?!Manifest )(\S+) ", line)) and m[1] in packages:
+                fetched.add(m[1])
+                job["packages_done"] = len(fetched)
+
         async def read(proc: asyncio.subprocess.Process) -> int:
+            nonlocal partial
             assert proc.stdout is not None
             # In chunks, keeping only the tail (E18); the phase is the last step line in that tail.
             while chunk := await proc.stdout.read(READ_CHUNK_BYTES):
+                *lines, partial = (partial + chunk).split(b"\n")
+                partial = partial[-OUTPUT_TAIL_BYTES:]
+                for line in lines:
+                    count(line.decode("utf-8", "replace").strip())
                 output.extend(chunk)
                 del output[:-OUTPUT_TAIL_BYTES]
                 job["output"] = output[-OUTPUT_TAIL_CHARS:].decode("utf-8", "replace")

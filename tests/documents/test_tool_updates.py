@@ -82,6 +82,26 @@ def test_tesseract_installs_with_the_fixed_homebrew_command_and_reports_its_step
         assert missing.status_code == 422 and client.get("/api/ocr").json()["can_install"] is False
 
 
+
+def test_tesseract_install_counts_the_packages_homebrew_fetches(tmp_path, monkeypatch):
+    # Homebrew 7 without a terminal prints no byte counts: one "Fetching:" list, then a tick per bottle.
+    brew = tmp_path / "brew"
+    brew.write_text('#!/bin/sh\necho "Fetching: leptonica, tesseract, tesseract-lang"\n'
+                    'echo "\u2714\ufe0e Bottle Manifest leptonica (1.85.0)"\necho "\u2714\ufe0e Bottle leptonica (1.85.0)"\n'
+                    'echo "\u2714\ufe0e Bottle tesseract (5.5.2)"\nsleep 1\n')
+    brew.chmod(0o755)
+    monkeypatch.setattr(tool_updates, "brew", lambda: str(brew))
+    monkeypatch.setattr(ocr, "tesseract_status", lambda langs=ocr.LANGUAGES: {"available": True, "version": "5.5.2"})
+    with client_for(tmp_path) as raw:
+        client = session(raw)
+        client.post("/api/ocr/install")
+        for _ in range(100):
+            job = client.get("/api/ocr").json()["job"]
+            if job["packages_done"] == 2 or job["status"] != "running":
+                break
+            time.sleep(0.05)
+        assert (job["phase"], job["packages_done"], job["packages_total"]) == ("downloading", 2, 3)
+
 # ---- a Tesseract that comes inside the packaged app (B1) ---------------------------------------------------
 
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="the fake Tesseract is a shell script")

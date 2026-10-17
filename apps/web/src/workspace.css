@@ -73,6 +73,8 @@
 .semantic-option-body .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
 .semantic-builtin{display:grid;gap:4px}
 .semantic-builtin .status-chip{justify-self:start;margin-top:2px}
+.semantic-builtin .actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.semantic-builtin .actions .btn-pri{border:1px solid transparent}
 @media(max-width:600px){.semantic-option-body{padding-left:13px}}
 .semantic-model{margin-left:auto;border:1px solid var(--strong-line);border-radius:5px;background:transparent;padding:4px 7px;font-size:11px;color:var(--ink)}
 .local-tool-facts dt{margin:0}

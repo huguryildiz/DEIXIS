@@ -389,7 +389,7 @@ export type PdfReader = { available: boolean; version: string; mupdf_version: st
 // A newer Ollama release and, per installed model, whether ollama.com has changed it; null where the check got no answer.
 export type OllamaUpdates = { version: string | null; latest: string | null; update_available: boolean | null; installed_with: 'homebrew' | 'app' | null; models: Record<string, boolean | null> }
 export type ToolUpdate = { tool: 'tesseract' | 'marker' | 'pymupdf'; installed: string | null; tested: string | null; latest: string | null; update_available: boolean | null; error: string | null }
-export type OcrJob = { status: 'running' | 'succeeded' | 'failed'; phase: 'preparing' | 'downloading' | 'installing'; output: string; started_at: string; finished_at: string | null }
+export type OcrJob = { status: 'running' | 'succeeded' | 'failed'; phase: 'preparing' | 'downloading' | 'installing'; output: string; started_at: string; finished_at: string | null; packages_done?: number; packages_total?: number | null }
 // Why Tesseract cannot be used, as a code the page words (ocr.ts).
 export type OcrReason = 'tesseract_missing' | 'tesseract_not_responding' | 'tesseract_failed' | 'tesseract_languages_missing'
 // `bundled`: the Tesseract that comes inside the app (updated with DEIXIS, never through Homebrew); `install_url` is the page to get it from where Homebrew cannot.

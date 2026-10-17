@@ -194,7 +194,7 @@ test('connections separate model connections from configured scholarly access', 
     // Crossref carries what it is asked for on the tile: abstracts and metadata checks, not record search (D87).
     await expect(page.getByRole('button', { name: 'Crossref No key needed Abstracts, metadata checks and PDF lookup' })).toBeVisible()
     await shot(page, 'connections-key-configured-desktop')
-    await page.getByRole('tab', { name: 'Models' }).click()
+    await page.getByRole('tab', { name: 'Language models' }).click()
     await page.locator('.co-fold').click()
     await expect(page.locator('.co-fold')).toHaveAttribute('aria-expanded', 'true')
     await expect(page.locator('.co-grid[data-group="others"] .co-card').first()).toBeVisible()

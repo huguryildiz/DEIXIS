@@ -694,10 +694,10 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
     await reach(['9a settings defaults', '9b settings connections', '9c connection sheet', '9d settings usage', '9e settings general'], async () => {
       await page.goto(main.url())
       await page.getByRole('button', { name: 'Settings', exact: true }).click()
-      // Settings opens on its Models tab (D30): the default models' selects are enabled once the models and defaults are
-      // read, and the semantic-search rows load after the tiles.
+      // Settings opens on its Language models tab (D30, D88): the default models' selects are enabled once the models and
+      // defaults are read, after the tiles.
       await expect(page.getByRole('combobox', { name: 'Literature model' })).toBeEnabled()
-      await expect(page.locator('.semantic-option').first()).toBeVisible()
+      await expect(page.locator('.co-grid[data-group="main"] .co-card').first()).toBeVisible()
       await scan(page, '9a settings defaults', () => dismissToasts(page))
       await page.goto(main.url('#/settings/sources'))
       await expect(page.getByRole('button', { name: /^OpenAlex No key needed/ })).toBeVisible()

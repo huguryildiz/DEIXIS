@@ -117,13 +117,13 @@ test.describe.serial('S24: the Settings page', () => {
   })
   test.afterAll(async () => { await page?.close(); await server.stop() })
 
-  test('four tabs (D30); Models holds one card per company, the other models folded, local models and document reading; the old Connections link opens Models at "Model connections"', async () => {
+  test('six tabs (D30; D88 adds Search & ranking and Document reading); Language models holds one card per company, the other models folded, local models and document reading; the old Connections link opens Models at "Model connections"', async () => {
     await page.goto(server.url('#/settings'))
     const tabs = page.getByRole('tab')
-    await expect(tabs).toHaveText(['Models', 'Sources', 'Usage', 'General'])
-    await expect(page.getByRole('tab', { name: 'Models' })).toHaveAttribute('aria-selected', 'true')
+    await expect(tabs).toHaveText(['Language models', 'Search & ranking', 'Document reading', 'Sources', 'Usage', 'General'])
+    await expect(page.getByRole('tab', { name: 'Language models' })).toHaveAttribute('aria-selected', 'true')
     const shown = page.locator('.settings-page h2:visible')
-    await expect(shown).toHaveText(['Model connections', /^Other models · \d+/, 'Local models', 'Default models', 'Semantic search', 'Document reading'])
+    await expect(shown).toHaveText(['Model connections', /^Other models · \d+/, 'Local models', 'Default models'])
     // No command-line or key names on the cards (owner-approved connection mockup, 15 Oct 2026); other models start folded.
     await expect(page.locator('.co-grid[data-group="main"] .co-name b')).toHaveText(['Claude', 'ChatGPT', 'Gemini', 'GitHub Copilot', 'Grok', 'Mistral'])
     await expect(page.locator('.co-grid[data-group="main"]')).not.toContainText(/CLI|_API_KEY|Codex/)
@@ -564,7 +564,7 @@ test.describe.serial('S24: the Settings page', () => {
     const reader = { installed: false, package: 'marker-pdf==1.10.2', path: '/SYNTHETIC/tools/marker', size_bytes: 0, models_downloaded: false, disk_free_gb: 120,
       install: { available: true, unavailable_reason: null, url: 'https://example.invalid/install' }, job: null, reading: null, pdfs: {} }
     await page.route(url => url.pathname === '/api/equation-reader', route => route.fulfill({ json: reader }))
-    await page.goto(server.url('#/settings'))
+    await page.goto(server.url('#/settings/documents'))
     await page.reload()
     await page.getByRole('button', { name: /^Equation reader/ }).click()
     await page.getByRole('dialog', { name: 'Equation reader (Marker)' }).getByRole('button', { name: 'Install', exact: true }).click()
@@ -578,7 +578,7 @@ test.describe.serial('S24: the Settings page', () => {
   test('a failed check says it could not check and adds no new time (Sol r1)', async () => {
     let fail = false
     await page.route(url => url.pathname === '/api/equation-reader', route => fail ? route.fulfill({ status: 500, json: { detail: 'SYNTHETIC reader check failure' } }) : route.fallback())
-    await page.goto(server.url('#/settings'))
+    await page.goto(server.url('#/settings/documents'))
     await page.reload()
     await page.getByRole('button', { name: /^Equation reader/ }).click()
     const sheet = page.getByRole('dialog', { name: 'Equation reader (Marker)' })
@@ -608,6 +608,8 @@ test.describe.serial('S24: the Settings page', () => {
     let release: () => void = () => {}
     const held = new Promise<void>(resolve => { release = resolve })
     let reads = 0
+    // Only the reads after the reload are counted: the route is set once the page is on Search & ranking.
+    await page.goto(server.url('#/settings/search'))
     await page.route(url => url.pathname === '/api/semantic-search', async route => {
       if (route.request().method() === 'PUT') {
         const body = route.request().postDataJSON() as { provider: string }
@@ -618,22 +620,26 @@ test.describe.serial('S24: the Settings page', () => {
       await held  // a later read answers with the state from before the save
       return route.fulfill({ json: view('off', false) })
     })
-    await page.goto(server.url('#/settings'))
     await page.reload()
-    const off = page.locator('.semantic-option[data-row="off"] input')
-    await expect(off).toBeChecked()
-    // The Ollama panel's Test reads semantic search again; that read is held open.
+    const semCard = (name: string) => page.locator('div.choice-groups[data-group="semantic"] .co-card').filter({ has: page.locator('.co-name b', { hasText: new RegExp(`^${name}$`) }) })
+    await expect(semCard('Off')).toHaveClass(/\bon\b/)
+    // The Ollama panel's Test (on Language models) reads semantic search again; that read is held open.
+    await page.getByRole('tab', { name: 'Language models' }).click()
     await page.locator('.co-card').filter({ hasText: /^Ollama/ }).click()
     const sheet = page.getByRole('dialog', { name: 'Ollama' })
     await sheet.getByRole('button', { name: 'Test', exact: true }).click()
     await expect.poll(() => reads).toBe(2)
     await page.keyboard.press('Escape')
     await expect(sheet).toHaveCount(0)
-    await page.locator('.semantic-option[data-row="openai"] input').click()
+    await page.getByRole('tab', { name: 'Search & ranking' }).click()
+    await semCard('OpenAI embeddings').click()
+    await page.getByRole('dialog', { name: 'OpenAI embeddings', exact: true }).getByRole('button', { name: 'Use for semantic search' }).click()
     await expect(page.getByText('Semantic search setting saved.')).toBeVisible()
     release()
     await page.waitForTimeout(500)
-    await expect(page.locator('.semantic-option[data-row="openai"] input')).toBeChecked()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('dialog', { name: 'OpenAI embeddings', exact: true })).toHaveCount(0)
+    await expect(semCard('OpenAI embeddings')).toHaveClass(/\bon\b/)
     await expect(page.locator('.semantic-privacy')).toHaveText('Passage text is sent to OpenAI.')
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
@@ -651,6 +657,7 @@ test.describe.serial('S24: the Settings page', () => {
     })
     await page.goto(server.url('#/settings'))
     await page.reload()
+    await page.getByRole('tab', { name: 'Language models' }).click()
     await page.locator('.co-card').filter({ hasText: /^Ollama/ }).click()
     const sheet = page.getByRole('dialog', { name: 'Ollama' })
     await expect(sheet.locator('.dmeta')).toContainText('127.0.0.1')
@@ -663,8 +670,14 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(model).toHaveValue('ollama|syn-embed-large')
     await sheet.getByRole('button', { name: 'Close' }).click()
     // The page row shows the same saved choice.
-    await expect(page.locator('.semantic-option[data-row="server"] input')).toBeChecked()
-    await expect(page.locator('.semantic-option[data-row="server"] select')).toHaveValue('ollama|syn-embed-large')
+    await page.getByRole('tab', { name: 'Search & ranking' }).click()
+    const serverCard = page.locator('div.choice-groups[data-group="semantic"] .co-card').filter({ has: page.locator('.co-name b', { hasText: /^Local model server$/ }) })
+    await expect(serverCard).toHaveClass(/\bon\b/)
+    await serverCard.click()
+    const serverSheet = page.getByRole('dialog', { name: 'Local model server', exact: true })
+    await expect(serverSheet.getByRole('combobox', { name: 'Embedding model' })).toHaveValue('ollama|syn-embed-large')
+    await page.keyboard.press('Escape')
+    await expect(serverSheet).toHaveCount(0)
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
 
@@ -850,7 +863,17 @@ test.describe.serial('S24: the Settings page', () => {
     await page.reload()
     const row = (heading: string) => page.locator('.set-flows > div').filter({ has: page.locator('b', { hasText: new RegExp(`^${heading}$`) }) })
     const general = () => page.getByRole('tab', { name: 'General' }).click()
-    const models = () => page.getByRole('tab', { name: 'Models' }).click()
+    const models = () => page.getByRole('tab', { name: 'Language models' }).click()
+    const search = () => page.getByRole('tab', { name: 'Search & ranking' }).click()
+    // A semantic search card opens its sheet; the sheet button chooses it and saves at once.
+    const pickSemanticCard = async (name: string) => {
+      await page.locator('div.choice-groups[data-group="semantic"] .co-card').filter({ has: page.locator('.co-name b', { hasText: new RegExp(`^${name}$`) }) }).click()
+      const sheet = page.getByRole('dialog', { name, exact: true })
+      await sheet.getByRole('button', { name: 'Use for semantic search' }).click()
+      await expect(page.getByText('Semantic search setting saved.')).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(sheet).toHaveCount(0)
+    }
     const sources = () => page.getByRole('tab', { name: 'Sources' }).click()
     await general()
     await expect(page.getByRole('heading', { name: 'Where your data goes' })).toBeVisible()
@@ -870,8 +893,8 @@ test.describe.serial('S24: the Settings page', () => {
     await models()
     await page.getByRole('combobox', { name: 'Literature model' }).selectOption({ label: 'SYNTHETIC model A' })
     await expect(page.getByText('Default literature model: syn-model-a')).toBeVisible()
-    await page.locator('.semantic-option[data-row="openai"] input').click()
-    await expect(page.getByText('Semantic search setting saved.')).toBeVisible()
+    await search()
+    await pickSemanticCard('OpenAI embeddings')
     scopus = 'api_key'
     await sources()
     await general()
@@ -895,9 +918,8 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(row('Optional services')).toContainText('titles and DOIs of works are sent to zotero.org')
     await expect(row('Optional services')).toContainText('none is found, the work’s title is sent to SerpApi')
     // Back to the built-in model: the line comes back.
-    await models()
-    await page.locator('.semantic-option[data-row="builtin"] input').click()
-    await expect(page.getByText('Semantic search setting saved.')).toBeVisible()
+    await search()
+    await pickSemanticCard('This computer · built-in')
     await general()
     await expect(row('Semantic search')).toContainText('Not sent anywhere.')
     await page.getByRole('heading', { name: 'Where your data goes' }).evaluate(el => el.scrollIntoView({ block: 'start' }))

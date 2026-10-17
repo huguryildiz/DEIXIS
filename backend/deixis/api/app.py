@@ -32,7 +32,7 @@ from deixis.tools.tool_paths import find_tool, is_bundled
 from deixis.config import Settings, load_settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition
-from deixis.documents import embeddings
+from deixis.documents import embeddings, rerankers
 from deixis.documents import figures
 from deixis.documents.identity import MATCH_TEXT_CHARS
 from deixis.documents import local_embedding, math_reader
@@ -284,8 +284,20 @@ class OllamaModelBody(BaseModel):
 
 
 class SemanticChoice(BaseModel):
-    provider: Literal["gemini", "builtin", "openai", "ollama", "lm_studio", "off"]
+    provider: Literal["gemini", "builtin", "openai", "voyage", "cohere", "ollama", "lm_studio", "off"]
     model: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class RerankChoice(BaseModel):
+    """The reranker for the order records are read in (off unless turned on). `pool_factor` (records reranked as a
+    multiple of those a run reads) and `timeout_seconds` are starting values the person may change; neither is a
+    measured optimum."""
+    enabled: bool
+    provider: Literal["builtin", "voyage", "cohere", "jina", "zeroentropy"] | None = None
+    pool_factor: float = Field(default=rerankers.DEFAULT_POOL_FACTOR, ge=rerankers.MIN_POOL_FACTOR,
+                               le=rerankers.MAX_POOL_FACTOR)
+    timeout_seconds: int = Field(default=rerankers.DEFAULT_TIMEOUT_SECONDS, ge=rerankers.MIN_TIMEOUT_SECONDS,
+                                 le=rerankers.MAX_TIMEOUT_SECONDS)
 
 
 class EnglishQuestion(BaseModel):
@@ -1731,7 +1743,11 @@ def create_app(
     async def semantic_search_view(request: Request, refresh: bool = False) -> dict[str, Any]:
         saved = store_of(request).setting("semantic_search")
         provider, model = embeddings.chosen(saved)
+        # A built-in choice saved for an earlier built-in model: Settings says the model changed and that its stored
+        # similarities are not reused; the next run embeds the sources again with the current model.
+        earlier = (saved or {}).get("model") if (saved or {}).get("provider") == "builtin" else None
         return {"provider": provider, "model": model, "explicit": saved is not None,
+                "builtin_model_changed": {"from": earlier, "to": model} if earlier and earlier != model else None,
                 "options": embeddings.options(await request.app.state.local_tools.snapshot(refresh),
                                               request.app.state.builtin.option())}
 
@@ -1748,13 +1764,41 @@ def create_app(
             raise HTTPException(422, option["reason"])
         model = None
         if body.provider != "off":
-            model = body.model or (option["models"][0] if body.provider in ("gemini", "builtin", "openai") else None)
+            model = body.model or (option["models"][0] if body.provider in ("gemini", "builtin", "openai", "voyage", "cohere") else None)
             if model is None:
                 raise HTTPException(422, "Choose an embedding model")
             if model not in option["models"]:
                 raise HTTPException(422, f"Model '{model}' is not offered by {body.provider}")
         store_of(request).set_setting("semantic_search", {"provider": body.provider, "model": model})
         return await semantic_search_view(request)
+
+    def reranking_view(request: Request) -> dict[str, Any]:
+        saved = store_of(request).setting(rerankers.SETTING) or {}
+        builtin = request.app.state.builtin.option()
+        return {"enabled": bool(saved.get("enabled")), "provider": saved.get("provider"),
+                "pool_factor": float(saved.get("pool_factor") or rerankers.DEFAULT_POOL_FACTOR),
+                "max_candidates": rerankers.MAX_CANDIDATES,
+                "timeout_seconds": int(saved.get("timeout_seconds") or rerankers.DEFAULT_TIMEOUT_SECONDS),
+                "applies_to": ["record_order"],
+                "options": rerankers.options(builtin["available"], builtin.get("reason"))}
+
+    @app.get("/api/reranking")
+    async def get_reranking(request: Request) -> dict[str, Any]:
+        return reranking_view(request)
+
+    @app.put("/api/reranking")
+    async def put_reranking(body: RerankChoice, request: Request) -> dict[str, Any]:
+        """Save the reranker; turning on one that cannot run now is refused, never replaced by another."""
+        if body.enabled:
+            if body.provider is None:
+                raise HTTPException(422, "Choose a reranker")
+            option = next(o for o in reranking_view(request)["options"] if o["provider"] == body.provider)
+            if not option["available"]:
+                raise HTTPException(422, option["reason"])
+        store_of(request).set_setting(rerankers.SETTING, {"enabled": body.enabled, "provider": body.provider,
+                                                          "pool_factor": body.pool_factor,
+                                                          "timeout_seconds": body.timeout_seconds})
+        return reranking_view(request)
 
     # The built-in embedding model (slice 21, D103): install on request, cancel, remove; POSIX only in this slice.
     def service_error(exc: ServiceError) -> HTTPException:

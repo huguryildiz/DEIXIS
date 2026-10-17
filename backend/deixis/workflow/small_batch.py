@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
 from typing import Any
 
+from deixis.documents import rerankers
 from deixis.domain import canonical
 from deixis.domain.reason_codes import reason
 from deixis.domain.rules import ABSTRACT_READ_LIMIT, FULLTEXT_RUNS
@@ -17,6 +19,7 @@ POLICY = "small_batch_fused_v1"
 BATCH_SIZE = 40
 MINIMUM = 50
 LIST_KEY = "small_batch:v1:list"
+RERANK_KEY = "rerank:v1:list"  # outside `small_batch:v1:%`, which `steps` reads as batch steps
 GRAPH_SEEDS = 30  # D246: rows with a reference list taken from the top of the fused order
 ANSWER_ALLOCATION_VERSION = 2
 
@@ -186,7 +189,8 @@ def build_list(manifest: dict[str, Any]) -> dict[str, Any]:
     ranked = replay(manifest)
     by_head = {r["id"]: r for r in manifest["pool"] + manifest.get("priority_pool", [])}
     priority = manifest["user_priority"]
-    order = list(dict.fromkeys(priority + ranked["fused"]))
+    automatic, reranker = reranked(manifest, ranked["fused"])
+    order = list(dict.fromkeys(priority + automatic))
     versions = manifest["versions"]
     by_work: dict[str, list[str]] = {}
     for svid, row in versions.items():
@@ -197,7 +201,29 @@ def build_list(manifest: dict[str, Any]) -> dict[str, Any]:
              for i, head in enumerate(order)]
     return {"policy": POLICY, "manifest": manifest, "manifest_hash": canonical.sha256_hex(manifest),
             "order": order, "order_hash": canonical.sha256_hex(order), "automatic_order": ranked["fused"],
-            "items": items, "ranks": json_value(ranked["ranks"]), "signal_reasons": ranked["reasons"]}
+            "items": items, "ranks": json_value(ranked["ranks"]), "signal_reasons": ranked["reasons"],
+            **({"reranker": reranker} if reranker else {})}
+
+
+def reranked(manifest: dict[str, Any], fused: list[str]) -> tuple[list[str], dict[str, Any] | None]:
+    """The automatic order after the stored rerank, and what was done; the fused order itself when there was none.
+
+    The rerank only reorders the records it scored, among their own places in the fused order. It applies only when
+    the records it scored are still the first records of that order that the person did not include themselves; when
+    the list moved since (a selection changed while the reranker ran) or the reranker failed, the fused order stands
+    and the listing says why. Everything here is read from the manifest, so the list replays exactly."""
+    stored = manifest.get("reranker")
+    if not stored:
+        return fused, None
+    told = {key: stored.get(key) for key in ("provider", "model", "status", "error_code")}
+    if stored.get("status") != "applied":
+        return fused, told | {"applied": False, "reason": stored.get("error_code") or stored.get("status"),
+                              "fallback": "fused_order"}
+    candidates = stored["candidate_ids"]
+    priority = set(manifest["user_priority"])
+    if [rid for rid in fused if rid not in priority][:len(candidates)] != candidates:
+        return fused, told | {"applied": False, "reason": "candidates_changed", "fallback": "fused_order"}
+    return rerankers.reorder(fused, candidates, stored["scores"]), told | {"applied": True, "reranked": len(candidates)}
 
 
 def next_batch(listing: dict[str, Any], number: int, size: int = BATCH_SIZE) -> dict[str, Any]:
@@ -299,55 +325,66 @@ def save_code(flow: Any, run: dict[str, Any], key: str, kind: str, build: Any) -
     return output
 
 
+def manifest_for(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> dict[str, Any]:
+    """Everything the list is computed from, read from the store now (before any stored rerank is added)."""
+    store, rid = flow.store, run["research_id"]
+    versions, by_work, keyword = ranking.pool_rows(store, rid, run["scope_revision"])
+    chained = flow._chain_filter(run)
+    heads = store.work_heads(rid)
+    pool = {row["work_id"]: row for row in keyword}
+    for head in chained:
+        if head in versions:
+            wid = versions[head]["work_id"]
+            pool[wid] = ranking._work_row(heads[wid], by_work[wid])
+    user_selected = {row[0] for row in store.conn.execute(
+        "SELECT source_version_id FROM selections WHERE research_id = ? AND origin = 'user' AND state = 'included'",
+        (rid,))}
+    priority = sorted({heads[wid] for wid in store.work_ids(list(user_selected)).values() if wid in heads})
+    priority_pool = [ranking._work_row(head, by_work[versions[head]["work_id"]]) for head in priority]
+    in_pool = {row["id"]: row for row in pool.values()}
+    verified = ranking.seed_rows(store, run, scope, versions, in_pool)
+    query, blocks = ranking.query_vocabulary(scope, vocabulary)
+    keyword_step = store.existing_step(run["id"], "ranking")
+    keyword_output = keyword_step["output"]
+    model = keyword_output.get("embedding_model")
+    off = (keyword_output.get("signals", {}).get("embedding") or {}).get("reason")
+    counts = {row["work_id"]: row["cited_by_count"] for row in store.conn.execute(
+        "SELECT work_id, MAX(cited_by_count) AS cited_by_count FROM source_versions"
+        " WHERE work_id IN (SELECT v.work_id FROM corpus_memberships m"
+        " JOIN source_versions v ON v.id = m.source_version_id"
+        " WHERE m.research_id = ? AND m.removed_at IS NULL) GROUP BY work_id", (rid,))}
+    for row in list(pool.values()) + priority_pool + verified:
+        row["cited_by_count"] = counts.get(row["work_id"])
+    from deixis.workflow.fast_search import graph_rule
+    rule = graph_rule(store, run)
+    manifest = {"ranking_version": 3, **({"graph_rule": rule} if rule != "sum_v1" else {}),
+                "scope_revision": run["scope_revision"], "selection_revision": store.selection_revision(rid),
+                "protocol": store.existing_step(run["id"], "protocol")["output"],
+                "pool": sorted(pool.values(), key=lambda row: row["id"]), "priority_pool": priority_pool,
+                "versions": versions,
+                "verified": verified, "query_words": query, "blocks": blocks, "embedding_model": model,
+                "similarities": fast_path.ranking_similarities(store, run, model) if model else {},
+                "off_reason": off, "compared_terms": ranking.joint_terms(store, scope, vocabulary),
+                "user_priority": list(dict.fromkeys(priority)),
+                "provenance": store.candidates(rid, run["scope_revision"]),
+                "chain_steps": [s["id"] for s in store.run_steps(run["id"])
+                                if s["operation_key"].startswith("chain")],
+                "keyword_heads": DecisionStore(store).ranking_order(keyword_step["id"]),
+                "chain_heads": chained,
+                "keyword_step": keyword_step["id"]}
+    from deixis.workflow.fast_chain import manifest as chain_manifest
+    manifest["fast_path"] = chain_manifest(store, run)
+    return manifest
+
+
 def freeze_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> dict[str, Any]:
     def build() -> dict[str, Any]:
-        store, rid = flow.store, run["research_id"]
-        versions, by_work, keyword = ranking.pool_rows(store, rid, run["scope_revision"])
-        chained = flow._chain_filter(run)
-        heads = store.work_heads(rid)
-        pool = {row["work_id"]: row for row in keyword}
-        for head in chained:
-            if head in versions:
-                wid = versions[head]["work_id"]
-                pool[wid] = ranking._work_row(heads[wid], by_work[wid])
-        user_selected = {row[0] for row in store.conn.execute(
-            "SELECT source_version_id FROM selections WHERE research_id = ? AND origin = 'user' AND state = 'included'",
-            (rid,))}
-        priority = sorted({heads[wid] for wid in store.work_ids(list(user_selected)).values() if wid in heads})
-        priority_pool = [ranking._work_row(head, by_work[versions[head]["work_id"]]) for head in priority]
-        in_pool = {row["id"]: row for row in pool.values()}
-        verified = ranking.seed_rows(store, run, scope, versions, in_pool)
-        query, blocks = ranking.query_vocabulary(scope, vocabulary)
-        keyword_step = store.existing_step(run["id"], "ranking")
-        keyword_output = keyword_step["output"]
-        model = keyword_output.get("embedding_model")
-        off = (keyword_output.get("signals", {}).get("embedding") or {}).get("reason")
-        counts = {row["work_id"]: row["cited_by_count"] for row in store.conn.execute(
-            "SELECT work_id, MAX(cited_by_count) AS cited_by_count FROM source_versions"
-            " WHERE work_id IN (SELECT v.work_id FROM corpus_memberships m"
-            " JOIN source_versions v ON v.id = m.source_version_id"
-            " WHERE m.research_id = ? AND m.removed_at IS NULL) GROUP BY work_id", (rid,))}
-        for row in list(pool.values()) + priority_pool + verified:
-            row["cited_by_count"] = counts.get(row["work_id"])
-        from deixis.workflow.fast_search import graph_rule
-        rule = graph_rule(store, run)
-        manifest = {"ranking_version": 3, **({"graph_rule": rule} if rule != "sum_v1" else {}),
-                    "scope_revision": run["scope_revision"], "selection_revision": store.selection_revision(rid),
-                    "protocol": store.existing_step(run["id"], "protocol")["output"],
-                    "pool": sorted(pool.values(), key=lambda row: row["id"]), "priority_pool": priority_pool,
-                    "versions": versions,
-                    "verified": verified, "query_words": query, "blocks": blocks, "embedding_model": model,
-                    "similarities": fast_path.ranking_similarities(store, run, model) if model else {},
-                    "off_reason": off, "compared_terms": ranking.joint_terms(store, scope, vocabulary),
-                    "user_priority": list(dict.fromkeys(priority)),
-                    "provenance": store.candidates(rid, run["scope_revision"]),
-                    "chain_steps": [s["id"] for s in store.run_steps(run["id"])
-                                    if s["operation_key"].startswith("chain")],
-                    "keyword_heads": DecisionStore(store).ranking_order(keyword_step["id"]),
-                    "chain_heads": chained,
-                    "keyword_step": keyword_step["id"]}
-        from deixis.workflow.fast_chain import manifest as chain_manifest
-        manifest["fast_path"] = chain_manifest(store, run)
+        manifest = manifest_for(flow, run, scope, vocabulary)
+        step = flow.store.existing_step(run["id"], RERANK_KEY)
+        if step is not None and step["status"] in ("succeeded", "failed"):
+            output = step["output"] or {}
+            manifest["reranker"] = {key: output.get(key) for key in (
+                "status", "provider", "model", "candidate_ids", "scores", "error_code")}
         return build_list(manifest)
     return save_code(flow, run, LIST_KEY, "code:small_batch_list", build)
 
@@ -439,6 +476,82 @@ def stored_progress(store: Any, run: dict[str, Any]) -> dict[str, Any] | None:
         "operation_blocker": run.get("pause_reason") if run["status"] in ("paused", "failed", "cancelled") else None}
 
 
+async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> None:
+    """Score the first records of the fused order with the reranker turned on in Settings, before the list freezes.
+
+    The candidates are the first records of the automatic (fused) order that the person did not include themselves,
+    as many as the run reads (its N) times the setting's pool factor, so the reranker decides which records fall above
+    the read cutoff, not only their order within it; each is sent as its title and abstract with the question. The scores are stored in this step and read
+    into the list's manifest. A reranker that fails, answers wrongly, runs out of time (its own limit, or what is left
+    of the ranking stage) never hands over to another reranker: the step is `failed`, says why, and the list keeps the
+    fused order. A pause or a cancellation stops the request (the built-in runner is killed) and the run stops. A rerank
+    that ended, either way, is not asked again on resume."""
+    store = flow.store
+    step = store.existing_step(run["id"], RERANK_KEY)
+    if step is not None and step["status"] in ("succeeded", "failed"):
+        return
+    choice = rerankers.chosen(store.setting(rerankers.SETTING))
+    if choice is None:
+        return
+    flow._checkpoint(run["id"], run["scope_revision"])
+    manifest = json_value(manifest_for(flow, run, scope, vocabulary))
+    priority = set(manifest["user_priority"])
+    read_top = run["budget"]["fast_path"]["N"]
+    candidates = [rid for rid in replay(manifest)["fused"] if rid not in priority][:choice.pool_size(read_top)]
+    rows = {row["id"]: row for row in manifest["pool"]}
+    texts = [rerankers.document(rows[rid]["title"], rows[rid]["abstract"]) for rid in candidates]
+    query = scope["question"]
+    step = store.step(run["id"], RERANK_KEY, "code:rerank")
+    store.start_step(step["id"])
+    output = choice.identity() | {
+        "candidate_ids": candidates, "read_top": read_top, "query_sha256": canonical.sha256_hex(query),
+        "sent": {"query": "question", "documents": "title_and_abstract", "count": len(candidates),
+                 "to": "this_computer" if choice.provider == "builtin" else choice.provider}}
+    seconds = float(choice.timeout_seconds)
+    deadline = fast_path.stage_deadline(store, run, "ranking")
+    if deadline is not None:
+        seconds = min(seconds, (deadline - store.clock.now()).total_seconds())
+    if seconds <= 0:
+        store.finish_step(step["id"], "failed", output=output | {"status": "failed", "error_code": "no_time_left",
+                                                                 "fallback": "fused_order"},
+                          error_code="no_time_left", error={"error": "the ranking stage had no time left"})
+        return
+    checkpoint = lambda: flow._checkpoint(run["id"], run["scope_revision"])  # noqa: E731
+    task = asyncio.ensure_future(rerankers.rerank(choice, flow.deps.http, getattr(flow.deps, "local_embedder", None),
+                                                  query, texts, checkpoint))
+    loop = asyncio.get_running_loop()
+    ends = loop.time() + seconds
+    try:
+        while not task.done():
+            left = ends - loop.time()
+            if left <= 0:
+                break
+            await asyncio.wait({task}, timeout=min(1.0, left))
+            if not task.done() and flow._stop_requested(run["id"], run["scope_revision"]):
+                break
+    finally:
+        if not task.done():
+            task.cancel()  # the built-in runner is killed, so no reply is left unread
+            await asyncio.gather(task, return_exceptions=True)
+    if task.cancelled():
+        checkpoint()  # a pause or a cancellation: the run stops here and the step is asked again on resume
+        error = rerankers.RerankError("reranker_timeout", f"no answer within {seconds:g} s")
+    else:
+        error = task.exception()
+    if error is None:
+        result = task.result()
+        store.finish_step(step["id"], "succeeded", output=output | {
+            "status": "applied", "scores": dict(zip(candidates, result["scores"])),
+            "truncated_documents": result["truncated"], "provider_tokens": result["provider_tokens"],
+            **({"provider_search_units": result["provider_search_units"]} if result.get("provider_search_units") is not None else {})})
+    elif isinstance(error, rerankers.RerankError):
+        store.finish_step(step["id"], "failed", output=output | {"status": "failed", "error_code": error.code,
+                                                                 "error": str(error)[:500], "fallback": "fused_order"},
+                          error_code=error.code, error={"error": str(error)[:500]})
+    else:
+        raise error
+
+
 async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> None:
     if flow.store.existing_step(run["id"], LIST_KEY) is None:
         chained = flow._chain_filter(run)
@@ -446,6 +559,7 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
         words, _ = lookups.title_words(vocabulary)
         lookups.flag_and_decide(flow.store, run, scope, words,
                                works=set(flow.store.work_ids(chained).values()), key="chain_record_flags")
+        await rerank_list(flow, run, scope, vocabulary)
     listing = freeze_list(flow, run, scope, vocabulary)
     from deixis.workflow import fast_read
     flow._close_clock_stage(run, "ranking")

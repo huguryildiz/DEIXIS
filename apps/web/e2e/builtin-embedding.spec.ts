@@ -62,14 +62,25 @@ class BuiltinServer {
 }
 
 const shot = (page: Page, name: string) => page.screenshot({ path: path.join(OUT, `${name}.png`), animations: 'disabled' })
-// The Settings page is one column since S24: the semantic choices are one radio group, each row named by its label.
-const semanticSection = (page: Page) => page.getByRole('radiogroup', { name: 'Semantic search provider' })
-const ROWS: Record<string, string> = { 'This computer · built-in': 'builtin', 'OpenAI embeddings': 'openai', 'Gemini embeddings': 'gemini', 'Local model server': 'server', Off: 'off' }
-const option = (page: Page, name: string) => semanticSection(page).locator(`.semantic-option[data-row="${ROWS[name]}"]`)
+// The semantic choices are model-style cards (Local models, API models, Off); a card opens a sheet that holds its details
+// and the button that chooses it.
+const semanticSection = (page: Page) => page.locator('div.choice-groups[data-group="semantic"]')
+const card = (page: Page, name: string) => semanticSection(page).locator('.co-card').filter({ has: page.locator('.co-name b', { hasText: new RegExp(`^${name}$`) }) })
+const sheetOf = (page: Page, name: string) => page.getByRole('dialog', { name, exact: true })
+async function openSheet(page: Page, name: string) {
+  await card(page, name).click()
+  const sheet = sheetOf(page, name)
+  await expect(sheet).toBeVisible()
+  return sheet
+}
+async function closeSheet(page: Page, name: string) {
+  await page.keyboard.press('Escape')
+  await expect(sheetOf(page, name)).toHaveCount(0)
+}
 const privacyNote = (page: Page) => page.locator('.semantic-privacy')
 
 async function openConnections(page: Page, server: BuiltinServer) {
-  await page.goto(server.url('#/settings/connections'))
+  await page.goto(server.url('#/settings/search'))
   await expect(semanticSection(page)).toBeVisible()
 }
 
@@ -97,54 +108,70 @@ test.describe.serial('N: the built-in embedding model', () => {
   })
   test.afterAll(async () => { await page?.close(); await server.stop() })
 
-  test('Settings lists Gemini, the built-in model, OpenAI, a local model server and Off (the order embeddings.chosen picks a default in), with Gemini’s free-key path', async () => {
+  test('Settings lists the built-in model, Gemini, OpenAI, Voyage AI and Off as cards (a local model server only when saved), with Gemini’s key section and link in its sheet', async () => {
     await openConnections(page, server)
-    await expect(semanticSection(page).locator('.semantic-option > label > span:not(.st):not(.spin):not(.connection-icon)')).toHaveText([
-      /^Gemini embeddings/, /^This computer · built-in/, /^OpenAI embeddings/, /^Local model server/, /^Off/])
-    const gemini = option(page, 'Gemini embeddings')
-    await expect(gemini).toContainText('Reads the question in any language. Needs a Google AI Studio key; a free key works.')
-    await expect(gemini).toContainText('Get a free key: sign in at aistudio.google.com/apikey, create a key, paste it under Model connections → Gemini.')
-    await expect(gemini.getByRole('link', { name: 'aistudio.google.com/apikey' })).toHaveAttribute('href', 'https://aistudio.google.com/apikey')
+    await expect(semanticSection(page).locator('.choice-head')).toHaveText(['Local models', 'API models'])
+    await expect(semanticSection(page).locator('.co-card .co-name b')).toHaveText([
+      'This computer · built-in', 'Gemini embeddings', 'OpenAI embeddings', 'Voyage AI embeddings', 'Cohere embeddings', 'Off'])
     await expect(semanticSection(page)).not.toContainText('Recommended')
-    const builtin = option(page, 'This computer · built-in')
-    await expect(builtin.getByRole('radio')).toBeDisabled()
-    await expect(builtin.locator('label .st')).toHaveText('Not downloaded')
-    // A row that cannot be chosen says what it needs, from the options' own state (no key set in this fixture).
-    await expect(option(page, 'Gemini embeddings').locator('label .st')).toHaveText('Needs a Google AI key')
-    await expect(option(page, 'OpenAI embeddings').locator('label .st')).toHaveText('Needs an OpenAI key')
-    await expect(option(page, 'Off').locator('label .st')).toHaveCount(0)
-    // The fixture's model files are SYNTHETIC and a few bytes long, but the sizes shown are the pinned model's.
-    await expect(builtin).toContainText('Needs about 212 MB of disk, plus about 74 MB if Python 3.12 has to be downloaded, plus room for a download cache.')
-    await builtin.scrollIntoViewIfNeeded()
+    // A card that cannot be chosen says what it needs, from the options' own state (no key set in this fixture).
+    await expect(card(page, 'This computer · built-in').locator('.st')).toHaveText('Not downloaded')
+    await expect(card(page, 'Gemini embeddings').locator('.st')).toHaveText('Needs a Google AI key')
+    await expect(card(page, 'OpenAI embeddings').locator('.st')).toHaveText('Needs an OpenAI key')
+    await expect(card(page, 'Voyage AI embeddings').locator('.st')).toHaveText('Needs a Voyage AI key')
+    await expect(card(page, 'Cohere embeddings').locator('.st')).toHaveText('Needs a Cohere key')
+    await expect(card(page, 'Off').locator('.st')).toHaveText('In use')
+    // Reranking: built-in under Local models; the API rerankers in order, each saying a key is needed; Off last.
+    const rerank = page.locator('div.choice-groups[data-group="reranking"]')
+    await expect(rerank.locator('.co-card .co-name b')).toHaveText([
+      'This computer · built-in', 'Voyage AI reranker', 'Cohere reranker', 'Jina AI reranker', 'ZeroEntropy reranker', 'Off'])
+    for (const name of ['Voyage AI reranker', 'Cohere reranker', 'Jina AI reranker', 'ZeroEntropy reranker'])
+      await expect(rerank.locator('.co-card').filter({ has: page.locator('.co-name b', { hasText: new RegExp(`^${name}$`) }) }).locator('.st')).toHaveText('Key needed')
+    await expect(card(page, 'Off')).toHaveClass(/\bon\b/)
     await shot(page, 'N-settings-not-downloaded-desktop')
+    const gemini = await openSheet(page, 'Gemini embeddings')
+    await expect(gemini).toContainText('Reads the question in any language. Needs a Google AI Studio key; a free key works.')
+    const key = gemini.locator('section.way[aria-label="With an API key"]')
+    await expect(key).toContainText('No key entered')
+    await expect(key.getByRole('link', { name: 'aistudio.google.com/apikey' })).toHaveAttribute('href', 'https://aistudio.google.com/apikey')
+    await expect(gemini.getByRole('button', { name: 'Use for semantic search' })).toBeDisabled()
+    await closeSheet(page, 'Gemini embeddings')
+    const builtin = await openSheet(page, 'This computer · built-in')
+    await expect(builtin.getByRole('button', { name: 'Use for semantic search' })).toBeDisabled()
+    // The fixture's model files are SYNTHETIC and a few bytes long, but the sizes shown are the pinned model's.
+    await expect(builtin).toContainText(/Needs about \d+ MB of disk, plus about 74 MB if Python 3\.12 has to be downloaded, plus room for a download cache\./)
+    await shot(page, 'N-settings-not-downloaded-sheet-desktop')
+    await closeSheet(page, 'This computer · built-in')
   })
 
   test('the download asks first with the disk size and the place, shows its steps, then the model is ready and can be chosen', async () => {
-    const builtin = option(page, 'This computer · built-in')
-    await builtin.getByRole('button', { name: 'Download' }).click()
-    const dialog = page.getByRole('alertdialog').or(page.getByRole('dialog'))
+    const builtin = await openSheet(page, 'This computer · built-in')
+    await builtin.getByRole('button', { name: 'Download', exact: true }).click()
+    const dialog = page.getByRole('alertdialog').or(page.getByRole('dialog')).filter({ hasText: 'Download the built-in model?' })
     await expect(dialog).toContainText('Download the built-in model?')
-    await expect(dialog).toContainText('The model is downloaded once from Hugging Face and takes about 212 MB in the DEIXIS data folder, plus about 74 MB if Python 3.12 has to be downloaded.')
+    await expect(dialog).toContainText(/The model is downloaded once from Hugging Face and takes about \d+ MB in the DEIXIS data folder, plus about 74 MB if Python 3\.12 has to be downloaded\./)
     await expect(dialog).toContainText('After that, semantic search sends no text off this computer.')
     await expect(dialog).toContainText(path.basename(server.dataDir))
     await shot(page, 'N-download-confirmation-desktop')
-    await dialog.getByRole('button', { name: 'Download' }).click()
+    await dialog.getByRole('button', { name: 'Download', exact: true }).click()
     await expect(builtin).toContainText(/Step [1-4] of 4:/)
-    await builtin.scrollIntoViewIfNeeded()
     await shot(page, 'N-download-progress-desktop')
-    await expect(builtin.locator('.semantic-builtin .status-chip')).toContainText('Ready · files checked', { timeout: 60_000 })
-    await expect(builtin).toContainText('Files checked at install and each time the model starts.')
+    const files = builtin.locator('section.semantic-builtin[aria-label="Model files"]')
+    await expect(files.locator('.way-head')).toContainText('Ready', { timeout: 60_000 })
+    await expect(files).toContainText(/Files checked .+, at install and each time the model starts\./)
     // A choice is saved at once; the note under the rows follows the saved setting.
-    // A ready built-in model can be the default with nothing saved yet; click (check() skips a checked radio) saves it.
-    await builtin.getByRole('radio').click()
-    await expect(builtin.getByRole('radio')).toBeChecked()
+    // A ready built-in model can be the default with nothing saved yet; the sheet button saves it.
+    await builtin.getByRole('button', { name: 'Use for semantic search' }).click()
     await expect(page.getByText('Semantic search setting saved.')).toBeVisible()
+    await expect(builtin.getByRole('button', { name: 'Use for semantic search' })).toHaveCount(0)
+    await closeSheet(page, 'This computer · built-in')
     await expect(privacyNote(page)).toHaveText('For semantic search, no text leaves the computer.')
-    await expect(builtin.locator('label .st')).toHaveCount(0)
-    await builtin.scrollIntoViewIfNeeded()
+    await expect(card(page, 'This computer · built-in').locator('.st')).toHaveText('In use')
+    await expect(card(page, 'This computer · built-in')).toHaveClass(/\bon\b/)
+    await card(page, 'This computer · built-in').scrollIntoViewIfNeeded()
     await shot(page, 'N-settings-ready-desktop')
     await page.setViewportSize({ width: 390, height: 844 })
-    await builtin.scrollIntoViewIfNeeded()
+    await card(page, 'This computer · built-in').scrollIntoViewIfNeeded()
     await shot(page, 'N-settings-ready-phone')
     await page.setViewportSize({ width: 1280, height: 900 })
   })
@@ -169,12 +196,14 @@ test.describe.serial('N: the built-in embedding model', () => {
 
   test('removing the model is confirmed and leaves it not downloaded', async () => {
     await openConnections(page, server)
-    const builtin = option(page, 'This computer · built-in')
-    await builtin.getByRole('button', { name: 'Remove' }).click()
-    const dialog = page.getByRole('alertdialog').or(page.getByRole('dialog'))
+    const builtin = await openSheet(page, 'This computer · built-in')
+    await builtin.getByRole('button', { name: 'Remove', exact: true }).click()
+    const dialog = page.getByRole('alertdialog').or(page.getByRole('dialog')).filter({ hasText: 'Scores it already gave are kept' })
     await expect(dialog).toContainText('Scores it already gave are kept; sources not yet scored are ranked without it until you download it again.')
-    await dialog.getByRole('button', { name: 'Remove' }).click()
+    await dialog.getByRole('button', { name: 'Remove', exact: true }).click()
     await expect(builtin).toContainText('Not downloaded')
+    await closeSheet(page, 'This computer · built-in')
+    await expect(card(page, 'This computer · built-in').locator('.st')).toHaveText('Not downloaded')
   })
 })
 
@@ -190,13 +219,14 @@ test.describe.serial('N: Gemini’s free tier and the uploaded-PDF line', () => 
 
   test('choosing Gemini says the free tier may use the text and that DEIXIS cannot tell the tier', async () => {
     await openConnections(page, server)
-    const gemini = option(page, 'Gemini embeddings')
-    await expect(gemini).not.toContainText('Get a free key')
-    await expect(gemini.locator('label .st')).toHaveCount(0)
-    // Gemini is the default with a Google key and nothing saved yet; choosing it saves it (check() would skip a checked radio).
-    await expect(gemini.getByRole('radio')).toBeChecked()
-    await gemini.getByRole('radio').click()
+    // Gemini is the default with a Google key and nothing saved yet; choosing it in its sheet saves it.
+    await expect(card(page, 'Gemini embeddings').locator('.st')).toHaveText('In use')
+    await expect(card(page, 'Gemini embeddings')).toHaveClass(/\bon\b/)
+    const gemini = await openSheet(page, 'Gemini embeddings')
+    await expect(gemini.locator('section.way[aria-label="With an API key"]')).toContainText('Ready')
+    await gemini.getByRole('button', { name: 'Use for semantic search' }).click()
     await expect(page.getByText('Semantic search setting saved.')).toBeVisible()
+    await closeSheet(page, 'Gemini embeddings')
     await expect(privacyNote(page)).toHaveText('Passage text is sent to Google. If your key is on Google’s free tier, which DEIXIS cannot detect, Google may use that text to improve its products.')
     await privacyNote(page).scrollIntoViewIfNeeded()
     await shot(page, 'N-gemini-free-tier-desktop')
@@ -227,8 +257,10 @@ test.describe.serial('N: a failed passage ranking still says where uploaded text
 
   test('the semantic line of a failed step keeps the uploaded-PDF line (Sol r4, finding 3)', async () => {
     await openConnections(page, server)
-    await option(page, 'Gemini embeddings').getByRole('radio').click()
+    const gemini = await openSheet(page, 'Gemini embeddings')
+    await gemini.getByRole('button', { name: 'Use for semantic search' }).click()
     await expect(page.getByText('Semantic search setting saved.')).toBeVisible()
+    await closeSheet(page, 'Gemini embeddings')
     // The fast path's own answer ranks passages by keyword alone (fast_path_lexical). The answer of an attached-files
     // research still ranks the attached PDF's passages by meaning, so a failed ranking is shown there.
     await startResearch(page, server, 'SYNTHETIC [embed-fails] comparison of molecular release schedules', 'Attached files')

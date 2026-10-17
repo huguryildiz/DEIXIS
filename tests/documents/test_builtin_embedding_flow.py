@@ -64,7 +64,7 @@ class FakeLocal:
         self.removing = self.installing = False
         self.runner = self.python = None
 
-    async def embed(self, texts, kind):
+    async def embed(self, texts, kind, report=None):
         self.calls.append((kind, len(texts)))
         if self.hook:
             self.hook(len(self.calls), texts, kind)
@@ -225,12 +225,12 @@ def test_options_list_the_built_in_model_second_and_refuse_it_until_it_is_instal
         saved = client.put("/api/semantic-search", json={"provider": "builtin"}).json()
     finally:
         client.__exit__(None, None, None)
-    assert [o["provider"] for o in view["options"]] == ["gemini", "builtin", "openai", "ollama", "lm_studio", "off"]
+    assert [o["provider"] for o in view["options"]] == ["gemini", "builtin", "openai", "voyage", "cohere", "ollama", "lm_studio", "off"]
     builtin = view["options"][1]
     assert (builtin["available"], builtin["reason"], builtin["models"]) == (False, "Not downloaded", [local_embedding.MODEL_ID])
     assert refused.status_code == 422 and refused.json()["detail"] == "Not downloaded"
-    assert (saved["provider"], saved["model"]) == ("builtin", "bge-small-en-v1.5@aa8f8b0:256")
-    assert embeddings.Embedder("builtin", saved["model"]).stored_model == "builtin:bge-small-en-v1.5@aa8f8b0:256"
+    assert (saved["provider"], saved["model"]) == ("builtin", local_embedding.MODEL_ID)
+    assert embeddings.Embedder("builtin", saved["model"]).stored_model == f"builtin:{local_embedding.MODEL_ID}"
     # Nothing saved and no Gemini key: off until the model is downloaded and its files check out, then the built-in
     # model (D7). It is never downloaded by itself, and a saved Off still wins.
     assert (view["provider"], view["explicit"]) == ("off", False)

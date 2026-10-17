@@ -1,9 +1,9 @@
 """Installing, checking and removing the built-in embedding model from Settings (slice 21, D103).
 
 The install is a four-step background job: (1) the environment (`uv venv`, Python 3.12), (2) `uv pip sync` of
-`embedding-requirements.txt` (fastembed and every dependency pinned with hashes, D20),
-(3) the five model files from the pinned revision, each checked against the manifest, (4) a start check: the runner
-says ready and embeds a known sentence into one 384-dimension unit vector. `installed.json` is written last; an
+`embedding-requirements.txt` (PyTorch's CPU wheels, Transformers and every dependency pinned with hashes, D20),
+(3) the Qwen3 embedding and reranker files from their pinned revisions, each checked against the manifest, (4) a start
+check: the runner says ready, embeds a known sentence into one 1,024-dimension unit vector and reranks two texts. `installed.json` is written last; an
 environment without it is half-built and is built again. `uv` runs with its cache and its Python under the data
 directory and `UV_PYTHON_PREFERENCE=only-managed`, so the system's Python and `~/.cache` are never touched.
 
@@ -230,7 +230,11 @@ class EmbeddingService:
             "last_full_check": self.integrity.last_full_check(), "job": job,
             "model": {"name": local_embedding.MODEL_NAME, "id": local_embedding.MODEL_ID,
                       "repository": local_embedding.REPOSITORY, "revision": local_embedding.REVISION,
-                      "package": local_embedding.FASTEMBED_PACKAGE, "files": local_embedding.manifest()},
+                      "package": local_embedding.PACKAGE, "files": local_embedding.manifest(),
+                      "device": local_embedding.DEVICE, "max_tokens": local_embedding.LOCAL_MAX_TOKENS},
+            "reranker": {"name": local_embedding.RERANKER_NAME, "id": local_embedding.RERANKER_ID,
+                         "repository": local_embedding.RERANKER_REPOSITORY, "revision": local_embedding.RERANKER_REVISION,
+                         "max_tokens": local_embedding.RERANK_MAX_TOKENS},
             "sizes": {"runtime_bytes": local_embedding.RUNTIME_BYTES_ESTIMATE, "model_bytes": local_embedding.MODEL_DISK_BYTES,
                       "python_bytes": local_embedding.PYTHON_BYTES_ESTIMATE},
             "path": str(self.paths.root), "size_bytes": size,
@@ -340,7 +344,8 @@ class EmbeddingService:
                 self._step(0)
                 await self._command([uv, "venv", "--allow-existing", "--python", local_embedding.PYTHON_VERSION, str(p.env)])
                 self._step(1)
-                await self._command([uv, "pip", "sync", "--python", str(p.python), str(local_embedding.REQUIREMENTS)])
+                await self._command([uv, "pip", "sync", "--python", str(p.python), "--torch-backend",
+                                     local_embedding.TORCH_BACKEND, str(local_embedding.REQUIREMENTS)])
                 self._step(2)
 
                 def progress(done: int, total: int) -> None:
@@ -360,19 +365,26 @@ class EmbeddingService:
                 try:
                     await checker.start(lock_fd=self._in_use_fd)
                     info = checker.ready_info or {}
-                    self._output(f"runner ready: fastembed {info.get('fastembed')}, onnxruntime {info.get('onnxruntime')}\n")
+                    self._output(f"runner ready: torch {info.get('torch')}, transformers {info.get('transformers')}, "
+                                 f"device {info.get('device')}\n")
                     (vector,) = await checker.embed([local_embedding.CHECK_SENTENCE], "query")
                     norm = sum(v * v for v in vector) ** 0.5
                     if abs(norm - 1.0) > 1e-3:
                         raise RuntimeError(f"the check sentence's vector has length {norm:.4f}, not 1")
+                    # Only that the reranker loads and answers with two probabilities; its quality is not checked.
+                    scores, _ = await checker.rerank(local_embedding.CHECK_SENTENCE, [local_embedding.CHECK_SENTENCE, "ready"],
+                                                     local_embedding.SECONDS_PER_BATCH_LIMIT)
+                    self._output(f"reranker ready: {len(scores)} scores\n")
                 finally:
                     await checker.close()
                 if not await asyncio.to_thread(self.integrity.check_now):
                     raise RuntimeError("the model files do not match after the install")
-                marker = {"model": local_embedding.MODEL_ID, "repository": local_embedding.REPOSITORY,
-                          "revision": local_embedding.REVISION, "package": local_embedding.FASTEMBED_PACKAGE,
+                marker = {"model": local_embedding.MODEL_ID, "reranker": local_embedding.RERANKER_ID,
+                          "repository": local_embedding.REPOSITORY, "revision": local_embedding.REVISION,
+                          "reranker_repository": local_embedding.RERANKER_REPOSITORY,
+                          "reranker_revision": local_embedding.RERANKER_REVISION, "package": local_embedding.PACKAGE,
                           "requirements": local_embedding.requirements_digest(),
-                          "fastembed": info.get("fastembed"), "onnxruntime": info.get("onnxruntime"),
+                          "torch": info.get("torch"), "transformers": info.get("transformers"), "device": info.get("device"),
                           "installed_at": local_embedding.now_iso()}
                 partial = p.installed_marker.with_suffix(".json.tmp")
                 partial.write_text(json.dumps(marker))

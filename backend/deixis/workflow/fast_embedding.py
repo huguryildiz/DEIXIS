@@ -50,6 +50,8 @@ class Consumer:
             self.store.start_step(self.step["id"])
             flow._merge_step_output(self.step["id"], {}, self.identity)
         self.budget = flow._rate_budget(self.step["id"], self.identity)
+        # Texts the built-in model cut at its token limit and tokens Voyage counted, in this pass of the step.
+        self.report = {"truncated_texts": 0, "provider_tokens": 0}
         if not self.closed and self.embedder and self.embedder.provider == "builtin" and self.query:
             self.warmup = asyncio.create_task(self._query())
 
@@ -57,7 +59,8 @@ class Consumer:
         token = local_embedding.RUNNER_THREADS.set(self.identity.get("threads"))
         try:
             return await self.embedder.embed(embeddings.client_for(self.embedder.provider, self.flow.deps), texts, kind, self.budget,
-                                             lambda: self.flow._checkpoint(self.run["id"], self.run["scope_revision"]))
+                                             lambda: self.flow._checkpoint(self.run["id"], self.run["scope_revision"]),
+                                             report=self.report)
         finally:
             local_embedding.RUNNER_THREADS.reset(token)
 
@@ -232,6 +235,10 @@ class Consumer:
                                "query_sha256": english_question.query_sha256(self.query[0]) if self.query else None}
             if self.embedder:
                 output["model"] = self.embedder.stored_model
+                prior = self.store.step_output(self.step["id"]) or {}
+                tracked = {"builtin": "truncated_texts", "voyage": "provider_tokens", "cohere": "provider_tokens"}.get(self.embedder.provider)
+                if tracked:
+                    output[tracked] = prior.get(tracked, 0) + self.report[tracked]
             status = "partial" if self.error and counts["embedded"] else "failed" if self.error else "succeeded"
             self.flow._finish_embedding_step(self.step["id"], status, output | self.budget.counts(), self.identity,
                 error_code="embedding_failed" if self.error else None, error={"error": str(self.error)} if self.error else None)

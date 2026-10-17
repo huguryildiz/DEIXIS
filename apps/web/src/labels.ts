@@ -419,7 +419,7 @@ const providerNames: Record<string, string> = {
 }
 export const providerName = (id: string) => providerNames[id] ?? id
 
-export const connectionNames: Record<string, string> = { codex: 'Codex', claude: 'Claude Code', copilot_cli: 'GitHub Copilot CLI', deepseek: 'DeepSeek', gemini: 'Gemini', gemini_cli: 'Gemini CLI', kimi: 'Kimi', grok: 'Grok', copilot: 'GitHub Copilot', glm: 'GLM', muse_spark: 'Muse Spark', muse_glimmer: 'Muse Glimmer', ollama: 'Ollama', qwen: 'Qwen', mistral: 'Mistral', anthropic: 'Anthropic API', openai: 'OpenAI API', openrouter: 'OpenRouter', mimo: 'Xiaomi MiMo', local_server: 'Local server' }
+export const connectionNames: Record<string, string> = { codex: 'Codex', claude: 'Claude Code', copilot_cli: 'GitHub Copilot CLI', deepseek: 'DeepSeek', gemini: 'Gemini', gemini_cli: 'Gemini CLI', kimi: 'Kimi', grok: 'Grok', copilot: 'GitHub Copilot', glm: 'GLM', muse_spark: 'Muse Spark', muse_glimmer: 'Muse Glimmer', ollama: 'Ollama', qwen: 'Qwen', mistral: 'Mistral', anthropic: 'Anthropic API', openai: 'OpenAI API', openrouter: 'OpenRouter', mimo: 'Xiaomi MiMo', voyage: 'Voyage AI', local_server: 'Local server' }
 export const connectionName = (id: string) => connectionNames[id] ?? id
 // Dollars for a person to read: whole dollars from ten up, cents below, "under $0.01" for a sliver.
 export const money = (usd: number) => usd === 0 ? '$0.00' : usd < 0.01 ? t('under $0.01') : `$${usd.toLocaleString(uiLocale(), usd >= 10 ? { maximumFractionDigits: 0 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
@@ -449,6 +449,7 @@ export const stepLabel = (kind: string, key: string, candidate = false) => {
   if (kind === 'model:search_plan') return t('Search plan (model)')
   if (kind === 'model:screening') return t('Screening proposal (model)')
   if (kind === 'code:abstract_stage') return t('Abstract screening (code)')
+  if (kind === 'code:rerank') return t('Reranking the first records (reranker)')
   if (kind === 'model:abstract_screening') return t('Abstract screening proposal (model)')
   // A fast-chain request's key names its number, not its direction (`chain:fast:{n}`).
   if (kind === 'provider_chain:openalex') return t('Citation chaining request')

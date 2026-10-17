@@ -1127,7 +1127,7 @@ def fake_builtin(data_dir: Path):
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.host == "huggingface.co":
-            return httpx.Response(200, content=bodies[request.url.path.rsplit("/", 1)[-1]])
+            return httpx.Response(200, content=bodies[builtin_helpers.manifest_name(request.url)])
         if request.url.host == "generativelanguage.googleapis.com":
             rows = json.loads(request.content)["requests"]
             # `[embed-fails]` in the question: once its query is embedded, document batches answer HTTP 500.

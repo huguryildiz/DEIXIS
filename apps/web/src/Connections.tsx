@@ -1,10 +1,10 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowUpRight, Ban, BadgeCheck, ChevronRight, CircleCheck, Cloud, Copy, Cpu, Download, FileLock, FileText, FileUp, HardDrive, Info, KeyRound, Laptop, MemoryStick, LoaderCircle, Package, PenLine, Plus, RefreshCw, RotateCw, Save, ScanText, Server, ShieldCheck, Sigma, Trash2, TriangleAlert, Upload } from 'lucide-react'
+import { ArrowUpRight, Ban, BadgeCheck, ChevronRight, CircleCheck, Cloud, Copy, Cpu, Download, FileLock, FileText, FileUp, HardDrive, Hexagon, Info, KeyRound, Laptop, MemoryStick, LoaderCircle, Package, PenLine, Plus, RefreshCw, RotateCw, Save, ScanText, Server, Shapes, ShieldCheck, Sigma, Trash2, TriangleAlert, Upload, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
 import { DataLocationCard } from './DataLocation'
-import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinEmbedding, type Connections, type Credentials, type KeyEntry, type KeyTest, type Keychain, type EquationReader, type LocalTool, type Mathpix, type OllamaUpdates, type OcrTool, type PdfReader, type ToolUpdate, type LocalTools, type ProviderTest, type ModelHealth, type ReferenceImport, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
+import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinEmbedding, type Connections, type Credentials, type KeyEntry, type KeyTest, type Keychain, type EquationReader, type LocalTool, type Mathpix, type OllamaUpdates, type OcrTool, type PdfReader, type ToolUpdate, type LocalTools, type ProviderTest, type ModelHealth, type ReferenceImport, type Reranking, type RerankProvider, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
 import { useToast } from './Toast'
 import { ocrLanguagesText } from './ocr'
 import { t, uiLocale } from './i18n'
@@ -114,7 +114,7 @@ const companyMark = (icon: string | undefined, mono: string | undefined, glyph?:
 // A card (mockup `.card`): the mark, name and maker, the status pill, then one line on how it is connected. Green only
 // when its connection says it is usable.
 function CompanyCard({ mark, name, maker, via, ready, status, active, compact = false, onClick }: {
-  mark: ReactNode; name: string; maker: string; via?: string; ready: boolean; status: string; active: boolean; compact?: boolean; onClick: () => void
+  mark: ReactNode; name: string; maker: ReactNode; via?: string; ready: boolean; status: string; active: boolean; compact?: boolean; onClick: () => void
 }) {
   return <button type="button" className={`co-card ${compact ? 'is-compact' : ''} ${active ? 'on' : ''}`} onClick={onClick}>
     <span className="co-head">{mark}<span className="co-name"><b>{name}</b><small>{maker}</small></span><span className={`st ${ready ? 'ok' : 'no'}`}>{status}</span></span>
@@ -130,10 +130,12 @@ const glyph = (icon: ReactNode) => <span className="connection-icon" aria-hidden
 const GLYPHS: Record<string, ReactNode> = {
   ocr: glyph(<ScanText strokeWidth={1.8} />), marker: <ConnectionIcon id="marker" />, mathpix: glyph(<Cloud strokeWidth={1.8} />), pymupdf: <ConnectionIcon id="pymupdf" />, servers: glyph(<Server strokeWidth={1.8} />),
   server: glyph(<Server strokeWidth={1.8} />), 'reference-files': glyph(<FileText strokeWidth={1.8} />), off: glyph(<Ban strokeWidth={1.8} />),
+  voyage: glyph(<Cloud strokeWidth={1.8} />), cohere: glyph(<Hexagon strokeWidth={1.8} />), jina: glyph(<Shapes strokeWidth={1.8} />),
+  zeroentropy: glyph(<Zap strokeWidth={1.8} />),
 }
 const settingsIcon = (key: string) => GLYPHS[key] ?? <ConnectionIcon id={localToolIcon(key)} />
 
-type Selected = { kind: 'company' | 'local' | 'equation-reader' | 'mathpix' | 'ocr-tool' | 'pdf-reader' | 'provider' | 'zotero' | 'reference-files'; id: string }
+type Selected = { kind: 'company' | 'local' | 'semantic' | 'equation-reader' | 'mathpix' | 'ocr-tool' | 'pdf-reader' | 'provider' | 'zotero' | 'reference-files'; id: string }
 type Tone = 'ok' | 'no' | 'warn'
 
 // Why a service refused a new key, in plain words, with the HTTP code it answered. The readings follow each
@@ -931,7 +933,7 @@ function ModelCatalogue({ model }: { model: ModelHealth }) {
 // The built-in embedding model (slice 21): disk sizes before the download, the job's steps while it runs, then ready
 // with the time of the last full file check. Downloaded, checked and ready are told apart; sizes are disk sizes.
 const builtinSteps: Record<string, string> = {
-  environment: 'Creating its Python environment…', package: 'Installing fastembed…',
+  environment: 'Creating its Python environment…', package: 'Installing PyTorch and Transformers…',
   model_files: 'Downloading the model files…', start_check: 'Checking that the model starts and answers…',
 }
 const aboutMb = (bytes: number) => Math.round(bytes / 1e6)
@@ -948,7 +950,7 @@ function BuiltinEmbeddingPanel({ builtin, dark, onChanged }: { builtin: BuiltinE
     setBusy(true)
     action().then(() => { setConfirm(null); return onChanged() }).catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
   }
-  if (builtin.status === 'unsupported_platform') return <p className="local-tool-note">{t('The built-in model is not available on Windows yet')}</p>
+  if (builtin.status === 'unsupported_platform') return <p className="way-desc">{t('The built-in model is not available on Windows yet')}</p>
   const { sizes, job } = builtin
   const running = builtin.status === 'installing'
   const failed = !running && job?.status === 'failed' && builtin.status !== 'ready'
@@ -956,54 +958,56 @@ function BuiltinEmbeddingPanel({ builtin, dark, onChanged }: { builtin: BuiltinE
   const checked = builtin.last_full_check ? new Date(builtin.last_full_check.at).toLocaleString(uiLocale(), { dateStyle: 'medium', timeStyle: 'short' }) : null
   const canDownload = !running && builtin.status !== 'ready' && builtin.status !== 'installing_elsewhere' && builtin.status !== 'removing'
   const stepName = job ? t(builtinSteps[job.step_name ?? ''] ?? '') : ''
-  return <div className="semantic-builtin">
-    {builtin.status === 'ready' && <span className="status-chip">{checked ? t('Ready · files checked {time}', { time: checked }) : t('Ready')}</span>}
-    {builtin.status === 'ready' && <p className="local-tool-note">{t('Files checked at install and each time the model starts.')}</p>}
-    {builtin.status === 'ready' && upToDate && <p className="local-tool-note" role="status">{t('No update: you have the model this version of DEIXIS uses. Updates come with new versions of DEIXIS.')}</p>}
+  // Laid out like a connection way in the Models sheets: a head with the state, then what is installed and the actions.
+  const [tone, state]: [Tone, string] = builtin.status === 'ready' ? ['ok', t('Ready')] : builtin.status === 'update_available' ? ['warn', t('Update available')]
+    : running ? ['no', t('Downloading…')] : ['no', t('Not downloaded')]
+  return <section className={`way semantic-builtin ${builtin.status === 'ready' ? 'is-on' : ''}`} aria-label={t('Model files')}>
+    <div className="way-head"><h3>{t('Model files')}</h3><span className={`st ${tone}`}>{state}</span></div>
+    {builtin.status === 'ready' && <p className="way-desc">{checked ? t('Files checked {time}, at install and each time the model starts.', { time: checked }) : t('Files checked at install and each time the model starts.')}</p>}
+    {builtin.status === 'ready' && upToDate && <p className="way-desc" role="status">{t('No update: you have the model this version of DEIXIS uses. Updates come with new versions of DEIXIS.')}</p>}
     {builtin.status === 'update_available' && <>
-      <span className="status-chip is-warning">{t('Update available')}</span>
-      <p className="local-tool-note">{builtin.available
+      <p className="way-desc">{builtin.available
         ? t('This version of DEIXIS uses a newer copy of the model. The installed copy stays in use until you update.')
         : t('This version of DEIXIS uses a newer copy of the model. The installed copy is not used until you update.')}</p>
     </>}
-    {(builtin.status === 'ready' || builtin.status === 'update_available') && <p className="local-tool-note">{withCode(t('Installed: the {model} model, {package} and a Python 3.12 of its own, in the DEIXIS data folder.'), { model: 'BAAI/bge-small-en-v1.5', package: 'fastembed' })}</p>}
+    {(builtin.status === 'ready' || builtin.status === 'update_available') && <p className="way-desc">{withCode(t('Installed: the {model} model, {package} and a Python 3.12 of its own, in the DEIXIS data folder.'), { model: 'Qwen3-Embedding-0.6B + Qwen3-Reranker-0.6B', package: 'PyTorch, Transformers' })}</p>}
     {builtin.status === 'files_do_not_match' && <p className="local-tool-error">{t('The model files do not match the checked copy, so the model is not used. Download them again.')}</p>}
-    {builtin.status === 'installing_elsewhere' && <p className="local-tool-note">{t('Another running copy of DEIXIS is downloading it.')}</p>}
-    {builtin.status === 'removing' && <p className="local-tool-note">{t('Being removed…')}</p>}
+    {builtin.status === 'installing_elsewhere' && <p className="way-desc">{t('Another running copy of DEIXIS is downloading it.')}</p>}
+    {builtin.status === 'removing' && <p className="way-desc">{t('Being removed…')}</p>}
     {builtin.status === 'remove_failed' && <>
       <p className="local-tool-error">{t('Removal did not finish: some files could not be deleted.')}</p>
       {(job?.output ?? '').split('\n').filter(Boolean).slice(0, 4).map((line, i) => <p key={i} className="local-tool-error">{line}</p>)}
     </>}
-    {canDownload && builtin.status !== 'update_available' && <p className="local-tool-note">{t('Needs about {total} MB of disk, plus about {python} MB if Python 3.12 has to be downloaded, plus room for a download cache.', sizeVars)}</p>}
-    {running && job && <p className="local-tool-note local-tool-progress-head" role="status"><LoaderCircle size={14} className="chat-spin" aria-hidden />
+    {canDownload && builtin.status !== 'update_available' && <p className="way-desc">{t('Needs about {total} MB of disk, plus about {python} MB if Python 3.12 has to be downloaded, plus room for a download cache.', sizeVars)}</p>}
+    {running && job && <p className="way-desc local-tool-progress-head" role="status"><LoaderCircle size={14} className="chat-spin" aria-hidden />
       {t('Step {step} of {steps}: {what}', { step: job.step, steps: job.steps, what: stepName })}
       {job.step_name === 'model_files' && job.bytes_total ? ` ${t('{done} of {total} MB', { done: aboutMb(job.bytes_done ?? 0), total: aboutMb(job.bytes_total) })}` : ''}</p>}
     {failed && job && <>
       <p className="local-tool-error">{t('Download failed at step {step} of {steps}: {what}', { step: job.step, steps: job.steps, what: stepName })}</p>
       {errorLines(job.output).map((line, i) => <p key={i} className="local-tool-error">{line}</p>)}
     </>}
-    {!running && job?.status === 'cancelled' && builtin.status !== 'ready' && <p className="local-tool-note">{t('Download cancelled.')}</p>}
+    {!running && job?.status === 'cancelled' && builtin.status !== 'ready' && <p className="way-desc">{t('Download cancelled.')}</p>}
     {job?.output && (failed || running) && <details className="local-tool-details"><summary>{t('Show full output')}</summary><pre className="local-tool-output">{job.output}</pre></details>}
     {canDownload && (builtin.uv.available
-      ? <div className="actions"><Button variant="outline" size="sm" disabled={busy} onClick={() => setConfirm('install')}>{t(builtin.status === 'update_available' ? 'Update' : failed || builtin.status === 'files_do_not_match' ? 'Try again' : 'Download')}</Button>
-        {builtin.status === 'update_available' && <Button variant="outline" size="sm" className="is-destructive" disabled={busy} onClick={() => setConfirm('remove')}>{t('Remove')}</Button>}</div>
-      : <p className="local-tool-note">{installReasonText(builtin.uv.reason)}<br /><a href={builtin.uv.url} target="_blank" rel="noopener noreferrer">{t('Installation instructions')}</a></p>)}
-    {running && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" disabled={busy} onClick={() => run(api.cancelBuiltinEmbedding)}>{t('Cancel download')}</Button></div>}
-    {builtin.status === 'ready' && <div className="actions"><Button variant="outline" size="sm" disabled={busy} onClick={() => run(async () => { await api.checkBuiltinEmbedding(); setUpToDate(true) })}>{t('Check for updates')}</Button>
-      <Button variant="outline" size="sm" className="is-destructive" disabled={busy} onClick={() => setConfirm('remove')}>{t('Remove')}</Button></div>}
-    {(builtin.status === 'remove_failed' || (builtin.status === 'update_available' && !builtin.uv.available)) && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" disabled={busy} onClick={() => setConfirm('remove')}>{t('Remove')}</Button></div>}
+      ? <div className="actions"><button type="button" className="btn-pri" disabled={busy} onClick={() => setConfirm('install')}>{builtin.status === 'update_available' ? <RefreshCw aria-hidden /> : <Download aria-hidden />}{t(builtin.status === 'update_available' ? 'Update' : failed || builtin.status === 'files_do_not_match' ? 'Try again' : 'Download')}</button>
+        {builtin.status === 'update_available' && <button type="button" className="ghost" disabled={busy} onClick={() => setConfirm('remove')}>{t('Remove')}</button>}</div>
+      : <p className="way-desc">{installReasonText(builtin.uv.reason)}<br /><a href={builtin.uv.url} target="_blank" rel="noopener noreferrer">{t('Installation instructions')}</a></p>)}
+    {running && <div className="actions"><button type="button" className="ghost" disabled={busy} onClick={() => run(api.cancelBuiltinEmbedding)}>{t('Cancel download')}</button></div>}
+    {builtin.status === 'ready' && <div className="actions"><button type="button" className="btn-pri" disabled={busy} onClick={() => run(async () => { await api.checkBuiltinEmbedding(); setUpToDate(true) })}><RotateCw aria-hidden />{t('Check for updates')}</button>
+      <button type="button" className="ghost" disabled={busy} onClick={() => setConfirm('remove')}>{t('Remove')}</button></div>}
+    {(builtin.status === 'remove_failed' || (builtin.status === 'update_available' && !builtin.uv.available)) && <div className="actions"><button type="button" className="ghost" disabled={busy} onClick={() => setConfirm('remove')}>{t('Remove')}</button></div>}
     <ConfirmDialog open={confirm === 'install'} dark={dark} neutral title={t('Download the built-in model?')}
       description={t('The model is downloaded once from Hugging Face and takes about {total} MB in the DEIXIS data folder, plus about {python} MB if Python 3.12 has to be downloaded. After that, semantic search sends no text off this computer.', sizeVars)}
       context={builtin.path} confirmLabel={t('Download')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(api.installBuiltinEmbedding)} onOpenChange={open => setConfirm(open ? 'install' : null)} />
     <ConfirmDialog open={confirm === 'remove'} dark={dark} title={t('Remove the built-in model?')}
       description={t('Its files are deleted. Scores it already gave are kept; sources not yet scored are ranked without it until you download it again.')}
       confirmLabel={t('Remove')} cancelLabel={t('Cancel')} busy={busy} onConfirm={() => run(api.removeBuiltinEmbedding)} onOpenChange={open => setConfirm(open ? 'remove' : null)} />
-  </div>
+  </section>
 }
 
 // Turns the bare site addresses in a settings sentence (openalex.org, zotero.org/settings/keys) into links.
 function linkify(text: string): ReactNode {
-  return text.split(/(\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:org|com|uk|gov|ai)(?:\/[\w/#?=.-]*[\w/])?)/).map((part, i) => i % 2
+  return text.split(/(\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:org|com|uk|gov|ai|dev)(?:\/[\w/#?=.-]*[\w/])?)/).map((part, i) => i % 2
     ? <a key={i} href={`https://${part}`} target="_blank" rel="noopener noreferrer">{part}</a> : part)
 }
 
@@ -1015,9 +1019,120 @@ function CheckButton({ id, label, run, checking, start, disabled = false, quiet 
   return <button type="button" className={quiet ? 'ghost' : 'btn-pri'} disabled={disabled || checking !== null} onClick={() => start(id, run)}>{checking === id ? <span className="spin" aria-hidden /> : <RotateCw aria-hidden />}{t(label)}</button>
 }
 
-function GeminiKeyPath() {
-  const [before, after] = t('Get a free key: sign in at {link}, create a key, paste it under Model connections → Gemini.').split('{link}')
-  return <p className="local-tool-note">{before}<a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer">aistudio.google.com/apikey</a>{after}</p>
+// Reranking (Qwen3 built-in or Voyage): off until turned on; reorders the first records of the fused order (the papers a
+// run reads times the pool factor) before they are read, so it decides which records fall above the read cutoff. It never includes or excludes, and the person's own included records stay first.
+function RerankingSettings({ refresh, dark, keyField, builtinPanel }: { refresh: string; dark: boolean; keyField: (env: string, service: string) => ReactNode; builtinPanel: ReactNode }) {
+  const [state, setState] = useState<Reranking | null>(null)
+  const [draft, setDraft] = useState<{ enabled: boolean; provider: RerankProvider | null; factor: string; timeout: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [sheet, setSheet] = useState<'off' | RerankProvider | null>(null)
+  const toast = useToast()
+  useEffect(() => {
+    api.reranking().then(result => { setState(result); setError('') }).catch((e: Error) => { if (!isLeft(e)) setError(e.message) })
+  }, [refresh])
+  if (!state) return error ? <Notice tone="error" panel="search">{error}</Notice> : null
+  const shown = draft ?? { enabled: state.enabled, provider: state.provider, factor: String(state.pool_factor), timeout: String(state.timeout_seconds) }
+  const option = (p: RerankProvider) => state.options.find(o => o.provider === p)
+  const changed = draft !== null
+  const save = (next: typeof shown) => {
+    setBusy(true); setError('')
+    api.saveReranking({ enabled: next.enabled, provider: next.provider, pool_factor: Number(next.factor), timeout_seconds: Number(next.timeout) })
+      .then(result => { setState(result); setDraft(null); toast('success', t('Reranking setting saved.')) })
+      .catch((e: Error) => setError(t('Could not save: {message}', { message: e.message })))
+      .finally(() => setBusy(false))
+  }
+  const sends = shown.provider ? option(shown.provider)?.sends : null
+  // One card per reranker, grouped like the model cards (on this computer, then APIs); a card opens its sheet, where it
+  // is chosen. Choosing saves at once, with the limits as they stand.
+  // API rerankers: where the key comes from and what each sends; the model name comes from the server's options.
+  const apis = [
+    ['voyage', t('Voyage AI reranker'), 'rerank-3-lite', 'VOYAGE_API_KEY', 'Voyage AI', 'dashboard.voyageai.com'],
+    ['cohere', t('Cohere reranker'), 'rerank-v4.0-fast', 'COHERE_API_KEY', 'Cohere', 'dashboard.cohere.com/api-keys'],
+    ['jina', t('Jina AI reranker'), 'jina-reranker-v3.5', 'JINA_API_KEY', 'Jina AI', 'jina.ai/api-dashboard'],
+    ['zeroentropy', t('ZeroEntropy reranker'), 'zerank-2', 'ZEROENTROPY_API_KEY', 'ZeroEntropy', 'dashboard.zeroentropy.dev'],
+  ] as const
+  const rows: { id: 'off' | RerankProvider; local: boolean | null; label: string; model: string; desc: ReactNode; key?: { env: string; service: string; site: string } }[] = [
+    { id: 'builtin', local: true, label: t('This computer · built-in'), model: 'Qwen3-Reranker-0.6B',
+      desc: withCode(t('{model} · downloaded with the built-in embedding model; no text leaves the computer'), { model: 'Qwen3-Reranker-0.6B' }) },
+    ...apis.map(([id, label, fallback, env, service, site]) => ({ id, local: false, label, model: option(id)?.model ?? fallback,
+      desc: withCode(t('{model} · sends the question and titles and abstracts to {service}', { service }), { model: option(id)?.model ?? fallback }),
+      key: { env, service, site } })),
+    { id: 'off', local: null, label: t('Off'), model: t('The fused ranking is read as it is.'), desc: t('The fused ranking is read as it is.') },
+  ]
+  const stateOf = (id: 'off' | RerankProvider) => {
+    const o = id === 'off' ? null : option(id)
+    const checked = id === 'off' ? !shown.enabled : shown.enabled && shown.provider === id
+    const available = id === 'off' || !!o?.available
+    // A card's pill stays short ("Key needed"); the sheet's key section says which key and where to get it.
+    const need = available ? null : id === 'builtin' ? t(o?.reason ?? 'Not downloaded') : t('Key needed')
+    return { o, checked, available, status: need ?? (checked ? t('In use') : t('Not in use')) }
+  }
+  const card = (row: (typeof rows)[number]) => {
+    const { checked, available, status } = stateOf(row.id)
+    return <CompanyCard key={row.id} mark={companyMark(undefined, undefined, settingsIcon(row.id))} name={row.label}
+      maker={row.id === 'off' ? row.model : <code className="model-id">{row.model}</code>} ready={checked && available} status={status} active={checked} compact onClick={() => setSheet(row.id)} />
+  }
+  const open = rows.find(r => r.id === sheet)
+  const openState = open ? stateOf(open.id) : null
+  return <>
+    <h2 id="reranking-title" data-panel="search">{t('Reranking')}</h2>
+    <p className="foot-note" data-panel="search">{t('Reorders the top of the ranking by reading the question with each title and abstract, before records are read, so it decides which papers fall within the reading limit. Only the record order is reranked; passages for answers are not. A reranker score never includes or excludes a record, and records you included stay first.')}</p>
+    {error && <Notice tone="error" panel="search">{error}</Notice>}
+    <div className="choice-groups" data-panel="search" data-group="reranking" aria-busy={busy || undefined}>
+      <h3 className="choice-head">{t('Local models')}</h3>
+      <div className="co-grid">{rows.filter(r => r.local === true).map(card)}</div>
+      <h3 className="choice-head">{t('API models')}</h3>
+      <div className="co-grid">{rows.filter(r => r.local === false).map(card)}</div>
+      <div className="co-grid choice-off">{rows.filter(r => r.local === null).map(card)}</div>
+    </div>
+    {shown.enabled && <section className="tool-facts" data-panel="search" aria-label={t('Reranking limits')}>
+      <dl>
+        <dt><label htmlFor="rerank-factor">{t('Records reranked (× papers read)')}</label></dt><dd>
+          <input id="rerank-factor" className="field mathpix-budget" type="number" min={1} max={4} step={0.5} inputMode="decimal" value={shown.factor} disabled={busy}
+            onChange={e => setDraft({ ...shown, factor: e.target.value })} />
+          <small className="foot-note">{t('At 2 the reranker sees twice the papers a run reads (Standard: 100 for 50 read), so a paper just below the cutoff can move in. At most {max} records. 2 is a starting value, not a measured best.', { max: state.max_candidates })}</small></dd>
+        <dt><label htmlFor="rerank-timeout">{t('Time limit (seconds)')}</label></dt><dd>
+          <input id="rerank-timeout" className="field mathpix-budget" type="number" min={10} max={900} step={1} inputMode="numeric" value={shown.timeout} disabled={busy}
+            onChange={e => setDraft({ ...shown, timeout: e.target.value })} />
+          <small className="foot-note">{t('When the reranker fails or runs out of time, the run keeps the fused order and says so; no other reranker is used.')}</small></dd>
+      </dl>
+    </section>}
+    {sends && shown.enabled && <p className="foot-note semantic-privacy" data-panel="search">{t(sends)}</p>}
+    {changed && <div className="actions" data-panel="search"><Button variant="outline" size="sm" disabled={busy} onClick={() => save(shown)}>{t('Save')}</Button>
+      <Button variant="ghost" size="sm" disabled={busy} onClick={() => { setDraft(null); setError('') }}>{t('Cancel')}</Button></div>}
+    <Sheet open={!!open} onOpenChange={next => { if (!next) setSheet(null) }}>
+      <SheetContent className={`detail-sheet connection-sheet ${dark ? 'dark' : ''}`}>
+        {open && openState && <>
+          <SheetHeader className="sheet-head">
+            <span className="sheet-mark" aria-hidden>{settingsIcon(open.id)}</span>
+            <div className="sheet-head-text">
+              <SheetTitle>{open.label}</SheetTitle>
+              <SheetDescription>{t('Reranking')}</SheetDescription>
+            </div>
+          </SheetHeader>
+          <div className="connection-body mk pad detail">
+            <p className="foot-note is-ink">{open.desc}</p>
+            {open.id === 'builtin' && builtinPanel}
+            {open.key && <section className={`way ${openState.available ? 'is-on' : ''}`} aria-label={t('With an API key')}>
+              <div className="way-head"><h3>{t('With an API key')}</h3><span className={`st ${openState.available ? 'ok' : 'no'}`}>{openState.available ? t('Ready') : t('No key entered')}</span></div>
+              <p className="way-desc">{linkify(t('Get the key at {site}.', { site: open.key.site }))}</p>
+              {keyField(open.key.env, open.key.service)}
+            </section>}
+            <section className={`way ${openState.checked ? 'is-on' : ''}`} aria-label={t('Reranking')}>
+              <div className="way-head"><h3>{t('Reranking')}</h3><span className={`st ${openState.checked && openState.available ? 'ok' : 'no'}`}>{openState.status}</span></div>
+              {open.id !== 'off' && openState.o?.sends && <p className="way-desc">{t(openState.o.sends)}</p>}
+              {!openState.checked && <div className="actions">
+                <button type="button" className="btn-pri" disabled={!openState.available || busy}
+                  onClick={() => { save({ ...shown, enabled: open.id !== 'off', provider: open.id === 'off' ? shown.provider : open.id }); setSheet(null) }}>
+                  {busy ? <span className="spin" aria-hidden /> : <CircleCheck aria-hidden />}{open.id === 'off' ? t('Turn reranking off') : t('Use this reranker')}</button>
+              </div>}
+            </section>
+          </div>
+        </>}
+      </SheetContent>
+    </Sheet>
+  </>
 }
 
 // A .bib or .ris file into the Library (F14, S19b's route). The sheet reports what the server stored, entry by entry
@@ -1381,7 +1496,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
       toast('success', url ? t('Local server address saved.') : t('Local server address removed.'))
     }).catch((e: Error) => setServerError(e.message)).finally(() => setServerBusy(false))
   }
-  // Semantic search rows (plan ST5): the mockup's five, one "Local model server" for Ollama and LM Studio. A row that
+  // Semantic search rows (plan ST5); "Local model server" (Ollama, LM Studio) only while it is the saved choice. A row that
   // cannot be chosen says what it needs, from the options' own state. A choice is saved at once; choosing the row that
   // is only the default (nothing saved yet) saves it too.
   const option = (p: SemanticSearchProvider) => semantic?.options.find(o => o.provider === p)
@@ -1406,31 +1521,56 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     if (!semantic) return null
     if (row === 'gemini') return option('gemini')?.available ? null : t('Needs a Google AI key')
     if (row === 'openai') return option('openai')?.available ? null : t('Needs an OpenAI key')
+    if (row === 'voyage') return option('voyage')?.available ? null : t('Needs a Voyage AI key')
+    if (row === 'cohere') return option('cohere')?.available ? null : t('Needs a Cohere key')
     if (row === 'builtin') { const o = option('builtin'); return o && !o.available ? t(o.reason ?? 'Not downloaded') : null }
     if (row === 'server') return serverChoices.length ? null : serverOptions.some(o => /lists no embedding model/.test(o.reason ?? '')) ? t('Needs an embedding model') : t('Needs a local server')
     return null
   }
-  const semanticRows: { id: string; label: string; desc?: ReactNode; providers: SemanticSearchProvider[]; body?: ReactNode }[] = [
-    { id: 'gemini', providers: ['gemini'], label: t('Gemini embeddings'),
+  const semanticRows: { id: string; label: string; local: boolean | null; model?: string; apiKey?: { env: string; site: string; service: string; conn?: string }; desc?: ReactNode; providers: SemanticSearchProvider[]; body?: ReactNode }[] = [
+    { id: 'gemini', providers: ['gemini'], label: t('Gemini embeddings'), local: false, model: option('gemini')?.models[0] ?? 'gemini-embedding',
       desc: withCode(t('{model} · sends titles, abstracts and passage text to Google'), { model: option('gemini')?.models[0] ?? 'gemini-embedding' }),
-      body: <>
-        <p className="local-tool-note">{t('Reads the question in any language. Needs a Google AI Studio key; a free key works.')}</p>
-        {!option('gemini')?.available && <GeminiKeyPath />}
-      </> },
-    { id: 'builtin', providers: ['builtin'], label: t('This computer · built-in'),
-      desc: withCode(t('{model} · reads English; for a question in another language it asks for one English sentence'), { model: 'bge-small-en-v1.5' }),
+      apiKey: { env: 'GEMINI_API_KEY', site: 'aistudio.google.com/apikey', service: 'Google AI Studio', conn: 'gemini' },
+      body: <p className="foot-note is-ink">{t('Reads the question in any language. Needs a Google AI Studio key; a free key works.')}</p> },
+    { id: 'openai', providers: ['openai'], label: t('OpenAI embeddings'), local: false, model: option('openai')?.models[0] ?? 'text-embedding-3-small',
+      desc: withCode(t('{model} · sends titles, abstracts and passage text to OpenAI'), { model: option('openai')?.models[0] ?? 'text-embedding-3-small' }),
+      apiKey: { env: 'OPENAI_API_KEY', site: 'platform.openai.com', service: 'OpenAI', conn: 'openai' } },
+    { id: 'voyage', providers: ['voyage'], label: t('Voyage AI embeddings'), local: false, model: option('voyage')?.models[0] ?? 'voyage-4-lite',
+      desc: withCode(t('{model} · sends titles, abstracts and passage text to Voyage AI'), { model: option('voyage')?.models[0] ?? 'voyage-4-lite' }),
+      apiKey: { env: 'VOYAGE_API_KEY', site: 'dashboard.voyageai.com', service: 'Voyage AI' } },
+    { id: 'cohere', providers: ['cohere'], label: t('Cohere embeddings'), local: false, model: option('cohere')?.models[0] ?? 'embed-v5.0-fast',
+      desc: withCode(t('{model} · sends titles, abstracts and passage text to Cohere'), { model: option('cohere')?.models[0] ?? 'embed-v5.0-fast' }),
+      apiKey: { env: 'COHERE_API_KEY', site: 'dashboard.cohere.com/api-keys', service: 'Cohere' } },
+    { id: 'builtin', providers: ['builtin'], label: t('This computer · built-in'), local: true, model: 'Qwen3-Embedding-0.6B',
+      desc: withCode(t('{model} · reads English; for a question in another language it asks for one English sentence'), { model: 'Qwen3-Embedding-0.6B' }),
       body: <>
         {builtin && <BuiltinEmbeddingPanel builtin={builtin} dark={dark} onChanged={async () => { await loadBuiltin(); await loadSemantic() }} />}
       </> },
-    { id: 'openai', providers: ['openai'], label: t('OpenAI embeddings'),
-      desc: withCode(t('{model} · sends titles, abstracts and passage text to OpenAI'), { model: option('openai')?.models[0] ?? 'text-embedding-3-small' }) },
-    { id: 'server', providers: ['ollama', 'lm_studio'], label: t('Local model server'), desc: t('An embedding model on Ollama or LM Studio') },
-    { id: 'off', providers: ['off'], label: t('Off'), desc: t('Keyword search only; sources get no similarity score.') },
+    // Local model servers are no longer offered (the built-in Qwen3 model covers keyless use); a saved Ollama or LM Studio
+    // choice still shows its row, so it is never switched away without the person choosing another.
+    ...(semantic && SERVER_IDS.includes(semantic.provider)
+      ? [{ id: 'server', providers: ['ollama', 'lm_studio'] as SemanticSearchProvider[], label: t('Local model server'), local: true, model: 'Ollama · LM Studio', desc: t('An embedding model on Ollama or LM Studio') }] : []),
+    { id: 'off', providers: ['off'], label: t('Off'), local: null, model: t('Keyword search only; sources get no similarity score.'), desc: t('Keyword search only; sources get no similarity score.') },
   ]
-  const privacy = !semantic ? null : semantic.provider === 'off' ? t('Sources get no similarity score; passages are ranked by keyword match only. No text is sent anywhere.')
-    : semantic.provider === 'gemini' ? t('Passage text is sent to Google. If your key is on Google’s free tier, which DEIXIS cannot detect, Google may use that text to improve its products.')
-    : semantic.provider === 'openai' ? t('Passage text is sent to {service}.', { service: 'OpenAI' })
-    : semantic.provider === 'builtin' ? t('For semantic search, no text leaves the computer.') : t('Passage text stays on this computer.')
+  const privacyOf = (provider: SemanticSearchProvider) => provider === 'off' ? t('Sources get no similarity score; passages are ranked by keyword match only. No text is sent anywhere.')
+    : provider === 'gemini' ? t('Passage text is sent to Google. If your key is on Google’s free tier, which DEIXIS cannot detect, Google may use that text to improve its products.')
+    : provider === 'openai' ? t('Passage text is sent to {service}.', { service: 'OpenAI' })
+    : provider === 'cohere' ? t('The question, titles, abstracts and passage text are sent to {service}. Each run records the tokens Cohere billed.', { service: 'Cohere' })
+    : provider === 'voyage' ? t('The question, titles, abstracts and passage text are sent to {service}. Each run records the tokens Voyage counted.', { service: 'Voyage AI' })
+    : provider === 'builtin' ? t('For semantic search, no text leaves the computer.') : t('Passage text stays on this computer.')
+  const privacy = semantic ? privacyOf(semantic.provider) : null
+  // A semantic search row's state: chosen, choosable, and what its card's pill says.
+  const semanticState = (row: (typeof semanticRows)[number]) => {
+    const isChosen = !!chosen && row.providers.includes(chosen.provider)
+    const available = !!semantic && (row.id === 'server' ? serverChoices.length > 0 : !!option(row.providers[0])?.available)
+    const need = needsPill(row.id)
+    return { isChosen, available, need, status: need ?? (isChosen ? t('In use') : t('Not in use')) }
+  }
+  const pickSemantic = (row: (typeof semanticRows)[number]) => {
+    if (row.id === 'server') { const first = serverChoices[0]; if (first) chooseSemantic(first.provider, first.model) }
+    else chooseSemantic(row.providers[0], null)
+  }
+  const semanticRow = selected?.kind === 'semantic' ? semanticRows.find(r => r.id === selected.id) : undefined
 
   // ---- the connection sheet ----
   const sel = selected
@@ -1444,6 +1584,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const name = !sel ? ''
     : company ? company.name
     : sel.kind === 'local' ? (sel.id === 'local_server' ? t('Another local server') : localToolNames[sel.id] ?? sel.id)
+    : sel.kind === 'semantic' ? semanticRow?.label ?? sel.id
     : sel.kind === 'provider' ? providerNames[sel.id] ?? sel.id
     : sel.kind === 'equation-reader' ? t('Equation reader (Marker)')
     : sel.kind === 'mathpix' ? t('Mathpix equation reader')
@@ -1457,6 +1598,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     : company ? t(company.maker)
     : sel.kind === 'provider' ? (providerUse[sel.id] ? t(providerUse[sel.id]) : providerRole(provider?.role))
     : sel.kind === 'zotero' ? t('Read-only collections')
+    : sel.kind === 'semantic' ? t('Semantic search')
     : sel.kind === 'reference-files' ? t('Import a .bib or .ris file')
     : null
   const checkedLine = (key: string) => checked[key] && !checkFailed[key] ? <span className="status-chip is-configured">{t('checked {time}', { time: clock(checked[key]) })}</span> : null
@@ -1611,7 +1753,37 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   }
   const localCheck = (conn: string | null) => Promise.all([...(conn ? [refreshModel(conn)] : []), loadTools(true, true), loadSemantic(true)])
   let body: ReactNode = null
-  if (company) {
+  if (semanticRow) {
+    const { isChosen, available, need, status } = semanticState(semanticRow)
+    const key = semanticRow.apiKey
+    const entry = key ? keyEntry(key.env) : undefined
+    body = <>
+      {semanticRow.desc && <p className="foot-note is-ink">{semanticRow.desc}</p>}
+      {key && <section className={`way ${entry?.configured ? 'is-on' : ''}`} aria-label={t('With an API key')}>
+        {wayHead(t('With an API key'), !credentials ? loading : entry?.configured ? ['ok', t('Ready')] : ['no', t('No key entered')])}
+        <p className="way-desc">{linkify(t('Get the key at {site}.', { site: key.site }))}</p>
+        {credentials && <KeyField key={key.env} env={key.env} entry={entry} keychain={credentials.keychain} label={t('Key')} service={key.service}
+          removeEffect={key.env === 'VOYAGE_API_KEY' ? t('Semantic search and reranking with Voyage stop until you add a key again.')
+            : key.env === 'COHERE_API_KEY' ? t('Semantic search and reranking with Cohere stop until you add a key again.')
+            : key.env === 'OPENAI_API_KEY' ? t('Research steps with this key, and semantic search with OpenAI, stop until a new key is added.')
+            : t('Research steps with this key, and semantic search with Gemini, stop until a new key is added.')}
+          onSaved={() => key.conn ? reloadAfterModelKeyChange(key.conn) : reloadAfterKeyChange()} />}
+      </section>}
+      {semanticRow.body}
+      <section className={`way ${isChosen && !need ? 'is-on' : ''}`} aria-label={t('Semantic search')}>
+        {wayHead(t('Semantic search'), [isChosen && !need ? 'ok' : 'no', status])}
+        <p className="way-desc">{privacyOf(semanticRow.id === 'server' ? 'ollama' : semanticRow.providers[0])}</p>
+        {semanticRow.id === 'server' && isChosen && serverChoices.length > 0 && <select className="select semantic-model" aria-label={t('Embedding model')} disabled={saving} value={`${chosen?.provider}|${chosen?.model ?? ''}`}
+          onChange={e => { const [p, ...m] = e.target.value.split('|'); chooseSemantic(p as SemanticSearchProvider, m.join('|')) }}>
+          {serverChoices.map(c => <option key={`${c.provider}|${c.model}`} value={`${c.provider}|${c.model}`}>{c.label}</option>)}
+        </select>}
+        {(!isChosen || (semantic && !semantic.explicit)) && <div className="actions">
+          <button type="button" className="btn-pri" disabled={!available || saving} onClick={() => pickSemantic(semanticRow)}>
+            {saving ? <span className="spin" aria-hidden /> : <CircleCheck aria-hidden />}{semanticRow.id === 'off' ? t('Turn semantic search off') : t('Use for semantic search')}</button>
+        </div>}
+      </section>
+    </>
+  } else if (company) {
     const ways = company.keyFirst
       ? [keyWay(company), company.account && accountWay(company)]
       : [company.account ? accountWay(company) : company.soon ? soonWay(company.soon) : null, keyWay(company)]
@@ -1798,40 +1970,29 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     <DataLocationCard dark={dark} />
 
     {defaults}
-    <h2 data-panel="models">{t('Semantic search')}</h2>
-    <p className="foot-note" data-panel="models">{t('Ranks search results by meaning, not only by shared words. Changing the provider scores the passages again; earlier scores are kept.')}</p>
-    {semError && <Notice tone="error" panel="models">{semError}</Notice>}
-    <div className="rows opts semantic-choices" data-panel="models" role="radiogroup" aria-label={t('Semantic search provider')} aria-busy={saving || undefined}>
-      {semanticRows.map(row => {
-        const isChosen = !!chosen && row.providers.includes(chosen.provider)
-        const available = !!semantic && (row.id === 'server' ? serverChoices.length > 0 : !!option(row.providers[0])?.available)
-        const need = needsPill(row.id)
-        const pick = () => {
-          if (row.id === 'server') { const first = serverChoices[0]; if (first) chooseSemantic(first.provider, first.model) }
-          else chooseSemantic(row.providers[0], null)
-        }
-        return <div className="semantic-option" key={row.id} data-row={row.id}>
-          <label className={!available ? 'is-disabled' : undefined}>
-            <input type="radio" name="semantic-provider" checked={isChosen} disabled={!available || saving} onChange={pick}
-              onClick={() => { if (isChosen && semantic && !semantic.explicit) pick() }} />
-            {settingsIcon(row.id)}<span>{row.label}{row.desc && <small>{row.desc}</small>}</span>
-            {saving && isChosen && <span className="spin" aria-label={t('Saving…')} />}
-            {need && <span className="st no">{need}</span>}
-          </label>
-          {row.id === 'server' && isChosen && serverChoices.length > 0 && <div className="semantic-option-body">
-            <select className="select semantic-model" aria-label={t('Embedding model')} disabled={saving} value={`${chosen?.provider}|${chosen?.model ?? ''}`}
-              onChange={e => { const [p, ...m] = e.target.value.split('|'); chooseSemantic(p as SemanticSearchProvider, m.join('|')) }}>
-              {serverChoices.map(c => <option key={`${c.provider}|${c.model}`} value={`${c.provider}|${c.model}`}>{c.label}</option>)}
-            </select>
-          </div>}
-          {row.body && <div className="semantic-option-body">{row.body}</div>}
-        </div>
-      })}
+    <h2 data-panel="search">{t('Semantic search')}</h2>
+    <p className="foot-note" data-panel="search">{t('Ranks search results by meaning, not only by shared words. Changing the provider scores the passages again; earlier scores are kept.')}</p>
+    {semError && <Notice tone="error" panel="search">{semError}</Notice>}
+    {semantic?.builtin_model_changed && <Notice tone="attention" panel="search">{t('The built-in model is now Qwen3-Embedding-0.6B. Scores stored with the earlier model are kept but not reused: the next run scores its sources again with the new model, after you download it below.')}</Notice>}
+    <div className="choice-groups" data-panel="search" data-group="semantic" aria-busy={saving || undefined}>
+      {([[true, t('Local models')], [false, t('API models')], [null, null]] as const).map(([local, head]) => <Fragment key={String(local)}>
+        {head && <h3 className="choice-head">{head}</h3>}
+        <div className={`co-grid ${local === null ? 'choice-off' : ''}`}>{semanticRows.filter(row => row.local === local).map(row => {
+          const { isChosen, need, status } = semanticState(row)
+          return <CompanyCard key={row.id} mark={companyMark(undefined, undefined, settingsIcon(row.id))} name={row.label}
+            maker={row.local === null || row.id === 'server' ? row.model ?? '' : <code className="model-id">{row.model}</code>}
+            ready={isChosen && !need} status={status} active={isChosen} compact onClick={() => show({ kind: 'semantic', id: row.id })} />
+        })}</div>
+      </Fragment>)}
     </div>
-    {privacy && <p className="foot-note semantic-privacy" data-panel="models">{privacy}</p>}
+    {privacy && <p className="foot-note semantic-privacy" data-panel="search">{privacy}</p>}
+    <RerankingSettings dark={dark} builtinPanel={builtin ? <BuiltinEmbeddingPanel builtin={builtin} dark={dark} onChanged={async () => { await loadBuiltin(); await loadSemantic() }} /> : null} keyField={(env, service) => credentials ? <KeyField key={env} env={env} entry={keyEntry(env)} keychain={credentials.keychain} label={t('Key')} service={service}
+      removeEffect={env === 'VOYAGE_API_KEY' ? t('Semantic search and reranking with Voyage stop until you add a key again.')
+        : env === 'COHERE_API_KEY' ? t('Semantic search and reranking with Cohere stop until you add a key again.') : t('Reranking with {service} stops until you add a key again.', { service })}
+      onSaved={reloadAfterKeyChange} /> : null} refresh={`${builtin?.status ?? ''}|${['VOYAGE_API_KEY', 'COHERE_API_KEY', 'JINA_API_KEY', 'ZEROENTROPY_API_KEY'].map(env => keyEntry(env)?.configured ?? '').join('|')}`} />
 
-    <section className="doc-readers" data-panel="models" aria-labelledby="document-reading">
-      <div className="co-group-head"><h2 id="document-reading">{t('Document reading')}</h2><p className="co-note">{t('Not models: tools that take the text out of PDFs.')}</p></div>
+    <section className="doc-readers" data-panel="documents" aria-labelledby="document-reading">
+      <div className="co-group-head"><h2 id="document-reading">{t('Document reading')}</h2><p className="co-note">{t('Tools that take the text out of PDFs.')}</p></div>
       <ul className="doc-list" data-group="documents">{docRows.map(row => {
         const [tone, status] = row.status
         return <li key={row.kind}><button type="button" className={isActive(row.kind, row.id) ? 'on' : ''} onClick={() => show({ kind: row.kind, id: row.id })}>

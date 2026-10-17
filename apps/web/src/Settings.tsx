@@ -105,14 +105,14 @@ export type AccessControl = {
   reload: () => void
 }
 
-export type SettingsTab = 'models' | 'sources' | 'usage' | 'general'
+export type SettingsTab = 'models' | 'search' | 'documents' | 'sources' | 'usage' | 'general'
 export type SettingsSection = 'connections' | 'access' | 'openalex' | 'profile' | SettingsTab
 const TABS: { id: SettingsTab; label: string }[] = [
-  { id: 'models', label: 'Models' }, { id: 'sources', label: 'Sources' }, { id: 'usage', label: 'Usage' }, { id: 'general', label: 'General' },
+  { id: 'models', label: 'Language models' }, { id: 'search', label: 'Search & ranking' }, { id: 'documents', label: 'Document reading' }, { id: 'sources', label: 'Sources' }, { id: 'usage', label: 'Usage' }, { id: 'general', label: 'General' },
 ]
 // The older section links open the tab that holds their section.
 const SECTION_TAB: Record<SettingsSection, SettingsTab> = {
-  connections: 'models', access: 'sources', openalex: 'sources', profile: 'general', models: 'models', sources: 'sources', usage: 'usage', general: 'general',
+  connections: 'models', access: 'sources', openalex: 'sources', profile: 'general', models: 'models', search: 'search', documents: 'documents', sources: 'sources', usage: 'usage', general: 'general',
 }
 
 export type ThemeChoice = 'system' | 'light' | 'dark'

@@ -51,9 +51,18 @@ class BudgetStop(Exception):
     """OpenAlex said the daily budget or rate limit is spent: stop, never retry around it."""
 
 
+DAILY = {'remaining_usd': None}  # the last `x-ratelimit-remaining-usd` OpenAlex sent
+
+
+def daily_spent():
+    """True once the free daily dollars read zero: past that, OpenAlex bills the prepaid balance, which we never use."""
+    return DAILY['remaining_usd'] is not None and float(DAILY['remaining_usd']) <= 0
+
+
 def openalex_get(client, params):
     reply = client.get(OPENALEX, params=params, timeout=60,
                        headers={'Authorization': f'Bearer {secret("OPENALEX_API_KEY")}'})
+    DAILY['remaining_usd'] = reply.headers.get('x-ratelimit-remaining-usd', DAILY['remaining_usd'])
     if reply.status_code in (402, 429):
         raise BudgetStop(f'OpenAlex {reply.status_code}: {reply.text[:200]}')
     reply.raise_for_status()
@@ -159,6 +168,9 @@ def run_openalex(args):
         for q in questions:
             if q['id'] in skip:
                 continue
+            if daily_spent():
+                print(f'stopped: OpenAlex daily budget spent; {len(done_ids(out))} of {len(questions)} questions done')
+                return
             row = {'id': q['id']}
             try:
                 row['query'] = write_query(client, QUERY_PROMPT.format(question=q['body']), raw=True)
@@ -180,6 +192,14 @@ def run_openalex(args):
 
 
 class LitDeixis(Deixis):
+    def daily_remaining_usd(self, research_id):
+        """The free daily OpenAlex dollars left after this research's last OpenAlex request, if it stated them."""
+        with closing(self.db()) as conn:
+            row = conn.execute("SELECT json_extract(error_json, '$.rate_limit.\"x-ratelimit-remaining-usd\"') "
+                               "FROM search_runs WHERE research_id = ? AND provider = 'openalex' "
+                               "ORDER BY retrieved_at DESC LIMIT 1", (research_id,)).fetchone()
+        return float(row[0]) if row and row[0] is not None else None
+
     def records(self, order, research_id):
         """Every list position with its OpenAlex work, DOI, title and the routes (search or chain) that brought it."""
         with closing(self.db()) as conn:
@@ -232,8 +252,9 @@ def run_deixis(args):
         with out.open('a') as f:
             f.write(json.dumps(row) + '\n')
         print(q['id'], row.get('error') or f"pool {row['pool']}, {row['seconds']} s")
-        if row.get('error') and 'budget' in row['error'].casefold():
-            print(f'stopped on budget; {len(done_ids(out))} of {len(questions)} questions done, rerun later')
+        left = server.daily_remaining_usd(row['research_id']) if row.get('research_id') else None
+        if (row.get('error') and 'budget' in row['error'].casefold()) or (left is not None and left <= 0):
+            print(f'stopped: OpenAlex daily budget spent; {len(done_ids(out))} of {len(questions)} questions done')
             return
 
 

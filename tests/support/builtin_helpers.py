@@ -1,4 +1,4 @@
-"""Shared pieces of the built-in embedding tests (slice 21): small SYNTHETIC model files standing in for the five of
+"""Shared pieces of the built-in embedding tests (slice 21): small SYNTHETIC model files standing in for those of
 the manifest, an installed environment made of them, and a LocalEmbedder that runs the fake runner."""
 
 import hashlib
@@ -25,12 +25,22 @@ def install_fake(paths: local_embedding.BuiltinPaths, bodies=None) -> None:
     """An environment as an install leaves it: the model files, a python and `installed.json` last."""
     paths.models.mkdir(parents=True, exist_ok=True)
     for name, body in (bodies or FILE_BODIES).items():
+        (paths.models / name).parent.mkdir(parents=True, exist_ok=True)
         (paths.models / name).write_bytes(body)
     paths.python.parent.mkdir(parents=True, exist_ok=True)
     if not paths.python.exists():
         os.symlink(sys.executable, paths.python)
-    paths.installed_marker.write_text(json.dumps({"model": local_embedding.MODEL_ID,
+    paths.installed_marker.write_text(json.dumps({"model": local_embedding.MODEL_ID, "reranker": local_embedding.RERANKER_ID,
                                                    "requirements": local_embedding.requirements_digest()}))
+
+
+def manifest_name(url):
+    """The manifest name a download asks for, from its pinned repository and revision; None for any other URL."""
+    for part, (repository, revision) in local_embedding.SOURCES.items():
+        prefix = f"/{repository}/resolve/{revision}/"
+        if url.host == "huggingface.co" and url.path.startswith(prefix):
+            return f"{part}/{url.path[len(prefix):]}"
+    return None
 
 
 def fake_embedder(paths, idle_seconds=300, integrity=None):
@@ -59,7 +69,7 @@ if step == "venv":
         os.symlink({python!r}, target)
     print("SYNTHETIC environment created", flush=True)
 else:
-    print("SYNTHETIC fastembed installed", flush=True)
+    print("SYNTHETIC packages installed", flush=True)
 """
 
 

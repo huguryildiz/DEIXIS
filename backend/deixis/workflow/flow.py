@@ -2010,7 +2010,8 @@ class ResearchFlow:
             return
         budget, stop = self._rate_budget(step["id"], identity), lambda: self._checkpoint(run_id, revision)
         try:
-            (query_vector,) = await embedder.embed(embeddings.client_for(embedder.provider, self.deps), [query_text], "RETRIEVAL_QUERY", budget, stop)
+            (query_vector,) = await embedder.embed(embeddings.client_for(embedder.provider, self.deps), [query_text], "RETRIEVAL_QUERY", budget, stop,
+                                                   report=progress)
             progress["dimensions"] = self._query_dimensions(query_vector, prior)
             while missing:
                 batch = missing[:embedder.batch]
@@ -3844,6 +3845,11 @@ class ResearchFlow:
                     "uploaded_confirmed_file_ids": prior.get("uploaded_confirmed_file_ids", []),
                     "uploaded_passages_confirmed": prior.get("uploaded_passages_confirmed", 0),
                     "stored_other_dimension": 0}
+        # Texts the built-in model cut at its token limit, and the tokens Voyage or Cohere counted (their usage); others
+        # report neither, so neither is shown for them.
+        tracked = {"builtin": "truncated_texts", "voyage": "provider_tokens", "cohere": "provider_tokens"}.get(embedder.provider)
+        if tracked:
+            progress[tracked] = prior.get(tracked, 0)
 
         def counts() -> dict[str, Any]:
             return {"model": embedder.stored_model, "passages": len(passages), **progress, "missing": len(missing),
@@ -3863,7 +3869,8 @@ class ResearchFlow:
         vectors = {pid: embeddings.from_blob(blob) for pid, blob in stored.items()}
         failure = None
         try:
-            (query_vector,) = await embedder.embed(embeddings.client_for(embedder.provider, self.deps), [query_text], "RETRIEVAL_QUERY", budget, stop)
+            (query_vector,) = await embedder.embed(embeddings.client_for(embedder.provider, self.deps), [query_text], "RETRIEVAL_QUERY", budget, stop,
+                                                   report=progress)
             progress["dimensions"] = self._query_dimensions(query_vector, prior)
         except embeddings.EmbeddingError as exc:
             self._finish_embedding_step(step["id"], "failed", counts() | budget.counts(), identity,
@@ -3894,7 +3901,7 @@ class ResearchFlow:
                 self._merge_step_output(step["id"], counts(), identity)
             try:
                 fresh = await embedder.embed(embeddings.client_for(embedder.provider, self.deps), [p["text"] for p in batch], "RETRIEVAL_DOCUMENT", budget, stop,
-                                             on_sent=attempted)
+                                             on_sent=attempted, report=progress)
                 embeddings.same_dimension(fresh, progress["dimensions"])
             except embeddings.EmbeddingError as exc:
                 failure = exc

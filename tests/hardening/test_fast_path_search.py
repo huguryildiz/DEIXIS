@@ -245,7 +245,7 @@ def queued(lib, klass=1, request=0, position=0, name='W1'):
 def fake_embedder(lib, flow, monkeypatch, *, fail=False, advance=False):
     lib.store.set_setting('semantic_search', {'provider': 'builtin', 'model': local_embedding.MODEL_ID})
     calls = []
-    async def embed(self, client, texts, task_type, *args):
+    async def embed(self, client, texts, task_type, *args, **kwargs):
         assert not lib.conn.in_transaction
         assert local_embedding.RUNNER_THREADS.get() == 4
         calls.append((task_type, texts))
@@ -448,12 +448,13 @@ def test_consumer_stop_preserves_inflight_batch_and_pending_resume(library, tmp_
     fake_embedder(lib, flow, monkeypatch)
     # Two batches: only the first finishes before the pause. The second remains
     # pending and can be resumed without resending completed document vectors.
-    ids = [queued(lib, 1, 0, i, f'Wresume{i}') for i in range(65)]
+    batch = local_embedding.LOCAL_BATCH  # the built-in model's records per request
+    ids = [queued(lib, 1, 0, i, f'Wresume{i}') for i in range(batch + 1)]
     calls = []
     async def execute():
         ready = asyncio.Event()
         release = asyncio.Event()
-        async def embed(self, client, texts, kind, *args):
+        async def embed(self, client, texts, kind, *args, **kwargs):
             assert not lib.conn.in_transaction
             calls.append((kind, len(texts)))
             if kind == 'RETRIEVAL_DOCUMENT' and not ready.is_set():
@@ -467,7 +468,7 @@ def test_consumer_stop_preserves_inflight_batch_and_pending_resume(library, tmp_
         lib.store.update_run(lib.run['id'], status='pause_requested')
         release.set()
         await consumer.stop()
-        assert sum(r['status'] == 'embedded' for r in rows(lib)) == 64
+        assert sum(r['status'] == 'embedded' for r in rows(lib)) == batch
         assert sum(r['status'] == 'pending' for r in rows(lib)) == 1
         lib.store.update_run(lib.run['id'], status='paused')
         lib.clock.advance(1000)
@@ -476,9 +477,9 @@ def test_consumer_stop_preserves_inflight_batch_and_pending_resume(library, tmp_
         resumed.start()
         fast_path.enter_stage(lib.store, lib.run, 'ranking')
         await resumed.drain(lib.store.candidates(lib.rid, 1))
-        assert sum(r['status'] == 'embedded' for r in rows(lib)) == 65
+        assert sum(r['status'] == 'embedded' for r in rows(lib)) == batch + 1
     asyncio.run(asyncio.wait_for(execute(), 3))
-    assert calls == [('RETRIEVAL_QUERY', 1), ('RETRIEVAL_DOCUMENT', 64), ('RETRIEVAL_QUERY', 1), ('RETRIEVAL_DOCUMENT', 1)]
+    assert calls == [('RETRIEVAL_QUERY', 1), ('RETRIEVAL_DOCUMENT', batch), ('RETRIEVAL_QUERY', 1), ('RETRIEVAL_DOCUMENT', 1)]
 
 
 def test_retry_after_cutoff_admits_only_unembedded_records(library, tmp_path, monkeypatch):

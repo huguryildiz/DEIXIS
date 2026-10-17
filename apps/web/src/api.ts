@@ -829,7 +829,7 @@ export type Mathpix = {
 }
 export type MathpixTest = { status: 'ok' | 'rejected' | 'failed'; detail: string; http_status: number | null; checked_at: string }
 export type LocalTools = { machine: { chip: string | null; memory_gb: number | null; disk_free_gb: number | null; disk_total_gb?: number | null }; tools: LocalTool[] }
-export type SemanticSearchProvider = 'gemini' | 'builtin' | 'openai' | 'ollama' | 'lm_studio' | 'off'
+export type SemanticSearchProvider = 'gemini' | 'builtin' | 'openai' | 'voyage' | 'cohere' | 'ollama' | 'lm_studio' | 'off'
 export type SemanticSearchOption = {
   provider: SemanticSearchProvider; models: string[]; available: boolean; reason: string | null
   // The built-in model only (slice 21): why it cannot be chosen, and the last full sha256 check of its files.
@@ -847,7 +847,15 @@ export type BuiltinEmbedding = { status: 'unsupported_platform' } | {
   sizes: { runtime_bytes: number; model_bytes: number; python_bytes: number }
   path: string; size_bytes: number; uv: { available: boolean; reason: 'uv_missing' | null; url: string }
 }
-export type SemanticSearch = { provider: SemanticSearchProvider; model: string | null; explicit: boolean; options: SemanticSearchOption[] }
+export type SemanticSearch = {
+  provider: SemanticSearchProvider; model: string | null; explicit: boolean; options: SemanticSearchOption[]
+  // A built-in choice saved for an earlier built-in model: its stored similarities are not reused.
+  builtin_model_changed?: { from: string; to: string } | null
+}
+// The reranker for the order records are read in (off unless turned on); it never decides inclusion.
+export type RerankProvider = 'builtin' | 'voyage' | 'cohere' | 'jina' | 'zeroentropy'
+export type RerankOption = { provider: RerankProvider; model: string; available: boolean; reason: string | null; sends: string | null }
+export type Reranking = { enabled: boolean; provider: RerankProvider | null; pool_factor: number; max_candidates: number; timeout_seconds: number; applies_to: string[]; options: RerankOption[] }
 export type InstitutionalAccess = { status: 'institutional' | 'none' | 'unknown' | 'not_checked'; via?: string; reason?: string }
 // Reading depth of a stored source version: a PDF text layer, an abstract, or bare metadata.
 export type AccessLevel = 'pdf_available' | 'abstract' | 'metadata'
@@ -1484,6 +1492,9 @@ export const api = {
   checkBuiltinEmbedding: () => request<BuiltinEmbedding>('/api/semantic-search/builtin/check', { method: 'POST' }),
   cancelBuiltinEmbedding: () => request<{ job: BuiltinEmbeddingJob }>('/api/semantic-search/builtin/cancel', { method: 'POST' }),
   removeBuiltinEmbedding: () => request<BuiltinEmbedding>('/api/semantic-search/builtin', { method: 'DELETE' }),
+  reranking: (leaving?: AbortSignal) => read<Reranking>('/api/reranking', leaving),
+  saveReranking: (body: { enabled: boolean; provider: RerankProvider | null; pool_factor: number; timeout_seconds: number }) =>
+    request<Reranking>('/api/reranking', json('PUT', body)),
   // The built-in model's English sentence for the current question revision, written once (slice 21).
   saveEnglishQuestion: (id: string, body: { text: string; expected_version: number } | { use_question: true; expected_version: number }) =>
     request<ResearchView>(`/api/researches/${id}/english-question`, json('PUT', body)),

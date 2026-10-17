@@ -23,6 +23,7 @@ from deixis.documents import local_embedding
 from deixis.documents.local_embedding import LocalEmbeddingError
 from deixis.workflow import local_embedding_service
 from deixis.workflow.local_embedding_service import EmbeddingService, ServiceError
+import builtin_helpers
 from builtin_helpers import FAKE_RUNNER, fake_embedder, fake_manifest, install_fake, write_fake_uv
 
 
@@ -39,10 +40,10 @@ def setup(tmp_path, monkeypatch):
     seen = []
 
     def handler(request):
-        name = request.url.path.rsplit("/", 1)[-1]
-        if request.url.host != "huggingface.co" or name not in bodies:
+        name = builtin_helpers.manifest_name(request.url)
+        if name not in bodies:
             return httpx.Response(404)  # the local tools' probes (Ollama, LM Studio, Zotero) find nothing
-        seen.append(request.url.path)
+        seen.append(name)
         return httpx.Response(200, content=bodies[name])
     return {"paths": paths, "record": record, "bodies": bodies, "transport": httpx.MockTransport(handler), "seen": seen}
 
@@ -92,6 +93,7 @@ def test_the_install_runs_its_four_steps_under_the_data_directory_and_writes_ins
     calls = [json.loads(line) for line in setup["record"].read_text().splitlines()]
     assert [c["argv"][:2] for c in calls] == [["venv", "--allow-existing"], ["pip", "sync"]]
     assert calls[1]["argv"][-1] == str(local_embedding.REQUIREMENTS)  # every package pinned with hashes (D20)
+    assert calls[1]["argv"][-3:-1] == ["--torch-backend", "cpu"]  # PyTorch's CPU wheels: no CUDA packages
     for call in calls:  # uv's cache, its Python and Hugging Face's home all live under the data directory
         env = call["env"]
         assert env["UV_CACHE_DIR"] == str(paths.uv_cache) and env["UV_PYTHON_INSTALL_DIR"] == str(paths.uv_python)
@@ -131,16 +133,16 @@ def test_a_failed_step_shows_its_output_and_an_environment_without_installed_jso
 
 def test_a_reinstall_does_not_download_the_files_that_are_already_whole(setup):
     service, paths = service_of(setup), setup["paths"]
-    paths.models.mkdir(parents=True)
     for name, body in setup["bodies"].items():
-        if name != "tokenizer.json":
+        if name != "embedding/tokenizer.json":
+            (paths.models / name).parent.mkdir(parents=True, exist_ok=True)
             (paths.models / name).write_bytes(body)
 
     async def go():
         await service.install()
         return await until_done(service)
     assert asyncio.run(go())["status"] == "succeeded"
-    assert [p.rsplit("/", 1)[-1] for p in setup["seen"]] == ["tokenizer.json"]
+    assert setup["seen"] == ["embedding/tokenizer.json"]
 
 
 def test_cancel_stops_this_process_s_job_and_writes_it_cancelled(setup, monkeypatch):
@@ -157,7 +159,7 @@ def test_cancel_stops_this_process_s_job_and_writes_it_cancelled(setup, monkeypa
     job, none = asyncio.run(go())
     assert job["status"] == "cancelled" and service.read_job()["status"] == "cancelled" and none == "no_install_running"
     Holder(paths.install_lock, exclusive=True).close()  # the lock was released: another holder takes it at once
-    assert not list(paths.models.glob("*.part")) if paths.models.exists() else True
+    assert not list(paths.models.rglob("*.part")) if paths.models.exists() else True
 
 
 def test_remove_deletes_the_environment_and_files_and_keeps_nothing_running(setup):
@@ -198,7 +200,7 @@ def test_the_endpoints_need_the_csrf_token_and_a_local_host(setup, tmp_path):
 def stale_job(paths):
     install_fake(paths)
     paths.installed_marker.unlink()
-    (paths.models / "model_optimized.onnx.part").write_bytes(b"SYNTHETIC half")
+    (paths.models / "embedding" / "model.safetensors.part").write_bytes(b"SYNTHETIC half")
     job = {"status": "running", "step": 3, "steps": 4, "started_at": "2026-09-25T10:00:00.000+00:00", "pid": 999999,
            "output": "SYNTHETIC"}
     paths.job_file.write_text(json.dumps(job))
@@ -211,7 +213,7 @@ def test_a_job_left_running_is_failed_and_its_leftovers_removed_when_the_locks_a
     asyncio.run(service.start())
     job = service.read_job()
     assert job["status"] == "failed" and job["output"].endswith("stopped when DEIXIS closed")
-    assert not paths.env.exists() and not list(paths.models.glob("*.part"))
+    assert not paths.env.exists() and not list(paths.models.rglob("*.part"))
 
 
 def test_with_the_install_lock_held_elsewhere_nothing_is_deleted_and_install_remove_and_cancel_refuse(setup):
@@ -232,7 +234,7 @@ def test_with_the_install_lock_held_elsewhere_nothing_is_deleted_and_install_rem
         holder.close()
     assert status["status"] == "installing_elsewhere" and status["job"]["status"] == "running"
     assert codes == ["in_use_by_another_process"] * 3
-    assert paths.job_file.read_bytes() == before and paths.env.exists() and list(paths.models.glob("*.part"))
+    assert paths.job_file.read_bytes() == before and paths.env.exists() and list(paths.models.rglob("*.part"))
 
 
 def test_with_a_check_runner_of_a_dead_install_still_holding_the_in_use_lock_recovery_waits(setup):
@@ -266,7 +268,7 @@ class Patch:
 builtin_helpers.fake_manifest(Patch())
 bodies = builtin_helpers.FILE_BODIES
 paths = local_embedding.builtin_paths(__import__("pathlib").Path({data!r}))
-transport = httpx.MockTransport(lambda r: httpx.Response(200, content=bodies[r.url.path.rsplit("/", 1)[-1]]))
+transport = httpx.MockTransport(lambda r: httpx.Response(200, content=bodies[builtin_helpers.manifest_name(r.url)]))
 service = EmbeddingService(paths, builtin_helpers.fake_embedder(paths), httpx.AsyncClient(transport=transport))
 
 async def main():
@@ -457,7 +459,7 @@ def test_a_file_changed_in_place_shows_the_last_check_until_the_runner_s_full_ch
     service = service_of(setup, embedder)
     asyncio.run(service.start())
     first = service.option()
-    target = paths.models / "config.json"
+    target = paths.models / "embedding" / "config.json"
     stat = target.stat()
     body = target.read_bytes()
     with open(target, "r+b") as handle:  # same size, same inode
@@ -534,16 +536,16 @@ def test_a_file_that_cannot_be_deleted_fails_the_removal_and_settings_says_so(se
     install_fake(paths)
     service = service_of(setup)
     asyncio.run(service.start())
-    os.chmod(paths.models, 0o500)  # the model files cannot be unlinked from a folder without write permission
+    os.chmod(paths.models / "embedding", 0o500)  # the model files cannot be unlinked from a folder without write permission
     try:
         with pytest.raises(ServiceError) as refused:
             asyncio.run(service.remove())
         status = asyncio.run(service.status())
         option = service.option()
     finally:
-        os.chmod(paths.models, 0o700)
+        os.chmod(paths.models / "embedding", 0o700)
     assert refused.value.code == "remove_incomplete" and "could not be deleted" in str(refused.value)
-    assert (paths.models / "config.json").exists() and not paths.installed_marker.exists()
+    assert (paths.models / "embedding" / "config.json").exists() and not paths.installed_marker.exists()
     assert status["status"] == "remove_failed" and status["job"]["status"] == "remove_failed"
     assert str(paths.models) in status["job"]["output"]
     assert (option["available"], option["reason"]) == (False, "Removal did not finish")
@@ -561,8 +563,8 @@ def test_the_install_clears_a_half_built_environment_off_the_event_loop(setup, m
     paths = setup["paths"]
     paths.python.parent.mkdir(parents=True)
     (paths.env / "SYNTHETIC-half-built").write_text("x")  # an environment without installed.json
-    (paths.models).mkdir(parents=True)
-    (paths.models / "model_optimized.onnx.part").write_bytes(b"SYNTHETIC")
+    (paths.models / "embedding").mkdir(parents=True)
+    (paths.models / "embedding" / "model.safetensors.part").write_bytes(b"SYNTHETIC")
     threads = []
     real = shutil.rmtree
 
@@ -619,7 +621,8 @@ def test_a_cancel_during_a_slow_clean_up_holds_the_locks_until_the_deletion_has_
 
 def test_the_requirements_file_pins_every_package_with_hashes_and_its_digest_ignores_comments(tmp_path, monkeypatch):
     lines = [line for line in local_embedding.REQUIREMENTS.read_text().splitlines() if line and not line.startswith((" ", "#"))]
-    assert "fastembed==0.8.1 \\" in lines and all("==" in line for line in lines)
+    assert "transformers==4.57.6 \\" in lines and all("==" in line for line in lines)
+    assert "torch==2.10.0 ; sys_platform == 'darwin' \\" in lines and not any("nvidia" in line for line in lines)
     assert all(line.endswith("\\") for line in lines)  # each pin is followed by its hashes
     digest = local_embedding.requirements_digest()
     copy = tmp_path / "embedding-requirements.txt"

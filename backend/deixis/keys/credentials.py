@@ -59,6 +59,10 @@ RETRY_AFTER = 5.0  # seconds before a keychain found unreachable is looked for a
 FILE_STORE = "keys-unencrypted.json"  # the opted-in file store in the data folder (A6)
 OPENAI_API_URL = "https://api.openai.com/v1"
 DEEPSEEK_API_URL = "https://api.deepseek.com"
+VOYAGE_API_URL = "https://api.voyageai.com/v1"
+COHERE_API_URL = "https://api.cohere.com"
+JINA_API_URL = "https://api.jina.ai/v1"
+ZEROENTROPY_API_URL = "https://api.zeroentropy.dev/v1"
 
 
 @dataclass(frozen=True)
@@ -83,6 +87,12 @@ MANAGED_KEYS = {k.env: k for k in (
     ManagedKey("ANTHROPIC_API_KEY", "model", "anthropic", testable=True),
     ManagedKey("OPENROUTER_API_KEY", "model", "openrouter", testable=True),
     ManagedKey("MIMO_API_KEY", "model", "mimo", testable=True),
+    # Voyage AI: embeddings and reranking only (Settings → Semantic search), never a model connection's key.
+    ManagedKey("VOYAGE_API_KEY", "model", "voyage", testable=True),
+    # Cohere (embeddings and reranking), Jina AI and ZeroEntropy (reranking): Settings → Search and ranking only.
+    ManagedKey("COHERE_API_KEY", "model", "cohere", testable=True),
+    ManagedKey("JINA_API_KEY", "model", "jina", testable=True),
+    ManagedKey("ZEROENTROPY_API_KEY", "model", "zeroentropy", testable=True),
     ManagedKey("OPENALEX_API_KEY", "source", "openalex", testable=True),
     ManagedKey("S2_API_KEY", "source", "semantic_scholar", testable=True),
     ManagedKey("NCBI_API_KEY", "source", "pubmed", testable=True),
@@ -879,7 +889,7 @@ def _source_request(env: str, value: str) -> tuple[str, dict[str, Any], dict[str
 
 
 async def test(client: httpx.AsyncClient, env: str, value: str) -> dict[str, Any]:
-    """One short request with the key: a scholarly source asks for one record (SerpApi: its account page); Gemini, DeepSeek, Anthropic and the OpenAI-compatible connections list models (OpenRouter reads its key's limits); OpenAI embeds one word, which also shows missing credit."""
+    """One short request with the key: a scholarly source asks for one record (SerpApi: its account page); Gemini, DeepSeek, Anthropic and the OpenAI-compatible connections list models (OpenRouter reads its key's limits); OpenAI and Voyage embed one word, which also shows missing credit; Cohere lists its models; Jina and ZeroEntropy rerank one word against one word (a few tokens)."""
     if not key_verification.is_valid_key(value):  # a header cannot carry it; nothing is sent
         return {"status": "rejected", "verification": "rejected", "detail": "The saved key is not a valid key. Enter it again.",
                 "checked_at": now(), "kind": "auth_failed", "http_status": None, "reset_at": None}
@@ -891,6 +901,21 @@ async def test(client: httpx.AsyncClient, env: str, value: str) -> dict[str, Any
         elif env == "GEMINI_API_KEY":
             response = await client.get(f"{GEMINI_API_URL}/models", params={"pageSize": 1},
                                         headers={"x-goog-api-key": value}, timeout=20)
+        elif env == "VOYAGE_API_KEY":  # one query word: a few tokens of the account's free allowance or credit
+            response = await client.post(f"{VOYAGE_API_URL}/embeddings", json={"model": "voyage-4-lite", "input": ["test"],
+                                                                                "input_type": "query"},
+                                         headers={"Authorization": f"Bearer {value}"}, timeout=20)
+        elif env == "COHERE_API_KEY":
+            response = await client.get(f"{COHERE_API_URL}/v1/models", params={"page_size": 1},
+                                        headers={"Authorization": f"Bearer {value}"}, timeout=20)
+        elif env == "JINA_API_KEY":
+            response = await client.post(f"{JINA_API_URL}/rerank", json={"model": "jina-reranker-v3.5", "query": "test",
+                                                                         "documents": ["test"], "top_n": 1, "return_documents": False},
+                                         headers={"Authorization": f"Bearer {value}"}, timeout=20)
+        elif env == "ZEROENTROPY_API_KEY":
+            response = await client.post(f"{ZEROENTROPY_API_URL}/models/rerank", json={"model": "zerank-2", "query": "test",
+                                                                                       "documents": ["test"], "top_n": 1},
+                                         headers={"Authorization": f"Bearer {value}"}, timeout=20)
         elif env == "DEEPSEEK_API_KEY":
             response = await client.get(f"{DEEPSEEK_API_URL}/models", headers={"Authorization": f"Bearer {value}"}, timeout=20)
         elif env == ANTHROPIC_KEY_ENV:

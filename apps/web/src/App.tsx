@@ -56,7 +56,7 @@ function parseHash(): Route {
   if (hash === 'settings/access') return { view: 'settings', tab: 'access' }
   if (hash === 'settings/openalex') return { view: 'settings', tab: 'openalex' }
   if (hash === 'settings/profile') return { view: 'settings', tab: 'profile' }
-  if (/^settings\/(models|sources|usage|general)$/.test(hash)) return { view: 'settings', tab: hash.slice('settings/'.length) as SettingsSection }
+  if (/^settings\/(models|search|documents|sources|usage|general)$/.test(hash)) return { view: 'settings', tab: hash.slice('settings/'.length) as SettingsSection }
   if (hash === 'settings') return { view: 'settings' }
   if (hash === 'trash') return { view: 'trash' }
   if (hash === 'library') return { view: 'library' }

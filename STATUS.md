@@ -91,61 +91,68 @@ One run per mode with gpt-5.6-luna on the DBR/VBF question, on a library copy.
 
 ## Open work
 
-### Claude code audit (16–17 Oct, low findings left)
+### Code audit leftovers (low)
 
-- Five low findings of the Claude audit are not fixed: the stale-cell recheck estimate stops at 25 sources, the study-table chain can run out of rounds after a failed source without saying so, section VI gap candidates need a reading depth that is never stored, follow-up context can take an answer of an earlier question revision, and follow-up table values include removed sources.
-- From the third audit: the PDF child process has no memory limit on Windows (a P10 Job Object item in `.local/plans/p10-plan.md`). Not checked: a kill search may give two of its eight slots to a preprint and its published version from two providers when the library has not joined them yet.
+- [ ] Stale-cell recheck estimate stops at 25 sources.
+- [ ] Study-table chain can run out of rounds after a failed source without saying so.
+- [ ] Section VI gap candidates need a reading depth that is never stored.
+- [ ] Follow-up context can take an answer of an earlier question revision; follow-up table values include removed sources.
+- [ ] PDF child process has no memory limit on Windows (P10 Job Object item in `.local/plans/p10-plan.md`).
+- [ ] Not checked: a kill search may spend two of its eight slots on a preprint and its published version when the library has not joined them.
 
 ### Left over from the clean start
 
-- The search stage can look finished while chain requests are still running, because those requests count toward screening.
-- Test gaps: the Playwright rate-limit cases do not match each failed OpenAlex request to its own row, and the fast-answer flow has no pause/resume test.
+- [ ] The search stage can look finished while chain requests still run, because they count toward screening.
+- [ ] Playwright rate-limit cases do not match each failed OpenAlex request to its own row.
+- [ ] The fast-answer flow has no pause/resume test.
 
-### Answer coverage (grounding audit, 16 Oct)
+### Answer coverage (`.local/plans/grounding-audit-2026-10-16.md`)
 
-A model-free check of the 8 stored answers found all 171 citation links sound: each anchor sits word for word in a passage of that answer's own input. The gap is coverage, not integrity (`.local/plans/grounding-audit-2026-10-16.md`).
+All 171 citation links in 8 stored answers are sound; the gap is coverage: answers leave relevant input works uncited.
 
-1. The latest DBR/VBF answer cites 14 of 20 full-text works and none of 24 abstract-only works. Relevant works go uncited, for example "Light-weight depth-based routing" and the Q-learning DBR paper (both full text), and "Adaptive Holding time and DBR" (abstract only, though the question asks for holding-time formulas).
-2. Target: every input work with a passage that answers the question is cited, or the answer says why it is left out. Not every input work: surveys, MAC and security papers are in the input too. Rough guess for this question: 20–25 such works against about 14 cited (not measured).
-3. Possible causes, not measured: the answer length limit (9 Oct: 48→120 passages barely raised citations), abstracts that give no numbers or formulas, and claims tied to only one source each.
-4. Measured 17 Oct (one Standard run, Sonnet 5.5 medium): the answer cited 10 of 40 given works (10 of 17 PDF works, 0 of 23 abstracts) with 12 of 30 claims, so length was not the limit. 25 uncited works had no number or formula for the question; 5 did. Every given work now gets a citation or a reason in `excluded_sources` (D80, backend only). Next: the answer view and exports, then a before/after run on one frozen answer input.
-5. Chain of Ideas–style idea generation waits until this is fixed, and it needs its own contract: premises cited, speculation marked as unsourced.
+- [ ] Show D80's `excluded_sources` (each given work cited or left out with a reason) in the answer view and exports; backend done.
+- [ ] Before/after run on one frozen answer input. 17 Oct: 10 of 40 given works cited, 0 of 23 abstracts; length was not the limit.
+- [ ] Chain of Ideas–style idea generation waits for this, with its own contract (premises cited, speculation marked unsourced).
 
 ### Search (after P10)
 
-1. In broad questions, known key papers are not near the top (battery_soh: 3 of 15 targets in the top 50), and the answer score does not measure this.
-2. dbr_vbf is the weakest question (69–79): the answer misses aspects a human reviewer would cover, and Quick misses the key paper Maulana 2019.
-3. Full text of paywalled papers cannot be read, so most engineering papers come in from the abstract.
-4. The value of survey papers is not measured, and papers with "survey" in the title are dropped.
-5. In Standard, 7 of 20 runs took over 5 minutes (cause not checked), Detailed citation accuracy was not re-measured after the fixes, and the sample is small (10 questions × 2).
-6. The free OpenAlex daily quota runs out after about 20 researches (the app now stops sending once it is used up, D173), and the answer call sometimes times out (1 in 21 runs).
-7. The full-text limits (10/20/40 works for Quick/Standard/Detailed) were never chosen by measurement; the 16 Oct check only showed they hold. Raising them is unlikely to help yet: Detailed filled 24 of 40 slots for lack of PDFs, and answers cite few of the works they already get. Measure after the answer-coverage work.
-8. BioASQ (17 Oct, 35 questions, Standard): of 480 gold papers, 343 are in the top 400; of the 107 never retrieved, all are in OpenAlex (77 with an abstract). Semantic search over abstracts is one OpenAlex `search.semantic` request capped at 50 records (`semantic_top`), against up to 1000 keyword records; it brought 72 gold papers, 8 of them only through it. The chain added 19 gold papers no search found. Not measured: whether a deeper semantic read closes the gap to Elicit.
-9. LitSearch benchmark (597 ML/NLP queries, EMNLP 2024), the computer-science check next to BioASQ: tooling ready (9c0fd3dd), not run. Next: `prepare --n 50` downloads only the 50 KB query table (the Hugging Face card states no license), then the OpenAlex and DEIXIS runs on a temporary data folder and a port other than 8765. `scripts/benchmark/litsearch.py` (matching, recall, route breakdown) and `litsearch_run.py` (prepare / openalex / deixis / score, outputs in `.local/litsearch/`), test `tests/measurement/test_litsearch_recall.py`. Gold papers resolve through Semantic Scholar and OpenAlex; unresolved ones stay in the denominator and are listed. No electrical-engineering benchmark with relevance labels was found.
+- [ ] Broad questions: known key papers are not near the top (battery_soh: 3 of 15 targets in the top 50), and the answer score does not measure it.
+- [ ] dbr_vbf is the weakest question (69–79); Quick misses the key paper Maulana 2019.
+- [ ] Paywalled full text cannot be read, so most engineering papers come in from the abstract.
+- [ ] Survey papers are dropped by title; their value is not measured.
+- [ ] Standard: 7 of 20 runs took over 5 minutes (cause not checked); Detailed citation accuracy not re-measured after the fixes.
+- [ ] Free OpenAlex daily quota runs out after about 20 researches (D173 stops sending); the answer call times out in about 1 of 21 runs.
+- [ ] Full-text limits (10/20/40) were never chosen by measurement; measure after the answer-coverage work.
+- [ ] BioASQ: 107 of 480 gold papers never retrieved, all in OpenAlex. Semantic search is capped at 50 records (`semantic_top`); test whether a deeper read closes the gap.
+- [ ] LitSearch (597 ML/NLP queries): tooling ready (9c0fd3dd), not run. Next: `litsearch_run.py prepare --n 50`, then OpenAlex and DEIXIS runs on a temp data folder and a port other than 8765.
 
 ### Not measured (needs a real model or real use)
 
-- Seed PDFs were measured only with the targets themselves as seeds, not with a real related paper the user has.
-- Report quality: in the one scored real report (H9e) most measures were out of range; on 16 Oct two live reports finished after one resume each, but nobody scored them.
-- Equations, lineage, kill-search finding the closest works, and crash recovery with real Codex; 5 of 18 report-edit actions; the owner's daily use.
-- Most features above (follow-up changes, table and report changes, new model connections, Mathpix, data move) have not been tried with a real model or provider.
-- Windows and Linux have not been run, the package has not been built with real PyInstaller, and OpenAI, Gemini and DeepSeek prices must be checked before release (P10 acceptance rows K1–K15).
+- [ ] Seed PDFs with a real related paper, not the targets themselves.
+- [ ] Report quality: the one scored report (H9e) was mostly out of range; two 16 Oct live reports were never scored.
+- [ ] Equations, lineage, kill search, crash recovery with real Codex, 5 of 18 report-edit actions, and the owner's daily use.
+- [ ] Follow-up, table and report changes, new model connections, Mathpix and data move with a real model or provider.
+- [ ] Windows, Linux and a real PyInstaller build; OpenAI, Gemini and DeepSeek prices before release (P10 rows K1–K15).
 
 ### Platform
 
-- Not measured: a second installed user, screen readers, capacity on a quiet machine, power loss and a full disk; older macOS, Intel, Linux and Windows are not supported.
+- [ ] Not measured: a second installed user, screen readers, a quiet-machine capacity run, power loss and a full disk.
 
 ### Code
 
-- The re-extraction background reader is not tested in the matrix.
-- UI: the sticky answer area in the queue grew to about 300 px at 1280×900, the selected tab may not scroll into view after a TR/EN switch, and report icon buttons on phones have no visible hint.
-- The first answer draft often breaks citation-anchor rules and repair adds 1–2 minutes per answer; CI runs on every push but is not required, and parallel tests fail now and then. On 16 Oct the quick run gave 143 failed and 65 errors at machine load 150–215 (another session was running tests); the failing review tests pass alone (27/27). Re-run on a quiet machine with `-rfE` to get the list. On 17 Oct a full serial `--testmon` run failed 3 tests in `tests/app/test_reference_import_parser.py` that pass when the file runs alone (41/41).
+- [ ] The re-extraction background reader is not tested in the matrix.
+- [ ] UI: the sticky answer area grew to about 300 px at 1280×900; the selected tab may not scroll into view after a TR/EN switch; report icon buttons on phones have no hint.
+- [ ] The first answer draft often breaks anchor rules; repair adds 1–2 minutes per answer.
+- [ ] Parallel tests fail now and then under load; re-run on a quiet machine with `-rfE`. `tests/app/test_reference_import_parser.py` fails 3 tests under full serial `--testmon`, passes alone.
 
 ### Live findings (4–5 Oct)
 
-- MDPI, SAGE and ScienceDirect PDFs return 403 from the ULAKBİM network; not rechecked on the fast path.
+- [ ] MDPI, SAGE and ScienceDirect PDFs return 403 from the ULAKBİM network; not rechecked on the fast path.
 
 ### Parked ideas (owner decides)
 
-- Use Jev (the TypeSafe classifier) to rank which sources get full-text slots; speed, price and accuracy not measured.
-- Fixed example questions (the home page only suggests questions from earlier answers), "this source was included in research X" hints, classifying why open-access PDFs return 403, a landing page (after P10), fast answers reading equations from arXiv source, more kill-search signals, and a warning when two queries share most terms.
+- [ ] Rank full-text slots with Jev (the TypeSafe classifier); speed, price and accuracy not measured.
+- [ ] Fixed example questions on the home page and "included in research X" hints.
+- [ ] Classify why open-access PDFs return 403.
+- [ ] Landing page (after P10).
+- [ ] Fast answers read equations from arXiv source; more kill-search signals; warn when two queries share most terms.

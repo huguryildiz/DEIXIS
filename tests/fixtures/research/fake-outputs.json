@@ -2397,7 +2397,7 @@
     ],
     "nearest_simple_explanation": "SYNTHETIC: buffering spreads arrivals.",
     "critical_assumption": "SYNTHETIC: the arrival bound holds.",
-    "validation_plan": "SYNTHETIC: choose a protocol.",
+    "validation_plan": "SYNTHETIC: choose an experimental protocol.",
     "source_ids": [
      "srv_SYNTHCAND01"
     ],

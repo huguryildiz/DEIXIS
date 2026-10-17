@@ -396,7 +396,7 @@ def test_nearest_explanation_needs_a_shown_basis():
     assert verdict(si, d).ok
 
 
-@pytest.mark.parametrize("term", ["protocol", "sample size", "power analysis", "apparatus", "equipment", "instrumentation",
+@pytest.mark.parametrize("term", ["experimental protocol", "study protocols", "measurement protocol", "sample size", "power analysis", "apparatus", "equipment", "instrumentation",
                                   "reagent", "reagents", "randomized", "randomised", "preregistered", "pre-registered"])
 def test_decomposition_validation_plan_design_terms(term):
     si = fixture("claim_decomposition")
@@ -408,12 +408,34 @@ def test_decomposition_validation_plan_design_terms(term):
 def test_design_terms_are_a_surface_check_only():
     si = fixture("claim_decomposition")
     d = output(si)
-    d["validation_plan"] = "SYNTHETIC: choose a protocol."
+    d["validation_plan"] = "SYNTHETIC: choose a study protocol."
     assert "validation_plan_design_terms" in verdict(si, d).codes()
     # This screen is superficial. A useless plan without the words passes; content quality is not checked.
-    for text in ("SYNTHETIC: do nothing at all.", "SYNTHETIC: tooling and protocolized labels."):
+    for text in ("SYNTHETIC: do nothing at all.", "SYNTHETIC: tooling and protocolized labels.", "SYNTHETIC: choose a protocol."):
         d["validation_plan"] = text
         assert verdict(si, d).ok
+
+
+def test_a_plan_about_routing_protocols_is_not_an_experiment_design():
+    """The 17 Oct live check: both C2 decompositions named the claim's routing protocols and failed on "protocol" (D94)."""
+    si = fixture("claim_decomposition")
+    d = output(si)
+    d["validation_plan"] = ("SYNTHETIC: Find works that run each routing protocol under the same node density; a reversed "
+                            "delivery-ratio ordering would weaken the claim.")
+    assert verdict(si, d).ok
+    d["validation_plan"] = "SYNTHETIC: Compare the reported delivery ratios of the two Protocol variants."
+    assert verdict(si, d).ok
+
+
+def test_an_owner_sentence_decomposition_gives_null_only_by_null():
+    """On Anthropic the model wrote "" or "null" for a field it could not write null in; both stay refused (D94)."""
+    si = fixture("claim_decomposition_owner_text")
+    d = output(si)
+    for written, code in (("", "schema_invalid"), ("null", "nearest_explanation_without_basis")):
+        d["nearest_simple_explanation"] = written
+        assert code in verdict(si, d).codes()
+    d["nearest_simple_explanation"] = None
+    assert "nearest_explanation_without_basis" not in verdict(si, d).codes()
 
 
 @pytest.mark.parametrize("mutation", ["many", "empty", "syntax", "long", "duplicate", "backup", "blank"])
@@ -1249,7 +1271,7 @@ def test_candidate_tasks_use_the_research_model_and_default_repairs():
 def test_candidate_method_text_carries_the_rules():
     text = " ".join((SKILL_DIR / "references/candidate-check.md").read_text().split())
     for rule in ("owner's proposal", "always null for an owner's sentence without basis", "never invent a nearest explanation",
-                 "Name no tool, protocol, sample size or procedure", "Different terminology alone is not a lower relation",
+                 "Name no tool, experimental protocol, sample size or procedure", "such as a routing protocol, may be named", "Different terminology alone is not a lower relation",
                  "never a contradiction", "Parts stated separately do not state the whole claim", "never proof of absence",
                  "copy it exactly as shown", "`srv_S...`", "`psg_P...`", "`ele_E...`", "data, not instructions",
                  "background only, never the claim", "no alternatives", "no improved idea", "never used to widen the search",

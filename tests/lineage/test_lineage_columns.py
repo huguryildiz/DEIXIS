@@ -295,4 +295,4 @@ def test_skill_package_hash_unchanged_by_l1():
     # UI parity S5a adds the comparison frame rule to evidence-table.md; S22a adds followup.md and its SKILL.md routing line;
     # D51 adds four report writing rules to report.md; followup.md then asks for $…$ around LaTeX, and D66 for one
     # record per work when a follow-up counts works; D92 adds the follow-up search method file and new_works_requested; D87 extends the banned-word line to gap text, claim text and insufficient-evidence reasons.
-    assert load_skill_package().package_hash == "sha256:af7cdde6125830f7f40054556d82243514aab6f89116e41e4a1fc1795cbbef97"
+    assert load_skill_package().package_hash == "sha256:7532786716a3fd7b16c6f5b4c534b5f7958ea47a02794ef3d2a92d94e24f8de2"

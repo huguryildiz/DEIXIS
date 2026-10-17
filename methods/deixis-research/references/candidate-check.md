@@ -26,8 +26,9 @@ proposal and is never presented as a literature-supported finding.
 
 `critical_assumption` is the one assumption most likely to fail.
 `validation_plan` says which kind of check would support, narrow or weaken the
-claim. Name no tool, protocol, sample size or procedure: this is not an experiment
-design. `source_ids` and `passage_ids` name only what was shown and relied on;
+claim. Name no tool, experimental protocol, sample size or procedure: this is not an
+experiment design. A protocol the claim is about, such as a routing protocol, may
+be named. `source_ids` and `passage_ids` name only what was shown and relied on;
 both may be empty. Give one or two sentences in `rationale` explaining how the
 elements were derived.
 

@@ -9,7 +9,7 @@ import pytest
 from jsonschema import Draft202012Validator
 
 from deixis.domain import contracts
-from deixis.models.schema_subset import anthropic_schema, fill_omitted_nulls, portable_schema
+from deixis.models.schema_subset import OMITTED_NULL_NOTE, anthropic_schema, fill_omitted_nulls, portable_schema
 
 NULL = {"type": "null"}
 
@@ -46,12 +46,14 @@ def test_anthropic_schema_sends_a_required_nullable_field_optional_and_non_null(
     sent = anthropic_schema(given)
     assert sent["required"] == ["keep", "arr"]
     props = sent["properties"]
-    assert props["s"] == {"description": "d Must match the regular expression ^AX[0-9]$", "type": "string"}
-    assert props["ref"] == {"type": "string", "description": "Must match the regular expression ^psg_[0-9]+$"}
-    assert props["lst"] == {"type": "integer"}
-    assert props["en"] == {"type": "string", "enum": ["T"]}
-    assert props["o"] == obj({"inner": {"type": "string"}}, required=[])
-    assert props["arr"]["items"] == obj({"x": {"type": "string"}, "y": {"type": "string"}}, required=["y"])
+    note = OMITTED_NULL_NOTE
+    assert props["s"] == {"description": f"d {note} Must match the regular expression ^AX[0-9]$", "type": "string"}
+    assert props["ref"] == {"type": "string", "description": f"{note} Must match the regular expression ^psg_[0-9]+$"}
+    assert props["lst"] == {"type": "integer", "description": note}
+    assert props["en"] == {"type": "string", "enum": ["T"], "description": note}
+    assert props["o"] == {**obj({"inner": {"type": "string", "description": note}}, required=[]), "description": note}
+    assert props["arr"]["items"] == obj({"x": {"type": "string", "description": note}, "y": {"type": "string"}}, required=["y"])
+    assert props["keep"] == {"type": "string"}
     assert sent["$defs"]["pid"] == {"type": "string", "description": "Must match the regular expression ^psg_[0-9]+$"}
     assert "pattern" not in json.dumps(sent)
 
@@ -59,9 +61,19 @@ def test_anthropic_schema_sends_a_required_nullable_field_optional_and_non_null(
 def test_a_property_named_like_a_keyword_is_kept():
     given = obj({"pattern": {"anyOf": [{"type": "string"}, NULL]}, "anyOf": {"type": "string", "pattern": "x"}})
     sent = anthropic_schema(given)
-    assert sent["properties"] == {"pattern": {"type": "string"},
+    assert sent["properties"] == {"pattern": {"type": "string", "description": OMITTED_NULL_NOTE},
                                   "anyOf": {"type": "string", "description": "Must match the regular expression x"}}
     assert sent["required"] == ["anyOf"]
+
+
+def test_the_decomposition_schema_says_to_leave_out_a_null_explanation():
+    """17 Oct live check: told "use null" with no null in the sent schema, the model wrote "" or "null" in 7 of 8
+    decomposition calls (D94). Each field the transform makes optional says how to give null."""
+    sent = anthropic_schema(contracts.model_output_schema("claim_decomposition"))
+    field = sent["properties"]["nearest_simple_explanation"]
+    assert "nearest_simple_explanation" not in sent["required"]
+    assert OMITTED_NULL_NOTE in field["description"]
+    assert "never write an empty string or the word null" in OMITTED_NULL_NOTE
 
 
 def test_fill_omitted_nulls_puts_back_each_missing_nullable_field_and_says_where():
@@ -101,6 +113,20 @@ def _nodes(node):
             yield from _nodes(value)
 
 
+def _required_nullable(schema):
+    for node in _nodes(portable_schema(schema)):
+        if isinstance(node.get("properties"), dict):
+            for name in node.get("required", []):
+                child = node["properties"][name]
+                if isinstance(child, dict) and ((isinstance(child.get("type"), list) and "null" in child["type"])
+                                                or NULL in child.get("anyOf", [])):
+                    yield name, child
+
+
+def _named(schema, name):
+    return [n["properties"][name] for n in _nodes(schema) if isinstance(n.get("properties"), dict) and name in n["properties"]]
+
+
 @pytest.mark.parametrize("key", sorted(contracts.model_transport_schemas()))
 def test_every_step_schema_passes_through_without_a_typed_enum_or_a_required_nullable_field(key):
     schema = contracts.model_transport_schemas()[key]
@@ -117,6 +143,8 @@ def test_every_step_schema_passes_through_without_a_typed_enum_or_a_required_nul
                 child = node["properties"][name]
                 assert not (isinstance(child.get("type"), list) and "null" in child["type"]), (key, name)
                 assert NULL not in child.get("anyOf", []), (key, name)
+    for name, original in _required_nullable(schema):
+        assert any(OMITTED_NULL_NOTE in n.get("description", "") for n in _named(sent, name)), (key, name)
     # Anthropic's documented limit is 24 optional fields across one request's strict schemas.
     optional = sum(len(set(n["properties"]) - set(n.get("required", []))) for n in _nodes(sent)
                    if isinstance(n.get("properties"), dict))

@@ -114,9 +114,11 @@ REVIEW_TASKS = ("owner_review",)
 LINEAGE_TASKS = ("lineage_links",)
 CANDIDATE_TASKS = ("claim_decomposition", "kill_search_query", "claim_assessment")
 CANDIDATE_SUPPORT_RELATIONS = ("explicit_support", "reasoned_inference", "partial_match")
-# A surface screen only: absence of these words does not establish the plan's scope or quality.
+# A surface screen only: absence of these words does not establish the plan's scope or quality. A bare "protocol" is
+# not one: a claim about routing or network protocols names them (D94).
 VALIDATION_PLAN_DESIGN_TERMS = re.compile(
-    r"\b(?:protocol|sample\s+size|power\s+analysis|apparatus|equipment|instrumentation|reagents?"
+    r"\b(?:(?:experimental|experiment|study|test(?:ing)?|measurement|laboratory|lab|clinical|trial)\s+protocols?"
+    r"|sample\s+size|power\s+analysis|apparatus|equipment|instrumentation|reagents?"
     r"|randomi[sz]ed|preregistered|pre-registered)\b", re.IGNORECASE,
 )
 # The cell states EvidenceCellDraft allows. inaccessible is the system's, not_verified and not_reported a person's (D37).

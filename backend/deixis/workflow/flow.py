@@ -5300,6 +5300,16 @@ class ResearchFlow:
             # The answer's passages, allowlist and handles; the model is the one this call goes to (S17).
             return copy.deepcopy(frozen) | {"step_input_id": new_id("sti"), "step_id": step_id, "created_at": now(),
                                             "model": frozen["model"] | {"connection": sent[0], "requested_model": sent[1]}}
+        stored = self.store.existing_step(run_id, LEDGER_COVERAGE_KEY)
+        if stored is not None and stored["status"] != "succeeded" and (stored["output"] or {}).get("coverage_closed"):
+            # A call that failed or was skipped is not sent again on resume: at most one coverage call per answer.
+            self._checkpoint(run_id, run["scope_revision"])
+            return output, key, stored["output"]["coverage_closed"]
+
+        def closed(outcome: dict[str, Any]) -> tuple[dict[str, Any], str, dict[str, Any]]:
+            step = self.store.existing_step(run_id, LEDGER_COVERAGE_KEY)
+            self.store.set_step_output(step["id"], (step["output"] or {}) | {"coverage_closed": record | outcome})
+            return output, key, record | outcome
         try:
             # Optional, and a spend threshold skips it instead of pausing the run: the answer is already valid. A
             # stop or a newer scope revision still stops the run.
@@ -5310,27 +5320,74 @@ class ResearchFlow:
         except OptionalStepFailed as failed:
             self._checkpoint(run_id, run["scope_revision"])  # a question changed meanwhile stops the run, not publishes
             if failed.reason == "spend_threshold":
-                return output, key, record | {"outcome": "skipped_spend"}
-            return output, key, record | {"outcome": "call_failed", "reason": failed.reason}
+                return closed({"outcome": "skipped_spend"})
+            return closed({"outcome": "call_failed", "reason": failed.reason})
         self._checkpoint(run_id, run["scope_revision"])
         if second.get("repair_skipped"):
-            return output, key, record | {"outcome": "skipped_budget"}
+            return closed({"outcome": "skipped_budget"})
         if second.get("invalid"):
             return output, key, record | {"outcome": "kept_first", "reason": "invalid"}
         payload = self.store.step_input_payload(second["step_input_id"])
-        after = contracts.answer_ledger(payload, second["result"], contracts.derive_evidence_links(payload, second["result"]),
-                                        second.get("ledger_split", []))
-        record["after"] = {"unaccounted": len(after["unaccounted"]), "cited": len(after["cited"]),
-                           "excluded": len(after["excluded"]), "claims": len(second["result"]["claims"])}
+
+        def counts(answer: dict[str, Any], split: list[dict[str, Any]]) -> tuple[dict[str, Any], dict[str, Any]]:
+            led = contracts.answer_ledger(payload, answer, contracts.derive_evidence_links(payload, answer), split)
+            return led, {"unaccounted": len(led["unaccounted"]), "cited": len(led["cited"]),
+                         "excluded": len(led["excluded"]), "claims": len(answer["claims"])}
+        after, record["after"] = counts(second["result"], second.get("ledger_split", []))
         if len(after["unaccounted"]) >= len(first["unaccounted"]):
             return output, key, record | {"outcome": "kept_first", "reason": "not_fewer_unaccounted"}
-        if not set(first["cited"]) <= set(after["cited"]):
-            return output, key, record | {"outcome": "kept_first", "reason": "dropped_cited_source"}
-        if (path := contracts.coverage_changed_path(output["result"], second["result"], set(after["cited"]))) is not None:
+        path = contracts.coverage_changed_path(output["result"], second["result"], set(after["cited"]))
+        if path is not None and path.startswith("/claims/"):
+            # The rewrite changed or dropped a claim of the first answer: publish the first claims unchanged with the
+            # rewrite's new ones instead, when that merged answer passes the same checks. A resumed run reads the
+            # merged result stored on the step and never merges again.
+            step = self.store.existing_step(run_id, LEDGER_COVERAGE_KEY)
+            merged = (step["output"] or {}).get("coverage_merge")
+            if merged is None:
+                merged = self._merge_coverage(payload, output["result"], second["result"])
+                self.store.set_step_output(step["id"], step["output"] | {"coverage_merge": merged})
+            record = record | {"merged": True, "path": path}
+            if merged.get("issue") is not None:
+                return output, key, record | {"outcome": "kept_first", "reason": "merge_invalid", "issue": merged["issue"]}
+            merged_after, record["after"] = counts(merged["result"], second.get("ledger_split", []))
+            if len(merged_after["unaccounted"]) >= len(first["unaccounted"]):
+                return output, key, record | {"outcome": "kept_first", "reason": "merge_invalid", "issue": "not_fewer_unaccounted"}
+            return second | {"result": merged["result"]}, LEDGER_COVERAGE_KEY, record | {"outcome": "published"}
+        if path is not None:
             return output, key, record | {"outcome": "kept_first", "reason": "changed_existing", "path": path}
         if contracts.over_inference_share(second["result"]):
             return output, key, record | {"outcome": "kept_first", "reason": "over_inference_share"}
+        # Limitations describe the answer as a whole, so the published answer takes the rewrite's.
         return second, LEDGER_COVERAGE_KEY, record | {"outcome": "published"}
+
+    @staticmethod
+    def _merge_coverage(payload: dict[str, Any], first: dict[str, Any], rewrite: dict[str, Any]) -> dict[str, Any]:
+        """D83: the first answer's claims unchanged plus the rewrite's claims with new labels, checked like an answer.
+
+        Each new claim goes after the last claim of its section, or at the end when its section is new, so a section's
+        claims stay consecutive; limitations and excluded_sources are the rewrite's. Returns {"result": answer} or
+        {"issue": code} for the first check it fails.
+        """
+        old = {claim["claim_label"] for claim in first["claims"]}
+        added = [claim for claim in rewrite["claims"] if claim["claim_label"] not in old]
+        claims = copy.deepcopy(first["claims"])
+        for claim in added:
+            sections = [i for i, c in enumerate(claims) if c["section"] == claim["section"]]
+            claims.insert(sections[-1] + 1 if sections else len(claims), copy.deepcopy(claim))
+        new = {claim["claim_label"] for claim in added}
+        draft = copy.deepcopy(rewrite) | {
+            "claims": claims,
+            "citation_anchors": copy.deepcopy(first["citation_anchors"])
+            + [copy.deepcopy(a) for a in rewrite["citation_anchors"] if a["claim_label"] in new]}
+        if len(claims) > contracts.LEDGER_CLAIM_LIMIT:
+            return {"issue": "over_claim_limit"}
+        if contracts.over_inference_share(draft):
+            return {"issue": "over_inference_share"}
+        kept, _ = contracts.split_ledger(draft)  # the rewrite's entries, already checked when it was validated
+        report = contracts.validate_model_output(payload, draft)
+        if not report.ok:
+            return {"issue": report.issues[0].code}
+        return {"result": report.result | {"excluded_sources": kept}}
 
     async def _cap_inference(self, run: dict[str, Any], scope: dict[str, Any], output: dict[str, Any],
                              key: str) -> tuple[dict[str, Any], str, dict[str, Any] | None]:

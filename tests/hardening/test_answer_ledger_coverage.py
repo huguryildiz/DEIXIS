@@ -12,7 +12,7 @@ from deixis.domain import contracts
 from deixis.models.adapter import ModelStepResult
 from deixis.workflow import spend
 from deixis.workflow.flow import LEDGER_COVERAGE_KEY, RunStopped
-from test_answer_ledger_flow import COVERAGE_LINE, answer_of, draft, entry, given, ledger, setup
+from test_answer_ledger_flow import COVERAGE_LINE, answer_of, draft, entry, given, ledger, save_fails_once, setup
 LIMIT = {"kind": "scope", "text": "SYNTHETIC limitation of the first answer.", "source_ids": []}
 NEW_LIMIT = {"kind": "access", "text": "SYNTHETIC limitation the rewrite adds.", "source_ids": []}
 
@@ -143,17 +143,7 @@ def edited(field):
 KEPT = {
     "invalid": ([first_answer, locator], "invalid", None),
     "not_fewer": ([first_answer, lambda si: covered(si, claims=[("c1", "source_stated", [0])])], "not_fewer_unaccounted", None),
-    "dropped_cited": ([first_answer, lambda si: covered(si, claims=[("c2", "source_stated", [1])], ledger=lambda order: [
-        entry(order[0]["source_id"]), entry(order[2]["source_id"])])], "dropped_cited_source", None),
     "inference_share": ([first_answer, with_inference], "over_inference_share", None),
-    "claim_deleted": ([two_claims, lambda si: covered(si, claims=[("c1", "source_stated", [0]), ("c3", "source_stated", [1])])],
-                      "changed_existing", "/claims/1"),
-    "claim_text": ([two_claims, edited("text")], "changed_existing", "/claims/1"),
-    "claim_passage": ([two_claims, edited("passage")], "changed_existing", "/claims/1"),
-    "claim_anchor": ([two_claims, edited("anchor")], "changed_existing", "/claims/1"),
-    "reordered": ([two_claims, lambda si: covered(si, claims=[("c2", "source_stated", [0]), ("c1", "source_stated", [0]),
-                                                              ("c3", "source_stated", [1])])], "changed_existing", "/claims/1"),
-    "limitation_dropped": ([first_answer, lambda si: covered(si, limitations=[NEW_LIMIT])], "changed_existing", "/limitations/0"),
     "exclusion_changed": ([first_answer, lambda si: covered(si, ledger=lambda order: [entry(order[2]["source_id"], note="SYNTHETIC: other.")])],
                           "changed_existing", "/excluded_sources/0"),
 }
@@ -164,18 +154,134 @@ def test_a_rewrite_that_fails_a_check_keeps_the_first_answer(tmp_path, case):
     scripts, reason, path = KEPT[case]
     store, flow, adapter, rid, run_id, sent = setup(tmp_path, scripts)
     try:
-        first_labels = ["c1", "c2"] if scripts[0] is two_claims else ["c1"]
         answer = answer_of(store, rid, flow, run_id)
         assert answer["status"] == "structurally_valid" and len(sent) == 2  # never unpublished by the rewrite
         record = coverage(answer)
         assert record["outcome"] == "kept_first" and record["reason"] == reason and record.get("path") == path
-        assert ("after" in record) == (reason != "invalid")
-        assert saved_key(store, answer) == "grounded_answer" and labels(store, answer) == first_labels
+        assert ("after" in record) == (reason != "invalid") and "merged" not in record
+        assert saved_key(store, answer) == "grounded_answer" and labels(store, answer) == ["c1"]
         assert ledger(answer)["unaccounted"] == [given(store, answer)[1]]
         again = answer_of(store, rid, flow, run_id)
         assert len(sent) == 2 and again["id"] == answer["id"]
     finally:
         store.conn.close()
+
+
+def inference_pair(order):
+    """c1 states source one; c2 infers from sources one and three, its passages in `order`; source two unaccounted."""
+    def script(si):
+        out = by_label(draft(si, [("c1", "source_stated", [0]), ("c2", "analyst_inference", order)], ledger=[]))
+        out["limitations"] = [LIMIT]
+        return out
+    return script
+
+
+def reordered_ids(si):
+    out = inference_pair([2, 0])(si)
+    extra = by_label(draft(si, [("c3", "source_stated", [1])], ledger=[]))
+    out["claims"] += extra["claims"]
+    out["citation_anchors"] = list(reversed(out["citation_anchors"])) + extra["citation_anchors"]
+    return out
+
+
+@pytest.mark.parametrize("case", ["id_order", "limitation_reworded", "limitation_dropped"])
+def test_a_rewrite_that_reorders_ids_or_rewrites_limitations_is_published(tmp_path, case):
+    """Passage lists compare as sets, and limitations follow the rewrite: they describe the answer as a whole."""
+    reworded = dict(LIMIT, text="SYNTHETIC limitation, now that abstracts are cited.", source_ids=[])
+    scripts = {"id_order": [inference_pair([0, 2]), reordered_ids],
+               "limitation_reworded": [first_answer, lambda si: covered(si, limitations=[reworded])],
+               "limitation_dropped": [first_answer, lambda si: covered(si, limitations=[NEW_LIMIT])]}[case]
+    store, flow, adapter, rid, run_id, sent = setup(tmp_path, scripts)
+    try:
+        answer = answer_of(store, rid, flow, run_id)
+        record = coverage(answer)
+        assert record["outcome"] == "published" and "merged" not in record and record["after"]["unaccounted"] == 0
+        assert saved_key(store, answer) == LEDGER_COVERAGE_KEY
+        shown = json.loads(answer["draft_json"])["limitations"]
+        assert shown == {"id_order": [LIMIT], "limitation_reworded": [reworded], "limitation_dropped": [NEW_LIMIT]}[case]
+    finally:
+        store.conn.close()
+
+
+MERGED = {
+    "claim_deleted": [two_claims, lambda si: covered(si, claims=[("c1", "source_stated", [0]), ("c3", "source_stated", [1])])],
+    "claim_text": [two_claims, edited("text")],
+    "claim_passage": [two_claims, edited("passage")],
+    "claim_anchor": [two_claims, edited("anchor")],
+    "reordered": [two_claims, lambda si: covered(si, claims=[("c2", "source_stated", [0]), ("c1", "source_stated", [0]),
+                                                             ("c3", "source_stated", [1])])],
+    "cited_source_dropped": [first_answer, lambda si: covered(si, claims=[("c2", "source_stated", [1])], ledger=lambda order: [
+        entry(order[0]["source_id"]), entry(order[2]["source_id"])])],
+}
+
+
+@pytest.mark.parametrize("case", list(MERGED))
+def test_a_rewrite_that_changed_a_claim_is_merged_into_the_first_answer_and_a_resume_sends_nothing(tmp_path, case):
+    store, flow, adapter, rid, run_id, sent = setup(tmp_path, MERGED[case])
+    try:
+        answer = answer_of(store, rid, flow, run_id)
+        first = store.existing_step(run_id, "grounded_answer")["output"]["result"]
+        record = coverage(answer)
+        expected_path = "/claims/0" if case == "cited_source_dropped" else "/claims/1"
+        assert record["outcome"] == "published" and record["merged"] is True and record["path"] == expected_path
+        assert record["after"]["unaccounted"] == 0 and ledger(answer)["complete"] is True
+        assert saved_key(store, answer) == LEDGER_COVERAGE_KEY
+        published = json.loads(answer["draft_json"])
+        old = len(first["claims"])
+        assert published["claims"][:old] == first["claims"]  # the first claims, unchanged and in their order
+        assert [c["claim_label"] for c in published["claims"]] == [c["claim_label"] for c in first["claims"]] + (
+            ["c2"] if case == "cited_source_dropped" else ["c3"])
+        for anchor in first["citation_anchors"]:
+            assert anchor in published["citation_anchors"]
+        assert published["limitations"] == [LIMIT, NEW_LIMIT]  # the rewrite's
+        stored = store.existing_step(run_id, LEDGER_COVERAGE_KEY)["output"]
+        assert stored["coverage_merge"]["result"] == published
+        again = answer_of(store, rid, flow, run_id)  # resumed: nothing is sent or merged again
+        assert len(sent) == 2 and again["id"] == answer["id"] and coverage(again) == record
+    finally:
+        store.conn.close()
+
+
+def many_new(kind, count):
+    def script(si):
+        out = edited("text")(si)
+        extra = by_label(draft(si, [(f"c{n}", kind, [1]) for n in range(4, 4 + count)], ledger=[]))
+        out["claims"] += extra["claims"]
+        out["citation_anchors"] += extra["citation_anchors"]
+        return out
+    return script
+
+
+@pytest.mark.parametrize("script, issue", [(many_new("source_stated", 28), "over_claim_limit"),
+                                           (many_new("analyst_inference", 4), "over_inference_share")])
+def test_a_merged_answer_over_the_claim_cap_or_the_inference_share_keeps_the_first_answer(tmp_path, script, issue):
+    store, flow, adapter, rid, run_id, sent = setup(tmp_path, [two_claims, script])
+    try:
+        answer = answer_of(store, rid, flow, run_id)
+        record = coverage(answer)
+        assert record["outcome"] == "kept_first" and record["reason"] == "merge_invalid" and record["issue"] == issue
+        assert record["merged"] is True and record["path"] == "/claims/1"
+        assert saved_key(store, answer) == "grounded_answer" and labels(store, answer) == ["c1", "c2"]
+        again = answer_of(store, rid, flow, run_id)
+        assert len(sent) == 2 and again["id"] == answer["id"]
+    finally:
+        store.conn.close()
+
+
+def test_preservation_compares_passage_ids_and_exclusions_as_sets():
+    first = {"claims": [{"claim_label": "c1", "section": "S", "text": "t", "support_type": "analyst_inference",
+                         "passage_ids": ["p1", "p2"]}],
+             "citation_anchors": [{"claim_label": "c1", "passage_id": "p1", "quote": "q1"},
+                                  {"claim_label": "c1", "passage_id": "p2", "quote": "q2"}],
+             "excluded_sources": [entry("s3"), entry("s4")]}
+    rewrite = json.loads(json.dumps(first))
+    rewrite["claims"][0]["passage_ids"].reverse()
+    rewrite["citation_anchors"].reverse()
+    rewrite["excluded_sources"].reverse()
+    assert contracts.coverage_changed_path(first, rewrite, set()) is None
+    rewrite["excluded_sources"][0]["note"] = "SYNTHETIC: changed."
+    assert contracts.coverage_changed_path(first, rewrite, set()) == "/excluded_sources/1"
+    assert contracts.coverage_changed_path(first, rewrite, {"s4"}) is None  # now cited: its entry may change
 
 
 def test_a_cited_source_whose_exclusion_entry_changes_is_not_a_change(tmp_path):
@@ -201,6 +307,23 @@ def test_a_failed_or_truncated_call_keeps_the_first_answer_and_the_run_goes_on(t
         record = coverage(answer)
         assert record["outcome"] == "call_failed" and record["reason"] and "after" not in record
         assert store.run(run_id)["status"] == "running"
+    finally:
+        store.conn.close()
+
+
+def test_a_call_that_failed_is_not_sent_again_when_the_answer_is_resumed(tmp_path):
+    """Sol round 1: max_tokens on the coverage call, a stop before the answer is saved, then a resume."""
+    store, flow, adapter, rid, run_id, sent = setup(tmp_path, [first_answer, covered])
+    try:
+        adapter.fail = lambda si: (ModelStepResult("failed", raw_text='{"claims": [', error="finish reason max_tokens",
+                                                   resolved_model="fake-model") if len(adapter.calls) == 2 else None)
+        save_fails_once(store)
+        with pytest.raises(RuntimeError):
+            answer_of(store, rid, flow, run_id)
+        assert len(adapter.calls) == 2
+        answer = answer_of(store, rid, flow, run_id)
+        assert len(adapter.calls) == 2 and coverage(answer)["outcome"] == "call_failed"
+        assert saved_key(store, answer) == "grounded_answer" and labels(store, answer) == ["c1"]
     finally:
         store.conn.close()
 

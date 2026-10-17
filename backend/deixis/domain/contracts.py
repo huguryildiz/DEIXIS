@@ -3042,22 +3042,23 @@ def over_inference_share(answer: dict[str, Any]) -> bool:
     return 2 * sum(1 for c in claims if c.get("support_type") == "analyst_inference") > len(claims)
 
 
-COVERAGE_KEPT_CLAIM_FIELDS = ("text", "support_type", "section", "passage_ids")
+COVERAGE_KEPT_CLAIM_FIELDS = ("text", "support_type", "section")
 
 
 def coverage_changed_path(first: dict[str, Any], rewrite: dict[str, Any], cited: set[str]) -> str | None:
     """D83: the first path of the accepted answer that its ledger coverage rewrite does not keep, or None.
 
     Both answers are resolved results (record IDs). Every first claim must be in the rewrite with the same label, text,
-    support type, section, passages and anchor quotes, in the same relative order; every first limitation must still
-    be there; every first excluded_sources entry whose source the rewrite still does not cite (`cited`) must be
-    unchanged. New claims, limitations and entries may be added anywhere.
+    support type, section, passages and anchor quotes (passages and anchors as sets), in the same relative order; every
+    first excluded_sources entry whose source the rewrite still does not cite (`cited`) must be in the rewrite unchanged,
+    anywhere in the list. Limitations are not compared: they describe the answer as a whole, so the rewrite's stand.
+    New claims and entries may be added anywhere.
     """
-    def anchors(answer: dict[str, Any]) -> dict[str, list[tuple[str, str]]]:
-        found: dict[str, list[tuple[str, str]]] = {}
+    def anchors(answer: dict[str, Any]) -> dict[str, set[tuple[str, str]]]:
+        found: dict[str, set[tuple[str, str]]] = {}
         for anchor in answer.get("citation_anchors") or []:
-            found.setdefault(anchor["claim_label"], []).append((anchor["passage_id"], anchor["quote"]))
-        return {label: sorted(pairs) for label, pairs in found.items()}
+            found.setdefault(anchor["claim_label"], set()).add((anchor["passage_id"], anchor["quote"]))
+        return found
 
     claims = rewrite.get("claims") or []
     position = {claim["claim_label"]: index for index, claim in enumerate(claims)}
@@ -3067,12 +3068,10 @@ def coverage_changed_path(first: dict[str, Any], rewrite: dict[str, Any], cited:
         label = claim["claim_label"]
         at = position.get(label)
         if (at is None or at <= last or any(claims[at].get(f) != claim.get(f) for f in COVERAGE_KEPT_CLAIM_FIELDS)
-                or new_anchors.get(label, []) != old_anchors.get(label, [])):
+                or set(claims[at].get("passage_ids") or []) != set(claim.get("passage_ids") or [])
+                or new_anchors.get(label, set()) != old_anchors.get(label, set())):
             return f"/claims/{index}"
         last = at
-    for index, limitation in enumerate(first.get("limitations") or []):
-        if limitation not in (rewrite.get("limitations") or []):
-            return f"/limitations/{index}"
     for index, entry in enumerate(first.get("excluded_sources") or []):
         if entry["source_id"] not in cited and entry not in (rewrite.get("excluded_sources") or []):
             return f"/excluded_sources/{index}"

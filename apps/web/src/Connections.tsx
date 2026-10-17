@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowUpRight, Ban, BadgeCheck, ChevronRight, CircleCheck, Cloud, Copy, Cpu, Download, FileLock, FileText, FileUp, HardDrive, Hexagon, Info, KeyRound, Laptop, MemoryStick, LoaderCircle, Package, PenLine, Plus, RefreshCw, RotateCw, Save, ScanText, Server, Shapes, ShieldCheck, Trash2, TriangleAlert, Upload, Zap } from 'lucide-react'
+import { ArrowUpRight, Ban, BadgeCheck, ChevronRight, CircleCheck, Cloud, Copy, Cpu, Download, FileLock, FileText, FileUp, HardDrive, Info, KeyRound, Laptop, MemoryStick, LoaderCircle, Package, PenLine, Plus, RefreshCw, RotateCw, Save, ScanText, Server, ShieldCheck, Trash2, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -130,8 +130,8 @@ const glyph = (icon: ReactNode) => <span className="connection-icon" aria-hidden
 const GLYPHS: Record<string, ReactNode> = {
   ocr: glyph(<ScanText strokeWidth={1.8} />), marker: <ConnectionIcon id="marker" />, mathpix: glyph(<Cloud strokeWidth={1.8} />), pymupdf: <ConnectionIcon id="pymupdf" />, servers: glyph(<Server strokeWidth={1.8} />),
   server: glyph(<Server strokeWidth={1.8} />), 'reference-files': glyph(<FileText strokeWidth={1.8} />), off: glyph(<Ban strokeWidth={1.8} />),
-  voyage: glyph(<Cloud strokeWidth={1.8} />), cohere: glyph(<Hexagon strokeWidth={1.8} />), jina: glyph(<Shapes strokeWidth={1.8} />),
-  zeroentropy: glyph(<Zap strokeWidth={1.8} />),
+  voyage: <ConnectionIcon id="voyage" />, cohere: <ConnectionIcon id="cohere" />, jina: <ConnectionIcon id="jina" />,
+  zeroentropy: <ConnectionIcon id="zeroentropy" />,
 }
 const settingsIcon = (key: string) => GLYPHS[key] ?? <ConnectionIcon id={localToolIcon(key)} />
 
@@ -759,7 +759,7 @@ function LocalModels({ tool, dark, memoryGb, onChanged, onDone }: { tool: LocalT
           {!lms && <button type="button" className="ghost icon-only" aria-label={t('Remove {model}', { model: m.id })} title={t('Remove')} disabled={busy} onClick={() => setRemoving(m.id)}><Trash2 size={14} aria-hidden /></button>}
         </span>
       </li>)}</ul>
-      : <p className="local-tool-note">{t('No models found.')}</p>}
+      : <p className="local-tool-note">{t('No language model is installed.')}</p>}
 
     {research.length > 0 && <>
       <h3 className="source-section">{t('Suggested models')}</h3>
@@ -875,7 +875,10 @@ function OcrToolDetails({ tool, onChanged }: { tool: OcrTool; onChanged: () => P
     <p className="tool-lead">{t('Tesseract reads scanned PDF pages that have no selectable text when you choose Read with OCR on a source.')}</p>
     <ToolTraits items={[...(tool.bundled ? [[<Package key="p" />, 'Comes with DEIXIS'] as [ReactNode, string]] : []), [<Laptop key="l" />, 'Runs on this computer'], [<ShieldCheck key="s" />, 'No file leaves it'], [<FileLock key="f" />, 'The PDF is not changed']]} />
     {running
-      ? <InstallProgress label={t(phase)} />
+      ? job.phase === 'downloading' && job.packages_total && (job.packages_done ?? 0) < job.packages_total
+        ? <InstallProgress label={t('Downloading: {done} of {total} packages', { done: job.packages_done ?? 0, total: job.packages_total })}
+          percent={Math.round(100 * (job.packages_done ?? 0) / job.packages_total)} />
+        : <InstallProgress label={t(phase)} />
       : !ready && tool.bundled ? <p className="local-tool-note is-callout">{t('Tesseract comes with DEIXIS but could not be run. Reinstall DEIXIS.')}</p>
       : !ready && (tool.can_install
         ? <section className="tool-install">

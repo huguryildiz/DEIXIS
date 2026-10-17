@@ -309,13 +309,16 @@ def client_of(setup, tmp_path):
 
 
 def wait_ready(client, model_id):
-    deadline = time.time() + 30
+    # Past the server's own start limit, so a slow start ends as "failed" with its output rather than as a test timeout.
+    deadline = time.time() + local_embedding.READY_TIMEOUT_SECONDS + 30
     while time.time() < deadline:
-        card = next(m for m in client.get("/api/semantic-search/builtin").json()["models"] if m["id"] == model_id)
+        status = client.get("/api/semantic-search/builtin").json()
+        card = next(m for m in status["models"] if m["id"] == model_id)
         if card["state"] in ("ready", "failed"):
+            assert card["state"] == "ready", status.get("job")
             return card
         time.sleep(0.05)
-    raise AssertionError("the install did not end")
+    raise AssertionError(f"the install did not end: {status.get('job')}")
 
 
 def test_the_routes_download_choose_and_remove_and_nothing_but_use_changes_a_choice(setup, tmp_path):

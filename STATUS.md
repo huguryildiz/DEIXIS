@@ -47,6 +47,7 @@ Most of this was tested with fake models and synthetic data only; "Not measured"
 - A follow-up gives one passage per work named in the table before the rest, so cross-work questions reach more works (D64).
 - A follow-up that counts or groups works has the model classify each work with a quote, and the app does the counting (D66).
 - A follow-up no longer opens a new question revision, and an unused revision can be withdrawn (D67).
+- A follow-up that asks for works outside the research can search for them (D92, 17 Oct): a "Search for new works" button (emphasized when the model says the question asks for new works) starts a run of its own under the same question, sends model-written terms through the same bounded transport, marks each found work new, already here or removed before, screens up to 40 new works at the abstract stage and includes nothing. The first search's counts stay apart in the funnel, PRISMA-S and the Method box. Tested with fake models and one browser check on synthetic records; the terms' quality and the new works' relevance are not measured.
 
 ### Evidence tables and reports
 

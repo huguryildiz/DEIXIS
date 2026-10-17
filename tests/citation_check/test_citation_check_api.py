@@ -312,6 +312,9 @@ AUTHOR_BIB = b"""@article{sj, title = {Two authors}, author = {Smith, Ann and Jo
 @article{berg, title = {Plain Berg}, author = {Berg, Anna}, year = {2024}}
 @article{vries, title = {Plain Vries}, author = {Vries, Jan}, year = {2025}}
 @article{svb, title = {Smith and Van Berg}, author = {Smith, Ann and Van Berg, Bo}, year = {2026}}
+@article{bv, title = {Given name Van}, author = {Berg, Van}, year = {2027}}
+@article{vba, title = {Particle before the comma}, author = {van Berg, Anna}, year = {2028}}
+@article{plain, title = {No comma}, author = {Anna von Kahl}, year = {2029}}
 """
 
 
@@ -336,6 +339,12 @@ AUTHOR_BIB = b"""@article{sj, title = {Two authors}, author = {Smith, Ann and Jo
     ("De Vries (2025)", "ambiguous"),            # `De Vries` is not `Vries`
     ("Vries (2025)", "planned"),
     ("(De Vries, 2025)", "ambiguous"),
+    # Sol round 3: the file's own `Last, First` boundary decides the surname.
+    ("(Van Berg, 2027)", "ambiguous"),           # `Berg, Van`: Van is the given name
+    ("(Berg, 2027)", "planned"),
+    ("(van Berg, 2028)", "planned"),             # `van Berg, Anna`
+    ("(Berg, 2028)", "ambiguous"),
+    ("(von Kahl, 2029)", "planned"),             # no comma: the particle reading
 ])
 def test_author_year_names_the_whole_author_list_unless_it_says_et_al(make, citation, status):
     app, _ = make()
@@ -350,3 +359,26 @@ def test_the_et_al_rule():
     assert match(["smith"], True, ["smith", "jones", "brown"]) and not match(["smith"], True, ["smith", "jones"])
     assert match(["smith", "jones"], True, ["smith", "jones", "brown"]) and not match(["smith", "jones"], True, ["smith", "jones"])
     assert match(["smith"], False, ["smith"]) and not match(["smith"], False, ["smith", "jones"])
+
+
+def test_an_entry_whose_author_boundary_cannot_be_told_makes_every_same_year_item_ambiguous(make):
+    # Two entries of 2022; one's author field does not split into its authors one for one (an empty name part).
+    bib = b"@article{a, title = {Readable}, author = {Smith, Ann}, year = {2022}}\n" \
+          b"@article{b, title = {Unreadable}, author = {, Ann}, year = {2022}}\n"
+    app, _ = make()
+    with TestClient(app) as raw:
+        client = session(raw)
+        view = submit(client, text="A claim (Smith, 2022) here.", bib=bib).json()
+        assert [p["status"] for m in view["markers"] for p in m["pairs"]] == ["ambiguous"]
+
+
+def test_ris_names_keep_their_comma_boundary(make):
+    ris = (b"TY  - JOUR\nTI  - Given name Van\nAU  - Berg, Van\nPY  - 2027\nER  - \n"
+           b"TY  - JOUR\nTI  - Particle\nAU  - van Berg, Anna\nPY  - 2028\nER  - \n")
+    app, _ = make()
+    with TestClient(app) as raw:
+        client = session(raw)
+        for citation, status in (("(Van Berg, 2027)", "ambiguous"), ("(Berg, 2027)", "planned"),
+                                 ("(van Berg, 2028)", "planned")):
+            view = submit(client, text=f"A claim {citation} here.", bib=ris, bib_name="refs.ris").json()
+            assert [p["status"] for m in view["markers"] for p in m["pairs"]] == [status], citation

@@ -24,6 +24,7 @@ from __future__ import annotations
 import difflib
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +50,38 @@ DOI_BATCH = openalex.MAX_IDS_PER_REQUEST
 
 # ------------------------------------------------------------------------------------------------------- creating
 
+def _structured_surnames(fmt: str, entry: bibtex_ris.Entry) -> list[str] | None:
+    """The entry's surnames from the file's own name boundary, or None when it cannot be told.
+
+    BibTeX `Last, First`, `von Last, First` and `Last, Jr, First`, and RIS `Last, First`: the surname is exactly the
+    part before the first comma, particles included, and the given names never join it (`Berg, Van` is `berg`). A
+    BibTeX name without a comma (`First von Last`) and a RIS name without one get the particle reading
+    (`draft_parse.surname_key`); a braced corporate name is one surname. A name list that does not split into the
+    entry's authors one for one, or an empty surname, is None, and author–year matching treats the entry as unknown."""
+    fields = {str(k).lower(): v for k, v in entry.fields.items()}
+    if fmt == "bibtex":
+        raw = re.sub(r"\s+", " ", str(fields.get("author") or ""))
+        names = [n.strip() for n in bibtex_ris._split_top(raw, re.compile(r" and ", re.IGNORECASE))
+                 if n.strip() and n.strip().lower() != "others"]
+    else:
+        names = []
+        for tag in ("au", "a1"):
+            value = fields.get(tag) or []
+            names.extend(v.strip() for v in ([value] if isinstance(value, str) else value) if str(v).strip())
+    if len(names) != len(entry.authors):
+        return None
+    surnames = []
+    for name in names:
+        braced = fmt == "bibtex" and name.startswith("{") and name.endswith("}")
+        parts = [name] if braced else (bibtex_ris._split_top(name, re.compile(r",")) if fmt == "bibtex" else name.split(","))
+        text = bibtex_ris.latex_to_text(parts[0]) if fmt == "bibtex" else parts[0].strip()
+        key = draft_parse.surname_fold(text) if len(parts) > 1 or braced else draft_parse.surname_key(text)
+        if not key:
+            return None
+        surnames.append(key)
+    return surnames
+
+
 def _bib_rows(bibliography: tuple[str, list[bibtex_ris.Entry]] | None, draft: draft_parse.Draft) -> tuple[str, list[dict]]:
     """The entries the check reads: the uploaded file when given, else the draft's own list."""
     rows = []
@@ -62,13 +95,15 @@ def _bib_rows(bibliography: tuple[str, list[bibtex_ris.Entry]] | None, draft: dr
             text = " ".join(str(v) for v in fields.values())
             rows.append({"origin": fmt, "key": entry.key, "number": None, "raw": dumps(entry.fields),
                          "doi": normalize_doi(entry.doi), "arxiv_id": arxiv or draft_parse.arxiv_of(text),
-                         "title": entry.title, "authors": entry.authors, "year": entry.year, "suffix": None})
+                         "title": entry.title, "authors": entry.authors, "year": entry.year, "suffix": None,
+                         "surnames": _structured_surnames(fmt, entry)})
         return fmt, rows
     for item in draft.list_entries:
         fields = draft_parse.written_entry_fields(item.raw)
         rows.append({"origin": draft.list_origin, "key": item.key, "number": item.number, "raw": item.raw,
                      "doi": fields["doi"], "arxiv_id": fields["arxiv_id"], "title": fields["title"],
-                     "authors": fields["authors"], "year": fields["year"], "suffix": fields["year_suffix"]})
+                     "authors": fields["authors"], "year": fields["year"], "suffix": fields["year_suffix"],
+                     "surnames": [draft_parse.surname_key(a) for a in fields["authors"]]})
     return draft.list_origin or "none", rows
 
 
@@ -82,8 +117,11 @@ def _match(target: draft_parse.Target, entries: list[dict]) -> tuple[int | None,
         cited = [draft_parse.surname_key(n) for n in target.names]
         found = []
         for i, entry in enumerate(entries):
-            surnames = [draft_parse.surname_key(a) for a in entry["authors"]]
-            if entry["year"] != target.year or not all(cited) or not authors_match(cited, target.et_al, surnames):
+            if entry["year"] != target.year:
+                continue
+            if entry["surnames"] is None or not all(entry["surnames"]):
+                return None, "ambiguous"  # an entry of that year whose authors cannot be read could be the one
+            if not all(cited) or not authors_match(cited, target.et_al, entry["surnames"]):
                 continue
             if target.suffix is not None and entry["suffix"] != target.suffix:
                 continue

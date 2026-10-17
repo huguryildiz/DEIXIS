@@ -545,6 +545,11 @@ def _fold(word: str) -> str:
     return "".join(c for c in text if c.isalpha() and not unicodedata.combining(c)).casefold()
 
 
+def surname_fold(surname: str) -> str:
+    """A surname the source wrote as one (the part before the comma of `Last, First`): every word kept, folded."""
+    return " ".join(f for f in (_fold(w) for w in re.split(r"\s+", surname.strip())) if f)
+
+
 def surname_key(name: str) -> str:
     """The surname of a name with its particles, accents and case folded, letters only: the last word, and the
     particles (`PARTICLES`, in any case) right before it. `van der Berg`, `Anna van der Berg` and `Van der Berg` give

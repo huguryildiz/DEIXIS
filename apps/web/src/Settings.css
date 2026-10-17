@@ -45,19 +45,26 @@
 .app .settings-page .rows .set-depth strong{color:var(--ink-2);font-weight:500}
 .app .settings-page .rows .select{height:27px;color:var(--ink-2)}
 .app .settings-page .rows .bar{flex:1;min-width:140px}
-/* Default models: model and thinking level stay on the role's line in every language (long Turkish option labels made
-   the selects wrap below). */
-.app .settings-page .set-roles>div{flex-wrap:nowrap}
-.app .settings-page .set-roles p{min-width:0}
-.app .settings-page .set-roles .select{flex:none;width:200px}
-.app .settings-page .set-roles .select+.select{width:130px}
-/* On a phone the line cannot hold both selects: they wrap under the role, so the page never scrolls sideways. */
+/* Default models: one grid row per step, so the selects line up under their column names in every language. */
+.app .settings-page .set-roles>div{display:grid;grid-template-columns:30px minmax(0,1fr) 220px 140px;align-items:center;gap:12px}
+.app .settings-page .set-roles .set-roles-head{padding-top:9px;padding-bottom:9px;background:var(--hover-surface);border-radius:10px 10px 0 0;color:var(--muted);font-size:11.5px;font-weight:500}
+.app .settings-page .set-roles-head span:first-child{grid-column:1 / 3}
+.app .settings-page .set-role-ico{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:8px;background:var(--accent-tint);color:var(--accent)}
+.app .settings-page .set-role-text{display:grid;gap:1px;min-width:0}
+.app .settings-page .set-roles .set-role-text b{min-width:0}
+.app .settings-page .set-roles .set-role-text p{min-width:0}
+.app .settings-page .set-role-model{position:relative;display:block;min-width:0}
+.app .settings-page .set-role-model .connection-icon{position:absolute;top:50%;left:9px;display:inline-flex;width:14px;height:14px;transform:translateY(-50%);pointer-events:none}
+.app .settings-page .set-role-model .connection-icon svg,.app .settings-page .set-role-model .connection-icon img{width:14px;height:14px}
+.app .settings-page .set-roles .select{width:100%;min-width:0}
+.app .settings-page .set-role-model.has-icon .select{padding-left:29px}
+/* On a phone the selects go under the step, side by side, so the page never scrolls sideways. */
 @media(max-width:620px){
-  .app .settings-page .set-roles>div{flex-wrap:wrap}
-  .app .settings-page .set-roles b{flex:1 0 100%;min-width:0}
-  .app .settings-page .set-roles p{flex:1 0 100%;margin-top:-8px}
-  .app .settings-page .set-roles .select{flex:2 1 170px;width:auto;min-width:0}
-  .app .settings-page .set-roles .select+.select{flex:1 1 110px}
+  .app .settings-page .set-roles>div{grid-template-columns:30px minmax(0,1fr) minmax(0,.7fr)}
+  .app .settings-page .set-roles .set-roles-head{display:none}
+  .app .settings-page .set-roles .set-roles-head+div{border-top:0}
+  .app .settings-page .set-role-text{grid-column:2 / 4}
+  .app .settings-page .set-role-model{grid-column:1 / 3}
 }
 .app .settings-page .bar{display:flex;height:6px;overflow:hidden;border-radius:3px;background:var(--selected-surface)}
 .app .settings-page .bar i{display:block;height:100%;background:var(--accent);transition:width .3s}
@@ -404,6 +411,20 @@
 .connection-sheet .server-facts dt{margin:0;color:var(--muted);font-size:11.5px}
 .connection-sheet .server-facts dd{margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);font-size:13px;font-weight:500;font-variant-numeric:tabular-nums}
 .connection-sheet .server-facts code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink)}
+.connection-sheet .server-status.is-bare{padding:0;border:0;background:none}
+.connection-sheet .server-form{display:grid;gap:8px}
+.connection-sheet .server-field{position:relative;display:block}
+.connection-sheet .server-field svg{position:absolute;top:50%;left:11px;color:var(--muted);transform:translateY(-50%);pointer-events:none}
+.connection-sheet .server-field .field{width:100%;padding-left:34px;font:13px ui-monospace,SFMono-Regular,Menlo,monospace}
+.connection-sheet .server-presets{display:flex;flex-wrap:wrap;gap:6px}
+.connection-sheet .server-preset{display:inline-flex;align-items:baseline;gap:6px;padding:4px 9px;border:1px solid var(--line);border-radius:999px;background:var(--paper);color:var(--ink-2);font-size:12px;cursor:pointer;transition:border-color .15s,background .15s}
+.connection-sheet .server-preset b{font-weight:500}
+.connection-sheet .server-preset code{color:var(--muted);font:11px ui-monospace,SFMono-Regular,Menlo,monospace}
+.connection-sheet .server-preset:hover:not(:disabled){border-color:var(--accent-line);background:var(--accent-tint)}
+.connection-sheet .server-preset.on{border-color:var(--accent-line);background:var(--accent-tint);color:var(--accent)}
+.connection-sheet .server-preset.on code{color:var(--accent)}
+.connection-sheet .server-local-note{display:flex;align-items:flex-start;gap:7px;margin:2px 0 0;color:var(--muted);font-size:12px;line-height:1.5}
+.connection-sheet .server-local-note svg{flex:none;margin-top:2px;color:var(--tone-include)}
 .connection-sheet .ollama-empty{display:flex;align-items:flex-start;gap:10px;padding:12px;border:1px dashed var(--strong-line);border-radius:10px}
 .connection-sheet .ollama-empty .ollama-model-ico{background:var(--hover-surface);color:var(--muted)}
 .connection-sheet .ollama-empty p{display:grid;gap:2px;margin:0;font-size:12.5px;line-height:1.5}

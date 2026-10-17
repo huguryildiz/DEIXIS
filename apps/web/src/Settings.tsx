@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { Info, RotateCw } from 'lucide-react'
+import { BookOpenText, Info, PenLine, RotateCw, ShieldCheck } from 'lucide-react'
 import { api, preferencesApi, shellApi, spendApi, usageApi, type About, type ContactEmailSetting, type Effort, type EffortLimits, type PreferenceChange, type Preferences, type Profile, type Connections, type InstitutionalAccess, type ModelRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Spending, type ConnectionUsage, type ModelUsage, type QuotaWindow, type UsageRole } from './api'
 import { canRun, connectionModels, modelKey, type ConnectionModel } from './Home'
 import { defaultEffort, exposesEffortControl } from './modelEffort'
 import { ConnectionsTab } from './Connections'
+import { ConnectionIcon } from './connectionIcons'
 import { DataFlowsSection } from './DataFlows'
 import { useToast } from './Toast'
 import { t, uiLocale, type UiLanguage } from './i18n'
@@ -16,10 +17,10 @@ import './Settings.css'
 
 const NO_DEFAULT = '__none'
 // The mockup's order and words (plan ST3); what each role does is the same in the composer's model menu.
-const ROLES: { role: ModelRole; label: string; desc: string }[] = [
-  { role: 'literature', label: 'Literature', desc: 'Plans searches and screens abstracts' },
-  { role: 'answer', label: 'Answer', desc: 'Writes the source-linked answer' },
-  { role: 'reviewer', label: 'Reviewer', desc: 'Checks each claim against its passages' },
+const ROLES: { role: ModelRole; label: string; desc: string; icon: typeof Info }[] = [
+  { role: 'literature', label: 'Literature', desc: 'Plans searches and screens abstracts', icon: BookOpenText },
+  { role: 'answer', label: 'Answer', desc: 'Writes the source-linked answer', icon: PenLine },
+  { role: 'reviewer', label: 'Reviewer', desc: 'Checks each claim against its passages', icon: ShieldCheck },
 ]
 const clock = (iso: string) => new Date(iso).toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit' })
 
@@ -185,7 +186,9 @@ export function SettingsPage({ dark, section, language, onLanguage, theme, onThe
     <h2 data-panel="models">{t('Default models')}</h2>
     <p className="foot-note set-roles-note" data-panel="models">{t('Defaults apply to new researches. Each research keeps the models it was created with.')}</p>
     <div className="rows set-roles" data-panel="models">
-      {ROLES.map(({ role, label, desc }) => {
+      {/* Column names for sighted readers; each select carries its own accessible name. */}
+      <div className="set-roles-head" aria-hidden><span>{t('Step')}</span><span>{t('Model')}</span><span>{t('Thinking level')}</span></div>
+      {ROLES.map(({ role, label, desc, icon: Icon }) => {
         const current = defaults?.[role]
         const list = models ?? []
         const value = current?.model ? modelKey(current.model_connection, current.model) : NO_DEFAULT
@@ -193,9 +196,11 @@ export function SettingsPage({ dark, section, language, onLanguage, theme, onThe
         const efforts = picked && exposesEffortControl(picked) ? picked.reasoning_efforts ?? [] : []
         const locked = !models || !defaults || !list.length || savingRole !== null
         const groups = [...new Set(list.map(m => m.connection))]
-        return <div key={role}>
-          <b>{t(label)}</b>
-          <p>{t(desc)}</p>
+        return <div key={role} className="set-role">
+          <span className="set-role-ico" aria-hidden><Icon size={15} /></span>
+          <span className="set-role-text"><b>{t(label)}</b><p>{t(desc)}</p></span>
+          <span className={`set-role-model${picked ? ' has-icon' : ''}`}>
+          {picked && <ConnectionIcon id={picked.connection} />}
           <select className="select" aria-label={t('{role} model', { role: t(label) })} disabled={locked} value={!list.length ? NO_DEFAULT : value}
             onChange={e => {
               if (!current) return
@@ -213,6 +218,7 @@ export function SettingsPage({ dark, section, language, onLanguage, theme, onThe
                 </optgroup>)}
               </>}
           </select>
+          </span>
           <select className="select" aria-label={t('{role} effort', { role: t(label) })} disabled={locked || !efforts.length}
             value={efforts.some(e => e.id === current?.reasoning_effort) ? current!.reasoning_effort! : ''}
             onChange={e => current && save(role, { ...current, reasoning_effort: e.target.value || null })}>

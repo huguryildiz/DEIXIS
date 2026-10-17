@@ -654,6 +654,11 @@ function LocalAppInstall({ tool, dark, onChanged, onDone }: { tool: LocalTool; d
   </div>
 }
 
+// The default addresses of the servers the Another local server sheet names.
+const LOCAL_SERVER_PRESETS: [string, string][] = [
+  ['llama.cpp · LocalAI', 'http://127.0.0.1:8080/v1'], ['Jan', 'http://127.0.0.1:1337/v1'], ['vLLM', 'http://127.0.0.1:8000/v1'],
+]
+
 // A local server card's models (Ollama, LM Studio): what is installed (each can be removed), a short list of suggested models and a name box for
 // any other library model. One download runs at a time; Ollama reports bytes per layer, summed into one bar.
 function LocalModels({ tool, dark, memoryGb, onChanged, onDone }: { tool: LocalTool; dark: boolean; memoryGb: number | null; onChanged: () => Promise<void>; onDone: () => void }) {
@@ -1962,21 +1967,36 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     const saved = localServer?.base_url ?? ''
     const field = serverDraft ?? saved
     const changed = field.trim().replace(/\/+$/, '') !== saved
+    const address = saved.replace(/^https?:\/\//, '')
     body = <>
-      {dmeta('local:local_server', localServer ? (saved ? modelStatus(localServer) : ['no', t('No address entered')]) : data ? unknown : loading, undefined,
-        localServer && saved && !localServer.ready ? healthReasonText(localServer) : undefined)}
+      <section className={saved ? 'server-status' : 'server-status is-bare'} aria-label={t('Status')}>
+        <div className="server-status-head">
+          {dmeta('local:local_server', localServer ? (saved ? modelStatus(localServer) : ['no', t('No address entered')]) : data ? unknown : loading, undefined,
+            localServer && saved && !localServer.ready ? healthReasonText(localServer) : undefined)}
+          {saved && <CheckButton {...checkProps} id="local:local_server" label="Test" run={() => refreshModel('local_server')} disabled={serverBusy} quiet />}
+        </div>
+        {saved && <dl className="server-facts">
+          <div><dt>{t('Address')}</dt><dd><code>{address}</code></dd></div>
+          {localServer?.models && <div><dt>{t('Models')}</dt><dd>{localServer.models.length}</dd></div>}
+        </dl>}
+      </section>
       <p className="foot-note is-ink">{t('For llama.cpp, Jan, LocalAI, vLLM or any server on this computer that answers like the OpenAI API. Enter the address its models list is under, usually ending in /v1.')}</p>
-      <form className="key-box" onSubmit={e => { e.preventDefault(); if (changed && field.trim()) saveLocalServer(field.trim()) }}>
-        <label className="lbl" htmlFor="local-server-url">{t('Server address')}
-          <input id="local-server-url" className="field" type="url" inputMode="url" spellCheck={false} autoComplete="off" value={field} disabled={serverBusy}
+      <form className="key-box server-form" onSubmit={e => { e.preventDefault(); if (changed && field.trim()) saveLocalServer(field.trim()) }}>
+        <label className="lbl" htmlFor="local-server-url">{t('Server address')}</label>
+        <span className="server-field"><Server size={15} aria-hidden />
+          <input id="local-server-url" className="field mono" type="url" inputMode="url" spellCheck={false} autoComplete="off" value={field} disabled={serverBusy}
             placeholder="http://127.0.0.1:8080/v1" onChange={e => { setServerDraft(e.target.value); setServerError('') }} />
-        </label>
-        <p className="foot-note">{t('Only a server on this computer is accepted: 127.0.0.1, localhost or [::1]. No text leaves the computer.')}</p>
+        </span>
+        {/* Each server's own default address; a chip only fills the field, Save and test still checks it. */}
+        <div className="server-presets" role="group" aria-label={t('Common addresses')}>
+          {LOCAL_SERVER_PRESETS.map(([name, url]) => <button key={name} type="button" className={`server-preset${field.trim() === url ? ' on' : ''}`} disabled={serverBusy}
+            onClick={() => { setServerDraft(url); setServerError('') }}><b>{name}</b><code>:{new URL(url).port}</code></button>)}
+        </div>
+        <p className="server-local-note"><ShieldCheck size={14} aria-hidden />{t('Only a server on this computer is accepted: 127.0.0.1, localhost or [::1]. No text leaves the computer.')}</p>
         {serverError && <Notice tone="error"><p>{serverError}</p></Notice>}
         <div className="acts">
           <button type="submit" className="btn-pri" disabled={serverBusy || !changed || !field.trim()}>{serverBusy ? <span className="spin" aria-hidden /> : <Save aria-hidden />}{t(serverBusy ? 'Saving…' : 'Save and test')}</button>
           {saved && <button type="button" className="ghost" disabled={serverBusy} onClick={() => saveLocalServer('')}>{t('Remove')}</button>}
-          {saved && <CheckButton {...checkProps} id="local:local_server" label="Test" run={() => refreshModel('local_server')} disabled={serverBusy} quiet />}
         </div>
       </form>
       {localServer && saved && <ModelCatalogue model={localServer} />}

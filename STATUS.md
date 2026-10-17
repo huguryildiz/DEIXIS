@@ -124,7 +124,7 @@ All 171 citation links in 8 stored answers are sound; the gap is coverage: answe
 
 ### Consensus-style modes
 
-- [ ] Citation snowballing (D91): live check on the DBR/VBF question (does a round from 1–2 included papers bring the two missed comparisons?) and the Playwright case are open.
+- [ ] Citation snowballing (D91): first live round on a copy of the DBR/VBF research (17 Oct, Sonnet 5.5 medium, seeds: the 2023 VBF/DBR comparison and Xie 2010) ran cleanly (79 new, 51 model reads, 6 candidates, nothing included) but brought neither missed comparison: no seed links to Maulana 2019 or Hakim 2018 in OpenAlex. A round from Hakim 2018 forward (Maulana cites it) is not measured; one round is not quality evidence. The Playwright case is open. Note: `.local/snowball-live-2026-10-18/`.
 - [ ] Reverse citation search: paste a statement and get works whose passages support or challenge it; waits for Verify Citations V3, whose claim-vs-passage step it reuses.
 
 ### Search (after P10)

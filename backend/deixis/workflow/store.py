@@ -1129,6 +1129,9 @@ class Store:
         With `expected_scope_revision` (D14) the run is created only while that question revision is still the current
         one; a newer revision raises RevisionConflict and nothing is written. A repeated idempotency key returns the run
         it created before, whatever the revision is now."""
+        if kind in INTERNAL_RESEARCH_KINDS:
+            # A feature's own run (D96) is opened by that feature as running, never queued: the worker has no handler.
+            raise RevisionConflict(f"A {kind} run is not queued through the generic run path")
         with transaction(self.conn):
             research = self.research(research_id)
             if idempotency_key:
@@ -1171,6 +1174,9 @@ class Store:
             run = self.run(run_id)
             if run["status"] != "paused":
                 raise RevisionConflict("Only a paused run can resume")
+            if run["kind"] in INTERNAL_RESEARCH_KINDS:
+                # Queued, the worker would fail it (no handler, no scope revision); its feature starts a new one (D96).
+                raise RevisionConflict(f"A paused {run['kind']} run is not resumed here; start it again from its feature")
             active = self.conn.execute(
                 f"SELECT id FROM runs WHERE research_id = ? AND id != ?"
                 f" AND status IN ({','.join('?' * len(ACTIVE_RUN_STATUSES))}) LIMIT 1",

@@ -327,3 +327,144 @@ def test_deleting_the_draft_removes_the_files_and_passages_it_acquired(make):
         assert store.conn.execute(f"SELECT COUNT(*) FROM passages WHERE source_version_id IN ({marks})", read).fetchone()[0] == 0
         assert store.conn.execute(f"SELECT COUNT(*) FROM source_versions WHERE id IN ({marks})", read).fetchone()[0] == 0
         assert store.conn.execute("SELECT COUNT(*) FROM runs WHERE research_id = ?", (view["research_id"],)).fetchone()[0] == 0
+
+
+# ---- review round 1 (Sol): identity on every chosen PDF, frozen identity per revision, staleness, resume, retries
+
+B_NAMED = ["SYNTHETIC doi:10.5555/syn.b Void avoidance in sparse acoustic networks."] + B_PAGES[1:]
+
+
+def pair_flags_of(view, key):
+    return [p["flags"] for _, p in pair_rows(view) if p["target"] == key]
+
+
+def test_an_open_access_pdf_that_does_not_name_its_work_is_flagged_through_plan_and_preview(make):
+    app, _, _ = make()  # b's open copy is an unrelated text under b's correct DOI
+    with TestClient(app) as raw:
+        client = session(raw)
+        view = start(client)
+        view = client.post(f"/api/citation-checks/{view['id']}/acquire").json()
+        b = entry(view, "b")
+        assert (b["text"]["origin"], b["text"]["identity"]) == ("open_access", "unconfirmed")
+        assert "identity_unconfirmed" in b["flags"] and pair_flags_of(view, "b") == [["identity_unconfirmed"]]
+        view = frozen(client, view["id"])
+        assert pair_flags_of(view, "b") == [["identity_unconfirmed"]]
+        item = next(i for i in client.get(f"/api/citation-checks/{view['id']}/preview").json()["selected"] if i["target"] == "b")
+        assert item["flags"] == ["identity_unconfirmed"] and item["identity"]["result"] == "unconfirmed"
+        assert item["identity"]["asset_id"] and item["identity"]["extraction_version"]
+
+
+def test_an_open_access_pdf_that_names_its_work_is_confirmed(make):
+    net = Net()
+
+    async def fetch(url):
+        net.fetched.append(url)
+        return FetchResult("ok", data=make_pdf(B_NAMED), final_url=url, http_status=200)
+
+    net.fetch = fetch
+    app, _, _ = make(net)
+    with TestClient(app) as raw:
+        client = session(raw)
+        view = client.post(f"/api/citation-checks/{start(client)['id']}/acquire").json()
+        assert entry(view, "b")["text"]["identity"] == "doi" and pair_flags_of(view, "b") == [[]]
+
+
+def test_a_stored_pdf_is_checked_too(make):
+    app, _, _ = make()
+    with TestClient(app) as raw:
+        client = session(raw)
+        client.post(f"/api/citation-checks/{start(client)['id']}/acquire")  # b's unrelated copy is now stored on b
+        view = start(client, b"Void avoidance keeps packets moving \\cite{b}.")
+        view = client.post(f"/api/citation-checks/{view['id']}/acquire").json()
+        b = entry(view, "b")
+        assert (b["text"]["origin"], b["text"]["identity"]) == ("stored_pdf", "unconfirmed")
+        assert pair_flags_of(view, "b") == [["identity_unconfirmed"]]
+
+
+def test_a_new_upload_never_clears_a_frozen_revisions_warning(make):
+    app, _, _ = make()
+    with TestClient(app) as raw:
+        client = session(raw)
+        view = start(client)
+        upload(client, view, "a", ["SYNTHETIC doi:10.9999/other.paper An unrelated study of lake ice."])
+        client.post(f"/api/citation-checks/{view['id']}/acquire")
+        frozen(client, view["id"])
+        upload(client, view, "a", A_PAGES)  # the right PDF, confirmed by its DOI
+        view = client.post(f"/api/citation-checks/{view['id']}/acquire").json()
+        assert entry(view, "a")["text"]["identity"] == "doi" and "identity_unconfirmed" not in entry(view, "a")["flags"]
+        # The frozen revision still reads the unrelated PDF, so its pairs keep the warning, and say they are stale.
+        assert pair_flags_of(view, "a") == [["identity_unconfirmed"], ["identity_unconfirmed"]]
+        preview = client.get(f"/api/citation-checks/{view['id']}/preview").json()
+        a = [i for i in preview["selected"] if i["target"] == "a"]
+        assert [(i["flags"], i["stale"], i["identity"]["result"]) for i in a] == [(["identity_unconfirmed"], True, "unconfirmed")] * 2
+        view = frozen(client, view["id"], refreeze=True)
+        assert pair_flags_of(view, "a") == [[], []]
+        row = app.state.store.conn.execute(
+            "SELECT previous_plans_json FROM citation_pairs WHERE draft_id = ? AND target = 'a' ORDER BY ordinal LIMIT 1",
+            (view["id"],)).fetchone()
+        assert '"unconfirmed"' in row[0]  # the earlier revision keeps the result it read
+
+
+def test_a_changed_passage_set_under_the_same_record_shows_the_plan_stale(make):
+    app, _, _ = make()
+    with TestClient(app) as raw:
+        client = session(raw)
+        view = start(client)
+        client.post(f"/api/citation-checks/{view['id']}/acquire")
+        frozen(client, view["id"])
+        url = f"/api/citation-checks/{view['id']}/preview"
+        b = next(i for i in client.get(url).json()["selected"] if i["target"] == "b")
+        assert (b["depth"], b["stale"]) == ("selected_passages", False)
+        store = app.state.store
+        page = store.passage(b["passage_ids"][0])
+        with store.conn:
+            store._insert_passage(page["source_version_id"], page["asset_id"], "pdf_page", 10, None, None, "chars:0-9",
+                                  page["extraction_version"], "SYNTHETIC added page")
+        assert next(i for i in client.get(url).json()["selected"] if i["target"] == "b")["stale"] is True
+
+
+def test_a_paused_citation_check_run_is_never_resumed_or_queued_by_the_generic_path(make):
+    from deixis.domain.rules import RevisionConflict
+    app, _, _ = make(Net(quota=True))
+    with TestClient(app) as raw:
+        client = session(raw)
+        view = client.post(f"/api/citation-checks/{start(client)['id']}/acquire").json()
+        store = app.state.store
+        run_id = view["text_acquisition"]["run_id"]
+        with pytest.raises(RevisionConflict):
+            store.resume_run(run_id)
+        assert store.run(run_id)["status"] == "paused"
+        with pytest.raises(RevisionConflict):
+            store.create_run(view["research_id"], "citation_check", {}, None)
+
+
+def test_a_busy_file_leaves_the_entry_pending_for_the_next_acquisition(make, monkeypatch):
+    from deixis.documents import acquisition
+    from deixis.workflow import text_retry
+    app, _, _ = make()
+    real = acquisition.acquire_for_source
+
+    async def busy(*args, **kwargs):
+        raise text_retry.FileBusy()
+
+    with TestClient(app) as raw:
+        client = session(raw)
+        view = start(client)
+        monkeypatch.setattr(acquisition, "acquire_for_source", busy)
+        view = client.post(f"/api/citation-checks/{view['id']}/acquire").json()
+        assert (entry(view, "b")["text"]["status"], entry(view, "b")["text"]["note"]) == ("pending", "file_busy")
+        monkeypatch.setattr(acquisition, "acquire_for_source", real)
+        view = client.post(f"/api/citation-checks/{view['id']}/acquire").json()
+        assert entry(view, "b")["text"]["origin"] == "open_access"
+
+
+def test_text_counters_name_entries_and_unique_records_apart(make):
+    app, _, _ = make()
+    bib = BIB + b"@article{b2, title = {Void avoidance in sparse acoustic networks}, author = {Kim, Jae}, year = {2021},"\
+                b" doi = {10.5555/syn.b}}\n"
+    with TestClient(app) as raw:
+        client = session(raw)
+        view = start(client, b"Void avoidance \\cite{b}. Holes again \\cite{b2}.", bib)
+        view = client.post(f"/api/citation-checks/{view['id']}/acquire").json()
+        counters = view["counters"]
+        assert counters["entries_with_text"]["full_text"] == 2 and counters["sources_with_text"]["full_text"] == 1

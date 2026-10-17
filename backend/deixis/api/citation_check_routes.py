@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict
 
 from deixis.api.app import UploadRefused, disk_full_refused, store_upload
 from deixis.config import Settings
-from deixis.documents import draft_parse, identity, pdf
+from deixis.documents import draft_parse, pdf
 from deixis.imports import bibtex_ris
 from deixis.workflow import citation_check, file_restore, text_retry
 
@@ -111,10 +111,8 @@ def register_citation_check_routes(app, settings: Settings,
             svid = store.create_upload_source(Path(filename).stem.strip()[:200] or "Uploaded PDF")
             store.add_asset_with_pages(svid, sha, size, path.name, "user_upload", None, filename, read.extraction,
                                        pdf.EXTRACTION_VERSION, pdf.chunk_page, input_observation=read.observation)
-        head = "\n".join(p["text"] for p in store.passages_for(svid) if p["kind"] == "pdf_page")
-        work_id = store.source(entry["resolved_source_version_id"])["work_id"]
-        versions = [dict(r) for r in store.conn.execute("SELECT doi, title FROM source_versions WHERE work_id = ?", (work_id,))]
-        citation_check.link_upload(store, draft_id, entry_id, svid, identity.check(head, versions))
+        checked = citation_check.pdf_identity(store, svid, entry["resolved_source_version_id"])
+        citation_check.link_upload(store, draft_id, entry_id, svid, checked["result"] if checked else "unconfirmed")
         return citation_check.view(store, draft_id)
 
     @app.post("/api/citation-checks/{draft_id}/acquire")

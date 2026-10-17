@@ -31,7 +31,7 @@ from typing import Any
 
 import httpx
 
-from deixis.documents import acquisition, draft_parse
+from deixis.documents import acquisition, draft_parse, identity
 from deixis.domain.citation_check import STATUSES
 from deixis.domain.rules import RevisionConflict
 from deixis.imports import bibtex_ris
@@ -332,6 +332,8 @@ async def _by_title(http: httpx.AsyncClient, api_key: str | None, contact_email:
 
 TEXT_PHASE = "text_acquisition"  # the `target.phase` of the run an acquisition opens
 BUDGET_STOP = "openalex_budget_exhausted"
+# A file another operation holds now; the entry stays pending and the next acquisition asks again.
+TRANSIENT_FILE_CODES = ("file_busy", "run_active")
 AVAILABLE_TEXT = ("full_text", "abstract", "metadata_only")
 
 
@@ -387,13 +389,39 @@ def link_upload(store: Store, draft_id: str, entry_id: str, svid: str, identity_
             " text_note = NULL WHERE id = ?", (svid, identity_result, entry_id))
 
 
-def _settle(store: Store, entry_id: str, svid: str, origin: str, note: str | None = None) -> None:
+def pdf_identity(store: Store, svid: str, target_svid: str) -> dict[str, Any] | None:
+    """`identity.check` on the PDF text of `svid` against every version of `target_svid`'s work, with the file and
+    extraction it read; None when `svid` has no PDF text. Run on every PDF an entry's text is chosen from (the
+    person's, a stored one, an open-access copy): a provider record verified by DOI says nothing about the file it
+    pointed to."""
+    pages = [p for p in store.passages_for(svid) if p["kind"] == "pdf_page"]
+    if not pages:
+        return None
+    work_id = store.source(target_svid)["work_id"]
+    versions = [dict(r) for r in store.conn.execute("SELECT doi, title FROM source_versions WHERE work_id = ?", (work_id,))]
+    return {"result": identity.check("\n".join(p["text"] for p in pages), versions), "source_version_id": svid,
+            "asset_id": pages[0]["asset_id"], "extraction_version": pages[0]["extraction_version"], "work_id": work_id}
+
+
+def _settle(store: Store, entry: dict[str, Any], svid: str, origin: str, note: str | None = None) -> None:
     source = store.source(svid)
+    checked = pdf_identity(store, svid, entry["resolved_source_version_id"])
     with transaction(store.conn):
         store.conn.execute(
             "UPDATE citation_bib_entries SET text_status = 'settled', available_text = ?, text_source_version_id = ?,"
-            " text_version = ?, text_origin = ?, text_note = ?, text_settled_at = ? WHERE id = ?",
-            (available_text(store, svid), svid, text_version(source), origin, note, now(), entry_id))
+            " text_version = ?, text_origin = ?, text_note = ?, text_settled_at = ?, text_identity = ?,"
+            " text_identity_asset_id = ?, text_identity_extraction = ? WHERE id = ?",
+            (available_text(store, svid), svid, text_version(source), origin, note, now(),
+             checked["result"] if checked else None, checked["asset_id"] if checked else None,
+             checked["extraction_version"] if checked else None, entry["id"]))
+
+
+def entry_identity(entry: dict[str, Any]) -> dict[str, Any] | None:
+    """The identity result of the entry's current text, as a plan freezes it."""
+    if entry["text_identity"] is None:
+        return None
+    return {"result": entry["text_identity"], "source_version_id": entry["text_source_version_id"],
+            "asset_id": entry["text_identity_asset_id"], "extraction_version": entry["text_identity_extraction"]}
 
 
 def _pending(store: Store, entry_id: str, note: str) -> None:
@@ -450,17 +478,17 @@ async def acquire(store: Store, http: httpx.AsyncClient, settings: Any, fetcher:
             svid, upload = entry["resolved_source_version_id"], entry["upload_source_version_id"]
             _join(store, research_id, svid)
             if upload and available_text(store, upload) == "full_text":
-                _settle(store, entry["id"], upload, "person_pdf")
+                _settle(store, entry, upload, "person_pdf")
                 continue
             if svid in read_now:
-                _settle(store, entry["id"], *read_now[svid])
+                _settle(store, entry, *read_now[svid])
                 continue
             if available_text(store, svid) == "full_text":
-                _settle(store, entry["id"], svid, "stored_pdf")
+                _settle(store, entry, svid, "stored_pdf")
                 continue
             without = "person_pdf_without_text" if upload else None
             if not normalize_doi(store.source(svid).get("doi")):
-                _settle(store, entry["id"], svid, "record", without or "no_doi")
+                _settle(store, entry, svid, "record", without or "no_doi")
                 continue
             stored = store.openalex_budget_reset()
             if stored and (budget.reset_at is None or stored > budget.reset_at):
@@ -477,8 +505,11 @@ async def acquire(store: Store, http: httpx.AsyncClient, settings: Any, fetcher:
                     xml_fetcher=xml_fetcher, recovery_dir=settings.recovery_dir, openalex_budget=budget,
                     workflow_run_id=run["id"])
             except (file_restore.FileRestoreRefused, text_retry.FileBusy) as exc:
-                _settle(store, entry["id"], svid, "record",
-                        exc.code if isinstance(exc, file_restore.FileRestoreRefused) else "file_busy")
+                code = exc.code if isinstance(exc, file_restore.FileRestoreRefused) else "file_busy"
+                if code in TRANSIENT_FILE_CODES:
+                    _pending(store, entry["id"], code)  # another operation holds the file: asked again next time
+                else:
+                    _settle(store, entry, svid, "record", code)
                 continue
             read = found.get("lookup_version_id") or svid
             if available_text(store, read) == "full_text":
@@ -491,7 +522,7 @@ async def acquire(store: Store, http: httpx.AsyncClient, settings: Any, fetcher:
                 continue
             else:
                 read_now[svid] = (svid, "record", without or "no_open_copy")
-            _settle(store, entry["id"], *read_now[svid])
+            _settle(store, entry, *read_now[svid])
     except BaseException:
         if run is not None:
             store.update_run(run["id"], event="run_failed", status="failed", error_json={"code": "text_acquisition_failed"})
@@ -587,7 +618,16 @@ def _plan_for(store: Store, svid: str, sentence: str, revision: int, ts: str) ->
             "passage_ids": [p["id"] for p in given],
             "passage_sha256": [hashlib.sha256(p["text"].encode("utf-8")).hexdigest() for p in given],
             "passage_chars": sum(len(p["text"]) for p in given),
-            "passages_total": len(ordered), "passages_not_given": len(ordered) - len(given)}
+            "passages_total": len(ordered), "passages_not_given": len(ordered) - len(given),
+            "fingerprint": text_fingerprint(ordered)}
+
+
+def text_fingerprint(passages: list[dict[str, Any]]) -> str:
+    """One hash of a record's readable passages as a plan saw them: each passage's id, file, extraction and text. A new
+    file, a new extraction or a changed passage set under the same record changes it."""
+    rows = sorted((p["id"], p["asset_id"] or "", p["extraction_version"] or "",
+                   hashlib.sha256(p["text"].encode("utf-8")).hexdigest()) for p in passages)
+    return hashlib.sha256(dumps(rows).encode("utf-8")).hexdigest()
 
 
 def freeze_plan(store: Store, draft_id: str, refreeze: bool = False) -> dict[str, Any]:
@@ -626,28 +666,32 @@ def freeze_plan(store: Store, draft_id: str, refreeze: bool = False) -> dict[str
             history = json.loads(pair["previous_plans_json"])
             if pair["plan_revision"] is not None:
                 history.append({"revision": pair["plan_revision"], "status": pair["status"], "superseded_at": ts,
-                                "plan": json.loads(pair["passage_plan_json"]) if pair["passage_plan_json"] else None})
+                                "plan": json.loads(pair["passage_plan_json"]) if pair["passage_plan_json"] else None,
+                                "identity": json.loads(pair["plan_identity_json"]) if pair["plan_identity_json"] else None})
             svid = entry["text_source_version_id"]
-            plan = None
+            plan, checked = None, None
             if entry["resolution_status"] != "resolved" or entry["resolved_source_version_id"] is None:
                 status = "unresolved"  # its record was purged since it resolved
             elif svid is None or available_text(store, svid) == "metadata_only":
                 status = "no_text"
             elif planned >= MAX_PAIRS_TO_MODEL:
-                status = "out_of_cap"
+                status, checked = "out_of_cap", entry_identity(entry)
             else:
-                status, planned = "planned", planned + 1
+                status, planned, checked = "planned", planned + 1, entry_identity(entry)
                 plan = _plan_for(store, svid, cited_sentence(draft["text"], markers[pair["marker_id"]], spans), revision, ts)
+            # The identity result is the revision's own: a later upload or acquisition never changes its warning.
             conn.execute("UPDATE citation_pairs SET status = ?, passage_plan_json = ?, plan_revision = ?,"
-                         " previous_plans_json = ? WHERE id = ?",
-                         (status, dumps(plan) if plan else None, revision, dumps(history), pair["id"]))
+                         " previous_plans_json = ?, plan_identity_json = ? WHERE id = ?",
+                         (status, dumps(plan) if plan else None, revision, dumps(history),
+                          dumps(checked) if checked else None, pair["id"]))
         conn.execute("UPDATE citation_drafts SET plan_revision = ?, plan_frozen_at = ? WHERE id = ?", (revision, ts, draft_id))
     return {"revision": revision, "frozen_at": ts, "frozen_now": True}
 
 
-def _stale(pair: dict[str, Any], entry: dict[str, Any] | None) -> bool:
-    """Whether the entry's text changed after this pair's plan was frozen (a person's PDF added, say): the plan still
-    stands until the person freezes again, and the change is shown."""
+def _stale(store: Store, pair: dict[str, Any], entry: dict[str, Any] | None) -> bool:
+    """Whether the entry's text changed after this pair's plan was frozen (a person's PDF added, a new file or
+    extraction under the same record, a given passage changed or gone): the plan still stands until the person
+    freezes again, and the change is shown."""
     if pair["plan_revision"] is None or entry is None:
         return False
     if entry["text_status"] != "settled":
@@ -655,7 +699,27 @@ def _stale(pair: dict[str, Any], entry: dict[str, Any] | None) -> bool:
     plan = json.loads(pair["passage_plan_json"]) if pair["passage_plan_json"] else None
     if plan is None:
         return pair["status"] == "no_text" and entry["available_text"] != "metadata_only"
-    return entry["text_source_version_id"] != plan["source_version_id"] or entry["available_text"] != plan["available_text"]
+    if entry["text_source_version_id"] != plan["source_version_id"] or entry["available_text"] != plan["available_text"]:
+        return True
+    if text_fingerprint(store.passages_for(plan["source_version_id"])) != plan["fingerprint"]:
+        return True
+    for passage_id, sha in zip(plan["passage_ids"], plan["passage_sha256"]):
+        row = store.conn.execute("SELECT text FROM passages WHERE id = ?", (passage_id,)).fetchone()
+        if row is None or hashlib.sha256(row["text"].encode("utf-8")).hexdigest() != sha:
+            return True
+    return False
+
+
+def pair_flags(pair: dict[str, Any], entry_flags: list[str], entry: dict[str, Any] | None) -> list[str]:
+    """A pair's flags: the entry's record flags, and `identity_unconfirmed` from the identity its frozen revision read
+    (from the entry's current text before any freeze). The entry's current PDF never decides a frozen pair's warning."""
+    flags = [f for f in entry_flags if f != "identity_unconfirmed"]
+    if pair["plan_revision"] is not None:
+        checked = json.loads(pair["plan_identity_json"]) if pair["plan_identity_json"] else None
+        unconfirmed = bool(checked and checked["result"] == "unconfirmed")
+    else:
+        unconfirmed = "identity_unconfirmed" in entry_flags
+    return flags + ["identity_unconfirmed"] if unconfirmed else flags
 
 
 # --------------------------------------------------------------------------------------------- preview and cost
@@ -712,6 +776,23 @@ def cost_range(items: list[tuple[dict[str, Any], str]], choice: dict[str, Any] |
     return out | {"usd": [dollars(low_in, low_out), dollars(high_in, high_out) + dollars(repair_in, repair_out)]}
 
 
+def record_flags(store: Store, entry: dict[str, Any] | None) -> list[str]:
+    """The flags an entry row carries (D86's title and retraction flags, and the identity of its PDFs)."""
+    if entry is None:
+        return []
+    flags = []
+    if entry["resolved_source_version_id"] is not None:
+        stored = store.source(entry["resolved_source_version_id"])
+        if entry["title"] and bibtex_ris.strict_title(entry["title"]) != bibtex_ris.strict_title(stored["title"] or ""):
+            flags.append("title_mismatch")
+        if stored["is_retracted"]:
+            flags.append("retracted")
+    if entry["text_identity"] == "unconfirmed" or (
+            entry["upload_source_version_id"] is not None and entry["upload_identity"] == "unconfirmed"):
+        flags.append("identity_unconfirmed")  # a PDF this entry reads or was given does not name the work
+    return flags
+
+
 def _source_summary(store: Store, svid: str | None) -> dict[str, Any] | None:
     if svid is None:
         return None
@@ -737,7 +818,8 @@ def preview(store: Store, draft_id: str, choice: dict[str, Any] | None) -> dict[
         item = {"id": pair["id"], "ordinal": pair["ordinal"], "marker_id": pair["marker_id"],
                 "marker_ordinal": pair["marker_ordinal"], "sentence": pair["sentence"], "target": pair["target"],
                 "bib_entry_id": pair["bib_entry_id"],
-                "source": _source_summary(store, entry["resolved_source_version_id"] if entry else None)}
+                "source": _source_summary(store, entry["resolved_source_version_id"] if entry else None),
+                "flags": pair_flags(pair, record_flags(store, entry), entry)}
         if pair["status"] == "out_of_cap":
             beyond.append(item)
             continue
@@ -748,7 +830,8 @@ def preview(store: Store, draft_id: str, choice: dict[str, Any] | None) -> dict[
             "text_source_version_id": plan["source_version_id"], "passage_ids": plan["passage_ids"],
             "passages_given": len(plan["passage_ids"]), "passages_total": plan["passages_total"],
             "passages_not_given": plan["passages_not_given"], "passage_chars": plan["passage_chars"],
-            "stale": _stale(pair, entry)})
+            "stale": _stale(store, pair, entry),
+            "identity": json.loads(pair["plan_identity_json"]) if pair["plan_identity_json"] else None})
     return {"id": draft_id, "plan_revision": draft["plan_revision"], "plan_frozen_at": draft["plan_frozen_at"],
             "cap": MAX_PAIRS_TO_MODEL, "passages_per_pair": PASSAGES_PER_PAIR, "selected": selected,
             "out_of_cap": beyond, "counters": counters(store, draft_id), "cost": cost_range(items, choice)}
@@ -769,14 +852,7 @@ def view(store: Store, draft_id: str) -> dict[str, Any]:
             source = {"source_version_id": stored["id"], "work_id": stored["work_id"], "title": stored["title"],
                       "authors": stored["authors"], "year": stored["year"], "venue": stored["venue"], "doi": stored["doi"],
                       "is_retracted": None if stored["is_retracted"] is None else bool(stored["is_retracted"])}
-        flags = []
-        if source is not None and row["title"] and \
-                bibtex_ris.strict_title(row["title"]) != bibtex_ris.strict_title(source["title"] or ""):
-            flags.append("title_mismatch")
-        if source is not None and source["is_retracted"]:
-            flags.append("retracted")
-        if row["upload_source_version_id"] is not None and row["upload_identity"] == "unconfirmed":
-            flags.append("identity_unconfirmed")  # the person's PDF does not name this work on its first pages
+        flags = record_flags(store, dict(row))
         entries[row["id"]] = {
             "id": row["id"], "ordinal": row["ordinal"], "origin": row["origin"], "key": row["entry_key"],
             "number": row["entry_number"], "raw_entry": row["raw_entry"],
@@ -793,7 +869,8 @@ def view(store: Store, draft_id: str) -> dict[str, Any]:
                 "source_version_id": row["upload_source_version_id"], "identity": row["upload_identity"]},
             "text": {"status": row["text_status"], "available": row["available_text"], "version": row["text_version"],
                      "origin": row["text_origin"], "source_version_id": row["text_source_version_id"],
-                     "note": row["text_note"], "settled_at": row["text_settled_at"]},
+                     "note": row["text_note"], "settled_at": row["text_settled_at"],
+                     "identity": row["text_identity"]},
             "source": source, "flags": flags}
     checks = {row["pair_id"]: dict(row) for row in conn.execute(
         "SELECT c.* FROM citation_checks c JOIN citation_pairs p ON p.id = c.pair_id WHERE p.draft_id = ?"
@@ -807,14 +884,15 @@ def view(store: Store, draft_id: str) -> dict[str, Any]:
             "id": row["id"], "ordinal": row["ordinal"], "target": row["target"], "status": row["status"],
             "result": check["result"] if check else None, "depth": check["depth"] if check else None,
             "bib_entry_id": row["bib_entry_id"], "source": entry["source"] if entry else None,
-            "flags": entry["flags"] if entry else [],
+            "flags": pair_flags(dict(row), entry["flags"], entry_rows.get(row["bib_entry_id"])) if entry else [],
             "plan": None if row["plan_revision"] is None else {
                 "revision": row["plan_revision"], "depth": plan["depth"] if plan else None,
                 "passage_ids": plan["passage_ids"] if plan else [],
                 "passages_total": plan["passages_total"] if plan else None,
                 "passages_not_given": plan["passages_not_given"] if plan else None,
                 "earlier_revisions": len(json.loads(row["previous_plans_json"])),
-                "stale": _stale(dict(row), entry_rows.get(row["bib_entry_id"]))}})
+                "identity": json.loads(row["plan_identity_json"]) if row["plan_identity_json"] else None,
+                "stale": _stale(store, dict(row), entry_rows.get(row["bib_entry_id"]))}})
     markers = [{
         "id": row["id"], "ordinal": row["ordinal"], "sentence": row["sentence"],
         "sentence_span": [row["sentence_start"], row["sentence_end"]], "span": [row["char_start"], row["char_end"]],
@@ -834,8 +912,8 @@ def view(store: Store, draft_id: str) -> dict[str, Any]:
 
 def counters(store: Store, draft_id: str) -> dict[str, Any]:
     """Each count from the stored rows, none folded into another (plan "Sayaçlar"). Ten citations of one work are one
-    source and ten pairs. `sources_with_text` counts resolved sources by the text decided for them (`pending` until
-    acquisition decides). The plan counts are None until a plan is frozen; the V3 counts (sent, completed, located,
+    source and ten pairs. `sources_with_text` counts unique resolved records by the best text decided for them
+    (`pending` until acquisition decides), `entries_with_text` the bibliography entries naming them. The plan counts are None until a plan is frozen; the V3 counts (sent, completed, located,
     could not check) stay None until the model step exists, not zero."""
     conn = store.conn
 
@@ -846,12 +924,23 @@ def counters(store: Store, draft_id: str) -> dict[str, Any]:
         "SELECT parse_status, COUNT(*) FROM citation_markers WHERE draft_id = ? GROUP BY parse_status", (draft_id,)).fetchall())
     pair_status = dict(conn.execute(
         "SELECT status, COUNT(*) FROM citation_pairs WHERE draft_id = ? GROUP BY status", (draft_id,)).fetchall())
-    texts = dict(conn.execute(
-        "SELECT CASE WHEN text_status = 'pending' THEN 'pending' ELSE available_text END, COUNT(*)"
+    named = conn.execute(
+        "SELECT resolved_source_version_id, CASE WHEN text_status = 'pending' THEN 'pending' ELSE available_text END"
         " FROM citation_bib_entries WHERE draft_id = ? AND resolution_status = 'resolved'"
         " AND resolved_source_version_id IS NOT NULL"
-        " AND id IN (SELECT bib_entry_id FROM citation_pairs WHERE draft_id = ? AND bib_entry_id IS NOT NULL) GROUP BY 1",
-        (draft_id, draft_id)).fetchall())
+        " AND id IN (SELECT bib_entry_id FROM citation_pairs WHERE draft_id = ? AND bib_entry_id IS NOT NULL)",
+        (draft_id, draft_id)).fetchall()
+    by_entry = {depth: 0 for depth in (*AVAILABLE_TEXT, "pending")}
+    by_record: dict[str, str] = {}
+    rank = {"full_text": 0, "abstract": 1, "metadata_only": 2, "pending": 3}
+    for record, depth in named:
+        by_entry[depth] += 1
+        # A record two entries name counts once, at the best text any of them has.
+        if record not in by_record or rank[depth] < rank[by_record[record]]:
+            by_record[record] = depth
+    by_source = {depth: 0 for depth in (*AVAILABLE_TEXT, "pending")}
+    for depth in by_record.values():
+        by_source[depth] += 1
     frozen = bool(draft_row(store, draft_id)["plan_revision"])
     to_send = one("SELECT COUNT(*) FROM citation_pairs WHERE draft_id = ? AND status = 'planned'"
                   " AND passage_plan_json IS NOT NULL")
@@ -864,7 +953,9 @@ def counters(store: Store, draft_id: str) -> dict[str, Any]:
         "sources_resolved": one(
             "SELECT COUNT(DISTINCT p.bib_entry_id) FROM citation_pairs p JOIN citation_bib_entries e ON e.id = p.bib_entry_id"
             " WHERE p.draft_id = ? AND e.resolution_status = 'resolved' AND e.resolved_source_version_id IS NOT NULL"),
-        "sources_with_text": {depth: texts.get(depth, 0) for depth in (*AVAILABLE_TEXT, "pending")},
+        # Unit: unique resolved records. `entries_with_text` counts bibliography entries.
+        "sources_with_text": by_source,
+        "entries_with_text": by_entry,
         "pairs": sum(pair_status.values()),
         "pairs_by_status": {status: pair_status.get(status, 0) for status in STATUSES},
         "pairs_in_plan": to_send + pair_status.get("out_of_cap", 0) if frozen else None,

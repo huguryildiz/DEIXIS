@@ -366,24 +366,88 @@ def test_a_spend_threshold_still_pauses_the_first_answer(tmp_path, monkeypatch):
         store.conn.close()
 
 
-def test_a_stop_during_the_rewrite_resends_only_the_rewrite(tmp_path):
+MAX_TOKENS = ModelStepResult("failed", raw_text='{"claims": [', error="finish reason max_tokens", resolved_model="fake-model")
+
+
+def test_a_pause_requested_while_the_call_is_cut_off_does_not_resend_it(tmp_path):
+    """Sol round 2: the failure is stored, the checkpoint stops the run before the closure is written, then a resume."""
     store, flow, adapter, rid, run_id, sent = setup(tmp_path, [first_answer, covered])
     try:
-        stopped = []
+        def fail(si):
+            if len(adapter.calls) < 2:
+                return None
+            store.update_run(run_id, status="pause_requested")
+            return MAX_TOKENS
+        adapter.fail = fail
+        with pytest.raises(RunStopped):
+            answer_of(store, rid, flow, run_id)
+        assert len(adapter.calls) == 2 and store.run(run_id)["status"] == "paused"
+        assert "coverage_closed" not in (store.existing_step(run_id, LEDGER_COVERAGE_KEY)["output"] or {})
+        store.update_run(run_id, status="running")
+        answer = answer_of(store, rid, flow, run_id)
+        assert len(adapter.calls) == 2 and answer["status"] == "structurally_valid"
+        assert coverage(answer)["outcome"] == "call_failed" and saved_key(store, answer) == "grounded_answer"
+    finally:
+        store.conn.close()
 
-        def stop(si):
-            if len(adapter.calls) == 2 and not stopped:
-                stopped.append(1)
+
+def fail_closure_once(store):
+    original, armed = store.set_step_output, [True]
+
+    def set_once(step_id, value):
+        if armed[0] and isinstance(value, dict) and "coverage_closed" in value:
+            armed[0] = False
+            raise RuntimeError("stopped before the closure was written")
+        return original(step_id, value)
+    store.set_step_output = set_once
+
+
+STOPS = {  # stop point → (rewrite script, what the coverage call returns, outcome saved after the resume)
+    "after_send": (covered, "raise", "call_failed"),
+    "failed_reply_pause": (covered, "max_tokens_pause", "call_failed"),
+    "failed_reply_before_closure": (covered, "max_tokens_closure", "call_failed"),
+    "failed_reply_before_save": (covered, "max_tokens_save", "call_failed"),
+    "succeeded_reply_pause": (covered, "pause", "published"),
+    "succeeded_reply_before_save": (covered, "save", "published"),
+    "merged_before_save": (MERGED["claim_text"][1], "save", "published"),
+}
+
+
+@pytest.mark.parametrize("stop", list(STOPS))
+def test_the_coverage_call_is_sent_at_most_once_whatever_the_stop(tmp_path, stop):
+    rewrite, how, expected = STOPS[stop]
+    store, flow, adapter, rid, run_id, sent = setup(tmp_path, [two_claims if stop == "merged_before_save" else first_answer, rewrite])
+    try:
+        def second(si):
+            return len(adapter.calls) == 2
+
+        def before(si):
+            if second(si) and how == "raise":
                 raise RuntimeError("stopped while the rewrite was out")
-        adapter.before = stop
+            if second(si) and how in ("pause", "max_tokens_pause"):
+                store.update_run(run_id, status="pause_requested")
+        adapter.before = before
+        adapter.fail = lambda si: MAX_TOKENS if second(si) and how.startswith("max_tokens") else None
+        if how in ("save", "max_tokens_save"):
+            save_fails_once(store)
+        if how == "max_tokens_closure":
+            fail_closure_once(store)
         with pytest.raises(Exception):
             answer_of(store, rid, flow, run_id)
+        assert len(adapter.calls) == 2
+        if store.run(run_id)["status"] == "paused":
+            store.update_run(run_id, status="running")
         answer = answer_of(store, rid, flow, run_id)
-        assert answer["status"] == "structurally_valid" and coverage(answer)["outcome"] == "published"
+        assert len(adapter.calls) == 2 and answer["status"] == "structurally_valid"
+        record = coverage(answer)
+        assert record["outcome"] == expected
+        assert saved_key(store, answer) == (LEDGER_COVERAGE_KEY if expected == "published" else "grounded_answer")
+        assert record.get("merged", False) is (stop == "merged_before_save")
+        again = answer_of(store, rid, flow, run_id)
+        assert len(adapter.calls) == 2 and again["id"] == answer["id"]
         keys = [r[0] for r in store.conn.execute(
-            "SELECT s.operation_key FROM model_sessions m JOIN step_inputs i ON i.id = m.step_input_id"
-            " JOIN run_steps s ON s.id = i.step_id WHERE i.task_type = 'grounded_answer' ORDER BY m.rowid")]
-        assert keys.count("grounded_answer") == 1 and keys.count(LEDGER_COVERAGE_KEY) == 2
+            "SELECT s.operation_key FROM model_sessions m JOIN run_steps s ON s.id = m.step_id ORDER BY m.rowid")]
+        assert keys.count(LEDGER_COVERAGE_KEY) == 1
     finally:
         store.conn.close()
 

@@ -5300,16 +5300,27 @@ class ResearchFlow:
             # The answer's passages, allowlist and handles; the model is the one this call goes to (S17).
             return copy.deepcopy(frozen) | {"step_input_id": new_id("sti"), "step_id": step_id, "created_at": now(),
                                             "model": frozen["model"] | {"connection": sent[0], "requested_model": sent[1]}}
-        stored = self.store.existing_step(run_id, LEDGER_COVERAGE_KEY)
-        if stored is not None and stored["status"] != "succeeded" and (stored["output"] or {}).get("coverage_closed"):
-            # A call that failed or was skipped is not sent again on resume: at most one coverage call per answer.
-            self._checkpoint(run_id, run["scope_revision"])
-            return output, key, stored["output"]["coverage_closed"]
-
         def closed(outcome: dict[str, Any]) -> tuple[dict[str, Any], str, dict[str, Any]]:
             step = self.store.existing_step(run_id, LEDGER_COVERAGE_KEY)
             self.store.set_step_output(step["id"], (step["output"] or {}) | {"coverage_closed": record | outcome})
             return output, key, record | outcome
+
+        # At most one coverage call per answer step: a resume never sends it again once it was sent, whatever the stop.
+        stored = self.store.existing_step(run_id, LEDGER_COVERAGE_KEY)
+        if stored is not None and stored["status"] != "succeeded":
+            if (stored["output"] or {}).get("coverage_closed"):
+                self._checkpoint(run_id, run["scope_revision"])
+                return output, key, stored["output"]["coverage_closed"]
+            sent = self.store.conn.execute(
+                "SELECT m.validation_json FROM step_inputs si JOIN model_sessions m ON m.step_input_id = si.id"
+                " WHERE si.step_id = ? ORDER BY m.rowid", (stored["id"],)).fetchall()
+            # A reply that was validated and found invalid is recovered by `_model_step` without a call (D249); any
+            # other session (failed, truncated, cut off by a stop, outcome unknown) closes the step as call_failed,
+            # read from the step itself in case the stop came before the closure was written.
+            if sent and not any(row["validation_json"] for row in sent):
+                self._checkpoint(run_id, run["scope_revision"])
+                reason = stored["error_code"] if stored["status"] in ("failed", "outcome_unknown") and stored["error_code"] else "interrupted"
+                return closed({"outcome": "call_failed", "reason": reason})
         try:
             # Optional, and a spend threshold skips it instead of pausing the run: the answer is already valid. A
             # stop or a newer scope revision still stops the run.

@@ -38,10 +38,12 @@ CHANGE = re.compile(r"\b(?:higher|lower|better|worse|improv\w*|reduc\w*|increas\
 SETTING = re.compile(r"\b(?:initial(?:ly)? energy|(?:is|are|was|were) set\b|set (?:to|as|at)\b|configured|deployed|deployment"
                      r"|simulation parameters?|parameter settings?|area of|transmission range (?:of|is)"
                      r"|range of (?:one-hop )?transmission)\b", re.IGNORECASE)
-# A sentence ends at `.!?;` and whitespace before a capital or a bracket, at a blank line, and at `.!?;` and
-# whitespace before a number unless the token before a period is an abbreviation (`approx. 20%`, `Fig. 7`, `U.S. 5`).
-# A decimal (12.5) has no space after its point and a PDF line wrap is a single line break, so neither splits.
-BOUNDARY = re.compile(r"[.!?;]\s+(?=[A-Z(\[\d])|\n\s*\n")
+# Sentences are cut in two passes. A blank line (any whitespace-only line) always ends one. Inside a block, `.!?;` and
+# whitespace end one before a capital or a bracket, and before a number unless the token before a period is an
+# abbreviation, a single letter or dotted initials (`approx. 20%`, `Fig. 7`, `U.S. 5`); the exception touches only that
+# rule. A decimal (12.5) has no space after its point and a PDF line wrap is a single line break, so neither splits.
+BLANK_LINE = re.compile(r"\n[^\S\n]*\n")
+PERIOD = re.compile(r"[.!?;]\s+(?=[A-Z(\[\d])")
 ABBREVIATIONS = frozenset({"approx", "ca", "e.g", "i.e", "cf", "vs", "resp", "al", "fig", "figs", "eq", "eqs", "no", "nos",
                            "vol", "pp", "sec", "tab", "ref", "refs", "max", "min", "avg"})
 _INITIALS = re.compile(r"(?:[a-z]\.)*[a-z]")  # one letter, or dotted initials such as U.S
@@ -59,15 +61,17 @@ def compile_terms(outcome_terms: list[str]) -> list[tuple[str, re.Pattern[str]]]
 def _sentences(text: str) -> list[str]:
     # A PDF text layer breaks lines inside a sentence; a single line break is a space, a blank line ends a sentence.
     text = unicodedata.normalize("NFKC", text)
-    parts, start = [], 0
-    for mark in BOUNDARY.finditer(text):
-        if mark.group(0)[0] == "." and text[mark.end()].isdigit():
-            token = re.split(r"[\s(\[]", text[start:mark.start()])[-1].lower()
-            if token in ABBREVIATIONS or _INITIALS.fullmatch(token):
-                continue
-        parts.append(text[start:mark.end()])
-        start = mark.end()
-    parts.append(text[start:])
+    parts = []
+    for block in BLANK_LINE.split(text):
+        start = 0
+        for mark in PERIOD.finditer(block):
+            if mark.group(0)[0] == "." and block[mark.end()].isdigit():
+                token = re.split(r"[\s(\[]", block[start:mark.start()])[-1].lower()
+                if token in ABBREVIATIONS or _INITIALS.fullmatch(token):
+                    continue
+            parts.append(block[start:mark.end()])
+            start = mark.end()
+        parts.append(block[start:])
     return [re.sub(r"\s*\n\s*", " ", part).strip() for part in parts if part.strip()]
 
 

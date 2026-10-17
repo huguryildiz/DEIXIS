@@ -1,3 +1,5 @@
+import pytest
+
 from deixis.workflow import formula_passages as fp
 from deixis.workflow import result_passages as rp
 
@@ -107,41 +109,52 @@ def test_ties_keep_the_higher_ranked_passage_and_one_passage_is_unchanged():
     assert rp.order(ranked[:1], OUTCOMES, True) == (ranked[:1], False)
 
 
-# Sol code review round 1: a sentence that starts with a number is its own sentence.
+
+# Every counterexample found in review (Sol code review rounds 1-3) and the cases they must not break.
 MERGED = "Energy consumption can be reduced by optimizing routing. 500 m × 500 m × 500 m is the simulated volume."
-GENUINE = "Energy consumption is 20% lower than DBR and 15% lower than VBF."
-
-
-def test_a_sentence_starting_with_a_number_is_not_merged_into_the_previous_one():
-    assert rp.score(MERGED, OUTCOMES) == 0
-    assert rp.score(GENUINE, OUTCOMES) == 2
-    # Decimals, `Fig. 7` and PDF line wraps still stay inside one sentence.
-    assert rp.score("As Fig. 7 shows, energy consumption is 12.5 J lower than VBF\nand 3.5 J lower than DBR.", OUTCOMES) == 2
-    ranked = [passage("topic", TOPIC), passage("merged", MERGED), passage("genuine", GENUINE)]
-    assert [p["id"] for p in rp.order(ranked, OUTCOMES, False)[0]] == ["genuine", "topic", "merged"]
-
-
-def test_a_reference_list_titled_with_equations_is_never_the_formula_passage():
-    refs = (REFERENCES + " [15] A. B. et al., Equations of state; equations of motion; formulas, vol. 2, pp. 1-9."
-            " [16] C. Lee et al., Wave equations, pp. 3-4.")
-    real = "The holding time is defined as f(d) = 2τ / δ · (R − d), δ ∈ (0, R] (4)."
-    assert rp.reference_list(refs, OUTCOMES) and fp.score(refs) > fp.score(real) >= fp.MIN_SCORE
-    ranked = [passage("topic", TOPIC), passage("refs", refs), passage("formula", real), passage("result", RESULT)]
-    assert [p["id"] for p in rp.order(ranked, OUTCOMES, True)[0]] == ["result", "formula", "topic", "refs"]
-
-
-# Sol code review round 2: a period after an abbreviation, a single letter or dotted initials does not end a sentence.
 APPROX = "Energy consumption is approx. 20% lower than DBR and 15% lower than VBF."
+BLANK = "Energy consumption can be reduced using protocol X.\n\n500 m × 500 m × 500 m is the simulated volume."
+DBR_P13 = ("For example, in a network with 200 nodes, DBR with five sinks has a packet delivery ratio of around 70%, which "
+           "is more than four times larger than 15%, the delivery ratio of VBF.")
+REFS_EQUATIONS = (REFERENCES + " [15] A. B. et al., Equations of state; equations of motion; formulas, vol. 2, pp. 1-9."
+                  " [16] C. Lee et al., Wave equations, pp. 3-4.")
+WEAK_FORMULA = "The holding time is defined as f(d) = 2τ / δ · (R − d), δ ∈ (0, R] (4)."
+SCORES = [
+    ("dvor_setup_page", DVOR_P7, 0),
+    ("number_start_sentence", MERGED, 0),
+    ("approx_before_number", APPROX, 2),
+    ("blank_line_after_single_letter", BLANK, 0),
+    ("blank_line_with_spaces", BLANK.replace("\n\n", "\n  \t\n"), 0),
+    ("table_3_change", "Table 3 shows energy consumption decreased from 12 J to 8 J", 2),
+    ("dbr_200_nodes", DBR_P13, 2),
+    ("fig_decimal_line_wrap", "As Fig. 7 shows, energy consumption is 12.5 J lower than VBF\nand 3.5 J lower than DBR.", 2),
+    ("capital_after_abbreviation_splits", "Energy consumption is lower than DBR, cf. Table 3. Delay is 20 ms and 15 ms.", 0),
+    *((f"abbreviation_{before}", f"Energy consumption is lower than DBR, {before} 20% and 15% lower than VBF.", 2)
+      for before in ("approx.", "ca.", "e.g.", "i.e.", "cf.", "vs.", "resp.", "al.", "Figs.", "Eq.", "No.", "vol.", "pp.",
+                     "Sec.", "Tab.", "Ref.", "max.", "min.", "avg.", "x.", "U.S.")),
+]
+ORDERS = [
+    ("result_before_formula", [("topic", TOPIC), ("formula", FORMULA), ("result", APPROX)], ["result", "formula"]),
+    ("number_start_does_not_outrank_a_result", [("topic", TOPIC), ("merged", MERGED), ("genuine", APPROX)],
+     ["genuine", "topic"]),
+    ("blank_line_does_not_outrank_a_result", [("topic", TOPIC), ("formula", FORMULA), ("setup", BLANK), ("result", APPROX)],
+     ["result", "formula"]),
+    ("references_never_promoted", [("topic", TOPIC), ("refs", REFS_EQUATIONS), ("formula", WEAK_FORMULA), ("result", RESULT)],
+     ["result", "formula"]),
+]
 
 
-def test_an_abbreviation_before_a_number_does_not_end_the_sentence():
-    assert rp.score(APPROX, OUTCOMES) == 2
-    for before in ("approx.", "ca.", "e.g.", "i.e.", "cf.", "vs.", "resp.", "Figs.", "Eq.", "Tab.", "avg.", "x.", "U.S."):
-        text = f"Energy consumption is lower than DBR, {before} 20% and 15% lower than VBF."
-        assert rp.score(text, OUTCOMES) == 2, before
-    assert rp.score(MERGED, OUTCOMES) == 0  # round 1: a plain word before the period still ends the sentence
+@pytest.mark.parametrize("kind, case, given, expected", [("score", *row) for row in SCORES] + [("order", *row) for row in ORDERS],
+                         ids=lambda value: value if isinstance(value, str) and len(value) < 60 and " " not in value else None)
+def test_review_counterexamples(kind, case, given, expected):
+    if kind == "score":
+        assert rp.score(given, OUTCOMES) == expected
+    else:
+        ordered, _ = rp.order([passage(pid, text) for pid, text in given], OUTCOMES, True)
+        assert [p["id"] for p in ordered][:2] == expected
+        refs = [pid for pid, text in given if rp.reference_list(text, OUTCOMES)]
+        assert [p["id"] for p in ordered][len(given) - len(refs):] == refs  # reference lists stay last
 
 
-def test_an_abbreviated_result_still_takes_the_first_slot():
-    ranked = [passage("topic", TOPIC), passage("formula", FORMULA), passage("result", APPROX)]
-    assert [p["id"] for p in rp.order(ranked, OUTCOMES, True)[0][:2]] == ["result", "formula"]
+def test_the_reference_fixture_outscores_the_real_formula():
+    assert rp.reference_list(REFS_EQUATIONS, OUTCOMES) and fp.score(REFS_EQUATIONS) > fp.score(WEAK_FORMULA) >= fp.MIN_SCORE

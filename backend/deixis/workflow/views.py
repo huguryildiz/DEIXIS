@@ -563,10 +563,10 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     # answer inside its own run, so later full-text reads and table fills must not push it out of the list.
     for row in conn.execute(
             "SELECT id FROM runs WHERE research_id = ?1 AND ("
-            " id IN (SELECT id FROM runs WHERE research_id = ?1 ORDER BY created_at DESC LIMIT 10)"
+            " id IN (SELECT id FROM runs WHERE research_id = ?1 ORDER BY created_at DESC, rowid DESC LIMIT 10)"
             " OR id = (SELECT run_id FROM answers WHERE research_id = ?1 ORDER BY created_at DESC, rowid DESC LIMIT 1)"
-            " OR id = (SELECT id FROM runs WHERE research_id = ?1 AND kind = 'discovery' ORDER BY created_at DESC LIMIT 1))"
-            " ORDER BY created_at DESC", (research_id,)):
+            " OR id = (SELECT id FROM runs WHERE research_id = ?1 AND kind = 'discovery' ORDER BY created_at DESC, rowid DESC LIMIT 1))"
+            " ORDER BY created_at DESC, rowid DESC", (research_id,)):
         run = store.run(row["id"])
         run["steps"] = store.run_steps(run["id"])
         # The models each step's calls went to, from its stored sessions (UI parity S27, D15): a step names the model it

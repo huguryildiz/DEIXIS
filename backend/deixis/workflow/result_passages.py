@@ -38,7 +38,11 @@ CHANGE = re.compile(r"\b(?:higher|lower|better|worse|improv\w*|reduc\w*|increas\
 SETTING = re.compile(r"\b(?:initial(?:ly)? energy|(?:is|are|was|were) set\b|set (?:to|as|at)\b|configured|deployed|deployment"
                      r"|simulation parameters?|parameter settings?|area of|transmission range (?:of|is)"
                      r"|range of (?:one-hop )?transmission)\b", re.IGNORECASE)
-SENTENCE = re.compile(r"(?<=[.!?;])\s+(?=[A-Z(\[])|\n\s*\n")
+# A sentence ends before a capital, a bracket or a number; before a number, not after `Fig.`, `Eq.` and the like.
+# A decimal (12.5) has no space after its point and a PDF line wrap is a single line break, so neither splits.
+SENTENCE = re.compile(r"(?<=[.!?;])\s+(?=[A-Z(\[])"
+                      r"|(?<=[.!?;])(?<!\bFig\.)(?<!\bEq\.)(?<!\bNo\.)(?<!\bvol\.)(?<!\bpp\.)(?<!\bSec\.)\s+(?=\d)"
+                      r"|\n\s*\n")
 CITATION = re.compile(r"\[\d+(?:\s*[,–-]\s*\d+)*\]|\bet al\.|\bvol\.|\bpp\.", re.IGNORECASE)
 MIN_SCORE = 2  # one value alone is too often a stray figure in an introduction; see D84
 REFERENCE_HITS = 6  # citation marks that make a passage with no outcome term a reference list
@@ -76,17 +80,18 @@ def order(ranked: list[dict[str, Any]], patterns: list[tuple[str, re.Pattern[str
     """A full-text source's passages in answer-input order, and whether a result passage took the first slot.
 
     Slot 1 is the most result-dense passage when it reaches `MIN_SCORE`, else the best topic passage; slot 2 is the
-    most formula-dense when formulas are asked (`formula_passages.bring_forward`); reference lists go last; everything
-    else keeps its rank. An equal score keeps the higher-ranked passage. With no outcome patterns this is exactly the
+    most formula-dense non-reference passage when formulas are asked (`formula_passages.bring_forward`); reference
+    lists go last; everything else keeps its rank. An equal score keeps the higher-ranked passage. With no outcome patterns this is exactly the
     order before D84.
     """
     if not patterns or len(ranked) < 2:
         return (formula_passages.bring_forward(ranked) if formulas else ranked), False
     refs = [reference_list(p["text"], patterns) for p in ranked]
-    ordered = [p for p, ref in zip(ranked, refs) if not ref] + [p for p, ref in zip(ranked, refs) if ref]
+    ordered = [p for p, ref in zip(ranked, refs) if not ref]
+    tail = [p for p, ref in zip(ranked, refs) if ref]  # never promoted, by either rule
     scores = [score(p["text"], patterns) for p in ordered]
-    best = max(range(len(ordered)), key=lambda i: (scores[i], -i))
+    best = max(range(len(ordered)), key=lambda i: (scores[i], -i), default=0)
     moved = best > 0 and scores[best] >= MIN_SCORE
     if moved:
         ordered = [ordered[best], *(p for i, p in enumerate(ordered) if i != best)]
-    return (formula_passages.bring_forward(ordered) if formulas else ordered), moved
+    return [*(formula_passages.bring_forward(ordered) if formulas else ordered), *tail], moved

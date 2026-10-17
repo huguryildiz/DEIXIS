@@ -105,3 +105,26 @@ def test_ties_keep_the_higher_ranked_passage_and_one_passage_is_unchanged():
     best_first = [passage("result", RESULT), passage("topic", TOPIC)]
     assert rp.order(best_first, OUTCOMES, False) == (best_first, False)
     assert rp.order(ranked[:1], OUTCOMES, True) == (ranked[:1], False)
+
+
+# Sol code review round 1: a sentence that starts with a number is its own sentence.
+MERGED = "Energy consumption can be reduced by optimizing routing. 500 m × 500 m × 500 m is the simulated volume."
+GENUINE = "Energy consumption is 20% lower than DBR and 15% lower than VBF."
+
+
+def test_a_sentence_starting_with_a_number_is_not_merged_into_the_previous_one():
+    assert rp.score(MERGED, OUTCOMES) == 0
+    assert rp.score(GENUINE, OUTCOMES) == 2
+    # Decimals, `Fig. 7` and PDF line wraps still stay inside one sentence.
+    assert rp.score("As Fig. 7 shows, energy consumption is 12.5 J lower than VBF\nand 3.5 J lower than DBR.", OUTCOMES) == 2
+    ranked = [passage("topic", TOPIC), passage("merged", MERGED), passage("genuine", GENUINE)]
+    assert [p["id"] for p in rp.order(ranked, OUTCOMES, False)[0]] == ["genuine", "topic", "merged"]
+
+
+def test_a_reference_list_titled_with_equations_is_never_the_formula_passage():
+    refs = (REFERENCES + " [15] A. B. et al., Equations of state; equations of motion; formulas, vol. 2, pp. 1-9."
+            " [16] C. Lee et al., Wave equations, pp. 3-4.")
+    real = "The holding time is defined as f(d) = 2τ / δ · (R − d), δ ∈ (0, R] (4)."
+    assert rp.reference_list(refs, OUTCOMES) and fp.score(refs) > fp.score(real) >= fp.MIN_SCORE
+    ranked = [passage("topic", TOPIC), passage("refs", refs), passage("formula", real), passage("result", RESULT)]
+    assert [p["id"] for p in rp.order(ranked, OUTCOMES, True)[0]] == ["result", "formula", "topic", "refs"]

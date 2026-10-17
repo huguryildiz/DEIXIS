@@ -23,6 +23,7 @@ the draft's own entries.
 
 from __future__ import annotations
 
+import bisect
 import io
 import re
 import unicodedata
@@ -31,6 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 from xml.etree import ElementTree
+from xml.parsers import expat
 
 from deixis.imports import bibtex_ris
 
@@ -138,6 +140,31 @@ def read_draft(data: bytes | None, filename: str | None, pasted: str | None) -> 
     return fmt, text
 
 
+class _Declaration(Exception):
+    pass
+
+
+def _declared(*_args) -> None:
+    raise _Declaration
+
+
+def _refuse_dtd(xml: bytes) -> None:
+    """A first pass with expat, which reads the XML declaration and byte-order mark itself (UTF-8, UTF-16 …): any
+    DOCTYPE, entity, notation or external-entity reference refuses the file before ElementTree sees it, so no entity is
+    ever expanded, whatever the encoding."""
+    parser = expat.ParserCreate()
+    parser.SetParamEntityParsing(expat.XML_PARAM_ENTITY_PARSING_NEVER)
+    parser.StartDoctypeDeclHandler = _declared
+    parser.EntityDeclHandler = _declared
+    parser.UnparsedEntityDeclHandler = _declared
+    parser.NotationDeclHandler = _declared
+    parser.ExternalEntityRefHandler = _declared
+    try:
+        parser.Parse(xml, True)
+    except (_Declaration, expat.ExpatError, ValueError):
+        raise DraftRefused(422, "draft_unreadable", "The .docx file could not be read") from None
+
+
 def docx_text(data: bytes) -> str:
     """The paragraphs of `word/document.xml`, one per line pair, from `w:t` runs (tabs as tabs, breaks as spaces)."""
     try:
@@ -151,8 +178,7 @@ def docx_text(data: bytes) -> str:
         raise DraftRefused(422, "draft_unreadable", "The .docx file could not be read") from None
     if len(xml) > MAX_DOCX_XML_BYTES:
         raise DraftRefused(413, "draft_too_large", "The .docx body is too large")
-    if b"<!DOCTYPE" in xml or b"<!ENTITY" in xml:
-        raise DraftRefused(422, "draft_unreadable", "The .docx file could not be read")
+    _refuse_dtd(xml)
     try:
         root = ElementTree.fromstring(xml)
     except ElementTree.ParseError:
@@ -183,6 +209,14 @@ _BIBITEM = re.compile(r"\\bibitem\s*(?:\[[^\]]*\])?\s*\{([^{}]+)\}")
 _LIST_PREFIX = re.compile(r"^[ \t]*(?:[-*+•][ \t]+|\d{1,4}\.[ \t]+)")
 
 
+def _check_list_size(count: int) -> None:
+    """A reference list over the cap is refused whole: a cut list could leave out the one entry a marker names, or the
+    second entry with its number, and a match on what is left would look exact."""
+    if count > MAX_LIST_ENTRIES:
+        raise DraftRefused(413, "draft_list_too_long",
+                           f"The draft's reference list has more than {MAX_LIST_ENTRIES} entries")
+
+
 def _tex_body(text: str) -> tuple[str, list[ListEntry], str | None]:
     text = re.sub(r"(?<!\\)%[^\n]*", "", text)  # comments
     begin = re.search(r"\\begin\{document\}", text)
@@ -196,8 +230,9 @@ def _tex_body(text: str) -> tuple[str, list[ListEntry], str | None]:
         return text, [], None
     block = environment.group(0)
     heads = list(_BIBITEM.finditer(block))
+    _check_list_size(len(heads))
     entries = []
-    for i, head in enumerate(heads[:MAX_LIST_ENTRIES]):
+    for i, head in enumerate(heads):
         stop = heads[i + 1].start() if i + 1 < len(heads) else len(block)
         raw = re.sub(r"\\end\{thebibliography\}", "", block[head.end():stop])
         entries.append(ListEntry(ordinal=i + 1, raw=re.sub(r"\s+", " ", raw).strip(), key=head.group(1).strip()))
@@ -214,7 +249,8 @@ def _cut_list(text: str) -> tuple[str, list[ListEntry], str | None]:
     numbered = list(_NUMBERED.finditer(tail))
     entries: list[ListEntry] = []
     if numbered:
-        for i, head in enumerate(numbered[:MAX_LIST_ENTRIES]):
+        _check_list_size(len(numbered))
+        for i, head in enumerate(numbered):
             stop = numbered[i + 1].start() if i + 1 < len(numbered) else len(tail)
             raw = re.sub(r"\s+", " ", tail[head.end():stop]).strip()
             if raw:
@@ -222,7 +258,8 @@ def _cut_list(text: str) -> tuple[str, list[ListEntry], str | None]:
     else:
         blocks = [b for b in re.split(r"\n[ \t]*\n", tail) if b.strip()]
         lines = blocks if len(blocks) > 1 else [line for line in tail.split("\n") if line.strip()]
-        for line in lines[:MAX_LIST_ENTRIES]:
+        _check_list_size(len(lines))
+        for line in lines:
             raw = re.sub(r"\s+", " ", _LIST_PREFIX.sub("", line)).strip()
             if raw:
                 entries.append(ListEntry(ordinal=len(entries) + 1, raw=raw))
@@ -281,7 +318,9 @@ _DASH = "-–—−"
 _NUMBER_ITEM = re.compile(rf"^\s*(\d{{1,4}})\s*(?:[{_DASH}]\s*(\d{{1,4}})\s*)?$")
 _IGNORED_BRACKETS = {"sic", "...", "…", "x", "X", " ", ""}
 _YEAR = r"(?:1[5-9]\d\d|20\d\d)"
-_NAME = r"(?:(?:van|von|de|der|den|del|della|di|da|du|le|la|dos|das)\s+)*[^\W\d_][\w'’\-]*"
+PARTICLES = ("van", "von", "de", "der", "den", "del", "della", "di", "da", "du", "des", "le", "la", "dos", "das", "ten",
+             "ter", "al", "el", "bin", "ibn")
+_NAME = rf"(?:(?:{'|'.join(PARTICLES)})\s+)*[^\W\d_][\w'’\-]*"
 _NAMES = (rf"(?P<names>{_NAME}(?:\s*,\s*{_NAME})*(?:\s*,?\s*(?:and|&)\s+{_NAME})?)"
           r"(?P<etal>\s+et\s+al\.?)?")
 _ITEM = re.compile(rf"^{_NAMES}\s*,?\s+(?P<years>{_YEAR}[a-z]?(?:\s*,\s*{_YEAR}[a-z]?)*)"
@@ -311,18 +350,28 @@ def _year_targets(names: list[str], et_al: bool, years: str, value_names: str) -
     return targets
 
 
-def _latex(text: str) -> list[Marker]:
-    markers = []
+class _Markers(list):
+    """Marker candidates as they are found; one past `MAX_MARKERS` refuses the draft before any later pass runs.
+    Overlapping candidates count too, so the cap is on what was scanned, never a cut list."""
+
+    def append(self, marker: Marker) -> None:
+        if len(self) >= MAX_MARKERS:
+            raise DraftRefused(413, "draft_too_many_markers", f"The draft has more than {MAX_MARKERS} citation markers")
+        super().append(marker)
+
+
+def _latex(text: str, markers: _Markers) -> None:
     for match in _CITE.finditer(text):
         keys = [k.strip() for k in match.group(2).split(",")]
         ok = bool(keys) and all(_CITE_KEY.fullmatch(k) for k in keys)
         markers.append(Marker(match.start(), match.end(), match.group(0), "latex", "recognized" if ok else "unrecognized",
                               [Target("key", k) for k in dict.fromkeys(keys)] if ok else []))
-    covered = [(m.start, m.end) for m in markers]
+    covered = sorted((m.start, m.end) for m in markers if m.style == "latex")
+    starts = [a for a, _ in covered]
     for head in _CITE_HEAD.finditer(text):  # a cite command whose braces could not be read
-        if not any(a <= head.start() < b for a, b in covered):
+        i = bisect.bisect_right(starts, head.start()) - 1
+        if i < 0 or not covered[i][0] <= head.start() < covered[i][1]:
             markers.append(Marker(head.start(), head.end(), head.group(0), "latex", "unrecognized"))
-    return markers
 
 
 def _numbers(content: str) -> list[int] | None:
@@ -338,8 +387,7 @@ def _numbers(content: str) -> list[int] | None:
     return numbers
 
 
-def _numeric(text: str) -> list[Marker]:
-    markers = []
+def _numeric(text: str, markers: _Markers) -> None:
     for match in _GROUP.finditer(text):
         raw, after = match.group(0), text[match.end():match.end() + 1]
         if after in ("(", ":") or raw.startswith("[^"):
@@ -372,11 +420,9 @@ def _numeric(text: str) -> list[Marker]:
             continue
         if re.search(r"[\d@]", content) or re.fullmatch(r"\S{1,30}", content):
             markers.append(Marker(match.start(), match.end(), raw, "numeric", "unrecognized"))
-    return markers
 
 
-def _author_year(text: str) -> list[Marker]:
-    markers = []
+def _author_year(text: str, markers: _Markers) -> None:
     for match in _YEARS_ONLY.finditer(text):  # narrative: `Zeng et al. (2022)`
         before = text[max(0, match.start() - 160):match.start()]
         names, position = None, 0
@@ -390,6 +436,9 @@ def _author_year(text: str) -> list[Marker]:
             continue
         found = _split_names(names.group("names"))
         start = match.start() - (len(before) - names.start())
+        if names.start() == 0 and match.start() > len(before):  # the names may begin before the look-back window
+            markers.append(Marker(start, match.end(), text[start:match.end()], "author_year", "unrecognized"))
+            continue
         markers.append(Marker(start, match.end(), text[start:match.end()], "author_year", "recognized",
                               _year_targets(found, bool(names.group("etal")), match.group(1), names.group("names").strip())))
     for match in _PAREN.finditer(text):  # parenthetical: `(Zeng et al., 2022; Kim, 2021)`
@@ -411,21 +460,22 @@ def _author_year(text: str) -> list[Marker]:
                                          parsed.group("names").strip()))
         markers.append(Marker(match.start(), match.end(), match.group(0), "author_year",
                               "recognized" if targets else "unrecognized", targets or []))
-    return markers
 
 
 def find_markers(text: str, fmt: Format) -> list[Marker]:
     """Every marker in draft order; where two overlap, LaTeX wins over numeric, numeric over author–year, and the
     earlier start over the later."""
-    found = _latex(text) + ([] if fmt == "tex" else _numeric(text)) + _author_year(text)
+    found = _Markers()
+    _latex(text, found)
+    if fmt != "tex":
+        _numeric(text, found)
+    _author_year(text, found)
     rank = {"latex": 0, "numeric": 1, "author_year": 2}
     kept: list[Marker] = []
     for marker in sorted(found, key=lambda m: (rank[m.style], m.start)):
         if not any(marker.start < k.end and k.start < marker.end for k in kept):
             kept.append(marker)
     kept.sort(key=lambda m: m.start)
-    if len(kept) > MAX_MARKERS:
-        raise DraftRefused(413, "draft_too_many_markers", f"The draft has more than {MAX_MARKERS} citation markers")
     return kept
 
 
@@ -470,13 +520,25 @@ def arxiv_of(text: str) -> str | None:
     return None
 
 
+def _fold(word: str) -> str:
+    text = unicodedata.normalize("NFKD", word)
+    return "".join(c for c in text if c.isalpha() and not unicodedata.combining(c)).casefold()
+
+
 def surname_key(name: str) -> str:
-    """The last word of a name, accents and case folded, letters only: `van der Berg` and `A. Berg` give `berg`."""
+    """The surname of a name with its particles, accents and case folded, letters only: the last word, and the
+    particles (`PARTICLES`) right before it. A particle that is the name's first word stays only when it is written in
+    lower case, so `van der Berg` gives `van der berg`, `Anna van der Berg` gives `van der berg`, `Van Morrison`
+    gives `morrison`, and `Berg` or `A. Berg` give `berg`."""
     words = [w for w in re.split(r"\s+", name.strip()) if w and not _INITIALS.fullmatch(w)]
     if not words:
         return ""
-    text = unicodedata.normalize("NFKD", words[-1])
-    return "".join(c for c in text if c.isalpha() and not unicodedata.combining(c)).casefold()
+    surname = [words[-1]]
+    for i in range(len(words) - 2, -1, -1):
+        if words[i].casefold() not in PARTICLES or (i == 0 and not words[i].islower()):
+            break
+        surname.insert(0, words[i])
+    return " ".join(f for f in (_fold(w) for w in surname) if f)
 
 
 def written_entry_fields(raw: str) -> dict:

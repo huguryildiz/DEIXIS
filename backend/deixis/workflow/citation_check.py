@@ -7,7 +7,8 @@ research, and the cascades remove what was read from the draft.
 
 Mapping a marker to an entry never guesses. A key or a number names an entry only when exactly one entry carries it
 (none: `unresolved`; several: `ambiguous`). An author–year item names an entry only when exactly one entry has the
-same year and the same surnames in the same order (the cited ones, first author first); a cited letter suffix
+same year and the same authors (`authors_match`: every author when the item has no `et al.`, surnames with their
+particles); a cited letter suffix
 (`2022a`) must be written on that entry, so a BibTeX entry, which has none, never takes one. Anything else is
 `ambiguous`.
 
@@ -42,6 +43,7 @@ KIND = "citation_check"
 # `difflib` ratio to the entry's title (both through `bibtex_ris.strict_title`) and no year that differs.
 TITLE_MATCH_MIN = 0.93
 TITLE_CANDIDATES = 5
+ET_AL_MIN_AUTHORS = 3  # `Smith et al.` names a work of three or more authors (`authors_match`)
 DOI_BATCH = openalex.MAX_IDS_PER_REQUEST
 
 
@@ -81,7 +83,7 @@ def _match(target: draft_parse.Target, entries: list[dict]) -> tuple[int | None,
         found = []
         for i, entry in enumerate(entries):
             surnames = [draft_parse.surname_key(a) for a in entry["authors"]]
-            if entry["year"] != target.year or surnames[:len(cited)] != cited or not all(cited):
+            if entry["year"] != target.year or not all(cited) or not authors_match(cited, target.et_al, surnames):
                 continue
             if target.suffix is not None and entry["suffix"] != target.suffix:
                 continue
@@ -90,6 +92,17 @@ def _match(target: draft_parse.Target, entries: list[dict]) -> tuple[int | None,
     if len(found) == 1:
         return found[0], "planned"
     return None, "unresolved" if not found else "ambiguous"
+
+
+def authors_match(cited: list[str], et_al: bool, surnames: list[str]) -> bool:
+    """Whether an entry's authors are the ones an author–year item names. Without `et al.` the item names every
+    author: the same number, the same surnames in order (`Smith` is not `Smith & Jones`). With `et al.` the cited
+    surnames are the first ones, followed by at least one more, and the entry has at least `ET_AL_MIN_AUTHORS` authors:
+    APA 7, Harvard and Chicago author–date write two authors out in full and shorten only three or more, so
+    `Smith et al.` never names a one- or two-author work."""
+    if not et_al:
+        return surnames == cited
+    return len(surnames) >= max(ET_AL_MIN_AUTHORS, len(cited) + 1) and surnames[:len(cited)] == cited
 
 
 def create(store: Store, draft: draft_parse.Draft, filename: str | None,

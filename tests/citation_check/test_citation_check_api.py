@@ -121,7 +121,7 @@ def test_an_ieee_draft_with_its_own_numbered_list_and_a_ris_file_for_author_year
              b"[1] Y. Zeng, \"Depth based routing for underwater networks,\" 2022, doi:10.5555/syn.zeng.\n"
              b"[2] J. Kim, \"Void avoidance in sparse acoustic networks,\" 2021.\n[3] M. Park, \"Energy aware forwarding,\" 2019.\n")
     ris = (b"TY  - JOUR\nID  - k1\nTI  - Void avoidance in sparse acoustic networks\nAU  - Kim, Jae\nPY  - 2021\nER  - \n"
-           b"TY  - JOUR\nID  - z1\nTI  - Depth based routing\nAU  - Zeng, Yi\nAU  - Li, Xu\nPY  - 2022\nER  - \n")
+           b"TY  - JOUR\nID  - z1\nTI  - Depth based routing\nAU  - Zeng, Yi\nAU  - Li, Xu\nAU  - Park, Min\nPY  - 2022\nER  - \n")
     with TestClient(app) as raw:
         client = session(raw)
         view = submit(client, draft, "draft.md").json()
@@ -282,6 +282,8 @@ def test_deleting_a_draft_removes_everything_read_from_it_and_its_research(make)
      "import_unknown_format"),
     ({"file": ("d.md", b"A [1].", "text/plain"), "bibliography": ("r.bib", b"@article{x, author={A}}", "text/plain")},
      None, "import_no_entries"),
+    ({"file": ("d.md", ("Claim [1].\n\nReferences\n" + "\n".join(f"[{i}] A. B, \"T{i},\" 2020." for i in range(1, 502)))
+               .encode(), "text/plain")}, None, "draft_list_too_long"),
 ])
 def test_refused_drafts_store_nothing(make, files, data, code):
     app, _ = make()
@@ -301,3 +303,40 @@ def test_an_oversized_body_is_refused_before_it_is_read_and_csrf_is_required(mak
             "content-type": "multipart/form-data; boundary=b", "content-length": str(30 * 1024 * 1024)})
         assert too_big.status_code == 413 and too_big.json()["code"] == "draft_too_large"
         assert raw.post("/api/citation-checks", data={"text": "A [1]."}, headers={"x-deixis-csrf": "wrong"}).status_code == 403
+
+
+AUTHOR_BIB = b"""@article{sj, title = {Two authors}, author = {Smith, Ann and Jones, Bo}, year = {2022}}
+@article{sjb, title = {Three authors}, author = {Smith, Cy and Jones, Di and Brown, Ed}, year = {2023}}
+@article{vdb, title = {Particle surname}, author = {van der Berg, Anna}, year = {2022}}
+@article{solo, title = {One author}, author = {Kim, Jae}, year = {2020}}
+"""
+
+
+@pytest.mark.parametrize("citation, status", [
+    # Sol round 1: an incomplete author list was taken as an exact match.
+    ("(Smith, 2022)", "ambiguous"),            # names one author of a two-author work
+    ("(Smith and Jones, 2023)", "ambiguous"),  # names two of three
+    ("(Berg, 2022)", "ambiguous"),             # the surname is `van der Berg`
+    ("(van der Berg, 2022)", "planned"),
+    ("(Smith and Jones, 2022)", "planned"),
+    ("(Smith & Jones, 2022)", "planned"),
+    ("Smith et al. (2023)", "planned"),        # et al. for a three-author work
+    ("(Smith et al., 2022)", "ambiguous"),     # et al. never names a two-author work
+    ("(Kim et al., 2020)", "ambiguous"),
+    ("(Kim, 2020)", "planned"),
+    ("(Smith, Jones, and Brown, 2023)", "planned"),
+    ("(Jones et al., 2023)", "ambiguous"),     # et al. keeps the first author first
+])
+def test_author_year_names_the_whole_author_list_unless_it_says_et_al(make, citation, status):
+    app, _ = make()
+    with TestClient(app) as raw:
+        client = session(raw)
+        view = submit(client, text=f"A claim {citation} here.", bib=AUTHOR_BIB).json()
+        assert [p["status"] for m in view["markers"] for p in m["pairs"]] == [status], view["markers"]
+
+
+def test_the_et_al_rule():
+    match = citation_check.authors_match
+    assert match(["smith"], True, ["smith", "jones", "brown"]) and not match(["smith"], True, ["smith", "jones"])
+    assert match(["smith", "jones"], True, ["smith", "jones", "brown"]) and not match(["smith", "jones"], True, ["smith", "jones"])
+    assert match(["smith"], False, ["smith"]) and not match(["smith"], False, ["smith", "jones"])

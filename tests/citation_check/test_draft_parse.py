@@ -149,15 +149,86 @@ def test_drafts_that_are_refused(data, name, pasted, code):
     assert caught.value.code == code
 
 
-def test_a_docx_with_an_entity_declaration_is_refused_before_parsing():
-    bomb = '<!DOCTYPE w:document [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;">]>'
+def docx_xml(xml: bytes):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("word/document.xml", xml)
+    return buffer.getvalue()
+
+
+W_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"'
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-16", "utf-16-le", "utf-16-be"])
+@pytest.mark.parametrize("dtd", [
+    '<!DOCTYPE w:document [<!ENTITY a "SYNTHETIC-expanded"><!ENTITY b "&a;&a;&a;&a;">]>',
+    '<!DOCTYPE w:document SYSTEM "http://example.invalid/x.dtd">',
+    '<!DOCTYPE w:document>',
+])
+def test_a_docx_with_a_dtd_or_entity_is_refused_in_any_encoding(encoding, dtd):
+    # Sol round 1: a UTF-16 document.xml passed the old byte search and its internal entity was expanded.
+    declaration = f'<?xml version="1.0" encoding="{encoding.upper()}"?>' if not encoding.endswith(("le", "be")) else \
+        f'<?xml version="1.0" encoding="UTF-16"?>'
+    xml = f'{declaration}{dtd}<w:document {W_NS}><w:body><w:p><w:r><w:t>&b;</w:t></w:r></w:p></w:body></w:document>'
+    data = xml.encode(encoding)
+    if encoding in ("utf-16-le", "utf-16-be"):
+        data = ("\ufeff" + xml).encode(encoding)
+    assert b"<!DOCTYPE" not in data or encoding == "utf-8"
     with pytest.raises(DraftRefused) as caught:
-        read_draft(docx("&b;", extra_xml=bomb), "draft.docx", None)
+        read_draft(docx_xml(data), "draft.docx", None)
     assert caught.value.code == "draft_unreadable"
 
 
-def test_too_many_markers_are_refused(monkeypatch):
+def test_a_utf16_docx_without_a_dtd_still_reads():
+    xml = f'<?xml version="1.0" encoding="UTF-16"?><w:document {W_NS}><w:body><w:p><w:r><w:t>Claim [1].</w:t></w:r></w:p>' \
+          '</w:body></w:document>'
+    assert read_draft(docx_xml(xml.encode("utf-16")), "draft.docx", None) == ("docx", "Claim [1].")
+
+
+def list_of(count, numbered=True):
+    return "\n".join(f"[{i}] A. Author{i}, \"Title {i},\" 2020." if numbered else f"Author{i}, A. (2020). Title {i}. J."
+                     for i in range(1, count + 1))
+
+
+@pytest.mark.parametrize("draft, fmt", [
+    # Sol round 1: 501 entries with a second [1] after the first 500 — the old cut dropped it and bound [1] to the first.
+    ("Claim [1].\n\nReferences\n" + list_of(500) + "\n[1] B. Second, \"Duplicate one,\" 2021.", "md"),
+    ("Claim (Author1, 2020).\n\nReferences\n" + list_of(501, numbered=False), "text"),
+    ("\\begin{document}See \\cite{k1}.\n\\begin{thebibliography}{9}\n"
+     + "\n".join(f"\\bibitem{{k{i}}} A. Author, T{i}, 2020." for i in range(1, 502)) + "\n\\end{thebibliography}\\end{document}", "tex"),
+])
+def test_a_reference_list_over_the_cap_is_refused_whole_never_cut(draft, fmt):
+    with pytest.raises(DraftRefused) as caught:
+        parse_draft(fmt, draft)
+    assert caught.value.code == "draft_list_too_long" and caught.value.status == 413
+
+
+def test_a_reference_list_at_the_cap_is_read_whole():
+    draft = parse_draft("md", "Claim [1].\n\nReferences\n" + list_of(500))
+    assert len(draft.list_entries) == 500 and draft.list_entries[-1].number == 500
+
+
+def test_narrative_names_cut_by_the_look_back_window_are_unrecognized():
+    names = ", ".join(f"Name{chr(65 + i % 26)}x" for i in range(30))
+    found = parse_draft("md", f"As {names} and Zeng (2022) said.").markers
+    assert [(m.style, m.status, m.targets) for m in found] == [("author_year", "unrecognized", [])]
+
+
+@pytest.mark.parametrize("name, key", [("van der Berg", "van der berg"), ("Anna van der Berg", "van der berg"),
+                                       ("Berg", "berg"), ("A. Berg", "berg"), ("Van Morrison", "morrison"),
+                                       ("Ludwig van Beethoven", "van beethoven"), ("Müller", "muller"),
+                                       ("al Farsi", "al farsi")])
+def test_surnames_keep_their_particles(name, key):
+    assert draft_parse.surname_key(name) == key
+
+
+def test_too_many_markers_are_refused_while_they_are_found(monkeypatch):
     monkeypatch.setattr(draft_parse, "MAX_MARKERS", 3)
+    assert len(parse_draft("md", "A [1]. B [2]. C [3].").markers) == 3
     with pytest.raises(DraftRefused) as caught:
         parse_draft("md", "A [1]. B [2]. C [3]. D [4].")
     assert caught.value.code == "draft_too_many_markers"
+    # The cap stops the scan itself: the overlap pass never sees more than MAX_MARKERS candidates.
+    monkeypatch.setattr(draft_parse, "_author_year", lambda *_: pytest.fail("the scan went on past the cap"))
+    with pytest.raises(DraftRefused):
+        parse_draft("md", "A [1]. B [2]. C [3]. D [4].")

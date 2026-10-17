@@ -116,7 +116,8 @@ CHAIN_RANK_BASE = 1_000_000_000
 # Steps whose records are shown as short handles instead of stored identifiers, because long random IDs were
 # mis-copied (D12). The abstract stage joined them in slice 09: its batches name 20 candidates each.
 HANDLE_TASKS = ("grounded_answer", "followup_answer", "answer_review", "cell_extraction", "abstract_screening",
-                "fulltext_adjudication", "lineage_links") + contracts.REPORT_TASKS + contracts.CANDIDATE_TASKS + contracts.REVIEW_TASKS
+                "fulltext_adjudication", "lineage_links") + contracts.REPORT_TASKS + contracts.CANDIDATE_TASKS + contracts.REVIEW_TASKS + (
+                contracts.CITATION_CHECK_TASKS)
 STOPWORDS = set(
     "the and for with what which how are was were from that this into about does using used use their there have has "
     "not but can our its them they than then also between within over under nasıl nedir neler olan için ile gibi veya "
@@ -5897,7 +5898,7 @@ class ResearchFlow:
                     report = contracts.validate_model_output(failed_input, original_output)
                     if report.ok:
                         report.result = output_text
-            elif task_type in ("grounded_answer", "followup_answer", "cell_extraction", "abstract_screening", "fulltext_adjudication") + contracts.REPORT_TASKS + contracts.LINEAGE_TASKS + contracts.CANDIDATE_TASKS + contracts.REVIEW_TASKS:
+            elif task_type in ("grounded_answer", "followup_answer", "cell_extraction", "abstract_screening", "fulltext_adjudication") + contracts.REPORT_TASKS + contracts.LINEAGE_TASKS + contracts.CANDIDATE_TASKS + contracts.REVIEW_TASKS + contracts.CITATION_CHECK_TASKS:
                 output_text = contracts.resolve_citation_handles(payload, output_text)
             # Field names from the alias table are put right before validation and the renames recorded (D86).
             if not anchor_patch:

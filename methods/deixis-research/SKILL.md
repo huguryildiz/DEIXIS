@@ -50,6 +50,7 @@ one; `report_section` also gets the source-grounded answer file.
 | `cell_extraction`, `table_columns` | [evidence table](references/evidence-table.md) | Answer evidence-table columns for one source, or suggest columns; do not answer the question. |
 | `lineage_links` | [development lines](references/synthesis.md) | Decide a development relation for each supplied candidate pair; this is not an idea-chain synthesis. |
 | `claim_decomposition`, `kill_search_query`, `claim_assessment` | [candidate checks](references/candidate-check.md) | Work only on a candidate record the application opened. |
+| `citation_check` | [citation check](references/citation-check.md) | Say which parts of one citing sentence the given passages of the cited work state; judge no citation right or wrong. |
 
 Claim-specific kill-search is available only through the three candidate tasks.
 Free candidate development and experiment design or execution remain

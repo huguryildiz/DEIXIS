@@ -50,6 +50,7 @@ SCHEMA_FILES = {
     "FollowupSearchQuery": "followup-search-query.schema.json",
     "ClaimAssessment": "claim-assessment.schema.json",
     "ReportSectionAnchorRepair": "report-section-anchor-repair.schema.json",
+    "CitationCheck": "citation-check.schema.json",
     # Not a model output: a search plan a person saved (UI parity S23a, F18), checked by `check_user_search_plan`.
     "UserSearchPlan": "user-search-plan.schema.json",
 }
@@ -75,6 +76,7 @@ SCHEMA_VERSIONS = {
     "FollowupSearchQuery": "deixis.followup_search_query.v1",
     "ClaimAssessment": "deixis.claim_assessment.v1",
     "ReportSectionAnchorRepair": "deixis.report_section_anchor_repair.v1",
+    "CitationCheck": "deixis.citation_check.v1",
     "UserSearchPlan": "deixis.user_search_plan.v1",
 }
 # Model outputs each task may return. More than one output type is wrapped in an
@@ -100,6 +102,7 @@ TASK_OUTPUTS = {
     "kill_search_query": ("KillSearchQuery",),
     "followup_search_query": ("FollowupSearchQuery",),
     "claim_assessment": ("ClaimAssessment",),
+    "citation_check": ("CitationCheck",),
 }
 EXTRACTION_TASKS = ("cell_extraction", "table_columns")
 # The block-labelling step sorts a phrase list code extracted; it carries a vocabulary_target instead (SW17.1).
@@ -113,6 +116,8 @@ REPORT_TASKS = ("report_plan", "report_section", "report_review")
 REVIEW_TASKS = ("owner_review",)
 LINEAGE_TASKS = ("lineage_links",)
 CANDIDATE_TASKS = ("claim_decomposition", "kill_search_query", "claim_assessment")
+# Verify Citations (D99): one citing sentence against the given passages of the one work it cites.
+CITATION_CHECK_TASKS = ("citation_check",)
 CANDIDATE_SUPPORT_RELATIONS = ("explicit_support", "reasoned_inference", "partial_match")
 # A surface screen only: absence of these words does not establish the plan's scope or quality. A bare "protocol" is
 # not one: a claim about routing or network protocols names them (D94).
@@ -570,6 +575,7 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
         issues.append(Issue("adjudication_run_out_of_range", "/adjudication_target/run", str(adjudication_target["run"])))
     issues.extend(_check_lineage_target(step_input, records))
     issues.extend(_check_candidate_target(step_input, records))
+    issues.extend(_check_citation_check_target(step_input, records))
     issues.extend(_check_owner_review_input(step_input, records))
     report_target = step_input.get("report_target")
     if (report_target is not None) != (step_input["task_type"] in REPORT_TASKS):
@@ -947,6 +953,36 @@ def _check_candidate_target(step_input: dict[str, Any], records: dict[str, set[s
     return issues
 
 
+def _check_citation_check_target(step_input: dict[str, Any], records: dict[str, set[str]]) -> list[Issue]:
+    """A citation check reads one work: its one source, passages of that source only, and nothing else (D99)."""
+    issues: list[Issue] = []
+    task = step_input["task_type"]
+    checking = task in CITATION_CHECK_TASKS
+    target = step_input.get("citation_check_target")
+    allow = step_input["allowlist"]
+    if (target is not None) != checking or (checking and (
+            step_input["candidates"] or allow["candidate_ids"] or "claims_under_review" in step_input or any(
+                field in step_input for field in ("extraction_target", "report_target", "vocabulary_target",
+                                                  "screening_target", "adjudication_target", "lineage_target",
+                                                  "candidate_target", "review_input")))):
+        issues.append(Issue("citation_check_target_mismatch", "/citation_check_target", task))
+    if not checking or target is None:
+        return issues
+    for key in sorted(set(allow) - {"candidate_ids", "source_ids", "passage_ids"}):
+        issues.append(Issue("citation_check_allowlist_key", f"/allowlist/{key}", key))
+    sid = target["assessed_source_id"]
+    if len(step_input["sources"]) != 1 or records["source_ids"] != {sid} or set(allow["source_ids"]) != {sid}:
+        issues.append(Issue("citation_check_source_mismatch", "/citation_check_target/assessed_source_id", sid))
+    if not step_input["passages"]:
+        issues.append(Issue("citation_check_without_text", "/passages", "a citation check needs given text"))
+    for i, passage in enumerate(step_input["passages"]):
+        if passage["source_id"] != sid:
+            issues.append(Issue("citation_check_passage_not_assessed_work", f"/passages/{i}/source_id", passage["source_id"]))
+    if set(allow["passage_ids"]) != records["passage_ids"]:
+        issues.append(Issue("citation_check_allowlist_mismatch", "/allowlist/passage_ids", "must equal the given passages"))
+    return issues
+
+
 def validate_model_output(step_input: dict[str, Any], raw: str | dict[str, Any]) -> ValidationReport:
     report = ValidationReport()
     if isinstance(raw, str):
@@ -959,7 +995,7 @@ def validate_model_output(step_input: dict[str, Any], raw: str | dict[str, Any])
         data = raw
 
     task_type = step_input["task_type"]
-    if task_type in CANDIDATE_TASKS + REVIEW_TASKS:
+    if task_type in CANDIDATE_TASKS + REVIEW_TASKS + CITATION_CHECK_TASKS:
         _check_utf8_text(data, report)
     validator = Draft202012Validator(step_output_schema(task_type))
     schema_errors = sorted(validator.iter_errors(data), key=lambda e: list(e.absolute_path))
@@ -992,7 +1028,7 @@ def validate_model_output(step_input: dict[str, Any], raw: str | dict[str, Any])
                 )
         _semantic_checks(step_input, output_type, result, report)
 
-    if task_type in CANDIDATE_TASKS + REVIEW_TASKS:
+    if task_type in CANDIDATE_TASKS + REVIEW_TASKS + CITATION_CHECK_TASKS:
         # Diagnostics may echo rejected keys or values, including from the best-effort pass.
         # Escape unencodable characters so storage and repair keep the invalid verdict.
         for issue in report.issues + report.warnings:
@@ -1055,7 +1091,7 @@ def _semantic_checks_best_effort(step_input: dict[str, Any], data: Any, report: 
         return path != "$" and not any(path == f or path.startswith(f + "/") or f.startswith(path + "/") for f in flagged)
 
     report.issues.extend(i for i in probe.issues if elsewhere(i.path) or (
-        step_input["task_type"] in REPORT_TASKS + LINEAGE_TASKS + CANDIDATE_TASKS + REVIEW_TASKS
+        step_input["task_type"] in REPORT_TASKS + LINEAGE_TASKS + CANDIDATE_TASKS + REVIEW_TASKS + CITATION_CHECK_TASKS
         and (i.code in {"unknown_passage_id", "unknown_cell_id", "unknown_source_id", "unknown_column_id", "unknown_element_ref"}
              or step_input["task_type"] in REVIEW_TASKS)))
     report.warnings.extend(w for w in probe.warnings if elsewhere(w.path))
@@ -1081,6 +1117,8 @@ def _semantic_checks(step_input: dict[str, Any], output_type: str, result: dict[
         _check_claim_decomposition(step_input, allow, result, report)
     elif output_type == "ClaimAssessment":
         _check_claim_assessment(step_input, allow, result, report)
+    elif output_type == "CitationCheck":
+        _check_citation_check(step_input, allow, result, report)
     elif output_type == "TableColumnProposal":
         _check_column_proposal(step_input, result, report)
     elif output_type == "ResearchTitle":
@@ -1618,6 +1656,96 @@ def _check_claim_assessment(step_input: dict[str, Any], allow: dict[str, set[str
     _check_nonblank_text(draft["nearest_match_summary"], "/nearest_match_summary", report)
 
 
+CITATION_CHECK_MAX_QUOTES = 8  # all parts together; the schema caps parts (4) and quotes per part (3)
+
+
+def _check_citation_check(step_input: dict[str, Any], allow: dict[str, set[str]],
+                          draft: dict[str, Any], report: ValidationReport) -> None:
+    """Coverage, part spans and quote location for one citing sentence (D99); never whether a passage supports it.
+
+    The rules are structural and fail closed: a missed positive is acceptable, a wrong one is not. Each part is a
+    verbatim span of the sentence, found by position in sentence order, and the spans together leave out no word token
+    but coordinating connectives (`citation_check_spans`). A quote is located only in the passage it names, a given
+    passage of the pair's one work: a match in another given passage is named in the issue as a hint and never moved
+    there. A located quote is refused when its tokens, the tokens next to it or its sentence may say something it does
+    not (`quote_meaning_differs`). Each failure sends the step to repair; `derive_result` reads only an output with
+    none."""
+    target = step_input["citation_check_target"]
+    sid, sentence = target["assessed_source_id"], target["sentence"]
+    passages = _lineage_records_by_id(step_input["passages"], "passage_id")
+    spans, left_out = citation_check_spans(sentence, draft["parts"])
+    total = 0
+    for i, part in enumerate(draft["parts"]):
+        path = f"/parts/{i}"
+        if spans[i] is None:
+            report.issues.append(Issue("part_not_in_sentence", f"{path}/text",
+                                       "copy each part's text exactly from the citing sentence, parts in sentence order"
+                                       " and not overlapping"))
+        evidence = part["evidence"]
+        total += len(evidence)
+        positive = part["assessment"] in ("stated", "partly")
+        if positive and not evidence:
+            report.issues.append(Issue("positive_part_without_quote", f"{path}/evidence",
+                                       f"a '{part['assessment']}' part quotes at least one given passage"))
+        if not positive and evidence:
+            report.issues.append(Issue("quote_on_not_stated_part", f"{path}/evidence", "a not_stated part has no quote"))
+        located: set[tuple[str, str]] = set()
+        for j, item in enumerate(evidence):
+            pid, item_path = item["passage_id"], f"{path}/evidence/{j}"
+            passage = passages.get(pid)
+            if pid not in allow["passage_ids"] or passage is None:
+                report.issues.append(Issue("unknown_passage_id", f"{item_path}/passage_id", pid))
+            elif passage["source_id"] != sid:
+                report.issues.append(Issue("passage_not_assessed_source", f"{item_path}/passage_id", pid))
+            elif (anchor := locate_anchor(item["quote"], passage["text"])) is None:
+                message = f"{pid}: the quoted text was not found in the cited passage"
+                if elsewhere := _passages_quoting(step_input, pid, item["quote"]):
+                    message += (f"; it is in {', '.join(elsewhere)}. Cite the passage that contains the quote, or remove"
+                                " this quote if that passage does not state the part")
+                report.issues.append(Issue("anchor_not_in_passage", f"{item_path}/quote", message))
+            elif (reason := quote_meaning_differs(item["quote"], passage["text"], anchor, part["text"])) is not None:
+                report.issues.append(Issue("quote_meaning_differs", f"{item_path}/quote",
+                                           f"{pid}: {MEANING_REASONS[reason]}"))
+            elif (pid, anchor.text) in located:
+                report.issues.append(Issue("duplicate_evidence_quote", f"{item_path}/quote",
+                                           f"{pid}: this quote repeats an earlier quote of the same passage"))
+            else:
+                located.add((pid, anchor.text))
+    if total > CITATION_CHECK_MAX_QUOTES:
+        report.issues.append(Issue("too_many_quotes", "/parts", f"{total} quotes; give at most {CITATION_CHECK_MAX_QUOTES}"))
+    if draft["covers_whole_sentence"] is not True:
+        report.issues.append(Issue("sentence_not_covered", "/covers_whole_sentence",
+                                   "split the sentence into parts that together cover everything it claims"))
+    if left_out:
+        report.issues.append(Issue("parts_leave_out_words", "/parts",
+                                   "no part holds these words of the sentence: " + ", ".join(left_out[:10])
+                                   + "; every word but and, or, but, while and whereas belongs to a part"))
+
+
+def citation_check_anchors(step_input: dict[str, Any], draft: dict[str, Any]) -> list[list[dict[str, Any]]]:
+    """Per part, per quote of a citation check: whether the backend located it (and no meaning difference refused it),
+    the passage's own located words, never the model's quote, and the passage's kind, so a result read from both an
+    abstract and PDF pages says which one each quote came from."""
+    passages = _lineage_records_by_id(step_input["passages"], "passage_id")
+    allowed = set(step_input["allowlist"]["passage_ids"])
+    sid = step_input["citation_check_target"]["assessed_source_id"]
+    out = []
+    for part in draft["parts"]:
+        anchors = []
+        for item in part["evidence"]:
+            passage = passages.get(item["passage_id"])
+            given = passage is not None and item["passage_id"] in allowed and passage["source_id"] == sid
+            anchor = locate_anchor(item["quote"], passage["text"]) if given else None
+            usable = anchor is not None and quote_meaning_differs(
+                item["quote"], passage["text"], anchor, part["text"]) is None
+            anchors.append({"passage_id": item["passage_id"], "quote": item["quote"], "located": usable,
+                            "anchor_text": anchor.text if usable else None,
+                            "anchor_match": anchor.kind if usable else None, "ratio": anchor.ratio if usable else None,
+                            "passage_kind": passage["locator"]["kind"] if given else None})
+        out.append(anchors)
+    return out
+
+
 def _check_cells(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:
     """Every target column is answered once, in its format, from quoted passages of the one source given (D27, D37)."""
     columns = {c["column_id"]: c for c in step_input["extraction_target"]["columns"]}
@@ -1755,6 +1883,223 @@ def locate_anchor(quote: str, passage: str) -> AnchorMatch | None:
     if ratio < ANCHOR_MIN_RATIO:
         return None
     return AnchorMatch("fuzzy", passage[spans[start][0]:spans[end - 1][1]], round(ratio, 3))
+
+
+# Verify Citations (D99, review round 1): structural rules a citation check's parts and quotes must meet. They fail
+# closed: a missed positive is acceptable, a wrong one is not. `locate_anchor` ignores punctuation and case and
+# tolerates near matches, so "significantly improves" is found in "does not significantly improve", "p > 5" in
+# "p >= 5" and "5 mW" in "5 MW"; these rules read the passage's own tokens around what it found.
+# Review round 2: plain punctuation is the only text that is no token. Every other non-space character that is not a
+# letter or a decimal digit (- − – / × · ^ ² ³ ° % ± < > = ≤ ≥ ≠ ~ ≈ …) is a token of its own, so it counts for
+# coverage and for the quote-versus-span checks. Superscripts, subscripts and fractions are no word characters here.
+CHECK_PUNCTUATION = frozenset(".,;:()[]'\"’“”")
+_LETTER = r"(?:(?![¹²³¼-¾\u2070-\u209f\u2150-\u218f])[^\W_])"
+CHECK_TOKEN = re.compile(
+    rf"(?P<num>(?<![\w.])[-−+±]?\d+(?:[.,]\d+)*)|(?P<op><=|>=|!=|==)|(?P<word>{_LETTER}+(?:['’]{_LETTER}+)*)"
+    r"|(?P<sym>[^\s.,;:()\[\]'\"’“”])")
+CHECK_OPERATORS = frozenset({"<=", ">=", "!=", "==", "<", ">", "≤", "≥", "≠", "±", "=", "≦", "≧", "⩽", "⩾", "~", "≈"})
+NEGATION_WORDS = frozenset({
+    "not", "no", "never", "without", "cannot", "neither", "nor", "none", "nobody", "nothing", "nowhere",
+    "fail", "fails", "failed", "failing", "unable", "lack", "lacks", "lacked", "lacking",
+    "değil", "yok", "hiç", "hiçbir", "asla"})  # Turkish verb negation (-me/-ma) is not read
+NEGATION_CONTRACTION = re.compile(r"[^\W\d_]+n['’]t$")  # don't, isn't, can't, won't, doesn't
+CONNECTIVES = frozenset({"and", "or", "but", "while", "whereas"})  # the only words two parts may leave between them
+COMPARISON_WORDS = {"more": "more", "greater": "more", "less": "less", "fewer": "less", "higher": "higher",
+                    "lower": "lower", "larger": "larger", "smaller": "smaller", "better": "better", "worse": "worse",
+                    **{w: "increase" for w in ("increase", "increases", "increased", "increasing")},
+                    **{w: "decrease" for w in ("decrease", "decreases", "decreased", "decreasing")}}
+# Review round 3: no punctuation bounds where a negation is read. A fixed window of the passage around the located span
+# is read instead, ignoring dots, commas and line breaks: any negation in it outside the quote refuses the quote.
+NEGATION_WINDOW_BEFORE = 250
+NEGATION_WINDOW_AFTER = 80
+MEANING_REASONS = {
+    "boundary": "the quote does not start and end where the located words do (a number or word is cut); quote whole"
+                " words exactly as the passage writes them",
+    "number": "a number of the quote differs from the passage's (value, sign or decimal); quote it as written",
+    "unit": "a unit of the quote differs from the passage's (units are read case by case); quote it as written",
+    "comparison": "a comparison of the quote differs from the passage's (an operator or a more/less word); quote it as"
+                  " written",
+    "context": "the passage writes a number, unit, sign, percent or comparison right next to the quote; include it",
+    "negation": "the passage holds a negation near the quote that the quote leaves out, or the quote one the passage"
+                " does not;"
+                " quote the clause including the negation, or do not use this passage for the part",
+    "part_negation": "the quote and the part disagree on a negation, so it cannot support the part as stated",
+}
+
+
+@dataclass(frozen=True)
+class CheckToken:
+    text: str
+    start: int
+    end: int
+    kind: str  # num | op | sym | word
+
+
+def check_tokens(text: str) -> list[CheckToken]:
+    out = []
+    for m in CHECK_TOKEN.finditer(text):
+        t = m.group(0)
+        kind = m.lastgroup
+        if kind == "sym" and t in CHECK_OPERATORS:
+            kind = "op"
+        out.append(CheckToken(t, m.start(), m.end(), kind))
+    return out
+
+
+def _token_key(token: CheckToken) -> str:
+    if token.kind == "num":
+        return token.text.replace("−", "-")
+    return unicodedata.normalize("NFKC", token.text).casefold() if token.kind == "word" else token.text
+
+
+def _negations(tokens: list[CheckToken]) -> int:
+    return sum(1 for t in tokens if t.kind == "word"
+               and (_token_key(t) in NEGATION_WORDS or NEGATION_CONTRACTION.match(_token_key(t))))
+
+
+def citation_check_spans(sentence: str, parts: list[dict[str, Any]]) -> tuple[list[tuple[int, int] | None], list[str]]:
+    """Where each part sits in the citing sentence, and the sentence's words no part holds.
+
+    A part is a verbatim span of the sentence (spaces and case aside), found by its tokens at the first position after
+    the part before it, so parts are in sentence order and never overlap; a part found nowhere there is None. Every
+    token no span covers is left out unless it is a coordinating connective (and, or, but, while, whereas); a negation,
+    a number, a variable or a comparison word never is. Punctuation is no token."""
+    tokens = check_tokens(sentence)
+    keys = [_token_key(t) for t in tokens]
+    flat = " ".join(sentence.split()).casefold()
+    spans: list[tuple[int, int] | None] = []
+    covered: set[int] = set()
+    at = 0
+    for part in parts:
+        wanted = [_token_key(t) for t in check_tokens(part["text"])]
+        span = None
+        if wanted and " ".join(part["text"].split()).casefold() in flat:
+            span = next(((i, i + len(wanted)) for i in range(at, len(keys) - len(wanted) + 1)
+                         if keys[i:i + len(wanted)] == wanted), None)
+        spans.append(span)
+        if span is not None:
+            covered.update(range(*span))
+            at = span[1]
+    left = [t.text for i, t in enumerate(tokens) if i not in covered and keys[i] not in CONNECTIVES]
+    return spans, left
+
+
+def citation_check_covers(sentence: str, parts: list[dict[str, Any]]) -> bool:
+    """Whether the parts are in the sentence and together leave nothing out: derived, never the model's word."""
+    spans, left = citation_check_spans(sentence, parts)
+    return all(span is not None for span in spans) and not left
+
+
+def _adjacent(text: str, left: int, right: int) -> bool:
+    return not text[left:right].strip()
+
+
+def _dehyphenated(text: str, tokens: list[CheckToken]) -> list[CheckToken]:
+    """`tokens` with a word hyphenated across a line break (`improve-` newline `ment`) joined into one word token."""
+    out: list[CheckToken] = []
+    i = 0
+    while i < len(tokens):
+        t = tokens[i]
+        if (out and out[-1].kind == "word" and t.text == "-" and out[-1].end == t.start and i + 1 < len(tokens)
+                and tokens[i + 1].kind == "word" and "\n" in (gap := text[t.end:tokens[i + 1].start])
+                and not gap.strip()):
+            out[-1] = CheckToken(out[-1].text + tokens[i + 1].text, out[-1].start, tokens[i + 1].end, "word")
+            i += 2
+            continue
+        out.append(t)
+        i += 1
+    return out
+
+
+def _cut_at(text: str, i: int) -> bool:
+    """Whether the character at `i` would make a span ending or starting there cut a token: anything but whitespace,
+    plain punctuation and the text's edge."""
+    return 0 <= i < len(text) and not text[i].isspace() and text[i] not in CHECK_PUNCTUATION
+
+
+def quote_meaning_differs(quote: str, passage: str, anchor: AnchorMatch, part_text: str | None = None) -> str | None:
+    """Why a located quote may say something the passage's located words do not, as a `MEANING_REASONS` key, else None.
+
+    For every match kind, exact included, read on the passage's own tokens that the located span touches (a number
+    whose sign or digits fall outside the span counts whole): the numbers (value, sign, decimal), comparison operators
+    as whole tokens and comparison words, and each unit after a number (case by case) must be the quote's; every match
+    kind, fuzzy included, must give the quote's token sequence (words case-folded, numbers, units and symbols as
+    written; only a word hyphenated across a line break is joined); no character but whitespace or plain punctuation
+    may touch the span, and the token right next to it, with only spaces between, must not be a number, sign, percent,
+    operator, or the unit of a number the span ends on; and the passage within 250 characters before the span and 80
+    after (dots, commas and line breaks ignored) must hold no negation outside it, the quote and the span must agree on
+    negations, and the quote must agree with its part on whether it is negated. A span the passage holds more than
+    once is read at each place, and any one refusal refuses it."""
+    q_tokens = _dehyphenated(quote, check_tokens(quote))
+    p_tokens = check_tokens(passage)
+    if not q_tokens:
+        return "boundary"
+    if part_text is not None and bool(_negations(q_tokens)) != bool(_negations(check_tokens(part_text))):
+        return "part_negation"
+    starts = [m.start() for m in re.finditer(re.escape(anchor.text), passage)] or [0]
+    for start in starts:
+        end = start + len(anchor.text)
+        inside = [t for t in p_tokens if t.end > start and t.start < end]
+        if not inside:
+            return "boundary"
+        # `locate_anchor` spans word characters only, so an operator, sign or percent the quote writes at its edge lies
+        # just outside the span; it joins the span when the passage writes it right there.
+        for edge in (0, -1):
+            wanted = list(q_tokens if edge == 0 else reversed(q_tokens))
+            for token in wanted:
+                if token.kind not in ("op", "sym"):
+                    break
+                i = p_tokens.index(inside[edge]) + (-1 if edge == 0 else 1)
+                if not 0 <= i < len(p_tokens) or p_tokens[i].kind not in ("op", "sym") or not _adjacent(
+                        passage, *((p_tokens[i].end, inside[0].start) if edge == 0 else (inside[-1].end, p_tokens[i].start))):
+                    break
+                inside = [p_tokens[i], *inside] if edge == 0 else [*inside, p_tokens[i]]
+        inside = _dehyphenated(passage, inside)
+        w_start = max(0, inside[0].start - NEGATION_WINDOW_BEFORE)
+        w_end = min(len(passage), inside[-1].end + NEGATION_WINDOW_AFTER)
+        window = [t for t in p_tokens if t.end > w_start and t.start < w_end]
+        if (_negations(q_tokens) != _negations(inside)
+                or _negations([t for t in window if t not in inside])):
+            return "negation"
+        if [_token_key(t) for t in q_tokens if t.kind == "num"] != [_token_key(t) for t in inside if t.kind == "num"]:
+            return "number"
+        if ([t.text for t in q_tokens if t.kind in ("op", "sym")] != [t.text for t in inside if t.kind in ("op", "sym")]
+                or Counter(COMPARISON_WORDS[k] for t in q_tokens if (k := _token_key(t)) in COMPARISON_WORDS)
+                != Counter(COMPARISON_WORDS[k] for t in inside if (k := _token_key(t)) in COMPARISON_WORDS)):
+            return "comparison"
+
+        def units(tokens: list[CheckToken]) -> list[tuple[str, str | None]]:
+            return [(_token_key(t), tokens[i + 1].text if i + 1 < len(tokens) and tokens[i + 1].kind != "num" else None)
+                    for i, t in enumerate(tokens) if t.kind == "num"]
+        if units(q_tokens) != units(inside):
+            return "unit"
+        # Review rounds 3–4: every match kind, fuzzy included, must give the quote's token sequence exactly as written,
+        # case included, so no unit prefix can change anywhere (`A/mW` vs `A/MW`); only a sentence-start capital may
+        # differ, on a word of three or more letters whose other letters are lower case. Fuzzy tolerance is left for
+        # PDF damage only: whitespace, plain punctuation and a word hyphenated across a line break.
+        if [_case_key(t) for t in q_tokens] != [_case_key(t) for t in inside]:
+            return "boundary"
+        # Read on characters, not tokens: a span that a non-space, non-punctuation character touches cuts a token
+        # (`5 mW` of `5 mW/cm²`, `5e` of `5e-3`, `10` of `10^6`, `km` of `km/h`).
+        if _cut_at(passage, inside[0].start - 1) or _cut_at(passage, inside[-1].end):
+            return "boundary"
+        before = [t for t in p_tokens if t.end <= inside[0].start]
+        after = [t for t in p_tokens if t.start >= inside[-1].end]
+        if before and _adjacent(passage, before[-1].end, inside[0].start) and before[-1].kind != "word":
+            return "context"
+        if after and _adjacent(passage, inside[-1].end, after[0].start) and (
+                after[0].kind != "word" or inside[-1].kind == "num"):
+            return "context"
+    return None
+
+
+def _case_key(token: CheckToken) -> str:
+    """A token as written, except that a capital first letter is ignored on a word of three or more letters whose
+    other letters are lower case ("The" / "the"); `mW` / `MW`, `mm` / `Mm` and `m` / `M` stay apart."""
+    text = token.text
+    if token.kind == "word" and len(text) >= 3 and text.isalpha() and text[1:].islower():
+        return text.lower()
+    return text
 
 
 def locate_in_cell_evidence(quote: str, cell: dict[str, Any]) -> AnchorMatch | None:
@@ -2635,6 +2980,13 @@ CANDIDATE_INPUT_ID_FIELDS = (
     ("allowlist/element_ids/*", "ele_E"), ("candidate_target/basis/*/passage_id", "psg_P"),
     ("candidate_target/assessed_source_id", "srv_S"), ("candidate_target/version/elements/*/element_id", "ele_E"),
 )
+CITATION_CHECK_INPUT_ID_FIELDS = (
+    ("passages/*/passage_id", "psg_P"), ("passages/*/source_id", "srv_S"),
+    ("sources/*/source_id", "srv_S"),
+    ("allowlist/passage_ids/*", "psg_P"), ("allowlist/source_ids/*", "srv_S"),
+    ("citation_check_target/assessed_source_id", "srv_S"),
+)
+CITATION_CHECK_OUTPUT_ID_FIELDS = (("parts/*/evidence/*/passage_id", "psg_P"),)
 LINEAGE_OUTPUT_ID_FIELDS = (
     ("decisions/*/from_source_id", "srv_S"), ("decisions/*/evidence/*/passage_id", "psg_P"),
 )
@@ -2851,9 +3203,10 @@ def with_citation_handles(step_input: dict[str, Any]) -> dict[str, Any]:
             if isinstance(owner[key], str):
                 owner[key] = handles.get(owner[key], owner[key])
         return shown
-    if step_input.get("task_type") in REPORT_TASKS + LINEAGE_TASKS + CANDIDATE_TASKS:
+    if step_input.get("task_type") in REPORT_TASKS + LINEAGE_TASKS + CANDIDATE_TASKS + CITATION_CHECK_TASKS:
         fields = CANDIDATE_INPUT_ID_FIELDS if step_input["task_type"] in CANDIDATE_TASKS else (
-            LINEAGE_INPUT_ID_FIELDS if step_input["task_type"] in LINEAGE_TASKS else REPORT_INPUT_ID_FIELDS)
+            CITATION_CHECK_INPUT_ID_FIELDS if step_input["task_type"] in CITATION_CHECK_TASKS else (
+            LINEAGE_INPUT_ID_FIELDS if step_input["task_type"] in LINEAGE_TASKS else REPORT_INPUT_ID_FIELDS))
         for owner, key, _, _ in _report_id_fields(shown, fields):
             if isinstance(owner[key], str):
                 owner[key] = handles.get(owner[key], owner[key])
@@ -3336,8 +3689,9 @@ def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict
             if isinstance(owner[key], str) and owner[key].startswith(kind):
                 owner[key] = real(owner[key])
         return data
-    if step_input.get("task_type") in REPORT_TASKS + LINEAGE_TASKS + CANDIDATE_TASKS:
+    if step_input.get("task_type") in REPORT_TASKS + LINEAGE_TASKS + CANDIDATE_TASKS + CITATION_CHECK_TASKS:
         fields = CANDIDATE_OUTPUT_ID_FIELDS[step_input["task_type"]] if step_input["task_type"] in CANDIDATE_TASKS else (
+            CITATION_CHECK_OUTPUT_ID_FIELDS if step_input["task_type"] in CITATION_CHECK_TASKS else
             LINEAGE_OUTPUT_ID_FIELDS if step_input["task_type"] in LINEAGE_TASKS else (
             REPORT_PLAN_ID_FIELDS if step_input["task_type"] == "report_plan" else (
                 REPORT_SECTION_ID_FIELDS if step_input["task_type"] == "report_section" else ())))

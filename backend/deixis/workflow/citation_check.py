@@ -1,6 +1,7 @@
-"""Verify Citations (V1, D86; V2, D96): a draft's markers, its bibliography entries and their (occurrence, entry) pairs,
-the lookup that names each entry's OpenAlex record, the text each entry is read from, the frozen passage plan of every
-pair, the preview with its cost range, the view and the delete. No model call: that is V3.
+"""Verify Citations (V1, D86; V2, D96; V3, D99): a draft's markers, its bibliography entries and their (occurrence,
+entry) pairs, the lookup that names each entry's OpenAlex record, the text each entry is read from, the frozen passage
+plan of every pair, the preview with its cost range, the model step that checks each planned pair and the code's
+verdict on it, the view, the export and the delete.
 
 Each draft owns one internal research row (`researches.kind = 'citation_check'`), made without a scope revision, an
 event or a run, so nothing starts discovery, a scope plan or a title call for it. Deleting the draft purges that
@@ -32,8 +33,9 @@ from typing import Any
 import httpx
 
 from deixis.documents import acquisition, draft_parse, identity
-from deixis.domain.citation_check import STATUSES
-from deixis.domain.rules import RevisionConflict
+from deixis.domain import contracts
+from deixis.domain.citation_check import STATUSES, PartAssessment, check_outcome
+from deixis.domain.rules import MAX_SCHEMA_REPAIRS, RevisionConflict
 from deixis.imports import bibtex_ris
 from deixis.models import prompt
 from deixis.providers import openalex
@@ -437,8 +439,9 @@ def recheck_identity(store: Store, entry: dict[str, Any]) -> dict[str, Any]:
 def revision_identity_confirmed(store: Store, pair: dict[str, Any]) -> bool | None:
     """Whether a frozen revision's identity result confirms the file its passages come from; None when the pair reads
     no text (`no_text`, `unresolved`). Fail-closed: a missing result, an unknown one, or one whose file or extraction
-    is not the one the given passages were cut from never confirms."""
-    if pair["status"] not in ("planned", "out_of_cap"):
+    is not the one the given passages were cut from never confirms. A checked pair (`done`, `could_not_check`) keeps
+    the revision it was checked on."""
+    if pair["status"] not in ("planned", "out_of_cap", "done", "could_not_check"):
         return None
     checked = json.loads(pair["plan_identity_json"]) if pair["plan_identity_json"] else None
     if not checked or checked.get("result") not in (*CONFIRMED, NOT_APPLICABLE):
@@ -584,8 +587,8 @@ async def acquire(store: Store, http: httpx.AsyncClient, settings: Any, fetcher:
 
 def acquisition_state(store: Store, research_id: str) -> dict[str, Any] | None:
     """The latest text acquisition run of the draft: its status and, when the budget paused it, when it returns."""
-    row = store.conn.execute("SELECT id FROM runs WHERE research_id = ? AND kind = ? ORDER BY created_at DESC, rowid DESC"
-                             " LIMIT 1", (research_id, KIND)).fetchone()
+    row = store.conn.execute("SELECT id FROM runs WHERE research_id = ? AND kind = ? AND json_extract(target_json, '$.phase') = ?"
+                             " ORDER BY created_at DESC, rowid DESC LIMIT 1", (research_id, KIND, TEXT_PHASE)).fetchone()
     if row is None:
         return None
     run = store.run(row["id"])
@@ -852,7 +855,9 @@ def _source_summary(store: Store, svid: str | None) -> dict[str, Any] | None:
 
 def preview(store: Store, draft_id: str, choice: dict[str, Any] | None) -> dict[str, Any]:
     """What the V3 step would be sent, read from the frozen plan and nothing else: the selected pairs in draft order
-    with their passages, the pairs beyond the cap, every counter, and the cost range. Reading it changes nothing."""
+    with their passages, the pairs beyond the cap, every counter, and the cost range. It changes nothing but one
+    event that records which revision was shown, priced for which model (D99): a check runs only a revision shown
+    with its model."""
     draft = draft_row(store, draft_id)
     if not draft["plan_revision"]:
         raise PlanRefused("plan_not_frozen", "The passage plan of this draft is not frozen yet")
@@ -881,9 +886,29 @@ def preview(store: Store, draft_id: str, choice: dict[str, Any] | None) -> dict[
             "passages_not_given": plan["passages_not_given"], "passage_chars": plan["passage_chars"],
             "stale": _stale(store, pair, entry),
             "identity": json.loads(pair["plan_identity_json"]) if pair["plan_identity_json"] else None})
+    shown = {"plan_revision": draft["plan_revision"], "connection": (choice or {}).get("connection"),
+             "model": (choice or {}).get("model"), "reasoning_effort": (choice or {}).get("reasoning_effort") or None}
+    with transaction(conn):
+        store._event(draft["research_id"], PREVIEW_EVENT, shown)
     return {"id": draft_id, "plan_revision": draft["plan_revision"], "plan_frozen_at": draft["plan_frozen_at"],
             "cap": MAX_PAIRS_TO_MODEL, "passages_per_pair": PASSAGES_PER_PAIR, "selected": selected,
             "out_of_cap": beyond, "counters": counters(store, draft_id), "cost": cost_range(items, choice)}
+
+
+PREVIEW_EVENT = "citation_check_previewed"
+
+
+def previewed(store: Store, research_id: str, revision: int, model: tuple[str, str, str | None]) -> str | None:
+    """None when this plan revision was previewed for this model (connection, model, reasoning effort); else why not:
+    `plan_not_previewed` or `model_not_previewed`."""
+    shown = [json.loads(r[0]) for r in store.conn.execute(
+        "SELECT payload_json FROM events WHERE research_id = ? AND type = ? ORDER BY id", (research_id, PREVIEW_EVENT))]
+    shown = [s for s in shown if s.get("plan_revision") == revision]
+    if not shown:
+        return "plan_not_previewed"
+    if not any((s.get("connection"), s.get("model"), s.get("reasoning_effort") or None) == tuple(model) for s in shown):
+        return "model_not_previewed"
+    return None
 
 
 # ---------------------------------------------------------------------------------------------------------- view
@@ -932,6 +957,7 @@ def view(store: Store, draft_id: str) -> dict[str, Any]:
         pairs_by_marker.setdefault(row["marker_id"], []).append({
             "id": row["id"], "ordinal": row["ordinal"], "target": row["target"], "status": row["status"],
             "result": check["result"] if check else None, "depth": check["depth"] if check else None,
+            "check": check_view(check),
             "bib_entry_id": row["bib_entry_id"], "source": entry["source"] if entry else None,
             "flags": pair_flags(store, dict(row), entry["flags"], entry_rows.get(row["bib_entry_id"])) if entry else [],
             "plan": None if row["plan_revision"] is None else {
@@ -954,6 +980,7 @@ def view(store: Store, draft_id: str) -> dict[str, Any]:
             "bibliography": {"origin": draft["bibliography_origin"], "filename": draft["bibliography_filename"],
                              "errors": json.loads(draft["bibliography_errors_json"])},
             "text_acquisition": acquisition_state(store, draft["research_id"]),
+            "check_run": check_state(store, draft["research_id"]),
             "plan": {"revision": draft["plan_revision"], "frozen_at": draft["plan_frozen_at"],
                      "cap": MAX_PAIRS_TO_MODEL, "passages_per_pair": PASSAGES_PER_PAIR},
             "counters": counters(store, draft_id), "markers": markers, "entries": list(entries.values())}
@@ -963,7 +990,7 @@ def counters(store: Store, draft_id: str) -> dict[str, Any]:
     """Each count from the stored rows, none folded into another (plan "Sayaçlar"). Ten citations of one work are one
     source and ten pairs. `sources_with_text` counts unique resolved records by the best text decided for them
     (`pending` until acquisition decides), `entries_with_text` the bibliography entries naming them. The plan counts are None until a plan is frozen; the V3 counts (sent, completed, located,
-    could not check) stay None until the model step exists, not zero."""
+    could not check) stay None until a check of the draft started, not zero."""
     conn = store.conn
 
     def one(sql: str) -> int:
@@ -990,9 +1017,12 @@ def counters(store: Store, draft_id: str) -> dict[str, Any]:
     by_source = {depth: 0 for depth in (*AVAILABLE_TEXT, "pending")}
     for depth in by_record.values():
         by_source[depth] += 1
-    frozen = bool(draft_row(store, draft_id)["plan_revision"])
+    draft = draft_row(store, draft_id)
+    frozen = bool(draft["plan_revision"])
     to_send = one("SELECT COUNT(*) FROM citation_pairs WHERE draft_id = ? AND status = 'planned'"
                   " AND passage_plan_json IS NOT NULL")
+    checked_pairs = one("SELECT COUNT(*) FROM citation_pairs WHERE draft_id = ? AND status IN ('done', 'could_not_check')")
+    checks = check_counts(store, draft) if frozen and check_started(store, draft["research_id"]) else None
     return {
         "occurrences": sum(marker_status.values()),
         "occurrences_recognized": marker_status.get("recognized", 0),
@@ -1007,11 +1037,363 @@ def counters(store: Store, draft_id: str) -> dict[str, Any]:
         "entries_with_text": by_entry,
         "pairs": sum(pair_status.values()),
         "pairs_by_status": {status: pair_status.get(status, 0) for status in STATUSES},
-        "pairs_in_plan": to_send + pair_status.get("out_of_cap", 0) if frozen else None,
+        "pairs_in_plan": to_send + checked_pairs + pair_status.get("out_of_cap", 0) if frozen else None,
         "pairs_out_of_cap": pair_status.get("out_of_cap", 0),
         "pairs_to_send": to_send if frozen else None,
-        "pairs_sent_to_model": None,
-        "pairs_done": None,
-        "pairs_found": None,
-        "pairs_could_not_check": None,
+        # None until a check of this draft started (V3, D99), never zero for "not asked". `done` is a valid completed
+        # assessment; `found` the done pairs with a located passage; `could_not_check` is in neither.
+        **(checks or dict.fromkeys(CHECK_COUNTERS)),
     }
+
+
+# ------------------------------------------------------------------------------------------------- the check (V3)
+#
+# Each planned pair of the frozen plan goes, in draft order, through one model step (`flow._model_step`: a stored
+# StepInput, the strict schema, no tools, the model the check names and no other, one schema repair) under the draft's
+# internal research. The step is keyed by pair and plan revision: a pair whose step succeeded or whose repair ran out
+# is never sent again, in this run or a later one. Only code turns the output into a result (`derive_result`): a
+# valid, completed assessment gives `done` with a result; an output still invalid after its repair gives
+# `could_not_check` with no result, its raw output and issues kept. A provider failure or a person's stop pauses the
+# run and leaves the pair `planned`: that is no verdict on the pair, and the next check sends it.
+
+TASK = "citation_check"
+CHECK_PHASE = "check"
+# The research question every check StepInput carries; the citing sentence itself is in `citation_check_target`.
+CHECK_QUESTION = ("Which parts of the citing sentence in citation_check_target do the given passages of the cited work"
+                  " state?")
+CHECK_COUNTERS = ("pairs_sent_to_model", "pairs_done", "pairs_found", "pairs_not_found_in_given",
+                  "pairs_could_not_check")
+FOUND = ("found_whole", "found_partial")
+
+
+def check_key(pair_id: str, revision: int) -> str:
+    return f"{TASK}:{pair_id}:r{revision}"
+
+
+def check_model(store: Store, choice: dict[str, Any] | None) -> tuple[str, str, str | None] | None:
+    """The model the check runs on: the one the request names, else the literature model in Settings, the one the
+    preview prices. None when neither names a connection and a model: the check is refused, never sent elsewhere."""
+    if not choice or not choice.get("model"):
+        default = store.setting("literature") or {}
+        choice = {"connection": default.get("model_connection"), "model": default.get("model"),
+                  "reasoning_effort": default.get("reasoning_effort")}
+    if not choice.get("connection") or not choice.get("model"):
+        return None
+    return choice["connection"], choice["model"], choice.get("reasoning_effort") or None
+
+
+def check_started(store: Store, research_id: str) -> bool:
+    return store.conn.execute(
+        "SELECT 1 FROM runs WHERE research_id = ? AND kind = ? AND json_extract(target_json, '$.phase') = ? LIMIT 1",
+        (research_id, KIND, CHECK_PHASE)).fetchone() is not None
+
+
+def check_counts(store: Store, draft: dict[str, Any]) -> dict[str, int]:
+    """The V3 counts of the current plan revision. Sent: pairs whose step reached the model at least once (a paused
+    pair included). A `could_not_check` pair is never a done or a not-found pair."""
+    revision = draft["plan_revision"]
+    rows = store.conn.execute(
+        "SELECT c.status, c.result FROM citation_checks c JOIN citation_pairs p ON p.id = c.pair_id"
+        " WHERE p.draft_id = ? AND c.plan_revision = ?", (draft["id"], revision)).fetchall()
+    sent = store.conn.execute(
+        "SELECT COUNT(DISTINCT s.operation_key) FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE r.research_id = ?"
+        " AND r.kind = ? AND s.operation_key LIKE ? AND EXISTS (SELECT 1 FROM model_sessions m WHERE m.step_id = s.id)",
+        (draft["research_id"], KIND, f"{TASK}:%:r{revision}")).fetchone()[0]
+    done = [r["result"] for r in rows if r["status"] == "done"]
+    return {"pairs_sent_to_model": sent, "pairs_done": len(done),
+            "pairs_found": sum(1 for r in done if r in FOUND),
+            "pairs_not_found_in_given": sum(1 for r in done if r == "not_found_in_given"),
+            "pairs_could_not_check": sum(1 for r in rows if r["status"] == "could_not_check")}
+
+
+def _open_check_run(store: Store, research_id: str, draft_id: str, revision: int, model: tuple[str, str, str | None],
+                    pairs: int, package_hash: str) -> dict[str, Any]:
+    """A `citation_check` run that is running from the start (the worker has no handler for the kind), with a model
+    call budget of every pair and its one repair, and the model and method package it froze."""
+    with transaction(store.conn):
+        if _active_run(store, research_id):
+            raise PlanRefused("run_active", "A run of this draft is still active")
+        research = store.research(research_id)
+        run_id, ts = new_id("run"), now()
+        store.conn.execute(
+            "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, target_json, created_at,"
+            " updated_at) VALUES (?, ?, ?, ?, 'running', 'claim_check', ?, ?, ?, ?)",
+            (run_id, research_id, research["current_scope_revision"], KIND,
+             dumps({"max_model_calls": pairs * (1 + MAX_SCHEMA_REPAIRS), "max_provider_requests": 0}),
+             dumps({"draft_id": draft_id, "phase": CHECK_PHASE, "plan_revision": revision, "pairs": pairs,
+                    "model": {"connection": model[0], "model": model[1], "reasoning_effort": model[2]},
+                    "skill_package_hash": package_hash}), ts, ts))
+        store._event(research_id, "run_started", {"kind": KIND, "phase": CHECK_PHASE}, run_id)
+    return store.run(run_id)
+
+
+def _recorded(store: Store, research_id: str, key: str) -> dict[str, Any] | None:
+    """A pair's step that already ended for good in any check run of the draft: its succeeded output, or its invalid
+    output after the repair ran out (or a message too large to send). Read back, never sent again."""
+    row = store.conn.execute(
+        "SELECT s.* FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE r.research_id = ? AND r.kind = ?"
+        " AND s.operation_key = ? AND (s.status = 'succeeded' OR (s.status = 'failed'"
+        " AND s.error_code IN ('invalid_model_output', 'message_too_large'))) ORDER BY s.rowid DESC LIMIT 1",
+        (research_id, KIND, key)).fetchone()
+    if row is None:
+        return None
+    output = json.loads(row["output_json"]) if row["output_json"] else {}
+    if row["status"] == "succeeded":
+        return output
+    return output | {"invalid": True, "issues": json.loads(row["error_json"] or "[]"),
+                     "message_too_large": row["error_code"] == "message_too_large"}
+
+
+def _raw_output(store: Store, step_input_id: str | None) -> str | None:
+    row = store.conn.execute("SELECT raw_output FROM model_sessions WHERE step_input_id = ? AND raw_output IS NOT NULL"
+                             " ORDER BY rowid DESC LIMIT 1", (step_input_id,)).fetchone() if step_input_id else None
+    return row["raw_output"] if row else None
+
+
+def _check_target(pair: dict[str, Any], plan: dict[str, Any], sentence: str) -> dict[str, Any]:
+    return {"pair_id": pair["id"], "sentence": sentence, "assessed_source_id": plan["source_version_id"],
+            "depth": plan["depth"], "passages_not_given": plan["passages_not_given"]}
+
+
+async def _send(flow: Any, run: dict[str, Any], model: tuple[str, str, str | None], pair: dict[str, Any],
+                sentence: str, key: str) -> dict[str, Any]:
+    """One pair's model step. The last look before each send (the first and the repair): a stop, a changed method
+    package, or a plan that went stale since the preview fails the run; the StepInput is built from the frozen passage
+    ids, read again for each attempt."""
+    store, run_id = flow.store, run["id"]
+    plan = json.loads(pair["passage_plan_json"])
+    scope = {"question": CHECK_QUESTION, "language_hint": None, "steering": None, "providers": [],
+             "model_connection": model[0], "requested_model": model[1], "reasoning_effort": model[2]}
+
+    def gate() -> None:
+        flow._checkpoint(run_id)
+        if run["target"]["skill_package_hash"] != flow.deps.package.package_hash:
+            flow._fail(run_id, "skill_package_changed")
+        fresh = dict(store.conn.execute("SELECT * FROM citation_pairs WHERE id = ?", (pair["id"],)).fetchone())
+        entry = store.conn.execute("SELECT * FROM citation_bib_entries WHERE id = ?", (pair["bib_entry_id"],)).fetchone()
+        if (fresh["plan_revision"] != run["target"]["plan_revision"] or fresh["status"] != "planned"
+                or _stale(store, fresh, dict(entry) if entry else None)):
+            flow._fail(run_id, "plan_stale", {"pair_id": pair["id"]})
+
+    def build(step_id: str) -> dict[str, Any]:
+        rows = [store.passage(passage_id) for passage_id in plan["passage_ids"]]
+        payload = flow._step_input(run, scope, step_id, TASK, [], [plan["source_version_id"]], rows, [], model)
+        return payload | {"citation_check_target": _check_target(pair, plan, sentence)}
+
+    return await flow.deps.limiter.run(f"{run_id}:{key}", lambda: flow._model_step(
+        run, scope, key, TASK, model=model, limiter=flow.deps.limiter, send_gate=gate, step_input_builder=build))
+
+
+def _provenance(store: Store, step_input_id: str | None) -> dict[str, Any]:
+    """Which run sent a step and on which model, read from its stored StepInput and its last model session, never
+    from the request now running: a step read back after a lost result keeps the model it was really sent to."""
+    row = store.conn.execute("SELECT run_id, payload_json FROM step_inputs WHERE id = ?",
+                             (step_input_id,)).fetchone() if step_input_id else None
+    session = store.conn.execute(
+        "SELECT run_id, connection, requested_model, resolved_model, reasoning_effort, raw_output FROM model_sessions"
+        " WHERE step_input_id = ? ORDER BY rowid DESC LIMIT 1", (step_input_id,)).fetchone() if step_input_id else None
+    asked = (json.loads(row["payload_json"]).get("model") or {}) if row else {}
+    return {"run_id": session["run_id"] if session else row["run_id"] if row else None,
+            "connection": session["connection"] if session else asked.get("connection"),
+            "requested_model": session["requested_model"] if session else asked.get("requested_model"),
+            "reasoning_effort": session["reasoning_effort"] if session else None,
+            "resolved_model": session["resolved_model"] if session else None,
+            "sent": session is not None}
+
+
+def _store_check(store: Store, run: dict[str, Any], pair: dict[str, Any], output: dict[str, Any]) -> dict[str, Any]:
+    """The code's verdict on one ended step, stored with the pair's new status in one write. A valid output becomes
+    `done` with a result only when `derive_result` reads one from the backend's own located quotes, with the
+    sentence's coverage derived from the parts' positions (`citation_check_covers`), never taken from the model alone;
+    anything else is `could_not_check` with no result. Either keeps the raw output, the depth and the flags of the
+    revision it read, and the run and model of the step that answered."""
+    plan = json.loads(pair["passage_plan_json"])
+    step_input_id = output.get("step_input_id")
+    anchors, result_doc = None, None
+    if output.get("invalid"):
+        code = "message_too_large" if output.get("message_too_large") else "invalid_model_output"
+        outcome = {"status": "could_not_check", "result": None,
+                   "error": {"code": code, "issues": output.get("issues") or []}}
+    else:
+        result_doc = output["result"]
+        payload = store.step_input_payload(step_input_id)
+        anchors = contracts.citation_check_anchors(payload, result_doc)
+        parts = [PartAssessment(part["assessment"], tuple(a["located"] for a in located))
+                 for part, located in zip(result_doc["parts"], anchors)]
+        covers = result_doc["covers_whole_sentence"] is True and contracts.citation_check_covers(
+            payload["citation_check_target"]["sentence"], result_doc["parts"])
+        outcome = check_outcome(parts, covers)
+        if outcome["error"] is not None:
+            outcome["error"] = {"code": outcome["error"], "issues": []}
+    entry = store.conn.execute("SELECT * FROM citation_bib_entries WHERE id = ?", (pair["bib_entry_id"],)).fetchone()
+    entry = dict(entry) if entry else None
+    flags = pair_flags(store, pair, record_flags(store, entry), entry)
+    kinds = sorted({a["passage_kind"] for part in anchors or [] for a in part if a["located"] and a["passage_kind"]})
+    basis = {"depth": plan["depth"], "passages_given": len(plan["passage_ids"]), "passages_total": plan["passages_total"],
+             "passages_not_given": plan["passages_not_given"], "source_version_id": plan["source_version_id"],
+             "located_passage_kinds": kinds}
+    raw = _raw_output(store, step_input_id)
+    record = _provenance(store, step_input_id)
+    sent_by = record.pop("run_id") or run["id"]
+    with transaction(store.conn):
+        store.conn.execute(
+            "INSERT INTO citation_checks (id, pair_id, step_id, output_json, located_anchors_json, depth, result, status,"
+            " error_json, created_at, plan_revision, run_id, step_input_id, model_json, raw_output, flags_json, basis_json)"
+            " VALUES (?, ?, (SELECT s.id FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE r.research_id = ?"
+            " AND s.operation_key = ? ORDER BY s.rowid DESC LIMIT 1), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (new_id("chk"), pair["id"], run["research_id"], check_key(pair["id"], pair["plan_revision"]),
+             dumps(result_doc) if result_doc is not None else None, dumps(anchors) if anchors is not None else None,
+             plan["depth"], outcome["result"], outcome["status"],
+             dumps(outcome["error"]) if outcome["error"] is not None else None, now(), pair["plan_revision"], sent_by,
+             step_input_id, dumps(record), raw, dumps(flags), dumps(basis)))
+        store.conn.execute("UPDATE citation_pairs SET status = ? WHERE id = ?", (outcome["status"], pair["id"]))
+    return outcome
+
+
+async def check(store: Store, flow: Any, draft_id: str, plan_revision: int | None,
+                choice: dict[str, Any] | None) -> dict[str, Any]:
+    """Check every planned pair of the frozen plan not checked yet, in draft order (at most `MAX_PAIRS_TO_MODEL`: the
+    freeze planned no more). Refused before anything is sent when no plan is frozen, when `plan_revision` is not the
+    frozen revision, when no model is named and Settings names none, when this revision was never previewed or was
+    previewed for another model (`previewed`), while a run of the draft is active, or when a planned pair's plan went stale since its freeze (its text, file, extraction or identity result
+    changed). The person then freezes again and previews the new plan: a check never reads another plan than the one
+    shown, and never silently re-freezes."""
+    from deixis.workflow.flow import RunStopped  # flow builds on most of the workflow; read only when checking
+    draft = draft_row(store, draft_id)
+    revision = draft["plan_revision"]
+    if not revision:
+        raise PlanRefused("plan_not_frozen", "The passage plan of this draft is not frozen yet")
+    if plan_revision != revision:
+        raise PlanRefused("plan_revision_mismatch", "The plan was frozen again since this preview", plan_revision=revision)
+    model = check_model(store, choice)
+    if model is None:
+        raise PlanRefused("no_model", "No model is named for the check and Settings names no literature model")
+    if (unshown := previewed(store, draft["research_id"], revision, model)) is not None:
+        raise PlanRefused(unshown, "This plan revision was not previewed for this model; preview it first",
+                          plan_revision=revision, model={"connection": model[0], "model": model[1],
+                                                         "reasoning_effort": model[2]})
+    research_id = draft["research_id"]
+    if _active_run(store, research_id):
+        raise PlanRefused("run_active", "A run of this draft is still active")
+    conn = store.conn
+    pending = [dict(r) for r in conn.execute(
+        "SELECT p.* FROM citation_pairs p WHERE p.draft_id = ? AND p.status = 'planned' AND p.plan_revision = ?"
+        " AND p.passage_plan_json IS NOT NULL AND NOT EXISTS (SELECT 1 FROM citation_checks c WHERE c.pair_id = p.id"
+        " AND c.plan_revision = p.plan_revision) ORDER BY p.ordinal", (draft_id, revision))]
+    entries = {r["id"]: dict(r) for r in conn.execute("SELECT * FROM citation_bib_entries WHERE draft_id = ?", (draft_id,))}
+    stale = [p["ordinal"] for p in pending if _stale(store, p, entries.get(p["bib_entry_id"]))]
+    if stale:
+        raise PlanRefused("plan_stale", "The text of some planned pairs changed since the plan was frozen; freeze the"
+                          " plan again and preview it", pairs=stale)
+    if not pending:
+        return {"status": "nothing_to_check", "run_id": None, "pause_reason": None, "error": None, "checked_now": 0}
+    markers = {r["id"]: dict(r) for r in conn.execute("SELECT * FROM citation_markers WHERE draft_id = ?", (draft_id,))}
+    spans = [(m["char_start"], m["char_end"]) for m in markers.values()]
+    run = _open_check_run(store, research_id, draft_id, revision, model, len(pending), flow.deps.package.package_hash)
+    checked = 0
+    try:
+        for pair in pending:
+            key = check_key(pair["id"], revision)
+            output = _recorded(store, research_id, key)
+            if output is None:
+                sentence = cited_sentence(draft["text"], markers[pair["marker_id"]], spans)
+                output = await _send(flow, run, model, pair, sentence, key)
+            _store_check(store, run, pair, output)
+            checked += 1
+            flow._checkpoint(run["id"])
+    except RunStopped:
+        stopped = store.run(run["id"])
+        return {"status": stopped["status"], "run_id": run["id"], "pause_reason": stopped["pause_reason"],
+                "error": stopped["error"], "checked_now": checked}
+    except BaseException:
+        if store.run(run["id"])["status"] in ACTIVE_RUN_STATUSES:
+            store.update_run(run["id"], event="run_failed", status="failed", error_json={"code": "citation_check_failed"})
+        raise
+    store.update_run(run["id"], event="run_completed", status="completed")
+    return {"status": "completed", "run_id": run["id"], "pause_reason": None, "error": None, "checked_now": checked}
+
+
+def check_state(store: Store, research_id: str) -> dict[str, Any] | None:
+    """The latest check run of the draft: its status, and why it stopped when it did."""
+    row = store.conn.execute("SELECT id FROM runs WHERE research_id = ? AND kind = ? AND json_extract(target_json, '$.phase') = ?"
+                             " ORDER BY created_at DESC, rowid DESC LIMIT 1", (research_id, KIND, CHECK_PHASE)).fetchone()
+    if row is None:
+        return None
+    run = store.run(row["id"])
+    return {"run_id": run["id"], "status": run["status"], "pause_reason": run["pause_reason"], "error": run["error"],
+            "plan_revision": run["target"]["plan_revision"], "model": run["target"]["model"]}
+
+
+def check_view(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    """One stored check as the view and the export show it: its status and result, the depth and flags of the
+    revision it read, the parts with the backend's located words, and, for a check that could not be completed, its
+    error and raw output."""
+    if row is None:
+        return None
+    output = json.loads(row["output_json"]) if row["output_json"] else None
+    anchors = json.loads(row["located_anchors_json"]) if row["located_anchors_json"] else None
+    parts = None
+    if output is not None:
+        parts = [{"text": part["text"], "assessment": part["assessment"], "evidence": located}
+                 for part, located in zip(output["parts"], anchors or [[] for _ in output["parts"]])]
+    return {"status": row["status"], "result": row["result"], "plan_revision": row["plan_revision"],
+            "depth": row["depth"], "basis": json.loads(row["basis_json"]) if row["basis_json"] else None,
+            "flags": json.loads(row["flags_json"] or "[]"), "parts": parts,
+            "covers_whole_sentence": output["covers_whole_sentence"] if output is not None else None,
+            "error": json.loads(row["error_json"]) if row["error_json"] else None,
+            "raw_output": row["raw_output"] if row["status"] == "could_not_check" else None,
+            "model": json.loads(row["model_json"]) if row["model_json"] else None, "run_id": row["run_id"],
+            "step_input_id": row["step_input_id"], "checked_at": row["created_at"]}
+
+
+# -------------------------------------------------------------------------------------------------------- export
+
+EXPORT_COLUMNS = ("pair", "marker", "sentence", "target", "source_title", "source_year", "source_doi", "status",
+                  "result", "depth", "passages_given", "passages_not_given", "located_passage_kinds", "flags",
+                  "error", "located_quotes")
+
+
+def export_rows(store: Store, draft_id: str) -> list[dict[str, Any]]:
+    """One row per pair in draft order: the sentence, the work as its record names it, the status and the result kept
+    apart (a `could_not_check` pair has none), the depth, the flags, the error, and the backend's located words."""
+    report = view(store, draft_id)
+    rows = []
+    for marker in report["markers"]:
+        for pair in marker["pairs"]:
+            check_row = pair["check"] or {}
+            source = pair["source"] or {}
+            basis = check_row.get("basis") or {}
+            quotes = [a["anchor_text"] for part in check_row.get("parts") or [] for a in part["evidence"] if a["located"]]
+            rows.append({"pair": pair["ordinal"], "marker": marker["raw"], "sentence": marker["sentence"],
+                         "target": pair["target"], "source_title": source.get("title"), "source_year": source.get("year"),
+                         "source_doi": source.get("doi"), "status": pair["status"], "result": pair["result"],
+                         "depth": check_row.get("depth") or (pair["plan"] or {}).get("depth"),
+                         "passages_given": basis.get("passages_given"), "passages_not_given": basis.get("passages_not_given"),
+                         "located_passage_kinds": basis.get("located_passage_kinds") or [],
+                         "flags": check_row["flags"] if check_row else pair["flags"],
+                         "error": (check_row.get("error") or {}).get("code"), "located_quotes": quotes})
+    return rows
+
+
+def export(store: Store, draft_id: str, fmt: str) -> str:
+    """The rows as CSV or Markdown; lists are joined with ` | `. A pair that could not be checked keeps its row."""
+    import csv
+    import io
+    rows = export_rows(store, draft_id)
+
+    def cell(value: Any) -> str:
+        if isinstance(value, list):
+            return " | ".join(str(v) for v in value)
+        return "" if value is None else str(value)
+
+    if fmt == "csv":
+        out = io.StringIO()
+        writer = csv.writer(out)
+        writer.writerow(EXPORT_COLUMNS)
+        for row in rows:
+            writer.writerow([cell(row[c]) for c in EXPORT_COLUMNS])
+        return out.getvalue()
+    lines = ["| " + " | ".join(EXPORT_COLUMNS) + " |", "|" + "---|" * len(EXPORT_COLUMNS)]
+    for row in rows:
+        lines.append("| " + " | ".join(cell(row[c]).replace("|", "\\|").replace("\n", " ") for c in EXPORT_COLUMNS) + " |")
+    return "\n".join(lines) + "\n"

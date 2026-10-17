@@ -201,6 +201,12 @@
    "derived_from": [],
    "date": "2026-10-17",
    "change": "Written for DEIXIS, not upstream text. Loaded only for followup_search_query: setting and task terms for a search started from a follow-up question, aimed at what the works already in the research do not cover. followup.md now says when to set new_works_requested; SKILL.md routes the new task_type. No real-model measurement."
+  },
+  {
+   "deixis_file": "references/citation-check.md",
+   "derived_from": [],
+   "date": "2026-10-18",
+   "change": "Written for DEIXIS (D99, Verify Citations V3), not upstream text. Loaded only for citation_check: split one citing sentence into claim parts and say for each whether the given passages of the cited work state it, with exact quotes. SKILL.md routes the new task_type. Not measured; the wording was tried against no model."
   }
  ],
  "phrasebank": {

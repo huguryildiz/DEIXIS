@@ -728,6 +728,47 @@
         }
       }
     },
+    "citation_check_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Verify Citations only (D98): one (citation occurrence, cited work) pair of a person's draft. The model splits the citing sentence into claim parts and assesses each against the given passages of that one work only.",
+      "required": [
+        "pair_id",
+        "sentence",
+        "assessed_source_id",
+        "depth",
+        "passages_not_given"
+      ],
+      "properties": {
+        "pair_id": {
+          "type": "string",
+          "pattern": "^cpr_[0-9A-Za-z]{8,40}$"
+        },
+        "sentence": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000,
+          "description": "The citing sentence with its citation markers cut out. Part texts are copied from it."
+        },
+        "assessed_source_id": {
+          "$ref": "common.schema.json#/$defs/source_id"
+        },
+        "depth": {
+          "type": "string",
+          "enum": [
+            "selected_passages",
+            "abstract",
+            "full_text"
+          ],
+          "description": "What the given passages are of the work: some of its passages, its abstract, or all of its passages."
+        },
+        "passages_not_given": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many passages of the work were not given. Nothing may be said about them."
+        }
+      }
+    },
     "candidate_target": {
       "type": "object",
       "additionalProperties": false,
@@ -936,7 +977,8 @@
         "kill_search_query",
         "claim_assessment",
         "owner_review",
-        "followup_search_query"
+        "followup_search_query",
+        "citation_check"
       ]
     },
     "scope_revision": {

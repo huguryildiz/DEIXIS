@@ -20,6 +20,7 @@ TASKS = (
     "search_query", "abstract_screening", "fulltext_adjudication",
     "report_plan", "report_section", "report_review",
     "lineage_links", "claim_decomposition", "kill_search_query", "claim_assessment", "followup_search_query",
+    "citation_check",
 )
 BUILDERS = {"model_output_schema", "step_output_schema", "report_section_anchor_patch_schema"}
 EXCLUSIONS = {
@@ -54,7 +55,7 @@ def nested(depth, leaf=None):
 def test_t0_registry_keys_are_independently_frozen():
     expected = {f"{builder}:{task}" for builder in ("model_output_schema", "step_output_schema") for task in TASKS}
     expected.add("report_section_anchor_patch_schema")
-    assert len(expected) == 41
+    assert len(expected) == 43
     assert contracts.model_transport_schemas().keys() == expected
 
 

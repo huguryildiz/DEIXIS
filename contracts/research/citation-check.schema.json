@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "step_input_id",
+    "scope_revision",
+    "skill_package_hash",
+    "parts",
+    "covers_whole_sentence"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "deixis.citation_check.v1"
+    },
+    "step_input_id": {
+      "$ref": "common.schema.json#/$defs/step_input_id"
+    },
+    "scope_revision": {
+      "$ref": "common.schema.json#/$defs/scope_revision"
+    },
+    "skill_package_hash": {
+      "$ref": "common.schema.json#/$defs/skill_package_hash"
+    },
+    "parts": {
+      "type": "array",
+      "description": "The claim parts of the citing sentence, 1 to 4, in sentence order. Each part's text is copied from citation_check_target.sentence. A stated or partly part has 1 to 3 evidence quotes; a not_stated part has none; at most 8 quotes in all parts together.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "text",
+          "assessment",
+          "evidence"
+        ],
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "A span copied exactly from the citing sentence.",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "assessment": {
+            "type": "string",
+            "enum": [
+              "stated",
+              "partly",
+              "not_stated"
+            ]
+          },
+          "evidence": {
+            "type": "array",
+            "description": "0 to 3 quotes, each copied exactly from the one given passage it names.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "passage_id",
+                "quote"
+              ],
+              "properties": {
+                "passage_id": {
+                  "$ref": "common.schema.json#/$defs/passage_id"
+                },
+                "quote": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1000
+                }
+              }
+            },
+            "minItems": 0,
+            "maxItems": 3
+          }
+        }
+      },
+      "minItems": 1,
+      "maxItems": 4
+    },
+    "covers_whole_sentence": {
+      "type": "boolean",
+      "description": "True only when the parts together cover everything the citing sentence claims."
+    }
+  },
+  "title": "CitationCheck",
+  "$id": "https://deixis.local/contracts/research/citation-check.schema.json"
+}

@@ -1,7 +1,8 @@
-"""Verify Citations, V1 (D86) and V2 (D96): give a draft and its bibliography, read back the occurrences, entries and
-pairs, look the entries up, attach the person's PDF to an entry, acquire each entry's text, freeze the passage plan,
-preview it with its cost range, delete the draft. No route here calls a model. The application middleware enforces
-loopback, Origin, CSRF and the body size (`upload_limit`; the entry upload ends in `/uploads`, so it has the PDF limit).
+"""Verify Citations, V1 (D86), V2 (D96) and V3 (D99): give a draft and its bibliography, read back the occurrences,
+entries and pairs, look the entries up, attach the person's PDF to an entry, acquire each entry's text, freeze the
+passage plan, preview it with its cost range, check the planned pairs with a model, export the result, delete the
+draft. Only `POST …/check` calls a model. The application middleware enforces loopback, Origin, CSRF and the body size
+(`upload_limit`; the entry upload ends in `/uploads`, so it has the PDF limit).
 
 Resolution is an explicit `POST …/resolve`, not a run step: it is a handful of OpenAlex lookups with no model call,
 like the Library's reference import, and it is idempotent by entry status (a resolved or unresolved entry is never
@@ -15,8 +16,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from fastapi import File, Form, Query, Request, UploadFile
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict
+from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel, ConfigDict, Field
 
 from deixis.api.app import UploadRefused, disk_full_refused, store_upload
 from deixis.config import Settings
@@ -28,6 +29,14 @@ from deixis.workflow import citation_check, file_restore, text_retry
 class PlanRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     refreeze: bool = False  # only the person's explicit request writes a new plan revision
+
+
+class CheckRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    plan_revision: int  # the frozen revision the person previewed; another one is refused
+    connection: str | None = Field(None, max_length=100)
+    model: str | None = Field(None, max_length=200)  # none: the literature model in Settings, as the preview prices
+    reasoning_effort: str | None = Field(None, max_length=50)
 
 
 def _parse(data: bytes | None, filename: str | None, text: str | None, bib: bytes | None, bib_name: str | None):
@@ -153,6 +162,29 @@ def register_citation_check_routes(app, settings: Settings,
             return citation_check.preview(store, draft_id, choice)
         except citation_check.PlanRefused as exc:
             return refused(exc)
+
+    @app.post("/api/citation-checks/{draft_id}/check")
+    async def run_check(draft_id: str, body: CheckRequest, request: Request):
+        """Send each planned pair not checked yet, in draft order, to the named model (else the literature model in
+        Settings), and store the code's verdict. Refused when the plan is not the previewed revision or went stale,
+        and when no model is named anywhere. A provider failure or a person's stop pauses the run; the next call goes
+        on from the first pair without a stored check and never sends a checked pair again."""
+        store = request.app.state.store
+        choice = {"connection": body.connection, "model": body.model, "reasoning_effort": body.reasoning_effort}
+        try:
+            outcome = await citation_check.check(store, request.app.state.worker.flow, draft_id, body.plan_revision,
+                                                 choice if body.model is not None else None)
+        except citation_check.PlanRefused as exc:
+            return refused(exc)
+        return {**citation_check.view(store, draft_id), "checked": outcome}
+
+    @app.get("/api/citation-checks/{draft_id}/export")
+    async def export_check(draft_id: str, request: Request, format: str = Query("csv", pattern="^(csv|md)$")):
+        """One row per pair, the pairs that could not be checked included, as CSV or Markdown."""
+        text = citation_check.export(request.app.state.store, draft_id, format)
+        media = "text/csv" if format == "csv" else "text/markdown"
+        return Response(text, media_type=f"{media}; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="citation-check-{draft_id}.{format}"'})
 
     @app.delete("/api/citation-checks/{draft_id}")
     async def delete_check(draft_id: str, request: Request) -> dict[str, Any]:

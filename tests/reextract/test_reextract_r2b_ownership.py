@@ -297,7 +297,8 @@ def test_only_restore_driver_places_active_library_hash_paths_static_guard():
     root = Path(__file__).resolve().parents[2] / "backend" / "deixis"
     allow = {"workflow/file_restore.py", "storage/backup.py", "keys/credentials.py", "documents/local_embedding.py",
              "documents/arxiv_source.py", "workflow/local_embedding_service.py",
-             "storage/data_location.py"}  # D32: moves the whole data folder at startup, before the library is opened
+             "storage/data_location.py",  # D32: moves the whole data folder at startup, before the library is opened
+             "models/quota.py"}  # D78: the last Claude Code limit reading, claude-quota.json beside the CLI workspace
     for path in root.rglob("*.py"):
         tree = ast.parse(path.read_text())
         calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)

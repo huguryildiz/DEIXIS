@@ -71,7 +71,9 @@ Most of this was tested with fake models and synthetic data only; "Not measured"
 - Post-parity cleanup and small features (P0–P5, D25–D33) are done: unused CSS removed, search-plan strike-through, request counts, stored thinking level, proxy name, "Try" for keyless sources.
 - Pre-P10 readiness is done in code: the packaged app finds its files, tools work when opened from the desktop, Windows CLIs start, a Linux fallback holds keys for the session, and cost estimates are shown.
 - An open PDF viewer now loads the restored file after a file restore.
-- A GitHub Actions workflow runs the quick tests and the web build on every push to main; it is informational and blocks nothing.
+- A GitHub Actions workflow runs the full test suite, split over four machines (4–8 min instead of 19), and the web build on every push to main; it is informational and blocks nothing.
+- Tests take less of the Mac (17 Oct): the quick run uses 4 workers and leaves out the ~2,000 tests of 0.2 s or more (about 2 min and 316 CPU-seconds, down from 1,250), and `pytest --testmon tests` reruns only the tests that touch changed Python code. Compiled files are cached outside the repository, test apps share FastAPI's type adapters, and record matching caches its title work. Measured under heavy load from other sessions, not on a quiet machine.
+- Two CI failures fixed (17 Oct): `test_connector_dispatch` failed when a background thread left by an earlier test spun on the test clock's fake 60 s sleep (the fake clock now applies only to its own thread), and the static `os.replace` guard now allows `models/quota.py`, which saves the last Claude Code limit reading (D78).
 - The P9 upgrade check's 15 teardown errors are fixed (385b4511), and the arXiv source-archive test that used to fail now passes.
 - Answers no longer overuse "It has been reported that…": the phrasebank is gone, and a live check on 16 Oct found no formula openings (D43).
 

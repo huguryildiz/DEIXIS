@@ -423,13 +423,34 @@
 .answer-ib[data-slot=button]:hover{background:var(--hover-surface);color:var(--ink)}
 .follow{border:1px solid var(--line);border-radius:12px;overflow:hidden}
 .follow h5{margin:0;padding:9px 16px;border-bottom:1px solid var(--line);background:var(--sidebar-surface);color:var(--muted);font-size:12px;font-weight:500}
-.follow button{display:flex;align-items:center;gap:10px;width:100%;padding:11px 16px;border:0;border-top:1px solid var(--line);background:none;color:var(--ink-2);font:inherit;font-size:13px;text-align:left;cursor:pointer}
-.follow h5+button{border-top:0}
-.follow button:hover{background:var(--hover-surface)}
-.follow button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.follow button>svg{flex:none}
+.follow>button,.follow-group>summary{display:flex;align-items:center;gap:10px;width:100%;padding:11px 16px;border:0;border-top:1px solid var(--line);background:none;color:var(--ink-2);font:inherit;font-size:13px;text-align:left;cursor:pointer}
+.follow h5+button,.follow h5+.follow-group>summary{border-top:0}
+.follow>button:hover,.follow-group>summary:hover{background:var(--hover-surface)}
+.follow>button:focus-visible,.follow-group>summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.follow>button>svg,.follow-group>summary>svg{flex:none}
 .follow .go{display:none;flex:none;place-items:center;width:24px;height:24px;margin-left:auto;border-radius:6px;background:var(--accent);color:var(--paper)}
-.follow button:is(:hover,:focus-visible,.first) .go{display:grid}
+.follow>button:is(:hover,:focus-visible,.first) .go{display:grid}
+/* The answer's unanswered aspects as one disclosure row (D98): each aspect with its follow-up and claim actions. */
+.follow-group>summary{list-style:none}
+.follow-group>summary::-webkit-details-marker{display:none}
+.follow-group>summary>span{flex:1;min-width:0}
+.follow-count{color:var(--muted);font-variant-numeric:tabular-nums}
+.follow-chev{margin-left:auto;color:var(--muted);transition:transform .15s ease-out}
+.follow-group[open]>summary .follow-chev{transform:rotate(90deg)}
+.follow-aspects{margin:0;padding:0;border-top:1px solid var(--line);list-style:none}
+.follow-aspects li{display:grid;gap:7px;padding:11px 16px 12px 42px;border-top:1px solid var(--line)}
+.follow-aspects li:first-child{border-top:0}
+.follow-aspects q{color:var(--ink);font-size:13px;quotes:none}
+.follow-aspect-acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px}
+.follow-aspect-acts button{font:inherit;cursor:pointer}
+.follow-mini{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink-2);font-size:12.5px}
+.follow-mini:hover{background:var(--hover-surface)}
+.follow-link{padding:0;border:0;background:none;color:var(--accent);font-size:12.5px;font-weight:500}
+.follow-link:hover{text-decoration:underline;text-underline-offset:2px}
+.follow-pill{display:inline-flex;align-items:center;padding:2px 9px;border:1px solid var(--accent-line);border-radius:999px;background:var(--accent-tint);color:var(--accent);font-size:12px;font-weight:500}
+.follow-pill:hover{text-decoration:underline;text-underline-offset:2px}
+.follow-aspect-acts button:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+@media (max-width:760px){.follow-aspects li{padding-left:16px}}
 /* "No research yet" (mockup `.empty`, R32): the research page before any research was opened. */
 .research-empty{display:grid;flex:1;place-items:center;min-height:60vh;padding:40px 24px;text-align:center}
 .research-empty>div{display:grid;justify-items:center;gap:10px;max-width:380px}

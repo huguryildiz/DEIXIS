@@ -19,7 +19,7 @@ from deixis.workflow.candidates.hits import merge_and_cut, rank_and_cut, rank_co
 from deixis.workflow.candidates.status import STATUSES, SUPPORT_RELATIONS, derive_status
 from deixis.workflow.store import ACTIVE_RUN_STATUSES, NotFound, Store
 
-ORIGINS = ("report_gap", "owner_text")
+ORIGINS = ("report_gap", "owner_text", "answer_thread")
 VERSION_ORIGINS = ("model_decomposition", "human_edit")
 ELEMENT_KINDS = ("mechanism", "condition", "outcome", "parameter")
 OUTCOMES = ("running", "paused", "completed", "failed", "stopped")
@@ -47,6 +47,7 @@ def _digest(value: Any) -> str:
 
 def purge_candidates(conn, research_id: str) -> None:
     """Called only inside Store.purge_research's authorized transaction."""
+    conn.execute("DELETE FROM answer_candidate_links WHERE research_id = ?", (research_id,))
     candidates = "SELECT id FROM research_candidates WHERE research_id = ?"
     versions = f"SELECT id FROM candidate_versions WHERE candidate_id IN ({candidates})"
     searches = f"SELECT id FROM kill_searches WHERE candidate_version_id IN ({versions})"
@@ -274,6 +275,63 @@ class CandidateStore:
                          "created_at": self._timestamp("research_candidates", "research_id", research_id)})
             self._event(id_, "opened")
             return self.candidate(id_)
+
+    def open_from_answer(self, research_id: str, answer_id: str, aspect_index: int | None, text: str,
+                         idempotency_key=None) -> tuple[dict, str | None]:
+        """A candidate the person writes from an answer's Next steps (D98): their sentence is the claim; the answer and
+        the unanswered aspect it was written beside are stored as context and in `answer_candidate_links`.
+
+        Returns the candidate and how an existing one was found: "replay" (the same request key, e.g. a retry after a
+        lost response), "aspect" (a candidate is already linked to this aspect of this answer), or None (new)."""
+        with self._transaction():
+            self.store.research(research_id)
+            self._text(text, "text", nonempty=True)
+            text = text.strip()
+            if len(text) > 2000:
+                raise InvalidCandidateInput("Owner text exceeds 2000 characters")
+            answer = self.conn.execute("SELECT * FROM answers WHERE id = ? AND research_id = ?",
+                                       (answer_id, research_id)).fetchone()
+            if answer is None:
+                raise NotFound(answer_id)
+            if answer["status"] != "structurally_valid":
+                raise InvalidCandidateInput("Only a valid answer has unanswered aspects")
+            aspects = list(json.loads(answer["draft_json"] or "{}").get("unanswered_aspects") or [])
+            if aspect_index is not None and (
+                    not isinstance(aspect_index, int) or isinstance(aspect_index, bool)
+                    or not 0 <= aspect_index < len(aspects) or not isinstance(aspects[aspect_index], str)):
+                raise InvalidCandidateInput("The answer has no unanswered aspect with this index")
+            if idempotency_key is not None:
+                row = self.conn.execute("SELECT * FROM research_candidates WHERE idempotency_key = ?", (idempotency_key,)).fetchone()
+                if row:
+                    link = self.conn.execute("SELECT * FROM answer_candidate_links WHERE candidate_id = ?", (row["id"],)).fetchone()
+                    if (row["research_id"] != research_id or row["origin_text"] != text or row["origin"] != "answer_thread"
+                            or link is None or link["answer_id"] != answer_id or link["aspect_index"] != aspect_index):
+                        raise InvalidCandidateInput("Answer-candidate idempotency key content mismatch")
+                    return self.candidate(row["id"]), "replay"
+            if aspect_index is not None:
+                linked = self.conn.execute(
+                    "SELECT candidate_id FROM answer_candidate_links WHERE answer_id = ? AND aspect_index = ?",
+                    (answer_id, aspect_index)).fetchone()
+                if linked:
+                    return self.candidate(linked["candidate_id"]), "aspect"
+            context = {"answer_id": answer_id, "report_version": answer["report_version"],
+                       "report_revision": answer["report_revision"], "aspect_index": aspect_index,
+                       "aspect_text": aspects[aspect_index] if aspect_index is not None else None}
+            id_ = new_id("rcd")
+            created = self._timestamp("research_candidates", "research_id", research_id)
+            self._insert("research_candidates", {"id": id_, "research_id": research_id, "origin": "answer_thread",
+                         "origin_text": text, "origin_basis_json": "{}", "origin_basis_view_json": "{}",
+                         "origin_provenance_json": dumps(context), "idempotency_key": idempotency_key,
+                         "created_at": created})
+            self._insert("answer_candidate_links", {"candidate_id": id_, "research_id": research_id,
+                         "answer_id": answer_id, "aspect_index": aspect_index, "created_at": created})
+            self._event(id_, "opened")
+            return self.candidate(id_), None
+
+    def answer_links(self, research_id: str, answer_id: str) -> list[dict]:
+        self.store.research(research_id)
+        return self._rows("SELECT * FROM answer_candidate_links WHERE research_id = ? AND answer_id = ?"
+                          " ORDER BY created_at, candidate_id", (research_id, answer_id))
 
     def add_version(self, research_id, candidate_id, *, claim_statement, conditions, elements,
                     nearest_simple_explanation, critical_assumption, validation_plan, origin,

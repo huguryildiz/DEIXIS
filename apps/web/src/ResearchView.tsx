@@ -733,6 +733,9 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     citing: citeClaimId,
     onCite: claim => setCiteClaimId(claim.id),
     onAsk: text => setFollowupFill(previous => ({ text, request: (previous?.request ?? 0) + 1 })),
+    onOpenCandidate: selection => { setCandidateSelection(selection); openPanel('cands') },
+    onOpenSource: svid => setPdfTarget({ assetId: null, sourceVersionId: svid, view: 'text' }),
+    onRunChanged: () => { void load(); onChanged() },
   } : undefined
   // A notice of the answer offers "Generate a new answer" when its evidence changed or it failed validation; the button
   // under the thread then leaves it to the notice, so the page has one.

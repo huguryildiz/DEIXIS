@@ -31,7 +31,7 @@ Most of this was tested with fake models and synthetic data only; "Not measured"
 - Reranker on BioASQ (D88, 17 Oct, 100 questions, stored candidate lists, title + abstract): Qwen3 and Voyage rerank-3-lite both raise recall@50 from 0.545, by about +0.03 reranking the first 100 and about +0.06 reranking the first 200 (every interval above zero, none reaching the +0.10 bar). The pool default is now 4× the papers read; the reranker stays off until turned on. Only record order was measured, not full product runs or answers (`.local/rerank-trial-2026-10-17/qwen-voyage-results.md`).
 - Verify Citations V1–V2 (D86, D96): a draft's citations and bibliography are read by code and resolved on OpenAlex; each cited work gets its text (your PDF, a stored or open-access PDF, else the abstract), every PDF goes through the identity check, and each citation gets a frozen set of 6 passages (keyword ranking), with a 200-pair cap and a cost preview. No model call yet; nothing tried on a real draft. V3–V5 (plan `.local/plans/verify-citations-plan.md`) are open.
 
-- Kill search retrieval (D94, D95, D97; parked 18 Oct): decomposition no longer fails on Anthropic (null note, "protocol" check narrowed); the eight kept works are ranked by concept-level BM25, block coverage and co-mention instead of a provider round-robin; each provider returns one full page; backup names reach the search. Three frozen live checks on the DBR/VBF claims plus one out-of-domain claim: v3 kept 3/4 (C1) and 4/4 (C2) targets, up from 1/4 and 2/4, but the knee-osteoarthritis PRP vs hyaluronic acid claim kept 0/3, same as the old code, so the gate failed and the "Next steps" UI is not built (`.local/killsearch-live-v3/RESULT.md`). Tuning against these claims has stopped; whether kill search finds prior work in general is not shown.
+- Kill search retrieval (D94, D95, D97; parked 18 Oct): decomposition no longer fails on Anthropic (null note, "protocol" check narrowed); the eight kept works are ranked by concept-level BM25, block coverage and co-mention instead of a provider round-robin; each provider returns one full page; backup names reach the search. Three frozen live checks on the DBR/VBF claims plus one out-of-domain claim: v3 kept 3/4 (C1) and 4/4 (C2) targets, up from 1/4 and 2/4, but the knee-osteoarthritis PRP vs hyaluronic acid claim kept 0/3, same as the old code, so the gate failed (`.local/killsearch-live-v3/RESULT.md`). The owner had the "Next steps" entry built anyway (D98, 18 Oct): a topics disclosure with "Write a claim about this topic", a "Search earlier work for a claim" row, and a summary under the box with counts from stored rows and the caveat that finding no match is not evidence of originality. Tuning against these claims has stopped; whether kill search finds prior work in general is not shown.
 
 ### Reading and answers
 
@@ -115,9 +115,9 @@ One run per mode with gpt-5.6-luna on the DBR/VBF question, on a library copy.
 - [ ] PDF child process has no memory limit on Windows (P10 Job Object item in `.local/plans/p10-plan.md`).
 - [ ] Not checked: a kill search may spend two of its eight slots on a preprint and its published version when the library has not joined them.
 
-### Kill search (parked 18 Oct, v3 live check failed on C3)
+### Kill search (v3 live check failed on C3; Next steps entry built anyway, D98)
 
-The "Next steps" entry (design `.local/design/kill-search-next-steps.md`) waits until a new, unseen claim set passes a frozen live check.
+The Next steps entry is on main with model-free tests only; it was not tried on a live answer. Whether kill search finds prior work in general still needs a new, unseen claim set and a frozen live check.
 
 - [ ] Query: the model's setting terms can miss how a target names the setting (Filardo 2015's abstract never says "knee osteoarthritis"); not found by any provider.
 - [ ] Synonym counting: synonyms that are not abbreviations ("knee OA", "viscosupplementation") count as separate concepts, so records that pile them up outrank direct comparisons (Cerza 2012 OpenAlex #7 → kept rank 25; with the old 20-record window it would have been 6th).

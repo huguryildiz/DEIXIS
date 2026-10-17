@@ -453,17 +453,20 @@ test.describe.serial('S10: the answer in the thread', () => {
     await acts.getByRole('button', { name: 'Download' }).click()
     await expect(page.getByRole('menuitem', { name: /^MD/ }).first()).toBeVisible()
     await page.keyboard.press('Escape')
-    // Next steps (R28): review, a table of the included sources, the answer's first unanswered aspect as a follow-up
-    // question (S22b, R30), full text for the works read from abstracts only.
+    // Next steps (R28): review, a table of the included sources, the answer's unanswered aspects grouped in one
+    // disclosure row (D98, each as a follow-up question or a claim), full text for the works read from abstracts only,
+    // and the earlier-work search for a claim.
     const next = thread(page).locator('.follow')
     await expect(next.locator('h5')).toHaveText('Next steps')
     const abstractOnly = answer.inputs_given!.depth!.abstract
-    await expect(next.getByRole('button')).toHaveText([
+    await expect(next.locator(':scope > button')).toHaveText([
       'Review the claims with another model',
       `Build an evidence table of the ${view.counts.included} included sources`,
-      ...answer.unanswered_aspects.slice(0, 1).map(aspect => `Ask as a follow-up: ${aspect}`),
       `Get full text for the ${abstractOnly} works the answer read from their abstracts only`,
+      'Search earlier work for a claim',
     ])
+    await expect(next.locator('details.follow-group > summary')).toHaveCount(answer.unanswered_aspects.length ? 1 : 0)
+    if (answer.unanswered_aspects.length) await expect(next.locator('details.follow-group > summary')).toHaveText(`Topics the answer did not answer (${answer.unanswered_aspects.length})`)
     await next.getByRole('button', { name: /^Get full text for/ }).click()
     await expect(panel(page, PANEL_TITLES.pdfs)).toBeVisible()
     await page.keyboard.press('Escape')

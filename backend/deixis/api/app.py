@@ -92,6 +92,7 @@ from deixis.workflow.lineage.run import LineagePlanner, stale_link_revisions
 from deixis.workflow.lineage.store import InvalidLineageInput, LineageStore
 from deixis.workflow.lineage.view import LineageView
 from deixis.workflow.candidates.run import KillSearchPlanner, candidate_evidence, decompose_budget, request_decomposition
+from deixis.workflow.candidates.answer_view import answer_candidates
 from deixis.workflow.candidates.store import CandidateStore, InvalidCandidateInput
 from deixis.workflow.views import library_version_to_add, library_view, library_work_view, occurrence_view, passage_view, report_gaps_view, report_view, research_view
 from deixis.workflow.worker import Worker
@@ -571,6 +572,12 @@ class OwnerTextCandidate(CandidateRequest):
     text: CandidateText = Field(min_length=1, max_length=2000)
 
 
+class AnswerCandidate(CandidateRequest):
+    # The person's sentence is the claim; the aspect index only names the unanswered aspect it was written beside.
+    aspect_index: int | None = Field(default=None, ge=0, le=100, strict=True)
+    text: CandidateText = Field(min_length=1, max_length=2000)
+
+
 class GapCandidate(CandidateRequest):
     origin: Literal["report_gap"]
     report_id: str = Field(min_length=1, max_length=80)
@@ -610,7 +617,7 @@ class CandidateOwnerDecision(CandidateRequest):
 
 class CandidateListItem(BaseModel):
     id: str
-    origin: Literal["owner_text", "report_gap"]
+    origin: Literal["owner_text", "report_gap", "answer_thread"]
     origin_report_id: str | None
     origin_gap_row_id: str | None
     gap_kind: str | None
@@ -626,7 +633,7 @@ class CandidateListItem(BaseModel):
 class CandidateCard(BaseModel):
     id: str
     research_id: str
-    origin: Literal["owner_text", "report_gap"]
+    origin: Literal["owner_text", "report_gap", "answer_thread"]
     origin_report_id: str | None
     origin_gap_row_id: str | None
     gap_kind: str | None
@@ -647,6 +654,18 @@ class CandidateCard(BaseModel):
     active_run: dict[str, Any] | None
     runs: list[dict[str, Any]]
     decompose_budget: dict[str, int]
+
+
+class AnswerCandidateCreated(BaseModel):
+    card: CandidateCard
+    reused: bool
+    replayed: bool
+
+
+class AnswerCandidates(BaseModel):
+    answer_id: str
+    candidates: list[dict[str, Any]]
+    decompose: dict[str, Any]
 
 
 class CandidateMatrix(BaseModel):
@@ -3212,6 +3231,23 @@ def create_app(
         else:
             candidate = cs.open_from_gap(research_id, body.report_id, body.gap_row_id)
         return candidate_card(request, research_id, candidate["id"])
+
+    answer_candidates_path = "/api/researches/{research_id}/answers/{answer_id}/candidates"
+
+    @app.post(answer_candidates_path, status_code=201, response_model=AnswerCandidateCreated)
+    async def open_answer_candidate(research_id: str, answer_id: str, body: AnswerCandidate, request: Request,
+                                    idempotency_key: str | None = Header(default=None, max_length=200)) -> dict:
+        cs = CandidateStore(store_of(request))
+        cs.store.research(research_id)
+        candidate, found = cs.open_from_answer(research_id, answer_id, body.aspect_index, body.text,
+            f"{research_id}:answer:{answer_id}:{idempotency_key}" if idempotency_key else None)
+        # reused: a candidate was already linked to this aspect; replayed: the same request key came again.
+        return {"card": candidate_card(request, research_id, candidate["id"]), "reused": found == "aspect",
+                "replayed": found == "replay"}
+
+    @app.get(answer_candidates_path, response_model=AnswerCandidates)
+    async def list_answer_candidates(research_id: str, answer_id: str, request: Request) -> dict:
+        return answer_candidates(store_of(request), research_id, answer_id)
 
     @app.get(candidates_path, response_model=list[CandidateListItem])
     async def list_candidates(research_id: str, request: Request) -> list[dict]:

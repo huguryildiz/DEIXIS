@@ -17,6 +17,8 @@ import { StatusDecision } from './StatusDecision'
 import { VersionBody } from './VersionBody'
 import { dateText, errorText, kindLabels, label, outcomeLabels, refusalLabels } from './labels'
 import { useReturnFocus } from './focus'
+import type { CandidateSelection } from './CandidatesView'
+import { scrollBehavior } from '../motion'
 
 const Failure = ({ text, retry }: { text: string; retry: () => void }) => <div className="notice bad" role="alert"><CircleX aria-hidden /><div className="nb"><span>{text}</span><div className="acts"><button type="button" className="ghost" onClick={retry}>{t('Retry')}</button></div></div></div>
 
@@ -24,13 +26,13 @@ const Failure = ({ text, retry }: { text: string; retry: () => void }) => <div c
 // report row it was opened from), the card, the search plan and searches, the computed status beside the person's own
 // decision, and the claim matrix of the chosen search. Nothing here is a finding until a search ran, and the status is
 // code's reading of the matrix, not a model verdict.
-export function CandidateDetail({ researchId, candidateId, initialCard, view, dark, modelText, onCard, onRefreshList, onRunChanged, onOpenSource }: {
-  researchId: string; candidateId: string; initialCard?: CandidateCard; view: ResearchView; dark: boolean; modelText: ModelText
+export function CandidateDetail({ researchId, candidateId, initialCard, intent, view, dark, modelText, onCard, onRefreshList, onRunChanged, onOpenSource }: {
+  researchId: string; candidateId: string; initialCard?: CandidateCard; intent?: CandidateSelection; view: ResearchView; dark: boolean; modelText: ModelText
   onCard: (card: CandidateCard) => void; onRefreshList: () => Promise<void>; onRunChanged: () => void; onOpenSource?: (sourceVersionId: string) => void
 }) {
   const [card, setCard] = useState<CandidateCard | null>(initialCard ?? null)
   const [matrix, setMatrix] = useState<CandidateMatrix | null>(null)
-  const [selectedSearch, setSelectedSearch] = useState<string | null>(null)
+  const [selectedSearch, setSelectedSearch] = useState<string | null>(intent?.search ?? null)
   const [error, setError] = useState('')
   const [matrixError, setMatrixError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -108,6 +110,29 @@ export function CandidateDetail({ researchId, candidateId, initialCard, view, da
     catch (e) { setError(errorText(e)) }
     finally { setBusy(false); runFocus.restoreFocus() }
   }
+  // What the opener asked to see (D98), done once per selection when its part of the card has loaded.
+  const handled = useRef<CandidateSelection | null>(null)
+  useEffect(() => {
+    if (!intent || handled.current === intent || !card) return
+    // The search the opener described is loaded first, so its matrix and evidence are what the focus lands on.
+    if (intent.search && selectedSearch !== intent.search && card.searches.some(s => s.id === intent.search)) {
+      setEvidence(null); setMatrix(null); setMatrixError(''); setSelectedSearch(intent.search); return
+    }
+    const latest = [...card.searches].reverse().find(s => s.candidate_version_id === card.current_version_id)
+    const chosen = selectedSearch ?? latest?.id
+    if (intent.focus === 'edit') { handled.current = intent; if (!card.trashed_at) { sheetFocus.rememberFocus(editorControl.current ?? root.current!, () => editorControl.current); setEditor(true) } return }
+    // The intent stays pending until the chosen search's matrix has loaded: a failed load keeps it for the Retry.
+    if (chosen && matrix?.kill_search_id !== chosen) return
+    handled.current = intent
+    if (intent.focus === 'evidence') { const hit = matrix?.hits.find(h => h.source_version_id === intent.evidence); if (hit) setEvidence(hit); return }
+    requestAnimationFrame(() => {
+      const target = root.current?.querySelector<HTMLElement>({ matrix: '.candidate-matrix-section h4', review: '.candidate-review-open', decision: '.candidate-status .acts > button' }[intent.focus as 'matrix' | 'review' | 'decision'])
+      if (!target) return
+      target.scrollIntoView({ block: 'start', behavior: scrollBehavior() })
+      if (target.tagName === 'H4') target.tabIndex = -1
+      target.focus({ preventScroll: true })
+    })
+  }, [intent, card, matrix, selectedSearch, sheetFocus])
   const refresh = () => { void onRefreshList(); void load().catch(() => {}); if (planOpen) void loadPlan() }
   const refreshButton = <button type="button" className="ib candidate-refresh" aria-label={t('Refresh')} title={t('Refresh')} onClick={refresh}><RotateCw size={15} aria-hidden /></button>
   if (!card) return <div ref={root} className="candidates-view candidate-detail mk pad detail">
@@ -145,9 +170,10 @@ export function CandidateDetail({ researchId, candidateId, initialCard, view, da
   const evidenceSource = evidenceHit && view.sources.find(s => s.source_version_id === evidenceHit.source_version_id)
   return <div ref={root} className="candidates-view candidate-detail mk pad detail">
     <div className="dhead">
-      <div className="venue"><span>{card.origin === 'owner_text' ? t('Your sentence') : t('Opened from a report row: {kind}', { kind: label(kindLabels, card.gap_kind ?? '') })}{card.current_version ? <> · {t('Version {n}', { n: card.current_version })}</> : null}</span><span className="spacer" />{refreshButton}</div>
+      <div className="venue"><span>{card.origin === 'owner_text' ? t('Your sentence') : card.origin === 'answer_thread' ? t('Your sentence from an answer') : t('Opened from a report row: {kind}', { kind: label(kindLabels, card.gap_kind ?? '') })}{card.current_version ? <> · {t('Version {n}', { n: card.current_version })}</> : null}</span><span className="spacer" />{refreshButton}</div>
       <div className="sentence" data-stored-text>{card.origin_text}</div>
-      {card.origin === 'owner_text' && <p className="foot-note">{t('This is your sentence, not a finding from the literature. The breakdown below and the search do not make it one.')}</p>}
+      {(card.origin === 'owner_text' || card.origin === 'answer_thread') && <p className="foot-note">{t('This is your sentence, not a finding from the literature. The breakdown below and the search do not make it one.')}</p>}
+      {card.origin === 'answer_thread' && card.origin_provenance.aspect_text && <p className="foot-note">{t('Written beside a topic answer V{v} did not answer:', { v: card.origin_provenance.report_version ?? '–' })} <span data-stored-text>{card.origin_provenance.aspect_text}</span></p>}
     </div>
     {card.origin_changed && <div className="notice warn"><TriangleAlert aria-hidden /><span>{t('A later candidate was opened from the same report row; the row may have been rewritten. This card keeps the wording it was opened with.')}</span></div>}
     {card.origin === 'report_gap' && <details className="mk-more"><summary><ChevronRight size={14} aria-hidden />{t('What it was opened from')}</summary>{(['basis_cell_ids', 'basis_passage_ids', 'basis_claim_keys'] as const).map(key => <section key={key}><h5>{t({ basis_cell_ids: 'Cell values', basis_passage_ids: 'Passage texts', basis_claim_keys: 'Claim texts' }[key])}</h5>{card.origin_basis_view[key]?.length ? <ul>{card.origin_basis_view[key]!.map(item => <li key={item.id}>{'missing' in item ? t('no longer available') : <span data-stored-text>{item.text}</span>}</li>)}</ul> : <p>{t('None.')}</p>}</section>)}</details>}
@@ -178,7 +204,7 @@ export function CandidateDetail({ researchId, candidateId, initialCard, view, da
             <div className="acts"><button type="button" className={searchedThis ? 'ghost' : 'btn-pri'} disabled={!plan || Boolean(startReason)} aria-describedby={startReason ? 'candidate-start-reason' : !plan ? 'candidate-plan-unavailable' : undefined} onClick={() => void start()}><Search aria-hidden />{t(searchedThis ? 'Search again' : 'Search for prior art on this claim')}</button><button type="button" className="ghost" onClick={closePlan}>{t('Cancel')}</button></div>
             {!plan && <p id="candidate-plan-unavailable" className="foot-note">{t('A search plan is required before starting.')}</p>}
           </section>}
-        {searches.length > 0 && <section className="candidate-searches" aria-labelledby={`candidate-searches-${card.id}`}><h5 id={`candidate-searches-${card.id}`}>{t('Searches ({n})', { n: searches.length })}</h5><ul className="elist">{searches.map(search => <li key={search.id}><b aria-hidden>{chosenKid === search.id ? '●' : ''}</b><span><button type="button" className="link" aria-pressed={chosenKid === search.id} onClick={() => { if (chosenKid === search.id) return; setEvidence(null); setMatrix(null); setSelectedSearch(search.id) }}>{t(search.version === card.current_version ? 'Version {n}' : 'Version {n}, not the current version', { n: search.version })} · {dateText(search.created_at)} · {label(outcomeLabels, search.outcome)} · {t('found {found}, kept {kept}', search.counts)}</button>{chosenKid === search.id && <small>{t('Shown below')}</small>}</span></li>)}</ul></section>}
+        {searches.length > 0 && <section className="candidate-searches" aria-labelledby={`candidate-searches-${card.id}`}><h5 id={`candidate-searches-${card.id}`}>{t('Searches ({n})', { n: searches.length })}</h5><ul className="elist">{searches.map(search => <li key={search.id}><b aria-hidden>{chosenKid === search.id ? '●' : ''}</b><span><button type="button" className="link" aria-pressed={chosenKid === search.id} onClick={() => { if (chosenKid === search.id) return; setEvidence(null); setMatrix(null); setMatrixError(''); setSelectedSearch(search.id) }}>{t(search.version === card.current_version ? 'Version {n}' : 'Version {n}, not the current version', { n: search.version })} · {dateText(search.created_at)} · {label(outcomeLabels, search.outcome)} · {t('found {found}, kept {kept}', search.counts)}</button>{chosenKid === search.id && <small>{t('Shown below')}</small>}</span></li>)}</ul></section>}
       </>}
       {version && !computed && <div className="acts candidate-review-acts"><CandidateReviewEntry card={card} version={version} view={view} current active={active} surface={reviewSurface} revision={reviewRevision} onTarget={setReviewTarget} /></div>}
       {startReason && <p id="candidate-start-reason" className="foot-note">{startReason}</p>}{busy && <p id="candidate-working" role="status" className="foot-note">{t('An operation is in progress.')}</p>}

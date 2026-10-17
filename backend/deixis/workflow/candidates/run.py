@@ -96,7 +96,10 @@ def version_target(version: dict) -> dict:
 
 
 def candidate_target(candidate: dict, version: dict | None = None, assessed_source_id: str | None = None) -> dict:
-    return {"candidate_id": candidate["id"], "origin": candidate["origin"], "gap_kind": candidate["gap_kind"],
+    # A sentence written from an answer is the person's own text with no basis (D98): the model sees it as owner text;
+    # the answer aspect beside it is the person's context, never part of the claim.
+    origin = "owner_text" if candidate["origin"] == "answer_thread" else candidate["origin"]
+    return {"candidate_id": candidate["id"], "origin": origin, "gap_kind": candidate["gap_kind"],
             "origin_text": candidate["origin_text"] if version is None else None, "basis": [],
             "version": version_target(version) if version else None, "assessed_source_id": assessed_source_id}
 
@@ -106,7 +109,7 @@ def decomposition_input(candidate: dict, current_passages: dict[str, list[dict]]
     target = candidate_target(candidate)
     omitted = dict.fromkeys(("missing", "non_current", "blank", "basis_limit", "message_size"), 0)
     passages = {}
-    view = json.loads(candidate["origin_basis_view_json"]) if candidate["origin"] != "owner_text" else {}
+    view = json.loads(candidate["origin_basis_view_json"]) if candidate["origin"] == "report_gap" else {}
     for key, kind in (("basis_cell_ids", "cell"), ("basis_passage_ids", "passage"), ("basis_claim_keys", "claim")):
         for item in view.get(key, []):
             if item.get("missing"):

@@ -650,6 +650,14 @@ def rich_library(tmp_path: Path):
         lib.candidate_store.record_owner_decision(lib.rid, v["id"], "closed", "SYNTHETIC second reason")
         lib.candidate_store.trash_candidate(lib.rid, v["candidate_id"])
         query(lib, start(lib, v), [], status="failed", raw_payload_path="SYNTHETIC-failed.json")
+        # Candidates written from an answer's Next steps (D98): one beside an unanswered aspect, one from the generic row.
+        answer_id = db.new_id("ans")
+        lib.conn.execute(
+            "INSERT INTO answers (id, research_id, run_id, scope_revision, status, draft_json, validation_json, report_version,"
+            " created_at) VALUES (?, ?, ?, 1, 'structurally_valid', ?, '{}', 1, 'now')",
+            (answer_id, lib.rid, lib.run, json.dumps({"title": "SYNTHETIC", "unanswered_aspects": ["SYNTHETIC aspect one."]})))
+        lib.candidate_store.open_from_answer(lib.rid, answer_id, 0, "SYNTHETIC claim beside an aspect.", "SYNTHETIC-key-aspect")
+        lib.candidate_store.open_from_answer(lib.rid, answer_id, None, "SYNTHETIC generic claim.", "SYNTHETIC-key-generic")
         model(lib)
         lineage_edit(lib)
         lineage_remove(lib)
@@ -806,6 +814,8 @@ def collect_views(client, research_ids: list[str]) -> dict[str, tuple]:
         base = f"/api/researches/{rid}"
         _, research = get(base)
         passages = keys_named(research, "passage_id")
+        for answer in research.get("answers", []) if isinstance(research, dict) else []:
+            get(f"{base}/answers/{answer['id']}/candidates")
         for suffix in ("/tables", "/reports", "/candidates", "/bibliography", "/audit", "/queue", "/prisma-s"):
             status, body = get(base + suffix)
             if status != 200:
@@ -917,6 +927,18 @@ def test_b01_backup_while_the_app_runs_restores_every_table_and_file_and_every_v
         opened = sum(1 for path, (status, _) in views_after.items() if "/passages/" in path and status == 200)
         print("B01 passage views opened in the restored app:", opened)
         assert opened > 0 and all(status == 200 for path, (status, _) in views_after.items() if "/passages/" in path)
+        # The answer links came back with the library: their rows match the backup (above), every linked candidate
+        # exists, and writing a claim from the same aspect again opens the original candidate instead of a new one.
+        links = sqlite3.connect(data / "library.sqlite").execute(
+            "SELECT l.research_id, l.answer_id, l.aspect_index, l.candidate_id, c.origin FROM answer_candidate_links l"
+            " JOIN research_candidates c ON c.id = l.candidate_id ORDER BY l.aspect_index IS NULL").fetchall()
+        assert [(row[2], row[4]) for row in links] == [(0, "answer_thread"), (None, "answer_thread")]
+        lists = [path for path in views_after if path.endswith(f"/answers/{links[0][1]}/candidates")]
+        assert lists and [r["candidate_id"] for r in views_after[lists[0]][1]["candidates"]] == [links[0][3], links[1][3]]
+        from test_api_flow import session
+        again = session(raw).post(f"/api/researches/{links[0][0]}/answers/{links[0][1]}/candidates",
+                         json={"aspect_index": 0, "text": "SYNTHETIC other words after restore"})
+        assert again.status_code == 201 and again.json()["reused"] is True and again.json()["card"]["id"] == links[0][3]
 
 
 # ---- connections after a restore (plan H4 item 5) ------------------------------------------------------------------

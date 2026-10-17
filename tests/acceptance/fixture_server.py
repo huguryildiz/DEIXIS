@@ -100,6 +100,8 @@ says "off-scope" out of scope and leaves the other two candidates, so a round on
 citing work already here, four new works, two candidates and two out of scope.
 "[candidate]" drives claim breakdown and a bounded claim search; "[candidate-access]" also returns a work
 without usable text. These markers affect only candidate-task calls and the distinct candidate query term.
+"[candidate-thread]" (D98, with "[candidate]") also gives the answer two SYNTHETIC unanswered aspects, so its Next steps
+box offers a claim from an aspect.
 """
 
 from __future__ import annotations
@@ -436,6 +438,8 @@ WITHHELD_PDFS = {work["best_oa_location"]["pdf_url"] for _, work in EUROPEPMC_WO
 # nothing, so found and unique are both PARITY_TOTAL. Each work has an open PDF naming its DOI on page one.
 PARITY_TOTAL, PARITY_SEMANTIC, PARITY_PASS, PARITY_CITED = 412, 50, 34, 12
 # The answer's unanswered aspects (SYNTHETIC), which Home offers as its "Suggested" cards (UI parity S5b).
+THREAD_UNANSWERED = ("SYNTHETIC release spacing under bounded arrivals in the same simulation setting.",
+                     "SYNTHETIC energy figures for buffered release under mobile relays.")
 PARITY_UNANSWERED = ("How do SYNTHETIC duty-cycled schedules compare on lifetime under node mobility?",
                      "Which SYNTHETIC energy models report k-connectivity repair costs?")
 # The titles name none of the query's second block (the question's own words), so code leaves every record to the two
@@ -1027,6 +1031,8 @@ class ScriptedCodex:
                                 "quote": " ".join(chosen["text"].split())[:600]})
             output["claims"] = claims
             output["citation_anchors"] = anchors
+            if "[candidate-thread]" in question:
+                output["unanswered_aspects"] = list(THREAD_UNANSWERED)
             if "[parity]" in question:
                 self.parity_ledger(si, output)
                 # Two notes of what the passages did not cover, as the mockup's two "Suggested" cards on Home (S5b).

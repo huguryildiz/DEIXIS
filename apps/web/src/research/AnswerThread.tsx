@@ -1,7 +1,7 @@
-import { type ReactNode } from 'react'
-import { ArrowUp, ArrowUpRight, BadgeCheck, BookOpen, BookOpenText, Copy, Eye, FileText, Filter, Info, ListChecks, ListMinus, MessageSquare, PencilLine, RotateCw, ScanText, Sigma, ShieldCheck, Table2, TriangleAlert, Upload, type LucideIcon } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { ArrowUp, ArrowUpRight, BadgeCheck, ChevronRight, SearchCheck, BookOpen, BookOpenText, Copy, Eye, FileText, Filter, Info, ListChecks, ListMinus, MessageSquare, PencilLine, RotateCw, ScanText, Sigma, ShieldCheck, Table2, TriangleAlert, Upload, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { type Answer, type Claim, type Limitation, type Source, type ValidationIssue, type Verdict } from '../api'
+import { api, type Answer, type Claim, type Limitation, type Source, type ValidationIssue, type Verdict } from '../api'
 import { locatorText, pauseReasonText, retractionNote, verdictLabels, versionText, versionTones } from '../labels'
 import { LATE_REVISION_LABEL, LATE_REVISION_DETAIL, LATE_REVISION_PENDING } from '../labels'
 import { MathText } from '../MathText'
@@ -24,6 +24,9 @@ import { ChangesBox, ReportPanel, type ReportVersion } from './ReportPanel'
 import { BASIS_BADGES, diffAnswers, type ComparisonBase } from './answerDiff'
 import { downloadReportMarkdown, ledgerLine, ledgerOk, ledgerRows, reportMarkdown, reportParts, verdictTones } from './reportMarkdown'
 import { printReport } from './printPanel'
+import { AnswerKillSummary, ClaimDialog, type ClaimTarget } from '../candidate/AnswerKillSearch'
+import { aspectPill, useAnswerCandidates } from '../candidate/answerCandidates'
+import type { CandidateSelection } from '../candidate/CandidatesView'
 
 const PERCENT = /%\s?\d+(?:[.,]\d+)?|\d+(?:[.,]\d+)?\s?%/g
 
@@ -59,6 +62,11 @@ export type AnswerThreadContext = {
   onCite: (claim: Claim, opener: HTMLElement) => void
   // A Next steps row puts a question in the follow-up composer (R28 → R30); the person sends it.
   onAsk: (text: string) => void
+  // Kill search from Next steps (D98): open the Candidates panel at a candidate, a work's Source details, and reload
+  // the research after a run control.
+  onOpenCandidate: (selection: CandidateSelection) => void
+  onOpenSource: (sourceVersionId: string) => void
+  onRunChanged: () => void
 }
 
 // A notice in the mockup's `.notice` form: an icon, the sentences, then the actions.
@@ -129,6 +137,13 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
   const openReviews = () => { review.target(answer.id, version); review.surface.openPanel() }
   const requestReview = (opener: HTMLElement) => { review.target(answer.id, version); review.surface.openDialog(opener) }
   const ctx = showCard ? thread : undefined
+  // The candidates written from this answer (D98), read again on every research event.
+  const killSearch = useAnswerCandidates(researchId, answer.id, eventCursor, Boolean(ctx) && answer.status === 'structurally_valid')
+  // The claim dialog belongs to the answer it was opened under; a new answer in its place closes it.
+  const [claimTarget, setClaimTarget] = useState<(ClaimTarget & { answerId: string }) | null>(null)
+  const openClaim = (target: ClaimTarget) => setClaimTarget({ ...target, answerId: answer.id })
+  const claim = claimTarget?.answerId === answer.id ? claimTarget : null
+  const [controlBusy, setControlBusy] = useState(false)
   const latePending = ctx && answer.late_revision_status && ['waiting_fetch', 'reading', 'answering'].includes(answer.late_revision_status.status)
     ? <p className="foot-note answer-late-pending" role="status">{t(LATE_REVISION_PENDING)}</p> : null
   const newAnswer = ctx && <Button size="sm" disabled={!ctx.canNewAnswer} onClick={ctx.onNewAnswer}><RotateCw size={14} aria-hidden />{answer.fulltext_read_since
@@ -376,13 +391,36 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
       <button type="button" className="first" aria-haspopup="dialog" onClick={e => requestReview(e.currentTarget)}><ListChecks size={16} aria-hidden /><span>{t('Review the claims with another model')}</span>{go}</button>
       {ctx.included > 0 && <button type="button" onClick={e => ctx.onPanel('table', e.currentTarget)}><Table2 size={16} aria-hidden />
         <span>{ctx.hasTable ? t('Open the evidence table') : t(ctx.included === 1 ? 'Build an evidence table of the {n} included source' : 'Build an evidence table of the {n} included sources', { n: count(ctx.included) })}</span>{go}</button>}
-      {/* The first aspect the answer says its passages did not cover, as a follow-up question: the row puts it in the
-          composer; nothing is sent until the person sends it. */}
-      {answer.applicability === 'current' && answer.unanswered_aspects.length > 0 && <button type="button" className="follow-ask" title={t('Puts this question in the follow-up box')} onClick={() => ctx.onAsk(answer.unanswered_aspects[0])}>
-        <MessageSquare size={16} aria-hidden /><span><span className="sr-only">{t('Ask as a follow-up:')} </span>{answer.unanswered_aspects[0]}</span>{go}</button>}
+      {/* The aspects the answer says its passages did not cover, grouped in one row (D98). Each can go to the follow-up
+          composer (nothing is sent until the person sends it) or open a claim the person writes; the aspect is never
+          turned into a claim by itself. A stale answer's aspects are not offered. */}
+      {answer.applicability === 'current' && answer.unanswered_aspects.length > 0 && <details className="follow-group">
+        <summary><MessageSquare size={16} aria-hidden /><span>{t('Topics the answer did not answer')} <span className="follow-count">({count(answer.unanswered_aspects.length)})</span></span><ChevronRight size={16} className="follow-chev" aria-hidden /></summary>
+        <ul className="follow-aspects">{answer.unanswered_aspects.map((aspect, index) => {
+          const linked = killSearch.data?.candidates.find(row => row.aspect_index === index && row.context.answer_id === answer.id)
+          return <li key={index}>
+            <q data-stored-text>{aspect}</q>
+            <div className="follow-aspect-acts">
+              <button type="button" className="follow-mini" title={t('Puts this question in the follow-up box')} onClick={() => ctx.onAsk(aspect)}><MessageSquare size={14} aria-hidden />{t('Prepare a follow-up question')}</button>
+              {linked ? <button type="button" className="follow-pill" onClick={() => ctx.onOpenCandidate({ id: linked.candidate_id })}>{aspectPill(linked)}</button>
+                : <button type="button" className="follow-link" aria-haspopup="dialog" onClick={() => openClaim({ aspectIndex: index, aspectText: aspect })}>{t('Write a claim about this topic')}</button>}
+            </div>
+          </li>
+        })}</ul>
+      </details>}
       {abstractOnly > 0 && <button type="button" onClick={e => ctx.onPanel('pdfs', e.currentTarget)}><Upload size={16} aria-hidden />
         <span>{t(abstractOnly === 1 ? 'Get full text for the {n} work the answer read from its abstract only' : 'Get full text for the {n} works the answer read from their abstracts only', { n: count(abstractOnly) })}</span>{go}</button>}
+      <button type="button" aria-haspopup="dialog" onClick={() => openClaim({ aspectIndex: null, aspectText: null })}><SearchCheck size={16} aria-hidden /><span>{t('Search earlier work for a claim')}</span>{go}</button>
     </section>
+    {killSearch.error && <p className="foot-note ksum-error" role="alert">{t('The earlier-work searches of this answer could not be read: {error}', { error: killSearch.error })} <button type="button" className="link" onClick={() => void killSearch.reload()}>{t('Retry')}</button></p>}
+    {(killSearch.data?.candidates.some(row => !row.trashed_at) ?? false) && <div className="ksum-list mk">
+      {killSearch.data!.candidates.filter(row => !row.trashed_at).map(row => <AnswerKillSummary key={row.candidate_id} row={row} busy={controlBusy}
+        onOpen={ctx.onOpenCandidate}
+        onOpenWork={(row, svid, search) => sources.some(s => s.source_version_id === svid) ? ctx.onOpenSource(svid) : ctx.onOpenCandidate({ id: row.candidate_id, focus: 'evidence', evidence: svid, search })}
+        onResume={async runId => { setControlBusy(true); try { await api.controlRun(runId, 'resume'); ctx.onRunChanged(); await killSearch.reload() } catch (e) { toast('error', e instanceof Error ? e.message : String(e)) } finally { setControlBusy(false) } }} />)}
+    </div>}
+    {claim && <ClaimDialog key={claim.answerId} researchId={researchId} answerId={claim.answerId} answerVersion={version} target={claim} decompose={killSearch.data?.decompose ?? null} dark={dark}
+      onClose={() => setClaimTarget(null)} onSaved={selection => { setClaimTarget(null); ctx.onOpenCandidate(selection); void killSearch.reload() }} />}
   </div>
   return <>
     {threadPart}

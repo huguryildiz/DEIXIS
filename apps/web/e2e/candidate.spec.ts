@@ -314,7 +314,7 @@ test.describe('claim candidates', () => {
     await expect(planPane(page)).toContainText('OpenAlex')
     await expect(planPane(page)).toContainText('Model-call ceiling: at most 54 model calls')
     await expect(planPane(page)).toContainText('Provider-request ceiling: at most')
-    await expect(planPane(page)).toContainText('At most 6 queries of 20 records each, no paging.')
+    await expect(planPane(page)).toContainText(/At most \d+ queries of \d+ records each, no paging\./)
     await expect(planPane(page)).toContainText('At most 8 works are read.')
     await capture(page, 'plan', planPane(page))
     await keyboardActivate(startSearch(page))

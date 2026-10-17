@@ -257,7 +257,9 @@ test.describe.serial('S22b: follow-up questions in the thread', () => {
     await visit(page, research())
     let posts = 0
     page.on('request', request => { if (request.method() === 'POST' && request.url().includes('/followup-turns')) posts++ })
-    await page.locator('.answer-thread .follow').getByRole('button', { name: `Ask as a follow-up: ${aspect}` }).click()
+    // The aspects sit in one disclosure row of Next steps (D98); each can go to the composer.
+    await page.locator('.answer-thread .follow details.follow-group > summary').click()
+    await page.locator('.answer-thread .follow-aspects li').filter({ hasText: aspect }).getByRole('button', { name: 'Prepare a follow-up question' }).click()
     await expect(composer(page)).toHaveValue(aspect)
     await expect(composer(page)).toBeFocused()
     expect(posts).toBe(0)

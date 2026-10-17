@@ -38,7 +38,7 @@ export function StatusDecision({ card, computed, computedVersion, previous, begi
     <p className="foot-note candidate-reason">{reasonText(computed)}</p>
     <p className="foot-note">{t('Code derived this status from the matrix below. It is not a model verdict, and it says nothing about works that were not read.')}</p>
     {open ? <form className="ceditor candidate-form" onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); close() } }} onSubmit={e => { e.preventDefault(); void save() }}>
-      <label className="lbl">{t('Your decision')}<select className="select" autoFocus value={status} onChange={e => setStatus(e.target.value as CandidateStatus)}>{Object.entries(statusLabels).map(([code, name]) => <option key={code} value={code}>{t(name)}</option>)}</select></label>
+      <label className="lbl">{t('Your decision')}<select className="select" autoFocus value={status} onChange={e => setStatus(e.target.value as CandidateStatus)}>{Object.keys(statusLabels).map(code => <option key={code} value={code}>{label(statusLabels, code)}</option>)}</select></label>
       <label className="lbl">{t('Reason')}<input className="field" aria-label={t('Reason')} required maxLength={2000} placeholder={t('Required')} value={reason} onChange={e => setReason(e.target.value)} /><small>{t('{n}/{max} characters', { n: reason.length, max: 2000 })}</small></label>
       <p className="foot-note">{t('Your decision is a note of your own. It is not independent evidence and does not change the computed status.')}</p>
       {problem && <div className="notice bad" role="alert"><CircleX aria-hidden /><span>{problem}</span></div>}

@@ -10,7 +10,10 @@ import { useReturnFocus } from './focus'
 import '../research/kit.css'
 import './candidate.css'
 
-export type CandidateSelection = { id: string; card?: CandidateCard }
+// `focus` names what the opener asked to see (the answer thread's summary links, D98): the card editor, the matrix, the
+// review entry, the decision control, or one kept work's evidence (`evidence`, its source version); `search` is the
+// kill search the opener described, which the panel shows instead of the current version's latest.
+export type CandidateSelection = { id: string; card?: CandidateCard; focus?: 'edit' | 'matrix' | 'review' | 'decision' | 'evidence'; evidence?: string; search?: string }
 
 // The Candidates panel (mockup `candList`, P35): one card per claim the person wants to test, with where it came from,
 // its version, the status code computed and the person's own decision. A card opens its candidate stacked on this list.
@@ -67,7 +70,7 @@ export function CandidatesView({ researchId, view, dark, modelText, selection, o
   // Back (or Close) clears the candidate; the panel stack hands focus back to the card that opened it.
   const closeDetail = useCallback(() => setSelected(null), [])
   const origin = selected ? selected.card?.origin ?? items?.find(i => i.id === selected.id)?.origin : undefined
-  const detailTitle = origin === 'report_gap' ? t('Candidates · From a report row') : origin === 'owner_text' ? t('Candidates · Your sentence') : t('Candidate')
+  const detailTitle = origin === 'report_gap' ? t('Candidates · From a report row') : origin === 'owner_text' ? t('Candidates · Your sentence') : origin === 'answer_thread' ? t('Candidates · Your sentence from an answer') : t('Candidate')
   return <div className="candidates-view candidates-list mk pad">
     <p>{t('A candidate is one claim you want to test against the literature. Nothing is searched until you start a search on a card.')}</p>
     {adding ? <form className="ceditor candidate-form candidate-add" onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeAdd() } }} onSubmit={e => { e.preventDefault(); void save() }}>
@@ -82,7 +85,7 @@ export function CandidatesView({ researchId, view, dark, modelText, selection, o
     {error && <div className="notice bad" role="alert"><CircleX aria-hidden /><div className="nb"><span>{error}</span><div className="acts"><button type="button" className="ghost" onClick={() => void load()}>{t('Retry')}</button></div></div></div>}
     {!items ? !error && <p role="status" className="foot-note">{t('Loading candidates…')}</p> : !items.length ? <p className="foot-note">{t('No candidates yet. Use Add candidate to store a claim you want to test.')}</p>
       : <ul className="candidate-list" aria-label={t('Candidates')}>{items.map(item => {
-        const meta = <span className="meta">{item.origin === 'owner_text' ? t('Your sentence') : t('From a report row: {kind}', { kind: label(kindLabels, item.gap_kind ?? '') })}{item.current_version ? <> · {t('Version {n}', { n: item.current_version })}</> : null}<span className="spacer" />
+        const meta = <span className="meta">{item.origin === 'owner_text' ? t('Your sentence') : item.origin === 'answer_thread' ? t('Your sentence from an answer') : t('From a report row: {kind}', { kind: label(kindLabels, item.gap_kind ?? '') })}{item.current_version ? <> · {t('Version {n}', { n: item.current_version })}</> : null}<span className="spacer" />
           <span className={`cst ${item.status?.status ?? 'not_run'}`}>{label(statusLabels, item.status?.status ?? 'not_run')}</span>{item.owner && <span className={`cst yours ${item.owner.status}`}>{t('You: {status}', { status: label(statusLabels, item.owner.status) })}</span>}</span>
         const claim = <p className="candidate-list-claim" data-stored-text>{item.claim_statement ?? origins[item.id] ?? t('Loading…')}</p>
         return <li key={item.id}>{item.trashed_at ? <div className="ccard is-trashed">{meta}{claim}<span className="meta">{t('In the Trash')}</span></div>
@@ -90,7 +93,7 @@ export function CandidatesView({ researchId, view, dark, modelText, selection, o
             <span className="meta">{item.current_version ? t('Card written') : t('No card yet')}{item.active_run_id && <> · <span className="spin" aria-hidden /> {t('Search running')}</>}</span></button>}</li>
       })}</ul>}
     {selected && <StackPanel name="cand" open onClose={closeDetail} title={detailTitle} icon={Lightbulb} className={`mk-detail-box cand-panel-box${dark ? ' dark' : ''}`}>
-      <CandidateDetail key={selected.id} researchId={researchId} candidateId={selected.id} initialCard={selected.card} view={view} dark={dark} modelText={modelText} onCard={applyCard} onRefreshList={load} onRunChanged={onRunChanged} onOpenSource={onOpenSource} />
+      <CandidateDetail key={selected.id} researchId={researchId} candidateId={selected.id} initialCard={selected.card} intent={selected.focus ? selected : undefined} view={view} dark={dark} modelText={modelText} onCard={applyCard} onRefreshList={load} onRunChanged={onRunChanged} onOpenSource={onOpenSource} />
     </StackPanel>}
   </div>
 }

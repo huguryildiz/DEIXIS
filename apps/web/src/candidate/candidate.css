@@ -77,3 +77,35 @@
 .candidate-editor .candidate-form textarea, .candidate-editor .candidate-form select { width: 100%; min-width: 0; max-width: 100%; }
 .candidate-editor button { max-width: 100%; white-space: normal; height: auto; min-height: 36px; }
 .candidate-aspects [data-stored-text] { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* The answer thread's summary of a candidate written from an answer (D98, mockup `.ksum`) and its claim dialog. */
+.ksum-list { display: grid; gap: 12px; }
+.mk .ksum { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.mk .ksum-h { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding: 9px 14px; border-bottom: 1px solid var(--line); background: var(--sidebar-surface); color: var(--muted); font-size: 12px; }
+.mk .ksum-h strong { color: var(--ink-2); font-weight: 500; }
+.mk .ksum-b { display: grid; gap: 8px; padding: 12px 14px; }
+.mk .ksum-claim { display: -webkit-box; margin: 0; overflow: hidden; color: var(--ink); font-size: 13.5px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.mk .ksum-verdict { display: flex; align-items: flex-start; gap: 9px; margin: 0; color: var(--ink); font-size: 13.5px; }
+.mk .ksum-verdict .spin { flex: none; margin-top: 3px; }
+.mk .ksum-dot { flex: none; width: 8px; height: 8px; margin-top: 7px; border-radius: 50%; background: var(--muted); }
+.mk .ksum-verdict.is-closed .ksum-dot { background: var(--tone-include); }
+.mk .ksum-verdict.is-narrowed .ksum-dot, .mk .ksum-verdict.is-pause .ksum-dot, .mk .ksum-verdict.is-undecided .ksum-dot { background: var(--tone-uncertain); }
+.mk .ksum-verdict.is-bad .ksum-dot { background: var(--tone-exclude); }
+.mk .ksum-fact { font-variant-numeric: tabular-nums; }
+.mk .ksum-works { display: grid; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 8px; list-style: none; overflow: hidden; }
+.mk .ksum-works li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; padding: 8px 11px; border-top: 1px solid var(--line); font-size: 12.5px; }
+.mk .ksum-works li:first-child { border-top: 0; }
+.mk .ksum-title { color: var(--ink-2); font-size: 12.5px; font-weight: 400; text-align: left; }
+.mk .ksum-title:hover { color: var(--accent); }
+.mk .ksum-els { display: flex; flex-basis: 100%; flex-wrap: wrap; gap: 4px; }
+.mk .ksum-caveat { padding-top: 8px; border-top: 1px dashed var(--line); }
+.mk .ksum-f { padding: 9px 14px; border-top: 1px solid var(--line); gap: 6px 16px; }
+.mk .ksum-f .link { font-size: 12.5px; }
+.ksum-error { margin: 0; color: var(--muted); font-size: 12px; }
+.ksum-error .link { padding: 0; border: 0; background: none; color: var(--accent); font: inherit; font-weight: 500; cursor: pointer; }
+.claim-dialog .claim-dialog-context { display: grid; gap: 4px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--sidebar-surface); color: var(--ink-2); font-size: 12.5px; }
+.claim-dialog .claim-dialog-context span { color: var(--muted); font-size: 11.5px; }
+.claim-dialog .claim-dialog-context p { margin: 0; }
+.claim-dialog .claim-dialog-label textarea { min-height: 96px; resize: vertical; }
+.claim-dialog .claim-dialog-foot { display: grid; gap: 8px; justify-content: stretch; }
+.claim-dialog .claim-dialog-ceiling .model-name { display: inline-flex; vertical-align: -3px; }

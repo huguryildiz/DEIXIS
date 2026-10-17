@@ -1046,7 +1046,7 @@ export type CandidateVersion = {
 export type CandidateSearchOutcome = 'running' | 'paused' | 'completed' | 'failed' | 'stopped'
 export type CandidateSearchRef = { id: string; candidate_version_id: string; run_id: string; outcome: CandidateSearchOutcome; created_at: string; version: number; counts: CandidateCounts }
 export type CandidateListItem = {
-  id: string; origin: 'owner_text' | 'report_gap'; origin_report_id: string | null; origin_gap_row_id: string | null; gap_kind: string | null
+  id: string; origin: 'owner_text' | 'report_gap' | 'answer_thread'; origin_report_id: string | null; origin_gap_row_id: string | null; gap_kind: string | null
   origin_changed: boolean; current_version: number; trashed_at: string | null; claim_statement: string | null
   status: CandidateComputed | null; owner: CandidateOwnerDecision | null; active_run_id: string | null
 }
@@ -1054,12 +1054,34 @@ type CandidateBasisItem = { id: string; missing: true } | { id: string; text: st
 export type CandidateCard = Omit<CandidateListItem, 'claim_statement' | 'status' | 'owner' | 'active_run_id'> & {
   research_id: string; origin_text: string; origin_basis: Record<string, unknown>
   origin_basis_view: { basis_cell_ids?: CandidateBasisItem[]; basis_passage_ids?: (CandidateBasisItem & { source_version_id?: string })[]; basis_claim_keys?: CandidateBasisItem[] }
-  origin_provenance: { origin?: 'code' | 'model'; section_id?: string; step_input_id?: string | null }
+  // An answer-thread candidate (D98) keeps the answer and the unanswered aspect it was written beside as context.
+  origin_provenance: { origin?: 'code' | 'model'; section_id?: string; step_input_id?: string | null } & Partial<AnswerCandidateContext>
   origin_fingerprint: string | null; created_at: string; versions: CandidateVersion[]; current_version_id: string | null
   owner_decisions: CandidateOwnerDecision[]; searches: CandidateSearchRef[]
   status: { computed: CandidateComputed; previous: CandidateComputed | null; owner: CandidateOwnerDecision | null } | null
   active_run: CandidateRunRef | null; runs: CandidateRunRef[]; decompose_budget: { max_model_calls: number; max_provider_requests: number }
 }
+export type AnswerCandidateContext = { answer_id: string; report_version: number | null; report_revision: number | null; aspect_index: number | null; aspect_text: string | null }
+// The answer thread's summary of one candidate written from an answer (D98). Every count comes from stored rows; the
+// merge counts are null until the merge is stored.
+export type AnswerCandidateSearch = {
+  kill_search_id: string; run_id: string; version: number; is_current_version: boolean; outcome: CandidateSearchOutcome; created_at: string
+  status: CandidateComputed
+  execution: { queries_planned: number; queries_recorded: number; queries_succeeded: number; queries_failed: number; queries_outcome_unknown: number
+    records_returned: number; hits_recorded: boolean; found: number | null; duplicates: number | null; unique: number | null; kept: number | null; rank_cut: number | null
+    assessed: number; insufficient_access: number; not_assessed_budget: number; pending: number; works_with_support: number; works_stating_whole_claim: number }
+  reading: { assessed_works: number; abstracts: number; stored_passages: number; depths: Record<CandidateDepth, number>; full_text: number; planned: boolean }
+  top_works: { source_version_id: string; rank: number; title: string; year: number | null; version_label: string | null; work_relevance: 'related' | 'uncertain'
+    states_whole_claim: boolean; reading_depth: CandidateDepth
+    elements: { element_id: string; position: number; kind: CandidateElementKind; text: string; relation: CandidateRelation; condition_alignment: CandidateAlignment | null }[] }[]
+}
+export type AnswerCandidateRun = { id: string; kind: RunKind; status: RunStatus; pause_reason: string | null }
+export type AnswerCandidate = {
+  candidate_id: string; aspect_index: number | null; created_at: string; context: AnswerCandidateContext; origin_text: string; trashed_at: string | null
+  current_version: number; claim_statement: string | null; current_version_searched: boolean; search: AnswerCandidateSearch | null
+  owner: (CandidateOwnerDecision & { version: number }) | null; run: AnswerCandidateRun | null; latest_run: AnswerCandidateRun | null
+}
+export type AnswerCandidates = { answer_id: string; candidates: AnswerCandidate[]; decompose: { connection: string; model: string | null; reasoning_effort: string | null; max_model_calls: number; max_provider_requests: number } }
 export type CandidateOpen = { origin: 'owner_text'; text: string } | { origin: 'report_gap'; report_id: string; gap_row_id: string }
 export type CandidateEdit = {
   claim_statement: string; conditions: string[]; elements: { text: string; kind: CandidateElementKind }[]
@@ -1550,6 +1572,11 @@ export const api = {
   reportGaps: (id: string, reportId: string) => request<ReportGap[]>(`/api/researches/${id}/reports/${reportId}/gaps`),
   candidates: (id: string) => request<CandidateListItem[]>(`/api/researches/${id}/candidates`),
   openCandidate: (id: string, body: CandidateOpen) => request<CandidateCard>(`/api/researches/${id}/candidates`, json('POST', body, { 'Idempotency-Key': crypto.randomUUID() })),
+  answerCandidates: (id: string, answerId: string) => request<AnswerCandidates>(`/api/researches/${id}/answers/${answerId}/candidates`),
+  // `key` stays the same for one pending submission, so a retry after a lost response finds the candidate it made
+  // (`replayed`) instead of making a second one; `reused` says a candidate was already linked to this aspect.
+  openAnswerCandidate: (id: string, answerId: string, body: { aspect_index: number | null; text: string }, key: string) =>
+    request<{ card: CandidateCard; reused: boolean; replayed: boolean }>(`/api/researches/${id}/answers/${answerId}/candidates`, json('POST', body, { 'Idempotency-Key': key })),
   candidate: (id: string, cid: string) => request<CandidateCard>(`/api/researches/${id}/candidates/${cid}`),
   editCandidate: (id: string, cid: string, body: CandidateEdit) => request<CandidateCard>(`/api/researches/${id}/candidates/${cid}/versions`, json('POST', body, { 'Idempotency-Key': crypto.randomUUID() })),
   decomposeCandidate: (id: string, cid: string) => request<Run>(`/api/researches/${id}/candidates/${cid}/decompose`, { method: 'POST', headers: { 'Idempotency-Key': crypto.randomUUID() } }),

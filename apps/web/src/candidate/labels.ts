@@ -1,4 +1,4 @@
-import { t, uiLocale } from '../i18n'
+import { t, tc, uiLocale } from '../i18n'
 import type { CandidateComputed } from '../api'
 
 export const statusLabels: Record<string, string> = { not_run: 'Not searched', undecided: 'Undecided', narrowed: 'Narrowed', closed: 'Closed', open: 'Open' }
@@ -47,7 +47,9 @@ export const runReasonLabels: Record<string, string> = {
   not_configured: 'The provider is not configured.', parse_error: 'The provider response could not be read.',
   outcome_unknown: 'Whether the request completed is unknown.', budget_exhausted: 'The run’s budget was exhausted.',
 }
-export const label = (map: Record<string, string>, code: string) => map[code] ? t(map[code]) : code
+// Status labels read their own contextual keys (i18n `tc`), so "Open" the status is not the verb "Open".
+export const statusText = (code: string) => statusLabels[code] ? tc('candidate status', statusLabels[code]) : code
+export const label = (map: Record<string, string>, code: string) => map === statusLabels ? statusText(code) : map[code] ? t(map[code]) : code
 export const reasonText = (computed: CandidateComputed, code = computed.reason) => reasonLabels[code] ? t(reasonLabels[code], { assessed: computed.facts.assessed, found: computed.facts.found, unread: computed.facts.unread }) : code
 export const dateText = (date: string) => new Date(date).toLocaleString(uiLocale(), { dateStyle: 'medium', timeStyle: 'short' })
 export const errorText = (error: unknown) => error instanceof Error ? error.message : String(error)

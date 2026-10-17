@@ -496,7 +496,7 @@ def test_invalid_output_is_repaired_once_then_kept_as_unverified_draft(tmp_path)
     def bad(si):
         if si["task_type"] != "grounded_answer":
             return valid_response(si)
-        return json.dumps(envelope(si, "deixis.grounded_answer_draft.v3") | {
+        return json.dumps(envelope(si, "deixis.grounded_answer_draft.v4") | {
             "title": "Synthetic evidence for release scheduling and optimization in constrained molecular communication networks",
             "answer_language": "en",
             "claims": [{"claim_label": "c1", "section": "Overview", "text": "It has been reported that X was invented.", "support_type": "source_stated", "passage_ids": ["psg_INVENTED0001"]}],

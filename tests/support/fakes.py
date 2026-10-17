@@ -220,12 +220,17 @@ def valid_response(si: dict[str, Any]) -> str:
             "work_classifications": [],
         })
     first = si["passages"][0]
-    return json.dumps(envelope(si, "deixis.grounded_answer_draft.v3") | {
+    return json.dumps(envelope(si, "deixis.grounded_answer_draft.v4") | {
         "title": "Synthetic evidence for release scheduling and optimization in constrained molecular communication networks",
         "answer_language": "en",
         "claims": [{"claim_label": "c1", "section": "Overview", "text": "It has been reported that the first passage supports this fake claim.", "support_type": "source_stated", "passage_ids": [first["passage_id"]]}],
         "citation_anchors": [{"claim_label": "c1", "passage_id": first["passage_id"], "quote": " ".join(first["text"].split())[:600]}],
         "limitations": [{"kind": "scope", "text": "It is beyond the scope of this answer to examine the fake scope.", "source_ids": [first["source_id"]]}],
+        # SYNTHETIC: every source but the cited one is left out with the reason that needs no quote.
+        "excluded_sources": [{"source_id": s["source_id"], "reason": "no_answering_content",
+                              "note": "SYNTHETIC: this source is left out of the fake answer.",
+                              "passage_id": None, "quote": None, "same_as_source_id": None}
+                             for s in si["sources"] if s["source_id"] != first["source_id"]],
         "unanswered_aspects": [], "capability_notice": None,
     })
 

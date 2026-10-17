@@ -92,12 +92,23 @@ Do not write identifiers or claims that are not asked for. Code applies your cho
 REPORT_SECTION_FULL_REPAIR_GUIDANCE = """Keep every claim's claim_key; change only what the issues require. A claim you remove must be named by its claim_key in an insufficient_evidence entry whose context starts with exactly <claim_key>: followed by a space and a non-empty explanation. Keep every insufficient_evidence entry of the failed output unchanged."""
 
 
-def resplit_message(step_input: dict[str, Any], issues: list[dict[str, str]], failed_output: str, labels: list[str]) -> str:
+LEDGER_HINTS_HEADING = ("Not blocking: these notes on excluded_sources do not make the output invalid. "
+                        "Correct them in the same output if you can.")
+
+
+def _hints_block(hints: list[str] | None) -> str:
+    """Ledger notes (D80) under their own heading; they are never part of the issues listed as blocking."""
+    return "\n\n" + LEDGER_HINTS_HEADING + "\n" + "\n".join(f"- {hint}" for hint in hints) if hints else ""
+
+
+def resplit_message(step_input: dict[str, Any], issues: list[dict[str, str]], failed_output: str, labels: list[str],
+                    *, hints: list[str] | None = None) -> str:
     """The one extra repair (D249): only D247's several-sources rule (and anchor defects) still blocks the answer."""
     return (
         step_message(step_input)
         + "\n\nThe previous output for this StepInput was repaired once and still fails validation only on these issues:\n"
         + json.dumps(issues, ensure_ascii=False, indent=1)
+        + _hints_block(hints)
         + "\n\nPrevious output (as received):\n" + failed_output
         + f"\n\nThe source_stated claims {', '.join(labels)} cite passages of more than one source. For each of them, "
         "either split it into one source_stated claim per source, each citing only that source's passages and stating only "
@@ -126,12 +137,14 @@ def inference_cap_message(step_input: dict[str, Any], valid_output: str, labels:
 
 def repair_message(step_input: dict[str, Any], issues: list[dict[str, str]],
                    anchor_context: list[dict[str, Any]] | None = None,
-                   failed_output: str | None = None, *, anchor_patch: bool = False) -> str:
+                   failed_output: str | None = None, *, anchor_patch: bool = False,
+                   hints: list[str] | None = None) -> str:
     message = (
         step_message(step_input)
         + "\n\nA previous output for this StepInput failed validation with these issues. "
         "Return a corrected JSON object; do not add identifiers that are not in the allowlist.\n"
         + json.dumps(issues, ensure_ascii=False, indent=1)
+        + _hints_block(hints)
     )
     if failed_output is not None and step_input["task_type"] == "report_section" and not anchor_patch:
         message += ("\n\nFailed output (as received):\n" + failed_output

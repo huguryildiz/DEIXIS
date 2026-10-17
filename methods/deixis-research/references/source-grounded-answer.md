@@ -47,11 +47,16 @@ missing part in `unanswered_aspects`.
    do not show it, say that the supplied passages do not show it. These rules
    stay within the claim limit of rule 4 and the Phrasing rules below.
 4. Keep the answer short: two to six claims per paragraph, at most thirty
-   claims in all. Choose the passages that bear most directly on the question,
-   above all those that compare the alternatives the question names or report
-   the quantities it asks about. A claim is one or two sentences about one
-   point and cites the specific passages that state it, at most five. Do not open
-   more than two claims with the same reporting frame.
+   claims in all. A claim is one or two sentences about one point and cites the
+   specific passages that state it, at most five. Do not open more than two
+   claims with the same reporting frame. In a `grounded_answer`, cite within
+   those thirty claims every given source whose passages answer some part of
+   the question, abstracts included (rule 9), each finding in its own
+   `source_stated` claim (rule 5). Sources that compare the alternatives the
+   question names or report the quantities it asks about come first. A source
+   may instead be left out for a reason rule 14 allows; do not add background
+   or repeated claims only to cite another source. A given source that no claim
+   cites is listed under rule 14.
 5. A `source_stated` claim reports what one source states: one finding in one
    setting. Cite only that source's passage or passages, each of which must on
    its own state the whole claim. The application rejects a `source_stated`
@@ -161,6 +166,25 @@ missing part in `unanswered_aspects`.
    `capability_notice`, add an `unsupported_request` limitation and still answer
    the supported part.
 13. Word every text field as set out in Phrasing below.
+14. In a `grounded_answer`, list each given source that no claim cites once in
+   `excluded_sources`, with a `reason` and a short `note` in the answer
+   language that says why it is left out. Never list a source a claim cites;
+   the application works out the cited sources from the claims. The reasons:
+   - `no_answering_content`: the given passages of this source do not answer
+     any part of what the question asks.
+   - `off_topic`: the source is not about the question's subject.
+   - `same_finding_as_cited`: a passage states a finding that a cited source
+     already reports; set `same_as_source_id` to that cited source.
+   - `different_conditions`: a passage answers part of the question, but for a
+     variant, a mixed baseline or a setting that cannot stand next to the
+     question's comparison.
+   - `claim_limit`: the source answers part of the question and is comparable,
+     but the answer already has thirty claims. Use it only then; it is a length
+     rule, not a judgment that the source matters less.
+   For the last three reasons, set `passage_id` to the passage of this source
+   that shows the reason and copy `quote` from it as rule 6 says. For the first
+   two, set `passage_id` and `quote` to null. Set `same_as_source_id` to null
+   for every reason but `same_finding_as_cited`.
 
 ### Phrasing
 

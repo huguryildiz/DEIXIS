@@ -7,7 +7,7 @@
    "expect_ok": true,
    "expect_codes": [],
    "output": {
-    "schema_version": "deixis.grounded_answer_draft.v3",
+    "schema_version": "deixis.grounded_answer_draft.v4",
     "step_input_id": "sti_SYNTHA0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -76,6 +76,32 @@
       ]
      }
     ],
+    "excluded_sources": [
+     {
+      "source_id": "srv_SYNA2pub01",
+      "reason": "no_answering_content",
+      "note": "SYNTHETIC: the abstract is about nutrient sharing, not a decision model.",
+      "passage_id": null,
+      "quote": null,
+      "same_as_source_id": null
+     },
+     {
+      "source_id": "srv_SYNA3pub01",
+      "reason": "no_answering_content",
+      "note": "SYNTHETIC: no passage of this version was given.",
+      "passage_id": null,
+      "quote": null,
+      "same_as_source_id": null
+     },
+     {
+      "source_id": "srv_SYNA5pub01",
+      "reason": "no_answering_content",
+      "note": "SYNTHETIC: the survey abstract states no model.",
+      "passage_id": null,
+      "quote": null,
+      "same_as_source_id": null
+     }
+    ],
     "unanswered_aspects": [
      "An issue that was not addressed in the supplied passages was whether the models were validated."
     ],
@@ -90,7 +116,7 @@
     "unknown_passage_id"
    ],
    "output": {
-    "schema_version": "deixis.grounded_answer_draft.v3",
+    "schema_version": "deixis.grounded_answer_draft.v4",
     "step_input_id": "sti_SYNTHA0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -109,6 +135,7 @@
     ],
     "citation_anchors": [],
     "limitations": [],
+    "excluded_sources": [],
     "unanswered_aspects": [],
     "capability_notice": null
    }
@@ -122,7 +149,7 @@
     "schema_invalid"
    ],
    "output": {
-    "schema_version": "deixis.grounded_answer_draft.v3",
+    "schema_version": "deixis.grounded_answer_draft.v4",
     "step_input_id": "sti_SYNTHA0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -142,6 +169,7 @@
     ],
     "citation_anchors": [],
     "limitations": [],
+    "excluded_sources": [],
     "unanswered_aspects": [],
     "capability_notice": null
    }
@@ -155,7 +183,7 @@
     "schema_invalid"
    ],
    "output": {
-    "schema_version": "deixis.grounded_answer_draft.v3",
+    "schema_version": "deixis.grounded_answer_draft.v4",
     "step_input_id": "sti_SYNTHA0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -175,6 +203,7 @@
     ],
     "citation_anchors": [],
     "limitations": [],
+    "excluded_sources": [],
     "unanswered_aspects": [],
     "capability_notice": null
    }
@@ -187,7 +216,7 @@
     "envelope_mismatch"
    ],
    "output": {
-    "schema_version": "deixis.grounded_answer_draft.v3",
+    "schema_version": "deixis.grounded_answer_draft.v4",
     "step_input_id": "sti_SYNTHB0001",
     "scope_revision": 2,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
@@ -196,6 +225,7 @@
     "claims": [],
     "citation_anchors": [],
     "limitations": [],
+    "excluded_sources": [],
     "unanswered_aspects": [
      "An issue that was not addressed in the supplied passages was whether X holds."
     ],
@@ -214,7 +244,7 @@
     "unknown_source_id"
    ],
    "output": {
-    "schema_version": "deixis.grounded_answer_draft.v3",
+    "schema_version": "deixis.grounded_answer_draft.v4",
     "step_input_id": "sti_SYNTHA0003",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
@@ -249,6 +279,7 @@
       ]
      }
     ],
+    "excluded_sources": [],
     "unanswered_aspects": [],
     "capability_notice": null
    }

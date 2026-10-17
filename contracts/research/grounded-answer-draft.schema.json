@@ -15,11 +15,12 @@
     "claims",
     "citation_anchors",
     "limitations",
+    "excluded_sources",
     "unanswered_aspects",
     "capability_notice"
   ],
   "properties": {
-    "schema_version": { "type": "string", "const": "deixis.grounded_answer_draft.v3" },
+    "schema_version": { "type": "string", "const": "deixis.grounded_answer_draft.v4" },
     "step_input_id": { "$ref": "common.schema.json#/$defs/step_input_id" },
     "scope_revision": { "$ref": "common.schema.json#/$defs/scope_revision" },
     "skill_package_hash": { "$ref": "common.schema.json#/$defs/skill_package_hash" },
@@ -89,6 +90,28 @@
             "maxItems": 20,
             "items": { "$ref": "common.schema.json#/$defs/source_id" }
           }
+        }
+      }
+    },
+    "excluded_sources": {
+      "type": "array",
+      "maxItems": 200,
+      "description": "One entry per given source the answer does not cite, with the reason it is left out. Code derives the cited sources from the claims; never list a cited source here.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source_id", "reason", "note", "passage_id", "quote", "same_as_source_id"],
+        "properties": {
+          "source_id": { "$ref": "common.schema.json#/$defs/source_id" },
+          "reason": {
+            "type": "string",
+            "enum": ["no_answering_content", "off_topic", "same_finding_as_cited", "different_conditions", "claim_limit"],
+            "description": "same_finding_as_cited, different_conditions and claim_limit need passage_id and quote; same_finding_as_cited also needs same_as_source_id."
+          },
+          "note": { "type": "string", "minLength": 1, "maxLength": 300, "description": "Why this source is left out, in the answer language." },
+          "passage_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/passage_id" }, { "type": "null" }] },
+          "quote": { "anyOf": [{ "type": "string", "minLength": 12, "maxLength": 600 }, { "type": "null" }] },
+          "same_as_source_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/source_id" }, { "type": "null" }] }
         }
       }
     },

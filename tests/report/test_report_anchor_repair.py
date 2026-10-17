@@ -240,12 +240,16 @@ def test_model_step_non_anchor_repairs_keep_the_old_message_byte_for_byte(tmp_pa
     assert shown == contracts.with_citation_handles(json.loads(rows[1][0]))
     stamped, _ = contracts.stamp_package_hash(task, first_payload, {"SYNTHETIC_invalid_shape": True})
     stamped, _ = contracts.stamp_step_input_id(task, first_payload, stamped)  # RF6 (D211)
+    if task == "grounded_answer":
+        contracts.split_ledger(stamped)  # D80: the ledger is taken out before validation
     problem = issues(first_payload, stamped)
     expected = old_repair_message(shown, contracts.issues_with_handles(first_payload, problem))
     if task == "report_section":
         assert rows[1][1].startswith(expected)
         assert '{"SYNTHETIC_invalid_shape": true}' in rows[1][1]
         assert prompt.REPORT_SECTION_FULL_REPAIR_GUIDANCE in rows[1][1]
+    elif task == "grounded_answer":  # D80: the ledger notes follow the issues, under their own heading
+        assert rows[1][1].startswith(expected + "\n\n" + prompt.LEDGER_HINTS_HEADING + "\n- ")
     else:
         assert rows[1][1] == expected
 

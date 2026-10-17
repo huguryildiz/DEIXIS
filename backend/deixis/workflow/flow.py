@@ -2391,8 +2391,12 @@ class ResearchFlow:
             return
         payload = self.store.step_input_payload(output["step_input_id"])
         links = contracts.derive_evidence_links(payload, output["result"])
+        # D80: built once, on the output that is saved (after D244, D249 and D260), with that attempt's own split
+        # diagnostics; a resumed run reads the same stored step output.
+        ledger = contracts.answer_ledger(payload, output["result"], links, output.get("ledger_split", []))
         answer_id = self.store.save_answer(rid, run_id, step["id"], output["step_input_id"], run["scope_revision"], "structurally_valid",
-                                           output["result"], {"ok": True, "issues": [], "warnings": output.get("warnings", [])}
+                                           output["result"], {"ok": True, "issues": [], "warnings": output.get("warnings", []),
+                                                              "evidence_ledger": ledger}
                                            | ({"extra_repair": extra_repair} if extra_repair else {})
                                            | ({"inference_cap": inference_cap} if inference_cap else {}), links,
                                            selection_revision=step_selection)
@@ -5562,15 +5566,22 @@ class ResearchFlow:
                     for pair in shown_context:
                         pair["cell_id"] = handles[pair["cell_id"]]
                 shown_issues = contracts.issues_with_handles(payload, repair_issues) if shown is not payload else repair_issues
+                hints = None
+                if task_type == "grounded_answer" and invalid_raw and (resplit or {}).get("kind") != "inference_cap":
+                    # D80: ledger notes, rebuilt from the stored failed output on every repair (a resumed step too);
+                    # they never join the issues, which decide D249 and what is stored as failed.
+                    hinted_input = self.store.step_input_payload(invalid_input)
+                    found = contracts.ledger_hints(hinted_input, contracts.resolve_citation_handles(hinted_input, invalid_raw))
+                    hints = [h["message"] for h in contracts.issues_with_handles(payload, [{"message": h} for h in found])]
                 if resplit is not None and resplit.get("kind") == "inference_cap":
                     message = prompt.inference_cap_message(shown, resplit["raw_output"], resplit["labels"], resplit["claim_count"])
                 elif resplit is not None:
-                    message = prompt.resplit_message(shown, shown_issues, resplit["raw_output"], resplit["labels"])
+                    message = prompt.resplit_message(shown, shown_issues, resplit["raw_output"], resplit["labels"], hints=hints)
                 elif task_type == "report_section":
                     message = prompt.repair_message(shown, shown_issues, shown_context,
                                                     failed_output=invalid_raw, anchor_patch=anchor_patch)
                 else:
-                    message = prompt.repair_message(shown, shown_issues, None)
+                    message = prompt.repair_message(shown, shown_issues, None, hints=hints)
             self.store.insert_step_input(step["id"], rid, run_id, attempt, payload, base, developer, message, schema, selection_revision)
             measured_chars = None
             if max_request_chars is not None:
@@ -5672,6 +5683,7 @@ class ResearchFlow:
             output_text = result.raw_text or ""
             patch_record = None
             normalised_changes = []
+            ledger, ledger_split = [], None
             if anchor_patch:
                 output_text = contracts.normalise_output(task_type, output_text)[0]
                 output_text, stamps = contracts.stamp_step_input_id(task_type, payload, output_text)
@@ -5700,6 +5712,10 @@ class ResearchFlow:
                     output_text, relabelled = contracts.relabel_split_claims(output_text, resplit["labels"])
                     split_relabel.clear()
                     split_relabel.update(relabelled)
+                if task_type == "grounded_answer" and isinstance(output_text, dict):
+                    # D80: the ledger never reaches validation or D244/D249/D260; the answer is judged on its claims
+                    # alone and the kept entries go back on a valid result below.
+                    ledger, ledger_split = contracts.split_ledger(output_text)
                 report = contracts.validate_model_output(payload, output_text)
                 # As the answer path drops an unanchored citation link, a report claim keeps only its anchored
                 # citations; a claim with no anchored citation left is not pruned and still fails.
@@ -5734,11 +5750,17 @@ class ResearchFlow:
                 recorded["validation_json"]["anchor_patch"] = patch_record
             if split_relabel:
                 recorded["validation_json"]["relabelled"] = dict(split_relabel)
+            if ledger_split is not None:
+                recorded["validation_json"]["ledger"] = ledger_split
             if report.ok:
+                if ledger_split is not None:
+                    report.result["excluded_sources"] = ledger
                 if task_type in ("grounded_answer", "followup_answer"):
                     report.result = contracts.name_sources_in_prose(payload, report.result)
                 output = {"output_type": report.output_type, "result": report.result,
                           "step_input_id": payload["step_input_id"], "resolved_model": result.resolved_model, "warnings": warnings}
+                if ledger_split is not None:
+                    output["ledger_split"] = ledger_split  # the published answer's ledger reads its own attempt's diagnostics
                 if patch_record is not None:
                     output["anchor_patch"] = patch_record
                 if extra:

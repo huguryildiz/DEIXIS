@@ -54,7 +54,7 @@ SCHEMA_FILES = {
 }
 SCHEMA_VERSIONS = {
     "OwnerReview": "deixis.owner_review.v1",
-    "GroundedAnswerDraft": "deixis.grounded_answer_draft.v3",
+    "GroundedAnswerDraft": "deixis.grounded_answer_draft.v4",
     "FollowupAnswer": "deixis.followup_answer.v4",
     "AnswerReview": "deixis.answer_review.v1",
     "EvidenceCellDraft": "deixis.evidence_cell_draft.v1",
@@ -2847,7 +2847,8 @@ def name_sources_in_prose(step_input: dict[str, Any], data: dict[str, Any]) -> d
         def title(match: re.Match[str]) -> str:
             return named.get(f"{match.group(1)}{int(match.group(2)):07d}", match.group(0))
         prose = lambda text: HANDLE_IN_PROSE.sub(title, text) if isinstance(text, str) else text
-        for items, key in ((data.get("claims"), "text"), (data.get("limitations"), "text"), (data.get("reviews"), "reason")):
+        for items, key in ((data.get("claims"), "text"), (data.get("limitations"), "text"), (data.get("reviews"), "reason"),
+                           (data.get("excluded_sources"), "note")):
             for item in items if isinstance(items, list) else []:
                 if isinstance(item, dict) and key in item:
                     item[key] = prose(item[key])
@@ -2857,6 +2858,145 @@ def name_sources_in_prose(step_input: dict[str, Any], data: dict[str, Any]) -> d
             if key in data:
                 data[key] = prose(data[key])
     return data
+
+
+# The evidence ledger (D80): `excluded_sources` says why each given source the answer does not cite is left out. It is
+# split off before the answer is validated and checked only on the published answer, so it never blocks an answer.
+LEDGER_ID_FIELDS = ("source_id", "passage_id", "same_as_source_id")
+LEDGER_QUOTE_REASONS = frozenset({"same_finding_as_cited", "different_conditions", "claim_limit"})
+LEDGER_CLAIM_LIMIT = 30  # the instruction's claim cap; claim_limit holds only for an answer that reached it
+LEDGER_MAX_HINTS = 10
+LEDGER_DROP_REASONS = {
+    "entry_unknown_source": "names a source that is not in the allowlist",
+    "entry_duplicate_source": "repeats the source of an earlier entry",
+    "entry_for_cited_source": "names a source the answer cites",
+    "entry_same_as_not_cited": "same_as_source_id is not a source the answer cites",
+    "entry_claim_limit_not_reached": f"claim_limit holds only for an answer with {LEDGER_CLAIM_LIMIT} claims",
+    "entry_quote_missing": "this reason needs a passage_id and a quote",
+    "entry_passage_unknown": "its passage_id is not in the allowlist",
+    "entry_passage_other_source": "its passage_id belongs to another source",
+    "entry_quote_not_located": "its quote was not found in that passage",
+}
+
+
+@cache
+def _ledger_validator() -> tuple[Draft202012Validator, int]:
+    """The item validator and entry cap of `excluded_sources`, read from the answer schema so the two cannot drift."""
+    root = step_output_schema("grounded_answer")
+    field = root["properties"]["excluded_sources"]
+    return Draft202012Validator(copy.deepcopy(field["items"]) | {"$defs": root["$defs"]}), field["maxItems"]
+
+
+def split_ledger(draft: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Take `excluded_sources` out of an answer draft before validation, leaving `[]` in its place.
+
+    Returns the entries that pass the item schema and one diagnostic per removal: a missing or non-array field, an
+    entry that fails the item schema, entries past the cap. The diagnostics are not validation issues.
+    """
+    present, value = "excluded_sources" in draft, draft.get("excluded_sources")
+    draft["excluded_sources"] = []
+    if not isinstance(value, list):
+        return [], [{"code": "ledger_field_malformed", "path": "/excluded_sources",
+                     "message": f"expected an array, got {type(value).__name__}" if present else "the field is missing"}]
+    validator, cap = _ledger_validator()
+    diagnostics, kept = [], []
+    if len(value) > cap:
+        diagnostics.append({"code": "ledger_too_many_entries", "path": "/excluded_sources", "count": len(value),
+                            "message": f"{len(value)} entries; those past {cap} were removed"})
+    for index, entry in enumerate(value[:cap]):
+        errors = sorted(validator.iter_errors(entry), key=lambda e: list(e.absolute_path))
+        if errors:
+            diagnostics.append({"code": "ledger_entry_malformed", "path": f"/excluded_sources/{index}",
+                                "message": f"entry removed: {errors[0].message[:200]}"})
+        else:
+            kept.append(entry)
+    return kept, diagnostics
+
+
+def _ledger_anchor(step_input: dict[str, Any], entry: dict[str, Any]) -> tuple[str | None, AnchorMatch | None]:
+    """Where a ledger entry's quote is found in a given passage of its own source: (drop code, match). Same matcher
+    as claim anchors."""
+    if entry["passage_id"] is None or entry["quote"] is None:
+        return "entry_quote_missing", None
+    passage = next((p for p in step_input["passages"] if p["passage_id"] == entry["passage_id"]), None)
+    if passage is None or entry["passage_id"] not in step_input["allowlist"]["passage_ids"]:
+        return "entry_passage_unknown", None
+    if passage["source_id"] != entry["source_id"]:
+        return "entry_passage_other_source", None
+    match = locate_anchor(entry["quote"], passage["text"])
+    return ("entry_quote_not_located" if match is None else None), match
+
+
+def _ledger_entry(step_input: dict[str, Any], entry: dict[str, Any], cited: set[str], claim_count: int,
+                  seen: set[str]) -> tuple[str | None, AnchorMatch | None]:
+    """A schema-valid ledger entry's drop code (None when it stands) and its located quote. A quote on a reason that
+    needs none is kept when located and ignored when not."""
+    source = entry["source_id"]
+    if source not in step_input["allowlist"]["source_ids"]:
+        return "entry_unknown_source", None
+    if source in seen:
+        return "entry_duplicate_source", None
+    seen.add(source)
+    if source in cited:
+        return "entry_for_cited_source", None
+    same_as = entry["same_as_source_id"]
+    if (same_as is not None or entry["reason"] == "same_finding_as_cited") and same_as not in cited:
+        return "entry_same_as_not_cited", None
+    if entry["reason"] == "claim_limit" and claim_count < LEDGER_CLAIM_LIMIT:
+        return "entry_claim_limit_not_reached", None
+    code, match = _ledger_anchor(step_input, entry)
+    return (code, None) if code is not None and entry["reason"] in LEDGER_QUOTE_REASONS else (None, match)
+
+
+def answer_ledger(step_input: dict[str, Any], answer: dict[str, Any], links: list[dict[str, Any]],
+                  split: list[dict[str, Any]]) -> dict[str, Any]:
+    """The evidence ledger of a published, valid answer. Cited sources come from its evidence links, never from the
+    model; an exclusion is kept only when it passes the entry checks; a given source with neither is unaccounted.
+
+    A located quote shows where an entry points; it does not show that the reason is right.
+    """
+    given = [s["source_id"] for s in step_input["sources"]]
+    linked = {link["source_id"] for link in links}
+    claim_count = len(answer.get("claims") or [])
+    excluded, dropped, seen = [], [], set()
+    for index, entry in enumerate(answer.get("excluded_sources") or []):
+        code, match = _ledger_entry(step_input, entry, linked, claim_count, seen)
+        if code is not None:
+            dropped.append({"index": index, "source_id": entry["source_id"], "code": code})
+        else:
+            excluded.append(entry | {"anchor_text": match.text if match else None, "anchor_match": match.kind if match else None})
+    accounted = linked | {entry["source_id"] for entry in excluded}
+    unaccounted = [s for s in given if s not in accounted]
+    return {"version": 1, "given": given, "cited": [s for s in given if s in linked], "excluded": excluded,
+            "unaccounted": unaccounted, "dropped": dropped, "split": list(split), "complete": not unaccounted}
+
+
+def ledger_hints(step_input: dict[str, Any], draft: Any) -> list[str]:
+    """Up to LEDGER_MAX_HINTS lines on a failed answer's ledger for its repair message; never validation issues.
+
+    Read from the failed draft as it stands: a claim passage outside the StepInput is skipped, and evidence links are
+    never derived from a draft that did not validate.
+    """
+    if not isinstance(draft, dict):
+        return []
+    draft = copy.deepcopy(draft)
+    entries, split = split_ledger(draft)
+    source_of = {p["passage_id"]: p["source_id"] for p in step_input["passages"]}
+    claims = draft["claims"] if isinstance(draft.get("claims"), list) else []
+    cited = {source_of[pid] for claim in claims if isinstance(claim, dict) and isinstance(claim.get("passage_ids"), list)
+             for pid in claim["passage_ids"] if isinstance(pid, str) and pid in source_of}
+    hints = [f"excluded_sources{d['path'].removeprefix('/excluded_sources')}: {d['message']}" for d in split]
+    seen: set[str] = set()
+    listed = set()
+    for entry in entries:
+        code, _ = _ledger_entry(step_input, entry, cited, len(claims), seen)
+        if code is None:
+            listed.add(entry["source_id"])
+        else:
+            hints.append(f"The excluded_sources entry for {entry['source_id']} would be dropped: {LEDGER_DROP_REASONS[code]}.")
+    hints += [f"{s['source_id']} is given but neither cited nor listed in excluded_sources."
+              for s in step_input["sources"] if s["source_id"] not in cited | listed]
+    return hints[:LEDGER_MAX_HINTS]
 
 
 ANCHOR_SALVAGE_CODES = frozenset({"duplicate_citation_anchor", "anchor_not_in_passage", "missing_citation_anchor",
@@ -2910,6 +3050,12 @@ def answer_with_handles(step_input: dict[str, Any], answer: dict[str, Any]) -> s
         claim["passage_ids"] = [handles.get(pid, pid) for pid in claim.get("passage_ids", [])]
     for anchor in shown.get("citation_anchors", []):
         anchor["passage_id"] = handles.get(anchor.get("passage_id"), anchor.get("passage_id"))
+    excluded = shown.get("excluded_sources")  # the resolver's guards: anything else is left as it is
+    for entry in excluded if isinstance(excluded, list) else []:
+        if isinstance(entry, dict):
+            for key in LEDGER_ID_FIELDS:
+                if isinstance(entry.get(key), str):
+                    entry[key] = handles.get(entry[key], entry[key])
     return json.dumps(shown, ensure_ascii=False)
 
 
@@ -3110,6 +3256,12 @@ def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict
     for anchor in anchors if isinstance(anchors, list) else []:
         if isinstance(anchor, dict) and isinstance(anchor.get("passage_id"), str):
             anchor["passage_id"] = real(anchor["passage_id"])
+    excluded = data.get("excluded_sources")  # anything not a list, dict or string is left for split_ledger to remove
+    for entry in excluded if isinstance(excluded, list) else []:
+        if isinstance(entry, dict):
+            for key in LEDGER_ID_FIELDS:
+                if isinstance(entry.get(key), str):
+                    entry[key] = real(entry[key])
     works = data.get("work_classifications")
     for work in works if isinstance(works, list) else []:
         if not isinstance(work, dict):

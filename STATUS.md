@@ -110,7 +110,7 @@ A model-free check of the 8 stored answers found all 171 citation links sound: e
 1. The latest DBR/VBF answer cites 14 of 20 full-text works and none of 24 abstract-only works. Relevant works go uncited, for example "Light-weight depth-based routing" and the Q-learning DBR paper (both full text), and "Adaptive Holding time and DBR" (abstract only, though the question asks for holding-time formulas).
 2. Target: every input work with a passage that answers the question is cited, or the answer says why it is left out. Not every input work: surveys, MAC and security papers are in the input too. Rough guess for this question: 20–25 such works against about 14 cited (not measured).
 3. Possible causes, not measured: the answer length limit (9 Oct: 48→120 passages barely raised citations), abstracts that give no numbers or formulas, and claims tied to only one source each.
-4. Next: measure it. For each uncited input work, say whether it had an answering passage, then find which cause applies.
+4. Measured 17 Oct (one Standard run, Sonnet 5.5 medium): the answer cited 10 of 40 given works (10 of 17 PDF works, 0 of 23 abstracts) with 12 of 30 claims, so length was not the limit. 25 uncited works had no number or formula for the question; 5 did. Every given work now gets a citation or a reason in `excluded_sources` (D80, backend only). Next: the answer view and exports, then a before/after run on one frozen answer input.
 5. Chain of Ideas–style idea generation waits until this is fixed, and it needs its own contract: premises cited, speculation marked as unsourced.
 
 ### Search (after P10)
@@ -122,6 +122,8 @@ A model-free check of the 8 stored answers found all 171 citation links sound: e
 5. In Standard, 7 of 20 runs took over 5 minutes (cause not checked), Detailed citation accuracy was not re-measured after the fixes, and the sample is small (10 questions × 2).
 6. The free OpenAlex daily quota runs out after about 20 researches (the app now stops sending once it is used up, D173), and the answer call sometimes times out (1 in 21 runs).
 7. The full-text limits (10/20/40 works for Quick/Standard/Detailed) were never chosen by measurement; the 16 Oct check only showed they hold. Raising them is unlikely to help yet: Detailed filled 24 of 40 slots for lack of PDFs, and answers cite few of the works they already get. Measure after the answer-coverage work.
+8. BioASQ (17 Oct, 35 questions, Standard): of 480 gold papers, 343 are in the top 400; of the 107 never retrieved, all are in OpenAlex (77 with an abstract). Semantic search over abstracts is one OpenAlex `search.semantic` request capped at 50 records (`semantic_top`), against up to 1000 keyword records; it brought 72 gold papers, 8 of them only through it. The chain added 19 gold papers no search found. Not measured: whether a deeper semantic read closes the gap to Elicit.
+9. Planned, not started: a LitSearch benchmark (597 ML/NLP queries, EMNLP 2024) run like BioASQ, DEIXIS against plain OpenAlex, as a computer-science check. No electrical-engineering benchmark with relevance labels was found.
 
 ### Not measured (needs a real model or real use)
 

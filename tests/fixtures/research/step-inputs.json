@@ -13,7 +13,7 @@
    "references/source-grounded-answer.md"
   ],
   "output_schema_versions": [
-   "deixis.grounded_answer_draft.v3"
+   "deixis.grounded_answer_draft.v4"
   ],
   "question": {
    "text": "SYNTHETIC: How is operations research used in molecular communication, and what decision variables, objectives and constraints do published models use?",
@@ -186,7 +186,7 @@
    "references/source-grounded-answer.md"
   ],
   "output_schema_versions": [
-   "deixis.grounded_answer_draft.v3"
+   "deixis.grounded_answer_draft.v4"
   ],
   "question": {
    "text": "SYNTHETIC: Which sensors are used in underwater sensor networks?",

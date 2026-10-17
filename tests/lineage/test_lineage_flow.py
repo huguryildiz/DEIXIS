@@ -271,7 +271,7 @@ def test_repair_message_over_48000_is_not_sent(lib, monkeypatch):
     lib.adapter.responder = invalid
     run = queue(lib)
     original = prompt.repair_message
-    monkeypatch.setattr(prompt, "repair_message", lambda *args: original(*args) + "x" * 48_000)
+    monkeypatch.setattr(prompt, "repair_message", lambda *args, **kwargs: original(*args, **kwargs) + "x" * 48_000)
     assert execute(lib, run)["status"] == "completed"
     assert len(lib.adapter.calls) == 1
     step = lib.store.existing_step(run["id"], run["target"]["chunks"][0]["key"])
@@ -1109,7 +1109,7 @@ def test_oversized_changed_repair_records_the_last_sent_fingerprint(lib, monkeyp
         return invalid(si)
     lib.adapter.responder = respond
     original = prompt.repair_message
-    monkeypatch.setattr(prompt, "repair_message", lambda *args: original(*args) + "x" * 48_000)
+    monkeypatch.setattr(prompt, "repair_message", lambda *args, **kwargs: original(*args, **kwargs) + "x" * 48_000)
     execute(lib, run)
     step = lib.store.existing_step(run["id"], run["target"]["chunks"][0]["key"])
     output = step["output"]

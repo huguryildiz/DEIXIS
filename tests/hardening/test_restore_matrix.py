@@ -726,7 +726,7 @@ EMPTY_BECAUSE = {
     "research_purge_authorizations": "a temporary row opened and removed inside the purge transaction",
     "recovery_purge_authorizations": "a temporary row opened and removed inside the recovery purge transaction",
     "scope_english_questions": "written only for a non-English question that gets an English rendering",
-    "snowball_admissions": "written only by a citation snowballing round (D90), which a person starts and this flow does not",
+    "snowball_admissions": "written only by a citation snowballing round (D91), which a person starts and this flow does not",
     "source_similarities": "written by the semantic ranking step, which needs an embedding model",
     "spend_ledger": "written only for a model call on a paid API key (F4); the library builder uses the scripted model",
     "suspected_duplicates": "written only when two sources look like duplicates of one work",

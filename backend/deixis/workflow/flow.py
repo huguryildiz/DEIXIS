@@ -27,7 +27,7 @@ import httpx
 
 from deixis.config import Settings
 from deixis.documents import fetch as fetch_module
-from deixis.documents import acquisition, embeddings, identity, math_reader, ocr, pdf
+from deixis.documents import acquisition, embeddings, identity, local_embedding, math_reader, ocr, pdf
 from deixis.domain import canonical, contracts, vocabulary as question_words
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS,
                                  FULLTEXT_CRITERION_PASSAGES, FULLTEXT_PASSAGES_PER_CALL, FULLTEXT_QUOTE_MIN_CHARS,
@@ -300,7 +300,7 @@ class FlowDeps:
     fetch_pdf: Callable[[str], Awaitable[fetch_module.FetchResult]] = fetch_module.fetch_pdf
     equations: Any = None  # workflow.equations.EquationService when the equation reader is set up (D52)
     limiter: ModelCallLimiter = field(default_factory=lambda: ModelCallLimiter(1))
-    local_embedder: Any = None  # documents.local_embedding.LocalEmbedder: the built-in embedding model (slice 21)
+    local_embedder: Any = None  # documents.local_embedding.LocalModels: the built-in models' llama.cpp servers
     fetch_xml: Callable[[str], Awaitable[fetch_module.FetchResult]] = acquisition.fetch_xml  # Europe PMC (SW21)
     clock: fast_path.Clock | None = None
     fetch_slots: Any = None
@@ -1406,7 +1406,8 @@ class ResearchFlow:
         if output.get("stored_model") or output.get("model"):
             return output.get("stored_model") or output["model"], None
         provider, model = embeddings.chosen(self.store.setting("semantic_search"))
-        if provider == "builtin" and model and english_question.embedding_query(self.store, scope) is None:
+        if (provider == "builtin" and model and embeddings.english_only(embeddings.Embedder(provider, model))
+                and english_question.embedding_query(self.store, scope) is None):
             return None, english_question.MISSING
         return self._embedding_model(), None
 
@@ -2006,8 +2007,7 @@ class ResearchFlow:
 
         # Whether the built-in model was installed and its files checked when this step ran: the transcript says so
         # from the step, never from what Settings say later (D103, decision 5).
-        installed = ({"model_installed": bool(getattr(embedder.local, "integrity", None) and embedder.local.integrity.available())}
-                     if embedder.provider == "builtin" else {})
+        installed = ({"model_installed": embeddings.builtin_ready(embedder)} if embedder.provider == "builtin" else {})
 
         def counts() -> dict[str, Any]:
             return {"model": embedder.stored_model, "sources": len(ids), **progress, "missing": len(missing), **installed,
@@ -2068,19 +2068,22 @@ class ResearchFlow:
 
     @staticmethod
     def _identity(embedder: embeddings.Embedder, identity_from: str | None) -> dict[str, Any]:
+        # The llama.cpp build of a built-in model is provenance, not identity: RUNTIME_NUMERICS in the stored model
+        # says when a build changes numerics.
         return ({"provider": embedder.provider, "stored_model": embedder.stored_model}
+                | (local_embedding.provenance() if embedder.provider == "builtin" else {})
                 | ({"identity_from": identity_from} if identity_from else {}))
 
     def _embedding_query(self, scope: dict[str, Any], embedder: embeddings.Embedder,
                          query_text: str | None = None, query_origin: str = "column") -> tuple[str, str] | None:
-        """(text, origin) of the query. The built-in model reads English only (D103): the question when it is English,
-        else the revision's English sentence; a table column's text only when it is English. Other providers take
-        the text as written."""
+        """(text, origin) of the query. A built-in Qwen3 model reads English only (D103, its English instruction): the
+        question when it is English, else the revision's English sentence; a table column's text only when it is
+        English. bge-m3 and the other providers take the text as written."""
         if query_text is not None:
-            if embedder.provider == "builtin" and not english_question.is_english(query_text):
+            if embeddings.english_only(embedder) and not english_question.is_english(query_text):
                 return None
             return query_text, query_origin
-        if embedder.provider == "builtin":
+        if embeddings.english_only(embedder):
             return english_question.embedding_query(self.store, scope)
         return scope["question"], "question"
 

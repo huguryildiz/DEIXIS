@@ -698,6 +698,9 @@ test.describe.serial('X01-X04: axe scan of the frozen screen list', () => {
       // defaults are read, after the tiles.
       await expect(page.getByRole('combobox', { name: 'Literature model' })).toBeEnabled()
       await expect(page.locator('.co-grid[data-group="main"] .co-card').first()).toBeVisible()
+      // Search & ranking's built-in catalog (in the page on every tab) arrives with its own read; both sections hold it before the scan.
+      await expect(page.locator('div.choice-groups[data-group="semantic"] .builtin-card').first()).toBeAttached()
+      await expect(page.locator('div.choice-groups[data-group="reranking"] .builtin-card').first()).toBeAttached()
       await scan(page, '9a settings defaults', () => dismissToasts(page))
       await page.goto(main.url('#/settings/sources'))
       await expect(page.getByRole('button', { name: /^OpenAlex No key needed/ })).toBeVisible()

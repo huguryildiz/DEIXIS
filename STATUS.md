@@ -24,7 +24,9 @@ Most of this was tested with fake models and synthetic data only; "Not measured"
 - OpenAlex similar-paper requests now overlap, starting 1.5 s apart with 100 records per page (D10).
 - PRISMA-S, the Method box and Watch now read the requests the fast plan really sends, including its semantic and Semantic Scholar requests, and Watch keeps each query's saved position.
 - Citation map (D42): a panel draws the sources by year or as a network from OpenAlex reference lists, and a work cited by two or more sources can be added as a candidate.
-- Citation snowballing (D90): rounds the person starts from chosen works (research ⋯ menu, citation map); backward and forward OpenAlex reads, abstract screening with lexical exclusion off, nothing included; up to 3 rounds. Model-free tests only.
+- Citation snowballing (D91): rounds the person starts from chosen works (research ⋯ menu, citation map); backward and forward OpenAlex reads, abstract screening with lexical exclusion off, nothing included; up to 3 rounds. Model-free tests only.
+- Built-in models on llama.cpp (D90, 17 Oct): a pinned GGUF catalog (embedding: Qwen3 0.6B/4B/8B, bge-m3; reranking: Qwen3 0.6B/4B/8B, bge-reranker-v2-m3) shown as cards in Search & ranking with a memory-based recommendation; the PyTorch runner is gone. Live on an M1 Pro with the 0.6B pair and synthetic texts: 250 titles embedded in 6.2 s (PyTorch 52 s), 100 reranked in 4.3 s warm (32 s), reranker memory steady at 1.6 GB. Retrieval quality, the larger models and Windows are not checked. Search & ranking also gained Cohere embeddings and Cohere, Jina and ZeroEntropy rerankers (D89, mocked tests only).
+- Reranker on BioASQ (D88, 17 Oct, 100 questions, stored candidate lists, title + abstract): Qwen3 and Voyage rerank-3-lite both raise recall@50 from 0.545, by about +0.03 reranking the first 100 and about +0.06 reranking the first 200 (every interval above zero, none reaching the +0.10 bar). The pool default is now 4× the papers read; the reranker stays off until turned on. Only record order was measured, not full product runs or answers (`.local/rerank-trial-2026-10-17/qwen-voyage-results.md`).
 - Verify Citations V1 (D86): a draft's citations and bibliography are read by code and resolved on OpenAlex; no model call yet. V2–V5 (plan `.local/plans/verify-citations-plan.md`) are open.
 
 ### Reading and answers
@@ -122,7 +124,7 @@ All 171 citation links in 8 stored answers are sound; the gap is coverage: answe
 
 ### Consensus-style modes
 
-- [ ] Citation snowballing (D90): live check on the DBR/VBF question (does a round from 1–2 included papers bring the two missed comparisons?) and the Playwright case are open.
+- [ ] Citation snowballing (D91): live check on the DBR/VBF question (does a round from 1–2 included papers bring the two missed comparisons?) and the Playwright case are open.
 - [ ] Reverse citation search: paste a statement and get works whose passages support or challenge it; waits for Verify Citations V3, whose claim-vs-passage step it reuses.
 
 ### Search (after P10)

@@ -1,5 +1,5 @@
-"""Reranking: a second ordering of the first records of the fused ranking (Qwen3 built-in, Voyage, Cohere, Jina or
-ZeroEntropy).
+"""Reranking: a second ordering of the first records of the fused ranking (a built-in catalog reranker run by llama.cpp,
+Voyage, Cohere, Jina or ZeroEntropy).
 
 A reranker reads the question and each candidate's title and abstract and gives a relevance score. It is used in one
 place only in this version: the order in which an `sw` run's records are read (`small_batch.freeze_list`). It never
@@ -9,7 +9,9 @@ is a priority signal, not evidence. Passage ranking for answers is not reranked.
 The setting is separate from the embedding provider, so any embedding (or none) can go with either reranker. Nothing
 reranks until the person turns it on in Settings: an unsaved setting is off, and no external API is called by itself.
 A failed, timed-out or stopped rerank never falls back to another reranker; the fused order is used and the step says
-so.
+so. A built-in choice is `(builtin, catalog id)`; one saved before the catalog (no model, or an earlier model) is never
+mapped to a catalog reranker: the rerank fails with `builtin_model_changed` until the person picks one. The built-in
+rerankers return raw scores (any sign or size); only their order is used.
 
 Voyage's rerank API (docs.voyageai.com, read 17 Oct 2026): up to 1,000 documents; per document the query and the
 document may hold 32,000 tokens together; in all "query tokens × documents + document tokens" may be 600K for
@@ -35,7 +37,7 @@ from typing import Any, Callable
 
 import httpx
 
-from deixis.documents import embeddings, local_embedding
+from deixis.documents import builtin_catalog, embeddings, local_embedding
 from deixis.keys import key_verification
 from deixis.models.gemini import error_message
 from deixis.providers.common import redact
@@ -57,8 +59,10 @@ NAMES = {"voyage": "Voyage AI", "cohere": "Cohere", "jina": "Jina AI", "zeroentr
 VOYAGE_TOTAL_TOKENS = 500_000  # estimated "query × documents + documents" per request, under the API's 600K
 # How many records are reranked, as a multiple of how many a run reads (the depth's N): 2 means the reranker sees twice
 # what is read, so a record just below the read cutoff can move above it and one above can move out. 1 only reorders
-# what would be read anyway. 2 is a starting value, not a measured optimum.
-DEFAULT_POOL_FACTOR = 2.0
+# what would be read anyway. 4 is the default: on 100 BioASQ questions reranking the first 200 of a Standard run
+# (factor 4) raised recall@50 about twice as much as the first 100 (factor 2), for Qwen3 and Voyage alike (D83). It is
+# not a measured optimum; 3 and higher pools were not tried.
+DEFAULT_POOL_FACTOR = 4.0
 MIN_POOL_FACTOR, MAX_POOL_FACTOR = 1.0, 4.0
 MAX_CANDIDATES = 400  # never more records than this in one rerank, whatever the depth and factor
 DEFAULT_TIMEOUT_SECONDS = 180
@@ -82,8 +86,12 @@ class Choice:
     timeout_seconds: int
 
     def identity(self) -> dict[str, Any]:
-        return {"provider": self.provider, "model": self.model, "pool_factor": self.pool_factor,
-                "timeout_seconds": self.timeout_seconds}
+        found = {"provider": self.provider, "model": self.model, "pool_factor": self.pool_factor,
+                 "timeout_seconds": self.timeout_seconds}
+        if self.provider == "builtin":
+            model = builtin_catalog.resolve(self.model, "reranker")
+            found |= {"model_identity": builtin_catalog.identity(model) if model else None, **local_embedding.provenance()}
+        return found
 
     def pool_size(self, read_top: int) -> int:
         """How many records of the automatic order are reranked when a run reads its first `read_top`."""
@@ -94,21 +102,29 @@ def chosen(setting: dict[str, Any] | None) -> Choice | None:
     """The reranker the saved setting turns on, or None: off unless the person turned it on (never by default)."""
     if not setting or not setting.get("enabled") or setting.get("provider") not in PROVIDERS:
         return None
-    model = local_embedding.RERANKER_ID if setting["provider"] == "builtin" else MODELS[setting["provider"]]
+    model = (setting.get("model") or builtin_catalog.NO_MODEL) if setting["provider"] == "builtin" else MODELS[setting["provider"]]
     return Choice(setting["provider"], model, float(setting.get("pool_factor") or DEFAULT_POOL_FACTOR),
                   int(setting.get("timeout_seconds") or DEFAULT_TIMEOUT_SECONDS))
 
 
-def options(builtin_available: bool, builtin_reason: str | None) -> list[dict[str, Any]]:
-    """Each reranker with whether it can be turned on now, why not, and what it sends where."""
+def options(builtin: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Each reranker with whether it can be turned on now, why not, and what it sends where; each built-in catalog
+    reranker is an entry of its own (`LocalModelService.options("reranker")`)."""
+    found = {s["model"]: s for s in builtin or []}
+
+    def local(model: builtin_catalog.Model) -> dict[str, Any]:
+        state = found.get(model.id) or {"available": False, "reason": "Not downloaded", "reason_code": "not_installed"}
+        return {"provider": "builtin", "model": model.id, "name": model.name, "available": bool(state.get("available")),
+                "reason": None if state.get("available") else state.get("reason") or "Not downloaded",
+                "reason_code": None if state.get("available") else state.get("reason_code"), "sends": None}
+
     def api(provider: str) -> dict[str, Any]:
         keyed = bool(os.environ.get(KEY_ENVS[provider]))
         return {"provider": provider, "model": MODELS[provider], "available": keyed,
                 "reason": None if keyed else f"Add a {NAMES[provider].removesuffix(' AI')} API key",
                 "sends": f"The question and the title and abstract of each reranked record, to {NAMES[provider]}"}
     return [
-        {"provider": "builtin", "model": local_embedding.RERANKER_ID, "available": builtin_available,
-         "reason": None if builtin_available else builtin_reason or "Not downloaded", "sends": None},
+        *(local(model) for model in builtin_catalog.of_kind("reranker")),
         *(api(provider) for provider in ("voyage", "cohere", "jina", "zeroentropy")),
     ]
 
@@ -140,12 +156,16 @@ async def rerank(choice: Choice, client: httpx.AsyncClient, local: Any, query: s
     if too_long:
         raise RerankError("reranker_failed", f"{len(too_long)} record(s) longer than {MAX_DOCUMENT_CHARS} characters")
     if choice.provider == "builtin":
+        model = builtin_catalog.resolve(choice.model, "reranker")
+        if model is None:
+            raise RerankError("reranker_unavailable", "builtin_model_changed: the saved built-in reranker is not one "
+                                                      "this DEIXIS runs; choose a built-in reranker in Settings")
         if local is None:
             raise RerankError("reranker_unavailable", "the built-in model is not set up in this process")
         try:
-            scores, cut = await local.rerank(query, documents, choice.timeout_seconds)
+            scores, cut = await local.rerank(model.id, query, documents, choice.timeout_seconds)
         except local_embedding.LocalEmbeddingError as exc:
-            code = "reranker_timeout" if exc.code == "builtin_timeout" else "reranker_failed"
+            code = {"builtin_timeout": "reranker_timeout", "builtin_model_changed": "reranker_unavailable"}.get(exc.code, "reranker_failed")
             raise RerankError(code, str(exc)) from exc
         return {"scores": scores, "truncated": len(cut), "provider_tokens": None}
     env = KEY_ENVS[choice.provider]

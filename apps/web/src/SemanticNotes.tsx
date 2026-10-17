@@ -1,18 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { LoaderCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { api, ApiError, type BuiltinEmbedding, type ResearchView, type SemanticSearch } from './api'
+import { api, ApiError, type BuiltinModels, type ResearchView, type SemanticSearch } from './api'
 import { Notice } from './Notice'
 import { t } from './i18n'
 
-// On Home when semantic search is off only because nothing is saved in Settings, no Gemini key is set and the built-in
-// model is not downloaded (D7). Downloading is the person's act; once the model is ready the backend uses it while
-// nothing is saved, so this note saves no choice and simply goes away. Never shown after the person chose Off.
-const aboutMb = (bytes: number) => Math.round(bytes / 1e6)
-
+// On Home when semantic search is off only because nothing is saved in Settings, no Gemini key is set and no built-in
+// embedding model is downloaded (D7). It offers the embedding model recommended for this computer. Downloading is the
+// person's act; once a model is ready the backend uses it while nothing is saved, so this note saves no choice and simply
+// goes away. Never shown after the person chose Off.
 export function SemanticSetupNote() {
   const [semantic, setSemantic] = useState<SemanticSearch | null>(null)
-  const [builtin, setBuiltin] = useState<BuiltinEmbedding | null>(null)
+  const [builtin, setBuiltin] = useState<BuiltinModels | null>(null)
   const [starting, setStarting] = useState(false)
   // A failed check and a failed start are kept apart, so a later successful check never hides why a start failed.
   const [loadError, setLoadError] = useState('')
@@ -23,7 +22,7 @@ export function SemanticSetupNote() {
   // Only the newest load may set state, so a slow earlier reply never brings back an older state.
   const load = useCallback(() => {
     const mine = ++seq.current
-    return Promise.all([api.semanticSearch(), api.builtinEmbedding()]).then(([s, b]) => {
+    return Promise.all([api.semanticSearch(), api.builtinModels()]).then(([s, b]) => {
       if (!alive.current || mine !== seq.current) return
       setSemantic(s); setBuiltin(b); setLoadError('')
     }).catch((e: Error) => { if (alive.current && mine === seq.current) setLoadError(e.message) })
@@ -36,50 +35,55 @@ export function SemanticSetupNote() {
     document.addEventListener('visibilitychange', again)
     return () => { window.removeEventListener('focus', again); document.removeEventListener('visibilitychange', again) }
   }, [load])
-  const status = builtin?.status
+  const embedding = builtin?.models.filter(m => m.kind === 'embedding') ?? []
+  const model = embedding.find(m => m.id === builtin?.recommended.embedding) ?? embedding[0]
+  const busyElsewhere = embedding.some(m => m.state === 'installing' || m.state === 'installing_elsewhere')
   useEffect(() => {
-    if (status !== 'installing' && status !== 'installing_elsewhere') return
+    if (!busyElsewhere) return
     let stopped = false
     let timer = 0
     const tick = () => { timer = window.setTimeout(() => { void load().finally(() => { if (!stopped) tick() }) }, 1500) }
     tick()
     return () => { stopped = true; window.clearTimeout(timer) }
-  }, [status, load])
+  }, [busyElsewhere, load])
   const retry = <Button type="button" variant="link" size="sm" onClick={() => { void load() }}>{t('Check again')}</Button>
   if ((!semantic || !builtin) && loadError) return <Notice tone="error">{t('Could not check semantic search: {message}', { message: loadError })} {retry}</Notice>
-  if (!semantic || !builtin || semantic.provider !== 'off' || semantic.explicit || builtin.status === 'unsupported_platform') return null
-  if (builtin.status === 'ready' || (builtin.status === 'update_available' && builtin.available) || builtin.status === 'removing' || builtin.status === 'remove_failed') return null
+  if (!semantic || !builtin || !model || semantic.provider !== 'off' || semantic.explicit || !builtin.supported) return null
+  if (embedding.some(m => m.state === 'ready' || m.state === 'removing' || m.state === 'remove_failed')) return null
   const install = () => {
     setStarting(true)
     setStartError('')
-    api.installBuiltinEmbedding()
-      .then(({ job }) => { if (alive.current) setBuiltin(current => current && current.status !== 'unsupported_platform' ? { ...current, status: 'installing', job } : current) })
+    api.installBuiltinModel(model.id)
       // Started in another tab, or already done there: the next load shows that download or the ready model. Any other
-      // refusal (another DEIXIS process using the model, uv missing) is said.
+      // refusal (another DEIXIS process using the model) is said.
       .catch((e: Error) => {
         const settled = e instanceof ApiError && (e.reason === 'install_running' || e.reason === 'already_installed')
         if (alive.current && !settled) setStartError(e.message)
       })
       .finally(() => { if (alive.current) { setStarting(false); void load() } })
   }
-  const { sizes, job } = builtin
-  const running = builtin.status === 'installing' || builtin.status === 'installing_elsewhere'
-  const mismatch = builtin.status === 'files_do_not_match'
-  const sizeVars = { total: aboutMb(sizes.runtime_bytes + sizes.model_bytes), python: aboutMb(sizes.python_bytes) }
+  const running = busyElsewhere
+  const job = embedding.find(m => m.state === 'installing')?.job
+  const mismatch = model.state === 'files_do_not_match'
+  const failed = model.state === 'failed'
+  const extra = !builtin.runtime.installed && builtin.runtime.download_bytes ? builtin.runtime.download_bytes : 0
   return <Notice tone="info">
     <p className="semantic-setup-text">{t('Semantic search is off, so sources are ranked by their keywords only. The built-in model ranks them by meaning; it runs on this computer and needs no key.')}</p>
-    {!running && <p className="semantic-setup-text">{t('It needs about {total} MB of disk, plus about {python} MB if Python 3.12 has to be downloaded, plus room for a download cache.', sizeVars)}</p>}
-    {mismatch && <p className="local-tool-error">{t('The model files do not match the checked copy, so the model is not used. Download them again.')}</p>}
-    {builtin.status === 'failed' && <p className="local-tool-error">{t('The last download failed. Settings → Connections shows the details.')}</p>}
+    {!running && <p className="semantic-setup-text">{withModel(t('Recommended for this computer: {model}, about {size} of disk.'), model.name, aboutMb(model.bytes + extra))}</p>}
+    {mismatch && <p className="local-tool-error">{t('The model file does not match its pinned copy, so the model is not used. Download it again.')}</p>}
+    {failed && <p className="local-tool-error">{t('The last download failed. Settings → Search & ranking shows the details.')}</p>}
     {running && <p className="semantic-setup-progress" role="status"><LoaderCircle size={14} className="chat-spin" aria-hidden />
-      {job && builtin.status === 'installing' ? t('Downloading the built-in model: step {step} of {steps}', { step: job.step, steps: job.steps }) : t('Downloading the built-in model…')}</p>}
+      {job ? t('Downloading the built-in model: step {step} of {steps}', { step: job.step, steps: job.steps }) : t('Downloading the built-in model…')}</p>}
     {startError && <p className="local-tool-error" role="alert">{startError}</p>}
     {loadError && <p className="local-tool-error" role="alert">{loadError} {retry}</p>}
-    {!running && (builtin.uv.available
-      ? <Button type="button" size="sm" variant="outline" disabled={starting} onClick={install}>{starting ? <><LoaderCircle size={14} className="chat-spin" aria-hidden />{t('Starting the download…')}</> : t(mismatch || builtin.status === 'failed' ? 'Download the built-in model again' : 'Download the built-in model')}</Button>
-      : <p>{t('The download needs uv. Settings → Connections → Semantic search shows how to install it.')}</p>)}
+    {!running && <Button type="button" size="sm" variant="outline" disabled={starting} onClick={install}>{starting ? <><LoaderCircle size={14} className="chat-spin" aria-hidden />{t('Starting the download…')}</> : t(mismatch || failed ? 'Download the built-in model again' : 'Download the built-in model')}</Button>}
   </Notice>
 }
+
+const aboutMb = (bytes: number) => Math.round(bytes / 1e6)
+// The model name in mono inside a translated sentence; the size is a number of MB.
+const withModel = (template: string, model: string, mb: number) =>
+  template.replace('{size}', t('{mb} MB', { mb })).split('{model}').flatMap((part, i) => i ? [<code key={i} className="model-id">{model}</code>, part] : [part])
 
 // Under the answer and table buttons whenever Gemini or OpenAI ranks passages (slice 21, decision 10). What will be
 // sent cannot be known when the button is pressed, so the line is conditional and promises no count; what was sent is

@@ -1,176 +1,106 @@
-"""The built-in embedding model and reranker, an optional local component installed on request (slice 21, D103; Qwen3).
+"""The built-in embedding models and rerankers: GGUF files from `builtin_catalog`, run by llama.cpp's `llama-server`.
 
-`Qwen/Qwen3-Embedding-0.6B` and `Qwen/Qwen3-Reranker-0.6B` (both Apache-2.0) from the pinned Hugging Face revisions
-below, run with PyTorch and Transformers the way the two model cards' "Transformers usage" sections do: last-token
-pooling of left-padded input and unit length for the embedding, an `Instruct: …\nQuery:` line on the query only; the
-reranker's yes/no probability after its fixed system prompt. They run in their own Python environment under the data
-directory (`tools/embedding`, uv, every package pinned with hashes), like the equation reader (D52); DEIXIS never
-imports `torch`, `transformers` or `numpy`. `LocalEmbedder` keeps one `embedding_runner.py` process, sends it one
-request per JSON line and stops it when idle; the reranker is loaded for a rerank request and freed after it.
+Each catalog model is downloaded, checked, removed and chosen on its own (`workflow/local_embedding_service.py`). A
+chosen model gets its own `llama-server` process the first time it is asked for, one model per process, on a free
+loopback port with a random API key of that process; `LocalModels` keeps one server per model and stops it after
+LOCAL_IDLE_SECONDS without a request. DEIXIS talks to it through the loopback client (no proxy, no redirects).
 
-Why this runtime: both model cards ship the safetensors weights and a Transformers recipe, and PyTorch has wheels for
-macOS on Apple Silicon (run on MPS) and for Windows x64 (CPU). The ONNX exports that would have kept the small
-onnxruntime environment are third-party copies (onnx-community), the reranker's as a text-generation graph with a
-key-value cache; llama.cpp would need a compiler or per-platform binaries. The price is size: the environment is
-estimated at about 600 MB installed (torch, transformers, tokenizers, numpy; not measured) against fastembed's 145 MB,
-and the model files are 2.4 GB against 67 MB. Speed and memory on real hardware were not measured either; the batch
-size, the token limits and the timeouts below are starting values, not measured optima.
+A server counts as ready only when `/health` answers 200, an authenticated probe only this process can answer comes
+back right (one sentence embedded into a unit vector of the catalog's dimension; two documents reranked into two
+finite scores), and the child is still alive. A port another process took is detected by the child's own bind error
+and the next port is tried, at most MAX_START_ATTEMPTS times.
 
-Every model file is one manifest (`MODEL_FILES`): the download, the runner, `options()` and the status endpoint all
-read it. A full sha256 check runs when the service starts, after an install and every time the runner starts; between
-two full checks, `Integrity` reports the last result for as long as the files keep their size, mtime and inode. That
-cache is not proof of integrity: a file changed in place with the same size and times is caught only by the next full
-check, at the runner's start.
+The child runs under a small `/bin/sh` watcher that holds a pipe from DEIXIS: when DEIXIS ends, even killed, the pipe
+closes and the watcher kills `llama-server`, so no server outlives it. The model's in-use lock (`flock`, shared) and the
+runtime's are handed to the child (`pass_fds`) and live as long as it does; installing or removing a model takes that
+model's lock exclusively, so neither happens under a running server.
 
-Token limits are explicit and never silent: the runner counts each text's tokens before it cuts it at the limit and
-names every text it cut in its reply; the steps record how many were cut.
+Replies are checked fail-closed: embeddings mapped by `index` (each 0..n-1 once), every vector of the catalog's
+dimension, finite, not null and of unit length; rerank results mapped by `results[].index` (each 0..n-1 once), every
+score a finite number of any sign or size (llama.cpp returns raw scores; only their order is used).
 
-POSIX only in this slice: ownership and use are `fcntl.flock` locks handed to child processes with `pass_fds`.
+Token limits are explicit: a text over the input limit is counted with the same server's `/tokenize`, cut at the limit
+by DEIXIS (`/detokenize`) and reported in `truncated_texts`; a text longer than MAX_INPUT_CHARS is refused, not cut.
+The cut policy is part of the stored identity (`builtin_catalog.identity`).
+
+Before a server starts, the model file must have the size, mtime and inode it had at its last full sha256 check
+(recorded on disk at the download and at "Check files"), and the server binary its recorded sha256. The cache is not
+proof: a file changed in place with the same size and times is caught only by the next full check.
+
+POSIX only in this slice.
 """
 
 from __future__ import annotations
 
-from contextvars import ContextVar
-
 import asyncio
-import base64
-import hashlib
 import json
 import math
 import os
-import platform
+import secrets
 import shutil
-import sys
+import signal
+import socket
 from array import array
+from collections import defaultdict
+from contextvars import ContextVar
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 import httpx
 
+from deixis.documents import builtin_catalog, llama_runtime
+from deixis.documents.builtin_catalog import CTX, Model
+from deixis.documents.llama_runtime import DownloadError, RuntimePaths, now_iso  # noqa: F401 (re-exported)
+from deixis.models.openai_compat import loopback_client
 from deixis.storage import library_lock
 from deixis.tools.child_env import child_env
 
-EMBEDDING_REPOSITORY = "Qwen/Qwen3-Embedding-0.6B"
-EMBEDDING_REVISION = "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3"
-RERANKER_REPOSITORY = "Qwen/Qwen3-Reranker-0.6B"
-RERANKER_REVISION = "e61197ed45024b0ed8a2d74b80b4d909f1255473"
-# The folder of the models folder each file goes into, and the repository and revision it is downloaded from.
-SOURCES = {"embedding": (EMBEDDING_REPOSITORY, EMBEDDING_REVISION), "reranker": (RERANKER_REPOSITORY, RERANKER_REVISION)}
-REPOSITORY, REVISION = EMBEDDING_REPOSITORY, EMBEDDING_REVISION
-MODEL_NAME = "qwen3-embedding-0.6b"
-RERANKER_NAME = "qwen3-reranker-0.6b"
-PACKAGE = "torch 2.10.0, transformers 4.57.6"
-# Every package of the environment, pinned with hashes and installed with `uv pip sync` (D20). Its digest goes into
-# installed.json; an installed copy whose digest or models differ from these is shown as "Update available".
-REQUIREMENTS = Path(__file__).with_name("embedding-requirements.txt")
-TORCH_BACKEND = "cpu"  # PyTorch's CPU wheels for Windows and Linux; the macOS wheel is the same on every index
-
-
-def requirements_digest() -> str:
-    """sha256 of the requirement lines only: a comment edited in the file is not an update."""
-    lines = [line for line in REQUIREMENTS.read_text().splitlines() if line.strip() and not line.lstrip().startswith("#")]
-    return hashlib.sha256("\n".join(lines).encode()).hexdigest()
-
-
-def _short(text: str) -> str:
-    return hashlib.sha256(text.encode()).hexdigest()[:8]
-
-
-PYTHON_VERSION = "3.12"
-DIMENSIONS = 1024  # the model's full output; Matryoshka shortening is not used
 LOCAL_BATCH = 16  # records per request (a starting value, not measured), so a pause waits at most one batch
-LOCAL_MAX_TOKENS = 512  # tokens an embedded text may have; a longer one is cut and reported as cut
-RERANK_MAX_TOKENS = 1024  # tokens of the reranker's whole input (its prompt, the question and one title and abstract)
-LOCAL_IDLE_SECONDS = 300  # an idle runner is stopped: it holds the embedding model (about 2.4 GB as float32)
-READY_TIMEOUT_SECONDS = 300  # the runner hashes 2.4 GB of files, then loads the model
-SECONDS_PER_BATCH_LIMIT = 300
-# MPS on Apple Silicon, the CPU elsewhere. The runner never falls back to another device: a missing MPS fails the start.
-DEVICE = "mps" if sys.platform == "darwin" and platform.machine() == "arm64" else "cpu"
-# The one-sentence task the Qwen3 model cards ask for, in English as they advise; only queries carry it.
-EMBEDDING_INSTRUCTION = "Given a research question, retrieve titles, abstracts and passages of scholarly papers that answer it"
-RERANK_INSTRUCTION = "Given a research question, judge whether the scholarly paper's title and abstract are relevant to answering it"
-# The model's identity in stored vectors and similarities: a changed revision, cut, device or instruction is another
-# model's vectors, so they are never compared with these.
-MODEL_ID = f"{MODEL_NAME}@{EMBEDDING_REVISION[:7]}:{LOCAL_MAX_TOKENS}:{DEVICE}:i{_short(EMBEDDING_INSTRUCTION)}"
-RERANKER_ID = f"{RERANKER_NAME}@{RERANKER_REVISION[:7]}:{RERANK_MAX_TOKENS}:{DEVICE}:i{_short(RERANK_INSTRUCTION)}"
-# Built-in models an earlier DEIXIS used. Their stored vectors stay where they are and are never read as Qwen3 vectors.
-EARLIER_MODEL_IDS = ("bge-small-en-v1.5@aa8f8b0:256",)
-RUNNER = Path(__file__).with_name("embedding_runner.py")
-# A known sentence the install's last step embeds: the runner must return one 1,024-dimension unit vector for it.
+LOCAL_IDLE_SECONDS = 300  # an idle server is stopped: it holds its model in memory
+READY_TIMEOUT_SECONDS = 120  # loading the model and answering the probe
+LOCK_WAIT_SECONDS = 30  # waiting for a model's in-use lock that an install's check or a removal holds
+SECONDS_PER_BATCH_LIMIT = 300  # one embedding request
+MAX_START_ATTEMPTS = 3  # ports tried when another process took the free one first
+INPUT_TOKENS = CTX - 16  # tokens one text may have (room for the model's own start and end tokens)
+RERANK_TEMPLATE_TOKENS = 256  # room for the reranker's template around the question and the document
+MAX_INPUT_CHARS = 20_000  # a longer text is refused, never cut (`embeddings.MAX_CHARS`)
+LOG_TAIL_BYTES = 4096
+UNIT_TOLERANCE = 1e-3
 CHECK_SENTENCE = "Packet size and energy consumption in wireless sensor networks."
+# Watches the pipe from DEIXIS: at its end (DEIXIS closed or killed) the server is killed; the server's own exit code
+# is the watcher's. "$@" is the server and its arguments.
+WATCHER = ('exec 3<&0; "$@" 0</dev/null & child=$!; '
+           '(while read -r _ <&3; do :; done; kill -KILL "$child" 2>/dev/null) & reaper=$!; '
+           'wait "$child"; code=$?; kill -KILL "$reaper" 2>/dev/null; exit "$code"')
+BIND_FAILURE = ("couldn't bind", "could not bind", "address already in use", "failed to bind")
+LEGACY_FOLDERS = ("embedding", "embedding-models", "embedding-hf-home", "uv-python", "uv-cache")
+LEGACY_FILES = ("embedding-job.json", "embedding-install.lock", "embedding-in-use.lock")
 
-
-@dataclass(frozen=True)
-class ModelFile:
-    name: str  # "<embedding|reranker>/<the file's path in its repository>"
-    size: int
-    sha256: str
-
-
-# Sizes and digests from the Hugging Face API at the pinned revisions (sha256 of the LFS weights and tokenizers as the
-# API lists them; the small files downloaded and hashed), 17 Oct 2026. README.md and .gitattributes are not needed.
-MODEL_FILES: tuple[ModelFile, ...] = (
-    ModelFile("embedding/1_Pooling/config.json", 313, "37bf193fa101f19101bfad9c31d3eb0f786e247b7b1e5cb7f007d730eed1ddbd"),
-    ModelFile("embedding/config.json", 727, "b5bf1f51fc45be473a54718cef92448d90a1be001bf9b9a44b8c7f10a19feaa9"),
-    ModelFile("embedding/config_sentence_transformers.json", 215, "10667c72ddb772627bf1780cb7f86af8e2ae0032b8c243c731172064105c6961"),
-    ModelFile("embedding/generation_config.json", 117, "28396d421a2108acce96383f6a7de78008f7f1b17f807958f3c14c51dbfb65fb"),
-    ModelFile("embedding/merges.txt", 1_671_853, "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"),
-    ModelFile("embedding/model.safetensors", 1_191_586_416, "0437e45c94563b09e13cb7a64478fc406947a93cb34a7e05870fc8dcd48e23fd"),
-    ModelFile("embedding/modules.json", 349, "84e40c8e006c9b1d6c122e02cba9b02458120b5fb0c87b746c41e0207cf642cf"),
-    ModelFile("embedding/tokenizer.json", 11_423_705, "def76fb086971c7867b829c23a26261e38d9d74e02139253b38aeb9df8b4b50a"),
-    ModelFile("embedding/tokenizer_config.json", 9_706, "253153d0738ceb4c668d2eff957714dd2bea0b56de772a9fdccd96cbf517e6a0"),
-    ModelFile("embedding/vocab.json", 2_776_833, "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"),
-    ModelFile("reranker/1_LogitScore/config.json", 57, "73e3156450564d8a98b7e47bcf5aace0f29600828b51937da545571e84db3ff3"),
-    ModelFile("reranker/chat_template.jinja", 741, "6f682162495ec5b39fd9005c01b6aa2a74669379fe967039f1e2cbbe8752369d"),
-    ModelFile("reranker/config.json", 727, "d479c427a9ca5295218063d4f9aca4f297ab4ac27487cca7af42c84643d51ef0"),
-    ModelFile("reranker/config_sentence_transformers.json", 325, "6a153d6696f78fd588c1c728967f0b773ea869d3c6028f151ce71ebe49140762"),
-    ModelFile("reranker/generation_config.json", 214, "81051cd3f6e77013827148d0b8a6ead93f8ac390d5ab805f849199f0af6a08db"),
-    ModelFile("reranker/merges.txt", 1_671_853, "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"),
-    ModelFile("reranker/model.safetensors", 1_191_588_280, "27cd75a405b9c1b46b59abfd88aaa209e6fed2a1972cde9b70e7659537c5e65b"),
-    ModelFile("reranker/modules.json", 280, "6f13b6b4a89e577b591b2077bca40c67c26541a6740a8809267cb474f90806a9"),
-    ModelFile("reranker/sentence_bert_config.json", 362, "3234ebd224d492cbe8d55d5ec80a3f408451c4db3005bafb64fe1c51c763e01e"),
-    ModelFile("reranker/tokenizer.json", 11_422_654, "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"),
-    ModelFile("reranker/tokenizer_config.json", 9_706, "253153d0738ceb4c668d2eff957714dd2bea0b56de772a9fdccd96cbf517e6a0"),
-    ModelFile("reranker/vocab.json", 2_776_833, "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"),
-)
-# Disk sizes, never download sizes: the wheels' download bytes were not measured.
-MODEL_DISK_BYTES = sum(f.size for f in MODEL_FILES)  # the pinned models' files, 2.4 GB; what Settings says before a download
-RUNTIME_BYTES_ESTIMATE = 600_000_000  # the environment, estimated from the wheels, not measured
-PYTHON_BYTES_ESTIMATE = 74_000_000  # CPython 3.12.13 as uv installed it on an M1 Pro, when uv has to download Python
-
-
-def model_bytes() -> int:
-    return sum(f.size for f in MODEL_FILES)
-
-
-def model_url(name: str) -> str:
-    part, path = name.split("/", 1)
-    repository, revision = SOURCES[part]
-    return f"https://huggingface.co/{repository}/resolve/{revision}/{path}"
-
-
-def supported() -> bool:
-    """The built-in model needs `fcntl.flock` and `pass_fds`: macOS and Linux in this slice."""
-    return os.name == "posix"
-
-
-def manifest() -> list[dict[str, Any]]:
-    return [{"name": f.name, "size": f.size, "sha256": f.sha256} for f in MODEL_FILES]
+RUNNER_THREADS: ContextVar[int | None] = ContextVar("deixis_embedding_threads", default=None)
 
 
 class LocalEmbeddingError(Exception):
-    """`builtin_unavailable`, `builtin_timeout`, `builtin_stopped`, `builtin_bad_reply` or `builtin_model_changed`, with
-    what happened."""
+    """`builtin_unavailable`, `builtin_timeout`, `builtin_stopped`, `builtin_bad_reply`, `builtin_input_too_long` or
+    `builtin_model_changed`, with what happened."""
 
     def __init__(self, code: str, message: str):
         super().__init__(f"{code}: {message}")
         self.code = code
 
 
-class DownloadError(Exception):
+class _BindFailed(Exception):
     pass
+
+
+def supported() -> bool:
+    """The built-in models need `fcntl.flock`, `pass_fds` and a pinned llama.cpp build: macOS and Linux x64."""
+    return llama_runtime.supported()
+
+
+def provenance() -> dict[str, str]:
+    """What a step records about the runtime that computed its vectors or scores."""
+    return {"runtime": "llama.cpp", "runtime_build": llama_runtime.TAG}
 
 
 @dataclass(frozen=True)
@@ -178,471 +108,591 @@ class BuiltinPaths:
     root: Path  # <data dir>/tools
 
     @property
-    def env(self) -> Path:
-        return self.root / "embedding"
-
-    @property
-    def python(self) -> Path:
-        return self.env / "bin" / "python"
-
-    @property
-    def installed_marker(self) -> Path:
-        return self.env / "installed.json"
+    def runtime(self) -> RuntimePaths:
+        return RuntimePaths(self.root / "llama")
 
     @property
     def models_root(self) -> Path:
-        return self.root / "embedding-models"
+        return self.root / "models"
+
+    def model_dir(self, model_id: str) -> Path:
+        return self.models_root / model_id
+
+    def model_file(self, model: Model) -> Path:
+        return self.model_dir(model.id) / model.file
+
+    def check_record(self, model_id: str) -> Path:
+        return self.model_dir(model_id) / "check.json"
 
     @property
-    def models(self) -> Path:
-        return self.models_root / f"qwen3-0.6b@{EMBEDDING_REVISION[:7]}-{RERANKER_REVISION[:7]}"
+    def locks(self) -> Path:
+        return self.root / "locks"
+
+    def model_lock(self, model_id: str) -> Path:
+        return self.locks / f"{model_id}.lock"
 
     @property
-    def hf_home(self) -> Path:
-        return self.root / "embedding-hf-home"
-
-    @property
-    def uv_cache(self) -> Path:
-        return self.root / "uv-cache"
-
-    @property
-    def uv_python(self) -> Path:
-        return self.root / "uv-python"
-
-    @property
-    def job_file(self) -> Path:
-        return self.root / "embedding-job.json"
+    def runtime_lock(self) -> Path:
+        return self.locks / "llama-runtime.lock"
 
     @property
     def install_lock(self) -> Path:
-        return self.root / "embedding-install.lock"
+        return self.root / "local-models-install.lock"
 
     @property
-    def in_use_lock(self) -> Path:
-        return self.root / "embedding-in-use.lock"
+    def job_file(self) -> Path:
+        return self.root / "local-models-job.json"
 
-    def installed(self) -> bool:
-        """Only an environment whose install wrote its last file counts; one without it is half-built."""
-        return self.installed_marker.is_file() and self.python.exists()
+    def log_file(self, model_id: str) -> Path:
+        return self.root / "llama-logs" / f"{model_id}.log"
 
-    def outdated(self) -> bool:
-        """An installed copy built from another model or another package list than this DEIXIS pins (D20)."""
-        try:
-            marker = json.loads(self.installed_marker.read_text())
-        except (OSError, ValueError):
-            return True
-        return (marker.get("model") != MODEL_ID or marker.get("reranker") != RERANKER_ID
-                or marker.get("requirements") != requirements_digest())
+    def installed(self, model: Model) -> bool:
+        """The model's file is in place (not a part); whether it matches is the integrity record's business."""
+        return self.model_file(model).is_file()
 
-    def runner_env(self) -> dict[str, str]:
-        """Offline, with the data directory's own Hugging Face home: nothing is read from or written to ~/.cache."""
-        return child_env({"HF_HUB_OFFLINE": "1", "HF_HOME": str(self.hf_home), "PYTHONUNBUFFERED": "1",
-                          "TOKENIZERS_PARALLELISM": "false"})
+    def legacy(self) -> list[Path]:
+        """What the earlier PyTorch built-in model (D88) left under tools; shown and removed only on request."""
+        return [p for p in ([self.root / n for n in LEGACY_FOLDERS] + [self.root / n for n in LEGACY_FILES])
+                if p.exists() or p.is_symlink()]
 
 
 def builtin_paths(data_dir: Path) -> BuiltinPaths:
     return BuiltinPaths(data_dir / "tools")
 
 
-RUNNER_THREADS: ContextVar[int | None] = ContextVar("deixis_embedding_threads", default=None)
-
-
-def runner_argv(paths: BuiltinPaths, threads: int | None = None) -> list[str]:
-    """The runner inherits the in-use lock's descriptor through `pass_fds` and keeps it open while it lives."""
-    return [str(paths.python), str(RUNNER), "--model-dir", str(paths.models), "--max-tokens", str(LOCAL_MAX_TOKENS),
-            "--rerank-max-tokens", str(RERANK_MAX_TOKENS), "--manifest", json.dumps(manifest()), "--device", DEVICE,
-            "--instruction", EMBEDDING_INSTRUCTION, "--rerank-instruction", RERANK_INSTRUCTION] + (
-                ["--threads", str(threads)] if threads is not None else [])
+def tree_size(root: Path) -> int:
+    if root.is_file() or root.is_symlink():
+        try:
+            return os.lstat(root).st_size
+        except OSError:
+            return 0
+    total = 0
+    for folder, _, files in os.walk(root):
+        for name in files:
+            try:
+                total += os.lstat(os.path.join(folder, name)).st_size
+            except OSError:
+                pass
+    return total
 
 
 # ---- the model files ---------------------------------------------------------------------
 
-def file_stats(paths: BuiltinPaths) -> tuple[tuple[int, int, int], ...] | None:
-    """(size, mtime_ns, inode) of each manifest file, or None when one is missing."""
-    stats = []
-    for model_file in MODEL_FILES:
-        try:
-            st = os.stat(paths.models / model_file.name)
-        except OSError:
-            return None
-        stats.append((st.st_size, st.st_mtime_ns, st.st_ino))
-    return tuple(stats)
-
-
-def _digest(path: Path) -> str:
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def file_matches(path: Path, model_file: ModelFile) -> bool:
+def file_stats(path: Path) -> list[int] | None:
     try:
-        return path.stat().st_size == model_file.size and _digest(path) == model_file.sha256
+        st = os.stat(path)
     except OSError:
-        return False
+        return None
+    return [st.st_size, st.st_mtime_ns, st.st_ino]
 
 
-def full_check(paths: BuiltinPaths) -> bool:
-    """Every manifest file present with its byte count and sha256."""
-    return all(file_matches(paths.models / f.name, f) for f in MODEL_FILES)
+class ModelIntegrity:
+    """The last full sha256 check of one model file, kept on disk next to it, trusted while the file keeps the size,
+    mtime and inode it had then."""
 
+    def __init__(self, paths: BuiltinPaths, model: Model):
+        self.paths, self.model = paths, model
 
-def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    @property
+    def _record_path(self) -> Path:
+        return self.paths.check_record(self.model.id)
 
-
-class Integrity:
-    """The last full check's result, trusted while every file keeps the size, mtime and inode it had then."""
-
-    def __init__(self, paths: BuiltinPaths):
-        self.paths = paths
-        self.at: str | None = None
-        self.passed: bool | None = None
-        self.stats: tuple[tuple[int, int, int], ...] | None = None
+    def _read(self) -> dict[str, Any] | None:
+        try:
+            record = json.loads(self._record_path.read_text())
+        except (OSError, ValueError):
+            return None
+        return record if isinstance(record, dict) else None
 
     def record(self, passed: bool) -> None:
-        self.at, self.passed, self.stats = now_iso(), passed, file_stats(self.paths) if passed else None
-
-    def reset(self) -> None:
-        self.at = self.passed = self.stats = None
+        stats = file_stats(self.paths.model_file(self.model)) if passed else None
+        self._record_path.parent.mkdir(parents=True, exist_ok=True)
+        partial = self._record_path.with_suffix(".json.tmp")
+        partial.write_text(json.dumps({"at": now_iso(), "passed": passed, "sha256": self.model.sha256, "stats": stats}))
+        os.replace(partial, self._record_path)
 
     def check_now(self) -> bool:
-        passed = full_check(self.paths)
+        passed = llama_runtime.file_matches(self.paths.model_file(self.model), self.model.bytes, self.model.sha256)
         self.record(passed)
         return passed
 
+    def reset(self) -> None:
+        self._record_path.unlink(missing_ok=True)
+
     def available(self) -> bool:
-        return (supported() and self.paths.installed() and bool(self.passed) and self.stats is not None
-                and file_stats(self.paths) == self.stats)
+        record = self._read()
+        return bool(record and record.get("passed") is True and record.get("sha256") == self.model.sha256
+                    and record.get("stats") is not None
+                    and record["stats"] == file_stats(self.paths.model_file(self.model)))
 
     def last_full_check(self) -> dict[str, Any] | None:
-        return None if self.at is None else {"at": self.at, "passed": bool(self.passed)}
+        record = self._read()
+        return None if record is None else {"at": record.get("at"), "passed": bool(record.get("passed"))}
 
 
-# The Integrity the running app's service keeps, for views that only have the store (as `equations.reading` is).
-_registered: Integrity | None = None
+# ---- locks -------------------------------------------------------------------------------
+
+def _open_lock(path: Path) -> int:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
 
 
-def register(integrity: Integrity) -> None:
-    global _registered
-    _registered = integrity
-
-
-def builtin_available() -> bool:
-    return bool(_registered is not None and _registered.available())
-
-
-def remove_parts(models: Path) -> None:
-    """Remove files a stopped download left half-written."""
-    if models.is_dir():
-        for part in models.rglob("*.part"):
-            part.unlink(missing_ok=True)
-
-
-async def download_model(client: httpx.AsyncClient, models: Path,
-                         progress: Callable[[int, int], None] | None = None) -> None:
-    """Download the manifest's files from the pinned revision into `models`.
-
-    Each file is written to `<name>.part`, its byte count and sha256 compared with the manifest, and only then moved
-    into place; a mismatch deletes the part and raises DownloadError, so no file is ever half there. A file already in
-    place with its digest is not asked for again. `progress(done, total)` gets bytes of the whole model."""
-    models.mkdir(parents=True, exist_ok=True)
-    total = model_bytes()
-    done = 0
-    for model_file in MODEL_FILES:
-        target = models / model_file.name
-        target.parent.mkdir(parents=True, exist_ok=True)
-        if await asyncio.to_thread(file_matches, target, model_file):
-            done += model_file.size
-            if progress:
-                progress(done, total)
-            continue
-        part = target.with_name(f"{target.name}.part")
-        digest, size = hashlib.sha256(), 0
-        try:
-            with open(part, "wb") as handle:
-                async with client.stream("GET", model_url(model_file.name), follow_redirects=True, timeout=120) as response:
-                    if response.status_code != 200:
-                        raise DownloadError(f"{model_file.name}: HTTP {response.status_code}")
-                    async for chunk in response.aiter_bytes(1 << 16):
-                        handle.write(chunk)
-                        digest.update(chunk)
-                        size += len(chunk)
-                        if size > model_file.size:
-                            raise DownloadError(f"{model_file.name}: more than {model_file.size} bytes")
-                        if progress:
-                            progress(done + size, total)
-            if size != model_file.size or digest.hexdigest() != model_file.sha256:
-                raise DownloadError(f"{model_file.name}: {size} bytes, sha256 {digest.hexdigest()[:12]}…, expected "
-                                    f"{model_file.size} bytes, {model_file.sha256[:12]}…")
-            os.replace(part, target)
-        except httpx.HTTPError as exc:
-            part.unlink(missing_ok=True)
-            raise DownloadError(f"{model_file.name}: {type(exc).__name__}: {str(exc)[:200]}") from exc
-        except BaseException:
-            part.unlink(missing_ok=True)
-            raise
-        done += model_file.size
-
-
-def remove_files(paths: BuiltinPaths) -> list[str]:
-    """Delete the environment's completion mark first, then the environment and every downloaded file. Returns the
-    paths that could not be deleted (empty when everything went); nothing is silently left behind."""
-    failed: list[str] = []
-
-    def note(_function: Any, path: str, _error: Any) -> None:
-        failed.append(str(path))
-
-    try:
-        paths.installed_marker.unlink(missing_ok=True)
-    except OSError:
-        failed.append(str(paths.installed_marker))
-    for folder in (paths.env, paths.models_root, paths.hf_home, paths.uv_cache, paths.uv_python):
-        if folder.exists() or folder.is_symlink():
-            shutil.rmtree(folder, onexc=note)
-            if folder.exists() and str(folder) not in failed:
-                failed.append(str(folder))
-    return failed
-
-
-# ---- the runner process ------------------------------------------------------------------
-
-def decode_vector(text: str) -> array:
-    vector = array("f")
-    vector.frombytes(base64.b64decode(text, validate=True))
-    if sys.byteorder != "little":
-        vector.byteswap()
-    return vector
-
-
-def _answer(reply: Any, request_id: int) -> dict[str, Any]:
-    if not isinstance(reply, dict) or reply.get("id") != request_id:
-        raise LocalEmbeddingError("builtin_bad_reply", "the reply answers another request")
-    if "error" in reply:
-        raise LocalEmbeddingError("builtin_bad_reply", f"the runner reported: {str(reply['error'])[:300]}")
-    return reply
-
-
-def truncated_of(reply: dict[str, Any], count: int) -> list[int]:
-    """The indexes of the texts the runner cut at its token limit; a reply that does not name them is refused."""
-    cut = reply.get("truncated")
-    if (not isinstance(cut, list) or any(type(i) is not int or not 0 <= i < count for i in cut)
-            or len(set(cut)) != len(cut)):
-        raise LocalEmbeddingError("builtin_bad_reply", "the reply does not say which texts were cut at the token limit")
-    return sorted(cut)
-
-
-def check_reply(reply: Any, request_id: int, count: int) -> list[array]:
-    """The reply's vectors, or LocalEmbeddingError `builtin_bad_reply`: same id, one vector per text, DIMENSIONS values
-    each, every value finite."""
-    reply = _answer(reply, request_id)
-    encoded = reply.get("vectors")
-    if not isinstance(encoded, list) or len(encoded) != count:
-        raise LocalEmbeddingError("builtin_bad_reply", f"{len(encoded) if isinstance(encoded, list) else 'no'} vectors for {count} texts")
-    vectors = []
-    for item in encoded:
-        try:
-            vector = decode_vector(item)
-        except (TypeError, ValueError) as exc:
-            raise LocalEmbeddingError("builtin_bad_reply", "a vector is not base64 float32") from exc
-        if len(vector) != DIMENSIONS:
-            raise LocalEmbeddingError("builtin_bad_reply", f"a vector has {len(vector)} dimensions, not {DIMENSIONS}")
-        if not all(math.isfinite(v) for v in vector):
-            raise LocalEmbeddingError("builtin_bad_reply", "a vector holds a value that is not finite")
-        vectors.append(vector)
-    return vectors
-
-
-def check_scores(reply: Any, request_id: int, count: int) -> list[float]:
-    """A rerank reply's scores in input order: one probability (0 to 1) per document, else `builtin_bad_reply`."""
-    scores = _answer(reply, request_id).get("scores")
-    if (not isinstance(scores, list) or len(scores) != count
-            or not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and 0 <= v <= 1
-                       for v in scores)):
-        raise LocalEmbeddingError("builtin_bad_reply", f"the reply does not hold {count} scores between 0 and 1")
-    return [float(v) for v in scores]
-
-
-def take_shared(path: Path) -> int | None:
-    """An open descriptor holding LOCK_SH on the in-use lock, or None when someone holds it exclusively."""
+def try_lock(path: Path, exclusive: bool) -> int | None:
+    """An open descriptor holding the lock, or None when another holder has it."""
     import fcntl
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+    fd = _open_lock(path)
     try:
-        fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        fcntl.flock(fd, (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) | fcntl.LOCK_NB)
     except OSError:
         os.close(fd)
         return None
     return fd
 
 
-class LocalEmbedder:
-    """One runner process shared by every caller; requests are served one at a time.
+async def wait_shared(path: Path, seconds: float = LOCK_WAIT_SECONDS) -> int | None:
+    """LOCK_SH on `path`, waiting up to `seconds` while someone holds it exclusively; None when it stays held."""
+    loop = asyncio.get_running_loop()
+    ends = loop.time() + seconds
+    while True:
+        fd = try_lock(path, exclusive=False)
+        if fd is not None or loop.time() >= ends:
+            return fd
+        await asyncio.sleep(0.25)
 
-    Before it starts a runner, the embedder takes LOCK_SH on `embedding-in-use.lock` and hands the descriptor to the
-    runner, which holds it for as long as it lives, even if DEIXIS dies. An install or a removal takes the same lock
-    exclusively, in this process or another; while one holds it, no runner starts. `removing` (and `installing`)
-    turn every new request away before any lock or process is touched.
-    """
 
-    def __init__(self, paths: BuiltinPaths, integrity: Integrity | None = None, idle_seconds: float = LOCAL_IDLE_SECONDS,
-                 runner: Path = RUNNER, python: str | None = None):
-        self.paths, self.idle_seconds = paths, idle_seconds
-        self.integrity = integrity or Integrity(paths)
-        self.runner, self.python = runner, python
+def _close(fd: int | None) -> None:
+    if fd is not None:
+        os.close(fd)
+
+
+# ---- the server process ------------------------------------------------------------------
+
+def free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def _number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def check_vectors(reply: Any, count: int, dimensions: int) -> list[array]:
+    """`/v1/embeddings` vectors in input order, mapped by `index`, or `builtin_bad_reply`: each index 0..count-1 once,
+    every vector `dimensions` long, finite, not null and of unit length."""
+    items = reply.get("data") if isinstance(reply, dict) else None
+    if not isinstance(items, list) or len(items) != count or not all(isinstance(i, dict) for i in items):
+        raise LocalEmbeddingError("builtin_bad_reply", f"{len(items) if isinstance(items, list) else 'no'} vectors for {count} texts")
+    indexes = [item.get("index") for item in items]
+    if any(type(i) is not int for i in indexes) or sorted(indexes) != list(range(count)):
+        raise LocalEmbeddingError("builtin_bad_reply", f"the reply's indexes are not 0 to {count - 1}, each once")
+    vectors: list[array | None] = [None] * count
+    for item in items:
+        values = item.get("embedding")
+        if not isinstance(values, list) or len(values) != dimensions:
+            raise LocalEmbeddingError("builtin_bad_reply", f"a vector has {len(values) if isinstance(values, list) else 'no'} "
+                                                           f"dimensions, not {dimensions}")
+        if not all(_number(v) for v in values):
+            raise LocalEmbeddingError("builtin_bad_reply", "a vector holds a null or a value that is not finite")
+        norm = math.sqrt(sum(v * v for v in values))
+        if abs(norm - 1.0) > UNIT_TOLERANCE:
+            raise LocalEmbeddingError("builtin_bad_reply", f"a vector has length {norm:.4f}, not 1")
+        vectors[item["index"]] = array("f", values)
+    return vectors  # type: ignore[return-value]
+
+
+def check_scores(reply: Any, count: int) -> list[float]:
+    """`/v1/rerank` scores in input order, mapped by `results[].index`, or `builtin_bad_reply`: each index 0..count-1
+    once, every score a finite number (raw scores: any sign or size)."""
+    items = reply.get("results") if isinstance(reply, dict) else None
+    if not isinstance(items, list) or len(items) != count or not all(isinstance(i, dict) for i in items):
+        raise LocalEmbeddingError("builtin_bad_reply", f"{len(items) if isinstance(items, list) else 'no'} scores for {count} documents")
+    indexes = [item.get("index") for item in items]
+    if any(type(i) is not int for i in indexes) or sorted(indexes) != list(range(count)):
+        raise LocalEmbeddingError("builtin_bad_reply", f"the reply does not rank documents 0 to {count - 1}, each once")
+    scores: list[float] = [0.0] * count
+    for item in items:
+        if not _number(item.get("relevance_score")):
+            raise LocalEmbeddingError("builtin_bad_reply", "a relevance score is not a finite number")
+        scores[item["index"]] = float(item["relevance_score"])
+    return scores
+
+
+class LlamaServer:
+    """One `llama-server` child serving one catalog model. The caller serializes requests (`LocalModels`)."""
+
+    def __init__(self, paths: BuiltinPaths, model: Model, client: httpx.AsyncClient, threads: int | None = None):
+        self.paths, self.model, self.client, self.threads = paths, model, client, threads
         self.process: asyncio.subprocess.Process | None = None
-        self.lock = asyncio.Lock()
-        self.removing = False
-        self.installing = False
-        self.ready_info: dict[str, Any] | None = None
-        self._idle: asyncio.TimerHandle | None = None
-        self._requests = 0
-        self._threads: int | None = None
+        self.port: int | None = None
+        self._key: str | None = None
 
-    def blocked(self) -> bool:
-        return self.removing or self.installing
+    @property
+    def alive(self) -> bool:
+        return self.process is not None and self.process.returncode is None
 
-    def _argv(self) -> list[str]:
-        argv = runner_argv(self.paths, self._threads)
-        if self.python is not None:  # tests run a fake runner with the test's own interpreter
-            argv[0] = self.python
-        argv[1] = str(self.runner)
-        return argv
+    @property
+    def base(self) -> str:
+        return f"http://127.0.0.1:{self.port}"
+
+    def argv(self, port: int, key: str) -> list[str]:
+        model = self.model
+        kind = (["--embedding", "--pooling", model.pooling] if model.kind == "embedding" else ["--rerank"])
+        return (["-m", str(self.paths.model_file(model)), "--host", "127.0.0.1", "--port", str(port), "-c", str(CTX),
+                 "-ub", str(CTX), "-b", str(CTX), "-np", "1", "-ngl", "99", "--api-key", key, *kind]
+                + (["--threads", str(self.threads)] if self.threads is not None else []))
+
+    def log_tail(self) -> str:
+        try:
+            with open(self.paths.log_file(self.model.id), "rb") as handle:
+                handle.seek(0, os.SEEK_END)
+                handle.seek(max(0, handle.tell() - LOG_TAIL_BYTES))
+                return handle.read().decode("utf-8", "replace")
+        except OSError:
+            return ""
 
     async def start(self, lock_fd: int | None = None) -> None:
-        """Start the runner. With `lock_fd`, the caller already holds the in-use lock (the install's check)."""
-        if not supported():
-            raise LocalEmbeddingError("builtin_unavailable", "the built-in model is not available on this platform")
-        if lock_fd is None and self.blocked():
-            raise LocalEmbeddingError("builtin_unavailable", "the built-in model is being installed or removed")
-        if not self.paths.installed() and lock_fd is None:
-            raise LocalEmbeddingError("builtin_unavailable", "the built-in model is not installed")
-        own = lock_fd is None
-        fd = take_shared(self.paths.in_use_lock) if own else lock_fd
-        if fd is None:
-            raise LocalEmbeddingError("builtin_unavailable", "the built-in model is being installed or removed")
-        try:
-            self.process = await asyncio.create_subprocess_exec(
-                *self._argv(), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL, env=self.paths.runner_env(), pass_fds=(fd, *library_lock.child_fds()), limit=64 * 1024 * 1024)
-        except OSError as exc:
-            raise LocalEmbeddingError("builtin_unavailable", f"the runner did not start: {exc}") from exc
-        finally:
-            if own:
-                os.close(fd)  # the runner holds the lock now, for as long as it lives
-        try:
-            line = await asyncio.wait_for(self.process.stdout.readline(), READY_TIMEOUT_SECONDS)
-        except asyncio.TimeoutError:
-            await self._kill()
-            raise LocalEmbeddingError("builtin_timeout", "the runner did not report ready") from None
-        try:
-            ready = json.loads(line) if line else None
-        except json.JSONDecodeError:
-            ready = None
-        if not isinstance(ready, dict) or ready.get("ready") is not True or ready.get("dimensions") != DIMENSIONS:
-            await self._kill()
-            error = (ready or {}).get("error") if isinstance(ready, dict) else None
-            if isinstance(ready, dict) and ready.get("code") == "files_do_not_match":
-                self.integrity.record(False)  # the gate failed: `available` turns false at once
-            raise LocalEmbeddingError("builtin_unavailable", f"the runner did not start: {error or 'no ready line'}")
-        # The runner checked every file's sha256 before it said ready: that is a full check.
-        self.integrity.record(True)
-        self.ready_info = ready
+        """Start and probe the server. With `lock_fd` the caller already holds the model's in-use lock (an install's
+        check); otherwise it is taken shared here, waiting at most LOCK_WAIT_SECONDS."""
+        runtime = self.paths.runtime
+        server = runtime.server()
+        if server is None:
+            raise LocalEmbeddingError("builtin_unavailable", "llama.cpp is not installed")
+        if not await asyncio.to_thread(runtime.server_matches):
+            raise LocalEmbeddingError("builtin_unavailable", "the llama.cpp server binary does not match its record")
+        for _attempt in range(MAX_START_ATTEMPTS):
+            own = lock_fd is None
+            model_fd = await wait_shared(self.paths.model_lock(self.model.id)) if own else lock_fd
+            if model_fd is None:
+                raise LocalEmbeddingError("builtin_unavailable", "the model is being installed or removed")
+            runtime_fd = await wait_shared(self.paths.runtime_lock)
+            if runtime_fd is None:
+                if own:
+                    _close(model_fd)
+                raise LocalEmbeddingError("builtin_unavailable", "llama.cpp is being installed or removed")
+            port, key = free_port(), secrets.token_hex(24)
+            log = self.paths.log_file(self.model.id)
+            log.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                with open(log, "wb") as handle:
+                    self.process = await asyncio.create_subprocess_exec(
+                        "/bin/sh", "-c", WATCHER, "deixis-llama", str(server), *self.argv(port, key),
+                        stdin=asyncio.subprocess.PIPE, stdout=handle, stderr=handle, cwd=str(server.parent),
+                        env=child_env(), start_new_session=True,
+                        pass_fds=(model_fd, runtime_fd, *library_lock.child_fds()))
+            except OSError as exc:
+                raise LocalEmbeddingError("builtin_unavailable", f"llama-server did not start: {exc}") from exc
+            finally:
+                _close(runtime_fd)
+                if own:
+                    _close(model_fd)  # the child holds the locks now, for as long as it lives
+            self.port, self._key = port, key
+            try:
+                await self._ready()
+                return
+            except _BindFailed:
+                await self.kill()
+            except BaseException:
+                await self.kill()
+                raise
+        raise LocalEmbeddingError("builtin_unavailable", f"no free port after {MAX_START_ATTEMPTS} attempts")
 
-    async def embed(self, texts: list[str], kind: str, report: dict[str, int] | None = None) -> list[array]:
+    def _exited(self) -> None:
+        """Raise for a child that has ended: `_BindFailed` when it could not take its port."""
+        if self.process is not None and self.process.returncode is not None:
+            tail = self.log_tail()
+            if any(marker in tail.lower() for marker in BIND_FAILURE):
+                raise _BindFailed()
+            raise LocalEmbeddingError("builtin_unavailable", f"llama-server ended with code {self.process.returncode}: "
+                                                            f"{tail.strip()[-300:]}")
+
+    async def _ready(self) -> None:
+        loop = asyncio.get_running_loop()
+        ends = loop.time() + READY_TIMEOUT_SECONDS
+        while True:
+            self._exited()
+            if loop.time() >= ends:
+                raise LocalEmbeddingError("builtin_timeout", f"llama-server was not ready within {READY_TIMEOUT_SECONDS} s")
+            try:
+                health = await self.client.get(f"{self.base}/health", timeout=2)
+                if health.status_code == 200:
+                    break
+            except httpx.HTTPError:
+                pass
+            await asyncio.sleep(0.1)
+        # Only this process knows the key: a server another process runs on this port cannot answer the probe.
+        seconds = max(1.0, ends - loop.time())
+        try:
+            if self.model.kind == "embedding":
+                await self.embed([CHECK_SENTENCE], "query", seconds)
+            else:
+                await self.rerank(CHECK_SENTENCE, [CHECK_SENTENCE, "ready"], seconds)
+        except LocalEmbeddingError:
+            self._exited()
+            raise
+        self._exited()
+
+    async def _post(self, path: str, body: dict[str, Any], seconds: float) -> Any:
+        try:
+            response = await self.client.post(f"{self.base}{path}", json=body, timeout=seconds,
+                                              headers={"Authorization": f"Bearer {self._key}"})
+        except httpx.TimeoutException as exc:
+            raise LocalEmbeddingError("builtin_timeout", f"no reply within {seconds:g} s") from exc
+        except httpx.HTTPError as exc:
+            raise LocalEmbeddingError("builtin_stopped", f"llama-server did not answer: {type(exc).__name__}") from exc
+        if response.status_code != 200:
+            raise LocalEmbeddingError("builtin_bad_reply", f"llama-server answered HTTP {response.status_code}: "
+                                                           f"{response.text[:300]}")
+        try:
+            return response.json()
+        except ValueError as exc:
+            raise LocalEmbeddingError("builtin_bad_reply", "the reply is not JSON") from exc
+
+    async def _tokens(self, text: str, seconds: float) -> list[int]:
+        """The text's tokens as this server's model counts them (`/tokenize`, no start or end token)."""
+        reply = await self._post("/tokenize", {"content": text, "add_special": False}, seconds)
+        tokens = reply.get("tokens") if isinstance(reply, dict) else None
+        if not isinstance(tokens, list) or not all(type(t) is int for t in tokens):
+            raise LocalEmbeddingError("builtin_bad_reply", "the tokenizer's reply holds no tokens")
+        return tokens
+
+    async def _fit(self, text: str, limit: int, seconds: float) -> tuple[str, bool]:
+        """`text` within `limit` tokens of this model: as it is, or cut at the limit (True). A text whose UTF-8 bytes
+        (plus two) fit is not counted: a token covers at least one byte, bar one leading space marker."""
+        if len(text) > MAX_INPUT_CHARS:
+            raise LocalEmbeddingError("builtin_input_too_long", f"a text of {len(text)} characters is longer than "
+                                                                f"{MAX_INPUT_CHARS}; it is refused, not cut")
+        if len(text.encode()) + 2 <= limit:
+            return text, False
+        tokens = await self._tokens(text, seconds)
+        if len(tokens) <= limit:
+            return text, False
+        reply = await self._post("/detokenize", {"tokens": tokens[:limit]}, seconds)
+        content = reply.get("content") if isinstance(reply, dict) else None
+        if not isinstance(content, str):
+            raise LocalEmbeddingError("builtin_bad_reply", "the detokenizer's reply holds no text")
+        return content, True
+
+    async def embed(self, texts: list[str], kind: str, seconds: float) -> tuple[list[array], list[int]]:
+        """Unit vectors in input order and the indexes of the texts cut at the token limit. Queries of a model with an
+        instruction carry `Instruct: …\\nQuery:`; documents are sent as they are."""
+        prefix = (f"Instruct: {self.model.query_instruction}\nQuery:"
+                  if kind == "query" and self.model.query_instruction else "")
+        inputs, cut = [], []
+        for index, text in enumerate(texts):
+            fitted, was_cut = await self._fit(prefix + text, INPUT_TOKENS, seconds)
+            inputs.append(fitted)
+            if was_cut:
+                cut.append(index)
+        reply = await self._post("/v1/embeddings", {"input": inputs, "encoding_format": "float"}, seconds)
+        return check_vectors(reply, len(texts), self.model.dimensions or 0), cut
+
+    async def rerank(self, query: str, documents: list[str], seconds: float) -> tuple[list[float], list[int]]:
+        """Raw relevance scores in input order and the indexes of the documents cut so that question, template and
+        document fit the context."""
+        query, query_cut = await self._fit(query, INPUT_TOKENS // 4, seconds)
+        if query_cut:
+            raise LocalEmbeddingError("builtin_input_too_long", "the question is longer than a quarter of the context")
+        query_tokens = len(query.encode()) + 2  # at most this many tokens; counted when that bound is large
+        if query_tokens > 512:
+            query_tokens = len(await self._tokens(query, seconds))
+        limit = INPUT_TOKENS - RERANK_TEMPLATE_TOKENS - query_tokens
+        inputs, cut = [], []
+        for index, document in enumerate(documents):
+            fitted, was_cut = await self._fit(document, limit, seconds)
+            inputs.append(fitted)
+            if was_cut:
+                cut.append(index)
+        reply = await self._post("/v1/rerank", {"query": query, "documents": inputs, "top_n": len(inputs)}, seconds)
+        return check_scores(reply, len(documents)), cut
+
+    async def kill(self) -> None:
+        """Kill the watcher and the server (one process group) and wait until every member has gone; the locks go
+        with them."""
+        process, self.process = self.process, None
+        if process is None:
+            return
+        _signal_group(process, signal.SIGKILL)
+        await process.wait()
+        await _group_gone(process.pid)
+
+    async def stop(self) -> None:
+        """End the server gently (SIGTERM to its group), killing it after 10 s."""
+        process = self.process
+        if process is None:
+            return
+        _signal_group(process, signal.SIGTERM)
+        try:
+            await asyncio.wait_for(process.wait(), 10)
+        except asyncio.TimeoutError:
+            pass
+        self.process = process
+        await self.kill()  # whatever of the group is left; waits until it is gone
+
+
+def _signal_group(process: asyncio.subprocess.Process, sig: int) -> None:
+    try:
+        os.killpg(process.pid, sig)  # started in its own session: the group id is the watcher's pid
+    except (ProcessLookupError, PermissionError):
+        if process.returncode is None:
+            process.send_signal(sig)
+
+
+async def _group_gone(pgid: int, seconds: float = 10) -> None:
+    """Wait until no process of the group is left (the server may outlive its watcher by a moment), killing again."""
+    loop = asyncio.get_running_loop()
+    ends = loop.time() + seconds
+    while loop.time() < ends:
+        try:
+            os.killpg(pgid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            return
+        await asyncio.sleep(0.02)
+
+
+# ---- the models of this process ---------------------------------------------------------
+
+class LocalModels:
+    """The servers of this DEIXIS process, one per catalog model in use; requests to one model are served one at a
+    time. `busy[model_id]` ("installing", "removing") turns new requests to that model away before any lock or
+    process is touched."""
+
+    def __init__(self, paths: BuiltinPaths, idle_seconds: float = LOCAL_IDLE_SECONDS,
+                 client: httpx.AsyncClient | None = None):
+        self.paths, self.idle_seconds = paths, idle_seconds
+        self.client = client or loopback_client()
+        self.servers: dict[str, LlamaServer] = {}
+        self.locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self.busy: dict[str, str] = {}
+        self._idle: dict[str, asyncio.TimerHandle] = {}
+
+    def integrity(self, model_id: str) -> ModelIntegrity:
+        model = builtin_catalog.get(model_id)
+        if model is None:
+            raise KeyError(model_id)
+        return ModelIntegrity(self.paths, model)
+
+    def available(self, model_id: str | None) -> bool:
+        """Installed, its file as at its last passed full check, and the runtime in place."""
+        model = builtin_catalog.get(model_id)
+        return bool(model and supported() and self.paths.runtime.installed() and ModelIntegrity(self.paths, model).available())
+
+    def _model(self, model_id: str, kind: str) -> Model:
+        model = builtin_catalog.get(model_id)
+        if model is None or model.kind != kind:
+            raise LocalEmbeddingError("builtin_model_changed", f"'{model_id}' is not a built-in {kind} model of this "
+                                                              "DEIXIS; choose one in Settings")
+        return model
+
+    async def embed(self, model_id: str, texts: list[str], kind: str, report: dict[str, int] | None = None) -> list[array]:
         """Vectors in input order for `kind` "document" or "query"; raises LocalEmbeddingError. `report`, when given,
-        gets `truncated_texts`: how many of these texts the runner cut at LOCAL_MAX_TOKENS."""
-        vectors, cut = await self._exchange(
-            {"kind": kind, "texts": texts}, SECONDS_PER_BATCH_LIMIT,
-            lambda reply, request_id: (check_reply(reply, request_id, len(texts)), truncated_of(reply, len(texts))))
+        gets `truncated_texts`: how many of these texts were cut at the token limit."""
+        model = self._model(model_id, "embedding")
+        vectors, cut = await self._request(model, lambda server: server.embed(texts, kind, SECONDS_PER_BATCH_LIMIT))
         if report is not None:
             report["truncated_texts"] = report.get("truncated_texts", 0) + len(cut)
         return vectors
 
-    async def rerank(self, query: str, documents: list[str], seconds: float) -> tuple[list[float], list[int]]:
-        """The reranker's relevance probability for each document, in input order, and the indexes of the documents
-        cut at RERANK_MAX_TOKENS. The runner loads the reranker for this request and frees it after; a request that
-        outlives `seconds`, or is cancelled, kills the runner, so no reply is left unread."""
-        return await self._exchange(
-            {"kind": "rerank", "query": query, "documents": documents}, seconds,
-            lambda reply, request_id: (check_scores(reply, request_id, len(documents)), truncated_of(reply, len(documents))))
+    async def rerank(self, model_id: str, query: str, documents: list[str], seconds: float) -> tuple[list[float], list[int]]:
+        """Raw scores in input order and the indexes of the documents cut. A request that outlives `seconds`, or is
+        cancelled, kills the server, so no reply is left unread."""
+        model = self._model(model_id, "reranker")
+        return await self._request(model, lambda server: server.rerank(query, documents, seconds))
 
-    async def _exchange(self, request: dict[str, Any], seconds: float, check: Callable[[Any, int], Any]) -> Any:
-        """Send one request, read its one reply line and return what `check` makes of it. A reply `check` refuses
-        closes the runner, under the lock, before the error is raised."""
-        if self.blocked() or not supported():
-            raise LocalEmbeddingError("builtin_unavailable", "the built-in model is being installed or removed"
-                                      if supported() else "the built-in model is not available on this platform")
-        async with self.lock:
-            if self.blocked():
-                raise LocalEmbeddingError("builtin_unavailable", "the built-in model is being installed or removed")
-            if self._idle:
-                self._idle.cancel()
-                self._idle = None
+    async def _request(self, model: Model, call: Callable[[LlamaServer], Awaitable[Any]]) -> Any:
+        if model.id in self.busy or not supported():
+            raise LocalEmbeddingError("builtin_unavailable", "the model is being installed or removed"
+                                      if supported() else "the built-in models are not available on this platform")
+        async with self.locks[model.id]:
+            if model.id in self.busy:
+                raise LocalEmbeddingError("builtin_unavailable", "the model is being installed or removed")
+            if (idle := self._idle.pop(model.id, None)) is not None:
+                idle.cancel()
             threads = RUNNER_THREADS.get()
-            if self._threads != threads:
-                await self._kill()
-                self._threads = threads
-            if self.process is None or self.process.returncode is not None:
-                self.process = None
-                await self.start()  # a runner that died is started again once, at the next request
-            self._requests += 1
-            request_id = self._requests
+            server = self.servers.get(model.id)
+            if server is not None and (not server.alive or server.threads != threads):
+                await server.kill()
+                self.servers.pop(model.id, None)
+                server = None
+            if server is None:
+                if not self.available(model.id):
+                    raise LocalEmbeddingError("builtin_unavailable", f"{model.name} is not downloaded, or its file does "
+                                                                     "not match its last check")
+                server = LlamaServer(self.paths, model, self.client, threads)
+                await server.start()  # a server that died is started again once, at the next request
+                self.servers[model.id] = server
             try:
-                self.process.stdin.write((json.dumps({"id": request_id, **request}) + "\n").encode())
-                await self.process.stdin.drain()
-            except (BrokenPipeError, ConnectionResetError) as exc:
-                await self._kill()
-                raise LocalEmbeddingError("builtin_stopped", "the runner stopped") from exc
-            try:
-                line = await asyncio.wait_for(self.process.stdout.readline(), seconds)
-            except asyncio.TimeoutError:
-                await self._kill()
-                raise LocalEmbeddingError("builtin_timeout", f"no reply within {seconds:g} s") from None
-            except asyncio.CancelledError:
-                await self._kill()  # the reply would be left unread on the shared runner
+                result = await call(server)
+            except LocalEmbeddingError as exc:
+                if exc.code != "builtin_input_too_long":  # refused before anything was sent
+                    await server.kill()
+                    self.servers.pop(model.id, None)
                 raise
-            if not line:
-                await self._kill()
-                raise LocalEmbeddingError("builtin_stopped", "the runner stopped")
-            try:
-                result = check(json.loads(line), request_id)
-            except (LocalEmbeddingError, json.JSONDecodeError) as exc:
-                await self._kill()
-                if isinstance(exc, LocalEmbeddingError):
-                    raise
-                raise LocalEmbeddingError("builtin_bad_reply", "the reply is not JSON") from exc
-            self._idle = asyncio.get_running_loop().call_later(self.idle_seconds, lambda: asyncio.ensure_future(self.close()))
+            except BaseException:  # a cancel: the reply would be left unread on the server
+                await server.kill()
+                self.servers.pop(model.id, None)
+                raise
+            self._idle[model.id] = asyncio.get_running_loop().call_later(
+                self.idle_seconds, lambda: asyncio.ensure_future(self.close(model.id)))
         return result
 
-    async def _kill(self) -> None:
-        process, self.process = self.process, None
-        if process is not None:
-            if process.returncode is None:
-                process.kill()
-            await process.wait()
+    async def close(self, model_id: str | None = None) -> None:
+        """Stop a model's server (every server without `model_id`) once its request in flight has ended, or after
+        SECONDS_PER_BATCH_LIMIT."""
+        for mid in ([model_id] if model_id else list(set(self.servers) | set(self._idle))):
+            if (idle := self._idle.pop(mid, None)) is not None:
+                idle.cancel()
+            lock = self.locks[mid]
+            try:
+                await asyncio.wait_for(lock.acquire(), SECONDS_PER_BATCH_LIMIT)
+            except asyncio.TimeoutError:
+                server = self.servers.pop(mid, None)
+                if server is not None:
+                    await server.kill()
+                continue
+            try:
+                server = self.servers.pop(mid, None)
+                if server is not None:
+                    await server.stop()
+            finally:
+                lock.release()
 
-    async def close(self) -> None:
-        """Stop the runner once the request it is serving has ended (or SECONDS_PER_BATCH_LIMIT has passed)."""
-        if self._idle:
-            self._idle.cancel()
-            self._idle = None
-        try:
-            await asyncio.wait_for(self.lock.acquire(), SECONDS_PER_BATCH_LIMIT)
-        except asyncio.TimeoutError:
-            await self._kill()
-            return
-        try:
-            process, self.process = self.process, None
-            if process and process.returncode is None:
-                process.stdin.close()
-                try:
-                    await asyncio.wait_for(process.wait(), 10)
-                except asyncio.TimeoutError:
-                    process.kill()
-                    await process.wait()
-        finally:
-            self.lock.release()
+
+# The running app's models, for views that only have the store (as `views.semantic_view` is).
+_registered: LocalModels | None = None
+
+
+def register(models: LocalModels) -> None:
+    global _registered
+    _registered = models
+
+
+def model_available(model_id: str | None) -> bool:
+    return bool(_registered is not None and hasattr(_registered, "available") and _registered.available(model_id))
+
+
+def remove_model_files(paths: BuiltinPaths, model: Model) -> list[str]:
+    """Delete the model's check record first, then its folder. Returns what could not be deleted."""
+    failed: list[str] = []
+
+    def note(_function: Any, path: str, _error: Any) -> None:
+        failed.append(str(path))
+
+    try:
+        paths.check_record(model.id).unlink(missing_ok=True)
+    except OSError:
+        failed.append(str(paths.check_record(model.id)))
+    folder = paths.model_dir(model.id)
+    if folder.exists() or folder.is_symlink():
+        shutil.rmtree(folder, onexc=note)
+        if folder.exists() and str(folder) not in failed:
+            failed.append(str(folder))
+    return failed
+
+
+def remove_parts(paths: BuiltinPaths) -> None:
+    """Remove model files a stopped download left half-written."""
+    if paths.models_root.is_dir():
+        for part in paths.models_root.rglob("*.part"):
+            part.unlink(missing_ok=True)

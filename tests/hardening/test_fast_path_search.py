@@ -227,10 +227,12 @@ def test_semantic_adapter_abstract_headers_and_legacy_revision(monkeypatch):
 
 
 def test_thread_argv_is_context_bound_and_default_unchanged(tmp_path):
+    from deixis.documents import builtin_catalog
     paths = local_embedding.builtin_paths(tmp_path)
-    original = local_embedding.runner_argv(paths)
+    model = builtin_catalog.get('qwen3-embedding-0.6b')
+    original = local_embedding.LlamaServer(paths, model, None).argv(1234, 'k')
     assert '--threads' not in original
-    assert local_embedding.runner_argv(paths, 4) == original + ['--threads', '4']
+    assert local_embedding.LlamaServer(paths, model, None, threads=4).argv(1234, 'k') == original + ['--threads', '4']
     assert local_embedding.RUNNER_THREADS.get() is None
 
 
@@ -243,7 +245,7 @@ def queued(lib, klass=1, request=0, position=0, name='W1'):
 
 
 def fake_embedder(lib, flow, monkeypatch, *, fail=False, advance=False):
-    lib.store.set_setting('semantic_search', {'provider': 'builtin', 'model': local_embedding.MODEL_ID})
+    lib.store.set_setting('semantic_search', {'provider': 'builtin', 'model': 'qwen3-embedding-0.6b'})
     calls = []
     async def embed(self, client, texts, task_type, *args, **kwargs):
         assert not lib.conn.in_transaction
@@ -514,7 +516,7 @@ def test_off_identity_stays_frozen_after_setting_change(library, tmp_path):
     flow, scope, _ = setup(library, tmp_path)
     async def execute():
         consumer = fast_embedding.Consumer(flow, library.run, scope)
-        library.store.set_setting('semantic_search', {'provider': 'builtin', 'model': local_embedding.MODEL_ID})
+        library.store.set_setting('semantic_search', {'provider': 'builtin', 'model': 'qwen3-embedding-0.6b'})
         assert flow._ranking_embedding(library.run, scope) == (None, 'embedding_off')
         resumed = fast_embedding.Consumer(flow, library.run, scope)
         assert resumed.embedder is None and resumed.warmup is None

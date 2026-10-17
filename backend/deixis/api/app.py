@@ -35,7 +35,7 @@ from deixis.documents import acquisition
 from deixis.documents import embeddings, rerankers
 from deixis.documents import figures
 from deixis.documents.identity import MATCH_TEXT_CHARS
-from deixis.documents import local_embedding, math_reader
+from deixis.documents import builtin_catalog, local_embedding, math_reader
 from deixis.documents import ocr
 from deixis.documents import pdf, pdf_child
 from deixis.documents import tool_updates
@@ -77,7 +77,7 @@ from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow import english_question
 from deixis.workflow import equations as equations_module
 from deixis.workflow.equations import EquationService, chunk_numbers, equation_state, equations_to_check, latex_numbers
-from deixis.workflow.local_embedding_service import EmbeddingService, ServiceError
+from deixis.workflow.local_embedding_service import LocalModelService, ServiceError
 from deixis.workflow.flow import FlowDeps, ResearchFlow
 from deixis.workflow import report_pipeline
 from deixis.workflow.report.store import ReportStore
@@ -289,15 +289,21 @@ class SemanticChoice(BaseModel):
 
 
 class RerankChoice(BaseModel):
-    """The reranker for the order records are read in (off unless turned on). `pool_factor` (records reranked as a
-    multiple of those a run reads) and `timeout_seconds` are starting values the person may change; neither is a
-    measured optimum."""
+    """The reranker for the order records are read in (off unless turned on). `model` names the built-in catalog
+    reranker (required for `builtin`). `pool_factor` (records reranked as a multiple of those a run reads) and
+    `timeout_seconds` are starting values the person may change; neither is a measured optimum."""
     enabled: bool
     provider: Literal["builtin", "voyage", "cohere", "jina", "zeroentropy"] | None = None
+    model: str | None = Field(default=None, min_length=1, max_length=200)
     pool_factor: float = Field(default=rerankers.DEFAULT_POOL_FACTOR, ge=rerankers.MIN_POOL_FACTOR,
                                le=rerankers.MAX_POOL_FACTOR)
     timeout_seconds: int = Field(default=rerankers.DEFAULT_TIMEOUT_SECONDS, ge=rerankers.MIN_TIMEOUT_SECONDS,
                                  le=rerankers.MAX_TIMEOUT_SECONDS)
+
+
+class BuiltinModelBody(BaseModel):
+    """One built-in catalog model (`documents/builtin_catalog.py`)."""
+    model: str = Field(min_length=1, max_length=200)
 
 
 class EnglishQuestion(BaseModel):
@@ -888,12 +894,12 @@ def create_app(
             equations.configure_arxiv_source(settings.effective_arxiv_source(), settings.data_dir)  # D104, off unless the flag says auto
         if equations.mathpix_client is None:
             equations.configure_mathpix(settings.data_dir, http)  # D40: requests only with the switch on and a key pair
-        # The built-in embedding model (slice 21): a test injects its own embedder and never starts a real runner.
+        # The built-in models (llama.cpp): a test injects its own models object and never starts a real server.
         builtin_paths = local_embedding.builtin_paths(settings.data_dir)
-        embedder = local_embedder if local_embedder is not None else local_embedding.LocalEmbedder(builtin_paths)
-        builtin = EmbeddingService(builtin_paths, embedder, http)
-        await builtin.start()  # recovers an install a closed DEIXIS left running, then checks the files in full
-        local_embedding.register(builtin.integrity)
+        embedder = local_embedder if local_embedder is not None else local_embedding.LocalModels(builtin_paths)
+        builtin = LocalModelService(builtin_paths, embedder, http)
+        await builtin.start()  # recovers an install a closed DEIXIS left running; the files' last checks are on disk
+        local_embedding.register(embedder)
         from deixis.workflow.background_fetch import FetchSlots
         limiter = ModelCallLimiter(settings.effective_model_concurrency())
         app.state.limiter = limiter  # Settings → Research changes its ceiling while DEIXIS runs
@@ -1745,13 +1751,13 @@ def create_app(
     async def semantic_search_view(request: Request, refresh: bool = False) -> dict[str, Any]:
         saved = store_of(request).setting("semantic_search")
         provider, model = embeddings.chosen(saved)
-        # A built-in choice saved for an earlier built-in model: Settings says the model changed and that its stored
-        # similarities are not reused; the next run embeds the sources again with the current model.
-        earlier = (saved or {}).get("model") if (saved or {}).get("provider") == "builtin" else None
+        # A built-in choice saved for a model this DEIXIS no longer runs (bge-small, the D88 PyTorch Qwen3, or no
+        # model): kept as saved, never remapped; runs fail with builtin_model_changed until a catalog model is chosen.
+        changed = provider == "builtin" and embeddings.builtin_model(model) is None
         return {"provider": provider, "model": model, "explicit": saved is not None,
-                "builtin_model_changed": {"from": earlier, "to": model} if earlier and earlier != model else None,
+                "builtin_model_changed": {"from": (saved or {}).get("model"), "to": None} if changed else None,
                 "options": embeddings.options(await request.app.state.local_tools.snapshot(refresh),
-                                              request.app.state.builtin.option())}
+                                              request.app.state.builtin.options("embedding"))}
 
     @app.get("/api/semantic-search")
     async def get_semantic_search(request: Request) -> dict[str, Any]:
@@ -1761,12 +1767,19 @@ def create_app(
     async def put_semantic_search(body: SemanticChoice, request: Request) -> dict[str, Any]:
         """Save the embedding provider for later answers; a provider or model not offered now is refused, never replaced."""
         tools = await request.app.state.local_tools.snapshot(refresh=body.provider in ("ollama", "lm_studio"))
-        option = next(o for o in embeddings.options(tools, request.app.state.builtin.option()) if o["provider"] == body.provider)
+        offered = embeddings.options(tools, request.app.state.builtin.options("embedding"))
+        if body.provider == "builtin":
+            option = next((o for o in offered if o["provider"] == "builtin" and o["model"] == body.model), None)
+            if option is None:
+                raise HTTPException(422, "Choose a built-in model" if body.model is None
+                                    else f"Model '{body.model}' is not a built-in model of this DEIXIS")
+        else:
+            option = next(o for o in offered if o["provider"] == body.provider)
         if not option["available"]:
             raise HTTPException(422, option["reason"])
         model = None
         if body.provider != "off":
-            model = body.model or (option["models"][0] if body.provider in ("gemini", "builtin", "openai", "voyage", "cohere") else None)
+            model = body.model or (option["models"][0] if body.provider in ("gemini", "openai", "voyage", "cohere") else None)
             if model is None:
                 raise HTTPException(422, "Choose an embedding model")
             if model not in option["models"]:
@@ -1776,13 +1789,17 @@ def create_app(
 
     def reranking_view(request: Request) -> dict[str, Any]:
         saved = store_of(request).setting(rerankers.SETTING) or {}
-        builtin = request.app.state.builtin.option()
+        choice = rerankers.chosen(saved)
+        builtin_model = (saved.get("model") or None) if saved.get("provider") == "builtin" else None
+        changed = saved.get("provider") == "builtin" and builtin_catalog.resolve(builtin_model, "reranker") is None
         return {"enabled": bool(saved.get("enabled")), "provider": saved.get("provider"),
+                "model": choice.model if choice else (saved.get("model") if saved.get("provider") == "builtin" else None),
+                "builtin_model_changed": {"from": builtin_model, "to": None} if changed else None,
                 "pool_factor": float(saved.get("pool_factor") or rerankers.DEFAULT_POOL_FACTOR),
                 "max_candidates": rerankers.MAX_CANDIDATES,
                 "timeout_seconds": int(saved.get("timeout_seconds") or rerankers.DEFAULT_TIMEOUT_SECONDS),
                 "applies_to": ["record_order"],
-                "options": rerankers.options(builtin["available"], builtin.get("reason"))}
+                "options": rerankers.options(request.app.state.builtin.options("reranker"))}
 
     @app.get("/api/reranking")
     async def get_reranking(request: Request) -> dict[str, Any]:
@@ -1794,33 +1811,42 @@ def create_app(
         if body.enabled:
             if body.provider is None:
                 raise HTTPException(422, "Choose a reranker")
-            option = next(o for o in reranking_view(request)["options"] if o["provider"] == body.provider)
+            offered = reranking_view(request)["options"]
+            if body.provider == "builtin":
+                option = next((o for o in offered if o["provider"] == "builtin" and o["model"] == body.model), None)
+                if option is None:
+                    raise HTTPException(422, "Choose a built-in reranker" if body.model is None
+                                        else f"Model '{body.model}' is not a built-in reranker of this DEIXIS")
+            else:
+                option = next(o for o in offered if o["provider"] == body.provider)
             if not option["available"]:
                 raise HTTPException(422, option["reason"])
         store_of(request).set_setting(rerankers.SETTING, {"enabled": body.enabled, "provider": body.provider,
+                                                          "model": body.model if body.provider == "builtin" else None,
                                                           "pool_factor": body.pool_factor,
                                                           "timeout_seconds": body.timeout_seconds})
         return reranking_view(request)
 
-    # The built-in embedding model (slice 21, D103): install on request, cancel, remove; POSIX only in this slice.
+    # The built-in models (llama.cpp, a catalog of GGUF files): download, check, cancel, remove, one model at a time;
+    # the earlier PyTorch install (D88) is removed only on request. POSIX only in this slice.
     def service_error(exc: ServiceError) -> HTTPException:
-        return HTTPException(409, {"reason": exc.code, "message": str(exc)})
+        return HTTPException(404 if exc.code == "unknown_model" else 409, {"reason": exc.code, "message": str(exc)})
 
     @app.get("/api/semantic-search/builtin")
     async def builtin_status(request: Request) -> dict[str, Any]:
         return await request.app.state.builtin.status()
 
     @app.post("/api/semantic-search/builtin/install", status_code=202)
-    async def install_builtin(request: Request) -> dict[str, Any]:
+    async def install_builtin(body: BuiltinModelBody, request: Request) -> dict[str, Any]:
         try:
-            return {"job": await request.app.state.builtin.install()}
+            return {"job": await request.app.state.builtin.install(body.model)}
         except ServiceError as exc:
             raise service_error(exc) from exc
 
     @app.post("/api/semantic-search/builtin/check")
-    async def check_builtin(request: Request) -> dict[str, Any]:
+    async def check_builtin(body: BuiltinModelBody, request: Request) -> dict[str, Any]:
         try:
-            return await request.app.state.builtin.check()
+            return await request.app.state.builtin.check(body.model)
         except ServiceError as exc:
             raise service_error(exc) from exc
 
@@ -1832,12 +1858,19 @@ def create_app(
             raise service_error(exc) from exc
 
     @app.delete("/api/semantic-search/builtin")
-    async def remove_builtin(request: Request) -> dict[str, Any]:
+    async def remove_builtin(body: BuiltinModelBody, request: Request) -> dict[str, Any]:
         try:
-            await request.app.state.builtin.remove()
+            await request.app.state.builtin.remove(body.model)
         except ServiceError as exc:
             raise service_error(exc) from exc
         return await request.app.state.builtin.status()
+
+    @app.delete("/api/semantic-search/builtin/legacy")
+    async def remove_builtin_legacy(request: Request) -> dict[str, Any]:
+        try:
+            return await request.app.state.builtin.remove_legacy()
+        except ServiceError as exc:
+            raise service_error(exc) from exc
 
     # The institution's proxy address (slice 18a): links open through it in the person's browser; DEIXIS never
     # sends a request through it. Empty means links open directly.

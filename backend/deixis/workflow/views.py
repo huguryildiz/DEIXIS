@@ -940,18 +940,24 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
 def semantic_view(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, Any]:
     """The provider semantic search uses, and whether its arm runs for this revision (D103, decision 10).
 
-    `arm`: "off" (no provider), "english_question_missing" (the built-in model, a question not in English and no
-    sentence saved), "not_installed" (the built-in model is chosen but not ready now), else "on". The provider is
-    what Settings say now; a run freezes its own in its step."""
+    `arm`: "off" (no provider), "builtin_model_changed" (a built-in choice saved for a model this DEIXIS no longer
+    runs), "english_question_missing" (a built-in Qwen3 model, a question not in English and no sentence saved),
+    "not_installed" (the built-in model is chosen but not ready now), else "on". The provider is what Settings say now;
+    a run freezes its own in its step."""
     provider, model = embeddings.chosen(store.setting("semantic_search"))
-    stored_model = embeddings.Embedder(provider, model).stored_model if provider != "off" and model else None
+    embedder = embeddings.Embedder(provider, model) if provider != "off" and model else None
+    stored_model = embedder.stored_model if embedder else None
     row = store.english_question(research_id, scope["revision"])
-    needs = provider == "builtin" and not english_question_rules.is_english(scope["question"], scope.get("language_hint"))
+    needs = bool(embedder and embeddings.english_only(embedder)
+                 and not english_question_rules.is_english(scope["question"], scope.get("language_hint")))
+    catalog_model = embeddings.builtin_model(model) if provider == "builtin" else None
     if stored_model is None:
         arm = "off"
+    elif provider == "builtin" and catalog_model is None:
+        arm = "builtin_model_changed"
     elif needs and row is None:
         arm = "english_question_missing"
-    elif provider == "builtin" and not local_embedding.builtin_available():
+    elif provider == "builtin" and not local_embedding.model_available(catalog_model.id):
         arm = "not_installed"
     else:
         arm = "on"

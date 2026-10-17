@@ -1,7 +1,7 @@
 """P9 H2: what a child process does when its parent is killed with SIGKILL.
 
-The kill is `os.kill` on the helper parent's one PID (never a group kill: no production child starts its own session,
-and a real crash ends one process). A child that is alive after the parent is confirmed dead proves it did not die
+The kill is `os.kill` on the helper parent's one PID (never a group kill: a real crash ends one process; the
+built-in models' llama-server is the one child that starts its own session, under a watcher of its parent's pipe). A child that is alive after the parent is confirmed dead proves it did not die
 with the parent; its end is then its own. Stand-ins, not the real `codex` (that is H10): a stand-in that never reads
 its stdin is not tested, because whether the real program ends on stdin EOF is a property of that program.
 """
@@ -72,24 +72,30 @@ def test_codex_rpc_child_ends_by_itself(harness, tmp_path, mode, limit):
     print(f"child codex {mode}: gone {time.monotonic() - killed:.2f} s after the kill")
 
 
-@pytest.mark.parametrize("runner,busy,limit", [("ok", "idle", 3), ("slow:3", "busy", 8)])
-def test_embedding_runner_ends_by_itself_and_frees_its_lock(harness, tmp_path, runner, busy, limit):
+@pytest.mark.parametrize("mode,busy,limit", [("", "idle", 3), ("slow:30", "busy", 3)])
+def test_the_llama_server_ends_with_its_parent_and_frees_its_lock(harness, tmp_path, mode, busy, limit):
+    """The server runs under the watcher, which kills it when the pipe from DEIXIS closes: busy or idle, it ends
+    within seconds of its parent's death, and the model's in-use lock is free again."""
     data = tmp_path / "embedding-data"
     data.mkdir()
-    proc, line = run_parent(harness, tmp_path, ["embedding", busy], {"FAKE_RUNNER": runner, "DEIXIS_DATA_DIR": str(data)})
+    proc, line = run_parent(harness, tmp_path, ["embedding", busy], {"FAKE_LLAMA": mode, "DEIXIS_DATA_DIR": str(data)})
     child = child_of(proc, line["child_pid"])
-    lock = data / "tools" / "embedding-in-use.lock"
+    lock = data / "tools" / "locks" / "qwen3-embedding-0.6b.lock"
     assert lock.exists()
     probe = os.open(lock, os.O_RDWR)
-    with pytest.raises(OSError):  # the runner holds the in-use lock while it lives
+    with pytest.raises(OSError):  # the server holds the in-use lock while it lives
         fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
     killed = kill_parent(harness, proc)
-    if busy == "busy":
-        time.sleep(max(0.0, killed + 1.0 - time.monotonic()))
-        assert is_same_and_live(child), "positive control: the runner must outlive its parent while it is answering"
-    wait_gone([child], limit, f"embedding runner {runner}")
-    print(f"child embedding {runner}: gone {time.monotonic() - killed:.2f} s after the kill")
-    fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)  # free once the runner is gone
+    wait_gone([child], limit, f"llama-server {busy}")
+    print(f"child llama-server {busy}: gone {time.monotonic() - killed:.2f} s after the kill")
+    deadline = time.monotonic() + 5
+    while True:  # free once the server and its watcher are gone
+        try:
+            fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except OSError:
+            assert time.monotonic() < deadline, "the lock stayed held"
+            time.sleep(0.05)
     os.close(probe)
 
 

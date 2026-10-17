@@ -9,7 +9,6 @@ import asyncio
 import json
 import time
 from array import array
-from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
@@ -17,7 +16,7 @@ import pytest
 
 from deixis.api.app import create_app
 from deixis.config import Settings
-from deixis.documents import embeddings, local_embedding
+from deixis.documents import builtin_catalog, embeddings, local_embedding
 from deixis.documents.local_embedding import LocalEmbeddingError
 from deixis.domain.vocabulary import detect_language
 from deixis.providers.common import ProviderRecord
@@ -28,14 +27,15 @@ from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.flow import ResearchFlow
 from deixis.workflow.store import Store
 from deixis.workflow.views import research_view
-from builtin_helpers import fake_manifest, install_fake
+from builtin_helpers import fake_catalog, ready
 from fakes import FakeAdapter, valid_response
 from test_ranking_flow import STRONG, Pool, client_of, discover, no_fetch, rank_rows, step_output, wait
 from test_semantic_retrieval import two_page_research
 
-BUILTIN = {"provider": "builtin", "model": local_embedding.MODEL_ID}
+EMB = "qwen3-embedding-0.6b"
+BUILTIN = {"provider": "builtin", "model": EMB}
 GEMINI = {"provider": "gemini", "model": embeddings.MODEL}
-BUILTIN_STORED = f"builtin:{local_embedding.MODEL_ID}"
+BUILTIN_STORED = "builtin:" + builtin_catalog.identity(builtin_catalog.get(EMB))
 # A discovery run's queue consumer (D252) runs the built-in model with its frozen thread count, which is part of the
 # stored identity: scores of capped and default threads are different cache rows.
 DISCOVERY_STORED = f"{BUILTIN_STORED}:threads=4"
@@ -45,7 +45,7 @@ ENGLISH_SENTENCE = "The effect of packet size on energy consumption in wireless 
 
 
 def basis(index: int) -> array:
-    values = array("f", [0.0] * local_embedding.DIMENSIONS)
+    values = array("f", [0.0] * 1024)
     values[index] = 1.0
     return values
 
@@ -56,15 +56,19 @@ class FakeLocal:
     `hook(calls, texts, kind)` runs before each answer (a pause, a setting change); `fail_on` makes that call (1-based)
     fail; `unavailable` fails every call as a model that is not installed does."""
 
-    def __init__(self, target=STRONG, fail_on=None, unavailable=False, hook=None, integrity=None):
+    def __init__(self, target=STRONG, fail_on=None, unavailable=False, hook=None, paths=None):
         self.target, self.fail_on, self.unavailable, self.hook = target, fail_on, unavailable, hook
         self.calls: list[tuple[str, int]] = []
         self.texts: list[str] = []
-        self.integrity = integrity or local_embedding.Integrity(local_embedding.builtin_paths(Path("/nonexistent-deixis")))
-        self.removing = self.installing = False
-        self.runner = self.python = None
+        self.paths = paths  # with paths: installed and checked as the real files under them say
+        self.busy, self.client = {}, None
+        self.models: list[str] = []
 
-    async def embed(self, texts, kind, report=None):
+    def available(self, model_id):
+        return self.paths is not None and local_embedding.LocalModels(self.paths).available(model_id)
+
+    async def embed(self, model_id, texts, kind, report=None):
+        self.models.append(model_id)
         self.calls.append((kind, len(texts)))
         if self.hook:
             self.hook(len(self.calls), texts, kind)
@@ -75,7 +79,7 @@ class FakeLocal:
         self.texts += texts if kind == "document" else []
         return [basis(0) if kind == "query" or (self.target and self.target in text) else basis(1) for text in texts]
 
-    async def close(self):
+    async def close(self, model_id=None):
         pass
 
     def documents(self):
@@ -212,29 +216,29 @@ def four_signals(tmp_path, monkeypatch, name, **kwargs):
 # ---- task 4: the provider -------------------------------------------------------------------------
 
 def test_options_list_the_built_in_model_second_and_refuse_it_until_it_is_installed(tmp_path, monkeypatch):
-    fake_manifest(monkeypatch)
+    fake_catalog(monkeypatch)
     paths = local_embedding.builtin_paths(tmp_path / "data")
-    local = FakeLocal(integrity=local_embedding.Integrity(paths))
+    local = FakeLocal(paths=paths)
     app = make_app(tmp_path, monkeypatch, Pool(), local)
     client = client_of(app)
     try:
         view = client.get("/api/semantic-search").json()
-        refused = client.put("/api/semantic-search", json={"provider": "builtin"})
-        install_fake(paths)
-        asyncio.run(app.state.builtin.start())  # the full check a start makes
-        saved = client.put("/api/semantic-search", json={"provider": "builtin"}).json()
+        refused = client.put("/api/semantic-search", json={"provider": "builtin", "model": EMB})
+        ready(paths, monkeypatch, EMB)  # the full check a start makes
+        saved = client.put("/api/semantic-search", json={"provider": "builtin", "model": EMB}).json()
     finally:
         client.__exit__(None, None, None)
-    assert [o["provider"] for o in view["options"]] == ["gemini", "builtin", "openai", "voyage", "cohere", "ollama", "lm_studio", "off"]
+    assert [o["provider"] for o in view["options"]] == ["gemini", "builtin", "builtin", "builtin", "builtin", "openai", "voyage",
+                                                        "cohere", "ollama", "lm_studio", "off"]
     builtin = view["options"][1]
-    assert (builtin["available"], builtin["reason"], builtin["models"]) == (False, "Not downloaded", [local_embedding.MODEL_ID])
+    assert (builtin["available"], builtin["reason"], builtin["models"]) == (False, "Not downloaded", [EMB])
     assert refused.status_code == 422 and refused.json()["detail"] == "Not downloaded"
-    assert (saved["provider"], saved["model"]) == ("builtin", local_embedding.MODEL_ID)
-    assert embeddings.Embedder("builtin", saved["model"]).stored_model == f"builtin:{local_embedding.MODEL_ID}"
+    assert (saved["provider"], saved["model"]) == ("builtin", EMB)
+    assert embeddings.Embedder("builtin", saved["model"]).stored_model == "builtin:" + builtin_catalog.identity(builtin_catalog.get(EMB))
     # Nothing saved and no Gemini key: off until the model is downloaded and its files check out, then the built-in
     # model (D7). It is never downloaded by itself, and a saved Off still wins.
     assert (view["provider"], view["explicit"]) == ("off", False)
-    assert embeddings.chosen(None) == ("builtin", local_embedding.MODEL_ID)
+    assert embeddings.chosen(None) == ("builtin", EMB)
     assert embeddings.chosen({"provider": "off", "model": None}) == ("off", None)
     monkeypatch.setenv("GEMINI_API_KEY", "SYNTHETIC-key")
     assert embeddings.chosen(None) == ("gemini", embeddings.MODEL)
@@ -574,6 +578,15 @@ def test_a_turkish_question_without_a_sentence_leaves_the_built_in_arm_off_and_s
     assert s.local.calls[0] == ("query", 1)
 
 
+def test_bge_m3_reads_a_turkish_question_as_written_and_never_asks_for_a_sentence(session):
+    s = session(setting={"provider": "builtin", "model": "bge-m3"})
+    rid, run_id, view, run = s.discover(question=TURKISH, key_terms=KEY_TERMS)
+    step = s.step(run_id)
+    assert step["output"].get("embedding_off_reason") is None and step["output"]["query_origin"] == "question"
+    assert view["semantic"]["needs_english_question"] is False
+    assert s.local.calls[0] == ("query", 1) and set(s.local.models) == {"bge-m3"}
+
+
 def test_the_answer_s_passage_step_records_why_the_built_in_model_did_not_rank(tmp_path):
     store, rid, svid, run = two_page_research(tmp_path)  # a Turkish question
     store.set_setting("semantic_search", BUILTIN)
@@ -660,9 +673,9 @@ def test_a_migrated_library_starts_with_no_sentences(tmp_path):
 # ---- task 7: the view, the uploaded-PDF line and the protocol ------------------------------------------
 
 def test_the_semantic_field_names_each_arm_and_carries_no_count(tmp_path, monkeypatch):
-    fake_manifest(monkeypatch)
+    fake_catalog(monkeypatch)
     paths = local_embedding.builtin_paths(tmp_path / "data")
-    local = FakeLocal(integrity=local_embedding.Integrity(paths))
+    local = FakeLocal(paths=paths)
     app = make_app(tmp_path, monkeypatch, Pool(), local)
     client = client_of(app)
     try:
@@ -677,8 +690,7 @@ def test_the_semantic_field_names_each_arm_and_carries_no_count(tmp_path, monkey
         store.set_setting("semantic_search", BUILTIN)
         arms["not_installed"] = client.get(f"/api/researches/{english}").json()["semantic"]
         arms["missing"] = client.get(f"/api/researches/{turkish}").json()["semantic"]
-        install_fake(paths)
-        asyncio.run(app.state.builtin.start())
+        ready(paths, monkeypatch, EMB)
         arms["on"] = client.get(f"/api/researches/{english}").json()["semantic"]
         monkeypatch.setenv("GEMINI_API_KEY", "SYNTHETIC-key")
         store.set_setting("semantic_search", GEMINI)
@@ -687,7 +699,7 @@ def test_the_semantic_field_names_each_arm_and_carries_no_count(tmp_path, monkey
         client.__exit__(None, None, None)
     assert {k: v["arm"] for k, v in arms.items()} == {"off": "off", "not_installed": "not_installed",
                                                       "missing": "english_question_missing", "on": "on", "gemini": "on"}
-    assert arms["on"] == {"provider": "builtin", "stored_model": BUILTIN_STORED, "arm": "on", "english_question": None,
+    assert arms["on"] == {"provider": "builtin", "stored_model": "builtin:" + builtin_catalog.identity(builtin_catalog.get(EMB)), "arm": "on", "english_question": None,
                           "needs_english_question": False}
     assert arms["gemini"] == {"provider": "gemini", "stored_model": embeddings.MODEL, "arm": "on", "english_question": None,
                               "needs_english_question": False}  # the line under the buttons depends on the provider alone

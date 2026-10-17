@@ -315,6 +315,7 @@ AUTHOR_BIB = b"""@article{sj, title = {Two authors}, author = {Smith, Ann and Jo
 @article{bv, title = {Given name Van}, author = {Berg, Van}, year = {2027}}
 @article{vba, title = {Particle before the comma}, author = {van Berg, Anna}, year = {2028}}
 @article{plain, title = {No comma}, author = {Anna von Kahl}, year = {2029}}
+@article{dv, title = {Braced parts}, author = {{De}, {Vries}}, year = {2030}}
 """
 
 
@@ -345,6 +346,9 @@ AUTHOR_BIB = b"""@article{sj, title = {Two authors}, author = {Smith, Ann and Jo
     ("(van Berg, 2028)", "planned"),             # `van Berg, Anna`
     ("(Berg, 2028)", "ambiguous"),
     ("(von Kahl, 2029)", "planned"),             # no comma: the particle reading
+    # Sol round 4: `{De}, {Vries}` is two braced parts, not one corporate name.
+    ("(De Vries, 2030)", "ambiguous"),
+    ("(De, 2030)", "planned"),
 ])
 def test_author_year_names_the_whole_author_list_unless_it_says_et_al(make, citation, status):
     app, _ = make()

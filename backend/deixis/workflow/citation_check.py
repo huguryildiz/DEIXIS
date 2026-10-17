@@ -72,7 +72,7 @@ def _structured_surnames(fmt: str, entry: bibtex_ris.Entry) -> list[str] | None:
         return None
     surnames = []
     for name in names:
-        braced = fmt == "bibtex" and name.startswith("{") and name.endswith("}")
+        braced = fmt == "bibtex" and name.startswith("{") and name.endswith("}") and bibtex_ris._balanced(name[1:-1])
         parts = [name] if braced else (bibtex_ris._split_top(name, re.compile(r",")) if fmt == "bibtex" else name.split(","))
         text = bibtex_ris.latex_to_text(parts[0]) if fmt == "bibtex" else parts[0].strip()
         key = draft_parse.surname_fold(text) if len(parts) > 1 or braced else draft_parse.surname_key(text)

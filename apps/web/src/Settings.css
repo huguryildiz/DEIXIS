@@ -405,7 +405,6 @@
 .connection-sheet .ollama-model-ico{display:inline-grid;place-items:center;flex:none;width:26px;height:26px;border-radius:7px;background:var(--accent-tint);color:var(--accent)}
 .connection-sheet .ollama-models .local-tool-model-meta{display:inline-flex;align-items:center;gap:8px;color:var(--muted);white-space:nowrap;flex:none;font-size:12px}
 .connection-sheet .ollama-size{font-variant-numeric:tabular-nums}
-.connection-sheet .ollama-tag{padding:1px 7px;border:1px solid var(--line);border-radius:99px;color:var(--ink-2);font-size:11px}
 .connection-sheet .ollama-models button,.connection-sheet .ollama-pull-row button{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;font-size:12px}
 .connection-sheet .ollama-models button.icon-only{padding:4px 5px;border-color:transparent;color:var(--muted)}
 .connection-sheet .ollama-models button.icon-only:hover:not(:disabled){border-color:var(--line);color:var(--error-ink)}

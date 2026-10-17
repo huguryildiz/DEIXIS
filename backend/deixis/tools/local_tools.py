@@ -240,6 +240,20 @@ def _command_output(argv: list[str], timeout: float | None = None) -> str | None
     return _version_line(probe_blocking(argv, timeout, child_env(tool=argv[0])))
 
 
+def _command_text(argv: list[str], timeout: float | None = None) -> str:
+    """A command's whole standard output; empty when it fails or does not answer."""
+    done = probe_blocking(argv, timeout, child_env(tool=argv[0]))
+    return done.stdout if done.ok else ""
+
+
+def _brew_stable(brew: str, formula: str) -> str | None:
+    """The version Homebrew would install now, which can lag the project's own release by days."""
+    try:
+        return str(json.loads(_command_text([brew, "info", "--json=v2", formula], 30))["formulae"][0]["versions"]["stable"])
+    except (ValueError, KeyError, IndexError, TypeError):
+        return None
+
+
 def _version_line(done: Probe) -> str | None:
     """The line of a tool's output that names its version; None when it fails or does not answer (A3b, E16)."""
     lines = [line.strip() for line in (done.stdout or done.stderr).strip().splitlines()]
@@ -494,7 +508,9 @@ class LocalTools:
 
             async def run(tool_id: str, job: dict[str, Any]) -> None:
                 await self._run(tool_id, job, [brew, "upgrade", "ollama"])
-                services = await asyncio.to_thread(_command_output, [brew, "services", "list"], 15) or ""
+                # The server keeps running the old binary until it restarts, so it restarts even when brew found
+                # nothing newer to install (an earlier upgrade may have left it on the old version).
+                services = await asyncio.to_thread(_command_text, [brew, "services", "list"], 15)
                 if job["status"] == "succeeded" and any(line.split()[:2] == ["ollama", "started"] for line in services.splitlines()):
                     job["status"] = "running"
                     await self._run(tool_id, job, [brew, "services", "restart", "ollama"])
@@ -677,6 +693,9 @@ class LocalTools:
         path = await asyncio.to_thread(find_tool, "ollama")
         real = os.path.realpath(path) if path else ""
         how = "homebrew" if "/Cellar/" in real or "/homebrew/" in real else "app" if OLLAMA_MAC and OLLAMA_MAC_APP.exists() else None
+        brew = await asyncio.to_thread(find_tool, "brew") if how == "homebrew" else None
+        if brew:  # `brew upgrade` can only reach Homebrew's version; offering a newer release it cannot install does nothing
+            released = await asyncio.to_thread(_brew_stable, brew, "ollama") or released
         return {"version": version, "latest": released, "update_available": newer(released, version), "installed_with": how,
                 "models": {m["name"]: c for m, c in zip(tags, models)}}
 

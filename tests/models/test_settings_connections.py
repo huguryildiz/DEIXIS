@@ -711,6 +711,28 @@ def test_ollama_updates_compare_the_release_and_each_models_manifest(tmp_path, p
     assert updates["models"] == {"qwen3:8b": True, "nomic-embed-text:latest": False, "gone:latest": None}
 
 
+def test_ollama_from_homebrew_is_offered_only_the_version_homebrew_has(tmp_path, paths, monkeypatch):
+    paths.update(ollama="/opt/homebrew/bin/ollama", brew="/opt/homebrew/bin/brew")
+    monkeypatch.setattr(local_tools, "_command_text", lambda argv, timeout=None:
+                        '{"formulae": [{"versions": {"stable": "0.40.4"}}]}' if argv[1:3] == ["info", "--json=v2"] else "")
+
+    def handler(request):
+        url = str(request.url)
+        if url == "http://127.0.0.1:11434/api/version":
+            return httpx.Response(200, json={"version": "0.40.4"})
+        if url == "http://127.0.0.1:11434/api/tags":
+            return httpx.Response(200, json={"models": []})
+        if url == local_tools.OLLAMA_RELEASES:
+            return httpx.Response(200, json={"tag_name": "v0.40.5"})
+        return remote(request)
+
+    app = create_app(Settings(data_dir=tmp_path / "brew", port=8765), http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+                     start_worker=False, extra_hosts=("testserver",), trusted_clients=("testclient",))
+    with TestClient(app) as c:
+        updates = c.get("/api/local-tools/ollama/updates").json()
+    assert (updates["latest"], updates["update_available"], updates["installed_with"]) == ("0.40.4", False, "homebrew")
+
+
 def test_ollama_from_homebrew_updates_with_brew_upgrade_and_restarts_its_service(client, paths, monkeypatch):
     ran = []
 
@@ -719,7 +741,7 @@ def test_ollama_from_homebrew_updates_with_brew_upgrade_and_restarts_its_service
         job.update(status="succeeded", finished_at="SYNTHETIC")
 
     monkeypatch.setattr(local_tools.LocalTools, "_run", run)
-    monkeypatch.setattr(local_tools, "_command_output", lambda argv, timeout=None: "Name   Status  User\nollama started SYNTHETIC")
+    monkeypatch.setattr(local_tools, "_command_text", lambda argv, timeout=None: "Name   Status  User\nollama started SYNTHETIC")
     paths.update(ollama="/opt/homebrew/bin/ollama", brew="/opt/homebrew/bin/brew")
     assert client.post("/api/local-tools/ollama/update").status_code == 202
     for _ in range(50):

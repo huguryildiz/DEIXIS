@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowUpRight, Ban, BadgeCheck, ChevronRight, CircleCheck, Cloud, Copy, Cpu, Download, FileLock, FileText, FileUp, HardDrive, Hexagon, Info, KeyRound, Laptop, MemoryStick, LoaderCircle, Package, PenLine, Plus, RefreshCw, RotateCw, Save, ScanText, Server, Shapes, ShieldCheck, Sigma, Trash2, TriangleAlert, Upload, Zap } from 'lucide-react'
+import { ArrowUpRight, Ban, BadgeCheck, ChevronRight, CircleCheck, Cloud, Copy, Cpu, Download, FileLock, FileText, FileUp, HardDrive, Hexagon, Info, KeyRound, Laptop, MemoryStick, LoaderCircle, Package, PenLine, Plus, RefreshCw, RotateCw, Save, ScanText, Server, Shapes, ShieldCheck, Trash2, TriangleAlert, Upload, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -691,13 +691,13 @@ function LocalModels({ tool, dark, memoryGb, onChanged, onDone }: { tool: LocalT
     api.localToolSuggested(lms ? 'lm_studio' : 'ollama', leaving.signal).then(c => { if (live) setCatalog(c) }, () => { if (live) setCatalog(null) })
     return () => { live = false; leaving.abort() }
   }, [lms])
-  const installed = tool.models ?? []
+  // Embedding models are chosen under Search & ranking; these lists are the research models.
+  const installed = (tool.models ?? []).filter(m => !m.embedding)
   // Ollama names carry a tag (":latest" when none is given); LM Studio lists a catalog model by its own key or file name.
   const full = (id: string) => lms ? id.toLowerCase().split('/').pop()! : id.includes(':') ? id : `${id}:latest`
-  const have = new Set(installed.map(m => full(m.id)))
+  const have = new Set((tool.models ?? []).map(m => full(m.id)))
   const suggested = (catalog?.models ?? tool.suggested ?? []).filter(s => !have.has(full(s.id)))
   const research = suggested.filter(s => s.purpose === 'research')
-  const embedding = suggested.filter(s => s.purpose === 'embedding')
   function updateApp() {
     setBusy(true)
     api.updateLocalTool(lms ? 'lm_studio' : 'ollama').then(onChanged).catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
@@ -751,10 +751,9 @@ function LocalModels({ tool, dark, memoryGb, onChanged, onDone }: { tool: LocalT
     <h3 className="source-section">{t('Installed models')}{installed.length > 0 && <span className="ollama-count">{installed.length}</span>}</h3>
     {installed.length > 0
       ? <ul className="local-tool-models ollama-models is-installed">{installed.map(m => <li key={m.id}>
-        <span className="ollama-model-ico" aria-hidden>{m.embedding ? <Sigma size={14} /> : <Cpu size={14} />}</span>
+        <span className="ollama-model-ico" aria-hidden><Cpu size={14} /></span>
         <span className="ollama-model-name" title={m.id}>{m.id}</span>
         <span className="local-tool-model-meta">
-          {m.embedding && <span className="ollama-tag">{t('embedding')}</span>}
           {m.size_bytes != null && <span className="ollama-size">{formatBytes(m.size_bytes)}</span>}
           {updates?.models[m.id] && <button type="button" className="ghost" title={t('ollama.com has a newer version of this model')} disabled={busy || pulling} onClick={() => start(m.id)}><RefreshCw size={14} aria-hidden />{t('Update')}</button>}
           {!lms && <button type="button" className="ghost icon-only" aria-label={t('Remove {model}', { model: m.id })} title={t('Remove')} disabled={busy} onClick={() => setRemoving(m.id)}><Trash2 size={14} aria-hidden /></button>}
@@ -782,16 +781,6 @@ function LocalModels({ tool, dark, memoryGb, onChanged, onDone }: { tool: LocalT
         </li>
       })}</ul>
     </>}
-    {embedding.length > 0 && <>
-      <h3 className="source-section">{t('Embedding models')}</h3>
-      <ul className="local-tool-models ollama-models">{embedding.map(s => <li key={s.id}>
-        <span title={s.id}>{s.name}</span>
-        <span className="local-tool-model-meta">{s.size_bytes != null && formatBytes(s.size_bytes)}
-          <button type="button" className="ghost" disabled={busy || pulling} onClick={() => start(s.id)}><Download size={14} aria-hidden />{t('Download')}</button>
-        </span>
-      </li>)}</ul>
-    </>}
-
     <details className="ollama-other">
       <summary>{t('Another model')}</summary>
       <form className="ollama-pull-form" onSubmit={e => { e.preventDefault(); if (name.trim()) start(name.trim()) }}>
@@ -1631,7 +1620,6 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const serverChoices = serverOptions.filter(o => o.available).flatMap(o => o.models.map(m => ({ provider: o.provider, model: m, label: `${o.provider === 'ollama' ? 'Ollama' : 'LM Studio'} · ${m}` })))
   const chosen = pending ?? (semantic ? { provider: semantic.provider, model: semantic.model } : null)
   const saving = pending !== null
-  const serverChosen = !!chosen && SERVER_IDS.includes(chosen.provider)
   function chooseSemantic(provider: SemanticSearchProvider, model: string | null) {
     if (saving || !semantic) return
     const version = ++seq.current.semanticVersion
@@ -1868,18 +1856,6 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     {wayHead(t(label), ['no', t('Coming soon')])}
     <p className="way-desc">{t('Signing in with a subscription account is not available for this model yet.')}</p>
   </section>
-  // The same choice as the Local model server row under Semantic search: choosing a model saves it as the provider.
-  const embeddingChoice = (provider: string) => {
-    const choices = serverChoices.filter(c => c.provider === provider)
-    const mine = serverChosen && chosen!.provider === provider
-    return <label className="lbl">{t('Embedding model for semantic search')}
-      <select className="select server-embedding" disabled={saving || !choices.length} value={mine ? `${chosen!.provider}|${chosen!.model ?? ''}` : ''}
-        onChange={e => { if (!e.target.value) return; const [p, ...m] = e.target.value.split('|'); chooseSemantic(p as SemanticSearchProvider, m.join('|')) }}>
-        {!mine && <option value="">{t(choices.length ? 'Not used for semantic search' : 'No embedding model listed')}</option>}
-        {choices.map(c => <option key={`${c.provider}|${c.model}`} value={`${c.provider}|${c.model}`}>{c.label}</option>)}
-      </select>
-    </label>
-  }
   const localCheck = (conn: string | null) => Promise.all([...(conn ? [refreshModel(conn)] : []), loadTools(true, true), loadSemantic(true)])
   let body: ReactNode = null
   if (semanticRow) {
@@ -1934,7 +1910,6 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
       <p className="foot-note">{t(tool && !tool.installed ? 'Ollama is not installed on this computer.' : tool && !tool.running ? 'Open the Ollama app or run `ollama serve`.' : 'No key is needed; DEIXIS uses Ollama on this computer.')}</p>
       <div className="acts"><CheckButton {...checkProps} id="local:ollama" label="Test" run={() => localCheck(model ? 'ollama' : null)} quiet /></div>
       {tool?.running && <section className="server-block" aria-label="Ollama">
-        {embeddingChoice('ollama')}
         <LocalModels tool={tool} dark={dark} memoryGb={machine?.memory_gb ?? null} onChanged={reloadTools} onDone={() => { void localCheck('ollama') }} />
       </section>}
       {tool && !tool.running && <LocalAppInstall tool={tool} dark={dark} onChanged={reloadTools} onDone={() => { void localCheck('ollama') }} />}
@@ -1953,7 +1928,6 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
       </div>
       {lmStudioInUse && <p className="foot-note">{t('Research steps use LM Studio at {address}.', { address: lmStudioUrl ?? '' })}</p>}
       {lmStudio?.running && <section className="server-block" aria-label="LM Studio">
-        {embeddingChoice('lm_studio')}
         <LocalModels tool={lmStudio} dark={dark} memoryGb={machine?.memory_gb ?? null} onChanged={reloadTools} onDone={() => { void localCheck(lmStudioInUse ? 'local_server' : null) }} />
       </section>}
       {lmStudio && !lmStudio.running && <LocalAppInstall tool={lmStudio} dark={dark} onChanged={reloadTools} onDone={() => { void localCheck(lmStudioInUse ? 'local_server' : null) }} />}

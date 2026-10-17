@@ -644,17 +644,7 @@ test.describe.serial('S24: the Settings page', () => {
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
 
-  test('the Ollama panel shows its address read-only and chooses the embedding model, as the page row does (Sol r2 backlog)', async () => {
-    const option = (provider: string, available: boolean, models: string[] = []) => ({ provider, models, available, reason: available ? null : 'SYNTHETIC not available' })
-    const view = (provider: string, model: string | null) => ({ provider, model, explicit: true,
-      options: [option('builtin', false), option('openai', false), option('gemini', false), option('ollama', true, ['syn-embed-small', 'syn-embed-large']), option('lm_studio', false), option('off', true)] })
-    const puts: { provider: string; model: string | null }[] = []
-    await page.route(url => url.pathname === '/api/semantic-search', route => {
-      if (route.request().method() !== 'PUT') return route.fulfill({ json: view('off', null) })
-      const body = route.request().postDataJSON() as { provider: string; model: string | null }
-      puts.push(body)
-      return route.fulfill({ json: view(body.provider, body.model) })
-    })
+  test('the Ollama panel shows its address read-only and leaves the embedding model to Search & ranking', async () => {
     await page.goto(server.url('#/settings'))
     await page.reload()
     await page.getByRole('tab', { name: 'Language models' }).click()
@@ -662,23 +652,8 @@ test.describe.serial('S24: the Settings page', () => {
     const sheet = page.getByRole('dialog', { name: 'Ollama' })
     await expect(sheet.locator('.dmeta')).toContainText('127.0.0.1')
     await expect(sheet.locator('input[value*="11434"]')).toHaveCount(0)
-    const model = sheet.getByRole('combobox', { name: 'Embedding model for semantic search' })
-    await expect(model).toHaveValue('')
-    await model.selectOption({ label: 'Ollama · syn-embed-large' })
-    await expect(page.getByText('Semantic search setting saved.')).toBeVisible()
-    expect(puts.at(-1)).toEqual({ provider: 'ollama', model: 'syn-embed-large' })
-    await expect(model).toHaveValue('ollama|syn-embed-large')
+    await expect(sheet.getByRole('combobox')).toHaveCount(0)
     await sheet.getByRole('button', { name: 'Close' }).click()
-    // The page row shows the same saved choice.
-    await page.getByRole('tab', { name: 'Search & ranking' }).click()
-    const serverCard = page.locator('div.choice-groups[data-group="semantic"] .co-card').filter({ has: page.locator('.co-name b', { hasText: /^Local model server$/ }) })
-    await expect(serverCard).toHaveClass(/\bon\b/)
-    await serverCard.click()
-    const serverSheet = page.getByRole('dialog', { name: 'Local model server', exact: true })
-    await expect(serverSheet.getByRole('combobox', { name: 'Embedding model' })).toHaveValue('ollama|syn-embed-large')
-    await page.keyboard.press('Escape')
-    await expect(serverSheet).toHaveCount(0)
-    await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
 
   test('Sign in has a button; the terminal command shows only after a failed sign-in', async () => {

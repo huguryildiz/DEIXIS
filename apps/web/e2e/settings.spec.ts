@@ -650,7 +650,7 @@ test.describe.serial('S24: the Settings page', () => {
     await page.getByRole('tab', { name: 'Language models' }).click()
     await page.locator('.co-card').filter({ hasText: /^Ollama/ }).click()
     const sheet = page.getByRole('dialog', { name: 'Ollama' })
-    await expect(sheet.locator('.dmeta')).toContainText('127.0.0.1')
+    await expect(sheet.locator('.server-facts')).toContainText('127.0.0.1')
     await expect(sheet.locator('input[value*="11434"]')).toHaveCount(0)
     await expect(sheet.getByRole('combobox')).toHaveCount(0)
     await sheet.getByRole('button', { name: 'Close' }).click()

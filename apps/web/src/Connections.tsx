@@ -759,7 +759,10 @@ function LocalModels({ tool, dark, memoryGb, onChanged, onDone }: { tool: LocalT
           {!lms && <button type="button" className="ghost icon-only" aria-label={t('Remove {model}', { model: m.id })} title={t('Remove')} disabled={busy} onClick={() => setRemoving(m.id)}><Trash2 size={14} aria-hidden /></button>}
         </span>
       </li>)}</ul>
-      : <p className="local-tool-note">{t('No language model is installed.')}</p>}
+      : <div className="ollama-empty">
+        <span className="ollama-model-ico" aria-hidden><Cpu size={14} /></span>
+        <p><b>{t('No language model is installed.')}</b>{research.length > 0 && <span>{t('Download one of the suggested models below to use it in research steps.')}</span>}</p>
+      </div>}
 
     {research.length > 0 && <>
       <h3 className="source-section">{t('Suggested models')}</h3>
@@ -1907,11 +1910,19 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     // One status line (address and version beside it), the embedding choice and the installed models; the path, role and
     // the fixed address field stay out, since none of them is something to act on here.
     const version = tool?.version?.match(/\d+(\.\d+)+/)?.[0]
-    const where = [tool?.running && tool.endpoint?.replace(/^https?:\/\//, ''), version && t('version {v}', { v: version })].filter(Boolean).join(' · ')
+    const address = tool?.running ? tool.endpoint?.replace(/^https?:\/\//, '') : undefined
     body = <>
-      {dmeta('local:ollama', model ? modelStatus(model) : data ? unknown : loading, where ? <span>{where}</span> : undefined, model && !model.ready ? healthReasonText(model) : undefined)}
+      <section className="server-status" aria-label={t('Status')}>
+        <div className="server-status-head">
+          {dmeta('local:ollama', model ? modelStatus(model) : data ? unknown : loading, undefined, model && !model.ready ? healthReasonText(model) : undefined)}
+          <CheckButton {...checkProps} id="local:ollama" label="Test" run={() => localCheck(model ? 'ollama' : null)} quiet />
+        </div>
+        {(address || version) && <dl className="server-facts">
+          {address && <div><dt>{t('Address')}</dt><dd><code>{address}</code></dd></div>}
+          {version && <div><dt>{t('Version')}</dt><dd>{version}</dd></div>}
+        </dl>}
+      </section>
       <p className="foot-note">{t(tool && !tool.installed ? 'Ollama is not installed on this computer.' : tool && !tool.running ? 'Open the Ollama app or run `ollama serve`.' : 'No key is needed; DEIXIS uses Ollama on this computer.')}</p>
-      <div className="acts"><CheckButton {...checkProps} id="local:ollama" label="Test" run={() => localCheck(model ? 'ollama' : null)} quiet /></div>
       {tool?.running && <section className="server-block" aria-label="Ollama">
         <LocalModels tool={tool} dark={dark} memoryGb={machine?.memory_gb ?? null} onChanged={reloadTools} onDone={() => { void localCheck('ollama') }} />
       </section>}

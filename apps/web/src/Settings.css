@@ -394,6 +394,21 @@
 .install-progress-bar.is-determinate span{animation:none;transition:width .4s ease}
 .server-pull{display:flex;flex-direction:column;gap:8px}
 .connection-sheet .server-block>*{min-width:0}
+.connection-sheet .server-status{display:grid;gap:11px;padding:11px 12px 12px 14px;border:1px solid var(--line);border-radius:10px;background:var(--card)}
+.connection-sheet .server-status-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.connection-sheet .server-status-head .dmeta{margin:0;flex-wrap:wrap}
+.connection-sheet .server-status-head button{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;font-size:12.5px}
+.connection-sheet .server-status-head button svg{width:14px;height:14px}
+.connection-sheet .server-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:0;padding-top:11px;border-top:1px solid var(--line)}
+.connection-sheet .server-facts div{display:grid;gap:2px;min-width:0}
+.connection-sheet .server-facts dt{margin:0;color:var(--muted);font-size:11.5px}
+.connection-sheet .server-facts dd{margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink);font-size:13px;font-weight:500;font-variant-numeric:tabular-nums}
+.connection-sheet .server-facts code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink)}
+.connection-sheet .ollama-empty{display:flex;align-items:flex-start;gap:10px;padding:12px;border:1px dashed var(--strong-line);border-radius:10px}
+.connection-sheet .ollama-empty .ollama-model-ico{background:var(--hover-surface);color:var(--muted)}
+.connection-sheet .ollama-empty p{display:grid;gap:2px;margin:0;font-size:12.5px;line-height:1.5}
+.connection-sheet .ollama-empty b{color:var(--ink);font-size:13px;font-weight:600}
+.connection-sheet .ollama-empty span{color:var(--muted)}
 /* Local model servers (Ollama, LM Studio): installed models in one framed list, suggestions as cards with a memory-fit meter. */
 .connection-sheet .source-section .ollama-count{display:inline-grid;place-items:center;min-width:18px;height:18px;margin-left:7px;padding:0 5px;border-radius:99px;background:var(--hover-surface);color:var(--muted);font-size:11px;font-weight:500;vertical-align:1px}
 .connection-sheet .ollama-models{border:1px solid var(--line);border-radius:10px;overflow:hidden}

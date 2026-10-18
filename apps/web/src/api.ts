@@ -1788,7 +1788,7 @@ export type OpenAlexBudgetToday = {
 export type QuotaWindow = { window: 'five_hour' | 'seven_day' | 'other'; minutes: number; used_fraction: number; resets_at: string | null }
 export type ConnectionUsage = {
   connection: string; kind: 'api' | 'subscription' | 'local' | 'none'; roles: UsageRole[]
-  spend: { estimated_usd: number; priced_calls: number; unpriced_calls: number } | null
+  spend: { estimated_usd: number; priced_calls: number; unpriced_calls: number; repriced_calls: number; repriced_price_list: string | null } | null
   quota: { source: 'live' | 'last_call'; seen_at: string; windows: QuotaWindow[] } | null
 }
 export type ModelUsage = { as_of: string; month_start: string; connections: ConnectionUsage[] }
@@ -2201,7 +2201,7 @@ export const preferencesApi = {
 // Estimated spending on paid-API models (api/spend_routes.py, F4). The threshold is an estimated-spend stopping threshold,
 // not a hard limit: a run pauses before its next paid call once today's estimate has reached it. `unpriced_calls` are
 // calls on a model with no listed price: they are not in `estimated_usd`, and they are never counted as zero dollars.
-export type SpendingToday = { day: string; estimated_usd: number; priced_calls: number; estimated_from_text_calls: number; unpriced_calls: number }
+export type SpendingToday = { day: string; estimated_usd: number; priced_calls: number; estimated_from_text_calls: number; unpriced_calls: number; repriced_calls: number; repriced_price_list: string | null }
 export type Spending = { daily_threshold_usd: number | null; today: SpendingToday; prices: { version: number; as_of: string } }
 export type SpendRole = 'literature' | 'answer' | 'reviewer'
 export type SpendRoleChoice = { connection: string; model: string; reasoning_effort: string | null }

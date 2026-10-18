@@ -4936,6 +4936,8 @@ const tr: Record<string, string> = {
   'estimated from {n} call': '{n} çağrıdan tahmin',
   'estimated from {n} calls': '{n} çağrıdan tahmin',
   '{n} with no listed price': '{n} çağrının fiyatı listede yok',
+  '{n} priced later from the {date} price list': '{n} çağrı sonradan {date} tarihli fiyat listesiyle fiyatlandı',
+  '{n} of them priced later from the {date} price list; the price was not known when they were made.': 'Bunların {n} tanesi sonradan {date} tarihli fiyat listesiyle fiyatlandı; çağrı yapıldığında fiyatı bilinmiyordu.',
   'Read from {name}, {time}': '{name} hesabından okundu, {time}',
   'Reported on the last call, {time}': 'Son çağrıda bildirildi, {time}',
   'On this computer, no charge': 'Bu bilgisayarda, ücretsiz',

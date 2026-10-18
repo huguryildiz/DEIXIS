@@ -480,6 +480,8 @@ function UsageThisMonth() {
         : t(unpriced > 0 ? 'at least {x} this month' : '{x} this month', { x: money(c.spend.estimated_usd) })
       note = priced > 0 ? t(priced === 1 ? 'estimated from {n} call' : 'estimated from {n} calls', { n: number(priced) }) : ''
       if (unpriced > 0) note += `${note ? ' · ' : ''}${t('{n} with no listed price', { n: number(unpriced) })}`
+      // Calls first booked with no price and priced later from a newer list (D111) are named, with that list's date.
+      if (c.spend.repriced_calls > 0) note += `${note ? ' · ' : ''}${t('{n} priced later from the {date} price list', { n: number(c.spend.repriced_calls), date: c.spend.repriced_price_list ?? '' })}`
     } else if (c.quota) {
       text = c.quota.windows.map(w => t(windowWords[w.window], { p: Math.round(w.used_fraction * 100) })).join(' · ')
       note = t(c.quota.source === 'live' ? 'Read from {name}, {time}' : 'Reported on the last call, {time}', { name, time: when(c.quota.seen_at) })
@@ -546,6 +548,7 @@ function SpendingSettings() {
         <p className="tnum">{today ? <>{money(today.estimated_usd)}
           <small>{t(today.priced_calls === 1 ? 'from {n} call' : 'from {n} calls', { n: today.priced_calls.toLocaleString(uiLocale()) })}
             {today.estimated_from_text_calls > 0 && ` · ${t('{n} of them estimated from text length because the provider sent no usage', { n: today.estimated_from_text_calls })}`}</small>
+          {today.repriced_calls > 0 && <small>{t('{n} of them priced later from the {date} price list; the price was not known when they were made.', { n: today.repriced_calls.toLocaleString(uiLocale()), date: today.repriced_price_list ?? '' })}</small>}
           {today.unpriced_calls > 0 && <small>{t('Not counted: {n} calls on models with no listed price.', { n: today.unpriced_calls.toLocaleString(uiLocale()) })}</small>}</>
           : t(error ? 'not known' : 'Checking…')}</p>
       </div>

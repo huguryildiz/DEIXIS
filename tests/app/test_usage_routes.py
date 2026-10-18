@@ -422,7 +422,8 @@ def test_the_models_route_gives_spend_for_a_paid_key_and_the_limit_for_a_subscri
     assert body["month_start"] == first
     assert rows["codex"] == {"connection": "codex", "kind": "subscription", "roles": ["literature"], "spend": None, "quota": reading}
     assert rows["deepseek"]["kind"] == "api" and rows["deepseek"]["roles"] == ["answer"]
-    assert rows["deepseek"]["spend"] == {"estimated_usd": 1.5, "priced_calls": 1, "unpriced_calls": 1}
+    assert rows["deepseek"]["spend"] == {"estimated_usd": 1.5, "priced_calls": 1, "unpriced_calls": 1, "repriced_calls": 0,
+                                       "repriced_price_list": None}
     assert set(rows) == {"codex", "deepseek"}  # no reviewer model: no reviewer row
 
 

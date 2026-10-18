@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from deixis.api.app import create_app
 from deixis.domain import skill
 from deixis.models.adapter import ModelStepResult
+from deixis.storage.db import transaction
 from deixis.workflow import spend, spend_estimate
 from fakes import FakeAdapter
 from test_api_flow import create, fake_fetch, openalex_client, session, sw_settings, wait_run
@@ -134,6 +135,40 @@ def test_a_model_with_no_listed_price_is_an_unpriced_call_never_zero_dollars(tmp
         assert row["cost_usd"] is None and row["basis"] == "unpriced" and row["input_tokens"] == 20_000
         total = spend.day_total(store.conn, spend.day_of(store.clock))
         assert total["unpriced_calls"] == 1 and total["priced_calls"] == 0
+
+
+def test_an_unpriced_call_is_priced_once_a_later_list_names_its_model_and_says_so(tmp_path, monkeypatch):
+    """D111: a row booked unpriced gets its cost from the current list, marked with when and the list's date; a model
+    still unlisted stays unpriced, a row priced when written is never touched, and repricing twice changes nothing."""
+    from deixis.api.usage_routes import month_spend
+    app = served(tmp_path, PaidAdapter())
+    with TestClient(app):
+        store = app.state.store
+        real = spend.price_table()
+        _, priced = make_session(store)
+        store.finish_model_session(priced, status="completed", raw_output="x", token_usage_json=CALL_USAGE, request_sent=True)
+        older = {**real, "as_of": "2026-01-01", "models": {**real["models"], "deepseek": {}}}
+        monkeypatch.setattr(spend, "price_table", lambda: older)
+        _, late = make_session(store)
+        store.finish_model_session(late, status="completed", raw_output="x", token_usage_json=CALL_USAGE, request_sent=True)
+        _, never = make_session(store, connection="mistral", model="mistral-unlisted")
+        store.finish_model_session(never, status="completed", raw_output="x", token_usage_json=CALL_USAGE, request_sent=True)
+        assert {r["session_id"]: r["basis"] for r in ledger(app)}[late] == "unpriced"
+        monkeypatch.setattr(spend, "price_table", lambda: real)
+        with transaction(store.conn):
+            assert spend.reprice_unpriced(store.conn) == 1
+        rows = {r["session_id"]: r for r in ledger(app)}
+        assert rows[late]["basis"] == "reported" and rows[late]["cost_usd"] == pytest.approx(0.006)
+        assert rows[late]["repriced_at"] and rows[late]["repriced_price_list"] == real["as_of"]
+        assert rows[never]["cost_usd"] is None and rows[never]["repriced_at"] is None
+        assert rows[priced]["repriced_at"] is None and rows[priced]["cost_usd"] == pytest.approx(0.006)
+        assert spend.reprice_unpriced(store.conn) == 0
+        total = spend.day_total(store.conn, spend.day_of(store.clock))
+        assert total["repriced_calls"] == 1 and total["repriced_price_list"] == real["as_of"]
+        assert total["priced_calls"] == 2 and total["unpriced_calls"] == 1
+        day = spend.day_of(store.clock)
+        month = month_spend(store.conn, "deepseek", day[:8] + "01", "9999-12-31")
+        assert month["repriced_calls"] == 1 and month["unpriced_calls"] == 0
 
 
 def test_a_call_that_never_reached_the_provider_or_ran_on_a_subscription_leaves_no_row(tmp_path):

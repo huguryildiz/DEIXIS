@@ -47,7 +47,7 @@ from deixis.imports import bibtex_ris
 from deixis.workflow import abstract_stage
 from deixis.workflow import source_keys
 from deixis.workflow import fast_path, intent, small_batch, statement_check
-from deixis.workflow import file_restore, text_retry
+from deixis.workflow import file_restore, spend, text_retry
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS, SEARCH_QUERY_CALLS,
                                  TEST_EFFORT_BUDGETS, RevisionConflict)
 from deixis.models import unusable
@@ -908,6 +908,8 @@ def create_app(
         store.recovery_dir = settings.recovery_dir
         store.study_table = settings.study_table
         source_keys.assign_missing(store)
+        with db.transaction(conn):
+            spend.reprice_unpriced(conn)  # calls booked unpriced get a cost once the price list names their model (D111)
         settings = settings.bound_to(store.setting)  # the contact email set in Settings is read before the env var (F15)
         app.state.settings = settings
         credentials.set_data_dir(settings.data_dir)

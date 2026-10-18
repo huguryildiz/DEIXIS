@@ -176,16 +176,34 @@ def record_session(conn: sqlite3.Connection, session_id: str, sent: bool | None)
          tokens["cached_input"] if tokens else None, tokens["output"] if tokens else None, cost, basis, now()))
 
 
+def reprice_unpriced(conn: sqlite3.Connection) -> int:
+    """Give a cost to the ledger rows booked as unpriced whose model the price list now names (D111), and return how many.
+    Each is rewritten from its stored session exactly as `record_session` would now write it, then marked with when and
+    with which dated list; a row whose model is still not listed, or whose session is gone, stays unpriced. Call inside a
+    transaction."""
+    as_of, count = price_table()["as_of"], 0
+    rows = conn.execute("SELECT session_id, connection, model FROM spend_ledger WHERE basis = 'unpriced'").fetchall()
+    for row in rows:
+        if price_for(row["connection"], row["model"]) is None:
+            continue
+        record_session(conn, row["session_id"], None)
+        count += conn.execute(
+            "UPDATE spend_ledger SET repriced_at = ?, repriced_price_list = ? WHERE session_id = ? AND cost_usd IS NOT NULL",
+            (now(), as_of, row["session_id"])).rowcount
+    return count
+
+
 def day_total(conn: sqlite3.Connection, day: str) -> dict[str, Any]:
     """What the ledger holds for a day: the estimated dollars of the calls with a cost, how many calls that is, how many
-    of those were estimated from text (no usage reported), and how many calls have no price (`unpriced`, not in the
-    dollars)."""
+    of those were estimated from text (no usage reported), how many calls have no price (`unpriced`, not in the
+    dollars), and how many were priced later from a newer list (`repriced`, D111) with the latest such list's date."""
     row = conn.execute(
         "SELECT COALESCE(SUM(cost_usd), 0) AS usd, COUNT(cost_usd) AS priced,"
-        " COALESCE(SUM(basis = 'estimated_from_text'), 0) AS from_text, COALESCE(SUM(cost_usd IS NULL), 0) AS unpriced"
+        " COALESCE(SUM(basis = 'estimated_from_text'), 0) AS from_text, COALESCE(SUM(cost_usd IS NULL), 0) AS unpriced,"
+        " COALESCE(SUM(repriced_at IS NOT NULL), 0) AS repriced, MAX(repriced_price_list) AS repriced_with"
         " FROM spend_ledger WHERE day = ?", (day,)).fetchone()
     return {"day": day, "estimated_usd": row["usd"], "priced_calls": row["priced"], "estimated_from_text_calls": row["from_text"],
-            "unpriced_calls": row["unpriced"]}
+            "unpriced_calls": row["unpriced"], "repriced_calls": row["repriced"], "repriced_price_list": row["repriced_with"]}
 
 
 def threshold(store: Any) -> float | None:

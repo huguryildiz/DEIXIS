@@ -4,6 +4,12 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D111 — Spend ledger: a call booked unpriced is priced once a later price list names its model
+Status: accepted · Date: 2026-10-18 · Writer: Claude · Reviewer: none yet
+Context: Settings showed Anthropic API as "not known" with 89 unpriced calls: every one ran on `claude-opus-5-5`, which the 16 October price list did not name. 743aae58 added the Claude 5 family and the newer Gemini models to `models/model_prices.json` (dated 2026-10-18), but a ledger row's cost is written when the call finishes, so the old rows stayed unpriced.
+Decision: On every start, after migrations, `spend.reprice_unpriced` rewrites each `basis = 'unpriced'` row whose model the current list names, from its stored session, the same way `record_session` would write it now. Migration 0012 adds `repriced_at` and `repriced_price_list` (the list's `as_of`), so a cost that was not known when the call was made stays told apart from one priced at the time. Settings names them: in the connection row ("n priced later from the {date} price list") and under today's estimate. A model still not listed, a row priced when written and a row whose session is gone are not touched; running it again changes nothing.
+Limit: The cost uses today's list for calls made before it; a provider that changed its price in between would make the figure wrong for those calls. Past days' totals rise when their rows are priced. The provider's bill is still what counts.
+
 ## D110 — Review queue: one answer to several ticked rows
 Status: accepted · Date: 2026-10-18 · Writer: Claude · Reviewer: none yet
 Context: The owner found answering a long queue one card at a time tedious; there was no bulk action.

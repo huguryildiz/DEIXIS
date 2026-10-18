@@ -193,9 +193,11 @@ def month_days(moment: datetime) -> tuple[str, str]:
 def month_spend(conn, connection: str, first: str, after: str) -> dict[str, Any]:
     """The spend ledger's estimate for one paid-API connection over [first, after)."""
     row = conn.execute(
-        "SELECT COALESCE(SUM(cost_usd), 0) AS usd, COUNT(cost_usd) AS priced, COALESCE(SUM(cost_usd IS NULL), 0) AS unpriced"
+        "SELECT COALESCE(SUM(cost_usd), 0) AS usd, COUNT(cost_usd) AS priced, COALESCE(SUM(cost_usd IS NULL), 0) AS unpriced,"
+        " COALESCE(SUM(repriced_at IS NOT NULL), 0) AS repriced, MAX(repriced_price_list) AS repriced_with"
         " FROM spend_ledger WHERE connection = ? AND day >= ? AND day < ?", (connection, first, after)).fetchone()
-    return {"estimated_usd": row["usd"], "priced_calls": row["priced"], "unpriced_calls": row["unpriced"]}
+    return {"estimated_usd": row["usd"], "priced_calls": row["priced"], "unpriced_calls": row["unpriced"],
+            "repriced_calls": row["repriced"], "repriced_price_list": row["repriced_with"]}
 
 
 async def connection_rows(store, adapters: dict[str, Any], moment: datetime) -> list[dict[str, Any]]:

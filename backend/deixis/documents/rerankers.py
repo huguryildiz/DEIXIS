@@ -67,7 +67,7 @@ MIN_POOL_FACTOR, MAX_POOL_FACTOR = 1.0, 4.0
 MAX_CANDIDATES = 400  # never more records than this in one rerank, whatever the depth and factor
 DEFAULT_TIMEOUT_SECONDS = 180
 MIN_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS = 10, 900
-MAX_DOCUMENT_CHARS = 20_000  # a title and abstract longer than this is not sent (refused, not cut)
+MAX_DOCUMENT_CHARS = 20_000  # a title and abstract longer than this is cut here, and the cut is counted (D102)
 
 
 class RerankError(Exception):
@@ -148,13 +148,22 @@ def reorder(automatic: list[str], candidates: list[str], scores: dict[str, float
 
 async def rerank(choice: Choice, client: httpx.AsyncClient, local: Any, query: str, documents: list[str],
                  stop: Callable[[], None] | None = None) -> dict[str, Any]:
-    """Scores in input order, with `truncated` (built-in: documents cut at its token limit) and `provider_tokens`
-    (Voyage's usage). Raises RerankError; the caller bounds the time and keeps the fused order on failure."""
+    """Scores in input order, with `truncated` (built-in: documents cut at its token limit), `cut_documents` (records
+    cut at MAX_DOCUMENT_CHARS here, for every reranker) and `provider_tokens` (Voyage's usage). Raises RerankError; the
+    caller bounds the time and keeps the fused order on failure.
+
+    A record's "abstract" is sometimes a whole article (an OpenAlex abstract holding the body text). Refusing it would
+    leave every other record of the run unreranked, so it is cut to its first MAX_DOCUMENT_CHARS characters, which
+    hold its title and opening, and counted (D102)."""
     if not documents:
-        return {"scores": [], "truncated": 0, "provider_tokens": None}
-    too_long = [i for i, text in enumerate(documents) if len(text) > MAX_DOCUMENT_CHARS]
-    if too_long:
-        raise RerankError("reranker_failed", f"{len(too_long)} record(s) longer than {MAX_DOCUMENT_CHARS} characters")
+        return {"scores": [], "truncated": 0, "cut_documents": 0, "provider_tokens": None}
+    cut = sum(len(text) > MAX_DOCUMENT_CHARS for text in documents)
+    documents = [text[:MAX_DOCUMENT_CHARS] for text in documents]
+    return await _rerank(choice, client, local, query, documents, stop) | {"cut_documents": cut}
+
+
+async def _rerank(choice: Choice, client: httpx.AsyncClient, local: Any, query: str, documents: list[str],
+                  stop: Callable[[], None] | None) -> dict[str, Any]:
     if choice.provider == "builtin":
         model = builtin_catalog.resolve(choice.model, "reranker")
         if model is None:

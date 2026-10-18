@@ -227,6 +227,21 @@ def test_voyage_rerank_maps_scores_back_to_input_order_and_refuses_a_wrong_reply
     assert failed.value.code == "reranker_failed"
 
 
+def test_a_record_past_the_character_limit_is_cut_and_counted_not_refused():
+    # A whole article in an OpenAlex abstract once left all 200 records of a run unreranked (D102).
+    sent = []
+
+    class Local:
+        async def rerank(self, model_id, query, documents, seconds):
+            sent.extend(documents)
+            return [0.1] * len(documents), []
+    choice = rerankers.chosen({"enabled": True, "provider": "builtin", "model": RER})
+    long = "SYNTHETIC " * 3000
+    result = asyncio.run(rerankers.rerank(choice, None, Local(), "q", [long, "short"]))
+    assert sent == [long[:rerankers.MAX_DOCUMENT_CHARS], "short"]
+    assert result["cut_documents"] == 1 and result["truncated"] == 0
+
+
 def test_the_built_in_rerank_goes_to_the_local_runner_and_maps_its_errors():
     class Local:
         async def rerank(self, model_id, query, documents, seconds):
@@ -236,7 +251,7 @@ def test_the_built_in_rerank_goes_to_the_local_runner_and_maps_its_errors():
             return [0.2, 0.8], [1]
     choice = rerankers.chosen({"enabled": True, "provider": "builtin", "model": RER})
     result = asyncio.run(rerankers.rerank(choice, None, Local(), "q", ["a", "b"]))
-    assert result == {"scores": [0.2, 0.8], "truncated": 1, "provider_tokens": None}
+    assert result == {"scores": [0.2, 0.8], "truncated": 1, "cut_documents": 0, "provider_tokens": None}
     with pytest.raises(rerankers.RerankError) as timeout:
         asyncio.run(rerankers.rerank(choice, None, Local(), "q", ["slow"]))
     assert timeout.value.code == "reranker_timeout"
@@ -357,7 +372,7 @@ def test_the_rerank_step_scores_the_first_records_the_person_did_not_include_wit
                                                      "SYNTHETIC title b\n\nSYNTHETIC abstract b"])]  # c is the person's
     assert step["status"] == "succeeded" and step["output"]["status"] == "applied"
     assert step["output"]["candidate_ids"] == ["a", "b"] and step["output"]["scores"] == {"a": 0.1, "b": 0.9}
-    assert step["output"]["read_top"] == 1
+    assert step["output"]["read_top"] == 1 and step["output"]["cut_documents"] == 0
     assert step["output"]["sent"] == {"query": "question", "documents": "title_and_abstract", "count": 2, "to": "this_computer"}
     # A rerank that ended is not asked again.
     asyncio.run(small_batch.rerank_list(flow, RUN, SCOPE, {}))
@@ -386,6 +401,20 @@ def test_a_failed_rerank_is_recorded_with_the_fused_order_as_its_fallback_and_no
     assert step["status"] == "failed" and step["error_code"] == "reranker_failed"
     assert (step["output"]["status"], step["output"]["fallback"]) == ("failed", "fused_order")
     assert sent == []  # Voyage has a key here and was not asked instead
+
+
+def test_the_cut_count_is_kept_when_the_reranker_then_fails(monkeypatch):
+    class Local:
+        async def rerank(self, model_id, query, documents, seconds):
+            assert len(documents[0]) == rerankers.MAX_DOCUMENT_CHARS
+            raise local_embedding.LocalEmbeddingError("builtin_unavailable", "SYNTHETIC not installed")
+    flow, store, _ = rerank_flow(monkeypatch, {"enabled": True, "provider": "builtin", "model": RER}, Local())
+    pool = small_batch.manifest_for()["pool"]  # rerank_flow's synthetic pool
+    pool[0]["abstract"] = "SYNTHETIC " * 3000
+    monkeypatch.setattr(small_batch, "manifest_for", lambda *args: {"pool": pool, "user_priority": [], "fused": ["a", "b"]})
+    asyncio.run(small_batch.rerank_list(flow, RUN, SCOPE, {}))
+    step = store.steps[small_batch.RERANK_KEY]
+    assert step["status"] == "failed" and step["output"]["cut_documents"] == 1
 
 
 def test_a_rerank_past_its_time_limit_is_stopped_and_recorded_as_a_timeout(monkeypatch):

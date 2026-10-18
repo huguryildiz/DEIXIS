@@ -4,6 +4,12 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D102 — A reranked record past 20,000 characters is cut and counted, not refused
+Status: accepted · Date: 2026-10-18 · Writer: Claude · Owner choice: cut and record
+Context: The first benchmark question with the owner's settings (BioASQ trial, Voyage rerank-3-lite, 200 candidates) failed its rerank with `reranker_failed`: one candidate's OpenAlex "abstract" held the whole article (23,753 characters), past DEIXIS's own `MAX_DOCUMENT_CHARS` (20,000, set with D88/D89, not measured; Voyage itself allows 32,000 tokens per query and document). The rule refused the whole request, so none of the 200 records was reranked and the list kept the fused order, visible only in the step.
+Decision: Every reranker receives each title and abstract cut to its first 20,000 characters; the step output records how many were cut (`cut_documents`), apart from the built-in model's own token cut (`truncated_documents`).
+Limits: A cut record is scored on its title and opening only. Cohere's per-document token check (4,096) still refuses the whole request when a record passes it. How often this happened in earlier runs is not counted.
+
 ## D101 — Verify Citations V4: the screen, a Library tool that shows each stored count, status and result apart
 Status: accepted · Date: 2026-10-18 · Writer: Claude (Opus subagent) · Reviewer: gpt-6.1-sol (round 1 "ready with fixes": three high findings and three backlog items, fixed as below: the quote mark is tied to the opened passage and its located words, with comparison signs kept wherever the page is searched; "What was read" names only what was given and each quote says where it came from; the draft list counts completed and could-not-be-checked pairs apart; a stale plan has a "Freeze the plan again" control; a check found running is polled with progress over one basis; the two file buttons have their own names and Source details its own labels)
 Context: V4 of 5 of Verify Citations (plan in `.local/plans/verify-citations-plan.md`; V1 D86, V2 D96, V3 D99). The routes existed; there was no screen. No real model was run for this slice.

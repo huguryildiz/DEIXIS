@@ -505,6 +505,7 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
     store.start_step(step["id"])
     output = choice.identity() | {
         "candidate_ids": candidates, "read_top": read_top, "query_sha256": canonical.sha256_hex(query),
+        "cut_documents": sum(len(text) > rerankers.MAX_DOCUMENT_CHARS for text in texts),  # D102, kept on failure too
         "sent": {"query": "question", "documents": "title_and_abstract", "count": len(candidates),
                  "to": "this_computer" if choice.provider == "builtin" else choice.provider}}
     seconds = float(choice.timeout_seconds)

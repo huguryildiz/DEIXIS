@@ -1,197 +1,69 @@
-# DEIXIS status
+# DEIXIS durumu
 
-**Last updated:** 18 October 2026. Decisions are in [docs/decisions.md](docs/decisions.md); old D numbers point to the old log in Git (commit 26c8214).
+**Son güncelleme:** 18 Ekim 2026. Kararlar [docs/decisions.md](docs/decisions.md) içinde (en yenisi üstte), ölçümler [docs/benchmark.md](docs/benchmark.md) içinde. Bu dosyanın 18 Ekim öncesi uzun hali Git geçmişinde (commit 847b6b0b).
 
-## Now
+## Kısaca: neredeyiz?
 
-The owner is checking the app by eye, and the problems they find get fixed in order. P10 (the macOS package) waits until that check is done.
+Durum kötü değil, ama dengesiz. Uygulama çalışıyor ve özellik bakımından geniş; asıl eksik, son haftalarda eklenen özelliklerin çoğunun gerçek bir modelle ve gerçek kullanımda denenmemiş olması.
 
-İkinci tam metin okuması artık ilk okumanın görmediği bölümleri okuyor (D76); modelsiz tekrar oynatmada makalelerin gösterilen bölüm payı %32'den %65'e çıktı, canlı Luna kabul testi (17 Eki, aynı 16 makale) test edilebilen dört koşulu geçti: kapsam ×1,77, negatiflerde yeni dahil yok, kısa makaleler değişmedi, çağrı ve token aynı; ama ilk 12 parçanın kaçırdığı ana kanıtı yakalama amacı bu sette ölçülemedi ve dışlama zorlaştı (bir negatif kuyruğa düştü).
+- **Sağlam olan:** atıf kuralı. Cevaptaki her atıf, okunan bir pasajda kodun bulduğu bir yere bağlanıyor; bulunamazsa cevap "doğrulanmamış taslak" kalıyor. 8 kayıtlı cevaptaki 171 atıf bağlantısının hepsi doğru çıktı.
+- **Ölçülen ve iyi olan:** arama sırası. 18 Ekim'de iki hazır test setinde, sahibin ayarlarıyla (Voyage embedding + Voyage reranker) DEIXIS ilk 50 sonuçta düz bir OpenAlex aramasından belirgin olarak fazla doğru makale buluyor: BioASQ'da 0,618'e karşı 0,489, LitSearch'te 0,700'e karşı 0,561. Reranker her iki sette de güven aralığı sıfırın üstünde katkı veriyor; bu yüzden artık varsayılan olarak açık (D104).
+- **Ölçülen ve zayıf olan:** elektrik mühendisliği survey seti (42 survey, gold = survey'in kaynakçası). Burada DEIXIS düz OpenAlex'i geçiyor (0,129'a karşı 0,065) ama fark küçük ve **reranker zarar veriyor** (0,091). Sebep: bu sette doğru makalelerin çoğu atıf zincirinden geliyor, reranker yalnız başlık ve özet okuduğu için zincir kayıtlarını aşağı itiyor. Varsayılanı açık yapan karar (D104) bu sonuçtan önce alındı; yeniden bakılmalı.
+- **Ölçülmeyen:** Verify Citations (taslak atıf denetimi), ters atıf arama, kartopu (snowballing), kill search'in Next steps girişi, run kartı. Hepsi yalnız sahte modelli testlerle ve Playwright'la sınandı. Okuma ve cevap kalitesi de ayrıca ölçülmedi: arama testleri yalnız sıralamayı ölçüyor.
+- **Bilinen zayıflık:** cevaplar, kendilerine verilen eserlerin azını atıflıyor (D83 sonrası DBR/VBF sorusunda 13 eserden 12–13'ü, ama her koşu 30 iddia sınırına takılıyor). Raporlar model puanıyla 30 üzerinden 15–20 aldı (insan puanı yok). Paywall arkasındaki tam metinler okunamıyor; mühendislik makalelerinin çoğu özetten okunuyor.
+- **Paketleme yok:** P10 (macOS paketi) sahibin görsel kontrolünü bekliyor. Windows ve Linux hiç denenmedi.
 
-17 Ekim kalite işleri (kickoff 1–7) bitti; açık karar: rapor tablosu yalnız tam metni okunan kaynakları alıyor, cevap ise özetten okunanları da atıflıyor, bu yüzden az tam metinli sorularda (pil, yükseköğretim) rapor tek kaynağa dayanıyor — özet kaynaklar da tabloya girsin mi, sahip karar verecek.
+Kısa hüküm: altyapı ve kurallar sağlam, arama ölçülmüş ve iyi; ama son iki haftada ölçmeden eklenen özellik sayısı fazla. Bir sonraki dönemin işi yeni özellik değil, var olanı gerçek kullanımda denemek ve paketlemek.
 
-## Next
+## Yarım kalan işler (18 Ekim)
 
-1. The owner's visual check and the fixes it turns up.
-2. P10: the macOS package (plan in `.local/plans/p10-plan.md`), then the search work listed under "Search" below.
+- **Verify Citations D105** (V5 pilotundan çıkan düzeltmeler): `.claude/worktrees/agent-a9c2c1463224185fd` içinde, main'e girmemiş 6 commit. Sol 4. tur incelemede "hazır değil" dedi (`\textbf@pair` gibi `@`'li komut adları); b0817990 bunu düzeltiyor, son Sol turu bekleniyor.
+- **Özet kaynaklar rapor tablosunda (D99 taslağı):** yerel `abstract-rows` dalında tek commit (dcd775ca), uzakta yok, main'e girmedi. Bekleyen sahip kararına bağlı: rapor tablosu bugün yalnız tam metni okunan kaynakları alıyor, cevap özetten okunanları da atıflıyor; az tam metinli sorularda (battery_soh, higher_ed_ai) rapor tek kaynağa dayanıyor. Plan: `.local/plans/abstract-rows-plan.md`.
+- **Arama kayıpları oturumu** ("okuma payı ve sorgu talimatı"): 18 Ekim'de hâlâ çalışıyordu. Kaçan makalelerin analizi `.local/benchmark-loss-2026-10-18/RESULT.md`: 74 kayıptan 35'i hiçbir DEIXIS sorgusuna uymuyor, 39'u sorgu başına okunan 500 kaydın ötesinde kalıyor.
 
-## Done
+## Döndüğünde sırayla bakılacaklar
 
-Most of this was tested with fake models and synthetic data only; "Not measured" below lists what still needs a real model or real use.
+1. **Yarım işleri kapat:** D105'in son Sol turunu al ve main'e al; `abstract-rows` için kararı ver (al ya da sil); arama kayıpları oturumunun sonucunu oku.
+2. **Reranker varsayılanını yeniden düşün:** survey setinde zarar ettiği için. Seçenekler: zincir kayıtlarını reranker'dan korumak, ya da reranker'ı yalnız anahtar kelime/semantik kayıtlara uygulamak. Önce ölç, sonra karar ver.
+3. **Görsel kontrol, sonra P10:** sahibin göz kontrolü ve çıkan düzeltmeler; ardından macOS paketi (plan `.local/plans/p10-plan.md`, K1–K15 satırları; OpenAI, Gemini, DeepSeek fiyatları yayından önce doğrulanacak).
+4. **Ölçülmemiş özellikleri bir kez canlı dene:** Verify Citations V5 pilotu gerçek bir taslakta (`.local/plans/verify-citations-v5-pilot.md`), ters atıf aramanın ekranı (R3) ve canlı pilotu (R4), kartopu için okuma penceresi ölçümü (havuz 200 ve 400, ikinci bir soruda).
+5. **Yeni özellik ekleme duraklaması:** gap finder, Chain of Ideas, R5 gibi fikirler yukarıdakiler bitene kadar bekler.
 
-### Search and seed PDFs
+## Açık işler (kısaltılmış)
 
-- Clean start (10–11 Oct): the fast path is the only search path, the old search and answer paths and old data support are gone, and the schema starts from one baseline.
-- Seed PDFs steer the search (D2, D3, D6): up to 5 uploaded or Zotero PDFs feed the citation chain and similar-paper requests without pushing out the question's own results.
-- OpenAlex similar-paper requests now overlap, starting 1.5 s apart with 100 records per page (D10).
-- PRISMA-S, the Method box and Watch now read the requests the fast plan really sends, including its semantic and Semantic Scholar requests, and Watch keeps each query's saved position.
-- Citation map (D42): a panel draws the sources by year or as a network from OpenAlex reference lists, and a work cited by two or more sources can be added as a candidate.
-- Citation snowballing (D91): rounds the person starts from chosen works (research ⋯ menu, citation map); backward and forward OpenAlex reads, abstract screening with lexical exclusion off, nothing included; up to 3 rounds. Model-free tests only.
-- Built-in models on llama.cpp (D90, 17 Oct): a pinned GGUF catalog (embedding: Qwen3 0.6B/4B/8B, bge-m3; reranking: Qwen3 0.6B/4B/8B, bge-reranker-v2-m3) shown as cards in Search & ranking with a memory-based recommendation; the PyTorch runner is gone. Live on an M1 Pro with the 0.6B pair and synthetic texts: 250 titles embedded in 6.2 s (PyTorch 52 s), 100 reranked in 4.3 s warm (32 s), reranker memory steady at 1.6 GB. Retrieval quality, the larger models and Windows are not checked. Search & ranking also gained Cohere embeddings and Cohere, Jina and ZeroEntropy rerankers (D89, mocked tests only).
-- Reranker on BioASQ (D88, 17 Oct, 100 questions, stored candidate lists, title + abstract): Qwen3 and Voyage rerank-3-lite both raise recall@50 from 0.545, by about +0.03 reranking the first 100 and about +0.06 reranking the first 200 (every interval above zero, none reaching the +0.10 bar). The pool default is now 4× the papers read; the reranker stays off until turned on. Only record order was measured, not full product runs or answers (`.local/rerank-trial-2026-10-17/qwen-voyage-results.md`).
-- Verify Citations V1–V4 (D86, D96, D99, D101): a draft's citations and bibliography are read by code and resolved on OpenAlex; each cited work gets its text (your PDF, a stored or open-access PDF, else the abstract) with an identity check, and each citation a frozen set of 6 passages. V3 sends each citation to a model; code decides the result: a quote counts only if it is found word for word in a given passage of that work, with no dropped negation, number, unit or comparison, and the parts cover the whole sentence; a failed repair is "could not check", never "not found". V4 adds the screen: Library › Verify citations, from draft upload through preview with cost to a results table where each quote opens the passage with only the backend-located words marked, plus CSV/Markdown export. Model-free tests and Playwright only; no real model run yet. V5 (live pilot on a real draft) is open.
-- Reverse citation search R1–R2 (D100, D103, 18 Oct): a research with the intent `statement` checks one pasted sentence against the works its search read, with Verify Citations V3's step and verdict; support only (whole, partial), not found in the given passages, could not check. Your include, exclude and "PDF wrong" choices decide the list and the passages. R2 (D103): it starts by itself when a statement research's search ends (or on its attached PDFs), through the runs route, resumes with the model it froze, and is marked stale when your choices, a source or the question change. Model-free tests only; no screen yet.
+### Arama
+- [ ] Geniş sorularda bilinen ana makaleler üste çıkmıyor (battery_soh: 15 hedeften 3'ü ilk 50'de); DBR/VBF en zayıf soru, Quick modu Maulana 2019'u kaçırıyor.
+- [ ] Sorgu başına 500 kayıt okuma sınırı; BioASQ'da 480 gold makalenin 107'si hiç gelmiyor (`semantic_top` 50'de sınırlı).
+- [ ] Ücretsiz OpenAlex günlük kotası yaklaşık 20 araştırmada bitiyor; Standard koşuların 20'de 7'si 5 dakikayı geçti (sebep bakılmadı).
+- [ ] Tam metin sınırları (10/20/40) ölçümle seçilmedi; ULAKBİM ağından MDPI, SAGE, ScienceDirect PDF'leri 403 dönüyor.
+- [ ] Kill search: canlı kapının üçüncü iddiası (diz osteoartriti) 0/3 kaldı; genel olarak önceki çalışmayı bulup bulmadığı gösterilmedi. Ayar çalışması durduruldu.
 
-- Kill search retrieval (D94, D95, D97; parked 18 Oct): decomposition no longer fails on Anthropic (null note, "protocol" check narrowed); the eight kept works are ranked by concept-level BM25, block coverage and co-mention instead of a provider round-robin; each provider returns one full page; backup names reach the search. Three frozen live checks on the DBR/VBF claims plus one out-of-domain claim: v3 kept 3/4 (C1) and 4/4 (C2) targets, up from 1/4 and 2/4, but the knee-osteoarthritis PRP vs hyaluronic acid claim kept 0/3, same as the old code, so the gate failed (`.local/killsearch-live-v3/RESULT.md`). The owner had the "Next steps" entry built anyway (D98, 18 Oct): a topics disclosure with "Write a claim about this topic", a "Search earlier work for a claim" row, and a summary under the box with counts from stored rows and the caveat that finding no match is not evidence of originality. Tuning against these claims has stopped; whether kill search finds prior work in general is not shown.
+### Cevap ve rapor
+- [ ] Her D83 koşusu 30 iddia sınırına takılıyor; 12–13 eser `claim_limit` ile dışarıda kalıyor. Başka sorularda ölçülmedi.
+- [ ] İlk cevap taslağı çoğu zaman bağlantı kurallarını bozuyor; onarım cevap başına 1–2 dakika ekliyor.
+- [ ] `review_mode: "off"` verilse de answer_review çalıştı (17 Ekim, 5 araştırma); bakılmadı.
+- [ ] Rapor kalitesi için sahip puanı alınmadı (`.local/plans/report-eval-set.md`).
 
-### Reading and answers
+### Kod denetiminden kalan düşük öncelikli maddeler
+- [ ] Bayat hücre yeniden kontrol tahmini 25 kaynakta duruyor; çalışma tablosu zinciri başarısız kaynaktan sonra sessizce turları bitirebiliyor; Section VI boşluk adayları saklanmayan bir okuma derinliği istiyor; takip bağlamı eski soru revizyonunun cevabını alabiliyor.
+- [ ] Windows'ta PDF alt sürecinin bellek sınırı yok (P10 Job Object maddesi).
 
-- An answer over attached PDFs only now spreads its 48-passage limit across all PDFs instead of taking 6 from each (D4).
-- The reading stage reads late PDFs of undecided works, passes a failed PDF's full-text slot to the next work, and splits the "screened" count by reason (D60).
-- The line above the answer says how many cited sources were read in full and how many from the abstract only, and table cells filled from an abstract are re-read when the PDF arrives (D52).
-- The full-text label says how many text chunks and pages the model actually saw (D62).
-- Formula questions put each source's most formula-heavy page into the answer input (D56).
-- Works the survey title rule set aside are labeled `code_decided` in the answer input, not `not_screened_at_cutoff` (D69).
-- Raw LaTeX outside `$…$` in answers, follow-ups and report sections sends the step to repair (D61).
-- Every work given to an answer is cited or left out with a reason (D80). One answer call left the reason list empty (29 of 41 works without a reason), so a valid answer with unaccounted works gets one coverage rewrite that keeps its claims (D83). Live on the DBR/VBF question, 3 runs: 0 unaccounted, cited works 12 → 27–28, 12–13 of 13 content-bearing works cited and the rest left out with a confirmed reason; the answer takes about 100 s instead of 22 s and the rewrite's output is 13–15k tokens against a 16k limit (`.local/plans/evidence-ledger-acceptance-2026-10-17.md`).
-- A full text's first answer-input slot goes to its most result-dense passage, formula passages keep the second, reference lists go last (D84). On the DBR/VBF copy, content-bearing works in the input rose 13 → 15 of 41; with D83, 15/15 were cited in two of three runs (8/15 in the third, where a repair wrote the ledger). Tuned on one research; outcome terms match only as the vocabulary writes them.
+### Test ve platform
+- [ ] Paralel testler yük altında ara sıra düşüyor; `tests/app/test_reference_import_parser.py` tam seri `--testmon`'da 3 test düşüyor, tek başına geçiyor.
+- [ ] Hızlı cevap akışının duraklat/sürdür testi yok; arama aşaması zincir istekleri sürerken bitmiş görünebiliyor.
+- [ ] Ölçülmedi: ikinci kurulu kullanıcı, ekran okuyucular, sessiz makinede kapasite, elektrik kesintisi, dolu disk.
 
-### Follow-up questions
+### Sahibin kararını bekleyen fikirler
+- Ana sayfada sabit örnek sorular; açık erişimli PDF'lerin neden 403 döndüğünü sınıflamak; P10 sonrası açılış sayfası; iki sorgu terimlerin çoğunu paylaşınca uyarı.
 
-- Follow-ups read the question, the last answer, earlier follow-ups and the evidence table, and can run a second pass over the research's own passages with up to 3 search phrases (D49, D50, D53).
-- A follow-up gives one passage per work named in the table before the rest, so cross-work questions reach more works (D64).
-- A follow-up that counts or groups works has the model classify each work with a quote, and the app does the counting (D66).
-- A follow-up no longer opens a new question revision, and an unused revision can be withdrawn (D67).
-- A follow-up that asks for works outside the research can search for them (D92, 17 Oct): a "Search for new works" button (emphasized when the model says the question asks for new works) starts a run of its own under the same question, sends model-written terms through the same bounded transport, marks each found work new, already here or removed before, screens up to 40 new works at the abstract stage and includes nothing. The first search's counts stay apart in the funnel, PRISMA-S and the Method box. Tested with fake models and one browser check on synthetic records; the terms' quality and the new works' relevance are not measured.
+## Yapılanlar (özet)
 
-### Evidence tables and reports
+Ayrıntı ve sayılar ilgili D kararında.
 
-- A table cell gets a "Check the number" flag when its number appears in none of its quotes (D54).
-- Report sections follow new writing rules (no synonym paraphrase, link sources, no simulation called an experiment), with two non-blocking warnings that check them (D51, D55).
-- Report versions go up only when the person asks; the app's own updates show as V1.1 (D57).
-- The model instructions were checked against the code with GPT Astra High: wrong or missing references were fixed (index terms, future-work citations, answer title length, follow-up second pass), and every instruction file is still in use.
-- Report sections see every table cell, drop the lowest-priority column instead of rows when over budget, and are reviewed in 30k-token chunks (D58).
-- A table opened from included sources adds a row when a source is included later (D63).
-- A report section gets a second repair before the report pauses (D65).
-- Table cells that fail their quote check no longer stop a report; they are retried once and otherwise marked not verified (D68).
-- Reports work on the Anthropic API: the section schema no longer gets HTTP 400 (D93), and a repair may reword an insufficient-evidence reason to drop a banned word or meet the word budget, so section VI and index terms no longer loop to `section_failed` (D87). 17 Oct: five reports on the five evaluation questions, all valid.
-- D68 cell retry measured on 7 live table fills with Sonnet 5.5 (17 Oct): 15 of 608 cells failed first, the older whole-call repair fixed 14, the D68 retry ran once and fixed it. Kept; no fix rate can be given from one case.
-
-### Models and settings
-
-- The Anthropic API connection streams its answer, so a call may write up to 64,000 tokens, thinking included; the whole turn is still bounded by 300 s (D85). Before it, three answer calls on 17 Oct stopped at the old 16,000 limit and two of those runs paused with no answer; in the three runs after it, a 19,240-token repair completed.
-- API keys, including Zotero and TypeSafe, live in the system keychain, and `.env` keys move there on startup (D19, D29).
-- Settings › Models has one card per company with both account sign-in and API key, plus new connections such as Claude and OpenAI API, OpenRouter and MiMo (D20–D24, D34).
-- Ollama and LM Studio cards install the app, start the server and download recommended models, and local models finish a full Quick research (qwen3.5:9b, about 32 min) (D39).
-- Users without a key get the downloaded built-in embedding model automatically (D7).
-- arXiv formulas come from the authors' LaTeX source by default, with Mathpix as an option (D36, D40).
-- Models that return 404 or answer as another model are hidden for 30 days, and GitHub Copilot connects only through the account (D59).
-- Settings › This computer shows the library folder and its size and can move it (D32).
-- Settings › Usage shows, per model connection, this month's estimated spend (API key) or the subscription's own 5-hour and weekly limit (Codex live, Claude Code from the last call) instead of call counts (D78).
-
-### App
-
-- The UI moved to the mockup v24 design, and the 17 bugs found against the mockup are fixed (D5).
-- Mockup v25 (D77): the question shows its scope as a chip, the four evidence counts sit in one strip, and each run phase has a ringed icon on a rail with its details in a panel. The citation line no longer says "N of N" (only located anchors are stored), and the chain rows say "kept after the term filter". The mockup parity check and the mockup itself are removed (D79); the shipped screens are the reference.
-- Run card (D82): each run is one card; the step panels show the two abstract readings that disagreed, why each passed work was not read in full text (with Add PDFs), and how each citation anchor matched; a "No full text" badge marks a run that read none. Not tried on a live run yet.
-- Post-parity cleanup and small features (P0–P5, D25–D33) are done: unused CSS removed, search-plan strike-through, request counts, stored thinking level, proxy name, "Try" for keyless sources.
-- Pre-P10 readiness is done in code: the packaged app finds its files, tools work when opened from the desktop, Windows CLIs start, a Linux fallback holds keys for the session, and cost estimates are shown.
-- An open PDF viewer now loads the restored file after a file restore.
-- A GitHub Actions workflow runs the full test suite, split over four machines (4–8 min instead of 19), and the web build on every push to main; it is informational and blocks nothing.
-- Tests take less of the Mac (17 Oct): the quick run uses 4 workers and leaves out the ~2,000 tests of 0.2 s or more (about 2 min and 316 CPU-seconds, down from 1,250), and `pytest --testmon tests` reruns only the tests that touch changed Python code. Compiled files are cached outside the repository, test apps share FastAPI's type adapters, and record matching caches its title work. Measured under heavy load from other sessions, not on a quiet machine.
-- Two CI failures fixed (17 Oct): `test_connector_dispatch` failed when a background thread left by an earlier test spun on the test clock's fake 60 s sleep (the fake clock now applies only to its own thread), and the static `os.replace` guard now allows `models/quota.py`, which saves the last Claude Code limit reading (D78).
-- The P9 upgrade check's 15 teardown errors are fixed (385b4511), and the arXiv source-archive test that used to fail now passes.
-- Answers no longer overuse "It has been reported that…": the phrasebank is gone, and a live check on 16 Oct found no formula openings (D43).
-
-### Code audit (16–17 Oct)
-
-Three read-only audits (GPT Astra twice, Claude once) found 33 defects in areas such as chain crash safety, PDF and URL limits, keychain handling, background workers and stale question revisions. 27 are fixed, each with a test that fails without the fix and a Sol review; the six low items left are under Open work.
-
-## Latest live check (16 Oct)
-
-One run per mode with gpt-5.6-luna on the DBR/VBF question, on a library copy.
-
-- Quick (25/10) and Detailed (100/40) limits held; full text filled 10 of 10 slots in Quick but 24 of 40 in Detailed, because 48 of 72 candidates had no PDF.
-- The model saw a median 41–46% of each read work's text chunks, and the second reading saw the same chunks as the first.
-- Answers cited only 3 of 23 and 4 of 70 works in their input.
-
-## Open work
-
-### Code audit leftovers (low)
-
-- [ ] Stale-cell recheck estimate stops at 25 sources.
-- [ ] Study-table chain can run out of rounds after a failed source without saying so.
-- [ ] Section VI gap candidates need a reading depth that is never stored.
-- [ ] Follow-up context can take an answer of an earlier question revision; follow-up table values include removed sources.
-- [ ] PDF child process has no memory limit on Windows (P10 Job Object item in `.local/plans/p10-plan.md`).
-- [ ] Not checked: a kill search may spend two of its eight slots on a preprint and its published version when the library has not joined them.
-
-### Kill search (v3 live check failed on C3; Next steps entry built anyway, D98)
-
-The Next steps entry is on main with model-free tests only; it was not tried on a live answer. Whether kill search finds prior work in general still needs a new, unseen claim set and a frozen live check.
-
-- [ ] Query: the model's setting terms can miss how a target names the setting (Filardo 2015's abstract never says "knee osteoarthritis"); not found by any provider.
-- [ ] Synonym counting: synonyms that are not abbreviations ("knee OA", "viscosupplementation") count as separate concepts, so records that pile them up outrank direct comparisons (Cerza 2012 OpenAlex #7 → kept rank 25; with the old 20-record window it would have been 6th).
-- [ ] Window: OpenAlex and PubMed match Sánchez 2012 only past their first 100 records; it arrived only as a Semantic Scholar record without abstract (rank 737).
-- [ ] UI wording "1000 records each" hides the per-provider windows; ranking text is hashed, not snapshotted.
-
-### Left over from the clean start
-
-- [ ] The search stage can look finished while chain requests still run, because they count toward screening.
-- [ ] Playwright rate-limit cases do not match each failed OpenAlex request to its own row.
-- [ ] The fast-answer flow has no pause/resume test.
-
-### Answer coverage (`.local/plans/grounding-audit-2026-10-16.md`)
-
-All 171 citation links in 8 stored answers are sound; the gap is coverage: answers leave relevant input works uncited.
-
-- [x] Before/after run on one frozen answer input: done 17 Oct (D80 + D83, see Done).
-- [ ] Every D83 run hit the 30-claim limit; 12–13 works per run are left out under `claim_limit`. Not measured on other questions.
-- [ ] Chain of Ideas–style idea generation waits for this, with its own contract (premises cited, speculation marked unsourced).
-
-### Consensus-style modes
-
-- [ ] Citation snowballing (D91): first live round on a copy of the DBR/VBF research (17 Oct, Sonnet 5.5 medium, seeds: the 2023 VBF/DBR comparison and Xie 2010) ran cleanly (79 new, 51 model reads, 6 candidates, nothing included) but brought neither missed comparison: no seed links to Maulana 2019 or Hakim 2018 in OpenAlex. A second round from Hakim 2018 forward (pending, never screened; chosen after seeing that Maulana cites it) brought Maulana 2019 back as new and both model reads made it a candidate (6 citing works, 4 new, nothing included). So a known link goes through, but the result depends on choosing the right seed; two rounds are not quality evidence. Seed-suggestion measurement (17 Oct, code only, no model): a title rule (both question blocks in the title) puts Hakim 2nd of 868 pending works, and one hop from its top 10 brings Maulana back (only through Hakim; no other new DBR/VBF comparison). The larger gap is screening order: the read window took 50 of 877 works, and all four known direct comparisons in the research (Hakim, Memon 2018, which is in the research after all, and two more) sit at positions 152 to 602, never screened. Voyage reranking of all 877 puts all four in the first 50 (Memon 1st), but the app reranks only the first 200 (N × 4). A new run on a copy with the pool at 400 (pool_factor 8, set in the copy's database; the UI caps it at 4) read Memon 1st and included it, and read Hakim 3rd (both model reads: candidate; no open full text). Memon was 247th before reranking, outside a 200 pool. One run, no 200-pool control, no answer generated. Next: compare pool 200 and 400 on another question before raising the cap; seed suggestion waits. Playwright case: `apps/web/e2e/snowball.spec.ts` (SYNTHETIC `[snowball]` fixture: one round from the menu, card counts match the stored summary, nothing included, a second round offered; workflow behaviour, not live data). Notes: `.local/snowball-live-2026-10-18/`, `.local/seed-suggest-2026-10-18/`.
-- [ ] Snowballing results depend entirely on the chosen seed: round 1 from two obvious seeds (an included comparison, Xie 2010) reached neither target; round 2 reached Maulana 2019 only because we picked Hakim 2018, which a person would not choose (pending, never screened). The app gives no help choosing seeds; whether it should suggest them waits for the read-window fix above.
-- [ ] Snowballing and read-window to-dos (owner, 18 Oct: noted to look at later):
-  - [ ] Read window / reranker: measure the pool at 200 vs 400 on a second question (DBR/VBF only so far) before raising the cap; the four known comparisons sat at positions 152–602.
-  - [ ] Seed suggestion (title rule: both question blocks in the title) in the snowball panel; waits for the read-window result.
-  - [ ] Panel: a second forward page that was not needed (the first page held every citing work) is counted as "not sent"; show it as not needed.
-- [ ] Reverse citation search R3–R5: Home mode and panel (R3), live support pilot (R4), "challenges" (R5, after the pilot). R1–R2 are under Done.
-- [ ] Gap finder (not designed): from a research's included works, list topics, settings or comparisons the read passages leave open, each with the passages that show the gap and the reading depth it rests on. A gap is a lead to check, not proof that no work exists (no search result proves novelty); it would hand a gap to kill search to look for earlier work. Overlaps with report Section VI gap candidates, whose reading depth is not stored yet (Code audit leftovers).
-
-### Search (after P10)
-
-- [ ] Broad questions: known key papers are not near the top (battery_soh: 3 of 15 targets in the top 50), and the answer score does not measure it.
-- [ ] dbr_vbf is the weakest question (69–79); Quick misses the key paper Maulana 2019.
-- [ ] Paywalled full text cannot be read, so most engineering papers come in from the abstract.
-- [x] Survey papers as citation-chain sources: measured offline 17 Oct on 10 runs, no checkable target reachable only through survey references; as extra ranking seeds recall@50 fell 57 → 53. Not adopted.
-- [x] Joint-signal weight ×2/×3 in the 21–500 ranking: 14 runs, J3 +6 relevant in the top 50, all from DBR/VBF; it loses on uwsn and clinical_imaging. Not adopted (17 Oct). Maulana 2019 is found but ranks ~147.
-- [ ] Standard: 7 of 20 runs took over 5 minutes (cause not checked); Detailed citation accuracy not re-measured after the fixes.
-- [ ] Free OpenAlex daily quota runs out after about 20 researches (D173 stops sending); the answer call times out in about 1 of 21 runs.
-- [ ] Full-text limits (10/20/40) were never chosen by measurement; measure after the answer-coverage work.
-- [ ] BioASQ: 107 of 480 gold papers never retrieved, all in OpenAlex. Semantic search is capped at 50 records (`semantic_top`); test whether a deeper read closes the gap.
-- [x] LitSearch (18 Oct, Standard, 50 sampled ML/NLP queries, 53 gold papers all in OpenAlex with an abstract): DEIXIS against one plain OpenAlex keyword query, recall @10 0.35 vs 0.30, @20 0.49 vs 0.36 (+0.13, 95% interval +0.03 to +0.25), @50 0.59 vs 0.52, @200 0.68 vs 0.67; only @20 differs beyond chance. The first 27 queries had shown +0.22 at @10; the full 50 do not. DEIXIS's ~1000-record pool holds 40 of 53 gold papers, plain OpenAlex's top 200 holds 36; 8 only DEIXIS, 4 only plain OpenAlex, 9 neither. Semantic search brought 26 of the 40 (10 only through it), keyword 30 (9 only), chain 8. With 1.07 gold papers per query each question scores 0 or 1, so 50 queries leave wide intervals. 27 queries ran on the free daily budget, 23 on $0.83 of prepaid credit. Not measured: why DEIXIS's keyword queries miss 4 papers one plain query finds. Not valid: the temporary data folder ran Gemini embedding with the reranker off, and Gemini's credit ran out, so 30 of the 50 questions lost the similarity step (HTTP 402) without stopping the run.
-- [x] Benchmark re-run (18 Oct, plan `.local/plans/benchmark-plan.md`, the owner's settings: Voyage voyage-4-lite embedding, Voyage rerank-3-lite, pool factor 4, Standard, Sonnet 5.5 medium; arms B reranker off and C on from one run, A one plain OpenAlex query). Recall@50 with paired 95% intervals: BioASQ 100: A 0.489, B 0.546, C 0.618; C−B +0.072 (+0.037 to +0.108), C−A +0.133 (+0.072 to +0.199). LitSearch 200 (198 gold papers, 195 in OpenAlex): A 0.561, B 0.636, C 0.700; C−B +0.064 (+0.019 to +0.112), C−A +0.142 (+0.075 to +0.209); @10 C−B +0.083 (+0.026 to +0.142), @20 C−B +0.033 (−0.020 to +0.085). The reranker passes the owner's rule (lower bound above zero on both sets); C−A passes +0.10 on the mean, not on the lower bound. @200 is the same for B and C by construction. No question failed; 3 BioASQ runs needed the person's second query attempt (a paused run is resumed once, as the person would), and one question per set was asked anew after an older harness had cancelled its paused run (noted on the row). Harness: D102 cut, query-pause resume, plain-arm prepaid floor. OpenAlex ~$0.033 per DEIXIS question. Search order only: reading and answers are not measured. Missed papers (gold in plain OpenAlex's top 200, never in the DEIXIS pool: LitSearch 17, BioASQ 57; `.local/benchmark-loss-2026-10-18/RESULT.md`): 35 of 74 match none of DEIXIS's keyword queries (old gene names, an added block the question lacks, a one-word second query), 39 match but sit past the 500 records read per query (a 1,000 depth would add at most 16); in LitSearch most are found by the plain query only through full text, which DEIXIS's title-and-abstract search does not read; none was lost after it was read. The reranker is now on by default with Voyage (D104). Electrical-engineering survey set (18 Oct, `scripts/benchmark/eesurvey*.py`, `.local/eesurvey/RESULT.md`): 42 surveys from IEEE and control venues, 7 topics × 6, gold = each survey's OpenAlex reference list (median 174), 28 test questions. Both arms lose the survey itself and every record dated after it, and DEIXIS also loses what only a chain from the survey or a later paper brought in (the survey was a chain seed in 35 of 42 runs). Test recall@50: A 0.065, B 0.129, C 0.091; B−A +0.064 (+0.051 to +0.080), below the +0.10 bar; C−B −0.038 (−0.053 to −0.024): on this set the reranker hurts, because most gold papers come through the chain and the reranker, reading title and abstract only, pushes chain records down (gold hits in the top 50 fall from 909 to 658). A rerank the product had no time left for (`no_time_left`, 1 question) now counts as the delivered result instead of stopping the run; the 41 reranked questions give the same −0.038. Chain requests were labelled as keyword searches in the harness's route tags; fixed, no earlier number used them.
-
-### Not measured (needs a real model or real use)
-
-- [x] Seed PDF with a real related paper (Kulla & Elmazi 2023, owner's library), 17 Oct: same 3 of 4 targets given and cited as without seed; only order improved (Hakim 2018 141 → 83). Found: an uploaded seed that is already a library record is read twice; that run's table_columns proposed 9 columns (bound now in the Anthropic schema description, D93).
-- [ ] Report quality: evaluation set of five fixed questions and a 6-criterion rubric (`.local/plans/report-eval-set.md`); 17 Oct reports scored by GPT-6.1 Sol high (model score, not a human score): totals 15–20 of 30, overall 2–6 of 10; weakest writing (2 everywhere) and coverage on battery_soh and higher_ed_ai, whose tables hold one full-text include each. Owner score not taken.
-- [ ] Evidence table rows are full-text includes only, while the answer cites abstract-read works: with little full text (battery_soh, higher_ed_ai) the report rests on one source. Product decision.
-- [ ] review_mode "off" in the create body still ran answer_review on all five 17 Oct researches; not looked into.
-- [ ] Equations, lineage, kill search, crash recovery with real Codex, 5 of 18 report-edit actions, and the owner's daily use.
-- [ ] Follow-up, table and report changes, new model connections, Mathpix and data move with a real model or provider.
-- [ ] Windows, Linux and a real PyInstaller build; OpenAI, Gemini and DeepSeek prices before release (P10 rows K1–K15).
-
-### Platform
-
-- [ ] Not measured: a second installed user, screen readers, a quiet-machine capacity run, power loss and a full disk.
-
-### Code
-
-- [ ] The re-extraction background reader is not tested in the matrix.
-- [ ] UI: the sticky answer area grew to about 300 px at 1280×900; the selected tab may not scroll into view after a TR/EN switch; report icon buttons on phones have no hint.
-- [ ] The first answer draft often breaks anchor rules; repair adds 1–2 minutes per answer.
-- [ ] Parallel tests fail now and then under load; re-run on a quiet machine with `-rfE`. `tests/app/test_reference_import_parser.py` fails 3 tests under full serial `--testmon`, passes alone.
-
-### Live findings (4–5 Oct)
-
-- [ ] MDPI, SAGE and ScienceDirect PDFs return 403 from the ULAKBİM network; not rechecked on the fast path.
-
-### Parked ideas (owner decides)
-
-- [ ] Fixed example questions on the home page and "included in research X" hints.
-- [ ] Classify why open-access PDFs return 403.
-- [ ] Landing page (after P10).
-- [ ] Fast answers read equations from arXiv source; more kill-search signals; warn when two queries share most terms.
+- **Arama:** tek yol hızlı yol (temiz başlangıç, 10–11 Ekim); başlangıç PDF'leri aramayı yönlendiriyor (D2, D3, D6); atıf haritası (D42); kartopu (D91); takip sorusundan yeni eser arama (D92); reranker varsayılan Voyage (D104); llama.cpp ile yerleşik embedding ve reranker modelleri (D90).
+- **Okuma ve cevap:** ikinci tam metin okuması görmediği bölümleri okuyor (D76); cevaba verilen her eser ya atıflanıyor ya gerekçeyle dışarıda kalıyor (D80, D83); sonuç yoğun pasaj önce (D84); formül soruları için formül sayfası (D56).
+- **Atıf denetimi:** Verify Citations V1–V4 (D86, D96, D99, D101); ters atıf arama R1–R2 (D100, D103).
+- **Tablo ve rapor:** sayı kontrol bayrağı (D54), yazım kuralları (D51, D55), hücre yeniden deneme (D68), Anthropic API'de rapor şeması (D87, D93).
+- **Modeller ve ayarlar:** Anthropic API akışlı cevap, 64k token (D85); anahtarlar sistem keychain'inde (D19, D29); şirket başına model kartı (D20–D24, D34); Ollama/LM Studio (D39); kullanım ve harcama ekranı (D78).
+- **Uygulama:** mockup v24/v25 tasarımı (D5, D77, D79); run kartı (D82); P10 öncesi hazırlık kodda bitti; GitHub Actions tam testi dört makinede koşturuyor (bilgi amaçlı, hiçbir şeyi engellemiyor).
+- **Kod denetimi (16–17 Ekim):** üç denetimde 33 kusur bulundu, 27'si testle ve Sol incelemesiyle düzeltildi; kalanlar yukarıda.

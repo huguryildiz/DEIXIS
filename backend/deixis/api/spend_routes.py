@@ -12,7 +12,7 @@ from typing import Any, Literal
 from fastapi import Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from deixis.documents import embeddings
+from deixis.documents import embeddings, rerankers
 from deixis.workflow import spend, spend_estimate
 
 
@@ -57,5 +57,6 @@ def register_spend_routes(app) -> None:
         state = request.app.state
         provider, _ = embeddings.chosen(state.store.setting("semantic_search"))
         roles = {role: (getattr(body, role).model_dump() if getattr(body, role) else None) for role in spend_estimate.ROLES}
+        rerank = rerankers.chosen(state.store.setting(rerankers.SETTING))
         return spend_estimate.estimate(state.package, body.effort, roles, reading_on=state.settings.fulltext_adjudication == "auto",
-                                       embedding_provider=provider)
+                                       embedding_provider=provider, rerank_provider=rerank.provider if rerank else None)

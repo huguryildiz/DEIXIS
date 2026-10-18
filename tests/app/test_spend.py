@@ -331,3 +331,12 @@ def test_the_estimate_route_reads_the_embedding_choice(tmp_path):
         data = response.json()
         assert data["usd"][0] < data["usd"][1] and data["embedding"]["included"] is False
         assert client.post("/api/spend/estimate", json=body | {"effort": "huge"}).status_code == 422
+
+
+def test_the_estimate_names_a_paid_reranker_as_billed_separately():
+    paid = spend_estimate.estimate(skill.load_skill_package(), "standard", roles(), reading_on=True,
+                                   embedding_provider="builtin", rerank_provider="voyage")
+    local = spend_estimate.estimate(skill.load_skill_package(), "standard", roles(), reading_on=True,
+                                    embedding_provider="builtin", rerank_provider="builtin")
+    assert paid["reranking"] == {"provider": "voyage", "paid": True, "included": False}
+    assert local["reranking"]["paid"] is False

@@ -6,8 +6,9 @@ place only in this version: the order in which an `sw` run's records are read (`
 includes, excludes or decides anything; the person's own included records stay first whatever it says, and its score
 is a priority signal, not evidence. Passage ranking for answers is not reranked.
 
-The setting is separate from the embedding provider, so any embedding (or none) can go with either reranker. Nothing
-reranks until the person turns it on in Settings: an unsaved setting is off, and no external API is called by itself.
+The setting is separate from the embedding provider, so any embedding (or none) can go with either reranker. With
+nothing saved, Voyage rerank-3-lite is on (D104); without a Voyage key nothing is sent, the run records
+`reranker_unavailable` and keeps the fused order. A saved setting, "off" included, always wins.
 A failed, timed-out or stopped rerank never falls back to another reranker; the fused order is used and the step says
 so. A built-in choice is `(builtin, catalog id)`; one saved before the catalog (no model, or an earlier model) is never
 mapped to a catalog reranker: the rerank fails with `builtin_model_changed` until the person picks one. The built-in
@@ -98,9 +99,21 @@ class Choice:
         return min(MAX_CANDIDATES, math.ceil(read_top * self.pool_factor))
 
 
+# With nothing saved, Voyage rerank-3-lite reorders the records (owner, 18 Oct; D104): on the owner's settings it raised
+# recall@50 on BioASQ 100 and LitSearch 200, the lower 95% bound above zero on both. Without a Voyage key it cannot run:
+# the run records `reranker_unavailable` and keeps the fused order, and Settings and the research say so.
+DEFAULT_SETTING = {"enabled": True, "provider": "voyage"}
+
+
+def setting_in_force(saved: dict[str, Any] | None) -> dict[str, Any]:
+    """The saved reranking setting, or the default when the person never saved one; a saved "off" stays off."""
+    return DEFAULT_SETTING if saved is None else saved
+
+
 def chosen(setting: dict[str, Any] | None) -> Choice | None:
-    """The reranker the saved setting turns on, or None: off unless the person turned it on (never by default)."""
-    if not setting or not setting.get("enabled") or setting.get("provider") not in PROVIDERS:
+    """The reranker the setting in force turns on, or None when it is off. Nothing saved means the default (D104)."""
+    setting = setting_in_force(setting)
+    if not setting.get("enabled") or setting.get("provider") not in PROVIDERS:
         return None
     model = (setting.get("model") or builtin_catalog.NO_MODEL) if setting["provider"] == "builtin" else MODELS[setting["provider"]]
     return Choice(setting["provider"], model, float(setting.get("pool_factor") or DEFAULT_POOL_FACTOR),
@@ -127,6 +140,19 @@ def options(builtin: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
         *(local(model) for model in builtin_catalog.of_kind("reranker")),
         *(api(provider) for provider in ("voyage", "cohere", "jina", "zeroentropy")),
     ]
+
+
+def blocked(choice: Choice | None, offered: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Why the reranker in force cannot run now (its option is not available, e.g. no Voyage key), or None."""
+    if choice is None:
+        return None
+    option = next((o for o in offered if o["provider"] == choice.provider
+                   and (choice.provider != "builtin" or o["model"] == choice.model)), None)
+    if option is None:
+        return {"reason_code": "not_offered", "reason": f"{choice.provider} {choice.model} is not offered"}
+    if option["available"]:
+        return None
+    return {"reason_code": option.get("reason_code") or "key_missing", "reason": option["reason"]}
 
 
 def document(title: str | None, abstract: str | None) -> str:

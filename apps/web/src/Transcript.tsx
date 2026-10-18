@@ -124,6 +124,18 @@ const embeddingOf = (stored: string) => {
   return EMBEDDING_CONNECTIONS.has(head) ? { connection: head, model: rest.join(':') } : { connection: 'gemini', model: stored }
 }
 // A 429 the embedding step waited out stays visible (slice 21).
+// What the record reranker did for a run (D104): the records the frozen order reranked, or why the fused order was kept.
+// The frozen list decides: a rerank that succeeded is not used when the list moved while it ran.
+const rerankLineText = (step: Step, listed: NonNullable<Step['output']>['reranker'] | null) => {
+  if (step.status === 'succeeded' && listed?.applied) return plural(listed.reranked ?? step.output?.reranked ?? 0, '{n} record reordered by the reranker', '{n} records reordered by the reranker')
+  const kept = t('The records kept their fused order.')
+  if (step.status === 'succeeded') return listed ? `${t('The reranker’s scores were not used: the list changed while it ran.')} ${kept}` : ''
+  const provider = step.output?.provider ?? ''
+  const why = step.error_code === 'reranker_unavailable'
+    ? provider === 'builtin' ? t('The reranker could not run on this computer.') : t('The reranker did not run: no usable {service} API key.', { service: connectionName(provider) })
+    : step.error_code === 'reranker_timeout' ? t('The reranker ran out of time.') : t('The reranker failed.')
+  return `${why} ${kept}`
+}
 const waitedText = (output: Step['output']) => output?.rate_limited_waits ? t('rate limited, waited {s} s', { s: Math.round(output.waited_seconds ?? 0) }) : ''
 const embeddingServices: Record<string, string> = { gemini: 'Google', openai: 'OpenAI' }
 const USER_PLAN = new Set(['user', 'user_edited'])
@@ -327,6 +339,9 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const included = view.sources.filter(s => s.selection.state === 'included')
   // The similarity step belongs to no phase of its own; the screening phase reports it.
   const similarity = steps.find(s => s.kind.startsWith('similarity:'))
+  // The record reranker (D104): on by default with Voyage; a run without a usable key keeps the fused order and says so.
+  const rerank = steps.find(s => s.operation_key === 'rerank:v1:list')
+  const listedRerank = steps.find(s => s.operation_key === 'small_batch:v1:list')?.output?.reranker ?? null
   // What the fast chain did in this run, once its summary is written: the works it started from (the semantic search's
   // seeds and any the ranking added) and the works no keyword search of the run found.
   const chainDone = steps.some(s => s.operation_key === 'fast_chain:summary' && s.status === 'succeeded')
@@ -625,6 +640,12 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
             <span>{similarityText}
               {similarityScored && <span className="chat-run-model chat-report-model"><ConnectionIcon id={similarityModel.connection} /><span className="sr-only">{connectionName(similarityModel.connection)} · </span>{builtinSim ? t('This computer · built-in') : similarityModel.model}</span>}</span>
             {timed(similarity)}
+          </p>}
+          {rerank && (rerank.status === 'succeeded' || rerank.status === 'failed') && rerankLineText(rerank, listedRerank) && <p className="chat-report-line" data-testid="rerank-line">
+            <span>{rerankLineText(rerank, listedRerank)}
+              {rerank.status === 'succeeded' && listedRerank?.applied && rerank.output?.model && <span className="chat-run-model chat-report-model"><ConnectionIcon id={rerank.output.provider ?? ''} /><span className="sr-only">{connectionName(rerank.output.provider ?? '')} · </span>{rerank.output.model}</span>}
+              {rerank.status === 'failed' && rerank.error_code === 'reranker_unavailable' && rerank.output?.provider !== 'builtin' && <Button variant="outline" size="sm" className="notice-ghost" onClick={() => { window.location.hash = '#/settings/search' }}>{t('Open Search & ranking')}</Button>}</span>
+            {timed(rerank)}
           </p>}
           {lines.length > 0 && <p className="chat-report-line"><span>{lines.join(' · ')}</span></p>}
           {run.signals && <SignalReport table={run.signals} probes={view.probes} />}

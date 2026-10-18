@@ -147,6 +147,9 @@ test.describe.serial('N: the built-in embedding model', () => {
       'Voyage AI reranker', 'Cohere reranker', 'Jina AI reranker', 'ZeroEntropy reranker', 'Off'])
     for (const name of ['Voyage AI reranker', 'Cohere reranker', 'Jina AI reranker', 'ZeroEntropy reranker'])
       await expect(rerank.locator('.co-card').filter({ has: page.locator('.co-name b', { hasText: new RegExp(`^${name}$`) }) }).locator('.st')).toHaveText('Key needed')
+    // D104: with nothing saved, Voyage reranking is on and the page says it needs a key; the reranking Off card is not in use.
+    await expect(rerank.locator('.co-card').filter({ has: page.locator('.co-name b', { hasText: /^Voyage AI reranker$/ }) })).toHaveClass(/\bon\b/)
+    await expect(page.getByText('Reranking is on by default with Voyage AI and needs a Voyage API key.', { exact: false })).toBeVisible()
     await expect(card(page, 'Off')).toHaveClass(/\bon\b/)
     await shot(page, 'N-settings-not-downloaded-desktop')
     const gemini = await openSheet(page, 'Gemini embeddings')

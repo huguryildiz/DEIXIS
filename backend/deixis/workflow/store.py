@@ -62,6 +62,12 @@ def _step_view_output(row: Any) -> dict[str, Any] | None:
     # The fast chain's seeds carry their reference lists; the timeline needs only how many there were.
     if row["operation_key"] in ("fast_chain:seeds", "fast_chain:seeds_fallback"):
         return {"seed_count": len(json.loads(row["output_json"]).get("seeds") or [])}
+    if row["operation_key"] == "rerank:v1:list":  # D104: whether the reranker ran, never its scores or candidates
+        out = json.loads(row["output_json"])
+        return {"provider": out.get("provider"), "model": out.get("model"), "error_code": out.get("error_code"),
+                "reranked": len(out.get("candidate_ids") or []), "cut_documents": out.get("cut_documents")}
+    if row["operation_key"] == "small_batch:v1:list":  # whether the frozen order used the rerank (D104), not the order
+        return {"reranker": json.loads(row["output_json"]).get("reranker")}
     if row["kind"] in STEP_OUTPUT_KINDS or row["operation_key"] in STEP_OUTPUT_KEYS:
         return json.loads(row["output_json"])
     if row["kind"] == "code:abstract_stage":

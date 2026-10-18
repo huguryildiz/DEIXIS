@@ -1207,6 +1207,10 @@ function RerankingSettings({ refresh, dark, keyField, builtin, onBuiltinChanged 
     <h2 id="reranking-title" data-panel="search">{t('Reranking')}</h2>
     <p className="foot-note" data-panel="search">{t('Reorders the top of the ranking by reading the question with each title and abstract, before records are read, so it decides which papers fall within the reading limit. Only the record order is reranked; passages for answers are not. A reranker score never includes or excludes a record, and records you included stay first.')}</p>
     {error && <Notice tone="error" panel="search">{error}</Notice>}
+    {state.enabled && state.blocked && <Notice tone="attention" panel="search">{state.provider === 'voyage' && state.blocked.reason_code === 'key_missing'
+      ? state.explicit ? t('Voyage AI reranking is on but has no API key. Until you add one, each search keeps the fused order and the research says so.')
+        : t('Reranking is on by default with Voyage AI and needs a Voyage API key. Until you add one, each search keeps the fused order and the research says so.')
+      : t('The reranker in use cannot run now: {reason}. Each search keeps the fused order and the research says so.', { reason: state.blocked.reason })}</Notice>}
     {state.builtin_model_changed && <Notice tone="attention" panel="search">{t('The built-in reranker chosen earlier is not available in this version of DEIXIS. Pick a reranker below; DEIXIS does not switch to another one by itself.')}</Notice>}
     <div className="choice-groups" data-panel="search" data-group="reranking" aria-busy={busy || undefined}>
       <h3 className="choice-head">{t('Local models')}</h3>

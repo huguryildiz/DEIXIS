@@ -180,8 +180,10 @@ def test_the_voyage_key_test_embeds_one_query_word_and_reads_a_refusal(monkeypat
 
 # ---- the reranker layer ----------------------------------------------------------------------------
 
-def test_reranking_is_off_unless_turned_on():
-    assert rerankers.chosen(None) is None
+def test_voyage_reranks_when_nothing_is_saved_and_a_saved_off_stays_off():
+    default = rerankers.chosen(None)  # D104
+    assert (default.provider, default.model, default.pool_factor, default.timeout_seconds) == (
+        "voyage", "rerank-3-lite", 4.0, 180)
     assert rerankers.chosen({"enabled": False, "provider": "voyage"}) is None
     choice = rerankers.chosen({"enabled": True, "provider": "builtin"})
     assert (choice.provider, choice.model, choice.pool_factor) == ("builtin", builtin_catalog.NO_MODEL, 4.0)
@@ -383,7 +385,7 @@ def test_off_writes_no_step_and_calls_nothing(monkeypatch):
     class Local:
         async def rerank(self, *args):
             raise AssertionError("not called")
-    flow, store, _ = rerank_flow(monkeypatch, None, Local())
+    flow, store, _ = rerank_flow(monkeypatch, {"enabled": False}, Local())
     asyncio.run(small_batch.rerank_list(flow, RUN, SCOPE, {}))
     assert store.steps == {}
 
@@ -500,11 +502,13 @@ def test_a_discovery_run_reranks_its_list_or_keeps_the_fused_order_and_says_so(t
 
 # ---- Settings ----------------------------------------------------------------------------------------
 
-def test_the_reranking_setting_is_off_by_default_and_refuses_a_reranker_that_cannot_run(tmp_path, monkeypatch):
+def test_the_reranking_setting_defaults_to_voyage_says_it_is_blocked_without_a_key_and_refuses_one_that_cannot_run(
+        tmp_path, monkeypatch):
     monkeypatch.delenv("VOYAGE_API_KEY", raising=False)
     s = Session(tmp_path, monkeypatch, setting=None)
     try:
         view = s.client.get("/api/reranking").json()
+        off = s.client.put("/api/reranking", json={"enabled": False}).json()
         refused = s.client.put("/api/reranking", json={"enabled": True, "provider": "voyage"})
         monkeypatch.setenv("VOYAGE_API_KEY", KEY)
         saved = s.client.put("/api/reranking", json={"enabled": True, "provider": "voyage", "pool_factor": 3}).json()
@@ -513,9 +517,12 @@ def test_the_reranking_setting_is_off_by_default_and_refuses_a_reranker_that_can
         semantic = s.client.get("/api/semantic-search").json()
     finally:
         s.close()
-    assert (view["enabled"], view["provider"], view["pool_factor"], view["applies_to"]) == (False, None, 4.0, ["record_order"])
+    assert (view["enabled"], view["provider"], view["model"], view["pool_factor"], view["explicit"]) == (
+        True, "voyage", "rerank-3-lite", 4.0, False)
+    assert view["blocked"] == {"reason_code": "key_missing", "reason": "Add a Voyage API key"}
+    assert (off["enabled"], off["explicit"], off["blocked"]) == (False, True, None)
     assert refused.status_code == 422 and refused.json()["detail"] == "Add a Voyage API key"
-    assert (saved["enabled"], saved["provider"], saved["pool_factor"]) == (True, "voyage", 3.0)
+    assert (saved["enabled"], saved["provider"], saved["pool_factor"], saved["blocked"]) == (True, "voyage", 3.0, None)
     assert too_many.status_code == 422
     assert builtin.status_code == 422  # the built-in model is not downloaded in this test
     assert semantic["provider"] != "voyage"  # a Voyage key turns on no embedding by itself
@@ -529,3 +536,33 @@ def test_settings_say_when_a_saved_built_in_choice_was_for_the_earlier_model(tmp
         s.close()
     assert (view["provider"], view["model"]) == ("builtin", "bge-small-en-v1.5@aa8f8b0:256")  # never remapped
     assert view["builtin_model_changed"] == {"from": "bge-small-en-v1.5@aa8f8b0:256", "to": None}
+
+
+def test_with_nothing_saved_and_no_voyage_key_the_run_records_that_the_reranker_did_not_run(monkeypatch):
+    # D104: on by default with Voyage; without a key nothing is sent, the fused order stands and the step says why.
+    monkeypatch.delenv("VOYAGE_API_KEY", raising=False)
+    sent = []
+    http = voyage(lambda r: sent.append(r) or httpx.Response(200))
+    flow, store, _ = rerank_flow(monkeypatch, None, None, http)
+    asyncio.run(small_batch.rerank_list(flow, RUN, SCOPE, {}))
+    step = store.steps[small_batch.RERANK_KEY]
+    assert step["status"] == "failed" and step["error_code"] == "reranker_unavailable" and sent == []
+    assert (step["output"]["provider"], step["output"]["model"], step["output"]["fallback"]) == (
+        "voyage", "rerank-3-lite", "fused_order")
+
+
+def test_the_research_view_carries_whether_the_reranker_ran_but_not_its_scores():
+    from deixis.workflow import store as store_module
+    row = {"operation_key": "rerank:v1:list", "kind": "code:rerank", "status": "failed", "output_json": json.dumps({
+        "provider": "voyage", "model": "rerank-3-lite", "error_code": "reranker_unavailable", "candidate_ids": ["a", "b"],
+        "scores": {"a": 1.0}, "cut_documents": 0, "error": "reranker_unavailable: SYNTHETIC"})}
+    assert store_module._step_view_output(row) == {"provider": "voyage", "model": "rerank-3-lite",
+                                                   "error_code": "reranker_unavailable", "reranked": 2, "cut_documents": 0}
+
+
+def test_the_list_step_view_carries_only_whether_its_order_used_the_rerank():
+    from deixis.workflow import store as store_module
+    told = {"applied": False, "reason": "candidates_changed", "fallback": "fused_order", "provider": "voyage"}
+    row = {"operation_key": "small_batch:v1:list", "kind": "code:small_batch_list", "status": "succeeded",
+           "output_json": json.dumps({"order": ["a", "b"], "manifest": {"pool": []}, "reranker": told})}
+    assert store_module._step_view_output(row) == {"reranker": told}  # the transcript says the scores were not used

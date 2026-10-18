@@ -296,7 +296,7 @@ class SemanticChoice(BaseModel):
 
 
 class RerankChoice(BaseModel):
-    """The reranker for the order records are read in (off unless turned on). `model` names the built-in catalog
+    """The reranker for the order records are read in (Voyage when nothing is saved, D104). `model` names the built-in catalog
     reranker (required for `builtin`). `pool_factor` (records reranked as a multiple of those a run reads) and
     `timeout_seconds` are starting values the person may change; neither is a measured optimum."""
     enabled: bool
@@ -1822,8 +1822,10 @@ def create_app(
         return await semantic_search_view(request)
 
     def reranking_view(request: Request) -> dict[str, Any]:
-        saved = store_of(request).setting(rerankers.SETTING) or {}
-        choice = rerankers.chosen(saved)
+        options = rerankers.options(request.app.state.builtin.options("reranker"))
+        stored = store_of(request).setting(rerankers.SETTING)
+        saved = rerankers.setting_in_force(stored)
+        choice = rerankers.chosen(stored)
         builtin_model = (saved.get("model") or None) if saved.get("provider") == "builtin" else None
         changed = saved.get("provider") == "builtin" and builtin_catalog.resolve(builtin_model, "reranker") is None
         return {"enabled": bool(saved.get("enabled")), "provider": saved.get("provider"),
@@ -1832,8 +1834,9 @@ def create_app(
                 "pool_factor": float(saved.get("pool_factor") or rerankers.DEFAULT_POOL_FACTOR),
                 "max_candidates": rerankers.MAX_CANDIDATES,
                 "timeout_seconds": int(saved.get("timeout_seconds") or rerankers.DEFAULT_TIMEOUT_SECONDS),
-                "applies_to": ["record_order"],
-                "options": rerankers.options(request.app.state.builtin.options("reranker"))}
+                "applies_to": ["record_order"], "explicit": stored is not None,
+                "blocked": rerankers.blocked(choice, options),
+                "options": options}
 
     @app.get("/api/reranking")
     async def get_reranking(request: Request) -> dict[str, Any]:

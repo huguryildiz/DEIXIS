@@ -40,9 +40,15 @@ export function SpendEstimateNote({ effort, answer, literature, reviewer }: {
       <ul>
         <li>{t('Low: the fewest calls, the smallest inputs, no reasoning. High: every call this depth allows, the largest inputs, each call that can be repaired repaired once, and up to {n} tokens of reasoning per call.', { n: Math.max(...Object.values(data.assumptions.reasoning_tokens)).toLocaleString(uiLocale()) })}</li>
         <li>{t('Instruction sizes are measured; the length of abstracts, passages and answers is assumed ({n} characters per token). Cached input is priced as normal input. Price list dated {date}. Nothing was measured on a real run.', { n: data.assumptions.chars_per_token, date: data.prices.as_of })}</li>
-        <li>{data.embedding.paid
-          ? t('Not included: semantic search on {provider}, billed separately, the study table and follow-up questions.', { provider: connectionName(data.embedding.provider) })
-          : t('Not included: the study table and follow-up questions. Semantic search adds nothing here.')}</li>
+        <li>{data.embedding.paid && data.reranking?.paid && data.reranking.provider === data.embedding.provider
+          ? t('Not included: semantic search and reranking on {provider}, billed separately, the study table and follow-up questions.', { provider: connectionName(data.embedding.provider) })
+          : data.embedding.paid
+            ? t('Not included: semantic search on {provider}, billed separately, the study table and follow-up questions.', { provider: connectionName(data.embedding.provider) })
+            : data.reranking?.paid
+              ? t('Not included: reranking on {provider}, billed separately, the study table and follow-up questions.', { provider: connectionName(data.reranking.provider ?? '') })
+              : t('Not included: the study table and follow-up questions. Semantic search adds nothing here.')}</li>
+        {data.embedding.paid && data.reranking?.paid && data.reranking.provider !== data.embedding.provider
+          && <li>{t('Reranking on {provider} is billed separately too.', { provider: connectionName(data.reranking.provider ?? '') })}</li>}
         {free.map(r => <li key={r.role}>{t(r.kind === 'subscription' ? '{role} runs on {model}, a subscription: no cost per call.' : '{role} runs on {model} on this computer: no cost per call.', { role: t(roleNames[r.role]), model: r.model ?? '' })}</li>)}
       </ul>
     </details>

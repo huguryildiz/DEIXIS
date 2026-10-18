@@ -183,7 +183,11 @@ export type Step = {
     // Abstract screening: the batch sizes the code queued, and the works one model read covered (never the model's prose).
     batch_sizes?: number[]; candidate_ids?: string[]
     // The full-text reading plan: the works it froze.
-    works?: unknown[] } | null
+    works?: unknown[]
+    // The record reranker (`rerank:v1:list`, D104): how many records it was given, its error code when it did not run.
+    reranked?: number; error_code?: string | null; cut_documents?: number | null
+    // The frozen list (`small_batch:v1:list`): whether its order used the rerank, and why not (D104).
+    reranker?: { applied: boolean; reason?: string | null; reranked?: number; provider?: string | null; model?: string | null } | null } | null
 }
 export type RunKind = 'discovery' | 'answer' | 'answer_review' | 'followup_answer' | 'report' | 'review' | 'watch_check' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search' | 'screen_more' | 'table_column_recheck' | 'citation_map' | 'snowball' | 'followup_search' | 'statement_check'
 // What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
@@ -893,12 +897,14 @@ export type SemanticSearch = {
   // A built-in choice saved for a model this DEIXIS no longer runs: kept as saved, never switched; runs fail until one is chosen.
   builtin_model_changed?: { from: string | null; to: string | null } | null
 }
-// The reranker for the order records are read in (off unless turned on); it never decides inclusion.
+// The reranker for the order records are read in (Voyage when nothing is saved, D104); it never decides inclusion.
 export type RerankProvider = 'builtin' | 'voyage' | 'cohere' | 'jina' | 'zeroentropy'
 export type RerankOption = { provider: RerankProvider; model: string; name?: string; available: boolean; reason: string | null; reason_code?: string | null; sends: string | null }
 export type Reranking = {
   enabled: boolean; provider: RerankProvider | null; model: string | null; pool_factor: number; max_candidates: number; timeout_seconds: number
   applies_to: string[]; options: RerankOption[]; builtin_model_changed?: { from: string | null; to: string | null } | null
+  // Whether the person saved a choice (false: the default is in force), and why the reranker in force cannot run now.
+  explicit?: boolean; blocked?: { reason_code: string; reason: string } | null
 }
 export type InstitutionalAccess = { status: 'institutional' | 'none' | 'unknown' | 'not_checked'; via?: string; reason?: string }
 // Reading depth of a stored source version: a PDF text layer, an abstract, or bare metadata.
@@ -2199,6 +2205,7 @@ export type SpendEstimate = {
     usd: [number, number] | null; calls: [number, number] | null }[]
   tasks: { task: string; role: SpendRole; calls: [number, number]; input_tokens: [number, number]; output_tokens: [number, number]; repairable: boolean; usd: [number, number] | null }[]
   embedding: { provider: string; paid: boolean; included: false }
+  reranking?: { provider: string | null; paid: boolean; included: false }
   prices: { version: number; as_of: string }
   assumptions: { chars_per_token: number; reasoning_tokens: Record<string, number>; reasoning_default: number }
 }

@@ -595,7 +595,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                  <span className="src-m evidence-row-meta">{[row.year, sort?.key === 'similarity' && source?.similarity != null && t('similarity {score}', { score: source.similarity.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }), t(accessLabels[row.access_level]), versionText(row.version_label), row.selection_state && t(rowSelectionLabels[row.selection_state])].filter(Boolean).join(' · ')}</span>
+                  <span className="src-m evidence-row-meta">{[row.year, sort?.key === 'similarity' && source?.similarity != null && t('similarity {score}', { score: source.similarity.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }), t(accessLabels[row.access_level]), versionText(row.version_label), row.report_membership === 'abstract_only' ? t('Undecided in Sources · in the report, read from the abstract only') : row.selection_state && t(rowSelectionLabels[row.selection_state])].filter(Boolean).join(' · ')}</span>
                 </th>
                 {columns.map((col, c) => {
                   const id = `${col.id}:${row.source_version_id}`

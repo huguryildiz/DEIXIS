@@ -12,7 +12,7 @@ from deixis.domain import contracts, wording
 from deixis.workflow.report import review_methodology
 from deixis.workflow.report.store import ReportStore
 from deixis.workflow.report.selection import usable_cells
-from deixis.workflow.report.snapshot import evidence_row_ids
+from deixis.workflow.report.snapshot import countable_row_ids, evidence_row_ids
 from deixis.workflow.store import Store
 
 
@@ -215,6 +215,66 @@ def _claim_depths(store: Store, reports: ReportStore, report_id: str, *, current
     return {claim_id: min(values, key=_DEPTH_ORDER.__getitem__) for claim_id, values in depths.items()}
 
 
+def claim_depth_marks(store: Store, reports: ReportStore, report_id: str) -> dict[str, str]:
+    """Claim id -> 'abstract' or 'mixed' for each claim that rests, wholly or partly, on what was read from an abstract.
+
+    D114: read from each claim's own current links, as `_claim_depths` reads them (a cell link by its frozen cell
+    revision's depth, a passage link by its passage kind), never from its row's deepest cell. A claim also rests on the
+    claims its `body_refs` name and on the frozen basis of the gaps its `gap_refs` name (basis cells, basis passages and
+    basis claims), so a VII claim supported only by an accepted gap, and an I/IX/abstract summary built on it, carry the
+    dependence too. A claim with no abstract-depth support gets no mark.
+    """
+    cells = {cell["cell_id"]: cell for cell in reports.snapshot(report_id).get("cells", [])}
+
+    def passage_class(passage_id: str | None) -> str | None:
+        row = store.conn.execute("SELECT kind FROM passages WHERE id = ?", (passage_id,)).fetchone() if passage_id else None
+        return None if row is None else "abstract" if row["kind"] == "abstract" else "full"
+
+    def cell_class(cell_id: str | None) -> str | None:
+        depth = cells.get(cell_id, {}).get("reading_depth")
+        return "abstract" if depth == "abstract" else "full" if depth in ("selected_sections", "full_text") else None
+
+    own: dict[str, set[str]] = defaultdict(set)
+    for link in _links(store, report_id, current=True):
+        found = cell_class(link["cell_id"]) if link["cell_id"] else passage_class(link["passage_id"])
+        if found:
+            own[link["claim_id"]].add(found)
+    claims = _claims(store, report_id)
+    by_key: dict[str, list[str]] = defaultdict(list)
+    for claim in claims:
+        by_key[claim["claim_key"]].append(claim["id"])
+    gaps = {gap["gap_id"]: json.loads(gap["basis_json"]) for gap in _gaps(store, report_id)}
+    refs: dict[str, list[str]] = defaultdict(list)
+    for claim in claims:
+        for ref in store.conn.execute("SELECT ref_kind, ref_value FROM report_claim_refs WHERE claim_id = ?", (claim["id"],)):
+            if ref["ref_kind"] == "body_ref":
+                refs[claim["id"]].extend(by_key.get(ref["ref_value"], []))
+                continue
+            basis = gaps.get(ref["ref_value"], {})
+            own[claim["id"]].update(c for c in map(cell_class, basis.get("basis_cell_ids", [])) if c)
+            own[claim["id"]].update(c for c in map(passage_class, basis.get("basis_passage_ids", [])) if c)
+            for key in basis.get("basis_claim_keys", []):
+                refs[claim["id"]].extend(by_key.get(key, []))
+    resolved: dict[str, set[str]] = {}
+
+    def classes(claim_id: str, seen: frozenset[str] = frozenset()) -> set[str]:
+        if claim_id in resolved:
+            return resolved[claim_id]
+        found = set(own.get(claim_id, set()))
+        for other in refs.get(claim_id, []):
+            if other not in seen and other != claim_id:
+                found |= classes(other, seen | {claim_id})
+        resolved[claim_id] = found
+        return found
+
+    marks = {}
+    for claim in claims:
+        found = classes(claim["id"])
+        if "abstract" in found:
+            marks[claim["id"]] = "abstract" if found == {"abstract"} else "mixed"
+    return marks
+
+
 def _check_derived_strength(store: Store, reports: ReportStore, report_id: str, *, current: bool = False) -> list[dict[str, Any]]:
     claims = _claims(store, report_id)
     by_key = {claim["claim_key"]: claim for claim in claims}
@@ -324,7 +384,8 @@ def _check_corpus_counts(store: Store, reports: ReportStore, report_id: str) -> 
 
 def _check_count_fields(store: Store, reports: ReportStore, report_id: str, *, current: bool = False) -> list[dict[str, Any]]:
     snapshot = reports.snapshot(report_id)
-    context = {"source_ids": evidence_row_ids(snapshot),
+    # The same count domain the section validator used: the frozen included rows only (D114).
+    context = {"source_ids": countable_row_ids(snapshot),
                "column_ids": [c["column_id"] for c in snapshot["columns"]], "cells": usable_cells(snapshot)}
     issues = []
     for claim in _claims(store, report_id, current=current):

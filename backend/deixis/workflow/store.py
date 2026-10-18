@@ -3548,16 +3548,32 @@ class Store:
             " ORDER BY p.kind, p.physical_page, p.rowid", (svid,)
         )]
 
-    def search_passages(self, svids: list[str], fts_query: str, limit: int) -> list[dict[str, Any]]:
-        if not svids or not fts_query:
+    def search_passages(self, svids: list[str], fts_query: str, limit: int,
+                        frozen: dict[str, list[str]] | None = None) -> list[dict[str, Any]]:
+        """Passages of these sources matching the query, best first.
+
+        A source named in `frozen` (a report row whose passages its snapshot froze, D114) is searched only within those
+        passage ids, inside the same ranking and before the limit, so a passage it gained later is never a hit.
+        """
+        frozen = frozen or {}
+        live = [svid for svid in svids if svid not in frozen]
+        pinned = [pid for svid in svids if svid in frozen for pid in frozen[svid]]
+        if not fts_query or not (live or pinned):
             return []
-        marks = ",".join("?" * len(svids))
+        clauses, params = [], [fts_query]
+        if live:
+            clauses.append(
+                f"(p.source_version_id IN ({','.join('?' * len(live))}) AND (p.asset_id IS NULL OR EXISTS"
+                " (SELECT 1 FROM source_assets a WHERE a.id = p.asset_id AND a.removed_at IS NULL AND a.extraction_version IS p.extraction_version)))")
+            params += live
+        if pinned:
+            clauses.append(f"p.id IN ({','.join('?' * len(pinned))})")
+            params += pinned
         rows = self.conn.execute(
             f"SELECT p.* FROM passages_fts f JOIN passages p ON p.rowid = f.rowid"
-            f" WHERE passages_fts MATCH ? AND p.source_version_id IN ({marks}) AND (p.asset_id IS NULL OR EXISTS"
-            f" (SELECT 1 FROM source_assets a WHERE a.id = p.asset_id AND a.removed_at IS NULL AND a.extraction_version IS p.extraction_version))"
+            f" WHERE passages_fts MATCH ? AND ({' OR '.join(clauses)})"
             " ORDER BY bm25(passages_fts), p.id LIMIT ?",  # an equal BM25 score orders by passage identifier (SW14.6)
-            (fts_query, *svids, limit),
+            (*params, limit),
         ).fetchall()
         return [dict(r) for r in rows]
 

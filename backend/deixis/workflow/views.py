@@ -14,6 +14,7 @@ from deixis.domain.rules import FULLTEXT_RUNS, effective_reviewer, result_applic
 from deixis.workflow import english_question as english_question_rules
 from deixis.workflow import approval as approval_rules
 from deixis.workflow import flow_counts as flow_rules
+from deixis.workflow import table_sources
 from deixis.workflow import run_card
 from deixis.workflow import overrides as override_rules
 from deixis.workflow import probes as probe_rules
@@ -22,6 +23,7 @@ from deixis.workflow.chaining import QUERY_PREFIX as CHAIN_PREFIX, policy as cha
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.equations import chunk_numbers, equation_reader, equation_state, equations_to_check, latex_numbers
 from deixis.workflow.queue import _snapshot as snapshot, context as queue_context, queue_answers, queue_counts, inspection_progress
+from deixis.workflow.report import assembly as report_assembly
 from deixis.workflow.report.store import DISPLAY_ORDER, ReportStore
 from deixis.workflow import waiting as waiting_rules
 from deixis.providers import openalex
@@ -196,6 +198,12 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
     except NotFound:
         frozen = None
     frozen_cells = {cell["cell_id"]: cell for cell in frozen["cells"]} if frozen else {}
+    # D114: the claims resting on what was read from an abstract, from their own links, and the rows this report read
+    # from their abstracts only (frozen without PDF text).
+    depth_marks = report_assembly.claim_depth_marks(store, reports, report_id) if frozen else {}
+    abstract_read = {row["source_version_id"] for row in (frozen or {}).get("rows", [])
+                     if row.get("membership") == "abstract_only"
+                     or (row.get("passage_ids") and row.get("reading_depth") in (None, "abstract"))}
     effective_by_claim: dict[str, list[dict]] = {}
     removed_by_claim: dict[str, list[dict]] = {}
     for link in reports.effective_links(report_id):
@@ -279,6 +287,7 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
                            "evidence": evidence, "original_evidence_count": len(original_ids),
                            "removed_links": removed, "evidence_basis": "direct" if evidence else "none",
                            "support_type_note": "model_written_type" if not evidence and original_ids else None,
+                           "depth_mark": depth_marks.get(claim["id"]),
                            "edited_basis": sorted(edited_basis)})
         sections.append({key: section[key] for key in (
             "section_id", "status", "word_count", "draft", "validation",
@@ -300,7 +309,7 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
         references.append({"number": number, "source_version_id": source_id, "source_key": source["source_key"],
                            "title": source["title"], "authors": json.loads(source["authors_json"]),
                            "year": source["year"], "venue": source["venue"], "doi": source["doi"],
-                           "version_label": source["version_label"],
+                           "version_label": source["version_label"], "abstract_only": source_id in abstract_read,
                            "open_passage_id": first_passage.get(source_id) or fallback})
     table_i = None
     missing_rows = None
@@ -330,6 +339,8 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
                       "ref_number": numbers.get(row["source_version_id"]),
                       "source_key": frozen_sources[row["source_version_id"]]["source_key"] if frozen_sources[row["source_version_id"]] else None,
                       "title": frozen_sources[row["source_version_id"]]["title"] if frozen_sources[row["source_version_id"]] else None,
+                      "abstract_only": row["source_version_id"] in abstract_read,
+                      "membership": row.get("membership", "included"),
                       **({"failed": True} if row["source_version_id"] in failed_ids else {})}
                      for row in frozen["rows"]],
             "cells": [{"cell_id": cell["cell_id"], "column_id": cell["column_id"], "source_version_id": cell["source_version_id"],
@@ -953,14 +964,16 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     run_total = conn.execute("SELECT COUNT(*) FROM runs WHERE research_id = ?", (research_id,)).fetchone()[0]
     # The study table an unfinished answer opens when it ends (report_pipeline.after_answer), so the rail can say it is
     # coming: only while the research has no table and includes a source; a late full-text revision opens none.
-    included_now = store.included_sources(research_id) if store.study_table == "auto" else []
-    study_table_pending = {"sources": len(included_now)} if included_now and not conn.execute(
-        "SELECT 1 FROM evidence_tables WHERE research_id = ? AND trashed_at IS NULL LIMIT 1", (research_id,)).fetchone() and conn.execute(
+    # A new table also holds the works read from their abstracts only (D114), so they count here too.
+    pending_answer = store.study_table == "auto" and conn.execute(
+        "SELECT 1 FROM evidence_tables WHERE research_id = ? AND trashed_at IS NULL LIMIT 1", (research_id,)).fetchone() is None and conn.execute(
         "SELECT 1 FROM runs r LEFT JOIN runs a ON a.id = json_extract(r.target_json, '$.answer_run_id')"
         " WHERE r.research_id = ? AND r.scope_revision = ? AND r.kind IN ('answer', 'answer_review')"
         " AND r.status IN ('queued', 'running', 'pause_requested', 'paused')"
         " AND COALESCE(json_extract(COALESCE(a.budget_json, r.budget_json), '$.trigger'), '') != 'late_fulltext' LIMIT 1",
-        (research_id, research["current_scope_revision"])).fetchone() else None
+        (research_id, research["current_scope_revision"])).fetchone() is not None
+    included_now = table_sources.table_sources(store, research_id) if pending_answer else []
+    study_table_pending = {"sources": len(included_now)} if included_now else None
     return {"research": research, "intent_outcome": intent_outcome(store, research), "scope": scope_view, "runs": runs,
             "run_total": run_total, "study_table_pending": study_table_pending, "search_runs": search_runs, "sources": sources,
             "answers": answers, "reportRuns": report_runs, "counts": counts, "last_event_id": last_event,

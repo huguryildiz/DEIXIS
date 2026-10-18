@@ -127,7 +127,9 @@ def _references(view: dict, bib_sources: list[dict]) -> tuple[dict[int, str], li
         keys[number] = key
     if len({key.lower() for key in keys.values()}) != len(keys):
         raise RevisionConflict("Cite keys collide ignoring case")
-    return keys, [by_bib[ref["source_version_id"]] for ref in refs], notes
+    # A reference read from its abstract only carries that note into its BibTeX entry (D114).
+    return keys, [by_bib[ref["source_version_id"]] | ({"abstract_only": True} if ref.get("abstract_only") else {})
+                  for ref in refs], notes
 
 
 @dataclass(frozen=True)
@@ -222,6 +224,8 @@ class _Writer:
             for number in links:
                 self.cited.setdefault(number, None)
             text = _join(text, "\\cite{" + ",".join(self.keys[number] for number in links) + "}")
+        if not keyword and (mark := export_text.claim_depth_mark(claim, self.tr)):
+            text += self.fixed(mark)
         return text
 
     def unchecked(self, view: dict) -> list[str]:
@@ -235,6 +239,8 @@ class _Writer:
             if basis["unverified_sources"]:
                 blocks.append(_itemize([": ".join(export_text.basis_source_fields(row, tr, line))
                                         for row in basis["unverified_sources"]]))
+            if basis.get("abstract_members"):
+                blocks.append(_itemize([export_text.abstract_member_field(row, tr, line) for row in basis["abstract_members"]]))
         missing = view.get("missing_rows")
         if missing:
             blocks.append(r"\noindent " + fixed(export_text.missing_rows_sentence(missing, tr)))

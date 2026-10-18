@@ -130,7 +130,18 @@ def render_review_methodology(numbers: dict[str, Any], language: str, *, provide
         + chain_provenance + (followup_sentence(numbers["followup_searches"], language)
                               if numbers.get("followup_searches") else "") \
         + (_ROW_TEMPLATES["tr" if language.startswith("tr") else "en"].format(**numbers["rows"])
-           if "rows" in numbers else "")
+           if "rows" in numbers else "") \
+        + (abstract_rows_sentence(numbers["abstract_rows"], language) if numbers.get("abstract_rows") else "")
+
+
+def abstract_rows_sentence(n: int, language: str) -> str:
+    """The table rows read from their abstracts only because no full text was obtained (D114); not included sources."""
+    if language.startswith("tr"):
+        return (f" Özet taramasını geçen ancak tam metni bulunamayan {n} kaynak daha kanıt tablosunda yer aldı ve"
+                " yalnızca özetlerinden okundu; bunlar dahil kaynaklara sayılmadı.")
+    return (f" A further {n} {'source' if n == 1 else 'sources'} passed abstract screening but no full text could be"
+            f" obtained; {'it is' if n == 1 else 'they are'} in the evidence table, read from the abstract only, and"
+            " not counted as included.")
 
 
 def render_limitations(numbers: dict[str, Any], language: str) -> str:
@@ -322,6 +333,8 @@ def write_review_methodology(store: Store, reports: ReportStore, report_id: str,
         numbers["reading"] = dict(snapshot["reading"])
     if snapshot.get("failed_rows"):
         numbers["rows"] = dict(snapshot["row_counts"])
+    if snapshot.get("abstract_rows"):
+        numbers["abstract_rows"] = len(snapshot["abstract_rows"])
     # From the snapshot only (D92): an older snapshot has no follow-up searches and prints none.
     if snapshot.get("followup_searches"):
         numbers["followup_searches"] = [dict(item) for item in snapshot["followup_searches"]]

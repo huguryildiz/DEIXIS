@@ -17,6 +17,10 @@ cells. Neither stops the report.
 
 Every following table gets its own fill: a cell belongs to one table's column (its own instruction and format), and a
 report is written from one table, so the same new source is a separate set of questions in each table.
+
+D114: a table made from the research (`follows_included = 2`) also follows the works read from their abstracts only
+(`table_sources`). Such a work gets a row when it has never had one in the table, matched by work, so a new head of a
+work adds no second row; its cells are due by the same rules as an included source's.
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ from typing import Any
 
 from deixis.storage.db import dumps, now, transaction
 from deixis.workflow.store import ACTIVE_RUN_STATUSES
+from deixis.workflow.table_sources import FOLLOWS_TABLE_SOURCES, new_abstract_rows, table_sources
 from deixis.workflow.tables import InvalidTableInput, TableStore
 
 log = logging.getLogger("deixis.table_rows")
@@ -35,17 +40,23 @@ _FOLLOWING = ("FROM evidence_tables et JOIN researches rs ON rs.id = et.research
               " JOIN selections s ON s.research_id = et.research_id AND s.state = 'included'"
               " JOIN corpus_memberships m ON m.research_id = s.research_id AND m.source_version_id = s.source_version_id"
               " AND m.removed_at IS NULL")
-_LIVE = "et.follows_included = 1 AND et.trashed_at IS NULL AND rs.trashed_at IS NULL"
+_LIVE = "et.follows_included >= 1 AND et.trashed_at IS NULL AND rs.trashed_at IS NULL"
 # Included sources of a following table's research that were never rows of it.
 NEW_ROWS_SQL = (f"SELECT et.research_id, et.id, s.source_version_id {_FOLLOWING} WHERE {_LIVE}"
                 " AND NOT EXISTS (SELECT 1 FROM table_rows t WHERE t.table_id = et.id AND t.source_version_id = s.source_version_id)"
                 " ORDER BY et.created_at, s.updated_at, s.source_version_id")
-# Empty cells of rows the app added whose source is still included, in columns that existed when the row was added or
-# that the study-table chain accepted, which no fill of the table planned since the row was added.
+# Tables made from the research (D114): they also follow the works read from their abstracts only.
+TABLE_SOURCE_TABLES_SQL = ("SELECT et.research_id, et.id FROM evidence_tables et JOIN researches rs ON rs.id = et.research_id"
+                           f" WHERE et.follows_included = {FOLLOWS_TABLE_SOURCES} AND et.trashed_at IS NULL AND rs.trashed_at IS NULL"
+                           " ORDER BY et.created_at, et.id")
+# Empty cells of rows the app added, in columns that existed when the row was added or that the study-table chain
+# accepted, which no fill of the table planned since the row was added. Whether the row's source is still one the table
+# follows (included, or for a D114 table read from its abstract only) is checked in Python by `_following`.
 DUE_CELLS_SQL = (
-    f"SELECT et.research_id, et.id, t.source_version_id, k.id {_FOLLOWING}"
-    " JOIN table_rows t ON t.table_id = et.id AND t.source_version_id = s.source_version_id"
-    " AND t.added_by = 'included_later' AND t.removed_at IS NULL"
+    "SELECT et.research_id, et.id, t.source_version_id, k.id FROM evidence_tables et JOIN researches rs ON rs.id = et.research_id"
+    " JOIN table_rows t ON t.table_id = et.id AND t.added_by = 'included_later' AND t.removed_at IS NULL"
+    " JOIN corpus_memberships m ON m.research_id = et.research_id AND m.source_version_id = t.source_version_id"
+    " AND m.removed_at IS NULL"
     " JOIN table_columns k ON k.table_id = et.id AND k.removed_at IS NULL"
     " AND (k.created_at <= t.created_at OR k.accepted_by = 'automatic')"
     f" WHERE {_LIVE}"
@@ -73,6 +84,14 @@ def add_rows(store: Any, rid: str | None = None) -> dict[str, list[str]]:
     for research_id, table_id, svid in store.conn.execute(
             NEW_ROWS_SQL.replace(" ORDER BY", " AND et.research_id = ? ORDER BY") if rid else NEW_ROWS_SQL, (rid,) if rid else ()):
         found.setdefault((research_id, table_id), []).append(svid)
+    for research_id, table_id in store.conn.execute(
+            TABLE_SOURCE_TABLES_SQL.replace(" ORDER BY", " AND et.research_id = ? ORDER BY") if rid else TABLE_SOURCE_TABLES_SQL,
+            (rid,) if rid else ()).fetchall():
+        try:
+            for svid in new_abstract_rows(store, research_id, table_id):
+                found.setdefault((research_id, table_id), []).append(svid)
+        except Exception:  # noqa: BLE001 - one table must not hold up the worker or the other tables
+            log.exception("reading the abstract-only works of table %s failed", table_id)
     tables, added = TableStore(store), {}
     for (research_id, table_id), svids in found.items():
         try:
@@ -94,8 +113,13 @@ def advance(store: Any, rid: str | None = None) -> list[dict[str, Any]]:
     """Add the rows, then queue the fills that are due; returns the runs it queued."""
     add_rows(store, rid)
     due: dict[tuple[str, str], dict[str, list[str]]] = {}
+    following: dict[str, set[str]] = {}
     for research_id, table_id, svid, column_id in store.conn.execute(
-            DUE_CELLS_SQL.replace(" ORDER BY", " AND et.research_id = ? ORDER BY") if rid else DUE_CELLS_SQL, (rid,) if rid else ()):
+            DUE_CELLS_SQL.replace(" ORDER BY", " AND et.research_id = ? ORDER BY") if rid else DUE_CELLS_SQL, (rid,) if rid else ()).fetchall():
+        if table_id not in following:
+            following[table_id] = set(table_sources(store, research_id, table_id))
+        if svid not in following[table_id]:
+            continue
         due.setdefault((research_id, table_id), {}).setdefault(svid, []).append(column_id)
     tables, queued, waiting = TableStore(store), [], set()
     for (research_id, table_id), only in due.items():

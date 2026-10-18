@@ -425,16 +425,26 @@ class ReportStore:
         result["added_sources"] = len(live_rows - frozen_rows)
         stamps = {row["source_version_id"]: row for row in self.conn.execute(
             "SELECT t.source_version_id, t.removed_at AS row_removed_at, m.removed_at AS membership_removed_at,"
-            " s.state AS selection_state, s.updated_at AS selection_updated_at FROM table_rows t"
+            " s.state AS selection_state, s.updated_at AS selection_updated_at,"
+            # A row read from its abstract only can leave the report without a selection change (D114): a stage decision
+            # or a file on its work is then when it left.
+            " (SELECT MAX(d.created_at) FROM stage_decisions d JOIN source_versions dv ON dv.id = d.source_version_id"
+            "  JOIN source_versions tv ON tv.id = t.source_version_id WHERE d.research_id = ? AND dv.work_id = tv.work_id)"
+            " AS decided_at,"
+            " (SELECT MAX(a.retrieved_at) FROM source_assets a JOIN source_versions av ON av.id = a.source_version_id"
+            "  JOIN source_versions tv ON tv.id = t.source_version_id WHERE av.work_id = tv.work_id) AS file_at"
+            " FROM table_rows t"
             " LEFT JOIN corpus_memberships m ON m.research_id = ? AND m.source_version_id = t.source_version_id"
             " LEFT JOIN selections s ON s.research_id = ? AND s.source_version_id = t.source_version_id"
-            " WHERE t.table_id = ?", (report["research_id"], report["research_id"], table_id),
+            " WHERE t.table_id = ?", (report["research_id"], report["research_id"], report["research_id"], table_id),
         )}
         removed_changes = {}
+        abstract_only = {row["source_version_id"] for row in snapshot["rows"] if row.get("membership") == "abstract_only"}
         for source_id in removed:
             record = stamps.get(source_id)
             departure = [] if record is None else [record["row_removed_at"], record["membership_removed_at"],
-                record["selection_updated_at"] if record["selection_state"] != "included" else None]
+                record["selection_updated_at"] if record["selection_state"] != "included" else None,
+                *((record["decided_at"], record["file_at"]) if source_id in abstract_only else ())]
             stamp = max((value for value in departure if value is not None), default="none")
             removed_changes[source_id] = {"key": f"source:{source_id}:{stamp}", "kind": "source_removed",
                                           "source_version_id": source_id}

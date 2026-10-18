@@ -150,7 +150,7 @@ def bibtex_with_notes(sources: list[dict[str, Any]], keys: list[str] | None = No
             ("url", identifiers["url"]),
             ("eprint", identifiers["eprint"]),
             ("eprinttype", "arxiv" if s["arxiv_id"] else ""),
-            ("note", tex(_version_note(s["version_label"]))),
+            ("note", tex(_version_note(s["version_label"], s.get("abstract_only", False)))),
         ]
         body = ",\n".join(f"  {name} = {{{value}}}" for name, value in fields if value)
         entries.append(f"@{entry_type}{{{key},\n{body}\n}}\n")
@@ -174,8 +174,12 @@ def _kind(publication_type: str | None) -> str:
     return next((kind for kind, names in _KINDS.items() if key in names), "other")
 
 
-def _version_note(label: str | None) -> str:
-    return f"Source version read in DEIXIS: {_VERSION_NAMES.get(label, label)}" if label else ""
+def _version_note(label: str | None, abstract_only: bool = False) -> str:
+    """The BibTeX note: the version read and, for a report source read from its abstract only, that (D114)."""
+    note = f"Source version read in DEIXIS: {_VERSION_NAMES.get(label, label)}" if label else ""
+    if abstract_only:
+        note = f"{note}; read from the abstract only" if note else "Read from the abstract only"
+    return note
 
 
 def _fold(text: str) -> str:

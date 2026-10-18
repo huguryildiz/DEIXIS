@@ -134,6 +134,13 @@ def basis_note(basis: dict[str, Any], tr: bool) -> str:
                           " a quote; the report does not cite them. They belong to the sources listed below.", tr,
                           f"{total} tablo hücresinin {unverified} tanesi bir alıntıyla doğrulanamadı; rapor bu hücrelere"
                           " atıf yapmıyor. Bu hücreler aşağıda listelenen kaynaklara ait."))
+    members = len(basis.get("abstract_members") or [])
+    if members:
+        parts.append(pick(f"{members} {'source' if members == 1 else 'sources'} entered the report from"
+                          f" {'its abstract' if members == 1 else 'their abstracts'} only because no full text was"
+                          f" obtained; {'it is' if members == 1 else 'they are'} listed below.", tr,
+                          f"{members} kaynak tam metni bulunamadığı için rapora yalnızca özetiyle girdi; aşağıda"
+                          " listelendi."))
     if short:
         parts.append(pick("Upload the PDFs of the sources read from the abstract or metadata for a more detailed report.", tr,
                           "Daha ayrıntılı bir rapor için özetten veya künye bilgisinden okunan kaynakların PDF'lerini"
@@ -146,6 +153,11 @@ def basis_source_fields(row: dict[str, Any], tr: bool, esc: Callable[[Any], str]
     return esc(row["source_key"] or row["title"]), esc(pick(
         f"{row['cells_unverified']} of {row['cells_total']} cells not verified", tr,
         f"{row['cells_total']} hücreden {row['cells_unverified']} tanesi doğrulanmadı"))
+
+
+def abstract_member_field(row: dict[str, Any], tr: bool, esc: Callable[[Any], str]) -> str:
+    """PIECEWISE: Escape one abstract-only source's label for the basis list (D114)."""
+    return esc(row.get("source_key") or row.get("title") or pick("Source record unavailable", tr, "Kaynak kaydı bulunamadı"))
 
 
 def missing_row_fields(row: dict[str, Any], tr: bool, esc: Callable[[Any], str]) -> tuple[str, str]:
@@ -264,11 +276,28 @@ def value_text(value: dict[str, Any] | None, options: list[dict[str, Any]] | Non
 
 
 def source_cell(row: dict[str, Any], tr: bool, esc: Callable[[Any], str]) -> str:
-    """PIECEWISE: Escape the source label before adding a reference prefix."""
+    """PIECEWISE: Escape the source label before adding a reference prefix and the abstract-only suffix (D114)."""
     source = esc(row.get("source_key") or row.get("title") or pick("Source record unavailable", tr, "Kaynak kaydı bulunamadı"))
     if row.get("ref_number") is not None:
         source = f'[{row["ref_number"]}] {source}'
+    if row.get("abstract_only"):
+        source += pick(" (abstract only)", tr, " (yalnızca özet)")
     return source
+
+
+def claim_depth_mark(claim: dict[str, Any], tr: bool) -> str:
+    """PLAIN: The mark after a claim's citations when it rests on what was read from an abstract (D114), else ''."""
+    mark = claim.get("depth_mark")
+    if mark == "abstract":
+        return pick(" (from abstract)", tr, " (özetten)")
+    if mark == "mixed":
+        return pick(" (partly from abstract)", tr, " (kısmen özetten)")
+    return ""
+
+
+def abstract_reference_note(tr: bool) -> str:
+    """PLAIN: The note a reference read from its abstract only ends with (D114)."""
+    return pick("Read from the abstract only.", tr, "Yalnızca özetten okundu.")
 
 
 def cell_text(cell: dict[str, Any] | None, column: dict[str, Any], tr: bool, esc: Callable[[Any], str]) -> str:

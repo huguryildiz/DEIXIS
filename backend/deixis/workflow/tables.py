@@ -16,6 +16,7 @@ from typing import Any
 from deixis.documents.jats import RENDITION_SQL
 from deixis.domain.rules import RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, transaction
+from deixis.workflow import table_sources
 from deixis.workflow.store import ACTIVE_RUN_STATUSES, EVIDENCE_STATUS_SQL, NotFound, Store
 
 ANSWER_FORMATS = ("choice", "number_unit", "yes_no", "text")
@@ -255,14 +256,16 @@ class TableStore:
                 if template is None:
                     raise NotFound(template_id)
             added_by = "included_at_creation" if rows is None else "user"
-            svids = self.store.included_sources(research_id) if rows is None else list(dict.fromkeys(rows))
+            # A table made from the research holds its included sources and the works read from their abstracts only (D114).
+            svids = table_sources.table_sources(self.store, research_id) if rows is None else list(dict.fromkeys(rows))
             self._check_members(research_id, svids)
             tid, ts = new_id("tbl"), now()
-            # A table made from the included sources follows them (D63, `table_rows.advance`); a hand-picked list does not.
+            # A table made from the research follows its sources (D63, D114: `table_rows.advance`); a hand-picked list does not.
             self.conn.execute(
                 "INSERT INTO evidence_tables (id, research_id, title, template_id, idempotency_key, follows_included, created_at,"
                 " updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (tid, research_id, title.strip(), template_id, key, int(rows is None), ts, ts),
+                (tid, research_id, title.strip(), template_id, key,
+                 table_sources.FOLLOWS_TABLE_SOURCES if rows is None else 0, ts, ts),
             )
             self.conn.executemany(
                 "INSERT INTO table_rows (table_id, source_version_id, added_by, created_at) VALUES (?, ?, ?, ?)",
@@ -757,7 +760,7 @@ class TableStore:
         """
         columns = self.target_columns(research_id, table_id, column_ids)
         sources, beyond = [], 0
-        included = set(self.store.included_sources(research_id)) if included_only else None
+        included = set(table_sources.table_sources(self.store, research_id, table_id)) if included_only else None
         for svid in self.active_rows(table_id):
             if (included is not None and svid not in included) or (only is not None and svid not in only):
                 continue
@@ -1032,6 +1035,8 @@ class TableStore:
     def table_view(self, research_id: str, table_id: str) -> dict[str, Any]:
         table = self._table(research_id, table_id)
         columns = self._columns(table_id)
+        # Why each row is in the table's report, read live (D114): 'included', 'abstract_only', or None (not in it).
+        report_membership = table_sources.membership(self.store, research_id, table_id)
         rows = []
         for r in self.conn.execute(
             "SELECT t.source_version_id, t.added_by, t.created_at, t.removed_at, v.work_id, v.title, v.authors_json, v.year,"
@@ -1047,7 +1052,7 @@ class TableStore:
             rows.append({"source_version_id": r["source_version_id"], "work_id": r["work_id"], "source_key": r["source_key"], "title": r["title"],
                          "authors": json.loads(r["authors_json"]), "year": r["year"], "version_label": r["version_label"],
                          "selection_state": r["selection_state"], "added_by": r["added_by"], "added_at": r["created_at"],
-                         "removed_at": r["removed_at"],
+                         "removed_at": r["removed_at"], "report_membership": report_membership.get(r["source_version_id"]),
                          "access_level": "pdf_available" if r["has_pdf_text"] else "abstract" if r["has_abstract"] else "metadata"})
         active_rows = {r["source_version_id"] for r in rows if r["removed_at"] is None}
         by_column = {c["id"]: c for c in columns}
@@ -1104,7 +1109,8 @@ class TableStore:
 
 
 def report_ready(store: Store, research_id: str, table_id: str) -> dict[str, Any]:
-    """Whether a report can be written from this table: it needs a column and an included source among its rows.
+    """Whether a report can be written from this table: it needs a column and a report source among its rows (an
+    included source or, in a table made from the research, a work read from its abstract only, D114).
 
     Empty, failed and unverified cells do not stop a report (D68): the report writes from what the table holds, uses
     a source without values from its abstract or metadata, and its basis note says which sources those are. `missing`
@@ -1112,7 +1118,7 @@ def report_ready(store: Store, research_id: str, table_id: str) -> dict[str, Any
     """
     tables = TableStore(store)
     columns = tables.target_columns(research_id, table_id)
-    included = set(store.included_sources(research_id))
+    included = set(table_sources.table_sources(store, research_id, table_id))
     rows = [source_id for source_id in tables.active_rows(table_id) if source_id in included]
     states = {(row["source_version_id"], row["column_id"]): row["state"] for row in store.conn.execute(
         "SELECT c.source_version_id, c.column_id, r.state FROM evidence_cells c"

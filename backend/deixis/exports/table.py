@@ -20,6 +20,8 @@ from deixis.exports.text import CitationStyle, Language, Translate, download_nam
     reference_text, translator, version_text
 
 ACCESS = {"pdf_available": "PDF text", "abstract": "Abstract only", "metadata": "Metadata only"}
+# Whether a row is in the table's report, and why (D114): an included source, or a work read from its abstract only.
+IN_REPORT = {"included": "Yes", "abstract_only": "Yes, abstract only", None: "No"}
 STATES = {"value": "Value", "not_verified": "Value without linked evidence", "unknown": "Unclear in the source",
           "not_reported": "Not reported", "not_applicable": "Not applicable", "inaccessible": "No text",
           "not_found_in_inspected_scope": "Not found in the text read"}
@@ -34,7 +36,7 @@ WARNINGS = (
     ("number_not_in_quote", "A number in this value does not appear in any of its quotes. It may be a count or a conversion the model made, or a misread; open the evidence and check it."),
     ("text_superseded", "This value cites an earlier text extraction of the PDF. Its evidence still opens that text; a recheck reads the current extraction."),
 )
-INFO_WIDTHS = (12.0, 50.0, 40.0, 30.0, 6.0, 18.0, 14.0)
+INFO_WIDTHS = (12.0, 50.0, 40.0, 30.0, 6.0, 18.0, 14.0, 16.0)
 PER_COLUMN = ("", "{name} — evidence", "{name} — source", "{name} — state", "{name} — warnings")
 
 
@@ -100,18 +102,18 @@ def _cell(t: Translate, language: Language, column: dict[str, Any], summary: dic
 
 
 def rows(view: dict[str, Any], sources: list[dict[str, Any]], *, language: Language, style: CitationStyle):
-    """(info header, column names, rows); a row is (seven info cells, one CellText per column)."""
+    """(info header, column names, rows); a row is (eight info cells, one CellText per column)."""
     t = translator(language)
     by_id = {s["source_version_id"]: s for s in sources}
     cells = {(c["column_id"], c["source_version_id"]): c for c in view["cells"]}
     columns = view["columns"]
-    header = [t("Key"), t("Reference"), t("Title"), t("Authors"), t("Year"), t("Version"), t("Access")]
+    header = [t("Key"), t("Reference"), t("Title"), t("Authors"), t("Year"), t("Version"), t("Access"), t("In report")]
     out = []
     for row in view["rows"]:
         source = by_id.get(row["source_version_id"])
         info = [row.get("source_key") or "", reference_text(style, source) if source else "", row["title"],
                 "; ".join(row.get("authors") or []), row.get("year"), version_text(t, row.get("version_label")),
-                t(ACCESS[row["access_level"]])]
+                t(ACCESS[row["access_level"]]), t(IN_REPORT[row.get("report_membership")])]
         out.append((info, [_cell(t, language, column, cells.get((column["id"], row["source_version_id"]))) for column in columns]))
     return header, [column["name"] for column in columns], out
 
@@ -129,17 +131,18 @@ def xlsx(view: dict[str, Any], sources: list[dict[str, Any]], *, language: Langu
 
 def docx(view: dict[str, Any], sources: list[dict[str, Any]], *, language: Language, style: CitationStyle,
          research_title: str = "") -> bytes:
-    """Landscape A4. The seven source fields share one cell, and the table columns come in groups of
+    """Landscape A4. The eight source fields share one cell, and the table columns come in groups of
     DOCX_COLUMNS_PER_TABLE, each group a table of its own that repeats the source cell, so no column gets too narrow
     to read however many columns the table has."""
     t = translator(language)
     info_header, names, data = rows(view, sources, language=language, style=style)
     sources_cells = []
     for info in [info for info, _ in data]:
-        key, reference, row_title, authors, year, version, access = ("" if item is None else str(item) for item in info)
+        key, reference, row_title, authors, year, version, access, in_report = ("" if item is None else str(item) for item in info)
         lines = [ooxml.paragraph(ooxml.Run(key, bold=True))] if key else []
         lines.append(ooxml.paragraph(reference or " · ".join(part for part in (row_title, authors, year) if part)))
         lines += [ooxml.paragraph(part, style="Small") for part in (version, access) if part and part != t("version not stated")]
+        lines.append(ooxml.paragraph(f'{t("In report")}: {in_report}', style="Small"))
         sources_cells.append(lines)
     values = []
     for _, cells in data:

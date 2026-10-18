@@ -537,10 +537,10 @@ def test_table_xlsx_is_the_browser_csv_plus_source_state_and_warnings(lang, styl
     data = table_export.xlsx(SYNTHETIC_TABLE, SYNTHETIC_SOURCES, language=lang, style=style)
     rows = xlsx_rows(data)
     names = ("Size", "Kind", "Note")
-    width = 7 + 5 * len(names)
+    width = 8 + 5 * len(names)  # eight source fields since D114 added "In report"
     head = expected[0]
     suffix = ("source", "state", "warnings") if lang == "en" else ("kaynak", "durum", "uyarılar")
-    assert rows[0] == head[:7] + [x for k, name in enumerate(names) for x in (head[7 + 2 * k], head[8 + 2 * k],
+    assert rows[0] == head[:8] + [x for k, name in enumerate(names) for x in (head[8 + 2 * k], head[9 + 2 * k],
                                                                              *(f"{name} — {s}" for s in suffix))]
 
     def text(value):
@@ -548,15 +548,15 @@ def test_table_xlsx_is_the_browser_csv_plus_source_state_and_warnings(lang, styl
 
     for row, line in zip(rows[1:], expected[1:]):
         row = row + [""] * (width - len(row))
-        assert [str(v) for v in row[:7]] + [text(row[7 + 5 * k + j]) for k in range(len(names)) for j in (0, 1)] == line
-    assert rows[1][4] == 2021 and rows[2][7] == 7  # numbers stay numbers in the workbook
+        assert [str(v) for v in row[:8]] + [text(row[8 + 5 * k + j]) for k in range(len(names)) for j in (0, 1)] == line
+    assert rows[1][4] == 2021 and rows[2][8] == 7  # numbers stay numbers in the workbook
     if lang == "en":
         for row, extras in zip(rows[1:], SYNTHETIC_EXTRAS):
             row = row + [""] * (width - len(row))
-            assert [tuple(row[9 + 5 * k: 12 + 5 * k]) for k in range(len(names))] == extras
+            assert [tuple(row[10 + 5 * k: 13 + 5 * k]) for k in range(len(names))] == extras
     else:
-        assert rows[1][9] == "Model · Tam metin" and rows[1][14] == "Siz · bağlı kanıt yok"
-        assert rows[1][15] == "Bağlı kanıtı olmayan değer" and rows[1][11].startswith("Bu sütunun önceki bir tanımıyla üretildi (revizyon 1).")
+        assert rows[1][10] == "Model · Tam metin" and rows[1][15] == "Siz · bağlı kanıt yok"
+        assert rows[1][16] == "Bağlı kanıtı olmayan değer" and rows[1][12].startswith("Bu sütunun önceki bir tanımıyla üretildi (revizyon 1).")
     workbook = parts(data, XLSX_PARTS)["xl/workbook.xml"]
     assert [s.get("name") for s in workbook.iter(S + "sheet")] == ["SYNTHETIC tablo ğ & <x>"]
     assert "Fast" not in raw_text(data)  # the proposal waiting for a decision is left out, as in the CSV
@@ -568,9 +568,9 @@ def test_table_docx_has_the_values_sources_states_warnings_and_quotes():
     assert items[:2] == ["SYNTHETIC research", "SYNTHETIC tablo ğ & <x> · V4"]
     grid = items[2]
     assert grid[0] == ["Source", "Size", "Kind", "Note"]
-    # The seven source fields share one cell: key, reference, then version and access.
-    assert grid[1][0] == "Lov21\nLovelace, A. (2021). SYNTHETIC routing.\naccepted manuscript\nPDF text"
-    assert grid[2][0].endswith("\nAbstract only") and "version not stated" not in grid[2][0]
+    # The eight source fields share one cell: key, reference, then version, access and whether it is in the report (D114).
+    assert grid[1][0] == "Lov21\nLovelace, A. (2021). SYNTHETIC routing.\naccepted manuscript\nPDF text\nIn report: No"
+    assert grid[2][0].endswith("\nAbstract only\nIn report: No") and "version not stated" not in grid[2][0]
     assert grid[1][1:] == [f"1,234.5 kB\nModel · Full text\n{STALE}\n{OCR}\n“size is 1,234.5 kB” — PDF p. 4 (printed 12)\nabstract",
                            "Slow, zz\nYou · no linked evidence\nState: Value without linked evidence",
                            f"{SPECIAL}\nModel · Abstract\n{REPLACED}\n{SUPERSEDED}\n“{SPECIAL}” — abstract"]
@@ -614,16 +614,16 @@ def test_table_routes_on_a_filled_synthetic_table(tmp_path):
         assert xlsx.headers["content-disposition"] == f"attachment; filename=\"{name}\"; filename*=UTF-8''{quote(name, safe='')}"
         rows = xlsx_rows(xlsx.content)
         expected = _csv(browser_exports(lang="en", style="apa", sources=sources, table=view)["csv"])
-        assert len(rows) == len(expected) and len(rows[0]) == 7 + 5 * len(view["columns"])
+        assert len(rows) == len(expected) and len(rows[0]) == 8 + 5 * len(view["columns"])
         cells = {(c["column_id"], c["source_version_id"]): c["current"] for c in view["cells"]}
         for row, line, source in zip(rows[1:], expected[1:], view["rows"]):
             row = row + [""] * (len(rows[0]) - len(row))
-            assert [str(v) for v in row[:7]] + [row[7 + 5 * k + j] for k in range(len(view["columns"])) for j in (0, 1)] == line
+            assert [str(v) for v in row[:8]] + [row[8 + 5 * k + j] for k in range(len(view["columns"])) for j in (0, 1)] == line
             for index, column in enumerate(view["columns"]):
                 current = cells[(column["id"], source["source_version_id"])]
                 for e in current["evidence"]:
-                    assert f"“{e['anchor_text']}” — PDF p. {e['physical_page']}" in row[8 + 5 * index]
-                assert row[9 + 5 * index: 11 + 5 * index] == ["Model · Selected pages", "Value"]
+                    assert f"“{e['anchor_text']}” — PDF p. {e['physical_page']}" in row[9 + 5 * index]
+                assert row[10 + 5 * index: 12 + 5 * index] == ["Model · Selected pages", "Value"]
         docx = client.get(base + "/docx?lang=tr&style=chicago")
         assert docx.status_code == 200 and docx.headers["content-type"] == ooxml.DOCX_MEDIA_TYPE
         assert docx.headers["content-disposition"].endswith(quote(f' - V{view["table"]["version"]}.docx', safe=''))

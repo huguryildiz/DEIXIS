@@ -114,6 +114,8 @@ def blocks(view: dict[str, Any], *, title: str, corpus: dict[str, int] | None,
         named = [export_text.basis_source_fields(row, tr, plain) for row in basis["unverified_sources"]]
         if named:
             out.append(ooxml.bullets([f"{source}: {count}"] for source, count in named))
+        if basis.get("abstract_members"):
+            out.append(ooxml.bullets([export_text.abstract_member_field(row, tr, plain)] for row in basis["abstract_members"]))
     missing = view.get("missing_rows")
     if missing:
         out.append(ooxml.paragraph(export_text.missing_rows_sentence(missing, tr)))
@@ -167,6 +169,7 @@ def blocks(view: dict[str, Any], *, title: str, corpus: dict[str, int] | None,
                 links = list(dict.fromkeys(link["ref_number"] for link in claim["evidence"]))
                 if links:
                     fragment += " " + ", ".join(f"[{ref}]" for ref in links)
+                fragment += export_text.claim_depth_mark(claim, tr)
                 fragments.append(fragment)
             out.append(ooxml.paragraph(*ooxml.with_math(" ".join(fragments))))
             if table and number == first_table_paragraph:
@@ -186,7 +189,8 @@ def blocks(view: dict[str, Any], *, title: str, corpus: dict[str, int] | None,
             fields.append(f'DOI: {plain(ref["doi"])}')
         if ref.get("version_label"):
             fields.append(f'({plain(ref["version_label"])})')
-        out.append(ooxml.paragraph(f'[{ref["number"]}] ' + ", ".join(fields), style="Bibliography"))
+        note = f'. {export_text.abstract_reference_note(tr)}' if ref.get("abstract_only") else ""
+        out.append(ooxml.paragraph(f'[{ref["number"]}] ' + ", ".join(fields) + note, style="Bibliography"))
     out += [ooxml.paragraph(export_text.corpus_footer(corpus, tr), style="Small"),
             ooxml.paragraph(f"{export_text.anchor_note(view, tr)} {export_text.review_note(view, tr, plain)}", style="Small")]
     review = view.get("review")

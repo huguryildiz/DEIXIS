@@ -8,7 +8,7 @@ from typing import Any
 
 from deixis.domain import contracts
 from deixis.workflow.store import NotFound, Store
-from deixis.workflow.report.snapshot import evidence_row_ids
+from deixis.workflow.report.snapshot import evidence_row_ids, frozen_passage_ids
 
 
 SECTION_BUDGET_TOKENS = {
@@ -43,6 +43,31 @@ def _query(plan: dict[str, Any]) -> str:
     return " OR ".join(f'"{term.replace(chr(34), "")}"' for term in terms if term.strip())
 
 
+def row_passages(store: Store, snapshot: dict[str, Any], source_id: str) -> list[dict[str, Any]]:
+    """The passages a report step may read for one row: the one way report code reads them (D114).
+
+    A row whose snapshot froze its passages (a row without PDF text when the snapshot was taken) gets exactly those, by
+    id, whatever the source gained since; a PDF that arrives later needs a new snapshot. Any other row reads the
+    source's current passages, as before.
+    """
+    frozen = frozen_passage_ids(snapshot).get(source_id)
+    if frozen is None:
+        return store.passages_for(source_id)
+    passages = []
+    for passage_id in frozen:
+        try:
+            passages.append(store.passage(passage_id))
+        except NotFound:
+            continue
+    return passages
+
+
+def allowed_passage(snapshot: dict[str, Any], passage: dict[str, Any]) -> bool:
+    """Whether a passage may reach a report step: any passage of an unfrozen row, only the frozen ones of a frozen row."""
+    frozen = frozen_passage_ids(snapshot).get(passage["source_version_id"])
+    return frozen is None or _passage_id(passage) in frozen
+
+
 def usable_cells(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     """The snapshot cells a report section may cite or count (D68). A source without text ('inaccessible') and a value
     without linked evidence ('not_verified') stay in Table I and the basis note, but are neither evidence nor a count."""
@@ -66,7 +91,8 @@ def select_evidence(store: Store, snapshot: dict[str, Any], section_id: str, pla
 
     del prior_summaries
     source_ids = evidence_row_ids(snapshot)
-    passages_by_source = {source_id: store.passages_for(source_id) for source_id in source_ids}
+    passages_by_source = {source_id: row_passages(store, snapshot, source_id) for source_id in source_ids}
+    frozen = frozen_passage_ids(snapshot)
     passage_by_id = {_passage_id(passage): passage for passages in passages_by_source.values() for passage in passages}
     selected_passages: list[dict[str, Any]] = []
     selected_cells: list[dict[str, Any]] = []
@@ -165,13 +191,17 @@ def select_evidence(store: Store, snapshot: dict[str, Any], section_id: str, pla
 
     query = _query(plan)
     cells = usable_cells(snapshot)
+
+    def search(ids: list[str], limit: int) -> list[dict[str, Any]]:
+        # A frozen row is ranked only within its frozen passages, before the limit (D114).
+        return store.search_passages(ids, query, limit, frozen) if frozen else store.search_passages(ids, query, limit)
     if section_id == "III":
         for entry in plan.get("glossary", []):
             passage = passage_by_id.get(entry["passage_id"])
             if passage is not None:
                 add_passage(passage)
         # One ranked passage per possible claim is enough; the token budget remains the final admission gate.
-        ranked = store.search_passages(source_ids, query, MAX_RANKED_PASSAGES) if query else []
+        ranked = search(source_ids, MAX_RANKED_PASSAGES) if query else []
         for passage in ranked:
             add_passage(passage)
         # Preserve at least one passage per source when the lexical query did not return one.
@@ -184,7 +214,7 @@ def select_evidence(store: Store, snapshot: dict[str, Any], section_id: str, pla
         table_columns = [column["column_id"] for column in snapshot.get("columns", [])]
         add_cells(cells, list(dict.fromkeys(axis_columns + table_columns + [item["column_id"] for item in cells])))
         for source_id in source_ids:
-            ranked = store.search_passages([source_id], query, 2) if query else passages_by_source[source_id][:2]
+            ranked = search([source_id], 2) if query else passages_by_source[source_id][:2]
             for passage in ranked[:2]:
                 add_passage(passage)
     elif section_id == "V":
@@ -200,7 +230,7 @@ def select_evidence(store: Store, snapshot: dict[str, Any], section_id: str, pla
         varied_sources = list(dict.fromkeys(item["source_version_id"] for item in axis_cells
                                              if item["column_id"] in varied_columns))
         for source_id in varied_sources:
-            ranked = store.search_passages([source_id], query, 1) if query else passages_by_source[source_id][:1]
+            ranked = search([source_id], 1) if query else passages_by_source[source_id][:1]
             for passage in ranked[:1]:
                 add_passage(passage)
     elif section_id == "VI":

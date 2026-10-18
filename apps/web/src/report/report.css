@@ -62,6 +62,8 @@
 .evidence-report-edit-check details[open] .opened, .evidence-report-removed[open] .opened { display: block; }
 .evidence-report-edit-check ul, .evidence-report-removed ul { padding-left: 22px; }
 .evidence-report-no-citation { color: var(--muted); font-family: var(--font-sans); font-size: 12px; }
+/* D114: a claim, reference or Table I row read from an abstract only. */
+.evidence-report-depth { color: var(--muted); font-family: var(--font-sans); font-size: 12px; }
 .evidence-report-removed { margin: 8px 0; }
 .evidence-report-edit fieldset { min-width: 0; margin: 0; padding: 10px 0; border: 0; border-top: 1px solid var(--line); }
 .evidence-report-edit legend { color: var(--ink); font-weight: 550; }

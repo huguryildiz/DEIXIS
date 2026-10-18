@@ -298,5 +298,6 @@ def test_skill_package_hash_unchanged_by_l1():
     # D99 (Verify Citations V3) adds the citation-check method file and its SKILL.md routing line; reverse citation
     # search R1 the statement-check method file and its routing line, R2 the claim paragraph in SKILL.md. D105 (V5 pilot)
     # adds the table-row paragraph and the baseline-method sentence to the citation-check method file. R5 adds the
-    # search query's field paragraph to search-query.md.
-    assert load_skill_package().package_hash == "sha256:b07fe3b529bbbd14c14b206553e5ae370e8f2da52ceb284aa990fa14dbdc4912"
+    # search query's field paragraph to search-query.md, D114 the
+    # abstract-only line to the report rules.
+    assert load_skill_package().package_hash == "sha256:52c060dfa56af64c27146cac90be96208b4ff3af5a180beb82f7b57abc13ba61"

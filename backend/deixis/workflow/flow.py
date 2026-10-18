@@ -47,6 +47,7 @@ from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow.search_page import Page
 from deixis.workflow import abstract_stage
 from deixis.workflow import small_batch
+from deixis.workflow import table_sources
 from deixis.workflow import spend
 from deixis.workflow import fast_path
 from deixis.workflow import intent as intent_rules
@@ -4286,7 +4287,9 @@ class ResearchFlow:
 
     def _left_out(self, run: dict[str, Any], svid: str) -> bool:
         """Whether an app-started fill (`included_only`, D63) must not start reading a source excluded since it was planned."""
-        return bool((run.get("target") or {}).get("included_only")) and svid not in self.store.included_sources(run["research_id"])
+        # Read live at each call, never cached for the run: a person may exclude the source meanwhile (D114).
+        return bool((run.get("target") or {}).get("included_only")) and not table_sources.in_table_sources(
+            self.store, run["research_id"], run["target"]["table_id"], svid)
 
     def _fill_stopped(self, run_id: str, scope_revision: int) -> bool:
         """Whether a returned fill call must defer or permanently skip updating its cells."""

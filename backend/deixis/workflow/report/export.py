@@ -107,6 +107,8 @@ def to_markdown(view: dict[str, Any], *, title: str, corpus: dict[str, int] | No
                 source, count = export_text.basis_source_fields(row, tr, _md)
                 lines.append(f"- {source}: {count}")
             lines.append("")
+        if basis.get("abstract_members"):
+            lines.extend([f"- {export_text.abstract_member_field(row, tr, _md)}" for row in basis["abstract_members"]] + [""])
     missing = view.get("missing_rows")
     if missing:
         lines.extend([export_text.missing_rows_sentence(missing, tr), ""])
@@ -166,6 +168,8 @@ def to_markdown(view: dict[str, Any], *, title: str, corpus: dict[str, int] | No
                 links = list(dict.fromkeys(link["ref_number"] for link in claim["evidence"]))
                 if links:
                     fragment += " " + ", ".join(f"[{number}]" for number in links)
+                if mark := export_text.claim_depth_mark(claim, tr):
+                    fragment += " " + _md(mark)
                 fragments.append(fragment)
             lines.extend([" ".join(fragments), ""])
             if table and paragraph == first_table_paragraph:
@@ -187,7 +191,10 @@ def to_markdown(view: dict[str, Any], *, title: str, corpus: dict[str, int] | No
             fields.append(f'DOI: {_md(ref["doi"])}')
         if ref.get("version_label"):
             fields.append(f'({_md(ref["version_label"])})')
-        lines.extend([f'[{ref["number"]}] ' + ", ".join(fields), ""])
+        line = f'[{ref["number"]}] ' + ", ".join(fields)
+        if ref.get("abstract_only"):
+            line += ". " + _md(export_text.abstract_reference_note(tr))  # D114
+        lines.extend([line, ""])
     lines.extend([export_text.corpus_footer(corpus, tr), ""])
     anchor = export_text.anchor_note(view, tr)
     review_note = export_text.review_note(view, tr, _md)

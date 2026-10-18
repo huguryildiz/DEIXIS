@@ -980,6 +980,8 @@ export type TableRow = {
   source_version_id: string; work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; version_label: string | null
   selection_state: 'included' | 'excluded' | 'pending' | null; added_by: 'included_at_creation' | 'included_later' | 'user'; added_at: string; removed_at: string | null
   access_level: 'pdf_available' | 'abstract' | 'metadata'
+  // Why the row is in the table's report (D114): an included source, a work read from its abstract only, or not in it.
+  report_membership?: 'included' | 'abstract_only' | null
 }
 export type CellValue = { option_ids?: string[]; number?: number; unit?: string | null; as_stated?: string | null; answer?: 'yes' | 'no'; text?: string }
 export type CellEvidence = {
@@ -1014,7 +1016,9 @@ export type TableView = {
 export type TableSummary = { id: string; title: string; version: number; answer_version: number | null; created_at: string; updated_at: string; rows: number; columns: number; access: { pdf_available: number; abstract: number; metadata: number }; auto_columns: number
   report_ready: { ready: boolean; cells_left: number; cells_total: number; included_rows: number } }
 export type ReportBasis = { sources: number; full_text: number; abstract_only: number; metadata_only: number; cells_total: number; cells_unverified: number
-  unverified_sources: { source_version_id: string; source_key: string | null; title: string; cells_unverified: number; cells_total: number }[] }
+  unverified_sources: { source_version_id: string; source_key: string | null; title: string; cells_unverified: number; cells_total: number }[]
+  // D114: the sources in the report only because they were read from their abstracts (no full text obtained).
+  abstract_members?: { source_version_id: string; source_key: string | null; title: string }[] }
 export type ReportSummary = { id: string; status: 'in_progress' | 'valid' | 'draft'; report_version: number | null; created_at: string }
 export type ReportLink = { link_id: string; passage_id: string | null; cell_id: string | null; source_version_id: string; ref_number: number; open_passage_id: string | null
   anchor_text: string | null; anchor_match: 'exact' | 'normalized' | 'fuzzy' | null }
@@ -1022,7 +1026,9 @@ export type ReportClaim = { id: string; claim_key: string; version: number; text
   warnings: { kind: string; detail?: string }[]; revisions: { id: string; kind: 'human_edit' | 'human_restore'; restored_from: string | null; text: string; note: string | null; created_at: string; warnings: { kind: string; detail?: string }[]; link_count: number | null; link_ids: string[] | null; changes_current: boolean }[]
   support_type: 'source_stated' | 'analyst_inference'; paragraph: number; table_ref: string | null; equation_ref: string | null; evidence: ReportLink[]
   original_evidence_count: number; removed_links: (Pick<ReportLink, 'link_id' | 'passage_id' | 'cell_id' | 'source_version_id' | 'anchor_text' | 'anchor_match'> & { title?: string; source_key?: string | null })[]
-  evidence_basis: 'direct' | 'none'; support_type_note: 'model_written_type' | null; edited_basis: string[] }
+  evidence_basis: 'direct' | 'none'; support_type_note: 'model_written_type' | null; edited_basis: string[]
+  // D114: the claim rests wholly or partly on what was read from an abstract, from its own links, body refs and gap refs.
+  depth_mark?: 'abstract' | 'mixed' | null }
 export type EditCheck = { id: string; created_at: string; checker_version: string; current: boolean; errors: number; warnings: number; skipped: number; edited_claims: number
   items: { rule: string; section_id: string | null; detail: string; severity: 'error' | 'warning' }[]
   skipped_rules: { rule: string; section_id: string | null; claim_key: string | null; reason: string }[]; rules_run: string[]; not_checked: string[] }
@@ -1042,8 +1048,8 @@ export type ReportDetail = ReportSummary & { language: string; updated_at: strin
   // `stale`: every cited cell or row that differs from the snapshot, including changes a section marked as seen.
   evidence_changes: { any: boolean; changed_cells: number; removed_sources: number; added_sources: number; revised_columns: number; not_checked: string[]
     stale?: { key: string; kind: 'cell_changed' | 'source_removed'; source_version_id: string; cell_id?: string; column_id?: string }[] }
-  references: { number: number; source_version_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null; doi: string | null; version_label: string | null; open_passage_id: string | null }[]
-  table_i: { columns: { column_id: string; name: string; answer_format: AnswerFormat; options: ColumnOption[] | null }[]; rows: { source_version_id: string; ref_number: number | null; source_key: string | null; title: string | null; failed?: boolean }[]
+  references: { number: number; source_version_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null; doi: string | null; version_label: string | null; open_passage_id: string | null; abstract_only?: boolean }[]
+  table_i: { columns: { column_id: string; name: string; answer_format: AnswerFormat; options: ColumnOption[] | null }[]; rows: { source_version_id: string; ref_number: number | null; source_key: string | null; title: string | null; failed?: boolean; abstract_only?: boolean }[]
     cells: { cell_id: string; column_id: string; source_version_id: string; state: CellState; value: CellValue | null; evidence_passage_ids: string[] }[] } | null
   run: { id: string; status: RunStatus; pause_reason: string | null; error?: { rule: string; section_id: string | null; detail: string }[] | null } | null; table_id: string | null }
 export type TableTemplate = { id: string; name: string; columns: ColumnSpec[]; created_at: string }

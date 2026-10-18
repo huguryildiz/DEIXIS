@@ -13,6 +13,7 @@ from typing import Any
 
 from deixis.domain.rules import RevisionConflict
 from deixis.storage.db import dumps, transaction
+from deixis.workflow import table_sources
 from deixis.workflow.store import Store
 from deixis.workflow.tables import MAX_FILL_SOURCES, InvalidTableInput, TableStore
 
@@ -37,11 +38,15 @@ def after_answer(store: Store, run: dict[str, Any]) -> None:
 
 
 def start(store: Store, research_id: str, idempotency_key: str | None) -> dict[str, Any]:
-    """Create the table of the included sources and queue the column proposal that opens the chain."""
+    """Create the table of the research's sources and queue the column proposal that opens the chain.
+
+    The table holds the included sources and the works read from their abstracts only (D114); either kind is enough to
+    build it. `pipeline.included` keeps its name in stored runs and counts all of them.
+    """
     tables = TableStore(store)
     base = f"{PIPELINE}:{idempotency_key}" if idempotency_key else None
     with transaction(store.conn):
-        included = store.included_sources(research_id)
+        included = table_sources.table_sources(store, research_id)
         if not included:
             raise RevisionConflict("Include at least one source before building the study table")
         table_id = tables.create_table(research_id, "Study table", None, None, f"{base}:table" if base else None)

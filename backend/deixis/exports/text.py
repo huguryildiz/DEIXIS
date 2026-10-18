@@ -68,6 +68,8 @@ TR: dict[str, str] = {
     "Year": "Yıl",
     "Version": "Sürüm",
     "Access": "Erişim",
+    "In report": "Raporda",
+    "Yes, abstract only": "Evet, yalnızca özet",
     "{name} — evidence": "{name} — kanıt",
     "published version": "yayımlanmış sürüm",
     "accepted manuscript": "kabul edilmiş makale",

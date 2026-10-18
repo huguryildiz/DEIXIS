@@ -13,6 +13,7 @@ import time
 import pytest
 
 from deixis.domain import contracts, skill
+from deixis.workflow import table_sources
 from deixis.workflow import fast_path, intent
 from helpers import make_pdf
 from test_abstract_flow import Pool, app_for, client_of, discover, wait, work
@@ -112,6 +113,8 @@ def test_table_and_compare_with_an_included_source_open_one_study_table_and_no_a
             included = store.included_sources(rid)
             tables = tables_of(store, rid)
             rows = rows_of(store, tables[0]["id"]) if tables else None
+            # D114: the study table also holds the works read from their abstracts only.
+            membership = table_sources.membership(store, rid, tables[0]["id"]) if tables else {}
             columns = runs_of(store, rid, "table_columns")
             answers = runs_of(store, rid, "answer")
             frozen = store.run(discovery["id"])["budget"]["fast_path"]
@@ -126,7 +129,9 @@ def test_table_and_compare_with_an_included_source_open_one_study_table_and_no_a
         assert frozen["auto_answer"] is False and frozen["after_discovery"] == "study_table"
         assert answers == []
         assert len(included) == 1 and len(tables) == 1 and tables[0]["title"] == "Study table"
-        assert rows == {(included[0], "included_at_creation")}
+        assert rows == {(svid, "included_at_creation") for svid in membership}
+        assert membership[included[0]] == "included"
+        assert set(membership.values()) <= {"included", "abstract_only"}
         assert len(columns) == 1 and columns[0]["idempotency_key"] == f"{rid}:study_table:intent:{discovery['id']}:columns"
         assert again == (tables, columns)
         assert view["intent_outcome"] is None

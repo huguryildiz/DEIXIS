@@ -46,6 +46,10 @@ given to you as rows and cited cells, and you discuss it — you do not restate 
   order they should read, starting at 1.
 - Do not write a page, equation, table, figure or section number into claim text; use `table_ref`/`equation_ref`
   and the application inserts the printed number.
+- A source whose `access_level` is `abstract` was read from its abstract only: restrict what you say of it to
+  what its abstract states, say so when a claim rests on it, and never call it an included source. A `count`
+  may take its members from the included sources only; a source the table holds because its full text could not
+  be obtained is never counted, and the application rejects a count that names one.
 - A `count` claim ("4 of the 6 full-text sources...") must give the exact source_ids of the numerator and the
   denominator in the `count` field; the sentence's own numbers must match those counts, and every member you
   name must actually carry the column value and reading depth your sentence claims — the application checks

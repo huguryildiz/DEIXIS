@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from deixis.storage.db import transaction
+from deixis.workflow import table_sources
 from .store import NotFound
 
 if TYPE_CHECKING:
@@ -114,8 +115,9 @@ class ReviewReader:
         return self._conn.execute("SELECT MAX(updated_at) FROM selections WHERE research_id = ?", (research_id,)).fetchone()[0]
 
     def included_rows(self, research_id, table_id):
-        # This is report.snapshot.included_table_rows' active-row/included-source boundary.
-        included = set(self.included_sources(research_id))
+        # This is report.snapshot.included_table_rows' active-row/report-source boundary (D114: a table made from the
+        # research also holds the works read from their abstracts only).
+        included = set(table_sources.table_sources(self._store, research_id, table_id))
         return [r[0] for r in self._conn.execute(
             "SELECT t.source_version_id FROM table_rows t JOIN source_versions v ON v.id = t.source_version_id"
             " JOIN evidence_tables et ON et.id = t.table_id"

@@ -15,7 +15,7 @@ from deixis.workflow.report import assembly, gaps, review_methodology, selection
 from deixis.workflow.report.plan import freeze_plan
 from deixis.workflow.report.review import run_report_review
 from deixis.workflow.report.store import ReportStore
-from deixis.workflow.report.snapshot import evidence_row_ids
+from deixis.workflow.report.snapshot import countable_row_ids, evidence_row_ids
 from deixis.workflow.store import NotFound
 from deixis.workflow.tables import report_ready
 
@@ -118,6 +118,8 @@ def _validation_context(flow: ResearchFlow, report_id: str, snapshot: dict, sect
         if row is None:
             raise ValueError(f"accepted VI basis passage missing: {pid}")
         p = dict(row)
+        if not selection.allowed_passage(snapshot, p):
+            continue  # a page a frozen abstract-only row gained after the snapshot (D114)
         basis_passages.append({"passage_id": pid, "source_id": p["source_version_id"],
             "reading_depth": "abstract" if p["kind"] == "abstract" else "selected_sections",
             "locator": {"kind": p["kind"], "physical_page": p["physical_page"], "printed_label": p["printed_label"]},
@@ -127,7 +129,8 @@ def _validation_context(flow: ResearchFlow, report_id: str, snapshot: dict, sect
         if shown_chars > MAX_BASIS_PASSAGE_CHARS:
             basis_passages.pop()
             break
-    return {"source_ids": evidence_row_ids(snapshot), "column_ids": [c["column_id"] for c in snapshot["columns"]],
+    # Count members come from the frozen included rows only; a row read from its abstract only is never counted (D114).
+    return {"source_ids": countable_row_ids(snapshot), "column_ids": [c["column_id"] for c in snapshot["columns"]],
             "cells": [{name: c[name] for name in ("cell_id", "source_version_id", "column_id", "state", "value", "reading_depth")}
                       for c in selection.usable_cells(snapshot)],
             "accepted_gaps": accepted, "basis_cells": basis_cells, "basis_passages": basis_passages}
@@ -317,7 +320,7 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
     # none (an attached-PDF research has no abstract at all, and an empty allowlist leaves the plan unwritable).
     plan_passages = []
     for source_id in source_ids:
-        source_passages = flow.store.passages_for(source_id)
+        source_passages = selection.row_passages(flow.store, snapshot, source_id)
         passage = next((row for row in source_passages if row["kind"] == "abstract"), None)
         if passage is None:
             passage = next((row for row in source_passages if row["kind"] == "pdf_page"), None)

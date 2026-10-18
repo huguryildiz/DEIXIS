@@ -398,8 +398,8 @@ def test_limitations_input_contract_accepts_six_and_seven_but_refuses_bad_sevent
         bad["report_target"]["limitations_core"]["items"][6][field] = value
         assert "step_input_schema_invalid" in {i.code for i in contracts.check_step_input(bad)}
     # D243 changes shared answer instructions, the clean start (D1) the method cleanup and UI parity S5a the column
-    # suggestion frame, S22a, D66 and D92 the follow-up method files, D51 and D87 the report writing rules, D98 the citation-check file, R1 the statement-check file, R2 the claim paragraph, R5 the search query's field; failed-row input rules stay fixed.
-    assert skill.load_skill_package().package_hash == "sha256:b07fe3b529bbbd14c14b206553e5ae370e8f2da52ceb284aa990fa14dbdc4912"
+    # suggestion frame, S22a, D66 and D92 the follow-up method files, D51 and D87 the report writing rules, D98 the citation-check file, R1 the statement-check file, R2 the claim paragraph, R5 the search query's field, D114 the abstract-only report line; failed-row input rules stay fixed.
+    assert skill.load_skill_package().package_hash == "sha256:52c060dfa56af64c27146cac90be96208b4ff3af5a180beb82f7b57abc13ba61"
 
 
 def test_three_full_text_absence_rows_have_identical_candidates_with_failed_row(state):
@@ -473,7 +473,9 @@ def test_old_snapshot_and_code_sections_keep_their_shapes_and_output(state):
                     "columns": [{"column_id": c["id"], "revision": c["current_revision"], "name": c["name"],
                                  "instruction": c["instruction"], "answer_format": c["answer_format"]}
                                 for c in TableStore(store).target_columns(rid, table)],
-                    "rows": [{"source_version_id": source, "version_label": version, "reading_depth": "abstract"}],
+                    # D114: a row records why it is in the report, and a row without PDF text its frozen abstract.
+                    "rows": [{"source_version_id": source, "version_label": version, "reading_depth": "abstract",
+                              "membership": "included", "passage_ids": [passage]}],
                     "cells": [{"cell_id": c["cell_id"], "cell_revision_id": c["cell_revision_id"], "column_id": c["column_id"],
                                "source_version_id": source, "state": "value", "value": {"text": "SYNTHETIC bounded formulation"},
                                "reading_depth": "abstract", "evidence": [{"passage_id": passage, "quote": CELL_QUOTE}]}

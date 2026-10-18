@@ -312,7 +312,8 @@ def test_report_view_returns_ordered_sections_claims_and_citation_anchors(tmp_pa
     assert cited_claims
     assert all({"id", "version", "claim_key", "text", "model_text", "edited", "warnings", "revisions",
                 "support_type", "evidence", "paragraph", "table_ref", "equation_ref", "original_evidence_count",
-                "removed_links", "evidence_basis", "support_type_note", "edited_basis"} == set(claim) for claim in cited_claims)
+                "removed_links", "evidence_basis", "support_type_note", "depth_mark", "edited_basis"} == set(claim)
+               for claim in cited_claims)
     assert all(set(link) == {"link_id", "passage_id", "cell_id", "source_version_id", "ref_number", "anchor_text", "anchor_match", "open_passage_id"}
                for claim in cited_claims for link in claim["evidence"])
     assert all(link["anchor_text"] for claim in cited_claims for link in claim["evidence"])

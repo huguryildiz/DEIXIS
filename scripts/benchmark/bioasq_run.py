@@ -1,9 +1,13 @@
 """Network side of the BioASQ benchmark: sample, gold metadata, system runs, scoring.
 
     uv run python scripts/benchmark/bioasq_run.py prepare --n 100
+    uv run python scripts/benchmark/bioasq_run.py preflight --base http://127.0.0.1:8766 --data-dir .local/bioasq/data
+    uv run python scripts/benchmark/bioasq_run.py deixis --base http://127.0.0.1:8766 --data-dir .local/bioasq/data
     uv run python scripts/benchmark/bioasq_run.py score
 
 Outputs live in .local/bioasq/ (ignored); each system writes one JSON line per question to runs/<system>.jsonl.
+DEIXIS writes two systems from one run, deixis_fused (reranker off) and deixis_rerank (reranker on), with the settings
+and stop rule of harness.py; runs/deixis.jsonl is the 17 Oct run (Gemini embedding, reranker off).
 """
 from __future__ import annotations
 
@@ -17,9 +21,10 @@ from pathlib import Path
 import httpx
 
 try:
-    from . import bioasq
+    from . import bioasq, harness
 except ImportError:
     import bioasq
+    import harness
 
 ROOT = Path(__file__).resolve().parents[2]
 HOME = ROOT / '.local/bioasq'
@@ -75,7 +80,9 @@ def secret(name):
 
 
 def done_ids(path):
-    return {r['id'] for r in read_jsonl(path) if not r.get('error')}
+    """Every question written, failures included: a failure is scored as zero, and running it again until it
+    succeeds would replace that zero with a success. A stop (budget) writes no row, so it is run later."""
+    return {r['id'] for r in read_jsonl(path)}
 
 
 def write_query(client, question, raw=False):
@@ -139,7 +146,7 @@ def repair_openalex(args):
     questions = {q['id']: q for q in json.loads((HOME / 'sample.json').read_text())['questions']}
     with httpx.Client() as client:
         for qid, old in rows.items():
-            if not (old.get('error') and old.get('query')):
+            if not (old.get('error') and old.get('query')) or old.get('rejected_query'):  # one repair per question
                 continue
             row = {'id': qid, 'rejected_query': old['query']}
             try:
@@ -172,25 +179,20 @@ class Deixis:
         reply.raise_for_status()
         return reply.json()
 
+    def put(self, path, body):
+        reply = self.http.put(path, json=body)
+        reply.raise_for_status()
+        return reply.json()
+
+    def get(self, path):
+        reply = self.http.get(path)
+        reply.raise_for_status()
+        return reply.json()
+
     def db(self):
         conn = sqlite3.connect((self.data_dir / 'library.sqlite').resolve().as_uri() + '?mode=ro', uri=True)
         conn.row_factory = sqlite3.Row
         return conn
-
-    def wait_list(self, run_id, timeout):
-        """The frozen small-batch list's order, or the run's stopping state if it ends or pauses first."""
-        start = time.time()
-        while time.time() - start < timeout:
-            with closing(self.db()) as conn:
-                step = conn.execute("SELECT status, output_json FROM run_steps WHERE run_id=? AND "
-                                    "operation_key='small_batch:v1:list'", (run_id,)).fetchone()
-                run = conn.execute('SELECT status, pause_reason, stage FROM runs WHERE id=?', (run_id,)).fetchone()
-            if step and step['status'] == 'succeeded':
-                return json.loads(step['output_json'])['order'], None
-            if run['status'] in ('paused', 'failed', 'cancelled', 'completed'):
-                return None, f"run {run['status']} at {run['stage']}: {run['pause_reason']}"
-            time.sleep(2)
-        return None, 'timeout'
 
     def records(self, order):
         with closing(self.db()) as conn:
@@ -217,45 +219,79 @@ class Deixis:
                                    for item in payload.get('results', [])}
         return self.payloads[path].get(work.rsplit('/', 1)[-1])
 
-    def failed_steps(self, run_id, keys=('source_similarity',)):
-        """Steps whose failure changes the ranking (the embedding signal); such a question is not scored."""
-        with closing(self.db()) as conn:
-            return [r[0] for r in conn.execute(
-                f"SELECT operation_key FROM run_steps WHERE run_id=? AND status='failed' AND operation_key IN "
-                f"({','.join('?' * len(keys))})", (run_id, *keys))]
+
+def ask_deixis(server, question):
+    """Start one discovery run as a user would; returns (research id, run id)."""
+    research = server.post('/api/researches', {
+        'question': question, 'effort': harness.DEPTH, 'model_connection': 'anthropic',
+        'requested_model': MODEL, 'reasoning_effort': EFFORT, 'review_mode': 'off'})['research']
+    run = server.post(f"/api/researches/{research['id']}/runs", {'kind': 'discovery'})
+    return research['id'], run['id']
+
+
+def measured_run(args, home, questions, server, records):
+    """Arms B and C for each question from one DEIXIS run with the plan's settings (harness module docstring).
+
+    `records(order, research_id)` turns list positions into scored rows. A product failure (the run failed) is a row
+    scored as zero; a pause, a timeout, a wrong embedding or a rerank that did not apply stops the whole run."""
+    settings = harness.stamp(harness.configure(server), MODEL, EFFORT) | {'keep': args.keep}  # positions kept per row
+    outs = {arm: home / f'runs/deixis_{arm}.jsonl' for arm in harness.ARMS}
+    outs['fused'].parent.mkdir(exist_ok=True)
+    skip = harness.done_in_all(list(outs.values()), read_jsonl)
+    todo = [q for q in questions if q['id'] not in skip]
+    print(f"{len(skip)} done, {len(todo)} to run; settings {json.dumps(settings)}")
+    with httpx.Client() as client:
+        for q in todo:
+            if why := harness.budget_stop(client, secret('OPENALEX_API_KEY'), args.prepaid_floor):
+                raise harness.Stop(f'{why}; {len(skip)} of {len(questions)} questions done')
+            row, start = {'id': q['id']}, time.time()
+            try:
+                row['research_id'], row['run_id'] = ask_deixis(server, q['body'])
+                listing, state = harness.wait_listing(server, row['run_id'], args.timeout)
+                server.http.post(f"/api/runs/{row['run_id']}/cancel")  # the list is frozen; reading is not measured
+            except Exception as exc:
+                harness.stopped(home, row, f'{type(exc).__name__}: {exc}'[:300], len(skip), len(questions))
+            row['seconds'] = round(time.time() - start, 1)
+            if listing is None and state['status'] != 'failed':
+                harness.stopped(home, row | {'state': state}, f"run {state['status']}: {state.get('reason')}",
+                                len(skip), len(questions))
+            rows = {}
+            if listing is None:
+                with closing(server.db()) as conn:
+                    if found := harness.failed_run_problems(conn, row['run_id']):
+                        harness.stopped(home, row | {'state': state}, '; '.join(found), len(skip), len(questions))
+                rows = dict.fromkeys(harness.ARMS, row | {'error': f"run failed at {state['stage']}: {state['reason']}"})
+            else:
+                with closing(server.db()) as conn:
+                    if found := harness.problems(conn, row['run_id'], listing):
+                        harness.stopped(home, row, '; '.join(found), len(skip), len(questions))
+                    rerank = harness.rerank_info(conn, row['run_id'], listing)
+                orders = harness.arms(listing)
+                by_svid = {r['svid']: r for r in records(orders['rerank'], row['research_id'])}
+                for arm, order in orders.items():
+                    rows[arm] = row | {'pool': len(order), 'rerank': rerank,
+                                       'records': [by_svid[svid] for svid in order[:args.keep]]}
+            for arm, out in outs.items():
+                with out.open('a') as f:
+                    f.write(json.dumps(rows[arm] | {'settings': settings}) + '\n')
+            skip.add(q['id'])
+            print(q['id'], rows['rerank'].get('error') or f"pool {rows['rerank']['pool']}, {row['seconds']} s")
 
 
 def run_deixis(args):
-    out = HOME / 'runs/deixis.jsonl'
-    out.parent.mkdir(exist_ok=True)
-    skip = done_ids(out)
     server = Deixis(args.base, args.data_dir)
     questions = json.loads((HOME / 'sample.json').read_text())['questions'][:args.limit]
-    for q in questions:
-        if q['id'] in skip:
-            continue
-        row, start = {'id': q['id']}, time.time()
-        try:
-            research = server.post('/api/researches', {
-                'question': q['body'], 'effort': 'standard', 'model_connection': 'anthropic',
-                'requested_model': MODEL, 'reasoning_effort': EFFORT, 'review_mode': 'off'})['research']
-            run = server.post(f"/api/researches/{research['id']}/runs", {'kind': 'discovery'})
-            row |= {'research_id': research['id'], 'run_id': run['id']}
-            order, row['error'] = server.wait_list(run['id'], args.timeout)
-            server.http.post(f"/api/runs/{run['id']}/cancel")  # the list is frozen; reading PDFs is not measured
-            if failed := server.failed_steps(run['id']):
-                row['error'] = f"failed: {', '.join(failed)}"
-            if order is not None and not row['error']:
-                row['pool'] = len(order)
-                row['records'] = server.records(order[:args.keep])
-        except Exception as exc:
-            row['error'] = f'{type(exc).__name__}: {exc}'[:500]
-        if not row.get('error'):
-            row.pop('error', None)
-        row['seconds'] = round(time.time() - start, 1)
-        with out.open('a') as f:
-            f.write(json.dumps(row) + '\n')
-        print(q['id'], row.get('error') or f"pool {row['pool']}, {row['seconds']} s")
+    try:
+        measured_run(args, HOME, questions, server, lambda order, _rid: server.records(order))
+    except harness.Stop as exc:
+        raise SystemExit(f'stopped: {exc}')
+
+
+def preflight(args):
+    try:
+        print(json.dumps(harness.preflight(Deixis(args.base, args.data_dir), secret), indent=1))
+    except harness.Stop as exc:
+        raise SystemExit(f'preflight failed: {exc}')
 
 
 def loss(args):
@@ -288,9 +324,11 @@ def loss(args):
 def score(args):
     questions = json.loads((HOME / 'sample.json').read_text())['questions']
     meta = json.loads((HOME / 'gold_meta.json').read_text())
-    systems = {}
+    systems, arms = {}, {}
     for path in sorted((HOME / 'runs').glob('*.jsonl')):
-        rows = {r['id']: r for r in read_jsonl(path)}
+        raw = read_jsonl(path)
+        arms[path.stem] = harness.check_arm(path.stem, raw)  # every row, also those a rerun replaced
+        rows = {r['id']: r for r in raw}
         per = {}
         for q in questions:
             row = rows.get(q['id'])
@@ -305,12 +343,12 @@ def score(args):
     report = {}
     for name, per in systems.items():
         report[name] = {'questions': len(per), 'failed': sum(v is None for v in per.values()),
-                        **{f'@{k}': bioasq.macro(per, k) for k in bioasq.DEPTHS}}
-        print(name, json.dumps(report[name]))
-    if 'deixis' in systems and 'openalex' in systems:
-        report['deixis_minus_openalex'] = {f'@{k}': bioasq.paired_bootstrap(systems['deixis'], systems['openalex'], k)
-                                           for k in bioasq.DEPTHS}
-        print('deixis − openalex', json.dumps(report['deixis_minus_openalex']))
+                        'mean_over': 'questions without failure; the paired differences count a failure as 0',
+                        **{f'@{k}': bioasq.macro(per, k) for k in bioasq.DEPTHS}, **arms[name]}
+        print(name, json.dumps({k: v for k, v in report[name].items() if k != 'settings'}))
+    for name, diff in harness.comparisons(systems, bioasq.paired_bootstrap, bioasq.DEPTHS).items():
+        report[name] = diff
+        print(name, json.dumps(diff))
     (HOME / 'report.json').write_text(json.dumps(report, indent=1))
 
 
@@ -330,7 +368,13 @@ def main():
     d.add_argument('--limit', type=int, default=None)
     d.add_argument('--keep', type=int, default=400, help='list positions kept before the time filter')
     d.add_argument('--timeout', type=int, default=900)
+    d.add_argument('--prepaid-floor', type=float, default=None,
+                   help='spend prepaid OpenAlex credit, stopping once the balance falls below this many USD')
     d.set_defaults(fn=run_deixis)
+    pf = sub.add_parser('preflight')
+    pf.add_argument('--base', required=True)
+    pf.add_argument('--data-dir', required=True)
+    pf.set_defaults(fn=preflight)
     sub.add_parser('score').set_defaults(fn=score)
     lo = sub.add_parser('loss')
     lo.add_argument('--data-dir', required=True)

@@ -1,14 +1,16 @@
 """Network side of the LitSearch benchmark: sample, gold resolution, system runs, scoring, route breakdown.
 
-    uv run python scripts/benchmark/litsearch_run.py prepare --n 50
+    uv run python scripts/benchmark/litsearch_run.py prepare --n 200
     uv run python scripts/benchmark/litsearch_run.py openalex
-    uv run python scripts/benchmark/litsearch_run.py deixis --base http://127.0.0.1:8766 --data-dir .local/litsearch/deixis-data
+    uv run python scripts/benchmark/litsearch_run.py preflight --base http://127.0.0.1:8766 --data-dir .local/litsearch/data
+    uv run python scripts/benchmark/litsearch_run.py deixis --base http://127.0.0.1:8766 --data-dir .local/litsearch/data
     uv run python scripts/benchmark/litsearch_run.py score
 
 Only the 50 KB `query` table is downloaded (Hugging Face datasets-server JSON, no parquet); the 2.9 GB corpus is not
 needed because gold papers are resolved through Semantic Scholar and OpenAlex. Outputs live in .local/litsearch/
 (ignored); each system writes one JSON line per question to runs/<system>.jsonl, and a rerun skips finished questions.
-An OpenAlex budget or rate-limit reply stops the run and prints how many questions are done.
+DEIXIS writes two systems from one run, deixis_fused (reranker off) and deixis_rerank (reranker on), with the settings
+and stop rule of harness.py. An OpenAlex budget or rate-limit reply stops the run and prints how many questions are done.
 """
 from __future__ import annotations
 
@@ -21,11 +23,12 @@ from pathlib import Path
 import httpx
 
 try:
-    from . import litsearch
-    from .bioasq_run import EFFORT, MODEL, Deixis, done_ids, read_jsonl, secret, write_query
+    from . import harness, litsearch
+    from .bioasq_run import Deixis, done_ids, measured_run, read_jsonl, secret, write_query
 except ImportError:
+    import harness
     import litsearch
-    from bioasq_run import EFFORT, MODEL, Deixis, done_ids, read_jsonl, secret, write_query
+    from bioasq_run import Deixis, done_ids, measured_run, read_jsonl, secret, write_query
 
 ROOT = Path(__file__).resolve().parents[2]
 HOME = ROOT / '.local/litsearch'
@@ -191,23 +194,7 @@ def run_openalex(args):
             print(q['id'], row.get('error') or f"{len(row['records'])} records")
 
 
-def prepaid_usd(client):
-    """The prepaid OpenAlex balance, read from a single-work request, which OpenAlex does not bill."""
-    reply = client.get(f'{OPENALEX}/W2171068337', params={'select': 'id'}, timeout=60,
-                       headers={'Authorization': f'Bearer {secret("OPENALEX_API_KEY")}'})
-    reply.raise_for_status()
-    return float(reply.headers['x-ratelimit-prepaid-remaining-usd'])
-
-
 class LitDeixis(Deixis):
-    def daily_remaining_usd(self, research_id):
-        """The free daily OpenAlex dollars left after this research's last OpenAlex request, if it stated them."""
-        with closing(self.db()) as conn:
-            row = conn.execute("SELECT json_extract(error_json, '$.rate_limit.\"x-ratelimit-remaining-usd\"') "
-                               "FROM search_runs WHERE research_id = ? AND provider = 'openalex' "
-                               "ORDER BY retrieved_at DESC LIMIT 1", (research_id,)).fetchone()
-        return float(row[0]) if row and row[0] is not None else None
-
     def records(self, order, research_id):
         """Every list position with its OpenAlex work, DOI, title and the routes (search or chain) that brought it."""
         with closing(self.db()) as conn:
@@ -232,54 +219,31 @@ class LitDeixis(Deixis):
 
 
 def run_deixis(args):
-    out = HOME / 'runs/deixis.jsonl'
-    out.parent.mkdir(exist_ok=True)
-    skip = done_ids(out)
+    """Arms B and C from one run per question; every list position is kept, since the route breakdown needs the pool."""
     server = LitDeixis(args.base, args.data_dir)
     questions = json.loads((HOME / 'sample.json').read_text())['questions'][:args.limit]
-    for q in questions:
-        if q['id'] in skip:
-            continue
-        row, start = {'id': q['id']}, time.time()
-        try:
-            research = server.post('/api/researches', {
-                'question': q['body'], 'effort': 'standard', 'model_connection': 'anthropic',
-                'requested_model': MODEL, 'reasoning_effort': EFFORT, 'review_mode': 'off'})['research']
-            run = server.post(f"/api/researches/{research['id']}/runs", {'kind': 'discovery'})
-            row |= {'research_id': research['id'], 'run_id': run['id']}
-            order, row['error'] = server.wait_list(run['id'], args.timeout)
-            server.http.post(f"/api/runs/{run['id']}/cancel")  # the list is frozen; reading PDFs is not measured
-            if order is not None:
-                row['pool'] = len(order)
-                row['records'] = server.records(order, research['id'])  # the whole pool: the breakdown needs it
-        except Exception as exc:
-            row['error'] = f'{type(exc).__name__}: {exc}'[:500]
-        if not row.get('error'):
-            row.pop('error', None)
-        row['seconds'] = round(time.time() - start, 1)
-        with out.open('a') as f:
-            f.write(json.dumps(row) + '\n')
-        print(q['id'], row.get('error') or f"pool {row['pool']}, {row['seconds']} s")
-        if args.prepaid_floor is not None:  # the owner allowed prepaid spending down to this balance
-            balance = prepaid_usd(server.http)
-            print(f'prepaid balance {balance:.4f} USD')
-            if balance < args.prepaid_floor:
-                print(f'stopped: prepaid balance below {args.prepaid_floor}; {len(done_ids(out))} of {len(questions)} '
-                      'questions done')
-                return
-            continue
-        left = server.daily_remaining_usd(row['research_id']) if row.get('research_id') else None
-        if (row.get('error') and 'budget' in row['error'].casefold()) or (left is not None and left <= 0):
-            print(f'stopped: OpenAlex daily budget spent; {len(done_ids(out))} of {len(questions)} questions done')
-            return
+    args.keep = None
+    try:
+        measured_run(args, HOME, questions, server, server.records)
+    except harness.Stop as exc:
+        raise SystemExit(f'stopped: {exc}')
+
+
+def preflight(args):
+    try:
+        print(json.dumps(harness.preflight(LitDeixis(args.base, args.data_dir), secret), indent=1))
+    except harness.Stop as exc:
+        raise SystemExit(f'preflight failed: {exc}')
 
 
 def score(args):
     questions = json.loads((HOME / 'sample.json').read_text())['questions']
     meta = json.loads((HOME / 'gold_meta.json').read_text())
-    systems, rows_by = {}, {}
+    systems, rows_by, arms = {}, {}, {}
     for path in sorted((HOME / 'runs').glob('*.jsonl')):
-        rows = rows_by[path.stem] = {r['id']: r for r in read_jsonl(path)}
+        raw = read_jsonl(path)
+        arms[path.stem] = harness.check_arm(path.stem, raw)  # every row, also those a rerun replaced
+        rows = rows_by[path.stem] = {r['id']: r for r in raw}
         per = {}
         for q in questions:
             row = rows.get(q['id'])
@@ -298,15 +262,16 @@ def score(args):
                        'unresolved': sorted(c for c in ids if not meta.get(c, {}).get('openalex'))}}
     for name, per in systems.items():
         report[name] = {'questions': len(per), 'failed': sum(v is None for v in per.values()),
-                        **{f'@{k}': litsearch.macro(per, k) for k in litsearch.DEPTHS}}
-        print(name, json.dumps(report[name]))
-    if 'deixis' in systems and 'openalex' in systems:
-        report['deixis_minus_openalex'] = {f'@{k}': litsearch.paired_bootstrap(systems['deixis'], systems['openalex'], k)
-                                           for k in litsearch.DEPTHS}
-        print('deixis − openalex', json.dumps(report['deixis_minus_openalex']))
-    if 'deixis' in rows_by:
-        report['deixis_routes'] = litsearch.route_breakdown(questions, rows_by['deixis'], meta)
-        print('deixis routes', json.dumps(report['deixis_routes']))
+                        'mean_over': 'questions without failure; the paired differences count a failure as 0',
+                        **{f'@{k}': litsearch.macro(per, k) for k in litsearch.DEPTHS}, **arms[name]}
+        print(name, json.dumps({k: v for k, v in report[name].items() if k != 'settings'}))
+    for name, diff in harness.comparisons(systems, litsearch.paired_bootstrap, litsearch.DEPTHS).items():
+        report[name] = diff
+        print(name, json.dumps(diff))
+    for name in ('deixis', 'deixis_rerank'):  # the pool is the same in both new arms; only the order differs
+        if name in rows_by:
+            report[f'{name}_routes'] = litsearch.route_breakdown(questions, rows_by[name], meta)
+            print(f'{name} routes', json.dumps(report[f'{name}_routes']))
     print('gold', json.dumps({k: v for k, v in report['gold'].items() if k != 'unresolved'}))
     (HOME / 'report.json').write_text(json.dumps(report, indent=1))
 
@@ -328,6 +293,10 @@ def main():
     d.add_argument('--prepaid-floor', type=float, default=None,
                    help='spend prepaid OpenAlex credit, stopping once the balance falls below this many USD')
     d.set_defaults(fn=run_deixis)
+    pf = sub.add_parser('preflight')
+    pf.add_argument('--base', required=True)
+    pf.add_argument('--data-dir', required=True)
+    pf.set_defaults(fn=preflight)
     sub.add_parser('score').set_defaults(fn=score)
     args = parser.parse_args()
     args.fn(args)

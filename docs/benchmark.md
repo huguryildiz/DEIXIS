@@ -151,29 +151,7 @@ OpenAlex (title and abstract search, up to 2,000 results each) to find the cause
 - Recall depends a little on provider speed, since Standard depth has stage deadlines.
 - A gold set is not exhaustive, and a passing benchmark is not scientific validation of DEIXIS's answers.
 
-## Reproduce
+## Run data
 
-Each set has a runner with `prepare`, the arm commands, `preflight` and `score`. Start a DEIXIS server on its own port
-with a temporary `DEIXIS_DATA_DIR`, never the library on 8765.
-
-```sh
-uv run python scripts/benchmark/bioasq_run.py prepare --n 100   # BioASQ zips under .local/bioasq/raw/ (free account)
-uv run python scripts/benchmark/bioasq_run.py openalex
-uv run python scripts/benchmark/bioasq_run.py openalex-repair
-uv run python scripts/benchmark/bioasq_run.py deixis --base http://127.0.0.1:8766 --data-dir .local/bioasq/data --prepaid-floor 1
-uv run python scripts/benchmark/bioasq_run.py score
-```
-
-`litsearch_run.py` and `eesurvey_run.py` have `prepare`, `openalex`, `preflight`, `deixis` and `score`; their `openalex` arm takes `--prepaid-floor` and repairs a rejected query itself. Code: `scripts/benchmark/` (`harness.py` holds the
-settings check, the stop rule and the budget floor). Tests: `tests/measurement/`.
-
-## Stored run data
-
-The DEIXIS data folders from the 18 Oct runs (library database and provider responses) are kept compressed next to each benchmark: `.local/litsearch/litsearch-data-2026-10-18.tar.zst` (709 MB, 4.4 GB unpacked) and `.local/bioasq/bioasq-data-2026-10-18.tar.zst` (451 MB, 3.0 GB unpacked). The ranking replay and the loss analysis (`scripts/benchmark/replay_ranking.py`, `check.py`, `bioasq_run.py loss`) read these folders, so unpack before rerunning them:
-
-```sh
-zstd -dc .local/litsearch/litsearch-data-2026-10-18.tar.zst | tar -xf - -C .local/litsearch
-zstd -dc .local/bioasq/bioasq-data-2026-10-18.tar.zst | tar -xf - -C .local/bioasq
-```
-
-Each command recreates `<benchmark>/data/`. Run results (`runs/*.jsonl`), gold sets and raw inputs stay in `.local/`. The EE survey set's data folder was deleted after scoring; its rows in `.local/eesurvey/runs/` keep every list position, route and chain seed, so scoring reruns without it.
+The DEIXIS data folders behind these runs (library databases, provider responses, per-question rows) stay on the
+owner's machine and are not in this repository; the scoring code and tests are.

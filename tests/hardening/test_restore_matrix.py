@@ -712,6 +712,8 @@ EMPTY_BECAUSE = {
     "citation_map_resolutions": "written only by a citation map run, which a person starts and this flow does not",
     **{table: "written only by a Verify Citations draft (D86), which this flow does not give" for table in (
         "citation_drafts", "citation_markers", "citation_bib_entries", "citation_pairs", "citation_checks")},
+    **{table: "written only by a statement check (D100), which only a research with the statement intent runs"
+       for table in ("statement_checks", "statement_check_items")},
     "fast_path_background_fetches": "written by fast-path background PDF fetches (D251); full-text fetch is off in the test settings",
     "human_selection_links": "written only by human decisions in the screening queue, which this flow does not make",
     "mathpix_requests": "written only by the optional Mathpix equation reader, which is off by default",

@@ -206,11 +206,10 @@ SLOW_TESTS = Path(__file__).with_name("slow_tests.txt")
 def pytest_collection_modifyitems(config, items):
     """Process tests (tests/process) are wall-clock and start real servers: they run only when -m names `process`.
 
-    Tests listed in slow_tests.txt (0.2 s or more each, about 2,000 of them) are marked `slow` and left out of a run that
+    Tests listed in slow_tests.txt (0.2 s or more each, about 3,000 of them) are marked `slow` and left out of a run that
     names no `-m` and no path, so the default run stays within a minute or two on four workers. Naming a file or test, or
-    any `-m` expression, runs them too; run everything before a push with `pytest -m "slow or not slow"`. To regenerate
-    the list, run that with `--durations=0 --durations-min=0.02`, sum call + setup + teardown per test id, keep those at
-    0.2 s or more."""
+    any `-m` expression, runs them too; run everything before a push with `pytest -m "slow or not slow"`. To bring the
+    list up to date, run that once with `--testmon`, then `uv run python scripts/update_slow_tests.py`."""
     marker = config.getoption("-m") or ""
     slow = set(line for line in SLOW_TESTS.read_text().splitlines() if line and not line.startswith("#"))
     for item in items:

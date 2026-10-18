@@ -195,7 +195,7 @@ test.describe.serial('S9: the steps list', () => {
     await expect(screen.locator('.step-row', { hasText: `${funnel.abstracts_read} of the ranking read` })).toContainText(`${view.counts.flow!.buckets.not_screened} not read`)
     await expect(screen.locator('.step-row', { hasText: 'Passed the abstract stage' })).toContainText(String(funnel.candidates))
     await expect(screen.locator('.step-row', { hasText: 'Waiting for your decision' })).toContainText(String(view.counts.queue))
-    await screen.getByRole('button', { name: 'Open' }).click()
+    await screen.getByRole('button', { name: 'Open', exact: true }).click()
     await expect(panel(page, PANEL_TITLES.queue)).toBeVisible()
     await page.keyboard.press('Escape')
     // Reading: what was retrieved and read (selected pages), what passed without a try, and the depth's limit.

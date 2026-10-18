@@ -3983,6 +3983,101 @@
      }
     ]
    }
+  },
+  {
+   "name": "statement_check_valid",
+   "step_input": "V_statement_check",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.citation_check.v1",
+    "step_input_id": "sti_SYNTHSTC001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "covers_whole_sentence": true,
+    "parts": [
+     {
+      "text": "Depth based routing raises packet delivery in sparse networks",
+      "assessment": "stated",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHCIT001",
+        "quote": "depth based routing raises packet delivery in sparse networks"
+       }
+      ]
+     },
+     {
+      "text": "reduces energy use",
+      "assessment": "not_stated",
+      "evidence": []
+     }
+    ]
+   }
+  },
+  {
+   "name": "statement_check_negation_flip",
+   "step_input": "V_statement_check",
+   "expect_ok": false,
+   "expect_codes": [
+    "quote_meaning_differs"
+   ],
+   "output": {
+    "schema_version": "deixis.citation_check.v1",
+    "step_input_id": "sti_SYNTHSTC001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "covers_whole_sentence": true,
+    "parts": [
+     {
+      "text": "Depth based routing raises packet delivery in sparse networks",
+      "assessment": "stated",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHCIT001",
+        "quote": "depth based routing raises packet delivery in sparse networks"
+       }
+      ]
+     },
+     {
+      "text": "reduces energy use",
+      "assessment": "stated",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHCIT002",
+        "quote": "the protocol does significantly reduce energy use"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "statement_check_not_covered",
+   "step_input": "V_statement_check",
+   "expect_ok": false,
+   "expect_codes": [
+    "parts_leave_out_words",
+    "sentence_not_covered"
+   ],
+   "output": {
+    "schema_version": "deixis.citation_check.v1",
+    "step_input_id": "sti_SYNTHSTC001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "covers_whole_sentence": false,
+    "parts": [
+     {
+      "text": "Depth based routing raises packet delivery in sparse networks",
+      "assessment": "stated",
+      "evidence": [
+       {
+        "passage_id": "psg_SYNTHCIT001",
+        "quote": "depth based routing raises packet delivery in sparse networks"
+       }
+      ]
+     }
+    ]
+   }
   }
  ]
 }

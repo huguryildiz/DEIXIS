@@ -207,6 +207,12 @@
    "derived_from": [],
    "date": "2026-10-18",
    "change": "Written for DEIXIS (D99, Verify Citations V3), not upstream text. Loaded only for citation_check: split one citing sentence into claim parts and say for each whether the given passages of the cited work state it, with exact quotes. SKILL.md routes the new task_type. Not measured; the wording was tried against no model."
+  },
+  {
+   "deixis_file": "references/statement-check.md",
+   "derived_from": [],
+   "date": "2026-10-18",
+   "change": "Written for DEIXIS (reverse citation search, slice R1), not upstream text; the rules of references/citation-check.md, for a sentence the person gave and a work the search found. Loaded only for statement_check. SKILL.md routes the new task_type. Not measured; the wording was tried against no model."
   }
  ],
  "phrasebank": {

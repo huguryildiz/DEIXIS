@@ -103,6 +103,7 @@ TASK_OUTPUTS = {
     "followup_search_query": ("FollowupSearchQuery",),
     "claim_assessment": ("ClaimAssessment",),
     "citation_check": ("CitationCheck",),
+    "statement_check": ("CitationCheck",),
 }
 EXTRACTION_TASKS = ("cell_extraction", "table_columns")
 # The block-labelling step sorts a phrase list code extracted; it carries a vocabulary_target instead (SW17.1).
@@ -116,8 +117,11 @@ REPORT_TASKS = ("report_plan", "report_section", "report_review")
 REVIEW_TASKS = ("owner_review",)
 LINEAGE_TASKS = ("lineage_links",)
 CANDIDATE_TASKS = ("claim_decomposition", "kill_search_query", "claim_assessment")
+# Reverse citation search (slice R1): a sentence the person pasted against the given passages of one work the search
+# found. It reads and returns what a citation check does; `citation_check_view` gives V3's rules its target.
+STATEMENT_CHECK_TASKS = ("statement_check",)
 # Verify Citations (D99): one citing sentence against the given passages of the one work it cites.
-CITATION_CHECK_TASKS = ("citation_check",)
+CITATION_CHECK_TASKS = ("citation_check",) + STATEMENT_CHECK_TASKS
 CANDIDATE_SUPPORT_RELATIONS = ("explicit_support", "reasoned_inference", "partial_match")
 # A surface screen only: absence of these words does not establish the plan's scope or quality. A bare "protocol" is
 # not one: a claim about routing or network protocols names them (D94).
@@ -575,7 +579,11 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
         issues.append(Issue("adjudication_run_out_of_range", "/adjudication_target/run", str(adjudication_target["run"])))
     issues.extend(_check_lineage_target(step_input, records))
     issues.extend(_check_candidate_target(step_input, records))
-    issues.extend(_check_citation_check_target(step_input, records))
+    statement_target = "statement_check_target" in step_input
+    if statement_target != (step_input["task_type"] in STATEMENT_CHECK_TASKS) or (
+            statement_target and "citation_check_target" in step_input):
+        issues.append(Issue("statement_check_target_mismatch", "/statement_check_target", step_input["task_type"]))
+    issues.extend(_check_citation_check_target(citation_check_view(step_input), records))
     issues.extend(_check_owner_review_input(step_input, records))
     report_target = step_input.get("report_target")
     if (report_target is not None) != (step_input["task_type"] in REPORT_TASKS):
@@ -984,6 +992,7 @@ def _check_citation_check_target(step_input: dict[str, Any], records: dict[str, 
 
 
 def validate_model_output(step_input: dict[str, Any], raw: str | dict[str, Any]) -> ValidationReport:
+    step_input = citation_check_view(step_input)
     report = ValidationReport()
     if isinstance(raw, str):
         try:
@@ -1720,6 +1729,22 @@ def _check_citation_check(step_input: dict[str, Any], allow: dict[str, set[str]]
         report.issues.append(Issue("parts_leave_out_words", "/parts",
                                    "no part holds these words of the sentence: " + ", ".join(left_out[:10])
                                    + "; every word but and, or, but, while and whereas belongs to a part"))
+
+
+def citation_check_view(step_input: dict[str, Any]) -> dict[str, Any]:
+    """A statement check's StepInput as V3's rules read it (slice R1): its `statement_check_target` given as the
+    `citation_check_target` they expect, the item id in place of a pair id, the rest unchanged. The stored StepInput is
+    never rewritten. Any other StepInput, and one with no statement target or with both targets, is returned as it is,
+    so the target checks refuse it."""
+    target = step_input.get("statement_check_target")
+    if (step_input.get("task_type") not in STATEMENT_CHECK_TASKS or not isinstance(target, dict)
+            or "citation_check_target" in step_input):
+        return step_input
+    view = {key: value for key, value in step_input.items() if key != "statement_check_target"}
+    view["citation_check_target"] = {"pair_id": target.get("item_id"), "sentence": target.get("sentence"),
+                                     "assessed_source_id": target.get("assessed_source_id"),
+                                     "depth": target.get("depth"), "passages_not_given": target.get("passages_not_given")}
+    return view
 
 
 def citation_check_anchors(step_input: dict[str, Any], draft: dict[str, Any]) -> list[list[dict[str, Any]]]:
@@ -2984,7 +3009,7 @@ CITATION_CHECK_INPUT_ID_FIELDS = (
     ("passages/*/passage_id", "psg_P"), ("passages/*/source_id", "srv_S"),
     ("sources/*/source_id", "srv_S"),
     ("allowlist/passage_ids/*", "psg_P"), ("allowlist/source_ids/*", "srv_S"),
-    ("citation_check_target/assessed_source_id", "srv_S"),
+    ("citation_check_target/assessed_source_id", "srv_S"), ("statement_check_target/assessed_source_id", "srv_S"),
 )
 CITATION_CHECK_OUTPUT_ID_FIELDS = (("parts/*/evidence/*/passage_id", "psg_P"),)
 LINEAGE_OUTPUT_ID_FIELDS = (

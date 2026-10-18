@@ -633,17 +633,24 @@ def sentence_terms(sentence: str) -> list[str]:
 
 
 def rank_passages(store: Store, svid: str, sentence: str) -> tuple[list[dict[str, Any]], list[str]]:
-    """Every passage a model step may read of this record, the ones sharing the sentence's words first.
+    """Every passage a model step may read of this record, the ones sharing the sentence's words first (`rank_pool`)."""
+    return rank_pool(store, svid, store.passages_for(svid), sentence)
+
+
+def rank_pool(store: Store, svid: str, pool: list[dict[str, Any]], sentence: str) -> tuple[list[dict[str, Any]], list[str]]:
+    """The passages of `pool` (passages of this record a model step may read), the ones sharing the sentence's words
+    first.
 
     The app's passage ranking: SQLite FTS5 BM25 over the sentence's words OR-ed (`store.search_passages`, the order
     answers and full-text readings use, equal scores by passage id), then the passages no word matched in stored order
     (kind, page), and a reference-list passage last (`flow._reference_list`), as `_retrieve` does. Not the first pages:
-    `candidates.shown_passages` takes those and is not a relevance order."""
+    `candidates.shown_passages` takes those and is not a relevance order. The search reads every readable passage of
+    the record, so a pool smaller than the record keeps the order its passages have among all of them."""
     from deixis.workflow.flow import _reference_list
-    pool = store.passages_for(svid)
     terms = sentence_terms(sentence)
     ids = {p["id"] for p in pool}
-    ranked = [p for p in store.search_passages([svid], " OR ".join(f'"{t}"' for t in terms), len(pool))
+    ranked = [p for p in store.search_passages([svid], " OR ".join(f'"{t}"' for t in terms),
+                                               max(len(pool), len(store.passages_for(svid))))
               if p["id"] in ids] if terms and pool else []
     seen = {p["id"] for p in ranked}
     ordered = ranked + [p for p in pool if p["id"] not in seen]
@@ -1127,14 +1134,15 @@ def _open_check_run(store: Store, research_id: str, draft_id: str, revision: int
     return store.run(run_id)
 
 
-def _recorded(store: Store, research_id: str, key: str) -> dict[str, Any] | None:
+def _recorded(store: Store, research_id: str, key: str, kind: str = KIND) -> dict[str, Any] | None:
     """A pair's step that already ended for good in any check run of the draft: its succeeded output, or its invalid
-    output after the repair ran out (or a message too large to send). Read back, never sent again."""
+    output after the repair ran out (or a message too large to send). Read back, never sent again. `kind` is the run
+    kind that sends such steps (a statement check's item steps too, slice R1)."""
     row = store.conn.execute(
         "SELECT s.* FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE r.research_id = ? AND r.kind = ?"
         " AND s.operation_key = ? AND (s.status = 'succeeded' OR (s.status = 'failed'"
         " AND s.error_code IN ('invalid_model_output', 'message_too_large'))) ORDER BY s.rowid DESC LIMIT 1",
-        (research_id, KIND, key)).fetchone()
+        (research_id, kind, key)).fetchone()
     if row is None:
         return None
     output = json.loads(row["output_json"]) if row["output_json"] else {}

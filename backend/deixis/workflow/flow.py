@@ -461,6 +461,9 @@ class ResearchFlow:
             elif run["kind"] == "snowball":
                 from deixis.workflow import snowball
                 await snowball.execute(self, run, scope)
+            elif run["kind"] == "statement_check":
+                from deixis.workflow import statement_check  # reverse citation search, slice R1
+                await statement_check.execute(self, run, scope)
             else:
                 self._fail(run_id, "unknown_run_kind", {"kind": run["kind"]})
         except RunStopped:

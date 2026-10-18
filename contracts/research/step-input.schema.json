@@ -769,6 +769,47 @@
         }
       }
     },
+    "statement_check_target": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Reverse citation search only: one sentence the person pasted and one work the search found. The model splits the sentence into claim parts and assesses each against the given passages of that one work only.",
+      "required": [
+        "item_id",
+        "sentence",
+        "assessed_source_id",
+        "depth",
+        "passages_not_given"
+      ],
+      "properties": {
+        "item_id": {
+          "type": "string",
+          "pattern": "^sci_[0-9A-Za-z]{8,40}$"
+        },
+        "sentence": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000,
+          "description": "The sentence as the person gave it. Part texts are copied from it."
+        },
+        "assessed_source_id": {
+          "$ref": "common.schema.json#/$defs/source_id"
+        },
+        "depth": {
+          "type": "string",
+          "enum": [
+            "selected_passages",
+            "abstract",
+            "full_text"
+          ],
+          "description": "What the given passages are of the work: some of its passages, its abstract, or all of its passages."
+        },
+        "passages_not_given": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many passages of the work were not given. Nothing may be said about them."
+        }
+      }
+    },
     "candidate_target": {
       "type": "object",
       "additionalProperties": false,
@@ -978,7 +1019,8 @@
         "claim_assessment",
         "owner_review",
         "followup_search_query",
-        "citation_check"
+        "citation_check",
+        "statement_check"
       ]
     },
     "scope_revision": {

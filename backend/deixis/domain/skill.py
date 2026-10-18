@@ -36,6 +36,7 @@ RUNTIME_FILES = {
     "followup_search_query": ("SKILL.md", "references/followup-search.md"),
     "claim_assessment": ("SKILL.md", "references/candidate-check.md"),
     "citation_check": ("SKILL.md", "references/citation-check.md"),
+    "statement_check": ("SKILL.md", "references/statement-check.md"),
 }
 PROVENANCE_REQUIRED = (
     "package",

@@ -51,6 +51,7 @@ one; `report_section` also gets the source-grounded answer file.
 | `lineage_links` | [development lines](references/synthesis.md) | Decide a development relation for each supplied candidate pair; this is not an idea-chain synthesis. |
 | `claim_decomposition`, `kill_search_query`, `claim_assessment` | [candidate checks](references/candidate-check.md) | Work only on a candidate record the application opened. |
 | `citation_check` | [citation check](references/citation-check.md) | Say which parts of one citing sentence the given passages of the cited work state; judge no citation right or wrong. |
+| `statement_check` | [statement check](references/statement-check.md) | Say which parts of one sentence the person gave the given passages of one found work state; judge no sentence true or false. |
 
 Claim-specific kill-search is available only through the three candidate tasks.
 Free candidate development and experiment design or execution remain

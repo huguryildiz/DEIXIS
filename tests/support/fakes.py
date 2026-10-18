@@ -65,12 +65,14 @@ def valid_response(si: dict[str, Any]) -> str:
                       for e in si["candidate_target"]["version"]["elements"]],
             "nearest_match_summary": "SYNTHETIC: no match in the supplied text.",
         })
-    if task == "citation_check":
-        # SYNTHETIC: the whole sentence as one part, stated by the opening words of the first given passage (D98).
+    if task in ("citation_check", "statement_check"):
+        # SYNTHETIC: the whole sentence as one part, stated by the opening words of the first given passage (D98); a
+        # statement check (reverse citation search, R1) reads its sentence from its own target.
         first = si["passages"][0]
         quote = first["text"] if len(first["text"]) <= 300 else first["text"][:300].rsplit(None, 1)[0]
+        target = si.get("citation_check_target") or si["statement_check_target"]
         return json.dumps(envelope(si, "deixis.citation_check.v1") | {
-            "parts": [{"text": si["citation_check_target"]["sentence"], "assessment": "stated",
+            "parts": [{"text": target["sentence"], "assessment": "stated",
                        "evidence": [{"passage_id": first["passage_id"], "quote": quote}]}],
             "covers_whole_sentence": True,
         })

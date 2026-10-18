@@ -471,6 +471,8 @@ class Store:
             # Follow-up turns and their links (S22a) point at runs, step inputs and passages deleted below.
             self.conn.execute("DELETE FROM followup_turn_links WHERE turn_id IN (SELECT id FROM followup_turns WHERE research_id = ?)", (research_id,))
             self.conn.execute("DELETE FROM followup_turns WHERE research_id = ?", (research_id,))
+            # Statement checks (reverse citation search) point at runs and steps deleted below; their items go with them.
+            self.conn.execute("DELETE FROM statement_checks WHERE research_id = ?", (research_id,))
             self.conn.execute("DELETE FROM evidence_links WHERE claim_id IN (SELECT id FROM claims WHERE answer_id IN (SELECT id FROM answers WHERE research_id = ?))", (research_id,))
             self.conn.execute("DELETE FROM claims WHERE answer_id IN (SELECT id FROM answers WHERE research_id = ?)", (research_id,))
             self.conn.execute("DELETE FROM pdf_candidates WHERE discovery_run_id IN (SELECT id FROM pdf_discovery_runs WHERE research_id = ?)", (research_id,))
@@ -1156,7 +1158,8 @@ class Store:
                      "research_title": "intake", "lineage_links": "synthesis",
                      "claim_decomposition": "candidate", "kill_search": "candidate", "review": "claim_check",
                      "watch_check": "discovery", "screen_more": "screening", "followup_search": "discovery",
-                     "citation_map": "synthesis", "snowball": "screening"}.get(kind, "extraction")
+                     "citation_map": "synthesis", "snowball": "screening",
+                     "statement_check": "claim_check"}.get(kind, "extraction")
             self.conn.execute(
                 "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, idempotency_key, target_json,"
                 " created_at, updated_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)",

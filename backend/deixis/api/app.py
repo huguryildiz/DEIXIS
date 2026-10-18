@@ -403,6 +403,17 @@ class QueueDecision(BaseModel):
     row_token: str = Field(max_length=200)
 
 
+class QueueRowRef(BaseModel):
+    source_version_id: str = Field(max_length=200)
+    row_token: str = Field(max_length=200)
+
+
+class QueueBulkDecision(BaseModel):
+    decision: Literal["include", "criterion_not_met", "not_sure"]
+    note: str | None = Field(default=None, max_length=1000)
+    rows: list[QueueRowRef] = Field(min_length=1, max_length=human_queue.BULK_LIMIT)
+
+
 class QueueUndo(BaseModel):
     row_token: str = Field(max_length=200)
 
@@ -2191,6 +2202,14 @@ def create_app(
         if added["restored"]:
             intent.attached_ingested(store, research_id)
         return {**research_view(store, research_id), **added}
+
+    @app.post("/api/researches/{research_id}/queue/decisions")
+    async def queue_decisions(research_id: str, body: QueueBulkDecision, request: Request) -> dict[str, Any]:
+        """One answer to the rows the person ticked; each is checked against its own token (D110)."""
+        store = store_of(request)
+        store.research(research_id)
+        return human_queue.decide_many(store, research_id, [(r.source_version_id, r.row_token) for r in body.rows],
+                                       body.decision, body.note)
 
     @app.post("/api/researches/{research_id}/queue/{source_version_id}/decision")
     async def queue_decision(research_id: str, source_version_id: str, body: QueueDecision,

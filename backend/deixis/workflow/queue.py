@@ -740,6 +740,43 @@ def decide(store: Store, research_id: str, source_version_id: str, answer: str, 
         return _result(store, research_id, svid)
 
 
+BULK_ANSWERS = ("include", "criterion_not_met", "not_sure")
+BULK_LIMIT = 100
+
+
+def decide_many(store: Store, research_id: str, rows: list[tuple[str, str]], answer: str,
+                note: str | None) -> dict[str, Any]:
+    """One answer to several rows the person ticked, each written as `decide` writes it, in its own transaction.
+
+    A row is checked against the token it was shown with, so a row that changed or left the queue is refused and named,
+    never answered under its new state; the others are still written. A PDF identity row is not answered in bulk:
+    whether a file is the work is a look at that file. The person's note goes with every answer.
+    """
+    if answer not in BULK_ANSWERS:
+        raise QueueUnavailable("Only include, does not meet the criterion and not sure are given to several rows")
+    applied: list[dict[str, Any]] = []
+    refused: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for svid, token in rows:
+        if svid in seen:
+            continue
+        seen.add(svid)
+        try:
+            ctx = _Context(store, research_id, store.source(svid)["work_id"]) if store.was_member(research_id, svid) else None
+            row = _state_of(ctx, svid)["row"] if ctx else None
+            if row is not None and row["kind"] == "confirm_pdf":
+                refused.append({"source_version_id": svid, "reason": "not_in_bulk"})
+                continue
+            result = decide(store, research_id, svid, answer, note, token)
+        except QueueConflict as exc:
+            refused.append({"source_version_id": svid, "reason": exc.reason})
+        except (NotASource, QueueUnavailable):
+            refused.append({"source_version_id": svid, "reason": "not_answerable"})
+        else:
+            applied.append({"source_version_id": svid, "undo_token": result["undo_token"]})
+    return {"applied": applied, "refused": refused}
+
+
 def _write_answer(ctx: _Context, svid: str, state: dict[str, Any], code: str, note: str | None,
                   via: str | None = None) -> dict[str, Any]:
     """A person's answer as D96 writes it: the decision, the selection and its link, or the release of a selection an

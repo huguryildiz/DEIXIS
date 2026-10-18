@@ -96,6 +96,16 @@ const ANSWER_NOTES: Partial<Record<QueueAnswer, string>> = {
   pdf_confirmed: 'The next reading run reads this work; no run starts by itself',
 }
 const ANSWER_ICONS: Record<QueueAnswer, typeof Check> = { include: Check, criterion_not_met: X, not_sure: Info, pdf_wrong: X, pdf_confirmed: Check }
+// One answer to several rows: a PDF identity row is a look at that file, so it is answered on its own card.
+type BulkAnswer = 'include' | 'criterion_not_met' | 'not_sure'
+const BULK_ANSWERS: BulkAnswer[] = ['include', 'criterion_not_met', 'not_sure']
+const pickable = (row: QueueRow) => row.kind !== 'confirm_pdf'
+const bulkWords: Record<BulkAnswer, string> = { include: 'Yes, include', criterion_not_met: 'No, does not meet the criterion', not_sure: 'Not sure' }
+const bulkToast: Record<BulkAnswer, [string, string]> = {
+  include: ['{n} work included as your own selection.', '{n} works included as your own selection.'],
+  criterion_not_met: ['{n} work recorded as not meeting the criterion.', '{n} works recorded as not meeting the criterion.'],
+  not_sure: ['{n} work left awaiting a decision.', '{n} works left awaiting a decision.'],
+}
 const PAGE = 20  // cards shown at once; the rest come with "Show more"
 const IN_FLIGHT = 2  // row details read at a time
 
@@ -116,6 +126,8 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
   // A note belongs to the work it was written for and stays with it across refreshes.
   const [notes, setNotes] = useState<Record<string, Note>>({})
   const [busy, setBusy] = useState(false)
+  // The rows ticked for one answer to all of them, by record; a row that leaves the list leaves the selection.
+  const [picked, setPicked] = useState<Set<string>>(new Set())
   const [actionError, setActionError] = useState<{ work: string; text: string } | null>(null)
   // A 409: whether the row left the queue, and the note that was being written for it, which is kept.
   const [conflict, setConflict] = useState<{ work: string; gone: boolean; title: string; note: string } | null>(null)
@@ -136,6 +148,7 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
       setDetails(prev => Object.fromEntries(Object.entries(prev).filter(([key]) => live.has(key))))
       // A detail that failed to load is tried again with the next list read, not held back by its old error.
       setDetailErrors({})
+      setPicked(prev => new Set([...prev].filter(svid => next.rows.some(r => r.source_version_id === svid && pickable(r)))))
       // A kind or reason filter whose rows are all gone falls back to every row, so no filter is left with nothing to
       // show and no control to clear it (the chips hide when one kind is left).
       const open = next.rows.filter(r => r.kind !== 'look_again')
@@ -161,6 +174,7 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
   const shown = ordered.slice(0, limit)
   const shownOpenCards = shown.filter(r => r.kind !== 'look_again')
   const shownLookAgain = shown.filter(r => r.kind === 'look_again')
+  const shownPickable = shown.filter(pickable)
 
   // The details of the cards on screen, two at a time, in card order.
   const inflight = useRef(new Set<string>())
@@ -266,6 +280,41 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
     } finally { setBusy(false) }
   }
 
+  // One answer to every ticked row. Each row is sent with the token the list shows and is checked against it, so a row
+  // that changed since is refused and stays in the queue; the others are written (D110).
+  async function answerPicked(choice: BulkAnswer) {
+    const targets = rows.filter(r => picked.has(r.source_version_id) && pickable(r))
+    if (!targets.length) return
+    setBusy(true)
+    setActionError(null)
+    try {
+      const result = await api.answerQueueRows(researchId, choice, targets.map(r => ({ source_version_id: r.source_version_id, row_token: r.row_token })))
+      await reloadAll()
+      setPicked(new Set())
+      const applied = result.applied
+      if (applied.length) toast('success', t(applied.length === 1 ? bulkToast[choice][0] : bulkToast[choice][1], { n: applied.length }),
+        { label: t('Undo'), run: () => { void undoMany(applied) } })
+      if (result.refused.length) toast('warning', t(result.refused.length === 1
+        ? '{n} row changed after it was shown, so it was not answered. It stays in the queue.'
+        : '{n} rows changed after they were shown, so they were not answered. They stay in the queue.', { n: result.refused.length }))
+      focusCard(null)
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : String(e))
+    } finally { setBusy(false) }
+  }
+
+  async function undoMany(entries: { source_version_id: string; undo_token: string }[]) {
+    setBusy(true)
+    let failed = 0
+    for (const entry of entries) {
+      try { await api.undoQueueDecision(researchId, entry.source_version_id, entry.undo_token) } catch { failed += 1 }
+    }
+    await reloadAll()
+    setBusy(false)
+    if (failed) toast('warning', t('{n} of your decisions changed after they were shown, so they were not taken back. The latest state is loaded.', { n: failed }))
+    else toast('success', t('Your decisions were taken back.'))
+  }
+
   if (error && !queue) return <Notice tone="error">{t('Could not load the queue: {error}', { error })}</Notice>
   if (!queue) return <p className="empty-inline" role="status">{t('Loading the queue…')}</p>
 
@@ -280,7 +329,9 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
     counts.user_selected > 0 && t(counts.user_selected === 1 ? 'you chose {n} work from the sources' : 'you chose {n} works from the sources', { n: counts.user_selected })].filter(Boolean)
   const card = (row: QueueRow) => {
     const key = keyOf(row)
-    return <QueueCard key={row.work_id} row={row} criterion={criterion} rowView={details[key]} detailError={detailErrors[key] ?? ''} unsettled={unsettled.has(key)} busy={busy}
+    return <QueueCard key={row.work_id} row={row} criterion={criterion}
+      picked={pickable(row) ? picked.has(row.source_version_id) : null}
+      onPick={on => setPicked(prev => { const next = new Set(prev); if (on) next.add(row.source_version_id); else next.delete(row.source_version_id); return next })} rowView={details[key]} detailError={detailErrors[key] ?? ''} unsettled={unsettled.has(key)} busy={busy}
       note={notes[row.work_id] ?? { text: '', open: false }} onNote={note => setNotes(prev => ({ ...prev, [row.work_id]: note }))}
       conflict={conflict && conflict.work === row.work_id && !conflict.gone} actionError={actionError?.work === row.work_id ? actionError.text : ''}
       onReadAgain={() => { mismatches.current.delete(key); setUnsettled(prev => { const next = new Set(prev); next.delete(key); return next }); setDetails(prev => Object.fromEntries(Object.entries(prev).filter(([k]) => k !== key))); setDetailErrors(prev => { const { [key]: _, ...rest } = prev; return rest }) }}
@@ -314,6 +365,10 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
           </SelectContent>
         </Select>}
       </div>}
+      {shownPickable.length > 1 && <label className="queue-pick-all"><input type="checkbox" className="queue-pick"
+        checked={shownPickable.every(r => picked.has(r.source_version_id))}
+        onChange={e => setPicked(prev => { const next = new Set(prev); for (const r of shownPickable) { if (e.target.checked) next.add(r.source_version_id); else next.delete(r.source_version_id) } return next })} />
+        {t('Select the {n} rows shown', { n: shownPickable.length })}</label>}
       {shownOpenCards.length > 0 ? <div className="queue-cards" role="list" aria-label={t('Rows awaiting your decision')}>{shownOpenCards.map(card)}</div>
         : !shownLookAgain.length && <p className="empty-inline queue-filter-empty">{t('No row matches this filter.')}</p>}
       {shownLookAgain.length > 0 && <section className="queue-cards" aria-labelledby="queue-look-again">
@@ -321,6 +376,13 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
         <div role="list" className="queue-cards">{shownLookAgain.map(card)}</div>
       </section>}
       {ordered.length > shown.length && <button type="button" className="ghost queue-more" onClick={() => setLimit(n => n + PAGE)}>{t('Show {n} more', { n: Math.min(PAGE, ordered.length - shown.length) })}</button>}
+      {picked.size > 0 && <div className="queue-selbar" role="region" aria-label={t('Answer the selected rows')}>
+        <strong>{t(picked.size === 1 ? '{n} row selected' : '{n} rows selected', { n: picked.size })}<span>{t('One answer is recorded as your decision for each.')}</span></strong>
+        <div className="queue-selbar-actions">
+          {BULK_ANSWERS.map(choice => { const Icon = ANSWER_ICONS[choice]; return <button key={choice} type="button" className={`is-${choice}`} disabled={busy} onClick={() => void answerPicked(choice)}><Icon size={14} aria-hidden />{t(bulkWords[choice])}</button> })}
+          <button type="button" className="queue-selbar-clear" disabled={busy} onClick={() => setPicked(new Set())}>{t('Clear')}</button>
+        </div>
+      </div>}
       <p className="foot-note">{t('Semantic support not checked. Your answer is recorded as your decision; DEIXIS does not say whether it is right.')}</p>
     </>}
 
@@ -335,8 +397,8 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
   </div>
 }
 
-function QueueCard({ row, criterion, rowView, detailError, unsettled, busy, note, onNote, conflict, actionError, onReadAgain, onAnswer, onOpenPage, onOpenPart, onOpenSource, onOpenCue }: {
-  row: QueueRow; criterion: string | null; rowView: QueueRowView | undefined; detailError: string; unsettled: boolean; busy: boolean
+function QueueCard({ row, criterion, picked, onPick, rowView, detailError, unsettled, busy, note, onNote, conflict, actionError, onReadAgain, onAnswer, onOpenPage, onOpenPart, onOpenSource, onOpenCue }: {
+  row: QueueRow; criterion: string | null; picked: boolean | null; onPick: (on: boolean) => void; rowView: QueueRowView | undefined; detailError: string; unsettled: boolean; busy: boolean
   note: Note; onNote: (note: Note) => void; conflict: boolean | null; actionError: string; onReadAgain: () => void
   onAnswer: (choice: QueueAnswer) => void; onOpenPage: (opener: HTMLElement) => void; onOpenPart: (part: QueuePart, opener: HTMLElement) => void
   onOpenSource: (opener: HTMLElement) => void; onOpenCue: (passageId: string, page: number, rendition: boolean | undefined, opener: HTMLElement) => void
@@ -361,7 +423,8 @@ function QueueCard({ row, criterion, rowView, detailError, unsettled, busy, note
   const words = row.kind === 'confirm_pdf' ? queueAnswerLabels : answerWords
   const titleId = `queue-title-${row.work_id}`
   return <article id={`queue-row-${row.work_id}`} className="qcard" role="listitem" aria-labelledby={titleId}>
-    <header><b>{t(head)}</b><span>· {t(about)}{earlier ? ` · ${t(queueAnsweredText[earlier])}` : ''}</span></header>
+    <header>{picked !== null && <input type="checkbox" className="queue-pick" checked={picked} onChange={e => onPick(e.target.checked)}
+      aria-label={t('Select {title}', { title: row.title })} />}<b>{t(head)}</b><span>· {t(about)}{earlier ? ` · ${t(queueAnsweredText[earlier])}` : ''}</span></header>
     <div className="qb">
       <h4 id={titleId}><button type="button" className="qcard-title" onClick={e => onOpenSource(e.currentTarget)}>{row.title}</button></h4>
       <div className="au">
@@ -412,18 +475,18 @@ function QueueCard({ row, criterion, rowView, detailError, unsettled, busy, note
           </section>}
           {row.question && <section className="queue-cues">
             <h5>{t('Sentences with this part’s phrases')}</h5>
-            {detail.cues.sentences.length ? <>
-              <ul>{detail.cues.sentences.map((cue, i) => <li key={i}><p className="queue-serif">{cue.sentence}</p>
-                {cue.passage_id && <button type="button" className="queue-page-link" onClick={e => onOpenCue(cue.passage_id!, cue.page, cue.rendition, e.currentTarget)}>{pageLocator(cue.page, cue.rendition)}<ChevronRight size={13} aria-hidden /></button>}</li>)}</ul>
-              {detail.cues.total > detail.cues.sentences.length && <p className="queue-muted">{t('{shown} of {total} sentences shown', { shown: detail.cues.sentences.length, total: detail.cues.total })}</p>}
-            </> : <p className="queue-muted">{t('This part’s phrases do not occur in the text.')}</p>}
+            {detail.cues.sentences.length ? <div className="queue-cue-box">
+              <ul>{detail.cues.sentences.map((cue, i) => <li key={i}><p className="queue-cue-text">{cue.sentence}</p>
+                {cue.passage_id && <button type="button" className="queue-cue-page" onClick={e => onOpenCue(cue.passage_id!, cue.page, cue.rendition, e.currentTarget)}>{pageLocator(cue.page, cue.rendition)}<ChevronRight size={13} aria-hidden /></button>}</li>)}</ul>
+              {detail.cues.total > detail.cues.sentences.length && <p className="queue-cue-foot">{t('{shown} of {total} sentences shown', { shown: detail.cues.sentences.length, total: detail.cues.total })}</p>}
+            </div> : <p className="queue-muted">{t('This part’s phrases do not occur in the text.')}</p>}
           </section>}
         </>}
       <div className="queue-decide">
       <div className="lbl queue-question">
         <span className="queue-question-text">{question}</span>
-        {criterion && row.kind !== 'look_again' && <span className="queue-criterion">{t('Criterion: {text}', { text: criterion })}</span>}
-        <span className="queue-why">{t('Why it is here:')} {queueReasonText(row.reason_code)} <code>{row.reason_code}</code></span>
+        {criterion && row.kind !== 'look_again' && <p className="queue-criterion"><b>{t('Criterion')}</b><span>{criterion}</span></p>}
+        <span className="queue-why"><Info size={13} aria-hidden /><span>{t('Why it is here:')} {queueReasonText(row.reason_code)} <code>{row.reason_code}</code></span></span>
       </div>
       {choice && <button type="button" className="ghost queue-open-page" onClick={e => onOpenPage(e.currentTarget)}><Eye size={14} aria-hidden />{t('Open page {page} in the PDF', { page: choice.page })}</button>}
       {actionError && <Notice tone="error">{actionError}</Notice>}
@@ -431,8 +494,8 @@ function QueueCard({ row, criterion, rowView, detailError, unsettled, busy, note
         {answers.map(choice => {
           const Icon = ANSWER_ICONS[choice]
           const label = t(words[choice])
-          return <button key={choice} type="button" aria-label={label} disabled={busy || !answerable} onClick={() => onAnswer(choice)}>
-            <Icon size={16} aria-hidden /><span>{label}{ANSWER_NOTES[choice] && <small>{t(ANSWER_NOTES[choice]!)}</small>}</span>
+          return <button key={choice} type="button" className={`is-${choice}`} aria-label={label} disabled={busy || !answerable} onClick={() => onAnswer(choice)}>
+            <i className="qopt-icon"><Icon size={15} aria-hidden /></i><span>{label}{ANSWER_NOTES[choice] && <small>{t(ANSWER_NOTES[choice]!)}</small>}</span>
           </button>
         })}
       </div>
@@ -445,16 +508,28 @@ function QueueCard({ row, criterion, rowView, detailError, unsettled, busy, note
 }
 
 function RunParts({ run, part, onOpenPart }: { run: QueueRun; part: string | undefined; onOpenPart: (part: QueuePart, opener: HTMLElement) => void }) {
+  const asked = run.parts.filter(p => p.part === part)
+  const others = run.parts.filter(p => p.part !== part)
+  const renderPart = (p: QueuePart) => <RunPart key={p.part} p={p} part={part} onOpenPart={onOpenPart} />
   return <>
     <h5 className="queue-run-head">{t('Run {n}', { n: run.run_no })}<small>{run.shown_pages.length ? t('pages shown: {pages}', { pages: run.shown_pages.join(', ') }) : t('no pages shown')}</small></h5>
-    {run.parts.map(p => <div key={p.part} className={`queue-part${p.part === part ? ' is-question' : ''}`}>
+    {/* The part this row asks about comes first; the others fold away so the two runs stay short. */}
+    {asked.map(renderPart)}
+    {others.length > 0 && (asked.length ? <details className="queue-other-parts">
+      <summary><ChevronRight size={13} aria-hidden className="queue-decided-chevron" />{t('Other parts ({n})', { n: others.length })}</summary>
+      {others.map(renderPart)}
+    </details> : others.map(renderPart))}
+  </>
+}
+
+function RunPart({ p, part, onOpenPart }: { p: QueuePart; part: string | undefined; onOpenPart: (part: QueuePart, opener: HTMLElement) => void }) {
+  return <div className={`queue-part${p.part === part ? ' is-question' : ''}`}>
       <p className="queue-part-head"><span>{p.part}</span><span className={`ref-pill queue-part-label is-${p.label}`}>{partLabelText(p.label)}</span>{p.part === part && <small className="queue-part-asked">{t('this row’s question')}</small>}</p>
       {p.quote && <blockquote className="queue-quote">{p.quote}</blockquote>}
       {p.label === 'present' && <p className="queue-part-note">{p.quote_verified ? t('Found on the page.') : t('Not found in the text.')}
         {(p.passage_id || p.closest?.passage_id) && <button type="button" className="queue-page-link" onClick={e => onOpenPart(p, e.currentTarget)}>{p.quote_verified && p.page !== null ? pageLocator(p.page, p.rendition) : t('Open the page')}<ChevronRight size={13} aria-hidden /></button>}</p>}
       {p.rationale && <p className="queue-rationale">{p.rationale}</p>}
-    </div>)}
-  </>
+    </div>
 }
 
 function Decided({ entries, busy, onUndo, onOpen }: { entries: QueueDecided[]; busy: boolean; onUndo: (entry: QueueDecided) => void; onOpen: (sourceVersionId: string, opener: HTMLElement) => void }) {

@@ -726,6 +726,10 @@ export type QueueDetail = {
 }
 export type QueueDecision = { id: string; reason_code: string; decided_by: 'code' | 'model_agreement' | 'human'; stale: boolean; undoable: boolean }
 export type QueueRowView = { row: QueueRow | null; decision: QueueDecision | null; undo_token: string; detail?: QueueDetail; coverage?: QueueRun[] }
+export type QueueBulkResult = {
+  applied: { source_version_id: string; undo_token: string }[]
+  refused: { source_version_id: string; reason: 'row_changed' | 'reading_started' | 'not_in_bulk' | 'not_answerable' }[]
+}
 export type QueueAnswerResult = {
   row: QueueRow | null; decision: QueueDecision | null; undo_token: string
   selection: { source_version_id: string; state: Source['selection']['state']; origin: Source['selection']['origin']; version: number } | null
@@ -1492,6 +1496,8 @@ export const api = {
   queueRow: (id: string, sourceId: string) => request<QueueRowView>(`/api/researches/${id}/queue/${sourceId}`),
   answerQueueRow: (id: string, sourceId: string, decision: QueueAnswer, rowToken: string, note?: string | null) =>
     request<QueueAnswerResult>(`/api/researches/${id}/queue/${sourceId}/decision`, json('POST', { decision, note: note ?? null, row_token: rowToken })),
+  answerQueueRows: (id: string, decision: 'include' | 'criterion_not_met' | 'not_sure', rows: { source_version_id: string; row_token: string }[], note?: string | null) =>
+    request<QueueBulkResult>(`/api/researches/${id}/queue/decisions`, json('POST', { decision, note: note ?? null, rows })),
   undoQueueDecision: (id: string, sourceId: string, undoToken: string) =>
     request<QueueAnswerResult>(`/api/researches/${id}/queue/${sourceId}/undo`, json('POST', { row_token: undoToken })),
   audit: (id: string) => request<AuditView>(`/api/researches/${id}/audit`),
@@ -1772,6 +1778,8 @@ export type OpenAlexBudgetToday = {
   // With an OpenAlex key the figure is read live from OpenAlex at as_of (source 'live'); otherwise it is OpenAlex's last
   // stored response, received at as_of. Credits are not requests (a search costs several) and are never converted to dollars.
   as_of: string | null; source: 'live' | 'last_stored_response'
+  // Prepaid balance bought on top of the daily budget, in the same unit; only a live read carries it.
+  prepaid_remaining?: number | null; prepaid_expires_at?: string | null
 }
 
 // Model connections in Settings → Usage (api/usage_routes.py): one row per connection a role uses now (plus any paid-by-key

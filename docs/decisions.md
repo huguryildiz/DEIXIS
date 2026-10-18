@@ -4,6 +4,12 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D110 — Review queue: one answer to several ticked rows
+Status: accepted · Date: 2026-10-18 · Writer: Claude · Reviewer: none yet
+Context: The owner found answering a long queue one card at a time tedious; there was no bulk action.
+Decision: Each queue card (except a PDF identity row) has a tick, plus "select the rows shown". A floating bar gives the ticked rows one answer: include, does not meet the criterion, or not sure. `POST /api/researches/{id}/queue/decisions` takes up to 100 `{source_version_id, row_token}` and writes each row through `queue.decide`, in its own transaction and checked against the token the list showed. A row that changed or left the queue is refused and named (`row_changed`, `reading_started`, `not_answerable`); a PDF identity row is refused as `not_in_bulk`; the other rows are still written. One toast counts what was recorded and offers to undo all of it; a second names how many were refused. Undo stays per decision. The card was also tightened: the runs show only the part the row asks about, the others fold under "Other parts (n)".
+Limit: A bulk answer is recorded as the person's decision for each row even if they did not open every card; the queue says so on the bar. No note field in the bar yet (the endpoint accepts one).
+
 ## D109 — Reverse citation search R4b: with support counted only on a stated part, the live pilot meets the bar; R4 closes, R5 stays blocked
 Status: accepted · Date: 2026-10-18 · Writer: Claude (Opus subagent ran the pilot) · Reviewer: gpt-6.1-sol (code hazır; measurement hazır)
 Context: D108's rule is on main (9551dd27, migration 0011: `support_rule_version` 2 on new revisions). The same 10 statements were run again under a new lock (`.local/reverse-citation-r4b-pilot/`, statements byte-identical to R4, same skill hash, `anthropic` / `claude-sonnet-5-5` / medium, Standard search, one run). Readers: Sol and blind Opus, with DEIXIS's class and the model's part assessments left out of their packets (written in the lock; a change from R4 whose effect is not known).

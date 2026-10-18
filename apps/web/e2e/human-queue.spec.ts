@@ -346,6 +346,26 @@ test.describe.serial('J: the human queue of an sw research', () => {
     await expect(card(page, answeredTitle)).toHaveCount(1)
   })
 
+  test('ticked rows take one answer together, a PDF row cannot be ticked, and the notification takes all of them back', async () => {
+    await page.reload()
+    await expect(card(page, TITLES.confirm_pdf).locator('.queue-pick')).toHaveCount(0)
+    await expect(page.locator('.queue-pick-all')).toContainText('Select the 3 rows shown')
+    await card(page, TITLES.choose_run).getByRole('checkbox', { name: `Select ${TITLES.choose_run}` }).check()
+    await card(page, TITLES.find_part).getByRole('checkbox', { name: `Select ${TITLES.find_part}` }).check()
+    const bar = page.getByRole('region', { name: 'Answer the selected rows' })
+    await expect(bar).toContainText('2 rows selected')
+    await shot(page, 'J-queue-bulk-1440')
+    await bar.getByRole('button', { name: 'Yes, include' }).click()
+    await expect(card(page, TITLES.choose_run)).toHaveCount(0)
+    await expect(card(page, TITLES.find_part)).toHaveCount(0)
+    await expect(bar).toHaveCount(0)
+    const toast = page.locator('.toast', { hasText: '2 works included as your own selection.' })
+    await toast.getByRole('button', { name: 'Undo' }).click()
+    await expect(card(page, TITLES.choose_run)).toHaveCount(1)
+    await expect(card(page, TITLES.find_part)).toHaveCount(1)
+    await expectMenuCount(page, 'queue', 4)
+  })
+
   test('Include takes the row out, the notification takes it back, and the source list shows the choice as the user’s', async () => {
     await page.reload()
     // The card stays where it is until the server has answered.

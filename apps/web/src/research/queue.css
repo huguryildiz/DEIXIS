@@ -60,11 +60,15 @@
 .qcard .queue-focus-text{font-weight:500}
 .qcard .queue-focus-definition{max-width:76ch;font-size:12.5px}
 /* The decision: the question, the criterion and why, then the answers, set apart from the evidence by one hairline. */
-.qcard .queue-decide{display:grid;gap:10px;margin-top:2px;padding-top:14px;border-top:1px solid var(--line)}
-.qcard .lbl{display:grid;gap:4px;color:var(--muted);font-size:12px;line-height:1.5}
-.qcard .queue-question-text{color:var(--ink);font-size:14px;font-weight:600;line-height:1.4}
-.qcard .queue-criterion{max-width:76ch;color:var(--ink-2);font-size:12.5px}
-.qcard .queue-why code{margin-left:4px;padding:0 5px;border-radius:4px;background:var(--selected-surface);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--muted)}
+.qcard .queue-decide{display:grid;gap:12px;margin-top:4px;padding-top:16px;border-top:1px solid var(--line)}
+.qcard .lbl{display:grid;gap:8px;color:var(--muted);font-size:12px;line-height:1.5}
+.qcard .queue-question-text{color:var(--ink);font-size:15px;font-weight:600;line-height:1.4;letter-spacing:-.005em}
+/* The criterion as a quiet labelled block, so the long sentence reads as reference, not as the question. */
+.qcard .queue-criterion{display:grid;gap:2px;margin:0;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:var(--sidebar-surface);color:var(--ink);font-size:13px;line-height:1.55}
+.qcard .queue-criterion b{color:var(--muted);font-size:11.5px;font-weight:600}
+.qcard .queue-why{display:flex;align-items:flex-start;gap:6px;color:var(--muted);font-size:12px}
+.qcard .queue-why>svg{flex:none;margin-top:2px;color:var(--faint)}
+.qcard .queue-why code{margin-left:4px;padding:1px 6px;border-radius:5px;background:var(--selected-surface);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;color:var(--muted);white-space:nowrap}
 .qcard .queue-open-page{justify-self:start}
 /* The two reads side by side (mockup .reads): one bordered box each. */
 .qcard .queue-runs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
@@ -93,8 +97,24 @@
 .qcard :is(.queue-pair,.queue-identity,.queue-cues) h5{margin:0 0 4px;color:var(--ink-2);font-size:12px;font-weight:600}
 .qcard .queue-first-page{max-height:220px;overflow:auto;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--page-surface);color:var(--page-ink);font-family:var(--font-serif);font-size:12.5px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
 .qcard .queue-serif{margin:0 0 4px;color:var(--ink);font-size:13px;line-height:1.5;overflow-wrap:anywhere}
-.qcard .queue-cues ul{display:grid;gap:6px;margin:0;padding:0;list-style:none}
-.qcard .queue-cues li{display:grid;gap:2px}
+/* The cue sentences: one framed list, each sentence beside its page chip. */
+.qcard .queue-cues h5{margin-bottom:8px}
+.qcard .queue-cue-box{border:1px solid var(--line);border-radius:10px;overflow:hidden}
+.qcard .queue-cue-box ul{margin:0;padding:0;list-style:none}
+.qcard .queue-cue-box li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:start;padding:10px 12px}
+.qcard .queue-cue-box li+li{border-top:1px solid var(--line)}
+.qcard .queue-cue-text{margin:0;color:var(--ink);font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.qcard .queue-cue-page{display:inline-flex;align-items:center;gap:1px;height:22px;padding:0 5px 0 8px;border:1px solid var(--accent-line);border-radius:999px;background:var(--accent-tint);color:var(--accent);font-size:11.5px;font-weight:500;white-space:nowrap;font-variant-numeric:tabular-nums;cursor:pointer;transition:background-color .14s ease-out,border-color .14s ease-out}
+.qcard .queue-cue-page:hover{border-color:var(--accent)}
+.qcard .queue-cue-page:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.qcard .queue-cue-foot{margin:0;padding:7px 12px;border-top:1px solid var(--line);background:var(--sidebar-surface);color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
+/* The parts a run read besides this row's question, folded away. */
+.qcard .queue-other-parts{border-top:1px solid var(--line)}
+.qcard .queue-other-parts>summary{display:flex;align-items:center;gap:5px;padding:9px 0;color:var(--muted);font-size:12px;font-weight:500;cursor:pointer;list-style:none}
+.qcard .queue-other-parts>summary::-webkit-details-marker{display:none}
+.qcard .queue-other-parts>summary:hover{color:var(--ink)}
+.qcard .queue-other-parts[open]>summary .queue-decided-chevron{transform:rotate(90deg)}
+.qcard .queue-other-parts>.queue-part:first-of-type{border-top:0;padding-top:2px}
 .queue-panel .queue-muted{margin:0;color:var(--muted);font-size:12.5px;line-height:1.55}
 .queue-panel .queue-kept-note{margin-top:6px;overflow-wrap:anywhere}
 .queue-panel .queue-kept-note q{font-style:italic}
@@ -104,12 +124,17 @@
 .queue-panel .queue-answers{display:grid;gap:4px}
 .queue-panel .queue-answers [data-slot=button]{justify-content:flex-start;width:100%;height:auto;min-height:36px;padding:7px 12px;border-radius:8px;font-size:13px;text-align:left;white-space:normal}
 .queue-panel .queue-answers [data-slot=button]:not(.bg-primary):hover:not(:disabled){border-color:var(--accent-line)}
-.qopts{display:grid;gap:6px}
-.qopts button{display:flex;gap:9px;align-items:flex-start;padding:8px 10px;border:1px solid var(--strong-line);border-radius:8px;background:transparent;color:var(--ink);font-size:13px;text-align:left;cursor:pointer}
-.qopts button>svg{flex:none;margin-top:1px}
+.qopts{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}
+.qopts button{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--strong-line);border-radius:9px;background:transparent;color:var(--ink);font-size:13.5px;font-weight:500;line-height:1.4;text-align:left;cursor:pointer;transition:border-color .14s ease-out,background-color .14s ease-out}
+.qopts button small{display:block;margin-top:2px;color:var(--muted);font-size:12px;font-weight:400;line-height:1.45}
+.qopts .qopt-icon{display:grid;flex:none;place-items:center;width:24px;height:24px;border-radius:999px;background:var(--selected-surface);color:var(--muted);font-style:normal}
+.qopts .is-include .qopt-icon,.qopts .is-pdf_confirmed .qopt-icon{background:var(--ok-surface);color:var(--ok-ink)}
+.qopts .is-criterion_not_met .qopt-icon,.qopts .is-pdf_wrong .qopt-icon{background:var(--error-surface);color:var(--error-ink)}
 .qopts button:hover:not(:disabled){border-color:var(--accent-line);background:var(--hover-surface)}
+.qopts :is(.is-include,.is-pdf_confirmed):hover:not(:disabled){border-color:var(--ok-line);background:var(--ok-surface)}
+.qopts :is(.is-criterion_not_met,.is-pdf_wrong):hover:not(:disabled){border-color:var(--error-line);background:var(--error-surface)}
+.qopts button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .qopts button:disabled{opacity:.5;cursor:default}
-.qopts button small{display:block;color:var(--muted);font-size:12px}
 .queue-panel .queue-note{display:grid;gap:4px;color:var(--ink);font-size:12.5px;font-weight:500}
 .queue-panel .queue-note>span{display:flex;justify-content:space-between;gap:10px}
 .queue-panel .queue-note small{color:var(--muted);font-size:11px;font-weight:400;font-variant-numeric:tabular-nums}
@@ -249,3 +274,25 @@
 .queue-panel .audit-row-main .queue-link{justify-self:start;padding:0;font-size:12.5px}
 .queue-panel .audit-panel .empty-inline{margin:0;padding:2px 0 0;font-size:12.5px}
 .queue-panel .audit-answered .queue-link{padding:0;font-size:12.5px}
+/* One answer to several rows (D110): a tick on each card head, a "select shown" line and a floating bar. */
+.queue-panel .queue-pick{flex:none;width:15px;height:15px;margin:0 2px 0 0;accent-color:var(--accent);cursor:pointer}
+.queue-panel .queue-pick:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.queue-panel .queue-pick-all{display:inline-flex;align-items:center;gap:8px;justify-self:start;color:var(--muted);font-size:12.5px;cursor:pointer}
+.queue-panel .queue-pick-all:hover{color:var(--ink)}
+.qcard:has(header .queue-pick:checked){border-color:var(--accent-line)}
+.qcard:has(header .queue-pick:checked) header{background:var(--accent-tint)}
+.queue-panel .queue-selbar{position:sticky;bottom:16px;z-index:5;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;padding:10px 12px 10px 16px;border:1px solid var(--strong-line);border-radius:10px;background:var(--raised-surface);box-shadow:var(--shadow-float)}
+.queue-panel .queue-selbar>strong{color:var(--ink);font-size:13px;font-weight:600}
+.queue-panel .queue-selbar>strong>span{display:block;margin-top:2px;color:var(--muted);font-size:12px;font-weight:400}
+.queue-panel .queue-selbar-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.queue-panel .queue-selbar-actions button{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 11px;border:1px solid var(--strong-line);border-radius:7px;background:transparent;color:var(--ink);font-size:12.5px;font-weight:500;white-space:nowrap;cursor:pointer;transition:border-color .14s ease-out,background-color .14s ease-out}
+.queue-panel .queue-selbar-actions .is-include>svg{color:var(--ok-ink)}
+.queue-panel .queue-selbar-actions .is-criterion_not_met>svg{color:var(--error-ink)}
+.queue-panel .queue-selbar-actions .is-not_sure>svg{color:var(--muted)}
+.queue-panel .queue-selbar-actions .is-include:hover:not(:disabled){border-color:var(--ok-line);background:var(--ok-surface)}
+.queue-panel .queue-selbar-actions .is-criterion_not_met:hover:not(:disabled){border-color:var(--error-line);background:var(--error-surface)}
+.queue-panel .queue-selbar-actions :is(.is-not_sure,.queue-selbar-clear):hover:not(:disabled){background:var(--hover-surface)}
+.queue-panel .queue-selbar-actions .queue-selbar-clear{border-color:transparent;color:var(--muted)}
+.queue-panel .queue-selbar-actions button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.queue-panel .queue-selbar-actions button:disabled{opacity:.5;cursor:default}
+@media(max-width:600px){.queue-panel .queue-selbar{bottom:10px}.queue-panel .queue-selbar-actions{width:100%}}

@@ -386,3 +386,41 @@ def test_user_edit_during_small_batch_stops_further_model_reads_and_publication(
                                       (rid, "abstract" if phase == "abstract_screening" else "fulltext")).fetchone()
     finally:
         client.__exit__(None, None, None)
+
+
+# ---- one answer to several rows (D110) ----------------------------------------------------------------------------
+
+def test_one_answer_to_several_rows_writes_each_and_names_the_ones_it_refused(tmp_path, monkeypatch):
+    from test_queue import Lib, queued
+    app, client = quiet_app(tmp_path, monkeypatch)
+    try:
+        store = app.state.store
+        lib = Lib(store)
+        first, second, changed = queued(lib), queued(lib), queued(lib)
+        identity = lib.work()
+        lib.text(identity, [lib.field["page"]])
+        lib.unconfirmed(identity)
+        rows = {r["source_version_id"]: r for r in queue_of(client, lib.rid)["rows"]}
+        refs = [{"source_version_id": svid, "row_token": rows[svid]["row_token"]} for svid in (first, second, identity)]
+        refs += [{"source_version_id": changed, "row_token": "stale"}, refs[0],
+                 {"source_version_id": "srv_notasource0000000000", "row_token": "x"}]
+        result = client.post(f"/api/researches/{lib.rid}/queue/decisions",
+                             json={"decision": "include", "note": "SYNTHETIC bulk", "rows": refs})
+        left = {r["source_version_id"] for r in queue_of(client, lib.rid)["rows"]}
+        notes = [DecisionStore(store).current(lib.rid, svid, "fulltext")["note"] for svid in (first, second)]
+        undone = client.post(f"/api/researches/{lib.rid}/queue/{first}/undo",
+                             json={"row_token": result.json()["applied"][0]["undo_token"]})
+        pdf_answer = client.post(f"/api/researches/{lib.rid}/queue/decisions",
+                                 json={"decision": "pdf_confirmed", "rows": refs[:1]})
+        empty = client.post(f"/api/researches/{lib.rid}/queue/decisions", json={"decision": "include", "rows": []})
+    finally:
+        client.__exit__(None, None, None)
+    assert result.status_code == 200
+    body = result.json()
+    assert [a["source_version_id"] for a in body["applied"]] == [first, second]
+    assert {(r["source_version_id"], r["reason"]) for r in body["refused"]} == {
+        (identity, "not_in_bulk"), (changed, "row_changed"), ("srv_notasource0000000000", "not_answerable")}
+    assert first not in left and second not in left and changed in left and identity in left
+    assert notes == ["SYNTHETIC bulk", "SYNTHETIC bulk"]
+    assert undone.status_code == 200
+    assert pdf_answer.status_code == 422 and empty.status_code == 422

@@ -1,4 +1,4 @@
-import type { Answer, CitationFlag, CitationPairStatus, CitationResult, Evidence, FileRestoreReceipt, SeedUse, PersonFile, PersonFileState, QueueAnswer, QueueKind, RunKind, RunStatus, Source, SourceScope, TextRecoveryCapability, TextRetryOperation, Verdict } from './api'
+import type { Answer, CitationFlag, CitationPairStatus, CitationResult, Evidence, FileRestoreReceipt, SeedUse, PersonFile, PersonFileState, QueueAnswer, QueueKind, RunKind, RunStatus, Source, SourceScope, StatementSupportClass, TextRecoveryCapability, TextRetryOperation, Verdict } from './api'
 import { t, uiLocale } from './i18n'
 
 // Label records hold English text; callers show them through t().
@@ -905,6 +905,11 @@ export const citationRefusals: Record<string, string> = {
 // (support located in given passages) and never that a work disagrees: no "challenges" result exists yet (R5).
 export const statementResultLabels: Record<CitationResult, string> = {
   found_whole: 'Supports the whole statement', found_partial: 'Supports part of the statement', not_found_in_given: 'Not found in the given passages',
+}
+// R4b (D108): the class the backend presents each completed work in (`statement.support_class`). A result whose parts
+// are only partly stated is not support: it has its own class, and its stored result is shown as the model's.
+export const statementClassLabels: Record<StatementSupportClass, string> = {
+  ...statementResultLabels, support_not_shown: 'Support not shown clearly enough',
 }
 // Why a revision is no longer current (`statement_check.stale_reason`).
 export const statementStaleReasons: Record<string, string> = {

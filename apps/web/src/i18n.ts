@@ -5879,6 +5879,11 @@ const tr: Record<string, string> = {
   'left out with a reason': 'sebeple dışarıda',
   'listed': 'listede',
   'support part of it': 'bir kısmını destekliyor',
+  // Reverse citation search R4b (D108): a result with only partly stated parts is not support.
+  'Support not shown clearly enough': 'Destek yeterince gösterilmedi',
+  'support not shown clearly enough': 'destek yeterince gösterilmedi',
+  'The model found only partial overlap in the passages it was given and marked no part of the statement as stated, so these works are not counted as support.': 'Model, kendisine verilen pasajlarda yalnızca kısmi bir örtüşme buldu ve iddianın hiçbir parçasını belirtilmiş saymadı; bu yüzden bu eserler destek sayılmaz.',
+  'Stored result before the support rule: partial overlap': 'Destek kuralından önceki kayıtlı sonuç: kısmi örtüşme',
   'support the whole statement': 'tamamını destekliyor',
   'the question was revised after this check': 'soru bu kontrolden sonra revize edildi',
   'the text of a work it lists changed after this check': 'listelediği bir eserin metni bu kontrolden sonra değişti',

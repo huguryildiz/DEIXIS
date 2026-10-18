@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CircleCheck, Download, LoaderCircle, Play, RotateCw, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { api, ApiError, statementApi, type CitationEvidence, type CitationPart, type CitationResult, type StatementCheckBrief, type StatementCheckItem, type StatementCheckView, type StatementCounters, type StatementPreview } from '../api'
+import { api, ApiError, statementApi, type CitationEvidence, type CitationPart, type StatementCheckBrief, type StatementCheckItem, type StatementCheckView, type StatementCounters, type StatementPreview, type StatementSupportClass } from '../api'
 import { Notice } from '../Notice'
 import { ModelName } from '../ModelName'
 import { useModelText } from '../modelText'
 import {
   citationAssessmentLabels, money, pauseDetailText, pauseReasonText, runStatusLabels, statementErrorText, statementExcludedReasons,
-  statementRefusals, statementResultLabels, statementStaleReasons,
+  statementClassLabels, statementRefusals, statementStaleReasons,
 } from '../labels'
 import { t, uiLocale } from '../i18n'
 import '../CitationCheck.css'
@@ -20,7 +20,8 @@ import './statement.css'
 
 const num = (n: number) => n.toLocaleString(uiLocale())
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
-const RESULTS: CitationResult[] = ['found_whole', 'found_partial', 'not_found_in_given']
+// The classes the backend presents completed works in (R4b, D108); `support_not_shown` exists from rule 2 on.
+const CLASSES: StatementSupportClass[] = ['found_whole', 'found_partial', 'support_not_shown', 'not_found_in_given']
 
 export type StatementQuote = { passageId: string; anchor: string }
 
@@ -203,8 +204,10 @@ function Facts({ preview, finished }: { preview: StatementPreview | null; finish
 // The statement-check box: one revision's own counts, apart from the search counts above (found, screened, read).
 function Counters({ c }: { c: StatementCounters }) {
   const item = (label: string, value: number) => <li><b className="tnum">{num(value)}</b><span>{t(label)}</span></li>
-  const depth = (result: CitationResult) => {
-    const by = c.results_by_depth[result]
+  // Every result count is the backend's class count (`counters.classes`), never the stored results recounted here.
+  const classes = c.support_rule_version >= 2 ? CLASSES : CLASSES.filter(name => name !== 'support_not_shown')
+  const depth = (name: StatementSupportClass) => {
+    const by = c.classes_by_depth[name]
     return t('abstract only {a} · selected passages {s} · full text {f}', { a: num(by.abstract), s: num(by.selected_passages), f: num(by.full_text) })
   }
   return <>
@@ -225,9 +228,10 @@ function Counters({ c }: { c: StatementCounters }) {
         <ul>
           {item('sent to the model', c.sent_to_model)}
           {item('completed', c.completed)}
-          {item('support the whole statement', c.results.found_whole)}
-          {item('support part of it', c.results.found_partial)}
-          {item('not found in given passages', c.results.not_found_in_given)}
+          {item('support the whole statement', c.classes.found_whole)}
+          {item('support part of it', c.classes.found_partial)}
+          {c.support_rule_version >= 2 && item('support not shown clearly enough', c.classes.support_not_shown)}
+          {item('not found in given passages', c.classes.not_found_in_given)}
           {item('could not be checked', c.by_status.could_not_check)}
           {item('waiting', c.by_status.planned)}
         </ul>
@@ -236,7 +240,7 @@ function Counters({ c }: { c: StatementCounters }) {
     <details className="cc-list sc-depths">
       <summary>{t('Results by reading depth')}</summary>
       <ul>
-        {RESULTS.map(result => <li key={result}><span>{t(statementResultLabels[result])}</span> <span className="cc-fine">{depth(result)}</span></li>)}
+        {classes.map(name => <li key={name}><span>{t(statementClassLabels[name])}</span> <span className="cc-fine">{depth(name)}</span></li>)}
         <li><span>{t('Works with a located quote')}</span> <span className="cc-fine">{t('from the abstract {a} · from PDF pages {p}', { a: num(c.works_with_located_quotes_from.abstract), p: num(c.works_with_located_quotes_from.pages) })}</span></li>
       </ul>
     </details>
@@ -257,13 +261,15 @@ function depthText(item: StatementCheckItem): string | null {
 const versionLabel: Record<string, string> = { upload: 'your upload', preprint: 'preprint', publisher: 'publisher version' }
 const quoteOrigin = (evidence: CitationEvidence) => t(evidence.passage_kind === 'abstract' ? 'Quote from the abstract' : 'Quote from the PDF text')
 
-type GroupKey = CitationResult | 'could_not_check' | 'planned' | 'not_checked' | 'person_excluded'
+// A completed work goes to the group of its backend class (`support_class`); the screen never derives it from parts.
+type GroupKey = StatementSupportClass | 'could_not_check' | 'planned' | 'not_checked' | 'person_excluded'
 const groupOf = (item: StatementCheckItem): GroupKey => item.eligibility === 'person_excluded' ? 'person_excluded'
   : item.eligibility !== 'listed' || item.status === 'no_text' ? 'not_checked'
-  : item.status === 'done' && item.result ? item.result : item.status === 'could_not_check' ? 'could_not_check' : 'planned'
+  : item.status === 'done' && item.support_class ? item.support_class : item.status === 'could_not_check' ? 'could_not_check' : 'planned'
 const GROUPS: { key: GroupKey; title: string }[] = [
   { key: 'found_whole', title: 'Supports the whole statement' },
   { key: 'found_partial', title: 'Supports part of the statement' },
+  { key: 'support_not_shown', title: 'Support not shown clearly enough' },
   { key: 'not_found_in_given', title: 'Not found in the given passages' },
   { key: 'could_not_check', title: 'Could not be checked' },
   { key: 'planned', title: 'Waiting to be checked' },
@@ -279,6 +285,7 @@ function Groups({ view, onOpenQuote, onOpenSource }: { view: StatementCheckView;
     const rows = grouped.get(group.key)!
     return <section key={group.key} className="sc-group" data-group={group.key} aria-labelledby={`sc-g-${group.key}`}>
       <h3 id={`sc-g-${group.key}`}>{t(group.title)} <span className="sc-count">{num(rows.length)}</span></h3>
+      {group.key === 'support_not_shown' && <p className="sc-note">{t('The model found only partial overlap in the passages it was given and marked no part of the statement as stated, so these works are not counted as support.')}</p>}
       {group.key === 'not_found_in_given' && <p className="sc-note">{t('The model did not find this statement in the passages it was given. This does not mean the work contradicts it.')}</p>}
       <ul>{rows.map(item => <Row key={item.id} item={item} onOpenQuote={onOpenQuote} onOpenSource={onOpenSource} />)}</ul>
     </section>
@@ -288,8 +295,9 @@ function Groups({ view, onOpenQuote, onOpenSource }: { view: StatementCheckView;
 function Row({ item, onOpenQuote, onOpenSource }: { item: StatementCheckItem; onOpenQuote: (quote: StatementQuote) => void; onOpenSource: (svid: string) => void }) {
   const read = depthText(item)
   const meta = [item.year, item.text_version ? t(versionLabel[item.text_version] ?? item.text_version) : null, item.doi].filter(Boolean).join(' · ')
-  const supports = item.result === 'found_whole' || item.result === 'found_partial'
-  const notFound = item.result === 'not_found_in_given'
+  const cls = item.support_class
+  const supports = cls === 'found_whole' || cls === 'found_partial' || cls === 'support_not_shown'
+  const notFound = cls === 'not_found_in_given'
   const reason = item.eligibility === 'out_of_cap' ? t('Beyond the cap of works sent to the model')
     : item.eligibility === 'excluded_reason' ? t(statementExcludedReasons[item.excluded_reason ?? ''] ?? (item.excluded_reason ?? '').replaceAll('_', ' '))
     : item.status === 'no_text' ? t('No text to read, so no model was asked')
@@ -301,7 +309,10 @@ function Row({ item, onOpenQuote, onOpenSource }: { item: StatementCheckItem; on
       {item.entry === 'person_included' && <span className="sc-entry">{t('You included it')}</span>}
     </div>
     <div className="sc-result">
-      {item.result && <span className="cc-pill" data-result={item.result}>{t(statementResultLabels[item.result])}</span>}
+      {cls && <span className="cc-pill" data-result={cls}>{t(statementClassLabels[cls])}</span>}
+      {/* Where the class comes from, in neutral words: the stored result (kept as it was in the data) is the partial
+          overlap rule 2 no longer counts as support, so it is never named with a support label here. */}
+      {cls === 'support_not_shown' && item.result && <span className="sc-model">{t('Stored result before the support rule: partial overlap')}</span>}
       {read && <span className="sc-read">{read}</span>}
       {reason && <span className="cc-reason">{reason}</span>}
       {supports && <span className="sc-model">{t('The model’s assessment; read the passage.')}</span>}

@@ -2311,12 +2311,17 @@ export type StatementCheckBrief = {
   id: string; research_id: string; revision: number; request_id: string; sentence: string; scope_revision: number; is_latest: boolean
   discovery_run_id: string | null; attachment_snapshot: { status: string } | null; effort: string; work_cap: number; model: StatementCheckModel
   currency: 'current' | 'stale'; stale_reason: string | null; status: 'open' | 'finished'
+  // R4b (D108): the rule this revision's results are presented by; 1 for a revision stored before it.
+  support_rule_version: 1 | 2
   run: { id: string; status: RunStatus; pause_reason: string | null } | null; created_at: string
 }
+// How the backend presents a completed work (`statement.support_class`); only the first two are support.
+export type StatementSupportClass = 'found_whole' | 'found_partial' | 'support_not_shown' | 'not_found_in_given'
 export type StatementCheckItem = {
   id: string; ordinal: number; work_id: string; source_version_id: string; title: string | null; year: number | null; doi: string | null
   text_version: string | null; route: string | null; entry: 'reading' | 'person_included'; eligibility: StatementEligibility
-  excluded_reason: string | null; status: StatementStatus | null; result: CitationResult | null; depth: CitationDepth | null
+  excluded_reason: string | null; status: StatementStatus | null; result: CitationResult | null
+  support_class: StatementSupportClass | null; depth: CitationDepth | null
   passages_given: number | null; passages_total: number | null; passages_not_given: number | null; passages_cut: number | null
   extraction_complete: boolean | null; parts: CitationPart[] | null; error: { code: string; reason?: string } | null; checked_at: string | null
 }
@@ -2324,6 +2329,8 @@ export type StatementCounters = {
   candidates: number; listed: number; out_of_cap: number; excluded_reason: number; person_excluded: number
   excluded_reasons: Record<string, number>; by_status: Record<StatementStatus, number>; sent_to_model: number; completed: number
   results: Record<CitationResult, number>; results_by_depth: Record<CitationResult, Record<CitationDepth, number>>
+  support_rule_version: 1 | 2
+  classes: Record<StatementSupportClass, number>; classes_by_depth: Record<StatementSupportClass, Record<CitationDepth, number>>
   works_with_located_quotes_from: { abstract: number; pages: number }
 }
 export type StatementCheckView = StatementCheckBrief & { latest_check_id: string | null; counters: StatementCounters; items: StatementCheckItem[] }

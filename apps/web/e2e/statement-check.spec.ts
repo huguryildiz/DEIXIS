@@ -10,8 +10,9 @@ import { chooseTheme, sourcePanel } from './panels'
 // Reverse citation search R3: Home's "Check a statement" mode, the statement check panel in the research thread, the
 // fixed note that "not found" is not "contradicts", a stale revision and a recheck, and the exports. The fixture server
 // searches its SYNTHETIC records and its scripted model answers each `statement_check` step by the work it reads
-// (`statement_answer`): W901 states the whole sentence, W902 its second part, W903 nothing, any other work gives an
-// answer that is not a check. Passing shows what the screen does with stored rows, not how well a model checks support.
+// (`statement_answer`): W901 states the whole sentence, W902 its second part, W903 nothing, W904 its first part only
+// partly (R4b, D108: support not shown clearly enough, never counted as support), any other work gives an answer that
+// is not a check. Passing shows what the screen does with stored rows, not how well a model checks support.
 const PORT = nextPort()
 const REPO = path.resolve(process.cwd(), '..', '..')
 const SERVER_URL = `http://127.0.0.1:${PORT}`
@@ -130,6 +131,7 @@ test.describe.serial('R3: statement check', () => {
     await expect(group(page, 'not_checked').locator('.sc-row')).toHaveCount(2)
     await expect(group(page, 'not_checked')).toContainText('Left out at screening')
     await expect(page.locator('.sc-group[data-group="could_not_check"]')).toHaveCount(0)
+    await expect(page.locator('.sc-group[data-group="support_not_shown"]')).toHaveCount(0)
     // The counts are the view's own, in a box apart from the search counts.
     const works = panel.getByRole('region', { name: 'Works', exact: true })
     const check = panel.getByRole('region', { name: 'Check', exact: true })
@@ -139,6 +141,7 @@ test.describe.serial('R3: statement check', () => {
     await expect(check).toContainText('3sent to the model')
     await expect(check).toContainText('1support the whole statement')
     await expect(check).toContainText('1support part of it')
+    await expect(check).toContainText('0support not shown clearly enough')
     await expect(check).toContainText('1not found in given passages')
     await expect(check).toContainText('0could not be checked')
     await expect(panel.locator('.sc-facts')).toContainText('fixture-model')
@@ -157,7 +160,8 @@ test.describe.serial('R3: statement check', () => {
     // The exports: one row per work, status and result apart, with the revision's currency.
     const csvHref = await panel.getByRole('link', { name: 'CSV' }).getAttribute('href')
     const csv = await (await request.get(`${SERVER_URL}${csvHref}`)).text()
-    expect(csv.split('\n')[0]).toContain('status,result,depth,passages_given,passages_not_given')
+    expect(csv.split('\n')[0]).toContain('status,result,support_class,depth,passages_given,passages_not_given')
+    expect(csv.split('\n')[0]).toMatch(/,currency,support_rule_version\r?$/)
     expect(csv).toContain('found_whole')
     expect(csv).toContain('not_found_in_given')
     expect(csv).toMatch(/,1,current/)
@@ -182,18 +186,45 @@ test.describe.serial('R3: statement check', () => {
     await expect(panel.locator('.notice')).toContainText('This check is out of date: you included, excluded or judged a work or file after this check. Its results are kept, but they are not current.')
     await expect(group(page, 'found_whole')).toContainText('SYNTHETIC molecule release scheduling with bisection')
     await shot(page, '02-stale')
+    // R4b: the hostile record joins too, so revision 2 has a work whose answer is not a check.
+    const hostile = (await (await request.get(`${SERVER_URL}/api/researches/${researchId}`)).json()).sources.find((s: { title: string }) => s.title.includes('hostile'))
+    expect((await request.patch(`${SERVER_URL}/api/researches/${researchId}/selections/${hostile.source_version_id}`,
+      { headers: h, data: { state: 'included', expected_version: hostile.selection.version } })).ok()).toBe(true)
     const started = page.waitForRequest(r => r.method() === 'POST' && /\/runs$/.test(new URL(r.url()).pathname))
     await panel.locator('.notice').getByRole('button', { name: 'Check again' }).click()
     const body = (await started).postDataJSON()
     expect(body).toEqual({ kind: 'statement_check', expected_scope_revision: 1 })
     await expect(panel.locator('.sc-sub')).toContainText('Revision 2', { timeout: 30_000 })
-    await expect(panel).toContainText('Check finished: 3 works completed, 1 could not be checked.', { timeout: 60_000 })
+    await expect(panel).toContainText('Check finished: 4 works completed, 1 could not be checked.', { timeout: 60_000 })
     const cnc = group(page, 'could_not_check')
-    await expect(cnc).toContainText('SYNTHETIC optimization of hospital visiting hours')
+    await expect(cnc).toContainText('SYNTHETIC hostile abstract record')
     await expect(cnc).toContainText('You included it')
     await expect(cnc).toContainText('The model’s answer did not pass the checks, also after one repair.')
     await expect(cnc.locator('.cc-pill')).toHaveCount(0)
-    await expect(panel.getByRole('region', { name: 'Check', exact: true })).toContainText('1could not be checked')
+    // R4b: W904's stored result is found_partial with only a partly part; the backend's class puts it in its own group,
+    // with its note, its parts and located quote, and its stored result named as the model's, never counted as support.
+    const notShown = group(page, 'support_not_shown')
+    await expect(notShown.locator('h3')).toHaveText('Support not shown clearly enough 1')
+    await expect(notShown.locator('.sc-note')).toHaveText('The model found only partial overlap in the passages it was given and marked no part of the statement as stated, so these works are not counted as support.')
+    await expect(notShown).toContainText('SYNTHETIC optimization of hospital visiting hours')
+    await expect(notShown).toContainText('You included it')
+    await expect(notShown.locator('.cc-pill')).toHaveText('Support not shown clearly enough')
+    await expect(notShown).toContainText('Stored result before the support rule: partial overlap')
+    await expect(notShown).not.toContainText(/supports? (part|the whole)/i)
+    await expect(notShown.locator('.cc-part-a')).toHaveText(['Model: Partly stated', 'Model: Not stated'])
+    await expect(notShown.locator('.cc-quote')).toHaveText(['“Visiting hours were improved”'])
+    await expect(group(page, 'found_partial').locator('.sc-row')).toHaveCount(1)
+    await expect(group(page, 'found_partial')).toContainText('SYNTHETIC relay budget allocation')
+    const recheck = panel.getByRole('region', { name: 'Check', exact: true })
+    await expect(recheck).toContainText('1could not be checked')
+    await expect(recheck).toContainText('1support the whole statement')
+    await expect(recheck).toContainText('1support part of it')
+    await expect(recheck).toContainText('1support not shown clearly enough')
+    await expect(recheck).toContainText('1not found in given passages')
+    const csv2 = await (await request.get(`${SERVER_URL}${await panel.getByRole('link', { name: 'CSV' }).getAttribute('href')}`)).text()
+    expect(csv2).toMatch(/,found_partial,support_not_shown,abstract,/)
+    expect(csv2).toMatch(/,2,current,2\r?\n/)
+    expect((await new AxeBuilder({ page }).include('.sc-panel').analyze()).violations).toEqual([])
     await shot(page, '03-recheck')
 
     // Revision 1 is still there, stale, and opens with a pointer to the latest.

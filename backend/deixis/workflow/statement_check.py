@@ -26,6 +26,12 @@ from the attached files, once none of them is still being extracted (`attachment
 
 A revision is `stale` (`refresh_currency`), never rewritten or deleted, once the question moved on, the person's
 choices changed after its freeze, or the text of a work it lists did. Its results stay, marked as not current.
+
+Presenting (slice R4b, D108). Each completed item also has a support class, read from its stored result and parts
+under the rule its revision stored (`support_rule_version`; `domain.statement.support_class`, the one place it is
+decided): a new revision counts a work as support only when at least one part is `stated`, and a `found_partial` with
+none is `support_not_shown`; a revision stored before R4b reads with rule 1, its class being its result. The view, the
+counters, the list and both exports take the class from `_support_class`; the stored result is never rewritten.
 """
 
 from __future__ import annotations
@@ -75,6 +81,12 @@ class FrozenInputChanged(Exception):
 
 def item_key(item_id: str, revision: int) -> str:
     return f"{TASK}:{item_id}:r{revision}"
+
+
+def _support_class(check: dict[str, Any], item: dict[str, Any]) -> str | None:
+    """The item's support class under its revision's rule (`statement.support_class`), from the stored rows only."""
+    output = json.loads(item["output_json"]) if item["output_json"] else {}
+    return statement.support_class(item["result"], output.get("parts"), check["support_rule_version"])
 
 
 def check_row(store: Store, check_id: str) -> dict[str, Any]:
@@ -286,11 +298,11 @@ def create_check(flow: Any, research_id: str, discovery_run_id: str | None, mode
         store.conn.execute(
             "INSERT INTO statement_checks (id, research_id, revision, request_id, sentence, sentence_sha256, scope_revision,"
             " discovery_run_id, cutoff_step_id, attachment_snapshot_json, user_signature, effort, work_cap, model_json,"
-            " skill_package_hash, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " skill_package_hash, support_rule_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (check_id, research_id, revision, request_id, sentence, hashlib.sha256(sentence.encode("utf-8")).hexdigest(),
              scope["revision"], discovery_run_id if cutoff else None, cutoff["id"] if cutoff else None,
              dumps(snapshot) if snapshot else None, small_batch.user_signature(store, research_id), scope["effort"],
-             cap, dumps(frozen), package_hash, ts))
+             cap, dumps(frozen), package_hash, statement.SUPPORT_RULE_VERSION, ts))
         _insert_items(store, check_id, items)
         planned = sum(item["status"] == "planned" for item in items)
         run = store.create_run(research_id, KIND, _budget(planned), f"{KIND}:{check_id}",
@@ -648,6 +660,7 @@ def _brief(store: Store, check: dict[str, Any], latest: str | None) -> dict[str,
             "attachment_snapshot": json.loads(check["attachment_snapshot_json"] or "null"),
             "effort": check["effort"], "work_cap": check["work_cap"], "model": json.loads(check["model_json"]),
             "currency": check["currency"], "stale_reason": check["stale_reason"], "status": check["status"],
+            "support_rule_version": check["support_rule_version"],
             "run": _run_brief(store, check["run_id"]), "created_at": check["created_at"]}
 
 
@@ -684,8 +697,8 @@ def view(store: Store, check_id: str) -> dict[str, Any]:
             "source_version_id": item["source_version_id"], "title": source.get("title"), "year": source.get("year"),
             "doi": source.get("doi"), "text_version": item["text_version"], "route": item["route"],
             "entry": item["entry"], "eligibility": item["eligibility"], "excluded_reason": item["excluded_reason"],
-            "status": item["status"], "result": item["result"], "depth": item["depth"],
-            "error": json.loads(item["error_json"] or "null"),
+            "status": item["status"], "result": item["result"], "support_class": _support_class(check, item),
+            "depth": item["depth"], "error": json.loads(item["error_json"] or "null"),
             "located_anchors": json.loads(item["located_anchors_json"] or "null"),
             "located_passage_kinds": json.loads(item["located_passage_kinds_json"] or "null"),
             "step_input_id": item["step_input_id"], "checked_at": item["checked_at"]})
@@ -727,11 +740,14 @@ def counters(store: Store, check: dict[str, Any]) -> dict[str, Any]:
     least once (a repair is not a second one). A call counts as sent unless it is known never to have left: no token
     usage and an `unavailable` result, or its step's last attempt closed `before_send`. A call whose delivery is
     unknown (a process that stopped, `after_send_unknown`) or that the provider refused counts as sent. Completed = the three results; `could_not_check` is none of them. Each
-    result is split by the work's one depth, and the passage kinds the located quotes came from are counted apart."""
+    result is split by the work's one depth, and the passage kinds the located quotes came from are counted apart.
+    `results` are the stored results; `classes` are how the screen and exports present them under the revision's rule
+    (`_support_class`): only `found_whole` and `found_partial` there are support, `support_not_shown` never is."""
     items = items_of(store, check["id"])
     eligibility = Counter(item["eligibility"] for item in items)
     status = Counter(item["status"] for item in items if item["eligibility"] == "listed")
     done = [item for item in items if item["status"] == "done"]
+    classes = {item["id"]: _support_class(check, item) for item in done}
     keys = [item_key(item["id"], check["revision"]) for item in items if item["eligibility"] == "listed"]
     sent = store.conn.execute(
         f"SELECT COUNT(DISTINCT s.operation_key) FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE r.research_id = ?"
@@ -751,21 +767,26 @@ def counters(store: Store, check: dict[str, Any]) -> dict[str, Any]:
         "results": {result: sum(item["result"] == result for item in done) for result in RESULTS},
         "results_by_depth": {result: {depth: sum(item["result"] == result and item["depth"] == depth for item in done)
                                       for depth in DEPTHS} for result in RESULTS},
+        "support_rule_version": check["support_rule_version"],
+        "classes": {name: sum(classes[item["id"]] == name for item in done) for name in statement.SUPPORT_CLASSES},
+        "classes_by_depth": {name: {depth: sum(classes[item["id"]] == name and item["depth"] == depth for item in done)
+                                    for depth in DEPTHS} for name in statement.SUPPORT_CLASSES},
         "works_with_located_quotes_from": {"abstract": kinds["abstract"], "pages": sum(n for k, n in kinds.items()
                                                                                       if k != "abstract")},
     }
 
 
 EXPORT_COLUMNS = ("ordinal", "title", "year", "doi", "source_version_id", "text_version", "entry", "eligibility",
-                  "excluded_reason", "status", "result", "depth", "passages_given", "passages_not_given",
+                  "excluded_reason", "status", "result", "support_class", "depth", "passages_given", "passages_not_given",
                   "passages_cut", "extraction_complete", "located_passage_kinds", "error", "located_quotes",
-                  "revision", "currency")
+                  "revision", "currency", "support_rule_version")
 
 
 def export_rows(store: Store, check_id: str) -> list[dict[str, Any]]:
     """One row per work in list order: the record's own title, year and DOI, eligibility, status and result kept apart
     (a `could_not_check` work has no result), the depth with the given, not-given and cut passage counts, whether the
-    extraction was complete, the error, the backend's located words with their page, and the revision's currency."""
+    extraction was complete, the error, the backend's located words with their page, the revision's currency, and the
+    support class beside the stored result under the revision's rule (`_support_class`)."""
     check = refresh_currency(store, check_row(store, check_id))
     rows = []
     for item in items_of(store, check_id):
@@ -781,12 +802,14 @@ def export_rows(store: Store, check_id: str) -> list[dict[str, Any]]:
                      "doi": source.get("doi"), "source_version_id": item["source_version_id"],
                      "text_version": item["text_version"], "entry": item["entry"], "eligibility": item["eligibility"],
                      "excluded_reason": item["excluded_reason"], "status": item["status"], "result": item["result"],
+                     "support_class": _support_class(check, item),
                      "depth": item["depth"], "passages_given": len(plan["passage_ids"]) if plan else None,
                      "passages_not_given": plan.get("passages_not_given"), "passages_cut": plan.get("passages_cut"),
                      "extraction_complete": None if item["extraction_complete"] is None else bool(item["extraction_complete"]),
                      "located_passage_kinds": json.loads(item["located_passage_kinds_json"] or "[]"),
                      "error": (json.loads(item["error_json"]) if item["error_json"] else {}).get("code"),
-                     "located_quotes": quotes, "revision": check["revision"], "currency": check["currency"]})
+                     "located_quotes": quotes, "revision": check["revision"], "currency": check["currency"],
+                     "support_rule_version": check["support_rule_version"]})
     return rows
 
 

@@ -521,7 +521,8 @@ def citation_answer(si: dict[str, Any]) -> str:
 
 # Reverse citation search (R3): every `statement_check` step is answered by the work it reads, known by its passages'
 # text (no marker; the question is the sentence). W901 states the whole sentence, W902 its second part, W903 nothing,
-# and any other work gets an answer that is not a check, so its repair runs out (could not be checked). The sentence the
+# W904 its first part only `partly` with no `stated` part (R4b, D108: "support not shown clearly enough"), and any other
+# work gets an answer that is not a check, so its repair runs out (could not be checked). The sentence the
 # spec pastes is STATEMENT_SENTENCE; the parts are spans of it, as the V3 rules ask.
 STATEMENT_SENTENCE = "A bisection schedule for molecule release is proposed and relays share a molecule budget."
 
@@ -548,6 +549,9 @@ def statement_answer(si: dict[str, Any]) -> str:
                     {"text": second, "assessment": "stated", "evidence": [quote("Relays share a molecule budget")]}])
     if "short letter on release schedules" in text:
         return doc([{"text": sentence, "assessment": "not_stated", "evidence": []}])
+    if "Visiting hours were improved" in text and second:
+        return doc([{"text": first, "assessment": "partly", "evidence": [quote("Visiting hours were improved")]},
+                    {"text": second, "assessment": "not_stated", "evidence": []}])
     return "SYNTHETIC: not a statement check"
 
 

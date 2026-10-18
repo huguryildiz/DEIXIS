@@ -29,6 +29,8 @@
 .sc-entry{color:var(--ink-2);font-size:12px}
 .sc-read{color:var(--ink-2);font-size:12.5px}
 .sc-model{color:var(--muted);font-size:12px}
+/* R4b (D108): a result with only partly stated parts is not support; its pill reads apart from both support pills. */
+.sc-panel .cc-pill[data-result=support_not_shown]{border-style:dashed;border-color:var(--warn-line);background:var(--sidebar-surface);color:var(--ink-2);white-space:normal}
 .sc-result .cc-parts{margin-top:4px}
 .sc-result .cc-reason{margin-top:0}
 .sc-foot{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 16px}

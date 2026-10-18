@@ -15,7 +15,8 @@ not measured.
 - DEIXIS finds more gold papers than one plain OpenAlex query on all three sets.
 - The reranker helps on BioASQ and LitSearch. On the EE survey set it hurts, because most of the gold papers there come
   through citation chaining and the reranker pushes chained records down.
-- On BioASQ, DEIXIS with the reranker is close to Elicit's published figures.
+- On BioASQ, DEIXIS with the reranker is close to Elicit's published figures
+  ([Evaluating Elicit's paper search](https://elicit.com/blog/evaluating-elicit-paper-search)).
 
 ![Recall at 10 to 200 results for each set and arm](img/benchmark-recall.png)
 
@@ -46,7 +47,7 @@ difference.
 | C: DEIXIS, reranker on | **0.392** | **0.502** | **0.618** | **0.693** | **0.744** |
 | C − B | +0.039 (−0.005 to +0.084) | +0.058 (+0.012 to +0.105) | +0.072 (+0.037 to +0.108) | +0.036 (+0.021 to +0.054) | 0 |
 | C − A | +0.114 (+0.048 to +0.180) | +0.142 (+0.076 to +0.209) | +0.133 (+0.072 to +0.199) | +0.092 (+0.037 to +0.149) | +0.077 (+0.028 to +0.129) |
-| Elicit, as published (5,486 questions) | 0.390 | 0.483 | 0.603 | 0.670 | |
+| [Elicit, as published](https://elicit.com/blog/evaluating-elicit-paper-search) (5,486 questions) | 0.390 | 0.483 | 0.603 | 0.670 | |
 | **LitSearch (200)** | | | | | |
 | A: plain OpenAlex | 0.394 | 0.449 | 0.561 | 0.621 | 0.669 |
 | B: DEIXIS, reranker off | 0.474 | 0.578 | 0.636 | 0.708 | 0.738 |

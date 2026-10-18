@@ -120,7 +120,6 @@
 .queue-panel .queue-kept-note q{font-style:italic}
 .queue-panel .queue-link{color:var(--accent);font-weight:500;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 /* The answers (mockup .qopts): bordered choices with what each does under its label. */
-/* The audit sample's answers (Funnel panel) keep the old button stack. */
 .queue-panel .queue-answers{display:grid;gap:4px}
 .queue-panel .queue-answers [data-slot=button]{justify-content:flex-start;width:100%;height:auto;min-height:36px;padding:7px 12px;border-radius:8px;font-size:13px;text-align:left;white-space:normal}
 .queue-panel .queue-answers [data-slot=button]:not(.bg-primary):hover:not(:disabled){border-color:var(--accent-line)}
@@ -250,30 +249,55 @@
 .answer-flow p{margin:0}
 .answer-flow .is-attention{color:var(--warn-ink)}
 .queue-panel .overrides-line{margin:-6px 0 16px;color:var(--ink);font-size:12.5px;line-height:1.55}
-.queue-panel .audit-panel{margin-top:28px;padding-top:14px;border-top:1px solid var(--line)}
-.queue-panel .audit-panel h3{margin:0 0 4px;color:var(--ink);font-size:14px;font-weight:600}
-.queue-panel .audit-group{margin-top:16px}
-.queue-panel .audit-group-head,.queue-panel .audit-subhead{margin:0 0 4px;color:var(--ink);font-size:13px;font-weight:600}
-.queue-panel .audit-subhead{margin-top:12px;font-size:12.5px;font-weight:550}
-.queue-panel .audit-group-head small,.queue-panel .audit-subhead small{margin-left:6px;color:var(--muted);font-size:11.5px;font-weight:400}
-.queue-panel .audit-result{margin:0 0 6px;color:var(--ink);font-size:12.5px}
+.queue-panel .audit-panel{margin-top:28px;padding-top:16px;border-top:1px solid var(--line)}
+.queue-panel .audit-panel h3{margin:0 0 4px;color:var(--ink);font-size:15px;font-weight:600}
+.queue-panel .audit-panel>.queue-muted{max-width:680px}
+/* Each group is a box (like the flow block's .plist): a head band on the side surface, then rows on hairlines. */
+.queue-panel .audit-group{margin-top:14px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--paper)}
+.queue-panel .audit-box-head{display:grid;gap:3px;padding:10px 14px;background:var(--sidebar-surface);border-bottom:1px solid var(--line)}
+.queue-panel .audit-group-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin:0;color:var(--ink);font-size:13.5px;font-weight:600;line-height:1.4}
+.queue-panel .audit-count{display:inline-flex;align-items:center;padding:1px 8px;border:1px solid var(--line);border-radius:999px;background:var(--paper);color:var(--muted);font-size:11.5px;font-weight:450;font-variant-numeric:tabular-nums}
+.queue-panel .audit-result{margin:0;color:var(--ink-2);font-size:12.5px;line-height:1.5;font-variant-numeric:tabular-nums}
 .queue-panel .audit-rows{margin:0;padding:0;list-style:none}
-.queue-panel .audit-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 16px;align-items:start;padding:11px 0;border-top:1px solid var(--line)}
-.queue-panel .audit-row-main{display:grid;gap:4px;min-width:0}
-.queue-panel .audit-question{margin:2px 0 0;color:var(--ink);font-size:13px;font-weight:550}
-.queue-panel .audit-runs{margin:4px 0 0;padding:0;list-style:none;display:grid;gap:6px;color:var(--ink);font-size:12.5px;line-height:1.5}
-.queue-panel .audit-runs p,.queue-panel .audit-quote{margin:0;color:var(--ink);font-size:12.5px;line-height:1.5}
+.queue-panel .audit-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,300px);gap:12px 24px;align-items:start;padding:14px;border-top:1px solid var(--line)}
+.queue-panel .audit-row:first-child{border-top:0}
+.queue-panel .audit-row.is-abstract{grid-template-columns:minmax(0,1fr)}
+.queue-panel .audit-row-main{display:grid;gap:6px;min-width:0}
+.queue-panel .audit-row-top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+.queue-panel .audit-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:0;color:var(--muted);font-size:12.5px;line-height:1.5}
+.queue-panel .audit-code{padding:1px 6px;border-radius:5px;background:var(--hover-surface);color:var(--ink-2);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px}
+.queue-panel .audit-included{padding:1px 8px;border-radius:999px;background:var(--ok-surface);color:var(--ok-ink);font-size:11.5px;font-weight:500}
+.queue-panel .audit-toggle{display:inline-flex;align-items:center;gap:4px;justify-self:start;margin-top:2px;color:var(--accent);font-size:12.5px;font-weight:500;cursor:pointer}
+.queue-panel .audit-toggle:hover{text-decoration:underline;text-underline-offset:2px}
+.queue-panel .audit-toggle[aria-expanded=true] .queue-decided-chevron{transform:rotate(90deg)}
+.queue-panel .audit-runs{margin:2px 0 0;padding:10px 12px;list-style:none;display:grid;gap:8px;border-radius:8px;background:var(--sidebar-surface);color:var(--ink);font-size:12.5px;line-height:1.5}
+.queue-panel .audit-runs strong{font-size:12px;font-weight:600}
+.queue-panel .audit-runs p{margin:0;color:var(--ink);font-size:12.5px;line-height:1.5}
+.queue-panel .audit-quote{display:grid;gap:2px;margin:2px 0 0;padding:9px 12px;border-radius:8px;background:var(--sidebar-surface);color:var(--ink);font-size:13px;line-height:1.55}
+.queue-panel .audit-quote-run{color:var(--muted);font-size:11.5px;font-weight:550}
+.queue-panel .audit-find{display:inline-flex;flex:none;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid var(--strong-line);border-radius:6px;background:var(--paper);color:var(--ink);font-size:12.5px;font-weight:500;white-space:nowrap;cursor:pointer;transition:border-color .14s ease-out,background-color .14s ease-out}
+.queue-panel .audit-find:hover{border-color:var(--accent-line);background:var(--hover-surface)}
+.queue-panel .audit-find svg{color:var(--muted)}
+.queue-panel .audit-ask{display:grid;gap:8px;min-width:0}
+.queue-panel .audit-question{margin:0;color:var(--ink);font-size:12.5px;font-weight:550}
+.queue-panel .audit-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.queue-panel .audit-choices button{min-height:32px;padding:6px 10px;border:1px solid var(--strong-line);border-radius:6px;background:var(--paper);color:var(--ink);font-size:12.5px;font-weight:500;line-height:1.3;text-align:center;cursor:pointer;transition:border-color .14s ease-out,background-color .14s ease-out,color .14s ease-out}
+.queue-panel .audit-choices button:hover:not(:disabled){border-color:var(--accent-line);background:var(--hover-surface)}
+.queue-panel .audit-choices .is-include:hover:not(:disabled){border-color:var(--ok-line);background:var(--ok-surface);color:var(--ok-ink)}
+.queue-panel .audit-choices :is(.is-criterion_not_met,.is-pdf_wrong):hover:not(:disabled){border-color:var(--error-line);background:var(--error-surface);color:var(--error-ink)}
+.queue-panel .audit-choices button:focus-visible,.queue-panel .audit-find:focus-visible,.queue-panel .audit-toggle:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.queue-panel .audit-choices button:disabled{opacity:.5;cursor:default}
 .queue-panel .audit-answered{display:flex;flex-wrap:wrap;align-items:center;gap:8px;justify-content:flex-end}
-.queue-panel .audit-answers{justify-content:flex-end;max-width:420px}
-.queue-panel .audit-abstract{margin-top:22px;padding-top:12px;border-top:1px solid var(--line)}
+.queue-panel .audit-abstract{margin-top:28px}
+.queue-panel .audit-section-head{margin:0 0 4px;color:var(--ink);font-size:14px;font-weight:600}
+.queue-panel .audit-abstract>.queue-muted{max-width:680px}
+.queue-panel .audit-panel .empty-inline{margin:0;padding:12px 14px;font-size:12.5px}
 @media (max-width:760px){
   .flow-detail{padding-left:0}
   .queue-panel .audit-row{grid-template-columns:minmax(0,1fr)}
-  .queue-panel .audit-answers,.queue-panel .audit-answered{justify-content:flex-start;max-width:none}
+  .queue-panel .audit-row-top{flex-direction:column;gap:8px}
+  .queue-panel .audit-answered{justify-content:flex-start}
 }
-.queue-panel .audit-row-main .queue-link{justify-self:start;padding:0;font-size:12.5px}
-.queue-panel .audit-panel .empty-inline{margin:0;padding:2px 0 0;font-size:12.5px}
-.queue-panel .audit-answered .queue-link{padding:0;font-size:12.5px}
 /* One answer to several rows (D110): a tick on each card head, a "select shown" line and a floating bar. */
 .queue-panel .queue-pick{flex:none;width:15px;height:15px;margin:0 2px 0 0;accent-color:var(--accent);cursor:pointer}
 .queue-panel .queue-pick:focus-visible{outline:2px solid var(--accent);outline-offset:2px}

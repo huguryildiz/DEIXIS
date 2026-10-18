@@ -89,7 +89,7 @@ def test_only_per_call_connections_are_priced():
 
 def test_the_price_table_is_dated_and_versioned():
     table = spend.price_table()
-    assert table["version"] == 1 and table["as_of"] == "2026-10-16"
+    assert table["version"] == 1 and table["as_of"] == "2026-10-18"
     assert all(set(prices) >= {"input", "output"} for models in table["models"].values() for prices in models.values())
 
 
@@ -302,7 +302,7 @@ def test_the_estimate_is_a_wide_range_that_grows_with_depth():
     assert quick[1] < standard[1] < detailed[1]
     result = estimate()
     assert result["complete"] and result["embedding"] == {"provider": "builtin", "paid": False, "included": False}
-    assert result["prices"] == {"version": 1, "as_of": "2026-10-16"}
+    assert result["prices"] == {"version": 1, "as_of": "2026-10-18"}
     # The fixed part of each call is measured from the loaded method files, not assumed.
     assert all(t["input_tokens"][0] > 1000 for t in result["tasks"])
 

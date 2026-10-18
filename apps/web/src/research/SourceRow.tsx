@@ -19,13 +19,18 @@ function PdfSearchStatus() {
   const [since] = useState(() => new Date().toISOString())
   return <p className="pdf-search-status" role="status">
     <span className="sr-only">{t('Checking Unpaywall, OpenAlex and Crossref; Web Search will run if no verified PDF is retrieved…')}</span>
-    <LoaderCircle size={14} className="pdf-search-spin" aria-hidden />
-    <strong aria-hidden>{t('Finding PDF')}</strong>
-    <span className="pdf-search-services" title={PDF_LOOKUP_SERVICES.map(providerName).join(', ')} aria-hidden>{PDF_LOOKUP_SERVICES.map(id => <ConnectionIcon key={id} id={id} />)}</span>
-    <span className="pdf-search-muted" aria-hidden>{t('{n} open-access services', { n: PDF_LOOKUP_SERVICES.length })}</span>
-    <span className="pdf-search-sep" aria-hidden />
-    <span className="pdf-search-muted" aria-hidden><ConnectionIcon id="web_search" />{t('Web Search if needed')}</span>
-    <Elapsed since={since} />
+    <span className="pdf-search-head" aria-hidden>
+      <LoaderCircle size={14} className="pdf-search-spin" />
+      <strong>{t('Finding PDF')}</strong>
+      <span className="pdf-search-services" title={PDF_LOOKUP_SERVICES.map(providerName).join(', ')}>{PDF_LOOKUP_SERVICES.map(id => <ConnectionIcon key={id} id={id} />)}</span>
+      <Elapsed since={since} />
+    </span>
+    <span className="pdf-search-detail" aria-hidden>
+      <span className="pdf-search-muted">{t('{n} open-access services', { n: PDF_LOOKUP_SERVICES.length })}</span>
+      <span className="pdf-search-sep" />
+      <span className="pdf-search-muted"><ConnectionIcon id="web_search" />{t('Web Search if needed')}</span>
+    </span>
+    <span className="runchip-sweep" aria-hidden />
   </p>
 }
 

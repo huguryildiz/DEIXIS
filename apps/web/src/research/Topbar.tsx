@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { Lightbulb, LoaderCircle, Pause, PencilLine, Play, TriangleAlert, X } from 'lucide-react'
+import { Lightbulb, Pause, PencilLine, Play, TriangleAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { type Run } from '../api'
 import { runKindLabels, runStatusLabels, searchQueryTriesLeft } from '../labels'
 import { t } from '../i18n'
+import { Elapsed } from '../EvidenceTable'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 
@@ -89,8 +90,10 @@ export function RunChip({ run, hasAnswer, busy, inThread, onControl }: {
   const stopped = run.status === 'paused' && run.pause_reason !== 'user_requested'
   return <div className="run-strip">
     <span className={`runchip run-strip-status${active ? ' is-live' : ' is-warn'}`} data-run-id={run.id} tabIndex={-1}>
-      {active ? <LoaderCircle size={13} className="chat-spin" aria-hidden /> : stopped ? <TriangleAlert size={13} aria-hidden /> : <Pause size={13} aria-hidden />}
+      {active ? <span className="runchip-dot" aria-hidden /> : stopped ? <TriangleAlert size={13} aria-hidden /> : <Pause size={13} aria-hidden />}
       <span className="runchip-text">{text}</span>
+      {active && <Elapsed since={run.created_at} />}
+      {active && <span className="runchip-sweep" aria-hidden />}
     </span>
     {active && run.status !== 'pause_requested' && <Button variant="ghost" size="sm" className="research-topbar-action run-strip-pause" disabled={busy} onClick={() => onControl('pause')}><Pause size={14} aria-hidden />{t('Pause')}</Button>}
     {!active && !inThread && run.status === 'paused' && !(run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0)

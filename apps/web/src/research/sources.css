@@ -66,7 +66,11 @@
 .proposal.ocr-note>svg{flex:none;margin:3px 0 0;color:var(--muted)}
 .pdf-ready-head .ocr-note{margin-top:6px!important}
 .pdf-text-page h4 .ref-pill{margin-left:8px;vertical-align:1px}
-.pdf-search-status{width:fit-content;max-width:100%;margin-top:10px;padding:6px 12px 6px 10px;border:1px solid var(--strong-line);border-radius:999px;background:var(--raised-surface);display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;color:var(--ink);font-size:12.5px;line-height:1.55}
+.pdf-search-status{position:relative;overflow:hidden;width:fit-content;max-width:100%;margin-top:10px;padding:8px 12px 9px 11px;border:1px solid var(--strong-line);border-radius:10px;background:var(--raised-surface);display:grid;gap:3px;color:var(--ink);font-size:12.5px;line-height:1.5}
+.pdf-search-head,.pdf-search-detail{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;min-width:0}
+.pdf-search-detail{padding-left:22px}
+.pdf-search-head .evidence-run-time{margin-left:auto;padding-left:6px}
+.pdf-search-status .runchip-sweep{height:1.5px}
 .pdf-search-status strong{font-weight:600}
 .pdf-search-spin{flex:none;color:var(--accent);animation:pdf-search-rot .9s linear infinite}
 @keyframes pdf-search-rot{to{transform:rotate(360deg)}}

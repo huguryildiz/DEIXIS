@@ -464,7 +464,7 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     const held = await create(api, '[answer-hold] How is SYNTHETIC molecule release scheduling optimized?')
     await page.goto(`${server.url()}/#/research/${held}`)
     try {
-      await expect(chip(page)).toHaveText('Answer · Writing the first version', { timeout: 60_000 })
+      await expect(chip(page).locator('.runchip-text')).toHaveText('Answer · Writing the first version', { timeout: 60_000 })
       await expect(chip(page)).toHaveClass(/is-live/)
       await expect(topbar(page).getByRole('button', { name: 'Pause' })).toBeVisible()
       // A live run can be cancelled beside Pause (the mockup draws no other way to stop it; §0 rule 5).

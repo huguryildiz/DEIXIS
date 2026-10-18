@@ -71,6 +71,16 @@
 .runchip.is-warn{border-color:transparent;background:var(--warn-surface);color:var(--warn-ink)}
 .runchip>svg{flex:none}
 .runchip-text{min-width:0;overflow:hidden;text-overflow:ellipsis}
+/* A live run (B, 18 Oct): a stronger accent outline, a pulsing dot, the elapsed time and a sweep along the bottom edge,
+   so the run reads as working at a glance; same height as the buttons beside it. */
+.runchip.is-live{position:relative;overflow:hidden;gap:9px;min-height:32px;padding:0 12px 0 11px;border-color:var(--accent);border-radius:8px;font-size:13px;font-weight:500}
+.runchip.is-live .evidence-run-time{color:var(--muted);font-size:12px;font-weight:400;font-variant-numeric:tabular-nums}
+.runchip-dot{position:relative;flex:none;width:8px;height:8px;border-radius:50%;background:currentColor}
+.runchip-dot::after{content:"";position:absolute;inset:-4px;border:2px solid currentColor;border-radius:50%;opacity:0;animation:runchip-pulse 1.8s ease-out infinite}
+.runchip-sweep{position:absolute;left:0;bottom:0;width:40%;height:2px;background:var(--accent);animation:runchip-sweep 1.8s ease-in-out infinite}
+@keyframes runchip-pulse{0%{transform:scale(.4);opacity:.7}100%{transform:scale(1.4);opacity:0}}
+@keyframes runchip-sweep{0%{transform:translateX(-100%)}100%{transform:translateX(250%)}}
+@media (prefers-reduced-motion:reduce){.runchip-dot::after{animation:none}.runchip-sweep{animation:none;width:100%;opacity:.5}}
 /* "N waiting for you" (mockup `.waitchip`) opens the queue panel. */
 .wait-chip{display:inline-flex;flex:none;align-items:center;gap:6px;padding:4px 10px;border:0;border-radius:999px;background:var(--warn-surface);color:var(--warn-ink);font-size:12px;white-space:nowrap;cursor:pointer}
 .wait-chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}

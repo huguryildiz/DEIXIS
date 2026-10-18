@@ -133,8 +133,9 @@ def rerank_problems(conn, run_id, listing=None):
         return found
     size = min(MAX_CANDIDATES, math.ceil((output.get('read_top') or 0) * RERANKER['pool_factor']),
                len(listing.get('automatic_order') or ()))
-    if len(output.get('candidate_ids') or ()) != size:
-        found.append(f"reranked {len(output.get('candidate_ids') or ())} records, expected {size}")
+    window = len(output.get('candidate_ids') or ()) + len(output.get('kept_in_place') or ())  # D106: chain-only kept
+    if window != size:
+        found.append(f"rerank window {window} records, expected {size}")
     if not told.get('applied'):
         found.append(f"rerank not applied: {told.get('reason') or 'no reranker in the list'}")
     return found

@@ -191,7 +191,15 @@ def test_rerank_with_another_pool_factor_stops(tmp_path):
     server.add(harness.RERANK_KEY, 'succeeded', RERANK_STEP | {'pool_factor': 1.0, 'candidate_ids': ['a']})
     with closing(server.db()) as conn:
         found = '; '.join(harness.problems(conn, 'run1', LISTING))
-    assert 'pool 1.0' in found and 'reranked 1 records, expected 3' in found
+    assert 'pool 1.0' in found and 'rerank window 1 records, expected 3' in found
+
+
+def test_chain_only_records_kept_in_place_count_toward_the_rerank_window(tmp_path):
+    server = FakeServer(tmp_path / 'lib.sqlite')
+    server.add('source_similarity', 'succeeded', {'provider': 'voyage', 'stored_model': 'voyage:voyage-4-lite@1024'})
+    server.add(harness.RERANK_KEY, 'succeeded', RERANK_STEP | {'candidate_ids': ['a', 'c'], 'kept_in_place': ['b']})
+    with closing(server.db()) as conn:
+        assert harness.problems(conn, 'run1', LISTING) == []  # D106
 
 
 def test_failed_run_with_failed_embedding_stops_instead_of_scoring_zero(tmp_path, monkeypatch):

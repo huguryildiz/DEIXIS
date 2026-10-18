@@ -209,7 +209,8 @@ def reranked(manifest: dict[str, Any], fused: list[str]) -> tuple[list[str], dic
     """The automatic order after the stored rerank, and what was done; the fused order itself when there was none.
 
     The rerank only reorders the records it scored, among their own places in the fused order. It applies only when
-    the records it scored are still the first records of that order that the person did not include themselves; when
+    the records it scored, with the chained records it kept in place (D106), are still the first records of that order
+    that the person did not include themselves; when
     the list moved since (a selection changed while the reranker ran) or the reranker failed, the fused order stands
     and the listing says why. Everything here is read from the manifest, so the list replays exactly."""
     stored = manifest.get("reranker")
@@ -219,11 +220,13 @@ def reranked(manifest: dict[str, Any], fused: list[str]) -> tuple[list[str], dic
     if stored.get("status") != "applied":
         return fused, told | {"applied": False, "reason": stored.get("error_code") or stored.get("status"),
                               "fallback": "fused_order"}
-    candidates = stored["candidate_ids"]
+    candidates, kept = stored["candidate_ids"], stored.get("kept_in_place") or []
     priority = set(manifest["user_priority"])
-    if [rid for rid in fused if rid not in priority][:len(candidates)] != candidates:
+    window = [rid for rid in fused if rid not in priority][:len(candidates) + len(kept)]
+    if [rid for rid in window if rid not in set(kept)] != candidates or not set(kept) <= set(window):
         return fused, told | {"applied": False, "reason": "candidates_changed", "fallback": "fused_order"}
-    return rerankers.reorder(fused, candidates, stored["scores"]), told | {"applied": True, "reranked": len(candidates)}
+    return rerankers.reorder(fused, candidates, stored["scores"]), told | {
+        "applied": True, "reranked": len(candidates), **({"kept_in_place": len(kept)} if kept else {})}
 
 
 def next_batch(listing: dict[str, Any], number: int, size: int = BATCH_SIZE) -> dict[str, Any]:
@@ -385,6 +388,8 @@ def freeze_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabular
             output = step["output"] or {}
             manifest["reranker"] = {key: output.get(key) for key in (
                 "status", "provider", "model", "candidate_ids", "scores", "error_code")}
+            if output.get("kept_in_place"):  # D106; a step without it (before D106, or none kept) adds nothing
+                manifest["reranker"]["kept_in_place"] = output["kept_in_place"]
         return build_list(manifest)
     return save_code(flow, run, LIST_KEY, "code:small_batch_list", build)
 
@@ -481,7 +486,8 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
 
     The candidates are the first records of the automatic (fused) order that the person did not include themselves,
     as many as the run reads (its N) times the setting's pool factor, so the reranker decides which records fall above
-    the read cutoff, not only their order within it; each is sent as its title and abstract with the question. The scores are stored in this step and read
+    the read cutoff, not only their order within it; each is sent as its title and abstract with the question. A
+    record of that window that only citation chaining brought (`chain_heads`) is not sent and keeps its place (D106). The scores are stored in this step and read
     into the list's manifest. A reranker that fails, answers wrongly, runs out of time (its own limit, or what is left
     of the ranking stage) never hands over to another reranker: the step is `failed`, says why, and the list keeps the
     fused order. A pause or a cancellation stops the request (the built-in runner is killed) and the run stops. A rerank
@@ -497,14 +503,19 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
     manifest = json_value(manifest_for(flow, run, scope, vocabulary))
     priority = set(manifest["user_priority"])
     read_top = run["budget"]["fast_path"]["N"]
-    candidates = [rid for rid in replay(manifest)["fused"] if rid not in priority][:choice.pool_size(read_top)]
+    window = [rid for rid in replay(manifest)["fused"] if rid not in priority][:choice.pool_size(read_top)]
+    # D106: a record only citation chaining brought keeps its fused place; the reranker reads title and abstract only
+    # and pushed such records down (EE survey benchmark, 18 Oct), while search records still move among theirs.
+    chained = set(manifest.get("chain_heads") or ())
+    candidates = [rid for rid in window if rid not in chained]
+    kept = [rid for rid in window if rid in chained]
     rows = {row["id"]: row for row in manifest["pool"]}
     texts = [rerankers.document(rows[rid]["title"], rows[rid]["abstract"]) for rid in candidates]
     query = scope["question"]
     step = store.step(run["id"], RERANK_KEY, "code:rerank")
     store.start_step(step["id"])
     output = choice.identity() | {
-        "candidate_ids": candidates, "read_top": read_top, "query_sha256": canonical.sha256_hex(query),
+        "candidate_ids": candidates, "kept_in_place": kept, "read_top": read_top, "query_sha256": canonical.sha256_hex(query),
         "cut_documents": sum(len(text) > rerankers.MAX_DOCUMENT_CHARS for text in texts),  # D102, kept on failure too
         "sent": {"query": "question", "documents": "title_and_abstract", "count": len(candidates),
                  "to": "this_computer" if choice.provider == "builtin" else choice.provider}}

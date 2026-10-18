@@ -312,6 +312,21 @@ def test_a_failed_or_stale_rerank_keeps_the_fused_order_and_says_why(fixed_repla
         False, reason, "fused_order")
 
 
+def test_a_chained_record_the_rerank_kept_in_place_stays_while_the_scored_records_move_around_it(fixed_replay):
+    stored = applied(["a", "c"], {"a": 0.1, "c": 0.9}) | {"kept_in_place": ["b"]}  # D106
+    listing = small_batch.build_list(manifest(["a", "b", "c", "d"], reranker=stored))
+    assert listing["order"] == ["c", "b", "a", "d"]
+    assert (listing["reranker"]["applied"], listing["reranker"]["reranked"], listing["reranker"]["kept_in_place"]) == (
+        True, 2, 1)
+
+
+@pytest.mark.parametrize("kept", [["d"], ["x"]])  # past the window, or no longer in the list
+def test_a_kept_record_outside_the_window_makes_the_rerank_stale(fixed_replay, kept):
+    stored = applied(["a", "b"], {"a": 0.1, "b": 0.9}) | {"kept_in_place": kept}
+    listing = small_batch.build_list(manifest(["a", "b", "c", "d"], reranker=stored))
+    assert listing["order"] == ["a", "b", "c", "d"] and listing["reranker"]["reason"] == "candidates_changed"
+
+
 # ---- the rerank step ---------------------------------------------------------------------------------
 
 class Steps:
@@ -379,6 +394,23 @@ def test_the_rerank_step_scores_the_first_records_the_person_did_not_include_wit
     # A rerank that ended is not asked again.
     asyncio.run(small_batch.rerank_list(flow, RUN, SCOPE, {}))
     assert len(seen) == 1
+
+
+def test_a_record_only_chaining_brought_is_not_sent_and_is_kept_in_place(monkeypatch):
+    seen = []
+
+    class Local:
+        async def rerank(self, model_id, query, documents, seconds):
+            seen.append(documents)
+            return [0.5] * len(documents), []
+    flow, store, _ = rerank_flow(monkeypatch, {"enabled": True, "provider": "builtin", "model": RER, "pool_factor": 2}, Local())
+    pool = small_batch.manifest_for()["pool"]
+    monkeypatch.setattr(small_batch, "manifest_for", lambda *args: {
+        "pool": pool, "user_priority": ["c"], "fused": ["a", "b", "c", "d"], "chain_heads": ["b", "d"]})
+    asyncio.run(small_batch.rerank_list(flow, RUN, SCOPE, {}))
+    output = store.steps[small_batch.RERANK_KEY]["output"]
+    assert seen == [["SYNTHETIC title a\n\nSYNTHETIC abstract a"]]  # b is chain-only; d is past the window
+    assert (output["candidate_ids"], output["kept_in_place"], output["sent"]["count"]) == (["a"], ["b"], 1)
 
 
 def test_off_writes_no_step_and_calls_nothing(monkeypatch):

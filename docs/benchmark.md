@@ -142,7 +142,9 @@ chaining budget such a seed used up cannot be given back, so this leans against 
 B's first 50 results have a chain route. The reranker compares only title and abstract with the question, and a
 survey's reference list holds many foundational or side papers whose text looks far from the question. In the first
 50 results the reranker cuts chained records from 1,164 to 793 and gold hits from 909 to 658. On BioASQ and LitSearch
-the gold papers read close to the question, and there the reranker helps.
+the gold papers read close to the question, and there the reranker helps. Since D106 the reranker leaves records
+only chaining brought in their place; replayed on these runs, EE C @50 rises from 0.091 to 0.111 and LitSearch is
+unchanged. The tables above are the runs as made, before D106.
 
 | Topic (test questions) | A @50 | B @50 | C @50 |
 |---|---|---|---|

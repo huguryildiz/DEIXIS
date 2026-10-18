@@ -341,6 +341,41 @@ def _marker_state(store: Store, asset: dict[str, Any]) -> dict[str, Any]:
     return {"state": "failed", "reason": row["rejection_reason"], "attempts": attempts, "at": row["created_at"]}
 
 
+QUEUED_STATES = ("pending", "reading", "source_waiting")
+
+
+def background_read_waiting(store: Store, asset_id: str) -> dict[str, Any] | None:
+    """The equation state of a PDF the background reader is reading now or will still read by itself, else None
+    (D105: a frozen citation-check plan would go stale when that reading lands). Read as `run_forever` and
+    `next_asset` read it: a reader that can run (Marker installed and not installing, the arXiv source route active, or
+    Mathpix active), a PDF with a successful text extraction not yet read by Marker, and a state that is pending,
+    reading, waiting for its source, or failed with attempts left. A PDF a run is using now still counts: it is read
+    once that run ends."""
+    service = getattr(store, "equation_route", None)
+    if service is None or not ((service.available() and not service.installing()) or service.route_active()
+                               or service.mathpix_active()):
+        return None
+    asset = store.conn.execute("SELECT removed_at, extraction_status, extraction_version FROM source_assets WHERE id = ?",
+                               (asset_id,)).fetchone()
+    if (asset is None or asset["removed_at"] is not None or asset["extraction_status"] not in ("succeeded", "partial")
+            or (asset["extraction_version"] or "").endswith("+" + math_reader.MATH_VERSION)):
+        return None
+    state = equation_state(store, asset_id)
+    if state["state"] in QUEUED_STATES or (state["state"] == "failed" and state.get("attempts", MAX_ATTEMPTS) < MAX_ATTEMPTS):
+        return state
+    return None
+
+
+def next_try_at(state: dict[str, Any]) -> str | None:
+    """When the background reader tries a waiting PDF next, when the state says: the source route's next attempt, or a
+    failed read's time plus `RETRY_AFTER`; None for a PDF pending or being read now."""
+    if state["state"] == "source_waiting":
+        return state.get("next_at")
+    if state["state"] == "failed" and state.get("at"):
+        return (datetime.fromisoformat(state["at"]) + RETRY_AFTER).isoformat(timespec="milliseconds")
+    return None
+
+
 def equations_to_check(store: Store, asset_id: str | None, extraction_version: str | None) -> dict[int, int]:
     """Per page of an extraction, how many display equations did not match the PDF's text layer."""
     row = store.conn.execute("SELECT math_json FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?",

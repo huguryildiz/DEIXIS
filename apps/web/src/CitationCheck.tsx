@@ -147,6 +147,14 @@ function DraftView({ id, dark, onSettings }: { id: string; dark: boolean; onSett
     const timer = setInterval(() => { citationApi.get(id).then(setView, () => {}) }, 1000)
     return () => clearInterval(timer)
   }, [polling, id])
+  // While a cited work's PDF is being read again in the background, the view is read every five seconds, so the
+  // freeze is offered once the re-extraction ends.
+  const reextracting = (view?.reextraction_waiting?.length ?? 0) > 0
+  useEffect(() => {
+    if (!reextracting) return
+    const timer = setInterval(() => { citationApi.get(id).then(setView, () => {}) }, 5000)
+    return () => clearInterval(timer)
+  }, [reextracting, id])
 
   async function act(kind: Exclude<Busy, null>, call: () => Promise<CitationCheckView>) {
     setBusy(kind); setError(null)
@@ -297,10 +305,16 @@ function NextStep({ view, stage, busy, preview, onSettings, onResolve, onAcquire
     {acquisition?.status === 'paused' && <Notice tone="attention">{t('Today’s OpenAlex budget is used up, so some works still wait.')}{acquisition.reset_at ? ` ${t('It returns at {time}.', { time: new Date(acquisition.reset_at).toLocaleString(uiLocale(), { dateStyle: 'medium', timeStyle: 'short' }) })}` : ''}</Notice>}
     <div className="cc-acts">{action('Get the text', onAcquire, 'acquire')}</div>
   </>
+  const waiting = view.reextraction_waiting ?? []
+  const nextTry = waiting.map(w => w.next_at).filter((at): at is string => Boolean(at)).sort()[0]
   if (stage === 'freeze') return <>
     <p className="cc-step-h">{t('Step 3 of 4 · Freeze the passage plan')}</p>
     <p className="cc-step-p">{t('For each citation, the {k} passages of the cited work that share the most words with the sentence are chosen and fixed. The preview and the check read only this plan. At most {cap} pairs go to the model, in draft order.', { k: view.plan.passages_per_pair, cap: num(view.plan.cap) })}</p>
-    <div className="cc-acts">{action('Freeze the plan', onFreeze, 'freeze')}</div>
+    {waiting.length > 0 && <Notice tone="attention">{t('Wait for re-extraction: the PDFs of entries {entries} are being read again for their equations. A plan frozen now would go stale when that ends; this page checks again every few seconds.', { entries: waiting.map(w => w.entry_ordinal).join(', ') })}
+      {nextTry ? ` ${t('The next try is at {time}.', { time: new Date(nextTry).toLocaleString(uiLocale(), { dateStyle: 'medium', timeStyle: 'short' }) })}` : ''}</Notice>}
+    <div className="cc-acts">{waiting.length > 0
+      ? <button type="button" className="btn-teal" disabled><LoaderCircle size={16} className="cc-spin" aria-hidden />{t('Wait for re-extraction')}</button>
+      : action('Freeze the plan', onFreeze, 'freeze')}</div>
   </>
   if (stage === 'paused' && view.check_run) {
     const run = view.check_run
@@ -389,6 +403,7 @@ function MarkedSentence({ marker }: { marker: CitationMarker }) {
   return <>{marker.sentence.slice(0, a)}<mark className="cc-marker">{marker.sentence.slice(a, b)}</mark>{marker.sentence.slice(b)}</>
 }
 
+const tableNotRead = 'The table’s layout was not read (merged cells, a nested table or a header over several rows), so this citation is not checked.'
 const unreadReason: Record<CitationMarker['style'], string> = {
   latex: 'The keys inside this \\cite could not be read.',
   numeric: 'The bracket is not a list or range of reference numbers DEIXIS reads.',
@@ -433,13 +448,14 @@ function CitationTable({ view, onQuote, onWork }: { view: CitationCheckView; onQ
     </tr></thead>
     {view.markers.map(marker => {
       const pairs = marker.pairs
-      const sentence = <td className="cc-sentence" rowSpan={Math.max(1, pairs.length)} data-label={t('Sentence')}><MarkedSentence marker={marker} /></td>
+      const sentence = <td className="cc-sentence" rowSpan={Math.max(1, pairs.length)} data-label={t('Sentence')}><MarkedSentence marker={marker} />
+        {marker.claim && <span className="cc-reason">{marker.claim_context ? t('Checked as the table row: {row}', { row: marker.claim }) : t('Checked as: {claim}', { claim: marker.claim })}</span>}</td>
       const n = <th scope="rowgroup" className="cc-n" rowSpan={Math.max(1, pairs.length)}>{marker.ordinal}</th>
       if (!pairs.length) return <tbody key={marker.id} data-marker={marker.ordinal}><tr data-status="unrecognized">
         {n}{sentence}<td data-label={t('Cited work')} className="cc-none">{marker.raw}</td><td data-label={t('What was read')} className="cc-none">–</td>
         <td data-label={t('Result')} className="cc-none">–</td>
         <td data-label={t('Status')}><span className="cc-status" data-status="unrecognized">{statusIcon('unrecognized')}{t(citationStatusLabels.unrecognized)}</span>
-          <span className="cc-reason">{t(unreadReason[marker.style])}</span></td>
+          <span className="cc-reason">{t(marker.parse_reason === 'table_layout_not_read' ? tableNotRead : unreadReason[marker.style])}</span></td>
       </tr></tbody>
       return <tbody key={marker.id} data-marker={marker.ordinal}>{pairs.map((pair, i) => {
         const reason = pairReason(pair)

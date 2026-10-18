@@ -9,7 +9,8 @@ Durum kötü değil, ama dengesiz. Uygulama çalışıyor ve özellik bakımınd
 - **Sağlam olan:** atıf kuralı. Cevaptaki her atıf, okunan bir pasajda kodun bulduğu bir yere bağlanıyor; bulunamazsa cevap "doğrulanmamış taslak" kalıyor. 8 kayıtlı cevaptaki 171 atıf bağlantısının hepsi doğru çıktı.
 - **Ölçülen ve iyi olan:** arama sırası. 18 Ekim'de iki hazır test setinde, sahibin ayarlarıyla (Voyage embedding + Voyage reranker) DEIXIS ilk 50 sonuçta düz bir OpenAlex aramasından belirgin olarak fazla doğru makale buluyor: BioASQ'da 0,618'e karşı 0,489, LitSearch'te 0,700'e karşı 0,561. Reranker her iki sette de güven aralığı sıfırın üstünde katkı veriyor; bu yüzden artık varsayılan olarak açık (D104).
 - **Ölçülen ve zayıf olan:** elektrik mühendisliği survey seti (42 survey, gold = survey'in kaynakçası). Burada DEIXIS düz OpenAlex'i geçiyor (0,129'a karşı 0,065) ama fark küçük ve **reranker zarar veriyor** (0,091). Sebep: bu sette doğru makalelerin çoğu atıf zincirinden geliyor, reranker yalnız başlık ve özet okuduğu için zincir kayıtlarını aşağı itiyor. Varsayılanı açık yapan karar (D104) bu sonuçtan önce alındı; yeniden bakılmalı.
-- **Ölçülmeyen:** Verify Citations (taslak atıf denetimi), ters atıf arama, kartopu (snowballing), kill search'in Next steps girişi, run kartı. Hepsi yalnız sahte modelli testlerle ve Playwright'la sınandı. Okuma ve cevap kalitesi de ayrıca ölçülmedi: arama testleri yalnız sıralamayı ölçüyor.
+- **Bir kez canlı denenen:** Verify Citations (taslak atıf denetimi). V5 pilotu (bir taslak, 30 çift, Sonnet 5.5; insan etiketi yok, okuyucular Sol ve Opus): D105 sonrası tekrarda kontrol tamamlanamayan %48'den %14'e indi, örneklemde yanlış "bulundu" 0, üç eşik geçti. Tek koşu; sonucun bir kısmı modelin koşudan koşuya oynamasından olabilir.
+- **Ölçülmeyen:** ters atıf arama, kartopu (snowballing), kill search'in Next steps girişi, run kartı. Hepsi yalnız sahte modelli testlerle ve Playwright'la sınandı. Okuma ve cevap kalitesi de ayrıca ölçülmedi: arama testleri yalnız sıralamayı ölçüyor.
 - **Bilinen zayıflık:** cevaplar, kendilerine verilen eserlerin azını atıflıyor (D83 sonrası DBR/VBF sorusunda 13 eserden 12–13'ü, ama her koşu 30 iddia sınırına takılıyor). Raporlar model puanıyla 30 üzerinden 15–20 aldı (insan puanı yok). Paywall arkasındaki tam metinler okunamıyor; mühendislik makalelerinin çoğu özetten okunuyor.
 - **Paketleme yok:** P10 (macOS paketi) sahibin görsel kontrolünü bekliyor. Windows ve Linux hiç denenmedi.
 
@@ -17,16 +18,15 @@ Kısa hüküm: altyapı ve kurallar sağlam, arama ölçülmüş ve iyi; ama son
 
 ## Yarım kalan işler (18 Ekim)
 
-- **Verify Citations D105** (V5 pilotundan çıkan düzeltmeler): `.claude/worktrees/agent-a9c2c1463224185fd` içinde, main'e girmemiş 6 commit. Sol 4. tur incelemede "hazır değil" dedi (`\textbf@pair` gibi `@`'li komut adları); b0817990 bunu düzeltiyor, son Sol turu bekleniyor.
 - **Özet kaynaklar rapor tablosunda (D99 taslağı):** yerel `abstract-rows` dalında tek commit (dcd775ca), uzakta yok, main'e girmedi. Bekleyen sahip kararına bağlı: rapor tablosu bugün yalnız tam metni okunan kaynakları alıyor, cevap özetten okunanları da atıflıyor; az tam metinli sorularda (battery_soh, higher_ed_ai) rapor tek kaynağa dayanıyor. Plan: `.local/plans/abstract-rows-plan.md`.
 - **Arama kayıpları oturumu** ("okuma payı ve sorgu talimatı"): 18 Ekim'de hâlâ çalışıyordu. Kaçan makalelerin analizi `.local/benchmark-loss-2026-10-18/RESULT.md`: 74 kayıptan 35'i hiçbir DEIXIS sorgusuna uymuyor, 39'u sorgu başına okunan 500 kaydın ötesinde kalıyor.
 
 ## Döndüğünde sırayla bakılacaklar
 
-1. **Yarım işleri kapat:** D105'in son Sol turunu al ve main'e al; `abstract-rows` için kararı ver (al ya da sil); arama kayıpları oturumunun sonucunu oku.
+1. **Yarım işleri kapat:** `abstract-rows` için kararı ver (al ya da sil); arama kayıpları oturumunun sonucunu oku.
 2. **Reranker varsayılanını yeniden düşün:** survey setinde zarar ettiği için. Seçenekler: zincir kayıtlarını reranker'dan korumak, ya da reranker'ı yalnız anahtar kelime/semantik kayıtlara uygulamak. Önce ölç, sonra karar ver.
 3. **Görsel kontrol, sonra P10:** sahibin göz kontrolü ve çıkan düzeltmeler; ardından macOS paketi (plan `.local/plans/p10-plan.md`, K1–K15 satırları; OpenAI, Gemini, DeepSeek fiyatları yayından önce doğrulanacak).
-4. **Ölçülmemiş özellikleri bir kez canlı dene:** Verify Citations V5 pilotu gerçek bir taslakta (`.local/plans/verify-citations-v5-pilot.md`), ters atıf aramanın ekranı (R3) ve canlı pilotu (R4), kartopu için okuma penceresi ölçümü (havuz 200 ve 400, ikinci bir soruda).
+4. **Ölçülmemiş özellikleri bir kez canlı dene:** ters atıf aramanın ekranı (R3) ve canlı pilotu (R4), kartopu için okuma penceresi ölçümü (havuz 200 ve 400, ikinci bir soruda).
 5. **Yeni özellik ekleme duraklaması:** gap finder, Chain of Ideas, R5 gibi fikirler yukarıdakiler bitene kadar bekler.
 
 ## Açık işler (kısaltılmış)
@@ -62,7 +62,7 @@ Ayrıntı ve sayılar ilgili D kararında.
 
 - **Arama:** tek yol hızlı yol (temiz başlangıç, 10–11 Ekim); başlangıç PDF'leri aramayı yönlendiriyor (D2, D3, D6); atıf haritası (D42); kartopu (D91); takip sorusundan yeni eser arama (D92); reranker varsayılan Voyage (D104); llama.cpp ile yerleşik embedding ve reranker modelleri (D90).
 - **Okuma ve cevap:** ikinci tam metin okuması görmediği bölümleri okuyor (D76); cevaba verilen her eser ya atıflanıyor ya gerekçeyle dışarıda kalıyor (D80, D83); sonuç yoğun pasaj önce (D84); formül soruları için formül sayfası (D56).
-- **Atıf denetimi:** Verify Citations V1–V4 (D86, D96, D99, D101); ters atıf arama R1–R2 (D100, D103).
+- **Atıf denetimi:** Verify Citations V1–V4 (D86, D96, D99, D101), V5 pilotu ve düzeltmeleri (D105; sonuç `.local/verify-citations-v5-pilot/RESULT-r2.md`, açık: tablo satırında yazar sütunu doğrulanacak iddia sayılıyor, P25); ters atıf arama R1–R2 (D100, D103).
 - **Tablo ve rapor:** sayı kontrol bayrağı (D54), yazım kuralları (D51, D55), hücre yeniden deneme (D68), Anthropic API'de rapor şeması (D87, D93).
 - **Modeller ve ayarlar:** Anthropic API akışlı cevap, 64k token (D85); anahtarlar sistem keychain'inde (D19, D29); şirket başına model kartı (D20–D24, D34); Ollama/LM Studio (D39); kullanım ve harcama ekranı (D78).
 - **Uygulama:** mockup v24/v25 tasarımı (D5, D77, D79); run kartı (D82); P10 öncesi hazırlık kodda bitti; GitHub Actions tam testi dört makinede koşturuyor (bilgi amaçlı, hiçbir şeyi engellemiyor).

@@ -1699,6 +1699,7 @@ def _check_citation_check(step_input: dict[str, Any], allow: dict[str, set[str]]
         if not positive and evidence:
             report.issues.append(Issue("quote_on_not_stated_part", f"{path}/evidence", "a not_stated part has no quote"))
         located: set[tuple[str, str]] = set()
+        refused: list[Issue] = []
         for j, item in enumerate(evidence):
             pid, item_path = item["passage_id"], f"{path}/evidence/{j}"
             passage = passages.get(pid)
@@ -1712,14 +1713,18 @@ def _check_citation_check(step_input: dict[str, Any], allow: dict[str, set[str]]
                     message += (f"; it is in {', '.join(elsewhere)}. Cite the passage that contains the quote, or remove"
                                 " this quote if that passage does not state the part")
                 report.issues.append(Issue("anchor_not_in_passage", f"{item_path}/quote", message))
-            elif (reason := quote_meaning_differs(item["quote"], passage["text"], anchor, part["text"])) is not None:
-                report.issues.append(Issue("quote_meaning_differs", f"{item_path}/quote",
-                                           f"{pid}: {MEANING_REASONS[reason]}"))
+            elif (meaning := quote_meaning(item["quote"], passage["text"], anchor, part["text"])) is not None:
+                reason, detail = meaning
+                refused.append(Issue("quote_meaning_differs", f"{item_path}/quote",
+                                     f"{pid}: {MEANING_REASONS[reason]}" + (f" ({detail})" if detail else "")))
             elif (pid, anchor.text) in located:
                 report.issues.append(Issue("duplicate_evidence_quote", f"{item_path}/quote",
                                            f"{pid}: this quote repeats an earlier quote of the same passage"))
             else:
                 located.add((pid, anchor.text))
+        if refused and located:
+            refused = [Issue(i.code, i.path, f"{i.message}; {KEPT_QUOTES_HINT}") for i in refused]
+        report.issues.extend(refused)
     if total > CITATION_CHECK_MAX_QUOTES:
         report.issues.append(Issue("too_many_quotes", "/parts", f"{total} quotes; give at most {CITATION_CHECK_MAX_QUOTES}"))
     if draft["covers_whole_sentence"] is not True:
@@ -1948,8 +1953,13 @@ MEANING_REASONS = {
     "negation": "the passage holds a negation near the quote that the quote leaves out, or the quote one the passage"
                 " does not;"
                 " quote the clause including the negation, or do not use this passage for the part",
-    "part_negation": "the quote and the part disagree on a negation, so it cannot support the part as stated",
+    "placeholder": "the quote takes words from DEIXIS's placeholder for symbols the PDF reader could not read; quote"
+                   " the passage's own words",
+    "part_negation": "the quote and the part disagree on a negation, so it cannot support the part as stated; quote a"
+                     " clause of the passage that writes the same negation, or assess the part not_stated",
 }
+# Said once per part when some of its quotes were refused and at least one other was located and kept (V5 pilot).
+KEPT_QUOTES_HINT = "this part's other quotes were located; removing the refused quote keeps them"
 
 
 @dataclass(frozen=True)
@@ -1977,9 +1987,57 @@ def _token_key(token: CheckToken) -> str:
     return unicodedata.normalize("NFKC", token.text).casefold() if token.kind == "word" else token.text
 
 
-def _negations(tokens: list[CheckToken]) -> int:
-    return sum(1 for t in tokens if t.kind == "word"
-               and (_token_key(t) in NEGATION_WORDS or NEGATION_CONTRACTION.match(_token_key(t))))
+# V5 pilot (D105): three phrases are no negation. DEIXIS's own placeholder for PDF symbols it could not read (the words
+# are the app's, never the author's: `documents/pdf.UNREADABLE`); `not` right before `only` (`not only X` states X); and
+# `without` right after `with and` or `with or` (`with and without X` states both). A phrase counts as no negation only
+# when every one of its tokens is in the token list read, so a quote that starts at `only` of `not only`, or at
+# `without` of `with and without`, still has the negation outside it in the window and is refused. The placeholder is
+# shielded only in the window around a quote and only whole; a quote that overlaps it is refused (Sol round 1).
+UNREADABLE_MARK = "[symbols not readable in the PDF]"
+
+
+def _negation_marks(tokens: list[CheckToken], text: str, placeholder: bool = False) -> list[CheckToken]:
+    """The negation words of `tokens`, a run of tokens read from `text`, but those of the two phrases above, and, with
+    `placeholder` (the window around a quote only), those of a whole placeholder in that run. Sol round 1: a quote
+    that touches a placeholder is refused before this is read (`quote_meaning`), so the placeholder is shielded only
+    where it lies wholly outside the quote."""
+    keys = [_token_key(t) for t in tokens]
+    shields = [(m.start(), m.end()) for m in re.finditer(re.escape(UNREADABLE_MARK), text)] if placeholder else []
+
+    def adjacent(i: int, j: int) -> bool:
+        return not text[tokens[i].end:tokens[j].start].strip()
+
+    out = []
+    for i, token in enumerate(tokens):
+        if token.kind != "word" or not (keys[i] in NEGATION_WORDS or NEGATION_CONTRACTION.match(keys[i])):
+            continue
+        if any(a <= token.start and token.end <= b for a, b in shields):
+            continue
+        if keys[i] == "not" and i + 1 < len(tokens) and keys[i + 1] == "only" and adjacent(i, i + 1):
+            continue
+        if (keys[i] == "without" and i >= 2 and keys[i - 2] == "with" and keys[i - 1] in ("and", "or")
+                and adjacent(i - 2, i - 1) and adjacent(i - 1, i)):
+            continue
+        out.append(token)
+    return out
+
+
+def _negations(tokens: list[CheckToken], text: str) -> int:
+    return len(_negation_marks(tokens, text))
+
+
+CLAIM_MATH = re.compile(r"\$[^$]+\$")
+
+
+def claim_tokens(text: str) -> list[CheckToken]:
+    """The tokens of a claim or a part: a `$…$` span (math the claim keeps verbatim, D105) is one opaque token that must
+    be copied exactly, as written; the rest is read by `check_tokens`."""
+    out, at = [], 0
+    for match in CLAIM_MATH.finditer(text):
+        out += [CheckToken(t.text, t.start + at, t.end + at, t.kind) for t in check_tokens(text[at:match.start()])]
+        out.append(CheckToken(match.group(0), match.start(), match.end(), "math"))
+        at = match.end()
+    return out + [CheckToken(t.text, t.start + at, t.end + at, t.kind) for t in check_tokens(text[at:])]
 
 
 def citation_check_spans(sentence: str, parts: list[dict[str, Any]]) -> tuple[list[tuple[int, int] | None], list[str]]:
@@ -1989,14 +2047,14 @@ def citation_check_spans(sentence: str, parts: list[dict[str, Any]]) -> tuple[li
     the part before it, so parts are in sentence order and never overlap; a part found nowhere there is None. Every
     token no span covers is left out unless it is a coordinating connective (and, or, but, while, whereas); a negation,
     a number, a variable or a comparison word never is. Punctuation is no token."""
-    tokens = check_tokens(sentence)
+    tokens = claim_tokens(sentence)
     keys = [_token_key(t) for t in tokens]
     flat = " ".join(sentence.split()).casefold()
     spans: list[tuple[int, int] | None] = []
     covered: set[int] = set()
     at = 0
     for part in parts:
-        wanted = [_token_key(t) for t in check_tokens(part["text"])]
+        wanted = [_token_key(t) for t in claim_tokens(part["text"])]
         span = None
         if wanted and " ".join(part["text"].split()).casefold() in flat:
             span = next(((i, i + len(wanted)) for i in range(at, len(keys) - len(wanted) + 1)
@@ -2043,6 +2101,19 @@ def _cut_at(text: str, i: int) -> bool:
 
 
 def quote_meaning_differs(quote: str, passage: str, anchor: AnchorMatch, part_text: str | None = None) -> str | None:
+    """Why a located quote may say something the passage's located words do not, as a `MEANING_REASONS` key, else None
+    (`quote_meaning`, without the detail)."""
+    found = quote_meaning(quote, passage, anchor, part_text)
+    return found[0] if found else None
+
+
+def _around(text: str, start: int, end: int, margin: int = 40) -> str:
+    """The words of `text` around a span, on one line, for a repair message."""
+    a, b = max(0, start - margin), min(len(text), end + margin)
+    return ("…" if a else "") + " ".join(text[a:b].split()) + ("…" if b < len(text) else "")
+
+
+def quote_meaning(quote: str, passage: str, anchor: AnchorMatch, part_text: str | None = None) -> tuple[str, str] | None:
     """Why a located quote may say something the passage's located words do not, as a `MEANING_REASONS` key, else None.
 
     For every match kind, exact included, read on the passage's own tokens that the located span touches (a number
@@ -2054,19 +2125,24 @@ def quote_meaning_differs(quote: str, passage: str, anchor: AnchorMatch, part_te
     operator, or the unit of a number the span ends on; and the passage within 250 characters before the span and 80
     after (dots, commas and line breaks ignored) must hold no negation outside it, the quote and the span must agree on
     negations, and the quote must agree with its part on whether it is negated. A span the passage holds more than
-    once is read at each place, and any one refusal refuses it."""
+    once is read at each place, and any one refusal refuses it. The second item names what was found and where (the
+    negation word, the character that touches the span), so the repair can act on it (V5 pilot, D105)."""
     q_tokens = _dehyphenated(quote, check_tokens(quote))
     p_tokens = check_tokens(passage)
     if not q_tokens:
-        return "boundary"
-    if part_text is not None and bool(_negations(q_tokens)) != bool(_negations(check_tokens(part_text))):
-        return "part_negation"
+        return "boundary", ""
+    if part_text is not None:
+        quoted, claimed = _negation_marks(q_tokens, quote), _negation_marks(check_tokens(part_text), part_text)
+        if bool(quoted) != bool(claimed):
+            word = (claimed or quoted)[0].text
+            return "part_negation", (f'the part holds the negation "{word}" and the quote holds none' if claimed
+                                     else f'the quote holds the negation "{word}" and the part holds none')
     starts = [m.start() for m in re.finditer(re.escape(anchor.text), passage)] or [0]
     for start in starts:
         end = start + len(anchor.text)
         inside = [t for t in p_tokens if t.end > start and t.start < end]
         if not inside:
-            return "boundary"
+            return "boundary", ""
         # `locate_anchor` spans word characters only, so an operator, sign or percent the quote writes at its edge lies
         # just outside the span; it joins the span when the passage writes it right there.
         for edge in (0, -1):
@@ -2082,39 +2158,52 @@ def quote_meaning_differs(quote: str, passage: str, anchor: AnchorMatch, part_te
         inside = _dehyphenated(passage, inside)
         w_start = max(0, inside[0].start - NEGATION_WINDOW_BEFORE)
         w_end = min(len(passage), inside[-1].end + NEGATION_WINDOW_AFTER)
-        window = [t for t in p_tokens if t.end > w_start and t.start < w_end]
-        if (_negations(q_tokens) != _negations(inside)
-                or _negations([t for t in window if t not in inside])):
-            return "negation"
+        # Sol round 1: the placeholder is DEIXIS's text, never the author's; a quote touching it, even in part, is refused.
+        for mark in re.finditer(re.escape(UNREADABLE_MARK), passage):
+            if mark.start() < inside[-1].end and inside[0].start < mark.end():
+                return "placeholder", f'the quote overlaps "{UNREADABLE_MARK}"'
+        if _negations(q_tokens, quote) != _negations(inside, passage):
+            return "negation", "the quote and the passage's located words hold a different number of negations"
+        # The window is read in two runs, before and after the span, so a phrase the span cuts is never shielded.
+        before_run = [t for t in p_tokens if t.end > w_start and t.end <= inside[0].start]
+        after_run = [t for t in p_tokens if t.start >= inside[-1].end and t.start < w_end]
+        for side, run in (("before", before_run), ("after", after_run)):
+            if marks := _negation_marks(run, passage, placeholder=True):
+                word = marks[-1] if side == "before" else marks[0]
+                gap = inside[0].start - word.end if side == "before" else word.start - inside[-1].end
+                return "negation", (f'the passage writes "{word.text}" {gap} characters {side} the quote:'
+                                    f' "{_around(passage, word.start, word.end)}"')
         if [_token_key(t) for t in q_tokens if t.kind == "num"] != [_token_key(t) for t in inside if t.kind == "num"]:
-            return "number"
+            return "number", ""
         if ([t.text for t in q_tokens if t.kind in ("op", "sym")] != [t.text for t in inside if t.kind in ("op", "sym")]
                 or Counter(COMPARISON_WORDS[k] for t in q_tokens if (k := _token_key(t)) in COMPARISON_WORDS)
                 != Counter(COMPARISON_WORDS[k] for t in inside if (k := _token_key(t)) in COMPARISON_WORDS)):
-            return "comparison"
+            return "comparison", ""
 
         def units(tokens: list[CheckToken]) -> list[tuple[str, str | None]]:
             return [(_token_key(t), tokens[i + 1].text if i + 1 < len(tokens) and tokens[i + 1].kind != "num" else None)
                     for i, t in enumerate(tokens) if t.kind == "num"]
         if units(q_tokens) != units(inside):
-            return "unit"
+            return "unit", ""
         # Review rounds 3–4: every match kind, fuzzy included, must give the quote's token sequence exactly as written,
         # case included, so no unit prefix can change anywhere (`A/mW` vs `A/MW`); only a sentence-start capital may
         # differ, on a word of three or more letters whose other letters are lower case. Fuzzy tolerance is left for
         # PDF damage only: whitespace, plain punctuation and a word hyphenated across a line break.
         if [_case_key(t) for t in q_tokens] != [_case_key(t) for t in inside]:
-            return "boundary"
+            return "boundary", (f'the passage\'s located words are "{" ".join(passage[inside[0].start:inside[-1].end].split())}"')
         # Read on characters, not tokens: a span that a non-space, non-punctuation character touches cuts a token
         # (`5 mW` of `5 mW/cm²`, `5e` of `5e-3`, `10` of `10^6`, `km` of `km/h`).
-        if _cut_at(passage, inside[0].start - 1) or _cut_at(passage, inside[-1].end):
-            return "boundary"
+        for side, i in (("before", inside[0].start - 1), ("after", inside[-1].end)):
+            if _cut_at(passage, i):
+                return "boundary", (f'the passage writes "{passage[i]}" right {side} the quote:'
+                                    f' "{_around(passage, inside[0].start, inside[-1].end, 20)}"')
         before = [t for t in p_tokens if t.end <= inside[0].start]
         after = [t for t in p_tokens if t.start >= inside[-1].end]
         if before and _adjacent(passage, before[-1].end, inside[0].start) and before[-1].kind != "word":
-            return "context"
+            return "context", f'the passage writes "{before[-1].text}" right before the quote'
         if after and _adjacent(passage, inside[-1].end, after[0].start) and (
                 after[0].kind != "word" or inside[-1].kind == "num"):
-            return "context"
+            return "context", f'the passage writes "{after[0].text}" right after the quote'
     return None
 
 

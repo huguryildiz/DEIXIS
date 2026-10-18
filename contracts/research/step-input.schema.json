@@ -748,7 +748,13 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4000,
-          "description": "The citing sentence with its citation markers cut out. Part texts are copied from it."
+          "description": "The citing sentence with its citation markers cut out and LaTeX written as plain text; for a citation in a table, the table row as 'Header: cell' pairs. Part texts are copied from it."
+        },
+        "context": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000,
+          "description": "Only for a table row: the table's caption, which says what the columns and the yes/no cells mean. Read it; no part copies it and no part needs to cover it."
         },
         "assessed_source_id": {
           "$ref": "common.schema.json#/$defs/source_id"

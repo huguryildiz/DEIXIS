@@ -28,7 +28,7 @@ import io
 import re
 import unicodedata
 import zipfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Literal
 from xml.etree import ElementTree
@@ -84,6 +84,9 @@ class Marker:
     targets: list[Target] = field(default_factory=list)
     sentence_start: int = 0
     sentence_end: int = 0
+    claim: str = ""  # what the check reads: the sentence (or table row) with markers cut, as plain text (D105)
+    reason: str | None = None  # why an unrecognized marker was not read (`table_layout_not_read`)
+    claim_context: str | None = None  # a table row's caption, shown to the model, never part of the claim
 
 
 @dataclass(frozen=True)
@@ -209,6 +212,15 @@ _BIBITEM = re.compile(r"\\bibitem\s*(?:\[[^\]]*\])?\s*\{([^{}]+)\}")
 _LIST_PREFIX = re.compile(r"^[ \t]*(?:[-*+•][ \t]+|\d{1,4}\.[ \t]+)")
 
 
+_COMMENT = re.compile(r"(?<!\\)((?:\\\\)*)%[^\n]*")
+
+
+def strip_comments(text: str) -> str:
+    r"""LaTeX comments removed: a `%` starts one when an even number of backslashes (0, 2, …) stands right before it, so
+    `\\%` is a line break and then a comment, while `\%` and `\\\%` are a literal percent sign (Sol round 3, D105)."""
+    return _COMMENT.sub(r"\1", text)
+
+
 def _check_list_size(count: int) -> None:
     """A reference list over the cap is refused whole: a cut list could leave out the one entry a marker names, or the
     second entry with its number, and a match on what is left would look exact."""
@@ -218,7 +230,7 @@ def _check_list_size(count: int) -> None:
 
 
 def _tex_body(text: str) -> tuple[str, list[ListEntry], str | None]:
-    text = re.sub(r"(?<!\\)%[^\n]*", "", text)  # comments
+    text = strip_comments(text)  # before any marker or table is read
     begin = re.search(r"\\begin\{document\}", text)
     if begin:
         text = text[begin.end():]
@@ -311,7 +323,7 @@ def sentences(text: str, protected: list[tuple[int, int]] = ()) -> list[tuple[in
 _CITE_COMMANDS = ("cite", "citep", "citet", "citealp", "citealt", "citeauthor", "citeyear", "parencite", "textcite",
                   "autocite", "footcite", "smartcite", "Cite", "Citep", "Citet", "Parencite", "Textcite", "Autocite")
 _CITE = re.compile(r"\\(?:" + "|".join(_CITE_COMMANDS) + r")\*?((?:\s*\[[^\[\]{}]*\]){0,2})\s*\{([^{}]*)\}")
-_CITE_HEAD = re.compile(r"\\(?:" + "|".join(_CITE_COMMANDS) + r")\*?(?![A-Za-z])")
+_CITE_HEAD = re.compile(r"\\(?:" + "|".join(_CITE_COMMANDS) + r")\*?(?![A-Za-z@])")  # `\cite@x` is another macro
 _CITE_KEY = re.compile(r"[^\s{}\\,%#~]+")
 _GROUP = re.compile(r"\[[^\[\]\n]{1,80}\](?:[ \t]*(?:,|;|–|—|-|−)[ \t]*\[[^\[\]\n]{1,80}\])*")
 _DASH = "-–—−"
@@ -507,11 +519,534 @@ def parse_draft(fmt: Format, text: str) -> Draft:
     else:
         body, entries, origin = _cut_list(text)
     markers = find_markers(body, fmt)
-    spans = sentences(body, [(m.start, m.end) for m in markers])
+    marker_spans = [(m.start, m.end) for m in markers]
+    spans = sentences(body, marker_spans)
+    tables = _tables(body) if fmt == "tex" or any(m.style == "latex" for m in markers) else []
     for marker in markers:
         sentence = next(((a, b) for a, b in spans if a <= marker.start < b), (marker.start, marker.end))
         marker.sentence_start, marker.sentence_end = sentence
+        latex = fmt == "tex" or marker.style == "latex"
+        table = _innermost(tables, marker.start) if latex else None
+        if table is not None:
+            row = next((r for r in table.rows if r.start <= marker.start < r.end), None)
+            claim = _row_claim(body, table, row, marker_spans)
+            if row is not None:
+                marker.sentence_start, marker.sentence_end = row.text_start, row.end
+            if claim is None:  # fail-closed: no claim, no pair, nothing sent
+                marker.status, marker.targets, marker.reason = "unrecognized", [], TABLE_LAYOUT_NOT_READ
+            else:
+                marker.claim, marker.claim_context = claim, table.caption
+        else:
+            cut = cut_markers(body, marker.sentence_start, marker.sentence_end, marker_spans)
+            # A sentence that holds nothing but LaTeX commands keeps its text as written, never an empty claim.
+            marker.claim = (plain_latex(cut) if latex else "") or re.sub(r"\s+", " ", cut).strip()
     return Draft(fmt, body, markers, entries, origin if entries else None)
+
+
+def cut_markers(text: str, start: int, end: int, spans: list[tuple[int, int]]) -> str:
+    """`text[start:end]` with every marker span inside it cut out, so a key, a number or a cited name never ranks a
+    passage or becomes a part of the claim."""
+    pieces, at = [], start
+    for left, right in sorted(spans):
+        if start <= left and right <= end and left >= at:
+            pieces.append(text[at:left])
+            at = right
+    pieces.append(text[at:end])
+    return "".join(pieces)
+
+
+# ------------------------------------------------------------------------------------------------- the plain claim
+#
+# V5 pilot (D105): a LaTeX sentence is given to the model and to the coverage and span checks as plain text, so a part
+# copied from it never has to copy LaTeX. The rules, applied the same way everywhere:
+# - comments, `\label`, `\ref`-like commands, sectioning commands and spacing commands go with their arguments
+#   (a footnote's and a caption's text stay); `\begin{…}` and `\end{…}` go and their content stays;
+# - a command whose arguments are text (`\emph`, `\textbf`, `\textit`, any unknown one with brace arguments) keeps the
+#   text of its arguments; `\textcolor{c}{x}` and `\href{u}{x}` keep x; an unknown command without arguments (a
+#   person's tag macro such as `\tP`) goes;
+# - a check mark (`\cmark`, `\checkmark`, `\ding{51}`, ✓, ✔) is the word "yes", a cross (`\xmark`, `\ding{55}`, ✗, ✘)
+#   the word "no";
+# - `~` is a space, `--` an en dash, `---` an em dash, `\%` `\&` `\$` `\#` `\_` the character, ``…'' curly quotes,
+#   accents (`\'e`, `\"{o}`) the accented letter;
+# - inline math (`$…$`, `\(…\)`) that converts one way (`simple_math`: letters, digits, simple operators, Greek
+#   letters and relations as Unicode, one-token scripts) is written plain without delimiters; every other math (a
+#   `\frac`, `\sqrt`, a grouped script of more than one token, `\left`, any other command, display math and math
+#   environments) stays verbatim as `$…$` with its spaces collapsed, never a reading that two sources could share;
+# - spaces are collapsed, with none before , . ; : ) ] and none after ( [.
+
+_SECTIONING = {"part", "chapter", "section", "subsection", "subsubsection", "paragraph", "subparagraph"}
+_DROP_WITH_ARGS = {"label", "ref", "eqref", "autoref", "cref", "Cref", "pageref", "nameref", "footnotemark", "index",
+                   "vspace", "hspace", "color", "pagecolor", "phantom", "hphantom", "vphantom",
+                   "bibliographystyle", "bibliography", "includegraphics", "input", "include", "newcommand",
+                   "renewcommand", "setlength", "addtolength", "arraystretch", "rule", "captionsetup",
+                   "cline", "cmidrule", "addlinespace", "rowcolor", "cellcolor", "columncolor", "arrayrulecolor"
+                   } | _SECTIONING
+_LAST_ARG = {"textcolor", "colorbox", "href", "fcolorbox"}  # keep only the last argument
+_WORDS = {"ldots": "…", "dots": "…", "textellipsis": "…", "textendash": "–", "textemdash": "—", "LaTeX": "LaTeX",
+          "TeX": "TeX", "S": "§", "P": "¶", "textasciitilde": "~", "textbackslash": "\\", "textbar": "|",
+          "textless": "<", "textgreater": ">", "copyright": "©", "textdegree": "°", "degree": "°", "times": "×",
+          "textperthousand": "‰", "ss": "ß", "o": "ø", "O": "Ø", "ae": "æ", "AE": "Æ", "oe": "œ", "OE": "Œ",
+          "aa": "å", "AA": "Å", "l": "ł", "L": "Ł", "i": "ı"}
+_MATH = {"alpha": "α", "beta": "β", "gamma": "γ", "delta": "δ", "epsilon": "ϵ", "varepsilon": "ε", "zeta": "ζ",
+         "eta": "η", "theta": "θ", "vartheta": "ϑ", "iota": "ι", "kappa": "κ", "lambda": "λ", "mu": "μ", "nu": "ν",
+         "xi": "ξ", "pi": "π", "varpi": "ϖ", "rho": "ρ", "varrho": "ϱ", "sigma": "σ", "varsigma": "ς", "tau": "τ",
+         "upsilon": "υ", "phi": "ϕ", "varphi": "φ", "chi": "χ", "psi": "ψ", "omega": "ω", "Gamma": "Γ", "Delta": "Δ",
+         "Theta": "Θ", "Lambda": "Λ", "Xi": "Ξ", "Pi": "Π", "Sigma": "Σ", "Upsilon": "Υ", "Phi": "Φ", "Psi": "Ψ",
+         "Omega": "Ω", "le": "≤", "leq": "≤", "ge": "≥", "geq": "≥", "neq": "≠", "ne": "≠", "pm": "±", "mp": "∓",
+         "times": "×", "cdot": "·", "approx": "≈", "sim": "∼", "simeq": "≃", "equiv": "≡", "propto": "∝",
+         "infty": "∞", "to": "→", "rightarrow": "→", "leftarrow": "←", "Rightarrow": "⇒", "in": "∈", "notin": "∉",
+         "subset": "⊂", "subseteq": "⊆", "cup": "∪", "cap": "∩", "ll": "≪", "gg": "≫", "partial": "∂",
+         "nabla": "∇", "sum": "∑", "prod": "∏", "int": "∫", "ell": "ℓ", "hbar": "ℏ", "star": "⋆", "ast": "∗",
+         "circ": "∘", "prime": "′", "lvert": "|", "rvert": "|", "vert": "|", "lVert": "‖", "rVert": "‖",
+         "langle": "⟨", "rangle": "⟩", "dagger": "†", "ldots": "…", "cdots": "⋯", "dots": "…"}
+_MATH_SIZING = {"left", "right", "big", "Big", "bigg", "Bigg", "bigl", "bigr", "Bigl", "Bigr", "biggl", "biggr",
+                "Biggl", "Biggr", "middle", "displaystyle", "textstyle", "scriptstyle", "limits", "nolimits"}
+_SPACING = {",": " ", ";": " ", ":": " ", " ": " ", "!": "", "/": "", "-": "", "quad": " ", "qquad": " ", "enspace": " ",
+            "thinspace": " ", "medspace": " ", "thickspace": " ", "noindent": "", "par": " ", "newline": " ",
+            "linebreak": " ", "centering": "", "raggedright": "", "raggedleft": "", "smallskip": " ",
+            "medskip": " ", "bigskip": " ", "item": " ", "toprule": " ", "midrule": " ", "bottomrule": " ",
+            "hline": " ", "tabularnewline": " "}
+_ACCENTS = {"'": "\u0301", "`": "\u0300", "^": "\u0302", '"': "\u0308", "~": "\u0303", "=": "\u0304", ".": "\u0307",
+            "c": "\u0327", "v": "\u030c", "u": "\u0306", "H": "\u030b", "k": "\u0328", "r": "\u030a", "d": "\u0323"}
+_YES_MACROS = {"cmark", "checkmark", "tick", "yes", "ok", "correct"}
+_NO_MACROS = {"xmark", "cross", "crossmark", "no", "wrong"}
+_YES_CHARS, _NO_CHARS = "✓✔☑🗸", "✗✘☒"
+_MATH_ENVS = ("equation", "equation*", "align", "align*", "gather", "gather*", "multline", "multline*", "displaymath",
+              "math", "eqnarray", "eqnarray*", "flalign", "flalign*", "alignat", "alignat*")
+_MATH_SPLIT = re.compile(r"\$\$(.+?)\$\$|(?<!\\)\$(.+?)(?<!\\)\$|\\\((.+?)\\\)|\\\[(.+?)\\\]|"
+                         r"\\begin\{(" + "|".join(re.escape(e) for e in _MATH_ENVS) + r")\}(.*?)\\end\{\5\}", re.DOTALL)
+
+
+def _group(text: str, i: int, open_: str = "{", close: str = "}") -> int | None:
+    """The index just past the balanced group that starts at `text[i]` (`{…}` or `[…]`), else None."""
+    if i >= len(text) or text[i] != open_:
+        return None
+    depth = 0
+    j = i
+    while j < len(text):
+        c = text[j]
+        if c == "\\":
+            j += 2
+            continue
+        if c == open_:
+            depth += 1
+        elif c == close:
+            depth -= 1
+            if depth == 0:
+                return j + 1
+        j += 1
+    return None
+
+
+def _args(text: str, i: int, spaces: bool) -> tuple[list[str], int]:
+    """The brace arguments right after a command name ending at `i` (an optional `[…]` and a star skipped), and where
+    they end. With `spaces`, spaces may stand before an argument."""
+    args = []
+    while True:
+        j = i
+        while spaces and j < len(text) and text[j] in " \t":
+            j += 1
+        if j < len(text) and text[j] == "[" and (end := _group(text, j, "[", "]")) is not None:
+            i = end
+            continue
+        if (end := _group(text, j)) is None:
+            return args, i
+        args.append(text[j + 1:end - 1])
+        i = end
+
+
+def _marks(text: str) -> str:
+    """Check marks and crosses as the words yes and no, before any other rule reads the text."""
+    text = re.sub(r"\\ding\s*\{\s*5[12]\s*\}", " yes ", text)
+    text = re.sub(r"\\ding\s*\{\s*5[5-8]\s*\}", " no ", text)
+    text = re.sub(r"\\(" + "|".join(_YES_MACROS) + r")(?![A-Za-z])(?:\s*\{\s*\})?", " yes ", text)
+    text = re.sub(r"\\(" + "|".join(_NO_MACROS) + r")(?![A-Za-z])(?:\s*\{\s*\})?", " no ", text)
+    text = re.sub(f"[{_YES_CHARS}]", " yes ", text)
+    return re.sub(f"[{_NO_CHARS}]", " no ", text)
+
+
+def _commands(text: str, math: bool) -> str:
+    out, i = [], 0
+    while i < len(text):
+        c = text[i]
+        if c != "\\":
+            out.append(c)
+            i += 1
+            continue
+        name_match = re.match(r"[A-Za-z@]+\*?|.", text[i + 1:], re.DOTALL)
+        if not name_match:
+            i += 1
+            continue
+        name = name_match.group(0)
+        end = i + 1 + len(name)
+        bare = name.rstrip("*")
+        if name in _ACCENTS and not math:  # `\'e`, `\"{o}`, `\c c`
+            j = end + (1 if name.isalpha() and end < len(text) and text[end] == " " else 0)
+            if (stop := _group(text, j)) is not None:
+                base, i = text[j + 1:stop - 1], stop
+            else:
+                base, i = text[j:j + 1], j + 1
+            out.append(unicodedata.normalize("NFC", (base[:1] + _ACCENTS[name] + base[1:]) if base else ""))
+            continue
+        if name == "\\":  # a line break; a word hyphenated across it is joined
+            i = end
+            if end < len(text) and text[end] == "[" and (stop := _group(text, end, "[", "]")) is not None:
+                i = stop
+            if not (out and out[-1] == "-"):
+                out.append(" ")
+            continue
+        if not name.isalpha() and not bare.isalpha():
+            if name in _SPACING:
+                out.append(_SPACING[name])
+            else:  # `\%`, `\&`, `\{` … the character itself; an escaped brace outlives the grouping braces removed later
+                out.append({"{": _OPEN, "}": _CLOSE}.get(name, name))
+            i = end
+            continue
+        if bare in ("begin", "end"):
+            _, i = _args(text, end, True)  # the environment's name and arguments (a tabular's width and columns)
+            out.append(" ")
+            continue
+        if bare in _SPACING:
+            out.append(_SPACING[bare])
+            _, i = _args(text, end, False) if bare in ("toprule", "midrule", "bottomrule") else ([], end)
+            continue
+        if bare in _DROP_WITH_ARGS:
+            _, i = _args(text, end, True)
+            out.append(" ")
+            continue
+        if math and bare in _MATH_SIZING:
+            i = end
+            continue
+        if math and bare in ("frac", "tfrac", "dfrac", "cfrac"):
+            j = end
+            parts = []
+            for _ in range(2):
+                while j < len(text) and text[j] == " ":
+                    j += 1
+                if (stop := _group(text, j)) is not None:
+                    parts.append(_commands(text[j + 1:stop - 1], True))
+                    j = stop
+                elif j < len(text):
+                    parts.append(text[j])
+                    j += 1
+            out.append("/".join(parts))
+            i = j
+            continue
+        if math and bare == "sqrt":
+            args, i = _args(text, end, True)
+            out.append("√" + "".join(_commands(a, True) for a in args))
+            continue
+        args, i_after = _args(text, end, bare in ("emph", "textbf", "textit", "text", "mathrm"))
+        if bare in _LAST_ARG and args:
+            out.append(_commands(args[-1], math))
+            i = i_after
+            continue
+        table = _MATH if math else _WORDS
+        if bare in table:
+            out.append(table[bare])
+            i = end
+            continue
+        if args:
+            out.append(" ".join(_commands(a, math) for a in args))
+            i = i_after
+            continue
+        if math:
+            out.append(bare)  # an operator name or a person's symbol macro: `\exp`, `\Reta`
+        i = end
+    return "".join(out)
+
+
+_OPEN, _CLOSE = "\x00(", "\x00)"  # an escaped brace while the grouping braces are removed
+
+
+def _ungroup(text: str) -> str:
+    return text.replace("{", "").replace("}", "").replace(_OPEN, "{").replace(_CLOSE, "}")
+
+
+def _text_rules(text: str) -> str:
+    text = text.replace("---", "—").replace("--", "–").replace("``", "“").replace("''", "”")
+    text = _commands(text, False)
+    return _ungroup(text.replace("~", " "))
+
+
+_MATH_SPACES = {",", ";", ":", " ", "quad", "qquad"}
+_MATH_PLAIN = set("+-=<>/*,.()|!'")
+
+
+def _math_script(inner: str) -> str | None:
+    """A sub- or superscript that is one token: one ASCII letter or digit, or one command of `_MATH`."""
+    inner = inner.strip()
+    if len(inner) == 1 and inner.isascii() and inner.isalnum():
+        return inner
+    command = re.fullmatch(r"\\([A-Za-z]+)", inner)
+    return _MATH[command.group(1)] if command and command.group(1) in _MATH else None
+
+
+def simple_math(body: str) -> str | None:
+    """Inline math as plain text, only when it converts one way (Sol round 1, D105): ASCII letters and digits, spaces,
+    `+ - = < > / * , . ( ) | ! '`, the commands of `_MATH` (Greek letters, relations) and math spacing, and a sub- or
+    superscript of one token (`x^2`, `x_{i}`, `e^{\\tau}`). Anything else (`\\frac`, `\\sqrt`, `\\left`, a grouped script
+    of more than one token, braces, any other command or character) gives None, and the math stays verbatim."""
+    out, i = [], 0
+    while i < len(body):
+        c = body[i]
+        if c == "\\":
+            command = re.match(r"\\([A-Za-z]+|[,;: ])", body[i:])
+            if command is None:
+                return None
+            name = command.group(1)
+            if name in _MATH:
+                out.append(_MATH[name])
+            elif name in _MATH_SPACES:
+                out.append(" ")
+            else:
+                return None
+            i += command.end()
+            continue
+        if c in "^_":
+            j = i + 1
+            if j < len(body) and body[j] == "{":
+                stop = _group(body, j)
+                script = _math_script(body[j + 1:stop - 1]) if stop is not None else None
+                if script is None:
+                    return None
+                out.append(c + script)
+                i = stop
+                continue
+            command = re.match(r"\\[A-Za-z]+", body[j:])
+            script = _math_script(command.group(0) if command else body[j:j + 1])
+            if script is None:
+                return None
+            out.append(c + script)
+            i = j + (command.end() if command else 1)
+            continue
+        if c.isspace():
+            out.append(" ")
+        elif (c.isascii() and c.isalnum()) or c in _MATH_PLAIN:
+            out.append(c)
+        else:
+            return None
+        i += 1
+    return " ".join("".join(out).split())
+
+
+def plain_latex(text: str) -> str:
+    """A LaTeX sentence as plain text, by the rules above; the same text gives the same result. Math that does not
+    convert one way (`simple_math`), display math and math environments stay verbatim between `$…$`, with only their
+    spaces collapsed: the model copies that span whole, and the coverage and span checks read it as one token."""
+    text = strip_comments(text)
+    pieces, kept, at = [], [], 0
+    for match in _MATH_SPLIT.finditer(text):
+        pieces.append(_text_rules(_marks(text[at:match.start()])))
+        body = next(g for g in (match.group(1), match.group(2), match.group(3), match.group(4), match.group(6))
+                    if g is not None)
+        inline = match.group(2) is not None or match.group(3) is not None
+        plain = simple_math(body) if inline else None
+        if plain is None:
+            kept.append("$" + " ".join(body.split()) + "$")
+            pieces.append(f"\x00{len(kept) - 1}\x00")  # left alone by the spacing rules below
+        else:
+            pieces.append(plain)  # inline math stays attached: `m$^2$` is m^2
+        at = match.end()
+    pieces.append(_text_rules(_marks(text[at:])))
+    plain = re.sub(r"\s+", " ", "".join(pieces))
+    plain = re.sub(r"\s+([,.;:!?)\]])", r"\1", plain)
+    plain = re.sub(r"([(\[])\s+", r"\1", plain)
+    plain = unicodedata.normalize("NFC", plain).strip()
+    return re.sub(r"\x00(\d+)\x00", lambda m: kept[int(m.group(1))], plain)
+
+
+# ------------------------------------------------------------------------------------------------------- tables
+#
+# A citation inside a `tabular` (also `tabular*`, `tabularx`, `tabulary`, `longtable`) is checked against the row it
+# sits in of its innermost table, never the whole table. The row is written as "Header: cell" pairs, each header from
+# the first row of the same tabular, cells by the plain-claim rules above (so a check mark reads "yes" and a cross
+# "no"), joined by "; ". The first column's pair comes first, then every other column with a value, in table order,
+# then the columns whose cell is "no", in table order: a cross claims nothing the passages could state, and grouped at
+# the end one claim part can hold them all. An empty cell is left out; a header missing for a column reads "Column n".
+# The table's caption, when it has at most `MAX_CAPTION_CHARS` characters (else its first sentence, when that does), is
+# given to the model as context: it says what the columns and the marks mean, and no part copies it.
+#
+# Whitelist (D105, Sol round 2): a row is read only when its innermost tabular is simple, and a layout that is not is
+# never guessed. Simple means: no `\multicolumn`, `\multirow`, `\cline`, `\cmidrule`, nested tabular or `\\[…]` row
+# split anywhere in that tabular's body, and it is inside no other tabular; the header is exactly its first row with text, and the next row starts with a
+# rule (`\hline` or `\midrule`; a `\toprule` before the header is fine), so there is no second header line; the citation
+# sits in a data row after that rule; and the row, its leading rule and spacing commands stripped, has exactly as many
+# cells as the header. Only the commands of an explicit allowlist may stand in the tabular's body (`_BODY_COMMANDS`, the
+# citation markers themselves, and inside math `_MATH`, math spacing and `_TABLE_MATH`) and in its column spec and width
+# (`_SPEC_COMMANDS`); any other command, a user macro above all, could hide a cell or a row. In a draft that is not
+# `.tex` (where comments are not removed) a comment `%` in the body also refuses the table. Anything else makes the
+# marker `unrecognized` with the reason `table_layout_not_read`: no claim, no pair, nothing reaches a model.
+
+MAX_CAPTION_CHARS = 600
+TABLE_LAYOUT_NOT_READ = "table_layout_not_read"
+_TABULAR_NAMES = r"tabular\*?|tabularx|tabulary|longtable"
+_TABULAR = re.compile(r"\\begin\{(" + _TABULAR_NAMES + r")\}")
+_TABULAR_EDGE = re.compile(r"\\(begin|end)\{(?:" + _TABULAR_NAMES + r")\}")
+_TABLE_ENV = re.compile(r"\\begin\{(table\*?|longtable)\}.*?\\end\{\1\}", re.DOTALL)
+_ROW_LEAD = re.compile(r"(?:\s|\\(?:toprule|midrule|bottomrule|hline|headrow|centering)\b|"
+                       r"\\(?:cline|cmidrule|rowcolor|addlinespace)\s*(?:\([^)]*\))?\s*(?:\[[^\]]*\])?\s*(?:\{[^{}]*\})*)*")
+_BODY_COMMANDS = ({"hline", "midrule", "toprule", "bottomrule", "addlinespace", "rowcolor", "shortstack", "textbf",
+                   "textit", "emph", "textsc", "texttt", "underline", "tabularnewline", "ding"}
+                  | _YES_MACROS | _NO_MACROS | {"\\", "&", "%", "_", "#", "$", ","})
+_SPEC_COMMANDS = {"extracolsep", "fill", "linewidth", "textwidth", "columnwidth", "\\"}
+_TABLE_MATH = {"frac", "tfrac", "dfrac", "sqrt", "left", "right", "min", "max", "log", "ln", "exp", "mathrm", "times",
+               "cdot", "pm", "approx", "sim", "infty"}
+_COMMAND = re.compile(r"\\([A-Za-z@]+|.)", re.DOTALL)  # a name with `@` is one name (Sol round 4)
+_HEADER_RULE = re.compile(r"\\(?:midrule|hline)\b")
+_NOT_SIMPLE = re.compile(r"\\(?:multicolumn|multirow|cline|cmidrule)\b|\\begin\{(?:" + _TABULAR_NAMES + r")\}|"
+                         r"(?:\\\\|\\tabularnewline)\s*\[")
+
+
+@dataclass(frozen=True)
+class _Row:
+    start: int  # where the row's text begins after the separator before it
+    text_start: int  # the first cell's text, rule commands before it skipped
+    end: int
+    cells: tuple[tuple[int, int], ...]
+    nested: bool  # a tabular inside the row
+
+
+@dataclass(frozen=True)
+class _Table:
+    body: tuple[int, int]  # from `\\begin{…}` to the body's end, for finding the innermost table
+    inner: tuple[int, int]  # the body alone, between the column spec and `\\end{…}`
+    spec: tuple[int, int]  # the width and column spec after `\\begin{…}`
+    rows: tuple[_Row, ...]
+    caption: str | None
+    enclosed: bool = False  # inside another tabular's body
+
+
+def _tabular_end(text: str, body_start: int) -> tuple[int, int]:
+    """Where the body of a tabular whose head ends at `body_start` ends, nested tabulars skipped, and where its
+    `\\end{…}` ends; an unclosed one runs to the end of the text."""
+    depth = 0
+    for edge in _TABULAR_EDGE.finditer(text, body_start):
+        if edge.group(1) == "begin":
+            depth += 1
+        elif depth:
+            depth -= 1
+        else:
+            return edge.start(), edge.end()
+    return len(text), len(text)
+
+
+def _tabular_rows(text: str, start: int, end: int) -> list[_Row]:
+    """The rows of a tabular body: row and cell separators count only outside braces and outside nested tabulars."""
+    rows, cells = [], []
+    row_start = cell_start = start
+    depth, i, nested, row_nested = 0, start, 0, False
+    while i < end:
+        c = text[i]
+        if c == "\\":
+            edge = _TABULAR_EDGE.match(text, i)
+            if edge:
+                nested += 1 if edge.group(1) == "begin" else -1
+                row_nested = True
+                i = edge.end()
+                continue
+            if depth == 0 and nested == 0 and (text.startswith("\\\\", i) or text.startswith("\\tabularnewline", i)):
+                cells.append((cell_start, i))
+                rows.append((row_start, i, tuple(cells), row_nested))
+                i += 2 if text.startswith("\\\\", i) else len("\\tabularnewline")
+                if i < end and text[i] == "[" and (stop := _group(text, i, "[", "]")) is not None:
+                    i = stop
+                row_start = cell_start = i
+                cells, row_nested = [], False
+                continue
+            i += 2
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+        elif c == "&" and depth == 0 and nested == 0:
+            cells.append((cell_start, i))
+            cell_start = i + 1
+        i += 1
+    cells.append((cell_start, end))
+    rows.append((row_start, end, tuple(cells), row_nested))
+    out = []
+    for a, b, row_cells, has_nested in rows:
+        lead = _ROW_LEAD.match(text, a, b)
+        text_start = lead.end() if lead else a
+        if has_nested or any(plain_latex(text[x:y]) for x, y in row_cells):
+            out.append(_Row(a, max(text_start, a), b, row_cells, has_nested))
+    return out
+
+
+def _caption(block: str) -> str | None:
+    head = re.search(r"\\caption\s*(?:\[[^\]]*\])?\s*(?=\{)", block)
+    if head is None or (stop := _group(block, head.end())) is None:
+        return None
+    caption = plain_latex(block[head.end() + 1:stop - 1])
+    if len(caption) <= MAX_CAPTION_CHARS:
+        return caption or None
+    first = sentences(caption)
+    return caption[first[0][0]:first[0][1]] if first and first[0][1] - first[0][0] <= MAX_CAPTION_CHARS else None
+
+
+def _tables(text: str) -> list[_Table]:
+    blocks = [(m.start(), m.end()) for m in _TABLE_ENV.finditer(text)]
+    tables = []
+    for head in _TABULAR.finditer(text):
+        _, body_start = _args(text, head.end(), True)
+        body_end, _ = _tabular_end(text, body_start)
+        block = next(((a, b) for a, b in blocks if a <= head.start() < b), None)
+        tables.append(_Table((head.start(), body_end), (body_start, body_end), (head.end(), body_start),
+                             tuple(_tabular_rows(text, body_start, body_end)),
+                             _caption(text[block[0]:block[1]]) if block else None))
+    return [replace(t, enclosed=any(o is not t and o.inner[0] <= t.body[0] < o.inner[1] for o in tables))
+            for t in tables]
+
+
+def _innermost(tables: list[_Table], at: int) -> _Table | None:
+    holding = [t for t in tables if t.body[0] <= at < t.body[1]]
+    return min(holding, key=lambda t: t.body[1] - t.body[0]) if holding else None
+
+
+def _commands_allowed(text: str, table: _Table, markers: list[tuple[int, int]]) -> bool:
+    for command in _COMMAND.finditer(text, table.spec[0], table.spec[1]):
+        if command.group(1) not in _SPEC_COMMANDS:
+            return False
+    body = text[table.inner[0]:table.inner[1]]
+    math = [(m.start() + table.inner[0], m.end() + table.inner[0]) for m in _MATH_SPLIT.finditer(body)]
+    for command in _COMMAND.finditer(text, table.inner[0], table.inner[1]):
+        at, name = command.start(), command.group(1)
+        if name in _CITE_COMMANDS and any(a <= at < b for a, b in markers):
+            continue  # the command of a citation marker the parser found; anything else in a marker is checked
+        if any(a <= at < b for a, b in math):
+            if name not in _MATH and name not in _MATH_SPACES and name not in _TABLE_MATH:
+                return False
+        elif name not in _BODY_COMMANDS:
+            return False
+    return True
+
+
+def _simple(text: str, table: _Table, markers: list[tuple[int, int]]) -> bool:
+    """The whitelist above, for the table as a whole."""
+    if table.enclosed or _NOT_SIMPLE.search(text, table.inner[0], table.inner[1]) or len(table.rows) < 2:
+        return False
+    if _COMMENT.search(text, table.inner[0], table.inner[1]) or not _commands_allowed(text, table, markers):
+        return False
+    after_header = table.rows[1]
+    return _HEADER_RULE.search(text, after_header.start, after_header.text_start) is not None
+
+
+def _row_claim(text: str, table: _Table, row: _Row | None, markers: list[tuple[int, int]]) -> str | None:
+    """The row's claim, or None when the table is not simple or the citation is not in one of its data rows."""
+    if row is None or not _simple(text, table, markers) or row is table.rows[0]:
+        return None
+    headers = [plain_latex(cut_markers(text, a, b, markers)) for a, b in table.rows[0].cells]
+    if len(row.cells) != len(headers):
+        return None
+    first, rest, crosses = [], [], []
+    for k, (a, b) in enumerate(row.cells):
+        value = plain_latex(cut_markers(text, max(a, row.text_start) if k == 0 else a, b, markers))
+        if value:
+            pair = f"{headers[k] or f'Column {k + 1}'}: {value}"
+            (first if k == 0 else crosses if value == "no" else rest).append(pair)
+    return "; ".join(first + rest + crosses) or None
 
 
 # ---------------------------------------------------------------------------------------- fields of a written entry

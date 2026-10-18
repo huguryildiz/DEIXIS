@@ -2237,10 +2237,12 @@ export type CitationCheckRow = {
 export type CitationPair = {
   id: string; ordinal: number; target: string; status: CitationPairStatus; result: CitationResult | null; depth: CitationDepth | null
   check: CitationCheckRow | null; bib_entry_id: string | null; source: CitationRecord | null; flags: CitationFlag[]
-  plan: { revision: number; depth: CitationDepth | null; passage_ids: string[]; passages_total: number | null; passages_not_given: number | null; earlier_revisions: number; stale: boolean } | null
+  plan: { revision: number; depth: CitationDepth | null; passage_ids: string[]; passages_total: number | null; passages_not_given: number | null; earlier_revisions: number; stale: boolean; text_changed_elsewhere?: boolean } | null
 }
 export type CitationMarker = {
   id: string; ordinal: number; sentence: string; sentence_span: [number, number]; span: [number, number]; raw: string
+  // What the check reads (D105): the sentence as plain text, or a table citation's row; `claim_context` is the caption.
+  claim?: string | null; claim_context?: string | null; parse_reason?: 'table_layout_not_read' | null
   style: 'latex' | 'numeric' | 'author_year'; parse_status: 'recognized' | 'unrecognized' | 'ambiguous'
   targets: { kind: 'key' | 'number' | 'author_year'; value: string }[]; pairs: CitationPair[]
 }
@@ -2265,6 +2267,8 @@ export type CitationCheckView = {
   id: string; research_id: string; format: 'text' | 'md' | 'tex' | 'docx'; original_filename: string | null; created_at: string
   bibliography: { origin: string; filename: string | null; errors: unknown[] }
   text_acquisition: CitationRunState | null; check_run: CitationRunState | null
+  // Entries whose PDF the background equation reader is still reading (D105): a freeze waits for them.
+  reextraction_waiting?: { entry_id: string; entry_ordinal: number; asset_id: string; state: string; next_at: string | null }[]
   plan: { revision: number | null; frozen_at: string | null; cap: number; passages_per_pair: number }
   counters: CitationCounters; markers: CitationMarker[]; entries: CitationEntry[]
 }

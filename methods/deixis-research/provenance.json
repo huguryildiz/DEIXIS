@@ -206,7 +206,7 @@
    "deixis_file": "references/citation-check.md",
    "derived_from": [],
    "date": "2026-10-18",
-   "change": "Written for DEIXIS (D99, Verify Citations V3), not upstream text. Loaded only for citation_check: split one citing sentence into claim parts and say for each whether the given passages of the cited work state it, with exact quotes. SKILL.md routes the new task_type. Not measured; the wording was tried against no model."
+   "change": "Written for DEIXIS (D99, Verify Citations V3), not upstream text. Loaded only for citation_check: split one citing sentence into claim parts and say for each whether the given passages of the cited work state it, with exact quotes. SKILL.md routes the new task_type. Not measured; the wording was tried against no model. 2026-10-18 (D105, after the V5 pilot): a table row is the sentence and the table's caption its context; a quote about compared or baseline methods does not support a part about the work's own method, nor the other way round. Not measured either. Same day (D105, Sol round 1): a `$…$` math span in the sentence is copied whole and unchanged into one part, and a table-row sentence is copied as given. Not measured."
   },
   {
    "deixis_file": "references/statement-check.md",

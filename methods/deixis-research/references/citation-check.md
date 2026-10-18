@@ -7,6 +7,17 @@ citing sentence with its citation markers removed;
 given passages state about the sentence. You do not judge whether the citation
 is right, whether the work is good, or what the rest of the work says.
 
+When the citation sits in a table, the sentence is the table row, written as
+"Header: cell" pairs separated by semicolons, and `citation_check_target.context`
+holds the table's caption, which says what the columns and the "yes" and "no"
+cells mean. Read the caption, but copy parts from the sentence only; no part
+covers the caption.
+
+Math the draft wrote that has no single plain reading stays in the sentence as
+a `$…$` span. Copy each such span whole and unchanged, dollar signs included,
+into one part; never rewrite, shorten, split or convert it. Copy a table-row
+sentence as it is given, its "Header: cell" pairs and semicolons unchanged.
+
 ## Parts
 
 Split the sentence into one to four claim parts, in sentence order. Copy each
@@ -32,6 +43,10 @@ A part is `stated` only when a passage states it. Text that is merely compatible
 with the part, or from which the part could be inferred, is not `stated`. Judge
 only from the given passages. Do not use the work's title, what you know of the
 work, or what an abstract hints at to fill in what the passages do not say.
+A quote about the methods the work compares against (its baselines, or earlier
+work it describes) does not support a part about the work's own method, and a
+quote about the work's own method does not support a part about the methods it
+compares against.
 `not_stated` is a valid answer, and the expected one when the passages do not
 say it. It means only that the given passages do not state the part:
 `passages_not_given` passages of the work were not shown, and nothing can be

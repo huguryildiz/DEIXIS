@@ -187,10 +187,11 @@ def create(store: Store, draft: draft_parse.Draft, filename: str | None,
             marker_id = new_id("cmk")
             store.conn.execute(
                 "INSERT INTO citation_markers (id, draft_id, ordinal, sentence, sentence_start, sentence_end, char_start,"
-                " char_end, raw, style, parse_status, targets_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " char_end, raw, style, parse_status, targets_json, claim, claim_context, parse_reason)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (marker_id, draft_id, ordinal, draft.text[marker.sentence_start:marker.sentence_end],
                  marker.sentence_start, marker.sentence_end, marker.start, marker.end, marker.raw, marker.style, status,
-                 dumps([t.view() for t in marker.targets])))
+                 dumps([t.view() for t in marker.targets]), marker.claim or None, marker.claim_context, marker.reason))
             for target, index, pair_status in pairs:
                 pair_ordinal += 1
                 store.conn.execute(
@@ -631,16 +632,13 @@ PLAN_STATUSES = ("planned", "out_of_cap", "no_text")  # the statuses a freeze de
 
 
 def cited_sentence(text: str, marker: dict[str, Any], spans: list[tuple[int, int]]) -> str:
-    """The marker's sentence with every citation marker in it cut out, so a key, a number or a cited name never ranks a
-    passage."""
-    start, end = marker["sentence_start"], marker["sentence_end"]
-    pieces, at = [], start
-    for left, right in sorted(spans):
-        if start <= left and right <= end and left >= at:
-            pieces.append(text[at:left])
-            at = right
-    pieces.append(text[at:end])
-    return re.sub(r"\s+", " ", "".join(pieces)).strip()
+    """The claim the check reads for this marker: the stored plain claim (`draft_parse`, D105: markers cut, LaTeX as
+    plain text, a table citation's row), else, for a draft read before claims were stored, the marker's sentence with
+    every citation marker in it cut out, so a key, a number or a cited name never ranks a passage."""
+    if marker.get("claim"):
+        return marker["claim"]
+    cut = draft_parse.cut_markers(text, marker["sentence_start"], marker["sentence_end"], spans)
+    return re.sub(r"\s+", " ", cut).strip()
 
 
 def sentence_terms(sentence: str) -> list[str]:
@@ -719,6 +717,10 @@ def freeze_plan(store: Store, draft_id: str, refreeze: bool = False) -> dict[str
             raise PlanRefused("already_checked", "Pairs of this draft were already checked; the plan they read stays")
         if _active_run(store, draft["research_id"]):
             raise PlanRefused("acquisition_running", "A text acquisition of this draft is still running")
+        if waiting := reextraction_waiting(store, draft_id):
+            raise PlanRefused("reextraction_pending", "The text of some cited works is being read again (equations);"
+                              " wait for the re-extraction to end, then freeze the plan",
+                              entries=sorted({w["entry_ordinal"] for w in waiting}))
         marks = ",".join("?" * len(PLAN_STATUSES))
         waiting = [r[0] for r in conn.execute(
             f"SELECT ordinal FROM citation_bib_entries WHERE draft_id = ? AND id IN (SELECT bib_entry_id FROM"
@@ -762,9 +764,13 @@ def freeze_plan(store: Store, draft_id: str, refreeze: bool = False) -> dict[str
 
 
 def _stale(store: Store, pair: dict[str, Any], entry: dict[str, Any] | None) -> bool:
-    """Whether the entry's text changed after this pair's plan was frozen (a person's PDF added, a new file or
-    extraction under the same record, a given passage changed or gone): the plan still stands until the person
-    freezes again, and the change is shown."""
+    """Whether the check would no longer read what the frozen plan shows: the plan still stands until the person
+    freezes again, and the change is shown. Decided by what the check uses (D105, after the V5 pilot): the entry's text
+    is no longer settled, or now comes from another record or at another depth (a person's PDF added); a given passage
+    is no longer one a model step may read of the record (a new file or extraction) or its text changed; the depth
+    label or the count of passages not given would no longer be true; or the revision's identity result is not about
+    the file and extraction the given passages come from. A change elsewhere in the record keeps the plan and is shown
+    (`text_changed_elsewhere`). A plan frozen before fingerprints existed stays stale, as before."""
     if pair["plan_revision"] is None or entry is None:
         return False
     if entry["text_status"] != "settled":
@@ -774,16 +780,50 @@ def _stale(store: Store, pair: dict[str, Any], entry: dict[str, Any] | None) -> 
         return pair["status"] == "no_text" and entry["available_text"] != "metadata_only"
     if entry["text_source_version_id"] != plan["source_version_id"] or entry["available_text"] != plan["available_text"]:
         return True
-    if plan.get("fingerprint") is None or text_fingerprint(store.passages_for(plan["source_version_id"])) != plan["fingerprint"]:
+    if plan.get("fingerprint") is None:
         return True  # a plan frozen before fingerprints existed cannot show it read the same text
     checked = json.loads(pair["plan_identity_json"] or "null")
     if revision_identity_confirmed(store, pair) is False and (not checked or checked.get("result") != "unconfirmed"):
         return True  # no identity result kept, or one read on another file or extraction than the given passages
+    current = {p["id"]: p for p in store.passages_for(plan["source_version_id"])}
     for passage_id, sha in zip(plan["passage_ids"], plan["passage_sha256"]):
-        row = store.conn.execute("SELECT text FROM passages WHERE id = ?", (passage_id,)).fetchone()
+        row = current.get(passage_id)
         if row is None or hashlib.sha256(row["text"].encode("utf-8")).hexdigest() != sha:
             return True
-    return False
+    not_given = len(current) - len(plan["passage_ids"])
+    depth = "abstract" if plan["available_text"] == "abstract" else "full_text" if not_given == 0 else "selected_passages"
+    return depth != plan["depth"] or not_given != plan["passages_not_given"]
+
+
+def text_changed_elsewhere(store: Store, pair: dict[str, Any]) -> bool:
+    """Whether the record's readable text changed since the freeze somewhere the pair's plan does not use: its plan
+    stays valid (`_stale` is false), and the change is recorded with the check and shown."""
+    plan = json.loads(pair["passage_plan_json"]) if pair["passage_plan_json"] else None
+    if not plan or plan.get("fingerprint") is None:
+        return False
+    return text_fingerprint(store.passages_for(plan["source_version_id"])) != plan["fingerprint"]
+
+
+def reextraction_waiting(store: Store, draft_id: str) -> list[dict[str, Any]]:
+    """The entries a pair names whose text comes from a PDF the background equation reader (Marker, the arXiv LaTeX
+    source or Mathpix) is reading now or will still read by itself (`equations.background_read_waiting`): its reading
+    writes a new extraction, so a plan frozen now would go stale minutes later (V5 pilot, D105). In entry order, with
+    the reader's state."""
+    from deixis.workflow import equations  # the equation service builds on the store; read only here
+    marks = ",".join("?" * len(PLAN_STATUSES))
+    rows = store.conn.execute(
+        f"SELECT e.id, e.ordinal, e.text_source_version_id FROM citation_bib_entries e WHERE e.draft_id = ?"
+        f" AND e.text_source_version_id IS NOT NULL AND e.id IN (SELECT bib_entry_id FROM citation_pairs WHERE"
+        f" draft_id = ? AND status IN ({marks})) ORDER BY e.ordinal", (draft_id, draft_id, *PLAN_STATUSES)).fetchall()
+    out = []
+    for row in rows:
+        for asset in store.conn.execute("SELECT id FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL",
+                                        (row["text_source_version_id"],)):
+            if (state := equations.background_read_waiting(store, asset["id"])) is not None:
+                out.append({"entry_id": row["id"], "entry_ordinal": row["ordinal"], "asset_id": asset["id"],
+                            "state": state["state"], "next_at": equations.next_try_at(state)})
+                break
+    return out
 
 
 def pair_flags(store: Store, pair: dict[str, Any], entry_flags: list[str], entry: dict[str, Any] | None) -> list[str]:
@@ -891,7 +931,7 @@ def preview(store: Store, draft_id: str, choice: dict[str, Any] | None) -> dict[
     entries = {r["id"]: dict(r) for r in conn.execute("SELECT * FROM citation_bib_entries WHERE draft_id = ?", (draft_id,))}
     selected, beyond, items = [], [], []
     for row in conn.execute(
-            "SELECT p.*, m.ordinal AS marker_ordinal, m.sentence FROM citation_pairs p JOIN citation_markers m"
+            "SELECT p.*, m.ordinal AS marker_ordinal, m.sentence, m.claim, m.claim_context FROM citation_pairs p JOIN citation_markers m"
             " ON m.id = p.marker_id WHERE p.draft_id = ? AND p.status IN ('planned', 'out_of_cap') ORDER BY p.ordinal",
             (draft_id,)):
         pair, entry = dict(row), entries.get(row["bib_entry_id"])
@@ -904,13 +944,13 @@ def preview(store: Store, draft_id: str, choice: dict[str, Any] | None) -> dict[
             beyond.append(item)
             continue
         plan = json.loads(pair["passage_plan_json"])
-        items.append((plan, pair["sentence"]))
+        items.append((plan, (pair["claim"] or pair["sentence"]) + (pair["claim_context"] or "")))
         selected.append(item | {
             "depth": plan["depth"], "available_text": plan["available_text"], "text_version": plan["text_version"],
             "text_source_version_id": plan["source_version_id"], "passage_ids": plan["passage_ids"],
             "passages_given": len(plan["passage_ids"]), "passages_total": plan["passages_total"],
             "passages_not_given": plan["passages_not_given"], "passage_chars": plan["passage_chars"],
-            "stale": _stale(store, pair, entry),
+            "stale": _stale(store, pair, entry), "text_changed_elsewhere": text_changed_elsewhere(store, pair),
             "identity": json.loads(pair["plan_identity_json"]) if pair["plan_identity_json"] else None})
     shown = {"plan_revision": draft["plan_revision"], "connection": (choice or {}).get("connection"),
              "model": (choice or {}).get("model"), "reasoning_effort": (choice or {}).get("reasoning_effort") or None}
@@ -993,9 +1033,11 @@ def view(store: Store, draft_id: str) -> dict[str, Any]:
                 "passages_not_given": plan["passages_not_given"] if plan else None,
                 "earlier_revisions": len(json.loads(row["previous_plans_json"])),
                 "identity": json.loads(row["plan_identity_json"]) if row["plan_identity_json"] else None,
-                "stale": _stale(store, dict(row), entry_rows.get(row["bib_entry_id"]))}})
+                "stale": _stale(store, dict(row), entry_rows.get(row["bib_entry_id"])),
+                "text_changed_elsewhere": text_changed_elsewhere(store, dict(row))}})
     markers = [{
         "id": row["id"], "ordinal": row["ordinal"], "sentence": row["sentence"],
+        "claim": row["claim"], "claim_context": row["claim_context"], "parse_reason": row["parse_reason"],
         "sentence_span": [row["sentence_start"], row["sentence_end"]], "span": [row["char_start"], row["char_end"]],
         "raw": row["raw"], "style": row["style"], "parse_status": row["parse_status"],
         "targets": json.loads(row["targets_json"]), "pairs": pairs_by_marker.get(row["id"], [])}
@@ -1006,6 +1048,7 @@ def view(store: Store, draft_id: str) -> dict[str, Any]:
             "bibliography": {"origin": draft["bibliography_origin"], "filename": draft["bibliography_filename"],
                              "errors": json.loads(draft["bibliography_errors_json"])},
             "text_acquisition": acquisition_state(store, draft["research_id"]),
+            "reextraction_waiting": reextraction_waiting(store, draft_id),
             "check_run": check_state(store, draft["research_id"]),
             "plan": {"revision": draft["plan_revision"], "frozen_at": draft["plan_frozen_at"],
                      "cap": MAX_PAIRS_TO_MODEL, "passages_per_pair": PASSAGES_PER_PAIR},
@@ -1177,13 +1220,14 @@ def _raw_output(store: Store, step_input_id: str | None) -> str | None:
     return row["raw_output"] if row else None
 
 
-def _check_target(pair: dict[str, Any], plan: dict[str, Any], sentence: str) -> dict[str, Any]:
-    return {"pair_id": pair["id"], "sentence": sentence, "assessed_source_id": plan["source_version_id"],
-            "depth": plan["depth"], "passages_not_given": plan["passages_not_given"]}
+def _check_target(pair: dict[str, Any], plan: dict[str, Any], sentence: str, context: str | None = None) -> dict[str, Any]:
+    target = {"pair_id": pair["id"], "sentence": sentence, "assessed_source_id": plan["source_version_id"],
+              "depth": plan["depth"], "passages_not_given": plan["passages_not_given"]}
+    return target | ({"context": context} if context else {})
 
 
 async def _send(flow: Any, run: dict[str, Any], model: tuple[str, str, str | None], pair: dict[str, Any],
-                sentence: str, key: str) -> dict[str, Any]:
+                sentence: str, key: str, context: str | None = None) -> dict[str, Any]:
     """One pair's model step. The last look before each send (the first and the repair): a stop, a changed method
     package, or a plan that went stale since the preview fails the run; the StepInput is built from the frozen passage
     ids, read again for each attempt."""
@@ -1205,7 +1249,7 @@ async def _send(flow: Any, run: dict[str, Any], model: tuple[str, str, str | Non
     def build(step_id: str) -> dict[str, Any]:
         rows = [store.passage(passage_id) for passage_id in plan["passage_ids"]]
         payload = flow._step_input(run, scope, step_id, TASK, [], [plan["source_version_id"]], rows, [], model)
-        return payload | {"citation_check_target": _check_target(pair, plan, sentence)}
+        return payload | {"citation_check_target": _check_target(pair, plan, sentence, context)}
 
     return await flow.deps.limiter.run(f"{run_id}:{key}", lambda: flow._model_step(
         run, scope, key, TASK, model=model, limiter=flow.deps.limiter, send_gate=gate, step_input_builder=build))
@@ -1258,7 +1302,7 @@ def _store_check(store: Store, run: dict[str, Any], pair: dict[str, Any], output
     kinds = sorted({a["passage_kind"] for part in anchors or [] for a in part if a["located"] and a["passage_kind"]})
     basis = {"depth": plan["depth"], "passages_given": len(plan["passage_ids"]), "passages_total": plan["passages_total"],
              "passages_not_given": plan["passages_not_given"], "source_version_id": plan["source_version_id"],
-             "located_passage_kinds": kinds}
+             "located_passage_kinds": kinds, "text_changed_elsewhere": text_changed_elsewhere(store, pair)}
     raw = _raw_output(store, step_input_id)
     record = _provenance(store, step_input_id)
     sent_by = record.pop("run_id") or run["id"]
@@ -1323,8 +1367,9 @@ async def check(store: Store, flow: Any, draft_id: str, plan_revision: int | Non
             key = check_key(pair["id"], revision)
             output = _recorded(store, research_id, key)
             if output is None:
-                sentence = cited_sentence(draft["text"], markers[pair["marker_id"]], spans)
-                output = await _send(flow, run, model, pair, sentence, key)
+                marker = markers[pair["marker_id"]]
+                output = await _send(flow, run, model, pair, cited_sentence(draft["text"], marker, spans), key,
+                                     marker.get("claim_context"))
             _store_check(store, run, pair, output)
             checked += 1
             flow._checkpoint(run["id"])
@@ -1375,7 +1420,7 @@ def check_view(row: dict[str, Any] | None) -> dict[str, Any] | None:
 
 # -------------------------------------------------------------------------------------------------------- export
 
-EXPORT_COLUMNS = ("pair", "marker", "sentence", "target", "source_title", "source_year", "source_doi", "status",
+EXPORT_COLUMNS = ("pair", "marker", "sentence", "claim", "target", "source_title", "source_year", "source_doi", "status",
                   "result", "depth", "passages_given", "passages_not_given", "located_passage_kinds", "flags",
                   "error", "located_quotes")
 
@@ -1392,6 +1437,7 @@ def export_rows(store: Store, draft_id: str) -> list[dict[str, Any]]:
             basis = check_row.get("basis") or {}
             quotes = [a["anchor_text"] for part in check_row.get("parts") or [] for a in part["evidence"] if a["located"]]
             rows.append({"pair": pair["ordinal"], "marker": marker["raw"], "sentence": marker["sentence"],
+                         "claim": marker["claim"],
                          "target": pair["target"], "source_title": source.get("title"), "source_year": source.get("year"),
                          "source_doi": source.get("doi"), "status": pair["status"], "result": pair["result"],
                          "depth": check_row.get("depth") or (pair["plan"] or {}).get("depth"),

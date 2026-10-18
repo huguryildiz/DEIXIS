@@ -896,6 +896,7 @@ export const citationRefusals: Record<string, string> = {
   run_active: 'A run of this draft is still active. Wait until it ends.',
   already_checked: 'Pairs of this draft were already checked, so the plan they read stays as it is.',
   acquisition_running: 'The text of the cited works is still being fetched.',
+  reextraction_pending: 'Some cited works are being read again for their equations. Wait for the re-extraction to end, then freeze the plan.',
   text_pending: 'Some entries are not looked up yet or their text is not decided.',
   entry_not_resolved: 'Only an entry linked to a record can take a PDF.',
 }

@@ -36,7 +36,7 @@ def test_a_library_made_up_to_0008_takes_0009_and_keeps_its_rows(tmp_path, monke
             conn.execute(statement)
     conn.close()
     conn = db.connect(path)
-    assert db.migrate(conn) == [9]
+    assert db.migrate(conn)[0] == 9  # later migrations (0010, D105) follow it
     assert [tuple(r) for r in conn.execute("SELECT id, intent, kind FROM researches")] == [("res_1", "compare", "research")]
     assert [tuple(r) for r in conn.execute("SELECT id, kind, status FROM runs")] == [("run_1", "snowball", "completed")]
     conn.execute("UPDATE researches SET intent = 'statement' WHERE id = 'res_1'")

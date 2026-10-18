@@ -76,6 +76,7 @@ test('a draft and its bibliography go from parse to results, with each count, st
   await expect(page.locator('.cc-table tbody[data-marker="8"] .cc-marker')).toHaveText('[ibid]')
   await expect(row(page, 8)).toContainText('No bibliography entry has zz.')
   await expect(row(page, 1)).toContainText('Not looked up yet')
+  await expect(row(page, 1)).toContainText('Checked as:')
   await expect(page.locator('.cc-entries li')).toHaveCount(5)
   await expect(page.locator('.cc-step')).toContainText('Step 1 of 4')
   await shot(page, '02-parsed')
@@ -89,9 +90,27 @@ test('a draft and its bibliography go from parse to results, with each count, st
   await expect(page.locator('.cc-entries li[data-entry="e"]')).toContainText('Metadata only')
   await shot(page, '03-text')
 
+  // A cited work's PDF still waiting for the equation reader (D105): the view says so and the freeze is not offered.
+  // The fixture server has no such reader, so the view's answer is changed here; the page reads the view again every
+  // five seconds and offers the freeze once nothing waits.
+  const step = page.locator('.cc-step')
+  const viewUrl = /\/api\/citation-checks\/cdr_[A-Za-z0-9]+$/
+  await page.route(viewUrl, async route => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const response = await route.fetch()
+    await route.fulfill({ response, json: { ...(await response.json()), reextraction_waiting: [{ entry_id: 'cbe_SYNTHETIC', entry_ordinal: 1, asset_id: 'ast_SYNTHETIC', state: 'failed', next_at: '2026-10-18T10:10:00.000+00:00' }] } })
+  })
+  await page.reload()
+  await expect(step).toContainText('Wait for re-extraction: the PDFs of entries 1 are being read again')
+  await expect(step).toContainText('The next try is at')
+  await expect(page.getByRole('button', { name: 'Wait for re-extraction' })).toBeDisabled()
+  await expect(page.getByRole('button', { name: 'Freeze the plan' })).toHaveCount(0)
+  await shot(page, '03b-reextraction')
+  await page.unroute(viewUrl)
+  await expect(page.getByRole('button', { name: 'Freeze the plan' })).toBeVisible({ timeout: 15_000 })
+
   // Freeze, then the preview: no literature model in Settings, so the cost is unknown (never 0) and Start waits.
   await page.getByRole('button', { name: 'Freeze the plan' }).click()
-  const step = page.locator('.cc-step')
   await expect(step).toContainText('Step 4 of 4')
   await expect(step.locator('.cc-facts')).toContainText('Unknown (no model is chosen)')
   await expect(step.locator('.cc-facts')).toContainText('6, in draft order')
@@ -169,7 +188,7 @@ test('a draft and its bibliography go from parse to results, with each count, st
   // The exports are the stored rows, the pair that could not be checked included.
   const [csv] = await Promise.all([page.waitForEvent('download'), page.getByRole('link', { name: 'Export CSV' }).click()])
   const csvText = readFileSync(await csv.path(), 'utf8')
-  expect(csvText.split('\n')[0]).toContain('pair,marker,sentence,target')
+  expect(csvText.split('\n')[0]).toContain('pair,marker,sentence,claim,target')
   expect(csvText).toContain('could_not_check')
   expect(csvText).toContain('found_partial')
   const [md] = await Promise.all([page.waitForEvent('download'), page.getByRole('link', { name: 'Export Markdown' }).click()])

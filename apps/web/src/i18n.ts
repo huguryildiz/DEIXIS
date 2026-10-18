@@ -3817,6 +3817,7 @@ const tr: Record<string, string> = {
   'Counts are Zotero’s own; standalone notes and non-PDF attachments are skipped, so fewer items may be added.': 'Sayılar Zotero’nun kendi sayılarıdır; tek başına notlar ve PDF olmayan ekler atlanır, bu yüzden daha az öğe eklenebilir.',
   // UI parity S22a: the follow-up answer run.
   'Follow-up answer': 'Takip sorusu yanıtı',
+  'Your source selection changed while this run was working, so it cannot go on with what it started from. Cancel it and start again.': 'Bu çalışma sürerken kaynak seçiminiz değişti; başladığı seçimle devam edemez. Çalışmayı iptal edip yeniden başlatın.',
   'Your source selection changed while this follow-up was being answered. Ask it again.': 'Bu takip sorusu yanıtlanırken kaynak seçiminiz değişti. Soruyu yeniden sorun.',
   'A source or its PDF changed while this follow-up was being answered. Ask it again.': 'Bu takip sorusu yanıtlanırken bir kaynak ya da PDF’si değişti. Soruyu yeniden sorun.',
   // UI parity S1: sidebar, background work, toast and the language command.
@@ -4819,9 +4820,14 @@ const tr: Record<string, string> = {
   '${x} left': '${x} kaldı',
   '{n} credit left': '{n} kredi kaldı',
   '{n} credits left': '{n} kredi kaldı',
+  '${x}': '${x}',
+  '{n} credit': '{n} kredi',
+  '{n} credits': '{n} kredi',
   'Last stored response, {time}': 'Kayıtlı son yanıt, {time}',
   'Latest run: {kind}': 'Son işlem: {kind}',
   'OpenAlex budget today': 'Bugünkü OpenAlex bütçesi',
+  'OpenAlex extra balance': 'OpenAlex ek bakiye',
+  'Expires {date}': '{date} tarihinde sona erer',
   'No OpenAlex response with a budget figure is stored since the daily reset (midnight UTC).': 'Günlük sıfırlamadan (UTC gece yarısı) bu yana bütçe değeri taşıyan bir OpenAlex yanıtı kaydedilmedi.',
   'could not be read': 'okunamadı',
   'No OpenAlex response stored since the daily reset': 'Günlük sıfırlamadan bu yana kayıtlı OpenAlex yanıtı yok',

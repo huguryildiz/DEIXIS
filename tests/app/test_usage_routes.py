@@ -297,7 +297,9 @@ def test_many_newer_rows_without_headers_do_not_hide_an_older_usable_one(served)
 # ---- Live read from OpenAlex's /rate-limit (needs a key, costs no credits) ------------------------------------------
 # The body follows the shape OpenAlex returned on 15 Oct 2026; the figures here are SYNTHETIC.
 LIVE = {"rate_limit": {"daily_budget_usd": 1, "daily_used_usd": 0.25, "daily_remaining_usd": 0.75,
-                       "resets_at": "2026-10-16T00:00:00.000Z", "credits_limit": 10000, "credits_remaining": 7500}}
+                       "resets_at": "2026-10-16T00:00:00.000Z", "credits_limit": 10000, "credits_remaining": 7500,
+                       "prepaid_remaining_usd": 2.5, "onetime_credits_remaining": 25000,
+                       "prepaid_expires_at": "Sat Jan 16 2027 11:05:39 GMT+0000 (Coordinated Universal Time)"}}
 
 
 def live_app(tmp_path, handler):
@@ -312,8 +314,10 @@ def test_live_answer_gives_dollars_first_and_the_reset_time():
     assert (body["unit"], body["remaining"], body["limit"], body["source"]) == ("usd", 0.75, 1.0, "live")
     assert body["used_fraction"] == pytest.approx(0.25)
     assert body["reset_at"] == "2026-10-16T00:00:00.000+00:00"
+    assert (body["prepaid_remaining"], body["prepaid_expires_at"]) == (2.5, "2027-01-16T11:05:39.000+00:00")
     credits = usage_routes.live_budget({"rate_limit": {"credits_limit": 10000, "credits_remaining": 7500}}, NOON)
     assert (credits["unit"], credits["remaining"], credits["limit"]) == ("credits", 7500.0, 10000.0)
+    assert (credits["prepaid_remaining"], credits["prepaid_expires_at"]) == (None, None)
     assert usage_routes.live_budget({"error": "x"}, NOON) is None
 
 

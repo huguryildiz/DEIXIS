@@ -37,6 +37,9 @@ function selectedIn(root: HTMLElement) {
   const node = range.commonAncestorContainer
   const element = node instanceof Element ? node : node.parentElement
   if (!element || !root.contains(element) || element.closest('.followup-compose, input, textarea, [contenteditable="true"], .add-to-chat')) return null
+  // The artifacts rail sits inside the thread column's grid but is not chat text: a selection touching it gets no button.
+  const inRail = (n: Node) => (n instanceof Element ? n : n.parentElement)?.closest('.research-rail')
+  if (inRail(range.startContainer) || inRail(range.endContainer)) return null
   const text = selectionText(range).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
   if (!text) return null
   const rect = range.getBoundingClientRect()

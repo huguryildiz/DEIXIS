@@ -1033,7 +1033,9 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
 
   // The notice under a stopped run's steps (R18, R21): why it stopped, with Resume run and Cancel run, or for a question
   // too broad to search, a field to rewrite it.
+  // An answer paused because the selection changed keeps its stored input, so Resume would stop again at once.
   const resumable = run.status === 'paused' && !(run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0)
+    && !(run.kind === 'answer' && run.pause_reason === 'selection_changed')
   const userPaused = run.status === 'paused' && run.pause_reason === 'user_requested'
   // A model that did not answer (R20): Resume run reads "Retry this step" (it sends the stopped step again), and the
   // person may move the role to another model first; the changes made since the stop are listed on the notice.
@@ -1133,7 +1135,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
           : <p><b>{pauseReasonText(run.pause_reason, run.error)}</b></p>}
         {pauseDetailText(run).map(line => <p key={line}>{line}</p>)}
         {run.kind === 'pdf_ocr' && failedOcrPages.length > 0 && <p>{t('Pages not read: {pages}', { pages: failedOcrPages.join(', ') })}</p>}
-        {unknownSteps.length > 0 && <p>{t('Unfinished: {steps}. Resuming repeats it; a repeated model call counts against your account usage.', { steps: unknownSteps.map(s => s.kind === 'model:report_review' ? t('Report review') : stepLabel(s.kind, s.operation_key)).join(', ') })}</p>}
+        {resumable && unknownSteps.length > 0 && <p>{t('Unfinished: {steps}. Resuming repeats it; a repeated model call counts against your account usage.', { steps: unknownSteps.map(s => s.kind === 'model:report_review' ? t('Report review') : stepLabel(s.kind, s.operation_key)).join(', ') })}</p>}
         {run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0 && <p>{t('The model has had its second try.')}</p>}
         {quotaPause && <p className="quota-lines">{budgetLines}</p>}
         {changesSinceStop.map(change => {

@@ -71,6 +71,14 @@ export function budgetFigure(budget: OpenAlexBudgetToday): string | null {
     : t(budget.remaining === 1 ? '{n} credit left' : '{n} credits left', { n: number(budget.remaining) })
 }
 
+// The prepaid balance on top of the daily budget, in the same unit; null when OpenAlex reported none.
+export function prepaidFigure(budget: OpenAlexBudgetToday): string | null {
+  const left = budget.prepaid_remaining ?? null
+  if (left === null) return null
+  return budget.unit === 'usd' ? t('${x}', { x: left.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })
+    : t(left === 1 ? '{n} credit' : '{n} credits', { n: number(left) })
+}
+
 export function budgetAsOf(budget: OpenAlexBudgetToday): string | null {
   return budget.as_of ? t('Last stored response, {time}', { time: timeText(budget.as_of) }) : null
 }

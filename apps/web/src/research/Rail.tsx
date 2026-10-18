@@ -6,7 +6,7 @@ import { collectionProgress } from '../BackgroundJobs'
 import { LATE_REVISION_LABEL, queueKindLabels, researchHeading, runKindLabels, tableTitle } from '../labels'
 import { t, uiLocale } from '../i18n'
 import { useRailWide } from './railData'
-import { budgetAsOf, budgetFigure, useOpenAlexBudget, usageRun } from './usageData'
+import { budgetAsOf, budgetFigure, prepaidFigure, useOpenAlexBudget, usageRun } from './usageData'
 
 // The artifacts rail (mockup `rail()`, RL1-RL7): 300px beside the thread from 1100px, gone while a panel is open (the
 // page hides it, it stays mounted so the button that opened a panel takes focus back). Every number comes from the view
@@ -115,6 +115,7 @@ export function Rail({ view, researchId, cited, reports, tables, hidden, candida
   const budget = useOpenAlexBudget(!off, view.last_event_id)
   const budgetValue = budget.value
   const budgetText = budgetValue ? budgetFigure(budgetValue) : null
+  const prepaidText = budgetValue ? prepaidFigure(budgetValue) : null
   const used = budgetValue?.used_fraction ?? null
 
   // The mockup's "Found" bar shows unique works (duplicates merged), so it is named so; rows found stay in the Funnel
@@ -204,6 +205,7 @@ export function Rail({ view, researchId, cited, reports, tables, hidden, candida
       <div className="kv rail-usage-budget"><span>{t('OpenAlex budget today')}</span><span className="tnum rail-data" title={budgetValue && !budgetText ? t('No OpenAlex response with a budget figure is stored since the daily reset (midnight UTC).') : undefined}>
         {budgetText ?? (budgetValue ? t('not known') : budget.failed ? t('could not be read') : '…')}</span></div>
       {used !== null && <div className="bar" aria-hidden><i style={{ width: `${Math.max(1, used * 100)}%`, background: used >= 1 ? 'var(--error-ink)' : 'var(--accent)' }} /></div>}
+      {prepaidText && <div className="kv rail-usage-budget"><span>{t('OpenAlex extra balance')}</span><span className="tnum rail-data" title={budgetValue?.prepaid_expires_at ? t('Expires {date}', { date: new Date(budgetValue.prepaid_expires_at).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'long', year: 'numeric' }) }) : undefined}>{prepaidText}</span></div>}
       {budgetValue && <p className="rail-usage-note">{[budgetAsOf(budgetValue) ?? t('No OpenAlex response stored since the daily reset'), budget.failed && t('not refreshed: the last read failed')].filter(Boolean).join(' · ')}</p>}
     </Box>
   </aside>

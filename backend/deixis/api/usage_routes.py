@@ -137,14 +137,24 @@ def budget(rows: list[tuple[str, str | None]], moment: datetime) -> dict[str, An
             "reset_at": None, "as_of": None, "source": SOURCE}
 
 
+def _prepaid_expiry(value: Any) -> str | None:
+    """OpenAlex writes the prepaid expiry as a JavaScript date string ("Sat Jan 16 2027 11:05:39 GMT+0000 (...)")."""
+    try:
+        return iso(datetime.strptime(str(value)[:24], "%a %b %d %Y %H:%M:%S").replace(tzinfo=timezone.utc))
+    except ValueError:
+        return None
+
+
 def live_budget(body: Any, moment: datetime) -> dict[str, Any] | None:
     """OpenAlex's budget today from its `/rate-limit` answer: the dollar figures when present, else the credit figures
-    (never mixed, as in `budget`). None when the answer carries neither."""
+    (never mixed, as in `budget`), plus the prepaid balance bought on top of the daily budget, in the same unit. None
+    when the answer carries neither."""
     limits = body.get("rate_limit") if isinstance(body, dict) else None
     if not isinstance(limits, dict):
         return None
-    for unit, remaining_key, limit_key in (("usd", "daily_remaining_usd", "daily_budget_usd"),
-                                           ("credits", "credits_remaining", "credits_limit")):
+    for unit, remaining_key, limit_key, prepaid_key, expiry_key in (
+            ("usd", "daily_remaining_usd", "daily_budget_usd", "prepaid_remaining_usd", "prepaid_expires_at"),
+            ("credits", "credits_remaining", "credits_limit", "onetime_credits_remaining", "onetime_credits_expires_at")):
         remaining = _number(str(limits.get(remaining_key)))
         if remaining is None:
             continue
@@ -156,7 +166,9 @@ def live_budget(body: Any, moment: datetime) -> dict[str, Any] | None:
         used = min(1.0, max(0.0, float((limit - remaining) / limit))) if limit else None
         return {"provider": "openalex", "unit": unit, "remaining": float(remaining),
                 "limit": float(limit) if limit else None, "used_fraction": used,
-                "reset_at": reset, "as_of": iso(moment), "source": "live"}
+                "reset_at": reset, "as_of": iso(moment), "source": "live",
+                "prepaid_remaining": float(prepaid) if (prepaid := _number(str(limits.get(prepaid_key)))) is not None else None,
+                "prepaid_expires_at": _prepaid_expiry(limits.get(expiry_key)) if prepaid is not None else None}
     return None
 
 

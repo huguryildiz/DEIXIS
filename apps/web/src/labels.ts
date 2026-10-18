@@ -277,6 +277,7 @@ const pauseReasons: Record<string, string> = {
   followup_no_query: 'No usable query could be built from the search terms, so nothing was searched.',
   followup_search_failed: 'No provider search succeeded, so nothing was added.',
   followup_selection_changed: 'Your source selection changed while this follow-up was being answered. Ask it again.',
+  selection_changed: 'Your source selection changed while this run was working, so it cannot go on with what it started from. Cancel it and start again.',
   followup_sources_changed: 'A source or its PDF changed while this follow-up was being answered. Ask it again.',
   no_provider_read: 'No provider read succeeded.',
   watch_disabled: 'The follow-up was turned off.',

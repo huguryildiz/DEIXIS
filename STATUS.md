@@ -26,7 +26,7 @@ Kısa hüküm: altyapı ve kurallar sağlam, arama ölçülmüş ve iyi; ama son
 1. **Yarım işleri kapat:** `abstract-rows` için kararı ver (al ya da sil); arama kayıpları oturumunun sonucunu oku.
 2. **Reranker ve zincir kayıtları:** D106 yalnız-zincir kayıtlarını korudu (kaybın yarısı). Kalan yarı, arama ile de bulunan zincir kayıtlarından geliyor; onları da korumak LitSearch'te −0,032 kaybettiriyor. Gerçek bir yeni koşu (BioASQ dahil) D106'yı doğrulamadan başka ayar yapılmasın.
 3. **Görsel kontrol, sonra P10:** sahibin göz kontrolü ve çıkan düzeltmeler; ardından macOS paketi (plan `.local/plans/p10-plan.md`, K1–K15 satırları; OpenAI, Gemini, DeepSeek fiyatları yayından önce doğrulanacak).
-4. **Ölçülmemiş özellikleri bir kez canlı dene:** ters atıf aramanın canlı pilotu R4 yapıldı ve çıtayı geçemedi (D108: "kısmen destekliyor" sonuçlarının 10–11/50'si yanlış); sıradaki R4b, yalnız en az bir parçası açıkça yazılı sonucu destek sayar ve aynı 10 cümleyle yeniden koşar, kartopu için okuma penceresi ölçümü (havuz 200 ve 400, ikinci bir soruda).
+4. **Ölçülmemiş özellikleri bir kez canlı dene:** ters atıf aramanın canlı pilotu R4b ile çıtayı geçti (D109: destek sayılan 24 sonuçta iki okuyucuya göre 0 hata; bedeli, okuyucuların destekleyici bulduğu ~20 sonuç "destek yeterince gösterilmedi" grubunda ve bilinen 7 destekleyiciden yalnız 1'i destek sayılıyor; arama kayıpları açık; R5 karşıtlık bloklu), kartopu için okuma penceresi ölçümü (havuz 200 ve 400, ikinci bir soruda).
 5. **Yeni özellik ekleme duraklaması:** gap finder, Chain of Ideas, R5 gibi fikirler yukarıdakiler bitene kadar bekler.
 
 ## Açık işler (kısaltılmış)

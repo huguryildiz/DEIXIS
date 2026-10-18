@@ -246,8 +246,16 @@ def measured_run(args, home, questions, server, records):
                 raise harness.Stop(f'{why}; {len(skip)} of {len(questions)} questions done')
             row, start = {'id': q['id']}, time.time()
             try:
-                row['research_id'], row['run_id'] = ask_deixis(server, q['body'])
-                listing, state = harness.wait_listing(server, row['run_id'], args.timeout)
+                # A run that stopped this benchmark on the model's query is taken up again, not asked anew.
+                paused, allowed, note = harness.paused_on_query(home, q['id'], read_jsonl, server)
+                if note:
+                    row['note'] = note
+                if paused:
+                    row['research_id'], row['run_id'] = paused
+                else:
+                    row['research_id'], row['run_id'] = ask_deixis(server, q['body'])
+                listing, state, row['query_resumes'] = harness.wait_with_query_retry(
+                    server, row['run_id'], args.timeout, allowed)
                 server.http.post(f"/api/runs/{row['run_id']}/cancel")  # the list is frozen; reading is not measured
             except Exception as exc:
                 harness.stopped(home, row, f'{type(exc).__name__}: {exc}'[:300], len(skip), len(questions))

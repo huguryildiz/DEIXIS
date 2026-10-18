@@ -54,18 +54,9 @@ class BudgetStop(Exception):
     """OpenAlex said the daily budget or rate limit is spent: stop, never retry around it."""
 
 
-DAILY = {'remaining_usd': None}  # the last `x-ratelimit-remaining-usd` OpenAlex sent
-
-
-def daily_spent():
-    """True once the free daily dollars read zero: past that, OpenAlex bills the prepaid balance, which we never use."""
-    return DAILY['remaining_usd'] is not None and float(DAILY['remaining_usd']) <= 0
-
-
 def openalex_get(client, params):
     reply = client.get(OPENALEX, params=params, timeout=60,
                        headers={'Authorization': f'Bearer {secret("OPENALEX_API_KEY")}'})
-    DAILY['remaining_usd'] = reply.headers.get('x-ratelimit-remaining-usd', DAILY['remaining_usd'])
     if reply.status_code in (402, 429):
         raise BudgetStop(f'OpenAlex {reply.status_code}: {reply.text[:200]}')
     reply.raise_for_status()
@@ -171,8 +162,8 @@ def run_openalex(args):
         for q in questions:
             if q['id'] in skip:
                 continue
-            if daily_spent():
-                print(f'stopped: OpenAlex daily budget spent; {len(done_ids(out))} of {len(questions)} questions done')
+            if why := harness.budget_stop(client, secret('OPENALEX_API_KEY'), args.prepaid_floor):
+                print(f'stopped: {why}; {len(done_ids(out))} of {len(questions)} questions done')
                 return
             row = {'id': q['id']}
             try:
@@ -284,6 +275,8 @@ def main():
     p.set_defaults(fn=prepare)
     o = sub.add_parser('openalex')
     o.add_argument('--limit', type=int, default=None)
+    o.add_argument('--prepaid-floor', type=float, default=None,
+                   help='spend prepaid OpenAlex credit, stopping once the balance would fall below this many USD')
     o.set_defaults(fn=run_openalex)
     d = sub.add_parser('deixis')
     d.add_argument('--base', required=True)

@@ -27,7 +27,7 @@ class FakeServer:
         self.http = SimpleNamespace(post=lambda path: None)
         with closing(sqlite3.connect(path)) as conn:
             conn.executescript('CREATE TABLE run_steps (run_id, operation_key, status, output_json);'
-                               'CREATE TABLE runs (id, status, pause_reason, stage);')
+                               'CREATE TABLE runs (id, status, pause_reason, stage, error_json);')
 
     def put(self, path, body):
         self.puts.append((path, body))
@@ -53,7 +53,7 @@ class FakeServer:
 
     def run_state(self, status, reason=None, stage='search', run='run1'):
         with closing(sqlite3.connect(self.path)) as conn, conn:
-            conn.execute('INSERT INTO runs VALUES (?, ?, ?, ?)', (run, status, reason, stage))
+            conn.execute('INSERT INTO runs VALUES (?, ?, ?, ?, NULL)', (run, status, reason, stage))
 
 
 def good_run(server, listing=LISTING, embedding=None):
@@ -240,10 +240,24 @@ def test_plain_openalex_failure_is_not_replaced_on_rerun(tmp_path, monkeypatch, 
             raise ValueError('provider down')
         return [{'title': 'found'}]
     monkeypatch.setattr(module, 'openalex_records', records)
-    module.run_openalex(SimpleNamespace(limit=None))
-    module.run_openalex(SimpleNamespace(limit=None))
+    monkeypatch.setattr(harness, 'budget_stop', lambda client, key, floor: None)
+    monkeypatch.setattr(module, 'secret', lambda name: 'k')
+    module.run_openalex(SimpleNamespace(limit=None, prepaid_floor=None))
+    module.run_openalex(SimpleNamespace(limit=None, prepaid_floor=None))
     written = bioasq_run.read_jsonl(tmp_path / 'runs/openalex.jsonl')
     assert len(calls) == 1 and [r['id'] for r in written] == ['q1'] and 'provider down' in written[0]['error']
+
+
+def test_plain_openalex_stops_on_budget_before_the_question(tmp_path, monkeypatch):
+    from scripts.benchmark import litsearch_run
+    (tmp_path / 'sample.json').write_text(json.dumps({'questions': [{'id': 'q1', 'body': 'Q?', 'year': 2020}]}))
+    monkeypatch.setattr(litsearch_run, 'HOME', tmp_path)
+    monkeypatch.setattr(litsearch_run, 'secret', lambda name: 'k')
+    monkeypatch.setattr(litsearch_run, 'write_query', lambda *a, **k: pytest.fail('no question after a budget stop'))
+    floors = []
+    monkeypatch.setattr(harness, 'budget_stop', lambda client, key, floor: floors.append(floor) or 'prepaid low')
+    litsearch_run.run_openalex(SimpleNamespace(limit=None, prepaid_floor=1.0))
+    assert floors == [1.0] and bioasq_run.read_jsonl(tmp_path / 'runs/openalex.jsonl') == []
 
 
 def test_bioasq_repair_runs_once_per_question(tmp_path, monkeypatch):
@@ -256,3 +270,87 @@ def test_bioasq_repair_runs_once_per_question(tmp_path, monkeypatch):
     bioasq_run.repair_openalex(SimpleNamespace())
     bioasq_run.repair_openalex(SimpleNamespace())
     assert len(bioasq_run.read_jsonl(tmp_path / 'runs/openalex.jsonl')) == 2
+
+
+class ResumingServer(FakeServer):
+    """A run paused on the model's query; `resume` makes the model's second try succeed (or fail again)."""
+
+    def __init__(self, path, second_try_ok=True):
+        super().__init__(path)
+        self.resumed, self.second_try_ok = [], second_try_ok
+        with closing(sqlite3.connect(path)) as conn, conn:
+            conn.execute("INSERT INTO runs VALUES ('run1', 'paused', 'search_query_failed', 'discovery', ?)",
+                         (json.dumps({'reason': 'invalid_model_output', 'retries_left': 1}),))
+
+    def post(self, path, body):
+        if path.endswith('/resume'):
+            self.resumed.append(path)
+            with closing(sqlite3.connect(self.path)) as conn, conn:
+                if self.second_try_ok:
+                    conn.execute("UPDATE runs SET status='running', pause_reason=NULL, error_json=NULL")
+                else:
+                    conn.execute("UPDATE runs SET error_json=?", (json.dumps({'retries_left': 0}),))
+            if self.second_try_ok:
+                self.add('source_similarity', 'succeeded',
+                         {'provider': 'voyage', 'stored_model': 'voyage:voyage-4-lite@1024'})
+                self.add(harness.RERANK_KEY, 'succeeded', RERANK_STEP)
+                self.add('small_batch:v1:list', 'succeeded', LISTING)
+            return {}
+        return super().post(path, body)
+
+
+def test_a_query_pause_is_resumed_once_like_the_person_would(tmp_path, monkeypatch):
+    server = ResumingServer(tmp_path / 'lib.sqlite')
+    run(tmp_path, monkeypatch, server)
+    row = rows(tmp_path, 'rerank')[0]
+    assert server.resumed == ['/api/runs/run1/resume'] and row['query_resumes'] == 1 and 'error' not in row
+
+
+def test_a_query_pause_with_no_attempt_left_is_a_scored_failure(tmp_path, monkeypatch):
+    server = ResumingServer(tmp_path / 'lib.sqlite', second_try_ok=False)
+    run(tmp_path, monkeypatch, server)
+    row = rows(tmp_path, 'rerank')[0]
+    assert len(server.resumed) == 1 and 'no model attempt left' in row['error']
+
+
+def test_a_question_stopped_on_its_query_resumes_its_own_run(tmp_path, monkeypatch):
+    server = ResumingServer(tmp_path / 'lib.sqlite')
+    (tmp_path / 'stopped.jsonl').write_text(json.dumps({'id': 'q1', 'research_id': 'resA', 'run_id': 'run1', 'state': {
+        'status': 'paused', 'reason': 'search_query_failed'}}) + '\n')
+    asked = []
+    monkeypatch.setattr(bioasq_run, 'ask_deixis', lambda *a: asked.append(a) or ('resB', 'runB'))
+    run(tmp_path, monkeypatch, server)
+    row = rows(tmp_path, 'rerank')[0]
+    assert asked == [] and row['research_id'] == 'resA'
+    assert server.resumed == ['/api/runs/run1/resume'] and row['query_resumes'] == 1  # one resume, counted once
+
+
+def test_a_query_pause_cancelled_since_is_asked_anew_and_noted(tmp_path, monkeypatch):
+    server = FakeServer(tmp_path / 'lib.sqlite')
+    server.run_state('cancelled', 'user_cancelled', run='runOld')
+    good_run(server)
+    (tmp_path / 'stopped.jsonl').write_text(json.dumps({'id': 'q1', 'research_id': 'resA', 'run_id': 'runOld', 'state': {
+        'status': 'paused', 'reason': 'search_query_failed'}}) + '\n')
+    run(tmp_path, monkeypatch, server)
+    row = rows(tmp_path, 'rerank')[0]
+    assert row['run_id'] == 'run1' and 'asked anew' in row['note']
+
+
+def test_a_question_asked_anew_gets_no_further_model_attempt(tmp_path, monkeypatch):
+    server = ResumingServer(tmp_path / 'lib.sqlite')  # its run pauses on the query with a retry left
+    server.run_state('cancelled', 'user_cancelled', run='runOld')
+    (tmp_path / 'stopped.jsonl').write_text(json.dumps({'id': 'q1', 'research_id': 'resA', 'run_id': 'runOld', 'state': {
+        'status': 'paused', 'reason': 'search_query_failed'}}) + '\n')
+    run(tmp_path, monkeypatch, server)
+    row = rows(tmp_path, 'rerank')[0]
+    assert server.resumed == [] and 'no model attempt left' in row['error']
+
+
+def test_an_exhausted_query_pause_from_an_earlier_stop_is_scored_not_resumed(tmp_path, monkeypatch):
+    server = ResumingServer(tmp_path / 'lib.sqlite')
+    with closing(sqlite3.connect(server.path)) as conn, conn:
+        conn.execute("UPDATE runs SET error_json=?", (json.dumps({'retries_left': 0}),))
+    (tmp_path / 'stopped.jsonl').write_text(json.dumps({'id': 'q1', 'research_id': 'resA', 'run_id': 'run1', 'state': {
+        'status': 'paused', 'reason': 'search_query_failed'}}) + '\n')
+    run(tmp_path, monkeypatch, server)
+    assert server.resumed == [] and 'no model attempt left' in rows(tmp_path, 'rerank')[0]['error']

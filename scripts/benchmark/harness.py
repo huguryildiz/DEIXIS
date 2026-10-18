@@ -161,13 +161,50 @@ def wait_listing(server, run_id, timeout):
     while time.time() - start < timeout:
         with closing(server.db()) as conn:
             status, output = step(conn, run_id, 'small_batch:v1:list')
-            run = conn.execute('SELECT status, pause_reason, stage FROM runs WHERE id=?', (run_id,)).fetchone()
+            run = conn.execute('SELECT status, pause_reason, stage, error_json FROM runs WHERE id=?', (run_id,)).fetchone()
         if status == 'succeeded':
             return output, None
         if run['status'] in ('paused', 'failed', 'cancelled', 'completed'):
-            return None, {'status': run['status'], 'stage': run['stage'], 'reason': run['pause_reason']}
+            return None, {'status': run['status'], 'stage': run['stage'], 'reason': run['pause_reason'],
+                          'error': json.loads(run['error_json']) if run['error_json'] else None}
         time.sleep(2)
     return None, {'status': 'timeout'}
+
+
+QUERY_PAUSE = 'search_query_failed'  # the model's query failed its checks; the person may ask it once more
+
+
+def wait_with_query_retry(server, run_id, timeout, resumes_allowed=1):
+    """Like `wait_listing`, but a run paused because the model's query failed is resumed while the product allows
+    another attempt, as the person would ("Try again"), and at most `resumes_allowed` times for this question (an
+    attempt spent in an earlier, cancelled run counts). Returns (listing, state, resumes). When no attempt is left the
+    state says so, and the question is a product failure scored as zero; the code's query alone is never chosen."""
+    resumes = 0
+    while True:
+        listing, state = wait_listing(server, run_id, timeout)
+        if listing is not None or state['status'] != 'paused' or state['reason'] != QUERY_PAUSE:
+            return listing, state, resumes
+        if resumes >= resumes_allowed or not (state.get('error') or {}).get('retries_left'):
+            return None, state | {'status': 'failed', 'reason': 'search_query_failed, no model attempt left'}, resumes
+        server.post(f'/api/runs/{run_id}/resume', {})
+        resumes += 1
+
+
+def paused_on_query(home, qid, read_jsonl, server):
+    """How to take up a question whose last stop was its run pausing on the model's query: (run to wait on or None,
+    resumes still allowed, note). A run still paused is waited on again (its own retries decide); a run cancelled since
+    (an older harness cancelled it) cannot be resumed, so the question is asked anew with the attempt it already spent
+    counted, and the row notes it."""
+    rows = [r for r in read_jsonl(home / 'stopped.jsonl') if r['id'] == qid and (r.get('state') or {}).get('reason')]
+    last = rows[-1] if rows else {}
+    if last.get('state', {}).get('reason') != QUERY_PAUSE:
+        return None, 1, None
+    with closing(server.db()) as conn:
+        status = conn.execute('SELECT status FROM runs WHERE id=?', (last['run_id'],)).fetchone()
+    if status and status[0] == 'paused':
+        return (last['research_id'], last['run_id']), 1, None
+    return None, 0, f"run {last['run_id']} paused on its query was cancelled before it could be resumed; asked anew " \
+                    "with no further model attempt"
 
 
 def stopped(home, row, why, done, total):

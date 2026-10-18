@@ -46,7 +46,7 @@ from deixis.domain import proxy, skill
 from deixis.imports import bibtex_ris
 from deixis.workflow import abstract_stage
 from deixis.workflow import source_keys
-from deixis.workflow import fast_path, intent, small_batch
+from deixis.workflow import fast_path, intent, small_batch, statement_check
 from deixis.workflow import file_restore, text_retry
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS, SEARCH_QUERY_CALLS,
                                  TEST_EFFORT_BUDGETS, RevisionConflict)
@@ -164,7 +164,8 @@ class CreateResearch(BaseModel):
     # The user's own English search terms, used by the sw workflow when code cannot read the question (SW2.1).
     key_terms: str | None = Field(default=None, max_length=500)
     # What the research produces (UI parity S5a, F4): a drafted report, the papers only, or a study table.
-    intent: Literal["report", "papers", "table", "compare"] = "report"
+    # `statement`: the question is one sentence (a claim) checked against the works found (reverse citation search).
+    intent: Literal["report", "papers", "table", "compare", "statement"] = "report"
 
 
 MODEL_ROLES = ("answer", "literature", "reviewer")
@@ -202,6 +203,8 @@ async def checked_research_models(store: Any, adapters: dict[str, Any], body: Cr
         raise HTTPException(422, "A PDF seed requires Files + academic search")
     if body.intent == "papers" and body.source_scope == "attached":
         raise HTTPException(422, "Finding papers needs academic search")
+    if body.intent == "statement" and len(body.question) > statement_check.MAX_SENTENCE_CHARS:
+        raise HTTPException(422, f"A sentence to check is at most {statement_check.MAX_SENTENCE_CHARS} characters")
     listed: dict[str, list[dict[str, Any]] | None] = {}
 
     async def check_role(connection: str, model: str, effort: str | None) -> None:
@@ -319,10 +322,16 @@ class EnglishQuestion(BaseModel):
 
 
 class StartRun(BaseModel):
-    kind: Literal["discovery", "answer", "pdf_collection", "research_title", "fulltext_fetch", "fulltext_adjudication"]
+    kind: Literal["discovery", "answer", "pdf_collection", "research_title", "fulltext_fetch", "fulltext_adjudication",
+                  "statement_check"]
     # The question revision the person's screen showed (UI parity S23b, D14): the run is created only while it is still
     # the current one, checked in the same transaction; another one answers 409 and creates nothing. Optional.
     expected_scope_revision: int | None = Field(default=None, strict=True, ge=1)
+    # `statement_check` only: the model the check runs on, stored with its revision; none: the literature model in
+    # Settings at this moment.
+    connection: str | None = Field(default=None, min_length=1, max_length=100)
+    model: str | None = Field(default=None, min_length=1, max_length=200)
+    reasoning_effort: str | None = Field(default=None, min_length=1, max_length=50)
 
 
 class ReviewPreviewRequest(BaseModel):
@@ -1233,6 +1242,7 @@ def create_app(
     from deixis.api.activity_routes import register_activity_routes; register_activity_routes(app)
     from deixis.api.citation_check_routes import register_citation_check_routes; register_citation_check_routes(
         app, settings, unlink=lambda store, files, payloads: unlink_orphans(store, files, payloads))
+    from deixis.api.statement_check_routes import register_statement_check_routes; register_statement_check_routes(app)
     from deixis.api.provider_test_routes import register_provider_test_routes
     register_provider_test_routes(app, lambda: settings.contact_email)  # the rebound settings: the email set in Settings
 
@@ -1978,6 +1988,27 @@ def create_app(
         scope = store.scope(research_id)
         if body.kind in ("fulltext_fetch", "fulltext_adjudication"):
             raise LegacyInspectionPolicyRemoved("legacy_inspection_policy_removed")
+        if body.kind == "statement_check":
+            # A new check revision (or a new check of the same sentence, under a new key) with its own budget, never
+            # the research budget below; the same key in the same research returns its revision (reverse citation R2).
+            if body.expected_scope_revision is None:
+                # The person's request names the question revision their screen showed; the discovery-end hook,
+                # which checks its own discovery and scope, is the only start without one.
+                raise HTTPException(422, "A statement check request names the question revision it was made on")
+            if (body.model is None) != (body.connection is None) or (body.reasoning_effort and not body.model):
+                raise HTTPException(422, "A check's model is named with its connection, or not at all")
+            model = ({"connection": body.connection, "model": body.model, "reasoning_effort": body.reasoning_effort}
+                     if body.model else None)
+            try:
+                check = statement_check.request(request.app.state.worker.flow, research_id,
+                                                idempotency_key or db.new_id("stcreq"), model,
+                                                body.expected_scope_revision)
+            except statement_check.Refused as exc:
+                return JSONResponse({"code": exc.code, "detail": exc.detail}, status_code=409)
+            request.app.state.worker.wake()
+            return store.run(check["run_id"]) | {"statement_check_id": check["id"], "revision": check["revision"]}
+        if body.model is not None or body.connection is not None or body.reasoning_effort is not None:
+            raise HTTPException(422, "A model is named only for a statement check run")
         if body.kind == "discovery" and scope["source_scope"] == "attached":
             raise HTTPException(422, "Academic search is not part of this research's source scope")
         if body.kind == "discovery" and scope["seed_mode"] == "uploaded_seed":

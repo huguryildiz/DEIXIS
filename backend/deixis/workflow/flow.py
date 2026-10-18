@@ -49,6 +49,7 @@ from deixis.workflow import abstract_stage
 from deixis.workflow import small_batch
 from deixis.workflow import spend
 from deixis.workflow import fast_path
+from deixis.workflow import intent as intent_rules
 from deixis.workflow import seed_match as seed_match_rules
 from deixis.workflow import adjudication
 from deixis.workflow import approval as approval_rules
@@ -474,6 +475,8 @@ class ResearchFlow:
                 from deixis.workflow import fast_answer, intent
                 fast_answer.auto_answer(self.store, run)
                 intent.after_discovery(self.store, run)  # `table`/`compare`: the study table instead of the answer
+                from deixis.workflow import statement_check
+                statement_check.after_discovery(self, run)  # `statement`: the sentence's check instead of the answer
         elif self.store.run(run_id)["status"] in ("running", "pause_requested"):
             if ((run["kind"] == "answer" and fast_path.enforces(run["budget"], "answer"))
                     or run["kind"] == "answer_review"):
@@ -5217,7 +5220,11 @@ class ResearchFlow:
             # A new report version a follow-up asked for (D57) is written with the person's own request as steering.
             "user_steering": ([scope["steering"]] if scope.get("steering") else [])
                              + ([run["target"]["report_request"]["text"][:2000]] if task_type == "grounded_answer"
-                                and (run.get("target") or {}).get("report_request") else []),
+                                and (run.get("target") or {}).get("report_request") else [])
+                             # A statement research's question is a claim: its terms and screening judge topic, not
+                             # agreement (reverse citation search R2).
+                             + ([intent_rules.STATEMENT_NOTE] if task_type in intent_rules.STATEMENT_NOTE_TASKS
+                                and intent_rules.is_statement(self.store, run) else []),
             # The providers a query may go to. A verification connector stays in the research's scope for the records
             # whose DOI is already known, and is never offered to the model as a place to search (D87).
             "capabilities": CAPABILITIES,

@@ -189,7 +189,7 @@ export function ModelPicker({ role, icon: Icon, hint, models, value, onChange, e
 
 // The mode chips under the composer (H13). Each sets what the research produces (its intent); "Ask my PDFs" is the
 // attached-only scope with a drafted report. The chosen chip is the person's explicit choice, stored with the research.
-type ModeChip = 'report' | 'papers' | 'table' | 'compare' | 'ask'
+type ModeChip = 'report' | 'papers' | 'table' | 'compare' | 'statement' | 'ask'  // 'statement' has no chip yet (reverse citation search R3)
 const modeChips: { id: ModeChip; label: string; icon: LucideIcon }[] = [
   { id: 'report', label: 'Draft report', icon: FileText },
   { id: 'papers', label: 'Find papers', icon: Search },

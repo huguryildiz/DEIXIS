@@ -92,12 +92,16 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
 def with_intent(policy: dict[str, Any], intent: str) -> dict[str, Any]:
     """The frozen policy routed by the research's intent (UI parity S5a): `report` leaves it as it is; `papers` queues
     no answer after discovery; `table` and `compare` queue no answer and open the study table instead
-    (`intent.after_discovery`). The hash covers the routing, so a run keeps the route it was queued with."""
+    (`intent.after_discovery`); `statement` queues no answer and checks the research's sentence against the works read
+    instead (`statement_check.after_discovery`). The hash covers the routing, so a run keeps the route it was queued
+    with."""
     if intent == "report":
         return policy
     routed = {k: v for k, v in policy.items() if k != "policy_hash"} | {"auto_answer": False}
     if intent in ("table", "compare"):
         routed["after_discovery"] = "study_table"
+    elif intent == "statement":
+        routed["after_discovery"] = "statement_check"
     return routed | {"policy_hash": canonical.sha256_hex(routed)}
 
 

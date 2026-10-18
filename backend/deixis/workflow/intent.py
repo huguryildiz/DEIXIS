@@ -7,7 +7,10 @@ in an `attached` research, which runs no discovery, as a table of the attached s
 no columns, so column suggestion and fill start as for a table made by hand. In a `compare` research every column
 suggestion step is given a comparison frame written by code from the question of the scope revision it runs under
 (`extraction_target.comparison_frame`); the method file says how to use it. Nothing here broadens the task: the intent
-is the person's explicit choice, stored with the research and shown with it.
+is the person's explicit choice, stored with the research and shown with it. `statement` (reverse citation search)
+asks one sentence, a claim: after discovery its works are checked against the sentence instead of an answer
+(`statement_check`), and the steps that choose and judge works are told the question is a claim whose topic, not whose
+direction, decides what is relevant (`STATEMENT_NOTE`).
 """
 
 from __future__ import annotations
@@ -18,9 +21,26 @@ from deixis.domain.rules import RevisionConflict
 from deixis.storage.db import new_id, rollback_savepoint, transaction
 from deixis.workflow.store import Store
 
-INTENTS = ("report", "papers", "table", "compare")
+INTENTS = ("report", "papers", "table", "compare", "statement")
 TABLE_INTENTS = ("table", "compare")
 TABLE_TITLE = "Study table"
+# Given to the steps that choose search terms and judge works in a statement research, as a user_steering line. A work
+# on the claim's topic is relevant whether it agrees with the claim or not, so a later "not found" is not caused by
+# the search leaving out works that disagree.
+STATEMENT_NOTE = ("Application note: this research's question is a claim to be checked, not a question. Choose terms "
+                  "and judge works by whether they study the claim's topic; a work is relevant whether it agrees with "
+                  "the claim, disagrees with it or says neither.")
+STATEMENT_NOTE_TASKS = ("criterion_proposal", "search_query", "abstract_screening", "fulltext_adjudication")
+
+
+def is_statement(store: Store, run: dict[str, Any]) -> bool:
+    """Whether a run belongs to a statement research: by the route its discovery froze (`fast_path.with_intent`),
+    else, for a run without a frozen route, by the research's intent."""
+    policy = (run.get("budget") or {}).get("fast_path") or {}
+    if "auto_answer" in policy:
+        return policy.get("after_discovery") == "statement_check"
+    row = store.conn.execute("SELECT intent FROM researches WHERE id = ?", (run["research_id"],)).fetchone()
+    return row is not None and row["intent"] == "statement"
 
 
 def comparison_frame(question: str) -> str:

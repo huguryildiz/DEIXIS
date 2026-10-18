@@ -53,6 +53,13 @@ one; `report_section` also gets the source-grounded answer file.
 | `citation_check` | [citation check](references/citation-check.md) | Say which parts of one citing sentence the given passages of the cited work state; judge no citation right or wrong. |
 | `statement_check` | [statement check](references/statement-check.md) | Say which parts of one sentence the person gave the given passages of one found work state; judge no sentence true or false. |
 
+A research may ask a claim instead of a question (a statement check). Its
+`criterion_proposal`, `search_query`, `abstract_screening` and
+`fulltext_adjudication` steps then carry a `user_steering` line that says so.
+Write the criterion about the claim's topic, choose terms that find work on that
+topic, and judge a work relevant by its topic: a work that disagrees with the
+claim, or says neither, is as relevant as one that agrees.
+
 Claim-specific kill-search is available only through the three candidate tasks.
 Free candidate development and experiment design or execution remain
 unavailable everywhere.

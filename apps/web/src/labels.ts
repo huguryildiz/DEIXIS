@@ -259,6 +259,7 @@ export const runKindLabels: Record<RunKind, string> = {
   table_column_recheck: 'Column recheck',
   citation_map: 'Reference list reading',
   snowball: 'Citation snowballing round',
+  statement_check: 'Statement check',
 }
 
 export const reportSupportLabels: Record<string, string> = { source_stated: 'Stated by the source', analyst_inference: 'Analyst inference' }

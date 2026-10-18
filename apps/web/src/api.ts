@@ -185,7 +185,7 @@ export type Step = {
     // The full-text reading plan: the works it froze.
     works?: unknown[] } | null
 }
-export type RunKind = 'discovery' | 'answer' | 'answer_review' | 'followup_answer' | 'report' | 'review' | 'watch_check' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search' | 'screen_more' | 'table_column_recheck' | 'citation_map' | 'snowball' | 'followup_search'
+export type RunKind = 'discovery' | 'answer' | 'answer_review' | 'followup_answer' | 'report' | 'review' | 'watch_check' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search' | 'screen_more' | 'table_column_recheck' | 'citation_map' | 'snowball' | 'followup_search' | 'statement_check'
 // What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
 export type RunTarget = {
   plan?: { groups: ReviewGroup[] }
@@ -1474,6 +1474,11 @@ export const api = {
   // `expectedScopeRevision` (D14): the run is created only while that question revision is current; a newer one answers 409.
   startRun: (id: string, kind: 'discovery' | 'answer' | 'pdf_collection' | 'research_title', idempotencyKey: string, expectedScopeRevision?: number) =>
     request<Run>(`/api/researches/${id}/runs`, json('POST', expectedScopeRevision === undefined ? { kind } : { kind, expected_scope_revision: expectedScopeRevision }, { 'Idempotency-Key': idempotencyKey })),
+  // A statement check (reverse citation search): a run of kind `statement_check` on the question revision the screen
+  // showed (required; another one answers 409). `model` is stored with the new check revision; none: the literature
+  // model in Settings now. The same key in the same research returns that revision; a new key checks again.
+  startStatementCheck: (id: string, idempotencyKey: string, expectedScopeRevision: number, model?: StatementCheckModel) =>
+    request<Run & { statement_check_id: string; revision: number }>(`/api/researches/${id}/runs`, json('POST', { kind: 'statement_check', expected_scope_revision: expectedScopeRevision, ...(model ?? {}) }, { 'Idempotency-Key': idempotencyKey })),
   controlRun: (runId: string, action: 'pause' | 'resume' | 'cancel' | 'retry_failed') => request<Run>(`/api/runs/${runId}/${action}`, { method: 'POST' }),
   select: (id: string, sourceId: string, state: Source['selection']['state'], expectedVersion: number, reason?: string) =>
     request<unknown>(`/api/researches/${id}/selections/${sourceId}`, json('PATCH', { state, expected_version: expectedVersion, reason })),
@@ -1784,7 +1789,8 @@ export const usageApi = {
 // or a study table (`compare` column suggestions also get a comparison frame). Suggestions are the stored unanswered
 // aspects of each research's latest valid answer while it is current for every reason: the answer model's notes,
 // labelled only as suggestions, never as proven gaps.
-export type ResearchIntent = 'report' | 'papers' | 'table' | 'compare'
+export type ResearchIntent = 'report' | 'papers' | 'table' | 'compare' | 'statement'
+export type StatementCheckModel = { connection: string; model: string; reasoning_effort?: string | null }
 export type IntentOutcome = { kind: 'table_skipped'; reason: 'no_included_source' | 'scope_revised' | 'run_active'; run_id: string }
 export type Suggestion = { text: string; research_id: string; research_title: string; answer_id: string; created_at: string }
 

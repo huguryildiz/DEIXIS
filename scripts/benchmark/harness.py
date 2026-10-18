@@ -3,7 +3,10 @@
 The runner sets the measured configuration in its temporary data folder and reads it back, so an empty folder's
 defaults (Gemini, reranker off) are never measured by accident. Every row carries those settings. After each question
 the run must show the expected embedding and an applied rerank; otherwise the whole run stops and the question is not
-written. Arm B (reranker off) and arm C (reranker on) come from one run: the frozen list keeps the fused order
+written. One exception, decided 18 Oct after the EE survey set's second question: when the product's own ranking-stage
+time ran out before the rerank (`no_time_left`, recorded by the product, D104), the row is written and arm C is what
+the product delivered, the fused order; the row says the rerank was not applied, and the report gives C−B over every
+question first and over the reranked ones second. Keys, provider errors and a different reranker still stop. Arm B (reranker off) and arm C (reranker on) come from one run: the frozen list keeps the fused order
 (`automatic_order`) next to the reranked one (`order`), so both arms share the same queries and OpenAlex is read once.
 """
 from __future__ import annotations
@@ -106,23 +109,32 @@ def embedding_problems(conn, run_id, required=True):
     return []
 
 
+NO_TIME = 'no_time_left'
+
+
 def rerank_problems(conn, run_id, listing=None):
     """The rerank step failed, used another reranker or pool, or (with a list) was not applied to it."""
     status, output = step(conn, run_id, RERANK_KEY)
     if status is None:
         return ['rerank step missing'] if listing is not None else []
-    found = [] if status == 'succeeded' else [f"rerank step {status}: {output.get('error_code')}"]
+    timed_out = status == 'failed' and output.get('error_code') == NO_TIME  # the product's budget: a result
+    found = [] if status == 'succeeded' or timed_out else [f"rerank step {status}: {output.get('error_code')}"]
     want = (RERANKER['provider'], RERANK_MODEL, RERANKER['pool_factor'])
     if (output.get('provider'), output.get('model'), output.get('pool_factor')) != want:
         found.append(f"reranker {output.get('provider')} {output.get('model')} pool {output.get('pool_factor')}, "
                      f"expected {want}")
     if listing is None:
         return found
+    told = listing.get('reranker') or {}
+    if timed_out:
+        if told.get('applied') or told.get('reason') != NO_TIME:
+            found.append(f"rerank ran out of time but the list says applied={told.get('applied')} "
+                         f"reason={told.get('reason')}")
+        return found
     size = min(MAX_CANDIDATES, math.ceil((output.get('read_top') or 0) * RERANKER['pool_factor']),
                len(listing.get('automatic_order') or ()))
     if len(output.get('candidate_ids') or ()) != size:
         found.append(f"reranked {len(output.get('candidate_ids') or ())} records, expected {size}")
-    told = listing.get('reranker') or {}
     if not told.get('applied'):
         found.append(f"rerank not applied: {told.get('reason') or 'no reranker in the list'}")
     return found
@@ -150,7 +162,9 @@ def arms(listing):
 def rerank_info(conn, run_id, listing):
     """What the rerank did for this question, from its own step: the row records it beside the starting settings."""
     _, output = step(conn, run_id, RERANK_KEY)
-    return {'reranked': (listing.get('reranker') or {}).get('reranked'), 'read_top': output.get('read_top'),
+    told = listing.get('reranker') or {}
+    return {'applied': bool(told.get('applied')), 'reason': told.get('reason'),
+            'reranked': told.get('reranked'), 'read_top': output.get('read_top'),
             'provider': output.get('provider'), 'model': output.get('model'), 'pool_factor': output.get('pool_factor')}
 
 

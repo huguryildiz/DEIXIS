@@ -193,6 +193,9 @@ class LitDeixis(Deixis):
             for svid, desc, provider in conn.execute(
                     'SELECT h.source_version_id, s.request_description, s.provider FROM candidate_hits h '
                     'JOIN search_runs s ON s.id = h.search_run_id WHERE h.research_id = ?', (research_id,)):
+                if desc.startswith('citation chaining'):  # a chain request's records are hits too, not a search
+                    routes.setdefault(svid, set()).add('chain')
+                    continue
                 kind = 'semantic' if 'search.semantic=' in desc else 'keyword'
                 routes.setdefault(svid, set()).add(f'{kind}:{provider}')
             for (svid,) in conn.execute('SELECT source_version_id FROM chain_links WHERE research_id = ? AND '

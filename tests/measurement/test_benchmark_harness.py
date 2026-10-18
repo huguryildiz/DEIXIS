@@ -140,7 +140,7 @@ def test_measured_run_writes_both_arms_with_settings(tmp_path, monkeypatch):
     assert [r['svid'] for r in rerank[0]['records']] == ['b', 'a', 'c']
     assert fused[0]['settings']['embedding'] == GOOD_SEMANTIC and fused[0]['settings']['commit'] == 'abc'
     assert fused[0]['settings']['keep'] is None
-    assert rerank[0]['rerank'] == {'reranked': 3, 'read_top': 50, 'provider': 'voyage', 'model': 'rerank-3-lite',
+    assert rerank[0]['rerank'] == {'applied': True, 'reason': None, 'reranked': 3, 'read_top': 50, 'provider': 'voyage', 'model': 'rerank-3-lite',
                                    'pool_factor': 4.0}
 
 
@@ -354,3 +354,28 @@ def test_an_exhausted_query_pause_from_an_earlier_stop_is_scored_not_resumed(tmp
         'status': 'paused', 'reason': 'search_query_failed'}}) + '\n')
     run(tmp_path, monkeypatch, server)
     assert server.resumed == [] and 'no model attempt left' in rows(tmp_path, 'rerank')[0]['error']
+
+
+TIMED_OUT = RERANK_STEP | {'status': 'failed', 'error_code': 'no_time_left', 'fallback': 'fused_order'}
+NO_TIME_LIST = LISTING | {'order': ['a', 'b', 'c'], 'reranker': {'applied': False, 'reason': 'no_time_left'}}
+
+
+def test_a_rerank_the_product_ran_out_of_time_for_is_a_result(tmp_path):
+    server = FakeServer(tmp_path / 'lib.sqlite')
+    server.add('source_similarity', 'succeeded', {'provider': 'voyage', 'stored_model': 'voyage:voyage-4-lite@1024'})
+    server.add(harness.RERANK_KEY, 'failed', TIMED_OUT)
+    with closing(server.db()) as conn:
+        assert harness.problems(conn, 'run1', NO_TIME_LIST) == []
+        assert harness.rerank_info(conn, 'run1', NO_TIME_LIST)['applied'] is False
+        assert harness.failed_run_problems(conn, 'run1') == []
+        # a list that claims the rerank applied, or gives another reason, still stops
+        assert harness.problems(conn, 'run1', LISTING) != []
+        assert harness.problems(conn, 'run1', NO_TIME_LIST | {'reranker': {'applied': False, 'reason': 'timeout'}})
+
+
+def test_a_timed_out_rerank_with_another_reranker_still_stops(tmp_path):
+    server = FakeServer(tmp_path / 'lib.sqlite')
+    server.add('source_similarity', 'succeeded', {'provider': 'voyage', 'stored_model': 'voyage:voyage-4-lite@1024'})
+    server.add(harness.RERANK_KEY, 'failed', TIMED_OUT | {'provider': 'cohere'})
+    with closing(server.db()) as conn:
+        assert 'reranker cohere' in '; '.join(harness.problems(conn, 'run1', NO_TIME_LIST))

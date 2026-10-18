@@ -2302,3 +2302,39 @@ export const citationApi = {
     request<CitationCheckView>(`/api/citation-checks/${id}/check`, json('POST', { plan_revision: revision, ...model })),
   exportUrl: (id: string, format: 'csv' | 'md') => `/api/citation-checks/${id}/export?format=${format}`,
 }
+
+// Reverse citation search (R1–R3): one revision of a statement research's check. Every count, result and quote comes
+// from the stored rows (`statement_check.view`); the latest revision is the one `latest_check_id` names.
+export type StatementEligibility = 'listed' | 'out_of_cap' | 'excluded_reason' | 'person_excluded'
+export type StatementStatus = 'planned' | 'done' | 'could_not_check' | 'no_text'
+export type StatementCheckBrief = {
+  id: string; research_id: string; revision: number; request_id: string; sentence: string; scope_revision: number; is_latest: boolean
+  discovery_run_id: string | null; attachment_snapshot: { status: string } | null; effort: string; work_cap: number; model: StatementCheckModel
+  currency: 'current' | 'stale'; stale_reason: string | null; status: 'open' | 'finished'
+  run: { id: string; status: RunStatus; pause_reason: string | null } | null; created_at: string
+}
+export type StatementCheckItem = {
+  id: string; ordinal: number; work_id: string; source_version_id: string; title: string | null; year: number | null; doi: string | null
+  text_version: string | null; route: string | null; entry: 'reading' | 'person_included'; eligibility: StatementEligibility
+  excluded_reason: string | null; status: StatementStatus | null; result: CitationResult | null; depth: CitationDepth | null
+  passages_given: number | null; passages_total: number | null; passages_not_given: number | null; passages_cut: number | null
+  extraction_complete: boolean | null; parts: CitationPart[] | null; error: { code: string; reason?: string } | null; checked_at: string | null
+}
+export type StatementCounters = {
+  candidates: number; listed: number; out_of_cap: number; excluded_reason: number; person_excluded: number
+  excluded_reasons: Record<string, number>; by_status: Record<StatementStatus, number>; sent_to_model: number; completed: number
+  results: Record<CitationResult, number>; results_by_depth: Record<CitationResult, Record<CitationDepth, number>>
+  works_with_located_quotes_from: { abstract: number; pages: number }
+}
+export type StatementCheckView = StatementCheckBrief & { latest_check_id: string | null; counters: StatementCounters; items: StatementCheckItem[] }
+export type StatementPreview = {
+  id: string; revision: number; work_cap: number; waiting: boolean; listed: number; planned: number; out_of_cap: number; no_text: number
+  excluded: number; passages_per_item: number; model: StatementCheckModel
+  cost: Omit<CitationCost, 'reason' | 'prices'> & { reason?: string; prices?: CitationCost['prices'] }
+}
+export const statementApi = {
+  list: (researchId: string) => request<{ latest_check_id: string | null; checks: StatementCheckBrief[] }>(`/api/researches/${researchId}/statement-checks`),
+  get: (id: string) => request<StatementCheckView>(`/api/statement-checks/${id}`),
+  preview: (id: string) => request<StatementPreview>(`/api/statement-checks/${id}/preview`),
+  exportUrl: (id: string, format: 'csv' | 'md') => `/api/statement-checks/${id}/export?format=${format}`,
+}

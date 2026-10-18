@@ -42,7 +42,7 @@ from deixis.documents import tool_updates
 from deixis.documents import equation_regions, mathpix
 from deixis.documents import upload_record
 from deixis.documents import draft_parse
-from deixis.domain import proxy, skill
+from deixis.domain import proxy, skill, statement
 from deixis.imports import bibtex_ris
 from deixis.workflow import abstract_stage
 from deixis.workflow import source_keys
@@ -203,8 +203,11 @@ async def checked_research_models(store: Any, adapters: dict[str, Any], body: Cr
         raise HTTPException(422, "A PDF seed requires Files + academic search")
     if body.intent == "papers" and body.source_scope == "attached":
         raise HTTPException(422, "Finding papers needs academic search")
-    if body.intent == "statement" and len(body.question) > statement_check.MAX_SENTENCE_CHARS:
-        raise HTTPException(422, f"A sentence to check is at most {statement_check.MAX_SENTENCE_CHARS} characters")
+    if body.intent == "statement":
+        try:
+            statement.check_sentence(body.question)
+        except statement.StatementTooLong as exc:
+            raise HTTPException(422, str(exc)) from exc
     listed: dict[str, list[dict[str, Any]] | None] = {}
 
     async def check_role(connection: str, model: str, effort: str | None) -> None:
@@ -1942,7 +1945,10 @@ def create_app(
     @app.post("/api/researches/{research_id}/scope")
     async def revise_scope(research_id: str, body: ScopeRevision, request: Request) -> dict[str, Any]:
         store = store_of(request)
-        store.revise_scope(research_id, body.expected_version, body.question, body.steering, body.key_terms)
+        try:
+            store.revise_scope(research_id, body.expected_version, body.question, body.steering, body.key_terms)
+        except statement.StatementTooLong as exc:  # a statement research's revised sentence keeps the same limit
+            raise HTTPException(422, str(exc)) from exc
         return research_view(store, research_id)
 
     @app.post("/api/researches/{research_id}/scope/withdraw")

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Popover } from '@base-ui/react/popover'
-import { ArrowUp, Brain, Check, ChevronDown, Cpu, FileText, FileUp, Gauge, LibraryBig, Lightbulb, Link2, Network, Paperclip, PenLine, Plus, RotateCw, ScanSearch, Search, ShieldCheck, SlidersHorizontal, Table2, Telescope, X, Zap, type LucideIcon } from 'lucide-react'
+import { ArrowUp, Brain, Check, ChevronDown, Cpu, FileText, FileUp, Gauge, LibraryBig, Lightbulb, Link2, Network, Paperclip, PenLine, Quote, Plus, RotateCw, ScanSearch, Search, ShieldCheck, SlidersHorizontal, Table2, Telescope, X, Zap, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -189,14 +189,22 @@ export function ModelPicker({ role, icon: Icon, hint, models, value, onChange, e
 
 // The mode chips under the composer (H13). Each sets what the research produces (its intent); "Ask my PDFs" is the
 // attached-only scope with a drafted report. The chosen chip is the person's explicit choice, stored with the research.
-type ModeChip = 'report' | 'papers' | 'table' | 'compare' | 'statement' | 'ask'  // 'statement' has no chip yet (reverse citation search R3)
+// "Check a statement" (reverse citation search R3) takes one pasted sentence: the works found are each checked for a
+// passage that states it, instead of an answer being written.
+type ModeChip = 'report' | 'papers' | 'table' | 'compare' | 'statement' | 'ask'
 const modeChips: { id: ModeChip; label: string; icon: LucideIcon }[] = [
   { id: 'report', label: 'Draft report', icon: FileText },
   { id: 'papers', label: 'Find papers', icon: Search },
   { id: 'table', label: 'Evidence table', icon: Table2 },
   { id: 'compare', label: 'Compare methods', icon: Network },
+  { id: 'statement', label: 'Check a statement', icon: Quote },
   { id: 'ask', label: 'Ask my PDFs', icon: Paperclip },
 ]
+
+// A statement is one sentence of at most this many characters (`statement_check.MAX_SENTENCE_CHARS`).
+const MAX_STATEMENT_CHARS = 600
+// More than one sentence: a sentence end followed by a capital letter. Only a hint; splitting is the person's call.
+const severalSentences = (text: string) => /[.!?]\s+\p{Lu}/u.test(text.trim())
 
 // Why a table/compare discovery of the current question wrote no table (the view's current outcome only).
 const outcomeText: Record<IntentOutcome['reason'], string> = {
@@ -311,7 +319,7 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
     homeApi.suggestions().then(result => { if (current) setSuggestions(result.suggestions) }, () => { if (current) setSuggestions([]) })
     return () => { current = false }
   }, [listKey])
-  const placeholder = useTypewriter([t('Ask a research question. DEIXIS searches, screens, reads and links every claim to a passage.'), ...suggestions.slice(0, 5).map(s => s.text)], question === '')
+  const placeholder = useTypewriter([t('Ask a research question. DEIXIS searches, screens, reads and links every claim to a passage.'), ...suggestions.slice(0, 5).map(s => s.text)], question === '' && intent !== 'statement')
   const [effort, setEffort] = useState<Effort>('standard')
   // The depth chosen in Settings → General; a pick made here before it arrives is kept.
   const effortPicked = useRef(false)
@@ -426,8 +434,12 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
     setError(rejected.length ? t('{files}: only PDF files can be attached.', { files: rejected.join(', ') }) : '')
   }
 
+  const statement = intent === 'statement'
+  const tooLong = statement && question.trim().length > MAX_STATEMENT_CHARS
+
   async function submit() {
     if (!question.trim() || busy) return
+    if (tooLong) { setError(t('A statement to check is at most {n} characters.', { n: MAX_STATEMENT_CHARS })); return }
     if (needsFiles && !files.length && !zotero) { setError(t('Attach at least one PDF to use “Attached files”.')); return }
     if (scope === 'attached_and_academic' && !files.length && !zotero) { setError(t('Add a PDF or Zotero collection to guide the search.')); return }
     if (noGuide) { setError(t('Choose at least one PDF to guide the search.')); return }
@@ -480,6 +492,12 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
       if (scope === 'attached' && intent === 'report') {
         step = 'Research saved, but DEIXIS could not start the answer: {message}. You can start it from the research page.'
         await api.startRun(id, 'answer', crypto.randomUUID())
+      }
+      // A statement over the attached files only: no search either, so the check of those files starts at once (it
+      // waits for their text). With a search, the check starts by itself when the search and reading end.
+      if (scope === 'attached' && intent === 'statement') {
+        step = 'Research saved, but DEIXIS could not start the statement check: {message}. You can start it from the research page.'
+        await api.startStatementCheck(id, crypto.randomUUID(), latestView.research.current_scope_revision)
       }
       onCreated(id)
     } catch (e) {
@@ -552,8 +570,12 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
         </Select>
       </div>
       <label className="composer-label sr-only" htmlFor="research-question">{t('What would you like to investigate?')}</label>
-      <Textarea ref={questionInput} id="research-question" aria-label={t('Research question')} placeholder={placeholder} value={question}
+      <Textarea ref={questionInput} id="research-question" aria-label={t(statement ? 'Statement to check' : 'Research question')} placeholder={statement ? t('Paste one sentence to check, for example a claim from your draft.') : placeholder} value={question}
         onChange={e => setQuestion(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void submit() } }} />
+      {statement && <p className={`composer-hint statement-hint${tooLong ? ' is-over' : ''}`} role={tooLong ? 'alert' : undefined}>
+        {tooLong ? t('A statement to check is at most {n} characters ({m} now).', { n: MAX_STATEMENT_CHARS, m: question.trim().length })
+          : severalSentences(question) ? t('Enter one claim. This looks like more than one sentence; check each one on its own.')
+          : t('One sentence, up to {n} characters. Each work found is checked for a passage that states it.', { n: MAX_STATEMENT_CHARS })}</p>}
       {scope === 'attached_and_academic' && files.length === 0 && zotero &&
         <p className="composer-hint">{t('The imported PDFs guide the search.')}</p>}
       <div className="composer-controls">
@@ -589,7 +611,7 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
             {(Object.keys(effortLabels) as Effort[]).map(d => <SelectItem key={d} value={d} className="home-menu-item"><MenuRow icon={effortOptions[d].icon} title={t(effortLabels[d])} detail={effortDetail(d, limits, LOCAL_CONNECTIONS.has(models.find(m => m.id === model)?.connection ?? ''))} /></SelectItem>)}
           </SelectContent>
         </Select>
-        <Button className="send-button" type="submit" size="icon" disabled={!question.trim() || busy || !model || !literature || (needsSource && !files.length && !zotero) || noGuide} aria-label={t('Start research')} title={noModel ? t('Connect a model to start') : undefined}><ArrowUp size={17} /></Button>
+        <Button className="send-button" type="submit" size="icon" disabled={!question.trim() || busy || tooLong || !model || !literature || (needsSource && !files.length && !zotero) || noGuide} aria-label={t('Start research')} title={noModel ? t('Connect a model to start') : undefined}><ArrowUp size={17} /></Button>
       </div>
       {guideRows && <div className="guide" role="group" aria-labelledby="guide-lead">
         <span id="guide-lead">{t('PDFs guiding the search · their titles, abstracts and references shape the query.')}</span>

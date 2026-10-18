@@ -26,7 +26,7 @@ Kısa hüküm: altyapı ve kurallar sağlam, arama ölçülmüş ve iyi; ama son
 1. **Yarım işleri kapat:** `abstract-rows` için kararı ver (al ya da sil); arama kayıpları oturumunun sonucunu oku.
 2. **Reranker ve zincir kayıtları:** D106 yalnız-zincir kayıtlarını korudu (kaybın yarısı). Kalan yarı, arama ile de bulunan zincir kayıtlarından geliyor; onları da korumak LitSearch'te −0,032 kaybettiriyor. Gerçek bir yeni koşu (BioASQ dahil) D106'yı doğrulamadan başka ayar yapılmasın.
 3. **Görsel kontrol, sonra P10:** sahibin göz kontrolü ve çıkan düzeltmeler; ardından macOS paketi (plan `.local/plans/p10-plan.md`, K1–K15 satırları; OpenAI, Gemini, DeepSeek fiyatları yayından önce doğrulanacak).
-4. **Ölçülmemiş özellikleri bir kez canlı dene:** ters atıf aramanın ekranı (R3) ve canlı pilotu (R4), kartopu için okuma penceresi ölçümü (havuz 200 ve 400, ikinci bir soruda).
+4. **Ölçülmemiş özellikleri bir kez canlı dene:** ters atıf aramanın canlı pilotu (R4; ekran R3 D107 ile main'de), kartopu için okuma penceresi ölçümü (havuz 200 ve 400, ikinci bir soruda).
 5. **Yeni özellik ekleme duraklaması:** gap finder, Chain of Ideas, R5 gibi fikirler yukarıdakiler bitene kadar bekler.
 
 ## Açık işler (kısaltılmış)
@@ -62,7 +62,7 @@ Ayrıntı ve sayılar ilgili D kararında.
 
 - **Arama:** tek yol hızlı yol (temiz başlangıç, 10–11 Ekim); başlangıç PDF'leri aramayı yönlendiriyor (D2, D3, D6); atıf haritası (D42); kartopu (D91); takip sorusundan yeni eser arama (D92); reranker varsayılan Voyage (D104); llama.cpp ile yerleşik embedding ve reranker modelleri (D90).
 - **Okuma ve cevap:** ikinci tam metin okuması görmediği bölümleri okuyor (D76); cevaba verilen her eser ya atıflanıyor ya gerekçeyle dışarıda kalıyor (D80, D83); sonuç yoğun pasaj önce (D84); formül soruları için formül sayfası (D56).
-- **Atıf denetimi:** Verify Citations V1–V4 (D86, D96, D99, D101), V5 pilotu ve düzeltmeleri (D105; sonuç `.local/verify-citations-v5-pilot/RESULT-r2.md`, açık: tablo satırında yazar sütunu doğrulanacak iddia sayılıyor, P25); ters atıf arama R1–R2 (D100, D103).
+- **Atıf denetimi:** Verify Citations V1–V4 (D86, D96, D99, D101), V5 pilotu ve düzeltmeleri (D105; sonuç `.local/verify-citations-v5-pilot/RESULT-r2.md`, açık: tablo satırında yazar sütunu doğrulanacak iddia sayılıyor, P25); ters atıf arama R1–R3 (D100, D103, D107; R3: Home modu ve sonuç paneli).
 - **Tablo ve rapor:** sayı kontrol bayrağı (D54), yazım kuralları (D51, D55), hücre yeniden deneme (D68), Anthropic API'de rapor şeması (D87, D93).
 - **Modeller ve ayarlar:** Anthropic API akışlı cevap, 64k token (D85); anahtarlar sistem keychain'inde (D19, D29); şirket başına model kartı (D20–D24, D34); Ollama/LM Studio (D39); kullanım ve harcama ekranı (D78).
 - **Uygulama:** mockup v24/v25 tasarımı (D5, D77, D79); run kartı (D82); P10 öncesi hazırlık kodda bitti; GitHub Actions tam testi dört makinede koşturuyor (bilgi amaçlı, hiçbir şeyi engellemiyor).

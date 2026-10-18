@@ -16,6 +16,7 @@
 .app .composer textarea:focus-visible{border:0;box-shadow:none}
 .app .composer textarea::placeholder{color:var(--muted)}
 .composer-hint{margin:0;padding:6px 16px 8px;color:var(--muted);font-size:12px}
+.composer-hint.statement-hint.is-over{color:var(--error-ink)}
 .home-estimate{margin:8px 4px 0;color:var(--muted);font-size:12px;line-height:1.5}
 .home-estimate p{margin:0}
 .home-estimate b{color:var(--ink);font-weight:500}

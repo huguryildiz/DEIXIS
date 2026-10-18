@@ -672,3 +672,28 @@ def test_a_request_id_belongs_to_one_research(tmp_path):
         statement_check.create_check(first.flow, rid, first.discovery["id"], MODEL, "shared-request")
     assert refused.value.code == "request_conflict"
     assert create(first, "shared-request")["id"] == check["id"]  # the same research's retry stays idempotent
+
+
+def test_the_view_gives_each_item_its_stored_parts_located_words_and_passage_counts(tmp_path):
+    """R3's panel reads these from the view: the model's parts with the backend's located words (never the model's
+    quote as a mark), and the frozen plan's given, not-given and cut counts with the extraction's completeness."""
+    lib = build(tmp_path, n=1, pdf=True)
+    inspected_pdf(lib)
+    cutoff(lib)
+    check = create(lib)
+    before = {item["source_version_id"]: item for item in statement_check.view(lib.store, check["id"])["items"]}
+    assert all(item["parts"] is None for item in before.values())
+    execute(lib, check)
+    shown = {item["source_version_id"]: item for item in statement_check.view(lib.store, check["id"])["items"]}
+    for row in items(lib, check):
+        item, plan = shown[row["source_version_id"]], json.loads(row["plan_json"])
+        assert (item["passages_given"], item["passages_total"], item["passages_not_given"], item["passages_cut"]) == (
+            len(plan["passage_ids"]), plan["passages_total"], plan["passages_not_given"], 0)
+        assert item["extraction_complete"] == (None if row["extraction_complete"] is None else bool(row["extraction_complete"]))
+        output, anchors = json.loads(row["output_json"]), json.loads(row["located_anchors_json"])
+        assert [(p["text"], p["assessment"]) for p in item["parts"]] == [(p["text"], p["assessment"]) for p in output["parts"]]
+        assert [p["evidence"] for p in item["parts"]] == anchors
+        located = item["parts"][0]["evidence"][0]
+        assert located["located"] and located["anchor_text"] in lib.store.passage(located["passage_id"])["text"]
+    pdf_item = shown[lib.sources[-1]]
+    assert pdf_item["depth"] == "full_text" and pdf_item["extraction_complete"] is True

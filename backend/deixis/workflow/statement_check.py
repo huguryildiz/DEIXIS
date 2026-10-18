@@ -35,7 +35,7 @@ import json
 from collections import Counter
 from typing import Any
 
-from deixis.domain import canonical, contracts
+from deixis.domain import canonical, contracts, statement
 from deixis.domain.citation_check import DEPTHS, RESULTS, PartAssessment, check_outcome
 from deixis.domain.rules import MAX_SCHEMA_REPAIRS
 from deixis.domain.rules import RevisionConflict
@@ -45,7 +45,7 @@ from deixis.workflow.store import NotFound, Store
 
 KIND = TASK = "statement_check"
 PASSAGES_PER_ITEM = citation_check.PASSAGES_PER_PAIR  # K: the passages one work is given, as a V3 pair is
-MAX_SENTENCE_CHARS = 600  # one sentence, as Home takes it
+MAX_SENTENCE_CHARS = statement.MAX_SENTENCE_CHARS  # one sentence, as Home takes it (`domain.statement`)
 WORK_CAPS = {"quick": 12, "standard": 24, "detailed": 40}  # works sent to the model, by the research's effort
 PLAN_VERSION = 1
 # The research question every item's StepInput carries; the sentence itself is in `statement_check_target`.
@@ -255,6 +255,10 @@ def create_check(flow: Any, research_id: str, discovery_run_id: str | None, mode
         research = store.research(research_id)
         if research["intent"] != "statement":
             raise Refused("not_statement", "Only a statement research has a statement check")
+        try:
+            statement.check_sentence(store.scope(research_id)["question"])
+        except statement.StatementTooLong as exc:  # a sentence stored before the limit applied everywhere
+            raise Refused("sentence_too_long", str(exc)) from exc
         if expected_scope_revision is not None and expected_scope_revision != research["current_scope_revision"]:
             raise Refused("revision_mismatch", f"The research is at question revision"
                                                f" {research['current_scope_revision']}, not {expected_scope_revision}")
@@ -664,7 +668,18 @@ def view(store: Store, check_id: str) -> dict[str, Any]:
     items = []
     for item in items_of(store, check_id):
         source = store.source(item["source_version_id"])
+        plan = json.loads(item["plan_json"]) if item["plan_json"] else {}
+        output = json.loads(item["output_json"]) if item["output_json"] else None
+        anchors = json.loads(item["located_anchors_json"] or "null")
         items.append({
+            # The model's parts as stored, each with the backend's own located words (V3's `check_view` shape), and
+            # the frozen plan's passage counts: the screen labels parts as the model's and marks only located words.
+            "parts": None if output is None else [
+                {"text": part["text"], "assessment": part["assessment"], "evidence": located}
+                for part, located in zip(output["parts"], anchors or [[] for _ in output["parts"]])],
+            "passages_given": len(plan["passage_ids"]) if plan else None, "passages_total": plan.get("passages_total"),
+            "passages_not_given": plan.get("passages_not_given"), "passages_cut": plan.get("passages_cut"),
+            "extraction_complete": None if item["extraction_complete"] is None else bool(item["extraction_complete"]),
             "id": item["id"], "ordinal": item["ordinal"], "work_id": item["work_id"],
             "source_version_id": item["source_version_id"], "title": source.get("title"), "year": source.get("year"),
             "doi": source.get("doi"), "text_version": item["text_version"], "route": item["route"],

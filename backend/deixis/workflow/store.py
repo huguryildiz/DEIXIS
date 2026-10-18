@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from deixis.domain.canonical import sha256_hex
+from deixis.domain import statement as statement_rule
 from deixis.documents.jats import RENDITION_SQL
 from deixis.domain.rules import RevisionConflict, apply_model_change, check_expected_version, effective_reviewer, role_model, step_model
 from deixis.storage.db import dumps, new_id, now, row_dict, transaction
@@ -654,6 +655,8 @@ class Store:
             ).fetchone())
             parent = research["current_scope_revision"]
             current_question = current["question"]
+            if research["intent"] == "statement":
+                statement_rule.check_sentence(question)
             current.update(question=question.strip(), steering=steering, created_at=now())
             if key_terms is not None and "key_terms" in current:
                 current["key_terms"] = key_terms

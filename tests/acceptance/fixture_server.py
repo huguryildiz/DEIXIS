@@ -104,6 +104,7 @@ without usable text. These markers affect only candidate-task calls and the dist
 box offers a claim from an aspect.
 `DEIXIS_FIXTURE_CITATION=on` (Verify citations V4) serves the SYNTHETIC works of `CITATION_BIB` and scripts each
 citation check by its sentence (see `CITATION_MODE`).
+Every `statement_check` step (reverse citation search R3) is scripted by the work it reads (see `statement_answer`).
 """
 
 from __future__ import annotations
@@ -518,6 +519,38 @@ def citation_answer(si: dict[str, Any]) -> str:
     return doc([{"text": sentence, "assessment": "not_stated", "evidence": []}])
 
 
+# Reverse citation search (R3): every `statement_check` step is answered by the work it reads, known by its passages'
+# text (no marker; the question is the sentence). W901 states the whole sentence, W902 its second part, W903 nothing,
+# and any other work gets an answer that is not a check, so its repair runs out (could not be checked). The sentence the
+# spec pastes is STATEMENT_SENTENCE; the parts are spans of it, as the V3 rules ask.
+STATEMENT_SENTENCE = "A bisection schedule for molecule release is proposed and relays share a molecule budget."
+
+
+def statement_answer(si: dict[str, Any]) -> str:
+    sentence = si["statement_check_target"]["sentence"]
+    text = " ".join(p["text"] for p in si["passages"])
+
+    def quote(words: str) -> dict[str, str]:
+        found = next(p for p in si["passages"] if words.casefold() in p["text"].casefold())
+        start = found["text"].casefold().index(words.casefold())
+        return {"passage_id": found["passage_id"], "quote": found["text"][start:start + len(words)]}
+
+    def doc(parts: list[dict[str, Any]]) -> str:
+        head = {"schema_version": "deixis.citation_check.v1", "step_input_id": si["step_input_id"],
+                "scope_revision": si["scope_revision"], "skill_package_hash": si["skill_package_hash"]}
+        return json.dumps(head | {"parts": parts, "covers_whole_sentence": True})
+
+    first, _, second = sentence.partition(" and ")
+    if "bisection schedule for molecule release" in text:
+        return doc([{"text": sentence, "assessment": "stated", "evidence": [quote("bisection schedule for molecule release")]}])
+    if "Relays share a molecule budget" in text and second:
+        return doc([{"text": first, "assessment": "not_stated", "evidence": []},
+                    {"text": second, "assessment": "stated", "evidence": [quote("Relays share a molecule budget")]}])
+    if "short letter on release schedules" in text:
+        return doc([{"text": sentence, "assessment": "not_stated", "evidence": []}])
+    return "SYNTHETIC: not a statement check"
+
+
 # "[parity]": a SYNTHETIC research shaped like the UI mockup's example (412 found, 50 screened, 34 past the abstract
 # stage, 20 read in full text, 12 cited, three queue rows). Every work is returned by exactly one search request: the
 # semantic page holds the first PARITY_SEMANTIC, the keyword query's cursor pages the rest, and citation chaining finds
@@ -830,6 +863,9 @@ class ScriptedCodex:
         if task == "citation_check":
             await asyncio.sleep(0.6)  # so the screen's running state can be seen
             return ModelStepResult("completed", raw_text=citation_answer(si), resolved_model=requested_model)
+        if task == "statement_check":
+            await asyncio.sleep(0.6)  # so the panel's running state can be seen
+            return ModelStepResult("completed", raw_text=statement_answer(si), resolved_model=requested_model)
         if output_schema.get("properties", {}).get("schema_version", {}).get("const") == "deixis.report_section_anchor_repair.v1":
             pairs = json.loads(message.split("Cell anchor repair pairs:\n", 1)[1].split("\nFor each failing anchor", 1)[0])
             patch = {"schema_version": "deixis.report_section_anchor_repair.v1",

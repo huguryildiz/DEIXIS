@@ -900,3 +900,48 @@ export const citationRefusals: Record<string, string> = {
   text_pending: 'Some entries are not looked up yet or their text is not decided.',
   entry_not_resolved: 'Only an entry linked to a record can take a PDF.',
 }
+
+// Reverse citation search (R3): the statement check panel. The results are V3's; the words say what the check is
+// (support located in given passages) and never that a work disagrees: no "challenges" result exists yet (R5).
+export const statementResultLabels: Record<CitationResult, string> = {
+  found_whole: 'Supports the whole statement', found_partial: 'Supports part of the statement', not_found_in_given: 'Not found in the given passages',
+}
+// Why a revision is no longer current (`statement_check.stale_reason`).
+export const statementStaleReasons: Record<string, string> = {
+  question_changed: 'the question was revised after this check',
+  person_choice_changed: 'you included, excluded or judged a work or file after this check',
+  source_changed: 'the text of a work it lists changed after this check',
+  source_removed: 'a work it lists left the research after this check',
+}
+// Why a work was not checked: the cutoff's reason, or the item's eligibility.
+export const statementExcludedReasons: Record<string, string> = {
+  outside_read_window: 'Outside the works the reading reached',
+  no_text_at_cutoff: 'No text when the reading stopped',
+  not_screened_at_cutoff: 'Not screened when the reading stopped',
+  versions_disagree: 'Its versions disagree',
+  out_of_scope: 'Left out at screening',
+  criterion_not_met: 'Did not meet the criterion at screening',
+  unresolved_without_fulltext: 'Waiting for its full text when the reading stopped',
+  code_decided: 'Set aside by code at screening',
+  removed_after_cutoff: 'Removed from the research after the reading',
+  fulltext_excluded_after_cutoff: 'Excluded after its full text was read',
+  source_changed_after_cutoff: 'Its record changed after the reading',
+  user_pending: 'Waiting for your decision',
+}
+// Why a listed work could not be checked (`error.code`, and for a changed input its reason).
+export const statementErrorText: Record<string, string> = {
+  invalid_model_output: 'The model’s answer did not pass the checks, also after one repair. Its raw answer is kept in the export.',
+  message_too_large: 'The passages were too long to send.',
+  frozen_input_changed: 'A frozen input changed before the result was stored, so it was not sent or not kept.',
+}
+// Refusals of a check request (409 `code`, `statement_check.Refused`).
+export const statementRefusals: Record<string, string> = {
+  no_model: 'No literature model is chosen in Settings. Choose one, then check again.',
+  not_statement: 'Only a research that checks a statement has a statement check.',
+  revision_mismatch: 'The question was revised meanwhile. The page is read again; check the new question.',
+  discovery_mismatch: 'The search and reading of the current question have not finished.',
+  cutoff_missing: 'The search stored no reading cutoff, so there is no list of works to check.',
+  run_active: 'A run of this research is still active. Wait until it ends.',
+  request_conflict: 'This request belongs to another research.',
+  sentence_too_long: 'The statement is longer than 600 characters. Revise the question to one shorter sentence, then check again.',
+}

@@ -42,6 +42,7 @@ import { ActivityPanel } from './research/ActivityPanel'
 import { PlanPanel } from './research/PlanPanel'
 import { CitationMap } from './citemap/CitationMap'
 import { SnowballPanel } from './research/SnowballPanel'
+import { StatementCheckPanel } from './research/StatementCheckPanel'
 import { PendingArtifacts, TableCard } from './research/ArtifactsTab'
 import { Rail } from './research/Rail'
 import { useRailWide } from './research/railData'
@@ -66,6 +67,10 @@ const TRANSCRIPT_KINDS = new Set<RunKind>(['discovery', 'pdf_collection', 'fullt
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 // Source details opened from a left-out work of the answer's evidence ledger (D80): the mark is the quote the model gave
 // for leaving the work out, never cited text; a row without a quote opens the work's first given passage, unmarked.
+// Source details opened from a statement check's located quote: the words marked are the ones the backend located.
+const statementSheetLabels = () => ({ heading: t('Located quote'), mark: t('Words the backend located for the statement'),
+  marked: t('Marked: the words the backend located in this passage for the statement check.'),
+  unmarked: t('The located words could not be marked in this passage. Nothing else is marked.') })
 const ledgerLabels = (quoted: boolean) => quoted
   ? { heading: t('Quote given for leaving this work out'), go: t('Go to the quote'), mark: t('Quote given for leaving this work out'),
     marked: t('Highlighted: the quote the model gave for leaving this work out. The answer does not cite it.'),
@@ -107,7 +112,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [candidateCount, setCandidateCount] = useState<number | null>(null)
   const [candidateSelection, setCandidateSelection] = useState<CandidateSelection | null>(null)
   // `view`: the tab Source details opens on (the Citation panel's Show in the PDF); `find`: start the open-copy lookup there.
-  const [passageTarget, setPassageTarget] = useState<{ passageId: string; highlightText: string | null; fromCitation: boolean; reportCitation?: boolean; ledger?: boolean; view?: 'text' | 'pdf'; find?: boolean } | null>(null)
+  const [passageTarget, setPassageTarget] = useState<{ passageId: string; highlightText: string | null; fromCitation: boolean; reportCitation?: boolean; ledger?: boolean; view?: 'text' | 'pdf'; find?: boolean; statement?: boolean } | null>(null)
   // The claim of the latest answer whose citations the Citation panel shows (P11).
   const [citeClaimId, setCiteClaimId] = useState<string | null>(null)
   // A PDF (opened on its PDF or plain-text tab) or a source opened from its title in the Sources table.
@@ -882,6 +887,11 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         emptyText={included ? t(included === 1 ? '{n} source is included. Generate an answer when your selection is ready.' : '{n} sources are included. Generate an answer when your selection is ready.', { n: included }) : t(hasAcademic ? 'Start an academic search, or attach PDFs.' : 'Attach PDFs, then generate an answer.')}
         latestAnswer={answer ? <><AnswerThread thread={answerThread} eventCursor={view.last_event_id} review={answerReview} researchId={id} title={answer.report_title ?? heading} version={answerVersion} answer={answer} sources={view.sources} busy={busy} dark={dark} reportOpen={openReportId === answer.id} onReportOpenChange={open => setOpenReportId(open ? answer.id : null)} onOpen={openAnswerPassage} onAttachPdf={chooseSourcePdf}
           versions={reportVersions} latestVersion={latestVersion} onVersion={switchReport} changes={answer.status === 'structurally_valid' ? reportChanges(answer) : undefined} />{tableCards}</> : null} />
+      {/* A statement research (reverse citation search R3) shows its check here, where an answer would stand. */}
+      {view.research.intent === 'statement' && <StatementCheckPanel researchId={id} scopeRevision={view.research.current_scope_revision} eventCursor={view.last_event_id}
+        runActive={anyActive} discoveryDone={view.scope.source_scope === 'attached' || view.runs.some(r => r.kind === 'discovery' && r.status === 'completed' && r.scope_revision === view.research.current_scope_revision)}
+        onOpenQuote={quote => setPassageTarget({ passageId: quote.passageId, highlightText: quote.anchor, fromCitation: true, statement: true })}
+        onOpenSource={svid => setPdfTarget({ assetId: null, sourceVersionId: svid, view: 'text' })} onChanged={() => { void load(); onChanged() }} />}
       {!answer && tableCards}
       {/* A search or answer still working: the report and table it will make stand as skeletons until they exist. */}
       {view.runs.some(r => ACTIVE.has(r.status) && (r.kind === 'discovery' || r.kind === 'answer')) && <PendingArtifacts report={!answer} table={!!tables && !tables.length} />}
@@ -1085,7 +1095,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       findOnOpen={Boolean(passageTarget?.find)} latestAnswer={answer?.status === 'structurally_valid' ? { version: answerVersion, claims: answer.claims } : null}
       actions={passageTarget?.reportCitation ? undefined : { busy, finding: pdfFinding, onFind: discoverPdf, onAttach: chooseSourcePdf, onReplace: chooseReplacement,
         onRemove: source => { void askRemoval([source.source_version_id]) }, onReextract: (source, assetId) => { void reextract(source, assetId) }, onRereadEquations: (source, assetId) => { void rereadEquations(source, assetId) }, onLookUpRecord: source => { void lookUpRecord(source) },
-        ocr: { tool: ocrTool, runs: view.runs, onRead: (source, assetId) => { void readWithOcr(source, assetId) } } }} highlightText={passageTarget?.highlightText} expectHighlight={passageTarget?.fromCitation} citationLabels={passageTarget?.reportCitation ? { marked: t('Exact text cited in this report'), mark: t('Exact text cited in this report'), unmarked: t('This report citation has no located text anchor, so its passage opens without a mark.') } : passageTarget?.ledger ? ledgerLabels(passageTarget.highlightText !== null) : undefined} sources={view.sources} dark={dark} onClose={() => { setPassageTarget(null); setPdfTarget(null) }}
+        ocr: { tool: ocrTool, runs: view.runs, onRead: (source, assetId) => { void readWithOcr(source, assetId) } } }} passageOnly={Boolean(passageTarget?.statement)} highlightText={passageTarget?.highlightText} expectHighlight={passageTarget?.fromCitation} citationLabels={passageTarget?.statement ? statementSheetLabels() : passageTarget?.reportCitation ? { marked: t('Exact text cited in this report'), mark: t('Exact text cited in this report'), unmarked: t('This report citation has no located text anchor, so its passage opens without a mark.') } : passageTarget?.ledger ? ledgerLabels(passageTarget.highlightText !== null) : undefined} sources={view.sources} dark={dark} onClose={() => { setPassageTarget(null); setPdfTarget(null) }}
       onRestoreSource={svid => { setPassageTarget(null); void act(() => api.restoreSources(id, [svid]), t('Restored to this research.')) }} />
   </section></PanelStackContext.Provider>
 }

@@ -60,7 +60,7 @@ test.describe.serial('S5b: Home intent chips, cards, setup card and guide rows',
   test('mode chips: Draft report is on by default, one chip at a time, and the chosen intent is sent', async ({ page }) => {
     await page.goto(server.url())
     await expect(page.locator('.models-summary')).toContainText('fixture-model')
-    const names = ['Draft report', 'Find papers', 'Evidence table', 'Compare methods', 'Ask my PDFs']
+    const names = ['Draft report', 'Find papers', 'Evidence table', 'Compare methods', 'Check a statement', 'Ask my PDFs']
     await expect(page.locator('.mode-chips .chip')).toHaveText(names)
     await expect(chip(page, 'Draft report')).toHaveAttribute('aria-pressed', 'true')
     // Ask my PDFs needs a PDF; the reason is the button's description.

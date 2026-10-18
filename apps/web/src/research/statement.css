@@ -1,0 +1,43 @@
+/* Statement check panel (reverse citation search R3): in the research thread where an answer would stand. It takes the
+   Verify Citations look (`CitationCheck.css`: counters, facts, pills, quotes) inside one hairline box; each result is a
+   group of rows, and the "not found" group opens with its fixed note. */
+.sc-panel{display:grid;gap:12px;margin:14px 0 6px;padding:16px 18px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);font-size:14px;line-height:1.5}
+.sc-panel :is(button,a,summary):focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.sc-panel .notice{margin:0}
+.sc-head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 16px}
+.sc-head>div{min-width:0}
+.sc-head h2{margin:0;font-size:16px;font-weight:600}
+.sc-sub{margin:2px 0 0;color:var(--muted);font-size:12.5px}
+.sc-sentence{margin:0;color:var(--ink);font-size:13.5px;line-height:1.5;overflow-wrap:anywhere}
+.sc-sentence-h{color:var(--muted);font-size:12.5px}
+.sc-box{display:grid;gap:8px;padding:12px 14px;border:1px solid var(--line);border-radius:8px;background:var(--sidebar-surface)}
+.sc-box .cc-acts{margin-top:2px}
+.sc-again{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.sc-done{display:flex;align-items:center;gap:8px;margin:0;color:var(--ink-2);font-size:13.5px}
+.sc-facts{margin:0}
+.sc-counters{grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);margin-top:0}
+.sc-meaning{margin:0}
+.sc-depths ul{display:grid;gap:3px;margin:8px 0 0;padding:0;list-style:none;font-size:13px}
+.sc-groups{display:grid;gap:14px}
+.sc-group h3{display:flex;align-items:baseline;gap:8px;margin:0 0 6px;color:var(--ink);font-size:14px;font-weight:600}
+.sc-count{color:var(--muted);font-size:12.5px;font-weight:500;font-variant-numeric:tabular-nums}
+.sc-note{margin:0 0 8px;color:var(--ink-2);font-size:13px}
+.sc-group>ul{display:grid;margin:0;padding:0;list-style:none;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.sc-row{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:6px 18px;padding:10px 12px}
+.sc-row+.sc-row{border-top:1px solid var(--line)}
+.sc-work,.sc-result{display:grid;align-content:start;justify-items:start;gap:2px;min-width:0}
+.sc-entry{color:var(--ink-2);font-size:12px}
+.sc-read{color:var(--ink-2);font-size:12.5px}
+.sc-model{color:var(--muted);font-size:12px}
+.sc-result .cc-parts{margin-top:4px}
+.sc-result .cc-reason{margin-top:0}
+.sc-foot{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 16px}
+.sc-revisions ol{padding-left:18px}
+.sc-revisions li{display:flex;flex-wrap:wrap;gap:4px 8px}
+.sc-revisions [aria-current]{font-weight:600}
+
+@media(max-width:760px){
+  .sc-panel{padding:12px}
+  .sc-counters{grid-template-columns:minmax(0,1fr)}
+  .sc-row{grid-template-columns:minmax(0,1fr)}
+}

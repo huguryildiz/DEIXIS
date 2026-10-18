@@ -501,8 +501,16 @@ test.describe.serial('S9: the steps list', () => {
     await expect(use).toBeDisabled()
     await dialog.getByRole('combobox', { name: 'Model' }).click()
     await page.getByRole('option', { name: 'Codex · fixture-model-b' }).click()
+    // Checked by default: the choice also becomes the Settings default of the role, for new researches.
+    await expect(dialog.getByRole('checkbox', { name: 'Also use as the default for new researches' })).toBeChecked()
+    const before = await (await api.context.get('/api/settings')).json()
     await use.click()
     await expect(dialog).toHaveCount(0)
+    await expect.poll(async () => (await (await api.context.get('/api/settings')).json()).literature)
+      .toMatchObject({ model_connection: 'codex', model: 'fixture-model-b' })
+    await expect(page.locator('.toast').filter({ hasText: 'is now the default literature model for new researches.' })).toBeVisible()
+    // The later tests create researches with the literature default they started with.
+    expect((await api.context.put('/api/settings/literature', { data: before.literature, headers: { 'x-deixis-csrf': api.token } })).ok()).toBe(true)
     // The change the server recorded is the one the page reports; the run is still stopped: nothing was sent.
     const after = await viewOf(api, rid)
     const change = after.model_changes?.at(-1)

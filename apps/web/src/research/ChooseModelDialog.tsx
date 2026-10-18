@@ -42,6 +42,8 @@ function RoleModelDialog({ target, view, dark, onClose, onChanged, onReload }: {
   const [choice, setChoice] = useState('')
   const [effort, setEffort] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // Also saved as the Settings default of the role, so a new research starts on the model chosen here.
+  const [asDefault, setAsDefault] = useState(true)
   const open = Boolean(target)
   useEffect(() => {
     if (!open) return
@@ -61,13 +63,16 @@ function RoleModelDialog({ target, view, dark, onClose, onChanged, onReload }: {
       const change = next.model_changes.at(-1)
       onChanged(next)
       onClose()
+      const defaulted = asDefault && await api.saveModelDefault(role, { model_connection: chosen.connection, model: chosen.model, reasoning_effort: effort })
+        .then(() => true, (e: Error) => { toast('error', t('Could not save the default: {message}', { message: e.message })); return false })
+      const also = defaulted ? ' ' + t('{model} is now the default {role} model for new researches.', { model: chosen.display_name, role: t(modelRoles[role].label).toLocaleLowerCase(uiLocale()) }) : ''
       // Only a change of the stopped step's own role moves where Retry sends it (the notice says the same).
       const words = change && { role: t(modelRoles[change.role].label), from: change.from.model ?? t('none'), to: change.to.model ?? '',
         stopped: t(modelRoles[target.role].label).toLocaleLowerCase(uiLocale()) }
-      toast('success', !change || !words ? t('The model change was saved.')
+      toast('success', (!change || !words ? t('The model change was saved.')
         : change.role === target.role
           ? t('{role} model changed from {from} to {to} for this research. Steps that run from now on use it; finished steps keep the model they ran on. Retry the step to send it.', words)
-          : t('{role} model changed from {from} to {to} for this research. Later steps of that role use it; the stopped step is a {stopped} step, so Retry still sends it to the {stopped} model.', words))
+          : t('{role} model changed from {from} to {to} for this research. Later steps of that role use it; the stopped step is a {stopped} step, so Retry still sends it to the {stopped} model.', words)) + also)
     } catch (e) {
       if (e instanceof ApiError && e.status === 409) {
         // The research moved on (another tab, a run started): read it again before saying the page shows it.
@@ -108,6 +113,7 @@ function RoleModelDialog({ target, view, dark, onClose, onChanged, onReload }: {
           </SelectContent>
         </Select>
       </label>}
+      <label className="choose-model-default"><input type="checkbox" checked={asDefault} onChange={event => setAsDefault(event.target.checked)} />{t('Also use as the default for new researches')}</label>
     </div>
   </ConfirmDialog>
 }

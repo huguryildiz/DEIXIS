@@ -4834,6 +4834,8 @@ const tr: Record<string, string> = {
   'not refreshed: the last read failed': 'yenilenmedi: son okuma başarısız oldu',
   '{role} model changed from {from} to {to} for this research. Steps that run from now on use it; finished steps keep the model they ran on. Retry the step to send it.': '{role} modeli bu araştırma için {from} yerine {to} oldu. Bundan sonra çalışan adımlar onu kullanır; biten adımlar çalıştıkları modeli korur. Göndermek için adımı yeniden deneyin.',
   'The model change was saved.': 'Model değişikliği kaydedildi.',
+  'Also use as the default for new researches': 'Yeni araştırmalar için de varsayılan yap',
+  '{model} is now the default {role} model for new researches.': '{model} artık yeni araştırmalar için varsayılan {role} modeli.',
   'Not changed: {message}. The page now shows the latest state.': 'Değiştirilmedi: {message}. Sayfa artık son durumu gösteriyor.',
   'Choose another model': 'Başka bir model seç',
   'Use this model': 'Bu modeli kullan',

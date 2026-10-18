@@ -82,6 +82,56 @@ keeping only works OpenAlex has and dates on or before the survey. Claude Sonnet
 from its title and abstract, without naming the survey or copying its title. A third of each topic is held out as a
 tuning split; the table above is the test split.
 
+<details>
+<summary>The 42 surveys (click a title for its DOI)</summary>
+
+| Topic | Survey | Venue, year | Gold papers | Split |
+|---|---|---|---|---|
+| Underwater and sensor networks | [A Survey of Autonomous Underwater Vehicle Formation: Performance, Formation Control, and Communication Capability](https://doi.org/10.1109/comst.2021.3059998) | IEEE Communications Surveys & Tutorials, 2021 | 184 | test |
+| Underwater and sensor networks | [Internet of Underwater Things and Big Marine Data Analytics—A Comprehensive Survey](https://doi.org/10.1109/comst.2021.3053118) | IEEE Communications Surveys & Tutorials, 2021 | 297 | test |
+| Underwater and sensor networks | [Maritime Communications: A Survey on Enabling Technologies, Opportunities, and Challenges](https://doi.org/10.1109/jiot.2022.3219674) | IEEE Internet of Things Journal, 2022 | 172 | test |
+| Underwater and sensor networks | [Review of Wireless Charging Systems for Autonomous Underwater Vehicles](https://doi.org/10.1109/joe.2019.2953015) | IEEE Journal of Oceanic Engineering, 2019 | 98 | tune |
+| Underwater and sensor networks | [Review of Power Conversion and Energy Management for Low-Power, Low-Voltage Energy Harvesting Powered Wireless Sensors](https://doi.org/10.1109/tpel.2019.2894465) | IEEE Transactions on Power Electronics, 2019 | 86 | tune |
+| Underwater and sensor networks | [A Survey on Mobile Charging Techniques in Wireless Rechargeable Sensor Networks](https://doi.org/10.1109/comst.2022.3189387) | IEEE Communications Surveys & Tutorials, 2022 | 194 | test |
+| Antennas and RF | [An Overview of the Development of Antenna-in-Package Technology for Highly Integrated Wireless Devices](https://doi.org/10.1109/jproc.2019.2933267) | Proceedings of the IEEE, 2019 | 158 | test |
+| Antennas and RF | [Tutorial on Electromagnetic Nonreciprocity and its Origins](https://doi.org/10.1109/jproc.2020.3012381) | Proceedings of the IEEE, 2020 | 272 | test |
+| Antennas and RF | [Metamaterials and Metasurfaces for Wireless Power Transfer and Energy Harvesting](https://doi.org/10.1109/jproc.2021.3127493) | Proceedings of the IEEE, 2021 | 191 | test |
+| Antennas and RF | [Rectennas for Radio-Frequency Energy Harvesting and Wireless Power Transfer: A Review of Antenna Design [Antenna Applications Corner]](https://doi.org/10.1109/map.2020.3012872) | IEEE Antennas and Propagation Magazine, 2020 | 116 | test |
+| Antennas and RF | [Microwave Nonreciprocity](https://doi.org/10.1109/jproc.2020.3006041) | Proceedings of the IEEE, 2020 | 174 | tune |
+| Antennas and RF | [Frequency Selective Surface Toward 6G Communication Systems: A Contemporary Survey](https://doi.org/10.1109/comst.2024.3369250) | IEEE Communications Surveys & Tutorials, 2024 | 238 | tune |
+| Power and energy | [An Overview of Artificial Intelligence Applications for Power Electronics](https://doi.org/10.1109/tpel.2020.3024914) | IEEE Transactions on Power Electronics, 2020 | 171 | test |
+| Power and energy | [Peer-to-Peer Trading in Electricity Networks: An Overview](https://doi.org/10.1109/tsg.2020.2969657) | IEEE Transactions on Smart Grid, 2020 | 93 | test |
+| Power and energy | [Overview and Comparison of Modulation and Control Strategies for a Nonresonant Single-Phase Dual-Active-Bridge DC–DC Converter](https://doi.org/10.1109/tpel.2019.2927930) | IEEE Transactions on Power Electronics, 2019 | 114 | tune |
+| Power and energy | [State of the Art and Trends in Electric and Hybrid Electric Vehicles](https://doi.org/10.1109/jproc.2021.3072788) | Proceedings of the IEEE, 2021 | 108 | test |
+| Power and energy | [A Review of Deep Reinforcement Learning for Smart Building Energy Management](https://doi.org/10.1109/jiot.2021.3078462) | IEEE Internet of Things Journal, 2021 | 126 | test |
+| Power and energy | [A General Review of Multilevel Inverters Based on Main Submodules: Structural Point of View](https://doi.org/10.1109/tpel.2018.2890649) | IEEE Transactions on Power Electronics, 2019 | 184 | tune |
+| Control | [All you need to know about model predictive control for buildings](https://doi.org/10.1016/j.arcontrol.2020.09.001) | Annual Reviews in Control, 2020 | 448 | test |
+| Control | [A survey of distributed optimization](https://doi.org/10.1016/j.arcontrol.2019.05.006) | Annual Reviews in Control, 2019 | 302 | test |
+| Control | [A Review of Sliding Mode Observer Based Sensorless Control Methods for PMSM Drive](https://doi.org/10.1109/tpel.2023.3287828) | IEEE Transactions on Power Electronics, 2023 | 115 | test |
+| Control | [Linear fractional order controllers; A survey in the frequency domain](https://doi.org/10.1016/j.arcontrol.2019.03.008) | Annual Reviews in Control, 2019 | 107 | test |
+| Control | [State of art on state estimation: Kalman filter driven by machine learning](https://doi.org/10.1016/j.arcontrol.2023.100909) | Annual Reviews in Control, 2023 | 175 | tune |
+| Control | [Survey of distributed algorithms for resource allocation over multi-agent systems](https://doi.org/10.1016/j.arcontrol.2024.100983) | Annual Reviews in Control, 2024 | 301 | tune |
+| Machine learning in EE | [Federated Learning in Mobile Edge Networks: A Comprehensive Survey](https://doi.org/10.1109/comst.2020.2986024) | IEEE Communications Surveys & Tutorials, 2020 | 181 | test |
+| Machine learning in EE | [Edge Intelligence: Paving the Last Mile of Artificial Intelligence With Edge Computing](https://doi.org/10.1109/jproc.2019.2918951) | Proceedings of the IEEE, 2019 | 109 | tune |
+| Machine learning in EE | [Applications of Deep Reinforcement Learning in Communications and Networking: A Survey](https://doi.org/10.1109/comst.2019.2916583) | IEEE Communications Surveys & Tutorials, 2019 | 189 | test |
+| Machine learning in EE | [Deep Learning in Mobile and Wireless Networking: A Survey](https://doi.org/10.1109/comst.2019.2904897) | IEEE Communications Surveys & Tutorials, 2019 | 563 | tune |
+| Machine learning in EE | [Artificial Neural Networks-Based Machine Learning for Wireless Networks: A Tutorial](https://doi.org/10.1109/comst.2019.2926625) | IEEE Communications Surveys & Tutorials, 2019 | 133 | test |
+| Machine learning in EE | [Application of Machine Learning in Wireless Networks: Key Techniques and Open Issues](https://doi.org/10.1109/comst.2019.2924243) | IEEE Communications Surveys & Tutorials, 2019 | 163 | test |
+| Signal processing | [A Survey of Indoor Localization Systems and Technologies](https://doi.org/10.1109/comst.2019.2911558) | IEEE Communications Surveys & Tutorials, 2019 | 158 | tune |
+| Signal processing | [A Survey on Fundamental Limits of Integrated Sensing and Communication](https://doi.org/10.1109/comst.2022.3149272) | IEEE Communications Surveys & Tutorials, 2022 | 124 | tune |
+| Signal processing | [Enabling Joint Communication and Radar Sensing in Mobile Networks—A Survey](https://doi.org/10.1109/comst.2021.3122519) | IEEE Communications Surveys & Tutorials, 2021 | 206 | test |
+| Signal processing | [A Survey on Channel Estimation and Practical Passive Beamforming Design for Intelligent Reflecting Surface Aided Wireless Communications](https://doi.org/10.1109/comst.2022.3155305) | IEEE Communications Surveys & Tutorials, 2022 | 236 | test |
+| Signal processing | [A Survey on Indoor Positioning Systems for IoT-Based Applications](https://doi.org/10.1109/jiot.2022.3149048) | IEEE Internet of Things Journal, 2022 | 114 | test |
+| Signal processing | [An Overview of Signal Processing Techniques for Terahertz Communications](https://doi.org/10.1109/jproc.2021.3100811) | Proceedings of the IEEE, 2021 | 473 | test |
+| Wireless and telecom | [On the Road to 6G: Visions, Requirements, Key Technologies, and Testbeds](https://doi.org/10.1109/comst.2023.3249835) | IEEE Communications Surveys & Tutorials, 2023 | 543 | tune |
+| Wireless and telecom | [Reconfigurable Intelligent Surfaces: Principles and Opportunities](https://doi.org/10.1109/comst.2021.3077737) | IEEE Communications Surveys & Tutorials, 2021 | 170 | test |
+| Wireless and telecom | [A Comprehensive Survey on Internet of Things (IoT) Toward 5G Wireless Systems](https://doi.org/10.1109/jiot.2019.2948888) | IEEE Internet of Things Journal, 2019 | 97 | tune |
+| Wireless and telecom | [Accessing From the Sky: A Tutorial on UAV Communications for 5G and Beyond](https://doi.org/10.1109/jproc.2019.2952892) | Proceedings of the IEEE, 2019 | 247 | test |
+| Wireless and telecom | [Satellite Communications in the New Space Era: A Survey and Future Challenges](https://doi.org/10.1109/comst.2020.3028247) | IEEE Communications Surveys & Tutorials, 2020 | 251 | test |
+| Wireless and telecom | [Toward Smart Wireless Communications via Intelligent Reflecting Surfaces: A Contemporary Survey](https://doi.org/10.1109/comst.2020.3004197) | IEEE Communications Surveys & Tutorials, 2020 | 149 | test |
+
+</details>
+
 **Keeping the comparison fair.** DEIXIS has no date limit, so before scoring both arms lose the survey itself and
 every record dated after it, compared by day. DEIXIS also loses any record that only a citation chain from the survey,
 or from a later paper, brought in. The list then closes up. The survey was a chain seed in 35 of the 42 DEIXIS runs.

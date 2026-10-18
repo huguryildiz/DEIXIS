@@ -1,5 +1,7 @@
 # BioASQ search benchmark
 
+The 18 Oct re-run with the owner's settings (Voyage embedding and reranker) is in [`benchmark.md`](benchmark.md); this page is the 17 Oct run and the method.
+
 Run on 2026-10-17 at commit `0b09c904`. This adapts Elicit's paper-search evaluation
 ([Evaluating Elicit's paper search](https://elicit.com/blog/evaluating-elicit-paper-search)) to DEIXIS, using 100 of
 its 5,486 questions.

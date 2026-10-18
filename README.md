@@ -142,15 +142,21 @@ Before an answer is published, code checks the cited source IDs, reading depth, 
 
 ## Benchmark
 
-On 100 BioASQ biomedical questions, using expert-chosen papers and Elicit's evaluation method, DEIXIS found this share of the expert papers in its first k results (macro-recall):
+On two public sets with expert-chosen papers, using Elicit's evaluation method and the settings the owner uses (Voyage embedding and reranker), DEIXIS found this share of the gold papers in its first k results (macro-recall, 18 Oct 2026):
 
 | System | @10 | @20 | @50 | @100 |
 |---|---|---|---|---|
-| DEIXIS, Standard | 0.352 | 0.423 | 0.545 | 0.635 |
-| OpenAlex keyword, same 100 questions | 0.281 | 0.364 | 0.489 | 0.607 |
+| **BioASQ, 100 biomedical questions** | | | | |
+| DEIXIS, Standard, reranker on | 0.392 | 0.502 | 0.618 | 0.693 |
+| DEIXIS, reranker off | 0.353 | 0.445 | 0.546 | 0.657 |
+| One OpenAlex keyword query | 0.281 | 0.364 | 0.489 | 0.607 |
 | Elicit, as published (5,486 questions) | 0.390 | 0.483 | 0.603 | 0.670 |
+| **LitSearch, 200 ML/NLP requests** | | | | |
+| DEIXIS, Standard, reranker on | 0.557 | 0.612 | 0.700 | 0.725 |
+| DEIXIS, reranker off | 0.474 | 0.578 | 0.636 | 0.708 |
+| One OpenAlex keyword query | 0.394 | 0.449 | 0.561 | 0.621 |
 
-DEIXIS beats a plain OpenAlex keyword search clearly at 10 results; at 20 to 100 the paired interval reaches zero. With 100 questions it can't be told apart from Elicit's published figures. About a quarter of all expert papers never entered DEIXIS's candidate list, so better ranking alone can't reach them. This covers biomedical questions and the candidate list only. Method, intervals and limits are in [`docs/benchmark-bioasq.md`](docs/benchmark-bioasq.md).
+With the reranker on (the default since D104), DEIXIS beats a plain OpenAlex keyword query at every depth on both sets, and the reranker's own gain at 50 results is above zero on both. On BioASQ it is close to Elicit's published figures, which come from a larger question set and are not compared statistically. Of the gold papers a plain query finds and DEIXIS never retrieves, about half match none of DEIXIS's queries (a missing name or an added topic) and half rank past the 500 records read per query. This covers the candidate list only, not reading or answers. Method, intervals and the loss analysis are in [`docs/benchmark.md`](docs/benchmark.md).
 
 ## Scope and limits
 

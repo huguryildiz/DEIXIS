@@ -191,6 +191,14 @@ def run_openalex(args):
             print(q['id'], row.get('error') or f"{len(row['records'])} records")
 
 
+def prepaid_usd(client):
+    """The prepaid OpenAlex balance, read from a single-work request, which OpenAlex does not bill."""
+    reply = client.get(f'{OPENALEX}/W2171068337', params={'select': 'id'}, timeout=60,
+                       headers={'Authorization': f'Bearer {secret("OPENALEX_API_KEY")}'})
+    reply.raise_for_status()
+    return float(reply.headers['x-ratelimit-prepaid-remaining-usd'])
+
+
 class LitDeixis(Deixis):
     def daily_remaining_usd(self, research_id):
         """The free daily OpenAlex dollars left after this research's last OpenAlex request, if it stated them."""
@@ -252,6 +260,14 @@ def run_deixis(args):
         with out.open('a') as f:
             f.write(json.dumps(row) + '\n')
         print(q['id'], row.get('error') or f"pool {row['pool']}, {row['seconds']} s")
+        if args.prepaid_floor is not None:  # the owner allowed prepaid spending down to this balance
+            balance = prepaid_usd(server.http)
+            print(f'prepaid balance {balance:.4f} USD')
+            if balance < args.prepaid_floor:
+                print(f'stopped: prepaid balance below {args.prepaid_floor}; {len(done_ids(out))} of {len(questions)} '
+                      'questions done')
+                return
+            continue
         left = server.daily_remaining_usd(row['research_id']) if row.get('research_id') else None
         if (row.get('error') and 'budget' in row['error'].casefold()) or (left is not None and left <= 0):
             print(f'stopped: OpenAlex daily budget spent; {len(done_ids(out))} of {len(questions)} questions done')
@@ -309,6 +325,8 @@ def main():
     d.add_argument('--data-dir', required=True)
     d.add_argument('--limit', type=int, default=None)
     d.add_argument('--timeout', type=int, default=900)
+    d.add_argument('--prepaid-floor', type=float, default=None,
+                   help='spend prepaid OpenAlex credit, stopping once the balance falls below this many USD')
     d.set_defaults(fn=run_deixis)
     sub.add_parser('score').set_defaults(fn=score)
     args = parser.parse_args()

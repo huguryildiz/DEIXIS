@@ -160,7 +160,7 @@ All 171 citation links in 8 stored answers are sound; the gap is coverage: answe
 - [ ] Free OpenAlex daily quota runs out after about 20 researches (D173 stops sending); the answer call times out in about 1 of 21 runs.
 - [ ] Full-text limits (10/20/40) were never chosen by measurement; measure after the answer-coverage work.
 - [ ] BioASQ: 107 of 480 gold papers never retrieved, all in OpenAlex. Semantic search is capped at 50 records (`semantic_top`); test whether a deeper read closes the gap.
-- [ ] LitSearch (597 ML/NLP queries): tooling ready (9c0fd3dd), not run. Next: `litsearch_run.py prepare --n 50`, then OpenAlex and DEIXIS runs on a temp data folder and a port other than 8765.
+- [x] LitSearch (18 Oct, Standard, 50 sampled ML/NLP queries, 53 gold papers all in OpenAlex with an abstract): DEIXIS against one plain OpenAlex keyword query, recall @10 0.35 vs 0.30, @20 0.49 vs 0.36 (+0.13, 95% interval +0.03 to +0.25), @50 0.59 vs 0.52, @200 0.68 vs 0.67; only @20 differs beyond chance. The first 27 queries had shown +0.22 at @10; the full 50 do not. DEIXIS's ~1000-record pool holds 40 of 53 gold papers, plain OpenAlex's top 200 holds 36; 8 only DEIXIS, 4 only plain OpenAlex, 9 neither. Semantic search brought 26 of the 40 (10 only through it), keyword 30 (9 only), chain 8. With 1.07 gold papers per query each question scores 0 or 1, so 50 queries leave wide intervals. 27 queries ran on the free daily budget, 23 on $0.83 of prepaid credit. Not measured: why DEIXIS's keyword queries miss 4 papers one plain query finds.
 
 ### Not measured (needs a real model or real use)
 

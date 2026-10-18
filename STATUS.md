@@ -10,7 +10,8 @@ Durum kötü değil, ama dengesiz. Uygulama çalışıyor ve özellik bakımınd
 - **Ölçülen ve iyi olan:** arama sırası. 18 Ekim'de iki hazır test setinde, sahibin ayarlarıyla (Voyage embedding + Voyage reranker) DEIXIS ilk 50 sonuçta düz bir OpenAlex aramasından belirgin olarak fazla doğru makale buluyor: BioASQ'da 0,618'e karşı 0,489, LitSearch'te 0,700'e karşı 0,561. Reranker her iki sette de güven aralığı sıfırın üstünde katkı veriyor; bu yüzden artık varsayılan olarak açık (D104).
 - **Ölçülen ve zayıf olan:** elektrik mühendisliği survey seti (42 survey, gold = survey'in kaynakçası). Burada DEIXIS düz OpenAlex'i geçiyor (0,129'a karşı 0,065) ama fark küçük ve **reranker zarar veriyor** (0,091). Sebep: bu sette doğru makalelerin çoğu atıf zincirinden geliyor, reranker yalnız başlık ve özet okuduğu için zincir kayıtlarını aşağı itiyor. Varsayılanı açık yapan karar (D104) bu sonuçtan önce alındı. D106 ile reranker yalnız zincirden gelen kayıtları artık yerinde bırakıyor: kayıtlı koşular üstünde tekrar oynatınca survey setinde 0,091 → 0,111, LitSearch değişmedi; kaybın yarısı duruyor, BioASQ ölçülmedi, yeni koşu yapılmadı.
 - **Bir kez canlı denenen:** Verify Citations (taslak atıf denetimi). V5 pilotu (bir taslak, 30 çift, Sonnet 5.5; insan etiketi yok, okuyucular Sol ve Opus): D105 sonrası tekrarda kontrol tamamlanamayan %48'den %14'e indi, örneklemde yanlış "bulundu" 0, üç eşik geçti. Tek koşu; sonucun bir kısmı modelin koşudan koşuya oynamasından olabilir.
-- **Ölçülmeyen:** ters atıf arama, kartopu (snowballing), kill search'in Next steps girişi, run kartı. Hepsi yalnız sahte modelli testlerle ve Playwright'la sınandı. Okuma ve cevap kalitesi de ayrıca ölçülmedi: arama testleri yalnız sıralamayı ölçüyor.
+- **Bir kez canlı denenen (2):** ters atıf arama. R4b pilotunda (10 cümle, Sonnet 5.5, okuyucular Sol ve Opus) destek sayılan 24 sonuçta 0 hata; ama kural ihtiyatlı, bilinen 7 destekleyiciden yalnız 1'i destek sayılıyor (D109).
+- **Ölçülmeyen:** kartopu (snowballing), kill search'in Next steps girişi, run kartı. Hepsi yalnız sahte modelli testlerle ve Playwright'la sınandı. Okuma ve cevap kalitesi de ayrıca ölçülmedi: arama testleri yalnız sıralamayı ölçüyor.
 - **Bilinen zayıflık:** cevaplar, kendilerine verilen eserlerin azını atıflıyor (D83 sonrası DBR/VBF sorusunda 13 eserden 12–13'ü, ama her koşu 30 iddia sınırına takılıyor). Raporlar model puanıyla 30 üzerinden 15–20 aldı (insan puanı yok). Paywall arkasındaki tam metinler okunamıyor; mühendislik makalelerinin çoğu özetten okunuyor.
 - **Paketleme yok:** P10 (macOS paketi) sahibin görsel kontrolünü bekliyor. Windows ve Linux hiç denenmedi.
 
@@ -39,6 +40,24 @@ Kısa hüküm: altyapı ve kurallar sağlam, arama ölçülmüş ve iyi; ama son
 - [ ] Tam metin sınırları (10/20/40) ölçümle seçilmedi; ULAKBİM ağından MDPI, SAGE, ScienceDirect PDF'leri 403 dönüyor.
 - [ ] Kill search: canlı kapının üçüncü iddiası (diz osteoartriti) 0/3 kaldı; genel olarak önceki çalışmayı bulup bulmadığı gösterilmedi. Ayar çalışması durduruldu.
 
+### Ters atıf arama (bir ifadeyi destekleyen eserleri bulma)
+Tamamlanan:
+- [x] Plan (Sol ile, `.local/plans/reverse-citation-search-plan.md`)
+- [x] R1: ifade kontrolü motoru, Verify Citations V3 adımını kullanıyor (D100)
+- [x] R2: başlatma, sürdürme, eskime, dışa aktarım yolları (D103)
+- [x] R3: Home'da "Check a statement" modu ve sonuç paneli (D107)
+- [x] R4: canlı pilot, çıtayı geçemedi; "kısmen destekliyor" sonuçlarının 10–11/50'si yanlış (D108)
+- [x] R4b: destek yalnız en az bir parça açıkça yazılıysa sayılıyor; aynı 10 cümlede çıta geçti (D109, `.local/reverse-citation-r4b-pilot/RESULT.md`)
+
+Yapılacak:
+- [ ] Arama kaybı: bilinen 13 destekleyiciden 5'ini arama hiç bulmuyor; alan kelimesi geçmeyen cümleler başka alanlara kayıyor (cümleye alan bağlamı eklemek denenmedi)
+- [ ] İhtiyatlı kuralın bedeli: "destek yeterince gösterilmedi" grubundaki 31 sonucun ~20'si aslında destekleyici; bilinen destekleyicilerden yalnız 1/7 destek sayılıyor. Tam metin okuma ya da parça bölmeyi iyileştirmek ayrı deneme ister
+- [ ] Tamamlanan kontrollerin hiçbiri tam metinle yapılmadı; hep özet
+- [ ] "Bulunamadı" çıkan 113 sonuç okunmadı (kaçırma oranı ölçülmedi)
+- [ ] Gemini embedding adımı iki koşuda da kredi bitmesi yüzünden çalışmadı; embedding'li koşu yok
+- [ ] Türkçe metinleri anadili Türkçe biri okumadı; çalışan/duraklayan kontrol tarayıcıda görülmedi
+- [ ] R5 "karşı çıkıyor" sonucu: bloklu; ayrı plan ve pilot kapısı gerekiyor (`.local/plans/reverse-citation-search-plan-with-challenge-2026-10-18.md`)
+
 ### Cevap ve rapor
 - [ ] Her D83 koşusu 30 iddia sınırına takılıyor; 12–13 eser `claim_limit` ile dışarıda kalıyor. Başka sorularda ölçülmedi.
 - [ ] İlk cevap taslağı çoğu zaman bağlantı kurallarını bozuyor; onarım cevap başına 1–2 dakika ekliyor.
@@ -63,7 +82,7 @@ Ayrıntı ve sayılar ilgili D kararında.
 
 - **Arama:** tek yol hızlı yol (temiz başlangıç, 10–11 Ekim); başlangıç PDF'leri aramayı yönlendiriyor (D2, D3, D6); atıf haritası (D42); kartopu (D91); takip sorusundan yeni eser arama (D92); reranker varsayılan Voyage (D104); llama.cpp ile yerleşik embedding ve reranker modelleri (D90).
 - **Okuma ve cevap:** ikinci tam metin okuması görmediği bölümleri okuyor (D76); cevaba verilen her eser ya atıflanıyor ya gerekçeyle dışarıda kalıyor (D80, D83); sonuç yoğun pasaj önce (D84); formül soruları için formül sayfası (D56).
-- **Atıf denetimi:** Verify Citations V1–V4 (D86, D96, D99, D101), V5 pilotu ve düzeltmeleri (D105; sonuç `.local/verify-citations-v5-pilot/RESULT-r2.md`, açık: tablo satırında yazar sütunu doğrulanacak iddia sayılıyor, P25); ters atıf arama R1–R3 (D100, D103, D107; R3: Home modu ve sonuç paneli).
+- **Atıf denetimi:** Verify Citations V1–V4 (D86, D96, D99, D101), V5 pilotu ve düzeltmeleri (D105; sonuç `.local/verify-citations-v5-pilot/RESULT-r2.md`, açık: tablo satırında yazar sütunu doğrulanacak iddia sayılıyor, P25); ters atıf arama R1–R4b (D100, D103, D107, D108, D109; Home modu, sonuç paneli, canlı pilot geçti).
 - **Tablo ve rapor:** sayı kontrol bayrağı (D54), yazım kuralları (D51, D55), hücre yeniden deneme (D68), Anthropic API'de rapor şeması (D87, D93).
 - **Modeller ve ayarlar:** Anthropic API akışlı cevap, 64k token (D85); anahtarlar sistem keychain'inde (D19, D29); şirket başına model kartı (D20–D24, D34); Ollama/LM Studio (D39); kullanım ve harcama ekranı (D78).
 - **Uygulama:** mockup v24/v25 tasarımı (D5, D77, D79); run kartı (D82); P10 öncesi hazırlık kodda bitti; GitHub Actions tam testi dört makinede koşturuyor (bilgi amaçlı, hiçbir şeyi engellemiyor).

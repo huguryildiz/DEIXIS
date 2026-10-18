@@ -114,4 +114,6 @@ uv run python scripts/benchmark/bioasq_run.py score
 uv run python scripts/benchmark/bioasq_run.py loss --data-dir .local/bioasq/deixis-data
 ```
 
+The 18 Oct run's data folder is archived; see "Stored run data" in [`benchmark.md`](benchmark.md).
+
 Scoring code: `scripts/benchmark/bioasq.py`, tested by `tests/measurement/test_bioasq_recall.py`.

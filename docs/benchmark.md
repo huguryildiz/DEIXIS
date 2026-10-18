@@ -85,3 +85,18 @@ The loss is in the search step; no paper was dropped after it was read. The patt
 - Reading and answers: this measures the order of the candidate list only.
 - Whether the missed papers would rank well once in the pool, and where semantic search places them.
 - Fixes for the query patterns above. They are a direction, not a measured result.
+
+## Stored run data
+
+The DEIXIS data folders from the 18 Oct runs (library database and provider responses) are no longer in `.local/`.
+They are compressed, outside the repository, at `~/Archive/deixis-bench/` on the owner's machine:
+`litsearch-data-2026-10-18.tar.zst` (709 MB, 4.4 GB unpacked) and `bioasq-data-2026-10-18.tar.zst` (451 MB,
+3.0 GB unpacked). The ranking replay and the loss analysis (`scripts/benchmark/replay_ranking.py`, `check.py`,
+`bioasq_run.py loss`) read these folders, so unpack before rerunning them:
+
+```sh
+zstd -dc ~/Archive/deixis-bench/litsearch-data-2026-10-18.tar.zst | tar -xf - -C .local/litsearch
+zstd -dc ~/Archive/deixis-bench/bioasq-data-2026-10-18.tar.zst | tar -xf - -C .local/bioasq
+```
+
+Each command recreates `<benchmark>/data/`. Run results (`runs/*.jsonl`), gold sets and raw inputs stay in `.local/`.

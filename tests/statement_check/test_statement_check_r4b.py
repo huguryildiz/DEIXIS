@@ -170,7 +170,7 @@ def test_a_library_made_up_to_0010_takes_0011_and_its_revisions_read_with_rule_1
                  " '{}', 'p', 'n')")
     conn.close()
     conn = db.connect(path)
-    assert db.migrate(conn) == [11]
+    assert db.migrate(conn)[0] == 11  # later migrations (0012, D111) follow it
     assert conn.execute("SELECT support_rule_version FROM statement_checks WHERE id = 'c'").fetchone()[0] == 1
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute("UPDATE statement_checks SET support_rule_version = 3 WHERE id = 'c'")

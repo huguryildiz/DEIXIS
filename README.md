@@ -142,21 +142,7 @@ Before an answer is published, code checks the cited source IDs, reading depth, 
 
 ## Benchmark
 
-On two public sets with expert-chosen papers, using Elicit's evaluation method and the settings the owner uses (Voyage embedding and reranker), DEIXIS found this share of the gold papers in its first k results (macro-recall, 18 Oct 2026):
-
-| System | @10 | @20 | @50 | @100 |
-|---|---|---|---|---|
-| **BioASQ, 100 biomedical questions** | | | | |
-| DEIXIS, Standard, reranker on | 0.392 | 0.502 | 0.618 | 0.693 |
-| DEIXIS, reranker off | 0.353 | 0.445 | 0.546 | 0.657 |
-| One OpenAlex keyword query | 0.281 | 0.364 | 0.489 | 0.607 |
-| Elicit, as published (5,486 questions) | 0.390 | 0.483 | 0.603 | 0.670 |
-| **LitSearch, 200 ML/NLP requests** | | | | |
-| DEIXIS, Standard, reranker on | 0.557 | 0.612 | 0.700 | 0.725 |
-| DEIXIS, reranker off | 0.474 | 0.578 | 0.636 | 0.708 |
-| One OpenAlex keyword query | 0.394 | 0.449 | 0.561 | 0.621 |
-
-With the reranker on (the default since D104), DEIXIS beats a plain OpenAlex keyword query at every depth on both sets, and the reranker's own gain at 50 results is above zero on both. On BioASQ it is close to Elicit's published figures, which come from a larger question set and are not compared statistically. Of the gold papers a plain query finds and DEIXIS never retrieves, about half match none of DEIXIS's queries (a missing name or an added topic) and half rank past the 500 records read per query. This covers the candidate list only, not reading or answers. Method, intervals and the loss analysis are in [`docs/benchmark.md`](docs/benchmark.md).
+On BioASQ (biomedicine) and LitSearch (ML/NLP), DEIXIS with its default reranker finds more expert-chosen papers in its first 50 results than a plain OpenAlex keyword query, and on BioASQ it is close to Elicit's published figures; on a set built from electrical-engineering surveys it also beats the plain query, but there the reranker lowers recall. Tables, charts and limits are in [`docs/benchmark.md`](docs/benchmark.md).
 
 ## Scope and limits
 

@@ -32,6 +32,7 @@ Kısa hüküm: altyapı ve kurallar sağlam, arama ölçülmüş ve iyi; ama son
 ## Açık işler (kısaltılmış)
 
 ### Arama
+- [ ] D106'yı gerçek bir benchmark koşusuyla doğrula (BioASQ, LitSearch, EE survey; reranker açık). Bugünkü sonuç yalnız kayıtlı puanların yeniden oynatılması. Maliyet yaklaşık 3 USD OpenAlex.
 - [ ] Geniş sorularda bilinen ana makaleler üste çıkmıyor (battery_soh: 15 hedeften 3'ü ilk 50'de); DBR/VBF en zayıf soru, Quick modu Maulana 2019'u kaçırıyor.
 - [ ] Sorgu başına 500 kayıt okuma sınırı; BioASQ'da 480 gold makalenin 107'si hiç gelmiyor (`semantic_top` 50'de sınırlı).
 - [ ] Ücretsiz OpenAlex günlük kotası yaklaşık 20 araştırmada bitiyor; Standard koşuların 20'de 7'si 5 dakikayı geçti (sebep bakılmadı).

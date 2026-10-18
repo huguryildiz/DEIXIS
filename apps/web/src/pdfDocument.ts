@@ -244,6 +244,10 @@ export function buildDocument(passages: Passages, figures: AssetFigure[], source
 // Where citation anchors fall in the document built from a page (the plain-text view opened from a citation). Letters and
 // digits are compared case-folded with spaces and punctuation ignored, as the server locates anchors (contracts.locate_anchor),
 // so line breaks, hyphenation and the paragraph joins made above do not stop a match; a match may run across blocks.
+// Comparison signs are kept in the match: the marked words come from the server, so they hold the same signs, and
+// `x < 5` must never mark an earlier `x > 5` on the page. Each sign is a token of its own, so a sign next to a word
+// (`p=0.05`) never widens a mark that starts or ends at that word.
+const ANCHOR_TOKEN = /[\p{L}\p{N}]+|[<>=≤≥≠±]/gu
 export type AnchorMarks = { blocks: Map<string, [number, number][]>; first: string | null; located: number }
 
 export function locateAnchors(doc: Doc, page: number | null, texts: string[]): AnchorMarks {
@@ -252,14 +256,14 @@ export function locateAnchors(doc: Doc, page: number | null, texts: string[]): A
   let compact = ''
   const spans: { block: number; start: number; end: number }[] = []
   blocks.forEach((block, i) => {
-    for (const m of block.text.matchAll(/[\p{L}\p{N}]+/gu)) {
+    for (const m of block.text.matchAll(ANCHOR_TOKEN)) {
       const word = m[0].normalize('NFKC').toLocaleLowerCase()
       compact += word
       for (let k = 0; k < word.length; k++) spans.push({ block: i, start: m.index!, end: m.index! + m[0].length })
     }
   })
   for (const text of texts) {
-    const quote = [...text.matchAll(/[\p{L}\p{N}]+/gu)].map(m => m[0].normalize('NFKC').toLocaleLowerCase()).join('')
+    const quote = [...text.matchAll(ANCHOR_TOKEN)].map(m => m[0].normalize('NFKC').toLocaleLowerCase()).join('')
     const at = quote ? compact.indexOf(quote) : -1
     if (at < 0) continue
     marks.located++
@@ -283,7 +287,7 @@ export const IN_TEXT = /\b(Figs?\.|Figures?|FIGS?\.|Tables?|TABLE|Eqs?\.|Equatio
 // only running text is marked span by span (a heading or table is marked whole, a formula or a link as a whole), and a match
 // that starts or ends inside a word widens to that word. Any of these leaves the text unmarked instead.
 export function marksExactly(doc: Doc, marks: AnchorMarks, texts: string[]): boolean {
-  const compact = (text: string) => [...text.matchAll(/[\p{L}\p{N}]+/gu)].map(m => m[0].normalize('NFKC').toLocaleLowerCase()).join('')
+  const compact = (text: string) => [...text.matchAll(ANCHOR_TOKEN)].map(m => m[0].normalize('NFKC').toLocaleLowerCase()).join('')
   let marked = ''
   for (const block of doc.pages.flatMap(p => p.blocks)) {
     const ranges = marks.blocks.get(block.id)

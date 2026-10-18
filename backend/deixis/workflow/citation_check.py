@@ -208,6 +208,25 @@ def draft_row(store: Store, draft_id: str) -> dict[str, Any]:
     return dict(row)
 
 
+def drafts(store: Store) -> list[dict[str, Any]]:
+    """Every draft, newest first, with what its list row shows: its file name, when it was given, how many citations
+    and pairs it has, how many pairs completed a check (`done`) and, apart, how many could not be checked, and its
+    latest check run's status. A pair that could not be checked is never counted as checked."""
+    rows = store.conn.execute(
+        "SELECT d.id, d.research_id, d.original_filename, d.format, d.created_at,"
+        " (SELECT COUNT(*) FROM citation_markers m WHERE m.draft_id = d.id) AS occurrences,"
+        " (SELECT COUNT(*) FROM citation_pairs p WHERE p.draft_id = d.id) AS pairs,"
+        " (SELECT COUNT(*) FROM citation_pairs p WHERE p.draft_id = d.id AND p.status = 'done') AS pairs_done,"
+        " (SELECT COUNT(*) FROM citation_pairs p WHERE p.draft_id = d.id AND p.status = 'could_not_check')"
+        " AS pairs_could_not_check FROM citation_drafts d ORDER BY d.created_at DESC, d.rowid DESC").fetchall()
+    out = []
+    for row in rows:
+        item = dict(row)
+        state = check_state(store, item.pop("research_id"))
+        out.append(item | {"check_status": state["status"] if state else None})
+    return out
+
+
 def delete(store: Store, draft_id: str) -> tuple[list[str], list[str]]:
     """Purge the draft's internal research; the draft and everything read from it go with it. The records and files
     acquisition read are members of that research (`_join`), so the purge removes every one no other research, Library

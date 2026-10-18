@@ -111,6 +111,19 @@ test('a queue quote is marked only when the mark is exactly the quote: never in 
   expect(exact('elays forward')).toBe(false)                     // part of a word would widen to the word
 })
 
+test('a citation anchor keeps comparison signs and is marked exactly, never widened to a sign next to it', () => {
+  const doc = buildDocument(pages(['SYNTHETIC trials report x > 5 over many trials and x < 5 over many trials; at p=0.05 the outcome changes.']), [], null)
+  const marked = (text: string) => {
+    const marks = locateAnchors(doc, 1, [text])
+    const [id, ranges] = [...marks.blocks.entries()][0]
+    const block = doc.pages[0].blocks.find(b => b.id === id)!
+    return { text: ranges.map(([a, b]) => block.text.slice(a, b)).join(' | '), exact: marksExactly(doc, marks, [text]) }
+  }
+  expect(marked('0.05 the outcome changes')).toEqual({ text: '0.05 the outcome changes', exact: true })
+  expect(marked('p=0.05 the outcome')).toEqual({ text: 'p=0.05 the outcome', exact: true })
+  expect(marked('x < 5 over many trials')).toEqual({ text: 'x < 5 over many trials', exact: true })
+})
+
 test('a queue quote across a hyphenated line end or two blocks is marked, and one that cuts a figure link is not', () => {
   const doc = buildDocument(pages(
     ['SYNTHETIC relays forward packets.\n\nIncreasing transmission power will re-\nduce the error rate on some links,', 'however, it raises interference on others, as Fig. 2 shows.'],

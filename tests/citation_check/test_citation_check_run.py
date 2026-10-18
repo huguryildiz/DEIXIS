@@ -456,3 +456,43 @@ def test_the_settings_literature_model_is_the_default_and_the_cap_holds(make):
         assert len(adapter.calls) == 200 and {s[1] for s in adapter.sent} == {"fake-literature"}
         counters = view["counters"]
         assert (counters["pairs_done"], counters["pairs_out_of_cap"], counters["pairs_to_send"]) == (200, 3, 0)
+
+
+def test_the_screen_lists_drafts_and_opens_a_located_quote_while_the_research_stays_hidden(make):
+    """V4: the Library tool lists earlier drafts, and Source details reads a located quote's passage and file under the
+    draft's internal research by GET only; every other route of that research still answers 404."""
+    app, _ = make()
+    with TestClient(app) as raw:
+        client = session(raw)
+        assert client.get("/api/citation-checks").json() == []
+        view = run(client, planned(client)["id"]).json()
+        listed = client.get("/api/citation-checks").json()
+        assert [(d["id"], d["original_filename"], d["occurrences"], d["pairs"], d["pairs_done"], d["pairs_could_not_check"],
+                 d["check_status"]) for d in listed] == [(view["id"], "draft.tex", 5, 5, 4, 0, "completed")]
+        assert "pairs_checked" not in listed[0]
+        rid = view["research_id"]
+        evidence = b_check(view)["check"]["parts"][0]["evidence"][0]
+        passage = client.get(f"/api/researches/{rid}/passages/{evidence['passage_id']}")
+        assert passage.status_code == 200 and evidence["anchor_text"] in passage.json()["text"]
+        asset = passage.json()["asset_id"]
+        assert client.get(f"/api/researches/{rid}/assets/{asset}/text").status_code == 200
+        assert client.get(f"/api/researches/{rid}").status_code == 404
+        assert client.get(f"/api/researches/{rid}/sources").status_code == 404
+        assert client.post(f"/api/researches/{rid}/passages/{evidence['passage_id']}").status_code == 404
+        assert client.delete(f"/api/researches/{rid}/assets/{asset}").status_code == 404
+        # A passage the draft's research does not hold is still refused by the route itself.
+        other = app.state.store.create_research("A SYNTHETIC question?", "academic", "quick", [], "fake", "fake-model", None)
+        assert client.get(f"/api/researches/{other}/passages/{evidence['passage_id']}").status_code == 404
+
+
+def test_the_draft_list_never_counts_a_pair_that_could_not_be_checked_as_checked(make):
+    """Review round 1 (V4): `done` and `could_not_check` are listed apart."""
+    def b(si, attempt):
+        return "SYNTHETIC not a citation check"
+    app, _ = make(scripted(b))
+    with TestClient(app) as raw:
+        client = session(raw)
+        view = run(client, planned(client)["id"]).json()
+        assert b_check(view)["status"] == "could_not_check"
+        listed = client.get("/api/citation-checks").json()
+        assert (listed[0]["pairs_done"], listed[0]["pairs_could_not_check"]) == (3, 1)

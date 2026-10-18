@@ -75,6 +75,11 @@ def register_citation_check_routes(app, settings: Settings,
             draft_id = citation_check.create(store, draft, file.filename if file else None, bib_read)
         return citation_check.view(store, draft_id)
 
+    @app.get("/api/citation-checks")
+    async def list_checks(request: Request) -> list[dict[str, Any]]:
+        """Every draft, newest first, so the Library tool can open an earlier check again."""
+        return citation_check.drafts(request.app.state.store)
+
     @app.get("/api/citation-checks/{draft_id}")
     async def get_check(draft_id: str, request: Request) -> dict[str, Any]:
         return citation_check.view(request.app.state.store, draft_id)

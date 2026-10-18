@@ -1,4 +1,4 @@
-import type { Answer, Evidence, FileRestoreReceipt, SeedUse, PersonFile, PersonFileState, QueueAnswer, QueueKind, RunKind, RunStatus, Source, SourceScope, TextRecoveryCapability, TextRetryOperation, Verdict } from './api'
+import type { Answer, CitationFlag, CitationPairStatus, CitationResult, Evidence, FileRestoreReceipt, SeedUse, PersonFile, PersonFileState, QueueAnswer, QueueKind, RunKind, RunStatus, Source, SourceScope, TextRecoveryCapability, TextRetryOperation, Verdict } from './api'
 import { t, uiLocale } from './i18n'
 
 // Label records hold English text; callers show them through t().
@@ -846,4 +846,55 @@ export function seedUseText(use: SeedUse) {
   if (!uses.length) return `${found}.`
   const list = new Intl.ListFormat(uiLocale(), { type: 'conjunction' }).format(uses)
   return `${found}; ${t(active ? 'now used for {uses}' : 'used for {uses}', { uses: list })}.`
+}
+
+// Verify Citations (D86, D96, D99). A result exists only for a checked pair; a status says how far a pair's check went.
+// They are labelled apart so the screen never shows a status as a finding.
+export const citationResultLabels: Record<CitationResult, string> = {
+  found_whole: 'Found whole', found_partial: 'Found partly', not_found_in_given: 'Not found in the given passages',
+}
+export const citationStatusLabels: Record<CitationPairStatus, string> = {
+  planned: 'Waiting to be checked', done: 'Checked', could_not_check: 'Could not be checked', out_of_cap: 'Beyond the 200-pair cap',
+  no_text: 'No text to read', unresolved: 'No entry or record', unrecognized: 'Marker not read', ambiguous: 'More than one entry fits',
+}
+export const citationFlagLabels: Record<CitationFlag, string> = {
+  title_mismatch: 'Title differs from the record', retracted: 'Retracted', identity_unconfirmed: 'PDF not confirmed as this work',
+}
+export const citationAssessmentLabels: Record<string, string> = { stated: 'Stated', partly: 'Partly stated', not_stated: 'Not stated' }
+// Why a lookup gave no record (`citation_check.resolve`).
+export const citationResolutionReasons: Record<string, string> = {
+  no_identifier_or_title: 'The entry has no DOI, arXiv id or title to look up.',
+  doi_not_filterable: 'The DOI cannot be looked up as written.',
+  doi_not_found: 'OpenAlex has no record with this DOI.',
+  doi_several_works: 'This DOI names more than one record.',
+  title_no_match: 'No record has a close enough title.',
+  title_several_matches: 'Several records have a close title.',
+  record_removed: 'The record this entry was linked to was removed.',
+  incomplete_answer: 'OpenAlex sent an incomplete answer.',
+}
+// Why an entry's text is less than full text, or still waits (`citation_check.acquire`).
+export const citationTextNotes: Record<string, string> = {
+  no_doi: 'The record has no DOI, so no open copy was looked for.',
+  no_open_copy: 'No open-access PDF was found.',
+  person_pdf_without_text: 'Your PDF has no text layer.',
+  openalex_budget_exhausted: 'Waiting: today’s OpenAlex budget is used up.',
+  file_busy: 'Waiting: another operation is using the file.',
+  run_active: 'Waiting: another run of this draft is active.',
+}
+export const citationTextOrigins: Record<string, string> = {
+  person_pdf: 'your PDF', stored_pdf: 'a PDF already stored', open_access: 'an open-access copy', record: 'the record',
+}
+// Refusals of the plan, preview and check routes (409 `code`), as the person can act on them.
+export const citationRefusals: Record<string, string> = {
+  plan_stale: 'The text of some cited works changed after the plan was frozen. Freeze the plan again, then check the new preview.',
+  plan_not_previewed: 'This plan was not previewed yet. The preview is shown again; read it, then start.',
+  model_not_previewed: 'The preview was for another model. The preview is shown again for the current model; read it, then start.',
+  no_model: 'No literature model is chosen. Choose one in Settings, then preview again.',
+  plan_revision_mismatch: 'The plan was frozen again after this preview. The new preview is shown.',
+  plan_not_frozen: 'The passage plan is not frozen yet.',
+  run_active: 'A run of this draft is still active. Wait until it ends.',
+  already_checked: 'Pairs of this draft were already checked, so the plan they read stays as it is.',
+  acquisition_running: 'The text of the cited works is still being fetched.',
+  text_pending: 'Some entries are not looked up yet or their text is not decided.',
+  entry_not_resolved: 'Only an entry linked to a record can take a PDF.',
 }

@@ -1,0 +1,168 @@
+/* Verify citations (V4): a Library tool on its own page. A column of up to 1180px: the path, the title, the counters
+   strip, the next-step box, the citations table and the bibliography list. Buttons take the Library's look. A result
+   is a tinted pill; a status is plain text with an icon, so the two never read alike. */
+.app .main-shell main:has(>.cc-page){padding-top:0}
+.cc-page{display:grid;align-content:start;max-width:1180px;margin:0 auto;padding:20px 28px 56px;color:var(--ink);font-family:var(--font-sans);font-size:14px;line-height:1.5}
+.cc-page :is(button,input,select,textarea){font:inherit;color:inherit}
+.cc-page :is(button,a,input,select,textarea,summary):focus-visible{outline:2px solid var(--accent);outline-offset:4px}
+.cc-page h1{margin:0;color:var(--ink);font-size:24px;font-weight:600;letter-spacing:-.01em;line-height:1.3;overflow-wrap:anywhere}
+.cc-page .cc-h2{margin:28px 0 10px;font-size:15px;font-weight:600}
+.cc-crumb{margin:0 0 14px;color:var(--muted);font-size:13px}
+.cc-crumb button{padding:0;border:0;background:none;color:var(--muted);cursor:pointer}
+.cc-crumb button:hover{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
+.cc-crumb span{color:var(--ink)}
+.cc-sub{margin:4px 0 0;color:var(--muted);font-size:13.5px}
+.cc-muted{margin:0;color:var(--muted);font-size:13.5px}
+.cc-fine{color:var(--muted);font-size:12.5px}
+.cc-none{color:var(--muted)}
+.cc-meaning{margin:12px 0 0}
+
+/* Buttons (the Library's `.ghost` and `.btn-teal`) */
+.cc-page .ghost{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);color:var(--ink-2);font-size:13px;line-height:1.5;text-decoration:none;white-space:nowrap;cursor:pointer}
+.cc-page .ghost:hover:not(:disabled){background:var(--hover-surface)}
+.cc-page .ghost:disabled{opacity:.5;cursor:default}
+.cc-page .btn-teal{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border:0;border-radius:7px;background:var(--accent);color:var(--paper);font-size:13px;font-weight:500;line-height:1.5;white-space:nowrap;cursor:pointer}
+.cc-page .btn-teal:hover:not(:disabled){background:var(--accent-deep)}
+.cc-page .btn-teal:disabled{opacity:.45;cursor:default}
+.cc-page :is(.ghost,.btn-teal) svg{flex:none;width:16px;height:16px}
+.cc-link{padding:0;border:0;background:none;color:var(--accent);font-size:12.5px;cursor:pointer}
+.cc-link:hover{text-decoration:underline;text-underline-offset:3px}
+.cc-spin{animation:cc-turn 1s linear infinite}
+@keyframes cc-turn{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.cc-spin{animation:none}}
+.cc-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-top:12px}
+.cc-inline-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+
+/* A bordered box: the start form and the next step */
+.cc-box{display:grid;gap:10px;margin-top:18px;padding:16px 18px;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
+.cc-box .notice{margin:0}
+
+/* Start */
+.cc-field{display:grid;gap:6px;color:var(--ink-2);font-size:13px;font-weight:500}
+.cc-field textarea{width:100%;min-height:150px;padding:10px 12px;border:1px solid var(--strong-line);border-radius:8px;background:var(--field-surface);color:var(--ink);font-size:13.5px;font-weight:400;line-height:1.55;resize:vertical}
+.cc-field textarea:disabled{opacity:.55}
+.cc-files{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.cc-file{display:grid;gap:6px;min-width:0}
+.cc-file-h{color:var(--ink-2);font-size:13px;font-weight:500}
+.cc-file-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;min-width:0}
+.cc-file-name{min-width:0;color:var(--muted);font-size:12.5px;overflow-wrap:anywhere}
+.cc-start>.cc-fine{margin:0}
+.cc-drafts{display:grid;margin:0;padding:0;overflow:hidden;list-style:none;border:1px solid var(--line);border-radius:10px}
+.cc-drafts li+li{border-top:1px solid var(--line)}
+.cc-drafts button{display:grid;gap:2px;width:100%;padding:11px 14px;border:0;background:none;text-align:left;cursor:pointer}
+.cc-drafts button:hover{background:var(--hover-surface)}
+.cc-drafts b{font-weight:500;overflow-wrap:anywhere}
+.cc-drafts span{color:var(--muted);font-size:12.5px}
+
+/* Head of a draft */
+.cc-head{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px 20px}
+.cc-head>div:first-child{min-width:0}
+.cc-export{display:flex;flex-wrap:wrap;gap:6px}
+
+/* The counters: three groups, each count on its own */
+.cc-counters{display:grid;grid-template-columns:minmax(0,4fr) minmax(0,5fr) minmax(0,8fr);gap:10px;margin-top:18px}
+.cc-counters section{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--sidebar-surface)}
+.cc-counters h3{margin:0 0 6px;color:var(--ink-2);font-size:12.5px;font-weight:600}
+.cc-counters ul{display:flex;flex-wrap:wrap;gap:6px 16px;margin:0;padding:0;list-style:none}
+.cc-counters li{display:grid;min-width:52px}
+.cc-counters li b{color:var(--ink);font-size:17px;font-weight:600;line-height:1.3}
+.cc-counters li span{color:var(--muted);font-size:11.5px;line-height:1.35}
+
+/* The next step */
+.cc-step-h{display:flex;align-items:center;gap:8px;margin:0;font-size:14px;font-weight:600}
+.cc-step-p{margin:0;color:var(--ink-2);font-size:13.5px}
+.cc-step .cc-acts{margin-top:2px}
+.cc-warn-icon{color:var(--tone-uncertain)}
+.cc-ok-icon{color:var(--tone-include)}
+.cc-running{display:grid;gap:8px}
+.cc-running>.cc-fine{margin:0}
+.cc-progress{height:6px;overflow:hidden;border-radius:999px;background:var(--sidebar-surface);box-shadow:inset 0 0 0 1px var(--line)}
+.cc-progress i{display:block;height:100%;border-radius:999px;background:var(--accent);transition:width .2s ease-out}
+.cc-preview{display:grid;gap:10px}
+.cc-facts{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:6px 20px;margin:0;padding:0;list-style:none;font-size:13.5px}
+.cc-facts li{display:grid;grid-template-columns:120px minmax(0,1fr);gap:8px;align-items:baseline}
+.cc-facts li>span:first-child{color:var(--muted);font-size:12.5px}
+.cc-list summary{color:var(--ink-2);font-size:13px;font-weight:500;cursor:pointer}
+.cc-list ol{display:grid;gap:4px;margin:8px 0 0;padding:0 0 0 22px;font-size:13px}
+.cc-list li{padding-left:2px}
+.cc-list li>span+span{margin-left:8px}
+.cc-pr-target,.cc-target{color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px}
+.cc-pr-read{color:var(--muted);font-size:12.5px}
+
+/* The citations table */
+.cc-table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px}
+.cc-table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:13px}
+.cc-c-n{width:44px}.cc-c-s{width:25%}.cc-c-w{width:19%}.cc-c-r{width:14%}.cc-c-x{width:20%}
+.cc-table th,.cc-table td{padding:10px 12px;text-align:left;vertical-align:top;white-space:normal;overflow-wrap:break-word}
+.cc-table thead th{border-bottom:1px solid var(--line);background:var(--sidebar-surface);color:var(--ink-2);font-size:12.5px;font-weight:600;white-space:nowrap}
+.cc-table tbody+tbody tr:first-child>*{border-top:1px solid var(--line)}
+.cc-table tr.cc-subrow>td{border-top:1px dashed var(--line)}
+.cc-table .cc-n{color:var(--muted);font-weight:500;font-variant-numeric:tabular-nums}
+.cc-sentence{color:var(--ink);line-height:1.55}
+.cc-marker{padding:0 2px;border-radius:3px;background:var(--accent-tint);color:var(--ink)}
+.cc-work>*,.cc-entry-body>*{display:block}
+.cc-work .cc-target{margin-bottom:2px}
+.cc-title{padding:0;border:0;background:none;color:var(--ink);font-weight:500;text-align:left;overflow-wrap:anywhere}
+button.cc-title{cursor:pointer}
+button.cc-title:hover{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
+.cc-authors{color:var(--muted);font-size:12.5px}
+.cc-flags{display:flex !important;flex-wrap:wrap;gap:4px;margin-top:4px}
+.cc-flag{display:inline-block;padding:0 7px;border:1px solid var(--warn-line);border-radius:999px;background:var(--warn-surface);color:var(--warn-ink);font-size:11.5px;line-height:1.6}
+.cc-read{color:var(--ink-2)}
+.cc-pill{display:inline-block;padding:1px 9px;border:1px solid var(--line);border-radius:999px;font-size:12px;font-weight:500;line-height:1.6;white-space:nowrap}
+.cc-pill[data-result=found_whole]{border-color:var(--ok-line);background:var(--ok-surface);color:var(--ok-ink)}
+.cc-pill[data-result=found_partial]{border-color:var(--warn-line);background:var(--warn-surface);color:var(--warn-ink)}
+.cc-pill[data-result=not_found_in_given]{background:var(--sidebar-surface);color:var(--ink-2);white-space:normal}
+.cc-status{display:inline-flex;align-items:flex-start;gap:5px;color:var(--ink-2);font-size:12.5px}
+.cc-status>svg{margin-top:2px}
+.cc-status>svg{flex:none;color:var(--muted)}
+.cc-status[data-status=done]>svg{color:var(--tone-include)}
+.cc-status[data-status=could_not_check]{color:var(--ink)}
+.cc-status[data-status=could_not_check]>svg{color:var(--tone-uncertain)}
+.cc-status[data-status=planned]>svg{color:var(--accent)}
+.cc-reason{display:block;margin-top:3px;color:var(--muted);font-size:12px;line-height:1.45}
+.cc-raw{margin-top:4px}
+.cc-raw summary{color:var(--ink-2);font-size:12px;cursor:pointer}
+.cc-raw pre{max-height:200px;margin:6px 0 0;padding:8px;overflow:auto;border:1px solid var(--line);border-radius:6px;background:var(--sidebar-surface);color:var(--ink-2);font-size:11.5px;white-space:pre-wrap;overflow-wrap:anywhere}
+.cc-parts{display:grid;gap:6px;margin:8px 0 0;padding:0;list-style:none}
+.cc-parts li{display:grid;gap:3px}
+.cc-part-h{color:var(--ink-2);font-size:12.5px;line-height:1.45}
+.cc-part-a{color:var(--ink);font-weight:600}
+.cc-quote{padding:3px 7px;border:1px solid var(--line);border-radius:6px;background:var(--mark);color:var(--ink);font-size:12px;line-height:1.45;text-align:left;cursor:pointer}
+.cc-quote:hover{border-color:var(--strong-line)}
+.cc-quote-wrap{display:grid;justify-items:start;gap:1px}
+.cc-origin{color:var(--muted);font-size:11.5px}
+
+/* The bibliography */
+.cc-entries{display:grid;margin:0;padding:0;overflow:hidden;list-style:none;border:1px solid var(--line);border-radius:10px}
+.cc-entries li{display:grid;grid-template-columns:minmax(40px,auto) minmax(0,1fr) auto;align-items:start;gap:4px 14px;padding:10px 14px}
+.cc-entries li+li{border-top:1px solid var(--line)}
+.cc-entries .cc-target{padding-top:2px}
+.cc-entry-body{display:grid;gap:1px;min-width:0}
+.cc-asw{color:var(--ink-2);overflow-wrap:anywhere}
+.cc-entry-state{color:var(--ink-2);font-size:12.5px}
+.cc-entry-state[data-state=unresolved],.cc-entry-state[data-state=lookup_failed]{color:var(--warn-ink)}
+
+@media(max-width:760px){
+  .cc-page{padding:12px 16px 48px}
+  .cc-page h1{font-size:22px}
+  .cc-files{grid-template-columns:minmax(0,1fr)}
+  .cc-counters{grid-template-columns:minmax(0,1fr)}
+  .cc-facts li{grid-template-columns:110px minmax(0,1fr)}
+  /* The table becomes one card per citation: each cell on its own line with its column name. */
+  .cc-table-wrap{overflow:visible;border:0;border-radius:0}
+  .cc-table,.cc-table tbody,.cc-table tr,.cc-table td,.cc-table th{display:block;width:auto;min-width:0}
+  .cc-table thead,.cc-table colgroup{display:none}
+  .cc-table tbody{margin-bottom:12px;overflow:hidden;border:1px solid var(--line);border-radius:10px}
+  .cc-table tbody+tbody tr:first-child>*{border-top:0}
+  .cc-table tr.cc-subrow{border-top:1px dashed var(--strong-line)}
+  .cc-table tr.cc-subrow>td{border-top:0}
+  .cc-table th,.cc-table td{padding:6px 12px;border:0 !important}
+  .cc-table th.cc-n{padding-top:10px}
+  .cc-table th.cc-n::before{content:'#'}
+  .cc-table td[data-label]::before{content:attr(data-label);display:block !important;margin-bottom:1px;color:var(--muted);font-size:11.5px;font-weight:500}
+  .cc-table td.cc-sentence{padding-bottom:8px;font-size:13.5px}
+  .cc-table tr>td:last-child{padding-bottom:12px}
+  .cc-entries li{grid-template-columns:minmax(0,1fr)}
+  .cc-entries .cc-attach{justify-self:start}
+}

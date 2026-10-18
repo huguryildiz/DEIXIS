@@ -102,6 +102,8 @@ citing work already here, four new works, two candidates and two out of scope.
 without usable text. These markers affect only candidate-task calls and the distinct candidate query term.
 "[candidate-thread]" (D98, with "[candidate]") also gives the answer two SYNTHETIC unanswered aspects, so its Next steps
 box offers a claim from an aspect.
+`DEIXIS_FIXTURE_CITATION=on` (Verify citations V4) serves the SYNTHETIC works of `CITATION_BIB` and scripts each
+citation check by its sentence (see `CITATION_MODE`).
 """
 
 from __future__ import annotations
@@ -431,6 +433,90 @@ EUROPEPMC_WORKS = {work["doi"].removeprefix("https://doi.org/"): (f"PMC9000{work
                    for work in QUEUE_WORKS if work["id"][-3:] in ("951", "952", "953", "956")}
 WITHHELD_PDFS = {work["best_oa_location"]["pdf_url"] for _, work in EUROPEPMC_WORKS.values()} if EUROPEPMC_MODE else set()
 
+# Verify citations (V4): `DEIXIS_FIXTURE_CITATION=on` makes OpenAlex answer the five SYNTHETIC works of CITATION_BIB by
+# DOI (a filter request resolves them, a single-DOI lookup gives work a its open PDF), every other host 404, and the
+# scripted model answer each `citation_check` step by its sentence: found whole (a), found partly (b), not found (c),
+# never a valid answer (d, so the repair runs out), and not found for the two-work marker.
+CITATION_MODE = os.environ.get("DEIXIS_FIXTURE_CITATION") == "on"
+CITATION_BIB = """@article{a, title = {SYNTHETIC depth based routing for acoustic sensor fields}, author = {Zeng, Yi}, year = {2022}, doi = {10.5555/cc.a}}
+@article{b, title = {SYNTHETIC void handling in sparse acoustic fields}, author = {Kim, Jae}, year = {2021}, doi = {10.5555/cc.b}}
+@article{c, title = {SYNTHETIC mobile sinks for buoy fields}, author = {Park, Min}, year = {2019}, doi = {10.5555/cc.c}}
+@article{d, title = {SYNTHETIC tidal drift of moored buoys}, author = {Lee, Ann}, year = {2018}, doi = {10.5555/cc.d}}
+@article{e, title = {SYNTHETIC record with nothing to read}, author = {Cho, Eun}, year = {2017}, doi = {10.5555/cc.e}}
+"""
+CITATION_DRAFT = ("Depth based routing raises packet delivery in sparse fields \\cite{a}. Void handling keeps packets moving"
+                  " and halves the energy use \\cite{b}. Mobile sinks remove every queueing delay \\cite{c}. Moored buoys"
+                  " drift with the tides \\cite{d}. Routing and void handling both shorten paths \\cite{a,b}. A record"
+                  " with nothing to read stays unread \\cite{e}. A key that is not in the bibliography \\cite{zz}. The same"
+                  " holds here [ibid].")
+# Page two is long enough to be cut into two passages: the first holds `x > 5`, the second the `x < 5` that pair a's quote
+# names, so a highlight that ignored comparison signs would mark the earlier sentence (review round 1, high 1).
+CITATION_FILLER = "\n".join(["SYNTHETIC filler on buoys and antennas and their depths in calm water."] * 24)
+CITATION_PAGES = ["SYNTHETIC doi:10.5555/cc.a Depth based routing for acoustic sensor fields.",
+                  "SYNTHETIC page two: in dense fields packet delivery rises when x > 5 over many trials.\n" + CITATION_FILLER
+                  + "\nIn sparse fields packet delivery rises when x < 5 over many trials.",
+                  "SYNTHETIC page three: buoys and antennas are listed with their depths."]
+
+
+def citation_work(key: str, title: str, abstract: str | None = None, pdf: bool = False) -> dict[str, Any]:
+    wid = f"https://openalex.org/W77{ord(key)}"
+    return {"id": wid, "doi": f"https://doi.org/10.5555/cc.{key}", "display_name": title, "publication_year": 2020,
+            "type": "article", "ids": {"openalex": wid}, "authorships": [{"author": {"display_name": "Ada Fixture"}}],
+            "is_retracted": False, "primary_location": {"version": "publishedVersion", "source": {"display_name": "SYNTHETIC Journal"}},
+            "best_oa_location": None, "abstract_inverted_index": inverted(abstract) if abstract else None,
+            "locations": [{"pdf_url": f"https://fixture.example/cc-{key}.pdf", "version": "publishedVersion"}] if pdf else []}
+
+
+CITATION_WORKS = [
+    citation_work("a", "SYNTHETIC depth based routing for acoustic sensor fields",
+                  "SYNTHETIC: routing and void handling both shorten paths in acoustic fields.", pdf=True),
+    citation_work("b", "SYNTHETIC void handling in sparse acoustic fields",
+                  "SYNTHETIC: void handling keeps packets moving around holes in sparse fields."),
+    citation_work("c", "SYNTHETIC mobile sinks for buoy fields", "SYNTHETIC: mobile sinks shorten routes to the surface."),
+    citation_work("d", "SYNTHETIC tidal drift of moored buoys", "SYNTHETIC: moored buoys drift with the tides."),
+    citation_work("e", "SYNTHETIC record with nothing to read")]
+
+
+def citation_lookup(request: httpx.Request) -> httpx.Response | None:
+    if request.url.host != "api.openalex.org":
+        return httpx.Response(404)
+    if "doi.org" in request.url.path:
+        doi = request.url.path.split("doi.org/", 1)[1]
+        found = [w for w in CITATION_WORKS if w["doi"].endswith(doi)]
+        return httpx.Response(200, json=found[0]) if found else httpx.Response(404)
+    asked = request.url.params.get("filter", "").removeprefix("doi:").split("|")
+    found = [w for w in CITATION_WORKS if w["doi"].removeprefix("https://doi.org/") in asked]
+    return httpx.Response(200, json={"meta": {"count": len(found)}, "results": found})
+
+
+def citation_answer(si: dict[str, Any]) -> str:
+    """The scripted citation check of one pair, chosen by its sentence (the markers already cut out)."""
+    sentence = si["citation_check_target"]["sentence"]
+
+    def quote(words: str) -> dict[str, str]:
+        found = next(p for p in si["passages"] if words.casefold() in p["text"].casefold())
+        start = found["text"].casefold().index(words.casefold())
+        return {"passage_id": found["passage_id"], "quote": found["text"][start:start + len(words)]}
+
+    def doc(parts: list[dict[str, Any]]) -> str:
+        head = {"schema_version": "deixis.citation_check.v1", "step_input_id": si["step_input_id"],
+                "scope_revision": si["scope_revision"], "skill_package_hash": si["skill_package_hash"]}
+        return json.dumps(head | {"parts": parts, "covers_whole_sentence": True})
+
+    if sentence.startswith("Depth based routing"):
+        return doc([{"text": sentence, "assessment": "stated",
+                     "evidence": [quote("packet delivery rises when x < 5 over many trials")]}])
+    if sentence.startswith("Void handling"):
+        first, second = sentence.split(" and ", 1)
+        return doc([{"text": first, "assessment": "stated", "evidence": [quote("void handling keeps packets moving")]},
+                    {"text": second, "assessment": "not_stated", "evidence": []}])
+    if sentence.startswith("Routing and void") and any("both shorten paths" in p["text"] for p in si["passages"]):
+        # Work a's abstract, given with its PDF pages (full text): a quote from the abstract, not from the PDF.
+        return doc([{"text": sentence, "assessment": "stated", "evidence": [quote("routing and void handling both shorten paths")]}])
+    if sentence.startswith("Moored buoys"):
+        return "SYNTHETIC: not a citation check"
+    return doc([{"text": sentence, "assessment": "not_stated", "evidence": []}])
+
 
 # "[parity]": a SYNTHETIC research shaped like the UI mockup's example (412 found, 50 screened, 34 past the abstract
 # stage, 20 read in full text, 12 cited, three queue rows). Every work is returned by exactly one search request: the
@@ -630,6 +716,8 @@ def spent_budget() -> httpx.Response:
 
 
 def openalex(request: httpx.Request) -> httpx.Response:
+    if CITATION_MODE:
+        return citation_lookup(request)
     params = request.url.params
     candidate_query = params.get('search.title_and_abstract', '').lower()
     if 'kfourclaim' in candidate_query or 'kfouraccess' in candidate_query:
@@ -676,6 +764,8 @@ def openalex(request: httpx.Request) -> httpx.Response:
 
 
 async def fetch(url: str) -> FetchResult:
+    if CITATION_MODE and url == "https://fixture.example/cc-a.pdf":
+        return FetchResult("ok", data=make_pdf(CITATION_PAGES), final_url=url, media_type="application/pdf", http_status=200)
     if url.startswith("https://fixture.example/parity-"):
         return FetchResult("ok", data=make_pdf(parity_pages(url)), final_url=url, media_type="application/pdf", http_status=200)
     if url.startswith("https://fixture.example/jobs-"):
@@ -737,6 +827,9 @@ class ScriptedCodex:
         global RATE_LIMIT_MODE
         si = parse_step_input(message)
         question, task = si["question"]["text"], si["task_type"]
+        if task == "citation_check":
+            await asyncio.sleep(0.6)  # so the screen's running state can be seen
+            return ModelStepResult("completed", raw_text=citation_answer(si), resolved_model=requested_model)
         if output_schema.get("properties", {}).get("schema_version", {}).get("const") == "deixis.report_section_anchor_repair.v1":
             pairs = json.loads(message.split("Cell anchor repair pairs:\n", 1)[1].split("\nFor each failing anchor", 1)[0])
             patch = {"schema_version": "deixis.report_section_anchor_repair.v1",

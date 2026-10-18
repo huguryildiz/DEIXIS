@@ -2202,3 +2202,86 @@ export const spendApi = {
   estimate: (body: { effort: Effort; literature: SpendRoleChoice | null; answer: SpendRoleChoice | null; reviewer: SpendRoleChoice | null }) =>
     request<SpendEstimate>('/api/spend/estimate', json('POST', body)),
 }
+
+// Verify Citations (api/citation_check_routes.py, D86, D96, D99). A draft's citation markers, its bibliography entries,
+// and one pair per (citation occurrence, entry). A pair's `status` is how far its check went; `result` exists only for
+// `done`. Titles, authors and years come from `source`, the stored record, never from the draft.
+export type CitationPairStatus = 'planned' | 'done' | 'could_not_check' | 'out_of_cap' | 'no_text' | 'unresolved' | 'unrecognized' | 'ambiguous'
+export type CitationResult = 'found_whole' | 'found_partial' | 'not_found_in_given'
+export type CitationDepth = 'selected_passages' | 'abstract' | 'full_text'
+export type CitationFlag = 'title_mismatch' | 'retracted' | 'identity_unconfirmed'
+export type CitationRecord = { source_version_id: string; work_id?: string; title: string | null; authors: string[]; year: number | null; venue?: string | null; doi: string | null; is_retracted?: boolean | null }
+export type CitationEvidence = { passage_id: string; quote: string; located: boolean; anchor_text: string | null; anchor_match: string | null; ratio: number | null; passage_kind: string | null }
+export type CitationPart = { text: string; assessment: 'stated' | 'partly' | 'not_stated'; evidence: CitationEvidence[] }
+export type CitationCheckRow = {
+  status: CitationPairStatus; result: CitationResult | null; plan_revision: number; depth: CitationDepth | null
+  basis: { depth: CitationDepth; passages_given: number; passages_total: number; passages_not_given: number; source_version_id: string; located_passage_kinds: string[] } | null
+  flags: CitationFlag[]; parts: CitationPart[] | null
+  covers_whole_sentence: boolean | null; error: { code: string; issues: unknown[] } | null; raw_output: string | null
+  model: { connection: string | null; requested_model: string | null; reasoning_effort: string | null; resolved_model: string | null; sent: boolean } | null
+  checked_at: string
+}
+export type CitationPair = {
+  id: string; ordinal: number; target: string; status: CitationPairStatus; result: CitationResult | null; depth: CitationDepth | null
+  check: CitationCheckRow | null; bib_entry_id: string | null; source: CitationRecord | null; flags: CitationFlag[]
+  plan: { revision: number; depth: CitationDepth | null; passage_ids: string[]; passages_total: number | null; passages_not_given: number | null; earlier_revisions: number; stale: boolean } | null
+}
+export type CitationMarker = {
+  id: string; ordinal: number; sentence: string; sentence_span: [number, number]; span: [number, number]; raw: string
+  style: 'latex' | 'numeric' | 'author_year'; parse_status: 'recognized' | 'unrecognized' | 'ambiguous'
+  targets: { kind: 'key' | 'number' | 'author_year'; value: string }[]; pairs: CitationPair[]
+}
+export type CitationEntry = {
+  id: string; ordinal: number; origin: string; key: string | null; number: number | null; raw_entry: string
+  as_written: { doi: string | null; arxiv_id: string | null; title: string | null; authors: string[]; year: number | null }
+  resolution: { status: 'pending' | 'resolved' | 'unresolved' | 'lookup_failed'; method: string | null; reason: string | null; origin: string | null }
+  upload: { source_version_id: string; identity: string | null } | null
+  text: { status: 'pending' | 'settled'; available: 'full_text' | 'abstract' | 'metadata_only' | null; version: string | null; origin: string | null; note: string | null }
+  source: CitationRecord | null; flags: CitationFlag[]
+}
+export type CitationTextDepths = { full_text: number; abstract: number; metadata_only: number; pending: number }
+export type CitationCounters = {
+  occurrences: number; occurrences_recognized: number; occurrences_ambiguous: number; occurrences_unrecognized: number
+  sources_unique: number; sources_resolved: number; sources_with_text: CitationTextDepths; entries_with_text: CitationTextDepths
+  pairs: number; pairs_by_status: Record<CitationPairStatus, number>; pairs_in_plan: number | null; pairs_out_of_cap: number; pairs_to_send: number | null
+  pairs_sent_to_model: number | null; pairs_done: number | null; pairs_found: number | null; pairs_not_found_in_given: number | null; pairs_could_not_check: number | null
+}
+export type CitationModel = { connection: string; model: string; reasoning_effort: string | null }
+export type CitationRunState = { run_id: string; status: RunStatus; pause_reason: string | null; reset_at?: string | null; error?: Record<string, unknown> | null; plan_revision?: number; model?: CitationModel }
+export type CitationCheckView = {
+  id: string; research_id: string; format: 'text' | 'md' | 'tex' | 'docx'; original_filename: string | null; created_at: string
+  bibliography: { origin: string; filename: string | null; errors: unknown[] }
+  text_acquisition: CitationRunState | null; check_run: CitationRunState | null
+  plan: { revision: number | null; frozen_at: string | null; cap: number; passages_per_pair: number }
+  counters: CitationCounters; markers: CitationMarker[]; entries: CitationEntry[]
+}
+export type CitationPreviewPair = { id: string; ordinal: number; marker_ordinal: number; sentence: string; target: string; source: CitationRecord | null; flags: CitationFlag[]
+  depth?: CitationDepth; passages_given?: number; passages_total?: number; passages_not_given?: number; stale?: boolean }
+export type CitationCost = { pairs: number; connection: string | null; model: string | null; reasoning_effort: string | null; kind: string | null; applies: boolean | null
+  usd: [number, number] | 'unknown' | null; reason?: 'no_model' | 'price_not_listed'; calls?: [number, number]; prices: { version: number; as_of: string } }
+export type CitationPreview = { id: string; plan_revision: number; cap: number; passages_per_pair: number; selected: CitationPreviewPair[]; out_of_cap: CitationPreviewPair[]; counters: CitationCounters; cost: CitationCost }
+export type CitationDraftSummary = { id: string; original_filename: string | null; format: string; created_at: string; occurrences: number; pairs: number; pairs_done: number; pairs_could_not_check: number; check_status: RunStatus | null }
+
+export const citationApi = {
+  list: () => request<CitationDraftSummary[]>('/api/citation-checks'),
+  create: (draft: { file?: File; text?: string }, bibliography?: File | null) => {
+    const form = new FormData()
+    if (draft.file) form.append('file', draft.file)
+    else form.append('text', draft.text ?? '')
+    if (bibliography) form.append('bibliography', bibliography)
+    return request<CitationCheckView>('/api/citation-checks', { method: 'POST', body: form })
+  },
+  get: (id: string) => request<CitationCheckView>(`/api/citation-checks/${id}`),
+  resolve: (id: string) => request<CitationCheckView>(`/api/citation-checks/${id}/resolve`, { method: 'POST' }),
+  acquire: (id: string) => request<CitationCheckView>(`/api/citation-checks/${id}/acquire`, { method: 'POST' }),
+  attachPdf: (id: string, entryId: string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<CitationCheckView>(`/api/citation-checks/${id}/entries/${entryId}/uploads`, { method: 'POST', body: form })
+  },
+  freeze: (id: string, refreeze = false) => request<CitationCheckView>(`/api/citation-checks/${id}/plan`, json('POST', refreeze ? { refreeze: true } : {})),
+  preview: (id: string) => request<CitationPreview>(`/api/citation-checks/${id}/preview`),
+  check: (id: string, revision: number, model: CitationModel) =>
+    request<CitationCheckView>(`/api/citation-checks/${id}/check`, json('POST', { plan_revision: revision, ...model })),
+  exportUrl: (id: string, format: 'csv' | 'md') => `/api/citation-checks/${id}/export?format=${format}`,
+}

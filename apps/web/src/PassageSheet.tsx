@@ -117,7 +117,7 @@ function markGroups(root: HTMLElement | null) {
 // latestAnswer: the research's latest valid answer, whose claims the details line counts ("cited in N claims of Vn").
 // actions: what the research page lets the panel do (P14); findOnOpen starts the open-copy lookup once on open (the
 // Citation panel's Find PDF). abstractPassageId: the source's abstract when no `sources` row names it (the Library page).
-export function PassageSheet({ researchId, passageId, assetId = null, sourceVersionId = null, initialView = 'text', initialPage = 1, highlightText, highlightTexts, expectHighlight = false, citationLabels, pdfRemoved = false, sources, dark, onClose, onRestoreSource, asPanel = false, latestAnswer = null, actions, findOnOpen = false, abstractPassageId = null }: { researchId: string; passageId: string | null; assetId?: string | null; sourceVersionId?: string | null; initialView?: 'text' | 'pdf'; initialPage?: number; highlightText?: string | null; highlightTexts?: string[]; expectHighlight?: boolean; citationLabels?: CitationLabels; pdfRemoved?: boolean; sources?: Source[]; dark: boolean; onClose: () => void; onRestoreSource?: (sourceVersionId: string) => void; asPanel?: boolean; latestAnswer?: { version: number; claims: Claim[] } | null; actions?: SourceActions; findOnOpen?: boolean; abstractPassageId?: string | null }) {
+export function PassageSheet({ researchId, passageId, assetId = null, sourceVersionId = null, initialView = 'text', initialPage = 1, highlightText, highlightTexts, expectHighlight = false, citationLabels, pdfRemoved = false, sources, dark, onClose, onRestoreSource, asPanel = false, latestAnswer = null, actions, findOnOpen = false, abstractPassageId = null, passageOnly = false }: { researchId: string; passageId: string | null; assetId?: string | null; sourceVersionId?: string | null; initialView?: 'text' | 'pdf'; initialPage?: number; highlightText?: string | null; highlightTexts?: string[]; expectHighlight?: boolean; citationLabels?: CitationLabels; pdfRemoved?: boolean; sources?: Source[]; dark: boolean; onClose: () => void; onRestoreSource?: (sourceVersionId: string) => void; asPanel?: boolean; latestAnswer?: { version: number; claims: Claim[] } | null; actions?: SourceActions; findOnOpen?: boolean; abstractPassageId?: string | null; passageOnly?: boolean }) {
   const [passage, setPassage] = useState<Passage | null>(null)
   const [assetText, setAssetText] = useState<AssetText | null>(null)
   // The whole extracted text of the PDF a cited passage comes from: undefined while it loads, null when the passage opens alone.
@@ -179,7 +179,9 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
         if (cancelled) return
         // Pin even a current citation to its occurrence: a promotion can happen between these two requests.
         const extractionId = p.occurrence?.extraction_id
-        const inDocument = p.kind !== 'abstract' && p.asset_id && extractionId && (p.evidence_status === 'current' || p.evidence_status === 'text_superseded')
+        // `passageOnly` (Verify citations): the opened passage alone, its backend-located words marked as stored, never
+        // searched again across the page's text.
+        const inDocument = !passageOnly && p.kind !== 'abstract' && p.asset_id && extractionId && (p.evidence_status === 'current' || p.evidence_status === 'text_superseded')
         setPassageDocument(inDocument ? undefined : null)
         setPassage(p)
         // An abstract opens on its own tab (mockup `detail()`: Abstract first when there is no PDF text).
@@ -191,7 +193,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
       : api.assetText(researchId, openAssetId!).then(value => { if (!cancelled) setAssetText(value) })
     request.catch((e: Error) => { if (!cancelled) setError(e.message) })
     return () => { cancelled = true; comparisonRequest.current += 1 }
-  }, [researchId, openPassageId, openAssetId, initialView])
+  }, [researchId, openPassageId, openAssetId, initialView, passageOnly])
 
   const source = passage?.source ?? assetText?.source ?? (detailsOnly && opened ? { ...opened, id: opened.source_version_id } : undefined)
   const abstract = passage?.kind === 'abstract'

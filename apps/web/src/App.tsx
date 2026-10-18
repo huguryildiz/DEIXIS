@@ -7,6 +7,7 @@ import { Home } from './Home'
 import { EmptyResearch, ResearchPage } from './ResearchView'
 import { SettingsPage, type SettingsSection } from './Settings'
 import { LibraryPage } from './LibraryPage'
+import { CitationCheckPage } from './CitationCheck'
 import { QuickFind, type PaletteCommand } from './QuickFind'
 import { KeysDialog } from './KeysDialog'
 import { IS_MAC, readSingleKeys, requestResearchPanel, useShortcuts, writeSingleKeys } from './Shortcuts'
@@ -30,7 +31,7 @@ import './research/queue.css'
 import './research/followup.css'
 import './Trash.css'
 
-type Route = { view: 'home' } | { view: 'research'; id: string; tab?: string } | { view: 'settings'; tab?: SettingsSection } | { view: 'trash' } | { view: 'library' }
+type Route = { view: 'home' } | { view: 'research'; id: string; tab?: string } | { view: 'settings'; tab?: SettingsSection } | { view: 'trash' } | { view: 'library' } | { view: 'citations'; id: string | null }
 type ThemeChoice = 'system' | 'light' | 'dark'
 
 const activeRunStatuses = new Set<RunStatus>(['queued', 'running', 'pause_requested'])
@@ -60,6 +61,8 @@ function parseHash(): Route {
   if (hash === 'settings') return { view: 'settings' }
   if (hash === 'trash') return { view: 'trash' }
   if (hash === 'library') return { view: 'library' }
+  if (hash === 'library/verify') return { view: 'citations', id: null }
+  if (hash.startsWith('library/verify/')) return { view: 'citations', id: hash.slice('library/verify/'.length) || null }
   return { view: 'home' }
 }
 
@@ -67,6 +70,7 @@ function go(route: Route) {
   window.location.hash = route.view === 'research' ? `/research/${route.id}${route.tab ? `/${route.tab}` : ''}`
     : route.view === 'home' ? '/'
     : route.view === 'settings' ? `/settings${route.tab ? `/${route.tab}` : ''}`
+    : route.view === 'citations' ? `/library/verify${route.id ? `/${route.id}` : ''}`
     : `/${route.view}`
 }
 
@@ -519,7 +523,7 @@ export default function App() {
         <button className="sidebar-find" onClick={openSearch} aria-label={t('Search')} aria-keyshortcuts="Meta+K Control+K" title={t('Search')}><Search size={16} aria-hidden="true" /><span className="sidebar-label">{t('Search')}</span><kbd className="sidebar-label">{IS_MAC ? '⌘K' : 'Ctrl K'}</kbd></button>
         <button className={route.view === 'research' && !awaitingOpen ? 'selected' : ''} onClick={() => go({ view: 'research', id: currentResearch ?? '' })} title={t(currentResearch ? 'Current research' : 'No research opened yet')}><Clock size={16} aria-hidden="true" /><span className="sidebar-label">{t('Current research')}</span></button>
         <button className={awaitingOpen ? 'selected' : ''} disabled={!awaitingTarget} onClick={openAwaiting} aria-label={awaitingTotal ? `${t('Awaiting you')}: ${awaitingDetail}` : t('Awaiting you')} title={awaitingTotal ? `${t('Awaiting you')} · ${awaitingDetail}` : t('Awaiting you')}><Inbox size={16} aria-hidden="true" /><span className="sidebar-label">{t('Awaiting you')}</span>{awaitingTotal > 0 && <span className="nav-count" aria-hidden="true">{awaitingTotal}</span>}</button>
-        <button className={route.view === 'library' ? 'selected' : ''} onClick={() => go({ view: 'library' })} title={t('Library')}><LibraryBig size={16} aria-hidden="true" /><span className="sidebar-label">{t('Library')}</span></button>
+        <button className={route.view === 'library' || route.view === 'citations' ? 'selected' : ''} onClick={() => go({ view: 'library' })} title={t('Library')}><LibraryBig size={16} aria-hidden="true" /><span className="sidebar-label">{t('Library')}</span></button>
         <button className={route.view === 'settings' ? 'selected' : ''} onClick={() => go({ view: 'settings' })} title={t('Settings')}><SlidersHorizontal size={16} aria-hidden="true" /><span className="sidebar-label">{t('Settings')}</span></button>
         <button className={route.view === 'trash' ? 'selected' : ''} onClick={() => go({ view: 'trash' })} title={t('Trash')}><Trash2 size={16} aria-hidden="true" /><span className="sidebar-label">{t('Trash')}</span></button>
       </nav>
@@ -577,7 +581,8 @@ export default function App() {
         {route.view === 'home' && <Home researches={researches} onCreated={id => { refreshList(); go({ view: 'research', id }) }} />}
         {route.view === 'research' && (route.id ? <ResearchPage key={`${route.id}/${route.tab ?? ''}`} id={route.id} initialTab={route.tab} dark={dark} onChanged={refreshList} />
           : <EmptyResearch opened={researches.length > 0} />)}
-        {route.view === 'library' && <LibraryPage dark={dark} researchKey={researchKey} onChanged={refreshList} onOpenResearch={(id, tab) => go({ view: 'research', id, tab })} onStartResearch={() => go({ view: 'home' })} />}
+        {route.view === 'library' && <LibraryPage dark={dark} researchKey={researchKey} onChanged={refreshList} onOpenResearch={(id, tab) => go({ view: 'research', id, tab })} onStartResearch={() => go({ view: 'home' })} onVerifyCitations={() => go({ view: 'citations', id: null })} />}
+        {route.view === 'citations' && <CitationCheckPage key={route.id ?? 'start'} id={route.id} dark={dark} onOpen={id => go({ view: 'citations', id })} onLibrary={() => go({ view: 'library' })} onSettings={() => go({ view: 'settings', tab: 'models' })} />}
         {route.view === 'settings' && <SettingsPage key={route.tab ?? 'page'} dark={dark} section={route.tab} language={language} onLanguage={chooseLanguage} theme={theme} onTheme={chooseTheme} onProfile={setProfile}
           access={{ proxy, readFailed: proxyReadFailed, testing: proxyBusy, testFailed: !!proxy?.address && proxyFailed === proxy.address, scopus: institutionalStatus,
             test: runProxyTest, save: saveProxy, saveLabel: saveProxyLabel, reload: checkAccess }} />}

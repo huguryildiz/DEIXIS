@@ -119,6 +119,9 @@ INSTITUTIONAL_ACCESS_RETRY_SECONDS = 30
 REPLACE_ASSET_PATH = re.compile(r"/api/researches/[^/]+/sources/[^/]+/assets/[^/]+")
 # A research's routes and its trash routes; an internal research (D86) is not found on any of them.
 RESEARCH_ROUTE = re.compile(r"/api/(?:researches|trash)/([^/]+)")
+# The evidence reads an internal research keeps (Verify Citations V4): a GET of one of its passages or files, so the
+# check's screen opens a located quote in Source details. Each route still checks the passage or file belongs to it.
+INTERNAL_EVIDENCE_ROUTE = re.compile(r"/api/researches/[^/]+/(?:passages|assets)/[^/]+(?:/[^/]+)*")
 
 
 def upload_limit(method: str, path: str) -> tuple[int, str, str] | None:
@@ -1088,7 +1091,8 @@ def create_app(
                 if int(length) > limit[0]:
                     return JSONResponse({"detail": limit[2], "code": limit[1]}, status_code=413)
         if (route := RESEARCH_ROUTE.match(request.url.path)) and (store := getattr(request.app.state, "store", None)) \
-                and store.is_internal_research(route.group(1)):
+                and store.is_internal_research(route.group(1)) and not (
+                    request.method == "GET" and INTERNAL_EVIDENCE_ROUTE.fullmatch(request.url.path)):
             return JSONResponse({"detail": "Not Found"}, status_code=404)
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"

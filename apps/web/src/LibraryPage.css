@@ -151,7 +151,7 @@
 .library-page .empty>div{position:relative}
 /* Start a research (a live action the mockup's empty state has no place for) sits under the box, outside its flow, so the
    mockup's centred heading and buttons keep their place. */
-.library-page .empty .lib-empty-more{position:absolute;top:100%;right:0;left:0;display:flex;justify-content:center;margin-top:10px}
+.library-page .empty .lib-empty-more{position:absolute;top:100%;right:0;left:0;display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:10px}
 .library-page .empty .lib-empty-more .ghost{border-radius:999px}
 .library-page .empty .notice{margin:6px 0 0;text-align:left}
 

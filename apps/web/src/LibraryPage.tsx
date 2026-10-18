@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import {
-  ArrowUpDown, Check, ChevronLeft, ChevronRight, Download, Ellipsis, FileText, Filter, Folder, LibraryBig, Link2, ListFilter,
+  ArrowUpDown, Check, ChevronLeft, ChevronRight, Download, Ellipsis, FileCheck2, FileText, Filter, Folder, LibraryBig, Link2, ListFilter,
   MessageSquare, PanelLeft, PanelRight, Plus, Search, SlidersHorizontal, Table2, Trash2, Upload, X,
 } from 'lucide-react'
 import {
@@ -132,12 +132,13 @@ function startModel(models: ConnectionModel[], setting: RoleModelSetting | undef
 // Counts the records of a bibliography file the server sent: one `@type{` per BibTeX entry, one `TY  -` per RIS record.
 const recordsIn = (text: string, format: 'bibtex' | 'ris') => (format === 'bibtex' ? text.match(/^\s*@(?!comment|preamble|string)\w+\s*[{(]/gim) : text.match(/^TY {2}- /gm))?.length ?? 0
 
-export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onStartResearch }: {
+export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onStartResearch, onVerifyCitations }: {
   dark: boolean
   researchKey: string
   onChanged: () => void
   onOpenResearch: (id: string, tab?: string) => void
   onStartResearch?: () => void
+  onVerifyCitations?: () => void
 }) {
   const toast = useToast()
   const [view, setView] = useState<LibraryView | null>(null)
@@ -701,7 +702,10 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
             <button type="button" className="btn-teal" disabled={locked} onClick={() => fileInput.current?.click()}><Upload size={16} aria-hidden />{t('Upload PDF')}</button>
             <button type="button" className="ghost" ref={zoteroButton} disabled={locked} onClick={() => setZoteroOpen(true)}>{t('Import from Zotero')}</button>
           </div>
-          {onStartResearch && <div className="lib-empty-more"><button type="button" className="ghost lib-start" onClick={onStartResearch}><Plus size={16} aria-hidden />{t('Start a research')}</button></div>}
+          {(onStartResearch || onVerifyCitations) && <div className="lib-empty-more">
+            {onStartResearch && <button type="button" className="ghost lib-start" onClick={onStartResearch}><Plus size={16} aria-hidden />{t('Start a research')}</button>}
+            {onVerifyCitations && <button type="button" className="ghost lib-start" onClick={onVerifyCitations}><FileCheck2 size={16} aria-hidden />{t('Verify citations')}</button>}
+          </div>}
           {result && <ResultNotice result={result} onOpen={target => onOpenResearch(target.id, target.tab)} onClose={() => setResult(null)} />}
         </div>
       </div>
@@ -735,6 +739,7 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>}
+        {onVerifyCitations && <button type="button" className="ghost" onClick={onVerifyCitations} title={t('Check a draft’s citations against the cited works')}><FileCheck2 size={16} aria-hidden />{t('Verify citations')}</button>}
         <button type="button" className="ghost" ref={zoteroButton} disabled={locked} onClick={() => setZoteroOpen(true)}>{t('Import from Zotero')}</button>
         <button type="button" className="btn-teal" disabled={locked} aria-busy={busy === 'upload'} onClick={() => fileInput.current?.click()}><Upload size={16} aria-hidden />{t('Upload PDF')}</button>
         <button type="button" className={`ib lib-toggle lib-toggle-left${showLeft ? '' : ' off'}`} aria-pressed={showLeft} title={showLeft ? t('Hide the list') : t('Show the list')} aria-label={showLeft ? t('Hide the list') : t('Show the list')} onClick={() => setShowLeft(v => !v)}><PanelLeft size={16} aria-hidden /></button>

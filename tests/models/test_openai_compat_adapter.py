@@ -127,6 +127,14 @@ def test_ollama_needs_no_key_and_says_when_it_is_not_running():
     assert null["ready"] is False and "ollama pull" in null["reason"]
 
 
+def test_embedding_and_reranker_models_are_not_offered_as_research_models():
+    listed = {"data": [{"id": "qwen3:8b"}, {"id": "nomic-embed-text:latest"}, {"id": "bge-m3"}, {"id": "bge-reranker-v2-m3"}, {"id": "all-minilm"}]}
+    status = asyncio.run(adapter(openai_compat.OLLAMA, lambda r: httpx.Response(200, json=listed)).health(refresh=True))
+    assert [m["id"] for m in status["models"]] == ["qwen3:8b"]
+    only = asyncio.run(adapter(openai_compat.OLLAMA, lambda r: httpx.Response(200, json={"data": [{"id": "nomic-embed-text"}]})).health(refresh=True))
+    assert only["ready"] is False and only["reason_code"] == "no_models"
+
+
 @every_spec
 def test_health_reports_http_errors_and_unreadable_lists(spec, monkeypatch):
     set_key(spec, monkeypatch)

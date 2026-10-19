@@ -72,6 +72,8 @@ OLLAMA = CompatConnection("ollama", "Ollama", "http://127.0.0.1:11434/v1", None)
 # A local model answers one call at a time and slower than a hosted one: its calls queue and get a longer limit, counted
 # from the moment the call is sent (local-models-fix plan, 15 Oct 2026).
 LOCAL_TURN_TIMEOUT = 1200.0
+# Ids that mark an embedding or reranking model in a connection's model list (the OpenAI-compatible list has no model type).
+NON_CHAT_MODEL_WORDS = ("embed", "rerank", "bge-", "minilm")
 # Ollama's context window per call: the input estimated high (characters / 3) plus room for the answer, in 8K steps.
 OLLAMA_ANSWER_TOKENS = 8192
 OLLAMA_CONTEXT_STEP = 8192
@@ -248,6 +250,8 @@ class OpenAICompatAdapter:
             if isinstance(listed, dict):
                 listed = listed.get("data") or []  # Ollama with no models answers "data": null
             entries = [m for m in listed if isinstance(m, dict) and isinstance(m.get("id"), str) and m["id"]]
+            # Embedding and reranking models cannot run a research step; they are chosen under Search & ranking.
+            entries = [m for m in entries if not any(w in m["id"].lower() for w in NON_CHAT_MODEL_WORDS)]
             if spec.model_prefix:
                 entries = [m for m in entries if m["id"].lower().startswith(spec.model_prefix)]
             if spec.required_parameter:

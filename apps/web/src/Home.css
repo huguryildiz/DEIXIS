@@ -17,12 +17,23 @@
 .app .composer textarea::placeholder{color:var(--muted)}
 .composer-hint{margin:0;padding:6px 16px 8px;color:var(--muted);font-size:12px}
 .composer-hint.statement-hint.is-over{color:var(--error-ink)}
-.home-estimate{margin:8px 4px 0;color:var(--muted);font-size:12px;line-height:1.5}
-.home-estimate p{margin:0}
-.home-estimate b{color:var(--ink);font-weight:500}
-.home-estimate summary{cursor:pointer;margin-top:4px;width:fit-content}
-.home-estimate ul{margin:6px 0 0;padding-left:18px}
-.home-estimate li{margin:2px 0}
+.home-estimate{margin:10px 0 0;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--muted);font-size:12px;line-height:1.5}
+.home-estimate details[open]{background:var(--hover-surface);border-radius:inherit}
+.home-estimate .estimate-line{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;padding:9px 14px;cursor:pointer;list-style:none}
+.home-estimate .estimate-line::-webkit-details-marker{display:none}
+.home-estimate .estimate-icon{flex:none;color:var(--muted)}
+.home-estimate .estimate-figure{display:inline-flex;align-items:baseline;gap:8px}
+.home-estimate .estimate-label{color:var(--muted);font-size:10.5px;font-weight:500;letter-spacing:.6px;text-transform:uppercase}
+.home-estimate b{color:var(--ink);font-size:13.5px;font-weight:600;font-variant-numeric:tabular-nums}
+.home-estimate .estimate-dash{margin:0 4px;color:var(--muted);font-weight:400}
+.home-estimate .estimate-note{flex:1 1 220px;min-width:0}
+.home-estimate .estimate-toggle{display:inline-flex;align-items:center;gap:3px;margin-left:auto;color:var(--accent);font-weight:500;white-space:nowrap}
+.home-estimate .estimate-toggle svg{transition:transform .15s ease}
+.home-estimate details[open] .estimate-toggle svg{transform:rotate(180deg)}
+.home-estimate .estimate-line:hover .estimate-toggle{text-decoration:underline;text-underline-offset:3px}
+.home-estimate ul{display:grid;gap:6px;margin:0;padding:10px 14px 12px 41px;border-top:1px solid var(--line);list-style:none}
+.home-estimate li{position:relative;margin:0;color:var(--ink-2)}
+.home-estimate li::before{content:'';position:absolute;left:-13px;top:.62em;width:4px;height:4px;border-radius:50%;background:var(--strong-line)}
 .composer-controls{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--line);background:var(--sidebar-surface)}
 .app .composer-models{position:relative;padding:10px 40px 10px 10px;border-top:1px solid var(--line);background:var(--sidebar-surface)}
 .models-picker-close{position:absolute;top:10px;right:10px;display:grid;place-items:center;width:24px;height:24px;border-radius:5px;color:var(--muted)}
@@ -82,12 +93,6 @@
 .composer .guide input{flex:none;margin:0;accent-color:var(--accent)}
 
 /* Mode chips (H13): what the research produces. Single choice; the chosen chip takes the accent tint. */
-.mode-chips{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
-.mode-chips .chip{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border:1px solid var(--strong-line);border-radius:999px;background:var(--paper);color:var(--ink-2);font-size:12.5px;cursor:pointer}
-.mode-chips .chip svg{flex:none;width:16px;height:16px}
-.mode-chips .chip:hover:not([aria-disabled=true]){background:var(--hover-surface)}
-.mode-chips .chip.on{border-color:var(--accent-line);background:var(--accent-tint);color:var(--accent)}
-.mode-chips .chip[aria-disabled=true]{opacity:.5;cursor:default}
 
 /* Resume and Suggested cards (H14, H15): three columns, one on a phone. */
 .home-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
@@ -126,3 +131,7 @@
   .attachments:empty{display:none}
   .home-cards{grid-template-columns:1fr}
 }
+
+.home-menu .home-menu-heading-gap{margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
+.home-menu-check{position:absolute;right:8px;top:9px;display:flex;color:var(--ink)}
+.composer-scope-mode{opacity:.8}

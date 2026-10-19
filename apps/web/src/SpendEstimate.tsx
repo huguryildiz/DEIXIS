@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { ChevronDown, Coins } from 'lucide-react'
 import { spendApi, type Effort, type SpendEstimate, type SpendRole, type SpendRoleChoice } from './api'
 import { connectionName, money } from './labels'
 import { t, uiLocale } from './i18n'
@@ -28,15 +29,19 @@ export function SpendEstimateNote({ effort, answer, literature, reviewer }: {
   const unpriced = data.roles.filter(r => r.kind === 'api' && !r.priced)
   const free = data.roles.filter(r => r.kind === 'subscription' || r.kind === 'local')
   return <div className="home-estimate" data-testid="spend-estimate">
-    <p>
-      {data.usd
-        ? <><b>{t('Estimated cost: at least {low}, at most {high}.', { low: money(data.usd[0]), high: money(data.usd[1]) })}</b>{' '}</>
-        : <b>{t('No cost estimate: DEIXIS has no price for this model.')}{' '}</b>}
-      {unpriced.length > 0 && data.usd && t('Left out because no price is known: {models}.', { models: unpriced.map(r => `${t(roleNames[r.role])} (${r.model})`).join(', ') })}{' '}
-      {t('The provider’s own bill is what counts.')}
-    </p>
     <details>
-      <summary>{t('How this is estimated')}</summary>
+      <summary className="estimate-line">
+        <Coins className="estimate-icon" size={15} aria-hidden />
+        {data.usd
+          ? <span className="estimate-figure"><span className="estimate-label">{t('Estimated cost')}</span>
+              <b title={t('Estimated cost: at least {low}, at most {high}.', { low: money(data.usd[0]), high: money(data.usd[1]) })}>{money(data.usd[0])}<span className="estimate-dash">–</span>{money(data.usd[1])}</b></span>
+          : <b className="estimate-figure">{t('No cost estimate: DEIXIS has no price for this model.')}</b>}
+        <span className="estimate-note">
+          {unpriced.length > 0 && data.usd && <>{t('Left out because no price is known: {models}.', { models: unpriced.map(r => `${t(roleNames[r.role])} (${r.model})`).join(', ') })}{' '}</>}
+          {t('The provider’s own bill is what counts.')}
+        </span>
+        <span className="estimate-toggle">{t('How this is estimated')}<ChevronDown size={14} aria-hidden /></span>
+      </summary>
       <ul>
         <li>{t('Low: the fewest calls, the smallest inputs, no reasoning. High: every call this depth allows, the largest inputs, each call that can be repaired repaired once, and up to {n} tokens of reasoning per call.', { n: Math.max(...Object.values(data.assumptions.reasoning_tokens)).toLocaleString(uiLocale()) })}</li>
         <li>{t('Instruction sizes are measured; the length of abstracts, passages and answers is assumed ({n} characters per token). Cached input is priced as normal input. Price list dated {date}. Nothing was measured on a real run.', { n: data.assumptions.chars_per_token, date: data.prices.as_of })}</li>

@@ -201,7 +201,8 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .user{display:flex;align-items:center;gap:8px;min-width:0;font-size:13px}
 .avatar{display:grid;place-items:center;flex:none;width:24px;height:24px;border-radius:50%;background:var(--accent-deep);color:#fff;font-size:10px;font-weight:600}
 .dark .avatar{background:var(--accent);color:var(--paper)}
-.user-name{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.user-name{flex:1;min-width:0;display:flex;flex-direction:column}
+.user-name>span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;line-height:1.3}
 .app .user>button{margin-left:auto;padding:4px;border-radius:6px;color:var(--muted);font-size:14px;line-height:1.5}
 .app .user>button svg{display:inline;vertical-align:baseline}
 .app .user>button:hover{background:var(--hover-surface)}
@@ -360,6 +361,9 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .keys-foot label{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
 .keys-foot input{width:14px;height:14px;margin:0;accent-color:var(--accent)}
 .app .user>button+button{margin-left:0}
+.app .user>.keys-toggle,.app .user>.lang-toggle,.app .user>.theme-toggle{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0}
+.app .user>.keys-toggle svg,.app .user>.theme-toggle svg{display:block}
+.app .user>.lang-toggle{font-size:11.5px;font-weight:600;letter-spacing:.3px;line-height:1}
 /* The name opens the profile settings; it keeps the plain text look of the row. */
 .app .user>.user-name{margin-left:0;padding:0;border-radius:4px;color:inherit;font-size:inherit;line-height:inherit;text-align:left;background:none}
 .app .user>.user-name:hover{background:none;text-decoration:underline;text-underline-offset:3px}

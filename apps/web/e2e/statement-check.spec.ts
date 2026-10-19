@@ -74,7 +74,8 @@ async function holdFirst(page: Page, checkId: string) {
   await page.route(match, handler)
   return hold
 }
-const chip = (page: Page) => page.locator('.mode-chips').getByRole('button', { name: 'Check a statement', exact: true })
+// "Check a statement" is a mode in the Workflows menu, under "What the research produces".
+const pickStatement = async (page: Page) => { await page.getByLabel('Source scope').click(); await page.locator('[role=option][data-mode=statement]').click() }
 const group = (page: Page, key: string) => page.locator(`.sc-group[data-group="${key}"]`)
 
 test.describe.serial('R3: statement check', () => {
@@ -87,8 +88,8 @@ test.describe.serial('R3: statement check', () => {
     // Home: the mode, its hint, the 600-character limit and the one-claim hint.
     await page.goto(SERVER_URL)
     await expect(page.locator('.models-summary')).toContainText('fixture-model')
-    await chip(page).click()
-    await expect(chip(page)).toHaveAttribute('aria-pressed', 'true')
+    await pickStatement(page)
+    await expect(page.getByLabel('Source scope')).toContainText('Check a statement')
     const box = page.getByLabel('Statement to check')
     await expect(box).toBeFocused()
     await expect(box).toHaveAttribute('placeholder', 'Paste one sentence to check, for example a claim from your draft.')
@@ -277,9 +278,9 @@ test.describe.serial('R3: statement check', () => {
     await expect(page.locator('.models-summary')).toContainText('fixture-model')
     await page.locator('input[type=file]').first().setInputFiles({ name: 'SYNTHETIC-claim.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n%%EOF\n') })
     await page.getByLabel('Source scope').click()
-    await page.getByRole('option', { name: 'Attached files' }).click()
-    await chip(page).click()
-    await expect(chip(page)).toHaveAttribute('aria-pressed', 'true')
+    await page.getByRole('option', { name: /^Attached files/ }).click()
+    await pickStatement(page)
+    await expect(page.getByLabel('Source scope')).toContainText('Check a statement')
     await page.getByLabel('Statement to check').fill(SENTENCE)
     const run = page.waitForRequest(r => r.method() === 'POST' && /\/api\/researches\/[^/]+\/runs$/.test(new URL(r.url()).pathname))
     await page.getByRole('button', { name: 'Start research' }).click()

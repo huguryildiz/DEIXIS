@@ -192,13 +192,13 @@ export function ModelPicker({ role, icon: Icon, hint, models, value, onChange, e
 // "Check a statement" (reverse citation search R3) takes one pasted sentence: the works found are each checked for a
 // passage that states it, instead of an answer being written.
 type ModeChip = 'report' | 'papers' | 'table' | 'compare' | 'statement' | 'ask'
-const modeChips: { id: ModeChip; label: string; icon: LucideIcon }[] = [
-  { id: 'report', label: 'Draft report', icon: FileText },
-  { id: 'papers', label: 'Find papers', icon: Search },
-  { id: 'table', label: 'Evidence table', icon: Table2 },
-  { id: 'compare', label: 'Compare methods', icon: Network },
-  { id: 'statement', label: 'Check a statement', icon: Quote },
-  { id: 'ask', label: 'Ask my PDFs', icon: Paperclip },
+const modeChips: { id: ModeChip; label: string; icon: LucideIcon; detail: string }[] = [
+  { id: 'report', label: 'Draft report', icon: FileText, detail: 'A written answer; each claim links to a passage you can open.' },
+  { id: 'papers', label: 'Find papers', icon: Search, detail: 'A list of relevant works to screen; no answer is written.' },
+  { id: 'table', label: 'Evidence table', icon: Table2, detail: 'One row per included study, filled from its text.' },
+  { id: 'compare', label: 'Compare methods', icon: Network, detail: 'Methods side by side, from the included studies.' },
+  { id: 'statement', label: 'Check a statement', icon: Quote, detail: 'Paste one sentence; each work found is checked for a passage that states it.' },
+  { id: 'ask', label: 'Ask my PDFs', icon: Paperclip, detail: 'An answer from your attached PDFs only; no search runs.' },
 ]
 
 // A statement is one sentence of at most this many characters (`statement_check.MAX_SENTENCE_CHARS`).
@@ -399,6 +399,9 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
     return excluded.length ? { all_eligible: true, excluded_source_version_ids: excluded } : { all_eligible: true }
   }
 
+  // A mode picked in the menu moves focus to the question once the menu has closed (the Select hands focus back to its
+  // trigger on close, after chooseChip ran).
+  const modePicked = useRef(false)
   function chooseChip(chip: ModeChip) {
     if (chip === 'ask') { setScope('attached'); setIntent('report') }
     else {
@@ -560,12 +563,23 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
     {noModel && connections && <SetupCard connections={connections} reasons={notReadyReasons(connections)} proxy={proxy} />}
     <form className="composer" onSubmit={e => { e.preventDefault(); void submit() }} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); void addFiles(e.dataTransfer.files) }}>
       <div className="composer-band">
-        <Select value={scope} onValueChange={value => { if (value) chooseScope(value as SourceScope) }}>
-          <SelectTrigger className="composer-scope" aria-label={t('Source scope')} title={t('Where DEIXIS looks for sources')}><SelectValue>{(value: string) => { const Icon = scopeOptions[value as SourceScope].icon; return <><Icon size={15} aria-hidden />{t(scopeLabels[value as SourceScope])}</> }}</SelectValue></SelectTrigger>
+        <Select value={scope} onValueChange={value => { if (typeof value === 'string' && value.startsWith('chip:')) { chooseChip(value.slice(5) as ModeChip); modePicked.current = true } else if (value) chooseScope(value as SourceScope) }}
+          onOpenChangeComplete={open => { if (!open && modePicked.current) { modePicked.current = false; questionInput.current?.focus() } }}>
+          <SelectTrigger className="composer-scope" aria-label={t('Source scope')} title={t('Where DEIXIS looks for sources')}><SelectValue>{(value: string) => { const Icon = scopeOptions[value as SourceScope].icon; return <><Icon size={15} aria-hidden />{t(scopeLabels[value as SourceScope])}{activeChip !== 'report' && activeChip !== 'ask' && <span className="composer-scope-mode">· {t(modeChips.find(c => c.id === activeChip)!.label)}</span>}</> }}</SelectValue></SelectTrigger>
           <SelectContent className="home-menu" align="start" sideOffset={6} alignItemWithTrigger={false} collisionPadding={8} collisionAvoidance={{ align: 'shift', fallbackAxisSide: 'none' }}>
             <div className="home-menu-heading" aria-hidden="true">{t('Workflows')}</div>
             {(Object.keys(scopeLabels) as SourceScope[]).map(s => <SelectItem key={s} value={s} className="home-menu-item"><MenuRow icon={scopeOptions[s].icon} title={t(scopeLabels[s])} detail={t(scopeOptions[s].detail)} /></SelectItem>)}
             <SelectItem value="__systematic_review" className="home-menu-item" disabled><MenuRow icon={Table2} title={t('Systematic review')} detail={t('Protocol, two reviewers, PRISMA flow')} later /></SelectItem>
+            {/* What the research produces (H13): picked here like a scope, but stored as the intent; the check marks the
+                current one because the Select's own value is the scope. */}
+            <div className="home-menu-heading home-menu-heading-gap" aria-hidden="true">{t('What the research produces')}</div>
+            {modeChips.map(({ id, label, icon, detail }) => {
+              const reason = chipDisabled(id)
+              return <SelectItem key={id} value={`chip:${id}`} className="home-menu-item" disabled={Boolean(reason)} data-mode={id} data-active={activeChip === id || undefined}>
+                <MenuRow icon={icon} title={t(label)} detail={reason ? <>{t(detail)}<span className="home-menu-warn">{reason}</span></> : t(detail)} />
+                {activeChip === id && <span className="home-menu-check" aria-hidden><Check size={16} /></span>}
+              </SelectItem>
+            })}
           </SelectContent>
         </Select>
       </div>
@@ -634,17 +648,6 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
     <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={e => { void addFiles(e.target.files); e.target.value = '' }} />
     {noModel && <p className="hint home-connect-hint">{t('Connect a model to start')}</p>}
     {error && <Notice tone="error">{error}</Notice>}
-    <div className="mode-chips" role="group" aria-label={t('What the research produces')}>
-      {modeChips.map(({ id, label, icon: Icon }) => {
-        const reason = chipDisabled(id)
-        return <button key={id} type="button" className={`chip ${activeChip === id ? 'on' : ''}`} aria-pressed={activeChip === id}
-          aria-disabled={reason ? true : undefined} aria-describedby={reason ? `chip-reason-${id}` : undefined} title={reason ?? undefined}
-          onClick={() => { if (!reason) chooseChip(id) }}>
-          <Icon aria-hidden />{t(label)}
-        </button>
-      })}
-      {modeChips.map(({ id }) => { const reason = chipDisabled(id); return reason && <span key={id} id={`chip-reason-${id}`} className="sr-only">{reason}</span> })}
-    </div>
     {(latest || suggestions.length > 0) && <div className="home-cards">
       {latest && <ResumeCard key={latest.id} research={latest} />}
       {suggestions.slice(0, 2).map(s => <button key={`${s.answer_id}:${s.text}`} type="button" className="card" onClick={() => { setQuestion(s.text); questionInput.current?.focus() }}>

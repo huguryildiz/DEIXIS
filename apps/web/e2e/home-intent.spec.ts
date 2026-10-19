@@ -48,7 +48,12 @@ class HomeServer {
 }
 
 const tinyPdf = (name: string) => ({ name, mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n%%EOF\n') })
-const chip = (page: Page, name: string) => page.locator('.mode-chips').getByRole('button', { name, exact: true })
+// The modes sit in the Workflows menu under "What the research produces"; an option's name starts with its title.
+// The menu is taller than the test window, so the mouse is moved off it: resting on a scroll arrow keeps it scrolling.
+const openMenu = async (page: Page) => { await page.getByLabel('Source scope').click(); await page.mouse.move(0, 0) }
+const mode = (page: Page, name: string) => page.locator('[role=option][data-mode]').filter({ hasText: new RegExp(`^${name}`) })
+const pickMode = async (page: Page, name: string) => { await openMenu(page); await mode(page, name).click() }
+const expectMode = async (page: Page, name: string) => { await openMenu(page); await expect(mode(page, name)).toHaveAttribute('data-active', 'true'); await page.keyboard.press('Escape') }
 const createBody = (request: Request) => request.postDataJSON() as { intent: string; source_scope: string }
 const isCreate = (request: Request) => request.method() === 'POST' && new URL(request.url()).pathname === '/api/researches'
 
@@ -61,15 +66,20 @@ test.describe.serial('S5b: Home intent chips, cards, setup card and guide rows',
     await page.goto(server.url())
     await expect(page.locator('.models-summary')).toContainText('fixture-model')
     const names = ['Draft report', 'Find papers', 'Evidence table', 'Compare methods', 'Check a statement', 'Ask my PDFs']
-    await expect(page.locator('.mode-chips .chip')).toHaveText(names)
-    await expect(chip(page, 'Draft report')).toHaveAttribute('aria-pressed', 'true')
-    // Ask my PDFs needs a PDF; the reason is the button's description.
-    await expect(chip(page, 'Ask my PDFs')).toHaveAttribute('aria-disabled', 'true')
-    await expect(chip(page, 'Ask my PDFs')).toHaveAccessibleDescription('Add a PDF first')
-    await chip(page, 'Evidence table').click()
-    await expect(chip(page, 'Evidence table')).toHaveAttribute('aria-pressed', 'true')
-    await expect(chip(page, 'Draft report')).toHaveAttribute('aria-pressed', 'false')
+    await openMenu(page)
+    for (const name of names) await expect(mode(page, name)).toHaveCount(1)
+    await expect(mode(page, 'Draft report')).toHaveAttribute('data-active', 'true')
+    // Ask my PDFs needs a PDF; the reason is shown under its description.
+    await expect(mode(page, 'Ask my PDFs')).toHaveAttribute('data-disabled', '')
+    await expect(mode(page, 'Ask my PDFs')).toContainText('Add a PDF first')
+    await mode(page, 'Evidence table').click()
+    // Picking a mode closes the menu and moves focus to the question.
     await expect(page.getByLabel('Research question')).toBeFocused()
+    await expectMode(page, 'Evidence table')
+    await openMenu(page)
+    await expect(mode(page, 'Draft report')).not.toHaveAttribute('data-active', 'true')
+    await page.keyboard.press('Escape')
+    await expect(page.getByLabel('Source scope')).toContainText('Evidence table')
     await page.getByLabel('Research question').fill('SYNTHETIC evidence table of release schedules')
     const created = page.waitForRequest(isCreate)
     await page.getByRole('button', { name: 'Start research' }).click()
@@ -81,21 +91,21 @@ test.describe.serial('S5b: Home intent chips, cards, setup card and guide rows',
     await page.goto(server.url())
     await expect(page.locator('.models-summary')).toContainText('fixture-model')
     await page.locator('input[type=file]').first().setInputFiles(tinyPdf('SYNTHETIC-ask.pdf'))
-    await chip(page, 'Find papers').click()
-    await chip(page, 'Ask my PDFs').click()
-    await expect(chip(page, 'Ask my PDFs')).toHaveAttribute('aria-pressed', 'true')
+    await pickMode(page, 'Find papers')
+    await pickMode(page, 'Ask my PDFs')
+    await expectMode(page, 'Ask my PDFs')
     await expect(page.getByLabel('Source scope')).toContainText('Attached files')
-    await expect(chip(page, 'Find papers')).toHaveAttribute('aria-disabled', 'true')
-    await expect(chip(page, 'Find papers')).toHaveAccessibleDescription('Needs academic search')
-    // Choosing a scope with a search in the menu leaves "Ask my PDFs": the chip goes back to Draft report.
-    await page.getByLabel('Source scope').click()
-    await page.getByRole('option', { name: 'Files + academic search' }).click()
-    await expect(chip(page, 'Draft report')).toHaveAttribute('aria-pressed', 'true')
+    await openMenu(page)
+    await expect(mode(page, 'Find papers')).toHaveAttribute('data-disabled', '')
+    await expect(mode(page, 'Find papers')).toContainText('Needs academic search')
+    // Choosing a scope with a search in the menu leaves "Ask my PDFs": the mode goes back to Draft report.
+    await page.getByRole('option', { name: /^Files \+ academic search/ }).click()
+    await expectMode(page, 'Draft report')
     // Choosing the attached scope while "Find papers" is on turns it into Ask my PDFs (finding papers needs a search).
-    await chip(page, 'Find papers').click()
-    await page.getByLabel('Source scope').click()
-    await page.getByRole('option', { name: 'Attached files' }).click()
-    await expect(chip(page, 'Ask my PDFs')).toHaveAttribute('aria-pressed', 'true')
+    await pickMode(page, 'Find papers')
+    await openMenu(page)
+    await page.getByRole('option', { name: /^Attached files/ }).click()
+    await expectMode(page, 'Ask my PDFs')
     await page.getByLabel('Research question').fill('SYNTHETIC question over my own PDF')
     const created = page.waitForRequest(isCreate)
     const run = page.waitForRequest(r => r.method() === 'POST' && /\/api\/researches\/[^/]+\/runs$/.test(new URL(r.url()).pathname)

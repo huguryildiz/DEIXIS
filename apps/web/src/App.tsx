@@ -114,6 +114,9 @@ function readCurrent(): string | null {
 // The DEIXIS mark in the ink of the brand text, so it follows the theme.
 const brandLogo = <svg className="brand-logo" viewBox="3 0 64 64" fill="none" aria-hidden="true"><path d="M17 52V12H29C42.255 12 53 20.954 53 32S42.255 52 32 52C28.5 52 27 50 27 46.5V42" stroke="currentColor" strokeWidth="6" /><circle cx="27" cy="34" r="5" fill="currentColor" /></svg>
 
+// The sidebar shows the name on two lines: given names, then the surname, so a long name is not cut off.
+const nameLines = (full: string) => { const name = full.trim(); const cut = name.lastIndexOf(' '); return cut > 0 ? [name.slice(0, cut), name.slice(cut + 1)] : [name] }
+
 export default function App() {
   const [route, setRoute] = useState<Route>(parseHash)
   const [researches, setResearches] = useState<ResearchSummary[]>([])
@@ -565,8 +568,9 @@ export default function App() {
         <button type="button" className="access-retry" onClick={retryAccess} style={accessFailed ? undefined : { display: 'none' }}>{t('Check again')}</button>
         <div className="user">
           <span className="avatar" aria-hidden="true" style={profile ? undefined : { visibility: 'hidden' }}>{profile?.initials ?? ''}</span>
-          <button type="button" className="user-name" onClick={() => go({ view: 'settings', tab: 'profile' })} aria-label={profile ? t('Profile · {name}', { name: profile.full_name }) : t('Profile')} title={t('Profile settings')}>{profile?.full_name ?? ''}</button>
+          <button type="button" className="user-name" onClick={() => go({ view: 'settings', tab: 'profile' })} aria-label={profile ? t('Profile · {name}', { name: profile.full_name }) : t('Profile')} title={t('Profile settings')}>{nameLines(profile?.full_name ?? '').map((line, i) => <span key={i}>{line}</span>)}</button>
           <button type="button" className="keys-toggle" onClick={() => openKeys()} aria-label={t('Shortcuts')} aria-keyshortcuts={singleKeys ? '?' : undefined} title={`${t('Shortcuts')} (?)`}><Keyboard size={16} aria-hidden="true" /></button>
+          <button type="button" className="lang-toggle" onClick={() => chooseLanguage(language === 'tr' ? 'en' : 'tr')} aria-label={t('Language')} title={language === 'tr' ? 'Switch to English' : 'Türkçe’ye geç'}>{language === 'tr' ? 'TR' : 'EN'}</button>
           <button type="button" className="theme-toggle" onClick={toggleTheme} aria-label={themeName} title={t(dark ? 'Light mode' : 'Dark mode')}>{dark ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}</button>
         </div>
       </div>

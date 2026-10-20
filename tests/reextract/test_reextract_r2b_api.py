@@ -4,7 +4,7 @@ import hashlib
 
 import pytest
 
-from deixis.documents import pdf, math_reader, ocr
+from deixis.documents import pdf, ocr
 from deixis.workflow import equations
 from tests.support.helpers import make_pdf
 from tests.reextract.reextract_r2a_helpers import api_library, body, url, head, sharing, child_lock
@@ -130,8 +130,7 @@ def test_file_only_restore_never_calls_parser_tools_models_or_http_new_contract(
         tear(lib)
         def forbidden(*args, **kwargs):
             raise AssertionError("File repair called an extraction, tool or model")
-        for module, name in ((pdf, "extract_pdf"), (ocr, "read_page"), (math_reader.MathReader, "read"),
-                             (equations.EquationService, "read_asset")):
+        for module, name in ((pdf, "extract_pdf"), (ocr, "read_page"), (equations.EquationService, "read_asset")):
             monkeypatch.setattr(module, name, forbidden)
         class Adapter:
             async def run_step(self, *args, **kwargs): forbidden()

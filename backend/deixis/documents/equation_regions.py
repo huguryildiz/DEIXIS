@@ -1,5 +1,5 @@
 """Numbered display equations on PDF pages with a text layer, the image sent for each, and the checks a reading of that
-image must pass before it replaces the page's lines (the Mathpix route, D40).
+image must pass before it replaces the page's lines (the Mathpix route, D40, and the answer model's, D113).
 
 Detector: a line ending in an equation number `(n)` at its column's right margin (`arxiv_source.number_line`, shared with
 the source route). Without a source the equation's lines are found by geometry only: lines that are not prose, in the
@@ -486,8 +486,9 @@ def latex_marks(latex: str) -> dict[str, Any]:
     return out
 
 
-def gate(candidate: dict[str, Any], response: dict[str, Any] | None) -> dict[str, Any]:
-    """{"latex", "reason", "checks"}: the LaTeX to place, or the first check it failed (`reason`)."""
+def gate(candidate: dict[str, Any], response: dict[str, Any] | None, require_confidence: bool = True) -> dict[str, Any]:
+    """{"latex", "reason", "checks"}: the LaTeX to place, or the first check it failed (`reason`). The answer model's
+    reading (D113) has no confidence, so its gate skips that one check (`require_confidence=False`)."""
     checks: dict[str, bool] = {}
     latex = (response or {}).get("latex_styled")
     if not isinstance(latex, str) or not latex.strip() or "$" in latex or re.search(r"\\(tag|label)\b", latex) \
@@ -495,7 +496,7 @@ def gate(candidate: dict[str, Any], response: dict[str, Any] | None) -> dict[str
         return {"latex": None, "reason": "not_single_equation", "checks": checks}
     latex = tidy(latex)
     confidence = (response or {}).get("confidence")
-    if not isinstance(confidence, (int, float)) or confidence < MIN_CONFIDENCE:
+    if require_confidence and (not isinstance(confidence, (int, float)) or confidence < MIN_CONFIDENCE):
         return {"latex": latex, "reason": "low_confidence", "checks": checks}
     checks["katex"] = not arxiv_source.katex_unknown(latex)
     if not checks["katex"]:

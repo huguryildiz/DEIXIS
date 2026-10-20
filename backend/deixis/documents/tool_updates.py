@@ -1,11 +1,11 @@
-"""Update checks for the PDF tools on Settings → On this computer: Tesseract, Marker and PyMuPDF.
+"""Update checks for the PDF tools on Settings → On this computer: Tesseract and PyMuPDF.
 
-A check runs when the tool's panel opens and sends one request: Homebrew's formula API for Tesseract, PyPI for the
-two Python packages. Tesseract is the user's own install in a run from the repository (D51): `TesseractInstaller`
+A check runs when the tool's panel opens and sends one request: Homebrew's formula API for Tesseract, PyPI for
+PyMuPDF. Tesseract is the user's own install in a run from the repository (D51): `TesseractInstaller`
 installs or updates it with the one fixed Homebrew command when the user presses Install or Update, and reports the step
 it is on. In the packaged app Tesseract comes inside it (B1): nothing is asked of Homebrew and its version moves with the
-app. Marker and PyMuPDF are
-pinned by DEIXIS: their reading errors were measured on the pinned version and the extraction version names it, so a
+app. PyMuPDF is
+pinned by DEIXIS: its reading errors were measured on the pinned version and the extraction version names it, so a
 newer release reaches the user with a DEIXIS update, not in place.
 """
 
@@ -21,13 +21,12 @@ from importlib.metadata import version as package_version
 import httpx
 
 from deixis.tools.child_env import UV_TLS, child_env
-from deixis.documents import math_reader, ocr
+from deixis.documents import ocr
 from deixis.tools.job_failure import failure_line
 from deixis.storage.db import now
 from deixis.tools.tool_paths import find_tool
-from deixis.tools.tool_probe import probe_blocking
 
-TOOLS = ("tesseract", "marker", "pymupdf")
+TOOLS = ("tesseract", "pymupdf")
 TESSERACT_URL = "https://formulae.brew.sh/api/formula/tesseract.json"
 PYPI_URL = "https://pypi.org/pypi/{name}/json"
 TIMEOUT_SECONDS = 10
@@ -60,36 +59,23 @@ def pymupdf_status() -> dict:
     return {"available": True, "version": package_version("pymupdf"), "mupdf_version": pymupdf.mupdf_version}
 
 
-def marker_installed_version(paths: math_reader.RuntimePaths) -> str | None:
-    """The marker-pdf version in DEIXIS's Marker environment, or None when it is not installed or cannot be asked."""
-    if not paths.installed():
-        return None
-    done = probe_blocking([str(paths.python), "-c", "from importlib.metadata import version; print(version('marker-pdf'))"],
-                          env=child_env())
-    return done.stdout.strip() or None if done.ok else None
-
-
 async def _latest(http: httpx.AsyncClient, tool: str) -> str:
     if tool == "tesseract":
         response = await http.get(TESSERACT_URL, timeout=TIMEOUT_SECONDS)
         response.raise_for_status()
         return response.json()["versions"]["stable"]
-    name = "marker-pdf" if tool == "marker" else "pymupdf"
-    response = await http.get(PYPI_URL.format(name=name), timeout=TIMEOUT_SECONDS)
+    response = await http.get(PYPI_URL.format(name="pymupdf"), timeout=TIMEOUT_SECONDS)
     response.raise_for_status()
     return response.json()["info"]["version"]
 
 
-async def check(tool: str, http: httpx.AsyncClient, marker_paths: math_reader.RuntimePaths) -> dict:
+async def check(tool: str, http: httpx.AsyncClient) -> dict:
     """The installed and the latest released version of `tool`, whether an update exists and how it is installed."""
     if tool == "tesseract":
         status = await asyncio.to_thread(ocr.tesseract_status)
         installed, tested = status["version"], None
         if status.get("bundled"):  # it comes with this DEIXIS and moves with it: no request to Homebrew
             return {"tool": tool, "installed": installed, "tested": tested, "latest": None, "update_available": None, "error": None}
-    elif tool == "marker":
-        installed = await asyncio.to_thread(marker_installed_version, marker_paths)
-        tested = math_reader.MARKER_PACKAGE.split("==")[1]
     else:
         installed = tested = package_version("pymupdf")
     try:

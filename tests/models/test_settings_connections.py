@@ -894,11 +894,7 @@ def test_a_missing_installer_is_a_reason_code_not_a_sentence(client, paths, monk
     refused = client.post("/api/local-tools/kimi_cli/install")
     assert refused.status_code == 422 and refused.json()["code"] == "uv_missing" and "PATH" not in refused.text
     assert client.post("/api/local-tools/cline/install").json()["code"] == "manager_missing"
-    monkeypatch.setattr("deixis.workflow.equations.find_tool", lambda name: None)
-    reader = client.get("/api/equation-reader").json()
-    assert reader["install"]["available"] is False and reader["install"]["unavailable_reason"] == "uv_missing"
-    for body in (tools, reader):
-        assert "was not found" not in str(body)
+    assert "was not found" not in str(tools)
 
 
 def test_a_failed_install_job_carries_a_marker_not_the_exception_or_a_path(client, paths, monkeypatch, caplog):

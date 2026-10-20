@@ -32,14 +32,12 @@ def register_preference_routes(app) -> None:
         state = request.app.state
         settings, store = state.settings, state.store
         effort = store.setting(DEFAULT_EFFORT_SETTING)
-        equations = getattr(state, "equations", None)
         return {
             "default_effort": effort if effort in EFFORTS else "standard",
             "fulltext_fetch": settings.effective_fulltext_fetch(),
             "arxiv_source": settings.effective_arxiv_source(),
-            # The arXiv route runs only on POSIX and only while Marker (the equation reader) is not installed.
+            # The arXiv route runs only on POSIX.
             "arxiv_route_possible": arxiv_source.posix_available(),
-            "marker_present": bool(equations and equations.marker_present()),
             "model_concurrency": settings.effective_model_concurrency(),
             "model_concurrency_max": MODEL_CONCURRENCY_MAX,
         }

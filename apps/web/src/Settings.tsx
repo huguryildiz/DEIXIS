@@ -601,8 +601,7 @@ function ResearchPreferences() {
     preferencesApi.set(next).then(setPrefs).catch((e: Error) => setError(t('Not saved: {message}', { message: e.message }))).finally(() => setBusy(false))
   }
   const onOff: { id: 'auto' | 'off'; label: string }[] = [{ id: 'auto', label: t('On') }, { id: 'off', label: t('Off') }]
-  const arxivNote = !prefs ? '' : !prefs.arxiv_route_possible ? t('Not available on this system.')
-    : prefs.marker_present ? t('Not used now: the equation reader (Marker) is installed and reads equations itself.') : ''
+  const arxivNote = !prefs ? '' : !prefs.arxiv_route_possible ? t('Not available on this system.') : ''
   const off = !prefs || busy
   // What each depth is for, with the numbers the run is given (`fast_path.MODES`, the same text as Home's depth menu).
   const depths: { id: Effort; label: string; use: string }[] = [

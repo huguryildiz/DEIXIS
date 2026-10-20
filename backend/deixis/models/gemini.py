@@ -7,6 +7,8 @@ instruction files and no CLI agent prompt. The Gemini CLI with a Google account 
 
 from __future__ import annotations
 
+import base64
+
 import asyncio
 import os
 import time
@@ -57,6 +59,8 @@ class GeminiAdapter:
     connection = "gemini"
     enforces_schema = True
     sends_reasoning_effort = True  # generationConfig.thinkingConfig.thinkingLevel
+    accepts_images = True  # run_step(image_png=...) sends one PNG with the message (D113)
+    key_env = KEY_ENV
 
     def __init__(self, client: httpx.AsyncClient | None = None, turn_timeout: float = 300.0):
         self._client = client
@@ -134,7 +138,8 @@ class GeminiAdapter:
         return status
 
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],
-                       requested_model: str | None, reasoning_effort: str | None = None) -> ModelStepResult:
+                       requested_model: str | None, reasoning_effort: str | None = None,
+                       image_png: bytes | None = None) -> ModelStepResult:
         key = api_key()
         if not key or not requested_model:
             return ModelStepResult("unavailable", error=f"{KEY_ENV} is not set" if not key else "no model requested",
@@ -145,7 +150,9 @@ class GeminiAdapter:
         if reasoning_effort:
             config["thinkingConfig"] = {"thinkingLevel": reasoning_effort}
         body = {"systemInstruction": {"parts": [{"text": f"{base}\n\n{developer}"}]},
-                "contents": [{"role": "user", "parts": [{"text": message}]}], "generationConfig": config}
+                "contents": [{"role": "user", "parts": ([] if image_png is None else [
+                    {"inlineData": {"mimeType": "image/png", "data": base64.standard_b64encode(image_png).decode()}}])
+                    + [{"text": message}]}], "generationConfig": config}
         try:
             response = await self._http().post(f"{API_URL}/models/{requested_model}:generateContent", json=body,
                                                headers={"x-goog-api-key": key}, timeout=self.turn_timeout)

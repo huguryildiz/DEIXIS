@@ -15,7 +15,6 @@ from deixis.workflow.store import Store
 from tests.reextract.test_reextract_r1_store import lib, setup, extraction, chunk, head, complete, reserve, observe, cited_answer
 from tests.documents.test_ocr_run import fake_reader, upload, ocr_url, SCAN, READY
 from tests.app.test_api_flow import app_for, create, session, wait_run
-from tests.documents.test_equations import FakeReader, stored_pdf
 from tests.documents.test_arxiv_source_route import library, service, read, FakeFetch
 
 
@@ -137,29 +136,6 @@ def test_ocr_run_preserves_or_rejects_shifted_coverage(tmp_path, monkeypatch, lo
 
 
 @pytest.mark.parametrize("lost", [False, True])
-def test_marker_execution_preserves_or_rejects_shifted_coverage(tmp_path, monkeypatch, lost):
-    store, svid, aid, papers = stored_pdf(tmp_path, ["SYNTHETIC first.", "SYNTHETIC second.", ""])
-    old = dict(store.conn.execute("SELECT * FROM asset_extractions WHERE asset_id = ? AND outcome = 'current'", (aid,)).fetchone())
-    real = pdf.extract_pdf
-    def reparse(path, **kw):
-        parsed = real(path, **kw)
-        if lost: parsed.pages = [p for p in parsed.pages if p.physical_page != 1]
-        return parsed
-    monkeypatch.setattr(pdf, "extract_pdf", reparse)
-    monkeypatch.setattr(math_reader, "math_pages", lambda path: [2] if lost else [1])
-    monkeypatch.setattr(math_reader, "table_pages", lambda path: [])
-    svc = equations.EquationService(store, FakeReader(), papers)
-    asyncio.run(svc.read_asset(aid))
-    row = store.conn.execute("SELECT * FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?",
-                             (aid, equations.target_version())).fetchone()
-    assert row["decision_code"] == ("text_page_lost" if lost else "upgraded")
-    assert row["outcome"] == ("rejected" if lost else "current")
-    assert row["baseline_extraction_id"] == old["id"]
-    if lost: assert store.asset(aid)["extraction_version"] == old["extraction_version"]
-    store.conn.close()
-
-
-@pytest.mark.parametrize("lost", [False, True])
 def test_source_execution_preserves_or_rejects_shifted_coverage(tmp_path, monkeypatch, lost):
     store, svid, aid, papers = library(tmp_path)
     baseline = pdf.extract_pdf(papers / "paper.pdf")
@@ -183,16 +159,15 @@ def test_source_execution_preserves_or_rejects_shifted_coverage(tmp_path, monkey
     store.conn.close()
 
 
-def test_next_asset_selects_recovered_head_despite_old_marker_and_does_not_repeat(lib, tmp_path):
-    svc = equations.EquationService(lib.store, FakeReader(), tmp_path)
-    old_target = equations.target_version()
-    svc._record_without_passages(lib.store.asset(lib.aid), old_target, equations.NO_MATH, 1)
-    assert svc.next_asset() is None
+def test_next_asset_selects_recovered_head_and_never_an_earlier_marker_reading(lib, tmp_path, monkeypatch):
+    svc = equations.EquationService(lib.store, tmp_path)
+    monkeypatch.setattr(svc, "model_ready", lambda: (True, None))  # a crop route that can read (D113)
+    monkeypatch.setattr(svc, "model_revision", lambda: "SYNTHETIC")
     result = complete(lib)
     version = head(lib)["extraction_version"]
     assert svc.next_asset() == lib.aid
     marker = extraction(pages=(1, 2, 3)); marker.math = {}
-    target = equations.target_version(version)
+    target = equations.target_version(version)  # an earlier Marker reading of the recovered head is kept, never read again
     lib.store.reextract_asset(lib.aid, marker, target, chunk)
     assert svc.next_asset() is None
     assert head(lib)["baseline_extraction_id"] == result["extraction_id"]
@@ -210,17 +185,17 @@ def test_ocr_repeat_after_marker_in_same_recovery_lineage_keeps_existing_policy(
 
 def test_forget_failure_never_deletes_recovery_occurrence(lib, tmp_path):
     rejected = complete(lib, extraction("failed", 0, (), "failure"))
-    svc = equations.EquationService(lib.store, FakeReader(), tmp_path)
+    svc = equations.EquationService(lib.store, tmp_path)
     svc._forget_failure(lib.aid, lib.conn.execute("SELECT extraction_version FROM asset_extractions WHERE id = ?", (rejected["extraction_id"],)).fetchone()[0])
     assert lib.conn.execute("SELECT 1 FROM asset_extractions WHERE id = ?", (rejected["extraction_id"],)).fetchone()
 
 
-@pytest.mark.parametrize("route", ["marker", "source"])
+@pytest.mark.parametrize("route", ["model", "source"])
 def test_equation_passageless_insert_duplicate_remains_no_op(lib, tmp_path, route):
-    svc = equations.EquationService(lib.store, FakeReader(), tmp_path)
-    target = equations.target_version() if route == "marker" else equations.source_target_version(None)
+    svc = equations.EquationService(lib.store, tmp_path)
+    target = equations.model_target_version(None) if route == "model" else equations.source_target_version(None)
     def record():
-        if route == "marker": svc._record_without_passages(lib.store.asset(lib.aid), target, equations.NO_MATH, 1)
+        if route == "model": svc._record_crop("model", lib.store.asset(lib.aid), target, equations.NO_CANDIDATES, {})
         else: svc._record_source_rejection(lib.store.asset(lib.aid), target, equations.NOTHING_PLACED, None)
     record()
     before = [tuple(r) for r in lib.conn.execute("SELECT * FROM asset_extractions")]

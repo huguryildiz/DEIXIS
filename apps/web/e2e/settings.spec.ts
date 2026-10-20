@@ -132,7 +132,7 @@ test.describe.serial('S24: the Settings page', () => {
     await page.locator('.co-fold').click()
     await expect(page.locator('.co-grid[data-group="others"] .co-name b')).toHaveText(['OpenRouter', 'Muse', 'MiMo', 'Qwen', 'GLM', 'DeepSeek'])
     await expect(page.locator('.co-grid[data-group="local"] .co-name b')).toHaveText(['Ollama', 'LM Studio', 'Another local server'])
-    await expect(page.locator('.doc-list b')).toHaveText(['PDF reader', 'Scanned PDF reader (OCR)', 'Equation reader'])
+    await expect(page.locator('.doc-list b')).toHaveText(['PDF reader', 'Scanned PDF reader (OCR)', 'Equations'])
     await page.getByRole('tab', { name: 'Sources' }).click()
     await expect(page).toHaveURL(/#\/settings\/sources$/)
     await expect(shown).toHaveText(['Institutional access', 'Scholarly sources', 'Reference managers'])
@@ -560,42 +560,44 @@ test.describe.serial('S24: the Settings page', () => {
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
 
-  test('the Marker install confirmation names the version-bound license (F2)', async () => {
-    const reader = { installed: false, package: 'marker-pdf==1.10.2', path: '/SYNTHETIC/tools/marker', size_bytes: 0, models_downloaded: false, disk_free_gb: 120,
-      install: { available: true, unavailable_reason: null, url: 'https://example.invalid/install' }, job: null, reading: null, pdfs: {} }
-    await page.route(url => url.pathname === '/api/equation-reader', route => route.fulfill({ json: reader }))
+  // The answer model reads equations (D113): its tile names the model, or says in plain words why it is off.
+  const equationModel = (change: object) => ({ switch: 'on', ready: true, reason: null, model: { connection: 'openai', model: 'syn-model-a', reasoning_effort: null },
+    model_refused: false, mathpix_first: false, monthly_budget: 500, month_requests: 12, per_pdf_limit: 60, month_cost: { usd: 0.0421, calls_without_cost: 0 }, pdfs: { read: 3, pending: 2 }, reading: null, ...change })
+
+  test('the Equations tile names the model that reads equations, its use this month and the PDFs by state', async () => {
+    await page.route(url => url.pathname === '/api/equation-model', route => route.fulfill({ json: equationModel({ month_cost: { usd: 0.0421, calls_without_cost: 4 } }) }))
     await page.goto(server.url('#/settings/documents'))
     await page.reload()
-    await page.getByRole('button', { name: /^Equation reader/ }).click()
-    await page.getByRole('dialog', { name: 'Equation reader (Marker)' }).getByRole('button', { name: 'Install', exact: true }).click()
-    const confirm = page.getByRole('dialog', { name: 'Install the equation reader?' })
-    await expect(confirm).toContainText('License of marker-pdf 1.10.2: the code is GPL-3.0-or-later. The model weights come with their own license, which limits commercial use.')
-    await expect(confirm.getByRole('link', { name: 'Marker’s license terms on GitHub' })).toHaveAttribute('href', 'https://github.com/datalab-to/marker')
-    await confirm.getByRole('button', { name: 'Cancel' }).click()
+    await page.getByRole('button', { name: /^Equations/ }).click()
+    const sheet = page.getByRole('dialog', { name: 'Equations read by the answer model' })
+    await expect(sheet.locator('.model-name')).toBeVisible()
+    await expect(sheet).toContainText('12 of 500 requests · at most 60 per PDF')
+    await expect(sheet).toContainText('may have been billed: 4 calls with unknown cost')
+    await expect(sheet).toContainText('3 read · 2 waiting')
+    await expect(sheet).not.toContainText('Marker')
+    await sheet.getByRole('button', { name: 'Close' }).click()
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
 
-  test('a failed check says it could not check and adds no new time (Sol r1)', async () => {
-    let fail = false
-    await page.route(url => url.pathname === '/api/equation-reader', route => fail ? route.fulfill({ status: 500, json: { detail: 'SYNTHETIC reader check failure' } }) : route.fallback())
+  test('the Equations tile says why equations keep the PDF’s text, and that Mathpix comes first', async () => {
+    let state = equationModel({ ready: false, reason: 'model_no_images' })
+    await page.route(url => url.pathname === '/api/equation-model', route => route.fulfill({ json: state }))
     await page.goto(server.url('#/settings/documents'))
     await page.reload()
-    await page.getByRole('button', { name: /^Equation reader/ }).click()
-    const sheet = page.getByRole('dialog', { name: 'Equation reader (Marker)' })
-    const find = sheet.getByRole('button', { name: 'Find it on this computer' })
-    await find.click()
-    await expect(sheet.locator('.dmeta')).toContainText(/checked \d/)
-    const pill = await sheet.locator('.dmeta > span').first().innerText()
-    fail = true
-    await find.click()
-    await expect(sheet.locator('.check-failed')).toHaveText(/^Could not check: .*SYNTHETIC reader check failure/)
-    await expect(sheet.locator('.dmeta')).not.toContainText(/checked \d/)
-    // The state shown is still the last one read; nothing new is claimed.
-    await expect(sheet.locator('.dmeta > span').first()).toHaveText(pill)
-    fail = false
-    await find.click()
-    await expect(sheet.locator('.dmeta')).toContainText(/checked \d/)
-    await expect(sheet.locator('.check-failed')).toHaveCount(0)
+    await page.getByRole('button', { name: /^Equations/ }).click()
+    const sheet = page.getByRole('dialog', { name: 'Equations read by the answer model' })
+    await expect(sheet).toContainText('cannot read images; equations keep the PDF’s text.')
+    await sheet.getByRole('button', { name: 'Close' }).click()
+    state = equationModel({ ready: false, reason: 'no_answer_model', model: null })
+    await page.reload()
+    await page.getByRole('button', { name: /^Equations/ }).click()
+    await expect(sheet).toContainText('No default answer model is set')
+    await expect(sheet.getByRole('link', { name: 'Set it in Default models' })).toBeVisible()
+    await sheet.getByRole('button', { name: 'Close' }).click()
+    state = equationModel({ mathpix_first: true })
+    await page.reload()
+    await page.getByRole('button', { name: /^Equations/ }).click()
+    await expect(sheet).toContainText('Mathpix reads equations while its switch is on')
     await sheet.getByRole('button', { name: 'Close' }).click()
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })

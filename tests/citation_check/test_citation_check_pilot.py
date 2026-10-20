@@ -544,25 +544,13 @@ def test_a_changed_given_passage_a_changed_count_or_a_new_extraction_makes_the_p
 
 
 class WaitingReader:
-    """An equation service whose reader is installed: every PDF not read yet by it is pending (`_marker_state`)."""
+    """An equation service whose answer-model route can read (D113): every PDF it has not read yet is pending."""
     reading = None
 
     def __init__(self, on=True):
         self.on = on
 
-    def available(self):
-        return self.on
-
-    def installing(self):
-        return False
-
-    def marker_present(self):
-        return self.on
-
     def route_active(self):
-        return False
-
-    def mathpix_active(self):
         return False
 
     def route_flag(self):
@@ -570,6 +558,15 @@ class WaitingReader:
 
     def mathpix_ready(self):
         return False
+
+    def model_ready(self):
+        return (True, None) if self.on else (False, "no_answer_model")
+
+    def crop_active(self):
+        return self.on
+
+    def model_revision(self):
+        return "fake/fake-model//nokey"
 
 
 def test_the_freeze_waits_for_a_re_extraction_of_a_cited_works_pdf(make):
@@ -605,7 +602,7 @@ def test_a_failed_read_with_attempts_left_waits_and_a_spent_one_does_not(make):
         try:
             store.equation_route = WaitingReader()
             asset = next(iter(store.conn.execute("SELECT * FROM source_assets WHERE removed_at IS NULL").fetchall()))
-            version = equations.target_version(asset["extraction_version"])
+            version = equations.model_target_version(asset["extraction_version"])
             with store.conn:
                 store.conn.execute(
                     "INSERT INTO asset_extractions (id, asset_id, extraction_version, extractor_profile, status, text_pages,"

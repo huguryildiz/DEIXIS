@@ -1,6 +1,6 @@
 """The arXiv source route in the equation service, the answer run and the views (slice 22, D104, decisions 1, 6–8).
 
-A fake fetch serves SYNTHETIC source archives; Marker is a fake reader that can be switched on; the clock is fake. The
+A fake fetch serves SYNTHETIC source archives; the clock is fake. The
 PDFs and records are SYNTHETIC. Passing shows the route's states, guards and wiring, not matching quality.
 """
 
@@ -22,7 +22,7 @@ from arxiv_helpers import make_arxiv_pdf, no_network, page_with_equations, sourc
 from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.documents import arxiv_source as src
-from deixis.documents import fetch, math_reader, pdf
+from deixis.documents import fetch, pdf
 from deixis.storage import db
 from deixis.workflow import equations
 from deixis.workflow.store import RunInProgress, Store
@@ -41,24 +41,6 @@ def arxiv_pdf(pages: int = 2) -> bytes:
         page = doc.new_page(width=612, height=792)
         page.insert_text((72, 90), "SYNTHETIC. A page of prose with no equation at all, only words about the model.", fontsize=10)
     return doc.tobytes()
-
-
-class NoMarker:
-    """Marker not installed; `installed` switches it on during a test (a later install, or a race)."""
-
-    def __init__(self):
-        self.installed, self.calls, self.lock = False, [], asyncio.Lock()
-
-    def available(self):
-        return self.installed
-
-    async def read(self, path, pages):
-        self.calls.append(pages)
-        return math_reader.Reading({p: f"SYNTHETIC Marker page {p + 1}\n\n$$m_{{k}} \\tag{{{p + 1}}}$$" for p in pages},
-                                   {p: [] for p in pages})
-
-    async def close(self):
-        pass
 
 
 class FakeFetch:
@@ -110,8 +92,8 @@ def library(tmp_path, label="arXiv v2", doi="10.48550/arXiv.2101.00001", landing
     return store, svid, aid, papers
 
 
-def service(store, papers, tmp_path, reader=None, fetcher=None, mode="auto"):
-    svc = equations.EquationService(store, reader or NoMarker(), papers)
+def service(store, papers, tmp_path, fetcher=None, mode="auto"):
+    svc = equations.EquationService(store, papers)
     svc.configure_arxiv_source(mode, tmp_path / "data", fetch_file=fetcher or FakeFetch())
     return svc
 
@@ -121,7 +103,7 @@ def read(svc, aid, **kw):
 
 
 # ---- the route writes a new extraction ----------------------------------------------------------------------------------
-def test_without_marker_an_eligible_pdf_gets_its_numbered_equations_from_the_source(tmp_path):
+def test_an_eligible_pdf_gets_its_numbered_equations_from_the_source(tmp_path):
     store, svid, aid, papers = library(tmp_path)
     fetcher = FakeFetch()
     svc = service(store, papers, tmp_path, fetcher=fetcher)
@@ -156,31 +138,24 @@ def test_a_submitted_version_record_keeps_its_label_beside_the_source_version(tm
 
 
 # ---- the four precedence rules and rule 3's table ------------------------------------------------------------------------
-def test_marker_installed_or_installing_keeps_todays_code_and_asks_for_nothing(tmp_path, monkeypatch):
-    monkeypatch.setattr(math_reader, "math_pages", lambda path: [0])
+def test_an_earlier_marker_reading_is_kept_and_the_route_never_reads_it(tmp_path):
     store, svid, aid, papers = library(tmp_path)
-    reader, fetcher = NoMarker(), FakeFetch()
-    reader.installed = True
-    svc = service(store, papers, tmp_path, reader=reader, fetcher=fetcher)
-    assert equations.equation_state(store, aid) == {"state": "pending"}  # rule 1: no route key
-    reader.installed = False
-    svc.job = {"status": "running"}
-    assert svc.installing() and equations.equation_state(store, aid) == {"state": "pending"}
-    assert not svc.route_active() and svc.next_asset() == aid  # today's code: pending
-    svc.job = None
-    reader.installed = True
-    read(svc, aid)
-    assert fetcher.calls == [] and store.asset(aid)["extraction_version"].endswith("+marker-1.10.2-math-v2")
+    fetcher = FakeFetch()
+    svc = service(store, papers, tmp_path, fetcher=fetcher)
+    store.conn.execute("UPDATE source_assets SET extraction_version = ? WHERE id = ?", (equations.target_version(), aid))
+    assert store.asset(aid)["extraction_version"].endswith("+marker-1.10.2-math-v2")
+    assert equations.equation_state(store, aid) == {"state": "read", "route": "marker", "to_check": [], "equations_to_check": 0}
+    assert read(svc, aid)["route"] == "marker" and not svc.route_target(aid) and svc.next_asset() is None
+    assert fetcher.calls == []
 
 
-def test_flag_off_is_todays_pending_and_a_stored_source_reading_stays_read_whatever_the_flag(tmp_path):
+def test_flag_off_reads_nothing_and_a_stored_source_reading_stays_read_whatever_the_flag(tmp_path):
     store, svid, aid, papers = library(tmp_path)
     fetcher = FakeFetch()
     svc = service(store, papers, tmp_path, fetcher=fetcher, mode="off")
-    assert equations.equation_state(store, aid) == {"state": "pending"} and not svc.route_active()
-    with pytest.raises(math_reader.MathReaderUnavailable):  # today's code without Marker
-        read(svc, aid)
-    assert fetcher.calls == []
+    off = {"state": "off", "reason": "no_answer_model", "route": "model"}
+    assert equations.equation_state(store, aid) == off and not svc.route_active()
+    assert read(svc, aid) == off and fetcher.calls == []
     svc.arxiv_mode = "auto"  # off -> on: the remaining PDF is read
     assert read(svc, aid)["state"] == "read" and len(fetcher.calls) == 1
     svc.arxiv_mode = "off"  # on -> off: no new request, the stored reading stays read (rule 2)
@@ -205,7 +180,7 @@ def test_an_eligibility_refusal_is_no_source_and_nothing_looks_at_it_again(tmp_p
     assert fetcher.calls == [] and svc.next_asset() is None
     assert equations.equation_state(store, aid)["state"] == "no_source"
     svc.arxiv_mode = "off"
-    assert equations.equation_state(store, aid) == {"state": "pending"}
+    assert equations.equation_state(store, aid) == {"state": "off", "reason": "no_answer_model", "route": "model"}
 
 
 def test_rule_three_states_from_stored_rows(tmp_path, clock):
@@ -321,7 +296,7 @@ def test_nothing_placed_is_a_passage_less_rejection_and_no_source(tmp_path):
 
 
 @pytest.mark.parametrize("error", ["extraction timed out", "extraction exceeded the memory limit"])
-def test_a_failed_re_extraction_is_its_own_reason_and_is_tried_again_like_a_failed_marker_read(tmp_path, monkeypatch, error):
+def test_a_failed_re_extraction_is_its_own_reason_and_is_tried_again_like_a_failed_read(tmp_path, monkeypatch, error):
     # Sol r1 finding 3: pdf.extract_pdf's time or memory limit used to be stored as nothing_placed (no_source, never retried).
     store, svid, aid, papers = library(tmp_path)
     fetcher = FakeFetch()
@@ -422,44 +397,15 @@ def test_a_task_cancelled_during_its_fetch_counts_the_attempt_and_leaves_no_down
     assert tuple(row) == ("not_settled", 1)
 
 
-def test_without_file_locks_the_route_is_off_and_says_so(tmp_path, monkeypatch):
+def test_without_file_locks_the_route_is_off(tmp_path, monkeypatch):
     store, svid, aid, papers = library(tmp_path)
     fetcher = FakeFetch()
     svc = service(store, papers, tmp_path, fetcher=fetcher)
     monkeypatch.setattr(src, "posix_available", lambda: False)
-    assert equations.equation_state(store, aid) == {"state": "no_source", "reason": "not_available_on_this_system", "route": "arxiv_source"}
-    assert read(svc, aid)["state"] == "no_source" and fetcher.calls == [] and not svc.route_active()
+    off = {"state": "no_source", "reason": "not_available_on_this_system", "route": "arxiv_source"}
+    assert equations.equation_state(store, aid) == off
+    assert read(svc, aid) == off and fetcher.calls == [] and not svc.route_active()
     assert store.conn.execute("SELECT COUNT(*) FROM asset_arxiv_versions").fetchone()[0] == 0
-
-
-# ---- Marker races, C1, later install ------------------------------------------------------------------------------------
-def test_marker_becoming_available_during_the_fetch_stops_the_write_and_marker_reads_it(tmp_path, monkeypatch):
-    monkeypatch.setattr(math_reader, "math_pages", lambda path: [0])
-    store, svid, aid, papers = library(tmp_path)
-    reader = NoMarker()
-    svc = service(store, papers, tmp_path, reader=reader, fetcher=FakeFetch(before=lambda: setattr(reader, "installed", True)))
-    state = read(svc, aid)
-    assert state == {"state": "pending", "outcome": "superseded_by_marker"}
-    assert store.asset(aid)["extraction_version"] == pdf.EXTRACTION_VERSION
-    assert read(svc, aid)["state"] == "read" and store.asset(aid)["extraction_version"] == equations.target_version()
-
-
-def test_marker_becoming_available_right_after_the_write_makes_the_reading_pending_and_marker_reads_it(tmp_path, monkeypatch):
-    monkeypatch.setattr(math_reader, "math_pages", lambda path: [0])
-    store, svid, aid, papers = library(tmp_path)
-    reader = NoMarker()
-    svc = service(store, papers, tmp_path, reader=reader)
-    assert read(svc, aid)["state"] == "read"
-    reader.installed = True  # Marker installed later
-    assert equations.equation_state(store, aid) == {"state": "pending"} and svc.next_asset() == aid
-    assert read(svc, aid)["state"] == "read" and store.asset(aid)["extraction_version"] == equations.target_version()
-    assert reader.calls == [[0]]
-    reader.installed = False  # removed again: C1, a Marker reading is never read by the route
-    fetcher = FakeFetch()
-    svc.configure_arxiv_source("auto", tmp_path / "data", fetch_file=fetcher)
-    assert equations.equation_state(store, aid) == {"state": "read", "to_check": [], "equations_to_check": 0}  # today's code
-    read(svc, aid)
-    assert fetcher.calls == [] and svc.next_asset() is None and not svc.route_target(aid)
 
 
 # ---- the last-write guard inside the write's transaction ----------------------------------------------------------------
@@ -824,7 +770,7 @@ def test_the_answer_reads_a_persons_published_pdf_and_not_the_preprints_source_p
         assert {p["source_id"] for p in payload["passages"] if p["locator"]["kind"] == "pdf_page"} == {pub}
 
 
-def test_the_background_reader_serves_the_route_while_marker_is_absent(tmp_path, monkeypatch):
+def test_the_background_reader_serves_the_route(tmp_path, monkeypatch):
     monkeypatch.setattr(equations, "RETRY_SECONDS", 0.01)
     store, svid, aid, papers = library(tmp_path)
     fetcher = FakeFetch()

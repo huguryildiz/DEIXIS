@@ -510,7 +510,7 @@
 .connection-sheet .ollama-pull-row input{flex:1;min-width:0}
 @keyframes install-sweep{from{transform:translateX(-100%)}to{transform:translateX(250%)}}
 @media(prefers-reduced-motion:reduce){.install-progress-bar span{animation:none;width:100%;opacity:.5}}
-/* PDF tool sheets (PyMuPDF, Tesseract, Marker): status with its check, lead, traits, install card, accuracy, facts. */
+/* PDF tool sheets (PyMuPDF, Tesseract): status with its check, lead, traits, install card, accuracy, facts. */
 .connection-sheet .tool-status{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
 .connection-sheet .tool-status>.notice{flex-basis:100%}
 .connection-sheet .tool-panel{gap:14px}

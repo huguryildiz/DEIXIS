@@ -9,6 +9,7 @@ import { ConnectionIcon } from '../connectionIcons'
 import { ocrOffer } from '../ocr'
 import { OcrButton, OcrNote } from '../OcrNote'
 import { t, uiLocale } from '../i18n'
+import { useModelText } from '../modelText'
 import { SourceKey } from '../SourceKey'
 import type { OcrContext } from './shared'
 import { proposalOf } from './sourceProposal'
@@ -40,6 +41,7 @@ export type RowActions = { onRemoveFromResearch: () => void; onSelect: (state: S
 // model's proposal and the person's decision. Another version of a work follows its record's line and has no proposal or
 // decision of its own. `citedClaims`: how many claims of the shown answer (V`answerVersion`) cite this version.
 export function SourceRow({ source, busy, picked, onPick, readsVersion, citedClaims, answerVersion, finding, ocr, asking, ...a }: { source: Source; busy: boolean; picked: boolean; onPick: (on: boolean) => void; readsVersion?: Source; citedClaims: number; answerVersion: number | null; finding: boolean; ocr: OcrContext; asking: boolean } & RowActions) {
+  const modelText = useModelText()
   const s = source.selection
   const other = source.version_role === 'other_version'
   const citationDetails = [source.volume && t('vol. {value}', { value: source.volume }), source.issue && t('no. {value}', { value: source.issue }), source.pages && t('pp. {value}', { value: source.pages })].filter(Boolean).join(', ')
@@ -75,7 +77,7 @@ export function SourceRow({ source, busy, picked, onPick, readsVersion, citedCla
         {retraction && <Tooltip content={retraction}><span className="pill source-fact is-retracted" tabIndex={0}>{t('Retracted')}</span></Tooltip>}
         {source.doi && <span className="pill source-fact is-plain"><Link2 size={12} aria-hidden />DOI</span>}
         {source.version_label && <span className={`pill source-fact is-${versionTones[source.version_label] ?? 'unstated'}`}>{versionText(source.version_label)}</span>}
-        {accessParts(source).map(part => <span key={part.text} className={`pill source-fact is-${part.tone}`}>{part.text}</span>)}
+        {accessParts(source, model => modelText(model)).map(part => <span key={part.text} className={`pill source-fact is-${part.tone}`}>{part.text}</span>)}
         {readsVersion && <Tooltip content={t('This record has no PDF text, so answers read the PDF of {version} below. Passages cited from it are labelled with that version; the two are not counted as separate sources.', { version: versionText(readsVersion.version_label) })}><span className="pill source-fact is-plain" tabIndex={0}>{t('answers read {version}', { version: versionText(readsVersion.version_label) })}</span></Tooltip>}
         {citedClaims > 0 && answerVersion !== null && <span className="pill source-fact is-cited">{t(citedClaims === 1 ? 'cited in {n} claim of V{v}' : 'cited in {n} claims of V{v}', { n: citedClaims, v: answerVersion })}</span>}
         {(source.rank !== null || source.similarity !== null) && <Tooltip content={t(source.similarity === null ? 'Its best position in the search results that found it. Used for ordering only; it is not a relevance judgment.' : source.access.abstract_passage_id ? 'Search rank: its best position in the search results that found it. Similarity: embedding similarity between the research question and this source’s title and stored abstract. Both are used for ordering only; neither is a relevance judgment.' : 'Search rank: its best position in the search results that found it. Similarity: embedding similarity between the research question and this source’s title; no abstract was available. Both are used for ordering only; neither is a relevance judgment.')}>

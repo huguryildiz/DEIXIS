@@ -1,6 +1,6 @@
 import { downloadName } from '../downloadName'
 import { type Answer, type Evidence, type EvidenceLedger, type LedgerReason, type LedgerWork, type Limitation, type Source, type Verdict } from '../api'
-import { locatorText, pageLocator, verdictLabels } from '../labels'
+import { equationReaderName, locatorText, pageLocator, verdictLabels } from '../labels'
 import { formatReferenceText, inTextCitation, type CitationStyle } from '../citations'
 import { OCR_LABEL } from '../ocr'
 import { t, uiLocale } from '../i18n'
@@ -127,7 +127,7 @@ export function reportMarkdown(answer: Answer, sources: Source[], title: string,
     lines.push(`## ${t('Cited passages')}`, '')
     refs.forEach(({ n, e }) => {
       const source = sources.find(s => s.source_version_id === e.source_version_id)
-      lines.push(`[${style === 'ieee' ? n : e.source_key ?? n}] ${source ? formatReferenceText(style, source) : e.title} — ${locatorText(e)}${e.text_source === 'ocr' ? ` (${t(OCR_LABEL)})` : ''}${e.text_source === 'latex_source' ? ` (${t('arXiv source')})` : ''}${e.text_source === 'equation_ocr' ? ` (${t('equations read by Mathpix')})` : ''}`)
+      lines.push(`[${style === 'ieee' ? n : e.source_key ?? n}] ${source ? formatReferenceText(style, source) : e.title} — ${locatorText(e)}${e.text_source === 'ocr' ? ` (${t(OCR_LABEL)})` : ''}${e.text_source === 'latex_source' ? ` (${t('arXiv source')})` : ''}${e.text_source === 'equation_ocr' ? ` (${t('equations read by {name}', { name: equationReaderName(e.equation_reader ?? { engine: 'mathpix' }) })})` : ''}`)
     })
     lines.push('')
   }

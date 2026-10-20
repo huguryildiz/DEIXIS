@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from deixis.documents import pdf, ocr, math_reader
+from deixis.documents import pdf, ocr
 from deixis.storage import db
 from deixis.workflow import recovery, equations
 from deixis.workflow.store import Store, NotFound, RequestConflict, RecoveryConflict, NotRetryable, RunInProgress
@@ -291,7 +291,6 @@ def test_retry_calls_no_parser_tool_provider_or_model(lib, monkeypatch):
     def forbidden(*args, **kwargs): raise AssertionError("Retry invoked external work")
     monkeypatch.setattr(pdf, "extract_pdf", forbidden)
     monkeypatch.setattr(ocr, "read_page", forbidden)
-    monkeypatch.setattr(math_reader.MathReader, "read", forbidden)
     monkeypatch.setattr(equations.EquationService, "read_asset", forbidden)
     # The Store module has no provider/model import; the import guard below pins that boundary.
     assert complete(lib)["outcome"] == "promoted"

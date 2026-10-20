@@ -21,8 +21,6 @@ DATAS = (
     ("backend/deixis/storage/migrations/*.sql", "deixis/storage/migrations"),
     ("backend/deixis/documents/katex_commands.json", "deixis/documents"),
     ("backend/deixis/documents/latex_kernel_names.json", "deixis/documents"),
-    # A script run by another Python (the equation reader's own environment), so read as a file.
-    ("backend/deixis/documents/marker_runner.py", "deixis/documents"),
     ("backend/deixis/workflow/report/latex_names.json", "deixis/workflow/report"),
     ("backend/deixis/models/model_prices.json", "deixis/models"),  # workflow/spend.py (F4)
     ("backend/deixis/exports/deixis-mark.png", "deixis/exports"),

@@ -91,8 +91,8 @@ def _output_digest(raw_output: str) -> str:
         return f"text:{sha256_hex(raw_output)}"
 
 
-# The suffix an equation pass appends to the extraction it was laid on (D36, D40, D46).
-EQUATION_PASS = re.compile(r"\+(?:marker-|arxiv-latex-|mathpix-).*$")
+# The suffix an equation pass appends to the extraction it was laid on (D36, D40, D46, D113).
+EQUATION_PASS = re.compile(r"\+(?:marker-|arxiv-latex-|mathpix-|model-eq-).*$")
 
 
 def _read_person_file(requests: dict[str, dict[str, Any]]) -> str | None:
@@ -3044,7 +3044,7 @@ class Store:
 
     def page_digest_holds(self, asset_id: str | None, digest: str | None) -> bool:
         """Whether a file's pages are still those a reading saw (decision 6, D46): its current extraction, or the
-        extraction an equation pass (Marker, arXiv LaTeX, Mathpix) was laid on. An equation pass adds the equations and
+        extraction an equation pass (Marker, arXiv LaTeX, Mathpix, the answer model) was laid on. An equation pass adds the equations and
         keeps the page text, so a file read just before it is still the file that was read; OCR or a new base
         extraction is a different file."""
         if digest is None or not asset_id:

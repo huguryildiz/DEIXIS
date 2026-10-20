@@ -325,7 +325,7 @@ const pauseReasons: Record<string, string> = {
   no_text: 'The source has no stored text to read.',
   equations_failed: 'Reading the equations of a PDF failed. Resume to answer from that PDF’s text layer.',
   equations_blocked_by_run: 'A PDF’s equations could not be stored while another run uses the same source. Resume when that run ends.',
-  equation_reader_unavailable: 'The equation reader (Marker) could not start. Resume to answer from the PDFs’ text layer.',
+  equation_reader_unavailable: 'The equation reader could not start. Resume to answer from the PDFs’ text layer.',
   ocr_pages_failed: 'OCR could not read some pages. Nothing was stored; resuming reads only those pages again.',
   ocr_blocked_by_run: 'The OCR text could not be stored while another run uses the same source. Resume when that run ends.',
   ocr_pages_changed: 'The PDF’s pages without text changed while OCR was running. Nothing was stored; start OCR again.',
@@ -490,7 +490,7 @@ export const stepLabel = (kind: string, key: string, candidate = false) => {
   if (kind === 'code:criterion_phrases') return t('Criterion phrases (code)')
   if (kind === 'fetch_pdf') return t('Open-access PDF retrieval')
   if (kind === 'pdf_other_copy') return t('Search for another open copy')
-  if (kind === 'read_equations') return t('Reading equations (Marker)')
+  if (kind === 'read_equations') return t('Reading equations')
   if (kind === 'ocr_pages') return t('Finding pages without text')
   if (kind === 'ocr_page') return t('OCR of PDF p. {page}', { page: key.split(':')[2] ?? '?' })
   if (kind === 'ocr_merge') return t('Storing the OCR text')
@@ -613,17 +613,36 @@ const mathpixReasons: Record<string, string> = {
 }
 const mathpixReasonText = (reason: string | null | undefined) => t(mathpixReasons[reason ?? ''] ?? reason ?? 'unavailable')
 
-function mathpixPart(equations: NonNullable<Source['access']['assets'][number]['equations']>): { tone: 'text' | 'unstated'; text: string } {
-  if (equations.state === 'read' && equations.mathpix) {
-    const { placed, pages } = equations.mathpix
-    return { tone: 'text', text: t(pages.length === 1 ? 'Equations read by Mathpix · {n} matched to {p} page · check against the page' : 'Equations read by Mathpix · {n} matched to {p} pages · check against the page', { n: placed, p: pages.length }) }
+// Who read an equation: Mathpix, or the model named by its stored id (or its display name where the caller has one).
+export function equationReaderName(reader: { engine: 'mathpix' } | { engine: 'model'; model: string } | { model: string } | null | undefined, modelName?: (model: string) => string): string {
+  if (!reader) return t('the answer model')
+  if ('engine' in reader && reader.engine === 'mathpix') return 'Mathpix'
+  const model = (reader as { model?: string }).model
+  return model ? (modelName ? modelName(model) : model) : t('the answer model')
+}
+
+// Why the answer model is not reading equations, by the reason code the backend stored.
+const equationOffReasons: Record<string, string> = {
+  switch_off: 'Equations are off in Settings', no_answer_model: 'no default answer model is set', connection_unavailable: 'the connection of the answer model is not available',
+  model_no_images: 'the answer model cannot read images', no_reader: 'no equation reader is available',
+}
+
+// Mathpix (D40) and the answer model (D113) read the same way: page-image crops matched to the PDF's text. `name` is the reader's name.
+function imageReaderPart(equations: NonNullable<Source['access']['assets'][number]['equations']>, name: string, modelName?: (model: string) => string): { tone: 'text' | 'unstated'; text: string } {
+  const placed = equations.route === 'model' ? equations.model : equations.mathpix
+  if (equations.state === 'read' && placed) {
+    const { placed: n, pages } = placed
+    const who = equations.route === 'model' ? equationReaderName(equations.reader ?? equations.model?.reader, modelName) : name
+    return { tone: 'text', text: t(pages.length === 1 ? 'Equations read by {name} · {n} matched to {p} page · check against the page' : 'Equations read by {name} · {n} matched to {p} pages · check against the page', { name: who, n, p: pages.length }) }
   }
-  if (equations.state === 'reading') return { tone: 'unstated', text: t('Mathpix is reading the equations · {n} pages', { n: equations.pages ?? '?' }) }
-  if (equations.state === 'no_candidates') return { tone: 'unstated', text: t('No numbered equation found for Mathpix') }
-  if (equations.state === 'none_placed') return { tone: 'unstated', text: t('Mathpix’s equations did not match the PDF’s text · none used') }
+  if (equations.state === 'reading') return { tone: 'unstated', text: t('{name} is reading the equations · {n} pages', { name, n: equations.pages ?? '?' }) }
+  if (equations.state === 'no_candidates') return { tone: 'unstated', text: t('No numbered equation found for {name}', { name }) }
+  if (equations.state === 'none_placed') return { tone: 'unstated', text: t('{name}’s equations did not match the PDF’s text · none used', { name }) }
   if (equations.state === 'keys_rejected') return { tone: 'unstated', text: t('Equations not read · Mathpix did not accept the key pair') }
-  if (equations.state === 'budget_reached') return { tone: 'unstated', text: t('Equations not read · the Mathpix request budget is used up') }
-  if (equations.state === 'failed') return { tone: 'unstated', text: t('Mathpix could not read the equations · {reason}', { reason: mathpixReasonText(equations.reason) }) }
+  if (equations.state === 'model_refused') return { tone: 'unstated', text: t('Equations not read · {name} refused the key; nothing more is sent until the key or the default model changes', { name }) }
+  if (equations.state === 'budget_reached') return { tone: 'unstated', text: t('Equations not read · the {name} request budget is used up', { name }) }
+  if (equations.state === 'off') return { tone: 'unstated', text: t('Equations not read · {reason}', { reason: t(equationOffReasons[equations.reason ?? ''] ?? equationOffReasons.no_reader) }) }
+  if (equations.state === 'failed') return { tone: 'unstated', text: t('{name} could not read the equations · {reason}', { name, reason: mathpixReasonText(equations.reason) }) }
   return { tone: 'unstated', text: t('Equations not read yet') }
 }
 
@@ -631,7 +650,7 @@ function mathpixPart(equations: NonNullable<Source['access']['assets'][number]['
 // PDF at its request budget whose saved answers can still be placed without a new request (D40).
 export function rereadEquationsLabel(equations: Source['access']['assets'][number]['equations']): string | null {
   if (equations?.state === 'failed') return t('Read equations again')
-  if (equations?.route === 'mathpix' && equations.state === 'budget_reached' && equations.stored_answers) return t('Read again from saved results · no new requests')
+  if ((equations?.route === 'mathpix' || equations?.route === 'model') && equations.state === 'budget_reached' && equations.stored_answers) return t('Read again from saved results · no new requests')
   return null
 }
 
@@ -643,7 +662,7 @@ export function pdfFailureText(error: string | null | undefined): string {
 }
 
 // Each part carries a tone so the source list can colour usable text apart from gaps.
-export function accessParts(source: Source): { tone: 'text' | 'abstract' | 'unstated' | 'ocr'; text: string }[] {
+export function accessParts(source: Source, modelName?: (model: string) => string): { tone: 'text' | 'abstract' | 'unstated' | 'ocr'; text: string }[] {
   const parts: { tone: 'text' | 'abstract' | 'unstated' | 'ocr'; text: string }[] = []
   const asset = source.access.assets[0]
   if (asset) parts.push(asset.extraction_status === 'no_text' ? { tone: 'unstated', text: t('PDF without a text layer') } : asset.extraction_status === 'failed' ? { tone: 'unstated', text: pdfFailureText(asset.extraction_error) } : { tone: 'text', text: t('PDF · {pages} pages · text {status}', { pages: asset.page_count ?? '?', status: t(asset.extraction_status) }) })
@@ -657,12 +676,13 @@ export function accessParts(source: Source): { tone: 'text' | 'abstract' | 'unst
   if (asset?.ocr?.ocr_pages) parts.push({ tone: 'ocr', text: t('OCR text on {k} of {n} pages · check against the page', { k: asset.ocr.ocr_pages, n: asset.page_count ?? '?' }) })
   const equations = asset?.equations
   if (equations?.route === 'arxiv_source') parts.push(arxivSourcePart(equations))
-  else if (equations?.route === 'mathpix') parts.push(mathpixPart(equations))
+  else if (equations?.route === 'mathpix') parts.push(imageReaderPart(equations, 'Mathpix'))
+  else if (equations?.route === 'model') parts.push(imageReaderPart(equations, equationReaderName(equations.reader, modelName), modelName))
   else if (equations?.state === 'reading') parts.push({ tone: 'unstated', text: t('Reading equations · {n} pages', { n: equations.pages ?? '?' }) })
   else if (equations?.state === 'pending') parts.push({ tone: 'unstated', text: t('Equations not read yet') })
   else if (equations?.state === 'read') parts.push(equations.equations_to_check
-    ? { tone: 'unstated', text: t(equations.equations_to_check === 1 ? 'Equations read (LaTeX) · {n} to check against the page' : 'Equations read (LaTeX) · {n} to check against the pages', { n: equations.equations_to_check }) }
-    : { tone: 'text', text: t('Equations read (LaTeX)') })
+    ? { tone: 'unstated', text: t(equations.equations_to_check === 1 ? 'Equations read by Marker earlier (LaTeX) · {n} to check against the page' : 'Equations read by Marker earlier (LaTeX) · {n} to check against the pages', { n: equations.equations_to_check }) }
+    : { tone: 'text', text: t('Equations read by Marker earlier (LaTeX)') })
   else if (equations?.state === 'failed') parts.push({ tone: 'unstated', text: t('Equations could not be read') })
   if (source.access.abstract_passage_id) parts.push({ tone: 'abstract', text: t(source.access.abstract_origin === 'provider_openalex_inverted_index' ? 'Abstract (rebuilt from OpenAlex index)' : 'Abstract') })
   if (!parts.length) parts.push({ tone: 'unstated', text: t('Metadata only') })

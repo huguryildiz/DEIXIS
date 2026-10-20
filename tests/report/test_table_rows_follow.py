@@ -218,22 +218,31 @@ def test_more_due_rows_than_one_run_reads_move_on_after_a_failed_run(tmp_path):
         s["source_version_id"] for s in first["target"]["sources"]}
 
 
-def test_an_exclusion_during_one_equation_read_stops_the_next_sources_reads(tmp_path):
+def test_an_exclusion_during_one_equation_read_stops_the_next_sources_reads(tmp_path, monkeypatch):
+    from deixis.workflow import flow
+
     lib = library(tmp_path)
     add_pdf(lib.store, lib.preprint, ["SYNTHETIC preprint page: packets of 64 bytes."], "7" * 64)
     asset = {svid: lib.conn.execute("SELECT id FROM source_assets WHERE source_version_id = ?", (svid,)).fetchone()[0]
              for svid in (lib.published, lib.preprint)}
     read = []
 
-    class Service:
-        def available(self):
+    class Service:  # a crop route that can read (D113); every PDF waits for it
+        def route_active(self):
+            return False
+
+        def crop_active(self):
             return True
+
+        def route_target(self, asset_id):
+            return False
 
         async def read_asset(self, asset_id, run_id=None):
             read.append(asset_id)
             select(lib, lib.preprint, "excluded")  # excluded while the published version's equations are read
-            return {"state": "read"}
+            return {"state": "read", "route": "model"}
 
+    monkeypatch.setattr(flow, "equation_state", lambda store, asset_id: {"state": "pending", "route": "model"})
     lib.flow.deps.equations = Service()
     run = lib.tables.request_fill(lib.rid, lib.tid, None, False, table_version(lib), None, included_only=True)
     assert execute(lib, run)["status"] == "completed"

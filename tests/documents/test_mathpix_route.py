@@ -1,6 +1,6 @@
 """The Mathpix route in the equation service (D40): requests, budgets, the route table, the write guard and provenance.
 
-Mathpix is a scripted `httpx.MockTransport` (`mathpix_helpers.FakeMathpix`); Marker is a fake that can be switched on.
+Mathpix is a scripted `httpx.MockTransport` (`mathpix_helpers.FakeMathpix`). No answer model is set in Settings, so the model route is off.
 The PDFs and records are SYNTHETIC. Passing shows the route's rules and wiring, not how well Mathpix reads equations.
 """
 
@@ -11,13 +11,13 @@ import httpx
 import pytest
 
 from arxiv_helpers import no_network  # noqa: F401
-from deixis.documents import equation_regions, math_reader, mathpix, pdf
+from deixis.documents import equation_regions, mathpix, pdf
 from deixis.storage import db
 from deixis.storage.db import now
 from deixis.workflow import equations
 from deixis.workflow.store import Store
 from mathpix_helpers import ANSWERS, PAIR, FakeMathpix, prose, two_equations
-from test_arxiv_source_route import FakeFetch, NoMarker
+from test_arxiv_source_route import FakeFetch
 
 TARGET = pdf.EXTRACTION_VERSION + "+mathpix-v1"
 
@@ -41,8 +41,8 @@ def on(monkeypatch):
     monkeypatch.setenv(mathpix.ENV, PAIR)
 
 
-def service(store, papers, tmp_path, fake=None, mode="off", switch="on", reader=None):
-    svc = equations.EquationService(store, reader or NoMarker(), papers)
+def service(store, papers, tmp_path, fake=None, mode="off", switch="on"):
+    svc = equations.EquationService(store, papers)
     svc.configure_arxiv_source(mode, tmp_path / "data", fetch_file=FakeFetch())
     svc.configure_mathpix(tmp_path / "data", (fake or FakeMathpix()).client())
     if switch:
@@ -127,20 +127,18 @@ def test_every_crop_refused_is_none_placed_with_its_reasons_and_terminal(tmp_pat
 
 
 # ---- nothing is sent ------------------------------------------------------------------------------------------------------
-@pytest.mark.parametrize("case", ["switch_off", "keys_missing", "pair_unreadable", "marker_installing"])
-def test_no_request_without_the_switch_a_readable_pair_or_with_marker_installing(tmp_path, monkeypatch, case):
+@pytest.mark.parametrize("case", ["switch_off", "keys_missing", "pair_unreadable"])
+def test_no_request_without_the_switch_or_a_readable_pair(tmp_path, monkeypatch, case):
     monkeypatch.setenv(mathpix.ENV, "not json" if case == "pair_unreadable" else PAIR)
     if case == "keys_missing":
         monkeypatch.delenv(mathpix.ENV)
     store, _, aid, papers = library(tmp_path)
     fake = FakeMathpix()
     svc = service(store, papers, tmp_path, fake, switch="off" if case == "switch_off" else "on")
-    if case == "marker_installing":
-        svc.job = {"status": "running"}
-    assert equations.equation_state(store, aid).get("route") is None
+    off = {"state": "off", "reason": "no_answer_model", "route": "model"}
+    assert equations.equation_state(store, aid) == off
     assert not svc.mathpix_active()
-    with pytest.raises(math_reader.MathReaderUnavailable):  # today's Marker path, and Marker is not installed
-        read(svc, aid)
+    assert read(svc, aid) == off
     assert fake.requests == []
 
 
@@ -355,19 +353,14 @@ def set_version(store, aid, version):
     store.conn.execute("UPDATE source_assets SET extraction_version = ? WHERE id = ?", (version, aid))
 
 
-def test_row_1_marker_installed_or_installing_never_routes_to_mathpix(tmp_path, on):
+def test_row_2_an_earlier_marker_reading_is_kept_and_mathpix_never_reads_it(tmp_path, on):
     store, _, aid, papers = library(tmp_path)
-    marker = NoMarker()
-    marker.installed = True
-    svc = service(store, papers, tmp_path, reader=marker)
-    assert equations.equation_state(store, aid) == {"state": "pending"} and not svc.mathpix_active()
-
-
-def test_row_2_a_marker_reading_stays_with_marker(tmp_path, on):
-    store, _, aid, papers = library(tmp_path)
-    service(store, papers, tmp_path)
+    fake = FakeMathpix()
+    svc = service(store, papers, tmp_path, fake)
     set_version(store, aid, equations.target_version(pdf.EXTRACTION_VERSION))
-    assert equations.equation_state(store, aid).get("route") is None
+    state = equations.equation_state(store, aid)
+    assert state["state"] == "read" and state["route"] == "marker"
+    assert read(svc, aid)["state"] == "read" and fake.requests == [] and svc.next_asset() is None
 
 
 def test_row_2b_a_mathpix_reading_is_kept_whatever_the_switch_and_the_arxiv_route_say(tmp_path, on):
@@ -422,10 +415,10 @@ def test_row_6_with_the_arxiv_route_off_or_unavailable_mathpix_reads(tmp_path, o
     assert equations.equation_state(store2, aid2)["route"] == "mathpix"
 
 
-def test_row_7_with_the_switch_off_the_state_is_todays(tmp_path, on):
+def test_row_7_with_the_switch_off_and_no_answer_model_the_state_is_off(tmp_path, on):
     store, _, aid, papers = library(tmp_path)
     service(store, papers, tmp_path, switch="off")
-    assert equations.equation_state(store, aid) == {"state": "pending"}
+    assert equations.equation_state(store, aid) == {"state": "off", "reason": "no_answer_model", "route": "model"}
 
 
 # ---- the write guard ---------------------------------------------------------------------------------------------------------
@@ -439,8 +432,6 @@ def guard_case(case, store, svc, aid):
             store.conn.execute("UPDATE asset_extractions SET outcome = 'superseded' WHERE asset_id = ?", (aid,))
         elif case == "file_changed":
             store.conn.execute("UPDATE source_assets SET sha256 = 'sha-b' WHERE id = ?", (aid,))
-        elif case == "marker_installing":
-            svc.job = {"status": "running"}
         elif case == "switch_off":
             store.set_setting(equations.MATHPIX_SWITCH, "off")
         elif case == "arxiv_reading_landed":
@@ -448,7 +439,7 @@ def guard_case(case, store, svc, aid):
     return before
 
 
-@pytest.mark.parametrize("case", ["asset_removed", "extraction_changed", "file_changed", "marker_installing", "switch_off",
+@pytest.mark.parametrize("case", ["asset_removed", "extraction_changed", "file_changed", "switch_off",
                                   "arxiv_reading_landed"])
 def test_the_guard_writes_nothing_when_the_pdf_or_the_route_changed_during_the_read_and_keeps_the_answers(tmp_path, on, case):
     store, svid, aid, papers = library(tmp_path)
@@ -462,11 +453,3 @@ def test_the_guard_writes_nothing_when_the_pdf_or_the_route_changed_during_the_r
     assert mathpix_extraction(store, aid) is None and store.conn.execute(count, (svid,)).fetchone()[0] == passages
     assert [r["status"] for r in rows(store)] == ["answered", "answered"]
 
-
-def test_marker_supersedes_a_mathpix_reading(tmp_path, on):
-    store, _, aid, papers = library(tmp_path)
-    marker = NoMarker()
-    svc = service(store, papers, tmp_path, reader=marker)
-    assert read(svc, aid)["state"] == "read"
-    marker.installed = True
-    assert equations.equation_state(store, aid) == {"state": "pending"}  # Marker reads it from the text layer again

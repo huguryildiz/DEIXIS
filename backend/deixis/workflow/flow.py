@@ -27,7 +27,7 @@ import httpx
 
 from deixis.config import Settings
 from deixis.documents import fetch as fetch_module
-from deixis.documents import acquisition, embeddings, identity, local_embedding, math_reader, ocr, pdf
+from deixis.documents import acquisition, embeddings, identity, local_embedding, ocr, pdf
 from deixis.domain import canonical, contracts, vocabulary as question_words
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS,
                                  FULLTEXT_CRITERION_PASSAGES, FULLTEXT_PASSAGES_PER_CALL, FULLTEXT_QUOTE_MIN_CHARS,
@@ -71,7 +71,7 @@ from deixis.workflow import search_query as search_query_rules
 from deixis.workflow import user_plan as user_plan_rules
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.decisions import DecisionStore, HumanDecisionStands
-from deixis.workflow.equations import EXTRACTION_FAILED, MAX_ATTEMPTS as EQUATION_ATTEMPTS, equation_fallback_field, equation_state, mathpix_answered
+from deixis.workflow.equations import CROP_ROUTES, EXTRACTION_FAILED, MAX_ATTEMPTS as EQUATION_ATTEMPTS, crop_answered, equation_fallback_field, equation_state
 from deixis.workflow.store import ACTIVE_RUN_STATUSES, NotFound, RunInProgress, Store, seed_source_ids
 from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, MAX_FILL_SOURCES, TableStore, check_value
 
@@ -2580,61 +2580,17 @@ class ResearchFlow:
                     break
 
     async def _read_equations(self, run: dict[str, Any], svids: list[str]) -> None:
-        """Wait until the equations of the PDFs an answer or a table cell reads have been read with Marker (D52).
-
-        Without the equation reader nothing waits. A failed read pauses the run with its reason; resuming continues
-        with that PDF's text layer, since its step stays failed.
-
-        Without Marker and with the arXiv source route on (D104), a PDF the route may read is read once per run through
-        it; no outcome of the route pauses the run: the step ends `succeeded` with the PDF's state in its output. The
-        Mathpix route (D40) works the same way and also honours "Answer now with PDF text".
-        """
+        """Read the numbered display equations of the PDFs an answer or a table cell reads, before it is written: from the
+        arXiv source (D104), with Mathpix (D40) or with the answer model (D113). No outcome pauses the run; without a
+        route that can read, nothing waits."""
         service = self.deps.equations
-        if service is None:
+        if service is None or not (service.route_active() or service.crop_active()):
             return
-        if not service.available():
-            if service.route_active() or service.mathpix_active():
-                await self._read_source_equations(run, svids)
-            return
-        run_id = run["id"]
-        assets = [(svid, r[0]) for svid in svids for r in self.store.conn.execute(
-            "SELECT id FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL", (svid,))]
-        skipped = left_out = 0
-        for svid, asset_id in assets:
-            if self._left_out(run, svid):  # checked before a step opens, so none waits `pending` for an excluded source
-                done = self.store.existing_step(run_id, f"equations:{asset_id}")
-                left_out += done is None or done["status"] not in ("succeeded", "failed")
-                continue
-            step = self.store.step(run_id, f"equations:{asset_id}", "read_equations")
-            if step["status"] in ("succeeded", "failed") or equation_state(self.store, asset_id)["state"] in ("read", "no_math"):
-                continue
-            if self.store.equation_skip_requested(run_id):  # "Answer now with PDF text": the rest keep their text layer
-                skipped += 1
-                continue
-            self._checkpoint(run_id)
-            self.store.start_step(step["id"])
-            try:
-                state = await service.read_asset(asset_id, run_id)
-            except RunInProgress:
-                self.store.finish_step(step["id"], "failed", error_code="equations_blocked_by_run", error={"asset_id": asset_id})
-                self._pause(run_id, "equations_blocked_by_run", {"asset_id": asset_id})
-            except math_reader.MathReaderUnavailable as exc:
-                self.store.finish_step(step["id"], "failed", error_code="equation_reader_unavailable", error={"error": str(exc)})
-                self._pause(run_id, "equation_reader_unavailable", {"error": str(exc)})
-            if state["state"] == "failed" and state.get("outcome") != "file_busy":
-                self.store.finish_step(step["id"], "failed", error_code="equations_failed", error={"asset_id": asset_id, **state})
-                self._pause(run_id, "equations_failed", {"asset_id": asset_id, **state})
-            self.store.finish_step(step["id"], "succeeded", output={"asset_id": asset_id, **state})
-        if skipped:
-            summary = self.store.step(run_id, "equations_skipped", "equations_skipped")
-            if summary["status"] != "succeeded":
-                self.store.start_step(summary["id"])
-                self.store.finish_step(summary["id"], "succeeded", output={"pdfs_read": len(assets) - skipped - left_out, "pdfs_skipped": skipped,
-                                                                           **({"pdfs_left_out": left_out} if left_out else {})})
+        await self._read_source_equations(run, svids)
 
     async def _read_source_equations(self, run: dict[str, Any], svids: list[str]) -> None:
-        """The arXiv source route's and Mathpix's step per PDF (D104, D40): tried at most once per run, never pausing it.
-        A PDF the source route settles for good within the step goes on to Mathpix in the same step."""
+        """The arXiv source route's and the crop routes' step per PDF (D104, D40, D113): tried at most once per run, never
+        pausing it. A PDF the source route settles for good within the step goes on to its crop route in the same step."""
         service = self.deps.equations
         run_id = run["id"]
         assets = [(svid, r[0]) for svid in svids for r in self.store.conn.execute(
@@ -2643,10 +2599,10 @@ class ResearchFlow:
         for svid, asset_id in assets:
             state = equation_state(self.store, asset_id)
             again = (state["state"] == "failed" and state.get("attempts", EQUATION_ATTEMPTS) < EQUATION_ATTEMPTS
-                     and (state.get("reason") == EXTRACTION_FAILED or state.get("route") == "mathpix")) \
-                or (state["state"] == "budget_reached" and mathpix_answered(self.store, asset_id))  # stored answers, no new request
+                     and (state.get("reason") == EXTRACTION_FAILED or state.get("route") in CROP_ROUTES)) \
+                or (state["state"] == "budget_reached" and crop_answered(self.store, asset_id, state.get("route")))  # stored answers, no new request
             waiting = state["state"] == "source_waiting"  # rule 3's table: the step records the wait and does not wait
-            on_route = state.get("route") == "mathpix" or (state.get("route") == "arxiv_source" and service.route_target(asset_id))
+            on_route = state.get("route") in CROP_ROUTES or (state.get("route") == "arxiv_source" and service.route_target(asset_id))
             if not on_route or (state["state"] != "pending" and not again and not waiting):
                 continue  # read, refused, permanently absent or failed for good: nothing to ask, no request
             if self._left_out(run, svid):
@@ -2656,7 +2612,7 @@ class ResearchFlow:
             step = self.store.step(run_id, f"equations:{asset_id}", "read_equations")
             if step["status"] in ("succeeded", "failed"):
                 continue
-            if state.get("route") == "mathpix" and self.store.equation_skip_requested(run_id):
+            if state.get("route") in CROP_ROUTES and self.store.equation_skip_requested(run_id):
                 skipped += 1  # "Answer now with PDF text": the rest keep their text layer
                 continue
             self._checkpoint(run_id)
@@ -2667,7 +2623,7 @@ class ResearchFlow:
             route = state["route"]
             for attempt in range(2):
                 if attempt and self._left_out(run, svid):
-                    break  # excluded while the source route was read: Mathpix is not asked (D63)
+                    break  # excluded while the source route was read: the crop route is not asked (D63)
                 try:
                     state = await service.read_asset(asset_id, run_id)
                 except RunInProgress:
@@ -2675,9 +2631,10 @@ class ResearchFlow:
                 except Exception as exc:  # noqa: BLE001 - a gain, never a requirement: the run goes on with the current text
                     log.exception("%s equation reading failed for %s", route, asset_id)
                     state = {"state": "pending", "outcome": "error", "error": f"{type(exc).__name__}: {exc}"[:300], "route": route}
-                if route == "mathpix" or state.get("route") != "mathpix" or state["state"] != "pending" or self.store.equation_skip_requested(run_id):
+                if route in CROP_ROUTES or state.get("route") not in CROP_ROUTES or state["state"] != "pending" \
+                        or self.store.equation_skip_requested(run_id):
                     break
-                route = "mathpix"  # the source route settled this PDF for good: Mathpix reads it now
+                route = state["route"]  # the source route settled this PDF for good: its crop route reads it now
             self.store.finish_step(step["id"], "succeeded", output={"asset_id": asset_id, **state, "route": state.get("route", route)})
         if skipped:
             summary = self.store.step(run_id, "equations_skipped", "equations_skipped")

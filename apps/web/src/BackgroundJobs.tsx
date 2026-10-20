@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Circle, CirclePause, Clock, Info, Pause, Play, TriangleAlert } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { api, type EquationReader, type ResearchSummary, type ResearchView, type Run, type RunStatus, type Source } from './api'
+import { api, type EquationModel, type ResearchSummary, type ResearchView, type Run, type RunStatus, type Source } from './api'
 import { t } from './i18n'
 import { useToast } from './Toast'
 
@@ -67,20 +67,20 @@ export function BackgroundJobs({ researches, dark, onOpenResearch }: {
   const [viewsFailed, setViewsFailed] = useState(false)
   const load = () => Promise.all(candidates.map(r => api.research(r.id).then(view => [r.id, view] as const, () => null)))
     .then(entries => { setViews(Object.fromEntries(entries.filter(e => e !== null))); setViewsFailed(entries.some(e => e === null)) })
-  // A failed read of the equation reader keeps the last answer and marks it stale: its job is then of unknown status, never finished.
-  const [reader, setReader] = useState<EquationReader | null>(null)
+  // A failed read of the equation model keeps the last answer and marks it stale: its job is then of unknown status, never finished.
+  const [reader, setReader] = useState<EquationModel | null>(null)
   const [readerFailed, setReaderFailed] = useState(false)
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({})
   useEffect(() => {
     if (candidates.length || Object.keys(views).length) void load()
-    api.equationReader().then(value => { setReader(value); setReaderFailed(false) }, () => setReaderFailed(true))
+    api.equationModel().then(value => { setReader(value); setReaderFailed(false) }, () => setReaderFailed(true))
   }, [researches]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const runJobs = candidates.flatMap(r => { const view = views[r.id]; const job = view && jobOf(r, view); return job ? [job] : [] })
-  // The equation reader works through the library's stored PDFs (D52) while it has one in hand or any waiting.
+  // The answer model reads equations in the library's stored PDFs (D113) while it has one in hand or any waiting.
   const readerPending = reader ? (reader.pdfs.pending ?? 0) + (reader.pdfs.reading ?? 0) : 0
-  const readerOn = !readerFailed && !!reader?.installed && (!!reader.reading || readerPending > 0)
-  const readerDone = reader ? (reader.pdfs.read ?? 0) + (reader.pdfs.no_math ?? 0) + (reader.pdfs.failed ?? 0) : 0
+  const readerOn = !readerFailed && !!reader?.ready && (!!reader.reading || readerPending > 0)
+  const readerDone = reader ? (reader.pdfs.read ?? 0) + (reader.pdfs.no_math ?? 0) + (reader.pdfs.no_candidates ?? 0) + (reader.pdfs.none_placed ?? 0) + (reader.pdfs.failed ?? 0) : 0
   const readerJob: Job | null = readerOn && reader ? { key: 'equation-reader', research: null, run: null, label: t('Reading equations'), done: readerDone, total: readerDone + readerPending, extra: 0, unit: t('PDFs'), sub: reader.reading?.title ?? t('PDFs in the library'), paused: !reader.reading } : null
   const jobs = readerJob ? [...runJobs, readerJob] : runJobs
 

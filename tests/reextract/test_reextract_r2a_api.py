@@ -13,7 +13,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from deixis.documents import pdf, ocr, math_reader
+from deixis.documents import pdf, ocr
 from deixis.storage import db
 from deixis.workflow import equations
 try:
@@ -466,7 +466,6 @@ def test_retry_calls_only_text_parser_with_tool_model_and_http_fail_on_call(tmp_
     with api_library(tmp_path, "partial") as lib:
         def forbidden(*args, **kwargs): raise AssertionError("Retry invoked a tool or model")
         monkeypatch.setattr(ocr, "read_page", forbidden)
-        monkeypatch.setattr(math_reader.MathReader, "read", forbidden)
         monkeypatch.setattr(equations.EquationService, "read_asset", forbidden)
         class ForbiddenAdapter:
             async def run_step(self, *args, **kwargs): forbidden()
@@ -478,8 +477,7 @@ def test_retry_calls_only_text_parser_with_tool_model_and_http_fail_on_call(tmp_
         assert response.status_code == 200 and response.json()["recovery"]["outcome"] == "promoted"
 
 
-def test_later_d52_selection_after_partial_retry_is_separate_guard(tmp_path):
-    from tests.documents.test_equations import FakeReader
+def test_later_equation_selection_after_partial_retry_is_separate_guard(tmp_path, monkeypatch):
     with api_library(tmp_path, "partial") as lib:
         op = lib.store.reserve_text_retry(lib.aid, expected_extraction_id=lib.eid,
             idempotency_key="d52-guard", request_fingerprint="d52-guard")
@@ -488,7 +486,10 @@ def test_later_d52_selection_after_partial_retry_is_separate_guard(tmp_path):
             observed_byte_size=len(lib.data), integrity="verified")
         assert lib.store.complete_text_retry(op["id"], pdf.extract_pdf(lib.path), pdf.chunk_page,
                                             input_observation_id=obs)["outcome"] == "promoted"
-        assert equations.EquationService(lib.store, FakeReader(), lib.settings.papers_dir).next_asset() == lib.aid
+        service = equations.EquationService(lib.store, lib.settings.papers_dir)
+        monkeypatch.setattr(service, "model_ready", lambda: (True, None))  # a crop route that can read (D113)
+        monkeypatch.setattr(service, "model_revision", lambda: "SYNTHETIC")
+        assert service.next_asset() == lib.aid
 
 
 def test_storage_classifier_keeps_unclassified_sqlite_errors_as_code_errors_guard():

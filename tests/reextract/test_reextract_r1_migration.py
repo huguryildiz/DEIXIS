@@ -289,6 +289,6 @@ def test_all_production_extraction_inserts_name_profile_and_retry_imports_no_ext
             if re.search(r"INSERT\s+(?:OR\s+IGNORE\s+)?INTO\s+asset_extractions", node.value, re.I):
                 assert "extractor_profile" in node.value, path
                 found.append(path)
-    assert len(found) == 4
+    assert len(found) == 3
     tree = ast.parse((ROOT / "backend/deixis/workflow/recovery.py").read_text())
     assert not any(isinstance(node, ast.ImportFrom) and (node.module or "").startswith(("deixis.models", "deixis.providers")) for node in ast.walk(tree))

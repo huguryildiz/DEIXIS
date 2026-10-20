@@ -1400,7 +1400,7 @@ def _check_math(step_input: dict[str, Any], draft: dict[str, Any], report: Valid
         if has_number_or_math(claim["text"]) and _rests_only_on_ocr([passages.get(pid) for pid in claim["passage_ids"]]):
             report.warnings.append(Issue("ocr_numbers_unchecked", f"/claims/{i}/text",
                                          "the claim states a number or equation read only from OCR text; check it against the PDF page"))
-    # D40 (r3): a quote that overlaps an equation Mathpix read from the page image rests on that reading, not the PDF's text.
+    # D40 (r3), D113: a quote that overlaps an equation read from the page image (Mathpix or the model) rests on that reading, not the PDF's text.
     for j, anchor in enumerate(draft.get("citation_anchors") or []):
         passage = passages.get(anchor.get("passage_id"))
         if passage is None or passage.get("text_source") != "equation_ocr" or not isinstance(anchor.get("quote"), str):
@@ -1411,7 +1411,7 @@ def _check_math(step_input: dict[str, Any], draft: dict[str, Any], report: Valid
         end = start + len(match.text)
         if start >= 0 and any(m.start() < end and start < m.end() for m in re.finditer(r"\$\$.*?\$\$", passage["text"], re.S)):
             report.warnings.append(Issue("anchor_in_ocr_equation", f"/citation_anchors/{j}/quote",
-                                         "the quote overlaps an equation read by Mathpix from the page image; check it against the PDF page"))
+                                         "the quote overlaps an equation read from the page image; check it against the PDF page"))
 
 
 def _check_phrasing(step_input: dict[str, Any], draft: dict[str, Any], report: ValidationReport) -> None:

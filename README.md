@@ -119,7 +119,7 @@ PYTHONPATH=backend uv run python -m deixis equations install
 
 A backup holds a consistent database snapshot, the PDFs in use, provider responses and a SHA-256 manifest. It does not hold keys. Restore checks the hashes and only writes into a data directory that has no library yet. Back up before you update the checkout.
 
-`reextract` re-reads the PDFs in use whose stored text came from an older extractor version; `--dry-run` only reports what would change. `equations install` adds the optional Marker equation reader (about 4.4 GB); without it, arXiv papers take their equations from the authors' LaTeX source, and Mathpix can be switched on in Settings.
+`reextract` re-reads the PDFs in use whose stored text came from an older extractor version; `--dry-run` only reports what would change. Numbered display equations come from the authors' LaTeX source for arXiv papers; otherwise the default answer model reads each one from a crop of the page image when its connection takes images (Anthropic, OpenAI or Gemini API), or Mathpix when it is switched on in Settings.
 
 Two release checks live in `scripts/release_checks/`. `install_check.py --port 8871` installs `HEAD` into a temporary folder and starts it with its own port, data directory and keychain. `run_matrix.sh` runs the whole model-free acceptance matrix (30 to 50 minutes, including the parity check, so it needs the mockup too) and refuses to start while a `.env` exists. Both leave a running instance and your library alone.
 

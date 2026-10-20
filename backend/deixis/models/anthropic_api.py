@@ -12,6 +12,7 @@ back together here into the same result a single response gave.
 from __future__ import annotations
 
 import asyncio
+import base64
 import codecs
 import hashlib
 import json
@@ -55,6 +56,8 @@ class AnthropicAdapter:
     connection = "anthropic"
     enforces_schema = True
     sends_reasoning_effort = True  # output_config.effort
+    accepts_images = True  # run_step(image_png=...) puts one PNG before the message (D113)
+    key_env = KEY_ENV
 
     def __init__(self, client: httpx.AsyncClient | None = None, turn_timeout: float = 300.0):
         self._client = client
@@ -130,7 +133,8 @@ class AnthropicAdapter:
         return status
 
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],
-                       requested_model: str | None, reasoning_effort: str | None = None) -> ModelStepResult:
+                       requested_model: str | None, reasoning_effort: str | None = None,
+                       image_png: bytes | None = None) -> ModelStepResult:
         key = api_key()
         if not key or not requested_model:
             return ModelStepResult("unavailable", error=f"{KEY_ENV} is not set" if not key else "no model requested",
@@ -143,7 +147,10 @@ class AnthropicAdapter:
         if reasoning_effort:
             output_config["effort"] = reasoning_effort
         body = {"model": requested_model, "max_tokens": MAX_TOKENS, "system": f"{base}\n\n{developer}",
-                "messages": [{"role": "user", "content": message}], "output_config": output_config}
+                "messages": [{"role": "user", "content": message if image_png is None else [
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/png",
+                                                 "data": base64.standard_b64encode(image_png).decode()}},
+                    {"type": "text", "text": message}]}], "output_config": output_config}
         body["stream"] = True
         stream, broken = _Stream(), None
         try:

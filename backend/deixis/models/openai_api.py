@@ -11,6 +11,8 @@ any other check. A model missing from the table is offered no effort and none is
 
 from __future__ import annotations
 
+import base64
+
 import os
 import re
 import time
@@ -66,6 +68,8 @@ class OpenAIAdapter:
     connection = "openai"
     enforces_schema = True
     sends_reasoning_effort = True  # reasoning.effort, from the fixed table (module docstring)
+    accepts_images = True  # run_step(image_png=...) sends one PNG with the message (D113)
+    key_env = KEY_ENV
 
     def __init__(self, client: httpx.AsyncClient | None = None, turn_timeout: float = 300.0):
         self._client = client
@@ -134,14 +138,17 @@ class OpenAIAdapter:
         return status
 
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],
-                       requested_model: str | None, reasoning_effort: str | None = None) -> ModelStepResult:
+                       requested_model: str | None, reasoning_effort: str | None = None,
+                       image_png: bytes | None = None) -> ModelStepResult:
         key = api_key()
         if not key or not requested_model:
             return ModelStepResult("unavailable", error=f"{KEY_ENV} is not set" if not key else "no model requested",
                                    delivery_class="before_send", error_kind="needs_key" if not key else "unknown")
         if not key_verification.is_valid_key(key):  # a header cannot carry it; nothing is sent
             return invalid_key_result()
-        body = {"model": requested_model, "instructions": f"{base}\n\n{developer}", "input": message, "store": False,
+        body = {"model": requested_model, "instructions": f"{base}\n\n{developer}", "input": message if image_png is None else [{"role": "user", "content": [
+                    {"type": "input_image", "image_url": "data:image/png;base64," + base64.standard_b64encode(image_png).decode()},
+                    {"type": "input_text", "text": message}]}], "store": False,
                 "text": {"format": {"type": "json_schema", "name": "deixis_step", "schema": output_schema, "strict": True}}}
         if reasoning_effort:
             body["reasoning"] = {"effort": reasoning_effort}

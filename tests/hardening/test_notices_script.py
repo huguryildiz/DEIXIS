@@ -85,7 +85,7 @@ def test_a_python_package_not_installed_here_needs_an_override():
 
 def test_the_committed_notices_file_covers_every_production_dependency():
     text = (REPO / "THIRD_PARTY_NOTICES").read_text(encoding="utf-8")
-    assert "MuPDF" in text and "Tesseract" in text and "Tauri" in text and "marker-pdf 1.10.2" in text
+    assert "MuPDF" in text and "Tesseract" in text and "Tauri" in text and "marker-pdf" not in text  # Marker removed (D113)
     for name, version in notices.python_requirements():
         assert f"python {name} {version}" in text
     lock = json.loads((REPO / "apps/web/package-lock.json").read_text(encoding="utf-8"))

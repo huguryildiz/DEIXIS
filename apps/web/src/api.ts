@@ -363,15 +363,18 @@ export type Asset = {
   rendition?: boolean
   // Sources only (D46): whether the text comes from the current extractor, and a later extraction that was not taken.
   current_extraction?: boolean; rejected_extraction?: { extraction_version: string; rejection_reason: string; created_at: string } | null
-  // Sources only (D52): whether Marker has read the PDF's pages with mathematics.
-  // A read's `equations_to_check` counts display equations that did not match the PDF's text layer, on pages `to_check`.
-  // Without Marker and with the arXiv source route on (D104), `route: 'arxiv_source'` and its own states/fields; with the
-  // Mathpix switch on (D40), `route: 'mathpix'` and its states (no_candidates, none_placed, keys_rejected, budget_reached).
+  // Sources only: how the PDF's display equations were read. With the arXiv source route on (D104), `route: 'arxiv_source'`
+  // and its own states/fields; with the Mathpix switch on (D40), `route: 'mathpix'` and its states (no_candidates,
+  // none_placed, keys_rejected, budget_reached); otherwise the answer model reads page-image crops (D113), `route: 'model'`,
+  // whose states add `off` (with a reason) and `model_refused`. An earlier Marker reading keeps `route: 'marker'` and its
+  // `equations_to_check`, which counts display equations that did not match the PDF's text layer, on pages `to_check`.
   equations?: {
-    state: 'read' | 'no_math' | 'failed' | 'reading' | 'pending' | 'no_source' | 'source_waiting' | 'no_candidates' | 'none_placed' | 'keys_rejected' | 'budget_reached'
+    state: 'read' | 'no_math' | 'failed' | 'reading' | 'pending' | 'no_source' | 'source_waiting' | 'no_candidates' | 'none_placed' | 'keys_rejected' | 'budget_reached' | 'off' | 'model_refused'
     reason?: string | null; attempts?: number; pages?: number; started_at?: string; to_check?: number[]; equations_to_check?: number
-    route?: 'arxiv_source' | 'mathpix'; next_at?: string
+    route?: 'arxiv_source' | 'mathpix' | 'model' | 'marker'; next_at?: string
     mathpix?: { placed: number; pages: number[]; refused: Record<string, number> }
+    model?: { placed: number; pages: number[]; refused: number; reader: EquationReaderInfo | null }
+    reader?: { connection: string; model: string } | null
     // Mathpix at its request budget: whether a read again would place from saved answers alone, sending nothing.
     stored_answers?: boolean
     source?: {
@@ -389,10 +392,10 @@ export type OcrRead = {
 // The local Tesseract (D51): usable when it runs and has data for at least one language.
 // PyMuPDF, which reads every PDF's text layer; it comes with DEIXIS.
 export type PdfReader = { available: boolean; version: string; mupdf_version: string }
-// An update check of a PDF tool, run only when asked; `tested` is the version DEIXIS pins (Marker, PyMuPDF).
+// An update check of a PDF tool, run only when asked; `tested` is the version DEIXIS pins (PyMuPDF).
 // A newer Ollama release and, per installed model, whether ollama.com has changed it; null where the check got no answer.
 export type OllamaUpdates = { version: string | null; latest: string | null; update_available: boolean | null; installed_with: 'homebrew' | 'app' | null; models: Record<string, boolean | null> }
-export type ToolUpdate = { tool: 'tesseract' | 'marker' | 'pymupdf'; installed: string | null; tested: string | null; latest: string | null; update_available: boolean | null; error: string | null }
+export type ToolUpdate = { tool: 'tesseract' | 'pymupdf'; installed: string | null; tested: string | null; latest: string | null; update_available: boolean | null; error: string | null }
 export type OcrJob = { status: 'running' | 'succeeded' | 'failed'; phase: 'preparing' | 'downloading' | 'installing'; output: string; started_at: string; finished_at: string | null; packages_done?: number; packages_total?: number | null }
 // Why Tesseract cannot be used, as a code the page words (ocr.ts).
 export type OcrReason = 'tesseract_missing' | 'tesseract_not_responding' | 'tesseract_failed' | 'tesseract_languages_missing'
@@ -446,7 +449,7 @@ export type PassageFreshness = {
 export type AssetText = {
   occurrence: ExtractionOccurrence | null
   asset: Asset
-  passages: { id: string; kind: 'pdf_page'; text: string; physical_page: number | null; printed_label: string | null; extraction_version: string | null; payload_ref: string | null; text_source?: 'text_layer' | 'ocr' | 'marker' | 'latex_source' | 'equation_ocr'; equations_to_check?: number; source_equations?: string[] }[]
+  passages: { id: string; kind: 'pdf_page'; text: string; physical_page: number | null; printed_label: string | null; extraction_version: string | null; payload_ref: string | null; text_source?: 'text_layer' | 'ocr' | 'marker' | 'latex_source' | 'equation_ocr'; equation_reader?: EquationReaderInfo | null; equations_to_check?: number; source_equations?: string[] }[]
   source: Passage['source']
 }
 // A figure found from its caption on a PDF page (D58), or a ruled algorithm box (label "algorithm-5"); its picture is cut
@@ -547,6 +550,7 @@ export type Evidence = {
   // null for abstracts; 'ocr' text was not checked against the page (D51); 'latex_source' holds the authors' LaTeX of
   // numbered display equations matched to the page by their numbers, from the arXiv source of this version (D104).
   text_source: 'text_layer' | 'ocr' | 'marker' | 'latex_source' | 'equation_ocr' | null
+  equation_reader?: EquationReaderInfo | null  // who read the equations of an 'equation_ocr' passage
   removed_from_research: boolean  // the source was removed from this research later; the quote still opens (D50)
   // Europe PMC's open-access text drawn as a PDF by DEIXIS (SW21): its pages are not the publisher's.
   rendition?: boolean
@@ -784,7 +788,7 @@ export type Trash = { researches: TrashedResearch[]; tables: TrashedTable[]; sou
 export type Passage = {
   occurrence: ExtractionOccurrence | null
   id: string; kind: Evidence['kind']; text: string; physical_page: number | null; printed_label: string | null
-  abstract_origin: string | null; extraction_version: string | null; payload_ref: string | null; text_source?: 'text_layer' | 'ocr' | 'marker' | 'latex_source' | 'equation_ocr'; equations_to_check?: number
+  abstract_origin: string | null; extraction_version: string | null; payload_ref: string | null; text_source?: 'text_layer' | 'ocr' | 'marker' | 'latex_source' | 'equation_ocr'; equation_reader?: EquationReaderInfo | null; equations_to_check?: number
   // The equation numbers placed in this passage from the arXiv source (D104) or by Mathpix (D40); empty otherwise.
   source_equations?: string[]
   reading_depth: string; asset_id: string | null
@@ -850,18 +854,23 @@ export type LocalTool = {
   // Ollama only: the models its card suggests, with their download size from ollama.com.
   suggested?: { id: string; name: string; maker: string; purpose: 'embedding' | 'research'; size_bytes: number | null; memory_gb?: number | null }[]
 }
-// The optional equation reader (Marker, D52), installed under the data directory.
-export type EquationReader = {
-  installed: boolean; package: string; path: string; size_bytes: number; models_downloaded: boolean; disk_free_gb: number
-  install: { available: boolean; unavailable_reason: 'uv_missing' | null; url: string }
-  job: { status: 'running' | 'succeeded' | 'failed' | 'cancelled'; step: number; steps: number; started_at: string; finished_at: string | null; output: string } | null
-  reading: { asset_id: string; title: string | null; pages: number; started_at: string } | null
-  pdfs: Partial<Record<'read' | 'no_math' | 'failed' | 'reading' | 'pending', number>>
+// Who read the equations of an 'equation_ocr' passage: Mathpix, or a model of the person's connections (D113).
+export type EquationReaderInfo = { engine: 'mathpix' } | { engine: 'model'; connection: string; model: string }
+// The answer model reading display equations from page-image crops (D113): its switch, why it is off, this month's requests and the PDFs by state.
+export type EquationModel = {
+  switch: 'on' | 'off'; ready: boolean
+  reason: null | 'switch_off' | 'no_answer_model' | 'connection_unavailable' | 'model_no_images'
+  model: { connection: string; model: string; reasoning_effort: string | null } | null
+  model_refused: boolean; mathpix_first: boolean
+  monthly_budget: number; month_requests: number; per_pdf_limit: number
+  month_cost: { usd: number; calls_without_cost: number }
+  pdfs: Partial<Record<'read' | 'pending' | 'reading' | 'failed' | 'no_math' | 'no_candidates' | 'none_placed' | 'model_refused' | 'budget_reached' | 'off', number>>
+  reading: { asset_id: string; title: string | null; pages: number; started_at: string; route: string } | null
 }
 // Mathpix (D40): the key pair (never shown), the switch, this month's requests against the budget and the PDFs it reads.
 export type Mathpix = {
   pair: { configured: boolean; unreadable: boolean; keychain_unavailable?: boolean; keychain_pending?: boolean; app_id: string | null }; keys_rejected: boolean; switch: 'on' | 'off'
-  monthly_budget: number; month_requests: number; per_pdf_limit: number; marker_present: boolean
+  monthly_budget: number; month_requests: number; per_pdf_limit: number
   pdfs: Partial<Record<'read' | 'pending' | 'reading' | 'failed' | 'no_candidates' | 'none_placed' | 'keys_rejected' | 'budget_reached', number>>
   reading: { asset_id: string; title: string | null; pages: number; started_at: string } | null
 }
@@ -976,6 +985,7 @@ export type CellEvidence = {
   passage_id: string; anchor_text: string | null; anchor_match: 'exact' | 'normalized' | 'fuzzy' | null; kind: Evidence['kind']
   physical_page: number | null; printed_label: string | null; asset_id: string | null; evidence_status: EvidenceStatus
   text_source: 'text_layer' | 'ocr' | 'marker' | 'latex_source' | 'equation_ocr' | null
+  equation_reader?: EquationReaderInfo | null  // who read the equations of an 'equation_ocr' passage
 }
 export type CellRevision = {
   id: string; kind: 'model_fill' | 'model_proposal' | 'system_fill' | 'human_edit' | 'accept_proposal' | 'dismiss_proposal'
@@ -1534,10 +1544,8 @@ export const api = {
   credentialInUse: (env: string) => request<{ env: string; running_researches: number }>(`/api/credentials/${env}/in-use`),
   testCredential: (env: string) => request<KeyTest>(`/api/credentials/${env}/test`, { method: 'POST' }),
   testProvider: (id: string) => request<ProviderTest>(`/api/providers/${encodeURIComponent(id)}/test`, { method: 'POST' }),
-  equationReader: (leaving?: AbortSignal) => read<EquationReader>('/api/equation-reader', leaving),
-  installEquationReader: () => request<{ job: EquationReader['job'] }>('/api/equation-reader/install', { method: 'POST' }),
-  cancelEquationReaderInstall: () => request<{ job: EquationReader['job'] }>('/api/equation-reader/cancel', { method: 'POST' }),
-  removeEquationReader: () => request<EquationReader>('/api/equation-reader', { method: 'DELETE' }),
+  equationModel: (leaving?: AbortSignal) => read<EquationModel>('/api/equation-model', leaving),
+  saveEquationModelSettings: (change: { switch?: 'on' | 'off'; monthly_budget?: number }) => request<EquationModel>('/api/equation-model', json('PUT', change)),
   rereadEquations: (id: string, sourceId: string, assetId: string) =>
     request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/equations`, { method: 'POST' }),
   mathpix: (leaving?: AbortSignal) => read<Mathpix>('/api/mathpix', leaving),
@@ -2190,7 +2198,7 @@ export const dataLocationApi = {
 // Settings → General → Research (api/preference_routes.py): stored values come before the ones DEIXIS started with.
 export type Preferences = {
   default_effort: Effort; fulltext_fetch: 'auto' | 'off'; arxiv_source: 'auto' | 'off'; arxiv_route_possible: boolean
-  marker_present: boolean; model_concurrency: number; model_concurrency_max: number
+  model_concurrency: number; model_concurrency_max: number
 }
 export type PreferenceChange = Partial<Pick<Preferences, 'default_effort' | 'fulltext_fetch' | 'arxiv_source' | 'model_concurrency'>>
 export const preferencesApi = {

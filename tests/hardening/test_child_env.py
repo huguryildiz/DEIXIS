@@ -15,8 +15,7 @@ import pytest
 from deixis.tools import child_env as env_module
 from deixis.tools import local_tools, tool_paths
 from deixis.tools.child_env import NODE_TLS, UV_TLS, child_env
-from deixis.documents import math_reader, tool_updates
-from deixis.workflow import equations
+from deixis.documents import tool_updates
 
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="the fake tools are shell scripts")
 
@@ -168,31 +167,6 @@ def test_the_tool_installer_never_sees_a_key_and_gives_npm_and_uv_the_system_cer
 
 
 @posix_only
-def test_the_equation_reader_installer_never_sees_a_key(tmp_path, secrets):
-    seen = tmp_path / "env"
-    uv = dump_env(seen, "uv", tmp_path / "bin")
-    service = equations.EquationService.__new__(equations.EquationService)
-    service.reader, service._install_proc = types.SimpleNamespace(paths=types.SimpleNamespace(models=tmp_path / "m")), None
-    job = {"status": "running", "step": 0, "output": ""}
-    asyncio.run(service._run_install(job, [[str(uv), "venv"]]))
-    assert job["status"] == "succeeded"
-    env = seen_by(seen)
-    assert_clean(env)
-    assert env["UV_NATIVE_TLS"] == "1" and env["MODEL_CACHE_DIR"] == str(tmp_path / "m")
-
-
-@posix_only
-def test_the_marker_environment_is_made_without_any_key(tmp_path, monkeypatch, secrets):
-    seen = tmp_path / "env"
-    uv = dump_env(seen, "uv", tmp_path / "bin")
-    monkeypatch.setattr(math_reader, "find_tool", lambda name: str(uv))
-    math_reader.install_runtime(math_reader.runtime_paths(tmp_path / "data"))
-    env = seen_by(seen)
-    assert_clean(env)
-    assert env["UV_NATIVE_TLS"] == "1"
-
-
-@posix_only
 def test_the_built_in_model_server_never_sees_a_key_or_a_network_setting(tmp_path, secrets, monkeypatch):
     from deixis.documents import builtin_catalog, local_embedding
     from builtin_helpers import install_runtime
@@ -233,14 +207,7 @@ def tools_run(program, tmp_path):
     return job, local_tools.LocalTools(None)._run("ollama", job, [str(program)])
 
 
-def equation_run(program, tmp_path):
-    service = equations.EquationService.__new__(equations.EquationService)
-    service.reader, service._install_proc = types.SimpleNamespace(paths=types.SimpleNamespace(models=tmp_path / "m")), None
-    job = {"status": "running", "step": 0, "output": ""}
-    return job, service._run_install(job, [[str(program)]])
-
-
-RUNNERS = [tesseract_run, tools_run, equation_run]
+RUNNERS = [tesseract_run, tools_run]
 
 
 def fake(tmp_path, body):
@@ -323,7 +290,7 @@ def test_a_job_cancelled_while_it_runs_is_not_left_running(tmp_path, runner):
 
 # ---- cancellation while the process is being started ------------------------------------------------
 
-@pytest.mark.parametrize("runner", [tesseract_run, tools_run, equation_run], ids=lambda r: r.__name__)
+@pytest.mark.parametrize("runner", RUNNERS, ids=lambda r: r.__name__)
 def test_a_job_cancelled_while_its_process_is_being_created_is_not_left_running(tmp_path, monkeypatch, runner):
     async def never(*args, **kwargs):
         await asyncio.sleep(3600)

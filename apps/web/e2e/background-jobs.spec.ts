@@ -6,7 +6,7 @@ import path from 'node:path'
 import { nextPort } from './ports'
 
 // The jobs sheet (parity S1, plan S13): an open sheet stays when its last job ends, and shows how it ended from stored
-// state only. The research list, the research view and the equation reader are SYNTHETIC route answers that change
+// state only. The research list, the research view and the equation model are SYNTHETIC route answers that change
 // while the sheet is open; a passing case shows the sheet's states, not real PDF work.
 
 const REPO = path.resolve(process.cwd(), '..', '..')
@@ -38,10 +38,11 @@ class Server {
   }
 }
 
-const READER_BASE = { package: 'marker-pdf', path: '', size_bytes: 0, models_downloaded: true, disk_free_gb: 100, install: { available: true, unavailable_reason: null, url: '' }, job: null }
-const READING = { ...READER_BASE, installed: true, reading: { asset_id: 'ast_jobs', title: 'SYNTHETIC library PDF', pages: 3, started_at: new Date().toISOString() }, pdfs: { read: 4, reading: 1, pending: 1 } }
-const READ_ALL = { ...READER_BASE, installed: true, reading: null, pdfs: { read: 5, no_math: 1, failed: 0 } }
-const NO_READER = { ...READER_BASE, installed: false, models_downloaded: false, reading: null, pdfs: {} }
+const MODEL_BASE = { switch: 'on', ready: true, reason: null, model: { connection: 'openai', model: 'syn-model', reasoning_effort: null }, model_refused: false, mathpix_first: false,
+  monthly_budget: 500, month_requests: 3, per_pdf_limit: 60, month_cost: { usd: 0, calls_without_cost: 0 } }
+const READING = { ...MODEL_BASE, reading: { asset_id: 'ast_jobs', title: 'SYNTHETIC library PDF', pages: 3, started_at: new Date().toISOString(), route: 'model' }, pdfs: { read: 4, reading: 1, pending: 1 } }
+const READ_ALL = { ...MODEL_BASE, reading: null, pdfs: { read: 5, no_math: 1, failed: 0 } }
+const NO_READER = { ...MODEL_BASE, ready: false, reason: 'no_answer_model', model: null, reading: null, pdfs: {} }
 
 const now = new Date().toISOString()
 const summary = (status: string) => ({
@@ -77,9 +78,9 @@ async function expectEnded(page: Page, readsAnswered = true) {
   await expect(page.locator('.jobs-sheet')).not.toContainText(readsAnswered ? UNKNOWN : 'Nothing is running.')
 }
 
-test('the equation reader finishes while the sheet is open: it stays, with the read, no-equation and failed counts under Finished', async ({ page }) => {
+test('the equation reading finishes while the sheet is open: it stays, with the read, no-equation and failed counts under Finished', async ({ page }) => {
   let reader: object = READING
-  await page.route('**/api/equation-reader', route => route.fulfill({ json: reader }))
+  await page.route('**/api/equation-model', route => route.fulfill({ json: reader }))
   await openSheet(page)
   await expect(page.locator('.jobs-sheet .job')).toContainText('Reading equations')
   reader = READ_ALL
@@ -90,9 +91,9 @@ test('the equation reader finishes while the sheet is open: it stays, with the r
   await expect(done.locator('svg.lucide-check')).toHaveCount(1)
 })
 
-test('the equation reader cannot be read any more: the sheet stays and the job is "Status unknown", never finished', async ({ page }) => {
+test('the equation model cannot be read any more: the sheet stays and the job is "Status unknown", never finished', async ({ page }) => {
   let failing = false
-  await page.route('**/api/equation-reader', route => failing ? route.fulfill({ status: 500, json: { detail: 'SYNTHETIC failure' } }) : route.fulfill({ json: READING }))
+  await page.route('**/api/equation-model', route => failing ? route.fulfill({ status: 500, json: { detail: 'SYNTHETIC failure' } }) : route.fulfill({ json: READING }))
   await openSheet(page)
   failing = true
   await expectEnded(page, false)
@@ -103,7 +104,7 @@ test('the equation reader cannot be read any more: the sheet stays and the job i
 
 test('an OCR run fails while the sheet is open: its own run status is shown as Failed, not Finished', async ({ page }) => {
   let status = 'running'
-  await page.route('**/api/equation-reader', route => route.fulfill({ json: NO_READER }))
+  await page.route('**/api/equation-model', route => route.fulfill({ json: NO_READER }))
   await page.route('**/api/researches', route => route.fulfill({ json: [summary(status)] }))
   await page.route('**/api/researches/res_jobs', route => route.fulfill({ json: view(status) }))
   await openSheet(page)
@@ -120,7 +121,7 @@ test('an OCR run fails while the sheet is open: its own run status is shown as F
 
 test('the research view cannot be read while an OCR run is listed: the sheet says the state is unknown, not that nothing runs', async ({ page }) => {
   let failing = false
-  await page.route('**/api/equation-reader', route => route.fulfill({ json: NO_READER }))
+  await page.route('**/api/equation-model', route => route.fulfill({ json: NO_READER }))
   await page.route('**/api/researches', route => route.fulfill({ json: [summary('running')] }))
   await page.route('**/api/researches/res_jobs', route => failing ? route.fulfill({ status: 500, json: { detail: 'SYNTHETIC failure' } }) : route.fulfill({ json: view('running') }))
   await openSheet(page)
@@ -132,7 +133,7 @@ test('the research view cannot be read while an OCR run is listed: the sheet say
 })
 
 test('a sidebar collapsed on the desktop still shows the background card in the phone drawer', async ({ page }) => {
-  await page.route('**/api/equation-reader', route => route.fulfill({ json: READING }))
+  await page.route('**/api/equation-model', route => route.fulfill({ json: READING }))
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto(server.url())
   await expect(page.locator('.sidebar-foot .bgcard')).toBeVisible()

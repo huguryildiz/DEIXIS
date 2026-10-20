@@ -22,6 +22,4 @@ Tauri and the system web view (desktop shell)
   WebKitGTK (LGPL-2.1-or-later) on Linux. DEIXIS does not copy any of them into its own files.
 
 Downloaded on request, not part of the package
-  Marker (marker-pdf 1.10.2, the optional equation reader): the code is GPL-3.0-or-later. Its model weights have their
-  own licence, which limits commercial use. Settings shows this before the download. https://github.com/datalab-to/marker
   The model command-line tools you connect (Codex, Claude Code, Gemini CLI) are separate programs under their own terms.

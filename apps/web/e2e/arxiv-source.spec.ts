@@ -12,8 +12,8 @@ import { backPanel, openPanel, reportPanel, showAnswer, sourcePanel } from './pa
 // SYNTHETIC PDF and a SYNTHETIC source archive (tests/support/arxiv_helpers.py) and a fake fetch, not real arXiv access or
 // matching quality on real papers.
 //
-// Its own fixture server with DEIXIS_FIXTURE_ARXIV_SOURCE=fake: Settings(arxiv_source="auto"), Marker not installed
-// (a fresh temp data directory has no equation-reader environment), and deixis.documents.fetch.fetch_file
+// Its own fixture server with DEIXIS_FIXTURE_ARXIV_SOURCE=fake: Settings(arxiv_source="auto"), the arXiv source route
+// ahead of the answer model's reading of equations, and deixis.documents.fetch.fetch_file
 // monkeypatched to return the SYNTHETIC source archive instead of a network request. DEIXIS_FIXTURE_FULLTEXT=on: discovery
 // fetches and reads the work's PDF, and a table fill reads its equations (the fast path's answer reads none, D253).
 

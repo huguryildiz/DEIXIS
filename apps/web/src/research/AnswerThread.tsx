@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react'
 import { ArrowUp, ArrowUpRight, BadgeCheck, ChevronRight, SearchCheck, BookOpen, BookOpenText, Copy, Eye, FileText, Filter, Info, ListChecks, ListMinus, MessageSquare, PencilLine, RotateCw, ScanText, Sigma, ShieldCheck, Table2, TriangleAlert, Upload, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { api, type Answer, type Claim, type EvidenceLedger, type Limitation, type Source, type ValidationIssue, type Verdict } from '../api'
-import { locatorText, pauseReasonText, retractionNote, verdictLabels, versionText, versionTones } from '../labels'
+import { equationReaderName, locatorText, pauseReasonText, retractionNote, verdictLabels, versionText, versionTones } from '../labels'
 import { LATE_REVISION_LABEL, LATE_REVISION_DETAIL, LATE_REVISION_PENDING } from '../labels'
 import { MathText } from '../MathText'
 import { writeClipboard } from '../clipboard'
@@ -288,7 +288,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
       <p className="answer-paragraph">{claims.map(claim => { const change = diff?.claims.get(claim.id); return <span className="claim" key={claim.id}>
         {change?.added ? <ins><span className="sr-only">{t('Added:')} </span><ClaimText claim={claim} /></ins> : <ClaimText claim={claim} />}
         {claim.evidence.map(e => {
-          const chipButton = <button key={e.passage_id} className={`cite-chip${e.kind === 'abstract' ? ' is-abstract' : ''}`} title={[e.title, versionText(e.version_label), locatorText(e), e.text_source === 'ocr' && t(OCR_LABEL), e.text_source === 'latex_source' && t('arXiv source'), e.text_source === 'equation_ocr' && t('equations read by Mathpix'), e.removed_from_research && t('Removed from this research')].filter(Boolean).join(' · ')} onClick={() => onOpen(e.passage_id, e.anchor_text)}>{citeLabel(claim, e) ?? `[${refs.get(e.passage_id)?.n}]`}{e.kind === 'abstract' && <span className="cite-chip-origin"><BookOpenText size={10} aria-hidden /><span className="sr-only">{t('abstract')}</span></span>}{e.text_source === 'latex_source' && <span className="cite-chip-origin"><Sigma size={10} aria-hidden /><span className="sr-only">{t('arXiv source')}</span></span>}</button>
+          const chipButton = <button key={e.passage_id} className={`cite-chip${e.kind === 'abstract' ? ' is-abstract' : ''}`} title={[e.title, versionText(e.version_label), locatorText(e), e.text_source === 'ocr' && t(OCR_LABEL), e.text_source === 'latex_source' && t('arXiv source'), e.text_source === 'equation_ocr' && t('equations read by {name}', { name: equationReaderName(e.equation_reader ?? { engine: 'mathpix' }, model => modelText(model)) }), e.removed_from_research && t('Removed from this research')].filter(Boolean).join(' · ')} onClick={() => onOpen(e.passage_id, e.anchor_text)}>{citeLabel(claim, e) ?? `[${refs.get(e.passage_id)?.n}]`}{e.kind === 'abstract' && <span className="cite-chip-origin"><BookOpenText size={10} aria-hidden /><span className="sr-only">{t('abstract')}</span></span>}{e.text_source === 'latex_source' && <span className="cite-chip-origin"><Sigma size={10} aria-hidden /><span className="sr-only">{t('arXiv source')}</span></span>}</button>
           return change?.addedPassages.has(e.passage_id) ? <ins key={e.passage_id} className="cite-ins"><span className="sr-only">{t('Added citation:')} </span>{chipButton}</ins> : chipButton
         })}
         {/* A passage the earlier version's claim of the same text cited and this one does not: named, not opened. */}
@@ -319,7 +319,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
               <span className={`ref-pill pill is-${versionTones[e.version_label ?? ''] ?? 'unstated'}`}><BadgeCheck size={12} aria-hidden />{versionText(e.version_label)}</span>
               {e.text_source === 'ocr' && <span className="ref-pill pill is-ocr"><ScanText size={12} aria-hidden />{t(OCR_LABEL)}</span>}
               {e.text_source === 'latex_source' && <span className="ref-pill pill is-text"><Sigma size={12} aria-hidden />{t('arXiv source')}</span>}
-              {e.text_source === 'equation_ocr' && <span className="ref-pill pill is-text"><Sigma size={12} aria-hidden />Mathpix</span>}
+              {e.text_source === 'equation_ocr' && <span className="ref-pill pill is-text"><Sigma size={12} aria-hidden />{equationReaderName(e.equation_reader ?? { engine: 'mathpix' }, model => modelText(model))}</span>}
               {e.removed_from_research && <span className="ref-pill pill is-removed"><ListMinus size={12} aria-hidden />{t('Removed from this research')}</span>}
             </span>
           </span>

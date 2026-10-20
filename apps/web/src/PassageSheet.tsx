@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, assetUrl, equationCropUrl, shellApi, type Asset, type AssetText, type Claim, type Passage, type PdfDiscovery, type Source } from './api'
-import { citedText, locatorText, providerName, rereadEquationsLabel, retractionNote, serviceErrors, serviceKind, versionText } from './labels'
+import { citedText, equationReaderName, locatorText, providerName, rereadEquationsLabel, retractionNote, serviceErrors, serviceKind, versionText } from './labels'
 import { t, uiLocale } from './i18n'
 import { PassageMathText } from './PassageMathText'
 import { PdfViewer } from './PdfViewer'
@@ -18,6 +18,7 @@ import { StackPanel } from './research/SplitPanel'
 import { usePanels } from './research/usePanelStack'
 import { citationStyles, formatBibtex, formatReferenceText, useCitationStyle } from './citations'
 import { useToast } from './Toast'
+import { useModelText } from './modelText'
 import type { OcrContext } from './research/shared'
 
 // Marks every located anchor; overlapping anchors are merged into one mark, and the first mark is scrolled into view
@@ -130,6 +131,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   // The source PDF's text is kept with the file it was read from: when the source's file changes (Replace PDF) the
   // earlier text no longer counts and the new file's is read.
   const [extraText, setExtraText] = useState<{ assetId: string; value: AssetText | false } | null>(null)
+  const modelText = useModelText()
   const [comparing, setComparing] = useState(false)
   const [loadingCurrent, setLoadingCurrent] = useState(false)
   const [comparisonError, setComparisonError] = useState('')
@@ -202,6 +204,8 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   const highlightKey = highlights.join('\u0000')
   const citation = useMemo(() => passage ? { page: passage.physical_page, texts: highlightKey ? highlightKey.split('\u0000') : [], expected: expectHighlight, labels: citationLabels } : null, [passage, highlightKey, expectHighlight, citationLabels])
   const status = passage?.evidence_status ?? 'current'
+  // Who read the numbered equations of this passage: Mathpix or the answer model (D113); passages stored before the field are Mathpix's.
+  const readerName = equationReaderName(passage?.equation_reader ?? { engine: 'mathpix' }, model => modelText(model))
   const earlier = Boolean(passage?.occurrence && !passage.occurrence.is_current && status === 'text_superseded')
   const shownDocument = comparing ? currentDocument : passageDocument
   const toggleCurrent = async () => {
@@ -456,7 +460,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
               {!(source.origin === 'user_upload' && source.version_label === 'uploaded file') && <span className="ref-pill pill dpill dpill-outline">{source.version_label ? versionText(source.version_label) : t('version not stated by the provider')}</span>}
               {(passage?.text_source === 'ocr' || row?.has_ocr_text) && <span className="ref-pill pill dpill is-ocr warn"><ScanText size={12} aria-hidden />{t(OCR_LABEL)}</span>}
               {passage?.text_source === 'latex_source' && <span className="ref-pill pill dpill is-text"><Sigma size={12} aria-hidden />{t('arXiv source')}</span>}
-              {passage?.text_source === 'equation_ocr' && <span className="ref-pill pill dpill is-text"><Sigma size={12} aria-hidden />Mathpix</span>}
+              {passage?.text_source === 'equation_ocr' && <span className="ref-pill pill dpill is-text"><Sigma size={12} aria-hidden />{readerName}</span>}
               {row && row.similarity !== null && <span className="dpill tnum" title={t('Used for ordering only; it is not a relevance judgment.')}>{t('similarity {score}', { score: row.similarity.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })}</span>}
             </div>
           </div>
@@ -496,8 +500,8 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
             {tabs.map(([key, label]) => <button key={key} type="button" role="tab" id={`source-tab-${key}`} aria-selected={tab === key} aria-controls={`source-${key}-view`} className={tab === key ? 'on' : undefined} onClick={() => choose(key)}>{key === 'pdf' ? 'PDF' : t(label)}</button>)}
           </div>
           {tab === 'text' && passage?.text_source === 'marker' && (passage.equations_to_check
-            ? <p className="source-notice"><TriangleAlert size={15} aria-hidden />{t(passage.equations_to_check === 1 ? 'Page read from the page image (Marker). {n} equation on this page does not match the PDF’s own text and may be misread; check it against the PDF page.' : 'Page read from the page image (Marker). {n} equations on this page do not match the PDF’s own text and may be misread; check them against the PDF page.', { n: passage.equations_to_check })}</p>
-            : <p className="source-notice"><Info size={15} aria-hidden />{t('Page read from the page image (Marker). Equations are LaTeX and tables are rebuilt as tables; check them against the PDF page.')}</p>)}
+            ? <p className="source-notice"><TriangleAlert size={15} aria-hidden />{t(passage.equations_to_check === 1 ? 'Page read from the page image (Marker, read earlier). {n} equation on this page does not match the PDF’s own text and may be misread; check it against the PDF page.' : 'Page read from the page image (Marker, read earlier). {n} equations on this page do not match the PDF’s own text and may be misread; check them against the PDF page.', { n: passage.equations_to_check })}</p>
+            : <p className="source-notice"><Info size={15} aria-hidden />{t('Page read from the page image (Marker, read earlier). Equations are LaTeX and tables are rebuilt as tables; check them against the PDF page.')}</p>)}
           {/* The arXiv source route (D104): numbered display equations matched to the page by their numbers, from the
               authors' own LaTeX of this arXiv version. The rest of the passage, including other mathematics, stays the
               PDF's own text layer; the route never checks that the source compiles to this page. */}
@@ -517,12 +521,12 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
           {tab === 'text' && passage?.text_source === 'equation_ocr' && passage.source_equations?.length ? (
             <div className="source-notice"><Info size={15} aria-hidden /><div>
               <p>{t(passage.source_equations.length === 1
-                ? 'Equation ({a}) in this passage was read by Mathpix from the page image and matched to the PDF’s letters, scripts and signs. Check it against the page. The rest of this passage is the PDF’s own text.'
-                : 'Equations {numbers} in this passage were read by Mathpix from the page image and matched to the PDF’s letters, scripts and signs. Check them against the page. The rest of this passage is the PDF’s own text.',
-                { a: passage.source_equations[0], numbers: passage.source_equations.map(n => `(${n})`).join(', ') })}</p>
+                ? 'Equation ({a}) in this passage was read by {name} from the page image and matched to the PDF’s letters, scripts and signs. Check it against the page. The rest of this passage is the PDF’s own text.'
+                : 'Equations {numbers} in this passage were read by {name} from the page image and matched to the PDF’s letters, scripts and signs. Check them against the page. The rest of this passage is the PDF’s own text.',
+                { a: passage.source_equations[0], numbers: passage.source_equations.map(n => `(${n})`).join(', '), name: readerName })}</p>
               <ul className="equation-crops">{passage.source_equations.map(n => <li key={n}><figure>
                 <figcaption>({n})</figcaption>
-                <img src={equationCropUrl(researchId, passage.id, n)} alt={t('The page image Mathpix read equation ({n}) from', { n })} loading="lazy" />
+                <img src={equationCropUrl(researchId, passage.id, n)} alt={t('The page image {name} read equation ({n}) from', { name: readerName, n })} loading="lazy" />
               </figure></li>)}</ul>
             </div></div>
           ) : null}

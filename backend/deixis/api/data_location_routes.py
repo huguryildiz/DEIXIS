@@ -69,9 +69,9 @@ def register_data_location_routes(app, settings: Settings) -> None:
 
     def installing(request: Request) -> bool:
         state = request.app.state
-        builtin, equations = getattr(state, "builtin", None), getattr(state, "equations", None)
+        builtin = getattr(state, "builtin", None)
         job = getattr(builtin, "job", None) if builtin is not None else None
-        return bool(job and job.get("status") == "running") or bool(equations and equations.installing())
+        return bool(job and job.get("status") == "running")
 
     @app.get("/api/settings/data-location")
     async def get_data_location(request: Request) -> dict[str, Any]:

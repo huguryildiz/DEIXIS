@@ -8,7 +8,6 @@ import dataclasses
 import os
 import socket
 import sqlite3
-import subprocess
 import sys
 import threading
 import time
@@ -378,26 +377,6 @@ def plan_text_retry(settings: Settings, asset_id: str, expected_extraction: str)
         return 3
 
 
-def equations(settings: Settings, action: str) -> int:
-    """Install, check or remove the optional equation reader (Marker) under the data directory (D52)."""
-    from deixis.documents import math_reader
-
-    paths = math_reader.runtime_paths(settings.data_dir)
-    if action == "install":
-        try:
-            math_reader.install_runtime(paths)
-        except (math_reader.MathReaderUnavailable, OSError, subprocess.CalledProcessError) as exc:
-            print(f"install failed: {exc}", file=sys.stderr)
-            return 1
-        print(f"Marker installed in {paths.env}; its models (about 3.3 GB) download into {paths.models} on the first read.")
-    elif action == "remove":
-        math_reader.remove_runtime(paths)
-        print(f"Removed {paths.env} and {paths.models}.")
-    else:
-        print(f"{'installed' if paths.installed() else 'not installed'}: {paths.env}")
-    return 0
-
-
 def recovery_files(settings: Settings, delete: bool) -> int:
     from deixis.workflow import reconcile, recovery_history
     from deixis.workflow.store import Store
@@ -442,8 +421,6 @@ def main(argv: list[str] | None = None) -> int:
     again.add_argument("--dry-run", action="store_true", help="Report what would become current or be rejected; write nothing")
     again.add_argument("--retry", metavar="ASSET_ID", help="Retry one failed or partial text extraction")
     again.add_argument("--expected-extraction", metavar="EXTRACTION_ID", help="The retry's current extraction baseline")
-    eq = sub.add_parser("equations", help="Install, check or remove the optional equation reader (Marker, about 4.4 GB)")
-    eq.add_argument("action", choices=("install", "status", "remove"))
     retained = sub.add_parser("recovery-files", help="List unreferenced retained recovery files")
     retained.add_argument("--delete", action="store_true", help="Delete listed files through the guarded recovery unlink")
     args = parser.parse_args(argv)
@@ -463,8 +440,6 @@ def main(argv: list[str] | None = None) -> int:
         settings = held
     if args.command == "recovery-files":
         return recovery_files(settings, args.delete)
-    if args.command == "equations":
-        return equations(settings, args.action)
     if args.command == "reextract":
         return reextract(settings, args.dry_run, args.retry, args.expected_extraction)
     if args.command in ("backup", "restore"):

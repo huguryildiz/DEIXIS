@@ -1,4 +1,4 @@
-"""Update checks for Tesseract, Marker and PyMuPDF on Settings → On this computer; release lists are mocked."""
+"""Update checks for Tesseract and PyMuPDF on Settings → On this computer; release lists are mocked."""
 
 from __future__ import annotations
 
@@ -21,8 +21,6 @@ from fakes import FakeAdapter
 def releases(request: httpx.Request) -> httpx.Response:
     if request.url.host == "formulae.brew.sh":
         return httpx.Response(200, json={"versions": {"stable": "5.5.3"}})
-    if request.url.path == "/pypi/marker-pdf/json":
-        return httpx.Response(200, json={"info": {"version": "2.0.0"}})
     if request.url.path == "/pypi/pymupdf/json":
         return httpx.Response(503)
     return httpx.Response(404)
@@ -49,13 +47,12 @@ def test_each_tool_reports_its_installed_and_latest_version(tmp_path, monkeypatc
         tesseract = client.get("/api/tool-updates/tesseract").json()
         assert (tesseract["installed"], tesseract["latest"], tesseract["update_available"]) == ("5.5.2", "5.5.3", True)
 
-        marker = client.get("/api/tool-updates/marker").json()  # not installed in this data folder
-        assert (marker["installed"], marker["tested"], marker["latest"], marker["update_available"]) == (None, "1.10.2", "2.0.0", None)
 
         pymupdf = client.get("/api/tool-updates/pymupdf").json()
         assert pymupdf["installed"] == client.get("/api/pdf-reader").json()["version"]
         assert pymupdf["latest"] is None and pymupdf["update_available"] is None and "503" in pymupdf["error"]
 
+        assert client.get("/api/tool-updates/marker").status_code == 404  # Marker was removed (D113)
         assert client.get("/api/tool-updates/zotero").status_code == 404
 
 
@@ -145,12 +142,12 @@ def test_the_update_check_of_a_bundled_tesseract_follows_the_app_and_asks_homebr
     packaged(monkeypatch, tmp_path / "bundle")
     asked = []
     http = httpx.AsyncClient(transport=httpx.MockTransport(lambda request: asked.append(request) or httpx.Response(200, json={"versions": {"stable": "9.9.9"}})))
-    result = asyncio.run(tool_updates.check("tesseract", http, None))
+    result = asyncio.run(tool_updates.check("tesseract", http))
     assert (result["installed"], result["latest"], result["update_available"], result["error"]) == ("5.5.1", None, None, None)
     assert asked == []
 
     packaged(monkeypatch, tmp_path / "bundle", frozen=False)  # not packaged and not on PATH: nothing installed, the formula API is asked
-    result = asyncio.run(tool_updates.check("tesseract", http, None))
+    result = asyncio.run(tool_updates.check("tesseract", http))
     assert (result["installed"], result["latest"], len(asked)) == (None, "9.9.9", 1)
 
 

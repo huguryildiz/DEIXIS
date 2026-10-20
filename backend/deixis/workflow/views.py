@@ -20,7 +20,7 @@ from deixis.workflow import probes as probe_rules
 from deixis.workflow import fast_answer as answer_input, screen_more
 from deixis.workflow.chaining import QUERY_PREFIX as CHAIN_PREFIX, policy as chain_policy, request_outcomes
 from deixis.workflow import vocabulary as vocabulary_rules
-from deixis.workflow.equations import chunk_numbers, equation_state, equations_to_check, latex_numbers
+from deixis.workflow.equations import chunk_numbers, equation_reader, equation_state, equations_to_check, latex_numbers
 from deixis.workflow.queue import _snapshot as snapshot, context as queue_context, queue_answers, queue_counts, inspection_progress
 from deixis.workflow.report.store import DISPLAY_ORDER, ReportStore
 from deixis.workflow import waiting as waiting_rules
@@ -648,7 +648,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         claims = []
         for c in conn.execute("SELECT * FROM claims WHERE answer_id = ? ORDER BY ordinal", (a["id"],)):
             rows = conn.execute(
-                "SELECT l.passage_id, l.source_version_id, s.work_id, l.anchor_text, l.anchor_match, p.kind, p.physical_page, p.printed_label, p.text_source, s.title, s.version_label,"
+                "SELECT l.passage_id, l.source_version_id, s.work_id, l.anchor_text, l.anchor_match, p.kind, p.physical_page, p.printed_label, p.text_source, p.extraction_version, p.asset_id, s.title, s.version_label,"
                 " p.text AS passage_text, (SELECT w.source_key FROM works w WHERE w.id = s.work_id) AS source_key,"
                 f" {EVIDENCE_STATUS_SQL} AS evidence_status, {RENDITION_SQL} AS rendition FROM evidence_links l"
                 " JOIN passages p ON p.id = l.passage_id JOIN source_versions s ON s.id = l.source_version_id"
@@ -663,6 +663,9 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
                  "version_label": e["version_label"], "anchor_text": e["anchor_text"], "anchor_match": e["anchor_match"],
                  "evidence_status": e["evidence_status"],
                  "text_source": e["text_source"], "removed_from_research": e["source_version_id"] in removed,
+                 # Who read an `equation_ocr` passage's equations: Mathpix or the answer model by name (D113).
+                 "equation_reader": equation_reader(e["extraction_version"], store, e["asset_id"])
+                 if e["text_source"] == "equation_ocr" else None,
                  # Europe PMC's text drawn as a PDF: its page is DEIXIS's, not the publisher's (SW21).
                  "rendition": bool(e["rendition"])}
                 for e in rows
@@ -764,7 +767,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
                              "equations": equation_state(store, r["id"]), "ocr": ocr_state(store, r["id"]), "rejected_extraction": dict(rejected) if (rejected := conn.execute(
             "SELECT extraction_version, rejection_reason, created_at FROM asset_extractions WHERE asset_id = ? AND outcome = 'rejected'"
             " AND extraction_version NOT LIKE '%+marker-%' AND extraction_version NOT LIKE '%+arxiv-latex-%'"
-            " AND extraction_version NOT LIKE '%+mathpix-%'"
+            " AND extraction_version NOT LIKE '%+mathpix-%' AND extraction_version NOT LIKE '%+model-eq-%'"
             " ORDER BY created_at DESC, rowid DESC LIMIT 1", (r["id"],)).fetchone()) else None} for r in conn.execute(
             "SELECT id, extraction_status, extraction_error, extraction_version, page_count, origin, byte_size, original_filename"
             " FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL", (svid,)
@@ -1421,11 +1424,14 @@ def passage_view(store: Store, research_id: str, passage_id: str) -> dict[str, A
         "extraction_version": passage["extraction_version"], "payload_ref": passage["payload_ref"], "text_source": passage["text_source"],
         "equations_to_check": equations_to_check(store, passage["asset_id"], passage["extraction_version"]).get(passage["physical_page"], 0)
         if passage["text_source"] == "marker" else 0,
-        # The equation numbers in this chunk placed from the arXiv source (D104) or read by Mathpix (D40); the rest of the
+        # The equation numbers in this chunk placed from the arXiv source (D104) or read from the page image (D40, D113); the rest of the
         # chunk is the PDF's text.
         "source_equations": chunk_numbers(latex_numbers(store, passage["asset_id"], passage["extraction_version"]),
                                           passage["physical_page"], passage["payload_ref"])
         if passage["text_source"] in ("latex_source", "equation_ocr") else [],
+        # Who read this passage's equations from the page image: Mathpix, or the answer model by name (D113).
+        "equation_reader": equation_reader(passage["extraction_version"], store, passage["asset_id"])
+        if passage["text_source"] == "equation_ocr" else None,
         "reading_depth": "abstract" if passage["kind"] == "abstract" else "selected_sections",
         "asset_id": passage["asset_id"],
         "rendition": store.asset_rendition(passage["asset_id"]),

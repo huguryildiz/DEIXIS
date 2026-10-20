@@ -708,12 +708,13 @@ def rich_library(tmp_path: Path):
 # and not named here fails the test, so a table a later migration adds is noticed; a named table that gained rows fails too.
 EMPTY_BECAUSE = {
     "arxiv_sources": "arXiv source reading is off in the test settings",
-    "asset_arxiv_versions": "written only by the optional equation reader (Marker), which is not installed",
+    "asset_arxiv_versions": "written only by the arXiv source route, which is off in the test settings",
     "citation_map_resolutions": "written only by a citation map run, which a person starts and this flow does not",
     **{table: "written only by a Verify Citations draft (D86), which this flow does not give" for table in (
         "citation_drafts", "citation_markers", "citation_bib_entries", "citation_pairs", "citation_checks")},
     **{table: "written only by a statement check (D100), which only a research with the statement intent runs"
        for table in ("statement_checks", "statement_check_items")},
+    "equation_model_requests": "written only by the answer model's equation reading (D113), which needs a default answer model that accepts images; none is set",
     "fast_path_background_fetches": "written by fast-path background PDF fetches (D251); full-text fetch is off in the test settings",
     "human_selection_links": "written only by human decisions in the screening queue, which this flow does not make",
     "mathpix_requests": "written only by the optional Mathpix equation reader, which is off by default",

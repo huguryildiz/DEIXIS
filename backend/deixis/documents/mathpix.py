@@ -130,10 +130,10 @@ async def test_pair(client: httpx.AsyncClient, app_id: str, app_key: str) -> dic
 
 
 @asynccontextmanager
-async def request_lock(directory: Path, wait: float = LOCK_WAIT_SECONDS) -> AsyncIterator[None]:
+async def request_lock(directory: Path, wait: float = LOCK_WAIT_SECONDS, folder: str = "mathpix") -> AsyncIterator[None]:
     """One request at a time per data directory, across processes (POSIX `flock`, Windows `msvcrt.locking`). Waiting
-    longer than `wait` seconds raises TimeoutError."""
-    path = directory / "mathpix" / ".request.lock"
+    longer than `wait` seconds raises TimeoutError. The answer model's equation requests (D113) use `folder="equation-model"`."""
+    path = directory / folder / ".request.lock"
     if os.name == "nt":  # pragma: no cover - exercised on Windows only
         import msvcrt
 

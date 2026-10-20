@@ -19,7 +19,7 @@ type DataFlowInput = {
   semantic: SemanticSearch | null
   email: ContactEmailSetting | null
   /** Optional services that are on now: Mathpix with its switch on and keys saved, a Zotero web key; null while unread. */
-  optional: { mathpix: boolean; zoteroWeb: boolean } | null
+  optional: { mathpix: boolean; equationModel: { connection: string; model: string } | null; zoteroWeb: boolean } | null
 }
 
 /** The rows as [heading, text]; a text is null while its setting is still unread; a row with nothing to say is left out. */
@@ -49,6 +49,7 @@ function dataFlowRows({ defaults, connections, semantic, email, optional }: Data
 
   const extras = !optional || !connections ? null : [
     ...(optional.mathpix ? [t('Mathpix is on: images of equation areas cut from PDFs are sent to Mathpix.')] : []),
+    ...(optional.equationModel ? [t('Equations are read by the answer model: images of equation areas cut from PDFs are sent to {connection}.', { connection: connectionName(optional.equationModel.connection) })] : []),
     ...(access('serpapi') ? [t('SerpApi: when you ask DEIXIS to find a PDF and none is found, the work’s title is sent to SerpApi.')] : []),
     ...(optional.zoteroWeb ? [t('A Zotero web key is saved: when you use your web library, titles and DOIs of works are sent to zotero.org to find their PDFs.')] : []),
   ]
@@ -86,8 +87,9 @@ export function DataFlowsSection({ defaults, active, refresh }: { defaults: Reco
     api.connections().then(value => { if (live) setConnections(value) }, fail)
     api.semanticSearch().then(value => { if (live) setSemantic(value) }, fail)
     shellApi.contactEmail().then(value => { if (live) setEmail(value) }, fail)
-    Promise.all([api.mathpix(), api.credentials()]).then(([mathpix, credentials]) => {
+    Promise.all([api.mathpix(), api.equationModel(), api.credentials()]).then(([mathpix, equation, credentials]) => {
       if (live) setOptional({ mathpix: mathpix.switch === 'on' && mathpix.pair.configured,
+        equationModel: equation.ready && !equation.mathpix_first ? equation.model : null,
         zoteroWeb: credentials.keys.some(k => k.env === 'ZOTERO_API_KEY' && k.configured) })
     }, fail)
     return () => { live = false }

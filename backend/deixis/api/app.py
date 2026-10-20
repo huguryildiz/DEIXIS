@@ -35,7 +35,7 @@ from deixis.documents import acquisition
 from deixis.documents import embeddings, rerankers
 from deixis.documents import figures
 from deixis.documents.identity import MATCH_TEXT_CHARS
-from deixis.documents import builtin_catalog, local_embedding, math_reader
+from deixis.documents import builtin_catalog, local_embedding
 from deixis.documents import ocr
 from deixis.documents import pdf, pdf_child
 from deixis.documents import tool_updates
@@ -76,7 +76,7 @@ from deixis.workflow import waiting as pdf_waiting
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow import english_question
 from deixis.workflow import equations as equations_module
-from deixis.workflow.equations import EquationService, chunk_numbers, equation_state, equations_to_check, latex_numbers
+from deixis.workflow.equations import EquationService, chunk_numbers, equation_reader, equation_state, equations_to_check, latex_numbers
 from deixis.workflow.local_embedding_service import LocalModelService, ServiceError
 from deixis.workflow.flow import FlowDeps, ResearchFlow
 from deixis.workflow import report_pipeline
@@ -935,12 +935,13 @@ def create_app(
                                                 base_url=lambda: store.setting(LOCAL_SERVER_SETTING)),
         }
         package = skill.load_skill_package()
-        equations = equation_service if equation_service is not None else EquationService(
-            store, math_reader.MathReader(math_reader.runtime_paths(settings.data_dir)), settings.papers_dir)
+        equations = equation_service if equation_service is not None else EquationService(store, settings.papers_dir)
         if equation_service is None:
             equations.configure_arxiv_source(settings.effective_arxiv_source(), settings.data_dir)  # D104, off unless the flag says auto
         if equations.mathpix_client is None:
             equations.configure_mathpix(settings.data_dir, http)  # D40: requests only with the switch on and a key pair
+        if not equations.adapters:
+            equations.configure_model(adapters)  # D113: the default answer model reads equation crops
         # The built-in models (llama.cpp): a test injects its own models object and never starts a real server.
         builtin_paths = local_embedding.builtin_paths(settings.data_dir)
         embedder = local_embedder if local_embedder is not None else local_embedding.LocalModels(builtin_paths)
@@ -1621,6 +1622,21 @@ def create_app(
             store.set_setting(equations_module.MATHPIX_BUDGET, body.monthly_budget)
         return request.app.state.equations.mathpix_status()
 
+    # ---- the answer model reads equation crops (D113): the switch and the monthly budget ----------------------------
+    @app.get("/api/equation-model")
+    async def equation_model_status(request: Request) -> dict[str, Any]:
+        return request.app.state.equations.model_status()
+
+    @app.put("/api/equation-model")
+    async def put_equation_model_settings(body: MathpixSettings, request: Request) -> dict[str, Any]:
+        """The switch and the monthly request budget; turning the switch off stops new requests (sent ones finish)."""
+        store = store_of(request)
+        if body.switch is not None:
+            store.set_setting(equations_module.MODEL_SWITCH, body.switch)
+        if body.monthly_budget is not None:
+            store.set_setting(equations_module.MODEL_BUDGET, body.monthly_budget)
+        return request.app.state.equations.model_status()
+
     @app.get("/api/mathpix/estimate")
     async def mathpix_estimate(request: Request) -> dict[str, Any]:
         """How many PDFs Mathpix would read and an upper bound of requests, from the detector alone; nothing is sent."""
@@ -1770,33 +1786,6 @@ def create_app(
     @app.post("/api/local-tools/{tool_id}/cancel")
     async def cancel_local_tool_install(tool_id: str, request: Request) -> dict[str, Any]:
         return {"job": request.app.state.local_tools.cancel(tool_id)}
-
-    @app.get("/api/equation-reader")
-    async def equation_reader_status(request: Request) -> dict[str, Any]:
-        """The optional equation reader (Marker, D52): installed or not, its size, its install job and the PDFs it has read."""
-        return await request.app.state.equations.status()
-
-    @app.post("/api/equation-reader/install", status_code=202)
-    async def install_equation_reader(request: Request) -> dict[str, Any]:
-        try:
-            return {"job": request.app.state.equations.install(await asyncio.to_thread(find_tool, "uv"))}
-        except ValueError as exc:
-            raise HTTPException(409, str(exc)) from exc
-
-    @app.post("/api/equation-reader/cancel")
-    async def cancel_equation_reader_install(request: Request) -> dict[str, Any]:
-        try:
-            return {"job": request.app.state.equations.cancel_install()}
-        except ValueError as exc:
-            raise HTTPException(409, str(exc)) from exc
-
-    @app.delete("/api/equation-reader")
-    async def remove_equation_reader(request: Request) -> dict[str, Any]:
-        try:
-            await request.app.state.equations.remove()
-        except ValueError as exc:
-            raise HTTPException(409, str(exc)) from exc
-        return await request.app.state.equations.status()
 
     async def semantic_search_view(request: Request, refresh: bool = False) -> dict[str, Any]:
         saved = store_of(request).setting("semantic_search")
@@ -2700,17 +2689,17 @@ def create_app(
 
     @app.get("/api/researches/{research_id}/passages/{passage_id}/equations/{number}/crop")
     async def get_equation_crop(research_id: str, passage_id: str, number: str, request: Request) -> Response:
-        """The image Mathpix read a passage's equation from (D40), rendered again from the stored PDF by its recipe; it is
-        served only when it hashes to the image that was sent."""
+        """The image Mathpix or the answer model read a passage's equation from (D40, D113), rendered again from the stored
+        PDF by its recipe; it is served only when it hashes to the image that was sent."""
         store = store_of(request)
         store.research(research_id)
         if passage_view(store, research_id, passage_id) is None:
             raise HTTPException(404, "Passage is not part of this research")
         passage = store.passage(passage_id)
-        item = equations_module.mathpix_crop(store, passage["asset_id"] or "", passage["extraction_version"] or "",
-                                             passage["physical_page"], number) if passage["text_source"] == "equation_ocr" else None
+        item = equations_module.crop_provenance(store, passage["asset_id"] or "", passage["extraction_version"] or "",
+                                                passage["physical_page"], number) if passage["text_source"] == "equation_ocr" else None
         if item is None:
-            raise HTTPException(404, "No equation read by Mathpix has this number in this passage")
+            raise HTTPException(404, "No equation read from the page image has this number in this passage")
         root = settings.papers_dir.resolve()
         path = (root / store.asset(passage["asset_id"])["storage_path"]).resolve()
         if not path.is_relative_to(root) or not path.exists():
@@ -2777,6 +2766,8 @@ def create_app(
         to_check = equations_to_check(store, asset_id, version)
         source_numbers = {version: latex_numbers(store, asset_id, version)
                           for version in {p["extraction_version"] for p in passages if p["text_source"] in ("latex_source", "equation_ocr")}}
+        readers = {version: equation_reader(version, store, asset_id)
+                   for version in {p["extraction_version"] for p in passages if p["text_source"] == "equation_ocr"}}
         return {
             "occurrence": occurrence_view(store, asset, dict(extraction) if extraction else None, extraction_version=version),
             "asset": {k: asset[k] for k in ("id", "extraction_status", "page_count", "origin", "byte_size", "original_filename")}
@@ -2785,7 +2776,8 @@ def create_app(
                          | {"equations_to_check": to_check.get(passage["physical_page"], 0) if passage["text_source"] == "marker" else 0,
                             "source_equations": chunk_numbers(source_numbers[passage["extraction_version"]], passage["physical_page"],
                                                               passage["payload_ref"])
-                            if passage["text_source"] in ("latex_source", "equation_ocr") else []}
+                            if passage["text_source"] in ("latex_source", "equation_ocr") else [],
+                            "equation_reader": readers.get(passage["extraction_version"]) if passage["text_source"] == "equation_ocr" else None}
                          for passage in passages],
             "source": {k: source[k] for k in ("id", "work_id", "title", "authors", "year", "venue", "doi", "landing_url", "version_label", "origin",
                                                 "cited_by_count", "cited_by_count_at")}
@@ -2905,10 +2897,10 @@ def create_app(
 
     @app.get("/api/tool-updates/{tool}")
     async def tool_update(tool: str, request: Request) -> dict[str, Any]:
-        """Installed and latest version of Tesseract, Marker or PyMuPDF; one request, sent only when the user asks."""
+        """Installed and latest version of Tesseract or PyMuPDF; one request, sent only when the user asks."""
         if tool not in tool_updates.TOOLS:
             raise HTTPException(404, "Unknown tool")
-        return await tool_updates.check(tool, request.app.state.http, request.app.state.equations.reader.paths)
+        return await tool_updates.check(tool, request.app.state.http)
 
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/ocr", status_code=202)
     async def read_with_ocr(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:
@@ -3025,15 +3017,16 @@ def create_app(
 
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/equations", status_code=202)
     async def reread_equations(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:
-        """Read a PDF's equations again in the background after a failed read (D52)."""
+        """Read a PDF's equations again in the background after a failed read (D40, D104, D113)."""
         store = store_of(request)
         asset_in_use(store, research_id, source_version_id, asset_id)
         service = request.app.state.equations
         state = equation_state(store, asset_id)
-        if not service.available() and not (state.get("route") == mathpix.ENGINE and service.mathpix_active()):
-            raise HTTPException(409, "The equation reader is not installed")
-        # A Mathpix PDF at its request budget is read again from its stored answers alone (D40); nothing new is sent.
-        cached = state["state"] == "budget_reached" and equations_module.mathpix_answered(store, asset_id)
+        if not ((state.get("route") in equations_module.CROP_ROUTES and service.crop_active())
+                or (state.get("route") == "arxiv_source" and service.route_active())):
+            raise HTTPException(409, "No equation reader can read this PDF now")
+        # A crop-route PDF at its request budget is read again from its stored answers alone (D40); nothing new is sent.
+        cached = state["state"] == "budget_reached" and equations_module.crop_answered(store, asset_id, state.get("route"))
         if state["state"] != "failed" and not cached:
             raise HTTPException(409, "Only a failed equation reading is read again")
         service.retry(asset_id)

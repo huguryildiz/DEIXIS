@@ -14,7 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from deixis.api.app import create_app
-from deixis.documents import math_reader, ocr, pdf
+from deixis.documents import ocr, pdf
 from deixis.workflow import equations, text_retry
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -26,7 +26,6 @@ def forbid_calls(monkeypatch, *, parser=True):
     if parser:
         monkeypatch.setattr(pdf, "extract_pdf", forbidden)
     monkeypatch.setattr(ocr, "read_page", forbidden)
-    monkeypatch.setattr(math_reader.MathReader, "read", forbidden)
     monkeypatch.setattr(equations.EquationService, "read_asset", forbidden)
     from deixis.models import codex_rpc, claude, gemini, deepseek
     for module in (codex_rpc, claude, gemini, deepseek):

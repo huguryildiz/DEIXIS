@@ -777,6 +777,7 @@ function OcrToolDetails({ tool, onChanged }: { tool: OcrTool; onChanged: () => P
   const canUpdate = ready && !running && update?.update_available && tool.can_install
   return <div className="local-tool-details-panel tool-panel">
     <p className="tool-lead">{t('Tesseract reads scanned PDF pages that have no selectable text when you choose Read with OCR on a source.')}</p>
+    <p className="local-tool-note">{t('Equations are not read by OCR: DEIXIS finds the numbered equations on the page and the default answer model reads an image of each as LaTeX. An equation is kept only when it matches the PDF’s own text, so equations on scanned pages keep the OCR text.')}</p>
     <ToolTraits items={[...(tool.bundled ? [[<Package key="p" />, 'Comes with DEIXIS'] as [ReactNode, string]] : []), [<Laptop key="l" />, 'Runs on this computer'], [<ShieldCheck key="s" />, 'No file leaves it'], [<FileLock key="f" />, 'The PDF is not changed']]} />
     {running
       ? job.phase === 'downloading' && job.packages_total && (job.packages_done ?? 0) < job.packages_total

@@ -3175,6 +3175,7 @@ const tr: Record<string, string> = {
   'Languages missing': 'Eksik dil var',
   'Installed · languages missing': 'Kurulu · eksik dil var',
   'Tesseract reads scanned PDF pages that have no selectable text when you choose Read with OCR on a source.': 'Bir kaynakta “OCR ile oku”yu seçtiğinizde Tesseract, seçilebilir metni olmayan taranmış PDF sayfalarını okur.',
+  'Equations are not read by OCR: DEIXIS finds the numbered equations on the page and the default answer model reads an image of each as LaTeX. An equation is kept only when it matches the PDF’s own text, so equations on scanned pages keep the OCR text.': 'Denklemler OCR ile okunmaz: DEIXIS sayfadaki numaralı denklemleri bulur, varsayılan cevap modeli her birinin görüntüsünü LaTeX olarak okur. Bir denklem ancak PDF’nin kendi metniyle eşleşirse tutulur; bu yüzden taranmış sayfalardaki denklemler OCR metnini korur.',
   'Text read by OCR is labelled wherever it is quoted. In a test on four scanned articles, 0.2–1.5% of characters were misread and equations were unusable, so check numbers and equations against the page.': 'OCR ile okunan metin alıntılandığı her yerde etiketlenir. Dört taranmış makalelik bir testte karakterlerin %0,2–1,5’i yanlış okundu ve denklemler kullanılamadı; bu yüzden sayıları ve denklemleri sayfayla karşılaştırın.',
   'Languages': 'Diller',
   'Missing': 'Eksik',

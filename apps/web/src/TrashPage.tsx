@@ -306,7 +306,7 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
     <p className="trash-foot trash-sub">{t('Nothing in the Trash expires.')}</p>
     {message && <div className="trash-message" role="status"><Info size={16} aria-hidden />{message}</div>}
     {error ? <p role="alert">{t('Could not load Trash: {message}', { message: error })} <button type="button" className="trash-ghost" onClick={() => { void refresh() }}>{t('Retry')}</button></p>
-      : !trash ? <p role="status">{t('Loading Trash…')}</p>
+      : !trash ? <p role="status"><span className="shimmer-text">{t('Loading Trash…')}</span></p>
       : entries.length === 0 ? <div className="trash-empty"><div><Trash2 size={16} aria-hidden /><h2>{t('The Trash is empty')}</h2>
         <p>{t('Research and sources you remove wait here until you restore or delete them.')}</p></div></div>
       : <>

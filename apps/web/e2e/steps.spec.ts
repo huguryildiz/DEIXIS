@@ -9,7 +9,7 @@ import { PANEL_TITLES, closePanel, openPlanPanel, panel } from './panels'
 // UI parity S9: the steps list (mockup R14-R16, R18). One line per phase with an 18px icon: the phase's icon once done,
 // a spinner and shimmering words while live, the warning sign where the run stopped; a chevron takes the icon's place
 // on hover and while the details are open. The details of each phase come from stored records (R15); a live run names
-// what follows in one "Next: … · stage N of M" line (R16); a stopped run carries Resume run and Cancel run in the
+// the phases still to come faded under it, with "stage N of M" in the card head (R16); a stopped run carries Resume run and Cancel run in the
 // notice under its steps (R18).
 //
 // Its own fixture server with full-text reading on, so the [parity] research reads full texts as the mockup's does.
@@ -125,7 +125,7 @@ test.describe.serial('S9: the steps list', () => {
     expect(icons).toEqual(['pencil-line', 'search', 'waypoints', 'list-checks', 'book-open', 'file-text', 'shield-check'])
     // A finished run shows no spinner and no "Next:" line; the models and Usage follow the steps.
     await expect(page.locator('.chat-steps .step-spin')).toHaveCount(0)
-    await expect(page.locator('.chat-steps-next')).toHaveCount(0)
+    await expect(page.locator('.chat-step.is-waiting')).toHaveCount(0)
     await expect(page.locator('.usage-line').first()).toContainText('fixture-model')
     // Hover puts the chevron in the icon's place; opened, it stays and turns down.
     const plan = line(page, 'Planned')
@@ -254,7 +254,7 @@ test.describe.serial('S9: the steps list', () => {
     await page.unrouteAll({ behavior: 'wait' })
   })
 
-  test('a live phase spins and shimmers, does not open, and the Next line names what follows', async () => {
+  test('a live phase spins and shimmers, does not open, and the phases still to come are listed faded', async () => {
     test.setTimeout(150_000)
     const release = path.join(server.dataDir, 'answer-release')
     rmSync(release, { force: true })
@@ -267,9 +267,9 @@ test.describe.serial('S9: the steps list', () => {
       await expect(writing.locator('.step-spin')).toBeVisible()
       await expect(writing.locator('.shimmer-text')).toHaveText('Writing a source-linked answer…')
       // The answer continues the count of the discovery it answers from: its stage is the one before the last.
-      const next = page.locator('.chat-steps-next')
-      await expect(next).toHaveText(/^Next: check citations · stage \d+ of \d+$/)
-      const [stage, total] = ((await next.textContent()) ?? '').match(/stage (\d+) of (\d+)/)!.slice(1).map(Number)
+      await expect(page.locator('.chat-step.is-waiting')).toHaveText(['check citations'])
+      const head = page.locator('.chat-live-head small')
+      const [stage, total] = ((await head.textContent()) ?? '').match(/stage (\d+) of (\d+)/)!.slice(1).map(Number)
       expect([stage, total]).toEqual([total - 1, total])
       expect(total).toBeGreaterThanOrEqual(6)
       // While it runs, Pause and Cancel sit beside the chip in the topbar.
@@ -278,7 +278,7 @@ test.describe.serial('S9: the steps list', () => {
     } finally { writeFileSync(release, 'SYNTHETIC release\n') }
     await settled(api, rid)
     await expect(line(page, /^Wrote /)).toBeEnabled({ timeout: 30_000 })
-    await expect(page.locator('.chat-steps-next')).toHaveCount(0)
+    await expect(page.locator('.chat-step.is-waiting')).toHaveCount(0)
   })
 
   test('a paused run marks its phase and carries Resume run and Cancel run in the notice under the steps', async () => {

@@ -121,7 +121,7 @@ export function LinkEditor({ target, view, sources, researchId, tableId, dark, r
         <label className="evidence-field"><span>{t('Note (optional)')}</span><textarea value={note} maxLength={2000} rows={2} onChange={e => setNote(e.target.value)} /></label>
         <h3>{t('Evidence')}</h3>
         {textError && <Notice tone="error">{textError}<Button type="button" variant="ghost" onClick={() => setTextReload(n => n + 1)}>{t('Retry')}</Button></Notice>}
-        {textLoading ? <p role="status">{t('Loading PDF text…')}</p> : !passages.length && <p>{t('No PDF passages could be loaded for the later work.')}</p>}
+        {textLoading ? <p role="status"><span className="shimmer-text">{t('Loading PDF text…')}</span></p> : !passages.length && <p>{t('No PDF passages could be loaded for the later work.')}</p>}
         {!textLoading && !passages.length && !storedEvidence.length && <p>{t('Save is unavailable because no evidence passage can be selected. Your typed quotes are kept.')}</p>}
         {storedEvidence.length > 0 && <p>{t('You can keep the link’s stored evidence. The server will check it when you save.')}</p>}
         <ol className="lineage-evidence-picker">{evidence.map((item, i) => { const passage = passages.find(p => p.id === item.passage_id); return <li key={i}>

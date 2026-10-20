@@ -125,7 +125,7 @@ export function ReviewRequest({ researchId, targetKind, targetId, version, runAc
         {preview.value.not_reviewed.length > 0 && <><b>{t('Not reviewed')}</b><NotReviewed rows={preview.value.not_reviewed} sourceName={sourceName} sectionLabel={sectionLabel} /></>}
       </section> : <div className="review-preview-row">
         <button type="button" className="ghost" disabled={Boolean(unavailableReason) || !chosen || previewBusy || Boolean(command.pending)} aria-describedby={unavailableReason ? reasonId : !chosen ? `${reasonId}-model` : `${reasonId}-hint`} onClick={() => void previewReview()}><Eye aria-hidden />{t('Preview')}</button>
-        <span id={`${reasonId}-hint`} className="foot-note" role={previewBusy ? 'status' : undefined}>{hint}</span>
+        <span id={`${reasonId}-hint`} className="foot-note" role={previewBusy ? 'status' : undefined}>{previewBusy ? <span className="shimmer-text">{hint}</span> : hint}</span>
       </div>}
       {error && <div className="notice bad" role="alert"><CircleX aria-hidden /><div className="nb"><span>{error}</span>{omitted.length > 0 && <NotReviewed rows={omitted} sourceName={sourceName} sectionLabel={sectionLabel} />}</div></div>}
       {disabledReason && <p id={reasonId} className="foot-note review-lock">{disabledReason}</p>}

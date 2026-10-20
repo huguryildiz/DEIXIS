@@ -249,7 +249,7 @@ export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChan
   }, [drawn])
 
   if (error && !map) return <div className="mk citemap"><Notice tone="error">{error}<button type="button" className="ghost" onClick={() => void reload()}>{t('Retry')}</button></Notice></div>
-  if (!map || !graph) return <div className="mk citemap"><p role="status">{t('Loading the citation map…')}</p></div>
+  if (!map || !graph) return <div className="mk citemap"><p role="status"><span className="shimmer-text">{t('Loading the citation map…')}</span></p></div>
 
   const selected = sel && visibleSet.has(sel) ? sel : (core.find(n => visibleSet.has(n.key)) ?? visible[0])?.key ?? null
   const focus = hover ?? selected
@@ -332,7 +332,7 @@ export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChan
     ? plural(plan.unresolvable_without_doi, '{n} uploaded PDF has no DOI and cannot be matched', '{n} uploaded PDFs have no DOI and cannot be matched') : null
   const titlesOnly = run?.target?.titles_only === true
   const planRow = running
-    ? <div className="cm-plan" role="status"><span className="spin" aria-hidden /><p>{t(titlesOnly ? 'Fetching titles from OpenAlex…' : 'Reading reference lists…')}</p></div>
+    ? <div className="cm-plan" role="status"><span className="spin" aria-hidden /><p><span className="shimmer-text">{t(titlesOnly ? 'Fetching titles from OpenAlex…' : 'Reading reference lists…')}</span></p></div>
     : paused && !budgetStop
       ? <div className="cm-plan"><p>{t(titlesOnly ? 'Title fetching is paused.' : 'Reference list reading is paused.')}</p><button type="button" className="ghost" disabled={starting} onClick={() => void resume()}>{t('Resume')}</button></div>
       : !paused && (planParts.length || noDoi)

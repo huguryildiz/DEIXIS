@@ -562,7 +562,7 @@ export default function App() {
         {/* The foot keeps one DOM shape while its reads arrive (profile, proxy, Scopus): only text, inline style and data attributes change. */}
         <button type="button" className="access" onClick={() => go({ view: 'settings', tab: 'access' })} aria-label={accessName} title={t('Institutional access settings')}>
           <span className="access-label" style={proxy?.address ? undefined : { display: 'none' }}>{proxy?.address ? t('Institutional access · {label}', { label: proxyLabel }) : ''}</span>
-          <span className="access-line"><i className="access-dot" data-tone={proxyState.tone} aria-hidden="true" /><span>{proxyState.text}</span></span>
+          <span className="access-line"><i className="access-dot" data-tone={proxyState.tone} aria-hidden="true" /><span>{proxyState.tone === 'checking' ? <span className="shimmer-text">{proxyState.text}</span> : proxyState.text}</span></span>
           <span className="access-line" style={scopusState ? undefined : { display: 'none' }}><i className="access-dot" data-tone={scopusState?.tone ?? 'unc'} aria-hidden="true" /><span>{scopusState?.text ?? ''}</span></span>
         </button>
         <button type="button" className="access-retry" onClick={retryAccess} style={accessFailed ? undefined : { display: 'none' }}>{t('Check again')}</button>

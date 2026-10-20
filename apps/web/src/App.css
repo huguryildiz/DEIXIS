@@ -175,6 +175,10 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .sidebar-action-message{padding:6px 16px;color:var(--muted);font-size:11.5px;line-height:1.4}
 .spin{display:inline-block;width:13px;height:13px;flex:none;border:1.6px solid var(--accent-line);border-top-color:var(--accent);border-radius:50%;animation:spin-turn .8s linear infinite}
 @keyframes spin-turn{to{transform:rotate(360deg)}}
+/* In-progress text: an accent highlight sweeps left to right across muted letters. */
+.shimmer-text{background:linear-gradient(90deg,var(--muted) 44%,var(--accent) 50%,var(--muted) 56%) 0 0/300% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:text-shimmer 2.2s linear infinite}
+@keyframes text-shimmer{from{background-position:100% 0}to{background-position:0 0}}
+@media (prefers-reduced-motion:reduce){.shimmer-text{animation:none;background:none;-webkit-text-fill-color:currentColor}}
 @media(prefers-reduced-motion:reduce){.spin{animation:none}}
 .sidebar-foot{display:grid;gap:8px;margin-top:auto;padding:10px 12px;border-top:1px solid var(--line)}
 .bgcard{display:grid;gap:3px;margin:0 -2px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--paper);color:var(--ink-2);font-size:12.5px;text-align:left}

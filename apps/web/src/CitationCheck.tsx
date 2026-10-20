@@ -93,7 +93,7 @@ function StartView({ onOpen }: { onOpen: (id: string) => void }) {
     </div>
     <h2 className="cc-h2">{t('Earlier checks')}</h2>
     {listError ? <Notice tone="error">{t('Could not read the earlier checks: {message}', { message: listError })}</Notice>
-      : drafts === null ? <p className="cc-muted" role="status">{t('Loading…')}</p>
+      : drafts === null ? <p className="cc-muted" role="status"><span className="shimmer-text">{t('Loading…')}</span></p>
       : !drafts.length ? <p className="cc-muted">{t('No check yet.')}</p>
       : <ul className="cc-drafts">{drafts.map(d => <li key={d.id}>
         <button type="button" onClick={() => onOpen(d.id)}>
@@ -172,7 +172,7 @@ function DraftView({ id, dark, onSettings }: { id: string; dark: boolean; onSett
   const refreeze = () => void act('freeze', () => citationApi.freeze(id, true))
 
   if (loadError) return <Notice tone="error">{t('Could not read this check: {message}', { message: loadError })}</Notice>
-  if (!view) return <p className="cc-muted" role="status">{t('Loading…')}</p>
+  if (!view) return <p className="cc-muted" role="status"><span className="shimmer-text">{t('Loading…')}</span></p>
   const c = view.counters
   const running = polling
   const ended = (c.pairs_done ?? 0) + (c.pairs_could_not_check ?? 0)
@@ -337,7 +337,7 @@ function PreviewBox({ preview, busy, onSettings, onPreview, onRefreeze, onStart 
   preview: CitationPreview | null; busy: Busy; onSettings: () => void; onPreview: () => void; onRefreeze: () => void; onStart: (model: CitationModel, revision: number) => void
 }) {
   const modelText = useModelText()
-  if (!preview) return <p className="cc-muted" role="status">{t('Reading the preview…')}</p>
+  if (!preview) return <p className="cc-muted" role="status"><span className="shimmer-text">{t('Reading the preview…')}</span></p>
   const cost = preview.cost
   const model = cost.connection && cost.model ? { connection: cost.connection, model: cost.model, reasoning_effort: cost.reasoning_effort } : null
   const stale = preview.selected.filter(p => p.stale).length

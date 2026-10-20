@@ -97,7 +97,7 @@ export function DataFlowsSection({ defaults, active, refresh }: { defaults: Reco
     <div className="rows set-flows" data-panel="general">
       {dataFlowRows({ defaults, connections, semantic, email, optional }).map(([heading, text]) => <div key={heading}>
         <b>{heading}</b>
-        <p>{text ?? t(failed ? 'Could not be read.' : 'Checking…')}</p>
+        <p>{text ?? (failed ? t('Could not be read.') : <span className="shimmer-text">{t('Checking…')}</span>)}</p>
       </div>)}
     </div>
   </>

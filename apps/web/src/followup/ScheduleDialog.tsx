@@ -59,7 +59,7 @@ export function ScheduleDialog({ researchId, scopeRevision, kind, watch, dark, a
       <DialogBody>
         <p className="foot-note">{t('DEIXIS checks only while it is running.')}</p>
         {error && <div className="notice bad" role="alert"><CircleX aria-hidden /><div className="nb"><span>{error}</span><div className="acts"><button type="button" className="ghost" disabled={previewing} onClick={() => { void loadPreview() }}>{t('Retry')}</button></div></div></div>}
-        {needsPreview && !preview && !error && <p role="status" className="foot-note"><span className="spin" aria-hidden /> {t('Loading follow-up…')}</p>}
+        {needsPreview && !preview && !error && <p role="status" className="foot-note"><span className="spin" aria-hidden /> <span className="shimmer-text">{t('Loading follow-up…')}</span></p>}
         {preview && <p className="foot-note">{kind === 'citing_works' && <>{t('{n} included works; {m} have no OpenAlex id and cannot be followed; at most {cap} OpenAlex ids are read per check and the rest roll to the next one', { n: preview.citing_works_count, m: preview.no_openalex_id, cap: preview.caps.citing_sources })}. </>}
           {t('At most {pages} pages of {per_page} records per query, {requests} requests and {records} records per check.', { pages: preview.caps.pages, per_page: preview.caps.per_page, requests: preview.caps.max_provider_requests, records: preview.caps.max_records })}</p>}
         {!watch && <p className="foot-note">{t('The first check records the records returned within its page budget and announces none of them.')}</p>}

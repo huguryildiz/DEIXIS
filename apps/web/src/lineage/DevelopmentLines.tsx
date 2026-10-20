@@ -140,7 +140,7 @@ export function DevelopmentLines({ researchId, tableId, tableVersion, eventCurso
   const work: WorkProps = { nodes: view?.nodes ?? {}, onPassage }
   const linkRow = (link: LineageLink, component?: LineageView['components'][number]) => <LinkRow key={link.link_id} link={link} component={component} {...work}
     onEdit={link => openEditor({ link })} onRemove={link => { rememberFocus(); setRemoveNote(''); setRemoving(link) }} />
-  if (!view) return <div className="lineage-view">{error ? <Notice tone="error">{error}<Button variant="ghost" onClick={() => void refresh()}>{t('Retry')}</Button></Notice> : <p role="status">{t('Loading development lines…')}</p>}</div>
+  if (!view) return <div className="lineage-view">{error ? <Notice tone="error">{error}<Button variant="ghost" onClick={() => void refresh()}>{t('Retry')}</Button></Notice> : <p role="status"><span className="shimmer-text">{t('Loading development lines…')}</span></p>}</div>
   const s = view.status, counts = view.counts
   return <div className="lineage-view" role="tabpanel" id={`lineage-panel-${tableId}`} aria-label={t('Development lines')}>
     {error && <Notice tone="error">{error}<Button variant="ghost" onClick={() => void refresh()}>{t('Retry')}</Button></Notice>}
@@ -162,7 +162,7 @@ export function DevelopmentLines({ researchId, tableId, tableVersion, eventCurso
       {planOpen && <div className="lineage-plan" aria-label={t('Development link plan')}>
         <h4>{t('Development link plan')}</h4>
         {planError && <Notice tone="error">{planError}<Button variant="ghost" onClick={() => void loadPlan()}>{t('Retry')}</Button></Notice>}
-        {!plan && !planError && <p role="status">{t('Loading the plan…')}</p>}
+        {!plan && !planError && <p role="status"><span className="shimmer-text">{t('Loading the plan…')}</span></p>}
         {plan && <><p>{t('{n} works will be read', { n: plan.selected.length })} · {plan.calls === 0 ? t('0 model calls; the scan is recorded') : t('{n} model calls', { n: plan.calls })} · {t('at most {n} model calls', { n: plan.max_model_calls })}</p>
           <p><ModelName connection={connection} text={model} /></p>
           <h4>{t('Selected works')} · {plan.selected.length}</h4>{plan.selected.length ? <ul>{plan.selected.map(item => <li key={item.to}><WorkName id={item.to} {...work} /> · {t(item.class)} · {t('{n} candidates', { n: item.candidate_count })} · {t('{n} model calls', { n: item.chunk_count })}{item.no_candidate && <> · {t(reasonLabels.no_candidate)}</>}</li>)}</ul> : <p>{t('No targets are selected; there is nothing to assess.')}</p>}
@@ -206,7 +206,7 @@ export function DevelopmentLines({ researchId, tableId, tableVersion, eventCurso
       <details><summary>{t('Links that no longer hold because their inputs changed')} · {view.history.stale.length}</summary>{view.history.stale.length ? <ul>{view.history.stale.map(link => linkRow(link))}</ul> : <p>{t('None.')}</p>}</details>
       <details><summary>{t('Links whose work left this table or the selection')} · {view.history.out_of_scope.length}</summary>{view.history.out_of_scope.length ? <ul>{view.history.out_of_scope.map(link => linkRow(link))}</ul> : <p>{t('None.')}</p>}</details>
     </section>
-    {baselineOpen && <div id="lineage-baseline-panel">{baselineError ? <Notice tone="error">{baselineError}<Button variant="ghost" onClick={() => void loadBaseline()}>{t('Retry')}</Button></Notice> : baseline ? <BaselinePanel baseline={baseline} {...work} /> : <p role="status">{t('Loading field baseline…')}</p>}</div>}
+    {baselineOpen && <div id="lineage-baseline-panel">{baselineError ? <Notice tone="error">{baselineError}<Button variant="ghost" onClick={() => void loadBaseline()}>{t('Retry')}</Button></Notice> : baseline ? <BaselinePanel baseline={baseline} {...work} /> : <p role="status"><span className="shimmer-text">{t('Loading field baseline…')}</span></p>}</div>}
     <section className="lineage-section lineage-counts"><h3>{t('Counts')}</h3>
       <p>{t('{components} components · {links} current links · {cross} cross relations · {stale} stale · {out} out of scope · {rejected} not accepted · {unplaced} unplaced · {edges} edges without mention', { components: counts.components, links: counts.current_links, cross: counts.cross_relations, stale: counts.history_stale, out: counts.history_out_of_scope, rejected: counts.not_accepted, unplaced: counts.unplaceable.total, edges: counts.unassessed_edges })}</p>
       <p>{t('Citation lists')} · {Object.entries(counts.edge_states).map(([state, n]) => `${t(edgeLabels[state as keyof typeof edgeLabels])} ${n}`).join(', ')} · {t('These are citation-list states, not link counts.')}</p>

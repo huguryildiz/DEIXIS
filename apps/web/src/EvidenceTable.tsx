@@ -120,7 +120,7 @@ function TemplateMenu({ templates, busy, label, detail, onPick }: { templates: T
     <DropdownMenuContent align="start" className="table-menu">
       <DropdownMenuGroup>
         <DropdownMenuLabel>{t('Templates')}</DropdownMenuLabel>
-        {templates === null ? <p className="table-menu-note">{t('Loading templates…')}</p>
+        {templates === null ? <p className="table-menu-note"><span className="shimmer-text">{t('Loading templates…')}</span></p>
           : templates.length ? templates.map(tpl => <DropdownMenuItem key={tpl.id} onClick={() => onPick(tpl)}><Table2 size={15} aria-hidden /><span>{tpl.name}<small>{tpl.columns.map(c => c.name).join(' · ')}</small></span></DropdownMenuItem>)
           : <p className="table-menu-note">{t('No saved templates yet. A table’s columns can be saved as a template from its More table actions menu.')}</p>}
       </DropdownMenuGroup>
@@ -247,7 +247,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
   }, [cellGone, removePanel])
 
   if (error && !tables) return <div className="table-panel"><Notice tone="error">{t('Could not load the evidence table: {error}', { error })}</Notice></div>
-  if (!tables) return <div className="table-panel"><p className="empty-inline">{t('Loading the evidence table…')}</p></div>
+  if (!tables) return <div className="table-panel"><p className="empty-inline"><span className="shimmer-text">{t('Loading the evidence table…')}</span></p></div>
 
   // No table yet: the three starts create it (mockup `.empty` with `.qopts`).
   if (!table) return <div className="table-panel">
@@ -500,7 +500,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
       onAdd={ids => act(async () => { await api.addTableRows(researchId, tableId, ids, table.table.version); setAddRowsOpen(false) }, t('Rows added.'))} />}
 
     {/* The model's column suggestions (mockup `.sugg`): one row per proposal; none joins the table until added. */}
-    {suggesting && <div className="sugg" role="status"><h5><span className="spin" aria-hidden />{t('Suggesting columns from the question…')}</h5></div>}
+    {suggesting && <div className="sugg" role="status"><h5><span className="spin" aria-hidden /><span className="shimmer-text">{t('Suggesting columns from the question…')}</span></h5></div>}
     {!suggesting && suggestionRun && suggestions.length > 0 && <section className="sugg evidence-suggestions" aria-labelledby="evidence-suggestions-title">
       <h5 id="evidence-suggestions-title"><Lightbulb size={14} aria-hidden />{t('Suggested from the question')}<span className="spacer" />
         <button type="button" className="ib" aria-label={t('Dismiss suggestions')} title={t('Hides the suggestions on this screen; they stay in the run record.')} onClick={() => setDiscarded([...discarded, ...suggestions.map(x => x.key)])}><X size={14} aria-hidden /></button></h5>
@@ -674,11 +674,11 @@ function CellButton({ column, row, summary, live, position, focusable, onFocus, 
   const liveText = live === 'recheck' ? t('Rechecking…') : live === 'fill' ? t('Filling…') : ''
   return <button type="button" className={`cell evidence-cell${current ? '' : ' is-empty'}${current && !value ? ' is-state' : ''}`} data-cell={position} tabIndex={focusable ? 0 : -1}
     aria-label={[`${column.name}, ${row.title}`, text, provenance !== text ? provenance : '', liveText, ...marks.map(m => m.label)].filter(Boolean).join('. ')} onFocus={onFocus} onClick={onOpen}>
-    {live === 'fill' ? <span className="evidence-cell-live" aria-hidden><span className="spin" />{liveText}</span>
+    {live === 'fill' ? <span className="evidence-cell-live" aria-hidden><span className="spin" /><span className="shimmer-text">{liveText}</span></span>
       : value ? <span className="evidence-cell-value" aria-hidden>{text}</span>
       : <span className="nrc evidence-cell-value" aria-hidden>{current ? text : '—'}</span>}
     {live !== 'fill' && <small className={value && current.state === 'not_verified' ? 'warn-t' : current?.state === 'unknown' ? 'warn-t' : undefined} aria-hidden>{provenance}</small>}
-    {live === 'recheck' && <span className="evidence-cell-live" aria-hidden><span className="spin" />{liveText}</span>}
+    {live === 'recheck' && <span className="evidence-cell-live" aria-hidden><span className="spin" /><span className="shimmer-text">{liveText}</span></span>}
     {marks.length > 0 && <span className="evidence-cell-flags" aria-hidden>{marks.map(m => <span key={m.label} className={`evidence-flag is-${m.tone}`}>{m.label}</span>)}</span>}
   </button>
 }
@@ -868,7 +868,7 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
   return <StackPanel name="cell" open onClose={onClose} title={title} icon={Table2} className={`table-panel-box cell-panel${dark ? ' dark' : ''}`}>
     <div className="pad detail cell-detail">
       {error && <p className="evidence-flag-note is-blocking" role="alert"><TriangleAlert size={14} aria-hidden /><span>{error}</span></p>}
-      {!cell && !error && <p role="status" className="foot-note">{t('Loading cell…')}</p>}
+      {!cell && !error && <p role="status" className="foot-note"><span className="shimmer-text">{t('Loading cell…')}</span></p>}
       {cell && <>
         <div className="dhead">
           <div className="venue"><FormatIcon size={16} aria-hidden />{column.name} · {t(formatLabels[column.answer_format])}</div>
@@ -886,7 +886,7 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
           <span>{dateText(current.created_at)}</span>
         </p>}
         {!draft && <div className="dacts">
-          <button type="button" className={`btn-pri${rechecking ? ' is-working' : ''}`} disabled={recheckLocked} onClick={() => mutate(() => api.recheckCell(researchId, tableId, column.id, sv, cell.version, newKey()), t('Recheck started. Its result will wait as a proposal.'), onRunStarted)}>{rechecking ? <><span className="spin" aria-hidden />{t('Rechecking…')}</> : <><RotateCw size={14} aria-hidden />{t('Recheck this cell')}</>}</button>
+          <button type="button" className={`btn-pri${rechecking ? ' is-working' : ''}`} disabled={recheckLocked} onClick={() => mutate(() => api.recheckCell(researchId, tableId, column.id, sv, cell.version, newKey()), t('Recheck started. Its result will wait as a proposal.'), onRunStarted)}>{rechecking ? <><span className="spin" aria-hidden /><span className="shimmer-text">{t('Rechecking…')}</span></> : <><RotateCw size={14} aria-hidden />{t('Recheck this cell')}</>}</button>
           <button type="button" className="ghost" disabled={busy} onClick={() => { setProblem(''); setDraft(draftFrom(column, current)); setDraftBase(cell?.version ?? null) }}><PencilLine size={14} aria-hidden />{t('Edit value')}</button>
           {source && <button type="button" className="ib" aria-label={t('Open the source')} title={t('Open the source')} onClick={onOpenSource}><FileText size={16} aria-hidden /></button>}
         </div>}
@@ -907,7 +907,7 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
           : 'PDF text for this source was added after this value was made. A recheck reads it; the result waits as a proposal.'))}
 
         {rechecking && !pending && <section className="evidence-block cell-waiting" aria-labelledby="evidence-slot-title">
-          <h4 className="sub" id="evidence-slot-title">{t('Pending proposal')}<span className="cell-live" role="status"><span className="cell-pulse" aria-hidden />{t('Rechecking this cell…')}</span></h4>
+          <h4 className="sub" id="evidence-slot-title">{t('Pending proposal')}<span className="cell-live" role="status"><span className="cell-pulse" aria-hidden /><span className="shimmer-text">{t('Rechecking this cell…')}</span></span></h4>
           <div className="cell-slot" aria-hidden><i /><i /><i /></div>
           <p className="foot-note">{t('The result will appear here as a proposal; the current value does not change.')}</p>
         </section>}

@@ -617,7 +617,7 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
                 </DropdownMenuGroup>
               </DropdownMenuContent>
             </DropdownMenu>
-          : <button type="button" className="models-summary" disabled title={connections ? notReadyReasons(connections) : ''}><Cpu size={15} aria-hidden /><span className="models-summary-label">{t('Models')}</span><span className="sr-only">: {t(connections ? 'no connection ready' : 'checking…')}</span></button>}
+          : <button type="button" className="models-summary" disabled title={connections ? notReadyReasons(connections) : ''}><Cpu size={15} aria-hidden /><span className="models-summary-label">{t('Models')}</span><span className="sr-only">: {connections ? t('no connection ready') : t('checking…')}</span></button>}
         <Select value={effort} onValueChange={value => { if (value) { effortPicked.current = true; setEffort(value as Effort) } }}>
           <SelectTrigger className="composer-depth" aria-label={t('Research depth')} title={t('How much searching and reading a run may do')}><SelectValue>{(value: string) => { const Icon = effortOptions[value as Effort].icon; return <><Icon size={15} aria-hidden />{t(effortLabels[value as Effort])}</> }}</SelectValue></SelectTrigger>
           <SelectContent className="home-menu" align="start" sideOffset={6} alignItemWithTrigger={false} collisionPadding={8} collisionAvoidance={{ align: 'shift', fallbackAxisSide: 'none' }}>
@@ -657,6 +657,6 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
       </button>)}
     </div>}
     <SemanticSetupNote />
-    <p className="hint home-hint">{busy ? t('Saving research…') : t('⌘ / Ctrl + Enter starts the research · ? shows shortcuts · Nothing is downloaded from paywalled sites')}</p>
+    <p className="hint home-hint">{busy ? <span className="shimmer-text">{t('Saving research…')}</span> : t('⌘ / Ctrl + Enter starts the research · ? shows shortcuts · Nothing is downloaded from paywalled sites')}</p>
   </section>
 }

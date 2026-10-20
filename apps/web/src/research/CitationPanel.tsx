@@ -36,7 +36,7 @@ function CitationEntry({ researchId, evidence, claim, source, onOpen }: { resear
     {authors.length > 0 && <div className="au">{authors.length > 6 ? `${authors.slice(0, 6).join(', ')}, ${t('and {n} more', { n: authors.length - 6 })}` : authors.join(', ')}</div>}
     {error ? <p className="quote">{error}</p> : quote ? <div className="quote">
       <HighlightedPassageText passage={{ text: quote.text, kind: passage!.kind }} highlightTexts={quote.located && evidence.anchor_text ? [evidence.anchor_text] : []} scroll={false} />
-    </div> : <p className="quote">{t('Loading passage…')}</p>}
+    </div> : <p className="quote"><span className="shimmer-text">{t('Loading passage…')}</span></p>}
     {/* Its parts with the mockup's own "·" between them (a separate element, as in `.loc`). */}
     <div className="loc">
       {[<span key="at">{(l => l.charAt(0).toUpperCase() + l.slice(1))(locatorText(evidence))}</span>,

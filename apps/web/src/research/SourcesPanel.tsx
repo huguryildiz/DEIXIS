@@ -236,7 +236,7 @@ function NotReadNotice({ unscreened, effort, limits, busy, active, screening, on
 }) {
   const { page, status } = unscreened
   const number = (n: number) => n.toLocaleString(uiLocale())
-  if (status === 'loading' && !page) return <div className="notice source-notread"><Info size={16} aria-hidden /><div className="nb"><span>{t('Reading the works found but never screened…')}</span></div></div>
+  if (status === 'loading' && !page) return <div className="notice source-notread"><Info size={16} aria-hidden /><div className="nb"><span><span className="shimmer-text">{t('Reading the works found but never screened…')}</span></span></div></div>
   if (status === 'none') return <div className="notice source-notread"><Info size={16} aria-hidden /><div className="nb"><span>{t('This research has no completed search with a ranked list, so no work is listed as never screened.')}</span></div></div>
   if (status === 'failed' || !page) return <div className="notice warn source-notread" role="alert"><Info size={16} aria-hidden /><div className="nb"><span>{t('The works found but never screened could not be read.')}</span>
     <div className="acts"><button type="button" className="ghost" onClick={() => { void unscreened.reload() }}>{t('Try again')}</button></div></div></div>

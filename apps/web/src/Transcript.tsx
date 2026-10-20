@@ -1042,22 +1042,33 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const modelDown = run.status === 'paused' && MODEL_DOWN.has(run.pause_reason ?? '')
   const changesSinceStop = modelDown ? (view.model_changes ?? []).filter(change => change.changed_at > run.updated_at) : []
   const vocabularyEnd = run.status === 'failed' && (run.pause_reason === 'vocabulary_too_broad' || run.pause_reason === 'vocabulary_empty')
-  const nextLine = active ? (() => {
-    const waiting = [...order.filter((_, i) => phaseStates[i] === 'waiting'), ...(autoAnswer ? ['answer', 'review'] as PhaseKey[] : [])]
-      .map(key => t(key === 'pdf' && run.kind !== 'discovery' ? (attachedOnly ? 'read the attached PDFs' : 'download open-access PDFs') : nextNames[key]))
-    const at = phaseStates.findIndex(state => state === 'running')
-    const stage = stageOffset + (at < 0 ? Math.max(0, phaseStates.findIndex(state => state === 'waiting')) : at) + 1
-    return `${t('Next: {list}', { list: waiting.length ? waiting.join(', ') : '—' })} · ${t('stage {n} of {total}', { n: stage, total: stageTotal })}`
-  })() : ''
+  // A live run is a progress card: the phase now running names its icon, the bar shows the stage reached, and the phases
+  // not reached yet are listed faded below the live one.
+  const nextName = (key: PhaseKey) => t(key === 'pdf' && run.kind !== 'discovery' ? (attachedOnly ? 'read the attached PDFs' : 'download open-access PDFs') : nextNames[key])
+  const runningAt = phaseStates.findIndex(state => state === 'running')
+  const stage = stageOffset + (runningAt < 0 ? Math.max(0, phaseStates.findIndex(state => state === 'waiting')) : runningAt) + 1
+  const LiveIcon = runningAt < 0 ? Search : phaseIcons[order[runningAt]]
+  const laterPhases: PhaseKey[] = active && autoAnswer ? ['answer', 'review'] : []
+  let fadeRank = 0
+  const waitingRow = (key: string, text: string) => <li key={key} className="chat-step step is-waiting" style={{ opacity: Math.max(0.3, 0.85 - 0.15 * fadeRank++) }}>
+    <span className="chat-step-line"><span className="chat-step-icon ico" role="img" aria-label={t('Not started')} /><span className="chat-step-text">{text}</span></span>
+  </li>
   return <section className={`chat-turn${active ? ' is-active' : ''}`}>
     <div className="chat-group">
-      <button type="button" className="chat-toggle" data-run-id={run.id} aria-expanded={expanded} onClick={() => setOpen(!expanded)}>
+      {active ? <button type="button" className="chat-toggle chat-live-head" data-run-id={run.id} aria-expanded={expanded} onClick={() => setOpen(!expanded)}>
+        <span className="chat-live-icon" aria-hidden><LiveIcon size={17} /></span>
+        <span className="chat-live-title"><small className="shimmer-text">{t('In progress')} · {t('stage {n} of {total}', { n: stage, total: stageTotal })}</small>
+          <span>{label}{olderRevision ? ` ${t('· for question revision {n}', { n: run.scope_revision })}` : ''}</span></span>
+        <time>{durationText(secondsBetween(started, clock))}</time>
+        <span className="chat-live-pill"><i aria-hidden />{t('Working')}</span>
+      </button> : <button type="button" className="chat-toggle" data-run-id={run.id} aria-expanded={expanded} onClick={() => setOpen(!expanded)}>
         {expanded ? <ChevronDown size={16} aria-hidden /> : <ChevronRight size={16} aria-hidden />}
-        <span className={active ? 'shimmer-text' : undefined}>{label}{olderRevision ? ` ${t('· for question revision {n}', { n: run.scope_revision })}` : ''}</span>
-        {active && <LoaderCircle size={14} className="chat-spin" aria-hidden />}
+        <span>{label}{olderRevision ? ` ${t('· for question revision {n}', { n: run.scope_revision })}` : ''}</span>
         <span className="chat-when">{startedText(started)}</span>
         <time>{durationText(secondsBetween(started, clock))}</time>
-      </button>
+      </button>}
+      {active && expanded && <div className="chat-live-bar" role="progressbar" aria-label={t('stage {n} of {total}', { n: stage, total: stageTotal })}
+        aria-valuemin={0} aria-valuemax={stageTotal} aria-valuenow={stage - 1}><i style={{ width: `${Math.min(100, ((stage - 0.5) / Math.max(1, stageTotal)) * 100)}%` }} /></div>}
       {expanded && <>
         {run.service_wait && <p className="chat-report-line">{serviceWaitRecordText(connectionName(run.service_wait.connection), run.service_wait.attempt, run.service_wait.seconds)}</p>}
         {run.kind === 'answer' && active && run.stage === 'inspection' && steps.some(step => step.kind === 'read_equations' && step.status === 'running') && !steps.some(step => step.kind === 'equations_skip') && <p className="chat-report-line"><button type="button" className="chat-steps-toggle" onClick={() => { api.skipEquations(run.id).catch(() => undefined) }}>{t('Answer now with PDF text')}</button></p>}
@@ -1070,6 +1081,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         <ol className="chat-steps steps">{order.map((key, i) => {
           const state = phaseStates[i]
           // A phase the run has not reached is named in the "Next:" line; a phase it skipped is not drawn.
+          if (state === 'waiting' && active) return waitingRow(key, nextName(key))
           if (state === 'waiting' || state === 'skipped') return null
           const group = groups[i]
           const seconds = phaseSeconds(group, state)
@@ -1100,7 +1112,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
             {detailsOpen && <div className="chat-step-detail step-detail">{details}</div>}
           </li>
         })}
-        {nextLine && <li className="chat-steps-next next">{nextLine}</li>}
+        {laterPhases.map(key => waitingRow(`later-${key}`, nextName(key)))}
         {/* Which model ran each model phase, and what the run spent behind one quiet toggle (mockup `.usage-line`). */}
         {(run.status !== 'queued' || run.kind === 'review') && run.kind !== 'pdf_collection' && run.kind !== 'pdf_ocr' && run.kind !== 'fulltext_fetch' && <li className="chat-run-meta usage-line">
           {models.length > 0 && <span className="chat-run-models">{models}</span>}

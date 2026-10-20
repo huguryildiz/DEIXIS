@@ -293,7 +293,7 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
     {note && <KeyStore keychain={keychain} onChanged={onSaved} />}
     {formError && <Notice tone="error"><p id={`${id}-error`}>{formError}</p></Notice>}
     <div className="acts">
-      {primary && <button type="submit" className="btn-pri" disabled={busy}>{busy ? <span className="spin" aria-hidden /> : typed ? <Save aria-hidden /> : <CircleCheck aria-hidden />}{t(busy ? (typed ? (entry.testable ? 'Testing and saving…' : 'Saving…') : 'Testing…') : primary)}</button>}
+      {primary && <button type="submit" className="btn-pri" disabled={busy}>{busy ? <span className="spin" aria-hidden /> : typed ? <Save aria-hidden /> : <CircleCheck aria-hidden />}{busy ? <span className="shimmer-text">{t(typed ? (entry.testable ? 'Testing and saving…' : 'Saving…') : 'Testing…')}</span> : t(primary)}</button>}
       {entry.configured && !fromShell && !asking && <button type="button" className="ghost" disabled={busy} onClick={ask}>{t(plain ? 'Remove ID' : 'Remove key')}</button>}
     </div>
     {asking && <RemoveNotice busy={busy} onRemove={remove} onKeep={() => setAsking(false)}
@@ -380,9 +380,9 @@ function LocalToolDetails({ tool, dark, onChanged, refresh = true, chip = true }
         {errorLines(tool.job.output).map((line, i) => <p key={i} className="local-tool-error">{line}</p>)}
         {tool.job.output && <details className="local-tool-details"><summary>{t('Show full output')}</summary><pre className="local-tool-output">{tool.job.output}</pre></details>}
       </>}
-      {running && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" onClick={cancelInstall} disabled={cancelling}>{t(cancelling ? 'Cancelling…' : 'Cancel installation')}</Button></div>}
+      {running && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" onClick={cancelInstall} disabled={cancelling}>{cancelling ? <span className="shimmer-text">{t('Cancelling…')}</span> : t('Cancel installation')}</Button></div>}
     </>}
-    {refresh && <Button variant="outline" className="connection-recheck" onClick={again} disabled={refreshing}><RefreshCw size={14} />{t(refreshing ? 'Refreshing…' : 'Refresh configuration')}</Button>}
+    {refresh && <Button variant="outline" className="connection-recheck" onClick={again} disabled={refreshing}><RefreshCw size={14} />{refreshing ? <span className="shimmer-text">{t('Refreshing…')}</span> : t('Refresh configuration')}</Button>}
   </div>
 }
 
@@ -597,7 +597,7 @@ function MathpixDetails({ mathpix, keychain, dark, onChanged, onKeychainChanged 
 // An indeterminate bar: the installers report the step they are on, not a fraction.
 function InstallProgress({ label, percent }: { label: string; percent?: number }) {
   return <div className="install-progress" role="status">
-    <span className="install-progress-label"><LoaderCircle size={14} className="chat-spin" aria-hidden />{label}</span>
+    <span className="install-progress-label"><LoaderCircle size={14} className="chat-spin" aria-hidden /><span className="shimmer-text">{label}</span></span>
     <div className={`install-progress-bar${percent != null ? ' is-determinate' : ''}`} aria-hidden><span style={percent != null ? { width: `${percent}%` } : undefined} /></div>
   </div>
 }
@@ -625,7 +625,7 @@ function LocalAppInstall({ tool, dark, onChanged, onDone }: { tool: LocalTool; d
   }
   if (tool.id === 'lm_studio' && tool.installed && !app && status !== 'running') return <div className="server-pull">
     <p className="local-tool-note">{t('LM Studio is installed, but its local server is off.')}</p>
-    <div className="actions"><Button size="sm" onClick={startServer} disabled={starting}><Server size={14} aria-hidden />{t(starting ? 'Starting…' : 'Start the server')}</Button></div>
+    <div className="actions"><Button size="sm" onClick={startServer} disabled={starting}><Server size={14} aria-hidden />{starting ? <span className="shimmer-text">{t('Starting…')}</span> : t('Start the server')}</Button></div>
   </div>
   if (!tool.install.available || (tool.installed && !app && status !== 'running')) return null
   function install() {
@@ -744,7 +744,7 @@ function LocalModels({ tool, dark, memoryGb, onChanged, onDone }: { tool: LocalT
       <InstallProgress percent={pull!.total ? Math.min(100, Math.round(pull!.completed / pull!.total * 100)) : undefined} label={pull!.total
         ? t('Downloading {model}: {done} of {total} MB', { model: pull!.model, done: aboutMb(pull!.completed), total: aboutMb(pull!.total) })
         : t('Preparing the download of {model}…', { model: pull!.model })} />
-      <div className="actions"><Button variant="outline" size="sm" className="is-destructive" onClick={cancelPull} disabled={cancelling}>{t(cancelling ? 'Cancelling…' : 'Cancel download')}</Button></div>
+      <div className="actions"><Button variant="outline" size="sm" className="is-destructive" onClick={cancelPull} disabled={cancelling}>{cancelling ? <span className="shimmer-text">{t('Cancelling…')}</span> : t('Cancel download')}</Button></div>
     </div>}
     {status === 'cancelled' && <p className="local-tool-note">{t('The download of {model} was cancelled.', { model: pull!.model })}</p>}
     {status === 'succeeded' && <p className="local-tool-note">{t('{model} is downloaded.', { model: pull!.model })}</p>}
@@ -1043,7 +1043,7 @@ function BuiltinModelFiles({ builtin, model: m, dark, onChanged }: { builtin: Bu
     {state === 'files_do_not_match' && <p className="local-tool-error">{t('The model file does not match its pinned copy, so the model is not used. Download it again.')}</p>}
     {state === 'runtime_missing' && <p className="local-tool-error">{t('llama.cpp, which runs the model, is missing or changed. Download again to put it back; the model file is kept if it is whole.')}</p>}
     {state === 'installing_elsewhere' && <p className="way-desc">{t('Another running copy of DEIXIS is downloading it.')}</p>}
-    {state === 'removing' && <p className="way-desc">{t('Being removed…')}</p>}
+    {state === 'removing' && <p className="way-desc"><span className="shimmer-text">{t('Being removed…')}</span></p>}
     {state === 'remove_failed' && <>
       <p className="local-tool-error">{t('Removal did not finish: some files could not be deleted.')}</p>
       {(job?.output ?? '').split('\n').filter(Boolean).slice(0, 4).map((line, i) => <p key={i} className="local-tool-error">{line}</p>)}
@@ -1290,7 +1290,7 @@ function ReferenceFileImport() {
       onDragOver={e => { e.preventDefault(); setOver(true) }} onDragLeave={() => setOver(false)}
       onDrop={e => { e.preventDefault(); setOver(false); choose(e.dataTransfer.files?.[0]) }}>
       <span className="ref-drop-ico" aria-hidden>{busy ? <span className="spin" /> : <FileUp />}</span>
-      <p className="ref-drop-title">{t(busy ? 'Importing…' : 'Drop a .bib or .ris file here')}</p>
+      <p className="ref-drop-title">{busy ? <span className="shimmer-text">{t('Importing…')}</span> : t('Drop a .bib or .ris file here')}</p>
       <p className="ref-drop-sub">{t('Exported from Zotero, Mendeley, EndNote or JabRef')}</p>
       <button type="button" className="btn-pri" disabled={busy} onClick={() => input.current?.click()}><Upload aria-hidden />{t('Choose a .bib or .ris file')}</button>
     </div>
@@ -1743,7 +1743,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     </Notice>
   }
   const dmeta = (key: string, [tone, status]: [Tone, string], extra?: ReactNode, reason?: ReactNode) => <>
-    <p className="dmeta">{checking === key ? <span><span className="spin" aria-hidden /> {t('Checking…')}</span> : <span className={`status-chip is-status ${tone === 'warn' ? 'is-warning' : tone === 'no' ? 'is-configured' : ''}`}>{status}</span>}{extra}{checking !== key && checkedLine(key)}</p>
+    <p className="dmeta">{checking === key ? <span><span className="spin" aria-hidden /> <span className="shimmer-text">{t('Checking…')}</span></span> : <span className={`status-chip is-status ${tone === 'warn' ? 'is-warning' : tone === 'no' ? 'is-configured' : ''}`}>{status}</span>}{extra}{checking !== key && checkedLine(key)}</p>
     {reasonNotice(key, reason)}
   </>
   const checkProps = { checking, start: runCheck }
@@ -1999,7 +1999,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
         <p className="server-local-note"><ShieldCheck size={14} aria-hidden />{t('Only a server on this computer is accepted: 127.0.0.1, localhost or [::1]. No text leaves the computer.')}</p>
         {serverError && <Notice tone="error"><p>{serverError}</p></Notice>}
         <div className="acts">
-          <button type="submit" className="btn-pri" disabled={serverBusy || !changed || !field.trim()}>{serverBusy ? <span className="spin" aria-hidden /> : <Save aria-hidden />}{t(serverBusy ? 'Saving…' : 'Save and test')}</button>
+          <button type="submit" className="btn-pri" disabled={serverBusy || !changed || !field.trim()}>{serverBusy ? <span className="spin" aria-hidden /> : <Save aria-hidden />}{serverBusy ? <span className="shimmer-text">{t('Saving…')}</span> : t('Save and test')}</button>
           {saved && <button type="button" className="ghost" disabled={serverBusy} onClick={() => saveLocalServer('')}>{t('Remove')}</button>}
         </div>
       </form>

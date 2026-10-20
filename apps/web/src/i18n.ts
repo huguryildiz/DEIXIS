@@ -1989,6 +1989,7 @@ const tr: Record<string, string> = {
   'An earlier answer: {status}.': 'Önceki yanıt: {status}.',
   'Done': 'Bitti',
   'In progress': 'Sürüyor',
+  'Working': 'Çalışıyor',
   'Stopped here': 'Burada durdu',
   'Waiting': 'Sırada',
   'Not run': 'Çalışmadı',

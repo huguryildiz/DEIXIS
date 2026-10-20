@@ -354,7 +354,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   }
 
   if (error && !view) return <section className="research-view"><Notice tone="error">{t('Could not open this research: {error}', { error })}</Notice></section>
-  if (!view) return <section className="research-view"><p className="session-meta">{t('Loading research…')}</p></section>
+  if (!view) return <section className="research-view"><p className="session-meta"><span className="shimmer-text">{t('Loading research…')}</span></p></section>
 
   const run = view.runs[0] as Run | undefined
   const active = run ? ACTIVE.has(run.status) : false

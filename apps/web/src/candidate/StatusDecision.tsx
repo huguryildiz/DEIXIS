@@ -42,7 +42,7 @@ export function StatusDecision({ card, computed, computedVersion, previous, begi
       <label className="lbl">{t('Reason')}<input className="field" aria-label={t('Reason')} required maxLength={2000} placeholder={t('Required')} value={reason} onChange={e => setReason(e.target.value)} /><small>{t('{n}/{max} characters', { n: reason.length, max: 2000 })}</small></label>
       <p className="foot-note">{t('Your decision is a note of your own. It is not independent evidence and does not change the computed status.')}</p>
       {problem && <div className="notice bad" role="alert"><CircleX aria-hidden /><span>{problem}</span></div>}
-      <div className="acts"><button type="submit" className="btn-pri" disabled={busy} aria-describedby={busy ? 'candidate-decision-saving' : undefined}>{t('Record my decision')}</button><button type="button" className="ghost" disabled={busy} onClick={close}>{t('Cancel')}</button>{busy && <span id="candidate-decision-saving" role="status" className="foot-note">{t('Saving…')}</span>}</div>
+      <div className="acts"><button type="submit" className="btn-pri" disabled={busy} aria-describedby={busy ? 'candidate-decision-saving' : undefined}>{t('Record my decision')}</button><button type="button" className="ghost" disabled={busy} onClick={close}>{t('Cancel')}</button>{busy && <span id="candidate-decision-saving" role="status" className="foot-note"><span className="shimmer-text">{t('Saving…')}</span></span>}</div>
     </form> : <div className="acts">
       <button ref={control} type="button" className="ghost" aria-expanded={open} onClick={e => { rememberFocus(e.currentTarget, () => control.current); setOpen(true) }}>{t('Record my decision')}</button>
       {actions}

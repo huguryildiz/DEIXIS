@@ -8,7 +8,7 @@ export function OcrNote({ offer }: { offer: OcrOffer }) {
     const paused = offer.run.status === 'paused'
     const text = offer.total === null ? t(paused ? 'OCR paused' : 'Reading pages without text with OCR…')
       : t(paused ? 'OCR paused · {done} of {total} pages read' : 'Reading with OCR · {done} of {total} pages', { done: offer.done, total: offer.total })
-    return <span className="proposal ocr-note" role="status">{paused ? <ScanText size={13} aria-hidden /> : <LoaderCircle size={13} className="chat-spin" aria-hidden />}{text}</span>
+    return <span className="proposal ocr-note" role="status">{paused ? <ScanText size={13} aria-hidden /> : <LoaderCircle size={13} className="chat-spin" aria-hidden />}{paused ? text : <span className="shimmer-text">{text}</span>}</span>
   }
   if (offer.kind === 'off') return <span className="proposal ocr-note"><ScanText size={13} aria-hidden />{t('Read with OCR is off: {reason}', { reason: offer.reason })}</span>
   const englishOnly = !offer.tool.languages.includes('tur')

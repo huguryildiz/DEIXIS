@@ -28,7 +28,7 @@ export function EvidencePanel({ researchId, card, matrix, hit, sourceKey, dark, 
     <div className="candidates-view candidate-evidence mk pad detail">
       <div className="dhead"><div className="venue">{t('Evidence supplied to this search')} · {t('Version {n}', { n: matrix.version })} · {label(depthLabels, hit.reading_depth)}</div><h1 data-stored-text>{evidence?.source.title ?? hit.source.title}</h1></div>
       {error && <div className="notice bad" role="alert"><CircleX aria-hidden /><div className="nb"><span>{error}</span><div className="acts"><button type="button" className="ghost" onClick={() => setRetry(n => n + 1)}>{t('Retry')}</button></div></div></div>}
-      {!evidence && !error && <p role="status" className="foot-note">{t('Loading evidence…')}</p>}
+      {!evidence && !error && <p role="status" className="foot-note"><span className="shimmer-text">{t('Loading evidence…')}</span></p>}
       {evidence && <>
         <p className="dmeta">{sourceKey && <span><SourceKey value={sourceKey} /></span>}{evidence.source.year && <span>{evidence.source.year}</span>}{evidence.source.venue && <span data-stored-text>{evidence.source.venue}</span>}<span>{versionText(evidence.source.version_label)}</span></p>
         {evidence.source.doi && <div className="rowacts"><a href={`https://doi.org/${evidence.source.doi.replace(/^https?:\/\/doi.org\//, '')}`} target="_blank" rel="noreferrer"><ProviderIcon id="doi" />{t('DOI')} <span data-stored-text>{evidence.source.doi}</span></a></div>}

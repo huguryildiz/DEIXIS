@@ -25,7 +25,7 @@ export function EditCheckPanel({ report, finished, busy, checking, labels, onChe
     : check?.current ? t('This check covers the current text and citations.') : ''
   return <section className="evidence-report-edit-check" aria-label={t('Edited text check')}>
     <div className="evidence-report-check-sentence"><p role="status">{sentence}</p>{check && <span>{t(check.current ? 'Current' : 'Out of date')}</span>}</div>
-    <div className="evidence-report-check-action"><Button size="sm" variant="outline" disabled={Boolean(reason)} aria-busy={checking} aria-describedby={reason ? reasonId : undefined} onClick={onCheck}>{t(checking ? 'Checking…' : check ? 'Check again' : 'Check edited text')}</Button>{reason && <p id={reasonId}>{reason}</p>}</div>
+    <div className="evidence-report-check-action"><Button size="sm" variant="outline" disabled={Boolean(reason)} aria-busy={checking} aria-describedby={reason ? reasonId : undefined} onClick={onCheck}>{checking ? <span className="shimmer-text">{t('Checking…')}</span> : t(check ? 'Check again' : 'Check edited text')}</Button>{reason && <p id={reasonId}>{reason}</p>}</div>
     {check && <>
       {!check.current && <p>{t('This is an earlier check; edits or other inputs changed since.')}</p>}
       {check.items.length ? <ol className="evidence-report-check-items">{check.items.map((item, i) => {

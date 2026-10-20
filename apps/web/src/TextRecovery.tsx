@@ -81,7 +81,7 @@ export function TextRecovery({ asset, sourceId, actionSlot }: { asset: Asset; so
     ...history.file_restores.map(file => ({ kind: 'file' as const, date: file.created_at, id: file.operation_id, file })),
   ].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)) : []
   return <section className="text-recovery" aria-label={t('PDF text recovery')}>
-    <p ref={result} tabIndex={-1} className={`text-recovery-result${capability.reason === 'password_protected' ? ' is-error' : ''}`} role="status">{resultText}</p>
+    <p ref={result} tabIndex={-1} className={`text-recovery-result${capability.reason === 'password_protected' ? ' is-error' : ''}`} role="status">{running ? <span className="shimmer-text">{resultText}</span> : resultText}</p>
     {showButton && actionSlot === undefined && <div className="text-recovery-action">
       <Tooltip content={blocked ? disabledReason : t('Try reading the stored PDF text once.')}>
         <Button ref={button} size="sm" variant="outline" aria-disabled={blocked || undefined} aria-describedby={blocked ? reasonId : undefined} onClick={() => void retry()}><ScanText size={14} aria-hidden />{t(capability.status === 'no_text' ? 'Check PDF text again' : 'Retry text extraction')}</Button>
@@ -100,7 +100,7 @@ export function TextRecovery({ asset, sourceId, actionSlot }: { asset: Asset; so
     </button>
     {open && <div id={`${reasonId}-history`}>
       {historyError && <Notice tone="error">{historyError}</Notice>}
-      {!history && !historyError && <p role="status">{t('Loading recovery history…')}</p>}
+      {!history && !historyError && <p role="status"><span className="shimmer-text">{t('Loading recovery history…')}</span></p>}
       {history && <>
         {!entries.length && <p>{t('No recorded recovery operations.')}</p>}
         <ol className="text-recovery-history">{entries.map(entry => <li key={entry.id}>

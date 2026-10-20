@@ -73,10 +73,10 @@ export function SemanticSetupNote() {
     {mismatch && <p className="local-tool-error">{t('The model file does not match its pinned copy, so the model is not used. Download it again.')}</p>}
     {failed && <p className="local-tool-error">{t('The last download failed. Settings → Search & ranking shows the details.')}</p>}
     {running && <p className="semantic-setup-progress" role="status"><LoaderCircle size={14} className="chat-spin" aria-hidden />
-      {job ? t('Downloading the built-in model: step {step} of {steps}', { step: job.step, steps: job.steps }) : t('Downloading the built-in model…')}</p>}
+      <span className="shimmer-text">{job ? t('Downloading the built-in model: step {step} of {steps}', { step: job.step, steps: job.steps }) : t('Downloading the built-in model…')}</span></p>}
     {startError && <p className="local-tool-error" role="alert">{startError}</p>}
     {loadError && <p className="local-tool-error" role="alert">{loadError} {retry}</p>}
-    {!running && <Button type="button" size="sm" variant="outline" disabled={starting} onClick={install}>{starting ? <><LoaderCircle size={14} className="chat-spin" aria-hidden />{t('Starting the download…')}</> : t(mismatch || failed ? 'Download the built-in model again' : 'Download the built-in model')}</Button>}
+    {!running && <Button type="button" size="sm" variant="outline" disabled={starting} onClick={install}>{starting ? <><LoaderCircle size={14} className="chat-spin" aria-hidden /><span className="shimmer-text">{t('Starting the download…')}</span></> : t(mismatch || failed ? 'Download the built-in model again' : 'Download the built-in model')}</Button>}
   </Notice>
 }
 
@@ -117,7 +117,7 @@ export function EnglishQuestion({ researchId, view, busy, onSaved }: {
     <form onSubmit={e => { e.preventDefault(); if (text.trim()) save({ text: text.trim(), expected_version: view.research.version }) }}>
       <label className="sr-only" htmlFor="english-question-text">{t('English sentence for the built-in model')}</label>
       <input id="english-question-text" value={text} maxLength={500} onChange={e => setText(e.target.value)} placeholder={t('One English sentence')} disabled={saving || busy} />
-      <Button type="submit" size="sm" disabled={saving || busy || !text.trim()}>{t(saving ? 'Saving…' : 'Save')}</Button>
+      <Button type="submit" size="sm" disabled={saving || busy || !text.trim()}>{saving ? <span className="shimmer-text">{t('Saving…')}</span> : t('Save')}</Button>
       <Button type="button" size="sm" variant="ghost" disabled={saving || busy} onClick={() => save({ use_question: true, expected_version: view.research.version })}>{t('The question is already in English')}</Button>
     </form>
     {error && <p className="local-tool-error" role="alert">{error}</p>}

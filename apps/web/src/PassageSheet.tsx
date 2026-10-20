@@ -349,7 +349,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
     if (!row || ((!find || find.svid !== row.source_version_id) && !finding)) return null
     if (finding || !find?.done) return <div className="notice answer-notice is-info find-block" role="status">
       <LoaderCircle size={16} className="pdf-search-spin" aria-hidden />
-      <div className="notice-body"><p><b>{t('Looking for an open copy…')}</b></p></div>
+      <div className="notice-body"><p><b><span className="shimmer-text">{t('Looking for an open copy…')}</span></b></p></div>
     </div>
     const records = row.access.pdf_discoveries.slice(find.before)
     const sent = records.filter(d => !notSent(d))
@@ -399,7 +399,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
 
   const textTab = passage && !abstract
     ? shownDocument !== null ? <>
-      {shownDocument ? <PdfTextDocument researchId={researchId} assetId={shownDocument.asset.id} passages={shownDocument.passages} showNotes={showNotes} sourceTitle={shownDocument.source.title} citation={citation} comparison={comparing} suppressFigurePictures={earlier && !comparing} rendition={textRendition} nav={nav} label={<>{t('Extracted PDF text')}{notesToggle(shownDocument)}</>} /> : <><h3 className="source-section">{t('Extracted PDF text')}</h3><p>{t('Loading PDF text…')}</p></>}
+      {shownDocument ? <PdfTextDocument researchId={researchId} assetId={shownDocument.asset.id} passages={shownDocument.passages} showNotes={showNotes} sourceTitle={shownDocument.source.title} citation={citation} comparison={comparing} suppressFigurePictures={earlier && !comparing} rendition={textRendition} nav={nav} label={<>{t('Extracted PDF text')}{notesToggle(shownDocument)}</>} /> : <><h3 className="source-section">{t('Extracted PDF text')}</h3><p><span className="shimmer-text">{t('Loading PDF text…')}</span></p></>}
     </> : <>
       <h3 className="source-section">{citationLabels?.heading ? `${citationLabels.heading} · ${locatorText(passage)}` : t('Cited passage · {locator}', { locator: locatorText(passage) })}</h3>
       {expectHighlight && !highlightAvailable && <div className="citation-highlight-note">{citationLabels?.unmarked ?? t('This saved citation has no exact text anchor, so it cannot be highlighted. Generate a new answer to repair its citation anchors.')}</div>}
@@ -408,7 +408,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
     : otherText ? <>
       {otherText.passages.length ? <PdfTextDocument researchId={researchId} assetId={otherText.asset.id} passages={otherText.passages} showNotes={showNotes} sourceTitle={otherText.source.title} rendition={Boolean(otherText.asset.rendition)} label={<>{t('Extracted PDF text')}{notesToggle(otherText)}</>} /> : <><h3 className="source-section">{t('Extracted PDF text')}</h3><Notice tone="info">{t('No text was extracted from this PDF.')}</Notice></>}
     </>
-    : needsOtherText ? <p>{t('Loading PDF text…')}</p>
+    : needsOtherText ? <p><span className="shimmer-text">{t('Loading PDF text…')}</span></p>
     : empty('text')
 
   const abstractTab = abstractShown ? <>
@@ -419,13 +419,13 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
     {abstract && highlightAvailable && <p className="foot-note">{citationLabels?.marked ?? t('Highlighted: the exact text cited in the answer.')}</p>}
     {/* Opened for something other than a citation with nothing to mark (a left-out work with no quote, D80): say so. */}
     {abstract && !expectHighlight && !highlightAvailable && citationLabels?.heading && <p className="foot-note">{citationLabels.marked}</p>}
-  </> : needsAbstract ? <p>{t('Loading passage…')}</p>
+  </> : needsAbstract ? <p><span className="shimmer-text">{t('Loading passage…')}</span></p>
     : <p className="source-notice"><Info size={15} aria-hidden />{t('No abstract is stored for this source.')}</p>
 
   const content = <>
       <div className="sheet-body source-detail">
         {error && <Notice tone="error">{error}</Notice>}
-        {!passage && !assetText && !detailsOnly && !error && <p>{t(openAssetId ? 'Loading PDF text…' : 'Loading passage…')}</p>}
+        {!passage && !assetText && !detailsOnly && !error && <p><span className="shimmer-text">{t(openAssetId ? 'Loading PDF text…' : 'Loading passage…')}</span></p>}
         {(passage || assetText || detailsOnly) && source && head && <>
           {/* The work (mockup `.dhead`): the source key, venue · year · citations, the title and the authors, then one
               status line: the decision and who made it, the latest answer's claims that cite this copy, the text the

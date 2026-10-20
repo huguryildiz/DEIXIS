@@ -72,7 +72,7 @@ export function FindingCard({ researchId, review, row, heading, group, sourceNam
           <button type="button" className="ghost" disabled={locked} aria-describedby={lockedBy} onClick={() => decide('deferred')}>{t('Defer')}</button>
           {current && <button type="button" className="link" disabled={locked} onClick={() => setChanging(false)}>{t('Keep {decision}', { decision: t(reviewDecisionLabels[current.decision]).toLocaleLowerCase(uiLocale()) })}</button>}
         </div>}
-    {locked && <p id={`${reasonId}-locked`} className="foot-note">{t(command.pending ? 'The last request may or may not have been saved.' : 'Loading current text…')}</p>}
+    {locked && <p id={`${reasonId}-locked`} className="foot-note">{command.pending ? t('The last request may or may not have been saved.') : <span className="shimmer-text">{t('Loading current text…')}</span>}</p>}
     {command.pending && !command.busy && <RetryNotice busy={command.busy} retry={() => void command.retry()} />}
     {error && <div className="notice warn"><TriangleAlert aria-hidden /><span>{error}</span></div>}
     {row.decision_history.length > 0 && <details><summary><ChevronRight size={14} aria-hidden />{t('Decision history ({n})', { n: row.decision_history.length })}</summary><ol className="review-history">{row.decision_history.map(decision => <li key={decision.id} data-decision-ordinal={decision.ordinal}><span>{t(decision.applied_ref ? 'Accepted and saved through the editor' : reviewDecisionLabels[decision.decision])}</span>{decision.reason && <span data-stored-text>: {decision.reason}</span>}{decision.applied_ref && <span data-stored-text> · {decision.applied_ref}</span>} · <time>{new Date(decision.created_at).toLocaleString(uiLocale())}</time></li>)}</ol></details>}

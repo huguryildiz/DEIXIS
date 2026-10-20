@@ -109,7 +109,7 @@ function ZoteroDialogContent({ destination, busy, initial, onImport }: {
       <div className="zotero-source" role="group" aria-label={t('Zotero library')}>
         {(['local', 'web'] as const).map(s => <button type="button" key={s} aria-pressed={source === s} onClick={() => choose(s)}>{s === 'local' ? t('Zotero on this computer') : 'zotero.org'}</button>)}
       </div>
-      {!rows && !error && <p className="zotero-dialog-status" role="status">{t('Reading collections…')}</p>}
+      {!rows && !error && <p className="zotero-dialog-status" role="status"><span className="shimmer-text">{t('Reading collections…')}</span></p>}
       {error && <Notice tone="error">{error}</Notice>}
       {rows && !rows.length && <div className="zotero-empty">
         <span className="zotero-empty-icon"><ConnectionIcon id="zotero" /></span>

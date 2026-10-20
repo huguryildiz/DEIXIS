@@ -7,7 +7,7 @@ import type { useFollowUpCommand } from './commands'
 export function CommandFeedback({ command }: { command: ReturnType<typeof useFollowUpCommand> }) {
   return <>
     {command.error && <div className="notice bad" role="alert"><CircleX aria-hidden /><span>{command.error}</span></div>}
-    {command.busy && <p role="status" className="foot-note">{t('Sending follow-up command…')}</p>}
+    {command.busy && <p role="status" className="foot-note"><span className="shimmer-text">{t('Sending follow-up command…')}</span></p>}
     {command.pending && !command.busy && <div className="notice bad" role="alert"><CircleX aria-hidden /><div className="nb"><span>{t('The request did not receive an HTTP answer. Retry sends the same command.')}</span><div className="acts"><button type="button" className="ghost" onClick={() => { void command.retry() }}>{t('Retry')}</button></div></div></div>}
   </>
 }

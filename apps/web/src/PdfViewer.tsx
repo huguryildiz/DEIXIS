@@ -101,7 +101,7 @@ export function PdfViewer({ url, initialPage = 1, title, rendition = false }: { 
       <a className="pdf-download" href={url.split('#')[0]} download aria-label={t('Download PDF')} title={t('Download PDF')}><Download /></a>
     </div>
     <div className="pdf-document" ref={viewportRef} tabIndex={0} role="region" aria-label={t('PDF pages')}>
-      {error ? <Notice tone="error">{t('Could not display PDF: {message}', { message: error })}</Notice> : !document && <p>{t('Loading PDF…')}</p>}
+      {error ? <Notice tone="error">{t('Could not display PDF: {message}', { message: error })}</Notice> : !document && <p><span className="shimmer-text">{t('Loading PDF…')}</span></p>}
       <canvas ref={canvasRef} aria-label={pageLocator(page, rendition)} />
     </div>
   </section>

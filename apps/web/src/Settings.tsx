@@ -54,7 +54,7 @@ function ProfileNameRow({ onProfile }: { onProfile: (profile: Profile) => void }
     <p>{t('Shown in the sidebar. It stays on this computer.')}{error && <span className="key-form-error" role="alert"> {error}</span>}</p>
     <input id="profile-name" className="field" type="text" autoComplete="name" maxLength={80} value={draft} disabled={stored === null || busy}
       placeholder={stored?.account_name || t('Your name')} onChange={e => { setDraft(e.target.value); setError('') }} />
-    <button type="submit" className="ghost" disabled={busy || !changed}>{t(busy ? 'Saving…' : 'Save')}</button>
+    <button type="submit" className="ghost" disabled={busy || !changed}>{busy ? <span className="shimmer-text">{t('Saving…')}</span> : t('Save')}</button>
   </form>
 }
 
@@ -85,7 +85,7 @@ function ContactEmailRow({ onSaved }: { onSaved: () => void }) {
       {error && <span className="key-form-error" role="alert"> {error}</span>}</p>
     <input id="contact-email" className="field" type="email" autoComplete="email" value={draft} disabled={stored === null || busy} placeholder="you@university.edu"
       onChange={e => { setDraft(e.target.value); setError('') }} />
-    <button type="submit" className="ghost" disabled={busy || !changed}>{t(busy ? 'Saving…' : 'Save')}</button>
+    <button type="submit" className="ghost" disabled={busy || !changed}>{busy ? <span className="shimmer-text">{t('Saving…')}</span> : t('Save')}</button>
     {stored && !stored.email && <Notice tone="attention">{stored.environment_set ? t('While this field is empty, DEIXIS sends the email that was set when it started.') : t('Without an email, OpenAlex and Crossref answer more slowly at busy times. Searches still run.')}</Notice>}
   </form>
 }
@@ -304,7 +304,7 @@ function AboutSection() {
     <div className="rows set-about" data-panel="general">
       <div>
         <b>{t('Version')}</b>
-        <p>{about ? `${about.version} · ${about.os} ${about.arch}` : t('Checking…')}</p>
+        <p>{about ? `${about.version} · ${about.os} ${about.arch}` : <span className="shimmer-text">{t('Checking…')}</span>}</p>
       </div>
       <div>
         <b>{t('License')}</b>
@@ -312,17 +312,17 @@ function AboutSection() {
       </div>
       <div>
         <b>{t('Source code')}</b>
-        <p>{about ? <a href={about.source_url} {...external}>{t('Source code for this version')}</a> : t('Checking…')}
+        <p>{about ? <a href={about.source_url} {...external}>{t('Source code for this version')}</a> : <span className="shimmer-text">{t('Checking…')}</span>}
           {about && !about.source_is_tag && <> {t('This version has no release tag yet, so the link opens the project page.')}</>}</p>
       </div>
       <div>
         <b>{t('Third-party licenses')}</b>
-        <p>{about?.notices_available ? <a href="/api/about/notices" {...external}>{t('Open the list')}</a> : about ? t('The list is not part of this build.') : t('Checking…')}
+        <p>{about?.notices_available ? <a href="/api/about/notices" {...external}>{t('Open the list')}</a> : about ? t('The list is not part of this build.') : <span className="shimmer-text">{t('Checking…')}</span>}
           {about?.notices_available && <> {t('The licenses of the software DEIXIS is built on.')}</>}</p>
       </div>
       <div>
         <b>{t('Report a problem')}</b>
-        <p>{about ? <a href={about.report_url} {...external}>{t('Report a problem on GitHub')}</a> : t('Checking…')}{' '}
+        <p>{about ? <a href={about.report_url} {...external}>{t('Report a problem on GitHub')}</a> : <span className="shimmer-text">{t('Checking…')}</span>}{' '}
           {t('The new issue has only the DEIXIS version, your operating system and its architecture filled in. If you have a diagnostic zip, attach it to the issue yourself by dragging it into the text box. Open the zip first and look at what it contains, because GitHub issues are public.')}</p>
       </div>
     </div>
@@ -395,7 +395,7 @@ function InstitutionalAccessBlock({ access }: { access: AccessControl }) {
       {p?.address && <ProxyNameRow access={access} proxy={p} />}
       <div className="row proxy-state" role="status">
         {line.tone === 'checking' ? <span className="spin" aria-hidden /> : <span className={`st ${line.tone}`}>{line.pill}</span>}
-        <span>{line.text}</span>
+        <span>{line.tone === 'checking' ? <span className="shimmer-text">{line.text}</span> : line.text}</span>
         {(access.readFailed) && <button type="button" className="link" onClick={access.reload}>{t('Try again')}</button>}
       </div>
       {scopus && <div className="row proxy-state proxy-scopus"><span className={`st ${scopus.tone}`}>{scopus.pill}</span><span>{scopus.text}</span></div>}
@@ -427,7 +427,7 @@ function ProxyNameRow({ access, proxy }: { access: AccessControl; proxy: ProxySe
     <div className="row">
       <input id="proxy-name" className="field" type="text" spellCheck={false} autoComplete="off" maxLength={80} value={field} disabled={busy}
         placeholder={proxy.label_default ?? ''} onChange={e => { setDraft(e.target.value); setError('') }} />
-      <button type="submit" className="ghost" disabled={busy || !changed}>{t(busy ? 'Saving…' : 'Save')}</button>
+      <button type="submit" className="ghost" disabled={busy || !changed}>{busy ? <span className="shimmer-text">{t('Saving…')}</span> : t('Save')}</button>
       {error && <span className="key-form-error" role="alert">{error}</span>}
     </div>
   </form>
@@ -500,11 +500,11 @@ function UsageThisMonth() {
       <div className="acts"><button type="button" className="ghost" disabled={loading} onClick={() => read()}>{t('Try again')}</button></div></div></div>}
     <div className="rows set-usage" data-panel="usage">
       {models.value ? models.value.connections.map(row)
-        : <div data-connection=""><b>{t('Models')}</b><div className="bar" aria-hidden style={{ visibility: 'hidden' }}><i /></div><p className="tnum">{t(loading && !models.failed ? 'Checking…' : 'not known')}</p></div>}
+        : <div data-connection=""><b>{t('Models')}</b><div className="bar" aria-hidden style={{ visibility: 'hidden' }}><i /></div><p className="tnum">{loading && !models.failed ? <span className="shimmer-text">{t('Checking…')}</span> : t('not known')}</p></div>}
       <div data-role="openalex">
         <b>{t('OpenAlex today')}</b>
         <div className="bar" aria-hidden style={b && b.used_fraction === null ? { visibility: 'hidden' } : undefined}><i style={{ width: `${Math.round((b?.used_fraction ?? 0) * 100)}%`, background: (b?.used_fraction ?? 0) >= 1 ? 'var(--tone-exclude)' : undefined }} /></div>
-        <p className="tnum">{budgetText ?? t(loading && !budget.failed ? 'Checking…' : 'not known')}
+        <p className="tnum">{budgetText ?? (loading && !budget.failed ? <span className="shimmer-text">{t('Checking…')}</span> : t('not known'))}
           <small>{b?.as_of ? t(b.source === 'live' ? 'Read from OpenAlex, {time}' : 'Last stored response, {time}', { time: clock(b.as_of) }) : b ? t('No OpenAlex response stored today') : ''}</small></p>
       </div>
     </div>
@@ -550,7 +550,7 @@ function SpendingSettings() {
             {today.estimated_from_text_calls > 0 && ` · ${t('{n} of them estimated from text length because the provider sent no usage', { n: today.estimated_from_text_calls })}`}</small>
           {today.repriced_calls > 0 && <small>{t('{n} of them priced later from the {date} price list; the price was not known when they were made.', { n: today.repriced_calls.toLocaleString(uiLocale()), date: today.repriced_price_list ?? '' })}</small>}
           {today.unpriced_calls > 0 && <small>{t('Not counted: {n} calls on models with no listed price.', { n: today.unpriced_calls.toLocaleString(uiLocale()) })}</small>}</>
-          : t(error ? 'not known' : 'Checking…')}</p>
+          : error ? t('not known') : <span className="shimmer-text">{t('Checking…')}</span>}</p>
       </div>
       <form onSubmit={e => { e.preventDefault(); if (changed && valid) save(amount) }}>
         <b><label htmlFor="spend-threshold">{t('Stop at an estimated amount per day')}</label></b>
@@ -559,7 +559,7 @@ function SpendingSettings() {
         <span className="set-spend-actions">
           <input id="spend-threshold" className="field" type="text" inputMode="decimal" value={draft} disabled={spending === null || busy} placeholder={t('Off')} aria-invalid={!valid}
             onChange={e => { setDraft(e.target.value); setError('') }} />
-          <button type="submit" className="ghost" disabled={busy || !changed || !valid}>{t(busy ? 'Saving…' : 'Save')}</button>
+          <button type="submit" className="ghost" disabled={busy || !changed || !valid}>{busy ? <span className="shimmer-text">{t('Saving…')}</span> : t('Save')}</button>
           {spending?.daily_threshold_usd != null && <button type="button" className="ghost" disabled={busy} onClick={() => save(null)}>{t('Turn off')}</button>}
         </span>
         {!valid && <Notice tone="attention">{t('Enter an amount in US dollars, for example 5.')}</Notice>}

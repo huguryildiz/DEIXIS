@@ -50,8 +50,8 @@ export function RunUsageBox({ run, cursor }: { run: Run; cursor: number }) {
   })()
   const requests = usage.value ? requestsSentence(usage.value.requests, run.kind === 'discovery') : null
   return <li className="usage-box">
-    <span>{calls}{usage.value && usage.failed ? ` ${t('(not refreshed: the last read failed)')}` : ''}</span>
-    {run.kind === 'discovery' && <span>{budget.value ? budgetSentence(budget.value) : budget.failed ? t('OpenAlex’s budget today could not be read.') : t('Reading OpenAlex’s budget today…')}{budget.value && budget.failed ? ` ${t('(not refreshed: the last read failed)')}` : ''}</span>}
+    <span>{!usage.value && !usage.failed ? <span className="shimmer-text">{calls}</span> : calls}{usage.value && usage.failed ? ` ${t('(not refreshed: the last read failed)')}` : ''}</span>
+    {run.kind === 'discovery' && <span>{budget.value ? budgetSentence(budget.value) : budget.failed ? t('OpenAlex’s budget today could not be read.') : <span className="shimmer-text">{t('Reading OpenAlex’s budget today…')}</span>}{budget.value && budget.failed ? ` ${t('(not refreshed: the last read failed)')}` : ''}</span>}
     {requests && <span>{requests}{usage.failed ? ` ${t('(not refreshed: the last read failed)')}` : ''}</span>}
   </li>
 }

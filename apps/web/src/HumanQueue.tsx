@@ -316,7 +316,7 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
   }
 
   if (error && !queue) return <Notice tone="error">{t('Could not load the queue: {error}', { error })}</Notice>
-  if (!queue) return <p className="empty-inline" role="status">{t('Loading the queue…')}</p>
+  if (!queue) return <p className="empty-inline" role="status"><span className="shimmer-text">{t('Loading the queue…')}</span></p>
 
   const counts = queue.counts
   // The inclusion criterion the open rows are current under (P39's criterion line), from the frozen protocol record the
@@ -443,10 +443,10 @@ function QueueCard({ row, criterion, picked, onPick, rowView, detailError, unset
       {rowView && !answerable && !detailError && (unsettled
         ? <Notice tone="attention">{t('This row kept changing while it was read, so it cannot be answered yet.')}{' '}
           <button type="button" className="queue-link" onClick={onReadAgain}>{t('Read it again')}</button></Notice>
-        : <p className="queue-muted" role="status">{t('Reading this row again…')}</p>)}
+        : <p className="queue-muted" role="status"><span className="shimmer-text">{t('Reading this row again…')}</span></p>)}
       {detailError ? <Notice tone="error">{t('Could not load this row: {error}', { error: detailError })}{' '}
           <button type="button" className="queue-link" onClick={onReadAgain}>{t('Read it again')}</button></Notice>
-        : !rowView ? <p className="queue-muted" role="status">{t('Loading this row…')}</p>
+        : !rowView ? <p className="queue-muted" role="status"><span className="shimmer-text">{t('Loading this row…')}</span></p>
         : !detail ? <Notice tone="attention">{t('This row changed while it was loading; the queue is being read again.')}</Notice>
         : <>
           {detail.identity && <section className="queue-identity" aria-label={t('The PDF and the work')}>

@@ -74,7 +74,7 @@ export function SnowballPanel({ researchId, eventCursor, initialSeed, onOpenSour
   const toggleDirection = (d: Direction) => setDirections(prev => { const next = new Set(prev); if (next.has(d)) next.delete(d); else next.add(d); return next })
 
   if (error && !view) return <div className="mk pad"><Notice tone="error">{error}<button type="button" className="ghost" onClick={() => void reload()}>{t('Retry')}</button></Notice></div>
-  if (!view) return <div className="mk pad"><p role="status">{t('Loading snowballing…')}</p></div>
+  if (!view) return <div className="mk pad"><p role="status"><span className="shimmer-text">{t('Loading snowballing…')}</span></p></div>
 
   const options = view.seed_options.filter(o => !query || (o.title ?? '').toLocaleLowerCase(uiLocale()).includes(query.toLocaleLowerCase(uiLocale())))
   return <div className="mk pad snowball">
@@ -182,7 +182,7 @@ function RoundView({ round, titles, note, researchId, onOpenSource, onChanged }:
   return <article className="sb-round">
     <div className="sb-head"><h4>{t('Round {n}', { n: round.round })}</h4>
       <span className="pill">{round.directions.map(d => t(d === 'backward' ? 'backward' : 'forward')).join(' + ')}</span>
-      {ACTIVE.has(round.status) && <span className="sb-live" role="status"><span className="spin" aria-hidden />{t('Running…')}</span>}
+      {ACTIVE.has(round.status) && <span className="sb-live" role="status"><span className="spin" aria-hidden /><span className="shimmer-text">{t('Running…')}</span></span>}
       {round.status === 'failed' && <span className="pill warn">{t('Failed')}</span>}
       {round.status === 'cancelled' && <span className="pill">{t('Cancelled')}</span>}
     </div>

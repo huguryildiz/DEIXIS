@@ -114,7 +114,7 @@ export function StatementCheckPanel({ researchId, scopeRevision, eventCursor, ru
     {/* The sentence this revision checked, as stored with it: an older revision keeps its own sentence. */}
     {view && <p className="sc-sentence"><span className="sc-sentence-h">{t('Checked sentence')}</span> <q>{view.sentence}</q></p>}
     {error && <Notice tone="error">{error}</Notice>}
-    {checks === null ? <p className="cc-muted" role="status">{t('Loading…')}</p>
+    {checks === null ? <p className="cc-muted" role="status"><span className="shimmer-text">{t('Loading…')}</span></p>
       : !view ? <div className="sc-box">
         <p className="cc-step-p">{discoveryDone ? t('No statement check has run yet. It reads each work the search reached against the statement.')
           : t('The check starts by itself when the search and reading end.')}</p>

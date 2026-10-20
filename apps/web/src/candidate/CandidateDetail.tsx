@@ -137,7 +137,7 @@ export function CandidateDetail({ researchId, candidateId, initialCard, intent, 
   const refreshButton = <button type="button" className="ib candidate-refresh" aria-label={t('Refresh')} title={t('Refresh')} onClick={refresh}><RotateCw size={15} aria-hidden /></button>
   if (!card) return <div ref={root} className="candidates-view candidate-detail mk pad detail">
     <div className="venue"><span className="spacer" />{refreshButton}</div>
-    {error ? <Failure text={error} retry={() => void load().catch(() => {})} /> : <p role="status" className="foot-note">{t('Loading candidate…')}</p>}
+    {error ? <Failure text={error} retry={() => void load().catch(() => {})} /> : <p role="status" className="foot-note"><span className="shimmer-text">{t('Loading candidate…')}</span></p>}
   </div>
   const version = card.versions.find(v => v.id === card.current_version_id)
   const researchRuns = view.runs.filter(r => CANDIDATE_KINDS.has(r.kind) && r.target?.candidate_id === card.id)
@@ -182,7 +182,7 @@ export function CandidateDetail({ researchId, candidateId, initialCard, intent, 
       {saved && <p role="status" className="foot-note">{saved}</p>}
       <h4 className="sub">{t('Candidate card')}</h4>
       {!version ? <>
-        {breaking ? <p className="foot-note"><span className="spin" aria-hidden /> {t('Breaking the claim into testable parts…')}</p>
+        {breaking ? <p className="foot-note"><span className="spin" aria-hidden /> <span className="shimmer-text">{t('Breaking the claim into testable parts…')}</span></p>
           : <p className="foot-note">{t('No card yet.')} {t('at most {n} model calls, no provider requests', { n: card.decompose_budget.max_model_calls })} · <ModelName connection={view.scope.model_connection} text={model} /></p>}
         <div className="acts"><button type="button" className="btn-pri" disabled={Boolean(startReason)} aria-describedby={startReason ? 'candidate-start-reason' : undefined} onClick={async () => { setBusy(true); setError(''); try { await api.decomposeCandidate(researchId, card.id); onRunChanged(); await load() } catch (e) { setError(errorText(e)) } finally { setBusy(false) } }}><Lightbulb aria-hidden />{t('Break the claim into testable parts')}</button>
           <button ref={editorControl} type="button" className="ghost" onClick={e => openEditor(e.currentTarget)}><PenLine aria-hidden />{t('Write the card myself')}</button></div>
@@ -193,7 +193,7 @@ export function CandidateDetail({ researchId, candidateId, initialCard, intent, 
         <h4 className="sub" ref={planHeading} tabIndex={-1}>{t('Search plan')}</h4>
         {!planOpen ? <div className="acts"><button ref={planControl} type="button" className="ghost" disabled={Boolean(startReason)} aria-expanded={false} aria-describedby={startReason ? 'candidate-start-reason' : undefined} onClick={e => { planFocus.rememberFocus(e.currentTarget, () => planControl.current); setPlanOpen(true); setPlan(null); setPlanError(''); void loadPlan() }}><ListChecks aria-hidden />{t('Plan the search')}</button></div>
           : <section className="candidate-plan" aria-label={t('Search plan')} onKeyDown={e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closePlan() } }}>
-            {planError && <Failure text={planError} retry={() => void loadPlan()} />}{!plan && !planError && <p role="status" className="foot-note">{t('Loading the plan…')}</p>}
+            {planError && <Failure text={planError} retry={() => void loadPlan()} />}{!plan && !planError && <p role="status" className="foot-note"><span className="shimmer-text">{t('Loading the plan…')}</span></p>}
             {plan && <><dl className="kv2">
               <dt>{t('Providers')}</dt><dd><ul className="candidate-plan-list">{plan.providers.map(provider => <li key={provider}><ConnectionIcon id={provider} />{providerName(provider)} · {(n => t(n === 1 ? '{n} request per search' : '{n} requests per search', { n }))(plan.transport.providers.find(p => p.provider === provider)?.requests_per_search ?? 0)}</li>)}</ul></dd>
               <dt>{t('Models')}</dt><dd><ul className="candidate-plan-list">{(['kill_search_query', 'claim_assessment'] as const).map(task => <li key={task}>{t(task === 'kill_search_query' ? 'Search terms (model)' : 'Claim assessment (model)')} · <ModelName connection={plan.model[task][0]} text={modelText(plan.model[task][1], plan.model[task][2])} /></li>)}</ul></dd>
@@ -208,10 +208,10 @@ export function CandidateDetail({ researchId, candidateId, initialCard, intent, 
       </>}
       {version && !computed && <div className="acts candidate-review-acts"><CandidateReviewEntry card={card} version={version} view={view} current active={active} surface={reviewSurface} revision={reviewRevision} onTarget={setReviewTarget} /></div>}
       {startReason && <p id="candidate-start-reason" className="foot-note">{startReason}</p>}{busy && <p id="candidate-working" role="status" className="foot-note">{t('An operation is in progress.')}</p>}
-      {searching && <div className="notice info"><span className="spin" aria-hidden /><span>{t('Searching, then assessing the kept works against the card…')}</span></div>}
+      {searching && <div className="notice info"><span className="spin" aria-hidden /><span><span className="shimmer-text">{t('Searching, then assessing the kept works against the card…')}</span></span></div>}
       {computed && <StatusDecision key={card.current_version_id} card={card} computed={computed} computedVersion={visibleMatrix?.version ?? card.current_version} previous={previous} beginMutation={beginMutation} onChanged={applyMutation}
         actions={version && <CandidateReviewEntry card={card} version={version} view={view} current active={active} surface={reviewSurface} revision={reviewRevision} onTarget={setReviewTarget} />} />}
-      {matrixError && <Failure text={matrixError} retry={() => void load().catch(() => {})} />}{chosenKid && !visibleMatrix && !matrixError && <p role="status" className="foot-note">{t('Loading matrix…')}</p>}
+      {matrixError && <Failure text={matrixError} retry={() => void load().catch(() => {})} />}{chosenKid && !visibleMatrix && !matrixError && <p role="status" className="foot-note"><span className="shimmer-text">{t('Loading matrix…')}</span></p>}
       {visibleMatrix && <SearchMatrix card={card} matrix={visibleMatrix} onEvidence={(hit, control) => {
         const key = control.dataset.candidateFocus!
         sheetFocus.rememberFocus(control, () => root.current?.querySelector<HTMLElement>(`[data-candidate-focus="${CSS.escape(key)}"]`) ?? null)

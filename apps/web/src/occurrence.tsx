@@ -17,7 +17,7 @@ export function OccurrenceNotice({ occurrence, earlier, comparing, loading, onTo
       {occurrence.input_relation === 'input_differed_from_expected_hash' && ` ${t(occurrence.retained_copy ? 'Those bytes are kept.' : 'Those bytes were not kept.')}`}</p>
     {occurrence.file_restored_after && <p>{t('The PDF file was restored after this text was extracted.')}</p>}
     {earlier && <Button size="sm" variant="outline" aria-disabled={loading || undefined} onClick={() => { if (!loading) onToggle() }}>{t(comparing ? 'Back to cited text' : 'Show current text')}</Button>}
-    {loading && <p role="status">{t('Loading current text…')}</p>}
+    {loading && <p role="status"><span className="shimmer-text">{t('Loading current text…')}</span></p>}
   </Notice>
 }
 

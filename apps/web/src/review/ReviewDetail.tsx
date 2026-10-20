@@ -63,7 +63,7 @@ export function ReviewDetail({ researchId, review, sources, sectionLabel, open, 
       {review.state === 'running' && <button type="button" className="ghost" disabled={controlBusy} aria-describedby={controlBusy ? 'review-control-busy' : undefined} onClick={() => void control('pause')}><Pause aria-hidden />{t('Pause')}</button>}
       {review.state === 'paused' && <button type="button" className="ghost" disabled={controlBusy} aria-describedby={controlBusy ? 'review-control-busy' : undefined} onClick={() => void control('resume')}><Play aria-hidden />{t('Resume')}</button>}
       <button type="button" className="ghost" disabled={controlBusy} aria-describedby={controlBusy ? 'review-control-busy' : undefined} onClick={() => void control('cancel')}><X aria-hidden />{t('Cancel')}</button>
-      {controlBusy && <span id="review-control-busy" role="status" className="foot-note">{t('Saving…')}</span>}
+      {controlBusy && <span id="review-control-busy" role="status" className="foot-note"><span className="shimmer-text">{t('Saving…')}</span></span>}
     </div>}
     {error && <div className="notice bad" role="alert"><CircleX aria-hidden /><span>{error}</span></div>}
     {review.stale_reasons.length > 0 && <div className="notice warn review-stale"><TriangleAlert aria-hidden /><span>{t(kind === 'candidate' ? 'Written against an earlier candidate: {reasons}. The findings are kept as they were.' : kind === 'answer' ? 'Written against an earlier answer: {reasons}. The findings are kept as they were.' : 'Written against an earlier report: {reasons}. The findings are kept as they were.', {

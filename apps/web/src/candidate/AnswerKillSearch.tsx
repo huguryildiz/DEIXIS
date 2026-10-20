@@ -84,7 +84,7 @@ export function ClaimDialog({ researchId, answerId, answerVersion, target, decom
           <button type="button" className="ghost" disabled={busy || empty} aria-describedby={busy || empty ? reasonId : undefined} onClick={() => void save('edit')}>{t('I will write the card myself')}</button>
         </div>
         {reason && <p id={reasonId} className="foot-note">{reason}</p>}
-        <p id="claim-dialog-ceiling" className="foot-note claim-dialog-ceiling">{!decompose ? t('Loading the model…')
+        <p id="claim-dialog-ceiling" className="foot-note claim-dialog-ceiling">{!decompose ? <span className="shimmer-text">{t('Loading the model…')}</span>
           : noModel ? t('No model is chosen for this research, so the claim cannot be broken into parts here. You can save it and write the card yourself.')
           : <>{t('Breaking into parts:')} <ModelName connection={decompose.connection} text={modelText(decompose.model, decompose.reasoning_effort)} /> · {t(decompose.max_model_calls === 1 ? 'at most {n} model call (retries included)' : 'at most {n} model calls (retries included)', { n: count(decompose.max_model_calls) })} · {t('no search')}</>}</p>
         <p className="foot-note">{t('Nothing is searched here. The search starts only in the Candidates panel, after you see its plan.')}</p>
@@ -173,7 +173,7 @@ export function AnswerKillSummary({ row, onOpen, onOpenWork, onResume, busy }: {
       <span aria-hidden>·</span><span>{shortDate(search?.created_at ?? row.created_at)}</span><span aria-hidden>·</span><span>{sourceLabel}</span></div>
     <div className="ksum-b">
       <p className="ksum-claim" data-stored-text title={row.claim_statement ?? row.origin_text}>{row.claim_statement ?? row.origin_text}</p>
-      <p className={`ksum-verdict is-${lineTone}`} role={lineTone === 'run' ? 'status' : undefined}>{lineTone === 'run' ? <span className="spin" aria-hidden /> : <span className="ksum-dot" aria-hidden />}<span>{line}</span></p>
+      <p className={`ksum-verdict is-${lineTone}`} role={lineTone === 'run' ? 'status' : undefined}>{lineTone === 'run' ? <span className="spin" aria-hidden /> : <span className="ksum-dot" aria-hidden />}<span>{lineTone === 'run' ? <span className="shimmer-text">{line}</span> : line}</span></p>
       {search && <p className="foot-note ksum-fact">{changed && <>{t('V{m} search:', { m: search.version })} </>}{executionLine(search)}</p>}
       {reading && <p className="foot-note ksum-fact">{reading}</p>}
       {shown && shown.top_works.length > 0 && <ul className="ksum-works" aria-label={t('Works with a recorded relation')}>{shown.top_works.map(work => <li key={work.source_version_id}>

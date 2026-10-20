@@ -31,7 +31,7 @@ export function GapNotice({ researchId, watch }: { researchId: string; watch: Wa
       <Info aria-hidden /><div className="nb" data-gap-id={gap.id}><GapText gap={gap} />
         <div className="acts">{gap.catch_up_check_id && (gap.catch_up_check_id === watch.last_check?.id
           ? <span className="foot-note">{t('Catch-up check')} · {t(stateLabels[watch.last_check.state])}</span>
-          : <><button type="button" className="ghost" disabled={loading} aria-describedby={`gap-loading-${gap.id}`} onClick={() => { void showCheck(gap.catch_up_check_id!) }}>{t('Show catch-up check')}</button><span id={`gap-loading-${gap.id}`} role="status" className="foot-note">{loading ? t('Loading follow-up…') : ''}</span></>)}
+          : <><button type="button" className="ghost" disabled={loading} aria-describedby={`gap-loading-${gap.id}`} onClick={() => { void showCheck(gap.catch_up_check_id!) }}>{t('Show catch-up check')}</button><span id={`gap-loading-${gap.id}`} role="status" className="foot-note">{loading ? <span className="shimmer-text">{t('Loading follow-up…')}</span> : ''}</span></>)}
         <button type="button" className="ghost" onClick={() => { acknowledged.add(gap.id); setHidden(gap.id) }}>{t('Acknowledge')}</button></div>
       </div>
     </div>}

@@ -33,9 +33,9 @@ export function ReportAspects({ researchId, reportId, eventCursor, valid, onOpen
     <p>{t('Each row is an aspect the report recorded. Investigating one opens a candidate card; nothing is searched until you start a search on the card.')}</p>
     <p>{t('The note above describes the report as it was written; a candidate’s own search status is on its card.')}</p>
     {error && <Notice tone="error">{error}<Button variant="ghost" onClick={() => void load()}>{t('Retry')}</Button></Notice>}
-    {!rows ? !error && <p role="status">{t('Loading aspects…')}</p> : rows.length ? <ul>{rows.map(row => <li key={row.id}><p>{label(kindLabels, row.kind)}</p><p data-stored-text>{row.text}</p>
+    {!rows ? !error && <p role="status"><span className="shimmer-text">{t('Loading aspects…')}</span></p> : rows.length ? <ul>{rows.map(row => <li key={row.id}><p>{label(kindLabels, row.kind)}</p><p data-stored-text>{row.text}</p>
       <ul>{candidates.filter(c => c.origin_gap_row_id === row.id).map(candidate => <li key={candidate.id}><Button variant="ghost" onClick={() => onOpen({ id: candidate.id })}>{t('Open candidate')} · {label(statusLabels, candidate.status?.status ?? 'not_run')}{candidate.origin_changed && <> {t('(a later candidate was opened from this row)')}</>}</Button></li>)}</ul>
       <Button variant="outline" disabled={opening !== null} aria-describedby={opening !== null ? 'candidate-opening' : undefined} onClick={() => void investigate(row)}>{t('Investigate')}</Button>
-    </li>)}</ul> : <p>{t('No aspects were recorded for this report.')}</p>}{opening !== null && <p id="candidate-opening" role="status">{t('Opening candidate…')}</p>}
+    </li>)}</ul> : <p>{t('No aspects were recorded for this report.')}</p>}{opening !== null && <p id="candidate-opening" role="status"><span className="shimmer-text">{t('Opening candidate…')}</span></p>}
   </section>
 }

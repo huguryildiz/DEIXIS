@@ -39,6 +39,6 @@ export function ReviewPane({ researchId, targetKind, targetId, eventCursor, init
     </button>)}</div></>}
     {!selectedId ? <p className="foot-note">{t('No review by another model is recorded for this target.')}</p>
       : detail?.id === selectedId ? <ReviewDetail researchId={researchId} review={detail} sources={sources} sectionLabel={sectionLabel} open={(id, anchor) => open(id, anchor, detail)} refresh={refresh} apply={apply} />
-        : !failure && <p role="status" className="foot-note">{t('Loading review…')}</p>}
+        : !failure && <p role="status" className="foot-note"><span className="shimmer-text">{t('Loading review…')}</span></p>}
   </div>
 }

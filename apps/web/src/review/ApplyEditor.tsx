@@ -62,7 +62,7 @@ export function ApplyEditor({ researchId, reportId, reviewId, finding, claim: or
   return <div className="review-apply-editor">
     <ClaimEdit claim={claim} initialText={previousBody?.text ?? finding.finding.suggested_fix ?? claim.text} conflicts={conflicts} sourceName={sourceName} cancel={cancel} save={save} busy={Boolean(command.pending) || reading || dependenciesChanged} locked={Boolean(command.pending)} error={error} context={<div className="review-editor-context"><p>{t('From review finding · {kind}', { kind: t(reviewFindingLabels[finding.finding.kind]) })}</p><h4>{t('Text at review time')}</h4><p className="review-claim" data-stored-text><MathText text={finding.finding.target.text_at_snapshot ?? ''} /></p>{finding.finding.target.text_at_snapshot !== claim.text && <><h4>{t('Current text')}</h4><p className="review-claim" data-stored-text><MathText text={claim.text} /></p></>}</div>} />
     {dependenciesChanged && <Button type="button" size="sm" variant="outline" disabled={reading} aria-describedby={reading ? 'review-editor-reading' : undefined} onClick={() => void reopen()}>{t('Reopen with current text')}</Button>}
-    {reading && <p id="review-editor-reading" role="status">{t('Loading current text…')}</p>}
+    {reading && <p id="review-editor-reading" role="status"><span className="shimmer-text">{t('Loading current text…')}</span></p>}
     {command.pending && !command.busy && <RetryNotice busy={command.busy} retry={() => void command.retry()} />}
   </div>
 }

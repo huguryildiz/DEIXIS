@@ -174,7 +174,7 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
   }
 
   if (error) return <Notice tone="error">{error}</Notice>
-  if (!list) return <p className="legacy-mini-note" role="status">{t('Loading the works waiting for a PDF…')}</p>
+  if (!list) return <p className="legacy-mini-note" role="status"><span className="shimmer-text">{t('Loading the works waiting for a PDF…')}</span></p>
   const rows = list.rows
   const skipped = list.skipped
   // The four boxes (mockup `.depth`): works that passed the abstract stage and, of them, those with PDF text in hand, both
@@ -234,14 +234,14 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
               </Button>
               : <Button variant="outline" size="sm" className="ghost" disabled={busy || finding !== null || !row.find_pdf_source_version_id}
                 title={row.find_pdf_source_version_id ? undefined : t('Find PDF needs a DOI')} onClick={() => { void findPdf(row) }}>
-                <FileSearch size={14} aria-hidden />{t(finding === row.work_id ? 'Finding…' : 'Find PDF')}
+                <FileSearch size={14} aria-hidden />{finding === row.work_id ? <span className="shimmer-text">{t('Finding…')}</span> : t('Find PDF')}
               </Button>}
             {canAttach && <Button variant="outline" size="sm" className="ghost" disabled={busy || reading} aria-label={t('Upload PDF for {title}', { title: row.title })} onClick={() => uploadFor(row)}><Upload size={14} aria-hidden />{t('Upload PDF')}</Button>}
           </span>
         </li>)}
       </ol>}
       {rows.length > 0 && canAttach && <div className="prow pdf-ready-zotero">
-        <Button variant="outline" size="sm" className="ghost" disabled={busy || reading || fromZoteroBusy} onClick={() => { void fromZotero() }}><ConnectionIcon id="zotero" />{t(fromZoteroBusy ? 'Looking in Zotero…' : 'Add from Zotero')}</Button>
+        <Button variant="outline" size="sm" className="ghost" disabled={busy || reading || fromZoteroBusy} onClick={() => { void fromZotero() }}><ConnectionIcon id="zotero" />{fromZoteroBusy ? <span className="shimmer-text">{t('Looking in Zotero…')}</span> : t('Add from Zotero')}</Button>
         <select value={zoteroSource} aria-label={t('Zotero library')} onChange={e => setZoteroSource(e.target.value as ZoteroSource)}>
           <option value="local">{t('this computer')}</option>
           <option value="web">zotero.org</option>
@@ -256,7 +256,7 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
     {canAttach && <div className={`drop pdf-ready-drop${dragging ? ' over is-over' : ''}`} data-testid="waiting-drop"
       onDragOver={e => { e.preventDefault(); setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={onDrop}>
       <Upload size={16} aria-hidden />
-      <span role="status">{reading ? t('Reading the files…') : <><b>{t('Drop PDFs here')}</b> {t('or choose files')}</>}</span>
+      <span role="status">{reading ? <span className="shimmer-text">{t('Reading the files…')}</span> : <><b>{t('Drop PDFs here')}</b> {t('or choose files')}</>}</span>
       <span className="foot-note">{t('Each is matched to a work by the DOI or title on its first pages; you choose the version and confirm before anything is attached.')}</span>
       <Button variant="outline" size="sm" className="ghost" disabled={busy || reading} onClick={() => fileInput.current?.click()}>{t('Choose files')}</Button>
       <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden aria-label={t('Choose PDF files')} onChange={e => { matchFiles(Array.from(e.target.files ?? [])); e.target.value = '' }} />
@@ -364,7 +364,7 @@ function YourFiles({ researchId, files, busy, onChanged }: { researchId: string;
         </ul>}
         {(row.state === 'unread' || row.state === 'changed') && row.request_id && <span className="person-files-actions">
           <Button size="sm" variant="outline" disabled={busy || acting !== null} onClick={() => { void act(row.request_id!, () => api.retryPersonReading(researchId, row.request_id!), 'The file waits to be read again.') }}>
-            <RotateCcw size={14} aria-hidden />{t(acting === row.request_id ? 'Asking…' : 'Read again')}
+            <RotateCcw size={14} aria-hidden />{acting === row.request_id ? <span className="shimmer-text">{t('Asking…')}</span> : t('Read again')}
           </Button>
         </span>}
       </li>)}
@@ -436,7 +436,7 @@ function MatchPanel({ proposal: p, rows, work, busy, onWork, onVersion, onConfir
     <div className="pdf-ready-actions">
       {p.refused
         ? <Button size="sm" variant="outline" disabled={busy} onClick={onRematch}><RotateCcw size={14} aria-hidden />{t('Match this file again')}</Button>
-        : <Button size="sm" disabled={busy || p.busy || !work || !p.version} onClick={onConfirm}>{t(p.busy ? 'Attaching…' : 'Attach to this version')}</Button>}
+        : <Button size="sm" disabled={busy || p.busy || !work || !p.version} onClick={onConfirm}>{p.busy ? <span className="shimmer-text">{t('Attaching…')}</span> : t('Attach to this version')}</Button>}
       <button type="button" className="pdf-ready-link" onClick={onSkip}>{t('Do not attach')}</button>
       {!p.refused && work && !p.version && <span className="pdf-ready-hint">{t('Choose the version first.')}</span>}
     </div>

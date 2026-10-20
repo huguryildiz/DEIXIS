@@ -364,7 +364,7 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
     <div className="report-scroll">
     <article ref={documentRoot} className="report-document evidence-report-document" data-report-id={reportId}>
       {error && <Notice tone="error">{error}</Notice>}
-      {!report ? <p>{t('Loading report…')}</p> : <>
+      {!report ? <p><span className="shimmer-text">{t('Loading report…')}</span></p> : <>
         <header className="report-document-head"><h1>{title}</h1>
           <div className="meta">
             <span>{report.status === 'valid' ? t('Evidence report · V{n}', { n: report.report_version ?? '' }) : report.status === 'draft' ? (report.sections.every(section => section.status === 'valid') && reportAssemblyDraftText(report.run?.error)) || t('DRAFT: {n} sections not validated', { n: report.sections.filter(section => section.status !== 'valid').length }) : t('Evidence report · being written')}</span>
@@ -515,7 +515,7 @@ function EvidenceCitePanel({ researchId, report, link, eventCursor, onClose, onO
       {!passageId ? <p className="foot-note">{t('No stored evidence passage can be opened for this citation.')}</p>
         : error ? <p className="quote">{error}</p>
         : quote ? <div className="quote"><HighlightedPassageText passage={{ text: quote.text, kind: passage!.kind }} highlightTexts={located && anchor ? [anchor] : []} scroll={false} /></div>
-        : <p className="quote">{t('Loading passage…')}</p>}
+        : <p className="quote"><span className="shimmer-text">{t('Loading passage…')}</span></p>}
       {passage && <div className="loc"><span>{name} · {locatorText(passage)}</span><span className="loc-dot" aria-hidden>·</span>
         {located ? <span className="ok-t">{t('Anchor located in the stored passage; whether it supports the sentence was not checked.')}</span>
           : <span className="warn-t">{t('The anchor was not located in this passage; it opens without a mark.')}</span>}</div>}

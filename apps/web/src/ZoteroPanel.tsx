@@ -36,7 +36,7 @@ export function ZoteroPanel({ busy, onImport, onClose }: {
       <Button type="button" variant="ghost" size="icon-sm" aria-label={t('Close Zotero import')} onClick={onClose}><X size={14} /></Button>
     </div>
     <p>{t('Read-only: nothing is written to Zotero. The collection’s own items (not its subcollections) and each item’s first PDF are added as sources you included.')}</p>
-    {!collections && !error && <p>{t('Reading collections…')}</p>}
+    {!collections && !error && <p><span className="shimmer-text">{t('Reading collections…')}</span></p>}
     {error && <Notice tone="error">{error}</Notice>}
     {collections && !collections.length && <div className="zotero-empty">
       <span className="zotero-empty-icon"><ConnectionIcon id="zotero" /></span>
@@ -54,7 +54,7 @@ export function ZoteroPanel({ busy, onImport, onClose }: {
         </SelectContent>
       </Select>
       <Button type="button" disabled={busy || !key} onClick={() => onImport(source, key, collections.find(c => c.key === key)?.name ?? key)}>
-        <Library size={14} />{t(busy ? 'Importing…' : 'Import collection')}
+        <Library size={14} />{busy ? <span className="shimmer-text">{t('Importing…')}</span> : t('Import collection')}
       </Button>
     </div>}
   </div>

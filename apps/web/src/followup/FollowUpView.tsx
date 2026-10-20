@@ -33,7 +33,7 @@ function EnableEntry({ id, kind, view, watchList, turnedOff, onEnable }: { id: s
     <small>{t(turnedOff ? 'This follow-up is turned off.' : 'This follow-up is not on.')}</small>
     {reason ? <div className={`notice ${state.retry && !noIncluded ? 'bad' : 'warn'}`} role={state.retry && !noIncluded ? 'alert' : undefined}>{state.retry && !noIncluded ? <CircleX aria-hidden /> : <TriangleAlert aria-hidden />}<div className="nb"><span>{reason}</span>
       {state.retry && !noIncluded && <div className="acts"><button type="button" className="ghost" onClick={() => setAttempt(value => value + 1)}>{t('Retry')}</button></div>}</div></div>
-      : state.ready ? <div className="acts"><button type="button" className="ghost" onClick={onEnable}>{t('Follow…')}</button></div> : <small role="status">{t('Loading follow-up…')}</small>}
+      : state.ready ? <div className="acts"><button type="button" className="ghost" onClick={onEnable}>{t('Follow…')}</button></div> : <small role="status"><span className="shimmer-text">{t('Loading follow-up…')}</span></small>}
   </section>
 }
 // The Follow-up panel (mockup `watchPanel`, P37/P38): one box for each kind of follow-up, then the records found that
@@ -51,7 +51,7 @@ export function FollowUpView({ researchId, view, dark, onReload, onChanged }: {
   return <section className="followup-view mk pad" aria-label={t('Follow-up')}>
     <div className="followup-intro"><p>{t('Follow-up watches for works that appear after this research ran. DEIXIS checks only while it is running.')}</p>
       <button type="button" className="ib" aria-label={t('Refresh')} title={t('Refresh')} onClick={() => { void data.reload() }}><RotateCw size={15} aria-hidden /></button></div>
-    {data.loading && <p role="status" className="foot-note">{t('Loading follow-up…')}</p>}
+    {data.loading && <p role="status" className="foot-note"><span className="shimmer-text">{t('Loading follow-up…')}</span></p>}
     {data.error && <div className="notice bad" role="alert"><CircleX aria-hidden /><div className="nb"><span>{t('Could not load follow-up: {error}', { error: data.error })}</span><div className="acts"><button type="button" className="ghost" onClick={() => { void data.reload() }}>{t('Retry')}</button></div></div></div>}
     {!data.loading && (['protocol_queries', 'citing_works'] as const).map(kind => {
       const watches = enabled.filter(item => item.kind === kind)

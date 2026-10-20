@@ -217,7 +217,7 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
   const cancel = () => { if (loaded?.plan) setDraft(draftOf(loaded.plan)); setRefused(null); onClose() }
 
   if (loadError && !loaded) return <div className="plan-panel mk pad"><p role="alert">{t('Could not load the search plan: {error}', { error: loadError })}</p></div>
-  if (!loaded) return <div className="plan-panel mk pad"><p role="status">{t('Loading the search plan…')}</p></div>
+  if (!loaded) return <div className="plan-panel mk pad"><p role="status"><span className="shimmer-text">{t('Loading the search plan…')}</span></p></div>
 
   const plan = loaded.plan
   // A withdrawn revision's number is not used again (D67): the backend says which number saving makes.

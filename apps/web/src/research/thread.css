@@ -240,7 +240,26 @@
 .chat-step-detail .answer-flow{margin:0}
 .chat-step-detail .answer-flow p{margin:0 0 3px}
 /* "Next: … · stage N of M" (R16), then the models and the Usage toggle (mockup `.next`, `.usage-line`, `.usage-box`). */
-.chat .chat-steps>.chat-steps-next{padding:2px 0 0 36px;color:var(--muted);font-size:12px}
+/* A live run reads as a progress card: icon disc, eyebrow + title, a Working pill, a bar for the stage reached, and the
+   phases still to come faded below the live one. */
+.chat-turn.is-active>.chat-group{padding:0;overflow:hidden}
+.chat-turn.is-active>.chat-group>:not(.chat-live-head,.chat-live-bar){margin-inline:18px}
+.chat-turn.is-active>.chat-group>:last-child{margin-bottom:14px}
+.chat-live-head{gap:14px;padding:14px 18px;border-bottom:1px solid var(--line);background:var(--sidebar-surface)}
+.chat-live-icon{display:grid;place-items:center;flex:none;width:38px;height:38px;border:1px solid var(--accent-line);border-radius:999px;background:var(--accent-tint);color:var(--accent)}
+.chat-live-title{display:flex;flex-direction:column;gap:1px;min-width:0}
+.chat-live-title small{font-size:12px;font-weight:500}
+.chat-live-title>span{color:var(--ink);font-size:14.5px;font-weight:500;overflow-wrap:anywhere}
+.chat-live-pill{display:inline-flex;align-items:center;gap:7px;flex:none;height:28px;padding:0 11px;border:1px solid var(--accent-line);border-radius:7px;background:var(--accent-tint);color:var(--accent);font-size:12.5px;font-weight:500}
+.chat-live-pill i{width:7px;height:7px;border-radius:50%;background:currentColor;animation:live-dot 1.6s ease-in-out infinite}
+.chat-live-head time{margin-left:auto}
+.chat-live-bar{height:7px;margin:16px 18px 10px;border-radius:999px;background:var(--line);overflow:hidden}
+.chat-live-bar i{display:block;height:100%;border-radius:inherit;background:var(--accent);transition:width .6s ease}
+@keyframes live-dot{50%{opacity:.35}}
+.chat-step.is-waiting .chat-step-line{cursor:default}
+.chat-step.is-waiting .chat-step-text::first-letter{text-transform:uppercase}
+.chat .chat-steps>.chat-step.is-waiting::before{display:none}
+@media (prefers-reduced-motion:reduce){.chat-live-pill i{animation:none}.chat-live-bar i{transition:none}}
 .chat .chat-steps>.usage-line{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:4px 0 0 36px;color:var(--muted);font-size:12px;line-height:1.5}
 .chat .chat-steps>.usage-box{display:grid;gap:3px;margin:4px 0 0 36px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:12.5px}
 /* Plan concepts and provider queries: rows indented under the phase line on a left hairline, meta on the right. */
@@ -325,10 +344,6 @@
 .chat-jump{position:fixed;bottom:24px;left:50%;z-index:30;display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border:1px solid var(--line);border-radius:999px;background:var(--paper);color:var(--ink);font-size:13px;box-shadow:0 8px 24px rgb(0 0 0/.12);transform:translateX(-50%);cursor:pointer}
 @keyframes chat-spin{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.chat-spin{animation:none}}
-/* In-progress text: an accent highlight sweeps left to right across muted letters. */
-.shimmer-text{background:linear-gradient(90deg,var(--muted) 44%,var(--accent) 50%,var(--muted) 56%) 0 0/300% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:text-shimmer 2.2s linear infinite}
-@keyframes text-shimmer{from{background-position:100% 0}to{background-position:0 0}}
-@media (prefers-reduced-motion:reduce){.shimmer-text{animation:none;background:none;-webkit-text-fill-color:currentColor}}
 @container (max-width:760px){.chat-list>li{flex-wrap:wrap}}
 @media (max-width:650px){.chat-step-detail{margin-left:0}.chat-list{margin-left:9px}.chat-run-foot{margin-left:0;padding-left:0}}
 .answer-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;margin:18px 0 8px}

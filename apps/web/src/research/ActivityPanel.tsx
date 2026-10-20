@@ -35,7 +35,7 @@ export function ActivityPanel({ researchId, eventCursor, events }: { researchId:
   }, [researchId, eventCursor])
   return <div className="activity-runs">
     {error && !runs ? <p className="empty-inline" role="alert">{t('Could not load the runs: {error}', { error })}</p>
-      : !runs ? <p className="empty-inline" role="status">{t('Loading the runs…')}</p>
+      : !runs ? <p className="empty-inline" role="status"><span className="shimmer-text">{t('Loading the runs…')}</span></p>
       : <>
         {/* A refresh that failed after the table loaded: the table stays, marked as the last one read. */}
         {error && <p className="activity-refresh-error" role="alert">{t('Could not refresh the runs: {error}. The table shows them as last read.', { error })}</p>}

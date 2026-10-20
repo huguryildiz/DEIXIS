@@ -95,7 +95,7 @@ function RoleModelDialog({ target, view, dark, onClose, onChanged, onReload }: {
         </Select>
       </label>
       <label className="choose-model-row"><span>{t('Model')}</span>
-        {models === null ? <span className="choose-model-note">{failed ? t('The model connections could not be read.') : t('Reading the model connections…')}</span>
+        {models === null ? <span className="choose-model-note">{failed ? t('The model connections could not be read.') : <span className="shimmer-text">{t('Reading the model connections…')}</span>}</span>
           : !models.length ? <span className="choose-model-note">{t('No connected model is ready.')}</span>
           : <Select value={choice || null} onValueChange={value => { if (value) { setChoice(value as string); setEffort(null) } }}>
             <SelectTrigger aria-label={t('Model')}><SelectValue placeholder={t('Choose a model')}>{(value: string) => { const m = models.find(x => x.id === value); return m ? `${connectionName(m.connection)} · ${m.display_name}` : t('Choose a model') }}</SelectValue></SelectTrigger>
@@ -156,7 +156,7 @@ function ReviewAgainDialog({ target, review, view, dark, onClose, onStarted }: {
         runActive={view.runs.some(r => ['queued', 'running', 'pause_requested'].includes(r.status))} sectionLabel={ref => ref}
         lead={<p className="foot-note review-again-lead">{t('This review keeps the model it was requested with ({model}); Retry sends it there again. Start review begins a new review of the same target on the model you choose, with the same focus and note; the stopped review stays as it is.', { model: review.card.requested_model.model })}</p>}
         started={started} cancel={close} />
-        : <p className="choose-model-note review-again-wait" role={failed ? 'alert' : 'status'}>{failed ? t('The stopped review could not be read: {error}', { error: failed }) : t('Reading the stopped review…')}</p>}
+        : <p className="choose-model-note review-again-wait" role={failed ? 'alert' : 'status'}>{failed ? t('The stopped review could not be read: {error}', { error: failed }) : <span className="shimmer-text">{t('Reading the stopped review…')}</span>}</p>}
     </DialogContent>
   </Dialog>
 }

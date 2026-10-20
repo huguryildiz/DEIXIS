@@ -844,7 +844,7 @@ export function LibraryPage({ dark, researchKey, onChanged, onOpenResearch, onSt
               </th>
             </tr></thead>
             <tbody>
-              {view === null && !error && <tr className="more-row"><td colSpan={6} role="status">{t('Loading Library…')}</td></tr>}
+              {view === null && !error && <tr className="more-row"><td colSpan={6} role="status"><span className="shimmer-text">{t('Loading Library…')}</span></td></tr>}
               {rows.map((entry, i) => {
                 const band = grouped ? bandOf(entry) : null
                 const head = band && (i === 0 || bandOf(rows[i - 1]).id !== band.id)
@@ -1113,7 +1113,7 @@ function NewResearchDialog({ request, dark, busy, count, onClose, onStart }: {
     <label className="lib-question">{t(mode === 'table' ? 'What should the table compare?' : 'Your question')}
       <textarea className="field" rows={3} maxLength={4000} value={question} onChange={event => setQuestion(event.target.value)} /></label>
     {failed ? <p className="lib-models" role="alert">{t('Could not read the model connections: {message}', { message: failed })}</p>
-      : list === null ? <p className="lib-models" role="status">{t('Reading the model connections…')}</p>
+      : list === null ? <p className="lib-models" role="status"><span className="shimmer-text">{t('Reading the model connections…')}</span></p>
       : settingsError && !fallback ? <div className="lib-models lib-settings-error" role="alert">
         <span>{t('Could not read the default models in Settings: {message}', { message: settingsError })}</span>
         <span className="acts">

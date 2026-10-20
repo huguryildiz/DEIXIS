@@ -1,19 +1,17 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowUpRight, Ban, BadgeCheck, ChevronRight, CircleCheck, Cloud, Copy, Cpu, Download, FileLock, FileText, FileUp, HardDrive, Info, KeyRound, Laptop, MemoryStick, LoaderCircle, Package, PenLine, Plus, RefreshCw, RotateCw, Save, ScanText, Server, ShieldCheck, Sigma, Trash2, TriangleAlert, Upload } from 'lucide-react'
+import { ArrowUpRight, Ban, BadgeCheck, ChevronRight, CircleCheck, Cloud, Copy, Cpu, Download, FileLock, FileText, FileUp, HardDrive, Info, KeyRound, Laptop, MemoryStick, LoaderCircle, Package, PenLine, Plus, RefreshCw, RotateCw, Save, ScanText, Server, ShieldCheck, Trash2, TriangleAlert, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { ConfirmDialog } from './ConfirmDialog'
 import { DataLocationCard } from './DataLocation'
-import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinModel, type BuiltinModels, type Connections, type Credentials, type KeyEntry, type KeyTest, type Keychain, type EquationModel, type LocalTool, type Mathpix, type OllamaUpdates, type OcrTool, type PdfReader, type ToolUpdate, type LocalTools, type ProviderTest, type ModelHealth, type ReferenceImport, type Reranking, type RerankProvider, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
+import { api, ApiError, libraryImportsApi, type AccountSignIn, type BuiltinModel, type BuiltinModels, type Connections, type Credentials, type KeyEntry, type KeyTest, type Keychain, type LocalTool, type Mathpix, type OllamaUpdates, type OcrTool, type PdfReader, type ToolUpdate, type LocalTools, type ProviderTest, type ModelHealth, type ReferenceImport, type Reranking, type RerankProvider, type SemanticSearch, type SemanticSearchOption, type SemanticSearchProvider } from './api'
 import { useToast } from './Toast'
 import { ocrLanguagesText } from './ocr'
 import { t, uiLocale } from './i18n'
-import { serviceErrorSentence, healthReasonText, installReasonText, toolActionError, credentialFailureText, keychainLabel, localToolIcon, localToolNames, providerRole, reasoningLabel, connectionName } from './labels'
+import { serviceErrorSentence, healthReasonText, installReasonText, toolActionError, credentialFailureText, keychainLabel, localToolIcon, localToolNames, providerRole, reasoningLabel } from './labels'
 import { ConnectionIcon } from './connectionIcons'
 import { writeClipboard } from './clipboard'
 import { Notice } from './Notice'
-import { ModelName } from './ModelName'
-import { useModelText } from './modelText'
 import { createRequestOrder } from './requestOrder'
 import { gaveNoAnswer, isLeft } from './readLimit'
 import { useLeaving } from './useLeaving'
@@ -123,7 +121,6 @@ function CompanyCard({ mark, name, maker, via, ready, status, active, compact = 
     {via && <span className="co-via">{via}</span>}
   </button>
 }
-const formatUsd = (usd: number) => usd.toLocaleString(uiLocale(), { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: usd < 1 ? 3 : 2 })
 const formatBytes = (bytes: number) => bytes / 1e9 >= 1 ? t('{gb} GB', { gb: (bytes / 1e9).toFixed(1) }) : t('{mb} MB', { mb: Math.round(bytes / 1e6) })
 const clock = (iso: string | number) => new Date(iso).toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit' })
 const day = (iso: string) => new Date(iso).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'short' })
@@ -131,14 +128,14 @@ const day = (iso: string) => new Date(iso).toLocaleDateString(uiLocale(), { day:
 // Settings icons, drawn in black and white (Settings.css): brand marks where connectionIcons.tsx has one, a plain glyph otherwise.
 const glyph = (icon: ReactNode) => <span className="connection-icon" aria-hidden="true">{icon}</span>
 const GLYPHS: Record<string, ReactNode> = {
-  ocr: glyph(<ScanText strokeWidth={1.8} />), equations: glyph(<Sigma strokeWidth={1.8} />), mathpix: glyph(<Cloud strokeWidth={1.8} />), pymupdf: <ConnectionIcon id="pymupdf" />, servers: glyph(<Server strokeWidth={1.8} />),
+  ocr: glyph(<ScanText strokeWidth={1.8} />), mathpix: glyph(<Cloud strokeWidth={1.8} />), pymupdf: <ConnectionIcon id="pymupdf" />, servers: glyph(<Server strokeWidth={1.8} />),
   server: glyph(<Server strokeWidth={1.8} />), 'reference-files': glyph(<FileText strokeWidth={1.8} />), off: glyph(<Ban strokeWidth={1.8} />),
   voyage: <ConnectionIcon id="voyage" />, cohere: <ConnectionIcon id="cohere" />, jina: <ConnectionIcon id="jina" />,
   zeroentropy: <ConnectionIcon id="zeroentropy" />,
 }
 const settingsIcon = (key: string) => GLYPHS[key] ?? <ConnectionIcon id={localToolIcon(key)} />
 
-type Selected = { kind: 'company' | 'local' | 'semantic' | 'equation-model' | 'mathpix' | 'ocr-tool' | 'pdf-reader' | 'provider' | 'zotero' | 'reference-files'; id: string }
+type Selected = { kind: 'company' | 'local' | 'semantic' | 'mathpix' | 'ocr-tool' | 'pdf-reader' | 'provider' | 'zotero' | 'reference-files'; id: string }
 type Tone = 'ok' | 'no' | 'warn'
 
 // Why a service refused a new key, in plain words, with the HTTP code it answered. The readings follow each
@@ -386,69 +383,6 @@ function LocalToolDetails({ tool, dark, onChanged, refresh = true, chip = true }
       {running && <div className="actions"><Button variant="outline" size="sm" className="is-destructive" onClick={cancelInstall} disabled={cancelling}>{cancelling ? <span className="shimmer-text">{t('Cancelling…')}</span> : t('Cancel installation')}</Button></div>}
     </>}
     {refresh && <Button variant="outline" className="connection-recheck" onClick={again} disabled={refreshing}><RefreshCw size={14} />{refreshing ? <span className="shimmer-text">{t('Refreshing…')}</span> : t('Refresh configuration')}</Button>}
-  </div>
-}
-
-// The answer model reading display equations from page-image crops (D113): on by default, but it reads only while the default answer
-// model is set and its connection takes images. The switch and the monthly budget are the same as Mathpix's.
-function EquationModelDetails({ state, onChanged }: { state: EquationModel; onChanged: (next: EquationModel) => void }) {
-  const [budget, setBudget] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [formError, setFormError] = useState('')
-  const modelText = useModelText()
-  const toast = useToast()
-  const on = state.switch === 'on'
-  const pdfs = state.pdfs
-  const waiting = (pdfs.pending ?? 0) + (pdfs.reading ?? 0)
-  const notUsed = (pdfs.no_math ?? 0) + (pdfs.no_candidates ?? 0) + (pdfs.none_placed ?? 0)
-  const stopped = (pdfs.failed ?? 0) + (pdfs.model_refused ?? 0) + (pdfs.budget_reached ?? 0)
-  const model = state.model
-  const fail = (e: Error) => setFormError(e.message)
-  function setSwitch(value: 'on' | 'off') {
-    setBusy(true); setFormError('')
-    api.saveEquationModelSettings({ switch: value }).then(result => {
-      onChanged(result)
-      toast('success', result.switch === 'on' ? t('Equation reading by the answer model is on.') : t('Equation reading by the answer model is off. Requests already sent finish; no new ones are sent.'))
-    }).catch(fail).finally(() => setBusy(false))
-  }
-  function saveBudget() {
-    const value = Number(budget)
-    if (!Number.isInteger(value) || value < 0) { setFormError(t('Type a whole number of requests.')); return }
-    setBusy(true); setFormError('')
-    api.saveEquationModelSettings({ monthly_budget: value }).then(result => { setBudget(null); onChanged(result); toast('success', t('Monthly budget saved.')) })
-      .catch(fail).finally(() => setBusy(false))
-  }
-  const why = state.reason === 'switch_off' ? t('Equations are switched off, so they keep the PDF’s own text.')
-    : state.reason === 'no_answer_model' ? <>{t('No default answer model is set, so equations keep the PDF’s own text.')} <a href="#/settings/models">{t('Set it in Default models')}</a></>
-    : state.reason === 'model_no_images' ? t('{connection} cannot read images; equations keep the PDF’s text.', { connection: model ? connectionName(model.connection) : t('The answer model’s connection') })
-    : state.reason === 'connection_unavailable' ? t('The connection of the answer model is not available now, so equations keep the PDF’s own text.') : null
-  const cost = state.month_cost
-  return <div className="local-tool-details-panel tool-panel">
-    <p className="tool-lead">{t('The default answer model reads the display equations in your PDFs from an image of the page, so answers and tables get them as LaTeX instead of broken PDF text. DEIXIS keeps an equation only when its letters, scripts and signs match the PDF’s own text.')}</p>
-    <ToolTraits items={[[<Cloud key="c" />, 'Runs on your answer model’s connection'], [<KeyRound key="k" />, 'Uses the connection you already set up']]} />
-    {model && !state.reason && <p className="local-tool-note">{t('Reading with')} <ModelName connection={model.connection} text={modelText(model.model)} /></p>}
-    {why && <Notice tone="attention"><p>{why}</p></Notice>}
-    {state.model_refused && <Notice tone="attention"><p>{t('The provider did not accept the key of the answer model. Nothing more is sent until the key or the default answer model changes.')}</p></Notice>}
-    {state.mathpix_first && <p className="local-tool-note">{t('Mathpix reads equations while its switch is on, so the answer model sends nothing for them.')}</p>}
-    <Notice tone="attention"><p>{t('DEIXIS does not send the PDF or its extracted text. For each numbered equation it sends an image of the area it takes to be the equation to the answer model’s provider; that area can hold nearby content.')}</p></Notice>
-    {formError && <Notice tone="error"><p>{formError}</p></Notice>}
-    <section className="tool-facts" aria-label={t('Equation reading use')}>
-      <dl>
-        <dt>{t('Reading')}</dt><dd>{t(on ? 'On' : 'Off')}{' '}
-          <button type="button" className="ghost" disabled={busy} onClick={() => setSwitch(on ? 'off' : 'on')}>{on ? t('Turn off') : t('Turn on')}</button></dd>
-        <dt>{t('This month')}</dt><dd>{t('{n} of {budget} requests · at most {limit} per PDF', { n: state.month_requests, budget: state.monthly_budget, limit: state.per_pdf_limit })}</dd>
-        <dt>{t('Cost')}</dt><dd>{cost.calls_without_cost > 0
-          ? t('Estimated {usd} · may have been billed: {n} calls with unknown cost', { usd: formatUsd(cost.usd), n: cost.calls_without_cost })
-          : t('Estimated {usd}', { usd: formatUsd(cost.usd) })}</dd>
-        <dt><label htmlFor="equation-model-budget">{t('Requests per month')}</label></dt><dd>
-          <input id="equation-model-budget" className="field mathpix-budget" type="number" min={0} step={1} inputMode="numeric" value={budget ?? String(state.monthly_budget)} disabled={busy} onChange={e => { setBudget(e.target.value); setFormError('') }} />
-          {budget !== null && <button type="button" className="ghost" disabled={busy} onClick={saveBudget}>{t('Save')}</button>}
-        </dd>
-        <dt>{t('PDFs')}</dt><dd>{t('{read} read · {waiting} waiting · {none} without a usable equation · {stopped} stopped', { read: pdfs.read ?? 0, waiting, none: notUsed, stopped })}</dd>
-        {state.reading && <><dt>{t('Reading now')}</dt><dd>{state.reading.title ?? t('A PDF in the library')} · {t('{n} pages', { n: state.reading.pages })}</dd></>}
-      </dl>
-    </section>
-    <ToolCaveat>{t('DEIXIS has not measured how often the answer model misreads an equation. An equation whose letters, scripts or signs differ from the PDF’s text is not used, but a misread that keeps all of them, such as a wrong digit, can pass. Check equations against the page.')}</ToolCaveat>
   </div>
 }
 
@@ -1295,7 +1229,6 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const [credentials, setCredentials] = useState<Credentials | null>(null)
   const [tools, setTools] = useState<LocalTools | null>(null)
   const [toolsError, setToolsError] = useState('')
-  const [equationModel, setEquationModel] = useState<EquationModel | null>(null)
   const [mathpix, setMathpix] = useState<Mathpix | null>(null)
   const [ocrTool, setOcrTool] = useState<OcrTool | null>(null)
   const [pdfReader, setPdfReader] = useState<PdfReader | null>(null)
@@ -1363,8 +1296,6 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     return api.localTools(refresh, leaving()).then(result => { if (n !== seq.current.tools) return false; setTools(result); setToolsError(''); return true })
       .catch((e: Error) => { if (n === seq.current.tools && !isLeft(e)) setToolsError(e.message); if (strict) throw e; return false })
   }, [leaving])
-  const loadEquationModel = useCallback((strict = false): Promise<boolean> => api.equationModel(leaving()).then(result => { setEquationModel(result); return true })
-    .catch((e: Error) => { if (!isLeft(e)) setToolsError(e.message); if (strict) throw e; return false }), [leaving])
   const loadMathpix = useCallback((strict = false): Promise<boolean> => api.mathpix(leaving()).then(result => { setMathpix(result); return true })
     .catch((e: Error) => { if (!isLeft(e)) setToolsError(e.message); if (strict) throw e; return false }), [leaving])
   const loadOcr = useCallback((strict = false): Promise<boolean> => api.ocr(leaving()).then(result => { setOcrTool(result); return true })
@@ -1386,7 +1317,6 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     const timer = window.setInterval(() => { void loadBuiltin().then(() => loadSemantic()) }, 1500)
     return () => window.clearInterval(timer)
   }, [builtin, loadBuiltin, loadSemantic])
-  useEffect(() => { void loadEquationModel() }, [loadEquationModel])
   useEffect(() => { void loadOcr() }, [loadOcr])
   useEffect(() => { void loadMathpix() }, [loadMathpix])
   useEffect(() => {
@@ -1400,11 +1330,6 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     return () => window.clearInterval(timer)
   }, [ocrTool, loadOcr])
   useEffect(() => { api.pdfReader(leaving()).then(setPdfReader, (e: Error) => { if (!isLeft(e)) setToolsError(e.message) }) }, [leaving])
-  useEffect(() => {
-    if (!equationModel?.reading) return
-    const timer = window.setInterval(() => { void loadEquationModel() }, 10000)
-    return () => window.clearInterval(timer)
-  }, [equationModel, loadEquationModel])
   useEffect(() => {
     if (!tools?.tools.some(tool => tool.job?.status === 'running' || tool.pull?.status === 'running')) return
     const timer = window.setInterval(() => { void loadTools(false) }, tools.tools.some(tool => tool.pull?.status === 'running') ? 1000 : 2000)
@@ -1525,9 +1450,6 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     : !ocrTool.available ? ['no', t('Not installed')] : !ocrTool.missing_languages.length ? ['ok', t('Installed')]
     : ['warn', t(ocrTool.languages.join() === 'eng' ? 'English only' : 'Languages missing')]
   const pdfReaderStatus = (): [Tone, string] => pdfReader ? ['ok', t('Installed')] : toolsError ? unknown : loading
-  const equationModelStatus = (): [Tone, string] => !equationModel ? (toolsError ? unknown : loading)
-    : equationModel.model_refused ? ['warn', t('Key refused')] : equationModel.ready ? ['ok', t('On')]
-    : equationModel.switch === 'on' ? ['warn', t('Not ready')] : ['no', t('Off')]
   const mathpixStatus = (): [Tone, string] => !mathpix ? (toolsError ? unknown : loading)
     : mathpix.keys_rejected ? ['warn', t('Key pair refused')] : !mathpix.pair.configured ? ['no', t('Not set up')]
     : mathpix.switch === 'on' ? ['ok', t('On')] : ['no', t('Off')]
@@ -1578,7 +1500,6 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const docRows: { kind: Selected['kind']; id: string; name: string; what: string; status: [Tone, string] }[] = [
     { kind: 'pdf-reader', id: 'pymupdf', name: 'PDF reader', what: 'Reads the text of every PDF', status: pdfReaderStatus() },
     { kind: 'ocr-tool', id: 'tesseract', name: 'Scanned PDF reader (OCR)', what: 'Turns scanned pages into text with Tesseract', status: ocrStatus() },
-    { kind: 'equation-model', id: 'equations', name: 'Equations', what: 'Read by the answer model as LaTeX', status: equationModelStatus() },
   ]
   const saveLocalServer = (url: string) => {
     setServerBusy(true); setServerError('')
@@ -1680,7 +1601,6 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
     : sel.kind === 'local' ? (sel.id === 'local_server' ? t('Another local server') : localToolNames[sel.id] ?? sel.id)
     : sel.kind === 'semantic' ? semanticRow?.label ?? sel.id
     : sel.kind === 'provider' ? providerNames[sel.id] ?? sel.id
-    : sel.kind === 'equation-model' ? t('Equations read by the answer model')
     : sel.kind === 'mathpix' ? t('Mathpix equation reader')
     : sel.kind === 'ocr-tool' ? t('OCR (Tesseract)')
     : sel.kind === 'pdf-reader' ? t('PDF reader (PyMuPDF)')
@@ -1997,11 +1917,6 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
       {MAILTO_PROVIDERS.has(provider.id) && <dl className="sheet-facts">
         <div><dt>{t('Contact email')}</dt><dd><a href="#/settings/profile">{t('Set in Profile')}</a></dd></div>
       </dl>}
-    </>
-  } else if (sel?.kind === 'equation-model') {
-    body = <>
-      <div className="tool-status">{dmeta('equation-model', equationModelStatus())}</div>
-      {equationModel && <EquationModelDetails state={equationModel} onChanged={setEquationModel} />}
     </>
   } else if (sel?.kind === 'mathpix') {
     body = <>

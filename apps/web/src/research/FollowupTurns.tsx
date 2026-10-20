@@ -224,14 +224,14 @@ export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTur
       {answer.outcome !== 'answered' && <p className="followup-outcome">{t(answer.outcome === 'not_answered' ? 'The passages in this research do not answer this.' : 'The passages in this research answer part of this.')}</p>}
       {turn.stale_selection && <p className="followup-note">{t('Your source selection changed after this answer was written; it reflects the earlier selection.')}</p>}
       {claims.length > 0 && <div className="prose followup-prose"><p>{claims.map(claim => <span className="claim" key={claim.id}><MathText text={claim.text} />
-        {claim.support_type === 'analyst_inference' && <span className="support-badge">{t('interpretation')}</span>}
+        {claim.support_type === 'analyst_inference' && <span className="support-badge is-inference">{t('interpretation')}</span>}
         {chip(claim)}</span>)}</p></div>}
       {groups && <div className="followup-groups">
         {groups.groups.map((group, g) => <div className="followup-group" key={group.label}>
           <p className="followup-group-head"><b>{group.label}</b> · {t('{n} works', { n: group.count })}</p>
           <ul>{group.works.map(work => { const claim = groupClaims.get(`g${g + 1}:${work.work_id}`)
             return <li key={work.work_id}><MathText text={workTitle(work)} />
-              {claim?.support_type === 'analyst_inference' && <span className="support-badge">{t('interpretation')}</span>} {claim && chip(claim)}
+              {claim?.support_type === 'analyst_inference' && <span className="support-badge is-inference">{t('interpretation')}</span>} {claim && chip(claim)}
               {work.note && <> — <MathText text={work.note} /></>}</li> })}</ul>
         </div>)}
         <p className="followup-note">{coverageText(groups)}</p>

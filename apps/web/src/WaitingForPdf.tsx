@@ -236,7 +236,7 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
                 title={row.find_pdf_source_version_id ? undefined : t('Find PDF needs a DOI')} onClick={() => { void findPdf(row) }}>
                 <FileSearch size={14} aria-hidden />{finding === row.work_id ? <span className="shimmer-text">{t('Finding…')}</span> : t('Find PDF')}
               </Button>}
-            {canAttach && <Button variant="outline" size="sm" className="ghost" disabled={busy || reading} aria-label={t('Upload PDF for {title}', { title: row.title })} onClick={() => uploadFor(row)}><Upload size={14} aria-hidden />{t('Upload PDF')}</Button>}
+            {canAttach && <Button size="sm" disabled={busy || reading} aria-label={t('Upload PDF for {title}', { title: row.title })} onClick={() => uploadFor(row)}><Upload size={14} aria-hidden />{t('Upload PDF')}</Button>}
           </span>
         </li>)}
       </ol>}
@@ -301,7 +301,7 @@ function SkippedWorks({ rows, disabled, canAttach, uploading, onUndo, onUpload }
         <span className="waiting-reason is-abstract">{t(row.answer_reads_abstract ? 'Read from the abstract only.' : 'The answer leaves it out: it has no abstract that passed the abstract stage.')}</span>
         <span className="pdf-ready-side waiting-actions">
           <Button variant="outline" size="sm" className="ghost" disabled={disabled} aria-label={t('Undo continuing without a PDF for {title}', { title: row.title })} onClick={() => onUndo(row)}><RotateCcw size={14} aria-hidden />{t('Undo')}</Button>
-          {canAttach && <Button variant="outline" size="sm" className="ghost" disabled={disabled || uploading} aria-label={t('Upload PDF for {title}', { title: row.title })} onClick={() => onUpload(row)}><Upload size={14} aria-hidden />{t('Upload PDF')}</Button>}
+          {canAttach && <Button size="sm" disabled={disabled || uploading} aria-label={t('Upload PDF for {title}', { title: row.title })} onClick={() => onUpload(row)}><Upload size={14} aria-hidden />{t('Upload PDF')}</Button>}
         </span>
       </li>)}
     </ol>

@@ -466,9 +466,10 @@ test.describe.serial('S8: research topbar and question bubble', () => {
     try {
       await expect(chip(page).locator('.runchip-text')).toHaveText('Answer · Writing the first version', { timeout: 60_000 })
       await expect(chip(page)).toHaveClass(/is-live/)
-      await expect(topbar(page).getByRole('button', { name: 'Pause' })).toBeVisible()
-      // A live run can be cancelled beside Pause (the mockup draws no other way to stop it; §0 rule 5).
-      await expect(topbar(page).getByRole('button', { name: 'Cancel', exact: true })).toBeVisible()
+      // A run drawn as a card in the thread is paused and cancelled from the card head; the topbar keeps the chip only.
+      await expect(page.locator('.chat-turn.is-active .chat-live-head').getByRole('button', { name: 'Pause' })).toBeVisible()
+      await expect(page.locator('.chat-turn.is-active .chat-live-head').getByRole('button', { name: 'Cancel', exact: true })).toBeVisible()
+      await expect(topbar(page).getByRole('button', { name: 'Pause' })).toHaveCount(0)
       await shot(page, 's8-chip-answer-writing')
     } finally { writeFileSync(release, 'SYNTHETIC release\n') }
     await settled(api, held)

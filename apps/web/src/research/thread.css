@@ -245,7 +245,12 @@
 .chat-turn.is-active>.chat-group{padding:0;overflow:hidden}
 .chat-turn.is-active>.chat-group>:not(.chat-live-head,.chat-live-bar){margin-inline:18px}
 .chat-turn.is-active>.chat-group>:last-child{margin-bottom:14px}
-.chat-live-head{gap:14px;padding:14px 18px;border-bottom:1px solid var(--line);background:var(--sidebar-surface)}
+.chat-live-head{display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--line);background:var(--sidebar-surface)}
+div.chat-live-head>.chat-toggle{flex:1;min-width:0;gap:14px;padding:0}
+.chat-head{display:flex;align-items:center}
+.chat-live-acts{display:flex;flex:none;align-items:center;gap:8px}
+.chat-live-acts .chat-live-cancel{color:var(--tone-exclude)}
+@media (max-width:650px){div.chat-live-head{flex-wrap:wrap}.chat-live-acts{width:100%;justify-content:flex-end}}
 .chat-live-icon{display:grid;place-items:center;flex:none;width:38px;height:38px;border:1px solid var(--accent-line);border-radius:999px;background:var(--accent-tint);color:var(--accent)}
 .chat-live-title{display:flex;flex-direction:column;gap:1px;min-width:0}
 .chat-live-title small{font-size:12px;font-weight:500}
@@ -260,6 +265,48 @@
 .chat-step.is-waiting .chat-step-text::first-letter{text-transform:uppercase}
 .chat .chat-steps>.chat-step.is-waiting::before{display:none}
 @media (prefers-reduced-motion:reduce){.chat-live-pill i{animation:none}.chat-live-bar i{transition:none}}
+/* The latest finished search closes as a card: a check disc, what it found, its first included works and a way to all. */
+.chat-turn.is-done>.chat-group{padding:0;overflow:hidden}
+.chat-turn.is-done>.chat-group>:not(.chat-live-head,.chat-done-works,.chat-done-foot){margin-inline:18px}
+.chat-done-head>.chat-toggle{padding:0}
+.chat-turn.is-done>.chat-group>.chat-steps{margin-block:12px 14px}
+.chat-done-head .chat-live-icon{border-color:var(--ok-line);background:var(--ok-surface);color:var(--tone-include)}
+.chat-done-head .chat-live-title small{color:var(--tone-include)}
+.chat-done-head .chat-when{margin-left:auto}
+.chat-done-head time{margin-left:0}
+.chat-done-chev{flex:none;color:var(--muted)}
+.chat-done-works{padding:6px 18px;border-bottom:1px solid var(--line)}
+.chat-done-foot{padding:14px 18px;border-bottom:1px solid var(--line)}
+.done-card-open{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;height:40px;border:0;border-radius:8px;background:var(--accent);color:var(--paper);font:inherit;font-size:14px;font-weight:500;cursor:pointer}
+.done-card-open:hover{background:color-mix(in srgb,var(--accent),var(--ink) 15%)}
+.done-card-open:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* A work row in these cards: a short author-year tag, then the stored title in the reading face. */
+.card-works{display:grid;grid-template-columns:minmax(0,1fr);gap:2px;margin:0;padding:0;list-style:none}
+.card-works li{display:flex;align-items:center;gap:14px;min-height:36px}
+.card-tag{flex:none;min-width:52px;padding:1px 7px;border:1px solid var(--accent-line);border-radius:5px;color:var(--accent);font-size:12.5px;font-variant-numeric:tabular-nums;text-align:center}
+.card-work-title{flex:1;min-width:0;overflow:hidden;padding:0;border:0;background:none;color:var(--ink);font-family:var(--font-serif);font-size:15px;text-align:left;text-overflow:ellipsis;white-space:nowrap}
+button.card-work-title{cursor:pointer}
+button.card-work-title:hover{color:var(--accent);text-decoration:underline;text-underline-offset:3px}
+/* Recommended next steps after a search, before the first answer. */
+.next-card{padding:16px 18px;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
+.next-card h4{display:flex;align-items:center;gap:10px;margin:0 0 8px;color:var(--ink);font-size:14.5px;font-weight:500}
+.next-card h4 svg{color:var(--muted)}
+.next-card>p{max-width:72ch;margin:0 0 14px;color:var(--muted);font-size:13.5px;line-height:1.6}
+.next-card-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
+.next-card-dismiss{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border:0;background:none;color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
+.next-card-dismiss:hover{color:var(--ink)}
+/* Included works an answer reads from abstracts only: what their PDFs add, and the way to get or upload them. */
+.pdf-card{border:1px solid var(--line);border-radius:10px;background:var(--paper);overflow:hidden}
+.pdf-card>header{display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--line);background:var(--sidebar-surface)}
+.pdf-card-icon{display:grid;place-items:center;flex:none;width:34px;height:34px;color:var(--ink-2)}
+.pdf-card h4{margin:0;color:var(--ink);font-size:14.5px;font-weight:500}
+.pdf-card header p{margin:2px 0 0;color:var(--muted);font-size:12.5px}
+.pdf-card-body{display:grid;gap:10px;padding:14px 18px 16px}
+.pdf-card-body>p{max-width:78ch;margin:0;color:var(--muted);font-size:13.5px;line-height:1.6}
+.pdf-card-body>p.pdf-card-more{font-size:12.5px}
+.pdf-card-upload{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;height:42px;margin-top:4px;border:1px dashed var(--accent-line);border-radius:8px;background:var(--accent-tint);color:var(--accent);font:inherit;font-size:14px;font-weight:500;cursor:pointer}
+.pdf-card-upload:hover{border-color:var(--accent)}
+@media (max-width:650px){.card-works li{gap:10px}.card-tag{min-width:0}.chat-done-head .chat-when{display:none}}
 .chat .chat-steps>.usage-line{display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:4px 0 0 36px;color:var(--muted);font-size:12px;line-height:1.5}
 .chat .chat-steps>.usage-box{display:grid;gap:3px;margin:4px 0 0 36px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;color:var(--muted);font-size:12.5px}
 /* Plan concepts and provider queries: rows indented under the phase line on a left hairline, meta on the right. */
@@ -325,8 +372,10 @@
 .pdf-suggest-info{display:inline-grid;place-items:center;color:var(--muted);cursor:help}
 .pdf-suggest-body{padding:14px 18px 16px}
 .legacy-research .pdf-suggest-body>p{margin:0 0 12px;color:var(--muted);font-size:13.5px;line-height:1.65}
-.pdf-suggest-list{display:flex;flex-direction:column;gap:8px;margin:14px 0 0;padding:0;list-style:none}
-.pdf-suggest-list li{display:flex;align-items:center;gap:10px;min-width:0}
+.pdf-suggest-list{display:grid;grid-template-columns:fit-content(15rem) minmax(0,1fr) max-content;gap:8px 12px;align-items:center;margin:14px 0 0;padding:0;list-style:none}
+/* Each row shares the list's columns (key, title, actions), so titles and buttons line up as in a table. */
+.pdf-suggest-list li{display:grid;grid-column:1/-1;grid-template-columns:subgrid;align-items:center;min-width:0}
+.pdf-suggest-list li>.source-key{justify-self:start;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .source-key{display:inline-flex;flex:none;align-items:center;padding:0 5px;border:1px solid var(--strong-line);border-radius:5px;color:var(--muted);font-family:var(--font-sans);font-size:11.5px;font-style:normal;font-weight:500;line-height:1.6;letter-spacing:0;font-variant-numeric:tabular-nums;white-space:nowrap}
 .source-sheet .source-venue .source-key{margin-right:2px;padding:0;border:0;color:var(--ink-2);font-size:12.5px}
 .source-sheet .source-venue .source-key::after{content:"·";margin-left:8px;color:var(--muted);font-weight:400}
@@ -338,7 +387,7 @@
 .pdf-suggest-actions button{border-color:color-mix(in srgb,var(--accent),transparent 60%);background:color-mix(in srgb,var(--accent),transparent 90%);color:var(--accent)}
 .pdf-suggest-actions button:hover{background:color-mix(in srgb,var(--accent),transparent 80%)}
 .pdf-suggest-actions button:disabled{opacity:.55;cursor:wait}
-@media (max-width:650px){.pdf-suggest-list li{flex-wrap:wrap;row-gap:6px}.pdf-suggest-title{flex-basis:calc(100% - 64px)}.pdf-suggest-actions{width:100%;justify-content:flex-end}}
+@media (max-width:650px){.pdf-suggest-list{grid-template-columns:fit-content(9rem) minmax(0,1fr)}.pdf-suggest-list li{row-gap:6px}.pdf-suggest-actions{grid-column:1/-1;justify-content:flex-end}}
 .chat-spin{flex:none;animation:chat-spin 1s linear infinite}
 .chat-end{height:1px}
 .chat-jump{position:fixed;bottom:24px;left:50%;z-index:30;display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border:1px solid var(--line);border-radius:999px;background:var(--paper);color:var(--ink);font-size:13px;box-shadow:0 8px 24px rgb(0 0 0/.12);transform:translateX(-50%);cursor:pointer}
@@ -367,6 +416,22 @@
 .cite-chip-origin{display:inline-flex;align-items:center;margin-left:3px;opacity:.85}
 /* A citation of an abstract: an outline instead of a fill, plus the book mark, so the reading depth shows without hovering. */
 .cite-chip.is-abstract{box-shadow:inset 0 0 0 1px var(--line);background:transparent}
+/* The evidence strip above the answer: reading depth and coverage as two tiles, each a label, a bar of the stored counts
+   and the sentence. Full text and cited are the accent; abstract only and left out are quiet; no reason recorded is warm. */
+.evidence-strip{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:8px 0 14px}
+.evidence-tile{display:grid;gap:7px;padding:11px 14px 12px;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
+.evidence-tile-label{color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.4px;text-transform:uppercase}
+.evidence-tile-bar{display:flex;gap:2px;height:6px;overflow:hidden;border-radius:999px;background:var(--line)}
+.evidence-tile-bar i{display:block;min-width:4px;height:100%}
+.evidence-tile-bar i:first-child{border-radius:999px 0 0 999px}
+.evidence-tile-bar i:last-child{border-radius:0 999px 999px 0}
+.evidence-tile-bar i:only-child{border-radius:999px}
+.evidence-tile-bar .is-full{background:var(--accent)}
+.evidence-tile-bar .is-abstract{background:repeating-linear-gradient(135deg,var(--warn-line) 0 4px,color-mix(in srgb,var(--warn-line),transparent 45%) 4px 8px)}
+.evidence-tile-bar .is-left{background:var(--strong-line)}
+.evidence-tile-bar .is-unknown{background:var(--tone-uncertain)}
+.evidence-strip .evidence-tile p.foot-note{margin:0;color:var(--ink-2);font-size:12.5px;line-height:1.5}
+.evidence-tile.is-thin{border-color:var(--warn-line);background:color-mix(in srgb,var(--warn-surface),var(--paper) 55%)}
 /* The answer's reading depth over its cited works, above the prose. */
 .answer-basis{margin:6px 0 2px;color:var(--muted);font-size:12.5px;line-height:1.5}
 /* The evidence ledger (D80) under the basis line: how many given works are cited or left out, then the left-out list. */
@@ -441,6 +506,16 @@
 .legacy-research .answer-prose p.claim:last-child{margin-bottom:0}
 .cite-chip.thread-cite{display:inline;margin:0 2px;padding:1px 5px;vertical-align:1px}
 .cite-chip.thread-cite:hover{background:var(--accent-tint);color:var(--accent)}
+/* The marks after a claim in the thread: soft pills that read as metadata, not as text. An interpretation leans warm and
+   italic; an abstract-only claim carries a hollow ring for "not the full text"; the citation is an accent-tinted pill. */
+:is(.answer-prose,.followup-prose) .support-badge{display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding:1px 8px 1px 7px;border:0;border-radius:999px;background:var(--hover-surface);color:var(--muted);font-family:var(--font-sans);font-size:10.5px;font-weight:500;letter-spacing:.15px;line-height:1.7;white-space:nowrap;vertical-align:1px}
+:is(.answer-prose,.followup-prose) .support-badge.is-abstract::before{content:"";flex:none;width:6px;height:6px;border:1.5px solid currentColor;border-radius:50%;opacity:.7}
+:is(.answer-prose,.followup-prose) .support-badge.is-inference{background:color-mix(in srgb,var(--warn-surface),transparent 20%);color:var(--warn-ink);font-style:italic}
+:is(.answer-prose,.followup-prose) .support-badge+.support-badge{margin-left:4px}
+:is(.answer-prose,.followup-prose) .cite-chip.thread-cite{margin:0 2px 0 4px;padding:1px 8px;border-radius:999px;background:color-mix(in srgb,var(--accent-tint),transparent 15%);box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent-line),transparent 45%);color:color-mix(in srgb,var(--accent),var(--ink) 20%);font-size:11.5px;font-weight:500;line-height:1.7;transition:background .15s,box-shadow .15s}
+:is(.answer-prose,.followup-prose) .cite-chip.thread-cite:hover{background:var(--accent-tint);box-shadow:inset 0 0 0 1px var(--accent-line);color:var(--accent)}
+:is(.answer-prose,.followup-prose) .cite-chip.thread-cite.is-on{background:var(--accent);box-shadow:none;color:var(--paper)}
+@media (prefers-reduced-motion:reduce){:is(.answer-prose,.followup-prose) .cite-chip.thread-cite{transition:none}}
 .answer-acts{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
 .answer-acts [data-slot=button].answer-pill{height:30px;gap:6px;padding-inline:10px;border:1px solid var(--strong-line);border-radius:999px;background:var(--paper);color:var(--ink-2);font-size:13px;font-weight:400}
 .answer-acts [data-slot=button].answer-pill:hover{background:var(--hover-surface)}

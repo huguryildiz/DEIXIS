@@ -59,6 +59,7 @@ import { AddToChat } from './research/AddToChat'
 import { FollowupTurnView } from './research/FollowupTurns'
 import { followupClaim, followupClaimId, followupGroupClaims, useFollowupTurns } from './research/followupData'
 import { createViewReads } from './research/viewReads'
+import { byRank, NextStepsCard, PdfSuggestCard } from './research/RunCards'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 // Rechecks a person starts from the table; short enough to start and end between two reads of the research.
@@ -100,6 +101,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // `ask` counts the requests to focus a field while the form is open.
   const [revising, setRevising] = useState<false | { focus: 'question' | 'terms'; revision: number; ask: number }>(false)
   const [savingRevision, setSavingRevision] = useState(false)
+  // The Next steps card of a finished search, dismissed for that search run only (this view, not stored).
+  const [nextDismissed, setNextDismissed] = useState<string | null>(null)
   // The seed the citation map passed when it opened the snowballing panel; null from the ⋯ menu.
   const [snowballSeed, setSnowballSeed] = useState<string | null>(null)
   const [error, setError] = useState('')
@@ -803,7 +806,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
           {run && (active || run.status === 'paused') && TABLE_RUN_KINDS.has(run.kind) && panel !== 'table' && <button type="button" className="run-chip" title={t('Open the Evidence table panel to control this run')} onClick={() => openPanel('table')}>
             <span className={`run-chip-dot${active ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}<ChevronRight size={13} aria-hidden />
           </button>}
-          {mainRun && <RunChip run={mainRun} hasAnswer={hasAnswer} busy={busy} inThread={TRANSCRIPT_KINDS.has(mainRun.kind) || mainRun.kind === 'followup_answer'} onControl={action => controlRun(mainRun, action)} />}
+          {mainRun && <RunChip run={mainRun} hasAnswer={hasAnswer} busy={busy} inThread={TRANSCRIPT_KINDS.has(mainRun.kind) || mainRun.kind === 'followup_answer'} controlsInCard={TRANSCRIPT_KINDS.has(mainRun.kind)} onControl={action => controlRun(mainRun, action)} />}
           {queueCount > 0 && <button type="button" className="wait-chip" onClick={showQueue}><Inbox size={16} aria-hidden />{t('{n} waiting for you', { n: queueCount })}</button>}
         </>}
       <Button ref={reviseButton} variant="ghost" size="sm" className="research-topbar-action research-revise" title={t('Revise question')} disabled={active} aria-expanded={Boolean(revising)}
@@ -880,6 +883,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         onGiveKeyTerms={() => reviseQuestion('terms')}
         queueCount={queueCount} onOpenQueue={showQueue} onOpenPdfs={() => openPanel('pdfs')} onOpenFunnel={() => openPanel('funnel')}
         onOpenSource={svid => setPdfTarget({ assetId: null, sourceVersionId: svid, view: 'text' })}
+        onOpenSourceList={filter => showSources(filter)}
         onControlRun={controlRun} onRewrite={rewriteAndSearch} busy={busy}
         onChooseModel={(target, role, opener, review) => setChooseModel({ run: target, role, opener, review })}
         onEditPlan={hasAcademic ? opener => openPanel('plan', { opener }) : undefined}
@@ -918,12 +922,13 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       </div>}
       {/* Before the first answer, the included sources without a PDF are named and the panel that gets them is one click
          away (D49); collecting, uploads and OCR live in that panel (UI parity S14, P40). */}
-      {!answer && missingPdfs > 0 && !active && view.runs.some(r => r.kind === 'discovery' || r.kind === 'pdf_collection') && <p className="pdf-ready-lede thread-pdf-note">
-        {t(missingPdfs === 1 ? '{n} included source has no PDF yet; an answer cites it from its abstract.' : '{n} included sources have no PDF yet; an answer cites them from their abstracts.', { n: missingPdfs })}{' '}
-        <button type="button" className="link" onClick={e => openPanel('pdfs', { opener: e.currentTarget })}>{t('Get more full text')}</button></p>}
+      {!answer && missingPdfs > 0 && !active && view.runs.some(r => r.kind === 'discovery' || r.kind === 'pdf_collection') &&
+        <PdfSuggestCard works={[...includedReading(view).missing].sort(byRank).slice(0, 3)} total={missingPdfs}
+          onOpen={svid => setPdfTarget({ assetId: null, sourceVersionId: svid, view: 'text' })} onUpload={opener => openPanel('pdfs', { opener })} />}
       {/* One next step after the last run: without an answer it is the primary action, with one the answer card's own "Open report" leads.
          While a run works there is no next step to offer, so the panel stays away rather than showing disabled buttons. */}
-      {      active ? (run?.target?.pipeline ? <p className="pdf-ready-lede" role="status">{t('Building the study table. The app chose its columns itself; open the table to review them.')}</p> : null) : <><div className="answer-actions">
+      {      active ? (run?.target?.pipeline ? <p className="pdf-ready-lede" role="status">{t('Building the study table. The app chose its columns itself; open the table to review them.')}</p> : null) : <>{(() => {
+        const actions = <>
         {/* With full text read since the answer started, the new answer is an update that names how many works it adds. */}
         {!answerOffersNew && <Button variant={answer && !newFulltext ? 'outline' : 'default'} disabled={busy || active || !(included || answersWithoutInclude)} onClick={startAnswer}><Sparkles size={15} />{
           !answer ? t('Generate source-linked answer') : newFulltext ? t(newFulltext === 1 ? 'Update the answer with 1 new full text' : 'Update the answer with {n} new full texts', { n: newFulltext }) : t('Generate a new answer')}</Button>}
@@ -932,7 +937,14 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         {hasAcademic && !(answer && view.search_runs.length) && (view.search_runs.length
           ? <Button className="search-again" variant="outline" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}><Search size={15} aria-hidden />{t('Search again')}</Button>
           : <Button variant="outline" disabled={busy || active || !seedSearchReady} onClick={startDiscovery}><Search size={15} />{t('Search providers')}</Button>)}
-      </div><UploadedTextNote semantic={view.semantic} /></>}
+      </>
+        // Before the first answer, after a search, the next step is a card that says what the answer and a table do.
+        const lastSearch = [...view.runs].reverse().find(r => r.kind === 'discovery')
+        return !answer && lastSearch?.status === 'completed' && nextDismissed !== lastSearch.id
+          ? <NextStepsCard included={included} onDismiss={() => setNextDismissed(lastSearch.id)}>{actions}
+            {included > 0 && <Button variant="outline" onClick={e => openPanel('table', { opener: e.currentTarget })}><Table2 size={15} aria-hidden />{t('Evidence table')}</Button>}</NextStepsCard>
+          : <div className="answer-actions">{actions}</div>
+      })()}<UploadedTextNote semantic={view.semantic} /></>}
       {/* Follow-up questions and their answers, oldest first (R31), then the sticky composer (R30). */}
       {followups.error && <Notice tone="error">{t('Could not load the follow-up questions: {error}', { error: followups.error })}</Notice>}
       {followups.turns.length > 0 && <div className="followup-turns">{followups.turns.map(turn => <FollowupTurnView key={turn.id} turn={turn} sources={view.sources}

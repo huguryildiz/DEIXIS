@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowDown, BookOpen, Check, ChevronDown, ChevronRight, Cpu, FileText, List, ListChecks, LoaderCircle, Minus, Pause, PencilLine, Play, RotateCw, ScanText, Search, ShieldCheck, Sparkles, TriangleAlert, Upload, Waypoints, type LucideIcon } from 'lucide-react'
+import { ArrowDown, BookOpen, Check, ChevronDown, ChevronRight, Cpu, FileText, List, ListChecks, LoaderCircle, Minus, Pause, PencilLine, Play, RotateCw, ScanText, Search, ShieldCheck, Sparkles, TriangleAlert, Upload, Waypoints, X, type LucideIcon } from 'lucide-react'
 import { api, type FulltextGapReason, type ModelRole, type ResearchView, type Run, type Verdict, type ReviewCard, type ReviewTargetKind, type SearchRun } from './api'
 import { ocrLanguagesText as ocrLanguages } from './ocr'
 import { serviceWaitRecordText, providerRetryText, serviceErrorSentence, serviceKind, connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, approvedByText, runStatusLabels, searchQueryTriesLeft, seedUseText, stepLabel, verdictLabels, wordLeftOutText } from './labels'
@@ -14,6 +14,8 @@ import { scrollBehavior } from './motion'
 import { Button } from '@/components/ui/button'
 import { RunUsageBox } from './research/usage'
 import { MODEL_DOWN, roleOfTask, stoppedRole } from './research/modelDown'
+import { byRank, OpenAllButton, WorkRows } from './research/RunCards'
+import { includedReading } from './includedReading'
 
 // The research as a record of work: one turn per run, each run one line per phase (mockup `.steps`, R14), details one
 // click deeper (R15). The page's event stream refreshes the view; a one-second clock keeps running durations moving.
@@ -143,11 +145,11 @@ const troubled = (s: Step) => s.status === 'failed' || s.status === 'outcome_unk
 const plural = (n: number, one: string, many: string, vars: Record<string, string | number> = {}) => t(n === 1 ? one : many, { n, ...vars })
 const compact = (n: number) => new Intl.NumberFormat(uiLocale(), { notation: 'compact', maximumFractionDigits: 1 }).format(n)
 const tally = (values: string[]) => { const counts = new Map<string, number>(); values.forEach(v => counts.set(v, (counts.get(v) ?? 0) + 1)); return [...counts] }
-export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, queueCount = 0, onOpenQueue, onOpenPdfs, onOpenFunnel, onEditPlan, onControlRun, onChooseModel, onRewrite, onOpenPassage, onOpenSource, busy = false }: {
+export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, queueCount = 0, onOpenQueue, onOpenPdfs, onOpenFunnel, onEditPlan, onControlRun, onChooseModel, onRewrite, onOpenPassage, onOpenSource, onOpenSourceList, busy = false }: {
   view: ResearchView; emptyText: string; latestAnswer: ReactNode; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
   // Resume run and Cancel run of the notice under a stopped run's steps (R18); Pause stays in the topbar.
-  onControlRun?: (run: Run, action: 'resume' | 'cancel') => void
+  onControlRun?: (run: Run, action: 'pause' | 'resume' | 'cancel') => void
   onChooseModel?: (run: Run, role: ModelRole, opener: HTMLElement, review?: { card: ReviewCard; kind: ReviewTargetKind }) => void
   // The too-broad notice (R21): the rewritten question is saved as a new revision, which then searches.
   onRewrite?: (question: string, keyTerms: string | null) => Promise<void>
@@ -155,6 +157,7 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   onOpenPdfs?: () => void
   onOpenFunnel?: () => void
   onOpenSource?: (sourceVersionId: string) => void
+  onOpenSourceList?: (filter: 'included' | 'passed') => void
   // The current question's plan step: "Edit plan" opens the Search plan panel (S23b).
   onEditPlan?: (opener: HTMLElement) => void
   // An anchor row of the citation check opens its stored passage with the anchor marked (Source details).
@@ -197,7 +200,7 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   <div className={`chat${runs.length ? '' : ' is-empty'}`}>
     {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} keepOpen={run.id === latestAnswerRun || run.id === latestDiscovery}
       modelText={modelText} onRetryFailedSearches={onRetryFailedSearches} onGiveKeyTerms={onGiveKeyTerms} onChooseCodeQuery={onChooseCodeQuery}
-      onControlRun={onControlRun} onChooseModel={onChooseModel} onRewrite={onRewrite} onOpenPdfs={onOpenPdfs} onOpenFunnel={onOpenFunnel} onEditPlan={onEditPlan} onOpenPassage={onOpenPassage} onOpenSource={onOpenSource} busy={busy}
+      onControlRun={onControlRun} onChooseModel={onChooseModel} onRewrite={onRewrite} onOpenPdfs={onOpenPdfs} onOpenFunnel={onOpenFunnel} onEditPlan={onEditPlan} onOpenPassage={onOpenPassage} onOpenSource={onOpenSource} onOpenSourceList={onOpenSourceList} busy={busy}
       queueLine={run.id === (latestDiscovery ?? lastReading) && queueCount > 0 && onOpenQueue ? { count: queueCount, open: onOpenQueue } : null}>
       {view.answers[0]?.run_id === run.id ? latestAnswer : null}
     </RunTurn>)}
@@ -208,17 +211,18 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   </>
 }
 
-function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, onControlRun, onChooseModel, onRewrite, onOpenPdfs, onOpenFunnel, onEditPlan, onOpenPassage, onOpenSource, busy, queueLine = null, children }: {
+function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, onControlRun, onChooseModel, onRewrite, onOpenPdfs, onOpenFunnel, onEditPlan, onOpenPassage, onOpenSource, onOpenSourceList, busy, queueLine = null, children }: {
   run: Run; view: ResearchView; now: number; latest: boolean; keepOpen: boolean; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
   onGiveKeyTerms?: () => void
   onChooseCodeQuery?: (run: Run) => Promise<void>
-  onControlRun?: (run: Run, action: 'resume' | 'cancel') => void
+  onControlRun?: (run: Run, action: 'pause' | 'resume' | 'cancel') => void
   onChooseModel?: (run: Run, role: ModelRole, opener: HTMLElement, review?: { card: ReviewCard; kind: ReviewTargetKind }) => void
   onRewrite?: (question: string, keyTerms: string | null) => Promise<void>
   onOpenPdfs?: () => void
   onOpenFunnel?: () => void
   onOpenSource?: (sourceVersionId: string) => void
+  onOpenSourceList?: (filter: 'included' | 'passed') => void
   onEditPlan?: (opener: HTMLElement) => void
   onOpenPassage?: (passageId: string, anchor: string | null) => void
   busy: boolean
@@ -1044,6 +1048,18 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const vocabularyEnd = run.status === 'failed' && (run.pause_reason === 'vocabulary_too_broad' || run.pause_reason === 'vocabulary_empty')
   // A live run is a progress card: the phase now running names its icon, the bar shows the stage reached, and the phases
   // not reached yet are listed faded below the live one.
+  // The latest finished search of this question revision closes as a card: what it found, its first included works.
+  // The latest answer closes the same way, with its claim and source counts. Included and passed-the-abstract-stage
+  // stay apart: a fast-path answer may read works that passed the abstract stage while none is included yet.
+  const doneSearch = run.kind === 'discovery' && run.status === 'completed' && latestDiscovery
+  const doneAnswer = run.kind === 'answer' && run.status === 'completed' && Boolean(answer) && keepOpen
+  const doneCard = doneSearch || doneAnswer
+  const includedRecords = doneSearch ? includedReading(view).records : []
+  const passed = funnel?.candidates ?? 0
+  const found = funnel?.unique_in_research ?? funnel?.unique ?? 0
+  const doneTitle = doneAnswer ? t('{claims} claims from {sources} sources', { claims: answer!.claims.length, sources: citedSources })
+    : includedRecords.length ? t('{found} works found · {included} included', { found, included: includedRecords.length })
+    : t('{found} works found · {passed} passed the abstract stage', { found, passed })
   const nextName = (key: PhaseKey) => t(key === 'pdf' && run.kind !== 'discovery' ? (attachedOnly ? 'read the attached PDFs' : 'download open-access PDFs') : nextNames[key])
   const runningAt = phaseStates.findIndex(state => state === 'running')
   const stage = stageOffset + (runningAt < 0 ? Math.max(0, phaseStates.findIndex(state => state === 'waiting')) : runningAt) + 1
@@ -1053,20 +1069,40 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const waitingRow = (key: string, text: string) => <li key={key} className="chat-step step is-waiting" style={{ opacity: Math.max(0.3, 0.85 - 0.15 * fadeRank++) }}>
     <span className="chat-step-line"><span className="chat-step-icon ico" role="img" aria-label={t('Not started')} /><span className="chat-step-text">{text}</span></span>
   </li>
-  return <section className={`chat-turn${active ? ' is-active' : ''}`}>
+  return <section className={`chat-turn${active ? ' is-active' : ''}${doneCard ? ' is-done' : ''}`}>
     <div className="chat-group">
-      {active ? <button type="button" className="chat-toggle chat-live-head" data-run-id={run.id} aria-expanded={expanded} onClick={() => setOpen(!expanded)}>
-        <span className="chat-live-icon" aria-hidden><LiveIcon size={17} /></span>
-        <span className="chat-live-title"><small className="shimmer-text">{t('In progress')} · {t('stage {n} of {total}', { n: stage, total: stageTotal })}</small>
-          <span>{label}{olderRevision ? ` ${t('· for question revision {n}', { n: run.scope_revision })}` : ''}</span></span>
-        <time>{durationText(secondsBetween(started, clock))}</time>
-        <span className="chat-live-pill"><i aria-hidden />{t('Working')}</span>
-      </button> : <button type="button" className="chat-toggle" data-run-id={run.id} aria-expanded={expanded} onClick={() => setOpen(!expanded)}>
-        {expanded ? <ChevronDown size={16} aria-hidden /> : <ChevronRight size={16} aria-hidden />}
-        <span>{label}{olderRevision ? ` ${t('· for question revision {n}', { n: run.scope_revision })}` : ''}</span>
-        <span className="chat-when">{startedText(started)}</span>
-        <time>{durationText(secondsBetween(started, clock))}</time>
-      </button>}
+      {/* One head element in every state (live, finished, plain): the toggle stays the same DOM node when a run starts,
+          finishes or resumes, so keyboard focus on it survives the change. */}
+      <div className={doneCard ? 'chat-live-head chat-done-head' : active ? 'chat-live-head' : 'chat-head'}>
+        <button type="button" className="chat-toggle" data-run-id={run.id} aria-expanded={expanded} onClick={() => setOpen(!expanded)}>
+          {doneCard ? <>
+            <span className="chat-live-icon" aria-hidden>{doneAnswer ? <FileText size={17} /> : <Check size={18} />}</span>
+            <span className="chat-live-title"><small>{label}</small><span>{doneTitle}</span></span>
+            <span className="chat-when">{startedText(started)}</span>
+            <time>{durationText(secondsBetween(started, clock))}</time>
+            {expanded ? <ChevronDown size={16} className="chat-done-chev" aria-hidden /> : <ChevronRight size={16} className="chat-done-chev" aria-hidden />}
+          </> : active ? <>
+            <span className="chat-live-icon" aria-hidden><LiveIcon size={17} /></span>
+            <span className="chat-live-title"><small className="shimmer-text">{t('In progress')} · {t('stage {n} of {total}', { n: stage, total: stageTotal })}</small>
+              <span>{label}{olderRevision ? ` ${t('· for question revision {n}', { n: run.scope_revision })}` : ''}</span></span>
+            <time>{durationText(secondsBetween(started, clock))}</time>
+          </> : <>
+            {expanded ? <ChevronDown size={16} aria-hidden /> : <ChevronRight size={16} aria-hidden />}
+            <span>{label}{olderRevision ? ` ${t('· for question revision {n}', { n: run.scope_revision })}` : ''}</span>
+            <span className="chat-when">{startedText(started)}</span>
+            <time>{durationText(secondsBetween(started, clock))}</time>
+          </>}
+        </button>
+        {active && (onControlRun ? <span className="chat-live-acts">
+          {run.status === 'pause_requested' ? <span className="chat-live-pill"><i aria-hidden /><span className="shimmer-text">{t('Pausing…')}</span></span>
+            : <Button variant="outline" size="sm" disabled={busy} onClick={() => onControlRun(run, 'pause')}><Pause size={14} aria-hidden />{t('Pause')}</Button>}
+          <Button variant="outline" size="sm" className="chat-live-cancel" disabled={busy} onClick={() => onControlRun(run, 'cancel')}><X size={14} aria-hidden />{t('Cancel')}</Button>
+        </span> : <span className="chat-live-pill"><i aria-hidden />{t('Working')}</span>)}
+      </div>
+      {doneCard && includedRecords.length > 0 && <div className="chat-done-works"><WorkRows works={[...includedRecords].sort(byRank).slice(0, 3)} onOpen={onOpenSource} /></div>}
+      {doneSearch && onOpenSourceList && (includedRecords.length > 0 || passed > 0) && <div className="chat-done-foot">{includedRecords.length > 0
+        ? <OpenAllButton n={includedRecords.length} onClick={() => onOpenSourceList('included')} />
+        : <OpenAllButton n={passed} passed onClick={() => onOpenSourceList('passed')} />}</div>}
       {active && expanded && <div className="chat-live-bar" role="progressbar" aria-label={t('stage {n} of {total}', { n: stage, total: stageTotal })}
         aria-valuemin={0} aria-valuemax={stageTotal} aria-valuenow={stage - 1}><i style={{ width: `${Math.min(100, ((stage - 0.5) / Math.max(1, stageTotal)) * 100)}%` }} /></div>}
       {expanded && <>

@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react'
 import { ArrowUp, ArrowUpRight, BadgeCheck, ChevronRight, SearchCheck, BookOpen, BookOpenText, Copy, Eye, FileText, Filter, Info, ListChecks, ListMinus, MessageSquare, PencilLine, RotateCw, ScanText, Sigma, ShieldCheck, Table2, TriangleAlert, Upload, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { api, type Answer, type Claim, type Limitation, type Source, type ValidationIssue, type Verdict } from '../api'
+import { api, type Answer, type Claim, type EvidenceLedger, type Limitation, type Source, type ValidationIssue, type Verdict } from '../api'
 import { locatorText, pauseReasonText, retractionNote, verdictLabels, versionText, versionTones } from '../labels'
 import { LATE_REVISION_LABEL, LATE_REVISION_DETAIL, LATE_REVISION_PENDING } from '../labels'
 import { MathText } from '../MathText'
@@ -94,10 +94,14 @@ function citedWorks(answer: Answer) {
 
 // How deep the answer read its cited works: a work counts as full text when any passage it is cited for is PDF text,
 // else as abstract only. Shown above the answer so an abstract-based first version reads as one.
-function basisLine(answer: Answer) {
+function basisCounts(answer: Answer) {
   const full = new Map<string, boolean>()
   for (const e of answer.claims.flatMap(c => c.evidence)) full.set(e.work_id, (full.get(e.work_id) ?? false) || e.kind !== 'abstract')
-  const n = full.size, fromFull = [...full.values()].filter(Boolean).length, fromAbstract = n - fromFull
+  const fromFull = [...full.values()].filter(Boolean).length
+  return { n: full.size, fromFull, fromAbstract: full.size - fromFull }
+}
+function basisLine(answer: Answer) {
+  const { n, fromFull, fromAbstract } = basisCounts(answer)
   if (!n) return null
   if (!fromAbstract) return t(n === 1 ? 'The cited source was read from its full text.' : 'All {n} cited sources were read from their full text.', { n: count(n) })
   if (!fromFull) return t(n === 1 ? 'The cited source was read from its abstract only.' : 'All {n} cited sources were read from their abstracts only.', { n: count(n) })
@@ -112,6 +116,26 @@ export type AnswerReviewControl = { surface: ReviewSurfaceState; revision: numbe
 // changes: the answer diff of this version's report (P4, S21): whether it is shown, the stored version it is compared
 // with (answerDiff.comparisonBase) and the head's Show/Hide changes.
 export type AnswerChanges = { on: boolean; base: ComparisonBase; onToggle: () => void }
+
+// The answer's reading depth and its evidence ledger as two tiles above the prose, each with a bar of its stored counts:
+// full text against abstract only over the cited works, and cited against left out (with or without a reason) over the
+// works the answer was given. The sentences stay as they were; the bars only draw the same numbers.
+function EvidenceStrip({ answer, basis, ledger }: { answer: Answer; basis: string | null; ledger: EvidenceLedger | null }) {
+  const depth = basisCounts(answer)
+  const seg = (n: number, total: number, cls: string) => n > 0 && <i className={cls} style={{ flexGrow: n / Math.max(1, total) }} />
+  return <div className="evidence-strip">
+    {basis && <div className={`evidence-tile${depth.fromAbstract && !depth.fromFull ? ' is-thin' : ''}`}>
+      <span className="evidence-tile-label">{t('Reading depth')}</span>
+      <span className="evidence-tile-bar" aria-hidden>{seg(depth.fromFull, depth.n, 'is-full')}{seg(depth.fromAbstract, depth.n, 'is-abstract')}</span>
+      <p className="foot-note answer-basis">{basis}</p>
+    </div>}
+    {ledger && <div className="evidence-tile">
+      <span className="evidence-tile-label">{t('Coverage of the given works')}</span>
+      <span className="evidence-tile-bar" aria-hidden>{seg(ledger.cited.length, ledger.given.length, 'is-full')}{seg(ledger.excluded.length, ledger.given.length, 'is-left')}{seg(ledger.unaccounted.length, ledger.given.length, 'is-unknown')}</span>
+      <p className="foot-note answer-ledger">{ledgerLine(ledger)}</p>
+    </div>}
+  </div>
+}
 
 // A claim's text with the measured values its cited passages also state set in bold; the backend finds them by number,
 // so bold says "this value is in the cited passage", not that the model thought it important.
@@ -366,12 +390,11 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
         <span className="report-artifact-copy"><strong>{title}</strong>
           <span className="report-artifact-meta">{t('Report')} · V{version} · {t(answer.claims.length === 1 ? '{n} claim' : '{n} claims', { n: count(answer.claims.length) })} · {t(cited === 1 ? '{n} source' : '{n} sources', { n: count(cited) })}</span></span>
       </button>}
-    {basis && sections.length > 0 && <p className="foot-note answer-basis">{basis}</p>}
-    {ledger && <p className="foot-note answer-ledger">{ledgerLine(ledger)}</p>}
+    {((basis && sections.length > 0) || ledger) && <EvidenceStrip answer={answer} basis={sections.length > 0 ? basis : null} ledger={ledger} />}
     {sections.length > 0 && <div className="prose answer-prose">{sections.slice(0, PROSE_SECTIONS).map(({ claims }, index) => <p key={index}>
       {claims.map(claim => <span className="claim" key={claim.id}><ClaimText claim={claim} />
-        {claim.support_type === 'analyst_inference' && <span className="support-badge">{t('interpretation')}</span>}
-        {claim.evidence_basis === 'abstract' && <span className="support-badge">{t('From abstract')}</span>}
+        {claim.support_type === 'analyst_inference' && <span className="support-badge is-inference">{t('interpretation')}</span>}
+        {claim.evidence_basis === 'abstract' && <span className="support-badge is-abstract">{t('From abstract')}</span>}
         {chip(claim)}</span>)}
     </p>)}</div>}
     {/* The sections past the thread's two stay in the report; say so, or a formula or result in them looks missing. */}

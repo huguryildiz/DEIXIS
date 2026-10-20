@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Check, ChevronDown, Clock, Copy, File, FileText, Lightbulb, ListChecks, MessageSquareQuote, Table2, type LucideIcon } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, Clock, Copy, File, FileText, Lightbulb, ListChecks, MessageSquareQuote, Table2, type LucideIcon } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, type Answer, type QueueRow, type ResearchView, type Run, type TableSummary } from '../api'
 import { collectionProgress } from '../BackgroundJobs'
@@ -29,11 +29,15 @@ function Box({ id, title, action, warn, children }: { id?: string; title: string
   </div>
 }
 
-function Row({ icon: Icon, label, aside, ariaLabel, onClick }: { icon: LucideIcon; label: string; aside?: string; ariaLabel?: string; onClick: (opener: HTMLElement) => void }) {
-  return <button type="button" className="li" aria-label={ariaLabel} title={ariaLabel} onClick={e => onClick(e.currentTarget)}>
-    <Icon size={16} strokeWidth={1.6} aria-hidden /><span>{label}</span>{aside && <em>{aside}</em>}
+function Row({ icon: Icon, label, aside, ariaLabel, tile = false, onClick }: { icon: LucideIcon; label: ReactNode; aside?: string; ariaLabel?: string; tile?: boolean; onClick: (opener: HTMLElement) => void }) {
+  return <button type="button" className={`li${tile ? ' li-tile' : ''}`} aria-label={ariaLabel} title={ariaLabel} onClick={e => onClick(e.currentTarget)}>
+    {tile ? <span className="li-ico" aria-hidden><Icon size={15} strokeWidth={1.7} /></span> : <Icon size={16} strokeWidth={1.6} aria-hidden />}
+    <span>{label}</span>{aside && <em>{aside}</em>}{tile && <ChevronRight size={15} className="li-go" aria-hidden />}
   </button>
 }
+
+// A count at the head of a row label ("19 waiting for a PDF"), set in the figure weight; the sentence stays one string.
+const leadNumber = (text: string) => { const m = text.match(/^(\d[\d.,]*)(\s.*)$/); return m ? <><b className="tnum">{m[1]}</b>{m[2]}</> : text }
 
 type Version = { id: string; tag: string; note?: string; at: string }
 
@@ -157,10 +161,10 @@ export function Rail({ view, researchId, cited, reports, tables, hidden, candida
     </div>
 
     {(queueCount > 0 || waitingCount > 0) && <Box warn title={t('Waiting for your decision')} action={{ label: t('Open'), name: t('Waiting for your decision'), onClick: open(queueCount > 0 ? 'queue' : 'pdfs') }}>
-      {queueRows.slice(0, QUEUE_ROWS).map(row => <Row key={row.row_token} icon={row.kind === 'confirm_pdf' ? File : row.kind === 'choose_version' ? Copy : ListChecks}
+      {queueRows.slice(0, QUEUE_ROWS).map(row => <Row key={row.row_token} tile icon={row.kind === 'confirm_pdf' ? File : row.kind === 'choose_version' ? Copy : ListChecks}
         label={row.title} aside={row.kind === 'look_again' ? t('Look again') : t(queueKindLabels[row.kind])} onClick={open('queue')} />)}
-      {queueCount > Math.min(QUEUE_ROWS, queueRows.length) && <Row icon={ListChecks} label={t('{n} waiting for you', { n: queueCount })} onClick={open('queue')} />}
-      {waitingCount > 0 && <Row icon={File} label={t('{n} waiting for a PDF', { n: waitingCount })} aside={t('PDF')} onClick={open('pdfs')} />}
+      {queueCount > Math.min(QUEUE_ROWS, queueRows.length) && <Row tile icon={ListChecks} label={leadNumber(t('{n} waiting for you', { n: queueCount }))} onClick={open('queue')} />}
+      {waitingCount > 0 && <Row tile icon={File} label={leadNumber(t('{n} waiting for a PDF', { n: waitingCount }))} aside={t('PDF')} onClick={open('pdfs')} />}
     </Box>}
 
     {funnel && <Box title={t('From search to answer')} action={{ label: t('Open'), name: t('From search to answer'), onClick: open(FUNNEL_PANEL) }}>

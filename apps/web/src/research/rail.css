@@ -12,9 +12,28 @@
 .rail .box>button.li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rail .box>button.li em{flex:none;margin-left:auto;color:var(--muted);font-size:12px;font-style:normal}
 .rail .rail-empty{color:var(--muted);font-size:12.5px}
-.rail .box.warnbox{border-color:transparent;background:var(--warn-surface)}
-.rail .box.warnbox h5{color:var(--warn-ink)}
-.rail .box.warnbox>button.li:hover{background:color-mix(in srgb,var(--ink),transparent 96%)}
+/* Waiting for your decision: a paper card under a warm wash, a live amber dot in the head, and each waiting kind as a
+   tile row (icon well, label with its count set bold, kind pill, chevron) that lifts on hover. */
+.rail .box.warnbox{gap:6px;padding:12px;border-color:var(--warn-line);background:linear-gradient(180deg,color-mix(in srgb,var(--warn-surface),transparent 15%),var(--paper) 72%);box-shadow:0 1px 2px rgb(0 0 0/.04),0 6px 18px -12px color-mix(in srgb,var(--warn-ink),transparent 55%)}
+.rail .box.warnbox h5{margin-bottom:6px;color:var(--warn-ink);font-size:12.5px;font-weight:600}
+.rail .box.warnbox h5>span{display:inline-flex;align-items:center;gap:8px}
+.rail .box.warnbox h5>span::before{content:"";flex:none;width:7px;height:7px;border-radius:50%;background:var(--tone-uncertain);box-shadow:0 0 0 3px color-mix(in srgb,var(--tone-uncertain),transparent 78%);animation:warn-dot 2.4s ease-in-out infinite}
+@keyframes warn-dot{50%{box-shadow:0 0 0 5px color-mix(in srgb,var(--tone-uncertain),transparent 90%)}}
+.rail .box.warnbox h5 button{padding:2px 8px;border:1px solid color-mix(in srgb,var(--accent),transparent 75%);border-radius:999px;background:var(--paper);font-size:12px}
+.rail .box.warnbox h5 button:hover{border-color:var(--accent)}
+.rail .box>button.li-tile{display:grid;grid-template-columns:28px minmax(0,1fr) 15px;column-gap:10px;row-gap:3px;align-items:center;margin:0;padding:8px;border:1px solid color-mix(in srgb,var(--warn-line),transparent 35%);border-radius:9px;background:var(--paper);color:var(--ink);transition:border-color .15s,box-shadow .15s,transform .15s}
+.rail .box>button.li-tile:hover{border-color:var(--warn-line);background:var(--paper);box-shadow:0 4px 12px -8px color-mix(in srgb,var(--warn-ink),transparent 40%);transform:translateY(-1px)}
+.rail .li-tile .li-ico{display:grid;place-items:center;flex:none;width:28px;height:28px;border-radius:7px;background:var(--warn-surface);color:var(--warn-ink)}
+.rail .li-tile b{font-weight:600}
+.rail .box>button.li-tile em{padding:1px 7px;border-radius:999px;background:var(--warn-surface);color:var(--warn-ink);font-size:11px;font-weight:500}
+.rail .li-tile .li-go{flex:none;margin-left:-2px;color:var(--muted);opacity:.5;transition:opacity .15s,transform .15s}
+/* The row's title on the first line and its kind pill under it, so a long title is not squeezed by the pill. */
+.rail .li-tile .li-ico{grid-row:1/span 2;grid-column:1}
+.rail .li-tile>span:not(.li-ico){grid-column:2;grid-row:1}
+.rail .box>button.li-tile em{grid-column:2;grid-row:2;justify-self:start;margin-left:0}
+.rail .li-tile .li-go{grid-column:3;grid-row:1/span 2;margin:0}
+.rail .li-tile:hover .li-go{opacity:1;transform:translateX(2px)}
+@media (prefers-reduced-motion:reduce){.rail .box.warnbox h5>span::before{animation:none}.rail .box>button.li-tile,.rail .li-tile .li-go{transition:none}.rail .box>button.li-tile:hover{transform:none}}
 .rail button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .rail .fun{display:grid;gap:5px}
 .rail .fun button{display:grid;grid-template-columns:96px minmax(0,1fr) 34px;gap:8px;align-items:center;margin:0 -4px;padding:2px 4px;border-radius:5px;color:var(--muted);font-size:12px;text-align:left}

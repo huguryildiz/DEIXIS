@@ -268,12 +268,14 @@ test.describe.serial('S9: the steps list', () => {
       await expect(writing.locator('.shimmer-text')).toHaveText('Writing a source-linked answer…')
       // The answer continues the count of the discovery it answers from: its stage is the one before the last.
       await expect(page.locator('.chat-step.is-waiting')).toHaveText(['check citations'])
-      const head = page.locator('.chat-live-head small')
+      const head = page.locator('.chat-turn.is-active .chat-live-head small')
       const [stage, total] = ((await head.textContent()) ?? '').match(/stage (\d+) of (\d+)/)!.slice(1).map(Number)
       expect([stage, total]).toEqual([total - 1, total])
       expect(total).toBeGreaterThanOrEqual(6)
-      // While it runs, Pause and Cancel sit beside the chip in the topbar.
-      await expect(page.locator('.research-topbar').getByRole('button', { name: 'Pause' })).toBeVisible()
+      // While it runs, Pause and Cancel sit in the run card's head; the topbar keeps only the chip.
+      await expect(page.locator('.chat-turn.is-active .chat-live-head').getByRole('button', { name: 'Pause' })).toBeVisible()
+      await expect(page.locator('.chat-turn.is-active .chat-live-head').getByRole('button', { name: 'Cancel', exact: true })).toBeVisible()
+      await expect(page.locator('.research-topbar').getByRole('button', { name: 'Pause' })).toHaveCount(0)
       await shot(page, 's9-steps-live')
     } finally { writeFileSync(release, 'SYNTHETIC release\n') }
     await settled(api, rid)

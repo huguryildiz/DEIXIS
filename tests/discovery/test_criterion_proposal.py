@@ -262,12 +262,13 @@ def test_the_bounds_are_enforced_in_code_as_well_as_in_the_schema():
     assert sorted(report.codes()) == ["criterion_part_count", "criterion_phrase_count"]
 
 
-def test_an_empty_phrase_and_a_phrase_written_twice_in_one_part_are_errors():
+def test_an_empty_phrase_is_an_error_and_a_repeat_counts_once():
     phrases = ["fatigue score", "Fatigue Score", "  ", "facit-f", "validated scale", "fatigue outcome"]
     report = contracts.ValidationReport()
     contracts._check_criterion_proposal(STEP_INPUT, proposal("SYNTHETIC", [part("one", phrases),
                                                                          part("two", phrases[:1] * 6)]), report)
-    assert "criterion_phrase_empty" in report.codes() and "duplicate_criterion_phrase" in report.codes()
+    assert "criterion_phrase_empty" in report.codes() and "duplicate_criterion_phrase" not in report.codes()
+    assert "criterion_phrase_count" in report.codes()  # part two repeats one phrase six times: one phrase, below the floor
 
 
 def test_a_phrase_standing_in_two_parts_is_not_an_error():
@@ -559,3 +560,15 @@ def test_v_a_stored_v1_proposal_without_the_field_reads_as_naming_nothing():
     assert result["question_elements"] == [] and result["required_roles"] == []
     rest = {k: v for k, v in result.items() if k not in ("question_elements", "required_roles")}
     assert canonical_json(rest) == BEFORE_SLICE_25
+
+
+def test_a_phrase_written_twice_in_one_part_does_not_void_the_proposal():
+    """Run 2026-10-20 lost two of three proposals to a repeated "psi", left no criterion, and skipped every full-text
+    reading. The consensus counts phrases as sets, so a repeat adds nothing and costs nothing (D112)."""
+    phrases = ["state psi", "Psi", "psi", "bell state", "entangled pair", "heralded pair", "remote memory"]
+    report = contracts.ValidationReport()
+    contracts._check_criterion_proposal(STEP_INPUT, proposal("SYNTHETIC", [part("one", phrases),
+                                                                         part("two", ["a", "b", "c", "d", "e", "f"])]),
+                                        report)
+    assert "duplicate_criterion_phrase" not in report.codes()
+    assert report.ok

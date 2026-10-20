@@ -181,6 +181,20 @@ def version_text(flow: Any, decisions: Any, facts: dict[str, Any], readings: dic
             "fulltext_ids": [p["id"] for p in passages if p["kind"] == "pdf_page" and p["asset_id"] == asset] if asset else []}
 
 
+def abstract_sibling(store: Any, rid: str, decisions: Any, facts: dict[str, Any], pools: dict[str, list[dict[str, Any]]],
+                     wid: str, head: str, svid: str) -> tuple[str, dict[str, Any]] | None:
+    """Another version of the work whose own screened abstract can stand in for `svid`, the answer version, which
+    holds a PDF nobody has read and so no abstract decision of its own (D112). The abstract is still that version's
+    own: it is never mixed with the PDF's pages."""
+    for other in [head, *store.work_versions(rid, head)]:
+        if other == svid:
+            continue
+        text = version_text(None, decisions, facts, {}, pools, wid, other)
+        if text["abstract"] is not None and text["abstract_ids"]:
+            return other, text
+    return None
+
+
 def text_row(store: Any, item: dict[str, Any], svid: str, text: dict[str, Any], route: str,
              reason: str | None) -> dict[str, Any]:
     """An answer input row for one work read from `svid`, before the person's choice is applied (`apply_user`)."""
@@ -217,6 +231,13 @@ def cutoff_snapshot(flow: Any, run: dict[str, Any], listing: dict[str, Any], clo
         outcome = decisions.work_outcome(rid, wid, facts)
         svid = versions.get(head) or head
         text = version_text(flow, decisions, facts, readings, pools, wid, svid)
+        # The PDF's version was never abstract-screened and its reading did not happen: the work would drop out as
+        # unscreened although another version of it was screened a candidate (D112).
+        sibling = (abstract_sibling(store, rid, decisions, facts, pools, wid, head, svid)
+                   if not text["asset"] and text["abstract"] is None else None)
+        pdf_version = svid if sibling else None
+        if sibling:
+            svid, text = sibling
         fresh, full, asset, abstract = text["fresh"], text["full"], text["asset"], text["abstract"]
         route = "fulltext" if asset and full["outcome"] == "include" else "abstract"
         # A PDF the person attached and the model read stays in the answer whatever the new ranking says.
@@ -243,6 +264,8 @@ def cutoff_snapshot(flow: Any, run: dict[str, Any], listing: dict[str, Any], clo
             reason = (UNRESOLVED_WITHOUT_FULLTEXT if routed and unread_text else
                       CODE_DECIDED if set_aside else "not_screened_at_cutoff")
         row = text_row(store, item, svid, text, route, reason)
+        if pdf_version:
+            row["abstract_of_unread_pdf_version"] = pdf_version
         apply_user(row, user)
         if not row["reason"] and not (row["fulltext_ids"] if row["route"] == "fulltext" else row["abstract_ids"]):
             row["reason"] = "no_text_at_cutoff"
@@ -479,7 +502,8 @@ def check_input(flow: Any, run_id: str, plan: dict[str, Any]) -> None:
             # checks below still apply to the version it reads.
             if heads.get(row["work_id"]) != row.get("head_after_cutoff", row["head"]) or row["route"] != "abstract":
                 flow._pause(run_id, "source_changed")
-        elif late and (heads.get(row["work_id"]) != row["head"] or versions.get(row["head"], row["head"]) != svid
+        elif late and (heads.get(row["work_id"]) != row["head"]
+                       or (versions.get(row["head"], row["head"]) != svid and not row.get("abstract_of_unread_pdf_version"))
                        or row["route"] == "fulltext" and flow._current_asset(svid) != row["asset_id"]):
             flow._pause(run_id, "source_changed")
         if svid not in members or any(members[svid].get(k) != v for k, v in row["version"].items()):

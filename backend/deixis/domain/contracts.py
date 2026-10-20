@@ -2296,10 +2296,12 @@ def _check_criterion_proposal(step_input: dict[str, Any], draft: dict[str, Any],
         report.issues.append(Issue("duplicate_criterion_part", "/parts", f"{name!r} names more than one part"))
     for index, part in enumerate(draft["parts"]):
         phrases = part["phrases"]
-        if not least <= len(phrases) <= most:
+        # A phrase written twice in one part is one phrase (D112): the consensus counts phrases as sets, so a repeat
+        # changes nothing, and voiding a whole proposal for it left run 2026-10-20 without a criterion.
+        distinct = len({normalize_phrase(phrase) or phrase for phrase in phrases})
+        if not least <= distinct <= most:
             report.issues.append(Issue("criterion_phrase_count", f"/parts/{index}/phrases",
-                                       f"expected {least} to {most}, got {len(phrases)}"))
-        seen: Counter[str] = Counter()
+                                       f"expected {least} to {most}, got {distinct}"))
         for position, phrase in enumerate(phrases):
             normalized = normalize_phrase(phrase)
             if not normalized:
@@ -2307,9 +2309,6 @@ def _check_criterion_proposal(step_input: dict[str, Any], draft: dict[str, Any],
                 continue
             if len(normalized.split()) > MAX_PHRASE_WORDS:
                 report.issues.append(Issue("criterion_phrase_too_long", f"/parts/{index}/phrases/{position}", phrase))
-            seen[normalized] += 1
-        for normalized in sorted(p for p, count in seen.items() if count > 1):
-            report.issues.append(Issue("duplicate_criterion_phrase", f"/parts/{index}/phrases", normalized))
 
 
 def _check_question_elements(step_input: dict[str, Any], draft: dict[str, Any], report: ValidationReport) -> None:

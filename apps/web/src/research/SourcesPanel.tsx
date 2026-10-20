@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowUpDown, Download, Filter, Info, LibraryBig, ListChecks, ListMinus, ListPlus, Search, Table2 } from 'lucide-react'
+import { ArrowUpDown, Download, Filter, Info, LibraryBig, ListChecks, ListMinus, ListPlus, Search, Table2, ChartNoAxesGantt, Rows3 } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { api, type Effort, type EffortLimits, type Source, type TableSummary, type UnscreenedWork } from '../api'
@@ -10,6 +10,7 @@ import { effortLabels } from '../Home'
 import { SCREEN_MORE_SIZE, useScreenMore, useUnscreened } from './unscreened'
 import { focusWhenLost } from '../focus'
 import { SourceRow } from './SourceRow'
+import { SourcesTimeline } from './SourcesTimeline'
 import { proposalOf } from './sourceProposal'
 import type { OcrContext } from './shared'
 
@@ -75,6 +76,7 @@ export function SourcesPanel({ sources, cited, citedVersions, answerVersion, bus
   const [pdfFilter, setPdfFilter] = useState<PdfFilter>('all')
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<SourceSort>('relevant')
+  const [view, setView] = useState<'list' | 'timeline'>('list')
   // The exclusion reason bar (mockup .why-bar): one source at a time, opened by Exclude, "Add a reason" or Edit.
   const [asking, setAsking] = useState<{ id: string; text: string; opener: HTMLElement | null } | null>(null)
   const [saving, setSaving] = useState(false)
@@ -161,6 +163,10 @@ export function SourcesPanel({ sources, cited, citedVersions, answerVersion, bus
           </SelectGroup>
         </SelectContent>
       </Select>
+      <div className="source-view-toggle" role="group" aria-label={t('Sources view')}>
+        <button type="button" aria-pressed={view === 'list'} className={view === 'list' ? 'on' : undefined} onClick={() => setView('list')}><Rows3 size={14} aria-hidden />{t('List')}</button>
+        <button type="button" aria-pressed={view === 'timeline'} className={view === 'timeline' ? 'on' : undefined} onClick={() => setView('timeline')}><ChartNoAxesGantt size={14} aria-hidden />{t('Timeline')}</button>
+      </div>
       <button type="button" className="ghost" disabled={!shownRows.length} onClick={() => downloadCsv(shownRows)} title={t(shownRows.length === 1 ? 'Download the {n} row shown as CSV' : 'Download the {n} rows shown as CSV', { n: shownRows.length })}><Download size={14} aria-hidden />{t('Download')}</button>
       <button type="button" className="ghost" disabled={busy || !shownRows.length} onClick={() => { void bar.onSaveToLibrary(shownIds) }} title={t(shownRows.length === 1 ? 'Save the {n} row shown to the Library' : 'Save the {n} rows shown to the Library', { n: shownRows.length })}><LibraryBig size={14} aria-hidden />{t('Save to library')}</button>
     </div>
@@ -177,7 +183,7 @@ export function SourcesPanel({ sources, cited, citedVersions, answerVersion, bus
       </div>
     </form>}
     {/* Chrome leaves a partly visible focused control where it is; the whole control comes into the table's view. */}
-    <div className="tbl-wrap" onFocus={e => e.target.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })}><table className="source-table">
+    {view === 'timeline' ? <SourcesTimeline records={shown.map(f => f[0])} stateOf={s => isCited([s]) ? 'cited' : tabOf(s)} onOpen={a.onOpen} /> : <div className="tbl-wrap" onFocus={e => e.target.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })}><table className="source-table">
       <thead><tr>
         <th className="cb"><input type="checkbox" aria-label={t('Select all shown')} checked={allShownPicked} disabled={!shownIds.length}
           ref={node => { if (node) node.indeterminate = !allShownPicked && shownIds.some(sid => picked.includes(sid)) }}
@@ -204,7 +210,7 @@ export function SourcesPanel({ sources, cited, citedVersions, answerVersion, bus
           ? t(needle && pdfFilter !== 'all' ? 'No works match “{q}” with {pdf}.' : needle ? 'No works match “{q}”.' : 'No works match with {pdf}.', { q: query.trim(), pdf: t(pdfFilterLabels[pdfFilter]).toLocaleLowerCase() })
           : t('No source matches this filter.')} <button type="button" className="link" onClick={clearAll}>{t(needle || pdfFilter !== 'all' ? 'Clear search and filter' : 'Show all sources')}</button></td></tr>}
       </tbody>
-    </table></div>
+    </table></div>}
     {picked.length > 0 && <SelectionBar ids={picked} busy={busy} {...bar} onClear={() => onPick([])} />}
   </div>
 }

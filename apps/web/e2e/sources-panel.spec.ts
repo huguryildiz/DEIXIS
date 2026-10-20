@@ -342,4 +342,38 @@ test.describe.serial('S13: the Sources panel', () => {
     expect(routeAfter.total).toBeLessThan(route.total)
     await expect(tab('Not read').locator('em')).toHaveText(routeAfter.total.toLocaleString())
   })
+
+  test('Timeline: a column per publication year, tags coloured by stored state, a tag opens the source', async () => {
+    const view = await viewOf(api, rid)
+    const recs = view.sources.filter(s => s.version_role === 'record')
+    const dated = recs.filter(s => s.year !== null)
+    await page.goto(sourcesUrl())
+    await tab('All').click()
+    await sources().getByRole('group', { name: 'Sources view' }).getByRole('button', { name: 'Timeline' }).click()
+    const line = sources().locator('.source-timeline')
+    await expect(line).toBeVisible()
+    await expect(sources().locator('tr.source-row')).toHaveCount(0)
+    // One column per distinct year, in ascending order; every dated work is one tag.
+    const years = [...new Set(dated.map(s => s.year as number))].sort((a, b) => a - b)
+    await expect(line.locator('.timeline-axis')).toHaveText(years.map(String))
+    await expect(line.locator('.timeline-tag')).toHaveCount(dated.length)
+    // Colour classes are the stored state, with no relevance wording.
+    const cls = await line.locator('.timeline-tag').evaluateAll(els => els.map(el => el.className))
+    expect(cls.every(c => /is-(cited|included|passed|pending|excluded)/.test(c))).toBe(true)
+    await expect(line).not.toContainText(/relevan(ce|t) \d|%/)
+    // The strip scrolls inside itself and is reachable by keyboard.
+    await line.locator('.timeline-scroll').focus()
+    await expect(line.locator('.timeline-scroll')).toBeFocused()
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true)
+    // The Included tab narrows the same view.
+    await tab('Included').click()
+    await expect(line.locator('.timeline-tag.is-included, .timeline-tag.is-cited')).toHaveCount(await line.locator('.timeline-tag').count())
+    await shot(page, 'S13-sources-timeline')
+    // A tag opens Source details for that work.
+    await line.locator('.timeline-tag').first().click()
+    await expect(panel(page, 'Source details')).toBeVisible()
+    await panel(page, 'Source details').getByRole('button', { name: 'Back' }).click()
+    await sources().getByRole('group', { name: 'Sources view' }).getByRole('button', { name: 'List' }).click()
+    await expect(line).toHaveCount(0)
+  })
 })

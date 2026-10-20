@@ -34,3 +34,17 @@ def test_the_route_says_why_it_is_off_and_saves_the_switch_and_budget(tmp_path, 
         assert client.get("/api/equation-reader").status_code in (404, 405)
         assert client.get("/api/tool-updates/marker").status_code == 404
         assert "marker_present" not in client.get("/api/settings/preferences").json()
+
+
+def test_the_route_answers_with_the_built_in_connections(tmp_path, monkeypatch):
+    """Without injected adapters the app builds its own map; the equation route must use it, not the missing argument."""
+    monkeypatch.setattr(equations.EquationService, "start", lambda self: None)
+    settings = Settings(data_dir=tmp_path / "data", port=8765, arxiv_source="off")
+    app = create_app(settings, http_client=openalex_client(200), fetcher=fake_fetch, extra_hosts=("testserver",),
+                     trusted_clients=("testclient",), start_worker=False)
+    with TestClient(app) as raw:
+        client = session(raw)
+        client.put("/api/settings/answer", json={"model_connection": "anthropic", "model": "claude-sonnet-5-5",
+                                                 "reasoning_effort": None})
+        response = client.get("/api/equation-model")
+        assert response.status_code == 200 and response.json()["reason"] != "connection_unavailable"

@@ -941,7 +941,7 @@ def create_app(
         if equations.mathpix_client is None:
             equations.configure_mathpix(settings.data_dir, http)  # D40: requests only with the switch on and a key pair
         if not equations.adapters:
-            equations.configure_model(adapters)  # D113: the default answer model reads equation crops
+            equations.configure_model(adapter_map)  # D113: the default answer model reads equation crops
         # The built-in models (llama.cpp): a test injects its own models object and never starts a real server.
         builtin_paths = local_embedding.builtin_paths(settings.data_dir)
         embedder = local_embedder if local_embedder is not None else local_embedding.LocalModels(builtin_paths)

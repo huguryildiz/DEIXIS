@@ -1,6 +1,6 @@
 # DEIXIS durumu
 
-**Son güncelleme:** 18 Ekim 2026. Kararlar [docs/decisions.md](docs/decisions.md) içinde (en yenisi üstte), ölçümler [docs/benchmark.md](docs/benchmark.md) içinde. Bu dosyanın 18 Ekim öncesi uzun hali Git geçmişinde (commit 847b6b0b).
+**Son güncelleme:** 20 Ekim 2026. Kararlar [docs/decisions.md](docs/decisions.md) içinde (en yenisi üstte), ölçümler [docs/benchmark.md](docs/benchmark.md) içinde. Bu dosyanın 18 Ekim öncesi uzun hali Git geçmişinde (commit 847b6b0b).
 
 ## Kısaca: neredeyiz?
 
@@ -13,6 +13,7 @@ Durum kötü değil, ama dengesiz. Uygulama çalışıyor ve özellik bakımınd
 - **Bir kez canlı denenen (2):** ters atıf arama. R4b pilotunda (10 cümle, Sonnet 5.5, okuyucular Sol ve Opus) destek sayılan 24 sonuçta 0 hata; ama kural ihtiyatlı, bilinen 7 destekleyiciden yalnız 1'i destek sayılıyor (D109).
 - **Ölçülmeyen:** kartopu (snowballing), kill search'in Next steps girişi, run kartı. Hepsi yalnız sahte modelli testlerle ve Playwright'la sınandı. Okuma ve cevap kalitesi de ayrıca ölçülmedi: arama testleri yalnız sıralamayı ölçüyor.
 - **Bilinen zayıflık:** cevaplar, kendilerine verilen eserlerin azını atıflıyor (D83 sonrası DBR/VBF sorusunda 13 eserden 12–13'ü, ama her koşu 30 iddia sınırına takılıyor). Raporlar model puanıyla 30 üzerinden 15–20 aldı (insan puanı yok). Paywall arkasındaki tam metinler okunamıyor; mühendislik makalelerinin çoğu özetten okunuyor.
+- **Denklemler (20 Ekim, D113):** Marker kaldırıldı (uygulamadan ve sahibin Mac'inden, ~4,3 GB). Numaralı denklemleri artık varsayılan cevap modeli sayfa kırpıntısından okuyor (yalnız Anthropic, OpenAI, Gemini API). 3 arXiv makalesinde canlı denendi: yerleştirilen 8 kaynak denklemin 8'i tam doğru, yanlış yerleştirme 0; ama 24 kaynak denklemden 14'ü bulucu tarafından hiç gönderilmedi. Asıl sınır bulucu, model değil. Bu istekler harcama görünümünde henüz yok.
 - **Paketleme yok:** P10 (macOS paketi) sahibin görsel kontrolünü bekliyor. Windows ve Linux hiç denenmedi.
 
 Kısa hüküm: altyapı ve kurallar sağlam, arama ölçülmüş ve iyi; ama son iki haftada ölçmeden eklenen özellik sayısı fazla. Bir sonraki dönemin işi yeni özellik değil, var olanı gerçek kullanımda denemek ve paketlemek.

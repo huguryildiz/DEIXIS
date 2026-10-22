@@ -53,6 +53,48 @@ def watch_shutdown(server, seconds: float, exit_function, cancel: threading.Even
         exit_function(FORCED_EXIT_CODE)
 
 
+IDLE_CHECK_SECONDS = 30.0
+
+
+class LastRequest:
+    """ASGI wrapper that notes when the last HTTP request arrived (the UI polls every few seconds while a tab is open)."""
+
+    def __init__(self, app):
+        self.app = app
+        self.at = time.monotonic()
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            self.at = time.monotonic()
+        await self.app(scope, receive, send)
+
+
+def library_busy(db_path: Path) -> bool:
+    """A run or a background fetch is queued or working. An unreadable library counts as busy: the server stays up."""
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=5)
+        try:
+            return conn.execute(
+                "SELECT EXISTS(SELECT 1 FROM runs WHERE status IN ('queued', 'running', 'pause_requested'))"
+                " OR EXISTS(SELECT 1 FROM fast_path_background_fetches WHERE status IN ('queued', 'running'))").fetchone()[0] == 1
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        return True
+
+
+def watch_idle(server, seconds: float, last_request, busy, cancel: threading.Event, check: float = IDLE_CHECK_SECONDS) -> None:
+    """Ask the server to stop once no request came for `seconds` and nothing is working (`serve --idle-exit`, used by
+    DEIXIS.app, whose launcher exits right after the start and so cannot stop the server when the browser tab closes)."""
+    while not cancel.wait(check):
+        if server.should_exit:
+            return
+        if time.monotonic() - last_request() >= seconds and not busy():
+            print(f"No browser tab for {seconds / 60:g} min and nothing working; stopping", file=sys.stderr)
+            server.should_exit = True
+            return
+
+
 def port_available(host: str, port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         if sys.platform != "win32":  # like uvicorn; lingering closed connections must not look like a running server
@@ -113,9 +155,11 @@ def hold_current_folder(settings: Settings) -> Settings | str:
     return "The data location kept changing while DEIXIS started. Try again."
 
 
-def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...], reread_location: bool = False) -> int:
+def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...], reread_location: bool = False,
+          idle_exit: float | None = None) -> int:
     """`reread_location`: the settings came from `load_settings`, so the location is read again under the folder lock (a caller
-    that builds its own settings has no location to read)."""
+    that builds its own settings has no location to read). `idle_exit`: seconds without a request after which an idle
+    server stops itself (see `watch_idle`); None keeps it running."""
     url = f"http://{settings.host}:{settings.port}/"
     if settings.host not in ("127.0.0.1", "localhost"):
         print("DEIXIS binds to loopback only; set DEIXIS_HOST=127.0.0.1.", file=sys.stderr)
@@ -171,7 +215,8 @@ def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...], re
     app = create_app(settings, extra_hosts=dev_hosts)
     if postponed is not None:
         app.state.move_postponed = {"path": str(postponed.new), "busy": str(postponed.busy)}
-    server = uvicorn.Server(uvicorn.Config(app, host=settings.host, port=settings.port, log_level="info",
+    tracked = LastRequest(app)
+    server = uvicorn.Server(uvicorn.Config(tracked, host=settings.host, port=settings.port, log_level="info",
                                            timeout_graceful_shutdown=3))
 
     def open_when_ready() -> None:
@@ -187,6 +232,9 @@ def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...], re
     # Never cancelled here: the executor join it guards happens inside `asyncio.run`'s close, inside `server.run()`, so the
     # thread is simply left running (the cancel event exists for the unit test).
     threading.Thread(target=watch_shutdown, args=(server, SHUTDOWN_EXIT_SECONDS, os._exit, threading.Event()), daemon=True).start()
+    if idle_exit is not None:
+        threading.Thread(target=watch_idle, args=(server, idle_exit, lambda: tracked.at, lambda: library_busy(settings.db_path),
+                                                  threading.Event()), daemon=True).start()
     server.run()
     return 0
 
@@ -412,6 +460,8 @@ def main(argv: list[str] | None = None) -> int:
     run = sub.add_parser("serve", help="Start the local API, worker and UI")
     run.add_argument("--port", type=int)
     run.add_argument("--no-browser", action="store_true")
+    run.add_argument("--idle-exit", type=float, metavar="MINUTES",
+                     help="Stop after this many minutes with no browser request and no run working")
     run.add_argument("--dev", action="store_true", help="Also accept requests proxied from the Vite dev server (port 5178)")
     save = sub.add_parser("backup", help="Write a consistent backup of the local library (safe while serving)")
     save.add_argument("destination", type=Path, help="Folder in which a new dated backup folder is created")
@@ -458,7 +508,8 @@ def main(argv: list[str] | None = None) -> int:
         # and concurrency requested by the environment (slice 13 smoke run).
         settings = dataclasses.replace(settings, port=args.port)
     dev_hosts = ("127.0.0.1:5178", "localhost:5178") if args.dev else ()
-    return serve(settings, not args.no_browser, dev_hosts, reread_location=True)
+    idle_exit = args.idle_exit * 60 if args.idle_exit else None
+    return serve(settings, not args.no_browser, dev_hosts, reread_location=True, idle_exit=idle_exit)
 
 
 if __name__ == "__main__":

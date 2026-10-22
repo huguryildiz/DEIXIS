@@ -3,6 +3,8 @@
 # Every click starts a clean server: stops the one already listening, rebuilds the UI when its
 # sources changed, starts the server in the background and opens the page once it answers.
 # A run that was working is picked up again at startup (recovered runs, see /api/health).
+# The launcher exits once the page opens, so the server stops itself after 15 minutes with no
+# open tab polling it and no run working (--idle-exit).
 # DEIXIS_PORT and DEIXIS_DATA_DIR override the defaults (tests).
 REPO="__REPO__"
 PORT="${DEIXIS_PORT:-8765}"
@@ -31,7 +33,7 @@ if [[ ! -f $DIST ]] || [[ -n "$(find apps/web/src apps/web/public apps/web/index
 fi
 
 note "Starting…"
-nohup uv run python -m deixis serve --no-browser --port $PORT >>"$LOG" 2>&1 &
+nohup uv run python -m deixis serve --no-browser --idle-exit 15 --port $PORT >>"$LOG" 2>&1 &
 for i in {1..90}; do
   if up; then open "$URL"; exit 0; fi
   sleep 1

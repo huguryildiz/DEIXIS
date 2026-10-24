@@ -92,8 +92,8 @@ def test_a_crop_overlapped_by_other_text_is_refused(tmp_path):
     y = prose(page, 90)
     scripted(page, 250, y + 20, [("u = v + w", "base")])
     number(page, y + 20, "1")
-    # A prose line set so close that it overlaps the equation's box.
-    page.insert_text((72, y + 26), "and here a note runs through the display across the whole of the column", fontsize=10, fontname="helv")
+    # A prose line set so close that it overlaps the equation's box (less than half a row: not a line beside it).
+    page.insert_text((72, y + 28), "and here a note runs through the display across the whole of the column", fontsize=10, fontname="helv")
     prose(page, y + 60, [AFTER])
     _, found = detect(tmp_path, doc)
     assert found and found[0]["refused"] == "crop_has_other_text" and "png" not in found[0]

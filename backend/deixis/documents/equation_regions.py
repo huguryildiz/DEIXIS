@@ -2,15 +2,28 @@
 image must pass before it replaces the page's lines (the Mathpix route, D40, and the answer model's, D113).
 
 Detector: a line ending in an equation number `(n)` at its column's right margin (`arxiv_source.number_line`, shared with
-the source route). Without a source the equation's lines are found by geometry only: lines that are not prose, in the
-same column, within 1.5 body line heights of the region, stopping at a prose line, a heading, a line crossing the column
-gutter or 12 lines. A non-prose line just below the region that belongs to no other number leaves the region unclear, and
-it is refused. Rotated pages and pages with a table caption are skipped, and so are OCR pages (they have no text layer).
+the source route), unless the text before the number is a sentence citing it ("The problem in (41)"). Without a source
+the equation's lines are found by geometry only: lines that are not prose, in the same column, within 1.5 body line
+heights of the region, at most 12. Growth upward stops at prose (also a row of fragments the text layer split around
+inline math, read from a paragraph margin), a lead-in ("as follows:", "where κ is given by" at a paragraph margin), a
+heading, a line crossing the column gutter, or another equation's line (another number's row, an earlier region); lines
+below that stop which start inside the region (a denominator) still join. A lower limit in script type centred under one
+of the region's operators (`t=1` under a sum) joins it. A line just above or below the region that is none of these, nor
+text at a paragraph margin, leaves the region unclear, and it is refused: the region may miss a part of the equation.
+On a single-column page whose prose the text layer split around inline math, the split lines do not make two columns.
+Rotated pages and pages with a table caption are skipped, and so are OCR pages (they have no text layer): a caption may
+name an unruled table whose rows the finder would take for displays.
 
-Crop: the union of the region's lines plus 2 pt, with the number cut out of the image. It is refused when any other
-text-layer span, a drawing other than a horizontal rule, or an image overlaps it, or when it crosses the column gutter:
-only the equation's own lines leave the computer. It is rendered at 200 dpi, lowered (not below 120) to stay within
-2,000 px a side and 4 Mpx, and refused above 2 MB as base64.
+Crop: the union of the region's lines plus 2 pt, with the number cut out of the image. Another text-layer span that only
+reaches into the 2 pt padding, clear of the equation's own type, is whited out when its line is prose, a number or held
+by another equation's region; any other span overlapping the crop, a drawing other than a horizontal rule, an image, or
+a crop across the column gutter refuses it: only the equation's own lines leave the computer. It is rendered at 200 dpi,
+lowered (not below 120) to stay within 2,000 px a side and 4 Mpx, and refused above 2 MB as base64.
+
+Measured (2026-10-24, model-free, `.local/equation-finder-2026-10-24/frozen.json` against `baseline.json`): on 452
+numbered equations of 34 arXiv papers placed by their LaTeX source, crops with exactly the source's lines rose from 185 to
+274; crops with other lines fell from 25 to 7 (lines with no letters, which the source placement leaves out). It shows the
+regions, not how well a model reads them.
 
 Gate: necessary checks, not proof. Letters and digits, their script level (raised, lowered, on the line), relation and
 operator signs and the number of fraction bars must agree between the reading and the text layer. A wrong reading with
@@ -45,6 +58,20 @@ SCRIPT_SIZE = 0.85  # type below this share of the body size is a script when it
 SCRIPT_SHIFT = 0.12  # share of the body size a script's baseline sits above or below its line's
 MIN_CONFIDENCE = 0.5  # a placement filter on Mathpix's own confidence, not an accuracy threshold
 NUMBER_TAIL = re.compile(r"\s*\(\d{1,3}[a-z]?\)\s*$")
+CUT_CLEARANCE = 0.75  # pt between a whited-out span and the equation's type: 2 px at 200 dpi, more than the rounding
+DOC_MARGIN_LINES = 3  # prose lines in the document that must share a left edge for it to count as a margin
+MARGIN_SLACK = 1.5  # pt a line's left edge may sit from a paragraph margin and still start there
+TEXT_START = re.compile(r"[A-Za-z]+")
+LEAD_IN = re.compile(r"[A-Za-z][A-Za-z\s,.;:'’-]*")
+# Words a sentence under a display holds and a display's constraint row does not. Articles and prepositions are not
+# among them: they stand in a constraint row too ("The sum of the powers ≤ P").
+SENTENCE_CUES = {"we", "is", "are", "was", "be", "if", "which", "that", "where", "then", "thus", "hence", "so", "gives",
+                 "give", "yields", "find", "have", "has", "holds", "hold", "since", "let", "it", "this", "these", "when",
+                 "can", "will", "follows", "obtain", "get", "see", "note"}
+RELATION = re.compile(r"[=<>≤≥≠≈≡∈∉⊂⊆⩽⩾∼≃≅∝]")
+DISPLAY_WORD = re.compile(r"(arg)?(min|max|minimi[sz]e|maximi[sz]e)|subject|sup|inf|lim")
+LIMIT_RELATION = re.compile(r"[=∈≤≥<>⊂⊆∉]")  # a lower limit names its index: i=1, k∈S, x≥0
+FUNCTION_NAME = re.compile(r"(arc)?(sin|cos|tan|cot|sec|csc)h?")
 
 # Every sign the gate compares, text-layer character → its class. A math sign (Unicode Sm/So) the table does not know, on
 # either side, refuses the region (`unknown_sign`): an unknown sign is never dropped from the comparison (Sol r1).
@@ -114,14 +141,35 @@ def _lines(page: pymupdf.Page, body_size: float) -> list[dict[str, Any]]:
 def _columns(lines: list[dict], width: float) -> tuple[float | None, list[tuple[float, float, float]]]:
     """The gutter (None on a one-column page) and each column as (left, right, right edge of its prose)."""
     prose = [line for line in lines if arxiv_source.is_prose(line["text"])]
+    sides = _sides(lines, width)
+    if sides is not None:
+        gutter, left, right = sides
+        # Lines crossing the gutter among the side lines (inline math between two halves of one prose line): one column
+        # the text layer split. A full-width title or abstract sits above the two columns, not among their lines.
+        top, bottom = min(line["box"][1] for line in left + right), max(line["box"][3] for line in left + right)
+        crossing = [line for line in lines if line["box"][0] < gutter < line["box"][2]
+                    and top <= (line["box"][1] + line["box"][3]) / 2 <= bottom]
+        if len(crossing) < min(len(left), len(right)):
+            return gutter, [(0.0, gutter, max(line["box"][2] for line in left)), (gutter, width, max(line["box"][2] for line in right))]
+    edge = max((line["box"][2] for line in prose or lines), default=width)
+    return None, [(0.0, width, edge)]
+
+
+def _split_by(content: list[int], lines: list[dict], sides: tuple[float, list[dict], list[dict]]) -> bool:
+    gutter = sides[0]
+    boxes = [lines[k]["box"] for k in content]
+    return any(box[0] < gutter for box in boxes) and any(box[0] >= gutter for box in boxes)
+
+
+def _sides(lines: list[dict], width: float) -> tuple[float, list[dict], list[dict]] | None:
+    """A gutter between prose on either half of the page (three lines each side), and those lines; else None."""
+    prose = [line for line in lines if arxiv_source.is_prose(line["text"])]
     mid = width / 2
     left = [line for line in prose if line["box"][2] <= mid + 4]
     right = [line for line in prose if line["box"][0] >= mid - 4]
-    if len(left) >= 3 and len(right) >= 3:
-        gutter = (max(line["box"][2] for line in left) + min(line["box"][0] for line in right)) / 2
-        return gutter, [(0.0, gutter, max(line["box"][2] for line in left)), (gutter, width, max(line["box"][2] for line in right))]
-    edge = max((line["box"][2] for line in prose or lines), default=width)
-    return None, [(0.0, width, edge)]
+    if len(left) < 3 or len(right) < 3:
+        return None
+    return (max(line["box"][2] for line in left) + min(line["box"][0] for line in right)) / 2, left, right
 
 
 def _column(box: tuple, columns: list[tuple[float, float, float]]) -> int:
@@ -238,20 +286,29 @@ def _detect(path: str, skip_pages: list[int], render: bool) -> list[dict[str, An
             page = doc[index]
             layouts.append((index, None, page.rect.height, pdf._blocks(page)))
         body = pdf._body_size(layouts) or 10.0
+        # The document's paragraph margins and indents: left edges that prose lines on its pages share (an indent may
+        # start a single paragraph on a page).
+        starts = Counter(round(box[0]) for *_, blocks in layouts for block in blocks
+                         for text, box in zip(block["masked"], block["line_boxes"]) if arxiv_source.is_prose(text.strip()))
+        margins = [x for x, count in starts.items() if count >= DOC_MARGIN_LINES]
         for index in range(min(doc.page_count, pdf.MAX_PAGES)):
             page = doc[index]
-            if index + 1 in skip_pages or page.rotation or math_reader.TABLE_CAPTION.search(page.get_text()):
+            if index + 1 in skip_pages or page.rotation:
                 continue
-            found += _page_regions(page, index + 1, body, render)
+            if math_reader.TABLE_CAPTION.search(page.get_text()):
+                continue
+            found += _page_regions(page, index + 1, body, render, margins)
     return found
 
 
-def _page_regions(page: pymupdf.Page, number: int, body: float, render: bool) -> list[dict[str, Any]]:
+def _page_regions(page: pymupdf.Page, number: int, body: float, render: bool,
+                  doc_margins: list[float] = ()) -> list[dict[str, Any]]:
     lines = _lines(page, body)
     if not lines:
         return []
     width = page.rect.width
     gutter, columns = _columns(lines, width)
+    sides = _sides(lines, width)
     prose_heights = [line["box"][3] - line["box"][1] for line in lines if arxiv_source.is_prose(line["text"])]
     lh = statistics.median(prose_heights) if prose_heights else body * 1.2
     numbers = {}
@@ -262,20 +319,209 @@ def _page_regions(page: pymupdf.Page, number: int, body: float, render: bool) ->
         col = _column(line["box"], columns)
         lo, hi, edge = columns[col]
         only = arxiv_source.NUMBER_ONLY.match(line["text"]) is not None
-        if line["box"][2] < edge - MARGIN_SHARE * width or (only and line["box"][0] < (lo + hi) / 2):
+        if line["box"][2] < edge - MARGIN_SHARE * width or (only and line["box"][0] < (lo + hi) / 2) or _citation(line["text"][:m.start()]):
             continue
         numbers[i] = (m.group(1), only, col)
-    out, taken = [], set()
+    margins = [m + list(doc_margins) for m in _margins(lines, columns)]
+    regions, taken, claimed = {}, set(), []
     for i, (n, only, col) in numbers.items():
-        region = _region(lines, i, only, col, columns, gutter, lh, set(numbers), taken)
+        region = _region(lines, i, only, col, columns, gutter, lh, set(numbers), taken, margins[col], claimed, body)
         if region is None:
             continue
+        # On a page taken for one column with prose on either half, a region with lines starting on either side of where
+        # the gutter would be may join two column equations: it is unclear.
+        if gutter is None and sides is not None and _split_by(region["content"], lines, sides):
+            region["unclear"] = True
         taken |= set(region["content"])
-        out.append(_candidate(page, number, n, lines, i, only, region, gutter, lh, body, numbers, render))
+        claimed.append(_union([lines[k]["box"] for k in region["content"] + [i]]))
+        regions[i] = region
+    # A line another region holds, a number line, or text: what a crop may white out when it only grazes the crop's edge.
+    held = {k for region in regions.values() for k in region["content"]} | set(numbers)
+    out, text = [], page.get_text("dict", flags=pdf.TEXT_FLAGS)["blocks"]  # read once: every crop checks it
+    for i, region in regions.items():
+        n, only, col = numbers[i]
+        others = (held - set(region["content"]) - {i}) | {k for k, line in enumerate(lines) if arxiv_source.is_prose(line["text"])}
+        out.append(_candidate(page, number, n, lines, i, only, region, gutter, lh, body, numbers, render, others, text))
     return out
 
 
-def _region(lines, i, only, col, columns, gutter, lh, numbers, taken) -> dict | None:
+def _margins(lines: list[dict], columns: list[tuple[float, float, float]]) -> list[list[float]]:
+    """Per column, the left edges at least two prose lines share: the paragraph margin and its indents."""
+    out = []
+    for col in range(len(columns)):
+        starts = Counter(round(line["box"][0]) for line in lines
+                         if arxiv_source.is_prose(line["text"]) and _column(line["box"], columns) == col)
+        out.append([x for x, count in starts.items() if count >= 2])
+    return out
+
+
+def _starts_text(line: dict, margin: list[float], letters: int = 2) -> bool:
+    """A line set at a paragraph margin that opens with a word (not an operator name): a line of text, not a display's."""
+    m = TEXT_START.match(line["text"])
+    return (m is not None and len(m.group(0)) >= letters and m.group(0) not in OPERATOR_NAMES
+            and any(abs(line["box"][0] - x) <= MARGIN_SLACK for x in margin))
+
+
+def _lead_in(line: dict, margin: list[float]) -> bool:
+    """The end of the sentence that leads into a display ("as follows:", "and", "where κ is given by", "x ≥ y, we have"):
+    a line at a paragraph margin that opens with a word and holds only words and punctuation, or that ends in a colon or
+    in a lower-case word (not a function name or a vowelless name; inline math after it is passed over)."""
+    text = line["text"]
+    if not any(abs(line["box"][0] - x) <= MARGIN_SLACK for x in margin):
+        return False
+    # After the word only punctuation, a symbol's name (α′) or a reference (`(59)`).
+    last = re.search(r"([A-Za-z]+)(?:[^A-Za-z0-9=<>≤≥+−]|\(\d{1,3}[a-z]?\))*$", text)
+    # A word, not a variable's name: lower case, with a vowel (`nv`, `drv` are names), and no function name.
+    ends_in_word = (last is not None and last.group(1).islower() and re.search(r"[aeiouy]", last.group(1)) is not None
+                    and not _function_name(last.group(1)))
+    if _starts_text(line, margin):
+        return LEAD_IN.fullmatch(text) is not None or text.endswith((":", ",")) or (ends_in_word and len(last.group(1)) >= 2)
+    words = [w for w in re.findall(r"[a-z]{3,}", text) if re.search(r"[aeiouy]", w) and not _function_name(w)]
+    if re.search(r"[.;]\s+[A-Z][a-z]{2,}", text):  # a sentence ends and the next begins: "…;0). Then, for any"
+        return True
+    return text.endswith(":") or (ends_in_word and (re.search(r"[.,;]\s", text) is not None
+                                                    or (len(last.group(1)) >= 3 and len(words) >= 2)))
+
+
+def _row_lead_in(lines: list[dict], k: int, in_column, margin: list[float], sentence: bool = False) -> bool:
+    """The line, or the row it sits in read left to right from a paragraph margin, is a lead-in (`_lead_in`): a sentence
+    the text layer split around inline math ("that α", "∗ e", "≤ 1 we have"). With `sentence`, only one that reads as a
+    sentence (ends in a colon or comma, or holds two words) or carries on the prose line above it: another lone word
+    ("minimize" after "as follows:") may be a display's first row, so it stops the growth but leaves the region unclear."""
+    row = _row(lines, k, in_column)
+    texts = [lines[k]["text"]] + ([" ".join(lines[j]["text"] for j in row)] if len(row) > 1 else [])
+    for text, box in zip(texts, [lines[k]["box"], lines[row[0]]["box"]]):
+        if _lead_in({"text": text, "box": box}, margin) and (not sentence or _sentence(text) or _continues(lines, k, in_column)):
+            return True
+    return False
+
+
+def _at_margin(line: dict, margin: list[float]) -> bool:
+    return any(abs(line["box"][0] - x) <= MARGIN_SLACK for x in margin)
+
+
+def _continues(lines: list[dict], k: int, in_column) -> bool:
+    """The prose line just above line k ends without a stop or a colon: k carries on its sentence ("… the receiver
+    counts" / "and"). After "as follows:" the next line may open a display ("minimize")."""
+    box = lines[k]["box"]
+    height = box[3] - box[1]
+    above = [j for j, line in enumerate(lines) if j != k and in_column(j) and box[1] - height <= line["box"][3] <= box[1] + 0.5]
+    if not above:
+        return False
+    j = max(above, key=lambda j: lines[j]["box"][3])
+    return arxiv_source.is_prose(lines[j]["text"]) and not lines[j]["text"].rstrip().endswith((".", ":", ";", "!", "?"))
+
+
+def _sentence(text: str) -> bool:
+    """Reads as a sentence, not a display's label ("maximize rate"): it does not open with an optimisation word, and it
+    ends in a colon or comma or holds two words."""
+    words = _words(text)
+    return not _display_word(text) and (text.rstrip().endswith((":", ",")) or len(words) >= 2)
+
+
+def _display_word(text: str) -> bool:
+    """Opens with a word that starts or continues an optimisation display at the margin ("minimize", "subject to")."""
+    m = TEXT_START.match(text)
+    return m is not None and DISPLAY_WORD.fullmatch(m.group(0).lower()) is not None or re.match(r"s\.\s*t\b", text) is not None
+
+
+def _words(text: str) -> list[str]:
+    return [w for w in re.findall(r"[A-Za-z]{2,}", text) if re.search(r"[aeiouy]", w.lower()) and not _function_name(w)]
+
+
+def _bare_relation(text: str) -> bool:
+    """A line with a relation sign and no word a sentence would hold ("average transmit power ≤ P", "sum of transmit
+    powers ≤ P"): it may be a constraint row of the display above even when it reads as words; "It is clear that A = 1"
+    and "For D = 4, we find" are sentences."""
+    if RELATION.search(text) is None:
+        return False
+    return not {w.lower() for w in re.findall(r"[A-Za-z]+", text)} & SENTENCE_CUES
+
+
+def _half_row(a: tuple, b: tuple) -> bool:
+    """Two boxes on one row: they overlap vertically by at least half the smaller height."""
+    return _overlap(a, b) >= 0.5 * min(a[3] - a[1], b[3] - b[1])
+
+
+def _text_below(lines: list[dict], k: int, in_column, margin: list[float]) -> bool:
+    """A line just below a display is text, not a further row of it: it starts at a paragraph margin with a word
+    ("where", "In this case"; with no relation sign: not "average power ≤ P") or is a prose row. The caller still refuses a row opening with an optimisation
+    display's word ("minimize", "subject to g(x) ≤ 0")."""
+    text = lines[k]["text"]
+    return _starts_text(lines[k], margin, 3) and not RELATION.search(text) or _row_prose(lines, k, in_column, margin)
+
+
+def _row_text(lines: list[dict], k: int, in_column) -> str:
+    return " ".join(lines[j]["text"] for j in _row(lines, k, in_column))
+
+
+def _row(lines: list[dict], k: int, in_column) -> list[int]:
+    """The column's lines sharing at least half of line k's height, left to right."""
+    box = lines[k]["box"]
+    return sorted((j for j, line in enumerate(lines) if in_column(j)
+                   and _overlap(line["box"], box) >= 0.5 * min(box[3] - box[1], line["box"][3] - line["box"][1])),
+                  key=lambda j: lines[j]["box"][0])
+
+
+def _citation(before: str) -> bool:
+    """The text before a line's `(n)` is a sentence that cites the equation ("= x. The problem in (41)"): it ends in a
+    word and reads as prose (a full stop before a capital, or two words)."""
+    last = re.search(r"([A-Za-z]+)\W*$", before)
+    if last is None or not last.group(1).islower() or not re.search(r"[aeiouy]", last.group(1)) or _function_name(last.group(1)):
+        return False
+    words = [w for w in re.findall(r"[a-z]{3,}", before) if re.search(r"[aeiouy]", w) and not _function_name(w)]
+    return re.search(r"[.;]\s+[A-Z]", before) is not None or len(words) >= 2
+
+
+def _function_name(word: str) -> bool:
+    return word in OPERATOR_NAMES or FUNCTION_NAME.fullmatch(word) is not None
+
+
+def _row_prose(lines: list[dict], k: int, in_column, margin: list[float]) -> bool:
+    """The line's row (the column's lines sharing at least half its height), read left to right, starts at a paragraph
+    margin and holds prose words: a prose line the text layer split around inline math. Function names are not words."""
+    row = _row(lines, k, in_column)
+    if len(row) < 2 or not any(abs(lines[row[0]]["box"][0] - x) <= MARGIN_SLACK for x in margin):
+        return False
+    words = [w for j in row for w in arxiv_source.PROSE_WORD.findall(lines[j]["text"]) if not _function_name(w)]
+    return len(words) >= arxiv_source.PROSE_WORDS
+
+
+def _hanging(lines: list[dict], k: int, content: list[int], body: float, lh: float, in_column) -> bool:
+    """A line in script type centred just under a narrow line of the region (an operator such as a sum): that operator's
+    lower limit (`t=1` under a sum), which belongs to the display above it. Without a relation sign (`∞`, `N`) and centred
+    over a narrow line outside the region too, it is taken for the upper limit of the operator below and left out."""
+    line = lines[k]
+    box = line["box"]
+    if not line["spans"] or any(s["size"] >= SCRIPT_SIZE * body for s in line["spans"]):
+        return False
+    centre = (box[0] + box[2]) / 2
+
+    def under(j: int) -> bool:  # `k` sits centred under line j
+        other = lines[j]["box"]
+        return (other[2] - other[0] <= 2 * lh and abs((other[0] + other[2]) / 2 - centre) <= 0.25 * (other[2] - other[0]) + 1.5
+                and -0.5 <= box[1] - other[3] <= lh)
+
+    def over(j: int) -> bool:  # `k` sits centred over line j
+        other = lines[j]["box"]
+        return (other[2] - other[0] <= 2 * lh and abs((other[0] + other[2]) / 2 - centre) <= 0.25 * (other[2] - other[0]) + 1.5
+                and -0.5 <= other[1] - box[3] <= lh)
+
+    return any(under(j) for j in content) and (LIMIT_RELATION.search(line["text"]) is not None
+                                                or not any(j not in content and j != k and in_column(j) and over(j) for j in range(len(lines))))
+
+
+def _claimed(line: dict, claimed: list[tuple], numbers: set, lines: list[dict], i: int, in_column) -> bool:
+    """The line belongs to another equation: it shares a row with another number line of its column, or lies on an
+    earlier region."""
+    box = line["box"]
+    if any(j != i and in_column(j) and _overlap(lines[j]["box"], box) >= 0.5 * min(box[3] - box[1], lines[j]["box"][3] - lines[j]["box"][1])
+           for j in numbers):
+        return True
+    return any(_touches(box, (c[0], c[1] + 0.5, c[2], c[3] - 0.5)) for c in claimed)
+
+
+def _region(lines, i, only, col, columns, gutter, lh, numbers, taken, margin=(), claimed=(), body=10.0) -> dict | None:
     number = lines[i]
     in_column = lambda k: _column(lines[k]["box"], columns) == col  # noqa: E731
     if only:
@@ -286,34 +532,68 @@ def _region(lines, i, only, col, columns, gutter, lh, numbers, taken) -> dict | 
             return None
     else:
         content = [i]
+    ceiling = None  # the bottom of a line that ended the growth upward: nothing starting above it joins
     while len(content) < MAX_REGION_LINES:
         top = min(lines[k]["box"][1] for k in content)
         bottom = max(lines[k]["box"][3] for k in content)
         band = sorted((k for k, line in enumerate(lines) if k not in content and k != i and line["box"][3] > top - GAP_LINES * lh
-                       and line["box"][1] < bottom and (in_column(k) or _crosses(line["box"], gutter))),
+                       and line["box"][1] < bottom and (ceiling is None or line["box"][1] >= ceiling - 0.5)
+                       and (in_column(k) or _crosses(line["box"], gutter))),
                       key=lambda k: -lines[k]["box"][3])
-        added, stop = 0, False
+        added, raised = 0, False
         for k in band:
             line = lines[k]
             if (k in taken or k in numbers or _crosses(line["box"], gutter) or arxiv_source.is_prose(line["text"])
-                    or line["kind"] == "heading" or pdf.HEADING.fullmatch(line["text"])):
-                stop = True
+                    or line["kind"] == "heading" or pdf.HEADING.fullmatch(line["text"]) or _row_lead_in(lines, k, in_column, margin)
+                    or _row_prose(lines, k, in_column, margin) or _claimed(line, claimed, numbers, lines, i, in_column)
+                    or (_at_margin(line, margin) and _continues(lines, k, in_column))):
+                # Lines below it that start inside the region (a denominator under the number's row) may still join.
+                ceiling, raised = line["box"][3] if ceiling is None else max(ceiling, line["box"][3]), True
                 break
             content.append(k)
             added += 1
             if len(content) >= MAX_REGION_LINES:
                 break
-        if stop or not added:
+        if not added and not raised:
             break
+    span = _union([lines[k]["box"] for k in content + [i]])
+    content += [k for k, line in enumerate(lines) if k not in content and k != i and k not in taken and k not in numbers
+                and span[1] <= line["box"][1] <= span[3] + lh and in_column(k) and _hanging(lines, k, content + [i], body, lh, in_column)]
+    # The lines just above the region must be text, a heading or another equation's: anything else may be a part of
+    # this equation the growth stopped short of (a line the heading pattern caught, `V Qe(t)`), and the crop would miss it.
+    # A row opening with an optimisation word ("maximize average rate", "subject to …") is never taken for text.
+    top = min(lines[k]["box"][1] for k in content + [i])
+    above = [k for k, line in enumerate(lines) if k not in content and k != i and in_column(k)
+             and top - GAP_LINES * lh < line["box"][3] <= top + 0.5]
+    unclear_above = any(not (lines[k]["kind"] == "heading" or k in taken or k in numbers
+                             or _claimed(lines[k], claimed, numbers, lines, i, in_column)
+                             or (arxiv_source.is_prose(lines[k]["text"]) or _row_lead_in(lines, k, in_column, margin, sentence=True)
+                                 or _row_prose(lines, k, in_column, margin)) and not _display_word(_row_text(lines, k, in_column)))
+                        for k in above)
     bottom = max(lines[k]["box"][3] for k in content + [i])
     below = [k for k, line in enumerate(lines) if k not in content and k != i and in_column(k)
              and bottom - 0.5 <= line["box"][1] < bottom + GAP_LINES * lh]
-    unclear = any(not arxiv_source.is_prose(lines[k]["text"]) and lines[k]["kind"] != "heading" and k not in numbers
-                  and not any(_overlap(lines[k]["box"], lines[j]["box"]) > 0 for j in numbers) for k in below)
-    return {"content": sorted(content), "unclear": unclear}
+    unclear = any(not (lines[k]["kind"] == "heading" or k in numbers
+                       or any(j != i and in_column(j) and _overlap(lines[k]["box"], lines[j]["box"]) > 0 for j in numbers)
+                       or (arxiv_source.is_prose(lines[k]["text"]) or _text_below(lines, k, in_column, margin))
+                       and not _display_word(_row_text(lines, k, in_column)) and not _bare_relation(_row_text(lines, k, in_column)))
+                  for k in below)
+    # A line beside the region on one of its rows (a label left of the display, "maximize average rate  u = v (1)") may be
+    # a part of it the growth left out as prose; only another equation's line or a number may stand there.
+    rows = [lines[k]["box"] for k in content + [i]]
+    beside = any(k not in content and k != i and in_column(k) and k not in taken and k not in numbers
+                 and not _claimed(lines[k], claimed, numbers, lines, i, in_column)
+                 and any(_half_row(lines[k]["box"], box) for box in rows)
+                 for k in range(len(lines)))
+    # A line of the region set at the paragraph margin and opening with a word is text ("where u = v", "If x = y"),
+    # not a display's name set flush left ("KAB = …"), unless it opens an optimisation display ("minimize").
+    text_inside = any(_starts_text(lines[k], margin) and re.match(r"(?=[A-Za-z]*[aeiouyAEIOUY])[A-Z]?[a-z]+\b", lines[k]["text"])
+                      and not _display_word(_row_text(lines, k, in_column)) for k in content)
+    return {"content": sorted(content), "unclear": unclear or unclear_above or beside or text_inside}
 
 
-def _candidate(page, page_number, n, lines, i, only, region, gutter, lh, body, numbers, render) -> dict[str, Any]:
+def _candidate(page, page_number, n, lines, i, only, region, gutter, lh, body, numbers, render, others=frozenset(),
+               text=None) -> dict[str, Any]:
     number = lines[i]
     if only:
         cut = tuple(number["box"])
@@ -328,13 +608,15 @@ def _candidate(page, page_number, n, lines, i, only, region, gutter, lh, body, n
                             "text_layer": "\n".join("".join(s["text"] for s in line).strip() for line in spans)}
     if not boxes:
         return item | {"refused": "region_unclear"}
-    box = _union(boxes)
-    box = (box[0] - PAD, box[1] - PAD, box[2] + PAD, box[3] + PAD)
+    core = _union(boxes)
+    box = (core[0] - PAD, core[1] - PAD, core[2] + PAD, core[3] + PAD)
     item["box"] = [round(v, 2) for v in box]
     if region["unclear"]:
         return item | {"refused": "region_unclear"}
     own = {tuple(round(v, 2) for v in s["box"]) for k in set(content) | {i} for s in lines[k]["spans"]}
-    if _crosses(box, gutter) or _other_text(page, box, own):
+    owner = {tuple(round(v, 2) for v in s["box"]): k for k, line in enumerate(lines) for s in line["spans"]}
+    grazing = _other_text(page, box, own, text)
+    if _crosses(box, gutter) or not all(_cuttable(span, core, owner, others) for span in grazing):
         return item | {"refused": "crop_has_other_text"}
     rules, other = _drawings(page, box)
     if other or any(_touches(tuple(info["bbox"]), box) for info in page.get_image_info()):
@@ -344,7 +626,8 @@ def _candidate(page, page_number, n, lines, i, only, region, gutter, lh, body, n
     dpi = crop_dpi(box)
     if dpi is None:
         return item | {"refused": "crop_too_large"}
-    recipe = {"page": page_number, "box": item["box"], "dpi": dpi, "cut": [[round(v, 2) for v in cut]] if _touches(cut, box) else []}
+    cuts = ([cut] if _touches(cut, box) else []) + grazing
+    recipe = {"page": page_number, "box": item["box"], "dpi": dpi, "cut": [[round(v, 2) for v in c] for c in cuts]}
     item["crop"] = recipe
     if not render:
         return item
@@ -354,14 +637,28 @@ def _candidate(page, page_number, n, lines, i, only, region, gutter, lh, body, n
     return item | {"png": png, "crop_sha256": hashlib.sha256(png).hexdigest()}
 
 
-def _other_text(page: pymupdf.Page, box: tuple, own: set) -> bool:
-    inner = (box[0] + 0.5, box[1] + 0.5, box[2] - 0.5, box[3] - 0.5)
-    for block in page.get_text("dict", flags=pdf.TEXT_FLAGS)["blocks"]:
+def _other_text(page: pymupdf.Page, box: tuple, own: set, blocks: list | None = None) -> list[tuple]:
+    """The boxes of text-layer spans other than the region's own that overlap the crop, up to its edge."""
+    out = []
+    for block in blocks if blocks is not None else page.get_text("dict", flags=pdf.TEXT_FLAGS)["blocks"]:
         for line in block.get("lines", []):
             for span in line["spans"]:
-                if span["text"].strip() and tuple(round(v, 2) for v in span["bbox"]) not in own and _touches(tuple(span["bbox"]), inner):
-                    return True
-    return False
+                if span["text"].strip() and tuple(round(v, 2) for v in span["bbox"]) not in own and _inside_any(tuple(span["bbox"]), box):
+                    out.append(tuple(span["bbox"]))
+    return out
+
+
+def _inside_any(a: tuple, b: tuple) -> bool:
+    """Boxes that share area: a span ending on the crop's edge puts no ink in it, one past the edge by any amount may."""
+    return a[0] < b[2] and a[2] > b[0] and a[1] < b[3] and a[3] > b[1]
+
+
+def _cuttable(span: tuple, core: tuple, owner: dict, others: set) -> bool:
+    """Another span may be whited out of the crop only when it lies in the crop's padding, at least `CUT_CLEARANCE` from
+    the equation's own type (the white box is rounded out to whole pixels), and belongs to a line another equation holds, a number line or prose. Anything else refuses the crop: it may be
+    a part of this equation the region missed."""
+    clear = (core[0] - CUT_CLEARANCE, core[1] - CUT_CLEARANCE, core[2] + CUT_CLEARANCE, core[3] + CUT_CLEARANCE)
+    return not _touches(span, clear) and owner.get(tuple(round(v, 2) for v in span)) in others
 
 
 def _drawings(page: pymupdf.Page, box: tuple) -> tuple[list[tuple], bool]:

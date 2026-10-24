@@ -69,7 +69,7 @@ Her adım dondurulmuş kuralla, 24 Ekim'in iddia ve soru setinde ölçülsün (e
 - [ ] **Hata (düzeltilmedi):** özeti geçen bir iş, indirilen PDF başka sürümse ve PDF okuması sonuçsuz kalırsa cevaptan tamamen düşüyor (`fast_answer.py::cutoff_snapshot`, kardeş sürümün özetine yalnız PDF'in hiç metni yoksa dönüyor). perishable_two'da Elicit'in en yakın makalesi bu yüzden iki koşuda da cevaba girmedi. Yalnız bu bir işte doğrulandı.
 - [ ] **Arama kaçırması:** perishable_res'te Elicit'in 10 anahtar makalesinin 5'i hiç gelmedi (OpenAlex'te var, iki koşuda aynı 5). Sebep ölçülmedi.
 - [ ] **PDF'i elle yükleme yükü:** 27 yüklemenin 19'u kapalı erişim, 7'si açık ama yalnız yayıncı sitesinde (bot koruması), 1'inin arXiv kopyası var; elle yük K sınırından değil erişimden. IEEE ağırlıklı konuda elle iş ~13–24 kalır, "3–5" hedefi arka uçla tutmuyor. Ölçülmeyen: 4 Ekim koşusunun K kaybı, kapalı işlerin yazar kopyaları.
-- [ ] **"Hepsini aç" düğmesi** (`WaitingForPdf.tsx`, `i18n.ts`, `e2e/waiting-pdf.spec.ts`): yazıldı, lint, tsc ve yeni Playwright testi geçti, **commit edilmedi** (`recursing-austin-3b8d32` çalışma klasöründe). Aynı spec'te iki eski test düşüyor (`drop zone opens…`, `L failure…`), düşme sebebi bakılmadı.
+- [x] **"Hepsini aç" düğmesi** (Waiting for your PDF): bekleyen her eserin DOI bağlantısını tek tıkla kendi sekmesinde açıyor, engellenen sekmeler sayılıyor ve sonraki tıklama yalnız onları açıyor; main'de (23440bb5, Sol 3 tur). Aynı spec'teki iki eski test D45/D46 ekran değişikliklerine göre güncellendi, spec 10/10.
 
 ### Ters atıf arama (bir ifadeyi destekleyen eserleri bulma)
 Tamamlanan:

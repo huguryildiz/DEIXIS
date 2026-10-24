@@ -167,6 +167,20 @@ def test_a_rewrite_that_fails_a_check_keeps_the_first_answer(tmp_path, case):
         store.conn.close()
 
 
+def test_a_rewrite_over_the_claim_limit_keeps_the_first_answer(tmp_path, monkeypatch):
+    """The schema allows 60 claims, the instruction 30: a rewrite published without a merge is held to the limit too."""
+    monkeypatch.setattr(contracts, "LEDGER_CLAIM_LIMIT", 1)
+    store, flow, adapter, rid, run_id, sent = setup(tmp_path, [first_answer, covered])
+    try:
+        answer = answer_of(store, rid, flow, run_id)
+        assert answer["status"] == "structurally_valid" and len(sent) == 2
+        record = coverage(answer)
+        assert record["outcome"] == "kept_first" and record["reason"] == "over_claim_limit" and record["after"]["claims"] == 2
+        assert saved_key(store, answer) == "grounded_answer" and labels(store, answer) == ["c1"]
+    finally:
+        store.conn.close()
+
+
 def inference_pair(order):
     """c1 states source one; c2 infers from sources one and three, its passages in `order`; source two unaccounted."""
     def script(si):

@@ -5386,6 +5386,8 @@ class ResearchFlow:
             return second | {"result": merged["result"]}, LEDGER_COVERAGE_KEY, record | {"outcome": "published"}
         if path is not None:
             return output, key, record | {"outcome": "kept_first", "reason": "changed_existing", "path": path}
+        if len(second["result"]["claims"]) > contracts.LEDGER_CLAIM_LIMIT:  # the schema allows more than the instruction
+            return output, key, record | {"outcome": "kept_first", "reason": "over_claim_limit"}
         if contracts.over_inference_share(second["result"]):
             return output, key, record | {"outcome": "kept_first", "reason": "over_inference_share"}
         # Limitations describe the answer as a whole, so the published answer takes the rewrite's.

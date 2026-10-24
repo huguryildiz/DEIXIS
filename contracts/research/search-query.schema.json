@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://deixis.local/contracts/research/search-query.schema.json",
   "title": "SearchQuery",
-  "description": "The keyword query of an sw discovery run, written by a model from the question alone (D92, slice 13h): terms for the setting block and the task block, at most 6 in total, and up to 3 backup terms per block. Asked once per scope revision, with at most one repair. Code counts every term, puts a backup in place of a term no record holds, and compiles the query; the model writes no operator and no query text.",
+  "description": "The keyword query of an sw discovery run, written by a model from the question alone (D92, slice 13h): the research field the question belongs to (R5), terms for the setting block and the task block, at most 6 in total, and up to 3 backup terms per block. Asked once per scope revision, with at most one repair. Code counts every term, puts a backup in place of a term no record holds, and compiles the query; the model writes no operator and no query text.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -10,6 +10,7 @@
     "step_input_id",
     "scope_revision",
     "skill_package_hash",
+    "field",
     "setting",
     "task",
     "setting_backup",
@@ -18,7 +19,7 @@
   "properties": {
     "schema_version": {
       "type": "string",
-      "const": "deixis.search_query.v1"
+      "const": "deixis.search_query.v2"
     },
     "step_input_id": {
       "$ref": "common.schema.json#/$defs/step_input_id"
@@ -28,6 +29,12 @@
     },
     "skill_package_hash": {
       "$ref": "common.schema.json#/$defs/skill_package_hash"
+    },
+    "field": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "description": "The research field the question belongs to, 1 to 4 words as its authors name it, no quotation marks, parentheses or Boolean operators. In a statement research code puts it in its own query and an author query."
     },
     "setting": {
       "type": "array",

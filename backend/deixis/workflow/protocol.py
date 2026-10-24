@@ -51,10 +51,12 @@ def _search_query(scope: dict[str, Any], vocabulary: dict[str, Any], queries: li
         return {"status": record["status"], "origin": "user", "prompt": None, "model": None, "attempts": [],
                 "plan_sha256": record["plan_sha256"],
                 "code_query_left_out": vocabulary["code_query"].get("left_out"), **_query_outcome(vocabulary, queries)}
+    # An answer written before R5 and reused for the same scope revision is a v1 answer: its own version is kept.
+    version = (record.get("answer") or {}).get("schema_version") or SCHEMA_VERSIONS["SearchQuery"]
     body = {
         "status": record["status"],
         # The prompt version: its method files, whose text `skill_package_hash` above covers, and the answer's schema.
-        "prompt": {"files": list(RUNTIME_FILES["search_query"]), "schema_version": SCHEMA_VERSIONS["SearchQuery"]},
+        "prompt": {"files": list(RUNTIME_FILES["search_query"]), "schema_version": version},
         "model": _model(step_model(scope, "search_query")),
         "attempts": record["attempts"],
     }
@@ -80,6 +82,9 @@ def _query_outcome(vocabulary: dict[str, Any], queries: list[dict[str, Any]]) ->
         # The code's own blocks as they were compiled (slice 13g), whether or not the user left them switched on.
         "code_concept_blocks": {block: [queried_form(t) for t in queried_terms(code["vocabulary"], block)]
                                 for block in ("setting", "task")},
+        # A statement research's field and author queries (R5): where the field came from and which providers took
+        # the author filter. Absent for every other research.
+        **({"statement": vocabulary["statement"]} if vocabulary.get("statement") else {}),
     }
 
 

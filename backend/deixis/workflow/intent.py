@@ -10,7 +10,8 @@ suggestion step is given a comparison frame written by code from the question of
 is the person's explicit choice, stored with the research and shown with it. `statement` (reverse citation search)
 asks one sentence, a claim: after discovery its works are checked against the sentence instead of an answer
 (`statement_check`), and the steps that choose and judge works are told the question is a claim whose topic, not whose
-direction, decides what is relevant (`STATEMENT_NOTE`).
+direction, decides what is relevant (`STATEMENT_NOTE`). The query step is also given the field the person typed
+(`field_note`, R5); without one it names the field itself.
 """
 
 from __future__ import annotations
@@ -31,6 +32,11 @@ STATEMENT_NOTE = ("Application note: this research's question is a claim to be c
                   "and judge works by whether they study the claim's topic; a work is relevant whether it agrees with "
                   "the claim, disagrees with it or says neither.")
 STATEMENT_NOTE_TASKS = ("criterion_proposal", "search_query", "abstract_screening", "fulltext_adjudication")
+
+
+def field_note(field: str) -> str:
+    """The user_steering line that gives a statement research's query step the field the person typed (R5)."""
+    return f"Application note: the person names this claim's field: {field}. Write it as `field`."
 
 
 def is_statement(store: Store, run: dict[str, Any]) -> bool:

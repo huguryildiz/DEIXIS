@@ -37,6 +37,11 @@
               "name": "publication_date",
               "value_type": "bool",
               "values": null
+            },
+            {
+              "name": "works_filter",
+              "value_type": "str",
+              "values": null
             }
           ],
           "page_gap": 0.0,

@@ -166,6 +166,8 @@ class CreateResearch(BaseModel):
     # What the research produces (UI parity S5a, F4): a drafted report, the papers only, or a study table.
     # `statement`: the question is one sentence (a claim) checked against the works found (reverse citation search).
     intent: Literal["report", "papers", "table", "compare", "statement"] = "report"
+    # A statement research's field (R5), e.g. "quantum networks"; left out, the query model names one.
+    field: str | None = Field(default=None, max_length=200)
 
 
 MODEL_ROLES = ("answer", "literature", "reviewer")
@@ -208,6 +210,13 @@ async def checked_research_models(store: Any, adapters: dict[str, Any], body: Cr
             statement.check_sentence(body.question)
         except statement.StatementTooLong as exc:
             raise HTTPException(422, str(exc)) from exc
+    if body.field is not None:
+        if body.intent != "statement":
+            raise HTTPException(422, "A field is only kept for a sentence to check")
+        try:
+            statement.check_field(body.field)
+        except statement.FieldRefused as exc:
+            raise HTTPException(422, str(exc)) from exc
     listed: dict[str, list[dict[str, Any]] | None] = {}
 
     async def check_role(connection: str, model: str, effort: str | None) -> None:
@@ -247,7 +256,8 @@ def create_research_row(store: Store, body: CreateResearch, literature_connectio
                                  body.review_mode, body.review_model, body.review_reasoning_effort,
                                  literature_connection=literature_connection, review_connection=review_connection,
                                  seed_mode=body.seed_mode,
-                                 key_terms=body.key_terms, intent=body.intent)
+                                 key_terms=body.key_terms, intent=body.intent,
+                                 statement_field=statement.check_field(body.field))
 
 
 # Request fields that carry a key or secret; a validation error never echoes them (D40).

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from datetime import date
 from typing import Any
 
@@ -149,6 +150,20 @@ async def _get(client: httpx.AsyncClient, params: dict[str, Any], headers: dict[
                access_mode: str, api_key: str | None, rate_headers: tuple[str, ...] = RATE_LIMIT_HEADERS, **kwargs):
     """One GET of `/works` through `send`, with the key passed for redaction."""
     return await send(client, WORKS_URL, params, headers, description, access_mode, rate_headers, (api_key,), **kwargs)
+
+
+AUTHOR_FILTER = "raw_author_name.search"  # matches a surname inside the author name as printed on the work
+
+
+def author_filter(names: list[str]) -> str:
+    """The `filter` value that keeps works by all of `names` (R5): one `raw_author_name.search` per surname, joined
+    by comma (AND). The filter does not fold accents ("Erçetin" and "Ercetin" find different works, read 2026-10-24),
+    so a surname with accents also asks for its unaccented spelling (`|`, OR)."""
+    parts = []
+    for name in names:
+        plain = "".join(c for c in unicodedata.normalize("NFKD", name) if not unicodedata.combining(c))
+        parts.append(f"{AUTHOR_FILTER}:{name}" + (f"|{plain}" if plain != name else ""))
+    return ",".join(parts)
 
 
 async def search_works(

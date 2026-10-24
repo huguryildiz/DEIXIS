@@ -1740,7 +1740,7 @@
    "references/search-query.md"
   ],
   "output_schema_versions": [
-   "deixis.search_query.v1"
+   "deixis.search_query.v2"
   ],
   "question": {
    "text": "SYNTHETIC: which supplementary controllers have been tested for damping subsynchronous oscillation in wind-integrated transmission grids, and what damping ratio did each one report?",

@@ -306,6 +306,7 @@ function useTypewriter(lines: string[], active: boolean): string {
 // `researches` is the shell's list (refreshed by its poll), newest first: the Resume card and the suggestions follow it.
 export function Home({ onCreated, researches }: { onCreated: (id: string) => void; researches: ResearchSummary[] }) {
   const [question, setQuestion] = useState('')
+  const [field, setField] = useState('')  // a statement's field (R5); empty: the query model names one
   const [scope, setScope] = useState<SourceScope>('academic')
   const [intent, setIntent] = useState<ResearchIntent>('report')
   // Home's real data: the latest research (Resume), stored unanswered aspects (Suggested) and the proxy setting.
@@ -454,6 +455,7 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
     let step = ''
     try {
       const view = await api.create({ question: question.trim(), source_scope: scope, intent,
+        ...(statement && scope !== 'attached' && field.trim() ? { field: field.trim() } : {}),
         seed_mode: scope === 'attached_and_academic' ? 'uploaded_seed' : 'question_only', effort, model_connection: chosen.connection, requested_model: chosen.model,
         reasoning_effort: efforts.some(e => e.id === reasoning) ? reasoning : null,
         literature_connection: literatureChoice.connection, literature_model: literatureChoice.model,
@@ -590,6 +592,11 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
         {tooLong ? t('A statement to check is at most {n} characters ({m} now).', { n: MAX_STATEMENT_CHARS, m: question.trim().length })
           : severalSentences(question) ? t('Enter one claim. This looks like more than one sentence; check each one on its own.')
           : t('One sentence, up to {n} characters. Each work found is checked for a passage that states it.', { n: MAX_STATEMENT_CHARS })}</p>}
+      {statement && scope !== 'attached' && <div className="statement-field">
+        <label htmlFor="statement-field">{t('Field (optional)')}</label>
+        <input id="statement-field" value={field} maxLength={80} autoComplete="off" placeholder={t('For example: wireless sensor networks')}
+          title={t('Searched with the sentence. Left empty, DEIXIS names the field from the sentence.')} onChange={e => setField(e.target.value)} />
+      </div>}
       {scope === 'attached_and_academic' && files.length === 0 && zotero &&
         <p className="composer-hint">{t('The imported PDFs guide the search.')}</p>}
       <div className="composer-controls">

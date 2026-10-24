@@ -71,7 +71,8 @@ def sent_plan(body):
     compiled = body.get("compiled_queries") or []
     plan = body.get("fast_path_search")
     if plan is None:
-        return [dict(q, key=f"search:{i}", arm="keyword", watchable=True, compiled_index=i) for i, q in enumerate(compiled)]
+        return [dict(q, key=f"search:{i}", arm="keyword", watchable=q.get("origin") != "author", compiled_index=i)
+                for i, q in enumerate(compiled)]
     semantic = plan["semantic"]
     sent = [{"provider_id": "openalex", "endpoint": "semantic", "query_text": semantic.get("query_text"),
              "origin": semantic.get("query_origin"), "key": "search:fast:semantic", "arm": "semantic",
@@ -79,8 +80,10 @@ def sent_plan(body):
     sent += [{"provider_id": spec["provider_id"], "endpoint": "semantic", "query_text": spec["query_text"],
               "origin": spec["origin"], "key": seed_key(spec), "arm": "seed_semantic", "watchable": False}
              for spec in plan.get("seed_semantic") or []]
-    sent += [dict(compiled[item["index"]], key=f"search:{item['index']}", arm="keyword", watchable=True,
-                  compiled_index=item["index"]) for item in plan["keywords"]]
+    # An author query (R5) is not watchable: a watch sends the query text without the author filter.
+    sent += [dict(compiled[item["index"]], key=f"search:{item['index']}", arm="keyword",
+                  watchable=compiled[item["index"]].get("origin") != "author", compiled_index=item["index"])
+             for item in plan["keywords"]]
     if plan.get("s2_bulk"):
         sent.append(dict(plan["s2_bulk"], key="search:fast:s2_bulk", arm="s2_bulk", watchable=True,
                          compiled_index=plan["s2_bulk_index"]))
@@ -151,7 +154,10 @@ def _carried(vocabulary, query):
 
     The block compiler is pure, so its prefix allocation is computed again from the vocabulary that wrote the query
     (the code's beside a model-written one, D92). Only when the text it gives is the stored text are its counts taken;
-    any other text says nothing about what the stored query holds."""
+    any other text says nothing about what the stored query holds. A statement research's author query (R5) holds
+    the field's root word alone, which the code query holding the field also carries, so it adds no pair."""
+    if query.get("origin") == "author":
+        return set()
     source = vocabulary["code_query"]["vocabulary"] if query.get("origin") == "code" else vocabulary
     groups, names = [], []
     for block in query_compiler.BLOCK_ORDER:
@@ -176,7 +182,7 @@ def plan_words(vocabulary, plan):
     sent = [spec["query"] for spec in plan["keywords"]] + ([plan["s2_bulk"]] if plan.get("s2_bulk") else [])
     carried = [_carried(vocabulary, query) for query in sent]
     known = all(c is not None for c in carried)
-    held = {(t["block"], queried_form(t)) for q in sent for t in
+    held = {(t["block"], queried_form(t)) for q in sent if q.get("origin") != "author" for t in
             (vocabulary["code_query"]["vocabulary"] if q.get("origin") == "code" else vocabulary)["terms"]
             if not t["dropped"]}
     words, seen = [], set()

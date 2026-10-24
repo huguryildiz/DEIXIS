@@ -72,10 +72,12 @@ def test_existing_facade_accepts_openalex_sort_and_publication_date():
     assert len(sent) == 1
 
 
-def test_existing_openalex_descriptor_is_revision_three_with_only_two_new_options():
+def test_existing_openalex_descriptor_is_revision_three_with_the_watch_and_author_filter_options():
     descriptor = facade.connectors()["openalex"].descriptor
     assert descriptor.adapter_revision == 3
-    assert {o.name for o in descriptor.endpoints[0].options} == {"references", "reference_count", "sort", "publication_date"}
+    # The watch added sort and publication_date; a statement research's author query (R5) added works_filter.
+    assert {o.name for o in descriptor.endpoints[0].options} == {"references", "reference_count", "sort", "publication_date",
+                                                                 "works_filter"}
     assert facade.connectors()["biorxiv"].descriptor.adapter_revision == 2
     assert facade.connectors()["biorxiv"].descriptor.endpoints[0].options == ()
 

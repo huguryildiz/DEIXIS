@@ -64,7 +64,7 @@ SCHEMA_VERSIONS = {
     "ResearchTitle": "deixis.research_title.v1",
     "VocabularyLabels": "deixis.vocabulary_labels.v1",
     "CriterionProposal": "deixis.criterion_proposal.v3",
-    "SearchQuery": "deixis.search_query.v1",
+    "SearchQuery": "deixis.search_query.v2",
     "AbstractScreening": "deixis.abstract_screening.v1",
     "FulltextAdjudication": "deixis.fulltext_adjudication.v1",
     "ReportPlanDraft": "deixis.report_plan_draft.v2",
@@ -2355,6 +2355,16 @@ def _check_search_query(draft: dict[str, Any], report: ValidationReport) -> None
             report.issues.append(Issue("empty_query_block", f"/{block}", "the block holds no term"))
     listed = chosen + [(f"{block}_backup", index, term["term"]) for block in ("setting", "task")
                        for index, term in enumerate(draft[f"{block}_backup"])]
+    # A model's query names its field (R5) under the rule a typed field meets (`statement.check_field`), so code never
+    # refuses a field the check let through; a person's saved plan has none.
+    field = draft.get("field")
+    if field is not None and (not field.strip() or _check_nonblank_text(field, "/field", report)):
+        from deixis.domain import statement
+        try:
+            if statement.check_field(field) is None:
+                report.issues.append(Issue("query_term_empty", "/field", field))
+        except statement.FieldRefused as refused:
+            report.issues.append(Issue(refused.code, "/field", field))
     seen: dict[str, str] = {}
     for block, index, term in listed:
         path = f"/{block}/{index}/term"

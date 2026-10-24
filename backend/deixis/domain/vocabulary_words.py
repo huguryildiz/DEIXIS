@@ -76,3 +76,15 @@ cause promote predict modulate determine mitigate worsen delay extend shorten bo
 accelerate slow protect outperform differ""".split()
 EFFECT_VERBS = frozenset(_EFFECT_VERB_BASES + [word + ("es" if word.endswith(("ss", "sh", "ch", "x")) else "s")
                                                for word in _EFFECT_VERB_BASES])
+
+# Verbs a claim sentence uses to say what a work did ("X schedules competing flows", "Y prove that ..."). In a statement
+# research (reverse citation search) each one ends a phrase and is dropped, so no code query copies a verb phrase
+# such as "schedule backlogs" (R5). Base and third-person forms of verbs that are rarely a noun or an adjective in a
+# title; "order", "drop", "store", "model" and every -ing and -ed form are left out for that reason.
+_STATEMENT_VERB_BASES = """support carry generate degrade prove serve maximize maximise minimize minimise schedule keep define
+reset find give let share matter prioritize prioritise show propose achieve derive introduce present develop enable
+require obtain demonstrate analyze analyse consider compute optimize optimise solve characterize characterise
+evaluate establish apply allow provide offer yield guarantee ensure exploit need""".split()
+STATEMENT_VERBS = EFFECT_VERBS | frozenset(
+    _STATEMENT_VERB_BASES + [word + ("es" if word.endswith(("ss", "sh", "ch", "x")) else "s")
+                             for word in _STATEMENT_VERB_BASES])

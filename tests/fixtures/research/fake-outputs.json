@@ -1464,10 +1464,11 @@
    "expect_ok": true,
    "expect_codes": [],
    "output": {
-    "schema_version": "deixis.search_query.v1",
+    "schema_version": "deixis.search_query.v2",
     "step_input_id": "sti_SYNTHE0002",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "field": "SYNTHETIC field",
     "setting": [
      {
       "term": "wind integrated transmission grid",
@@ -1512,10 +1513,11 @@
     "too_many_query_terms"
    ],
    "output": {
-    "schema_version": "deixis.search_query.v1",
+    "schema_version": "deixis.search_query.v2",
     "step_input_id": "sti_SYNTHE0002",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "field": "SYNTHETIC field",
     "setting": [
      {
       "term": "wind integrated transmission grid",
@@ -1575,10 +1577,11 @@
     "duplicate_query_term"
    ],
    "output": {
-    "schema_version": "deixis.search_query.v1",
+    "schema_version": "deixis.search_query.v2",
     "step_input_id": "sti_SYNTHE0002",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "field": "SYNTHETIC field",
     "setting": [
      {
       "term": "wind integrated transmission grid",
@@ -1623,10 +1626,11 @@
     "query_syntax_in_term"
    ],
    "output": {
-    "schema_version": "deixis.search_query.v1",
+    "schema_version": "deixis.search_query.v2",
     "step_input_id": "sti_SYNTHE0002",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "field": "SYNTHETIC field",
     "setting": [
      {
       "term": "\"wind farm\"",
@@ -1671,10 +1675,11 @@
     "query_term_too_long"
    ],
    "output": {
-    "schema_version": "deixis.search_query.v1",
+    "schema_version": "deixis.search_query.v2",
     "step_input_id": "sti_SYNTHE0002",
     "scope_revision": 1,
     "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "field": "SYNTHETIC field",
     "setting": [
      {
       "term": "wind integrated transmission grid",

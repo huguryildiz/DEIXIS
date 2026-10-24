@@ -287,6 +287,7 @@ class Store:
         search_workflow: str = "sw",
         key_terms: str | None = None,
         intent: str = "report",
+        statement_field: str | None = None,
     ) -> str:
         rid, ts = new_id("res"), now()
         title = provisional_title(question)
@@ -308,6 +309,7 @@ class Store:
             columns["seed_mode"] = seed_mode
             columns["search_workflow"] = search_workflow
             columns["key_terms"] = key_terms
+            columns["statement_field"] = statement_field
             names = ", ".join(columns)
             placeholders = ", ".join("?" for _ in columns)
             self.conn.execute(

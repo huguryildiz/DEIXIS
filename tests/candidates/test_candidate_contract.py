@@ -462,7 +462,7 @@ def test_query_reuses_the_search_query_bounds(mutation):
     candidate_report = verdict(si, d)
     search_si = fixture("kill_search_query")
     search_si["task_type"] = "search_query"
-    search_d = d | {"schema_version": "deixis.search_query.v1"}
+    search_d = d | {"schema_version": "deixis.search_query.v2", "field": "SYNTHETIC field"}
     search_report = verdict(search_si, search_d)
     assert query.codes() and candidate_report.codes() == search_report.codes()
 

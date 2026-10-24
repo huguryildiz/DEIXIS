@@ -140,7 +140,7 @@ def _host(url: str) -> str:
 
 CONNECTORS = {c.provider_id: c for c in (
     Connector("openalex", openalex.search_works, openalex.MAX_RESULTS, "OPENALEX_API_KEY", paging="cursor",
-              sw_options={"reference_count": True, "references": True}, options=("sort", "publication_date"),
+              sw_options={"reference_count": True, "references": True}, options=("sort", "publication_date", "works_filter"),
               host=_host(openalex.WORKS_URL), adapter_revision=3,
               endpoints={"semantic": Endpoint("single_page", 50, 50,
                          options=("reference_count", "references"), query_syntax=QuerySyntax("plain"),
@@ -257,8 +257,9 @@ def reading(query: dict[str, Any]) -> Connector:
 
 
 def endpoint_options(query: dict[str, Any]) -> dict[str, Any]:
-    """The arguments a query that names its endpoint passes to its connector's `search`; none for any other query."""
-    return {key: query[key] for key in ("endpoint", "sort") if query.get(key) is not None}
+    """The arguments a query that names its endpoint, sort or filter passes to its connector's `search` (a statement
+    research's OpenAlex author query carries `works_filter`, R5); none for any other query."""
+    return {key: query[key] for key in ("endpoint", "sort", "works_filter") if query.get(key) is not None}
 
 
 def provider_role(connector: Connector) -> str:

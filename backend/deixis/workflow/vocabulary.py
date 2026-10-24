@@ -106,6 +106,18 @@ def apply_labels(extraction: Extraction, runs: list[dict[str, str]]) -> tuple[Ex
     return labelled, records
 
 
+def extraction_of(built: dict[str, Any]) -> Extraction:
+    """The extraction a stored code vocabulary was built from, each term with its own origin, so it can be built again
+    with one phrase more (a statement research's field, R5) without asking anything it already counted."""
+    blocks: dict[str, list[str]] = {name: [] for name in BLOCK_NAMES}
+    for term in built["terms"]:
+        blocks[term["block"]].append(term["phrase"])
+    blocks["outcome"] = list(built["outcome_terms"])
+    return Extraction(language=built["language"], blocks=blocks, claim_words=list(built["claim_words"]),
+                      exclusion_words=list(built["exclusion_words"]), block_assignment=built["block_assignment"],
+                      origins={term["phrase"]: term["origin"] for term in built["terms"]})
+
+
 async def build_vocabulary(extraction: Extraction, count: Callable[[str], Awaitable[int | None]],
                            known: dict[str, int | None] | None = None) -> dict[str, Any]:
     """Probe the extraction's setting and task phrases and decide the form each one enters the query in.

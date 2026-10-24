@@ -138,12 +138,15 @@ def _groups(store: Store, research_id: str, revision: int, until: str | None = N
     # stored; the first and last read are the earliest and latest stamps, taken apart.
     rows.sort(key=lambda r: (r["page_number"] or 0, r["retrieved_at"], r["row_order"]))
     cards: dict[str, list[dict[str, Any]]] = {}
-    groups: dict[tuple[str, str, str], dict[str, Any]] = {}
+    groups: dict[tuple[str, str, str, str | None], dict[str, Any]] = {}
     for row in rows:
-        key = (row["run_id"], row["provider"], row["query_text"])
+        chain = row["query_text"].startswith(CHAIN_PREFIX)
+        # A statement research's author queries (R5) send one text under different author filters: the filter keeps
+        # them apart. A chain's filter changes with the work it follows, so it is not part of a chain group's key.
+        key = (row["run_id"], row["provider"], row["query_text"],
+               None if chain else _request_parts(row["request_description"]).get("filter"))
         group = groups.get(key)
         if group is None:
-            chain = row["query_text"].startswith(CHAIN_PREFIX)
             if row["run_id"] not in cards:
                 card = store.existing_step(row["run_id"], "protocol_approval")
                 cards[row["run_id"]] = (((card or {}).get("output") or {}).get("approved") or {}).get("queries") or []

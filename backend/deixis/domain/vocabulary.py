@@ -21,7 +21,7 @@ import unicodedata
 from dataclasses import dataclass, field, replace
 
 from deixis.domain.vocabulary_words import (AUXILIARIES, CUE_WORDS, EFFECT_VERBS, ENGLISH_FUNCTION_WORDS,
-                                            GENERAL_WORDS, MAX_CUE_WORDS, QUESTION_FRAMES)
+                                            GENERAL_WORDS, MAX_CUE_WORDS, QUESTION_FRAMES, STATEMENT_VERBS)
 
 ENGLISH_FUNCTION_WORD_SHARE = 0.2  # a question with accented letters is English only at or above this share
 LONG_QUESTION_WORDS = 8  # a text this long without one English function word is not an English sentence
@@ -118,18 +118,36 @@ def parse_key_terms(key_terms: str) -> Extraction:
     return _extraction("en", phrases, "user")
 
 
-def extract(question: str, language_hint: str | None = None, key_terms: str | None = None) -> Extraction | None:
+def extract(question: str, language_hint: str | None = None, key_terms: str | None = None,
+            statement: bool = False) -> Extraction | None:
     """The question's search phrases, or None when code cannot read the question and the user gave no key terms.
 
     Code never translates: a question that is not English and carries no key terms returns None, and the run pauses
-    for the user (SW2.1).
+    for the user (SW2.1). A `statement` question is a claim sentence (reverse citation search, R5): its "X et al."
+    mentions are cut out first (`statement.without_authors`), and a claim verb or a bare number ends a phrase and is
+    dropped, so "schedule competing flows" is searched as "competing flows".
     """
-    language = detect_language(question, language_hint)
+    from deixis.domain.statement import without_authors
+    # An accented surname ("Erçetin") says nothing about a claim's language, so it is read without any author mention.
+    language = detect_language(without_authors(question, pairs=True) if statement else question, language_hint)
     if key_terms and key_terms.strip():
         return replace(parse_key_terms(key_terms), language=language)
     if language != "en":
         return None
+    if statement:
+        return _extraction(language, _phrases(without_authors(question), breaks=STATEMENT_VERBS), "rule")
     return _extraction(language, _phrases(question), "rule")
+
+
+def with_field(extraction: Extraction, field: str) -> Extraction:
+    """The extraction with a statement research's field first in the setting block (R5), its origin `field`. The same
+    phrase read from the sentence leaves the list it stood in, so it stands in one block only."""
+    phrase = " ".join(field.lower().split())
+    drop = lambda items: [item for item in items if item != phrase]  # noqa: E731
+    blocks = {name: drop(items) for name, items in extraction.blocks.items()}
+    blocks["setting"] = [phrase] + blocks["setting"]
+    return replace(extraction, blocks=blocks, claim_words=drop(extraction.claim_words),
+                   exclusion_words=drop(extraction.exclusion_words), origins=extraction.origins | {phrase: "field"})
 
 
 def _extraction(language: str, phrases: list[Phrase], block_assignment: str) -> Extraction:
@@ -184,7 +202,9 @@ def _trim(words: list[str]) -> list[str]:
     return words[start:end]
 
 
-def _phrases(question: str) -> list[Phrase]:
+def _phrases(question: str, breaks: frozenset[str] = frozenset()) -> list[Phrase]:
+    """The candidate phrases; a word in `breaks`, or a bare number when `breaks` is given, ends a phrase as
+    punctuation inside a clause would and is dropped (statement questions, R5)."""
     phrases: list[Phrase] = []
     for sentence in re.split(r"(?<=[.!?])\s+", question.strip()):
         tokens = [t.lower() for t in _TOKEN.findall(_strip_frames(sentence.strip()))]
@@ -220,6 +240,9 @@ def _phrases(question: str) -> list[Phrase]:
             elif tokens[index] in ENGLISH_FUNCTION_WORDS:
                 close(None)
                 inverted = inverted or tokens[index] in AUXILIARIES
+                index += 1
+            elif breaks and (tokens[index] in breaks or tokens[index].isdigit()):
+                close(None)
                 index += 1
             elif not _WORD.fullmatch(tokens[index]):  # punctuation ends the clause and the cue with it
                 close(None)

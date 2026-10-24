@@ -34,7 +34,7 @@ def term(phrase, kind="topic", why="SYNTHETIC reason"):
 
 
 def answer(setting, task, setting_backup=(), task_backup=()):
-    return {"setting": [term(p) for p in setting], "task": [term(p) for p in task],
+    return {"field": "synthetic field", "setting": [term(p) for p in setting], "task": [term(p) for p in task],
             "setting_backup": [{"term": p} for p in setting_backup], "task_backup": [{"term": p} for p in task_backup]}
 
 
@@ -51,7 +51,7 @@ def counter(counts, default=50):
 
 def test_the_task_is_registered_with_its_schema_its_method_file_and_one_repair():
     assert contracts.TASK_OUTPUTS["search_query"] == ("SearchQuery",)
-    assert contracts.SCHEMA_VERSIONS["SearchQuery"] == "deixis.search_query.v1"
+    assert contracts.SCHEMA_VERSIONS["SearchQuery"] == "deixis.search_query.v2"
     assert RUNTIME_FILES["search_query"] == ("SKILL.md", "references/search-query.md")
     assert "search_query" in LITERATURE_TASKS  # the literature model writes the query, as it labels blocks
     assert schema_repairs("search_query") == 1
@@ -61,7 +61,7 @@ def test_the_task_is_registered_with_its_schema_its_method_file_and_one_repair()
 def test_the_method_package_is_intact_and_names_no_field():
     assert integrity_issues() == []
     text = load_skill_package().runtime_text("search_query")
-    assert "deixis.search_query.v1" in text
+    assert "deixis.search_query.v2" in text
     # The rules are generic: none of the measurement's three questions reaches the instructions.
     assert not any(word in text.lower() for word in ("quantum", "packet", "sepsis", "entanglement", "neonatal"))
 
@@ -299,7 +299,7 @@ def test_the_model_writes_the_query_and_the_code_query_is_searched_beside_it(tmp
     assert body["search_query"]["status"] == "ready" and body["search_query"]["code_query_searched"] is True
     # The prompt version is the one the model was sent, read from its StepInput and not from the package at freeze.
     assert body["search_query"]["prompt"] == {"files": ["SKILL.md", "references/search-query.md"],
-                                              "schema_version": "deixis.search_query.v1",
+                                              "schema_version": "deixis.search_query.v2",
                                               "skill_package_hash": calls(adapter)[0]["skill_package_hash"]}
     assert body["search_query"]["answer"]["setting"][0]["term"] == "synthetic setting"
     assert {q.get("origin") for q in body["compiled_queries"]} == {"model", "code"}
@@ -328,7 +328,7 @@ def test_an_answer_that_breaks_a_bound_gets_one_repair(tmp_path, monkeypatch):
             return valid_response(si)
         sent.append(si)
         if len(sent) == 1:
-            return json.dumps(envelope(si, "deixis.search_query.v1") | answer(
+            return json.dumps(envelope(si, "deixis.search_query.v2") | answer(
                 ["s one", "s two", "s three"], ["t one", "t two", "t three", "t four"]))
         return valid_response(si)
 

@@ -1397,6 +1397,7 @@ export const api = {
     literature_connection: string; literature_model: string; literature_reasoning_effort: string | null
     review_mode: ReviewMode; review_connection: string | null; review_model: string | null; review_reasoning_effort: string | null
     intent?: ResearchIntent  // default 'report'; 'papers' with source_scope 'attached' is refused (422)
+    field?: string  // a statement research's field (R5); refused (422) with another intent or with query syntax
   }) => request<ResearchView>('/api/researches', json('POST', body)),
   settings: (leaving?: AbortSignal) => read<Record<ModelRole, RoleModelSetting>>('/api/settings', leaving),
   saveModelDefault: (role: ModelRole, setting: RoleModelSetting) =>

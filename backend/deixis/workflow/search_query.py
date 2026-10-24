@@ -29,6 +29,9 @@ ATTEMPTS = 2  # the first call, and one more when the user asks for it after a f
 MAX_COUNT_REQUESTS = 24  # six chosen terms and six backups, each counted alone and with the other block
 KINDS = ("topic", "method", "population", "other")
 THRESHOLDS = {"attempts": ATTEMPTS, "max_count_requests": MAX_COUNT_REQUESTS}
+# The providers whose keyword search takes an author filter (a statement research's named authors, R5). Semantic
+# Scholar's bulk search, arXiv and the others are searched without one and named so in the vocabulary.
+AUTHOR_FILTER_PROVIDERS = ("openalex",)
 
 
 def _other(block: str) -> str:
@@ -205,9 +208,22 @@ def code_searched(vocabulary: dict[str, Any]) -> bool:
     return bool(code.get("searched")) and code.get("compiled", True)
 
 
+def with_authors_compiled(vocabulary: dict[str, Any], queries: list[dict[str, Any]]) -> dict[str, Any]:
+    """A statement research's vocabulary with the named works whose author query was compiled (`compiled`) and those
+    the request limit left out (`query_limit`), read from `queries` (R5). Any other vocabulary is returned as it is."""
+    author = (vocabulary.get("statement") or {}).get("author_query")
+    if author is None:
+        return vocabulary
+    sent = [query["authors"] for query in queries if query.get("origin") == "author"]
+    cut = [group for group in author["groups"] if group not in sent] if author.get("search") and author["providers"] else []
+    return vocabulary | {"statement": vocabulary["statement"] | {
+        "author_query": author | {"compiled": sent, "query_limit": cut}}}
+
+
 def with_compiled(vocabulary: dict[str, Any], queries: list[dict[str, Any]]) -> dict[str, Any]:
-    """The vocabulary with `code_query.compiled` set from the first round's compiled queries. The switch the user
-    sees (`searched`) is left as it is."""
+    """The vocabulary with `code_query.compiled` set from the first round's compiled queries, and a statement
+    research's author record (`with_authors_compiled`). The switch the user sees (`searched`) is left as it is."""
+    vocabulary = with_authors_compiled(vocabulary, queries)
     if "code_query" not in vocabulary:
         return vocabulary
     compiled = any(query.get("origin") == "code" for query in queries)
@@ -245,4 +261,34 @@ def compile_queries(vocabulary: dict[str, Any], providers: list[str], limit: int
         ordered += [model[provider]] if provider in model else []
         if provider in code and (provider not in model or code[provider]["query_text"] != model[provider]["query_text"]):
             ordered.append(code[provider])
-    return ordered[:limit]
+    return with_authors(vocabulary, ordered, providers, limit)
+
+
+def with_authors(vocabulary: dict[str, Any], queries: list[dict[str, Any]], providers: list[str],
+                 limit: int) -> list[dict[str, Any]]:
+    """`queries` with a statement research's author queries (R5) after the last query of each provider that takes
+    them, cut to `limit`. A research with no author query gets its queries back cut as before; `with_compiled`
+    records which named works the limit left without a query."""
+    out: list[dict[str, Any]] = []
+    for index, query in enumerate(queries):
+        out.append(query)
+        provider = query["provider_id"]
+        if all(later["provider_id"] != provider for later in queries[index + 1:]):
+            out += author_queries(vocabulary, provider, providers)
+    return out[:limit]
+
+
+def author_queries(vocabulary: dict[str, Any], provider: str, providers: list[str]) -> list[dict[str, Any]]:
+    """A statement research's author queries for `provider` (R5): one per work the sentence names, the field's root
+    word under that work's author filter, for a provider that takes one and is planned. None for any other research.
+    A field whose words were not counted has no root: its words go unquoted, so OpenAlex asks for each of them (AND)
+    rather than for the exact phrase ("quantum networks" would miss "quantum repeater networks")."""
+    author = (vocabulary.get("statement") or {}).get("author_query") or {}
+    if provider not in AUTHOR_FILTER_PROVIDERS or provider not in providers or not author.get("search"):
+        return []
+    from deixis.providers import openalex
+
+    search = author["search"]
+    return [{"provider_id": provider, "query_text": search if " " in search else quoted(search),
+             "works_filter": openalex.author_filter(names), "authors": names, "origin": "author",
+             "rationale": "Authors the sentence names, within its field"} for names in author["groups"]]

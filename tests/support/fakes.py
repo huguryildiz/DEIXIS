@@ -146,7 +146,8 @@ def valid_response(si: dict[str, Any]) -> str:
     if task == "search_query":
         # SYNTHETIC and field-independent: one term per block and one backup each, so a flow test gets a model-written
         # query whose words say nothing about any field and nothing about model behavior.
-        return json.dumps(envelope(si, "deixis.search_query.v1") | {
+        return json.dumps(envelope(si, "deixis.search_query.v2") | {
+            "field": "synthetic field",
             "setting": [{"term": "synthetic setting", "kind": "topic", "why": "SYNTHETIC setting term"}],
             "task": [{"term": "synthetic task", "kind": "topic", "why": "SYNTHETIC task term"}],
             "setting_backup": [{"term": "synthetic setting backup"}],

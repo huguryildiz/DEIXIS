@@ -15,6 +15,12 @@ block:
 - `task`: what the question looks for in that field — the problem,
   intervention or kind of method it asks about.
 
+First name the research `field` the question belongs to: 1 to 4 words, as
+the authors of that field name it (for example "wireless sensor networks",
+"cardiac surgery", "coral reef ecology"). When `user_steering` gives the field,
+write that field. The setting terms lie inside this field: a question that
+does not name its field is still searched within it.
+
 Write the query:
 
 1. Pick the best query of AT MOST 6 terms in total, with at least 1 term in
@@ -61,4 +67,4 @@ decides what is searched; leave out what only that paper names (its system,
 dataset or project names) and what it covers beyond the question.
 
 Echo `step_input_id` and `scope_revision` exactly as given, following the
-envelope rule in [SKILL.md](../SKILL.md), and set `schema_version` to `deixis.search_query.v1`.
+envelope rule in [SKILL.md](../SKILL.md), and set `schema_version` to `deixis.search_query.v2`.

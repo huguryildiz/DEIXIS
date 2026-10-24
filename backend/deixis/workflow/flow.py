@@ -28,7 +28,7 @@ import httpx
 from deixis.config import Settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition, embeddings, identity, local_embedding, ocr, pdf
-from deixis.domain import canonical, contracts, vocabulary as question_words
+from deixis.domain import canonical, contracts, statement as statement_rule, vocabulary as question_words
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS,
                                  FULLTEXT_CRITERION_PASSAGES, FULLTEXT_PASSAGES_PER_CALL, FULLTEXT_QUOTE_MIN_CHARS,
                                  FULLTEXT_RUNS, MAX_RATE_LIMIT_MODEL_RETRIES, MAX_TRANSIENT_NETWORK_RETRIES,
@@ -719,14 +719,19 @@ class ResearchFlow:
         if step["status"] == "succeeded":
             stored = step["output"]
             return self._code_proposed(run_id, stored["vocabulary"], stored["queries"])
+        statement = intent_rules.is_statement(self.store, run)
         try:
-            extraction = question_words.extract(scope["question"], scope.get("language_hint"), scope.get("key_terms"))
+            extraction = question_words.extract(scope["question"], scope.get("language_hint"), scope.get("key_terms"),
+                                                statement=statement)
         except ValueError as exc:
             self._pause(run_id, "key_terms_needed", {"error": str(exc)})
         if extraction is None:
             # Code does not translate. The run waits for the user's English terms in a new scope revision (SW2.1).
             self._pause(run_id, "key_terms_needed", {"language": scope.get("language_hint") or "other"})
         extraction, labelling = await self._vocabulary_labels(run, scope, extraction)
+        if statement and scope.get("statement_field") and extraction.block_assignment != "user":
+            # The field the person typed leads the setting block (R5); it is not labelled, the person placed it.
+            extraction = question_words.with_field(extraction, scope["statement_field"])
         self.store.start_step(step["id"])
         built = await vocabulary_rules.build_vocabulary(extraction, self._count_probe(scope, run_id))
         built["labelling"] = labelling
@@ -766,7 +771,7 @@ class ResearchFlow:
             return await self._user_search_query(run, scope, code_vocabulary, code_queries)
         step = self.store.existing_step(run_id, "search_query")
         if step is None and self.deps.settings.search_query != "model":
-            return code_vocabulary, code_queries
+            return self._code_statement(run, scope, code_vocabulary, code_queries)
         step = step or self.store.step(run_id, "search_query", "code:search_query")
         if step["status"] == "succeeded":
             stored = step["output"]
@@ -795,6 +800,7 @@ class ResearchFlow:
             # The user chose the code's query after the model's failed; the vocabulary says so wherever it is read.
             chosen = code_vocabulary | {"search_query": {"status": "failed", "choice": "code_only",
                                                          "attempts": output["attempts"]}}
+            chosen, code_queries = self._code_statement(run, scope, chosen, code_queries)
             self.store.start_step(step["id"])
             self.store.finish_step(step["id"], "succeeded", output=output | {
                 "status": "code_only", "vocabulary": chosen, "queries": code_queries})
@@ -846,7 +852,20 @@ class ResearchFlow:
                   # under a newer package, and must not credit the answer to that one.
                   "skill_package_hash": self.store.step_input_payload(answer["step_input_id"])["skill_package_hash"],
                   "answer": answer["result"]}
+        claim = None
+        if intent_rules.is_statement(self.store, run):
+            # Written on the step as soon as it is built, as the counts above are: a worker that dies before the step
+            # closes reads the field's counts and the code query back instead of asking OpenAlex again (R5).
+            saved = output.get("statement_context")
+            if saved is None or saved["attempt"] != attempt:
+                built_context = await self._statement_context(run, scope, code_vocabulary, code_queries, answer["result"])
+                saved = output["statement_context"] = {"attempt": attempt, **dict(zip(
+                    ("code_vocabulary", "code_queries", "claim"), built_context))}
+                self.store.set_step_output(step["id"], output)
+            code_vocabulary, code_queries, claim = saved["code_vocabulary"], saved["code_queries"], saved["claim"]
         built = search_query_rules.vocabulary(code_vocabulary, code_queries, checked, record)
+        if claim is not None:
+            built["statement"] = claim
         queries = search_query_rules.compile_queries(built, _planned_providers(scope), run["budget"]["max_provider_requests"])
         built = search_query_rules.with_compiled(built, queries)
         # D6, diagnosis only: the model's terms that share no word with the question and some word with the seeds.
@@ -857,6 +876,59 @@ class ResearchFlow:
             "status": "ready", "vocabulary": built, "queries": queries,
             "query_compiler": query_compiler.BLOCKS_VERSION, "seed_passages_sha256": seed_sha} | seeded)
         return self._proposed(run_id, built, queries)
+
+    async def _statement_context(self, run: dict[str, Any], scope: dict[str, Any], code_vocabulary: dict[str, Any],
+                                 code_queries: list[dict[str, Any]], answer: dict[str, Any]
+                                 ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
+        """A statement research's field and named authors beside a model-written query, and the code query with that
+        field (R5).
+
+        The field the person typed decides, and the code vocabulary already holds it (`_vocabulary`). Without one the
+        query model's `field` is used: the answer check holds it to the typed field's rule, so it is never refused
+        here. The code vocabulary is rebuilt with it first in the setting block, reading back every count it already
+        holds; nothing is sent here but the new counts.
+        """
+        if scope.get("statement_field"):
+            return code_vocabulary, code_queries, self._statement_claim(run, scope, code_vocabulary, "person")
+        field = statement_rule.check_field(answer.get("field"))
+        if field is not None:
+            extraction = vocabulary_rules.extraction_of(code_vocabulary)
+            rebuilt = await vocabulary_rules.build_vocabulary(
+                question_words.with_field(extraction, field), self._count_probe(scope, run["id"]),
+                known={probe["query"]: probe["count"] for probe in code_vocabulary["probes"]})
+            code_vocabulary = rebuilt | {"labelling": code_vocabulary.get("labelling")}
+            code_queries = query_compiler.compile_block_queries(code_vocabulary, _planned_providers(scope),
+                                                                run["budget"]["max_provider_requests"])
+        return code_vocabulary, code_queries, self._statement_claim(run, scope, code_vocabulary, "model", field)
+
+    def _statement_claim(self, run: dict[str, Any], scope: dict[str, Any], code_vocabulary: dict[str, Any],
+                         origin: str, field: str | None = None) -> dict[str, Any]:
+        """What a statement research's vocabulary records of its field and its named authors (R5). Each work the
+        sentence names gets one author query: the field's root word under the author filter, on the planned providers
+        that take one; the others are named in `no_author_filter`. With no field term (none typed and no model asked,
+        or the field's count was zero) no author query is compiled, and `left_out` says so."""
+        field = scope.get("statement_field") or field
+        term = next((t for t in code_vocabulary["terms"] if t["origin"] == "field"), None)
+        groups = statement_rule.author_groups(scope["question"])
+        search = term["root"] if term is not None and not term["dropped"] else None
+        planned = search_providers(_planned_providers(scope))
+        return {"field": {"text": field, "origin": origin if field else None},
+                "author_query": {"groups": groups, "search": search,
+                                 "left_out": None if search or not groups else "no_field_term",
+                                 "providers": [p for p in planned if p in search_query_rules.AUTHOR_FILTER_PROVIDERS],
+                                 "no_author_filter": [p for p in planned
+                                                      if p not in search_query_rules.AUTHOR_FILTER_PROVIDERS]}}
+
+    def _code_statement(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
+                        queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """The code's query alone (no model writes one, or the person chose it), with a statement research's typed
+        field, which `_vocabulary` already put in it, and its author queries (R5). Any other research: as given."""
+        if not intent_rules.is_statement(self.store, run) or vocabulary["block_assignment"] == "user":
+            return vocabulary, queries
+        vocabulary = vocabulary | {"statement": self._statement_claim(run, scope, vocabulary, "person")}
+        queries = search_query_rules.with_authors(vocabulary, queries, _planned_providers(scope),
+                                                  run["budget"]["max_provider_requests"])
+        return search_query_rules.with_authors_compiled(vocabulary, queries), queries
 
     def _user_plan_run(self, run_id: str) -> bool:
         run = self.store.run(run_id)
@@ -1314,7 +1386,9 @@ class ResearchFlow:
         model-written vocabulary's with the code's query beside it (D92), recompiled for the same providers."""
         limit = budget["max_provider_requests"]
         if not search_query_rules.is_model_written(vocabulary):
-            return vocabulary, query_compiler.compile_block_queries(vocabulary, providers, limit)
+            compiled = search_query_rules.with_authors(
+                vocabulary, query_compiler.compile_block_queries(vocabulary, providers, limit), providers, limit)
+            return search_query_rules.with_authors_compiled(vocabulary, compiled), compiled
         code = vocabulary["code_query"]
         built = vocabulary | {"code_query": code | {
             "queries": query_compiler.compile_block_queries(code["vocabulary"], providers, limit)}}
@@ -5185,7 +5259,9 @@ class ResearchFlow:
                              # A statement research's question is a claim: its terms and screening judge topic, not
                              # agreement (reverse citation search R2).
                              + ([intent_rules.STATEMENT_NOTE] if task_type in intent_rules.STATEMENT_NOTE_TASKS
-                                and intent_rules.is_statement(self.store, run) else []),
+                                and intent_rules.is_statement(self.store, run) else [])
+                             + ([intent_rules.field_note(scope["statement_field"])] if task_type == "search_query"
+                                and scope.get("statement_field") and intent_rules.is_statement(self.store, run) else []),
             # The providers a query may go to. A verification connector stays in the research's scope for the records
             # whose DOI is already known, and is never offered to the model as a place to search (D87).
             "capabilities": CAPABILITIES,

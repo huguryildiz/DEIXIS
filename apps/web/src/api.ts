@@ -1996,7 +1996,9 @@ export const screenMoreApi = {
 export type SnowballSummary = {
   round: number; seeds: number; unusable_seeds: number; seeds_without_list: number
   backward_ids: number; held: number; ambiguous_planned: number; not_requested: number; forward_seeds_not_requested: number
-  requests: { index: number; direction: 'backward' | 'forward'; status: string; seed: string | null; page: number | null; asked: number; returned: number; provider_total: number | null }[]
+  requests: { index: number; direction: 'backward' | 'forward'; status: string; seed: string | null; page: number | null; asked: number; returned: number; provider_total: number | null
+    // Why a step closed without a request; 'no_cursor': the page before it was the last one. Missing in older summaries.
+    unsent?: string | null }[]
   unsent: Record<string, number>; admissions: Partial<Record<'new' | 'seen' | 'existing' | 'ambiguous' | 'no_record' | 'unresolved', number>>
   new_works: number; planned_for_screening: number; not_screened_limit: number
   // How far the planned works' screening got: planning a work is not reading it.

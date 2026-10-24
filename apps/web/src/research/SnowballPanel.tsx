@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { GitFork, Search } from 'lucide-react'
-import { api, ApiError, screenMoreApi, snowballApi, type SnowballRound, type SnowballSeries, type SnowballView } from '../api'
+import { api, ApiError, screenMoreApi, snowballApi, type SnowballRound, type SnowballSeries, type SnowballSummary, type SnowballView } from '../api'
 import { Notice } from '../Notice'
 import { useToast } from '../Toast'
 import { t, uiLocale } from '../i18n'
@@ -161,14 +161,20 @@ function RoundView({ round, titles, note, researchId, onOpenSource, onChanged }:
   const backwardAsked = s ? s.requests.filter(q => q.direction === 'backward').reduce((n, q) => n + q.asked, 0) : 0
   const forward = s ? s.requests.filter(q => q.direction === 'forward') : []
   const sent = (status: string) => !['cancelled', 'not_started', 'pending'].includes(status)
-  const unsent = s ? Object.values(s.unsent).reduce((n, v) => n + v, 0) : 0
+  // A later page closed without a request because the page before had no cursor: that page was the last, nothing was
+  // left to ask. Summaries stored before `unsent` was kept per request only count it, under `no_cursor`.
+  const lastPageBefore = (q: SnowballSummary['requests'][number]) => q.unsent === 'no_cursor'
+    || (q.unsent === undefined && q.status === 'cancelled' && (q.page ?? 1) > 1 && !!s?.unsent.no_cursor)
+  const notNeeded = forward.filter(lastPageBefore).length
+  const notSent = forward.filter(q => !sent(q.status) && !lastPageBefore(q)).length
+  const unsent = s ? Object.entries(s.unsent).reduce((n, [why, v]) => why === 'no_cursor' ? n : n + v, 0) : 0
   const rows: [string, string][] = s ? [
     [t('Seeds'), [String(s.seeds), s.unusable_seeds ? t('{n} without an OpenAlex record', { n: s.unusable_seeds }) : '',
       s.seeds_without_list ? t('{n} whose reference list could not be read', { n: s.seeds_without_list }) : ''].filter(Boolean).join(' · ')],
     [t('Reference ids'), [t('{n} named', { n: s.backward_ids }), t('{n} already in this research', { n: s.held }), t('{n} asked', { n: backwardAsked }),
       s.not_requested ? t('{n} not asked (request limit)', { n: s.not_requested }) : ''].filter(Boolean).join(' · ')],
     [t('Citing-work pages'), [t('{n} asked', { n: forward.filter(q => sent(q.status)).length }),
-      forward.some(q => !sent(q.status)) ? t('{n} not sent', { n: forward.filter(q => !sent(q.status)).length }) : '', ...forward.filter(q => q.page === 1 && q.provider_total !== null).map(q => t('{title}: {total} citing works in OpenAlex', { title: titles.get(q.seed ?? '') ?? t('seed'), total: q.provider_total ?? 0 }))].filter(Boolean).join(' · ')],
+      notSent ? t('{n} not sent', { n: notSent }) : '', notNeeded ? t('{n} not needed (OpenAlex had no further page)', { n: notNeeded }) : '', ...forward.filter(q => q.page === 1 && q.provider_total !== null).map(q => t('{title}: {total} citing works in OpenAlex', { title: titles.get(q.seed ?? '') ?? t('seed'), total: q.provider_total ?? 0 }))].filter(Boolean).join(' · ')],
     [t('Came back'), [t('{n} new to this research', { n: a.new ?? 0 }), t('{n} already held', { n: a.existing ?? 0 }), a.seen ? t('{n} seen again this round', { n: a.seen }) : '',
       a.ambiguous ? t('{n} matching two works here (not added)', { n: a.ambiguous }) : '', a.no_record ? t('{n} with no OpenAlex record', { n: a.no_record }) : '',
       a.unresolved ? t('{n} unresolved (incomplete answer)', { n: a.unresolved }) : '', unsent ? t('{n} requests not sent', { n: unsent }) : ''].filter(Boolean).join(' · ')],

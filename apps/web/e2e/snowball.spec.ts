@@ -27,7 +27,7 @@ class Server {
     this.dataDir = mkdtempSync(path.join(tmpdir(), 'deixis-snowball-'))
     this.proc = spawn(process.env.DEIXIS_TEST_PYTHON ?? path.join(REPO, '.venv/bin/python'),
       [path.join(REPO, 'tests/acceptance/fixture_server.py'), '--data-dir', this.dataDir, '--port', String(PORT)],
-      { cwd: REPO, env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: `${REPO}/backend:${REPO}` }, stdio: 'inherit' })
+      { cwd: REPO, env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: `${REPO}/backend:${REPO}`, OPENALEX_API_KEY: 'SYNTHETIC-key' }, stdio: 'inherit' })
     await expect.poll(async () => { try { return (await fetch(`${URL}/api/health`)).ok } catch { return false } }).toBe(true)
   }
   async stop() {
@@ -116,7 +116,8 @@ test.describe('citation snowballing', () => {
     expect([s.new_works, s.planned_for_screening, s.screening.model_read]).toEqual([4, 4, 4])
     expect(s.candidates).toHaveLength(2)
     const forwardPages = s.requests.filter(q => q.direction === 'forward')
-    expect(forwardPages).toHaveLength(1)
+    // With a key a second page is planned; the fixture's three citing works fit on page 1, so it has no cursor to send.
+    expect(forwardPages.map(q => [q.page, q.status, q.unsent])).toEqual([[1, 'succeeded', null], [2, 'cancelled', 'no_cursor']])
 
     // The round card says what the summary stored, each count apart.
     const card = box(page).locator('.sb-round')
@@ -128,7 +129,7 @@ test.describe('citation snowballing', () => {
     expect(asked).toBe(2)
     await expect(countRow(page, 'Seeds')).toHaveText(String(s.seeds))
     await expect(countRow(page, 'Reference ids')).toHaveText(`${s.backward_ids} named · ${s.held} already in this research · ${asked} asked`)
-    await expect(countRow(page, 'Citing-work pages')).toHaveText(`1 asked · ${SEED_TITLE}: ${forwardPages[0].provider_total} citing works in OpenAlex`)
+    await expect(countRow(page, 'Citing-work pages')).toHaveText(`1 asked · 1 not needed (OpenAlex had no further page) · ${SEED_TITLE}: ${forwardPages[0].provider_total} citing works in OpenAlex`)
     expect(forwardPages[0].provider_total).toBe(3)
     await expect(countRow(page, 'Came back')).toHaveText(`${s.admissions.new} new to this research · ${s.admissions.existing} already held`)
     await expect(countRow(page, 'Abstract screening')).toHaveText(`${s.planned_for_screening} of ${s.new_works} new works planned · ${s.screening.model_read} read by the model`)

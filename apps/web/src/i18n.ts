@@ -5380,6 +5380,7 @@ const tr: Record<string, string> = {
   'Source citation map': 'Atıf haritası',
   // Citation snowballing (research/SnowballPanel.tsx).
   '{n} not sent': '{n} gönderilmedi',
+  '{n} not needed (OpenAlex had no further page)': '{n} gerekmedi (OpenAlex’te sonraki sayfa yoktu)',
   'Abstract screening': 'Özet taraması',
   '{n} of {total} new works planned': '{total} yeni eserden {n} planlandı',
   '{n} read by the model': '{n} model tarafından okundu',

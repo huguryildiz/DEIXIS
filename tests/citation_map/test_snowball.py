@@ -225,6 +225,20 @@ def test_a_second_forward_page_waits_for_the_first_pages_cursor(lib, monkeypatch
     assert {k for k, v in admissions(lib, run["id"]).items() if v == "new"} == {"W940", "W941"}
 
 
+def test_a_second_page_after_the_last_page_is_marked_per_request_as_having_no_cursor(lib, monkeypatch):
+    """Live check 24 Oct: every citing work fit on page 1, so page 2 closed unsent, and the panel read it as a page that
+    should have gone out. The summary says, per request, why a step was not sent."""
+    monkeypatch.setenv(CONNECTORS["openalex"].key_env, "synthetic-key")
+    lib.api.add(0, refs=[])
+    lib.api.add(940)
+    lib.api.citing["W0"] = [["W940"]]
+    run = snowball.request(lib.store, lib.rid, seeds=[lib.by_oid["W0"]], directions=["forward"])
+    execute(lib, run)
+    assert [r["cursor"] for r in lib.api.sent("cites")] == ["*"]
+    requests = snowball.summary(lib.store, lib.store.run(run["id"]))["requests"]
+    assert [(r["page"], r["status"], r["unsent"]) for r in requests] == [(1, "succeeded", None), (2, "cancelled", "no_cursor")]
+
+
 def test_refusals(lib, tmp_path):
     with pytest.raises(snowball.SnowballRefused) as no_dir:
         snowball.request(lib.store, lib.rid, seeds=[lib.by_oid["W0"]], directions=[])

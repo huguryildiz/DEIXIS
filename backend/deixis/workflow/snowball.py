@@ -631,7 +631,7 @@ def summary(store: Any, run: dict[str, Any]) -> dict[str, Any]:
         per_request.append({"index": spec["index"], "direction": spec["direction"], "status": status,
                             "seed": spec.get("seed"), "page": spec.get("page"),
                             "asked": len(spec.get("batch") or []), "returned": output.get("returned", 0),
-                            "provider_total": output.get("provider_total")})
+                            "provider_total": output.get("provider_total"), "unsent": output.get("unsent")})
     limit = listing.get("screen_limit", SCREEN_LIMIT)
     planned = [item["work_id"] for item in listing["items"][:limit]]
     states = screening_states(store, rid, planned, run["id"])

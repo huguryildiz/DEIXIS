@@ -10,10 +10,10 @@ Durum kötü değil, ama dengesiz. Uygulama çalışıyor ve özellik bakımınd
 - **Ölçülen ve iyi olan:** arama sırası. 18 Ekim'de iki hazır test setinde, sahibin ayarlarıyla (Voyage embedding + Voyage reranker) DEIXIS ilk 50 sonuçta düz bir OpenAlex aramasından belirgin olarak fazla doğru makale buluyor: BioASQ'da 0,618'e karşı 0,489, LitSearch'te 0,700'e karşı 0,561. Reranker her iki sette de güven aralığı sıfırın üstünde katkı veriyor; bu yüzden artık varsayılan olarak açık (D104).
 - **Ölçülen ve zayıf olan:** elektrik mühendisliği survey seti (42 survey, gold = survey'in kaynakçası). Burada DEIXIS düz OpenAlex'i geçiyor (0,129'a karşı 0,065) ama fark küçük ve **reranker zarar veriyor** (0,091). Sebep: bu sette doğru makalelerin çoğu atıf zincirinden geliyor, reranker yalnız başlık ve özet okuduğu için zincir kayıtlarını aşağı itiyor. Varsayılanı açık yapan karar (D104) bu sonuçtan önce alındı. D106 ile reranker yalnız zincirden gelen kayıtları artık yerinde bırakıyor: kayıtlı koşular üstünde tekrar oynatınca survey setinde 0,091 → 0,111, LitSearch değişmedi; kaybın yarısı duruyor, BioASQ ölçülmedi, yeni koşu yapılmadı.
 - **Bir kez canlı denenen:** Verify Citations (taslak atıf denetimi). V5 pilotu (bir taslak, 30 çift, Sonnet 5.5; insan etiketi yok, okuyucular Sol ve Opus): D105 sonrası tekrarda kontrol tamamlanamayan %48'den %14'e indi, örneklemde yanlış "bulundu" 0, üç eşik geçti. Tek koşu; sonucun bir kısmı modelin koşudan koşuya oynamasından olabilir.
-- **Bir kez canlı denenen (2):** ters atıf arama. R4b pilotunda (10 cümle, Sonnet 5.5, okuyucular Sol ve Opus) destek sayılan 24 sonuçta 0 hata; ama kural ihtiyatlı, bilinen 7 destekleyiciden yalnız 1'i destek sayılıyor (D109).
+- **Canlı denenen (2):** ters atıf arama. R4b pilotunda destek sayılan 24 sonuçta 0 hata (D109). 24 Ekim'de sorguya alan ve yazar bilgisi eklendi (D116): bilinen 13 destekleyiciden bulunan 8 → 12 (aynı gün tekrar 9), yanlış "bütünüyle bulundu" 0, koşu ~32 USD. Kural hâlâ ihtiyatlı: destekleyicilerin çoğu "destek yeterince gösterilmedi" grubunda kalıyor.
 - **24 Ekim'de canlı denenen:** run kartı geçti (sayılar, nedenler ve alıntılar kayıtlarla birebir tuttu). Kill search ve kartopu çalışıyor ama aranan makaleleri çoğu zaman kaçırıyor: ikisi de çok sonuç bulup yalnız ilk birkaçına bakıyor (aşağıda "Sonra bakılacak"). Sonuçlar `.local/live-pilots-2026-10/RESULT.md` ve `elicit3/RESULT-2.md`. Okuma ve cevap kalitesi ayrıca ölçülmedi.
 - **Bilinen zayıflık:** cevaplar, kendilerine verilen eserlerin azını atıflıyor (D83 sonrası DBR/VBF sorusunda 13 eserden 12–13'ü, ama her koşu 30 iddia sınırına takılıyor). Raporlar model puanıyla 30 üzerinden 15–20 aldı (insan puanı yok). Paywall arkasındaki tam metinler okunamıyor; mühendislik makalelerinin çoğu özetten okunuyor.
-- **Denklemler (20 Ekim, D113):** Marker kaldırıldı (uygulamadan ve sahibin Mac'inden, ~4,3 GB). Numaralı denklemleri artık varsayılan cevap modeli sayfa kırpıntısından okuyor (yalnız Anthropic, OpenAI, Gemini API). 3 arXiv makalesinde canlı denendi: yerleştirilen 8 kaynak denklemin 8'i tam doğru, yanlış yerleştirme 0; ama 24 kaynak denklemden 14'ü bulucu tarafından hiç gönderilmedi. Asıl sınır bulucu, model değil. 24 Ekim'den beri bu istekler günlük harcamaya, eşiğe ve Settings → Usage'a sayılıyor (D115).
+- **Denklemler (D113, D118):** Marker kaldırıldı; numaralı denklemleri varsayılan cevap modeli sayfa kırpıntısından okuyor (yalnız Anthropic, OpenAI, Gemini API). 24 Ekim'de bulucu iyileşti (D118): 34 arXiv makalesindeki 452 denklemlik ölçümde tam doğru kırpıntı 185 → 274, başka satır taşıyan kırpıntı 25 → 7; D113'ün 24 denkleminde tam doğru 8 → 15. Canlı deneme (3 makale, Sonnet 5.5, 0,13 USD): kaynakla karşılaştırılabilen 19 yerleştirmenin 19'u tam doğru. Tablo başlıklı sayfalar hâlâ atlanıyor. Bu istekler artık günlük harcamaya ve Settings → Usage'a sayılıyor (D115).
 - **Özetten okunan eserler rapor tablosunda (24 Ekim, D114):** yeni oluşturulan kanıt tablolarına ve raporlarına, yalnız özeti okunan eserler de "özetten" işaretiyle giriyor. Eski tablolar değişmiyor. Sol üç turda inceledi; canlı modelle denenmedi.
 - **Paketleme yok:** P10 (macOS paketi) sahibin görsel kontrolünü bekliyor. Windows ve Linux hiç denenmedi.
 
@@ -24,6 +24,8 @@ Kısa hüküm: altyapı ve kurallar sağlam, arama ölçülmüş ve iyi; ama son
 Sahibin hedefi: yalnız görsel kontrol, ardından uygulama (P10) kısmı. Liste `.local/visual-check-2026-10-24.md` (14 Ekim'den beri değişen ekranlar, 29 madde). Build güncel; sahibin kütüphanesinin bir kopyasında 0014–0016 kayıt dosyaları sorunsuz uygulandı ve ekranlar hatasız açıldı.
 
 24 Ekim incelemesinde bulunup görsel kontrolü beklemeyen işler park edildi: D106 gerçek koşusu (~12 USD OpenAlex + 1–3 USD Voyage, 7–9 saat; ön ödemeli bakiye ~10 USD yükleme ister), arama sıralaması (ana makaleler havuzda ama ilk 50'nin dışında; sorgu 6 terim sınırı eş anlamlıları atıyor), plan aşaması süresi (sayım istekleri sırayla gidiyor, süre sınırı uygulanmıyor), 30 iddia sınırını 45'e çıkarma ölçümü (~18 koşu). Yan hata düzeldi: doğrudan yayımlanan bir yeniden yazım da 30 iddia sınırına tabi (e46aa4fa).
+
+Bugün ayrıca PDF indirmede e-posta, sunucu başına 403 sayımı ve Elsevier açık erişim yolu eklendi (D117). Main'in son CI koşusunda bir test düştü (`test_worker_survives_a_code_error_in_a_turn`); yerelde art arda ve paralel geçiyor, ara sıra düşen bir test gibi görünüyor, yeniden koşturuldu.
 
 ## Döndüğünde sırayla bakılacaklar
 
@@ -59,6 +61,16 @@ Sahibin hedefi: yalnız görsel kontrol, ardından uygulama (P10) kısmı. Liste
 
 Her adım dondurulmuş kuralla, 24 Ekim'in iddia ve soru setinde ölçülsün (etiketler `.local/live-pilots-2026-10/RULES.md` ve `elicit3/targets.json`).
 
+### Sonra bakılacak: Elicit karşılaştırması ve PDF boşluğu (24 Ekim, incelenecek)
+
+Ölçümler yapıldı, hiçbiri koda yansımadı. Ayrıntı: `.local/elicit-compare-2026-10/RESULT.md` ve `.local/pdf-gap-2026-10/RESULT.md`.
+
+- [ ] **Elicit'e karşı (5 soru, ikişer canlı koşu, Sonnet 5.5 medium):** Elicit'in anahtar makalelerinin %83'ü bulundu, %60'ı cevapta atıf aldı; 0,90'a ulaşılmadı. Atıfların 156'sı da bulunmuş pasaja bağlı. Hüküm karşılaştırması tek model okuyucudan; insan okuması yok (etiketsiz yan yana okuma dosyası istenirse hazırlanır).
+- [ ] **Hata (düzeltilmedi):** özeti geçen bir iş, indirilen PDF başka sürümse ve PDF okuması sonuçsuz kalırsa cevaptan tamamen düşüyor (`fast_answer.py::cutoff_snapshot`, kardeş sürümün özetine yalnız PDF'in hiç metni yoksa dönüyor). perishable_two'da Elicit'in en yakın makalesi bu yüzden iki koşuda da cevaba girmedi. Yalnız bu bir işte doğrulandı.
+- [ ] **Arama kaçırması:** perishable_res'te Elicit'in 10 anahtar makalesinin 5'i hiç gelmedi (OpenAlex'te var, iki koşuda aynı 5). Sebep ölçülmedi.
+- [ ] **PDF'i elle yükleme yükü:** 27 yüklemenin 19'u kapalı erişim, 7'si açık ama yalnız yayıncı sitesinde (bot koruması), 1'inin arXiv kopyası var; elle yük K sınırından değil erişimden. IEEE ağırlıklı konuda elle iş ~13–24 kalır, "3–5" hedefi arka uçla tutmuyor. Ölçülmeyen: 4 Ekim koşusunun K kaybı, kapalı işlerin yazar kopyaları.
+- [ ] **"Hepsini aç" düğmesi** (`WaitingForPdf.tsx`, `i18n.ts`, `e2e/waiting-pdf.spec.ts`): yazıldı, lint, tsc ve yeni Playwright testi geçti, **commit edilmedi** (`recursing-austin-3b8d32` çalışma klasöründe). Aynı spec'te iki eski test düşüyor (`drop zone opens…`, `L failure…`), düşme sebebi bakılmadı.
+
 ### Ters atıf arama (bir ifadeyi destekleyen eserleri bulma)
 Tamamlanan:
 - [x] Plan (Sol ile, `.local/plans/reverse-citation-search-plan.md`)
@@ -69,7 +81,7 @@ Tamamlanan:
 - [x] R4b: destek yalnız en az bir parça açıkça yazılıysa sayılıyor; aynı 10 cümlede çıta geçti (D109, `.local/reverse-citation-r4b-pilot/RESULT.md`)
 
 Yapılacak:
-- [ ] Arama kaybı: bilinen 13 destekleyiciden 5'ini arama hiç bulmuyor; alan kelimesi geçmeyen cümleler başka alanlara kayıyor (cümleye alan bağlamı eklemek denenmedi)
+- [x] Arama kaybı: alan ve yazar sorguları eklendi, bulunan 8 → 12/13 (D116, `.local/reverse-citation-r5/RESULT.md`); modelin alanı kendisinin bulduğu yol ölçülmedi
 - [ ] İhtiyatlı kuralın bedeli: "destek yeterince gösterilmedi" grubundaki 31 sonucun ~20'si aslında destekleyici; bilinen destekleyicilerden yalnız 1/7 destek sayılıyor. Tam metin okuma ya da parça bölmeyi iyileştirmek ayrı deneme ister
 - [ ] Tamamlanan kontrollerin hiçbiri tam metinle yapılmadı; hep özet
 - [ ] "Bulunamadı" çıkan 113 sonuç okunmadı (kaçırma oranı ölçülmedi)

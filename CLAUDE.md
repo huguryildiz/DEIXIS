@@ -23,6 +23,7 @@ Python 3.12, native arm64. Runtime data lives in `DEIXIS_DATA_DIR` (default `~/L
 - `deixis/contracts/research/*.schema.json` + `domain/contracts.py`: step I/O and semantic checks. A schema change also updates `tests/fixtures/research/*` and `tests/support/fakes.py::valid_response`.
 - `deixis/methods/deixis-research/`: instructions loaded into model steps; editing them changes `skill_package_hash`.
 - `providers/registry.py`: scholarly sources. `storage/schema.sql`: a schema change edits it, raises its version and adds the step for existing libraries to `storage/upgrades.py`; never add a migration file.
+- `storage/upgrades.py`: never edit an existing step's SQL, name, version or foreign-key flag; append a new step.
 - UI: read [.impeccable.md](.impeccable.md) first; the shipped screens are the visual reference (D79).
 
 ## Evidence

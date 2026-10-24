@@ -1,9 +1,10 @@
 """storage/schema.sql and the upgrade steps in storage/upgrades.py (D119) against the migration files they replaced.
 
-A new library made from schema.sql must hold what the old chain 0001 to 0016 made, object for object in the same order;
-a library made at any older version by the old files must open, upgrade on its own and keep every row, id and file; a
-library at the current version must open without any write. The old files are test fixtures (old_library.py).
-Libraries here are SYNTHETIC.
+A new library made from schema.sql must hold what a library made by the old chain 0001 to 0016 holds once today's
+upgrade steps after 16 have run, object for object in the same order; a library made at any older version by the old
+files must open, upgrade on its own and keep every row, id and file; a library at the current version must open without
+any write. The old files are test fixtures (old_library.py) and stop at version 16 for good: a later version is a step in
+upgrades.py and a change to schema.sql, never a fixture. Libraries here are SYNTHETIC.
 """
 
 import hashlib
@@ -18,7 +19,8 @@ from deixis.workflow.store import Store
 from old_library import FOREIGN_KEYS_OFF, OLD_MIGRATIONS, master, old_files, old_library, steps_through, version_of
 
 CURRENT = db.schema_version()
-HISTORICAL = range(1, CURRENT)
+LAST_FILE = 16  # the last version the old migration files reach (D119); fixed, whatever CURRENT becomes
+HISTORICAL = range(1, LAST_FILE + 1)
 PAPER = b"%PDF SYNTHETIC paper kept through the upgrade " * 40
 
 # Rows a library at version 1 can hold: a research with a paused run, a succeeded step and its stored input, and an
@@ -80,19 +82,21 @@ def test_schema_sql_names_the_version_every_step_reaches():
 
 def test_each_step_is_the_old_migration_file_word_for_word():
     """The steps were moved out of 0002 to 0016 unchanged: same name, same SQL, same foreign-key handling."""
-    for path in old_files(CURRENT):
+    for path in old_files(LAST_FILE):
         if version_of(path) == 1:
             continue
         step = upgrades.STEPS[version_of(path)]
         assert step.name == path.name
         assert (f"{FOREIGN_KEYS_OFF}\n" if step.foreign_keys_off else "") + step.sql == path.read_text(encoding="utf-8")
     assert sorted(path.name for path in OLD_MIGRATIONS.glob("*.sql")) == [db.BASELINE_NAME] + [
-        upgrades.STEPS[v].name for v in range(2, CURRENT + 1)]
+        upgrades.STEPS[v].name for v in range(2, LAST_FILE + 1)]
 
 
 def test_a_new_library_from_schema_sql_equals_one_made_by_the_old_files(tmp_path):
+    """The old files up to 16, then today's steps after 16 (none while CURRENT is 16)."""
     new = fresh_library(tmp_path / "new.sqlite")
-    old = old_library(tmp_path / "old.sqlite", CURRENT)
+    old = old_library(tmp_path / "old.sqlite", LAST_FILE)
+    assert db.migrate(old) == list(range(LAST_FILE + 1, CURRENT + 1))
     # Same objects with the same SQL text in the same creation order (the order triggers on one table fire in).
     assert master(new) == master(old)
     assert len(master(new)) > 400
@@ -109,7 +113,8 @@ def test_a_new_library_from_schema_sql_equals_one_made_by_the_old_files(tmp_path
 
 
 def test_a_new_library_is_made_in_one_transaction(tmp_path, monkeypatch):
-    """A failure while making a new library leaves no table behind (the old chain kept the files that had finished)."""
+    """A failure while making a new library leaves only the empty version table, which `migrate` creates before the
+    transaction (the old chain kept the files that had finished)."""
     real = db.SCHEMA.read_text(encoding="utf-8")
     broken = tmp_path / "schema.sql"
     broken.write_text(real + "\nINSERT INTO no_such_table VALUES (1);\n", encoding="utf-8")

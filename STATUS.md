@@ -13,19 +13,21 @@ Durum kötü değil, ama dengesiz. Uygulama çalışıyor ve özellik bakımınd
 - **Bir kez canlı denenen (2):** ters atıf arama. R4b pilotunda (10 cümle, Sonnet 5.5, okuyucular Sol ve Opus) destek sayılan 24 sonuçta 0 hata; ama kural ihtiyatlı, bilinen 7 destekleyiciden yalnız 1'i destek sayılıyor (D109).
 - **24 Ekim'de canlı denenen:** run kartı geçti (sayılar, nedenler ve alıntılar kayıtlarla birebir tuttu). Kill search ve kartopu çalışıyor ama aranan makaleleri çoğu zaman kaçırıyor: ikisi de çok sonuç bulup yalnız ilk birkaçına bakıyor (aşağıda "Sonra bakılacak"). Sonuçlar `.local/live-pilots-2026-10/RESULT.md` ve `elicit3/RESULT-2.md`. Okuma ve cevap kalitesi ayrıca ölçülmedi.
 - **Bilinen zayıflık:** cevaplar, kendilerine verilen eserlerin azını atıflıyor (D83 sonrası DBR/VBF sorusunda 13 eserden 12–13'ü, ama her koşu 30 iddia sınırına takılıyor). Raporlar model puanıyla 30 üzerinden 15–20 aldı (insan puanı yok). Paywall arkasındaki tam metinler okunamıyor; mühendislik makalelerinin çoğu özetten okunuyor.
-- **Denklemler (20 Ekim, D113):** Marker kaldırıldı (uygulamadan ve sahibin Mac'inden, ~4,3 GB). Numaralı denklemleri artık varsayılan cevap modeli sayfa kırpıntısından okuyor (yalnız Anthropic, OpenAI, Gemini API). 3 arXiv makalesinde canlı denendi: yerleştirilen 8 kaynak denklemin 8'i tam doğru, yanlış yerleştirme 0; ama 24 kaynak denklemden 14'ü bulucu tarafından hiç gönderilmedi. Asıl sınır bulucu, model değil. Bu istekler harcama görünümünde henüz yok.
+- **Denklemler (20 Ekim, D113):** Marker kaldırıldı (uygulamadan ve sahibin Mac'inden, ~4,3 GB). Numaralı denklemleri artık varsayılan cevap modeli sayfa kırpıntısından okuyor (yalnız Anthropic, OpenAI, Gemini API). 3 arXiv makalesinde canlı denendi: yerleştirilen 8 kaynak denklemin 8'i tam doğru, yanlış yerleştirme 0; ama 24 kaynak denklemden 14'ü bulucu tarafından hiç gönderilmedi. Asıl sınır bulucu, model değil. 24 Ekim'den beri bu istekler günlük harcamaya, eşiğe ve Settings → Usage'a sayılıyor (D115).
+- **Özetten okunan eserler rapor tablosunda (24 Ekim, D114):** yeni oluşturulan kanıt tablolarına ve raporlarına, yalnız özeti okunan eserler de "özetten" işaretiyle giriyor. Eski tablolar değişmiyor. Sol üç turda inceledi; canlı modelle denenmedi.
 - **Paketleme yok:** P10 (macOS paketi) sahibin görsel kontrolünü bekliyor. Windows ve Linux hiç denenmedi.
 
 Kısa hüküm: altyapı ve kurallar sağlam, arama ölçülmüş ve iyi; ama son iki haftada ölçmeden eklenen özellik sayısı fazla. Bir sonraki dönemin işi yeni özellik değil, var olanı gerçek kullanımda denemek ve paketlemek.
 
-## Yarım kalan işler (18 Ekim)
+## Görsel kontrol (24 Ekim)
 
-- **Özet kaynaklar rapor tablosunda (D99 taslağı):** yerel `abstract-rows` dalında tek commit (dcd775ca), uzakta yok, main'e girmedi. Bekleyen sahip kararına bağlı: rapor tablosu bugün yalnız tam metni okunan kaynakları alıyor, cevap özetten okunanları da atıflıyor; az tam metinli sorularda (battery_soh, higher_ed_ai) rapor tek kaynağa dayanıyor. Plan: `.local/plans/abstract-rows-plan.md`.
-- **Arama kayıpları oturumu** ("okuma payı ve sorgu talimatı"): 18 Ekim'de hâlâ çalışıyordu. Kaçan makalelerin analizi `.local/benchmark-loss-2026-10-18/RESULT.md`: 74 kayıptan 35'i hiçbir DEIXIS sorgusuna uymuyor, 39'u sorgu başına okunan 500 kaydın ötesinde kalıyor.
+Sahibin hedefi: yalnız görsel kontrol, ardından uygulama (P10) kısmı. Liste `.local/visual-check-2026-10-24.md` (14 Ekim'den beri değişen ekranlar, 29 madde). Build güncel; sahibin kütüphanesinin bir kopyasında 0014–0016 kayıt dosyaları sorunsuz uygulandı ve ekranlar hatasız açıldı.
+
+24 Ekim incelemesinde bulunup görsel kontrolü beklemeyen işler park edildi: D106 gerçek koşusu (~12 USD OpenAlex + 1–3 USD Voyage, 7–9 saat; ön ödemeli bakiye ~10 USD yükleme ister), arama sıralaması (ana makaleler havuzda ama ilk 50'nin dışında; sorgu 6 terim sınırı eş anlamlıları atıyor), plan aşaması süresi (sayım istekleri sırayla gidiyor, süre sınırı uygulanmıyor), 30 iddia sınırını 45'e çıkarma ölçümü (~18 koşu). Yan hata düzeldi: doğrudan yayımlanan bir yeniden yazım da 30 iddia sınırına tabi (e46aa4fa).
 
 ## Döndüğünde sırayla bakılacaklar
 
-1. **Yarım işleri kapat:** `abstract-rows` için kararı ver (al ya da sil); arama kayıpları oturumunun sonucunu oku.
+1. **Yarım işler kapandı (24 Ekim):** `abstract-rows` alındı (D114, fd4d37bf); arama kayıpları okundu (yukarıda).
 2. **Reranker ve zincir kayıtları:** D106 yalnız-zincir kayıtlarını korudu (kaybın yarısı). Kalan yarı, arama ile de bulunan zincir kayıtlarından geliyor; onları da korumak LitSearch'te −0,032 kaybettiriyor. Gerçek bir yeni koşu (BioASQ dahil) D106'yı doğrulamadan başka ayar yapılmasın.
 3. **Görsel kontrol, sonra P10:** sahibin göz kontrolü ve çıkan düzeltmeler; ardından macOS paketi (plan `.local/plans/p10-plan.md`, K1–K15 satırları; OpenAI, Gemini, DeepSeek fiyatları yayından önce doğrulanacak).
 4. **Ölçülmemiş özellikleri bir kez canlı dene:** ters atıf aramanın canlı pilotu R4b ile çıtayı geçti (D109: destek sayılan 24 sonuçta iki okuyucuya göre 0 hata; bedeli, okuyucuların destekleyici bulduğu ~20 sonuç "destek yeterince gösterilmedi" grubunda ve bilinen 7 destekleyiciden yalnız 1'i destek sayılıyor; arama kayıpları açık; R5 karşıtlık bloklu), kartopu okuma penceresi 24 Ekim'de ölçüldü (400'lük havuz tutulmadı, 200 kalıyor).
@@ -34,7 +36,7 @@ Kısa hüküm: altyapı ve kurallar sağlam, arama ölçülmüş ve iyi; ama son
 ## Açık işler (kısaltılmış)
 
 ### Arama
-- [ ] D106'yı gerçek bir benchmark koşusuyla doğrula (BioASQ, LitSearch, EE survey; reranker açık). Bugünkü sonuç yalnız kayıtlı puanların yeniden oynatılması. Maliyet yaklaşık 3 USD OpenAlex.
+- [ ] D106'yı gerçek bir benchmark koşusuyla doğrula (BioASQ, LitSearch, EE survey; reranker açık). Bugünkü sonuç yalnız kayıtlı puanların yeniden oynatılması. Maliyet yaklaşık 12 USD OpenAlex (24 Ekim tahmini; eski 3 USD yanlıştı), ön ödemeli bakiye yüklenmeli; eski koşu satırları önce ayrı klasöre taşınmalı.
 - [ ] Geniş sorularda bilinen ana makaleler üste çıkmıyor (battery_soh: 15 hedeften 3'ü ilk 50'de); DBR/VBF en zayıf soru, Quick modu Maulana 2019'u kaçırıyor.
 - [ ] Sorgu başına 500 kayıt okuma sınırı; BioASQ'da 480 gold makalenin 107'si hiç gelmiyor (`semantic_top` 50'de sınırlı).
 - [ ] Ücretsiz OpenAlex günlük kotası yaklaşık 20 araştırmada bitiyor; Standard koşuların 20'de 7'si 5 dakikayı geçti (sebep bakılmadı).

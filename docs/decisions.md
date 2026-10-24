@@ -4,6 +4,25 @@ Durable decisions, newest first. Each entry is short: status, what was decided, 
 
 The log restarted on 10 October 2026. D1 lists the decisions in force at that point; new decisions start at D2. The old entries (old D1 to D261) are in Git history: `docs/decisions.md` at commit `26c8214` is the last full copy. D numbers in code and test comments written before the restart point to that old log, not to the entries below.
 
+## D117 — PDF fetch: publishers' 403s are counted per host, and Elsevier's article API fetches open-access 10.1016 PDFs with the Scopus key
+Status: accepted · Date: 2026-10-24 · Writer: Claude · Reviewer: gpt-6.1-sol (f1582ec5 hazır in round 1; 8fbbf7f7 değişmeli in round 1 with three findings, fixed, hazır in round 2)
+Context: Open-access PDFs from MDPI, SAGE and ScienceDirect failed with 403 on the owner's network. The PDF fetch sent `DEIXIS/0.1 (local research workspace)` without the Settings email. Measured 24 Oct from Turkcell Superonline (AS34984), not ULAKBİM, on a seeded OpenAlex sample with Unpaywall's `url_for_pdf` (`.local/pdf-403-2026-10/RESULT.md`), each link fetched through `fetch_pdf` once with the old and once with the new User-Agent:
+
+| Group | Links tried | Old UA | New UA (email) | Screening |
+|---|---|---|---|---|
+| MDPI | 7 | 7 × 403 | 7 × 403 | Akamai |
+| SAGE group (sagepub, Wiley, T&F) | 4 of 7 | 4 × 403 | 4 × 403 | Cloudflare challenge |
+| Elsevier | 1 of 7 (6 had no PDF link in Unpaywall) | 1 × 403 | 1 × 403 | Cloudflare challenge |
+| arXiv (control) | 5 | 4 PDF, 1 timeout | 5 PDF | none |
+| PMC (control) | 2 | 2 × HTML | 2 × HTML | — |
+
+On the 20 publisher works without a PDF: SerpApi Google Scholar with DEIXIS's title rule gave 0 PDFs (1 candidate, 403); Europe PMC's existing route gave 10; SAGE's Crossref text-mining links gave 7 × 403; Elsevier's article API with the owner's Scopus key gave 7 of 7 real PDFs (owner's terminal, same network).
+Decision:
+- The PDF fetch's own client sends the Settings email in its User-Agent, read at each fetch (`create_app` wraps `fetch_pdf`). A failed `fetch_pdf` step keeps `final_url` and `media_type`, and a non-200 result keeps its content type. The run card's `fulltext_gaps` rows carry the refusing `host`, and `refused_hosts` counts 401/403 rows per host; the source shows "{host} refused ({status})". No migration (f1582ec5).
+- Elsevier's article API is a PDF route for 10.1016 DOIs (`acquisition.elsevier_lookup`, after the four lookups). It reads the article record with the Scopus key and lists a candidate only when the record's DOI is this one and Elsevier marks it open access; a non-OA article is never asked for, as a key outside an entitled network can be given less than the whole file. Without a key the lookup is stored as `auth_required` / `missing_elsevier_key` and shown as not sent. The stored address holds no key: `fetch_pdf(headers=…)` sends it only to hops on the first URL's https origin (host and port), never across a redirect to another host, port or plain http. Elsevier joins the routes a 10.1016 DOI's lookup history needs (`required_routes`), so a history from before this route is asked again once; the other-version and confirm paths fetch with the key too. Migration 0014 adds `elsevier` to the provider lists of `pdf_discovery_runs` and `pdf_candidates` (8fbbf7f7).
+- Not done, by rule: browser impersonation, solving bot challenges, paywall routes or sending requests through the institution proxy. Automatic SerpApi was not built (0 of 20).
+Limits: The email changed no refusal; it is for API politeness only. MDPI and SAGE stay without an automatic publisher route (Europe PMC recovers part of them). The Elsevier result is 7 OA articles, one network, one day; the PDFs were not checked page by page to be the whole article (the 0.25 MB one may be a meeting abstract), and no live research run has used the route yet. PMC's `pdf` links now answer HTML; an answer run's narrow trigger (403/404) does not open the lookup for that. Not measured on ULAKBİM (`measure.py ulakbim` reruns it). The 27 user uploads in the owner's library are mostly subscription papers (19), which no route here reaches (`.local/pdf-gap-2026-10/RESULT.md`).
+
 ## D116 — Check a statement: the claim's field and the authors it names reach the search
 Status: accepted · Date: 2026-10-24 · Writer: Claude · Reviewer: gpt-6.1-sol (code round 1 not ready, six findings fixed; round 2 not ready, two findings fixed; round 3 hazır)
 Context: In D109's pilot the search never found 5 of 13 known supporters: statements without the field's key word drifted to other fields, and code queries copied the sentence's author names and claim verbs. Commits and the result note call this work "R5". It is not the R5 that D109 keeps blocked (challenges, "karşı çıkıyor"); that work is unchanged and still blocked.

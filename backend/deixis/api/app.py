@@ -2520,6 +2520,7 @@ def create_app(
                 store, research_id, source_version_id, request.app.state.http, settings.papers_dir,
                 settings.contact_email, os.environ.get("SERPAPI_API_KEY"), request.app.state.fetch_pdf,
                 core_key=os.environ.get("CORE_API_KEY"), xml_fetcher=request.app.state.fetch_xml,
+                elsevier_key=os.environ.get("SCOPUS_API_KEY"),
                 recovery_dir=settings.recovery_dir,
             )
         except ValueError as exc:
@@ -2545,7 +2546,9 @@ def create_app(
             raise HTTPException(409, "This source already has a PDF")
         result = await acquisition.attach_confirmed_candidate(store, source_version_id, candidate, settings.papers_dir,
                                                               request.app.state.fetch_pdf, research_id=research_id,
-                                                              recovery_dir=settings.recovery_dir)
+                                                              recovery_dir=settings.recovery_dir,
+                                                              elsevier_key=os.environ.get("SCOPUS_API_KEY"),
+                                                              contact_email=settings.contact_email)
         if result.status != "ok":
             reason = f"HTTP {result.http_status}" if result.status == "http_error" else result.status.replace("_", " ")
             raise HTTPException(502, f"No PDF was retrieved from this link ({reason})")

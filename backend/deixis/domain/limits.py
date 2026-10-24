@@ -54,7 +54,7 @@ def service_error_kind(status: int | str | None = None, *, exc: Exception | None
         return "auth_failed"  # Gemini answers an invalid key with HTTP 400 API_KEY_INVALID
     if status in SERVICE_ERROR_KINDS:
         return str(status)
-    if status in {"not_configured", "missing_core_key", "missing_serpapi_key", "missing_contact_email"}:
+    if status in {"not_configured", "missing_core_key", "missing_elsevier_key", "missing_serpapi_key", "missing_contact_email"}:
         return "needs_key"
     if status in {"auth_required", "entitlement_missing", "email_rejected", "authentication_failed"}:
         return "auth_failed"

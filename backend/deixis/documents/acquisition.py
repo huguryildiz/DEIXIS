@@ -29,6 +29,10 @@ SERPAPI_URL = "https://serpapi.com/search.json"
 EUROPEPMC_SEARCH_URL = "https://www.ebi.ac.uk/europepmc/webservices/rest/search"
 EUROPEPMC_LANDING_URL = "https://europepmc.org/article/PMC/{pmcid}"
 XML_MEDIA_TYPES = ("application/xml", "text/xml")
+ELSEVIER_ARTICLE_URL = "https://api.elsevier.com/content/article/doi/{doi}"
+# Elsevier's own DOI prefix: its article API is asked for these alone.
+ELSEVIER_DOI_PREFIX = "10.1016/"
+ELSEVIER_KEY_HEADER = "X-ELS-APIKey"
 UNPAYWALL_URL = "https://api.unpaywall.org/v2"
 OPENALEX_SELECT = "doi,display_name,primary_location,best_oa_location,locations"
 # Crossref's IEEE text-mining links redirect to the paywalled IEEE document page instead of a PDF: all 6 tried on
@@ -358,6 +362,66 @@ async def europepmc_lookup(client: httpx.AsyncClient, doi: str, source_version: 
         return Lookup("parse_error", [], 200, type(exc).__name__)
 
 
+async def elsevier_lookup(client: httpx.AsyncClient, doi: str, source_version: str | None, api_key: str | None) -> Lookup:
+    """Elsevier's article API for a 10.1016 DOI, read with the Scopus key: a candidate only for an open-access article.
+
+    Publisher sites answer a non-browser client with a bot check (403), while this API serves the publisher's own PDF to
+    a key holder (measured 2026-10-24: 7 of 7 open-access ScienceDirect articles). Only a record whose DOI is this one
+    and that Elsevier marks open access is a candidate: for any other article a key outside an entitled network can be
+    given less than the whole file, so it is not asked. The candidate's address holds no key (`fetcher_for` sends
+    it as a header, to this host alone). The copy is the publisher's (`publishedVersion`).
+    """
+    if not api_key:
+        return Lookup("auth_required", [], error_code="missing_elsevier_key")
+    url = ELSEVIER_ARTICLE_URL.format(doi=quote(doi, safe="/"))
+    try:
+        async with fetch.host_gate(url):  # one request per host at a time (slice 13e)
+            response = await client.get(url, params={"view": "META"}, timeout=30,
+                                        headers={ELSEVIER_KEY_HEADER: api_key, "Accept": "application/json"})
+    except httpx.TimeoutException:
+        return Lookup("timeout", [], error_code="timeout")
+    except httpx.HTTPError as exc:
+        return Lookup("failed", [], error_code=type(exc).__name__)
+    if response.status_code == 404:
+        return Lookup("zero_results", [], 404)
+    if response.status_code == 429:
+        return Lookup("rate_limited", [], 429, "rate_limited")
+    if response.status_code in (401, 403):
+        return Lookup("auth_required", [], response.status_code, "auth_required")
+    if response.status_code != 200:
+        return Lookup("failed", [], response.status_code, f"http_{response.status_code}")
+    try:
+        record = response.json()["full-text-retrieval-response"]["coredata"]
+        if normalize_doi(record.get("prism:doi")) != doi:
+            return Lookup("zero_results", [], 200, "doi_mismatch")
+        if not (record.get("openaccessArticle") is True or str(record.get("openaccess")) == "1"):
+            return Lookup("zero_results", [], 200, "not_open_access")
+        landing = next((link.get("@href") for link in record.get("link") or []
+                        if isinstance(link, dict) and link.get("@rel") == "scidir"), None)
+        candidate = Candidate("elsevier", f"{url}?httpAccept=application/pdf", landing, "publishedVersion",
+                              record.get("openaccessUserLicense"), "doi_verified",
+                              _version_status("publishedVersion", source_version))
+        return Lookup("completed", [candidate], 200)
+    except (json.JSONDecodeError, TypeError, KeyError, AttributeError) as exc:
+        return Lookup("parse_error", [], 200, type(exc).__name__)
+
+
+def required_routes(doi: str | None) -> frozenset[str]:
+    """The lookups `acquire_for_source` asks for this DOI: the four, and Elsevier's for a 10.1016 DOI. A history without
+    one of them (an interruption, or a record looked up before the Elsevier route existed) is asked again."""
+    return REQUIRED_ROUTES | {"elsevier"} if (doi or "").startswith(ELSEVIER_DOI_PREFIX) else REQUIRED_ROUTES
+
+
+def fetcher_for(candidate: dict[str, Any], fetcher: Callable[[str], Awaitable[fetch.FetchResult]],
+                elsevier_key: str | None, contact_email: str | None) -> Callable[[str], Awaitable[fetch.FetchResult]]:
+    """The fetch for this candidate: an Elsevier API copy through `fetch_pdf` with the key sent to its own https origin
+    alone (`_fetch`), any other through `fetcher`."""
+    if candidate["provider"] != "elsevier":
+        return fetcher
+    return lambda url: fetch.fetch_pdf(url, email=contact_email,
+                                       headers={ELSEVIER_KEY_HEADER: elsevier_key} if elsevier_key else None)
+
+
 def fetch_xml(url: str) -> Awaitable[fetch.FetchResult]:
     """Europe PMC's full text through `fetch_file`'s protections; an answer of another type comes back `wrong_type`."""
     return fetch.fetch_file(url, XML_MEDIA_TYPES)
@@ -451,8 +515,12 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
                              recovery_dir: Path | None = None,
                              openalex_budget: OpenAlexBudget | None = None,
                              workflow_run_id: str | None = None,
-                             before_publish: Callable[[], Awaitable[None]] | None = None) -> dict[str, Any]:
+                             before_publish: Callable[[], Awaitable[None]] | None = None,
+                             elsevier_key: str | None = None) -> dict[str, Any]:
     """Look this record's DOI up in Unpaywall, OpenAlex, Crossref and CORE and retrieve a copy of its own version.
+
+    A 10.1016 DOI is also looked up in Elsevier's article API (`elsevier_lookup`, with `elsevier_key`, the Scopus key);
+    without the key that lookup is stored as `auth_required` and nothing is sent. Its PDF is tried with the others.
 
     When none of their verified copies gave a file, Europe PMC is asked once (SW21, D106): its open-access full text
     is drawn as a PDF labelled as a rendition and attached by the same version rule.
@@ -488,6 +556,8 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
     cr = await crossref_lookup(client, doi, source.get("version_label"), contact_email=contact_email)
     record("crossref", cr)
     record("core", await core_lookup(client, doi, core_key))
+    if "elsevier" in required_routes(doi):
+        record("elsevier", await elsevier_lookup(client, doi, source.get("version_label"), elsevier_key))
     if cr.record is not None:
         if before_publish is not None:
             await before_publish()
@@ -504,7 +574,7 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
             if candidate["candidate_url"] in attempted_urls:
                 continue
             attempted_urls.add(candidate["candidate_url"])
-            result = await fetcher(candidate["candidate_url"])
+            result = await fetcher_for(candidate, fetcher, elsevier_key, contact_email)(candidate["candidate_url"])
             store.record_pdf_attempt(candidate["id"], result)
             if result.status != "ok":
                 continue
@@ -536,7 +606,7 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
     if other_versions and not store.has_asset(source_version_id):
         asset_id, lookup_version_id = await _attach_other_version(
             store, research_id, source_version_id, papers_dir, fetcher, xml_fetcher, recovery_dir=recovery_dir,
-            before_publish=before_publish)
+            before_publish=before_publish, elsevier_key=elsevier_key, contact_email=contact_email)
 
     # A listed URL is not a found PDF: it may be gated, dead, HTML, or a different version. Make the fallback explicit
     # and retain its uncertain-version candidates for manual review/upload; never silently attach them.
@@ -565,7 +635,8 @@ async def _attach_other_version(store: Store, research_id: str, source_version_i
                                 fetcher: Callable[[str], Awaitable[fetch.FetchResult]],
                                 xml_fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch_xml, *,
                                 recovery_dir: Path | None = None,
-                                before_publish: Callable[[], Awaitable[None]] | None = None
+                                before_publish: Callable[[], Awaitable[None]] | None = None,
+                                elsevier_key: str | None = None, contact_email: str | None = None
                                 ) -> tuple[str | None, str | None]:
     """Attach a verified copy of another declared version to its own row under the same work; (asset, row) or (None, None).
 
@@ -597,7 +668,7 @@ async def _attach_other_version(store: Store, research_id: str, source_version_i
             return await _attach_rendition(store, version_id, candidate, data, papers_dir,
                                            research_id=research_id, recovery_dir=recovery_dir,
                                            before_publish=before_publish), version_id
-        result = await fetcher(candidate["candidate_url"])
+        result = await fetcher_for(candidate, fetcher, elsevier_key, contact_email)(candidate["candidate_url"])
         store.record_pdf_attempt(candidate["id"], result)
         if result.status != "ok":
             continue
@@ -634,9 +705,10 @@ async def _attach_pdf(store: Store, source_version_id: str, data: bytes, papers_
 
 async def attach_confirmed_candidate(store: Store, source_version_id: str, candidate: dict[str, Any], papers_dir: Any,
                                      fetcher: Callable[[str], Awaitable[fetch.FetchResult]] = fetch.fetch_pdf, *,
-                                     research_id: str | None = None, recovery_dir: Path | None = None) -> fetch.FetchResult:
+                                     research_id: str | None = None, recovery_dir: Path | None = None,
+                                     elsevier_key: str | None = None, contact_email: str | None = None) -> fetch.FetchResult:
     recovery_dir = file_restore.resolve_recovery_dir(store, papers_dir, recovery_dir)
-    result = await fetcher(candidate["candidate_url"])
+    result = await fetcher_for(candidate, fetcher, elsevier_key, contact_email)(candidate["candidate_url"])
     store.record_pdf_attempt(candidate["id"], result)
     if result.status == "ok":
         # The version claim is the user's, not the provider's, so the file is recorded as their confirmed copy.

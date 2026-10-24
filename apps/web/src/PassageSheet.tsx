@@ -75,7 +75,7 @@ type Tab = 'abs' | 'text' | 'pdf'
 // asked only when these give no file, so they are named only once their answers are recorded.
 // A lookup DEIXIS recorded without sending a request (P15): the service needed a key or contact setting that is not
 // set, or the OpenAlex daily budget was closed. It is named apart from the services that were asked.
-const NOT_SENT = new Set(['missing_contact_email', 'missing_core_key', 'missing_serpapi_key'])
+const NOT_SENT = new Set(['missing_contact_email', 'missing_core_key', 'missing_elsevier_key', 'missing_serpapi_key'])
 const notSent = (d: PdfDiscovery) => NOT_SENT.has(d.error_code ?? '') || (d.error_code === 'quota_exhausted' && d.http_status === null)
 // Whether a stored PDF has text a new answer can read, from its extraction state (a kept file can have none).
 const textState = (asset: Asset | null | undefined): 'text' | 'none' | 'pending' | null =>

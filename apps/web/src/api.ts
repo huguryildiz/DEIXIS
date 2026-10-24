@@ -457,13 +457,13 @@ export type AssetText = {
 // from the page by the server.
 export type AssetFigure = { page: number; label: string; kind?: 'figure' | 'algorithm'; width: number; height: number }
 export type PdfCandidate = {
-  id: string; provider: 'unpaywall' | 'openalex' | 'crossref' | 'core' | 'europepmc' | 'web_search'; candidate_url: string; landing_url: string | null
+  id: string; provider: 'unpaywall' | 'openalex' | 'crossref' | 'core' | 'europepmc' | 'elsevier' | 'web_search'; candidate_url: string; landing_url: string | null
   version_label: string | null; license: string | null; identity_status: 'doi_verified' | 'title_verified' | 'unverified' | 'mismatch'
   version_status: 'match' | 'different' | 'uncertain'; access_status: 'not_attempted' | 'downloaded' | 'http_error' | 'not_pdf' | 'too_large' | 'timeout' | 'blocked_url' | 'wrong_type' | 'failed'
   http_status: number | null; error_code: string | null; final_url: string | null; discovered_at: string; attempted_at: string | null
 }
 export type PdfDiscovery = {
-  provider: 'unpaywall' | 'openalex' | 'crossref' | 'core' | 'europepmc' | 'web_search'; query_text: string; status: string; result_count: number; other_title_count: number
+  provider: 'unpaywall' | 'openalex' | 'crossref' | 'core' | 'europepmc' | 'elsevier' | 'web_search'; query_text: string; status: string; result_count: number; other_title_count: number
   http_status: number | null; error_code: string | null; retry_after?: string | null; created_at: string; finished_at: string | null
 }
 export type PdfMatch = { filename: string; source_version_id: string | null; basis: 'doi' | 'title' | null }

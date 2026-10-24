@@ -447,7 +447,9 @@ def test_d10_a_missing_pdf_file_answers_404_file_missing_but_the_text_is_still_s
 # ---- O1, O12: a full, busy, read-only or damaged library in a request -----------------------------------------------
 
 def make_full(conn: sqlite3.Connection) -> None:
-    """Stop this connection's database from growing: any write that needs a new page now fails with SQLITE_FULL."""
+    """Stop this connection's database from growing: any write that needs a new page now fails with SQLITE_FULL.
+    The free pages a table rebuild in a migration leaves are given back first, or a write would fit in them."""
+    conn.execute("VACUUM")
     conn.execute(f"PRAGMA max_page_count = {conn.execute('PRAGMA page_count').fetchone()[0]}")
 
 

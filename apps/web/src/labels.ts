@@ -52,7 +52,7 @@ export const serviceErrors: Record<string, string> = {
 
 export function serviceKind(code: unknown, httpStatus?: number | null, surface = 'api'): string {
   if (typeof code === 'string' && serviceErrors[code]) return code
-  if (['not_configured', 'missing_core_key', 'missing_serpapi_key', 'missing_contact_email'].includes(String(code))) return 'needs_key'
+  if (['not_configured', 'missing_core_key', 'missing_elsevier_key', 'missing_serpapi_key', 'missing_contact_email'].includes(String(code))) return 'needs_key'
   if (['auth_required', 'entitlement_missing', 'email_rejected', 'authentication_failed'].includes(String(code))) return 'auth_failed'
   if (/timeout|timed out/i.test(String(code))) return 'timeout'
   if (/CertificateError|CERTIFICATE_VERIFY_FAILED/i.test(String(code))) return 'certificate'
@@ -424,7 +424,7 @@ export const verdictLabels: Record<Verdict, string> = {
 }
 
 const providerNames: Record<string, string> = {
-  unpaywall: 'Unpaywall', openalex: 'OpenAlex', semantic_scholar: 'Semantic Scholar', crossref: 'Crossref', arxiv: 'arXiv', biorxiv: 'bioRxiv', pubmed: 'PubMed', ieee_xplore: 'IEEE Xplore', scopus: 'Scopus', core: 'CORE', europepmc: 'Europe PMC', serpapi: 'SerpApi', web_search: 'Web Search', zotero: 'Zotero',
+  unpaywall: 'Unpaywall', openalex: 'OpenAlex', semantic_scholar: 'Semantic Scholar', crossref: 'Crossref', arxiv: 'arXiv', biorxiv: 'bioRxiv', pubmed: 'PubMed', ieee_xplore: 'IEEE Xplore', scopus: 'Scopus', core: 'CORE', europepmc: 'Europe PMC', elsevier: 'Elsevier API', serpapi: 'SerpApi', web_search: 'Web Search', zotero: 'Zotero',
 }
 export const providerName = (id: string) => providerNames[id] ?? id
 

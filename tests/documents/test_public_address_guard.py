@@ -127,3 +127,36 @@ def test_the_pdf_fetch_names_the_settings_email_in_its_user_agent(monkeypatch, e
     # A refusal keeps its status, the address that refused and the type it answered with (a bot check's HTML page).
     assert (result.status, result.http_status, result.final_url, result.media_type) == (
         "http_error", 403, "https://papers.example/a.pdf", "text/html")
+
+
+def test_extra_headers_go_to_the_first_host_alone(monkeypatch):
+    resolving_public(monkeypatch)
+    seen = []
+
+    def handler(request):
+        seen.append((request.headers["host"], request.headers.get("x-els-apikey")))
+        if request.headers["host"] == "api.publisher.example":
+            return httpx.Response(302, headers={"location": "https://cdn.elsewhere.example/a.pdf"})
+        return httpx.Response(200, headers={"content-type": "application/pdf"}, content=b"%PDF-1.4 SYNTHETIC")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    result = asyncio.run(fetch.fetch_pdf("https://api.publisher.example/a?httpAccept=application/pdf", client,
+                                         headers={"X-ELS-APIKey": "SYNTHETIC-KEY"}))
+    assert result.status == "ok"
+    assert seen == [("api.publisher.example", "SYNTHETIC-KEY"), ("cdn.elsewhere.example", None)]
+
+
+@pytest.mark.parametrize("location", ["http://api.publisher.example/a.pdf", "https://api.publisher.example:8443/a.pdf"])
+def test_extra_headers_do_not_follow_a_redirect_to_plain_http_or_another_port(monkeypatch, location):
+    resolving_public(monkeypatch)
+    seen = []
+
+    def handler(request):
+        seen.append((str(request.url.scheme), request.headers.get("x-els-apikey")))
+        if not seen[1:]:
+            return httpx.Response(302, headers={"location": location})
+        return httpx.Response(200, headers={"content-type": "application/pdf"}, content=b"%PDF-1.4 SYNTHETIC")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    result = asyncio.run(fetch.fetch_pdf("https://api.publisher.example/a", client, headers={"X-ELS-APIKey": "SYNTHETIC-KEY"}))
+    assert result.status == "ok" and [key for _, key in seen] == ["SYNTHETIC-KEY", None]

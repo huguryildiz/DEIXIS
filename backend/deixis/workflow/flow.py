@@ -2784,6 +2784,7 @@ class ResearchFlow:
             found = await acquisition.acquire_for_source(
                 self.store, run["research_id"], source["id"], self.deps.http, settings.papers_dir, settings.contact_email, None,
                 self.deps.fetch_pdf, core_key=CONNECTORS["core"].api_key(), web_search=False, other_versions=other_versions,
+                elsevier_key=CONNECTORS["scopus"].api_key(),
                 xml_fetcher=self.deps.fetch_xml, recovery_dir=settings.recovery_dir,
                 openalex_budget=self._openalex_budget_of(run["id"]), workflow_run_id=run["id"],
                 **({"before_publish": lambda: self._fast_fetch_publish(run, source["work_id"])}
@@ -3026,8 +3027,9 @@ class ResearchFlow:
         """
         latest = {d["provider"]: d for d in self.store.pdf_discoveries(research_id, svid, retry_after=True)}
         # Each lookup is stored as it returns, so an interruption can leave a lookup history that stops part way: a
-        # route of the four that has no row was never asked, and the work is not settled without it.
-        missing = len(acquisition.REQUIRED_ROUTES - latest.keys()) if latest else 0
+        # route of the ones its DOI needs that has no row was never asked, and the work is not settled without it.
+        required = acquisition.required_routes(normalize_doi(self.store.source(svid).get("doi")))
+        missing = len(required - latest.keys()) if latest else 0
         # A lookup OpenAlex's daily budget refused is asked again once its reset has passed, and until then it is
         # deferred (`_quota_deferred`), not unanswered: asking before the reset would only be refused again.
         return (missing

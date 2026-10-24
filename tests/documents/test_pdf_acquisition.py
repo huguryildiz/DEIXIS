@@ -752,3 +752,198 @@ def test_a_quota_outcome_without_an_identity_gets_one_with_or_without_a_run_or_a
     ids = [r[0] for r in store.conn.execute("SELECT attempt_id FROM pdf_discovery_runs ORDER BY rowid")]
     assert ids[0] and ids[1] and ids[0] != ids[1] and ids[2] is None  # an ordinary id-less outcome stays as it was
     connection.close()
+
+
+ELSEVIER_DOI = "10.1016/j.synth.2024.000001"
+
+
+def _elsevier_record(doi=ELSEVIER_DOI, openaccess="1"):
+    return {"full-text-retrieval-response": {"coredata": {
+        "prism:doi": doi, "openaccess": openaccess, "openaccessArticle": openaccess == "1",
+        "openaccessUserLicense": "http://creativecommons.org/licenses/by/4.0/",
+        "link": [{"@href": "https://www.sciencedirect.com/science/article/pii/S0000", "@rel": "scidir"}]}}}
+
+
+@pytest.mark.parametrize("payload, status, code", [
+    (_elsevier_record(), "completed", None),
+    (_elsevier_record(openaccess="0"), "zero_results", "not_open_access"),
+    (_elsevier_record(doi="10.1016/j.other.2024.1"), "zero_results", "doi_mismatch"),
+])
+def test_elsevier_lists_only_its_open_access_record_of_this_doi(payload, status, code):
+    sent = []
+
+    def handler(request):
+        sent.append(request)
+        return httpx.Response(200, json=payload)
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await acquisition.elsevier_lookup(client, ELSEVIER_DOI, "publishedVersion", "SYNTHETIC-KEY")
+
+    lookup = run(check())
+    assert (lookup.status, lookup.error_code) == (status, code)
+    assert sent[0].headers["x-els-apikey"] == "SYNTHETIC-KEY" and sent[0].url.params["view"] == "META"
+    if status == "completed":
+        [candidate] = lookup.candidates
+        # The stored address holds no key: the key travels as a header only.
+        assert candidate.url == f"https://api.elsevier.com/content/article/doi/{ELSEVIER_DOI}?httpAccept=application/pdf"
+        assert (candidate.version_label, candidate.identity_status, candidate.version_status) == (
+            "publishedVersion", "doi_verified", "match")
+        assert candidate.landing_url == "https://www.sciencedirect.com/science/article/pii/S0000"
+
+
+def test_elsevier_without_a_key_is_recorded_as_not_sent():
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(lambda request: pytest.fail("request sent"))) as client:
+            return await acquisition.elsevier_lookup(client, ELSEVIER_DOI, "publishedVersion", None)
+
+    assert (run(check()).status, run(check()).error_code) == ("auth_required", "missing_elsevier_key")
+
+
+def test_a_refused_elsevier_link_falls_through_to_the_api_copy_fetched_with_the_key(tmp_path, monkeypatch):
+    connection = db.connect(tmp_path / "library.sqlite")
+    db.migrate(connection)
+    store = Store(connection)
+    rid = store.create_research("Synthetic question?", "academic", "quick", ["openalex"], "fake", "m", "en")
+    record = ProviderRecord(
+        provider_record_id="W1", title="Exact synthetic title", authors=[], year=2024, venue="J", publication_type="article",
+        doi=ELSEVIER_DOI, landing_url="https://www.sciencedirect.com/science/article/pii/S0000", oa_pdf_url=None,
+        oa_pdf_version=None, version_label="publishedVersion", abstract=None, abstract_origin=None, identifiers={}, raw={},
+    )
+    svid, _ = store.upsert_provider_source("openalex", record, None)
+    store.add_to_corpus(rid, svid, "search")
+
+    def handler(request):
+        if "api.openalex.org" in request.url.host:
+            return httpx.Response(200, json={"doi": f"https://doi.org/{ELSEVIER_DOI}", "display_name": record.title,
+                "locations": [{"pdf_url": "https://www.sciencedirect.com/science/article/pii/S0000/pdf",
+                               "version": "publishedVersion"}]})
+        if "api.elsevier.com" in request.url.host:
+            return httpx.Response(200, json=_elsevier_record())
+        if "api.unpaywall.org" in request.url.host:
+            return httpx.Response(200, json={"doi": ELSEVIER_DOI, "oa_locations": [], "best_oa_location": None})
+        return httpx.Response(200, json={"message": {"DOI": ELSEVIER_DOI, "link": []}})
+
+    plain, keyed = [], []
+
+    async def fetcher(url):
+        plain.append(url)
+        return FetchResult("http_error", final_url=url, http_status=403, media_type="text/html")
+
+    async def fetch_pdf(url, client=None, deadline=None, *, email=None, headers=None):
+        keyed.append((url, email, headers))
+        return FetchResult("ok", data=make_pdf(["SYNTHETIC full text"]), final_url=url, http_status=200)
+
+    monkeypatch.setattr(acquisition.fetch, "fetch_pdf", fetch_pdf)
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await acquisition.acquire_for_source(store, rid, svid, client, tmp_path / "papers", "me@synthetic.example",
+                                                        None, fetcher, elsevier_key="SYNTHETIC-KEY")
+
+    assert run(check())["pdf_found"] is True and store.has_asset(svid)
+    assert plain == ["https://www.sciencedirect.com/science/article/pii/S0000/pdf"]
+    api = f"https://api.elsevier.com/content/article/doi/{ELSEVIER_DOI}?httpAccept=application/pdf"
+    assert keyed == [(api, "me@synthetic.example", {"X-ELS-APIKey": "SYNTHETIC-KEY"})]
+    assert [d["provider"] for d in store.pdf_discoveries(rid, svid)] == ["unpaywall", "openalex", "crossref", "core", "elsevier"]
+    assert [(c["provider"], c["access_status"]) for c in store.pdf_candidates(svid)] == [
+        ("openalex", "http_error"), ("elsevier", "downloaded")]
+    connection.close()
+
+
+def test_a_doi_of_another_publisher_does_not_ask_elsevier(tmp_path):
+    connection = db.connect(tmp_path / "library.sqlite")
+    db.migrate(connection)
+    store = Store(connection)
+    rid = store.create_research("Synthetic question?", "academic", "quick", ["openalex"], "fake", "m", "en")
+    record = ProviderRecord(
+        provider_record_id="W1", title="Exact synthetic title", authors=[], year=2024, venue="J", publication_type="article",
+        doi="10.1/test", landing_url=None, oa_pdf_url=None, oa_pdf_version=None, version_label="publishedVersion",
+        abstract=None, abstract_origin=None, identifiers={}, raw={},
+    )
+    svid, _ = store.upsert_provider_source("openalex", record, None)
+    store.add_to_corpus(rid, svid, "search")
+
+    def handler(request):
+        assert "api.elsevier.com" not in request.url.host
+        if "api.unpaywall.org" in request.url.host:
+            return httpx.Response(200, json={"doi": "10.1/test", "oa_locations": [], "best_oa_location": None})
+        if "api.openalex.org" in request.url.host:
+            return httpx.Response(200, json={"doi": "https://doi.org/10.1/test", "display_name": record.title, "locations": []})
+        if "europepmc" in request.url.host or "ebi.ac.uk" in request.url.host:
+            return httpx.Response(200, json={"resultList": {"result": []}})
+        return httpx.Response(200, json={"message": {"DOI": "10.1/test", "link": []}})
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await acquisition.acquire_for_source(store, rid, svid, client, tmp_path / "papers", None, None,
+                                                        elsevier_key="SYNTHETIC-KEY", web_search=False)
+
+    run(check())
+    assert "elsevier" not in [d["provider"] for d in store.pdf_discoveries(rid, svid)]
+    connection.close()
+
+
+def _elsevier_source(tmp_path, version_label="publishedVersion"):
+    connection = db.connect(tmp_path / "library.sqlite")
+    db.migrate(connection)
+    store = Store(connection)
+    rid = store.create_research("Synthetic question?", "academic", "quick", ["openalex"], "fake", "m", "en")
+    record = ProviderRecord(
+        provider_record_id="W1", title="Exact synthetic title", authors=[], year=2024, venue="J", publication_type="article",
+        doi=ELSEVIER_DOI, landing_url=None, oa_pdf_url=None, oa_pdf_version=None, version_label=version_label,
+        abstract=None, abstract_origin=None, identifiers={}, raw={},
+    )
+    svid, _ = store.upsert_provider_source("openalex", record, None)
+    store.add_to_corpus(rid, svid, "search")
+    return connection, store, rid, svid
+
+
+def test_a_history_from_before_the_elsevier_route_is_not_settled_for_a_10_1016_doi(tmp_path):
+    connection, store, rid, svid = _elsevier_source(tmp_path)
+    flow = _flow_over(store)
+    for provider in ("unpaywall", "openalex", "crossref", "core"):
+        store.record_pdf_discovery(rid, svid, provider, ELSEVIER_DOI, acquisition.attempted(acquisition.Lookup("zero_results", [], 200)))
+    assert flow._unanswered_lookups(rid, svid) == 1  # Elsevier's lookup was never asked
+    store.record_pdf_discovery(rid, svid, "elsevier", ELSEVIER_DOI,
+                               acquisition.attempted(acquisition.Lookup("auth_required", [], error_code="missing_elsevier_key")))
+    assert flow._unanswered_lookups(rid, svid) == 0  # without a key it is settled as not sent
+    connection.close()
+    assert acquisition.required_routes("10.1/test") == acquisition.REQUIRED_ROUTES
+
+
+def test_an_elsevier_copy_of_another_version_is_fetched_with_the_key(tmp_path, monkeypatch):
+    connection, store, rid, svid = _elsevier_source(tmp_path, version_label="acceptedVersion")
+
+    def handler(request):
+        if "api.elsevier.com" in request.url.host:
+            return httpx.Response(200, json=_elsevier_record())
+        if "api.unpaywall.org" in request.url.host:
+            return httpx.Response(200, json={"doi": ELSEVIER_DOI, "oa_locations": [], "best_oa_location": None})
+        if "api.openalex.org" in request.url.host:
+            return httpx.Response(200, json={"doi": f"https://doi.org/{ELSEVIER_DOI}", "display_name": "Exact synthetic title",
+                                             "locations": []})
+        if "ebi.ac.uk" in request.url.host:
+            return httpx.Response(200, json={"resultList": {"result": []}})
+        return httpx.Response(200, json={"message": {"DOI": ELSEVIER_DOI, "link": []}})
+
+    keyed = []
+
+    async def fetch_pdf(url, client=None, deadline=None, *, email=None, headers=None):
+        keyed.append(headers)
+        return FetchResult("ok", data=make_pdf(["SYNTHETIC full text"]), final_url=url, http_status=200)
+
+    async def plain(url):
+        pytest.fail(f"fetched without the key: {url}")
+
+    monkeypatch.setattr(acquisition.fetch, "fetch_pdf", fetch_pdf)
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await acquisition.acquire_for_source(store, rid, svid, client, tmp_path / "papers", None, None, plain,
+                                                        web_search=False, other_versions=True, elsevier_key="SYNTHETIC-KEY")
+
+    found = run(check())
+    assert found["pdf_found"] is True and found["lookup_version_id"] and not store.has_asset(svid)
+    assert keyed == [{"X-ELS-APIKey": "SYNTHETIC-KEY"}]
+    connection.close()

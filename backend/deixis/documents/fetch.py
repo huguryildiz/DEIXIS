@@ -173,16 +173,19 @@ def _pinned_request(url: str, address: str) -> tuple[str, dict[str, str], dict[s
 
 async def _fetch(url: str, client: httpx.AsyncClient | None, deadline: float, *, accept: str | None = None, gate: Any = None,
                  admit: Callable[[httpx.Response, str], FetchResult | None] | None = None,
-                 finish: Callable[[httpx.Response, bytes, str], FetchResult], email: str | None = None) -> FetchResult:
+                 finish: Callable[[httpx.Response, bytes, str], FetchResult], email: str | None = None,
+                 extra_headers: dict[str, str] | None = None) -> FetchResult:
     """The protections both fetches share: public addresses only, the checked address pinned, at most MAX_REDIRECTS
     redirects, MAX_BYTES, `host_gate` and one `asyncio.timeout(deadline)` over the whole fetch.
 
     `admit` reads a 200 response's headers before the body and may refuse it; `finish` turns the body into the
     result. A failure names the URL being read when it happened, after any redirect. `gate` is fetch_file's. Without
-    `client` the fetch opens its own, whose User-Agent names `email` (`user_agent`)."""
+    `client` the fetch opens its own, whose User-Agent names `email` (`user_agent`). `extra_headers` (an API key) go to
+    the first URL's https origin alone: a redirect to another host, port or to plain http never carries them."""
     own_client = client is None
     client = client or httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": user_agent(email)}, trust_env=False)
     current = url
+    origin = _https_origin(url) if extra_headers else None
     try:
         if gate is not None:
             await gate.before()
@@ -200,6 +203,8 @@ async def _fetch(url: str, client: httpx.AsyncClient | None, deadline: float, *,
                         except BlockedUrl as exc:
                             return FetchResult("blocked_url", final_url=current, error=str(exc))
                         target, headers, extensions = _pinned_request(current, address)
+                        if origin is not None and _https_origin(current) == origin:
+                            headers = {**extra_headers, **headers}  # never in place of Host
                         headers["Accept-Encoding"] = ACCEPT_ENCODING
                         if accept is not None:
                             headers["Accept"] = accept
@@ -272,20 +277,30 @@ async def _fetch(url: str, client: httpx.AsyncClient | None, deadline: float, *,
             await client.aclose()
 
 
+def _https_origin(url: str) -> tuple[str, int] | None:
+    """An https URL's host and effective port; None for any other scheme or a URL that cannot be read."""
+    try:
+        parts = urlsplit(url)
+        return (parts.hostname.lower(), parts.port or 443) if parts.scheme == "https" and parts.hostname else None
+    except ValueError:
+        return None
+
+
 def _media_type(response: httpx.Response) -> str:
     return response.headers.get("content-type", "").split(";")[0].strip().lower()
 
 
 async def fetch_pdf(url: str, client: httpx.AsyncClient | None = None, deadline: float = PDF_DEADLINE_SECONDS, *,
-                    email: str | None = None) -> FetchResult:
+                    email: str | None = None, headers: dict[str, str] | None = None) -> FetchResult:
     """A PDF, judged by its first bytes rather than its declared type. The whole fetch ends at `deadline`. `email` is
-    the contact address set in Settings, sent in the User-Agent as the API lookups send it."""
+    the contact address set in Settings, sent in the User-Agent as the API lookups send it; `headers` go to the URL's
+    own host alone (`_fetch`)."""
     def finish(response: httpx.Response, data: bytes, current: str) -> FetchResult:
         if not data.startswith(b"%PDF-"):
             return FetchResult("not_pdf", final_url=current, media_type=_media_type(response), http_status=200)
         return FetchResult("ok", data=data, final_url=current, media_type="application/pdf", http_status=200)
 
-    return await _fetch(url, client, deadline, accept=PDF_ACCEPT, finish=finish, email=email)
+    return await _fetch(url, client, deadline, accept=PDF_ACCEPT, finish=finish, email=email, extra_headers=headers)
 
 
 async def fetch_file(url: str, media_types: tuple[str, ...], gate: Any = None, client: httpx.AsyncClient | None = None,

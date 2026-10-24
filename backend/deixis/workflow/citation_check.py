@@ -569,6 +569,7 @@ async def acquire(store: Store, http: httpx.AsyncClient, settings: Any, fetcher:
                 found = await acquisition.acquire_for_source(
                     store, research_id, svid, http, settings.papers_dir, settings.contact_email, None, fetcher,
                     core_key=CONNECTORS["core"].api_key(), web_search=False, other_versions=True,
+                    elsevier_key=CONNECTORS["scopus"].api_key(),
                     xml_fetcher=xml_fetcher, recovery_dir=settings.recovery_dir, openalex_budget=budget,
                     workflow_run_id=run["id"])
             except (file_restore.FileRestoreRefused, text_retry.FileBusy) as exc:

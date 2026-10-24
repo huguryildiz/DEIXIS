@@ -1,6 +1,6 @@
 # DEIXIS durumu
 
-**Son güncelleme:** 20 Ekim 2026. Kararlar [docs/decisions.md](docs/decisions.md) içinde (en yenisi üstte), ölçümler [docs/benchmark.md](docs/benchmark.md) içinde. Bu dosyanın 18 Ekim öncesi uzun hali Git geçmişinde (commit 847b6b0b).
+**Son güncelleme:** 24 Ekim 2026. Kararlar [docs/decisions.md](docs/decisions.md) içinde (en yenisi üstte), ölçümler [docs/benchmark.md](docs/benchmark.md) içinde. Bu dosyanın 18 Ekim öncesi uzun hali Git geçmişinde (commit 847b6b0b).
 
 ## Kısaca: neredeyiz?
 
@@ -11,7 +11,7 @@ Durum kötü değil, ama dengesiz. Uygulama çalışıyor ve özellik bakımınd
 - **Ölçülen ve zayıf olan:** elektrik mühendisliği survey seti (42 survey, gold = survey'in kaynakçası). Burada DEIXIS düz OpenAlex'i geçiyor (0,129'a karşı 0,065) ama fark küçük ve **reranker zarar veriyor** (0,091). Sebep: bu sette doğru makalelerin çoğu atıf zincirinden geliyor, reranker yalnız başlık ve özet okuduğu için zincir kayıtlarını aşağı itiyor. Varsayılanı açık yapan karar (D104) bu sonuçtan önce alındı. D106 ile reranker yalnız zincirden gelen kayıtları artık yerinde bırakıyor: kayıtlı koşular üstünde tekrar oynatınca survey setinde 0,091 → 0,111, LitSearch değişmedi; kaybın yarısı duruyor, BioASQ ölçülmedi, yeni koşu yapılmadı.
 - **Bir kez canlı denenen:** Verify Citations (taslak atıf denetimi). V5 pilotu (bir taslak, 30 çift, Sonnet 5.5; insan etiketi yok, okuyucular Sol ve Opus): D105 sonrası tekrarda kontrol tamamlanamayan %48'den %14'e indi, örneklemde yanlış "bulundu" 0, üç eşik geçti. Tek koşu; sonucun bir kısmı modelin koşudan koşuya oynamasından olabilir.
 - **Bir kez canlı denenen (2):** ters atıf arama. R4b pilotunda (10 cümle, Sonnet 5.5, okuyucular Sol ve Opus) destek sayılan 24 sonuçta 0 hata; ama kural ihtiyatlı, bilinen 7 destekleyiciden yalnız 1'i destek sayılıyor (D109).
-- **Ölçülmeyen:** kartopu (snowballing), kill search'in Next steps girişi, run kartı. Hepsi yalnız sahte modelli testlerle ve Playwright'la sınandı. Okuma ve cevap kalitesi de ayrıca ölçülmedi: arama testleri yalnız sıralamayı ölçüyor.
+- **24 Ekim'de canlı denenen:** run kartı geçti (sayılar, nedenler ve alıntılar kayıtlarla birebir tuttu). Kill search ve kartopu çalışıyor ama aranan makaleleri çoğu zaman kaçırıyor: ikisi de çok sonuç bulup yalnız ilk birkaçına bakıyor (aşağıda "Sonra bakılacak"). Sonuçlar `.local/live-pilots-2026-10/RESULT.md` ve `elicit3/RESULT-2.md`. Okuma ve cevap kalitesi ayrıca ölçülmedi.
 - **Bilinen zayıflık:** cevaplar, kendilerine verilen eserlerin azını atıflıyor (D83 sonrası DBR/VBF sorusunda 13 eserden 12–13'ü, ama her koşu 30 iddia sınırına takılıyor). Raporlar model puanıyla 30 üzerinden 15–20 aldı (insan puanı yok). Paywall arkasındaki tam metinler okunamıyor; mühendislik makalelerinin çoğu özetten okunuyor.
 - **Denklemler (20 Ekim, D113):** Marker kaldırıldı (uygulamadan ve sahibin Mac'inden, ~4,3 GB). Numaralı denklemleri artık varsayılan cevap modeli sayfa kırpıntısından okuyor (yalnız Anthropic, OpenAI, Gemini API). 3 arXiv makalesinde canlı denendi: yerleştirilen 8 kaynak denklemin 8'i tam doğru, yanlış yerleştirme 0; ama 24 kaynak denklemden 14'ü bulucu tarafından hiç gönderilmedi. Asıl sınır bulucu, model değil. Bu istekler harcama görünümünde henüz yok.
 - **Paketleme yok:** P10 (macOS paketi) sahibin görsel kontrolünü bekliyor. Windows ve Linux hiç denenmedi.
@@ -28,7 +28,7 @@ Kısa hüküm: altyapı ve kurallar sağlam, arama ölçülmüş ve iyi; ama son
 1. **Yarım işleri kapat:** `abstract-rows` için kararı ver (al ya da sil); arama kayıpları oturumunun sonucunu oku.
 2. **Reranker ve zincir kayıtları:** D106 yalnız-zincir kayıtlarını korudu (kaybın yarısı). Kalan yarı, arama ile de bulunan zincir kayıtlarından geliyor; onları da korumak LitSearch'te −0,032 kaybettiriyor. Gerçek bir yeni koşu (BioASQ dahil) D106'yı doğrulamadan başka ayar yapılmasın.
 3. **Görsel kontrol, sonra P10:** sahibin göz kontrolü ve çıkan düzeltmeler; ardından macOS paketi (plan `.local/plans/p10-plan.md`, K1–K15 satırları; OpenAI, Gemini, DeepSeek fiyatları yayından önce doğrulanacak).
-4. **Ölçülmemiş özellikleri bir kez canlı dene:** ters atıf aramanın canlı pilotu R4b ile çıtayı geçti (D109: destek sayılan 24 sonuçta iki okuyucuya göre 0 hata; bedeli, okuyucuların destekleyici bulduğu ~20 sonuç "destek yeterince gösterilmedi" grubunda ve bilinen 7 destekleyiciden yalnız 1'i destek sayılıyor; arama kayıpları açık; R5 karşıtlık bloklu), kartopu için okuma penceresi ölçümü (havuz 200 ve 400, ikinci bir soruda).
+4. **Ölçülmemiş özellikleri bir kez canlı dene:** ters atıf aramanın canlı pilotu R4b ile çıtayı geçti (D109: destek sayılan 24 sonuçta iki okuyucuya göre 0 hata; bedeli, okuyucuların destekleyici bulduğu ~20 sonuç "destek yeterince gösterilmedi" grubunda ve bilinen 7 destekleyiciden yalnız 1'i destek sayılıyor; arama kayıpları açık; R5 karşıtlık bloklu), kartopu okuma penceresi 24 Ekim'de ölçüldü (400'lük havuz tutulmadı, 200 kalıyor).
 5. **Yeni özellik ekleme duraklaması:** gap finder, Chain of Ideas, R5 gibi fikirler yukarıdakiler bitene kadar bekler.
 
 ## Açık işler (kısaltılmış)
@@ -39,7 +39,23 @@ Kısa hüküm: altyapı ve kurallar sağlam, arama ölçülmüş ve iyi; ama son
 - [ ] Sorgu başına 500 kayıt okuma sınırı; BioASQ'da 480 gold makalenin 107'si hiç gelmiyor (`semantic_top` 50'de sınırlı).
 - [ ] Ücretsiz OpenAlex günlük kotası yaklaşık 20 araştırmada bitiyor; Standard koşuların 20'de 7'si 5 dakikayı geçti (sebep bakılmadı).
 - [ ] Tam metin sınırları (10/20/40) ölçümle seçilmedi; ULAKBİM ağından MDPI, SAGE, ScienceDirect PDF'leri 403 dönüyor.
-- [ ] Kill search: canlı kapının üçüncü iddiası (diz osteoartriti) 0/3 kaldı; genel olarak önceki çalışmayı bulup bulmadığı gösterilmedi. Ayar çalışması durduruldu.
+- [ ] Kill search ve kartopu: bulunan doğru makaleler sıralama sınırında kesiliyor (aşağıda "Sonra bakılacak").
+
+### Sonra bakılacak: bulunan makale sıralamada kesiliyor (24 Ekim)
+
+İki özellik de aynı yerde takılıyor. Arama doğru makaleyi getiriyor, ama özellik yalnız ilk birkaçına bakıyor ve doğru makale o birkaçın dışında kalıyor.
+
+- [ ] **Kill search, ilk 8:** yazdığın iddiayı daha önce yapan var mı diye bakıyor; havuzdan yalnız 8 eseri modele okutuyor. 24 Ekim'de 3 yeni iddiada etiketli 9 eserin 6'sı havuza geldi, yalnız 1'i 8'e girdi. Örnek: kalp yetmezliği iddiasında asıl deneme (DAPA-HF) 66. sırada. AoI iddiasında 8 yerin 5'ini iki makalenin arXiv/konferans/dergi sürümleri kapladı.
+- [ ] **Kartopu, ilk 80:** bir turda yüzlerce yeni eser geliyor, yalnız ilk 80'i taranıyor. Sıra kabaca "başlıkta soru terimi var mı, kaç tohuma bağlı, ne kadar yeni" diye kuruluyor. Aranan eserler 170, 221, 298. sıralarda kaldı. Eski makalelerin çoğunun özeti yok, model okuyamıyor. 3 soruda kaçan 15 eserden 1'i aday oldu.
+
+Önerilen çözüm sırası (ölçülmedi, öneri):
+1. **Sürümleri kesimden önce birleştir** (kill search): aynı makalenin arXiv, konferans ve dergi kaydı tek eser sayılsın. Model gerekmez, 8 yeri boşaltır. İlk denenecek iş bu.
+2. **Kesimden önce iddiaya/soruya göre yeniden sırala:** ana aramada zaten açık olan reranker (Voyage) kill search havuzunun ilk ~100'üne ve kartopunun yeni eserlerine uygulansın. Bugünkü sıra kelime eşleşmesi ve tarihle kuruluyor, anlama bakmıyor.
+3. **İki aşamalı okuma:** ilk ~40 eserin başlık ve özeti tek ucuz model çağrısında elensin, ayrıntılı okumaya en iyi 8 (kill search) veya 80 (kartopu) gitsin.
+4. **Özeti olmayana özet bul:** kartopunda taramadan önce Semantic Scholar, Crossref veya PubMed'den özet istensin; yine yoksa "başlıktan bakılmalı" diye kişiye gösterilsin.
+5. **Kesileni göster:** kartta "havuzda olup okunmayan N eser" listesi ve "bunları da oku" düğmesi; kartopunda mevcut "Screen more" öne çıksın.
+
+Her adım dondurulmuş kuralla, 24 Ekim'in iddia ve soru setinde ölçülsün (etiketler `.local/live-pilots-2026-10/RULES.md` ve `elicit3/targets.json`).
 
 ### Ters atıf arama (bir ifadeyi destekleyen eserleri bulma)
 Tamamlanan:

@@ -1,11 +1,12 @@
-"""0007_answer_thread_candidates.sql (D98) on a library made by 0001 to 0006. Libraries here are SYNTHETIC."""
+"""Upgrade step 7 (0007_answer_thread_candidates.sql, D98) on a library made by 0001 to 0006. Libraries here are
+SYNTHETIC."""
 
-import shutil
 import sqlite3
 
 import pytest
 
-from deixis.storage import db
+from deixis.storage import db, upgrades
+from old_library import old_library, steps_through
 
 REBUILT_TRIGGERS = ("candidate_status_overrides_no_delete", "candidate_versions_no_delete", "claim_elements_no_delete",
                     "claim_matrix_cells_no_delete", "claim_matrix_evidence_no_delete", "kill_search_hits_no_delete",
@@ -22,16 +23,8 @@ def schema(conn):
 
 
 def test_0007_adds_the_answer_thread_origin_keeps_rows_and_triggers_and_matches_a_fresh_library(tmp_path, monkeypatch):
-    earlier = tmp_path / "migrations"
-    earlier.mkdir()
-    names = sorted(p.name for p in db.MIGRATIONS_DIR.glob("*.sql") if int(p.name[:4]) < 7)
-    for name in names:
-        shutil.copy(db.MIGRATIONS_DIR / name, earlier)
     path = tmp_path / "library.sqlite"
-    with monkeypatch.context() as patch:
-        patch.setattr(db, "MIGRATIONS_DIR", earlier)
-        conn = db.connect(path)
-        assert db.migrate(conn) == [1, 2, 3, 4, 5, 6]
+    conn = old_library(path, 6)
     conn.execute("INSERT INTO researches (id, title, created_at, updated_at) VALUES ('res_1', 'SYNTHETIC', 'now', 'now')")
     conn.execute(CANDIDATE, ("rcd_SYNTHETIC0001", "owner_text"))
     conn.execute("INSERT INTO candidate_versions (id, candidate_id, version, claim_statement, conditions_json,"
@@ -43,11 +36,7 @@ def test_0007_adds_the_answer_thread_origin_keeps_rows_and_triggers_and_matches_
     before = [tuple(r) for r in conn.execute("SELECT * FROM research_candidates")]
     conn.close()
 
-    up_to_seventh = tmp_path / "migrations-0007"
-    up_to_seventh.mkdir()
-    for name in [*names, "0007_answer_thread_candidates.sql"]:
-        shutil.copy(db.MIGRATIONS_DIR / name, up_to_seventh)
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", up_to_seventh)
+    monkeypatch.setattr(upgrades, "STEPS", steps_through(7))
     conn = db.connect(path)
     assert db.migrate(conn) == [7]
     assert [tuple(r) for r in conn.execute("SELECT * FROM research_candidates")] == before
@@ -60,6 +49,4 @@ def test_0007_adds_the_answer_thread_origin_keeps_rows_and_triggers_and_matches_
     with pytest.raises(sqlite3.IntegrityError, match="purge authorization"):
         conn.execute("DELETE FROM candidate_versions")
     assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
-    fresh = db.connect(tmp_path / "fresh.sqlite")
-    assert db.migrate(fresh) == [1, 2, 3, 4, 5, 6, 7]
-    assert schema(conn) == schema(fresh)
+    assert schema(conn) == schema(old_library(tmp_path / "fresh.sqlite", 7))

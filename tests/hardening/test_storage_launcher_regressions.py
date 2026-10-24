@@ -6,7 +6,9 @@ import pytest
 
 from deixis import __main__ as launcher
 from deixis.config import Settings
-from deixis.storage import backup, db
+from deixis.storage import backup, db, upgrades
+from deixis.storage.upgrades import Step
+from old_library import stand_in_schema
 from test_restore_matrix import (
     fake_uvicorn, file_facts, folder_names, hand_backup,
     entry, library_with_id_only_in_the_wal, settings_for, write_manifest,
@@ -127,15 +129,12 @@ def test_schema_copy_stat_failure_is_controlled(tmp_path, monkeypatch, which):
 
 
 def test_startup_message_preserves_finished_migrations(tmp_path, monkeypatch):
-    migrations = tmp_path / "migrations"
-    migrations.mkdir()
-    (migrations / "0001_first.sql").write_text("CREATE TABLE first_table (value BLOB);\n")
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", migrations)
+    stand_in_schema(monkeypatch, tmp_path / "schema", "CREATE TABLE first_table (value BLOB);\n")
     path = tmp_path / "data" / "library.sqlite"
     conn = db.connect(path)
     assert db.migrate(conn) == [1]
     conn.close()
-    (migrations / "0002_full.sql").write_text("INSERT INTO first_table VALUES (zeroblob(1000000));\n")
+    upgrades.STEPS[2] = Step("0002_full.sql", False, "INSERT INTO first_table VALUES (zeroblob(1000000));\n")
     real_connect = db.connect
     codes = []
 

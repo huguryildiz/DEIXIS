@@ -294,17 +294,12 @@ def test_screen_more_reads_on_from_a_round_list_with_lexical_exclusion_off(lib, 
 
 
 def test_0003_keeps_every_run_and_accepts_the_snowball_kind(tmp_path, monkeypatch):
-    import shutil
     import sqlite3
-    first_two = tmp_path / "migrations"
-    first_two.mkdir()
-    for name in ("0001_schema.sql", "0002_citation_check.sql"):
-        shutil.copy(db.MIGRATIONS_DIR / name, first_two)
+
+    from deixis.storage import upgrades
+    from old_library import old_library, steps_through
     path = tmp_path / "library.sqlite"
-    with monkeypatch.context() as patch:
-        patch.setattr(db, "MIGRATIONS_DIR", first_two)
-        conn = db.connect(path)
-        assert db.migrate(conn) == [1, 2]
+    conn = old_library(path, 2)
     conn.execute("INSERT INTO researches (id, title, created_at, updated_at) VALUES ('res_1', 'SYNTHETIC', 'now', 'now')")
     conn.execute("INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
                  " VALUES ('run_1', 'res_1', 1, 'citation_check', 'completed', 'intake', '{}', 'now', 'now')")
@@ -312,9 +307,8 @@ def test_0003_keeps_every_run_and_accepts_the_snowball_kind(tmp_path, monkeypatc
         conn.execute("INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
                      " VALUES ('run_2', 'res_1', 1, 'snowball', 'queued', 'screening', '{}', 'now', 'now')")
     conn.close()
-    shutil.copy(db.MIGRATIONS_DIR / "0003_snowball.sql", first_two)  # later migrations (0004 on) are their own tests
-    with monkeypatch.context() as patch:
-        patch.setattr(db, "MIGRATIONS_DIR", first_two)
+    with monkeypatch.context() as patch:  # later steps (4 on) are their own tests
+        patch.setattr(upgrades, "STEPS", steps_through(3))
         conn = db.connect(path)
         assert db.migrate(conn) == [3]
     assert [tuple(r) for r in conn.execute("SELECT id, kind FROM runs")] == [("run_1", "citation_check")]

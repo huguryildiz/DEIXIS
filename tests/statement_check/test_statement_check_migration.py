@@ -1,12 +1,12 @@
-"""0009_statement_check.sql (reverse citation search, R1) on a library made up to 0008 and on a fresh one. Libraries
-here are SYNTHETIC."""
+"""Upgrade step 9 (0009_statement_check.sql, reverse citation search, R1) on a library made up to 0008, and a fresh
+library. Libraries here are SYNTHETIC."""
 
-import shutil
 import sqlite3
 
 import pytest
 
 from deixis.storage import db
+from old_library import old_library
 
 TRIGGERS = ("kill_searches_run_guard", "owner_reviews_run_guard", "watch_checks_run_guard")
 
@@ -16,16 +16,8 @@ def schema(conn):
 
 
 def test_a_library_made_up_to_0008_takes_0009_and_keeps_its_rows(tmp_path, monkeypatch):
-    before = tmp_path / "migrations"
-    before.mkdir()
-    for path in sorted(db.MIGRATIONS_DIR.glob("*.sql")):
-        if int(path.name.split("_", 1)[0]) < 9:
-            shutil.copy(path, before)
     path = tmp_path / "library.sqlite"
-    with monkeypatch.context() as patch:
-        patch.setattr(db, "MIGRATIONS_DIR", before)
-        conn = db.connect(path)
-        assert db.migrate(conn)[-1] == 8
+    conn = old_library(path, 8)
     conn.execute("INSERT INTO researches (id, title, created_at, updated_at, intent) VALUES ('res_1', 'SYNTHETIC', 'n', 'n', 'compare')")
     conn.execute("INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
                  " VALUES ('run_1', 'res_1', 1, 'snowball', 'completed', 'screening', '{}', 'n', 'n')")
@@ -36,7 +28,7 @@ def test_a_library_made_up_to_0008_takes_0009_and_keeps_its_rows(tmp_path, monke
             conn.execute(statement)
     conn.close()
     conn = db.connect(path)
-    assert db.migrate(conn)[0] == 9  # later migrations (0010, D105) follow it
+    assert db.migrate(conn)[0] == 9  # later steps (10, D105) follow it
     assert [tuple(r) for r in conn.execute("SELECT id, intent, kind FROM researches")] == [("res_1", "compare", "research")]
     assert [tuple(r) for r in conn.execute("SELECT id, kind, status FROM runs")] == [("run_1", "snowball", "completed")]
     conn.execute("UPDATE researches SET intent = 'statement' WHERE id = 'res_1'")

@@ -24,7 +24,7 @@ import pytest
 from deixis import __main__ as deixis_main
 from deixis.config import Settings
 from deixis.storage import backup as backup_module
-from deixis.storage import db
+from deixis.storage import db, upgrades
 from deixis.storage.backup import BackupError, MANIFEST, create_backup, restore_backup
 from restore_compare import compare_states, library_state, sha256_file, tree_snapshot
 
@@ -343,25 +343,21 @@ def test_b03_unknown_migration_id_is_refused_and_no_file_changes(tmp_path, case)
     assert file_facts(folder) == before_files and folder_names(folder) == before_names
 
 
-def newer_code_migrations(tmp_path: Path) -> tuple[Path, int]:
-    """The packaged migrations plus one SYNTHETIC later one: the migration set of the next DEIXIS, for which a library
-    written by today's code is the older library."""
-    newer = tmp_path / "newer-migrations"
-    newer.mkdir(parents=True)
-    for p in sorted(db.MIGRATIONS_DIR.glob("*.sql")):
-        shutil.copyfile(p, newer / p.name)
+def newer_code_steps() -> tuple[dict, int]:
+    """The packaged upgrade steps plus one SYNTHETIC later one: the steps of the next DEIXIS (set as `upgrades.STEPS`),
+    for which a library written by today's code is the older library."""
     version = max(db.packaged_versions()) + 1
-    (newer / f"{version:04d}_synthetic_next.sql").write_text("CREATE TABLE synthetic_next (id TEXT PRIMARY KEY);\n")
-    return newer, version
+    step = upgrades.Step(f"{version:04d}_synthetic_next.sql", False, "CREATE TABLE synthetic_next (id TEXT PRIMARY KEY);\n")
+    return {**upgrades.STEPS, version: step}, version
 
 
 def test_b03_library_from_an_older_code_opens_and_migrate_applies_exactly_the_missing_migration(tmp_path, monkeypatch):
-    newer, pending = newer_code_migrations(tmp_path)
+    newer, pending = newer_code_steps()
     path = tmp_path / "lib" / "library.sqlite"
     conn = db.connect(path)
     assert db.migrate(conn) == sorted(PACKAGED_VERSIONS)
     conn.close()
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", newer)
+    monkeypatch.setattr(upgrades, "STEPS", newer)
     assert db.packaged_versions() == PACKAGED_VERSIONS | {pending}
     db.check_schema_known(path)  # known ids only: nothing to refuse
     conn = db.connect(path)
@@ -989,9 +985,9 @@ def test_a_restored_library_shows_the_model_connection_as_not_ready_and_pauses_i
 # ---- B02: a backup of a library that the current code has not migrated yet ------------------------------------------
 
 def old_library(tmp_path: Path, monkeypatch, with_paper_file: bool = True) -> Settings:
-    """A library migrated by today's code with one paper row, then opened by a code with one more (SYNTHETIC) migration,
-    which stays set as `db.MIGRATIONS_DIR`; the paper's file is in papers/ unless `with_paper_file` is False."""
-    newer, _ = newer_code_migrations(tmp_path)
+    """A library migrated by today's code with one paper row, then opened by a code with one more (SYNTHETIC) upgrade step,
+    which stays set in `upgrades.STEPS`; the paper's file is in papers/ unless `with_paper_file` is False."""
+    newer, _ = newer_code_steps()
     settings = Settings(data_dir=tmp_path / "data", port=8765)
     settings.data_dir.mkdir()
     conn = db.connect(settings.db_path)
@@ -1005,7 +1001,7 @@ def old_library(tmp_path: Path, monkeypatch, with_paper_file: bool = True) -> Se
                  " 'user_upload', 'succeeded')", (hashlib.sha256(data).hexdigest(), len(data)))
     conn.commit()
     conn.close()
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", newer)
+    monkeypatch.setattr(upgrades, "STEPS", newer)
     if with_paper_file:
         settings.papers_dir.mkdir(parents=True, exist_ok=True)
         (settings.papers_dir / "old-paper.pdf").write_bytes(data)

@@ -1,4 +1,4 @@
-"""SQLite connection, migrations and small helpers."""
+"""SQLite connection, schema version and upgrades, and small helpers."""
 
 from __future__ import annotations
 
@@ -14,8 +14,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-MIGRATIONS_DIR = Path(__file__).parent / "migrations"
-FOREIGN_KEYS_OFF = "-- deixis:foreign-keys-off"
+from deixis.storage import upgrades
+
+# A new library is made from SCHEMA in one transaction; its header carries the schema version (D119). A library at an older
+# version runs the steps in upgrades.STEPS it has not recorded. Version 1 is recorded under the name of the D75 baseline.
+SCHEMA = Path(__file__).parent / "schema.sql"
+SCHEMA_VERSION_LINE = "-- deixis:schema-version "
+BASELINE_NAME = "0001_schema.sql"
 # The files 0001_schema.sql replaced on 2026-10-16 (D75). A library that recorded all of them under these names has
 # exactly the schema of 0001_schema.sql, and its rows are folded into that one row once; one that recorded the old
 # baseline without all of the rest misses schema changes this version can no longer apply.
@@ -26,7 +31,7 @@ SQUASHED = dict(enumerate((
     "0013_source_key_format.sql", "0014_mathpix_equations.sql", "0015_citation_map.sql", "0016_pdf_skips.sql",
     "0017_answer_report_revision.sql", "0018_read_coverage.sql", "0019_table_rows_follow.sql", "0020_spend_ledger.sql",
     "0021_scope_revision_withdraw.sql", "0022_followup_work_groups.sql"), start=1))
-SQUASHED_INTO = "0001_schema.sql"
+SQUASHED_INTO = BASELINE_NAME
 _ALPHABET = string.digits + string.ascii_letters
 
 
@@ -78,8 +83,17 @@ class StartupProblem(str):
     code: str | None = None
 
 
+def schema_version() -> int:
+    """The version schema.sql makes, from its `-- deixis:schema-version N` line."""
+    for line in SCHEMA.read_text(encoding="utf-8").splitlines():
+        if line.startswith(SCHEMA_VERSION_LINE):
+            return int(line[len(SCHEMA_VERSION_LINE):])
+    raise RuntimeError(f"{SCHEMA.name} names no schema version")
+
+
 def packaged_versions() -> set[int]:
-    return {int(path.name.split("_", 1)[0]) for path in MIGRATIONS_DIR.glob("*.sql")}
+    """Every version this DEIXIS knows: 1 (the baseline) and one per upgrade step."""
+    return {1, *upgrades.STEPS}
 
 
 def _applied_versions(conn: sqlite3.Connection) -> set[int] | None:
@@ -281,6 +295,8 @@ def open_problem(path: Path) -> str | None:
 
 
 def migrate(conn: sqlite3.Connection) -> list[int]:
+    """Make a new library from schema.sql, or bring an older one up with the upgrade steps it has not recorded.
+    Returns the versions recorded by this call."""
     conn.execute(
         "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)"
     )
@@ -290,36 +306,55 @@ def migrate(conn: sqlite3.Connection) -> list[int]:
             conn.execute("UPDATE schema_migrations SET name = ? WHERE version = 1", (SQUASHED_INTO,))
     applied = {row[0] for row in conn.execute("SELECT version FROM schema_migrations")}
     done = []
-    for path in sorted(MIGRATIONS_DIR.glob("*.sql")):
-        version = int(path.name.split("_", 1)[0])
+    if not applied:
+        done = _create(conn)
+        applied = set(done)
+    elif 1 not in applied:
+        raise MigrationFailed(BASELINE_NAME, RuntimeError("the library records later schema versions without the baseline"))
+    for version, step in sorted(upgrades.STEPS.items()):
         if version in applied:
             continue
         try:
-            script = path.read_text(encoding="utf-8")
             # Rebuilding a table that other tables reference needs foreign keys off (SQLite's documented 12-step procedure).
             # The pragma cannot change inside a transaction, and the check runs before the commit.
-            keys_off = script.startswith(FOREIGN_KEYS_OFF)
-            if keys_off:
+            if step.foreign_keys_off:
                 conn.execute("PRAGMA foreign_keys = OFF")
             try:
                 with transaction(conn):
-                    for statement in _split_sql(script):
+                    for statement in _split_sql(step.sql):
                         conn.execute(statement)
-                    if keys_off and conn.execute("PRAGMA foreign_key_check").fetchall():
-                        raise RuntimeError(f"foreign key check failed in {path.name}")
+                    if step.foreign_keys_off and conn.execute("PRAGMA foreign_key_check").fetchall():
+                        raise RuntimeError(f"foreign key check failed in {step.name}")
                     conn.execute(
                         "INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
-                        (version, path.name, now()),
+                        (version, step.name, now()),
                     )
             finally:
-                if keys_off:
+                if step.foreign_keys_off:
                     conn.execute("PRAGMA foreign_keys = ON")
-        except (sqlite3.Error, OSError, RuntimeError) as exc:  # the transaction has rolled this file back (E24)
-            raise MigrationFailed(path.name, exc) from exc
+        except (sqlite3.Error, OSError, RuntimeError) as exc:  # the transaction has rolled this step back (E24)
+            raise MigrationFailed(step.name, exc) from exc
         done.append(version)
     if conn.execute("PRAGMA foreign_key_check").fetchall():
         raise RuntimeError("foreign key check failed after migration")
     return done
+
+
+def _create(conn: sqlite3.Connection) -> list[int]:
+    """A new library: schema.sql and the record of every version it holds, in one transaction (nothing stays on failure)."""
+    try:
+        script = SCHEMA.read_text(encoding="utf-8")
+        version = schema_version()
+        names = {1: BASELINE_NAME, **{v: step.name for v, step in upgrades.STEPS.items()}}
+        with transaction(conn):
+            for statement in _split_sql(script):
+                conn.execute(statement)
+            stamp = now()
+            conn.executemany("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)",
+                             [(v, names[v], stamp) for v in range(1, version + 1)])
+    except (sqlite3.Error, OSError, RuntimeError, KeyError) as exc:
+        raise MigrationFailed(SCHEMA.name, exc) from exc
+    return list(range(1, version + 1))
 
 
 def _split_sql(script: str) -> list[str]:

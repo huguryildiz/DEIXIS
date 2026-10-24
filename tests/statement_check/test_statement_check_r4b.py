@@ -7,7 +7,6 @@ Records and model answers are SYNTHETIC; no real model or network is used."""
 import csv
 import io
 import json
-import shutil
 import sqlite3
 
 import pytest
@@ -153,16 +152,9 @@ def test_items_without_a_result_have_no_class(tmp_path):
 # ------------------------------------------------------------------------------------------------- the migration
 
 def test_a_library_made_up_to_0010_takes_0011_and_its_revisions_read_with_rule_1(tmp_path, monkeypatch):
-    before = tmp_path / "migrations"
-    before.mkdir()
-    for path in sorted(db.MIGRATIONS_DIR.glob("*.sql")):
-        if int(path.name.split("_", 1)[0]) < 11:
-            shutil.copy(path, before)
+    from old_library import old_library
     path = tmp_path / "library.sqlite"
-    with monkeypatch.context() as patch:
-        patch.setattr(db, "MIGRATIONS_DIR", before)
-        conn = db.connect(path)
-        assert db.migrate(conn)[-1] == 10
+    conn = old_library(path, 10)
     conn.execute("INSERT INTO researches (id, title, created_at, updated_at, intent) VALUES ('r', 't', 'n', 'n', 'statement')")
     conn.execute("INSERT INTO statement_checks (id, research_id, revision, request_id, sentence, sentence_sha256,"
                  " scope_revision, attachment_snapshot_json, user_signature, effort, work_cap, model_json,"
@@ -170,7 +162,7 @@ def test_a_library_made_up_to_0010_takes_0011_and_its_revisions_read_with_rule_1
                  " '{}', 'p', 'n')")
     conn.close()
     conn = db.connect(path)
-    assert db.migrate(conn)[0] == 11  # later migrations (0012, D111) follow it
+    assert db.migrate(conn)[0] == 11  # later steps (12, D111) follow it
     assert conn.execute("SELECT support_rule_version FROM statement_checks WHERE id = 'c'").fetchone()[0] == 1
     with pytest.raises(sqlite3.IntegrityError):
         conn.execute("UPDATE statement_checks SET support_rule_version = 3 WHERE id = 'c'")

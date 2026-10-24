@@ -3,7 +3,6 @@
 import errno
 import hashlib
 import os
-import shutil
 import sqlite3
 import subprocess
 import sys
@@ -14,7 +13,7 @@ import pytest
 
 from deixis import __main__ as cli
 from deixis.documents import pdf
-from deixis.storage import db
+from deixis.storage import db, upgrades
 try:
     from deixis.workflow import text_retry
 except ImportError:
@@ -179,12 +178,10 @@ def test_dry_run_copy_and_parser_errors_leave_library_unchanged(tmp_path, monkey
 def test_dry_run_with_a_pending_migration_refuses_without_migrating(tmp_path, monkeypatch, capsys):
     settings = cli.Settings(data_dir=tmp_path)
     conn = db.connect(settings.db_path); db.migrate(conn); conn.close()
-    # The code now ships one more migration than the library has applied.
-    pending = tmp_path / "migrations"; pending.mkdir()
-    for path in db.MIGRATIONS_DIR.glob("*.sql"): shutil.copy(path, pending / path.name)
+    # The code now ships one more upgrade step than the library has applied.
     version = max(db.packaged_versions()) + 1
-    (pending / f"{version:04d}_synthetic_pending.sql").write_text("CREATE TABLE synthetic_pending (id TEXT PRIMARY KEY);\n")
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", pending)
+    step = upgrades.Step(f"{version:04d}_synthetic_pending.sql", False, "CREATE TABLE synthetic_pending (id TEXT PRIMARY KEY);\n")
+    monkeypatch.setattr(upgrades, "STEPS", {**upgrades.STEPS, version: step})
     before = file_state(tmp_path)
     assert cli.plan_text_retry(settings, "ast_missing", "ext_missing") == 2
     assert "this library needs a migration" in capsys.readouterr().err

@@ -1,4 +1,4 @@
-"""Checks of the current schema (the baseline migration) on synthetic, temporary libraries."""
+"""Checks of the current schema (storage/schema.sql) on synthetic, temporary libraries."""
 
 import sqlite3
 import re

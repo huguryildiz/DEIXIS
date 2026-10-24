@@ -17,7 +17,7 @@ import pytest
 
 from deixis.config import Settings
 from deixis.domain import contracts, skill
-from deixis.storage import db
+from deixis.storage import db, upgrades
 from deixis.storage.db import new_id, now, transaction
 from deixis.workflow import table_rows, table_sources
 from deixis.workflow.decisions import DecisionStore
@@ -585,7 +585,7 @@ def test_a_library_with_the_d114_marker_is_refused_by_a_build_without_it(tmp_pat
     db.migrate(conn)
     conn.close()
     assert 16 in db.packaged_versions()
-    assert any(p.name == "0016_abstract_rows.sql" for p in db.MIGRATIONS_DIR.iterdir())
+    assert upgrades.STEPS[16].name == "0016_abstract_rows.sql"
     # The main this lands on knew 0001-0015; a build like that must refuse a library 0016 marked.
     monkeypatch.setattr(db, "packaged_versions", lambda: {v for v in range(1, 16)})
     with pytest.raises(db.UnknownSchemaError):

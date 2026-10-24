@@ -27,11 +27,11 @@ VALUE = {"number": 128, "unit": "byte", "as_stated": "128 bytes"}
 
 # ---- migration ------------------------------------------------------------------------------
 def test_foreign_keys_off_migration_rolls_back_on_a_violation(tmp_path, monkeypatch):
-    folder = tmp_path / "migrations"
-    folder.mkdir()
-    (folder / "0001_parent.sql").write_text("CREATE TABLE parent (id TEXT PRIMARY KEY);\nCREATE TABLE child (parent_id TEXT REFERENCES parent(id));\n")
-    (folder / "0002_orphan.sql").write_text(f"{db.FOREIGN_KEYS_OFF}\nINSERT INTO child VALUES ('missing');\n")
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", folder)
+    from deixis.storage.upgrades import Step
+    from old_library import stand_in_schema
+    stand_in_schema(monkeypatch, tmp_path / "schema",
+                    "CREATE TABLE parent (id TEXT PRIMARY KEY);\nCREATE TABLE child (parent_id TEXT REFERENCES parent(id));\n",
+                    steps={2: Step("0002_orphan.sql", True, "INSERT INTO child VALUES ('missing');\n")})
     conn = db.connect(tmp_path / "library.sqlite")
     with pytest.raises(RuntimeError, match="0002_orphan"):
         db.migrate(conn)

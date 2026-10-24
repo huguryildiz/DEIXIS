@@ -64,18 +64,19 @@ def shared_route_adapters():
 
 @pytest.fixture(scope="session", autouse=True)
 def migrated_template(tmp_path_factory):
-    """Migrating every new library (today one baseline file, 0001_schema.sql, with the whole schema) was close to half
-    of the suite's time when the chain had 71 files. Each worker migrates one template library once; an empty library
-    migrated from the real migrations folder is then a page copy of it (sqlite backup). A test that points MIGRATIONS_DIR elsewhere, or a library that already has
-    tables, goes through the real migrate."""
-    from deixis.storage import db
+    """Migrating every new library was close to half of the suite's time when the schema was a chain of 71 files. Each
+    worker makes one template library from schema.sql once; an empty library is then a page copy of it (sqlite backup).
+    A test that sets its own schema or upgrade steps (db.SCHEMA, upgrades.STEPS), or a library that already has tables,
+    goes through the real migrate."""
+    from deixis.storage import db, upgrades
 
-    real_migrate, real_dir = db.migrate, db.MIGRATIONS_DIR
+    real_migrate, real_schema, real_steps = db.migrate, db.SCHEMA, upgrades.STEPS
     template = db.connect(tmp_path_factory.mktemp("template") / "library.sqlite")
     versions = real_migrate(template)
 
     def migrate(conn):
-        if db.MIGRATIONS_DIR != real_dir or conn.in_transaction or conn.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone():
+        if (db.SCHEMA != real_schema or upgrades.STEPS is not real_steps or conn.in_transaction
+                or conn.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone()):
             return real_migrate(conn)
         template.backup(conn)
         return list(versions)

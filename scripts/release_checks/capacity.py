@@ -694,11 +694,11 @@ def counts(data_dir: Path, research_id: str | None = None) -> dict[str, Any]:
 
 
 def code_migration() -> int:
-    """The highest migration file in deixis/storage/migrations/ today."""
+    """The highest schema version the code knows today (storage/schema.sql and its upgrade steps)."""
     _deixis()
     from deixis.storage import db
 
-    return max(int(path.name.split("_", 1)[0]) for path in db.MIGRATIONS_DIR.glob("*.sql"))
+    return max(db.packaged_versions())
 
 
 def library_migration(data_dir: Path) -> int:

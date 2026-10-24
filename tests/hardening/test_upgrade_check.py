@@ -16,9 +16,9 @@ from pathlib import Path
 import pytest
 
 from deixis import config
-from deixis.storage import db
+from deixis.storage import db, upgrades
 from deixis.workflow.store import Store
-from test_restore_matrix import add_versions, make_source_library, migrated_library, newer_code_migrations
+from test_restore_matrix import add_versions, make_source_library, migrated_library, newer_code_steps
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "release_checks"))
 import upgrade_check as uc  # noqa: E402
@@ -189,14 +189,14 @@ def test_open_copy_counts_before_and_after_are_equal_and_a_pending_migration_is_
     """A restored library written by earlier code (today's migrations, opened by a code with one more SYNTHETIC
     migration): opening applies exactly that one and loses nothing."""
     packaged = sorted(db.packaged_versions())
-    newer, pending = newer_code_migrations(dirs["scratch"])
+    newer, pending = newer_code_steps()
     work = staged(dirs, restored=False)
     target = work / uc.RESTORED / "library.sqlite"
     conn = db.connect(target)
     db.migrate(conn)
     Store(conn).create_research("SYNTHETIC question", "attached", "quick", [], "fake", "fake-model", "en")
     conn.close()
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", newer)
+    monkeypatch.setattr(upgrades, "STEPS", newer)
     result = uc.open_copy(str(work))
     assert result["applied_before"] == uc.compact(packaged) and result["pending"] == str(pending)
     assert result["applied_after"] == uc.compact([*packaged, pending])  # numbers may have gaps (0009 is free, D27)

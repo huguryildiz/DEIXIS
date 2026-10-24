@@ -18,7 +18,7 @@ DATAS = (
     ("deixis/contracts/research/*.schema.json", "deixis/contracts/research"),  # domain/contracts.py
     ("deixis/methods/deixis-research", "deixis/methods/deixis-research"),  # domain/skill.py, checked at startup
     ("web/dist", "web/dist"),  # config.Settings.web_dist; built by `npm run build` first
-    ("deixis/storage/migrations/*.sql", "deixis/storage/migrations"),
+    ("deixis/storage/schema.sql", "deixis/storage"),  # storage/db.py makes a new library from it
     ("deixis/documents/katex_commands.json", "deixis/documents"),
     ("deixis/documents/latex_kernel_names.json", "deixis/documents"),
     ("deixis/workflow/report/latex_names.json", "deixis/workflow/report"),

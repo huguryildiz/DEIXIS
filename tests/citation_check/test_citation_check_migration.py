@@ -1,11 +1,12 @@
-"""0002_citation_check.sql (D86) on a fresh library and on one made by 0001 alone. Libraries here are SYNTHETIC."""
+"""Upgrade step 2 (0002_citation_check.sql, D86) on a library made by 0001 alone, and a fresh library. Libraries here are
+SYNTHETIC."""
 
-import shutil
 import sqlite3
 
 import pytest
 
-from deixis.storage import db
+from deixis.storage import db, upgrades
+from old_library import old_library, steps_through
 
 TRIGGERS = ("kill_searches_run_guard", "owner_reviews_run_guard", "watch_checks_run_guard")
 
@@ -15,14 +16,8 @@ def schema(conn):
 
 
 def test_a_library_made_by_0001_alone_takes_0002_and_keeps_its_rows(tmp_path, monkeypatch):
-    only_first = tmp_path / "migrations"
-    only_first.mkdir()
-    shutil.copy(db.MIGRATIONS_DIR / "0001_schema.sql", only_first)
     path = tmp_path / "library.sqlite"
-    with monkeypatch.context() as patch:
-        patch.setattr(db, "MIGRATIONS_DIR", only_first)
-        conn = db.connect(path)
-        assert db.migrate(conn) == [1]
+    conn = old_library(path, 1)
     conn.execute("INSERT INTO researches (id, title, created_at, updated_at) VALUES ('res_1', 'SYNTHETIC', 'now', 'now')")
     conn.execute("INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
                  " VALUES ('run_1', 'res_1', 1, 'citation_map', 'completed', 'intake', '{}', 'now', 'now')")
@@ -31,14 +26,10 @@ def test_a_library_made_by_0001_alone_takes_0002_and_keeps_its_rows(tmp_path, mo
                      " VALUES ('run_2', 'res_1', 1, 'citation_check', 'queued', 'intake', '{}', 'now', 'now')")
     conn.close()
 
-    # 0002 alone, as a later migration (0003) would rebuild `runs` again and is tested on its own.
-    up_to_second = tmp_path / "migrations-0002"
-    up_to_second.mkdir()
-    for name in ("0001_schema.sql", "0002_citation_check.sql"):
-        shutil.copy(db.MIGRATIONS_DIR / name, up_to_second)
-    monkeypatch.setattr(db, "MIGRATIONS_DIR", up_to_second)
+    # Step 2 alone, as a later step (3) would rebuild `runs` again and is tested on its own.
+    monkeypatch.setattr(upgrades, "STEPS", steps_through(2))
     conn = db.connect(path)
-    assert db.migrate(conn)[0] == 2  # later migrations follow it
+    assert db.migrate(conn) == [2]
     assert conn.execute("SELECT kind FROM researches WHERE id = 'res_1'").fetchone()[0] == "research"
     assert [tuple(r) for r in conn.execute("SELECT id, kind, status FROM runs")] == [("run_1", "citation_map", "completed")]
     conn.execute("INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, created_at, updated_at)"
@@ -46,9 +37,7 @@ def test_a_library_made_by_0001_alone_takes_0002_and_keeps_its_rows(tmp_path, mo
     assert {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'trigger'")} >= set(TRIGGERS)
     assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     conn.execute("DELETE FROM runs WHERE id = 'run_2'")
-    fresh = db.connect(tmp_path / "fresh.sqlite")
-    assert db.migrate(fresh)[:2] == [1, 2]
-    assert schema(conn) == schema(fresh)
+    assert schema(conn) == schema(old_library(tmp_path / "fresh.sqlite", 2))
 
 
 def test_a_fresh_library_checks_kinds_results_and_cascades(tmp_path):

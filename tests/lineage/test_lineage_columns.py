@@ -297,5 +297,6 @@ def test_skill_package_hash_unchanged_by_l1():
     # record per work when a follow-up counts works; D92 adds the follow-up search method file and new_works_requested; D87 extends the banned-word line to gap text, claim text and insufficient-evidence reasons.
     # D99 (Verify Citations V3) adds the citation-check method file and its SKILL.md routing line; reverse citation
     # search R1 the statement-check method file and its routing line, R2 the claim paragraph in SKILL.md. D105 (V5 pilot)
-    # adds the table-row paragraph and the baseline-method sentence to the citation-check method file.
-    assert load_skill_package().package_hash == "sha256:bfbfdc8d3d20f73605b2b35744d2c2fc13dc62acf38f973cfc57218ff6ca3541"
+    # adds the table-row paragraph and the baseline-method sentence to the citation-check method file. R5 adds the
+    # search query's field paragraph to search-query.md.
+    assert load_skill_package().package_hash == "sha256:b07fe3b529bbbd14c14b206553e5ae370e8f2da52ceb284aa990fa14dbdc4912"

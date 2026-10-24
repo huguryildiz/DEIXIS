@@ -7,7 +7,7 @@
   "validation_role": "heldout",
   "question": "Which model-based and data-driven methods estimate lithium-ion battery state of health, and what measurements and validation conditions distinguish these approaches?",
   "question_sha256": "cbd0748bc27fac1de69e92d63af0ea35e22a6afae7f85c46551eafb3f6e5bbc6",
-  "reference": "A Review of Lithium-Ion Battery State of Health Estimation and Prediction Methods (2021), DOI 10.3390/wevj12030113; Crossref /works/10.3390/wevj12030113 reference field; abstract objective/scope; OA license https://creativecommons.org/licenses/by/4.0/; retained evidence .local/benchmark/2026-10-07-quality85-crossref/energy-source.json. Source review is not a target and is never supplied to the run.",
+  "reference": "A Review of Lithium-Ion Battery State of Health Estimation and Prediction Methods (2021), DOI 10.3390/wevj12030113; Crossref /works/10.3390/wevj12030113 reference field; abstract objective/scope; OA license https://creativecommons.org/licenses/by/4.0/; retained evidence notes/benchmark/2026-10-07-quality85-crossref/energy-source.json. Source review is not a target and is never supplied to the run.",
   "answer_elements": [
     {
       "id": "B1",
@@ -49,9 +49,9 @@
           "journal-title": "Appl. Energy"
         },
         "membership_rule": "reference_doi_exact",
-        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/energy-target-21.json",
+        "crossref_path": "notes/benchmark/2026-10-07-quality85-crossref/energy-target-21.json",
         "crossref_sha256": "6fbd1264d0761820d7c54da2d2dd9b8d5ee5363900c53979ef54be7dfe4d07b1",
-        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_path": "notes/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
         "openalex_work_id": "https://openalex.org/W2783030034",
         "abstract_text": null,
         "abstract_source": null
@@ -98,9 +98,9 @@
           "journal-title": "Energy"
         },
         "membership_rule": "reference_doi_exact",
-        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-73.json",
+        "crossref_path": "notes/benchmark/2026-10-07-quality85-revision/energy-target-73.json",
         "crossref_sha256": "2e66f95945a57dcc079afb73031371de68c01b0d3bda50ea444b5f8fbed58b7e",
-        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_path": "notes/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
         "openalex_work_id": "https://openalex.org/W2925615792",
         "abstract_text": null,
         "abstract_source": null
@@ -147,9 +147,9 @@
           "journal-title": "J. Power Sources"
         },
         "membership_rule": "reference_doi_exact",
-        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-75.json",
+        "crossref_path": "notes/benchmark/2026-10-07-quality85-revision/energy-target-75.json",
         "crossref_sha256": "6cb6571a7bd9baf46fd59d605edb9290e00a99e57788aebd96107618da4dffeb",
-        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_path": "notes/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
         "openalex_work_id": "https://openalex.org/W3110175444",
         "abstract_text": null,
         "abstract_source": null
@@ -196,9 +196,9 @@
           "journal-title": "J. Power Sources"
         },
         "membership_rule": "reference_doi_exact",
-        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/energy-target-79.json",
+        "crossref_path": "notes/benchmark/2026-10-07-quality85-crossref/energy-target-79.json",
         "crossref_sha256": "5ac663a433cadec75f1827d989122ec2a61c3fd3bfb20f1720254d16684ad266",
-        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_path": "notes/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
         "openalex_work_id": "https://openalex.org/W1966039250",
         "abstract_text": null,
         "abstract_source": null
@@ -245,9 +245,9 @@
           "journal-title": "Appl. Energy"
         },
         "membership_rule": "reference_doi_exact",
-        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-80.json",
+        "crossref_path": "notes/benchmark/2026-10-07-quality85-revision/energy-target-80.json",
         "crossref_sha256": "e04544438a6df1491d8bce6dc02b807af9a1859bd9fc5efb4bd8ee09bd18527d",
-        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_path": "notes/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
         "openalex_work_id": "https://openalex.org/W2588881132",
         "abstract_text": null,
         "abstract_source": null
@@ -300,9 +300,9 @@
           "journal-title": "Energy"
         },
         "membership_rule": "reference_doi_exact",
-        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-81.json",
+        "crossref_path": "notes/benchmark/2026-10-07-quality85-revision/energy-target-81.json",
         "crossref_sha256": "50dfdfbd74218700369ee680c90b53e9e3855108b1949805c290596e5d696eef",
-        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_path": "notes/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
         "openalex_work_id": "https://openalex.org/W3134677430",
         "abstract_text": null,
         "abstract_source": null
@@ -349,9 +349,9 @@
           "journal-title": "J. Power Sources"
         },
         "membership_rule": "reference_doi_exact",
-        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-83.json",
+        "crossref_path": "notes/benchmark/2026-10-07-quality85-revision/energy-target-83.json",
         "crossref_sha256": "d8fa43cd2c3cbf75c206c65516248ec909bb4e78e733947554c4a7fc5878c395",
-        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_path": "notes/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
         "openalex_work_id": "https://openalex.org/W2083808869",
         "abstract_text": null,
         "abstract_source": null
@@ -398,9 +398,9 @@
           "journal-title": "IET Electr. Syst. Transp."
         },
         "membership_rule": "reference_doi_exact",
-        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-85.json",
+        "crossref_path": "notes/benchmark/2026-10-07-quality85-revision/energy-target-85.json",
         "crossref_sha256": "c836054dcda5182b8cf630a0132c7d3be21b7bdfb9e33a080bd0fd19d70db513",
-        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_path": "notes/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
         "openalex_work_id": "https://openalex.org/W2949238220",
         "abstract_text": "One of the main issues with KF‐based methods is complication of determining the process noise covariance matrix, which is usually obtained by empirical tuning. Here, by using the adaptive observer designed around an arbitrary operating point of a non‐linear system, a novel systematic approach is developed for determining the covariance matrix of the parameter noise in the EKF with the aim of jointly estimating the states and unknown parameters of the system. The proposed mixed adaptive observer and EKF method are applied to a Lithium–Ion battery to simultaneously estimate its state of charge (SOC) and internal resistance as well as the state of health (SOH). The dynamical behaviour of the battery is modelled by using a commonly used RC model and is validated by the real data collected from the battery. The proposed method provides a robust performance against the model uncertainties and shows satisfactory parameter convergence properties. Experimental tests are established to certify the capability and effectiveness of the proposed scheme compared to the conventional EKF. Furthermore, a simulation study is carried out to verify the robustness of the proposed method.",
         "abstract_source": "crossref"
@@ -455,9 +455,9 @@
           "journal-title": "Sci. Rep."
         },
         "membership_rule": "reference_doi_exact",
-        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-96.json",
+        "crossref_path": "notes/benchmark/2026-10-07-quality85-revision/energy-target-96.json",
         "crossref_sha256": "b8344d912dae7a12af76ef1f90f7b7f9f0acadb1ea5d759b3e94cceee476e976",
-        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_path": "notes/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
         "openalex_work_id": "https://openalex.org/W3035578270",
         "abstract_text": "Abstract Accurate state of health (SOH) estimation of rechargeable batteries is important for the safe and reliable operation of electric vehicles (EVs), smart phones, and other battery operated systems. We propose a novel method for accurate SOH estimation which does not necessarily need full charging data. Using only partial charging data during normal usage, 10 derived voltage values ( $${v}_{sei}$$ v s e i ) are collected. The initial $${v}_{sei}$$ v s e i point is fixed and then for every 1.5% increase in the Coulomb counting, other points are selected. The difference between the $${v}_{sei}$$ v s e i values ( $$\\Delta {v}_{sei}$$ Δ v s e i ) and the average temperature during the charging form the feature vector at different SOH levels. The training data set is prepared by extrapolating the charging voltage curves for the complete SOH range using initial 400 cycles of data. The trained artificial neural network (ANN) based on the feature vector and SOH values can be used in any battery management system (BMS) with a time complexity of only $$O({n}^{4})$$ O ( n 4 ) . Less than 1% mean absolute error (MAE) for the test cases has been achieved. The proposed method has a moderate training data requirement and does not need any knowledge of previous SOH, state of charge (SOC) vs. OCV relationship, and absolute SOC value.",
         "abstract_source": "crossref"
@@ -499,9 +499,9 @@
           "DOI": "10.3390/en13102548"
         },
         "membership_rule": "reference_doi_exact",
-        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-98.json",
+        "crossref_path": "notes/benchmark/2026-10-07-quality85-revision/energy-target-98.json",
         "crossref_sha256": "1958a9cf063e3dded6b3ac970983bd5fcd61452e8270d293adaabd7ee8d7f21a",
-        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_path": "notes/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
         "openalex_work_id": "https://openalex.org/W3025182772",
         "abstract_text": "This paper proposes a method for the combined estimation of the state of charge (SOC) and state of health (SOH) of batteries in hybrid and full electric vehicles. The technique is based on a set of five artificial neural networks that are used to tackle a regression and a classification task. In the method, the estimation of the SOC relies on the identification of the ageing of the battery and the estimation of the SOH depends on the behavior of the SOC in a recursive closed-loop. The networks are designed by means of training datasets collected during the experimental characterizations conducted in a laboratory environment. The lithium battery pack adopted during the study is designed to supply and store energy in a mild hybrid electric vehicle. The validation of the estimation method is performed by using real driving profiles acquired on-board of a vehicle. The obtained accuracy of the combined SOC and SOH estimator is around 97%, in line with the industrial requirements in the automotive sector. The promising results in terms of accuracy encourage to deepen the experimental validation with a deployment on a vehicle battery management system.",
         "abstract_source": "crossref"
@@ -548,9 +548,9 @@
           "journal-title": "Int. J. Energy Res."
         },
         "membership_rule": "reference_doi_exact",
-        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-100.json",
+        "crossref_path": "notes/benchmark/2026-10-07-quality85-revision/energy-target-100.json",
         "crossref_sha256": "675c5a4f4fbf94de7fb0304180fae676ab7a3b08bc25d6a933b0d360d5cab943",
-        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_path": "notes/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
         "openalex_work_id": "https://openalex.org/W3015574081",
         "abstract_text": "Online state of health (SOH) prediction of lithium-ion batteries remains a very important problem in assessing the safety and reliability of battery-powered systems. Deep learning techniques based on recurrent neural networks with memory, such as the long short-term memory (LSTM) and gated recurrent unit (GRU), have very promising advantages, when compared to other SOH estimation algorithms. This work addresses the battery SOH prediction based on GRU. A complete BMS is presented along with the internal structure and configuration parameters. The neural network was highly optimized by adaptive moment estimation (Adam) algorithm. Experimental data show very good estimation results for different temperature values, not only at room value. Comparisons performed against other relevant estimation methods highlight the performance of the recursive neural network algorithms such as GRU and LSTM, with the exception of the battery regeneration points. Compared to LSTM, the GRU algorithm gives slightly higher estimation errors, but within similar prediction error range, while needing significantly fewer parameters (about 25% fewer), thus making it a very suitable candidate for embedded implementations.",
         "abstract_source": "openalex"
@@ -597,9 +597,9 @@
           "journal-title": "J. Energy Storage"
         },
         "membership_rule": "reference_doi_exact",
-        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/energy-target-105.json",
+        "crossref_path": "notes/benchmark/2026-10-07-quality85-crossref/energy-target-105.json",
         "crossref_sha256": "a04c887cf11c695249a7e2f90b3d5e7ac6117b7adfd5e845a14d581d0f5313d7",
-        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_path": "notes/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
         "openalex_work_id": "https://openalex.org/W3047827241",
         "abstract_text": null,
         "abstract_source": null
@@ -646,9 +646,9 @@
           "journal-title": "IEEE Trans. Ind. Electron."
         },
         "membership_rule": "reference_doi_exact",
-        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-108.json",
+        "crossref_path": "notes/benchmark/2026-10-07-quality85-revision/energy-target-108.json",
         "crossref_sha256": "00ddfe06ff6255e777c522a35d66e92a9d8b0cdd81c4fc0326ee73d60faf65ae",
-        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_path": "notes/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
         "openalex_work_id": "https://openalex.org/W2980420373",
         "abstract_text": "Existing state-of-health (SOH) data-driven prediction techniques for lithium-ion batteries are subject to mass training data, which leads to limited application. To face the challenge, in this article, we propose a novel SOH prediction method based on transfer learning. The long short-term memory (LSTM) combined with fully connected (FC) layers is designed as the base model. The LSTM can learn the long-term dependencies of battery aging to reduce the noise sensitivity of the prediction model, and the FC layers serve as the “firewall” during the transferring process. A feature expression scoring (FES) rule is developed to assess the relevance of multiple prediction tasks. Different from traditional transfer learning, we select the task with the highest FES score to obtain the base model with superior generalization performance. During transfer learning, the fine-tuning strategy is executed for the tasks with high scores, but rebuilding strategy for the low score one. Only using the first 25% of a dataset for transfer training, our technique can predict more phases compared to traditional data-driven methods, which will avoid more unreasonable operations from users. The experimental results verify that the proposed method can achieve accurate, fast, and steady SOH prediction. Compared to some existing data-driven methods, our method obtains optimal performance.",
         "abstract_source": "openalex"
@@ -695,9 +695,9 @@
           "journal-title": "IEEE Trans. Veh. Technol."
         },
         "membership_rule": "reference_doi_exact",
-        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-110.json",
+        "crossref_path": "notes/benchmark/2026-10-07-quality85-revision/energy-target-110.json",
         "crossref_sha256": "7429de7bb7013ed4a003aa635c9b17d70388b10bef6083c7b8fae561e150fd2d",
-        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_path": "notes/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
         "openalex_work_id": "https://openalex.org/W2963691557",
         "abstract_text": "The online estimation of battery state-of-health (SOH) is an ever significant issue for the intelligent energy management of the autonomous electric vehicles. Machine-learning based approaches are promising for the online SOH estimation. This paper proposes a machine-learning based algorithm for the online SOH estimation of Li-ion battery. A predictive diagnosis model used in the algorithm is established based on support vector machine (SVM). The support vectors, which reflects the intrinsic characteristics of the Li-ion battery, are determined from the charging data of fresh cells. Furthermore, the coefficients of the SVMs for cells at different SOH are identified once the support vectors are determined. The algorithm functions by comparing partial charging curves with the stored SVMs. Similarity factor is defined after comparison to quantify the SOH of the data under evaluation. The operation of the algorithm only requires partial charging curves, e.g., 15 min charging curves, making fast on-board diagnosis of battery SOH into reality. The partial charging curves can be intercepted from a wide range of voltage section, thereby relieving the pain that there is little chance that the driver charges the battery pack from a predefined state-of-charge. Train, validation, and test are conducted for two commercial Li-ion batteries with Li(NiCoMn)1/3O2 cathode and graphite anode, indicating that the algorithm can estimate the battery SOH with less than 2% error for 80% of all the cases, and less than 3% error for 95% of all the cases.",
         "abstract_source": "openalex"
@@ -752,9 +752,9 @@
           "journal-title": "J. Power Sources"
         },
         "membership_rule": "reference_doi_exact",
-        "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/energy-target-132.json",
+        "crossref_path": "notes/benchmark/2026-10-07-quality85-crossref/energy-target-132.json",
         "crossref_sha256": "3385cdcf3c24b40815ab35fa01ff22169a7a318fefbd3413c173b7db54ba7076",
-        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_path": "notes/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
         "openalex_work_id": "https://openalex.org/W2793702125",
         "abstract_text": null,
         "abstract_source": null
@@ -801,9 +801,9 @@
           "journal-title": "AIChE J."
         },
         "membership_rule": "reference_doi_exact",
-        "crossref_path": ".local/benchmark/2026-10-07-quality85-revision/energy-target-133.json",
+        "crossref_path": "notes/benchmark/2026-10-07-quality85-revision/energy-target-133.json",
         "crossref_sha256": "13e49ebfa44fb559c3ab6e6eff6faea3c935eed92f4a6771c215e805c64ea858",
-        "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+        "openalex_path": "notes/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
         "openalex_work_id": "https://openalex.org/W2094999625",
         "abstract_text": "Accurate state of health (SOH) estimation in lithium‐ion batteries, which plays a significant role not only in state of charge (SOC) estimation but also in remaining useful life (RUL) prognostics is studied. SOC estimation and RUL prognostics often require one‐step‐ahead and long‐term SOH prediction, respectively. A systematic multiscale Gaussian process regression (GPR) modeling method is proposed to tackle accurate SOH estimation problems. Wavelet analysis method is utilized to decouple global degradation, local regeneration and fluctuations in SOH time series. GPR with the inclusion of time index is utilized to fit the extracted global degradation trend, and GPR with the input of lag vector is designed to recursively predict local regeneration and fluctuations. The proposed method is validated through experimental data from lithium‐ion batteries degradation test. Both one‐step‐ahead and multi‐step‐ahead SOH prediction performances are thoroughly evaluated. The satisfactory results illustrate that the proposed method outperform GPR models without trend extraction. It is thus indicated that the proposed multiscale GPR modeling method can not only be greatly helpful to both RUL prognostics and SOC estimation for lithium‐ion batteries, but also provide a general promising approach to tackle complex time series prediction in health management systems. © 2015 American Institute of Chemical Engineers AIChE J, 61: 1589–1600, 2015",
         "abstract_source": "crossref"
@@ -837,21 +837,21 @@
   "revision_history": {
     "previous_question": "Which model-based and data-driven methods estimate lithium-ion battery state of health, and what measurements and validation conditions distinguish these approaches?",
     "previous_question_sha256": "cbd0748bc27fac1de69e92d63af0ea35e22a6afae7f85c46551eafb3f6e5bbc6",
-    "previous_snapshot": ".local/benchmark/2026-10-07-quality85-revision/battery_soh-before.json",
+    "previous_snapshot": "notes/benchmark/2026-10-07-quality85-revision/battery_soh-before.json",
     "scope_reason": "Soru ve kaynak derleme korunur; yalnız hedeflerin kanıtı ve sayısı düzeltilir."
   },
   "source_evidence": {
-    "crossref_path": ".local/benchmark/2026-10-07-quality85-crossref/energy-source.json",
+    "crossref_path": "notes/benchmark/2026-10-07-quality85-crossref/energy-source.json",
     "crossref_sha256": "1054fc5358b40255f34c24803dfdbb3bff9161dfe03b1ed72c022fc93c403b61",
-    "openalex_path": ".local/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
+    "openalex_path": "notes/benchmark/2026-10-07-quality85-revision/energy-openalex.json",
     "abstract_text": "Lithium-ion power batteries have been widely used in transportation due to their advantages of long life, high specific power, and energy. However, the safety problems caused by the inaccurate estimation and prediction of battery health state have attracted wide attention in academic circles. In this paper, the degradation mechanism and main definitions of state of health (SOH) were described by summarizing domestic and foreign literatures. The estimation and prediction methods of lithium-ion power battery SOH were discussed from three aspects: model-based methods, data-driven methods, and fusion technology methods. This review summarizes the advantages and disadvantages of the current mainstream SOH estimation and prediction methods. This paper believes that more innovative feature parameter extraction methods, multi-algorithm coupling, combined with cloud platform and other technologies will be the development trend of SOH estimation and prediction in the future, which provides a reference for health state estimation and prediction of lithium-ion power battery."
   },
   "consensus_freeze": {
-    "original_sol_snapshot": ".local/benchmark/2026-10-07-quality85-revision/battery_soh-sol-before-consensus.json",
+    "original_sol_snapshot": "notes/benchmark/2026-10-07-quality85-revision/battery_soh-sol-before-consensus.json",
     "original_sol_sha256": "ef4ecf08504609cac9d28384a9355efc2801fd7e7423775a73a3d1833edf2b40",
-    "claude_input": ".local/docs/product/search-quality-85-claude-labels-2026-10-07.json",
+    "claude_input": "notes/docs/product/search-quality-85-claude-labels-2026-10-07.json",
     "claude_sha256": "031f012c50599684f94df7978c355786f8cab1a62fd9e360c5d8c26675666945",
-    "blind_evidence": ".local/benchmark/2026-10-07-quality85-revision/battery_soh-blind-evidence.json",
+    "blind_evidence": "notes/benchmark/2026-10-07-quality85-revision/battery_soh-blind-evidence.json",
     "blind_evidence_sha256": "b71ef6d52ea2a69273862d086dac687fc45571817335c7557208473324e1530c",
     "agreement": {
       "n": 16,

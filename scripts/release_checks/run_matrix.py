@@ -532,7 +532,7 @@ class Run:
         self.args, self.out, self.stamp = args, out, stamp
         self.stages: dict[str, dict[str, Any]] = {}
         self.shims = out / "bin"
-        self.cap_out = REPO / ".local" / "release-checks" / "capacity" / ("matrix-" + stamp)
+        self.cap_out = REPO / "notes" / "release-checks" / "capacity" / ("matrix-" + stamp)
         self.cap_root = Path("/tmp/h5-matrix-" + stamp)
         self.python = str(REPO / ".venv" / "bin" / "python")
         self.proc: Optional[subprocess.Popen] = None
@@ -751,7 +751,7 @@ def print_table(rows: list[dict[str, Any]]) -> None:
 
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="P9 acceptance matrix, one command")
-    p.add_argument("--out-dir", help="must not exist; default .local/release-checks/matrix/<stamp>")
+    p.add_argument("--out-dir", help="must not exist; default notes/release-checks/matrix/<stamp>")
     p.add_argument("--only", help="comma-separated stage names; the others give ölçülmedi")
     p.add_argument("--skip", help="comma-separated stage names to skip (their rows give ölçülmedi)")
     p.add_argument("--overlay-uncommitted", action="store_true", help="install stage: copy modified files over the exported commit")
@@ -866,7 +866,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.self_test:
         return self_test()
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    out = Path(args.out_dir).expanduser().resolve() if args.out_dir else REPO / ".local" / "release-checks" / "matrix" / stamp
+    out = Path(args.out_dir).expanduser().resolve() if args.out_dir else REPO / "notes" / "release-checks" / "matrix" / stamp
     tools = {name: shutil.which(name) for name in ("uv", "node", "npm")}
     busy = [p for p, _ in listeners(OWN_PORTS[0], OWN_PORTS[-1])] + [p for p, _ in listeners(PLAYWRIGHT_PORTS[0], PLAYWRIGHT_PORTS[-1])]
     busy += bind_busy(OWN_PORTS) + bind_busy(PLAYWRIGHT_PORTS)

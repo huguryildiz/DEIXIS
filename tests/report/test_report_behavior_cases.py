@@ -508,7 +508,7 @@ def test_main_returns_failure_for_incomplete_or_invalid_run(
     monkeypatch.setattr(runner, "CodexAdapter", FakeAdapter)
     monkeypatch.setattr(runner, "run_one", fake_run)
     assert asyncio.run(runner.main("fixture-model", {"RB01"}, False)) == 1
-    files = list((tmp_path / ".local").glob("report-behavior-*/results.json"))
+    files = list((tmp_path / "notes").glob("report-behavior-*/results.json"))
     assert len(files) == 1
     assert json.loads(files[0].read_text())["results"][0]["runs"][0]["status"] == status
 
@@ -545,7 +545,7 @@ def test_main_stops_on_first_tool_item_and_writes_partial_results(
     monkeypatch.setattr(runner, "run_one", fake_run)
     assert asyncio.run(runner.main("fixture-model", {"RB01", "RB02"}, False)) == 1
     assert called == ["sti_SYNTHP15RB01"]
-    files = list((tmp_path / ".local").glob("report-behavior-*/results.json"))
+    files = list((tmp_path / "notes").glob("report-behavior-*/results.json"))
     assert len(files) == 1
     payload = json.loads(files[0].read_text())
     assert [row["case_id"] for row in payload["results"]] == ["RB01"]
@@ -569,7 +569,7 @@ def test_not_ready_writes_only_timestamped_reason(tmp_path, monkeypatch: pytest.
     monkeypatch.setattr(runner, "load_skill_package", lambda: SimpleNamespace(package_hash=PACKAGE_HASH))
     monkeypatch.setattr(runner, "CodexAdapter", NotReadyAdapter)
     assert asyncio.run(runner.main("fixture-model", {"RB01"}, False)) == 1
-    files = list((tmp_path / ".local").glob("report-behavior-*/results-*.json"))
+    files = list((tmp_path / "notes").glob("report-behavior-*/results-*.json"))
     assert len(files) == 1
     assert json.loads(files[0].read_text()) == {
         "model": "fixture-model", "not_ready_reason": "Codex not ready: SYNTHETIC unavailable"}

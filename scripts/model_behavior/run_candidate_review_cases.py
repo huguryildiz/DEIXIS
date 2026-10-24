@@ -270,7 +270,7 @@ async def main(model="sonnet", selected=None, only_build=False, out_dir=None, *,
         if not only_build and (expect_cases_sha256 != hashes["cases"]
                                or expect_expectations_sha256 != hashes["expectations"]):
             raise ValueError("--expect-cases-sha256 and --expect-expectations-sha256 are required and must match")
-        out_dir = checked_out_dir(out_dir or Path(f".local/p8-b8b-{datetime.now(timezone.utc).date().isoformat()}"))
+        out_dir = checked_out_dir(out_dir or Path(f"notes/p8-b8b-{datetime.now(timezone.utc).date().isoformat()}"))
         cases = load_cases()
         if selected is not None:
             if not selected or set(selected) - set(CASE_IDS):

@@ -379,7 +379,7 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
                            **({"head_after_cutoff": found["current_head"]} if found["current_head"] != row["head"] else {}))
         # A snowball round's candidate is a work the discovery never listed, so it has no cutoff row to update. It
         # joins the answer as abstract-based evidence only once the person included the work's head (plan
-        # .local/plans/snowballing-plan.md): two model reads that agree propose it, the person decides.
+        # notes/plans/snowballing-plan.md): two model reads that agree propose it, the person decides.
         present = {row["work_id"] for row in rows}
         position = max((row["position"] for row in rows), default=0)
         for work_id, found in sorted(later.items()):

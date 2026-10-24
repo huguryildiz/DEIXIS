@@ -377,7 +377,7 @@ async def main(model: str, selected: set[str] | None, only_build: bool, out_dir:
             print(case["id"])
         return 0
     if out_dir is None:
-        out_dir = Path(f".local/p6-slice2-l8-{datetime.now(timezone.utc).date().isoformat()}")
+        out_dir = Path(f"notes/p6-slice2-l8-{datetime.now(timezone.utc).date().isoformat()}")
     out_dir = REPO_ROOT / out_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     settings = load_settings()

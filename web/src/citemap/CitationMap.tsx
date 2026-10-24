@@ -9,7 +9,7 @@ import { usePanels } from '../research/usePanelStack'
 import '../research/kit.css'
 import './citation-map.css'
 
-// The citation map panel (D42, owner-approved mockup .local/design/citation-map-mockup): the research's works and the
+// The citation map panel (D42, owner-approved mockup notes/design/citation-map-mockup): the research's works and the
 // outside works their stored OpenAlex reference lists name, drawn as a year timeline or a deterministic force layout,
 // a detail side for the chosen work, the research's core and the often-cited outside works. Links come from stored
 // reference lists only; no model is called. Reading missing lists is a run the person starts from the plan row.

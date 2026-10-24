@@ -591,7 +591,7 @@ async def main(model: str, selected: set[str] | None, only_build: bool) -> int:
             print(case["id"])
         return 0
     settings = load_settings()
-    out_dir = REPO_ROOT / ".local" / f"report-behavior-{datetime.now(timezone.utc).date().isoformat()}"
+    out_dir = REPO_ROOT / "notes" / f"report-behavior-{datetime.now(timezone.utc).date().isoformat()}"
     results: list[dict[str, Any]] = []
     stop_reason: str | None = None
     with tempfile.TemporaryDirectory(prefix="deixis-report-behavior-") as workspace:

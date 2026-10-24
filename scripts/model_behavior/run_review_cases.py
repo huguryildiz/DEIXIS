@@ -409,7 +409,7 @@ async def main(model, selected=None, only_build=False, out_dir=None, codex_home=
         print(f"input error: {exc}")
         return 2
 
-    out_dir = REPO_ROOT / (out_dir or Path(f".local/p8-b4-{datetime.now(timezone.utc).date().isoformat()}"))
+    out_dir = REPO_ROOT / (out_dir or Path(f"notes/p8-b4-{datetime.now(timezone.utc).date().isoformat()}"))
     out_dir.mkdir(parents=True, exist_ok=True)
     rows, out_file = [], None
     record = {"model": {"connection": connection, "requested_model": model, "reasoning_effort": effort},

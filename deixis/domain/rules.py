@@ -64,7 +64,7 @@ SOURCE_ROUTES = {
 # Screening proposals are requested for at most this many candidates per model call.
 SCREENING_BATCH = 40
 
-# The abstract stage of an `sw` run (K3, decided 2026-09-21; measurement in .local/archive/sw/sw-abstract-batch-2026-09-21).
+# The abstract stage of an `sw` run (K3, decided 2026-09-21; measurement in notes/archive/sw/sw-abstract-batch-2026-09-21).
 # The model reads the first N works of the inspection order, N by effort; every other work stays `abstract_not_read`
 # and the next discovery run of the same question reads on from there. Hand-picked, not optimised: a batch of 20 gave
 # the same labels as one record per call on two topics (96 of 100, 54 of 60) at half the time, and label accuracy was
@@ -80,7 +80,7 @@ ABSTRACT_QUOTE_MIN_CHARS = 12
 # measured in the product. A work outside the limit is not dropped: it is counted as not reached and the next
 # retrieval run starts from it.
 # 2026-09-23 (D94, slice 14a): quick 40 -> 80. A model-free replay of the plan on eleven stored libraries
-# (.local/archive/sw/sw-slice14a-order-replay-2026-09-23) found the limit, not the order, keeps verified works out: quick had
+# (notes/archive/sw/sw-slice14a-order-replay-2026-09-23) found the limit, not the order, keeps verified works out: quick had
 # 234-348 eligible works for 40 places, and doubling the limit put 28 instead of 16 verified quantum works in the
 # plan over three runs. One topic; the time it costs is measured by the slice's live acceptance, not here.
 FULLTEXT_WORK_LIMIT = {"quick": 80, "standard": 100, "detailed": 300}
@@ -99,7 +99,7 @@ FULLTEXT_PASSAGES_PER_CALL = 12
 # a run whose budget has no `read_rule` reads as before (same list twice, page check, both runs must agree).
 FULLTEXT_READ_RULE = "split_v1"
 
-# Citation chaining of an `sw` discovery run (D95, slice 15; replay in .local/archive/sw/sw-slice15-chain-replay-2026-09-23).
+# Citation chaining of an `sw` discovery run (D95, slice 15; replay in notes/archive/sw/sw-slice15-chain-replay-2026-09-23).
 # 2026-09-23: 15 code seeds; 25 seeds added no work to the plan in `quick` and `standard` (1 in one quantum `detailed`
 # run at 150 / 75); with 15 seeds quantum `detailed` gained 0 at 50 / 25 and at 150 / 75, and the package question
 # `detailed` 1 in one run at 150 / 75. The chain's own abstract read and its own room in the full-text plan sit on top
@@ -110,7 +110,7 @@ FULLTEXT_READ_RULE = "split_v1"
 # 3.50 / 3.81 / 3.30 min against 3.0 with 25; 12 is the smallest room that kept the three chained verified works
 # that were read (places 4, 8 and 12). `quick` 20 -> 12 after the second acceptance: the package question's chain time
 # was 2.04 / 2.19 min against 2.0 with 20. Both changes were made after the results were seen, agreed with gpt-6-sol
-# medium (.local/archive/sw/sw-slice15-acceptance-2026-09-23/sol-decision*.md).
+# medium (notes/archive/sw/sw-slice15-acceptance-2026-09-23/sol-decision*.md).
 CHAIN_PLAN_ROOM = {"quick": 12, "standard": 12, "detailed": 12}
 FULLTEXT_CRITERION_PASSAGES = 8
 FULLTEXT_QUOTE_MIN_CHARS = 12
@@ -118,7 +118,7 @@ FULLTEXT_QUOTE_MIN_CHARS = 12
 # Effort presets bound work; they are not paper-count or accuracy guarantees. Provider requests are
 # bounded per run; with several providers enabled, one query per relevant provider needs room. `core_depth` is
 # how many results OpenAlex's core-only query reads (0: no such query); standard's 250 candidates and 15 model calls were
-# chosen for it in .local/docs/archive/search-2026-09/search-recall-depth-2026-09-17.md, detailed keeps more room than standard.
+# chosen for it in notes/docs/archive/search-2026-09/search-recall-depth-2026-09-17.md, detailed keeps more room than standard.
 # 2026-09-21 (D78): an sw discovery run is given CRITERION_CALLS on top of its preset for the criterion proposal it
 # makes before the first search (api/app.py), so its room for screening is what it was. The presets themselves are
 # unchanged for answer runs, which propose no criterion.

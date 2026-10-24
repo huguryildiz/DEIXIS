@@ -1,8 +1,8 @@
-/* The citation map panel (CitationMap.tsx), from the owner-approved mockup .local/design/citation-map-mockup: summary,
+/* The citation map panel (CitationMap.tsx), from the owner-approved mockup notes/design/citation-map-mockup: summary,
    plan row and quota band, chips with the layout switch and search, the map with its detail side, two ranked lists and
    the foot notes. Mockup tokens map to the editorial ones (--teal → --accent, --ok → --tone-include, --warn →
    --tone-uncertain, --line-2 → --strong-line, --chip → --selected-surface, --edge → --strong-line); mockup --faint text is
-   --muted, and amber text on the warn tint is --warn-ink (.impeccable.md §2.1). The panel's width, not the window's,
+   --muted, and amber text on the warn tint is --warn-ink (CLAUDE.md, UI rules). The panel's width, not the window's,
    decides when the detail side moves under the map. */
 .split-panel-content.citemap-panel-box{padding:22px 24px 64px;font-size:14px;line-height:1.5}
 .citemap{container:citemap/inline-size;display:grid;gap:18px;max-width:1180px;margin-inline:auto;min-width:0}

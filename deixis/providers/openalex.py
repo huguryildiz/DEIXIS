@@ -73,7 +73,7 @@ MAX_RESULTS = 100
 COUNT_PER_PAGE = 1
 COUNT_SELECT = "id"
 # The field of each work's primary topic, grouped over the whole result set (docs.openalex.org, "Group works", read
-# 2026-09-23; probed live on three questions the same day, `.local/archive/sw/sw-slice14-fields-probe-2026-09-23/`).
+# 2026-09-23; probed live on three questions the same day, `notes/archive/sw/sw-slice14-fields-probe-2026-09-23/`).
 FIELD_GROUP = "primary_topic.field.id"
 
 

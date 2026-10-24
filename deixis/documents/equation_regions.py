@@ -20,7 +20,7 @@ by another equation's region; any other span overlapping the crop, a drawing oth
 a crop across the column gutter refuses it: only the equation's own lines leave the computer. It is rendered at 200 dpi,
 lowered (not below 120) to stay within 2,000 px a side and 4 Mpx, and refused above 2 MB as base64.
 
-Measured (2026-10-24, model-free, `.local/2026-10-24-equation-finder/frozen.json` against `baseline.json`): on 452
+Measured (2026-10-24, model-free, `notes/2026-10-24-equation-finder/frozen.json` against `baseline.json`): on 452
 numbered equations of 34 arXiv papers placed by their LaTeX source, crops with exactly the source's lines rose from 185 to
 274; crops with other lines fell from 25 to 7 (lines with no letters, which the source placement leaves out). It shows the
 regions, not how well a model reads them.

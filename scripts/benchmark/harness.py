@@ -1,4 +1,4 @@
-"""Shared DEIXIS side of the BioASQ and LitSearch runs (benchmark plan, .local/plans/benchmark-plan.md, 18 Oct).
+"""Shared DEIXIS side of the BioASQ and LitSearch runs (benchmark plan, notes/plans/benchmark-plan.md, 18 Oct).
 
 The runner sets the measured configuration in its temporary data folder and reads it back, so an empty folder's
 defaults (Gemini, reranker off) are never measured by accident. Every row carries those settings. After each question

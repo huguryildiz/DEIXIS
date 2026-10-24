@@ -1,4 +1,4 @@
-"""Citation snowballing rounds (plan .local/plans/snowballing-plan.md). SYNTHETIC OpenAlex records through a mocked
+"""Citation snowballing rounds (plan notes/plans/snowballing-plan.md). SYNTHETIC OpenAlex records through a mocked
 transport and the fake model: these show the round's bookkeeping (identity, admissions, links, pause, resume, refusals,
 the screening hand-off), not OpenAlex coverage or model quality."""
 

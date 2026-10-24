@@ -2,12 +2,12 @@
 
     uv run python scripts/benchmark/litsearch_run.py prepare --n 200
     uv run python scripts/benchmark/litsearch_run.py openalex
-    uv run python scripts/benchmark/litsearch_run.py preflight --base http://127.0.0.1:8766 --data-dir .local/litsearch/data
-    uv run python scripts/benchmark/litsearch_run.py deixis --base http://127.0.0.1:8766 --data-dir .local/litsearch/data
+    uv run python scripts/benchmark/litsearch_run.py preflight --base http://127.0.0.1:8766 --data-dir notes/litsearch/data
+    uv run python scripts/benchmark/litsearch_run.py deixis --base http://127.0.0.1:8766 --data-dir notes/litsearch/data
     uv run python scripts/benchmark/litsearch_run.py score
 
 Only the 50 KB `query` table is downloaded (Hugging Face datasets-server JSON, no parquet); the 2.9 GB corpus is not
-needed because gold papers are resolved through Semantic Scholar and OpenAlex. Outputs live in .local/litsearch/
+needed because gold papers are resolved through Semantic Scholar and OpenAlex. Outputs live in notes/litsearch/
 (ignored); each system writes one JSON line per question to runs/<system>.jsonl, and a rerun skips finished questions.
 DEIXIS writes two systems from one run, deixis_fused (reranker off) and deixis_rerank (reranker on), with the settings
 and stop rule of harness.py. An OpenAlex budget or rate-limit reply stops the run and prints how many questions are done.
@@ -31,7 +31,7 @@ except ImportError:
     from bioasq_run import Deixis, done_ids, measured_run, read_jsonl, secret, write_query
 
 ROOT = Path(__file__).resolve().parents[2]
-HOME = ROOT / '.local/litsearch'
+HOME = ROOT / 'notes/litsearch'
 SEED = 20261017
 ROWS = 'https://datasets-server.huggingface.co/rows'
 S2_BATCH = 'https://api.semanticscholar.org/graph/v1/paper/batch'

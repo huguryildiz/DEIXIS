@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """P9 H5: model-free capacity and performance measurement (plan rows K01 to K07).
 
-Subcommands (all raw output goes to .local/release-checks/capacity/, every library, data dir, backup and home under /tmp/h5-*):
+Subcommands (all raw output goes to notes/release-checks/capacity/, every library, data dir, backup and home under /tmp/h5-*):
 
   generate     --root /tmp/h5-lib --points 100,1000,5000,7769,10000   synthetic libraries, one per point
   pdf-library  --root /tmp/h5-lib                                      one research with a 45 MiB, 500-page PDF
-  measure      --root /tmp/h5-lib --points ... --reps 3 --out .local/release-checks/capacity/<label>/   [--pdf | --control]
-  summarize    --out .local/release-checks/capacity/<label>/ [--also <folder> ...]       summary.json from the repetition files
-  table        --out .local/release-checks/capacity/<label>/ [--also <folder> ...]       the Markdown capacity table
+  measure      --root /tmp/h5-lib --points ... --reps 3 --out notes/release-checks/capacity/<label>/   [--pdf | --control]
+  summarize    --out notes/release-checks/capacity/<label>/ [--also <folder> ...]       summary.json from the repetition files
+  table        --out notes/release-checks/capacity/<label>/ [--also <folder> ...]       the Markdown capacity table
   limits       [--out ... [--also <folder> ...]]                       the K07 limits table
 
 K03a needs the "pdf" point next to the N points, and the control run is a third `measure` call. Either run the three calls
@@ -46,7 +46,7 @@ from typing import Any
 
 REPO = Path(__file__).resolve().parents[2]
 BROWSER = Path(__file__).resolve().parent / "capacity_browser.mjs"
-OUT_ROOT = REPO / ".local" / "release-checks" / "capacity"
+OUT_ROOT = REPO / "notes" / "release-checks" / "capacity"
 SHAPE_VERSION = 1
 PORT_FIRST = int(os.environ.get("P9_CAPACITY_PORT_FIRST", "8900"))  # the range is this port and the 20 after it (the matrix runner sets 8950)
 PORTS = range(PORT_FIRST, PORT_FIRST + 21)

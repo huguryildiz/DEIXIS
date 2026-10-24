@@ -24,7 +24,32 @@ Python 3.12, native arm64. Runtime data lives in `DEIXIS_DATA_DIR` (default `~/L
 - `deixis/methods/deixis-research/`: instructions loaded into model steps; editing them changes `skill_package_hash`.
 - `providers/registry.py`: scholarly sources. `storage/schema.sql`: a schema change edits it, raises its version and adds the step for existing libraries to `storage/upgrades.py`; never add a migration file.
 - `storage/upgrades.py`: never edit an existing step's SQL, name, version or foreign-key flag; append a new step.
-- UI: read [.impeccable.md](.impeccable.md) first; the shipped screens are the visual reference (D79).
+- Repository: `deixis/` (API, worker, storage, providers, model adapters), `web/` (React UI the backend serves), `tests/`, `scripts/` (probes, benchmarks, release checks, real-model case runners; not app features), `docs/` (`decisions.md`, `benchmark.md`), `STATUS.md` (the owner's status page, Turkish, mirrored to Notion) and the ignored `notes/`.
+- A file that code reads sits next to its reader: the connector ledger `tests/providers/connector-onboarding.md`, the frozen P8 expectation sheets in `tests/model_behavior/` (hashed by the runners), `providers.env.example`. Every non-Python file the app reads at run time is listed in `deixis/package_manifest.py`; a new one goes on that list.
+- UI: the shipped screens are the visual reference (D79); follow "UI rules" below.
+
+## Search pipeline
+
+- A discovery run always takes the fast path (`fast_path_v1`): plan, search, ranking, read and answer stages, each with a soft deadline; unused time carries over, and local-model runs have no read or answer deadline. Mode numbers (N read, K full text, record caps, answer passages 16/48/80) live in `fast_path.MODES` and are frozen into each run's budget.
+- Plan: code picks the search words (`question_words`); models only sort them into blocks, write the query and propose the inclusion criterion. The protocol and search plan freeze (`protocol:freeze`) before any request that fetches results. Up to five seed PDFs (`seed_pdf_v2`) are matched to OpenAlex works first and frozen in the protocol.
+- Search: OpenAlex semantic and keyword requests (plus one Semantic Scholar bulk query in Detailed), one OpenAlex citation-chain round and an embedding consumer run at once until the stage cutoff. Other registry providers are not searched; Crossref, Semantic Scholar and Scopus only fill missing abstracts.
+- Ranking orders, never removes: each signal (`bm25`, `blocks`, `tfidf`, `graph`, `joint`, `embedding`) ranks the whole pool and ranks are fused (RRF, k = 60), then `small_batch.replay` recomputes the list from the stored manifest. The optional reranker changes only the order; if it fails the list keeps the fused order and no other reranker is tried.
+- Read: abstract screening of the top N never includes a source; inclusion needs a full-text read (`fulltext_adjudication`, two calls, code-verified quotes). At most K works get full text before the cutoff; the rest go to the background fetch queue. The cutoff snapshot is the evidence the answer may use.
+- Answer: passages come from BM25 over full text fused with criterion passages; an answer review run never changes the answer; late full text can produce at most one revision, and the earlier answer is kept. Follow-up, Screen more, snowball and citation map runs start only from the person.
+
+## UI rules (`web/src`)
+
+- A quiet research desk, light first with a full dark theme. The deliverable comes first; runs, steps and usage sit one level deeper. Every state is shown, including failure and "not checked"; a visual state comes from a stored backend state, and copy never claims more than was checked ("located" is not "verified").
+- Example data never ships. A new feature goes into the nearest existing container and takes its look; if existing copy would be false, change the words, keep the layout.
+- Tokens are defined once in `index.css` (`:root` and `.dark`); a new token goes into both, with no per-component palettes or `var()` hex fallbacks. shadcn tokens are only for `components/ui`. `--faint` is never text. Tones: include green = done/included, uncertain amber = partial/attention, exclude red = blocking failure/excluded, `--accent` = live work or selection. Text on a tinted notice uses the matching `-ink` token. Text keeps 4.5:1 contrast on every surface.
+- Inter (`var(--font-sans)`) for everything; Source Serif 4 only for the report title. Fonts are bundled, no network requests. Sentence case, no uppercase eyebrows. Sizes 10–28px from the existing scale, weights 400–650. Radii 5–7px controls, 8–10px panels, 12px composer, 999px pills. Structure is 1px hairlines; shadows only on floating layers. Icons are lucide, `aria-hidden`; no emoji as icons.
+- Model and provider names show the display name with its connection icon (`ModelName.tsx`, `useModelText()`); the raw ID goes in a details disclosure.
+- A source title opens `PassageSheet` everywhere. A citation chip opens the exact stored passage and source version. Mark only the backend-located anchor (`mark.citation-highlight`); if it cannot be located, mark nothing, tint the page amber and say to check the PDF. Versions, abstract-only and PDF states are written in text, never color alone.
+- States: loading is short text with `role=status`; live work shows motion with text; empty is one muted sentence with the next action; attention and error use `Notice.tsx` (error with `role=alert`); success is a toast; confirmations use `ConfirmDialog.tsx`. A disabled control has a visible or accessible reason.
+- Motion only shows a state change or live work (100–200ms feedback), with a reduced-motion path; script scrolls use `scrollBehavior()` from `motion.ts`.
+- Breakpoint 760px: the sidebar becomes a drawer. Sheets are base-ui side sheets about 56% wide. Never truncate evidence-critical text without a way to reveal it; the page never scrolls sideways.
+- Strings go through `t(englishKey, vars)` in `i18n.ts` with the Turkish map; no `DEIXIS_*` env-var names in UI copy. Focus is a 2px accent outline.
+- Before landing: reuse classes and tokens, remove CSS your change leaves unreferenced, keep the stack (React 19, Tailwind 4, base-ui/shadcn; no new UI dependency for styling), run `npm run build`, `npm run lint` and the relevant Playwright tests, and look at desktop and 390px in light and dark.
 
 ## Evidence
 
@@ -47,5 +72,5 @@ Python 3.12, native arm64. Runtime data lives in `DEIXIS_DATA_DIR` (default `~/L
 - The worktree may hold someone else's changes; don't stage or revert them. No destructive git.
 - Testing: after a change run `pytest --testmon tests`; it does not see edits to schemas, methods, SQL or fixtures, so after those run the files that read them. Don't run the full suite locally before a push: the `ci` workflow runs it on GitHub in four parallel parts; check its result and fix a red run first.
 - Tests are model-free (`FakeAdapter`, mocked `httpx`, fake fetcher via `create_app`); a new test folder goes into `pythonpath` in `pyproject.toml`. Passing tests show workflow behavior, not model quality.
-- Decisions go in [docs/decisions.md](docs/decisions.md), newest on top. Plans and design notes go in the ignored `.local/`; a new measurement or pilot folder there is named `YYYY-MM-DD-topic` (fixed-name folders that scripts read, such as `bioasq/` or `release-checks/`, keep their names).
+- Decisions go in [docs/decisions.md](docs/decisions.md), newest on top, as five lines: `## D<n> — <short title> (<date>)`, then `Decision:` (one or two sentences), `Why:`, `Limit:` and `Evidence:` (`notes/<folder>` · commit), one sentence each. Plans, measurements and design notes go in the ignored `notes/` (links into it resolve only on the owner's machine); a new measurement or pilot folder there is named `YYYY-MM-DD-topic` (fixed-name folders that scripts read, such as `bioasq/` or `release-checks/`, keep their names).
 - Report what changed, which checks ran and passed, what was skipped or left unverified, and whether anything was pushed.

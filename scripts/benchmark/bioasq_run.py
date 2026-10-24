@@ -1,11 +1,11 @@
 """Network side of the BioASQ benchmark: sample, gold metadata, system runs, scoring.
 
     uv run python scripts/benchmark/bioasq_run.py prepare --n 100
-    uv run python scripts/benchmark/bioasq_run.py preflight --base http://127.0.0.1:8766 --data-dir .local/bioasq/data
-    uv run python scripts/benchmark/bioasq_run.py deixis --base http://127.0.0.1:8766 --data-dir .local/bioasq/data
+    uv run python scripts/benchmark/bioasq_run.py preflight --base http://127.0.0.1:8766 --data-dir notes/bioasq/data
+    uv run python scripts/benchmark/bioasq_run.py deixis --base http://127.0.0.1:8766 --data-dir notes/bioasq/data
     uv run python scripts/benchmark/bioasq_run.py score
 
-Outputs live in .local/bioasq/ (ignored); each system writes one JSON line per question to runs/<system>.jsonl.
+Outputs live in notes/bioasq/ (ignored); each system writes one JSON line per question to runs/<system>.jsonl.
 DEIXIS writes two systems from one run, deixis_fused (reranker off) and deixis_rerank (reranker on), with the settings
 and stop rule of harness.py; runs/deixis.jsonl is the 17 Oct run (Gemini embedding, reranker off).
 """
@@ -27,7 +27,7 @@ except ImportError:
     import harness
 
 ROOT = Path(__file__).resolve().parents[2]
-HOME = ROOT / '.local/bioasq'
+HOME = ROOT / 'notes/bioasq'
 SEED = 20261017
 ESUMMARY = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi'
 

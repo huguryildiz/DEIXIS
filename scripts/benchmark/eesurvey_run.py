@@ -2,15 +2,15 @@
 
     uv run python scripts/benchmark/eesurvey_run.py prepare --max-spend 0.30 --prepaid-floor 3.0
     uv run python scripts/benchmark/eesurvey_run.py openalex --prepaid-floor 1
-    uv run python scripts/benchmark/eesurvey_run.py preflight --base http://127.0.0.1:8769 --data-dir .local/eesurvey/data
-    uv run python scripts/benchmark/eesurvey_run.py deixis --base http://127.0.0.1:8769 --data-dir .local/eesurvey/data \
+    uv run python scripts/benchmark/eesurvey_run.py preflight --base http://127.0.0.1:8769 --data-dir notes/eesurvey/data
+    uv run python scripts/benchmark/eesurvey_run.py deixis --base http://127.0.0.1:8769 --data-dir notes/eesurvey/data \
         --prepaid-floor 1
     uv run python scripts/benchmark/eesurvey_run.py score
 
 `prepare` reads the survey pool from OpenAlex (filters only), picks the surveys (eesurvey.select), fetches each one's
 references, keeps the gold set, and has claude-sonnet-5-5 write one question per survey. Every network answer is cached
-under .local/eesurvey/raw/, so a rerun spends nothing on what it already has; the owner's removals go in
-.local/eesurvey/exclude.json (a list of OpenAlex ids) and a rerun moves the next survey up. A question's id comes from
+under notes/eesurvey/raw/, so a rerun spends nothing on what it already has; the owner's removals go in
+notes/eesurvey/exclude.json (a list of OpenAlex ids) and a rerun moves the next survey up. A question's id comes from
 its survey and its tune/test side is kept once given; the set's fingerprint goes in runs/SET, and every command refuses
 runs made for a different set. A question that fails the wording check after its retry stops preparation and every
 run. Each OpenAlex reply's balance headers are read: preparation stops when it has spent `--max-spend` or, once the
@@ -43,7 +43,7 @@ except ImportError:
     from litsearch_run import BudgetStop, LitDeixis
 
 ROOT = Path(__file__).resolve().parents[2]
-HOME = ROOT / '.local/eesurvey'
+HOME = ROOT / 'notes/eesurvey'
 RAW = HOME / 'raw'
 OPENALEX = 'https://api.openalex.org/works'
 POOL_FIELDS = ('id,doi,display_name,publication_date,publication_year,type,referenced_works_count,cited_by_count,'
@@ -252,7 +252,7 @@ def set_markdown(questions):
              f'Altın kayıtların toplamı {total}, özeti olanlar {abstracts} '
              f'(%{100 * abstracts / max(total, 1):.0f}).', '',
              'Soruların üçte biri ayar (tune), üçte ikisi test için işaretli; sonuç test kısmında okunur. '
-             'İstemediğin survey\'in OpenAlex kimliğini `.local/eesurvey/exclude.json` listesine yaz ve `prepare`\'ı '
+             'İstemediğin survey\'in OpenAlex kimliğini `notes/eesurvey/exclude.json` listesine yaz ve `prepare`\'ı '
              'yeniden çalıştır; sıradaki survey yerine geçer.', '']
     for topic in eesurvey.TOPIC_ORDER:
         items = [q for q in questions if q['topic'] == topic]

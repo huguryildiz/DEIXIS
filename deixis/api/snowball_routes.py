@@ -1,4 +1,4 @@
-"""Citation snowballing (plan .local/plans/snowballing-plan.md); the application middleware enforces CSRF.
+"""Citation snowballing (plan notes/plans/snowballing-plan.md); the application middleware enforces CSRF.
 
 `GET .../snowball` lists the works a round can start from and every series with its rounds, counts and new works.
 `POST .../snowball` queues one round: 409 while another run of the research is active or the series cannot go on,

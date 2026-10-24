@@ -6,6 +6,7 @@ __pycache__/
 node_modules/
 dist/
 .local/
+/notes/
 .impeccable
 .pytest_cache
 web/test-results/

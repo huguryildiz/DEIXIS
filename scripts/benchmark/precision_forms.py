@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 CASES = ('dbr_vbf', 'kurt2017', 'uwsn_kconn2022', 'irs2021')
 A_ROOT = Path('/tmp/deixis-measure-2026-10-06-r2')
 C_ROOT = Path('/tmp/deixis-measure-2026-10-07-sb6')
-OUTPUT = ROOT / '.local/benchmark/2026-10-07-precision'
+OUTPUT = ROOT / 'notes/benchmark/2026-10-07-precision'
 DOI_TEXT = re.compile(r'(?:https?://(?:dx\.)?doi\.org/|doi:\s*)?10\.\d{4,9}/[^\s<>"\]]+', re.I)
 
 
@@ -270,7 +270,7 @@ Etiketleri soru dizininde `labels_sol.json` ve `labels_claude.json` adıyla sakl
 Repo kökünden, dört sorunun tüm etiketleri tamamlandıktan sonra:
 
 ```sh
-python3 scripts/benchmark/precision_forms.py score --root .local/benchmark/2026-10-07-precision
+python3 scripts/benchmark/precision_forms.py score --root notes/benchmark/2026-10-07-precision
 ```
 
 Komut sonuçları stdout'a JSON olarak yazar; form ve anahtarları değiştirmez.

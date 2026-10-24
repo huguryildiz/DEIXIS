@@ -5,7 +5,7 @@ Usage: uv run --no-sync python scripts/model_behavior/run_cases.py --model gpt-5
 Each case builds its StepInput from the synthetic fixtures, uses the loaded deixis-research
 package and a fresh ephemeral Codex thread in the DEIXIS Codex home, and makes one attempt
 (no schema repair) so the first output is what gets judged. Results, raw outputs and the
-automatic checks are written to .local/model-behavior-<date>/results.json. Human judgement
+automatic checks are written to notes/model-behavior-<date>/results.json. Human judgement
 is recorded separately; passing the automatic checks is not success on its own.
 """
 
@@ -99,7 +99,7 @@ async def main(model: str, selected: set[str] | None) -> None:
     package = load_skill_package()
     fixtures = json.loads(FIXTURES.read_text())
     cases = json.loads(CASES.read_text())["cases"]
-    out_dir = REPO_ROOT / ".local" / f"model-behavior-{datetime.now().date().isoformat()}"
+    out_dir = REPO_ROOT / "notes" / f"model-behavior-{datetime.now().date().isoformat()}"
     out_dir.mkdir(parents=True, exist_ok=True)
     results: list[dict[str, Any]] = []
     with tempfile.TemporaryDirectory(prefix="deixis-mb-") as workspace:

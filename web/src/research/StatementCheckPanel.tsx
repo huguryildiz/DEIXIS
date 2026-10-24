@@ -13,7 +13,7 @@ import { t, uiLocale } from '../i18n'
 import '../CitationCheck.css'
 import './statement.css'
 
-// Reverse citation search R3 (plan `.local/plans/reverse-citation-search-plan.md`, D100, D103): the statement check of a
+// Reverse citation search R3 (plan `notes/plans/reverse-citation-search-plan.md`, D100, D103): the statement check of a
 // statement research, in its thread instead of an answer. It shows the latest revision (`latest_check_id`), or an
 // earlier one the person picks, with its currency read now; each work's result, reading depth and the backend's located
 // quotes. Every count, title and result here comes from the stored view; nothing is computed from model prose.

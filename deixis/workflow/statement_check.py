@@ -1,4 +1,4 @@
-"""Reverse citation search, slice R1 (plan `.local/plans/reverse-citation-search-plan.md`): the statement check.
+"""Reverse citation search, slice R1 (plan `notes/plans/reverse-citation-search-plan.md`): the statement check.
 
 A statement research (`researches.intent = 'statement'`) asks one sentence the person pasted; its question is that
 sentence. After its search and reading, each work the reading reached (and each work the person included) is checked

@@ -13,7 +13,7 @@ never touched. Standard library only; runs on Python 3.9 or newer, arm64 macOS o
     python3 scripts/release_checks/install_check.py --self-test
 
 Exit codes: 0 every mandatory row passed, 1 a row failed, 2 refused (environment, port, directory), 4 keychain
-isolation failed. Raw output goes to --out-dir (default .local/release-checks/install/<stamp>/, ignored by Git).
+isolation failed. Raw output goes to --out-dir (default notes/release-checks/install/<stamp>/, ignored by Git).
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ LOOPBACK = ("127.0.0.1", "::1", "localhost")
 LOCK_FILES = ("uv.lock", "web/package-lock.json")
 INSTALL_PROXY_NAMES = ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
                        "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS")
-OVERLAY_SKIP_PARTS = (".local", "node_modules", ".venv", "dist")
+OVERLAY_SKIP_PARTS = ("notes", "node_modules", ".venv", "dist")
 OVERLAY_SKIP_PATHS = (".vscode", "TODO.md", "scripts/local_index.py")
 LIMITS = {"uv_sync": 1800, "npm_ci": 1800, "npm_build": 900, "ready": 60, "stop": 15, "other": 30, "shell": 90}
 MANDATORY = ("I01", "I02", "I03", "I04", "I05", "I07", "keyring", "cleanup")
@@ -1237,7 +1237,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--rev", default="HEAD", help="commit to export (default HEAD)")
     parser.add_argument("--port", type=int, default=8871)
     parser.add_argument("--work-dir", help="must not exist; default /tmp/h1-install-<stamp>")
-    parser.add_argument("--out-dir", help="must not exist; default <repo>/.local/release-checks/install/<stamp>")
+    parser.add_argument("--out-dir", help="must not exist; default <repo>/notes/release-checks/install/<stamp>")
     parser.add_argument("--uv-cache", help="uv cache of an earlier kept run (never deleted); default a fresh one in the work dir")
     parser.add_argument("--npm-cache", help="npm cache of an earlier kept run (never deleted); default a fresh one in the work dir")
     parser.add_argument("--keep", action="store_true", help="keep the work directory")
@@ -1296,7 +1296,7 @@ def main() -> int:
     if _inside(work, REPO) or _inside(work, LIVE_DATA_DIR.resolve()) or work == home or _inside(home, work):
         print("refused: the work directory is inside the repository or the live data directory, or equals or contains HOME", file=sys.stderr)
         return 2
-    out = Path(args.out_dir).expanduser().resolve() if args.out_dir else REPO / ".local" / "release-checks" / "install" / stamp
+    out = Path(args.out_dir).expanduser().resolve() if args.out_dir else REPO / "notes" / "release-checks" / "install" / stamp
     if out.exists():
         print("refused: the output directory %s already exists" % out, file=sys.stderr)
         return 2

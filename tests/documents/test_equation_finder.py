@@ -1,7 +1,7 @@
 """The D113 finder's region rules beyond D40 (2026-10-24): lead-in text, text lines around and beside a display, crops
 grazed by neighbouring text, operator limits, citing sentences, columns, table-caption pages. The
 PDFs are SYNTHETIC (drawn with PyMuPDF, `mathpix_helpers`); no request is sent. Passing shows the rules, not how often
-real papers are read right (the model-free bench on 34 arXiv papers is in `.local/2026-10-24-equation-finder`)."""
+real papers are read right (the model-free bench on 34 arXiv papers is in `notes/2026-10-24-equation-finder`)."""
 
 import pymupdf
 

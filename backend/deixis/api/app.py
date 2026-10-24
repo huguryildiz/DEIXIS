@@ -909,6 +909,7 @@ def create_app(
         store.study_table = settings.study_table
         source_keys.assign_missing(store)
         with db.transaction(conn):
+            spend.book_equation_requests(conn)  # equation-reader requests stored before they were booked (D115)
             spend.reprice_unpriced(conn)  # calls booked unpriced get a cost once the price list names their model (D111)
         settings = settings.bound_to(store.setting)  # the contact email set in Settings is read before the env var (F15)
         app.state.settings = settings

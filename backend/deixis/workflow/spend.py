@@ -12,7 +12,9 @@ as spent, estimated the same way. Only a call that never reached the provider (n
 error and no usage) is left out.
 
 The ledger (`spend_ledger`) is separate from the researches: deleting a research does not lower the day's total. A row is
-written in the same transaction as the model session's result (`Store.finish_model_session`).
+written in the same transaction as the model session's result (`Store.finish_model_session`). An equation-reader request
+(D113, `equation_model_requests`) is not a model session; it gets a row under its own id when its result is stored
+(`record_equation_request`, D115), so the day's total, the threshold and Settings → Usage count it too.
 """
 
 from __future__ import annotations
@@ -166,27 +168,70 @@ def record_session(conn: sqlite3.Connection, session_id: str, sent: bool | None)
         guess = {"input": (sent_chars[0] if sent_chars and sent_chars[0] else 0) // CHARS_PER_TOKEN, "cached_input": 0,
                  "cache_write": 0, "output": len(session["raw_output"] or "") // CHARS_PER_TOKEN}
         cost, basis, tokens = cost_of(prices, guess), "estimated_from_text", guess
+    _book(conn, session_id, sent_day(session["started_at"]), session["connection"], model, tokens, cost, basis)
+
+
+def _book(conn: sqlite3.Connection, row_id: str, day: str, connection: str, model: str | None,
+          tokens: dict[str, int] | None, cost: float | None, basis: str) -> None:
     conn.execute(
         "INSERT INTO spend_ledger (session_id, day, connection, model, input_tokens, cached_input_tokens, output_tokens,"
         " cost_usd, basis, recorded_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         " ON CONFLICT(session_id) DO UPDATE SET model = excluded.model, input_tokens = excluded.input_tokens,"
         " cached_input_tokens = excluded.cached_input_tokens, output_tokens = excluded.output_tokens,"
         " cost_usd = excluded.cost_usd, basis = excluded.basis",
-        (session_id, sent_day(session["started_at"]), session["connection"], model, tokens["input"] if tokens else None,
-         tokens["cached_input"] if tokens else None, tokens["output"] if tokens else None, cost, basis, now()))
+        (row_id, day, connection, model, tokens["input"] if tokens else None, tokens["cached_input"] if tokens else None,
+         tokens["output"] if tokens else None, cost, basis, now()))
+
+
+def record_equation_request(conn: sqlite3.Connection, request_id: str) -> None:
+    """Write (or rewrite) the ledger row of an equation-reader request (D113) from its stored row, booked under the
+    request's own id on the day it was reserved (D115). Call inside the transaction that stores the request's result.
+
+    The same rules as `record_session`, with D113's cost rule: only a completed answer with usage (accepted, or refused
+    by the check) is priced; an unknown outcome is booked unpriced even with partial usage, and nothing is estimated from
+    text, because the crop image the model was sent is most of the input. A reserved row, a connection that does not bill
+    per call and a request that never reached the provider leave no row."""
+    row = conn.execute(
+        "SELECT connection, requested_model, resolved_model, status, http_status, delivery_class, token_usage_json,"
+        " reserved_at FROM equation_model_requests WHERE id = ?", (request_id,)).fetchone()
+    if row is None or row["connection"] not in API_KEY_CONNECTIONS or row["status"] == "reserved":
+        return
+    usage = json.loads(row["token_usage_json"]) if row["token_usage_json"] else None
+    if request_sent(row["status"], row["delivery_class"], row["http_status"], bool(usage)) is False:
+        conn.execute("DELETE FROM spend_ledger WHERE session_id = ?", (request_id,))
+        return
+    model = row["resolved_model"] or row["requested_model"]
+    prices, tokens = price_for(row["connection"], model), usage_tokens(usage)
+    cost, basis = None, "unpriced"
+    if prices is not None and tokens is not None and row["status"] in ("answered", "error"):
+        cost, basis = cost_of(prices, tokens), "reported"
+    _book(conn, request_id, sent_day(row["reserved_at"]), row["connection"], model, tokens, cost, basis)
+
+
+def book_equation_requests(conn: sqlite3.Connection) -> int:
+    """Book every settled equation-reader request that has no ledger row yet (those stored before D115), and return how
+    many rows were written. Run on every start; a request that leaves no row is looked at again and still leaves none.
+    Call inside a transaction."""
+    before = conn.execute("SELECT COUNT(*) FROM spend_ledger").fetchone()[0]
+    for (request_id,) in conn.execute(
+            "SELECT e.id FROM equation_model_requests e LEFT JOIN spend_ledger l ON l.session_id = e.id"
+            " WHERE l.session_id IS NULL AND e.status != 'reserved'").fetchall():
+        record_equation_request(conn, request_id)
+    return conn.execute("SELECT COUNT(*) FROM spend_ledger").fetchone()[0] - before
 
 
 def reprice_unpriced(conn: sqlite3.Connection) -> int:
     """Give a cost to the ledger rows booked as unpriced whose model the price list now names (D111), and return how many.
-    Each is rewritten from its stored session exactly as `record_session` would now write it, then marked with when and
-    with which dated list; a row whose model is still not listed, or whose session is gone, stays unpriced. Call inside a
-    transaction."""
+    Each is rewritten from its stored session (or equation request, D115) exactly as it would now be written, then marked
+    with when and with which dated list; a row whose model is still not listed, or whose session is gone, stays
+    unpriced. Call inside a transaction."""
     as_of, count = price_table()["as_of"], 0
     rows = conn.execute("SELECT session_id, connection, model FROM spend_ledger WHERE basis = 'unpriced'").fetchall()
     for row in rows:
         if price_for(row["connection"], row["model"]) is None:
             continue
-        record_session(conn, row["session_id"], None)
+        record_session(conn, row["session_id"], None)  # each rewrites only its own kind of row; the other finds no row
+        record_equation_request(conn, row["session_id"])
         count += conn.execute(
             "UPDATE spend_ledger SET repriced_at = ?, repriced_price_list = ? WHERE session_id = ? AND cost_usd IS NOT NULL",
             (now(), as_of, row["session_id"])).rowcount

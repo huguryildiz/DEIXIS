@@ -316,3 +316,85 @@ def test_a_model_read_is_not_shown_as_an_arxiv_read_while_the_source_route_is_on
     svc.reading = {"asset_id": aid, "title": None, "pages": 1, "started_at": "x", "route": "model"}
     asset = store.asset(aid)
     assert equations._source_state(store, asset)["state"] != "reading"
+
+
+# ---- the spend ledger (D115) ----------------------------------------------------------------------------------------------
+# The equation reader on a paid-API connection books each request in the spend ledger, so the day's total, the daily
+# threshold and Settings → Usage count it. claude-sonnet-5-5 is $2 / $10 per million: 900 in + 40 out is $0.0022.
+
+PAID_MODEL = "claude-sonnet-5-5"
+
+
+def paid_service(store, papers, tmp_path, model):
+    svc = equations.EquationService(store, papers, data_dir=tmp_path / "data", adapters={"anthropic": model})
+    store.set_setting("answer", {"model_connection": "anthropic", "model": PAID_MODEL, "reasoning_effort": "medium"})
+    return svc
+
+
+def ledger_rows(store):
+    return {r["session_id"]: dict(r) for r in store.conn.execute("SELECT * FROM spend_ledger")}
+
+
+def test_paid_equation_requests_count_in_the_days_total_the_threshold_and_the_usage_rows(tmp_path):
+    from datetime import UTC, datetime
+
+    from deixis.api import usage_routes
+    from deixis.workflow import spend
+    store, _, aid, papers = library(tmp_path)
+    assert read(paid_service(store, papers, tmp_path, FakeImageModel(resolved=PAID_MODEL)), aid)["state"] == "read"
+    booked = ledger_rows(store)
+    assert set(booked) == {r["id"] for r in rows(store)} and len(booked) == 2  # one row per request, under its own id
+    assert all(r["connection"] == "anthropic" and r["model"] == PAID_MODEL and r["basis"] == "reported"
+               and r["cost_usd"] == pytest.approx(0.0022) for r in booked.values())
+    total = spend.day_total(store.conn, spend.day_of(store.clock))
+    assert total["estimated_usd"] == pytest.approx(0.0044) and total["priced_calls"] == 2 and total["unpriced_calls"] == 0
+    assert spend.over_threshold(store) is None  # threshold off
+    store.set_setting(spend.THRESHOLD_SETTING, 0.004)
+    assert spend.over_threshold(store)["estimated_usd"] == pytest.approx(0.0044)
+    store.set_setting(spend.THRESHOLD_SETTING, 0.01)
+    assert spend.over_threshold(store) is None
+    usage = {r["connection"]: r for r in asyncio.run(usage_routes.connection_rows(store, {}, datetime.now(UTC)))}
+    assert usage["anthropic"]["roles"] == ["answer"]
+    assert usage["anthropic"]["spend"]["estimated_usd"] == pytest.approx(0.0044) and usage["anthropic"]["spend"]["priced_calls"] == 2
+    # The route's own month figure reads the same rows: one source, nothing counted twice.
+    assert equations.model_month_cost(store) == {"usd": pytest.approx(0.0044), "calls_without_cost": 0}
+
+
+def test_an_unknown_paid_request_is_booked_unpriced_and_one_never_sent_is_not_booked(tmp_path):
+    from deixis.workflow import spend
+    store, _, aid, papers = library(tmp_path)
+    partial = ModelStepResult("failed", error="Incomplete stream", delivery_class="after_send_unknown",
+                              resolved_model=PAID_MODEL, token_usage={"input_tokens": 900, "output_tokens": 3})
+    unsent = ModelStepResult("unavailable", error="ConnectError", delivery_class="before_send")
+    svc = paid_service(store, papers, tmp_path, FakeImageModel([partial]))
+    read(svc, aid)
+    svc.adapters["anthropic"] = FakeImageModel([unsent])
+    read(svc, aid, retry=True)
+    statuses = {r["id"]: r["status"] for r in rows(store)}
+    assert sorted(statuses.values()) == ["error", "unknown"]
+    booked = ledger_rows(store)
+    (unknown,) = [i for i, s in statuses.items() if s == "unknown"]
+    assert set(booked) == {unknown} and booked[unknown]["cost_usd"] is None and booked[unknown]["basis"] == "unpriced"
+    total = spend.day_total(store.conn, spend.day_of(store.clock))
+    assert total["estimated_usd"] == 0 and total["unpriced_calls"] == 1  # may have been billed: never read as $0
+    assert equations.model_month_cost(store) == {"usd": 0, "calls_without_cost": 1}
+
+
+def test_requests_stored_before_the_ledger_are_booked_once_at_start_and_repriced_like_sessions(tmp_path, monkeypatch):
+    from deixis.workflow import spend
+    store, _, aid, papers = library(tmp_path)
+    read(paid_service(store, papers, tmp_path, FakeImageModel(resolved=PAID_MODEL)), aid)
+    store.conn.execute("DELETE FROM spend_ledger")  # as a library from before D115
+    store.conn.commit()
+    real = spend.price_table()
+    monkeypatch.setattr(spend, "price_table", lambda: {**real, "models": {**real["models"], "anthropic": {}}})
+    with db.transaction(store.conn):
+        assert spend.book_equation_requests(store.conn) == 2
+    assert {r["basis"] for r in ledger_rows(store).values()} == {"unpriced"}
+    with db.transaction(store.conn):
+        assert spend.book_equation_requests(store.conn) == 0
+    monkeypatch.setattr(spend, "price_table", lambda: real)
+    with db.transaction(store.conn):
+        assert spend.reprice_unpriced(store.conn) == 2
+    assert all(r["cost_usd"] == pytest.approx(0.0022) and r["repriced_price_list"] == real["as_of"]
+               for r in ledger_rows(store).values())

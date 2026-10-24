@@ -147,20 +147,17 @@ def model_refused(store: Store, revision: str | None) -> bool:
 
 
 def model_month_cost(store: Store) -> dict[str, Any]:
-    """This calendar month's model requests priced from the price list: dollars for calls that completed with usage, and
-    how many counted calls have no known cost (reserved or unknown, even with partial usage; an error without usage; a
-    model the list does not price)."""
-    dollars, unknown = 0.0, 0
-    for row in store.conn.execute(
-            f"SELECT status, connection, requested_model, resolved_model, token_usage_json FROM equation_model_requests"
-            f" WHERE substr(reserved_at, 1, 7) = ? AND {MODEL_COUNTED}", (now()[:7],)):
-        prices = spend.price_for(row["connection"], row["resolved_model"] or row["requested_model"])
-        tokens = spend.usage_tokens(json.loads(row["token_usage_json"])) if row["token_usage_json"] else None
-        if prices is None or tokens is None or row["status"] not in ("answered", "error"):
-            unknown += 1
-        else:
-            dollars += spend.cost_of(prices, tokens)
-    return {"usd": round(dollars, 4), "calls_without_cost": unknown}
+    """This calendar month's model requests priced in the spend ledger (D115, the one place their dollars are kept):
+    dollars for calls that completed with usage, and how many counted calls have no known cost (reserved or unknown,
+    even with partial usage; an error without usage; a model the list does not price)."""
+    month = now()[:7]
+    counted = store.conn.execute(f"SELECT COUNT(*) FROM equation_model_requests WHERE substr(reserved_at, 1, 7) = ? AND {MODEL_COUNTED}",
+                                 (month,)).fetchone()[0]
+    priced = store.conn.execute(
+        "SELECT COUNT(l.cost_usd) AS n, COALESCE(SUM(l.cost_usd), 0) AS usd FROM spend_ledger l"
+        f" JOIN equation_model_requests e ON e.id = l.session_id WHERE substr(e.reserved_at, 1, 7) = ? AND {MODEL_COUNTED}",
+        (month,)).fetchone()
+    return {"usd": round(priced["usd"], 4), "calls_without_cost": counted - priced["n"]}
 
 
 def mathpix_switch(store: Store) -> bool:
@@ -921,6 +918,7 @@ class EquationService:
                 (status, getattr(result, "resolved_model", None), latex, getattr(result, "http_status", None),
                  getattr(result, "delivery_class", None), getattr(result, "error_kind", None), reason,
                  json.dumps(result.token_usage) if getattr(result, "token_usage", None) else None, now(), row_id))
+            spend.record_equation_request(self.store.conn, row_id)  # the day's spend counts it too (D115)
 
     async def _model_answer(self, asset_id: str, start_version: str | None, start_id: str | None, file_sha: str, ctx: Any,
                             crop: dict[str, Any]) -> dict[str, Any]:

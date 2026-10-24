@@ -75,9 +75,10 @@ def close(store, run, items, selected, cut, k_selected=3, **extra):
                  "read_cutoff_at": cut, **extra})
 
 
-def fetch_failed(store, run, svid, status, at):
+def fetch_failed(store, run, svid, status, at, final_url=None):
     step(store, run, f"fetch:{svid}", "fetch_pdf", status="failed", error_code="fetch_http_error",
-         error={"http_status": status, "error": "SYNTHETIC refused", "url": "https://example.org/x.pdf"}, at=at)
+         error={"http_status": status, "error": "SYNTHETIC refused", "url": "https://example.org/x.pdf",
+                **({"final_url": final_url} if final_url else {})}, at=at)
 
 
 def test_screening_passes_count_each_pair_and_list_the_works_that_did_not_agree(store):
@@ -207,6 +208,36 @@ def test_fulltext_gaps_give_each_unread_passed_work_the_reason_its_records_state
                                "not_reached_before_cutoff": 1, "reading_failed": 1, "identity_unconfirmed": 1,
                                "unknown": 2}
     assert sum(gaps["reasons"].values()) == gaps["not_read"] == len(gaps["rows"])
+
+
+def test_refused_downloads_are_counted_per_host_that_answered(store):
+    lib = Lib(store)
+    fast = fast_run(store, lib)
+    first, second, third, missing, old = (candidate(lib) for _ in range(5))
+    cut = stamp()
+    BEFORE = shift(cut, -30)
+    for svid in (first, second, third, missing, old):
+        step(store, fast, f"fulltext_work:{lib.work_of(svid)}", "code:fulltext_work", output={"code": "no_fulltext"},
+             at=BEFORE)
+    # The host after the redirect counts, not the link's; an attempt stored before the final address was kept counts
+    # under its link's host, and a 404 is no refusal.
+    fetch_failed(store, fast, first, 403, BEFORE, "https://www.mdpi.com/a/pdf")
+    fetch_failed(store, fast, second, 403, BEFORE, "https://www.mdpi.com/b/pdf")
+    fetch_failed(store, fast, third, 401, BEFORE, "https://journals.sagepub.com/doi/pdf/x")
+    fetch_failed(store, fast, missing, 404, BEFORE, "https://www.mdpi.com/c/pdf")
+    fetch_failed(store, fast, old, 403, BEFORE)
+    close(store, fast, [item(lib, svid) for svid in (first, second, third, missing, old)], [], cut, k_selected=0)
+
+    gaps = run_of(views.research_view(store, lib.rid), fast)["fulltext_gaps"]
+    hosts = {row["work_id"]: (row["http_status"], row["host"]) for row in gaps["rows"]}
+    assert hosts == {lib.work_of(first): (403, "www.mdpi.com"), lib.work_of(second): (403, "www.mdpi.com"),
+                     lib.work_of(third): (401, "journals.sagepub.com"), lib.work_of(missing): (404, "www.mdpi.com"),
+                     lib.work_of(old): (403, "example.org")}
+    assert gaps["refused_hosts"] == [{"host": "www.mdpi.com", "works": 2}, {"host": "example.org", "works": 1},
+                                     {"host": "journals.sagepub.com", "works": 1}]
+    detail = next(s for s in views.research_view(store, lib.rid)["sources"] if s["source_version_id"] == first)
+    assert detail["access"]["fetch"] == {"status": "failed", "error_code": "fetch_http_error", "http_status": 403,
+                                         "host": "www.mdpi.com"}
 
 
 def test_later_records_do_not_change_an_earlier_runs_gaps(store):

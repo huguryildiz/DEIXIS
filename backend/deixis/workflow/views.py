@@ -782,7 +782,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         # The link's latest attempt in any research: a refused link is not requested again (see Store.pdf_link_refusal).
         # Equal start times select the last inserted step (rowid), not the random step id or the index's traversal order.
         fetch = conn.execute(
-            "SELECT status, error_code, json_extract(error_json, '$.http_status') AS http_status FROM run_steps"
+            "SELECT status, error_code, json_extract(error_json, '$.http_status') AS http_status,"
+            " json_extract(error_json, '$.final_url') AS final_url, json_extract(error_json, '$.url') AS url FROM run_steps"
             " WHERE operation_key = ? ORDER BY started_at DESC, rowid DESC LIMIT 1", (f"fetch:{svid}",)
         ).fetchone()
         other_copy = conn.execute(
@@ -822,7 +823,10 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             "access": {"abstract_passage_id": abstract["id"] if abstract else None,
                        "abstract_origin": abstract["abstract_origin"] if abstract else None,
                        "oa_pdf_url": row["oa_pdf_url"], "oa_pdf_version": row["oa_pdf_version"], "assets": assets, "replaced_assets": replaced_assets,
-                       "fetch": dict(fetch) if fetch else None, "other_copy": dict(other_copy) if other_copy else None,
+                       "fetch": {"status": fetch["status"], "error_code": fetch["error_code"], "http_status": fetch["http_status"],
+                                 # The host that answered a failed download, after any redirect.
+                                 "host": run_card.fetch_host(fetch["final_url"]) or run_card.fetch_host(fetch["url"])}
+                       if fetch else None, "other_copy": dict(other_copy) if other_copy else None,
                        "pdf_candidates": pdf_candidates,
                        "pdf_discoveries": store.pdf_discoveries(research_id, svid, retry_after=True)},
             "selection": {"state": row["state"], "origin": row["selection_origin"], "version": row["selection_version"],

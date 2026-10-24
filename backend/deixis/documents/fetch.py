@@ -173,14 +173,15 @@ def _pinned_request(url: str, address: str) -> tuple[str, dict[str, str], dict[s
 
 async def _fetch(url: str, client: httpx.AsyncClient | None, deadline: float, *, accept: str | None = None, gate: Any = None,
                  admit: Callable[[httpx.Response, str], FetchResult | None] | None = None,
-                 finish: Callable[[httpx.Response, bytes, str], FetchResult]) -> FetchResult:
+                 finish: Callable[[httpx.Response, bytes, str], FetchResult], email: str | None = None) -> FetchResult:
     """The protections both fetches share: public addresses only, the checked address pinned, at most MAX_REDIRECTS
     redirects, MAX_BYTES, `host_gate` and one `asyncio.timeout(deadline)` over the whole fetch.
 
     `admit` reads a 200 response's headers before the body and may refuse it; `finish` turns the body into the
-    result. A failure names the URL being read when it happened, after any redirect. `gate` is fetch_file's."""
+    result. A failure names the URL being read when it happened, after any redirect. `gate` is fetch_file's. Without
+    `client` the fetch opens its own, whose User-Agent names `email` (`user_agent`)."""
     own_client = client is None
-    client = client or httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": user_agent()}, trust_env=False)
+    client = client or httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": user_agent(email)}, trust_env=False)
     current = url
     try:
         if gate is not None:
@@ -224,7 +225,9 @@ async def _fetch(url: str, client: httpx.AsyncClient | None, deadline: float, *,
                                     return FetchResult("blocked_url", final_url=location, error=f"not a valid URL: {exc}")
                                 continue
                             if response.status_code != 200:
-                                return FetchResult("http_error", final_url=current, http_status=response.status_code)
+                                # The refusal's own type is kept: a bot check answers 403 with an HTML page.
+                                return FetchResult("http_error", final_url=current, http_status=response.status_code,
+                                                   media_type=_media_type(response) or None)
                             refused = admit(response, current) if admit is not None else None
                             if refused is not None:
                                 return refused
@@ -273,14 +276,16 @@ def _media_type(response: httpx.Response) -> str:
     return response.headers.get("content-type", "").split(";")[0].strip().lower()
 
 
-async def fetch_pdf(url: str, client: httpx.AsyncClient | None = None, deadline: float = PDF_DEADLINE_SECONDS) -> FetchResult:
-    """A PDF, judged by its first bytes rather than its declared type. The whole fetch ends at `deadline`."""
+async def fetch_pdf(url: str, client: httpx.AsyncClient | None = None, deadline: float = PDF_DEADLINE_SECONDS, *,
+                    email: str | None = None) -> FetchResult:
+    """A PDF, judged by its first bytes rather than its declared type. The whole fetch ends at `deadline`. `email` is
+    the contact address set in Settings, sent in the User-Agent as the API lookups send it."""
     def finish(response: httpx.Response, data: bytes, current: str) -> FetchResult:
         if not data.startswith(b"%PDF-"):
             return FetchResult("not_pdf", final_url=current, media_type=_media_type(response), http_status=200)
         return FetchResult("ok", data=data, final_url=current, media_type="application/pdf", http_status=200)
 
-    return await _fetch(url, client, deadline, accept=PDF_ACCEPT, finish=finish)
+    return await _fetch(url, client, deadline, accept=PDF_ACCEPT, finish=finish, email=email)
 
 
 async def fetch_file(url: str, media_types: tuple[str, ...], gate: Any = None, client: httpx.AsyncClient | None = None,

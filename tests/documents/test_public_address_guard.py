@@ -96,3 +96,34 @@ def test_an_unrelated_protocol_error_is_still_failed(monkeypatch):
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     result = asyncio.run(fetch.fetch_pdf("https://papers.example/a.pdf", client))
     assert (result.status, result.error) == ("failed", "RemoteProtocolError")
+
+
+class OwnClient(httpx.AsyncClient):
+    """The client `_fetch` opens for itself when none is given, with a mock transport in place of the network."""
+    sent: list[httpx.Request] = []
+
+    def __init__(self, **kwargs):
+        def handler(request):
+            OwnClient.sent.append(request)
+            return httpx.Response(403, headers={"content-type": "text/html; charset=utf-8"}, content=b"<html>SYNTHETIC</html>")
+        super().__init__(transport=httpx.MockTransport(handler), **kwargs)
+
+
+@pytest.mark.parametrize("email, env, agent", [
+    ("me@synthetic.example", None, "DEIXIS/0.1 (local research workspace; mailto:me@synthetic.example)"),
+    (None, "env@synthetic.example", "DEIXIS/0.1 (local research workspace; mailto:env@synthetic.example)"),
+    (None, None, "DEIXIS/0.1 (local research workspace)"),
+])
+def test_the_pdf_fetch_names_the_settings_email_in_its_user_agent(monkeypatch, email, env, agent):
+    resolving_public(monkeypatch)
+    monkeypatch.setattr(fetch.httpx, "AsyncClient", OwnClient)
+    if env:
+        monkeypatch.setenv("DEIXIS_CONTACT_EMAIL", env)
+    else:
+        monkeypatch.delenv("DEIXIS_CONTACT_EMAIL", raising=False)
+    OwnClient.sent = []
+    result = asyncio.run(fetch.fetch_pdf("https://papers.example/a.pdf", email=email))
+    assert [request.headers["user-agent"] for request in OwnClient.sent] == [agent]
+    # A refusal keeps its status, the address that refused and the type it answered with (a bot check's HTML page).
+    assert (result.status, result.http_status, result.final_url, result.media_type) == (
+        "http_error", 403, "https://papers.example/a.pdf", "text/html")

@@ -985,7 +985,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         <div className="step-bar" aria-hidden>{reasons.map(r => <i key={r} className={`gap-${r}`} style={{ width: `${(100 * gaps.reasons[r]) / gaps.not_read}%` }} />)}</div>
         <ul className="step-legend">{reasons.map(r => <li key={r}><i className={`gap-${r}`} aria-hidden />{t(gapReasonLabels[r])} <b>{gaps.reasons[r]}</b></li>)}</ul>
       </div>)
-      shown('gaps', gaps.rows, 3).forEach(g => parts.push(row(sourceTitle(g.source_version_id, g.title), g.http_status ? `${t(gapReasonLabels[g.reason])} · ${g.http_status}` : t(gapReasonLabels[g.reason]), `gap-${g.source_version_id}`)))
+      if (gaps.refused_hosts?.length) parts.push(row(t('Downloads refused (401/403), by host'), gaps.refused_hosts.map(h => `${h.host} ${h.works}`).join(' · '), 'refused-hosts'))
+      shown('gaps', gaps.rows, 3).forEach(g => parts.push(row(sourceTitle(g.source_version_id, g.title), [t(gapReasonLabels[g.reason]), g.http_status, g.host].filter(Boolean).join(' · '), `gap-${g.source_version_id}`)))
       const gapMore = more('gaps', gaps.rows.length, 3)
       if (gapMore) parts.push(gapMore)
       if (onOpenPdfs || onOpenFunnel) parts.push(<div key="gap-actions" className="step-actions">

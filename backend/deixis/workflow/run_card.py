@@ -15,6 +15,7 @@ import json
 from datetime import datetime
 from functools import cached_property
 from typing import Any
+from urllib.parse import urlsplit
 
 from deixis.workflow import fast_path
 
@@ -23,6 +24,14 @@ GAP_REASONS = ("no_open_pdf", "fetch_failed", "deferred", "outside_read_limit", 
 # The fast path's cutoff snapshot (`fast_answer.CUTOFF`), frozen with the read stage's closure when the answer stage is
 # enforced too.
 CUTOFF_KEY = "fast_path:v1:cutoff"
+
+
+def fetch_host(url: Any) -> str | None:
+    """The host a stored URL names, lower case; None when there is none or it cannot be read."""
+    try:
+        return urlsplit(url).hostname if isinstance(url, str) else None
+    except ValueError:
+        return None
 
 
 class Facts:
@@ -62,12 +71,15 @@ class Facts:
         return before | own
 
     @cached_property
-    def failed_fetches(self) -> list[tuple[str, datetime | None, int | None]]:
-        """Every failed `fetch_pdf` attempt of the research's runs: its version, when it finished, its HTTP status."""
+    def failed_fetches(self) -> list[tuple[str, datetime | None, int | None, str | None]]:
+        """Every failed `fetch_pdf` attempt of the research's runs: its version, when it finished, its HTTP status and
+        the host that answered (the address after redirects; an attempt stored before it was kept names its link's)."""
         return [(row["operation_key"].split(":", 1)[1], _time(row["finished_at"]),
-                 row["http_status"] if isinstance(row["http_status"], int) else None)
+                 row["http_status"] if isinstance(row["http_status"], int) else None,
+                 fetch_host(row["final_url"]) or fetch_host(row["url"]))
                 for row in self.store.conn.execute(
-                    "SELECT s.operation_key, s.finished_at, json_extract(s.error_json, '$.http_status') AS http_status"
+                    "SELECT s.operation_key, s.finished_at, json_extract(s.error_json, '$.http_status') AS http_status,"
+                    " json_extract(s.error_json, '$.final_url') AS final_url, json_extract(s.error_json, '$.url') AS url"
                     " FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE r.research_id = ? AND s.kind = 'fetch_pdf'"
                     " AND s.status = 'failed' ORDER BY s.rowid", (self.rid,))]
 
@@ -178,7 +190,7 @@ def fulltext_gaps(store: Any, run: dict[str, Any], facts: Facts, read_view: dict
     3. The work's retrieval as it stood at the read cutoff (every record when the run has no closure): its
        `code:fulltext_work` step settled by then, and the failed `fetch_pdf` attempts of its versions, in any run, that
        finished by then and by the time the step settled.
-       - settled `no_fulltext`: `fetch_failed` when such a failed attempt exists (its HTTP status is given), else
+       - settled `no_fulltext`: `fetch_failed` when such a failed attempt exists (its HTTP status and host are given), else
          `no_open_pdf` (every route answered and none had a file);
        - settled `text_unreadable` (a PDF came and no text could be read from it): `reading_failed`;
        - failed `quota_deferred`: `deferred` (nothing was sent: OpenAlex's daily budget was spent);
@@ -191,6 +203,8 @@ def fulltext_gaps(store: Any, run: dict[str, Any], facts: Facts, read_view: dict
        in the closure's window but not among its `selected_work_ids` while all K slots were taken and it was never
        claimed: `outside_read_limit`. Being absent from a window is not that proof.
     6. Otherwise `unknown`.
+
+    `refused_hosts` counts the `fetch_failed` rows refused with 401 or 403 under the host that refused them.
     """
     if run["kind"] != "discovery" or not fast_path.enforces(run["budget"], "read"):
         return None
@@ -213,10 +227,10 @@ def fulltext_gaps(store: Any, run: dict[str, Any], facts: Facts, read_view: dict
                 if output.get(key):
                     frozen_work[output[key]] = step["operation_key"].split(":", 1)[1]
     work_of = lambda svid: frozen_work.get(svid) or facts.versions.get(svid, (None, None))[0]  # noqa: E731
-    failed_fetches: dict[str, list[tuple[datetime | None, int | None]]] = {}
-    for svid, when, status in facts.failed_fetches:
+    failed_fetches: dict[str, list[tuple[datetime | None, int | None, str | None]]] = {}
+    for svid, when, status, host in facts.failed_fetches:
         if (work := work_of(svid)) is not None:
-            failed_fetches.setdefault(work, []).append((when, status))
+            failed_fetches.setdefault(work, []).append((when, status, host))
     title_of = lambda svid: facts.versions.get(svid, (None, None))[1] if svid else None  # noqa: E731
 
     # The version each reading read, from this run's frozen adjudication plans: a reading is keyed by the work's head,
@@ -282,55 +296,62 @@ def fulltext_gaps(store: Any, run: dict[str, Any], facts: Facts, read_view: dict
             frozen[work] = version
     frozen |= read_version
 
-    def retrieval(work_id: str) -> tuple[str, int | None] | None:
+    # A reason with the HTTP status and host of the failed download behind it; both None for any other reason.
+    def retrieval(work_id: str) -> tuple[str, int | None, str | None] | None:
         claim = claims.get(work_id)
         settled = _time(claim["finished_at"]) if claim else None
         if claim is None or not by(cutoff_at, settled):
             return None
-        attempts = [status for when, status in failed_fetches.get(work_id, [])
+        attempts = [(status, host) for when, status, host in failed_fetches.get(work_id, [])
                     if by(cutoff_at, when) and by(settled, when)]
-        failed = ("fetch_failed", attempts[-1]) if attempts else None
+        failed = ("fetch_failed", *attempts[-1]) if attempts else None
         code = (claim["output"] or {}).get("code")
         if claim["status"] == "succeeded":
             if code == "no_fulltext":
-                return failed or ("no_open_pdf", None)
+                return failed or ("no_open_pdf", None, None)
             if code == "text_unreadable":
-                return "reading_failed", None
+                return "reading_failed", None, None
             return None
         if claim["status"] == "failed" and claim["error_code"] == "quota_deferred":
-            return "deferred", None
+            return "deferred", None, None
         return failed
 
-    def reason(work_id: str) -> tuple[str, int | None]:
+    def reason(work_id: str) -> tuple[str, int | None, str | None]:
         if work_id in passes:
             found = passes[work_id]
             if any(code == "model_read_cutoff" for _, code in found):
-                return "not_reached_before_cutoff", None
+                return "not_reached_before_cutoff", None, None
             if any(status in ("failed", "outcome_unknown") for status, _ in found):
-                return "reading_failed", None
-            return "unknown", None
+                return "reading_failed", None, None
+            return "unknown", None, None
         if work_id in unconfirmed:
-            return "identity_unconfirmed", None
+            return "identity_unconfirmed", None, None
         if (fetched := retrieval(work_id)) is not None:
             return fetched
         cut = (items.get(work_id) or {}).get("cutoff")
         if (isinstance(cut, dict) and "fulltext_after_cutoff" in cut) or cut == "not_screened_at_cutoff":
-            return "not_reached_before_cutoff", None
+            return "not_reached_before_cutoff", None, None
         if cut == "not_screened_model_budget":
-            return "outside_read_limit", None
+            return "outside_read_limit", None, None
         if work_id in outside or (work_id in items and work_id not in selected and k_full and work_id not in claims):
-            return "outside_read_limit", None
-        return "unknown", None
+            return "outside_read_limit", None, None
+        return "unknown", None, None
 
     rows = []
     for work_id in sorted(passed - read_any):
         head = frozen.get(work_id)
-        why, status = reason(work_id)
+        why, status, host = reason(work_id)
         rows.append({"source_version_id": head, "work_id": work_id, "title": title_of(head), "reason": why,
-                     "http_status": status})
+                     "http_status": status, "host": host})
     rows.sort(key=lambda row: (row["title"] or "", row["work_id"]))
     reasons = dict.fromkeys(GAP_REASONS, 0)
     for row in rows:
         reasons[row["reason"]] += 1
+    # The works whose download a host refused (401 or 403), counted per host, most first.
+    refused: dict[str, int] = {}
+    for row in rows:
+        if row["reason"] == "fetch_failed" and row["http_status"] in (401, 403) and row["host"]:
+            refused[row["host"]] = refused.get(row["host"], 0) + 1
+    refused_hosts = [{"host": host, "works": n} for host, n in sorted(refused.items(), key=lambda kv: (-kv[1], kv[0]))]
     return {"passed": len(passed), "read": len(passed & read_any), "read_any": len(read_any),
-            "not_read": len(rows), "reasons": reasons, "rows": rows}
+            "not_read": len(rows), "reasons": reasons, "rows": rows, "refused_hosts": refused_hosts}

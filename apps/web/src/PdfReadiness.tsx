@@ -224,7 +224,7 @@ function missingReason(record: Source, versions: Source[]): string {
     if (s.access.other_copy?.status === 'failed') return t('No open copy found')
     const fetch = s.access.fetch
     if (fetch?.status === 'failed') {
-      if (fetch.http_status === 401 || fetch.http_status === 403) return t('Publisher refused ({status})', { status: fetch.http_status })
+      if (fetch.http_status === 401 || fetch.http_status === 403) return fetch.host ? t('{host} refused ({status})', { host: fetch.host, status: fetch.http_status }) : t('Publisher refused ({status})', { status: fetch.http_status })
       if (fetch.http_status === 404 || fetch.http_status === 410) return t('Link had no PDF')
       return fetchReasonText(fetch.error_code, fetch.http_status)
     }

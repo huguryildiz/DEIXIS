@@ -951,7 +951,13 @@ def create_app(
         from deixis.workflow.background_fetch import FetchSlots
         limiter = ModelCallLimiter(settings.effective_model_concurrency())
         app.state.limiter = limiter  # Settings → Research changes its ceiling while DEIXIS runs
-        flow = ResearchFlow(FlowDeps(settings, store, adapter_map, package, http, fetcher or fetch_module.fetch_pdf, equations,
+        async def fetch_pdf(url: str) -> fetch_module.FetchResult:
+            # The PDF fetch opens its own client (pinned address, no proxy), so the Settings email is passed to it here,
+            # read at every fetch: it can change while DEIXIS runs.
+            return await fetch_module.fetch_pdf(url, email=settings.contact_email)
+
+        pdf_fetcher = fetcher or fetch_pdf
+        flow = ResearchFlow(FlowDeps(settings, store, adapter_map, package, http, pdf_fetcher, equations,
                                      limiter=limiter, local_embedder=embedder,
                                      fetch_xml=xml_fetcher or acquisition.fetch_xml, clock=store.clock, fetch_slots=FetchSlots(12),
                                      local_http=local_http))
@@ -963,7 +969,7 @@ def create_app(
             equations.start()  # reads stored PDFs' equations in the background when the reader is installed (D52)
         app.state.store, app.state.worker, app.state.adapters = store, worker, adapter_map
         app.state.package, app.state.owner = package, owner
-        app.state.http, app.state.fetch_pdf = http, fetcher or fetch_module.fetch_pdf
+        app.state.http, app.state.fetch_pdf = http, pdf_fetcher
         app.state.local_http = local_http
         # A connection opened now, for a check that must not ride a pooled one from before a network change (VPN).
         app.state.fresh_http = lambda: (nullcontext(http_client) if http_client else

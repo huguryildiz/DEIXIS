@@ -2718,8 +2718,10 @@ class ResearchFlow:
             self.store.add_usage(run["id"], "downloads")
             result = await self.deps.fetch_pdf(source["oa_pdf_url"])
             if result.status != "ok":
+                # The address that answered after any redirect and its declared type, so refusals count per host.
                 self.store.finish_step(step["id"], "failed", error_code=f"fetch_{result.status}",
-                                       error={"http_status": result.http_status, "error": result.error, "url": source["oa_pdf_url"]})
+                                       error={"http_status": result.http_status, "error": result.error, "url": source["oa_pdf_url"],
+                                              "final_url": result.final_url, "media_type": result.media_type})
                 return
             data, final_url = result.data, result.final_url
         sha = hashlib.sha256(data).hexdigest()

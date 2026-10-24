@@ -3006,6 +3006,8 @@ const tr: Record<string, string> = {
   'PDF has no text layer': 'PDF’te metin katmanı yok',
   'No open copy found': 'Açık kopya bulunamadı',
   'Publisher refused ({status})': 'Yayıncı reddetti ({status})',
+  '{host} refused ({status})': '{host} reddetti ({status})',
+  'Downloads refused (401/403), by host': 'Reddedilen indirmeler (401/403), host başına',
   'Link had no PDF': 'Bağlantıda PDF yok',
   'Open copy is another version': 'Açık kopya başka bir sürüm',
   'No open link listed': 'Açık bağlantı yok',

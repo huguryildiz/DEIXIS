@@ -6,6 +6,7 @@ against the environment variable behave as the slice says. It says nothing about
 real Scopus key is entitled.
 """
 
+import asyncio
 import socket
 
 import httpx
@@ -360,6 +361,22 @@ def test_the_contact_email_setting_is_read_before_the_environment_variable(serve
     assert effective(app) == "me@synthetic.example"
     cleared = client.put("/api/contact-email", json={"email": ""}).json()
     assert cleared["email"] is None and effective(app) == "env@synthetic.example"
+
+
+def test_the_pdf_fetch_is_given_the_contact_email_set_in_settings_at_each_download(served, monkeypatch):
+    app, client, _, _ = served
+    asked = []
+
+    async def fetch_pdf(url, email=None):
+        asked.append((url, email))
+        return fetch.FetchResult("http_error", final_url=url, http_status=403)
+
+    monkeypatch.setattr(fetch, "fetch_pdf", fetch_pdf)
+    url = "https://papers.synthetic.example/a.pdf"
+    asyncio.run(app.state.fetch_pdf(url))
+    client.put("/api/contact-email", json={"email": "me@synthetic.example"})
+    asyncio.run(app.state.worker.flow.deps.fetch_pdf(url))
+    assert asked == [(url, None), (url, "me@synthetic.example")]
 
 
 @pytest.mark.parametrize("bad", ["not an email", "a@b", "a b@c.org", "x@y.org,z@y.org", "a" * 250 + "@b.org"])

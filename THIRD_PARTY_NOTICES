@@ -1,6 +1,6 @@
 THIRD-PARTY NOTICES
 
-DEIXIS is licensed AGPL-3.0-or-later (see LICENSE). It includes or depends on the software below. The Python and npm lists are written by scripts/licenses/build_notices.py from uv.lock and apps/web/package-lock.json (production dependencies only); the npm list includes build tools that the lock declares as dependencies, so it is a superset of what the web app ships. Native components are listed by hand after them.
+DEIXIS is licensed AGPL-3.0-or-later (see LICENSE). It includes or depends on the software below. The Python and npm lists are written by scripts/licenses/build_notices.py from uv.lock and web/package-lock.json (production dependencies only); the npm list includes build tools that the lock declares as dependencies, so it is a superset of what the web app ships. Native components are listed by hand after them.
 
 Contents
 --------

@@ -262,7 +262,7 @@ for (const file of ['src/PassageSheet.tsx', 'src/research/SourceRow.tsx']) {
   assert(!/equations\?\.state === 'failed' && <(DropdownMenuItem|button)/.test(source), file);
 }
 """
-    result = subprocess.run(["node", "-e", script], cwd=root / "apps/web", capture_output=True, text=True)
+    result = subprocess.run(["node", "-e", script], cwd=root / "web", capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
 
 

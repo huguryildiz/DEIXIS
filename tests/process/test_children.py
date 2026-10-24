@@ -108,7 +108,7 @@ def pdf_case(tmp_path, lifetime="60", guard=True, limit=250 * 1024**2):
 
     big, ready, gate, log = [tmp_path / name for name in ("big.pdf", "ready.json", "gate", "guard.jsonl")]
     memory_probe.build_pdf(big, 67 * 1024**2)
-    env = {"PYTHONPATH": str(HERE.parent.parent / "backend"), "DEIXIS_CHILD_LIFETIME_SECONDS": lifetime,
+    env = {"PYTHONPATH": str(HERE.parent.parent), "DEIXIS_CHILD_LIFETIME_SECONDS": lifetime,
            "DEIXIS_CHILD_GUARD_DISABLED": "0" if guard else "1", "DEIXIS_CHILD_GUARD_LOG": str(log),
            "DEIXIS_TEST_MEMORY_LIMIT": str(limit)}
     out = tmp_path / "parent.jsonl"

@@ -35,8 +35,8 @@ def test_a_paused_run_after_a_model_failure_carries_the_connections_own_words(tm
 
 
 def test_the_run_line_uses_safe_fallbacks_and_keeps_the_reason_line():
-    labels = (TESTS.parent / "apps" / "web" / "src" / "labels.ts").read_text()
-    transcript = (TESTS.parent / "apps" / "web" / "src" / "Transcript.tsx").read_text()
+    labels = (TESTS.parent / "web" / "src" / "labels.ts").read_text()
+    transcript = (TESTS.parent / "web" / "src" / "Transcript.tsx").read_text()
     assert "model_connection_not_ready: 'The selected model connection is not ready. Nothing was sent to another model.'" in labels
     assert "Historical free text is not safe to echo" in labels
     assert "The connection did not complete this call. Check it in Settings before resuming." in labels

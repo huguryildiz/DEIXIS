@@ -1,7 +1,7 @@
 # Scholarly connector onboarding
 
 The B1 boundary is `deixis.scholarly_connector.v1` in
-[`contract.py`](../../backend/deixis/providers/contract.py). D174 Q1/Q2 restrict
+[`contract.py`](../../deixis/providers/contract.py). D174 Q1/Q2 restrict
 registration to reviewed adapters in the codebase. Packaged builds cannot add
 sources. No runtime import path, URL, key or API request can register code.
 The compatibility facade validates request fields and declared option values
@@ -20,7 +20,7 @@ synthetic fixtures (D201).
    evidence in the new provider module. Verify current compatibility against
    authoritative provider documentation in a separately authorized task; B1
    used no network and establishes no current provider truth.
-2. Register the adapter in `backend/deixis/providers/registry.py:88` and supply
+2. Register the adapter in `deixis/providers/registry.py:88` and supply
    default/endpoint metadata (`registry.py:25`, `registry.py:37`). Derive its
    descriptor through `facade.descriptor_for`; declare lookup and citing bindings
    through `Connector.capabilities` with their batch ceiling, retry-allowance support
@@ -34,7 +34,7 @@ synthetic fixtures (D201).
    policy in `Connector.retry` (`registry.py:72`), using the provider's constants;
    `facade.descriptor_for` reads `common.send` defaults and merges those overrides
    without provider branches. Add managed keys if needed in
-   `backend/deixis/keys/credentials.py:39`; source keys remain `testable=False`
+   `deixis/keys/credentials.py:39`; source keys remain `testable=False`
    (`keys/credentials.py:36`). Do not emulate unsupported remote operations.
 3. Declare a display name and default/endpoint `query_syntax` in
    `providers/registry.py:36,76,77`; `resolve_query_syntax` (`registry.py:142`)
@@ -45,9 +45,9 @@ synthetic fixtures (D201).
    not an admission surface. Check compiler delegation/allocation
    (`providers/query_compiler.py:70,106,122`) and facade rendering/rules
    (`providers/facade.py:126,130`), plus `domain/rules.py:56,60`,
-   `workflow/routing.py:88`, `contracts/research/common.schema.json:36`,
-   `methods/deixis-research/SKILL.md:10`, `api/app.py:807-822`, and connection labels
-   in `apps/web/src/labels.ts:206`. Lookup persistence has closed provider and
+   `workflow/routing.py:88`, `deixis/contracts/research/common.schema.json:36`,
+   `deixis/methods/deixis-research/SKILL.md:10`, `api/app.py:807-822`, and connection labels
+   in `web/src/labels.ts:206`. Lookup persistence has closed provider and
    status lists in `storage/migrations/0048_record_lookups_scopus.sql:5,6`;
    PDF persistence has closed lists in `0055_europepmc_pdf_provider.sql:8,25`.
    A new supported persistence route needs a new migration, never an edit to
@@ -66,7 +66,7 @@ synthetic fixtures (D201).
    until observed. B5 (D196) recorded G1 acceptance and the product-document wording.
 
 Paths abbreviated as `providers/`, `workflow/`, `domain/`, `storage/` and `api/`
-above are under `backend/deixis/`. Admission citations describe the inspected
+above are under `deixis/`. Admission citations describe the inspected
 `1fb1743` code; registry citations describe the B1 working tree.
 
 ## Version and unsupported rules
@@ -145,7 +145,7 @@ continues.
 Explicit regeneration command from the repository root:
 
 ```sh
-PYTHONPATH=backend:. UV_CACHE_DIR=/tmp/deixis-uv-cache .venv/bin/python tests/support/connector_baseline.py --write
+PYTHONPATH=. UV_CACHE_DIR=/tmp/deixis-uv-cache .venv/bin/python tests/support/connector_baseline.py --write
 ```
 
 Tests read the freeze; they do not regenerate it. The frozen descriptors pin

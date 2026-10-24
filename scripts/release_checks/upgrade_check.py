@@ -38,7 +38,7 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-sys.path[:0] = [str(REPO / "backend")]
+sys.path[:0] = [str(REPO)]
 
 from deixis import config  # noqa: E402
 from deixis.config import Settings  # noqa: E402

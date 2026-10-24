@@ -6,7 +6,7 @@ records elapsed time, exit code, peak sampled RSS, the child's own peak (`wait4`
 `--mode extract` runs `extract_pdf` instead and records its status and error text.
 
 Output is one JSON line per run on stdout and, with `--out`, appended to that file. Nothing here reads the
-owner's library, calls a model or touches the network. Run from the repo root with `PYTHONPATH=backend`."""
+owner's library, calls a model or touches the network. Run from the repo root with `PYTHONPATH=.`."""
 
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ def rss_bytes(pid: int) -> int:
 
 def run_child(path: Path, limit: int, max_chars: int = 3_000_000, timeout: float = 90.0) -> dict:
     """The production argv of `extract_pdf`, watched from outside."""
-    backend = Path(__file__).resolve().parents[2] / "backend"
+    backend = Path(__file__).resolve().parents[2]
     argv = [sys.executable, "-m", "deixis.documents.pdf", str(path), str(max_chars), str(limit)]
     started = time.monotonic()
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:

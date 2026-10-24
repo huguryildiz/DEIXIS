@@ -140,7 +140,7 @@ def rich(lib, *, reviews=True):
 def verified_child(lib, mode, *, parked=False):
     """Kill or park an actual attachment/CLI upgrade in its private-copy parser."""
     root = Path(__file__).resolve().parents[2]
-    env = dict(os.environ, PYTHONPATH=str(root / "backend") + os.pathsep + str(root),
+    env = dict(os.environ, PYTHONPATH=str(root),
                DEIXIS_DATA_DIR=str(lib.settings.data_dir))
     process = subprocess.Popen([sys.executable, "-c",
         "from tests.reextract.reextract_r3_helpers import verified_child_main; verified_child_main()",

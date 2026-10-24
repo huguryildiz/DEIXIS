@@ -25,7 +25,7 @@ chmod +x "$APP/Contents/MacOS/launch"
 
 # Icon from the UI's SVG (Quick Look renders it to PNG).
 TMP=$(mktemp -d)
-qlmanage -t -s 1024 -o "$TMP" "$REPO/apps/web/dist/deixis-icon.svg" >/dev/null 2>&1 || true
+qlmanage -t -s 1024 -o "$TMP" "$REPO/web/dist/deixis-icon.svg" >/dev/null 2>&1 || true
 PNG=$(ls "$TMP"/*.png 2>/dev/null | head -1 || true)
 if [[ -n "$PNG" ]]; then
   SET="$TMP/deixis.iconset"; mkdir "$SET"

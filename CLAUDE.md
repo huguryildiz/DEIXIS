@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-DEIXIS is a local, single-user research workspace: question → scholarly search or attached PDFs → screening → passage reading → an answer whose every citation points to a located passage. FastAPI backend (`backend/deixis`) serves a React/Vite UI (`apps/web`) on loopback. This file is the working agreement for every agent and contributor; `AGENTS.md` points here.
+DEIXIS is a local, single-user research workspace: question → scholarly search or attached PDFs → screening → passage reading → an answer whose every citation points to a located passage. FastAPI backend (`deixis`) serves a React/Vite UI (`web`) on loopback. This file is the working agreement for every agent and contributor; `AGENTS.md` points here.
 
 ## Commands
 
@@ -9,8 +9,8 @@ uv sync
 uv run pytest --testmon tests          # after a change: only the tests that touch changed Python code
 uv run pytest                          # quick: slow tests left out, 4 workers
 uv run pytest -m "slow or not slow"    # everything; GitHub Actions runs it on every push to main
-uv run python -m deixis serve          # http://127.0.0.1:8765, serves apps/web/dist
-cd apps/web && npm ci && npm run build && npm run lint
+uv run python -m deixis serve          # http://127.0.0.1:8765, serves web/dist
+cd web && npm ci && npm run build && npm run lint
 DEIXIS_ACCEPTANCE_DIR=/tmp/deixis-acceptance npm run test:acceptance   # Playwright, needs a fresh build
 ```
 
@@ -20,8 +20,8 @@ Python 3.12, native arm64. Runtime data lives in `DEIXIS_DATA_DIR` (default `~/L
 
 - `workflow/`: runs and steps. Discovery is the fast path (`fast_path.py`, `fast_search.py`, `fast_chain.py`, `fast_read.py`); answers in `fast_answer.py`. Each step is a row keyed by `operation_key`, so a succeeded step is never re-run.
 - `models/` + `flow._model_step`: a model call gets a stored `StepInput` and a strict schema; no tools, no silent model fallback, bounded repair.
-- `contracts/research/*.schema.json` + `domain/contracts.py`: step I/O and semantic checks. A schema change also updates `tests/fixtures/research/*` and `tests/support/fakes.py::valid_response`.
-- `methods/deixis-research/`: instructions loaded into model steps; editing them changes `skill_package_hash`.
+- `deixis/contracts/research/*.schema.json` + `domain/contracts.py`: step I/O and semantic checks. A schema change also updates `tests/fixtures/research/*` and `tests/support/fakes.py::valid_response`.
+- `deixis/methods/deixis-research/`: instructions loaded into model steps; editing them changes `skill_package_hash`.
 - `providers/registry.py`: scholarly sources. `storage/migrations/`: one new numbered file per schema change; never edit an applied one.
 - UI: read [.impeccable.md](.impeccable.md) first; the shipped screens are the visual reference (D79).
 

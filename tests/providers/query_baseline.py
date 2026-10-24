@@ -1,6 +1,6 @@
 """SYNTHETIC query freeze on e19a7f7; capture explicitly before production edits.
 
-PYTHONPATH=backend:. .venv/bin/python tests/providers/query_baseline.py --write
+PYTHONPATH=. .venv/bin/python tests/providers/query_baseline.py --write
 
 The entries of the SearchPlan v2 compiler (`compile_queries`, `_terms`, `_fit`, `_compact_openalex`) were taken out
 of the frozen file when that compiler was removed (clean start, slice 3a). When the pre-D93 `routed=False` compile was

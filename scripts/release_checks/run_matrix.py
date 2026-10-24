@@ -69,7 +69,7 @@ ROWS: list[dict[str, Any]] = [
     {"id": "I01", "claim": "uv sync, npm ci and npm run build finish clean in a clean export", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "no data", "rule": ("install", "I01")},
     {"id": "I02", "claim": "serve starts, /api/health ok, the question box renders, a stop frees the port", "cls": "zorunlu", "kind": "G", "execution": "real process, real Chrome", "data": "empty library", "rule": ("install", "I02")},
     {"id": "I03", "claim": "busy port: one clear message, exit 2, no second writer", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "empty library", "rule": ("install", "I03")},
-    {"id": "I04", "claim": "no apps/web/dist: the API starts and warns", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "empty library", "rule": ("install", "I04")},
+    {"id": "I04", "claim": "no web/dist: the API starts and warns", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "empty library", "rule": ("install", "I04")},
     {"id": "I05", "claim": "unwritable data directory: start fails, exit not 0, nothing left behind", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "empty library", "rule": ("install", "I05")},
     {"id": "I06", "claim": "two processes on one data directory: second is not_owner, takes over when the owner is killed", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "synthetic records, scripted model", "rule": ("junit", [(PROC + "test_crash", "test_i06*")])},
     {"id": "I07", "claim": "isolated environment: model connections show not ready with a reason", "cls": "zorunlu", "kind": "G", "execution": "real process", "data": "empty library", "rule": ("install", "I07")},
@@ -407,7 +407,7 @@ def evaluate(row: dict[str, Any], data: dict[str, Any]) -> dict[str, str]:
             res["note"] = "; ".join(filter(None, [res["note"]] + reasons))
         return res
     if kind in ("pw", "cap") or row["rule"] in (("suite", "playwright"), ("suite", "capacity")):
-        if data.get("web_ok") is not True:  # both the browser rows and the capacity rows measure the served apps/web/dist: a stale or missing build proves nothing
+        if data.get("web_ok") is not True:  # both the browser rows and the capacity rows measure the served web/dist: a stale or missing build proves nothing
             return row_result(NOT, "", "depends on the web stage: it must run in this invocation and build clean")
     if data.get("playwright_port_clash") and (kind == "pw" or row["rule"] == ("suite", "playwright")):
         return row_result(NOT, "", "a fixture port was taken while the suite ran (address already in use): a foreign server may have been measured")
@@ -895,11 +895,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         "versions": {"macOS": version(["sw_vers", "-productVersion"]), "python": version([run.python, "--version"]), "uv": version(["uv", "--version"]),
                      "node": version(["node", "--version"]), "npm": version(["npm", "--version"]), "arch": platform.machine()},
         "provenance": {"install": "HEAD plus uncommitted overlay" if args.overlay_uncommitted else "HEAD export only (uncommitted changes not included)",
-                       "other_stages": "working tree (.venv and apps/web/node_modules as found, installed before the run)"},
+                       "other_stages": "working tree (.venv and web/node_modules as found, installed before the run)"},
         "live_8765_listeners_before": [pid for p, pid in listeners(8765, 8765)],
     }
     print("preflight ok: commit %s%s, %s" % (commit[:10], " (dirty)" if dirty else "", meta["uptime_start"]), flush=True)
-    web = REPO / "apps" / "web"
+    web = REPO / "web"
 
     handled = [signal.SIGINT, signal.SIGTERM] + ([] if signal.getsignal(signal.SIGHUP) is signal.SIG_IGN else [signal.SIGHUP])  # nohup ignores SIGHUP on purpose
     run.handled = handled

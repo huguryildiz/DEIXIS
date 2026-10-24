@@ -1,6 +1,6 @@
 """SYNTHETIC replay freeze on 1fb1743. Regenerate explicitly, never from a test.
 
-PYTHONPATH=backend:. .venv/bin/python tests/support/connector_baseline.py --write
+PYTHONPATH=. .venv/bin/python tests/support/connector_baseline.py --write
 """
 
 import argparse

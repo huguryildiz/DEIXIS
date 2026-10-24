@@ -160,11 +160,11 @@ def test_model_quota_pause_preserves_metadata_without_secrets(tmp_path, monkeypa
 
 def test_every_service_code_has_english_and_turkish_text():
     root = Path(__file__).resolve().parents[2]
-    labels = (root / 'apps/web/src/labels.ts').read_text()
+    labels = (root / 'web/src/labels.ts').read_text()
     block = labels.split('export const serviceErrors:', 1)[1].split('\n}', 1)[0]
     messages = dict(re.findall(r"^  (\w+): '([^']+)',", block, re.M))
     assert set(messages) == SERVICE_ERROR_KINDS
-    translations = (root / 'apps/web/src/i18n.ts').read_text()
+    translations = (root / 'web/src/i18n.ts').read_text()
     keys = set(re.findall(r"^  '((?:[^'\\]|\\.)*)':", translations, re.M))
     assert set(messages.values()) <= keys
     # Recovery and effect text needs both languages too.
@@ -197,7 +197,7 @@ for (const language of ['en', 'tr']) {
   assert(/not guaranteed|kesin değil/.test(quota.when));
 }
 """
-    result = subprocess.run(['node', '-e', script], cwd=root / 'apps/web', capture_output=True, text=True)
+    result = subprocess.run(['node', '-e', script], cwd=root / 'web', capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
 
 

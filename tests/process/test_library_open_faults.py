@@ -4,7 +4,7 @@ Every case starts the real launcher as a child process (the model-free parts of 
 keychain, a temporary HOME and data directory) and looks at its exit code, its stderr and the files it leaves behind.
 The tests show the launcher's behavior on synthetic libraries; they say nothing about model quality or provider access.
 
-Run on their own: `PYTHONPATH=backend:. uv run pytest tests/process/test_library_open_faults.py -m process -n 0 -q`.
+Run on their own: `PYTHONPATH=. uv run pytest tests/process/test_library_open_faults.py -m process -n 0 -q`.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ def launcher_env(data_dir: Path, home: Path) -> dict[str, str]:
     return {
         "PATH": "/usr/bin:/bin",
         "HOME": str(home),
-        "PYTHONPATH": str(REPO / "backend"),
+        "PYTHONPATH": str(REPO),
         "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring",
         "DEIXIS_DATA_DIR": str(data_dir),
     }

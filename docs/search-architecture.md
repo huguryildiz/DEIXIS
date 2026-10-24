@@ -1,6 +1,6 @@
 # Search architecture
 
-This document traces how a DEIXIS question becomes a set of sources that are ranked, read and answered. It describes the code at commit `8cbedaea` on 17 Oct 2026, under policy `fast_path_v1`, seed rule `seed_pdf_v2` (D3, D6) and ranking version 3. Every box names the function or module that does the work, so the diagrams can be checked against the code. Paths are relative to `backend/deixis/`.
+This document traces how a DEIXIS question becomes a set of sources that are ranked, read and answered. It describes the code at commit `8cbedaea` on 17 Oct 2026, under policy `fast_path_v1`, seed rule `seed_pdf_v2` (D3, D6) and ranking version 3. Every box names the function or module that does the work, so the diagrams can be checked against the code. Paths are relative to `deixis/`.
 
 A discovery run always takes the fast path. It has five stages, each on its own clock with a soft deadline: plan, search, ranking, read and answer. When a discovery run completes, an answer run is queued automatically, and an answer review run follows it. Full text that arrives after the read cutoff can produce one late revision of the answer. A person can start four more kinds of run on a finished research: follow-up questions, Screen more, snowball rounds and the citation map (section 7).
 

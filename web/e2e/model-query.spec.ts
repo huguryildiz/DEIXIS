@@ -1,0 +1,146 @@
+import { expect, test, type Page } from '@playwright/test'
+import { spawn, type ChildProcess } from 'node:child_process'
+import { mkdirSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
+import { nextPort } from './ports'
+
+// Case I: a model writes the sw discovery run's search query, the run searches with it without asking and the plan
+// step's details list the queries it sent (S9, R15), and a failed model stops the run until the user says what to
+// search with (D92).
+//
+// Its own fixture server: the application of cases A–G started with the model-written query. The model is scripted and
+// every record SYNTHETIC, so a passing case shows application behavior, not whether a model writes a good query.
+
+const REPO = path.resolve(process.cwd(), '..')
+const PYTHON = path.join(REPO, '.venv', 'bin', 'python')
+const SERVER = path.join(REPO, 'tests', 'acceptance', 'fixture_server.py')
+const OUT = path.resolve(process.env.DEIXIS_ACCEPTANCE_DIR ?? 'test-results/acceptance')
+mkdirSync(OUT, { recursive: true })
+
+const QUESTION = 'How is SYNTHETIC molecule release scheduling optimised in relay networks with bisection search to improve bit error probability?'
+
+class ModelQueryServer {
+  private proc?: ChildProcess
+  readonly dataDir = mkdtempSync(path.join(tmpdir(), 'deixis-model-query-'))
+  constructor(readonly port: number) {}
+
+  async start() {
+    const env = {  // no provider keys or user data directory reach the fixture
+      PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: REPO,
+      DEIXIS_SEARCH_WORKFLOW: 'sw', DEIXIS_SEARCH_QUERY: 'model',
+    }
+    this.proc = spawn(PYTHON, [SERVER, '--data-dir', this.dataDir, '--port', String(this.port)], { cwd: REPO, env, stdio: 'inherit' })
+    for (let i = 0; i < 150; i++) {
+      try { if ((await fetch(`http://127.0.0.1:${this.port}/api/health`)).ok) return } catch { /* not listening yet */ }
+      await new Promise(resolve => setTimeout(resolve, 200))
+    }
+    throw new Error(`model query fixture server on ${this.port} did not start`)
+  }
+
+  async stop() {
+    const proc = this.proc
+    if (!proc || proc.exitCode !== null) return
+    const exited = new Promise(resolve => proc.once('exit', resolve))
+    proc.kill('SIGTERM')
+    await exited
+  }
+
+  url() { return `http://127.0.0.1:${this.port}/` }
+}
+
+const shot = (page: Page, name: string) => page.screenshot({ path: path.join(OUT, `${name}.png`), animations: 'disabled', fullPage: true })
+// The plan step of the run and its details (S9, R15): the search words, each query with who wrote it, the criterion.
+const planLine = (page: Page) => page.locator('.chat-step-line', { hasText: 'Planned the searches' })
+async function openPlan(page: Page) {
+  const line = planLine(page).first()
+  await expect(line).toBeVisible({ timeout: 60_000 })
+  if (await line.getAttribute('aria-expanded') !== 'true') await line.click()
+  return page.locator('.chat-step.open', { has: line }).locator('.chat-step-detail')
+}
+const MODEL_QUERY = '"relay networks" AND ("molecule release" OR "bisection search")'
+
+async function startResearch(page: Page, server: ModelQueryServer, question: string) {
+  await page.goto(server.url())
+  await page.getByLabel('Research question').fill(question)
+  await expect(page.locator('.models-summary')).toContainText('fixture-model')
+  await page.getByRole('button', { name: 'Start research' }).click()
+  await page.waitForURL(/#\/research\//)
+}
+
+test.describe.serial('I: the model-written search query of an sw discovery run', () => {
+  const server = new ModelQueryServer(nextPort())
+  let page: Page
+
+  test.beforeAll(async ({ browser }) => {
+    await server.start()
+    page = await browser.newPage()
+  })
+  test.afterAll(async () => { await page?.close(); await server.stop() })
+
+  test('the run searches without asking, and the plan step lists the model query it sent', async () => {
+    await startResearch(page, server, QUESTION)
+    const plan = await openPlan(page)
+    await expect(plan).toContainText('Nobody reviewed the search vocabulary; the fast path went on without asking.')
+    await expect(plan.locator('.step-row', { hasText: MODEL_QUERY }).first()).toContainText('model')
+    await shot(page, 'I-model-query-approved-desktop')
+  })
+
+  test('with no full text read, the search phase shows no included counts, and the signals are too few to judge', async () => {
+    // Slice 19: this server reads no full text, so nothing is included yet and no count stands in for it.
+    const toggle = page.getByRole('button', { name: /Ran search & screening/ })
+    await expect(toggle).toBeVisible({ timeout: 60_000 })
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
+    const turn = page.locator('.chat-turn').filter({ has: toggle })
+    await turn.locator('.chat-step-line', { hasText: /^Searched / }).click()
+    const arms = turn.locator('.chat-arms').first()
+    // One search source: no "no other source" clause and no per-arm list that would repeat the source and chain rows.
+    await expect(arms).not.toContainText('Full text not read yet')
+    await expect(arms).not.toContainText('no other source’s search found')
+    await expect(arms).not.toContainText('included by two agreeing runs')
+    await turn.locator('.chat-step-line', { hasText: /^Screened / }).click()
+    await expect(turn).toContainText('Too few to judge a signal by (fewer than 30).')
+    await shot(page, 'I-arms-not-read-desktop')
+  })
+
+  test('with every confirmed work found, the empty list says a search or the citation chain found them', async () => {
+    // Slice 19, review 2: the research view is served with one confirmed work and an empty not-found list, the
+    // payload the backend derives when the citation chain alone found it (tests/discovery/test_probes.py
+    // test_a_confirmed_work_found_only_by_the_citation_chain_leaves_the_view_list_empty). The sentence must name the chain.
+    const view = /\/api\/researches\/res_[^/?]+$/
+    await page.route(view, async route => {
+      const response = await route.fetch()
+      const body = await response.json()
+      body.probes = { ...body.probes, verified: 1, not_found: { status: 'counted', works: [] } }
+      await route.fulfill({ response, json: body })
+    })
+    try {
+      await page.reload()
+      const toggle = page.getByRole('button', { name: /Ran search & screening/ })
+      await expect(toggle).toBeVisible({ timeout: 60_000 })
+      if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click()
+      const turn = page.locator('.chat-turn').filter({ has: toggle })
+      await turn.locator('.chat-step-line', { hasText: /^Searched / }).click()
+      await expect(turn).toContainText('A search or the citation chain of this question revision found every work you confirmed or brought.')
+      await expect(turn).not.toContainText('Your work no search found')
+    } finally { await page.unroute(view) }
+  })
+
+  test('a failed model stops the run, and the code query is searched only when the user chooses it', async () => {
+    await startResearch(page, server, `${QUESTION} [query-down]`)
+    // A stop the run did not ask for: the notice under the steps is the error one and carries Resume run (S9, R18).
+    const note = page.locator('.chat-note.is-error')
+    await expect(note).toContainText('The model could not write the search query', { timeout: 60_000 })
+    // Nothing was searched, and no protocol was frozen for a query nobody wrote: the plan step stopped.
+    await expect(planLine(page)).toHaveCount(0)
+    await expect(page.locator('.chat-step.att .chat-step-line')).toHaveText('Stopped while planning')
+    await expect(note.getByRole('button', { name: 'Resume run' })).toBeVisible()
+    await shot(page, 'I-model-query-failed-desktop')
+    await note.getByRole('button', { name: 'Search with the query built from the question’s words' }).click()
+    // The run goes on without asking; the queries it sent are the code's, not the model's.
+    const plan = await openPlan(page)
+    await expect(plan.locator('code').first()).toBeVisible()
+    await expect(plan).not.toContainText(MODEL_QUERY)
+    await shot(page, 'I-model-query-code-only-desktop')
+  })
+})

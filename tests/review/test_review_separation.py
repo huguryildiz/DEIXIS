@@ -12,7 +12,7 @@ from tests.review.review_helpers import report_with_sections, review_lib, all_ro
 
 
 def test_review_package_import_and_write_boundary():
-    root = Path("backend/deixis/workflow/review")
+    root = Path("deixis/workflow/review")
     assert (root / "run.py").is_file()
     forbidden = {"deixis.workflow.store", "deixis.workflow.report.store", "deixis.workflow.tables",
                  "deixis.workflow.candidates.store", "deixis.workflow.lineage.store", "deixis.workflow.flow"}

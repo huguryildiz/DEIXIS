@@ -20,7 +20,7 @@ from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 from deixis.domain.limits import SERVICE_ERROR_KINDS, certificate_failure, error_name, service_error_kind
 
-BACKEND = str(Path(__file__).resolve().parents[2] / "backend")
+BACKEND = str(Path(__file__).resolve().parents[2])
 
 
 def certificate(folder: Path, name: str, host: str = "localhost") -> tuple[Path, Path]:
@@ -143,7 +143,7 @@ def test_the_main_entry_point_turns_the_system_store_on_before_anything_else():
 
 def test_certificate_is_a_known_service_error_kind_and_has_ui_texts():
     assert "certificate" in SERVICE_ERROR_KINDS
-    web = Path(BACKEND).parent / "apps" / "web" / "src"
+    web = Path(BACKEND) / "web" / "src"
     labels, texts = (web / "labels.ts").read_text(), (web / "i18n.ts").read_text()
     assert "certificate: '" in labels and "code === 'certificate'" in labels and "CERTIFICATE_VERIFY_FAILED" in labels
     for english in ("Your network or computer did not accept the secure connection to {service}.",

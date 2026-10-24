@@ -11,7 +11,7 @@ import pytest
 
 from deixis.documents import child_guard as cg, pdf, ocr, jats, arxiv_source
 
-BACKEND = str(Path(__file__).resolve().parents[2] / "backend")
+BACKEND = str(Path(__file__).resolve().parents[2])
 SUPPORTED = pytest.mark.skipif(not pdf._watch_supported(), reason="resident guard supports macOS and Linux")
 
 

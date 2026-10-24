@@ -244,7 +244,7 @@ sys.exit(main(sys.argv[1:]))
 """
         env = os.environ.copy()
         env["DEIXIS_DATA_DIR"] = str(lib.settings.data_dir)
-        env["PYTHONPATH"] = str(Path(__file__).resolve().parents[2] / "backend")
+        env["PYTHONPATH"] = str(Path(__file__).resolve().parents[2])
         child = subprocess.Popen([sys.executable, "-c", code, "reextract", "--retry", lib.aid,
                                   "--expected-extraction", lib.eid], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                  stderr=subprocess.PIPE, text=True, env=env)

@@ -147,7 +147,7 @@ def test_generated_product_never_opens_or_closes_without_the_explicit_gate():
 
 @pytest.mark.parametrize("module", ["status", "hits", "terms"])
 def test_candidate_computations_import_only_the_pure_allowlist(module):
-    path = Path("backend/deixis/workflow/candidates") / f"{module}.py"
+    path = Path("deixis/workflow/candidates") / f"{module}.py"
     allowed = {"deixis.providers.query_compiler", "deixis.providers.query_rules",
                "deixis.workflow.criterion", "deixis.workflow.vocabulary",
                "deixis.workflow.ranking"}  # hits' ranked cut reuses the fast path's pure signal functions

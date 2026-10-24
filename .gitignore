@@ -8,8 +8,8 @@ dist/
 .local/
 .impeccable
 .pytest_cache
-apps/web/test-results/
-apps/web/playwright-report/
+web/test-results/
+web/playwright-report/
 /test-results/
 
 # Private design evidence; do not publish.

@@ -6,10 +6,10 @@ import subprocess
 
 def test_toast_cursor_rejects_old_matches_and_observer_survives_navigation():
     root = Path(__file__).resolve().parents[2]
-    spec = Path(os.environ.get("RR_B_REPORT_SPEC", root / "apps/web/e2e/report-edit.spec.ts"))
+    spec = Path(os.environ.get("RR_B_REPORT_SPEC", root / "web/e2e/report-edit.spec.ts"))
     code = r"""
 const fs = require('fs'), vm = require('vm'), assert = require('assert');
-const ts = require(process.argv[2] + '/apps/web/node_modules/typescript');
+const ts = require(process.argv[2] + '/web/node_modules/typescript');
 const source = fs.readFileSync(process.argv[1],'utf8');
 const start=source.indexOf('async function watchToasts('), end=source.indexOf('const dismissToasts',start);
 assert.ok(start>=0,'toast recorder missing');

@@ -12,7 +12,7 @@ import sys
 import time
 
 REPO = Path(__file__).resolve().parents[2]
-sys.path[:0] = [str(REPO / "backend"), str(REPO)]
+sys.path[:0] = [str(REPO)]
 
 import httpx
 from deixis import __main__ as deixis_main

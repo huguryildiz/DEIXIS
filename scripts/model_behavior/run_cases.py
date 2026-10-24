@@ -1,6 +1,6 @@
 """Run the prepared real-model behavior cases (tests/model_behavior/cases.json) through the Codex adapter.
 
-Usage: PYTHONPATH=backend uv run --no-sync python scripts/model_behavior/run_cases.py --model gpt-5.6-luna [--cases MB01,MB02]
+Usage: uv run --no-sync python scripts/model_behavior/run_cases.py --model gpt-5.6-luna [--cases MB01,MB02]
 
 Each case builds its StepInput from the synthetic fixtures, uses the loaded deixis-research
 package and a fresh ephemeral Codex thread in the DEIXIS Codex home, and makes one attempt

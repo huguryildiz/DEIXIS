@@ -180,7 +180,7 @@ def test_xlsx_writer_cells_names_and_limits():
 
 
 def test_turkish_strings_match_the_interface_map():
-    source = (Path(__file__).resolve().parents[2] / "apps/web/src/i18n.ts").read_text(encoding="utf-8")
+    source = (Path(__file__).resolve().parents[2] / "web/src/i18n.ts").read_text(encoding="utf-8")
     body = source[source.index("const tr: Record<string, string> = {"):]
     interface = {m.group(1).replace("\\'", "'"): m.group(2).replace("\\'", "'") for m in re.finditer(
         r"^\s*'((?:[^'\\]|\\.)*)':\s*'((?:[^'\\]|\\.)*)',?\s*$", body, re.M)}
@@ -234,7 +234,7 @@ def browser_exports(*, lang, style, sources, answer=None, title="", version=0, t
     root = Path(__file__).resolve().parents[2]
     payload = json.dumps({"lang": lang, "style": style, "sources": sources, "answer": answer, "title": title,
                           "version": version, "table": table})
-    done = subprocess.run(["node", "-e", BROWSER], input=payload, cwd=root / "apps/web", capture_output=True, text=True)
+    done = subprocess.run(["node", "-e", BROWSER], input=payload, cwd=root / "web", capture_output=True, text=True)
     assert done.returncode == 0, done.stderr
     return json.loads(done.stdout)
 
@@ -738,7 +738,7 @@ def test_evidence_report_route_and_refusals(tmp_path):
 # ---- print stylesheet ----------------------------------------------------------------------------------------------
 
 def test_print_stylesheet_prints_dark_mode_in_the_light_palette():
-    src = Path(__file__).resolve().parents[2] / "apps/web/src"
+    src = Path(__file__).resolve().parents[2] / "web/src"
 
     def tokens(css: str, selector: str) -> dict[str, str]:
         body = re.search(r"^\s*" + re.escape(selector) + r"\s*\{(.*?)^\s*\}", css, re.S | re.M).group(1)

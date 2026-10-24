@@ -1,6 +1,6 @@
 """Settings reads are cancelled when the page is left and end with a "did not answer" error when they take too long (E25).
-Runs apps/web/src/readLimit.ts in node, as test_request_order.py does. Writes do not go through it (their results are
-kept); the browser-level checks are in apps/web/e2e/settings.spec.ts."""
+Runs web/src/readLimit.ts in node, as test_request_order.py does. Writes do not go through it (their results are
+kept); the browser-level checks are in web/e2e/settings.spec.ts."""
 
 import subprocess
 from pathlib import Path
@@ -28,7 +28,7 @@ const late = () => Object.assign(new Error('late'), { code: 'read_timed_out' });
 def run_node(body: str):
     root = Path(__file__).resolve().parents[2]
     # Node exits 0 when the script ends with a promise still pending, so the script must say it ran to the end.
-    result = subprocess.run(["node", "-e", PRELUDE % body], cwd=root / "apps/web", capture_output=True, text=True, timeout=60)
+    result = subprocess.run(["node", "-e", PRELUDE % body], cwd=root / "web", capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr
     assert "FINISHED" in result.stdout, "the script did not run to its end"
 
@@ -84,7 +84,7 @@ leaving.abort();
 await assert.rejects(read, isLeft);
 global.setTimeout = real;
 """)
-    api = (Path(__file__).resolve().parents[2] / "apps/web/src/api.ts").read_text()
+    api = (Path(__file__).resolve().parents[2] / "web/src/api.ts").read_text()
     for method in ("connections:", "modelConnection:", "localTools:", "ocr:", "toolUpdate:"):
         line = next(x for x in api.splitlines() if x.strip().startswith(method) and "read<" in x)
         assert line.rstrip().rstrip(",").endswith("null),") or ", null)" in line, line

@@ -6,7 +6,7 @@ image to 0 bytes free, sends requests, frees the space and checks that nothing w
 is touched: the image is attached under the test's own tmp folder and always detached and deleted afterwards.
 It shows how the application behaves on a full disk; it measures no model quality and no live provider access.
 
-Run on their own: `PYTHONPATH=backend:. uv run pytest tests/process/test_disk_full.py -m process -n 0 -q`.
+Run on their own: `PYTHONPATH=. uv run pytest tests/process/test_disk_full.py -m process -n 0 -q`.
 """
 
 from __future__ import annotations
@@ -87,7 +87,7 @@ class Server:
         home, logs = tmp_path / "home", tmp_path / "logs"  # outside the volume: logs must not eat its space
         home.mkdir(exist_ok=True)
         logs.mkdir(exist_ok=True)
-        env = {"PATH": "/usr/bin:/bin", "HOME": str(home), "PYTHONPATH": str(REPO / "backend"),
+        env = {"PATH": "/usr/bin:/bin", "HOME": str(home), "PYTHONPATH": str(REPO),
                "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring", "PYTHONDONTWRITEBYTECODE": "1"}
         self.err_path = logs / "err.txt"
         with open(logs / "out.txt", "wb") as out, open(self.err_path, "wb") as err:

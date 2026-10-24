@@ -30,7 +30,7 @@ import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-sys.path[:0] = [str(REPO / "tests" / "acceptance"), str(REPO / "tests"), str(REPO / "backend")]
+sys.path[:0] = [str(REPO / "tests" / "acceptance"), str(REPO / "tests"), str(REPO)]
 
 import fixture_server as fx  # noqa: E402
 import httpx  # noqa: E402

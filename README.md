@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="apps/web/public/deixis-icon.svg" alt="DEIXIS source mark" width="176">
+<img src="web/public/deixis-icon.svg" alt="DEIXIS source mark" width="176">
 
 <h1>DEIXIS</h1>
 
@@ -80,8 +80,8 @@ DEIXIS is still in active development. For now it runs from this repository; an 
 
 ```sh
 uv sync
-cd apps/web && npm ci && npm run build && cd ../..
-PYTHONPATH=backend uv run python -m deixis serve
+cd web && npm ci && npm run build && cd ..
+uv run python -m deixis serve
 ```
 
 The app opens at <http://127.0.0.1:8765/>. If that port already serves DEIXIS, open that instance instead of starting another. The app starts without any model connection; you need one only to run a research.
@@ -95,13 +95,13 @@ The app opens at <http://127.0.0.1:8765/>. If that port already serves DEIXIS, o
 From the repository root:
 
 ```sh
-PYTHONPATH=backend uv run python -m deixis serve --dev --no-browser   # backend for UI work
-(cd apps/web && npm run dev)                                           # Vite on :5178, proxies /api
-PYTHONPATH=backend uv run pytest                                       # quick run, slow tests left out
-PYTHONPATH=backend uv run pytest -m "slow or not slow"                 # slow tests too; run before a push
-PYTHONPATH=backend uv run pytest -m process -n 0                       # process tests (real servers, wall clock)
-(cd apps/web && npm run build && npm run lint)
-(cd apps/web && DEIXIS_ACCEPTANCE_DIR=/tmp/deixis-acceptance npm run test:acceptance -- --project acceptance)
+uv run python -m deixis serve --dev --no-browser   # backend for UI work
+(cd web && npm run dev)                            # Vite on :5178, proxies /api
+uv run pytest                                      # quick run, slow tests left out
+uv run pytest -m "slow or not slow"                # slow tests too; run before a push
+uv run pytest -m process -n 0                      # process tests (real servers, wall clock)
+(cd web && npm run build && npm run lint)
+(cd web && DEIXIS_ACCEPTANCE_DIR=/tmp/deixis-acceptance npm run test:acceptance -- --project acceptance)
 ```
 
 The Vite proxy expects the backend on port 8765.
@@ -111,10 +111,10 @@ The pytest suite and the Playwright browser suite use fake models, mocked provid
 Library maintenance:
 
 ```sh
-PYTHONPATH=backend uv run python -m deixis backup /path/to/backup-parent
-DEIXIS_DATA_DIR=/path/to/empty-dir PYTHONPATH=backend uv run python -m deixis restore /path/to/backup-folder
-PYTHONPATH=backend uv run python -m deixis reextract --dry-run
-PYTHONPATH=backend uv run python -m deixis equations install
+uv run python -m deixis backup /path/to/backup-parent
+DEIXIS_DATA_DIR=/path/to/empty-dir uv run python -m deixis restore /path/to/backup-folder
+uv run python -m deixis reextract --dry-run
+uv run python -m deixis equations install
 ```
 
 A backup holds a consistent database snapshot, the PDFs in use, provider responses and a SHA-256 manifest. It does not hold keys. Restore checks the hashes and only writes into a data directory that has no library yet. Back up before you update the checkout.
@@ -127,11 +127,11 @@ Two release checks live in `scripts/release_checks/`. `install_check.py --port 8
 
 | Part | Where |
 |---|---|
-| Local API, research workflow, storage, provider connectors, model adapters | [`backend/deixis/`](backend/deixis) |
-| React interface, built and served by the backend | [`apps/web/`](apps/web) |
-| JSON Schemas for every model step | [`contracts/research/`](contracts/research) |
-| Method instructions loaded into model steps | [`methods/deixis-research/`](methods/deixis-research) |
-| Tests and fixtures; browser tests | [`tests/`](tests) · [`apps/web/e2e/`](apps/web/e2e) |
+| Local API, research workflow, storage, provider connectors, model adapters | [`deixis/`](deixis) |
+| React interface, built and served by the backend | [`web/`](web) |
+| JSON Schemas for every model step | [`deixis/contracts/research/`](deixis/contracts/research) |
+| Method instructions loaded into model steps | [`deixis/methods/deixis-research/`](deixis/methods/deixis-research) |
+| Tests and fixtures; browser tests | [`tests/`](tests) · [`web/e2e/`](web/e2e) |
 | Measurement and probe scripts (not app features) | [`scripts/`](scripts) |
 
 A research runs as a sequence of stored steps. Each step is saved with its input before the model is called, and a finished step returns its saved output when asked again. That is what lets a research pause, resume and recover after a crash without repeating model calls. Half-finished work found at startup is marked as unknown or paused, not retried blindly.

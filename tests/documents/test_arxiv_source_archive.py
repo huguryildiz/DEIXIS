@@ -406,8 +406,8 @@ def test_a_trailing_control_space_does_not_eat_the_closing_aligned():
 
 
 def test_katex_commands_file_carries_the_web_apps_katex_version():
-    data = json.loads((REPO / "backend/deixis/documents/katex_commands.json").read_text())
-    package = json.loads((REPO / "apps/web/package.json").read_text())
+    data = json.loads((REPO / "deixis/documents/katex_commands.json").read_text())
+    package = json.loads((REPO / "web/package.json").read_text())
     assert data["katex_version"] == package["dependencies"]["katex"].lstrip("^~") == "0.16.47"
     assert {"frac", "mathbb", "text", "operatorname"} <= set(data["commands"]) and "paren" not in data["commands"]
     assert "aligned" in data["environments"]

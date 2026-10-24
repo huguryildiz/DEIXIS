@@ -10,14 +10,14 @@ REPO = Path(__file__).resolve().parents[2]
 
 
 def _turkish_keys() -> set[str]:
-    source = (REPO / "apps" / "web" / "src" / "i18n.ts").read_text()
+    source = (REPO / "web" / "src" / "i18n.ts").read_text()
     return set(re.findall(r"^  '((?:[^'\\]|\\.)*)':", source, re.M))
 
 
 def _note_templates() -> set[str]:
     found = {"PDF input not verified: " + text_retry.INPUT_CHANGED}
-    app = ast.parse((REPO / "backend" / "deixis" / "api" / "app.py").read_text())
-    zotero = ast.parse((REPO / "backend" / "deixis" / "providers" / "zotero.py").read_text())
+    app = ast.parse((REPO / "deixis" / "api" / "app.py").read_text())
+    zotero = ast.parse((REPO / "deixis" / "providers" / "zotero.py").read_text())
     for node in ast.walk(app):
         if isinstance(node, ast.Dict) and any(isinstance(k, ast.Constant) and k.value == "note" for k in node.keys):
             value = node.values[[k.value if isinstance(k, ast.Constant) else None for k in node.keys].index("note")]

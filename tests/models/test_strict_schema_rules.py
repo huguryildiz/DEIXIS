@@ -24,13 +24,13 @@ TASKS = (
 )
 BUILDERS = {"model_output_schema", "step_output_schema", "report_section_anchor_patch_schema"}
 EXCLUSIONS = {
-    ("backend/deixis/domain/contracts.py", "load_schema"): "Canonical files, never sent as is.",
-    ("backend/deixis/domain/contracts.py", "_adapter_schema"): "Internal registry-builder step.",
-    ("backend/deixis/domain/contracts.py", "_common_schema"): "Internal registry-builder step.",
-    ("backend/deixis/models/gemini.py", "response_schema"): "Gemini-only transform of a registry schema.",
-    ("backend/deixis/models/schema_subset.py", "portable_schema"): "Anthropic/OpenRouter subset of a registry schema (D34).",
-    ("backend/deixis/models/anthropic_api.py", "anthropic_schema"): "Anthropic subset of a registry schema (D34, D93).",
-    ("backend/deixis/models/openai_compat.py", "portable_schema"): "OpenRouter subset of a registry schema (D34).",
+    ("deixis/domain/contracts.py", "load_schema"): "Canonical files, never sent as is.",
+    ("deixis/domain/contracts.py", "_adapter_schema"): "Internal registry-builder step.",
+    ("deixis/domain/contracts.py", "_common_schema"): "Internal registry-builder step.",
+    ("deixis/models/gemini.py", "response_schema"): "Gemini-only transform of a registry schema.",
+    ("deixis/models/schema_subset.py", "portable_schema"): "Anthropic/OpenRouter subset of a registry schema (D34).",
+    ("deixis/models/anthropic_api.py", "anthropic_schema"): "Anthropic subset of a registry schema (D34, D93).",
+    ("deixis/models/openai_compat.py", "portable_schema"): "OpenRouter subset of a registry schema (D34).",
 }
 OLD_REASON = {"anyOf": [
     {"$ref": "#/$defs/short_text", "minLength": 1, "pattern": r"\S"},
@@ -80,7 +80,7 @@ def test_t2_frozen_rejected_transport_has_exactly_one_r1_issue():
 
 def test_t3_schema_call_sites_are_registered_or_explicitly_excluded():
     root = Path(__file__).resolve().parents[2]
-    files = sorted((root / "backend/deixis").rglob("*.py"))
+    files = sorted((root / "deixis").rglob("*.py"))
     files += sorted((root / "scripts/model_behavior").glob("*.py"))
     seen_exclusions = set()
     unknown = []

@@ -421,8 +421,8 @@ os._exit(0)  # no checkpoint, no close: the committed row lives only in the -wal
 
 def library_with_id_only_in_the_wal(folder: Path) -> Path:
     path = migrated_library(folder / "library.sqlite")
-    subprocess.run([sys.executable, "-c", CHILD, str(path), str(REPO / "backend")], check=True, timeout=60,
-                   env={"PATH": "/usr/bin:/bin", "HOME": str(folder), "PYTHONPATH": str(REPO / "backend")})
+    subprocess.run([sys.executable, "-c", CHILD, str(path), str(REPO)], check=True, timeout=60,
+                   env={"PATH": "/usr/bin:/bin", "HOME": str(folder), "PYTHONPATH": str(REPO)})
     assert (folder / "library.sqlite-wal").stat().st_size > 0 and (folder / "library.sqlite-shm").exists()
     with sqlite3.connect(path.resolve().as_uri() + "?mode=ro&immutable=1", uri=True) as conn:
         in_main = {r[0] for r in conn.execute("SELECT version FROM schema_migrations")}
@@ -982,7 +982,7 @@ def test_a_restored_library_shows_the_model_connection_as_not_ready_and_pauses_i
         _, run = wait_run(client, rid, posted.json()["id"], timeout=90)  # 12 s alone; the default 15 s failed under load
         print("connections finding: a run on the restored research ->", run["status"], run["pause_reason"])
         assert (run["status"], run["pause_reason"]) == ("paused", "model_connection_not_ready")
-    labels = (REPO / "apps" / "web" / "src" / "labels.ts").read_text()
+    labels = (REPO / "web" / "src" / "labels.ts").read_text()
     assert "model_connection_not_ready: 'The selected model connection is not ready. Nothing was sent to another model.'" in labels
 
 

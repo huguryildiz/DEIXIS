@@ -30,13 +30,12 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: apps/web/package-lock.json
+          cache-dependency-path: web/package-lock.json
       - run: npm ci
-        working-directory: apps/web  # some backend tests run the web TypeScript through node and need its typescript
+        working-directory: web  # some backend tests run the web TypeScript through node and need its typescript
       - run: uv sync --frozen
       - run: uv run --no-sync pytest -n 3 -m "slow or not slow"
         env:
-          PYTHONPATH: backend
           DEIXIS_TEST_SHARD: ${{ matrix.shard }}/4  # tests/conftest.py keeps this machine's part
 
   web:
@@ -44,14 +43,14 @@ jobs:
     timeout-minutes: 15
     defaults:
       run:
-        working-directory: apps/web
+        working-directory: web
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: apps/web/package-lock.json
+          cache-dependency-path: web/package-lock.json
       - run: npm ci
       - run: npm run lint
       - run: npm run build

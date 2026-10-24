@@ -61,7 +61,7 @@ def test_an_npm_package_with_a_known_licence_carries_its_licence_file(tmp_path):
 
 
 def test_the_script_exits_non_zero_and_lists_the_packages_when_a_licence_is_unknown(tmp_path, monkeypatch, capsys):
-    (tmp_path / "apps" / "web" / "node_modules").mkdir(parents=True)
+    (tmp_path / "web" / "node_modules").mkdir(parents=True)
     monkeypatch.setattr(notices, "REPO", tmp_path)
     web = fake_web(tmp_path, {"license": "WTFPL-ish"})
     monkeypatch.setattr(notices, "build", lambda: _build(web))
@@ -88,7 +88,7 @@ def test_the_committed_notices_file_covers_every_production_dependency():
     assert "MuPDF" in text and "Tesseract" in text and "Tauri" in text and "marker-pdf" not in text  # Marker removed (D113)
     for name, version in notices.python_requirements():
         assert f"python {name} {version}" in text
-    lock = json.loads((REPO / "apps/web/package-lock.json").read_text(encoding="utf-8"))
+    lock = json.loads((REPO / "web/package-lock.json").read_text(encoding="utf-8"))
     for key, info in lock["packages"].items():
         if key and not info.get("dev"):
             assert f"npm    {key.rsplit('node_modules/', 1)[-1]} {info['version']}" in text

@@ -57,7 +57,7 @@ def test_every_pdf_write_in_the_api_is_inside_disk_full_refused():
     import ast
     from pathlib import Path as P
 
-    tree = ast.parse((P(__file__).parents[2] / "backend" / "deixis" / "api" / "app.py").read_text())
+    tree = ast.parse((P(__file__).parents[2] / "deixis" / "api" / "app.py").read_text())
     parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
     calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute) and n.func.attr == "store_pdf_file"]
     assert len(calls) == 2

@@ -249,7 +249,7 @@ vocabulary = {{"terms": [{{"block": b, "root": t, "phrase": t, "in_query": "phra
 assert query_compiler.compile_block_queries(vocabulary, ["openalex"], 1)[0]["query_text"] == "alpha AND beta"
 assert facade.connectors()["openalex"].render_query([["alpha"], ["beta"]]).native_query == "alpha AND beta"
 '''
-    paths = [str(ROOT / "backend"), *(p for p in sys.path if "site-packages" in p)]
+    paths = [str(ROOT), *(p for p in sys.path if "site-packages" in p)]
     env = {"PATH": os.environ.get("PATH", ""), "PYTHONPATH": os.pathsep.join(paths), "PYTHONDONTWRITEBYTECODE": "1"}
     result = subprocess.run([sys.executable, "-S", "-c", code], cwd=tmp_path, env=env,
                             capture_output=True, text=True, timeout=30)

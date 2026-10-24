@@ -1,6 +1,6 @@
 """Acceptance fixture server: the real application with a scripted model connection, mocked OpenAlex and fixed PDFs.
 
-Started by the Playwright acceptance run (apps/web/e2e) for cases A–G. Every record is SYNTHETIC. The run shows
+Started by the Playwright acceptance run (web/e2e) for cases A–G. Every record is SYNTHETIC. The run shows
 application behavior in a browser; it does not measure model quality or live provider access.
 
 Question markers select failure scripts: "[rate-limit]" (OpenAlex 429), "[model-down]" (the first abstract-screening call
@@ -121,7 +121,7 @@ from textwrap import fill
 from typing import Any
 
 REPO = Path(__file__).resolve().parents[2]
-sys.path[:0] = [str(REPO / "tests"), str(REPO / "tests" / "support"), str(REPO / "backend")]
+sys.path[:0] = [str(REPO / "tests"), str(REPO / "tests" / "support"), str(REPO)]
 
 import httpx  # noqa: E402
 import keyring  # noqa: E402

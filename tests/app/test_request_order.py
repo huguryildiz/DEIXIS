@@ -1,5 +1,5 @@
 """The Connections page orders the answers of the all-connections read and of a single-connection check per connection
-(E7): an older answer that arrives late is dropped. Runs apps/web/src/requestOrder.ts in node, as the label tests do."""
+(E7): an older answer that arrives late is dropped. Runs web/src/requestOrder.ts in node, as the label tests do."""
 
 import subprocess
 from pathlib import Path
@@ -65,5 +65,5 @@ order.release(b);
 assert(!order.settle('gemini', a));
 assert(order.settle('gemini', c));
 """
-    result = subprocess.run(["node", "-e", script], cwd=root / "apps/web", capture_output=True, text=True)
+    result = subprocess.run(["node", "-e", script], cwd=root / "web", capture_output=True, text=True)
     assert result.returncode == 0, result.stderr

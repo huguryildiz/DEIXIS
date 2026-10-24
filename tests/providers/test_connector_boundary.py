@@ -100,7 +100,7 @@ def test_descriptors_frozen():
 def test_descriptors_registry_and_module_policy():
     facades = facade.connectors()
     assert list(facades) == list(registry.CONNECTORS)
-    enum = json.loads((ROOT / "contracts/research/common.schema.json").read_text())["$defs"]["provider_id"]["enum"]
+    enum = json.loads((ROOT / "deixis/contracts/research/common.schema.json").read_text())["$defs"]["provider_id"]["enum"]
     assert set(facades) == set(enum)
     defaults = inspect.signature(common.send).parameters
     for order, (pid, f) in enumerate(facades.items()):
@@ -208,7 +208,7 @@ async def run():
 asyncio.run(run())
 '''
     # -S excludes sitecustomize; explicitly provide only package and dependency paths.
-    paths = [str(ROOT / "backend"), *(p for p in sys.path if "site-packages" in p)]
+    paths = [str(ROOT), *(p for p in sys.path if "site-packages" in p)]
     env = {"PATH": os.environ.get("PATH", ""), "PYTHONPATH": os.pathsep.join(paths), "PYTHONDONTWRITEBYTECODE": "1"}
     result = subprocess.run([sys.executable, "-S", "-c", code], env=env, cwd=tmp_path,
                             capture_output=True, text=True, timeout=30)
@@ -406,7 +406,7 @@ if rendered.retained != ("alpha", "beta") or rendered.dropped != ("unused",):
 if compiled[0]["dropped_terms"] != ["unused"]:
     raise AssertionError("compiler ignored shared occurrence counts")
 '''
-    paths = [str(ROOT / "backend"), *(p for p in sys.path if "site-packages" in p)]
+    paths = [str(ROOT), *(p for p in sys.path if "site-packages" in p)]
     env = {"PATH": os.environ.get("PATH", ""), "PYTHONPATH": os.pathsep.join(paths), "PYTHONDONTWRITEBYTECODE": "1"}
     command = [sys.executable, *(["-O"] if optimize else []), "-S", "-c", code]
     result = subprocess.run(command, env=env, cwd=tmp_path, capture_output=True, text=True, timeout=30)
@@ -505,7 +505,7 @@ def scan_vocabulary(source, filename="scratch.py"):
 
 def test_provider_static_vocabulary():
     failures = []
-    for path in sorted((ROOT / "backend/deixis/providers").glob("*.py")):
+    for path in sorted((ROOT / "deixis/providers").glob("*.py")):
         failures.extend(scan_vocabulary(path.read_text(), path.name)[0])
     assert failures == []
 

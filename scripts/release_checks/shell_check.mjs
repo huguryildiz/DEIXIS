@@ -28,7 +28,7 @@ const result = {
 
 let browser
 try {
-  const require = createRequire(path.join(exportDir, 'apps/web/package.json'))
+  const require = createRequire(path.join(exportDir, 'web/package.json'))
   const { chromium } = require('@playwright/test')
   browser = await chromium.launch({ channel: 'chrome', headless: true, args: launchArgs })
   const context = await browser.newContext()

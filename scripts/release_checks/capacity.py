@@ -16,7 +16,7 @@ summarize/table/limits: rep files are merged by point name (--out first, then ea
 
 Every library is synthetic: SYNTHETIC titles, no answers, reports, evidence tables, model steps or model sessions.
 Measure with the repository's venv python (native arm64), for example
-  PYTHONPATH=backend:. .venv/bin/python scripts/release_checks/capacity.py measure ...
+  PYTHONPATH=. .venv/bin/python scripts/release_checks/capacity.py measure ...
 The script starts only the processes it records as (pid, lstart, command) and re-checks that record before it signals one.
 """
 
@@ -353,7 +353,7 @@ def child_env(home: Path, data_dir: Path) -> dict[str, str]:
     for name in ("codex", "claude", "gemini"):
         if shutil.which(name, path=path):
             raise GuardError(f"a {name} binary is on the child's PATH")
-    return {"PATH": path, "HOME": str(home), "PYTHONPATH": f"{REPO / 'backend'}:{REPO}",
+    return {"PATH": path, "HOME": str(home), "PYTHONPATH": str(REPO),
             "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring", "DEIXIS_DATA_DIR": str(data_dir)}
 
 
@@ -605,7 +605,7 @@ def selection_of(n: int) -> str:
 
 
 def _deixis() -> None:
-    backend = str(REPO / "backend")
+    backend = str(REPO)
     if backend not in sys.path:
         sys.path.insert(0, backend)
 
@@ -694,7 +694,7 @@ def counts(data_dir: Path, research_id: str | None = None) -> dict[str, Any]:
 
 
 def code_migration() -> int:
-    """The highest migration file in backend/deixis/storage/migrations/ today."""
+    """The highest migration file in deixis/storage/migrations/ today."""
     _deixis()
     from deixis.storage import db
 
@@ -1177,7 +1177,7 @@ def run_rep(point: Any, rep: int, src: Path, info: dict[str, Any], out: Path, no
             view = json.loads(timed_get(server.base, f"/api/researches/{rid}")["body"])
         label, count = heading_label(view), len(view["sources"])
         rec.update(label=label, sources=count)
-        web = str(REPO / "apps" / "web")
+        web = str(REPO / "web")
         base_args = {"web": web, "url": server.base, "researchId": rid, "label": label, "expectedSources": count,
                      "timeoutMs": int(UI_DEADLINE_S * 1000)}
         if not control and not is_pdf:
@@ -1377,7 +1377,7 @@ def limits_table(measured: dict[str, Any] | None = None) -> list[dict[str, Any]]
     from deixis.config import Settings
     from deixis.documents import fetch, pdf
 
-    backend = REPO / "backend" / "deixis"
+    backend = REPO / "deixis"
     where = lambda path, pattern: f"{path.relative_to(REPO)}:{_line_of(path, pattern)}"  # noqa: E731
     mib = lambda v: f"{v:,} bytes ({v / 1048576:g} MiB)"  # noqa: E731
     concurrency = Settings.__dataclass_fields__["model_concurrency"].default

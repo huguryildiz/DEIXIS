@@ -288,7 +288,7 @@ else:
 conn.close(); print('race committed',flush=True)
 '''
             result = subprocess.run([sys.executable, "-c", code, str(lib.settings.db_path), race, lib.aid, lib.rid, lib.svid, other],
-                env=dict(os.environ, PYTHONPATH=str(ROOT / "backend"), DEIXIS_DATA_DIR=str(lib.settings.data_dir)),
+                env=dict(os.environ, PYTHONPATH=str(ROOT), DEIXIS_DATA_DIR=str(lib.settings.data_dir)),
                 capture_output=True, text=True, timeout=30)
             assert result.returncode == 0, result.stderr
             assert result.stdout.strip() == "race committed"

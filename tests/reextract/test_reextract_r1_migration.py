@@ -282,7 +282,7 @@ def test_extraction_shape_guards(lib, bad):
 
 def test_all_production_extraction_inserts_name_profile_and_retry_imports_no_external_work():
     found = []
-    for path in (ROOT / "backend/deixis").rglob("*.py"):
+    for path in (ROOT / "deixis").rglob("*.py"):
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
             if not isinstance(node, ast.Constant) or not isinstance(node.value, str): continue
@@ -290,5 +290,5 @@ def test_all_production_extraction_inserts_name_profile_and_retry_imports_no_ext
                 assert "extractor_profile" in node.value, path
                 found.append(path)
     assert len(found) == 3
-    tree = ast.parse((ROOT / "backend/deixis/workflow/recovery.py").read_text())
+    tree = ast.parse((ROOT / "deixis/workflow/recovery.py").read_text())
     assert not any(isinstance(node, ast.ImportFrom) and (node.module or "").startswith(("deixis.models", "deixis.providers")) for node in ast.walk(tree))

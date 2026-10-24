@@ -180,7 +180,7 @@ assert.deepStrictEqual(['macos', 'windows', 'linux'].map(labels.keychainLabel), 
 i18n.setUiLanguage('en');
 assert.deepStrictEqual(['macos', 'windows', 'linux'].map(labels.keychainLabel), ['the Keychain', 'the Credential Manager', 'the system keyring']);
 """
-    result = subprocess.run(["node", "-e", script, "--", __import__("json").dumps(codes)], cwd=root / "apps/web", capture_output=True, text=True)
+    result = subprocess.run(["node", "-e", script, "--", __import__("json").dumps(codes)], cwd=root / "web", capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
 
 
@@ -208,6 +208,6 @@ def test_a_key_test_that_cannot_reach_the_api_does_not_name_the_exception(client
 def test_the_first_run_text_names_the_built_in_model_only_where_it_is_offered():
     from pathlib import Path
 
-    home = (Path(__file__).resolve().parents[2] / "apps/web/src/Home.tsx").read_text()
+    home = (Path(__file__).resolve().parents[2] / "web/src/Home.tsx").read_text()
     assert "builtinOffered &&" in home and "unsupported_platform" in home
     assert "Semantic search also has a built-in model" not in home.split("{builtinOffered &&")[0].split("Not connected. Use a Codex")[1]

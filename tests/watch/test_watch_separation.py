@@ -6,7 +6,7 @@ import re
 
 
 def test_watch_package_has_no_library_writer_or_sql_mutation():
-    root = Path("backend/deixis/workflow/watch")
+    root = Path("deixis/workflow/watch")
     forbidden_calls = {"record_search", "add_search_run", "upsert_provider_source", "add_to_corpus", "link_records"}
     library = {"sources", "source_versions", "works", "corpus_memberships", "candidates", "candidate_hits",
                "search_runs", "identifier_mappings", "record_links", "selections", "passages"}
@@ -22,7 +22,7 @@ def test_watch_package_has_no_library_writer_or_sql_mutation():
 
 
 def test_check_is_pure_and_only_reads_provider_constants():
-    tree = ast.parse(Path("backend/deixis/workflow/watch/check.py").read_text())
+    tree = ast.parse(Path("deixis/workflow/watch/check.py").read_text())
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
             assert node.func.attr not in ("execute", "transaction")

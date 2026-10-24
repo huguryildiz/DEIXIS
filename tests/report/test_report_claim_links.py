@@ -329,7 +329,7 @@ REVISION_READERS = {
 @pytest.mark.parametrize("table,expected", [("report_citation_links", CITATION_READERS),
                                            ("report_claim_revision_links", REVISION_READERS)])
 def test_raw_table_access_has_a_fixed_source_allowlist(table, expected):
-    root = Path(__file__).resolve().parents[2] / "backend/deixis"
+    root = Path(__file__).resolve().parents[2] / "deixis"
     found = set()
     def visit(node, file, scope=()):
         if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):

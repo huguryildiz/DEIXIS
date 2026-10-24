@@ -32,15 +32,15 @@ def bundle(tmp_path: Path) -> Path:
     """The package compiled to sourceless `.pyc` files, the manifest's data files and the `deixis` dist-info that
     P10d's `copy_metadata("deixis")` adds, and nothing else."""
     root = tmp_path / "bundle"
-    shutil.copytree(REPO / "backend" / "deixis", root / "deixis",
+    shutil.copytree(REPO / "deixis", root / "deixis",
                     ignore=lambda folder, names: [n for n in names if not (n.endswith(".py") or Path(folder, n).is_dir())
                                                   or n == "__pycache__"])
     assert compileall.compile_dir(root / "deixis", legacy=True, quiet=1)
     for source in (root / "deixis").rglob("*.py"):
         source.unlink()
     pairs = package_manifest.datas(REPO)
-    if not any(dest.startswith("apps/web/dist") for _, dest in pairs):  # the web app is not built in this checkout
-        pairs.append((str(tmp_path / "index.html"), "apps/web/dist"))
+    if not any(dest.startswith("web/dist") for _, dest in pairs):  # the web app is not built in this checkout
+        pairs.append((str(tmp_path / "index.html"), "web/dist"))
         (tmp_path / "index.html").write_text("<p>SYNTHETIC web build</p>")
     for source, dest in pairs:
         (root / dest).mkdir(parents=True, exist_ok=True)
@@ -111,7 +111,7 @@ print(json.dumps({"package": deixis.__file__, "root": str(RESOURCE_ROOT), "issue
 """)
     assert seen["package"].startswith(str(root)) and seen["package"].endswith(".pyc") and seen["root"] == str(root)
     assert seen["issues"] == [] and seen["health"]["status"] == "ok"
-    assert seen["health"]["skill_package_hash"] == skill.package_hash(REPO / "methods" / "deixis-research")
+    assert seen["health"]["skill_package_hash"] == skill.package_hash(REPO / "deixis" / "methods" / "deixis-research")
     assert "SYNTHETIC web build" in seen["page"] or "<div id=\"root\">" in seen["page"]
     assert seen["metadata"].startswith(str(root)) and seen["version"] == importlib.metadata.version("deixis")
     assert seen["key_set"] is False and (root / ".env").read_text() == "OPENALEX_API_KEY=SYNTHETIC-dotenv-key\n"
@@ -132,7 +132,7 @@ bare = prisma_s._pin(Path(registry.__file__), "no_registry_connector")
 print(json.dumps({"built": built, "bare": [bare["identity"], bare["build_sha256"], bare["sha256"]],
                   "source_on_disk": Path(registry.__file__).with_suffix(".py").exists()}))
 """)
-    digest = {name: hashlib.sha256((REPO / "backend/deixis/providers" / name).read_bytes()).hexdigest()
+    digest = {name: hashlib.sha256((REPO / "deixis/providers" / name).read_bytes()).hexdigest()
               for name in ("registry.py", "query_compiler.py")}
     assert seen["built"] == {"registry": ["build_sha256", digest["registry.py"], None],
                              "separate": ["build_sha256", digest["registry.py"], None],
@@ -142,11 +142,11 @@ print(json.dumps({"built": built, "bare": [bare["identity"], bare["build_sha256"
 
 def test_the_manifest_lists_every_data_file_next_to_the_code_and_the_build_record():
     listed = {Path(source).resolve() for source, _ in package_manifest.datas(REPO)}
-    package = REPO / "backend" / "deixis"
+    package = REPO / "deixis"
     data_files = {p.resolve() for p in package.rglob("*") if p.is_file() and p.suffix not in (".py", ".pyc")}
     assert data_files <= listed
-    assert all((REPO / "contracts/research" / name).resolve() in listed for name in os.listdir(REPO / "contracts/research"))
-    assert (REPO / "methods/deixis-research/references/report.md").resolve() in listed
+    assert all((REPO / "deixis/contracts/research" / name).resolve() in listed for name in os.listdir(REPO / "deixis/contracts/research"))
+    assert (REPO / "deixis/methods/deixis-research/references/report.md").resolve() in listed
     assert package_manifest.datas(REPO, Path("/b/build_identity.json"))[-1] == ("/b/build_identity.json", "deixis")
 
 

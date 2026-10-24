@@ -2,7 +2,7 @@
 //
 // Usage: node capacity_browser.mjs '<json args>'   (capacity.py builds the args and reads the one JSON line printed)
 // args: { web, url, researchId, label, expectedSources, steps, timeoutMs, pages?, pdfMarkers? }
-//   web      the repository's apps/web folder (Playwright is loaded from its node_modules)
+//   web      the repository's web folder (Playwright is loaded from its node_modules)
 //   label    the research screen's heading text (computed by capacity.py from the same rule ResearchView.tsx uses)
 //   steps    any of: k01, k04, k04c-abstract, k04c-pdf, two-tab, pdf
 //   pdfMarkers  {work number: unique text of page 1 of its stored PDF}; k04c-pdf waits for the marker of the row it clicked

@@ -345,7 +345,7 @@ def provenance(hashes):
     def git(*args):
         return subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, check=True).stdout.rstrip()
     return {"sha256": hashes, "head": git("rev-parse", "HEAD"),
-            "status_porcelain": git("status", "--porcelain", "--", "backend", "contracts", "methods",
+            "status_porcelain": git("status", "--porcelain", "--", "deixis",
                                     "scripts/model_behavior", "tests/model_behavior", str(EXPECTATIONS.relative_to(REPO_ROOT)))}
 
 

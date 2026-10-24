@@ -2,11 +2,11 @@
 file text when the package ships one, then the native components listed by hand in `native_components.txt`.
 
 Python: the production closure of `uv.lock` (`uv export --no-dev`), read from the installed distributions' metadata.
-npm: the non-dev packages of `apps/web/package-lock.json`, read from `apps/web/node_modules`. A package whose licence
+npm: the non-dev packages of `web/package-lock.json`, read from `web/node_modules`. A package whose licence
 cannot be named from a known list makes the script exit 1 and list it; a licence that is really known is added to
 OVERRIDES below with the reason, never skipped. Packages the lock needs only on another platform are not installed here;
 they must have an override (Python) or take the lock's licence field without text (npm optional builds).
-Run from the repository root after `uv sync` and `cd apps/web && npm ci`:
+Run from the repository root after `uv sync` and `cd web && npm ci`:
     uv run python scripts/licenses/build_notices.py            # writes THIRD_PARTY_NOTICES
     uv run python scripts/licenses/build_notices.py --check    # scan only, exit 1 on an unknown licence
 """
@@ -184,7 +184,7 @@ def resolve(entries: list[dict]) -> list[str]:
 
 def render(entries: list[dict], native: str) -> str:
     out = ["THIRD-PARTY NOTICES", "", "DEIXIS is licensed AGPL-3.0-or-later (see LICENSE). It includes or depends on the software below. "
-           "The Python and npm lists are written by scripts/licenses/build_notices.py from uv.lock and apps/web/package-lock.json "
+           "The Python and npm lists are written by scripts/licenses/build_notices.py from uv.lock and web/package-lock.json "
            "(production dependencies only); the npm list includes build tools that the lock declares as dependencies, so it is a "
            "superset of what the web app ships. Native components are listed by hand after them.", "",
            "Contents", "--------"]
@@ -204,7 +204,7 @@ def render(entries: list[dict], native: str) -> str:
 
 
 def build(web: Path | None = None) -> tuple[str, list[str]]:
-    web = web or REPO / "apps" / "web"
+    web = web or REPO / "web"
     entries = python_entries(python_requirements()) + npm_entries(web)
     problems = resolve(entries)
     entries.sort(key=lambda e: (e["ecosystem"] != "python", e["name"].lower(), e["version"]))
@@ -216,8 +216,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, default=REPO / "THIRD_PARTY_NOTICES")
     parser.add_argument("--check", action="store_true", help="scan only; write nothing")
     args = parser.parse_args(argv)
-    if not (REPO / "apps" / "web" / "node_modules").is_dir():
-        print("apps/web/node_modules is missing; run `npm ci` in apps/web first.", file=sys.stderr)
+    if not (REPO / "web" / "node_modules").is_dir():
+        print("web/node_modules is missing; run `npm ci` in web first.", file=sys.stderr)
         return 1
     text, problems = build()
     if problems:

@@ -29,7 +29,7 @@ def app_for(base, http=None):
 
 
 def route_first(app):
-    """Put the route just added ahead of the static mount at "/", which create_app adds only when apps/web/dist exists."""
+    """Put the route just added ahead of the static mount at "/", which create_app adds only when web/dist exists."""
     app.router.routes.insert(0, app.router.routes.pop())
 
 
@@ -167,7 +167,7 @@ def test_request_directory_failure_at_each_site(tmp_path, monkeypatch, site, err
 
 
 def test_every_request_directory_call_is_guarded():
-    tree = ast.parse((Path(__file__).parents[2] / "backend/deixis/api/app.py").read_text())
+    tree = ast.parse((Path(__file__).parents[2] / "deixis/api/app.py").read_text())
     parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
     calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call)
              and isinstance(node.func, ast.Attribute) and node.func.attr == "mkdir"

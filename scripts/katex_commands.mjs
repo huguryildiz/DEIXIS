@@ -1,4 +1,4 @@
-// Writes backend/deixis/documents/katex_commands.json: the commands and environments the web app's KaTeX knows (D104).
+// Writes deixis/documents/katex_commands.json: the commands and environments the web app's KaTeX knows (D104).
 //
 // KaTeX has no public registry, so candidates are the string literals of its own bundle; a command is known when
 // rendering it alone does not fail with "Undefined control sequence" (a missing argument is a different error), and an
@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const require = createRequire(join(root, 'apps/web/package.json'))
+const require = createRequire(join(root, 'web/package.json'))
 const katex = require('katex')
 const bundle = readFileSync(require.resolve('katex/dist/katex.js'), 'utf8')
 
@@ -51,5 +51,5 @@ for (let code = 33; code < 127; code++) {
   }
 }
 const out = { katex_version: katex.version, commands: [...commands].sort(), environments: [...environments].sort(), symbols }
-writeFileSync(join(root, 'backend/deixis/documents/katex_commands.json'), JSON.stringify(out, null, 1) + '\n')
+writeFileSync(join(root, 'deixis/documents/katex_commands.json'), JSON.stringify(out, null, 1) + '\n')
 console.log(`KaTeX ${out.katex_version}: ${out.commands.length} commands, ${out.environments.length} environments, ${out.symbols.length} control symbols`)

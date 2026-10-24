@@ -131,7 +131,7 @@ def test_b03_the_production_launcher_refuses_a_library_with_an_unknown_migration
 def test_b03_the_production_launcher_refuses_an_unknown_id_that_exists_only_in_the_wal(harness, tmp_path):
     data = tmp_path / "data"
     small_library(harness, data)
-    subprocess.run([sys.executable, "-c", CHILD, str(data / "library.sqlite"), str(REPO / "backend")], check=True, timeout=60,
+    subprocess.run([sys.executable, "-c", CHILD, str(data / "library.sqlite"), str(REPO)], check=True, timeout=60,
                    env=child_env(harness.home))
     assert (data / "library.sqlite-wal").stat().st_size > 0 and (data / "library.sqlite-shm").exists()
     with sqlite3.connect((data / "library.sqlite").resolve().as_uri() + "?mode=ro&immutable=1", uri=True) as conn:

@@ -49,7 +49,7 @@ BANNED_COMMANDS = ("codex", "claude", "gemini", "tesseract")
 SHIM_TOOLS = ("uv", "node", "npm", "npx")
 SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
 LOOPBACK = ("127.0.0.1", "::1", "localhost")
-LOCK_FILES = ("uv.lock", "apps/web/package-lock.json")
+LOCK_FILES = ("uv.lock", "web/package-lock.json")
 INSTALL_PROXY_NAMES = ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
                        "SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS")
 OVERLAY_SKIP_PARTS = (".local", "node_modules", ".venv", "dist")
@@ -177,8 +177,8 @@ def decide_keyring_stage1(info: Dict[str, Any]) -> Tuple[bool, str]:
 
 def check_i04(stdout: str, health_status: Optional[int]) -> Tuple[bool, List[str]]:
     reasons = []
-    if "UI build not found (apps/web/dist)" not in stdout:
-        reasons.append("the 'UI build not found (apps/web/dist)' warning line is missing")
+    if "UI build not found (web/dist)" not in stdout:
+        reasons.append("the 'UI build not found (web/dist)' warning line is missing")
     if health_status != 200:
         reasons.append("/api/health did not answer 200 (got %s)" % health_status)
     return not reasons, reasons
@@ -255,7 +255,7 @@ def launch_env_problems(env: Dict[str, str], cwd: Path, work: Path, export: Path
     for key in ("DEIXIS_HOST", "DEIXIS_PORT"):
         if key in env:
             problems.append("%s must not be passed" % key)
-    if env.get("PYTHONPATH") != str(export / "backend"):
+    if env.get("PYTHONPATH") != str(export):
         problems.append("PYTHONPATH is not the export's absolute backend directory")
     if Path(cwd).resolve() != export:
         problems.append("cwd is not the export")
@@ -505,7 +505,7 @@ class Audit:
             env["DEIXIS_DATA_DIR"] = str(data_dir if data_dir is not None else self.work / "data-probe")
             env["DEIXIS_CODEX_HOME"] = str(self.codex_home)
             env["PYTHON_KEYRING_BACKEND"] = KEYRING_NULL
-            env["PYTHONPATH"] = str(self.export / "backend")
+            env["PYTHONPATH"] = str(self.export)
             if control:
                 del env["PYTHON_KEYRING_BACKEND"]
         if kind == "install":
@@ -810,7 +810,7 @@ class Audit:
                 self.overlay["files"].append({"path": rel, "sha256": sha256_of(source)})
 
     def engines_check(self) -> List[str]:
-        engines = json.loads(read_text(self.export / "apps/web/package.json")).get("engines", {})
+        engines = json.loads(read_text(self.export / "web/package.json")).get("engines", {})
         problems = []
         for tool, version in (("node", self.tool_versions["node"]), ("npm", self.tool_versions["npm"])):
             spec = engines.get(tool)
@@ -916,14 +916,14 @@ class Audit:
             print("\nKEYRING ISOLATION FAILED. " + KEYRING_ALTERNATIVE)
             return self.finalize(4)
 
-        ci = self.install_step("npm ci", [str(self.bin / "npm"), "ci"], self.export / "apps/web", LIMITS["npm_ci"])
+        ci = self.install_step("npm ci", [str(self.bin / "npm"), "ci"], self.export / "web", LIMITS["npm_ci"])
         if ci["exit"] != 0:
             self.finish_i01(False)
             return self.finalize(1)
 
         self.run_i04()
-        build = self.install_step("npm run build", [str(self.bin / "npm"), "run", "build"], self.export / "apps/web", LIMITS["npm_build"])
-        dist = (self.export / "apps/web/dist/index.html").exists()
+        build = self.install_step("npm run build", [str(self.bin / "npm"), "run", "build"], self.export / "web", LIMITS["npm_build"])
+        dist = (self.export / "web/dist/index.html").exists()
         self._i01["evidence"].append({"dist_index_html": dist})
         self.hash_locks("after_install")
         locks_same = self.lock_hashes["before"] == self.lock_hashes["after_install"]
@@ -956,9 +956,9 @@ class Audit:
         stdout = read_text(self.logs / "serve-nodist.stdout.log")
         ok, reasons = check_i04(stdout, server["status"])
         ok = ok and (server["body"] or {}).get("status") == "ok"
-        self.rows["I04"] = row("I04", ROW_CLAIMS["I04"], "pass" if ok else "fail", "export without apps/web/dist, empty library",
+        self.rows["I04"] = row("I04", ROW_CLAIMS["I04"], "pass" if ok else "fail", "export without web/dist, empty library",
                                {"ready_seconds": server["ready_seconds"], "health_status": server["status"]},
-                               [{"warning_line_present": "UI build not found (apps/web/dist)" in stdout, "health": server["body"],
+                               [{"warning_line_present": "UI build not found (web/dist)" in stdout, "health": server["body"],
                                  "stop": stop, "reasons": reasons}])
 
     def run_i02_i03b_i07(self) -> None:
@@ -1124,7 +1124,7 @@ ROW_CLAIMS = {
     "I01": "uv sync, npm ci and npm run build exit 0 in a clean export",
     "I02": "serve starts, /api/health is ok, the question box renders, stop frees the port and leaves no process",
     "I03": "busy port: 'Port N is in use', exit 2, data directory unchanged, a second instance is not a writer",
-    "I04": "no apps/web/dist: the API starts and prints the warning",
+    "I04": "no web/dist: the API starts and prints the warning",
     "I05": "unwritable data directory: exit not 0, nothing created, one message with path and cause",
     "I07": "without any model account every model connection is not ready and says why",
     "I08": "clean macOS user account, README steps only (manual)",
@@ -1179,8 +1179,8 @@ def self_test() -> int:
         expect("keyring snippet %s reads no secret" % name, any(w in code for w in ("get_password", "set_password", "delete_password")), False)
 
     expect("i04 no warning", check_i04("DEIXIS is running", 200)[0], False)
-    expect("i04 no health", check_i04("UI build not found (apps/web/dist). The API will run", None)[0], False)
-    expect("i04 pass", check_i04("UI build not found (apps/web/dist). The API will run", 200)[0], True)
+    expect("i04 no health", check_i04("UI build not found (web/dist). The API will run", None)[0], False)
+    expect("i04 pass", check_i04("UI build not found (web/dist). The API will run", 200)[0], True)
 
     expect("i03 message missing", check_port_busy(2, "something else", "something else", 8871)[0], False)
     expect("i03 pass", check_port_busy(2, "Port 8871 is in use. DEIXIS may", "Port 8871 is in use.", 8871)[0], True)
@@ -1212,7 +1212,7 @@ def self_test() -> int:
     work = Path("/tmp/work").resolve()
     export = work / "export"
     env = {"DEIXIS_DATA_DIR": str(work / "data"), "DEIXIS_CODEX_HOME": str(work / "codex-home"), "PYTHON_KEYRING_BACKEND": KEYRING_NULL,
-           "PYTHONPATH": str(export / "backend")}
+           "PYTHONPATH": str(export)}
     expect("launcher baseline", launch_env_problems(env, export, work, export), [])
     expect("launcher no data dir", bool(launch_env_problems({k: v for k, v in env.items() if k != "DEIXIS_DATA_DIR"}, export, work, export)), True)
     expect("launcher live data dir", bool(launch_env_problems(dict(env, DEIXIS_DATA_DIR=str(LIVE_DATA_DIR)), export, work, export)), True)

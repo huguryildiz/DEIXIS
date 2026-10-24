@@ -235,7 +235,7 @@ def test_code_facts_carry_their_pinned_source_and_a_changed_file_is_not_verified
         source = found["code_source"]
         assert source["verified"] is True and re.fullmatch(r"[0-9a-f]{64}", source["sha256"])
         assert source["identity"] == "source_sha256" and source["build_sha256"] is None
-        assert source["code_version"].startswith("deixis/") and source["source"].startswith("backend/deixis/")
+        assert source["code_version"].startswith("deixis/") and source["source"].startswith("deixis/")
     assert item(data, 3)["code_source"]["fact"] == "no_registry_connector"
     # A module loaded from a file that changed on disk afterwards: its code origin is no longer shown as verified.
     copy = tmp_path / "registry_copy.py"
@@ -263,10 +263,10 @@ def test_a_frozen_build_reports_the_build_digest_as_such_and_never_as_a_source_s
     data = lib.export()
     three = item(data, 3)
     source = three["code_source"]
-    expected = hashlib.sha256((RESOURCE_ROOT / "backend/deixis/providers/registry.py").read_bytes()).hexdigest()
+    expected = hashlib.sha256((RESOURCE_ROOT / "deixis/providers/registry.py").read_bytes()).hexdigest()
     assert (source["identity"], source["build_sha256"], source["sha256"], source["verified"]) == (
         "build_sha256", expected, None, None)
-    assert source["source"] == "backend/deixis/providers/registry.py" and "not verified" not in three["text"]
+    assert source["source"] == "deixis/providers/registry.py" and "not verified" not in three["text"]
     assert f"build sha256 {expected}, recorded when the package was built" in prisma_s.markdown(data)
     # Without the build record only the code version identifies the code.
     monkeypatch.setattr(prisma_s, "BUILD_IDENTITY", tmp_path / "absent.json")

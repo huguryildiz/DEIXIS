@@ -11,7 +11,7 @@ import pytest
 
 from deixis.documents import arxiv_source, jats, ocr, pdf
 
-BACKEND = str(Path(__file__).resolve().parents[2] / "backend")
+BACKEND = str(Path(__file__).resolve().parents[2])
 CHILD = ("import sys, time; sys.path[:0] = [%r]; from deixis.documents import pdf; pdf._watch_memory(10**12); "
          "print('armed', flush=True); time.sleep(30)" % BACKEND)
 

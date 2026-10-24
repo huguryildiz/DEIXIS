@@ -144,7 +144,7 @@ def child_env(home: Path, **extra: str) -> dict[str, str]:
     bin_dir = str(Path(sys.executable).parent)
     path = f"{bin_dir}:/usr/bin:/bin"
     assert shutil.which("codex", path=path) is None, "a codex binary is on the child's PATH"
-    env = {"PATH": path, "HOME": str(home), "PYTHONPATH": f"{REPO / 'backend'}:{REPO}",
+    env = {"PATH": path, "HOME": str(home), "PYTHONPATH": str(REPO),
            "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring"}
     for name, value in extra.items():
         assert name.startswith("P9_") or name in ("DEIXIS_DATA_DIR", "FAKE_LLAMA", "DEIXIS_CHILD_LIFETIME_SECONDS"), name

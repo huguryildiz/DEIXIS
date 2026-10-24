@@ -23,7 +23,7 @@ from tests.reextract.reextract_r2c_helpers import ROOT, child_lock
 def probe(lib):
     result = subprocess.run([sys.executable, "-c",
         "from pathlib import Path; import sys; from deixis.workflow.text_retry import lock_held; print(lock_held(Path(sys.argv[1]), sys.argv[2]))",
-        str(lib.settings.recovery_dir), lib.sha], env=dict(os.environ, PYTHONPATH=str(ROOT / "backend")),
+        str(lib.settings.recovery_dir), lib.sha], env=dict(os.environ, PYTHONPATH=str(ROOT)),
         capture_output=True, text=True, timeout=30, check=True)
     return result.stdout.strip() == "True"
 

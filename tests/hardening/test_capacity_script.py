@@ -392,7 +392,7 @@ def test_a_prepared_library_is_reused_only_at_the_codes_highest_migration(librar
     root, info = library
     want = capacity.code_migration()
     assert info["migration"] == want == capacity.library_migration(root / "n100")
-    assert want == max(int(p.name.split("_", 1)[0]) for p in (REPO / "backend" / "deixis" / "storage" / "migrations").glob("*.sql"))
+    assert want == max(int(p.name.split("_", 1)[0]) for p in (REPO / "deixis" / "storage" / "migrations").glob("*.sql"))
     scratch = Path(tempfile.mkdtemp(prefix="h5-"))
     try:
         shutil.copytree(root / "n100", scratch / "n100")
@@ -410,7 +410,7 @@ def test_a_prepared_library_is_reused_only_at_the_codes_highest_migration(librar
         conn.close()
         # With only the baseline packaged, "one migration earlier" is a library that records none (MAX(version) reads as 0).
         previous = max((int(p.name.split("_", 1)[0]) for p in
-                        (REPO / "backend" / "deixis" / "storage" / "migrations").glob("*.sql")
+                        (REPO / "deixis" / "storage" / "migrations").glob("*.sql")
                         if int(p.name.split("_", 1)[0]) < want), default=0)
         assert capacity.library_migration(scratch / "n100") == previous
         assert any(f"highest migration is {previous}" in p and "generate --force" in p for p in capacity.ready_problems(scratch / "n100"))

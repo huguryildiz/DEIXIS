@@ -26,10 +26,10 @@ if [[ -n $PIDS ]]; then
   lsof -nP -tiTCP:$PORT -sTCP:LISTEN >/dev/null && fail "The old server did not stop"
 fi
 
-DIST=apps/web/dist/index.html
-if [[ ! -f $DIST ]] || [[ -n "$(find apps/web/src apps/web/public apps/web/index.html apps/web/package.json -newer $DIST -print -quit 2>/dev/null)" ]]; then
+DIST=web/dist/index.html
+if [[ ! -f $DIST ]] || [[ -n "$(find web/src web/public web/index.html web/package.json -newer $DIST -print -quit 2>/dev/null)" ]]; then
   note "Building the interface…"
-  (cd apps/web && { [[ -d node_modules ]] || npm ci; } && npm run build) >>"$LOG" 2>&1 || fail "UI build failed"
+  (cd web && { [[ -d node_modules ]] || npm ci; } && npm run build) >>"$LOG" 2>&1 || fail "UI build failed"
 fi
 
 note "Starting…"

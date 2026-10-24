@@ -21,7 +21,7 @@ def digest(stage: str, hash_seed: str, shuffle: int | None) -> str:
     command = [sys.executable, str(Path(__file__).with_name("determinism_stages.py")), stage]
     if shuffle is not None:
         command += ["--shuffle", str(shuffle)]
-    env = os.environ | {"PYTHONHASHSEED": hash_seed, "PYTHONPATH": f"{REPO_ROOT / 'backend'}:{REPO_ROOT / 'tests'}"}
+    env = os.environ | {"PYTHONHASHSEED": hash_seed, "PYTHONPATH": f"{REPO_ROOT}:{REPO_ROOT / 'tests'}"}
     result = subprocess.run(command, capture_output=True, text=True, env=env, cwd=REPO_ROOT, check=True)
     return result.stdout.strip()
 

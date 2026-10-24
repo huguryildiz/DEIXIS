@@ -5,7 +5,7 @@ answer is used only when the call completed, carried no tool item, parses to exa
 the model that was asked (or its own dated snapshot); anything else is stored and refused, never placed. The reading then
 goes through the same gate as Mathpix's (`equation_regions.gate`), without the confidence check: a model gives none.
 
-Measured 20 Oct 2026 (`.local/equation-bench-2026-10-20`, 204 numbered equations of 34 arXiv papers, the authors' LaTeX as
+Measured 20 Oct 2026 (`.local/2026-10-20-equation-bench`, 204 numbered equations of 34 arXiv papers, the authors' LaTeX as
 the reference): Claude Sonnet 5.5 at medium effort 78% exact and 93% within 0.1 normalized edit distance, about 2 s per
 equation; the gate was not part of that measurement.
 """

@@ -12,7 +12,8 @@ import { t } from './i18n'
 // The works of an sw research no route found a PDF for (slice 18a, SW10.4–5), in reading order. The person opens a
 // link in their own browser (through their institution's proxy when one is set), saves the PDF and drops it here. A
 // dropped file is matched to a work; the person picks the version and confirms, and only then is it attached. The
-// screen never attaches by itself and never opens more than the one link the person clicks.
+// screen never attaches by itself and opens a link only when the person clicks: one row's link, or "Open all links",
+// which opens each row's DOI link (or its publisher page) in its own tab, nothing more.
 //
 // Below the list, "Your files" (slice 18b) says what became of each file the person added: waiting to be read, being
 // read, and what the reading decided, all from what is stored. A file the model could not read is read again only when
@@ -44,6 +45,7 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
   const [skipping, setSkipping] = useState<string | null>(null)
   const [zoteroSource, setZoteroSource] = useState<ZoteroSource>('local')
   const [fromZoteroBusy, setFromZoteroBusy] = useState(false)
+  const [blockedRows, setBlockedRows] = useState<string[]>([])  // rows whose tab the browser blocked on the last try
   const fileInput = useRef<HTMLInputElement>(null)
   const toast = useToast()
 
@@ -177,6 +179,20 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
   if (!list) return <p className="legacy-mini-note" role="status"><span className="shimmer-text">{t('Loading the works waiting for a PDF…')}</span></p>
   const rows = list.rows
   const skipped = list.skipped
+  const openable = rows.filter(row => row.links.doi || row.links.landing)
+  // One click, one tab per row: the DOI link (through the proxy when one is set), else the publisher page. A browser that
+  // lets only the first pop-up through leaves the rest unopened; the count is shown so the person can allow pop-ups, and
+  // the next click opens only the rows that were blocked.
+  const retry = openable.filter(row => blockedRows.includes(row.work_id))
+  const openAll = () => {
+    const blocked: string[] = []
+    for (const row of retry.length > 0 ? retry : openable) {
+      const tab = window.open(row.links.doi ?? row.links.landing ?? '', '_blank')
+      if (tab) tab.opener = null
+      else blocked.push(row.work_id)
+    }
+    setBlockedRows(blocked)
+  }
   // The four boxes (mockup `.depth`): works that passed the abstract stage and, of them, those with PDF text in hand, both
   // from the same source list and rule as the Sources panel's "Passed abstract" (the funnel's); the works this panel
   // lists as waiting; and the files you added that no reading has read, as "Your files" lists them.
@@ -210,6 +226,14 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
       {rows.length > 0 && <p className="prow foot-note">{list.via_proxy
         ? t('Links open through your institution’s proxy in your browser; DEIXIS sends nothing through it.')
         : <>{t('Links open directly.')} <a href="#/settings/access">{t('Set your institution’s proxy address')}</a></>}</p>}
+      {openable.length > 1 && <div className="prow waiting-open-all">
+        <Button variant="outline" size="sm" className="ghost" onClick={openAll}>
+          <ExternalLink size={14} aria-hidden />{retry.length > 0
+            ? plural(retry.length, 'Open the {n} blocked link', 'Open the {n} blocked links')
+            : t('Open all {n} links', { n: openable.length })}
+        </Button>
+        {retry.length > 0 && <span className="foot-note" role="status">{plural(retry.length, 'The browser blocked {n} tab. Allow pop-ups for this page and try again.', 'The browser blocked {n} tabs. Allow pop-ups for this page and try again.')}</span>}
+      </div>}
       {rows.length > 0 && <ol className="pdf-ready-rows waiting-rows" aria-label={t('Works waiting for your PDF, in reading order')}>
         {rows.map(row => <li key={row.work_id} className="prow">
           <span className="waiting-place" title={row.relevance?.rank != null && row.relevance.ranked != null ? t('Ranked {n} of {total}', { n: row.relevance.rank, total: row.relevance.ranked }) : t('Place in the reading order')}>{row.relevance?.rank ?? row.place}</span>

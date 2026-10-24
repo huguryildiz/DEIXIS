@@ -129,6 +129,31 @@ test.describe.serial('K: the works waiting for the person’s PDF', () => {
     await shot(page, 'K-waiting-list-1440')
   })
 
+  test('"Open all links" opens each waiting row’s DOI link in its own tab, only with more than one row (SYNTHETIC API state)', async () => {
+    // The fixture lists one work; a second row is added to the response here, so the button appears.
+    const waitingApi = /\/api\/researches\/[^/]+\/waiting$/
+    await page.route(waitingApi, async route => {
+      const body = await (await route.fetch()).json()
+      const copy = { ...body.rows[0], work_id: 'wrk_synthetic_second', title: 'SYNTHETIC second waiting work', links: { doi: 'https://doi.org/10.5555/q956', landing: null } }
+      await route.fulfill({ json: { ...body, rows: [...body.rows, copy] } })
+    })
+    const opened: string[] = []
+    page.context().on('page', tab => { opened.push(tab.url()) })  // listening before the page loads: a tab opened on load counts
+    await page.context().route(/doi\.org/, route => route.fulfill({ body: '' }))
+    await page.goto(`${URL}/#/research/${rid}`)
+    await page.reload()
+    await openPanel(page, 'pdfs')
+    await expect(page.getByRole('button', { name: 'Open all 2 links' })).toBeVisible()
+    expect(opened).toEqual([])  // nothing opens before the click
+    await page.getByRole('button', { name: 'Open all 2 links' }).click()
+    await expect.poll(() => opened.length).toBe(2)
+    expect(new Set(opened).size).toBe(2)  // one tab per row, each its own link
+    expect(opened).toContain('https://doi.org/10.5555/q956')
+    await page.unroute(waitingApi)
+    for (const tab of page.context().pages()) if (tab !== page) await tab.close()
+    await shot(page, 'K-waiting-open-all-1440')
+  })
+
   test('with no reading plan yet, the drop zone opens while a file has a work to go to (SYNTHETIC API state)', async () => {
     // Sol S14 round 1: the zone follows the backend's attach candidates, not the plan alone.
     for (const [candidates, zones] of [[1, 1], [0, 0]] as const) {
@@ -139,7 +164,8 @@ test.describe.serial('K: the works waiting for the person’s PDF', () => {
       })
       await page.goto('about:blank')
       await page.goto(`${URL}/#/research/${rid}/waiting`)
-      await expect(page.getByRole('heading', { name: 'No work waits for your PDF' })).toBeVisible()
+      // With no plan the empty box's head says the retrieval has not run (94b25138: the box is one line, its head).
+      await expect(page.getByRole('heading', { name: 'The full-text retrieval has not run for this question yet.' })).toBeVisible()
       await expect(page.getByTestId('waiting-drop')).toHaveCount(zones)
       await page.unroute(`**/api/researches/${rid}/waiting`)
     }
@@ -313,7 +339,10 @@ test.describe.serial('L failure: a reading that decides nothing', () => {
       await p.goto('about:blank')
       await p.goto(`${FAIL_URL}/#/research/${failing}/waiting`)
       const listed = p.getByRole('list', { name: 'Your PDF, not read yet' }).getByRole('listitem').filter({ hasText: WAITING_TITLE })
-      await expect(listed).toContainText('Your PDF is attached and not read yet: the answer leaves this work out until the model reads it.')
+      // The reason is said once in the box's lede; each row carries a "Not read yet" pill with the full fact as its title (c0e25cd0).
+      await expect(p.locator('section[aria-labelledby="pdf-unread-title"]')).toContainText('1 source has your PDF, not read yet. The answer leaves it out until the model reads it.')
+      await expect(listed.locator('.pill.warn')).toHaveText('Not read yet')
+      await expect(listed.locator('.pill.warn')).toHaveAttribute('title', 'Your PDF is attached and not read yet: the answer leaves this work out until the model reads it.')
       // The link goes to "Your files" further down the same panel.
       await expect(p.getByRole('link', { name: 'See it in Your files' })).toHaveAttribute('href', '#person-files-title')
       // Listed once, in its own group: not among the works that need a PDF, with no upload and no abstract fallback.

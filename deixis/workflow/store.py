@@ -794,6 +794,16 @@ class Store:
             "SELECT MAX(rowid) FROM events WHERE research_id = ? AND type IN ('scope_revised', 'seed_selected')"
             " AND json_extract(payload_json, '$.scope_revision') = ?", (research_id, revision)).fetchone()[0] or 0
 
+    def _person_titled(self, research_id: str) -> bool:
+        """Whether the title is the person's: they renamed the research after its question last named it (a question
+        revision that was not withdrawn; a search-plan revision keeps the title). Generated titles then leave it alone."""
+        named = self.conn.execute(
+            "SELECT MAX(e.rowid) FROM events e JOIN scope_revisions s ON s.research_id = e.research_id"
+            " AND s.revision = json_extract(e.payload_json, '$.scope_revision') WHERE e.research_id = ? AND e.type = 'scope_revised'"
+            " AND json_extract(e.payload_json, '$.user_plan') IS NULL AND s.withdrawn_at IS NULL", (research_id,)).fetchone()[0] or 0
+        return self.conn.execute("SELECT 1 FROM events WHERE research_id = ? AND type = 'research_title_edited' AND rowid > ? LIMIT 1",
+                                 (research_id, named)).fetchone() is not None
+
     def withdraw_revision(self, research_id: str, expected_version: int, revision: int) -> int:
         """Withdraw the current question revision and go back to the one it was opened from (D67); returns that number.
 
@@ -3430,15 +3440,19 @@ class Store:
         return [dict(r) for r in rows]
 
     def set_research_title(self, research_id: str, scope_revision: int, title: str) -> None:
-        """Apply a discovery-time title for the active question revision. A valid answer may rename it later."""
+        """Apply a discovery-time title for the active question revision, unless the title is the person's
+        (`_person_titled`). A valid answer may rename it later, under the same condition."""
         with transaction(self.conn):
+            if self._person_titled(research_id):
+                return
             self.conn.execute(
                 "UPDATE researches SET title = ?, updated_at = ? WHERE id = ? AND current_scope_revision = ?",
                 (title.strip(), now(), research_id, scope_revision),
             )
 
     def rename_research(self, research_id: str, expected_version: int, title: str) -> None:
-        """Persist a user-authored title. It is not final: a later scope revision or a valid answer may name the research again (D68)."""
+        """Persist a user-authored title. Generated titles (discovery, answers) no longer replace it; a new question
+        (`revise_scope`) names the research after that question again."""
         final_title = title.strip()
         if not final_title:
             raise ValueError("Title cannot be blank")
@@ -3733,11 +3747,13 @@ class Store:
                         (new_id("evl"), claim_ids[link["claim_label"]], link["passage_id"], link["source_id"], step_input_id,
                          link.get("anchor_text"), link.get("anchor_match")),
                     )
-                # Only a valid answer for the active question revision may replace the provisional question-as-title.
-                self.conn.execute(
-                    "UPDATE researches SET title = ? WHERE id = ? AND current_scope_revision = ?",
-                    (draft["title"], research_id, scope_revision),
-                )
+                # Only a valid answer for the active question revision may replace the provisional question-as-title,
+                # and never a title the person wrote for this revision.
+                if not self._person_titled(research_id):
+                    self.conn.execute(
+                        "UPDATE researches SET title = ? WHERE id = ? AND current_scope_revision = ?",
+                        (draft["title"], research_id, scope_revision),
+                    )
             self.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (now(), research_id))
             self._event(research_id, "answer_saved", {"answer_id": aid, "status": status}, run_id)
             from deixis.workflow import fast_path

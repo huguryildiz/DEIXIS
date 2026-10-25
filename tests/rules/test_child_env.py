@@ -53,11 +53,12 @@ def test_keys_loaded_into_this_process_never_reach_a_real_child(monkeypatch):
 # ---- every non-model child is built from it --------------------------------------------------------
 
 def test_no_child_process_is_started_with_the_whole_environment():
-    """A grep over the sources: `os.environ` is never copied whole into a child's env (the model CLIs use their own lists)."""
+    """A grep over the sources: `os.environ` is never copied whole into a child's env (the model CLIs use their own lists,
+    their --version probes this one)."""
     root = Path(env_module.__file__).parents[1]
     offenders = [f"{p.relative_to(root)}:{n}" for p in root.rglob("*.py")
                  for n, line in enumerate(p.read_text().splitlines(), 1)
-                 if "**os.environ" in line and p.name not in {"claude.py", "gemini.py"}]  # --version probes of the CLIs
+                 if "**os.environ" in line]
     assert offenders == []
 
 
@@ -116,6 +117,27 @@ def test_the_built_in_model_server_never_sees_a_key_or_a_network_setting(tmp_pat
         asyncio.run(server.start())
     assert_clean(seen)
     assert "HTTPS_PROXY" not in seen  # loopback only: no network settings at all
+
+
+def test_the_claude_and_gemini_version_probes_never_see_a_key(tmp_path, secrets, monkeypatch):
+    from deixis.models import claude, gemini
+    from deixis.tools.tool_probe import Probe
+
+    seen = []
+
+    async def capture(argv, timeout=None, env=None):
+        seen.append(dict(env))
+        return Probe(error="not_responding")
+    for module in (claude, gemini):
+        monkeypatch.setattr(module, "probe", capture)
+        monkeypatch.setattr(module, "find_tool", lambda name: f"/opt/fake/{name}")
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    asyncio.run(claude.ClaudeCodeAdapter(tmp_path / "claude")._check())
+    asyncio.run(gemini.GeminiAdapter()._check(None))
+    assert len(seen) == 2
+    for env in seen:
+        assert_clean(env)
+    assert seen[0]["DISABLE_TELEMETRY"] == "1"
 
 
 # ---- installer output (E18) ------------------------------------------------------------------------

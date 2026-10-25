@@ -79,3 +79,34 @@ def test_the_route_withdraws_and_says_why_it_cannot(tmp_path):
         assert back.status_code == 200 and back.json()["research"]["current_scope_revision"] == 1
 
 
+
+
+def test_a_generated_title_never_replaces_the_one_the_person_wrote(tmp_path):
+    """Discovery-time naming and a valid answer rename the research, until the person names it; a new question
+    revision names it after its question again."""
+    store, rid = store_for(tmp_path)
+
+    def answer(title):
+        run = store.create_run(rid, "answer", {}, None)
+        store.save_answer(rid, run["id"], None, None, store.research(rid)["current_scope_revision"], "structurally_valid",
+                          {"title": title, "answer_language": "en", "claims": []}, {}, [])
+        store.update_run(run["id"], status="completed")
+
+    store.set_research_title(rid, 1, "SYNTHETIC generated title")
+    answer("SYNTHETIC answer title")
+    assert store.research(rid)["title"] == "SYNTHETIC answer title"
+    store.rename_research(rid, store.research(rid)["version"], "SYNTHETIC title the person wrote")
+    store.set_research_title(rid, 1, "SYNTHETIC later generated title")
+    answer("SYNTHETIC later answer title")
+    assert store.research(rid)["title"] == "SYNTHETIC title the person wrote"
+    plan_revision = store.save_user_plan(rid, store.research(rid)["version"], PLAN)  # same question, so the title stays theirs
+    store.set_research_title(rid, plan_revision, "SYNTHETIC generated title after the plan")
+    answer("SYNTHETIC answer title after the plan")
+    assert store.research(rid)["title"] == "SYNTHETIC title the person wrote"
+    revise(store, rid, "SYNTHETIC an interim question")
+    withdraw(store, rid)  # back to the person's question and title, still theirs
+    answer("SYNTHETIC answer title after the withdrawal")
+    assert store.research(rid)["title"] == "SYNTHETIC title the person wrote"
+    revise(store, rid, "SYNTHETIC a new question")
+    answer("SYNTHETIC answer to the new question")
+    assert store.research(rid)["title"] == "SYNTHETIC answer to the new question"

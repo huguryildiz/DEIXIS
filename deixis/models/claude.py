@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import re
 import time
 from pathlib import Path
@@ -27,7 +26,7 @@ from claude_agent_sdk import (
     ToolUseBlock,
 )
 
-from deixis.tools.child_env import NODE_TLS
+from deixis.tools.child_env import NODE_TLS, child_env
 from deixis.models import quota
 from deixis.models.adapter import ModelStepResult
 from deixis.domain.limits import limit_kind, service_error_kind, safe_error
@@ -124,7 +123,7 @@ class ClaudeCodeAdapter:
             status["reason_code"], status["reason"] = "unsupported_install", found.problem
             return status
         cli = found.argv[0]
-        version = await probe([cli, "--version"], env={**os.environ, "PATH": child_path(cli), **TELEMETRY_OFF})
+        version = await probe([cli, "--version"], env=child_env(TELEMETRY_OFF, tool=cli))  # no saved key reaches the probe
         if version.error == "not_responding":
             status["reason_code"] = "timeout"
             status["reason"] = "Claude Code CLI is not responding"

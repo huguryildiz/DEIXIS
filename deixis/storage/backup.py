@@ -163,11 +163,9 @@ def _place_file(source: Path, dest: Path, sha256: str) -> None:
         raise
 
 
-def restore_backup(backup: Path, settings: Settings) -> dict[str, Any]:
-    """Restore into a data directory that has no library yet. Existing model sign-in data is left in place.
-
-    Every refusal happens before anything is written. A cut restore (SIGKILL) leaves `.restoring-*.part` files and maybe
-    finished files, never a half file under a final name; running it again finishes the job."""
+def check_restore(backup: Path, settings: Settings) -> tuple[dict[str, Any], list[tuple[dict[str, Any], Path]]]:
+    """Every reason `restore_backup` refuses, read-only: the manifest and the files not in the target yet. Raises
+    BackupError. The command runs it before it takes the folder lock too, so a refusal leaves no lock file behind."""
     manifest = _read_manifest(backup)
     entries = manifest["files"]
 
@@ -185,6 +183,14 @@ def restore_backup(backup: Path, settings: Settings) -> dict[str, Any]:
             raise BackupError(f"backup file is missing or changed: {entry['path']}")
     if DB_NAME not in {e["path"] for e in entries}:
         raise BackupError("backup has no library database")
+    conn = sqlite3.connect(f"{(backup / DB_NAME).resolve().as_uri()}?mode=ro&immutable=1", uri=True)  # writes nothing beside it
+    try:
+        if conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+            raise BackupError("restored database failed the SQLite integrity check")
+    except sqlite3.DatabaseError as exc:
+        raise BackupError(f"restored database failed the SQLite integrity check: {exc}") from exc
+    finally:
+        conn.close()
 
     pending = []  # (entry, destination) of the files that are not in the target yet
     for entry in entries:
@@ -197,7 +203,17 @@ def restore_backup(backup: Path, settings: Settings) -> dict[str, Any]:
                 raise BackupError(f"a different file already exists at {dest}")
             continue
         pending.append((entry, dest))
+    return manifest, pending
 
+
+def restore_backup(backup: Path, settings: Settings) -> dict[str, Any]:
+    """Restore into a data directory that has no library yet. Existing model sign-in data is left in place.
+
+    Every refusal happens before anything is written. A cut restore (SIGKILL) leaves `.restoring-*.part` files and maybe
+    finished files, never a half file under a final name; running it again finishes the job."""
+    manifest, pending = check_restore(backup, settings)
+    entries = manifest["files"]
+    db_path = settings.db_path
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     for folder in FILE_DIRS.values():
         directory = getattr(settings, folder)

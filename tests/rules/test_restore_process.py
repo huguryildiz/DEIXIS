@@ -256,6 +256,31 @@ def test_f03_backup_killed_after_its_manifest_restores_every_table_and_file(harn
     assert left["tables"] == library_state(data)["tables"], "the backup differs from the source library the server left"
 
 
+def test_a_refused_restore_leaves_no_lock_file_or_folder_behind(harness, tmp_path):
+    """The command takes the target folder's lock before restore checks the backup; a refusal takes back what that made."""
+    import hashlib
+    from deixis.storage.backup import FORMAT
+
+    missing = tmp_path / "not-a-backup"
+    missing.mkdir()
+    damaged = tmp_path / "damaged-backup"  # every hash matches its manifest, but the database is not a SQLite file
+    (damaged / "papers").mkdir(parents=True)
+    (damaged / "library.sqlite").write_bytes(b"SYNTHETIC not a database " * 200)
+    (damaged / "papers" / "SYNTHETIC.pdf").write_bytes(b"%PDF SYNTHETIC")
+    files = [{"path": rel, "sha256": hashlib.sha256((damaged / rel).read_bytes()).hexdigest(), "bytes": (damaged / rel).stat().st_size}
+             for rel in ("library.sqlite", "papers/SYNTHETIC.pdf")]
+    (damaged / "manifest.json").write_text(json.dumps({"format": FORMAT, "created_at": "SYNTHETIC",
+                                                       "schema_versions": [], "files": files, "not_included": []}))
+    for n, backup in enumerate((missing, damaged)):
+        new, empty = tmp_path / f"new-target-{n}", tmp_path / f"empty-target-{n}"
+        empty.mkdir()
+        for target in (new, empty):
+            done = harness.run_cli(["restore", str(backup)], target)
+            assert done.returncode == 1 and "restore failed" in done.stderr, (done.stdout, done.stderr)
+        assert not new.exists()
+        assert list(empty.iterdir()) == []
+
+
 # ---- a restore killed half way --------------------------------------------------------------------------------------
 
 

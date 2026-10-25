@@ -483,6 +483,12 @@ def main(argv: list[str] | None = None) -> int:
     except PointerDamaged as exc:  # E23: never an empty default library in place of the one the pointer named
         print(str(exc), file=sys.stderr)
         return 2
+    if args.command == "restore":  # refused before the folder lock exists, so a refusal leaves the target as it was
+        try:
+            backup.check_restore(args.backup, settings)
+        except backup.BackupError as exc:
+            print(f"restore failed: {exc}", file=sys.stderr)
+            return 1
     if args.command != "serve":  # every process that opens the library holds its folder's shared lock (E1); `serve` takes it after a move
         if isinstance(held := hold_current_folder(settings), str):
             print(held, file=sys.stderr)

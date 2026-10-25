@@ -1,4 +1,7 @@
 id,date,title,area,status,commit,notes
+D123,2026-10-25,"A title the person wrote is no longer replaced by generated titles or later answers",ui,accepted,,
+D122,2026-10-25,A restore's refusal checks run before the folder lock is taken; a refused restore leaves the target untouched,storage,accepted,,
+D121,2026-10-25,The Claude Code and Gemini API version checks get the child-process allowlist instead of the whole environment,privacy,accepted,,
 D120,2026-10-25,"Tests cut to about 1,500 cases and five Playwright specs, grouped by step; one pytest command",testing,accepted,c24d7319,notes/plans/sadelesme-test-ozeti.md
 D119,2026-10-25,One schema file with numbered upgrade steps replaces the 16 migration files,storage,accepted,a62ab5ed,notes/plans/sadelesme-review/sol-asama-2-tur2.md
 D118,2026-10-24,"Equation finder: more numbered displays cropped cleanly, unclear regions refused",reading,accepted,ecb812f5,notes/2026-10-24-equation-finder

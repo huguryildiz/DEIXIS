@@ -1,8 +1,10 @@
 # DEIXIS durumu
 
-**Son güncelleme:** 24 Ekim 2026. Kararlar [docs/decisions.csv](docs/decisions.csv) içinde (en yenisi üstte), ölçümler [docs/benchmark.md](docs/benchmark.md) içinde. Bu dosyanın 18 Ekim öncesi uzun hali Git geçmişinde (commit 847b6b0b).
+**Son güncelleme:** 25 Ekim 2026. Kararlar [docs/decisions.csv](docs/decisions.csv) içinde (en yenisi üstte), ölçümler [docs/benchmark.md](docs/benchmark.md) içinde. Bu dosyanın 18 Ekim öncesi uzun hali Git geçmişinde (commit 847b6b0b).
 
 ## Kısaca: neredeyiz?
+
+- **25 Ekim, repo sadeleşmesi (davranış değişmedi):** klasörler `deixis/`, `web/`, `tests/`, `docs/`; tek `deixis/storage/schema.sql` + sürümlü yükseltme adımları (D119); karar kaydı `docs/decisions.csv`; arama `docs/search.md`'de iki şemayla; testler 17.041 → ~1.500 durum, Playwright 54 → 5 spec, tek komut ~2 dk (D120); `.local/` → `notes/`. Her aşamayı Sol High inceledi.
 
 Durum kötü değil, ama dengesiz. Uygulama çalışıyor ve özellik bakımından geniş; asıl eksik, son haftalarda eklenen özelliklerin çoğunun gerçek bir modelle ve gerçek kullanımda denenmemiş olması.
 

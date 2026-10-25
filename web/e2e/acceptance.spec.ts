@@ -180,7 +180,8 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     const manuscript = row(page, 'SYNTHETIC molecule schedule letter', true)
     await expect(manuscript.getByText('Another version of the record above: submitted manuscript. It follows the record’s selection')).toBeVisible()
     await expect(row(page, 'SYNTHETIC molecule schedule letter').locator('.source-status')).toContainText('different version (submitted manuscript) · not used for this version')
-    await expect(page.locator('.research-facts')).toContainText('6Unique works')  // five searched works and the uploaded seed
+    // D132: with a search behind it, the unique-work count sits in "How this answer was built", not the facts strip.
+    await expect(page.locator('.answer-basis-lead')).toContainText('6 works found')  // five searched works and the uploaded seed
     await expect(manuscript.getByRole('button', { name: 'Include' })).toHaveCount(0)  // D48: only the work's head has a selection
     await expect(row(page, 'SYNTHETIC molecule schedule letter').getByRole('button', { name: 'Include' })).toBeDisabled()
     await shot(page, 'C-other-version-follows-record')

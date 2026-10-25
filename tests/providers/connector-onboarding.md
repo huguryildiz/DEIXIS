@@ -60,7 +60,7 @@ synthetic fixtures (D201).
    unrepresented synthetic registration. Run `tests/test_connector_boundary.py`
    and the relevant integration tests with mocked HTTP, fake credentials,
    temporary storage and fail-closed network guards. B2 adds full conformance.
-5. Record exact commands, results, mismatches and limits in `docs/decisions.md`
+5. Record exact commands, results, mismatches and limits in the commit message and a row in `docs/decisions.csv`
    before release admission. Synthetic checks establish application behavior.
    A live probe needs separate authorization; access and quota stay unverified
    until observed. B5 (D196) recorded G1 acceptance and the product-document wording.

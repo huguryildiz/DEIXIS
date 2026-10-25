@@ -1,6 +1,6 @@
 # DEIXIS durumu
 
-**Son güncelleme:** 24 Ekim 2026. Kararlar [docs/decisions.md](docs/decisions.md) içinde (en yenisi üstte), ölçümler [docs/benchmark.md](docs/benchmark.md) içinde. Bu dosyanın 18 Ekim öncesi uzun hali Git geçmişinde (commit 847b6b0b).
+**Son güncelleme:** 24 Ekim 2026. Kararlar [docs/decisions.csv](docs/decisions.csv) içinde (en yenisi üstte), ölçümler [docs/benchmark.md](docs/benchmark.md) içinde. Bu dosyanın 18 Ekim öncesi uzun hali Git geçmişinde (commit 847b6b0b).
 
 ## Kısaca: neredeyiz?
 

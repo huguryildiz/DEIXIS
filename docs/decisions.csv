@@ -1,0 +1,118 @@
+id,date,title,area,status,commit,notes
+D119,2026-10-25,One schema file with numbered upgrade steps replaces the 16 migration files,storage,accepted,a62ab5ed,notes/plans/sadelesme-review/sol-asama-2-tur2.md
+D118,2026-10-24,"Equation finder: more numbered displays cropped cleanly, unclear regions refused",reading,accepted,ecb812f5,notes/2026-10-24-equation-finder
+D117,2026-10-24,"PDF fetch: 403s counted per host, Elsevier article API for open-access PDFs",reading,accepted,8fbbf7f7,notes/2026-10-24-pdf-403/RESULT.md
+D116,2026-10-24,Check a statement: the claim's field and named authors reach the search,search,accepted,1173ee50,notes/2026-10-24-reverse-citation-r5/RESULT.md
+D115,2026-10-24,Equation-reader requests are booked in the spend ledger,models,accepted,a1424deb,
+D114,2026-10-18,"Works read from abstracts only join evidence tables and reports, each marked",table,accepted,fd4d37bf,notes/plans/abstract-rows-plan.md
+D113,2026-10-20,Marker removed; the answer model reads numbered equations from page crops,reading,accepted,d99ec273,notes/2026-10-20-equation-bench
+D112,2026-10-20,Heralded-memory run losses: repeated phrase no longer voids a proposal,screening,accepted,2b43e564,
+D111,2026-10-18,Spend ledger: unpriced calls are priced once a price list names the model,models,accepted,ba431df6,
+D110,2026-10-18,Review queue: one answer to several ticked rows,ui,accepted,0ae2dbb9,
+D109,2026-10-18,"Reverse citation search R4b: pilot meets the bar; R4 closes, R5 stays blocked",search,accepted,d09538ca,notes/2026-10-18-reverse-citation-r4b-pilot/
+D108,2026-10-18,Reverse citation search R4: pilot fails; R4b counts support only on stated part,search,accepted,9551dd27,notes/2026-10-18-reverse-citation-r4-pilot/
+D107,2026-10-18,Reverse citation search R3: a Home mode and a statement-check panel,ui,accepted,1068863c,notes/plans/reverse-citation-search-plan.md
+D106,2026-10-18,The reranker leaves chain-only records in their fused place,search,accepted,86263ec5,
+D105,2026-10-18,"Verify Citations after V5 pilot: table rows, plain claims, negations, freeze",answer,accepted,07686021,notes/2026-10-18-verify-citations-v5-pilot/RESULT-r2.md
+D104,2026-10-18,The record reranker is on by default with Voyage rerank-3-lite,search,accepted,bc7e668a,
+D103,2026-10-18,"Reverse citation search R2: how a statement check starts, resumes and goes stale",search,accepted,8c358455,notes/plans/reverse-citation-search-plan.md
+D102,2026-10-18,"A reranked record past 20,000 characters is cut and counted, not refused",search,accepted,38db53d4,
+D101,2026-10-18,"Verify Citations V4: the screen, a Library tool showing counts, status, result",ui,accepted,216071d9,notes/plans/verify-citations-plan.md
+D100,2026-10-18,Reverse citation search R1: a pasted statement checked against works searched,search,accepted,d35d3672,notes/plans/reverse-citation-search-plan.md
+D99,2026-10-18,Verify Citations V3: a model step per planned pair; the code decides the result,answer,accepted,1af5e83e,notes/plans/verify-citations-plan.md
+D98,2026-10-18,Kill search gets an entry in the answer's Next steps; its live gate failed,ui,accepted,dae4dac7,notes/design/kill-search-next-steps.md
+D97,2026-10-18,Kill search plan v3: backups are searched and the ranked cut counts concepts,search,accepted,af76e51c,notes/killsearch-live-v2/RESULT.md
+D96,2026-10-17,"Verify Citations V2: entry text, frozen passage plan per pair, 200-pair cap",answer,accepted,0db4fd6d,notes/plans/verify-citations-plan.md
+D95,2026-10-17,Kill search ranks its pool before the eight-work cut and asks for stricter terms,search,accepted,ea17db26,notes/killsearch-live-2026-10-17/RESULT.md
+D94,2026-10-17,"The Anthropic schema says how to give null; a bare ""protocol"" is no design term",models,accepted,2916d2bb,notes/killsearch-live-2026-10-17/RESULT.md
+D93,2026-10-17,"Anthropic API: required nullable fields as optional, patterns as descriptions",models,accepted,cf061be0,
+D92,2026-10-17,"A follow-up can search for new works, from a button, as a run of its own",search,accepted,45fea567,
+D91,2026-10-17,"Citation snowballing: person-started rounds from chosen works, nothing included",search,accepted,019bea39,notes/plans/snowballing-plan.md
+D90,2026-10-17,Built-in models run on llama.cpp from a pinned GGUF catalog,models,accepted,0009b9b6,notes/plans/llamacpp-local-models-plan.md
+D89,2026-10-17,"Search & ranking as model-style cards, with Cohere, Jina and ZeroEntropy",models,accepted,a868f463,
+D88,2026-10-17,Qwen3 replaces bge-small as the built-in model; a reranker and Voyage are added,models,partly superseded by D90,a868f463,notes/rerank-trial-2026-10-17/qwen-voyage-results.md
+D87,2026-10-17,A repair may reword an insufficient-evidence reason only for banned words,answer,accepted,fb977b90,
+D86,2026-10-17,"Verify Citations V1: code reads a draft's markers, bibliography and pairs",answer,accepted,0123e93d,notes/plans/verify-citations-plan.md
+D85,2026-10-17,"The Anthropic API connection streams its answer, 64,000-token output limit",models,accepted,1894bd5f,notes/plans/anthropic-streaming-plan.md
+D84,2026-10-17,A full-text source's first answer slot goes to its most result-dense passage,answer,accepted,5893d1c4,notes/plans/result-passage-plan.md
+D83,2026-10-17,A valid answer that leaves given works unaccounted gets one coverage rewrite,answer,accepted,7a9fa43f,notes/plans/ledger-coverage-plan.md
+D82,2026-10-17,"Run card: screening readings, full-text gaps and anchor matches in step panels",ui,accepted,fd31f4fb,
+D81,2026-10-17,Measured values a cited passage states are set in bold in the answer,answer,accepted,e4612400,
+D80,2026-10-17,Every work given to an answer is cited or left out with a reason,answer,accepted,e4046042,notes/plans/answer-coverage-2026-10-17.md
+D79,2026-10-17,The mockup parity check is removed; the mockup stays as a reference,testing,accepted,8952db05,notes/design/elicit-style-mockup/
+D78,2026-10-17,Settings → Usage shows spend and subscription limits per connection,ui,accepted,de39c347,
+D77,2026-10-17,"Mockup v25: question chip, counts strip and ringed phase steps",ui,accepted,0b55d0fe,notes/design/elicit-style-mockup/
+D76,2026-10-16,Second full-text read sees what the first did not; shared parts must agree,screening,accepted,10e3e014,notes/second-read-replay/
+D75,2026-10-16,Migrations 0001–0022 squashed into one schema file,storage,partly superseded by D119,f0beb493,
+D74,2026-10-16,Running headers and footers repeated across pages leave the PDF text,reading,accepted,99a9a6f4,
+D73,2026-10-16,"PRISMA-S, the Method box and Watch read the requests the fast plan sent",search,accepted,57963b5b,
+D70,2026-10-16,"Method package review: one routing table, no clarification questions",docs,accepted,e3b19210,
+D69,2026-10-16,A work the survey-title rule set aside is labelled code-decided,screening,accepted,7fb51119,
+D68,2026-10-16,Failed table cells no longer stop a report,table,accepted,102fb11f,
+D67,2026-10-16,"A follow-up opens no question revision, and an unused revision can be withdrawn",answer,accepted,e6fe78d8,
+D66,2026-10-16,A counting or grouping follow-up classifies each work; the application counts,answer,accepted,f49e2625,
+D65,2026-10-16,A report section gets a second repair before the report pauses,answer,accepted,60c7a19e,notes/live-2026-10-16-review-fixes.json
+D64,2026-10-16,"A follow-up puts first one passage per work its table values name, within share",answer,accepted,4618a58a,
+D63,2026-10-16,A table that follows the included sources adds and marks rows itself,table,accepted,0c477ae4,
+D62,2026-10-16,A full-text reading records how much of the extracted text it showed,screening,accepted,b401d5e1,
+D61,2026-10-16,"LaTeX outside $…$ in an answer, a follow-up or a report section is refused",answer,accepted,31af2420,
+D60,2026-10-16,Read-stage counts and slots say what was read,screening,accepted,276bb91e,
+D59,2026-10-16,GitHub Models removed; a model found gone is no longer offered,models,accepted,0241c6b8,
+D58,2026-10-16,A report section gets every table cell with its quotes before page text,answer,accepted,e98e59f5,
+D57,2026-10-16,A report version is opened by the person; an automatic update keeps the number,answer,accepted,55789afe,
+D56,2026-10-16,A formula question brings each full-text source's formula page into the input,answer,accepted,9344c695,
+D55,2026-10-16,D51's report rules are checked by two warnings and four behavior cases,testing,accepted,d350febb,
+D54,2026-10-16,A table value whose number none of its quotes state is flagged,table,accepted,116a23b3,
+D53,2026-10-16,A follow-up reads the evidence-table columns its question is about,answer,accepted,8b29ce10,
+D52,2026-10-16,A table value read from the abstract is read again when the PDF arrives,table,accepted,d1e30e4d,
+D51,2026-10-16,"Report sections paraphrase, relate sources and keep the kind of evidence",answer,accepted,a766b6d4,
+D50,2026-10-16,"A follow-up starts from the answer and evidence table, may ask the library again",answer,accepted,5381808a,
+D49,2026-10-16,A follow-up is read in its conversation and over the research as it has grown,answer,accepted,f4666355,
+D48,2026-10-16,"Lines of unmapped PDF symbols are marked, not guessed",reading,accepted,97862dec,
+D47,2026-10-16,"The Library shows the works a research kept, and all works on request",ui,accepted,bc5dad2f,
+D46,2026-10-16,"""Continue without PDF"": a work with no findable PDF is read from its abstract",reading,accepted,94b25138,
+D45,2026-10-16,An equation pass after a reading leaves the person's file read,reading,accepted,c0e25cd0,
+D44,2026-10-15,A work that late full text excluded stays out of later answers,screening,accepted,99b06eb6,
+D43,2026-10-15,Answers and reports use plain prose; the phrasebank leaves the package,answer,accepted,b0bd4754,
+D42,2026-10-15,"Citation map reads stored OpenAlex reference lists, fills gaps only when asked",search,accepted,15f71b7d,notes/citation-map-plan.md
+D41,2026-10-15,Text drawn inside a vector plot stays out of the page text (layout-v3),reading,accepted,566c01ed,
+D40,2026-10-15,"Mathpix reads numbered display equations from page images, behind an off switch",reading,accepted,1f3da5bf,notes/equation-reader-plan-2026-10-15.md
+D39,2026-10-15,A local model gets calls one at a time and no read or answer deadline,models,accepted,83fb2162,
+D38,2026-10-15,"Work keys read as first author, four-digit year and first title word",other,accepted,c06e42f2,
+D37,2026-10-15,"An uploaded PDF takes title, authors, abstract from its matching OpenAlex record",reading,accepted,1808f603,
+D36,2026-10-15,arXiv PDFs take numbered equations from the authors' LaTeX source by default,reading,accepted,b41a3ee9,
+D35,2026-10-15,OpenAI API reasoning efforts come from a fixed per-model table,models,accepted,5a809603,
+D34,2026-10-15,"Direct API keys for Claude and OpenAI; OpenRouter, MiMo, a generic local server",models,accepted,af41a88e,
+D33,2026-10-15,"A keyless source's Test sends one keyless request, reports only if it answered",providers,accepted,135ebf5a,
+D32,2026-10-15,The library's folder can be changed in Settings; the move happens at next start,storage,accepted,29f83fb9,
+D31,2026-10-15,A run's OpenAlex and Semantic Scholar requests are stored per row and counted,providers,accepted,398badef,
+D30,2026-10-15,Settings is split into four tabs; the mockup stays one page,ui,accepted,d05fa01f,
+D29,2026-10-15,A key saved in Settings wins over the same key in the shell,other,accepted,608477ed,
+D28,2026-10-15,"Answer step: organize by topic, give trade-offs, match certainty to evidence",answer,accepted,93e05301,
+D27,2026-10-15,"A paper OpenAlex flags as retracted gets a ""Retracted"" mark",providers,accepted,3f1f0ba1,
+D26,2026-10-14,A plan word that no sent query carried is shown as not searched,search,accepted,0e139199,
+D25,2026-10-14,A model session stores its reasoning effort; the model line names only that,models,accepted,ab32fcbf,
+D24,2026-10-14,GitHub Copilot CLI runs research steps with every Copilot tool off,models,accepted,d2807c72,
+D23,2026-10-14,Gemini CLI connection with a Google account,models,accepted,d0892a70,
+D22,2026-10-14,Six more model connections run through the OpenAI-compatible adapter,models,partly superseded by D59,73e448bb,
+D21,2026-10-14,Sign in to Codex and Claude Code from Settings,models,accepted,d6acf4b0,
+D20,2026-10-14,Built-in embedding packages pinned with hashes; a differing copy shows an update,packaging,partly superseded by D88,73e448bb,
+D19,2026-10-14,API keys live in the system keychain; keys found in `.env` move there at startup,other,partly superseded by D29,73e448bb,
+D18,2026-10-14,Parity with mockup v24 is closed; the parity check stays as the UI gate,testing,partly superseded by D79,180f4b89,notes/design/parity-coverage.md
+D17,2026-10-14,The Library counts from the stored list and reports only what the server did,ui,accepted,f3188d47,
+D16,2026-10-14,Settings shows only what was stored or measured; a key is never shown again,ui,accepted,240c2d97,
+D15,2026-10-14,A stopped model is replaced only by the person; the stopped step waits for Retry,models,accepted,025adfec,
+D14,2026-10-14,A run can be bound to the question revision the screen showed,process,accepted,1eac60f4,
+D13,2026-10-13,"""Search for new works on this"" saves the follow-up as a new revision",search,superseded by D67,3b366c92,
+D12,2026-10-12,A person can edit the search plan; a saved plan replaces three planning calls,search,accepted,404b574a,
+D11,2026-10-12,Follow-up questions are answered only from passages the research already holds,answer,accepted,a8be5633,
+D10,2026-10-12,OpenAlex semantic requests overlap behind a 1.5 s start gate; pages of 100,providers,accepted,aae001f9,
+D9,2026-10-12,An answer the person starts may read works screened after the cutoff,answer,accepted,e1f943d2,
+D8,2026-10-11,The interface matches the mockup; mockup-only elements become real features,ui,partly superseded by D79,de294f88,notes/design/elicit-style-mockup/index.html
+D7,2026-10-11,A downloaded built-in model is used when nothing else is chosen,models,accepted,7784cb15,
+D6,2026-10-11,"Seeds widen the search, the question decides the order (fast_path_search v2)",search,accepted,fa6e0487,notes/seed-live-2026-10-12/RULE.md
+D5,2026-10-11,The interface takes the mockup's look,ui,partly superseded by D8,0c90edc8,notes/design/elicit-style-mockup/
+D4,2026-10-11,An answer over attached PDFs reads them in full width,answer,accepted,8b924ffe,
+D3,2026-10-11,"Up to five seed PDFs, uploads and Zotero through one gate (seed_pdf_v2)",search,accepted,fbdaa8e5,notes/seed-live-2026-10-11/RULE.md
+D2,2026-10-11,The seed PDF guides the search (seed_pdf_v1),search,accepted,05666829,
+D1,2026-10-10,Baseline: decisions in force at the 10 Oct 2026 clean start,other,accepted,5a30689,

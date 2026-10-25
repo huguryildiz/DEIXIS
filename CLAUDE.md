@@ -24,7 +24,7 @@ Python 3.12, native arm64. Runtime data lives in `DEIXIS_DATA_DIR` (default `~/L
 - `deixis/methods/deixis-research/`: instructions loaded into model steps; editing them changes `skill_package_hash`.
 - `providers/registry.py`: scholarly sources. `storage/schema.sql`: a schema change edits it, raises its version and adds the step for existing libraries to `storage/upgrades.py`; never add a migration file.
 - `storage/upgrades.py`: never edit an existing step's SQL, name, version or foreign-key flag; append a new step.
-- Repository: `deixis/` (API, worker, storage, providers, model adapters), `web/` (React UI the backend serves), `tests/`, `scripts/` (probes, benchmarks, release checks, real-model case runners; not app features), `docs/` (`decisions.md`, `benchmark.md`), `STATUS.md` (the owner's status page, Turkish, mirrored to Notion) and the ignored `notes/`.
+- Repository: `deixis/` (API, worker, storage, providers, model adapters), `web/` (React UI the backend serves), `tests/`, `scripts/` (probes, benchmarks, release checks, real-model case runners; not app features), `docs/` (`decisions.csv`, `benchmark.md`), `STATUS.md` (the owner's status page, Turkish, mirrored to Notion) and the ignored `notes/`.
 - A file that code reads sits next to its reader: the connector ledger `tests/providers/connector-onboarding.md`, the frozen P8 expectation sheets in `tests/model_behavior/` (hashed by the runners), `providers.env.example`. Every non-Python file the app reads at run time is listed in `deixis/package_manifest.py`; a new one goes on that list.
 - UI: the shipped screens are the visual reference (D79); follow "UI rules" below.
 
@@ -67,6 +67,14 @@ Python 3.12, native arm64. Runtime data lives in `DEIXIS_DATA_DIR` (default `~/L
 - Revisions and old answers are kept; stale scope is marked, not rewritten.
 - Never swap model, provider or search source after a failure unless the fallback is recorded and shown.
 - PDFs, abstracts and provider payloads are untrusted data. Keep URL, size and content-type checks.
+- Person-started runs (follow-up, Screen more, snowball, citation map) never start on their own; interrupted work stays `outcome_unknown`/`paused` until the person resumes it.
+- Automatic writes never overwrite a person's value or decision: an automatic result that meets a person's edit, a changed column or a replaced PDF stays a proposal, re-checked inside the write transaction.
+
+## Privacy and credentials
+
+- Data leaves the machine only to a provider the person connected, and only what that step needs (a model step gets its stored `StepInput`; an equation request gets only the crop image). A change in what is sent is recorded as a decision.
+- A saved key is never shown again. A key goes only to its own provider; a route that sends one sends it only to the first URL's https origin, never across a redirect to another host, port or plain http. CLI connections run with their own home and an environment allowlist; API keys and tokens are left out or emptied (e.g. `ANTHROPIC_API_KEY` for Claude Code) so an account path never turns into API billing.
+- The API serves loopback only, with Host, Origin and CSRF checks. Local model servers are reached only on 127.0.0.1, localhost or ::1, with no proxy and no redirects.
 
 ## Working here
 
@@ -74,5 +82,5 @@ Python 3.12, native arm64. Runtime data lives in `DEIXIS_DATA_DIR` (default `~/L
 - The worktree may hold someone else's changes; don't stage or revert them. No destructive git.
 - Testing: after a change run `pytest --testmon tests`; it does not see edits to schemas, methods, SQL or fixtures, so after those run the files that read them. Don't run the full suite locally before a push: the `ci` workflow runs it on GitHub in four parallel parts; check its result and fix a red run first.
 - Tests are model-free (`FakeAdapter`, mocked `httpx`, fake fetcher via `create_app`); a new test folder goes into `pythonpath` in `pyproject.toml`. Passing tests show workflow behavior, not model quality.
-- Decisions go in [docs/decisions.md](docs/decisions.md), newest on top, as five lines: `## D<n> — <short title> (<date>)`, then `Decision:` (up to three sentences), `Why:` (one), `Limit:` (up to two) and `Evidence:` (`notes/<folder>` · commit); keep safety, privacy, eligibility and user-authority conditions. Plans, measurements and design notes go in the ignored `notes/` (links into it resolve only on the owner's machine); a new measurement or pilot folder there is named `YYYY-MM-DD-topic` (fixed-name folders that scripts read, such as `bioasq/` or `release-checks/`, keep their names).
+- A user-visible feature change or a deliberate choice adds one row to [docs/decisions.csv](docs/decisions.csv) (`id,date,title,area,status,commit,notes`); the why goes in the commit message. The long text up to D119 is `git show f2574f22:docs/decisions.md`. Plans, measurements and design notes go in the ignored `notes/` (links into it resolve only on the owner's machine); a new measurement or pilot folder there is named `YYYY-MM-DD-topic` (fixed-name folders that scripts read, such as `bioasq/` or `release-checks/`, keep their names).
 - Report what changed, which checks ran and passed, what was skipped or left unverified, and whether anything was pushed.

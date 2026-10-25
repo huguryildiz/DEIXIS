@@ -69,6 +69,8 @@ def test_fake_valid_response_passes_every_fixture_step_contract():
     """tests/support/fakes.py::valid_response must keep matching the schemas (CLAUDE.md: a schema change updates it)."""
     from fakes import valid_response
 
+    covered = {si["task_type"] for key, si in STEP_INPUTS.items() if not key.startswith("_")}
+    assert covered == set(contracts.TASK_OUTPUTS)  # a new task gets a fixture input here first
     failed = {}
     for key, si in sorted(STEP_INPUTS.items()):
         if key.startswith("_"):

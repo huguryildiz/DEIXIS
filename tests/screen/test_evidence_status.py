@@ -122,3 +122,48 @@ def test_a_cell_with_a_waiting_proposal_is_left_to_the_person(tmp_path, monkeypa
     assert table_refresh.advance(lib.store) == [] and made == [] and runs(lib) == count
 
 
+def test_a_model_value_read_from_the_abstract_is_read_again_by_itself_when_pdf_text_arrives(tmp_path):
+    lib = filled(tmp_path)
+    lib.adapter.responder = citing("pdf")
+    before = cell(lib, lib.preprint)
+    assert before["current"]["reading_depth"] == "abstract" and table_refresh.advance(lib.store) == []
+    arrive(lib, lib.preprint)
+    assert {"newer_text", "newer_text_auto"} <= set(cell(lib, lib.preprint)["flags"])
+
+    (run,) = table_refresh.advance(lib.store)
+    assert run["kind"] == "table_fill" and run["target"]["auto_refresh"] is True
+    assert [s["source_version_id"] for s in run["target"]["sources"]] == [lib.preprint]
+    assert execute(lib, run)["status"] == "completed"
+    view = cell(lib, lib.preprint)
+    current = view["current"]
+    assert (current["kind"], current["author"], current["reading_depth"]) == ("model_fill", "model", "selected_sections")
+    assert current["based_on_revision_id"] == before["current"]["id"] and view["pending_proposal"] is None
+    assert [r["id"] for r in view["revisions"]] == [before["current"]["id"], current["id"]]  # the old reading stays in history
+    assert "newer_text" not in view["flags"] and table_refresh.advance(lib.store) == []
+
+
+def refreshed_after(tmp_path, responder=None, during=None):
+    """Arrive PDF text for the preprint, run its automatic re-read and return the cell's value before and its view after."""
+    lib = filled(tmp_path)
+    lib.adapter.responder = responder or citing("pdf")
+    asset = arrive(lib, lib.preprint)
+    before = cell(lib, lib.preprint)["current"]
+    if during:
+        lib.adapter.before = once(lambda: during(lib, asset))
+    (run,) = table_refresh.advance(lib.store)
+    assert execute(lib, run)["status"] == "completed"
+    return before, cell(lib, lib.preprint)
+
+
+def test_a_pdf_removed_while_the_model_reads_it_leaves_the_re_read_a_proposal(tmp_path):
+    before, view = refreshed_after(tmp_path, during=lambda lib, asset: lib.store.remove_asset(lib.rid, lib.preprint, asset))
+    assert view["current"]["id"] == before["id"] and view["pending_proposal"] is not None
+
+
+def test_a_column_edited_while_the_model_reads_leaves_the_re_read_a_proposal(tmp_path):
+    def edit(lib, asset):
+        column = lib.tables.table_view(lib.rid, lib.tid)["columns"][0]
+        lib.tables.revise_column(lib.rid, lib.tid, lib.cid, {"instruction": "Report the largest packet size."}, None, column["version"])
+
+    before, view = refreshed_after(tmp_path, during=edit)
+    assert view["current"]["id"] == before["id"] and view["pending_proposal"]["column_revision"] == 1

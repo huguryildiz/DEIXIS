@@ -3131,5 +3131,678 @@
    "depth": "selected_passages",
    "passages_not_given": 4
   }
+ },
+ "L_answer_review": {
+  "claims_under_review": [
+   {
+    "claim_label": "c1",
+    "text": "It has been reported that the first passage supports this fake claim.",
+    "support_type": "source_stated",
+    "passage_ids": [
+     "psg_P0000001"
+    ]
+   }
+  ],
+  "step_input_id": "sti_n6wHYfJDTccDKmYRRkZ1",
+  "research_id": "res_w9uHB4Q4bpiJYivYxKF3",
+  "run_id": "run_iPtNguyQqzVe3spe0yHA",
+  "step_id": "stp_sYXQ2xJpIm8uQFtDGMlh",
+  "task_type": "answer_review",
+  "scope_revision": 1,
+  "skill_package_hash": "sha256:52c060dfa56af64c27146cac90be96208b4ff3af5a180beb82f7b57abc13ba61",
+  "skill_files": [
+   "SKILL.md",
+   "references/answer-review.md"
+  ],
+  "output_schema_versions": [
+   "deixis.answer_review.v1"
+  ],
+  "question": {
+   "text": "How is molecule release scheduling optimized?",
+   "language_hint": null
+  },
+  "user_steering": [],
+  "capabilities": {
+   "supported_tasks": [
+    "grounded_answer",
+    "answer_review",
+    "cell_extraction",
+    "table_columns",
+    "research_title"
+   ],
+   "unsupported_tasks": [
+    "synthesis",
+    "candidate_development",
+    "claim_check",
+    "experiment"
+   ]
+  },
+  "enabled_providers": [],
+  "candidates": [],
+  "sources": [
+   {
+    "source_id": "srv_S0000001",
+    "work_id": "wrk_weim7rG3jnf3syEURyle",
+    "title": "a",
+    "year": null,
+    "version_label": "uploaded file",
+    "access_level": "pdf_available"
+   }
+  ],
+  "passages": [
+   {
+    "passage_id": "psg_P0000001",
+    "source_id": "srv_S0000001",
+    "reading_depth": "selected_sections",
+    "locator": {
+     "kind": "pdf_page",
+     "physical_page": 1,
+     "printed_label": null
+    },
+    "abstract_origin": null,
+    "text_source": "text_layer",
+    "text": "SYNTHETIC molecule release schedule"
+   }
+  ],
+  "allowlist": {
+   "candidate_ids": [],
+   "source_ids": [
+    "srv_S0000001"
+   ],
+   "passage_ids": [
+    "psg_P0000001"
+   ]
+  },
+  "human_corrections": [],
+  "budget": {
+   "max_model_calls": 6,
+   "max_schema_repairs": 1,
+   "max_provider_requests": 3
+  },
+  "model": {
+   "connection": "fake",
+   "requested_model": "fake-model"
+  },
+  "created_at": "2026-10-25T02:18:14.369+00:00"
+ },
+ "T_cell_extraction": {
+  "extraction_target": {
+   "table_id": "tbl_oSqkxzABio9RMuq6BAzA",
+   "source_id": "srv_S0000001",
+   "columns": [
+    {
+     "column_id": "col_C0000001",
+     "revision": 1,
+     "name": "SYNTHETIC method",
+     "instruction": "Record the SYNTHETIC method.",
+     "answer_format": "text",
+     "options": null,
+     "allow_multiple": false,
+     "unit_hint": null
+    },
+    {
+     "column_id": "col_C0000002",
+     "revision": 1,
+     "name": "SYNTHETIC stated limitations",
+     "instruction": "Record the source's stated limitations.",
+     "answer_format": "text",
+     "options": null,
+     "allow_multiple": false,
+     "unit_hint": null
+    },
+    {
+     "column_id": "col_C0000003",
+     "revision": 1,
+     "name": "SYNTHETIC stated future work",
+     "instruction": "Record the source's stated future work.",
+     "answer_format": "text",
+     "options": null,
+     "allow_multiple": false,
+     "unit_hint": null
+    }
+   ],
+   "passage_scope": {
+    "given": 1,
+    "available": 1,
+    "all_pages_given": true
+   }
+  },
+  "step_input_id": "sti_EXjUmrqTcaIIkfD589sv",
+  "research_id": "res_PBdxpjmfqB16OlnO7jE0",
+  "run_id": "run_9WA90cBkdNxt0MwunZlt",
+  "step_id": "stp_hmD7znjRksEZzywI0UJG",
+  "task_type": "cell_extraction",
+  "scope_revision": 1,
+  "skill_package_hash": "sha256:52c060dfa56af64c27146cac90be96208b4ff3af5a180beb82f7b57abc13ba61",
+  "skill_files": [
+   "SKILL.md",
+   "references/evidence-table.md"
+  ],
+  "output_schema_versions": [
+   "deixis.evidence_cell_draft.v1"
+  ],
+  "question": {
+   "text": "How is molecule release scheduling optimized?",
+   "language_hint": null
+  },
+  "user_steering": [],
+  "capabilities": {
+   "supported_tasks": [
+    "grounded_answer",
+    "answer_review",
+    "cell_extraction",
+    "table_columns",
+    "research_title"
+   ],
+   "unsupported_tasks": [
+    "synthesis",
+    "candidate_development",
+    "claim_check",
+    "experiment"
+   ]
+  },
+  "enabled_providers": [],
+  "candidates": [],
+  "sources": [
+   {
+    "source_id": "srv_S0000001",
+    "work_id": "wrk_nLPdlm5Ltoa8UG0AXjuE",
+    "title": "report",
+    "year": null,
+    "version_label": "uploaded file",
+    "access_level": "pdf_available"
+   }
+  ],
+  "passages": [
+   {
+    "passage_id": "psg_P0000001",
+    "source_id": "srv_S0000001",
+    "reading_depth": "selected_sections",
+    "locator": {
+     "kind": "pdf_page",
+     "physical_page": 1,
+     "printed_label": null
+    },
+    "abstract_origin": null,
+    "text_source": "text_layer",
+    "text": "SYNTHETIC evidence states that molecule release scheduling uses a bounded formulation."
+   }
+  ],
+  "allowlist": {
+   "candidate_ids": [],
+   "source_ids": [
+    "srv_S0000001"
+   ],
+   "passage_ids": [
+    "psg_P0000001"
+   ]
+  },
+  "human_corrections": [],
+  "budget": {
+   "max_model_calls": 4,
+   "max_schema_repairs": 1,
+   "max_provider_requests": 0
+  },
+  "model": {
+   "connection": "fake",
+   "requested_model": "fake-model"
+  },
+  "created_at": "2026-10-25T02:18:11.525+00:00"
+ },
+ "T_table_columns": {
+  "extraction_target": {
+   "table_id": "tbl_mE6c7hoVW5zNizEg9UgY",
+   "source_id": null,
+   "columns": [
+    {
+     "column_id": "col_vsSWZHnZyDxhVC4HZVKV",
+     "revision": 1,
+     "name": "Packet size",
+     "instruction": "Report the packet size the study evaluates, as stated.",
+     "answer_format": "number_unit",
+     "options": null,
+     "allow_multiple": false,
+     "unit_hint": "byte"
+    }
+   ],
+   "passage_scope": null
+  },
+  "step_input_id": "sti_DnG2B6CxjPuku1oUU3Gs",
+  "research_id": "res_yhtliOLTbRpIXycJlcq2",
+  "run_id": "run_BZcPTOLaPENxbbAKx9J2",
+  "step_id": "stp_cEoiymsOIqRXWVNqyq3x",
+  "task_type": "table_columns",
+  "scope_revision": 1,
+  "skill_package_hash": "sha256:52c060dfa56af64c27146cac90be96208b4ff3af5a180beb82f7b57abc13ba61",
+  "skill_files": [
+   "SKILL.md",
+   "references/evidence-table.md"
+  ],
+  "output_schema_versions": [
+   "deixis.table_column_proposal.v1"
+  ],
+  "question": {
+   "text": "How is molecule release scheduling optimized?",
+   "language_hint": null
+  },
+  "user_steering": [],
+  "capabilities": {
+   "supported_tasks": [
+    "grounded_answer",
+    "answer_review",
+    "cell_extraction",
+    "table_columns",
+    "research_title"
+   ],
+   "unsupported_tasks": [
+    "synthesis",
+    "candidate_development",
+    "claim_check",
+    "experiment"
+   ]
+  },
+  "enabled_providers": [],
+  "candidates": [],
+  "sources": [
+   {
+    "source_id": "srv_LRWwvIMMG1Ns1Z0LVfj3",
+    "work_id": "wrk_LxOmj5ziuQREZvLgtgGe",
+    "title": "a",
+    "year": null,
+    "version_label": "uploaded file",
+    "access_level": "pdf_available"
+   }
+  ],
+  "passages": [],
+  "allowlist": {
+   "candidate_ids": [],
+   "source_ids": [
+    "srv_LRWwvIMMG1Ns1Z0LVfj3"
+   ],
+   "passage_ids": []
+  },
+  "human_corrections": [],
+  "budget": {
+   "max_model_calls": 2,
+   "max_schema_repairs": 1,
+   "max_provider_requests": 0
+  },
+  "model": {
+   "connection": "fake",
+   "requested_model": "fake-model"
+  },
+  "created_at": "2026-10-25T02:18:16.802+00:00"
+ },
+ "S_followup_search_query": {
+  "step_input_id": "sti_BD1WiyYGAjfxMvIjHEE5",
+  "research_id": "res_5OGUoHbhA7nJIYVFGvY3",
+  "run_id": "run_FlPyBcej4rIEu3uhHokG",
+  "step_id": "stp_LQPPUM4ycqeGSPM6NliK",
+  "task_type": "followup_search_query",
+  "scope_revision": 1,
+  "skill_package_hash": "sha256:52c060dfa56af64c27146cac90be96208b4ff3af5a180beb82f7b57abc13ba61",
+  "skill_files": [
+   "SKILL.md",
+   "references/followup-search.md"
+  ],
+  "output_schema_versions": [
+   "deixis.followup_search_query.v1"
+  ],
+  "question": {
+   "text": "[new-works] Are there other studies on this that also report energy use?",
+   "language_hint": null
+  },
+  "user_steering": [],
+  "capabilities": {
+   "supported_tasks": [
+    "grounded_answer",
+    "answer_review",
+    "cell_extraction",
+    "table_columns",
+    "research_title"
+   ],
+   "unsupported_tasks": [
+    "synthesis",
+    "candidate_development",
+    "claim_check",
+    "experiment"
+   ]
+  },
+  "enabled_providers": [
+   "openalex",
+   "semantic_scholar",
+   "arxiv",
+   "biorxiv",
+   "pubmed"
+  ],
+  "candidates": [],
+  "sources": [],
+  "passages": [],
+  "allowlist": {
+   "candidate_ids": [],
+   "source_ids": [],
+   "passage_ids": []
+  },
+  "human_corrections": [],
+  "budget": {
+   "max_model_calls": 14,
+   "max_schema_repairs": 1,
+   "max_provider_requests": 63
+  },
+  "model": {
+   "connection": "fake",
+   "requested_model": "fake-model"
+  },
+  "created_at": "2026-10-25T02:18:27.058+00:00",
+  "followup_search_context": {
+   "research_question": "How does irrigation scheduling affect marketable yield in greenhouse tomato production?",
+   "unanswered_aspects": [],
+   "answer_claims": [
+    "It has been reported that the first passage supports this fake claim."
+   ],
+   "searched_queries": [
+    "greenhouse AND irrigation",
+    "greenhouse + irrigation",
+    "abs:greenhouse AND abs:irrigation"
+   ],
+   "included_works": [],
+   "included_works_total": 0
+  }
+ },
+ "N_research_title": {
+  "step_input_id": "sti_avQnomjdZq2oWr4tEGmy",
+  "research_id": "res_Xbubz9tDyAqE1h825MwQ",
+  "run_id": "run_RmnVSg9ocv2XH40WIrfF",
+  "step_id": "stp_TwB7tB5HpmfRggEXrVZr",
+  "task_type": "research_title",
+  "scope_revision": 1,
+  "skill_package_hash": "sha256:52c060dfa56af64c27146cac90be96208b4ff3af5a180beb82f7b57abc13ba61",
+  "skill_files": [
+   "SKILL.md",
+   "references/research-title.md"
+  ],
+  "output_schema_versions": [
+   "deixis.research_title.v1"
+  ],
+  "question": {
+   "text": "How does irrigation scheduling affect marketable yield in greenhouse tomato production?",
+   "language_hint": null
+  },
+  "user_steering": [],
+  "capabilities": {
+   "supported_tasks": [
+    "grounded_answer",
+    "answer_review",
+    "cell_extraction",
+    "table_columns",
+    "research_title"
+   ],
+   "unsupported_tasks": [
+    "synthesis",
+    "candidate_development",
+    "claim_check",
+    "experiment"
+   ]
+  },
+  "enabled_providers": [
+   "openalex",
+   "semantic_scholar",
+   "arxiv",
+   "biorxiv",
+   "pubmed"
+  ],
+  "candidates": [],
+  "sources": [
+   {
+    "source_id": "srv_CcmycOL7vw1wc8XBpl5W",
+    "work_id": "wrk_c4pV7RvMAPI06NbuZp8S",
+    "title": "SYNTHETIC irrigation scheduling in greenhouse tomato production 23",
+    "year": 2024,
+    "version_label": "publishedVersion",
+    "access_level": "pdf_available"
+   },
+   {
+    "source_id": "srv_7CPHGIEDEk3amrm9GGH7",
+    "work_id": "wrk_WNt6B47YTTIByUbQZaQg",
+    "title": "SYNTHETIC irrigation scheduling in greenhouse tomato production 29",
+    "year": 2024,
+    "version_label": "publishedVersion",
+    "access_level": "pdf_available"
+   },
+   {
+    "source_id": "srv_2N3oJJNIGdavw0SjgTI5",
+    "work_id": "wrk_mFUgzMtuE8DNe980drfa",
+    "title": "SYNTHETIC irrigation scheduling in greenhouse tomato production 19",
+    "year": 2024,
+    "version_label": "publishedVersion",
+    "access_level": "pdf_available"
+   },
+   {
+    "source_id": "srv_5vQj9nB4YiNuiBpIotGX",
+    "work_id": "wrk_ttPsTmpM4QPigVcKqNW1",
+    "title": "SYNTHETIC irrigation scheduling in greenhouse tomato production 18",
+    "year": 2024,
+    "version_label": "publishedVersion",
+    "access_level": "pdf_available"
+   },
+   {
+    "source_id": "srv_CHwP3vhjFvrUeYW6ehTM",
+    "work_id": "wrk_ZSlnT8weHXMGlMVseZ4Z",
+    "title": "SYNTHETIC irrigation scheduling in greenhouse tomato production 5",
+    "year": 2024,
+    "version_label": "publishedVersion",
+    "access_level": "pdf_available"
+   },
+   {
+    "source_id": "srv_DXb351FEX4ZhNDRttKke",
+    "work_id": "wrk_LkHK7ql6gNVzqhkPUbpt",
+    "title": "SYNTHETIC irrigation scheduling in greenhouse tomato production 15",
+    "year": 2024,
+    "version_label": "publishedVersion",
+    "access_level": "pdf_available"
+   },
+   {
+    "source_id": "srv_65Anf3DJ9EqU2ZVfv7IG",
+    "work_id": "wrk_e2qRMqUV4VgPGEkD2mX5",
+    "title": "SYNTHETIC irrigation scheduling in greenhouse tomato production 7",
+    "year": 2024,
+    "version_label": "publishedVersion",
+    "access_level": "pdf_available"
+   },
+   {
+    "source_id": "srv_Jg0H6Fr05qqojhKPdq3J",
+    "work_id": "wrk_ss86Xna4TqNDZltQqy3X",
+    "title": "SYNTHETIC irrigation scheduling in greenhouse tomato production 27",
+    "year": 2024,
+    "version_label": "publishedVersion",
+    "access_level": "pdf_available"
+   },
+   {
+    "source_id": "srv_HxFx9zaG8GLEwbnMrAaY",
+    "work_id": "wrk_bYph2RSBJVdMdYzDldRN",
+    "title": "SYNTHETIC irrigation scheduling in greenhouse tomato production 2",
+    "year": 2024,
+    "version_label": "publishedVersion",
+    "access_level": "pdf_available"
+   },
+   {
+    "source_id": "srv_Kze6YO6gmCqvbdKS1SI2",
+    "work_id": "wrk_hBaJCYXvbBQYuLJiPPTY",
+    "title": "SYNTHETIC irrigation scheduling in greenhouse tomato production 17",
+    "year": 2024,
+    "version_label": "publishedVersion",
+    "access_level": "pdf_available"
+   }
+  ],
+  "passages": [
+   {
+    "passage_id": "psg_e4vhIGlBsHOZ7Z2VksUl",
+    "source_id": "srv_CcmycOL7vw1wc8XBpl5W",
+    "reading_depth": "abstract",
+    "locator": {
+     "kind": "abstract",
+     "physical_page": null,
+     "printed_label": null
+    },
+    "abstract_origin": "provider_openalex_inverted_index",
+    "text_source": null,
+    "text": "We vary the irrigation scheduling of an open field crop and report the water it used."
+   },
+   {
+    "passage_id": "psg_1FSpCkGb2HMAnv2QGjUZ",
+    "source_id": "srv_7CPHGIEDEk3amrm9GGH7",
+    "reading_depth": "abstract",
+    "locator": {
+     "kind": "abstract",
+     "physical_page": null,
+     "printed_label": null
+    },
+    "abstract_origin": "provider_openalex_inverted_index",
+    "text_source": null,
+    "text": "We vary the irrigation scheduling of an open field crop and report the water it used."
+   },
+   {
+    "passage_id": "psg_49TbqSYx2qq1j3J3xaqy",
+    "source_id": "srv_2N3oJJNIGdavw0SjgTI5",
+    "reading_depth": "abstract",
+    "locator": {
+     "kind": "abstract",
+     "physical_page": null,
+     "printed_label": null
+    },
+    "abstract_origin": "provider_openalex_inverted_index",
+    "text_source": null,
+    "text": "We vary the irrigation scheduling of an open field crop and report the water it used."
+   },
+   {
+    "passage_id": "psg_MVz1z3erYX9mWtjoKEHJ",
+    "source_id": "srv_5vQj9nB4YiNuiBpIotGX",
+    "reading_depth": "abstract",
+    "locator": {
+     "kind": "abstract",
+     "physical_page": null,
+     "printed_label": null
+    },
+    "abstract_origin": "provider_openalex_inverted_index",
+    "text_source": null,
+    "text": "We vary the irrigation scheduling of an open field crop and report the water it used."
+   },
+   {
+    "passage_id": "psg_TTxvnYJsGUY4IQVIQ6Kc",
+    "source_id": "srv_CHwP3vhjFvrUeYW6ehTM",
+    "reading_depth": "abstract",
+    "locator": {
+     "kind": "abstract",
+     "physical_page": null,
+     "printed_label": null
+    },
+    "abstract_origin": "provider_openalex_inverted_index",
+    "text_source": null,
+    "text": "We vary the irrigation scheduling of an open field crop and report the water it used."
+   },
+   {
+    "passage_id": "psg_4yyP5v1clxqmCb8qjGGX",
+    "source_id": "srv_DXb351FEX4ZhNDRttKke",
+    "reading_depth": "abstract",
+    "locator": {
+     "kind": "abstract",
+     "physical_page": null,
+     "printed_label": null
+    },
+    "abstract_origin": "provider_openalex_inverted_index",
+    "text_source": null,
+    "text": "We vary the irrigation scheduling of an open field crop and report the water it used."
+   },
+   {
+    "passage_id": "psg_vDkDg2NKlzOp3TFFaohm",
+    "source_id": "srv_65Anf3DJ9EqU2ZVfv7IG",
+    "reading_depth": "abstract",
+    "locator": {
+     "kind": "abstract",
+     "physical_page": null,
+     "printed_label": null
+    },
+    "abstract_origin": "provider_openalex_inverted_index",
+    "text_source": null,
+    "text": "We vary the irrigation scheduling of an open field crop and report the water it used."
+   },
+   {
+    "passage_id": "psg_mx2wPQT3u93Y93cuzlhy",
+    "source_id": "srv_Jg0H6Fr05qqojhKPdq3J",
+    "reading_depth": "abstract",
+    "locator": {
+     "kind": "abstract",
+     "physical_page": null,
+     "printed_label": null
+    },
+    "abstract_origin": "provider_openalex_inverted_index",
+    "text_source": null,
+    "text": "We vary the irrigation scheduling of an open field crop and report the water it used."
+   },
+   {
+    "passage_id": "psg_7Akw9tNcmHfz3IhTjqeL",
+    "source_id": "srv_HxFx9zaG8GLEwbnMrAaY",
+    "reading_depth": "abstract",
+    "locator": {
+     "kind": "abstract",
+     "physical_page": null,
+     "printed_label": null
+    },
+    "abstract_origin": "provider_openalex_inverted_index",
+    "text_source": null,
+    "text": "We vary the irrigation scheduling of an open field crop and report the water it used."
+   },
+   {
+    "passage_id": "psg_LQjeMkcLDjNzECh23mWm",
+    "source_id": "srv_Kze6YO6gmCqvbdKS1SI2",
+    "reading_depth": "abstract",
+    "locator": {
+     "kind": "abstract",
+     "physical_page": null,
+     "printed_label": null
+    },
+    "abstract_origin": "provider_openalex_inverted_index",
+    "text_source": null,
+    "text": "We vary the irrigation scheduling of an open field crop and report the water it used."
+   }
+  ],
+  "allowlist": {
+   "candidate_ids": [],
+   "source_ids": [
+    "srv_CcmycOL7vw1wc8XBpl5W",
+    "srv_7CPHGIEDEk3amrm9GGH7",
+    "srv_2N3oJJNIGdavw0SjgTI5",
+    "srv_5vQj9nB4YiNuiBpIotGX",
+    "srv_CHwP3vhjFvrUeYW6ehTM",
+    "srv_DXb351FEX4ZhNDRttKke",
+    "srv_65Anf3DJ9EqU2ZVfv7IG",
+    "srv_Jg0H6Fr05qqojhKPdq3J",
+    "srv_HxFx9zaG8GLEwbnMrAaY",
+    "srv_Kze6YO6gmCqvbdKS1SI2"
+   ],
+   "passage_ids": [
+    "psg_e4vhIGlBsHOZ7Z2VksUl",
+    "psg_1FSpCkGb2HMAnv2QGjUZ",
+    "psg_49TbqSYx2qq1j3J3xaqy",
+    "psg_MVz1z3erYX9mWtjoKEHJ",
+    "psg_TTxvnYJsGUY4IQVIQ6Kc",
+    "psg_4yyP5v1clxqmCb8qjGGX",
+    "psg_vDkDg2NKlzOp3TFFaohm",
+    "psg_mx2wPQT3u93Y93cuzlhy",
+    "psg_7Akw9tNcmHfz3IhTjqeL",
+    "psg_LQjeMkcLDjNzECh23mWm"
+   ]
+  },
+  "human_corrections": [],
+  "budget": {
+   "max_model_calls": 13,
+   "max_schema_repairs": 1,
+   "max_provider_requests": 3
+  },
+  "model": {
+   "connection": "fake",
+   "requested_model": "fake-model"
+  },
+  "created_at": "2026-10-25T02:18:25.723+00:00"
  }
 }

@@ -71,7 +71,7 @@ def run_step(tmp_path, defects):
 
 
 @pytest.mark.parametrize("defect", ["unfindable"])
-@pytest.mark.parametrize("last", ["corrected"])
+@pytest.mark.parametrize("last", ["corrected", "unfindable"])
 def test_lossy_anchor_salvage_waits_for_repair_and_preserves_corrected_content(tmp_path, defect, last):
     result, store, adapter, raw_outputs, pids = run_step(tmp_path, [defect, last])
     try:
@@ -95,9 +95,14 @@ def test_lossy_anchor_salvage_waits_for_repair_and_preserves_corrected_content(t
             assert any(w["dropped"] == "claim" and w["claim_label"] == "c2" for w in warnings)
             assert [c["claim_label"] for c in result["result"]["claims"]] == ["c1"]
             assert result["result"]["claims"][0]["passage_ids"] == [pids[0]]
+            # the failed repair left unlocated anchors: their links and the claim resting only on them are gone
+            anchors = result["result"]["citation_anchors"]
+            assert anchors and {(a["claim_label"], a["passage_id"]) for a in anchors} == {("c1", pids[0])}
         final = json.loads(sessions[-1]["validation_json"])
         assert final["ok"] and not final["issues"]
         assert final["warnings"] == result["warnings"]
+        payload = store.conn.execute("SELECT payload_json FROM step_inputs WHERE id = ?", (result["step_input_id"],)).fetchone()
+        assert contracts.validate_model_output(json.loads(payload[0]), result["result"]).ok  # what survives validates
     finally:
         store.conn.close()
 

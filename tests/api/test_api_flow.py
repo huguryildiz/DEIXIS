@@ -377,3 +377,17 @@ def test_literature_model_runs_search_steps_and_the_research_model_writes_the_an
         assert (revised["scope"]["literature_model"], revised["scope"]["literature_reasoning_effort"]) == ("lit-model", "low")
 
 
+def test_user_can_edit_research_title(tmp_path):
+    with TestClient(app_for(tmp_path)) as client:
+        session(client)
+        rid = create(client)
+        view = client.get(f"/api/researches/{rid}").json()
+        updated = client.post(f"/api/researches/{rid}/title", json={
+            "title": "SYNTHETIC custom project title",
+            "expected_version": view["research"]["version"],
+        })
+        assert updated.status_code == 200, updated.text
+        payload = updated.json()
+        assert payload["research"]["title"] == "SYNTHETIC custom project title"
+        assert payload["research"]["version"] == view["research"]["version"] + 1
+        assert client.get(f"/api/researches/{rid}").json()["research"]["title"] == "SYNTHETIC custom project title"

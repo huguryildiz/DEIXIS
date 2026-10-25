@@ -452,17 +452,21 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     await page.reload()
   })
 
-  for (const [name, ring] of [['transparent', 'outline:2px solid transparent!important'], ['zero-width', 'outline:0 solid var(--accent)!important']] as const) {
-    test(`X05 negative control: a button whose focus ring is ${name} has no focus indicator`, async () => {
+  for (const [name, css] of [
+    ['a transparent ring', '.app [data-a11y-control]:focus-visible{outline:2px solid transparent!important;box-shadow:none!important}'],
+    ['a zero-width ring', '.app [data-a11y-control]:focus-visible{outline:0 solid var(--accent)!important;box-shadow:none!important}'],
+    ['only a zero-size ::after with a background', '.app [data-a11y-control]:focus-visible{outline:none!important;box-shadow:none!important}.app [data-a11y-control]:focus-visible::after{content:"";position:absolute;width:0;height:0;background:var(--accent)}'],
+  ] as const) {
+    test(`X05 negative control: a button whose focus shows ${name} has no focus indicator`, async () => {
       await page.goto(server.url())
       const button = page.getByRole('button', { name: 'Library', exact: true })
       await tabTo(page, button, [])
       expect(await focusIndicator(page), 'the shipped button shows focus').not.toBe('')
       await button.evaluate(el => el.setAttribute('data-a11y-control', ''))
-      await page.addStyleTag({ content: `.app [data-a11y-control]:focus-visible{${ring};box-shadow:none!important}` })
+      await page.addStyleTag({ content: css })
       await button.blur()
       await tabTo(page, button, [])
-      expect(await focusIndicator(page), `a ${name} ring is no indicator`).toBe('')
+      expect(await focusIndicator(page), `${name} is no indicator`).toBe('')
       await page.reload()
     })
   }

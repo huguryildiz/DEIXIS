@@ -44,7 +44,7 @@ export async function axeScan(page: Page, screen: string): Promise<string[]> {
 // What the focused element and its nearest ancestors (an ancestor such as the composer draws the ring for the input
 // inside) actually render as decoration: the outline, the box shadows, the borders and the ::before / ::after boxes. A
 // part that draws nothing (no width, style none or hidden, a transparent colour, a shadow with no blur and no spread, a
-// pseudo-element with no content, hidden or at opacity 0) is left empty. Runs in the page, so it is self-contained.
+// pseudo-element with no content, hidden, at opacity 0, or a background on a box of zero width or height) is left empty. Runs in the page, so it is self-contained.
 function renderedDecoration(el: Element): string[][] {
   const alpha = (color: string) => {
     if (!color || color === 'transparent') return 0
@@ -55,7 +55,8 @@ function renderedDecoration(el: Element): string[][] {
     return 1
   }
   const visibleStyle = (style: string) => style !== 'none' && style !== 'hidden'
-  const shadows = (value: string) => {
+  // On a box with no area only a positive spread paints; otherwise a blur or a non-zero spread does.
+  const shadows = (value: string, empty = false) => {
     if (!value || value === 'none') return ''
     const parts: string[] = []
     let depth = 0, current = ''
@@ -68,7 +69,7 @@ function renderedDecoration(el: Element): string[][] {
     return parts.filter(part => {
       const color = part.match(/[a-z-]+\([^)]*\)|transparent/)?.[0] ?? 'rgb(0, 0, 0)'
       const lengths = part.replace(color, '').replace('inset', '').trim().split(/\s+/).map(parseFloat)
-      return alpha(color) > 0 && ((lengths[2] ?? 0) > 0 || (lengths[3] ?? 0) !== 0)
+      return alpha(color) > 0 && (empty ? (lengths[3] ?? 0) > 0 : (lengths[2] ?? 0) > 0 || (lengths[3] ?? 0) !== 0)
     }).join(', ')
   }
   const out: string[][] = []
@@ -82,8 +83,9 @@ function renderedDecoration(el: Element): string[][] {
     const pseudo = ['::before', '::after'].map(p => {
       const ps = getComputedStyle(node!, p)
       if (ps.content === 'none' || ps.content === 'normal' || ps.display === 'none' || ps.visibility !== 'visible' || parseFloat(ps.opacity) <= 0) return ''
-      const fill = alpha(ps.backgroundColor) > 0 ? `background ${ps.backgroundColor}` : ''
-      const shadow = shadows(ps.boxShadow)
+      const empty = !(parseFloat(ps.width) > 0 && parseFloat(ps.height) > 0)  // a background on a box with no area paints nothing
+      const fill = !empty && alpha(ps.backgroundColor) > 0 ? `background ${ps.backgroundColor}` : ''
+      const shadow = shadows(ps.boxShadow, empty)
       return fill || shadow ? `${p} ${fill} ${shadow}`.trim() : ''
     })
     out.push([outline, shadows(s.boxShadow), border, ...pseudo])

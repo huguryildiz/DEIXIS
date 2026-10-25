@@ -129,7 +129,7 @@ test.describe.serial('K: the works waiting for the person’s PDF', () => {
     await shot(page, 'K-waiting-list-1440')
   })
 
-  test('"Open all links" opens each waiting row’s DOI link in its own tab, only with more than one row (SYNTHETIC API state)', async () => {
+  test('"Open next link" opens one waiting row’s DOI link per click, in reading order, only with more than one row (SYNTHETIC API state)', async () => {
     // The fixture lists one work; a second row is added to the response here, so the button appears.
     const waitingApi = /\/api\/researches\/[^/]+\/waiting$/
     await page.route(waitingApi, async route => {
@@ -143,12 +143,17 @@ test.describe.serial('K: the works waiting for the person’s PDF', () => {
     await page.goto(`${URL}/#/research/${rid}`)
     await page.reload()
     await openPanel(page, 'pdfs')
-    await expect(page.getByRole('button', { name: 'Open all 2 links' })).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Open next link (1 / 2)' })).toBeVisible()
     expect(opened).toEqual([])  // nothing opens before the click
-    await page.getByRole('button', { name: 'Open all 2 links' }).click()
+    await page.getByRole('button', { name: 'Open next link (1 / 2)' }).click()
+    await expect.poll(() => opened.length).toBe(1)  // one click, one tab
+    await expect(page.getByText('Next: SYNTHETIC second waiting work')).toBeVisible()
+    await page.getByRole('button', { name: 'Open next link (2 / 2)' }).click()
     await expect.poll(() => opened.length).toBe(2)
-    expect(new Set(opened).size).toBe(2)  // one tab per row, each its own link
-    expect(opened).toContain('https://doi.org/10.5555/q956')
+    expect(opened[1]).toBe('https://doi.org/10.5555/q956')  // the second row's own link
+    expect(new Set(opened).size).toBe(2)
+    await expect(page.getByText('All 2 links are open.')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Open the links again from the first' })).toBeVisible()
     await page.unroute(waitingApi)
     for (const tab of page.context().pages()) if (tab !== page) await tab.close()
     await shot(page, 'K-waiting-open-all-1440')

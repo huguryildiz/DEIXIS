@@ -190,6 +190,16 @@ test.describe('S12: report, Citation and Source details panels', () => {
       await page.keyboard.press('Escape')
       await expect(page.locator('.review-dialog')).toHaveCount(0)
       await expect(report).toBeVisible()
+      // The dialog takes focus one frame after it opens; an Escape in that frame, still on the panel's button, closes
+      // only the dialog too (the cause of the CI failure of 25 Oct). The Escape goes to whatever holds focus after one
+      // task, which is the panel's button whenever that frame has not yet come.
+      await review.evaluate(async el => {
+        (el as HTMLElement).focus(); (el as HTMLElement).click()
+        await new Promise(resolve => setTimeout(resolve))
+        document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+      })
+      await expect(page.locator('.review-dialog')).toHaveCount(0)
+      await expect(report).toBeVisible()
       await shot(page, 's12-report-panel')
       await page.keyboard.press('Escape')
       await expect(page.locator('[data-split-panel]')).toHaveCount(0)

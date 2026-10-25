@@ -5,6 +5,7 @@ import { t } from '../lib/i18n'
 import { usePanels, type PanelStack } from './usePanelStack'
 
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"]),summary'
+const OVERLAY = ':is([role="dialog"]:not([data-split-panel]), [role="alertdialog"], [role="menu"]):not([data-ending-style])'
 
 // The panel frame (mockup `.panel`, P1): a 46px head with Back (when a panel is stacked), the panel's own heading and
 // actions, Full width and Close, then a scrolling body. The open panel's content is placed into the two slots by its
@@ -33,12 +34,14 @@ export function SplitPanel({ stack, phone }: { stack: PanelStack; phone: boolean
   // The content is portalled in from elsewhere in the React tree, so its keys reach the panel only through the DOM. The
   // listener sits on the document, after React's own: an Escape a field or a widget already used (preventDefault) stays
   // its own, any other Escape inside the panel closes it. Keys in a menu or dialog opened from the panel are outside it.
+  // A dialog moves focus in one frame after it opens, so an Escape in that frame still comes from the panel's button:
+  // while a dialog or menu is open the Escape is the overlay's, never the panel's.
   const { close } = stack
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const el = root.current
       if (!el || event.defaultPrevented || event.isComposing || !el.contains(event.target as Node)) return
-      if (event.key === 'Escape') { event.preventDefault(); close(); return }
+      if (event.key === 'Escape') { if (!document.querySelector(OVERLAY)) { event.preventDefault(); close() } return }
       if (event.key !== 'Tab' || !phone) return
       const items = Array.from(el.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(item => item.getClientRects().length > 0)
       if (!items.length) return

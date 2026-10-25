@@ -48,7 +48,7 @@ function MenuRow({ icon: Icon, title, detail, later }: { icon: LucideIcon; title
   return <span className="home-menu-row"><Icon size={16} aria-hidden /><span className="home-menu-text">{title}{detail && <small>{detail}</small>}</span>{later && <span className="home-menu-badge">{t('Later')}</span>}</span>
 }
 
-export function Option({ icon: Icon, title, detail }: { icon: LucideIcon; title: string; detail?: ReactNode }) {
+function Option({ icon: Icon, title, detail }: { icon: LucideIcon; title: string; detail?: ReactNode }) {
   return <span className="intake-option"><Icon size={16} /><span><strong>{title}</strong>{detail && <small>{detail}</small>}</span></span>
 }
 

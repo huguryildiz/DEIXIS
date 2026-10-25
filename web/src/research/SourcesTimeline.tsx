@@ -6,8 +6,8 @@ import { byRank, shortTag } from './RunCards'
 // from the axis, best stored rank at the bottom. Tag colour is the stored state (cited, included, passed abstract,
 // undecided, excluded); rank only orders a column and says nothing about relevance. Works without a year are counted
 // under the axis, never placed.
-export type TimelineState = 'cited' | 'included' | 'passed' | 'pending' | 'excluded'
-export const timelineStates: Array<[TimelineState, string]> = [['cited', 'Cited in answer'], ['included', 'Included'], ['passed', 'Passed abstract'], ['pending', 'Undecided'], ['excluded', 'Excluded']]
+type TimelineState = 'cited' | 'included' | 'passed' | 'pending' | 'excluded'
+const timelineStates: Array<[TimelineState, string]> = [['cited', 'Cited in answer'], ['included', 'Included'], ['passed', 'Passed abstract'], ['pending', 'Undecided'], ['excluded', 'Excluded']]
 
 export function SourcesTimeline({ records, stateOf, onOpen }: { records: Source[]; stateOf: (source: Source) => TimelineState; onOpen: (source: Source) => void }) {
   const dated = records.filter(s => s.year !== null)

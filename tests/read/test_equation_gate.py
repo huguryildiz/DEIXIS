@@ -10,7 +10,6 @@ from deixis.models.adapter import ModelStepResult
 from deixis.storage import db
 from deixis.workflow.read import equations
 from deixis.workflow.run.store import Store
-from mathpix_helpers import prose, two_equations
 from arxiv_helpers import no_network  # noqa: F401  (fixtures used by name)
 
 

@@ -28,7 +28,7 @@ export type PanelStack = {
 }
 
 // The URL names a panel with the mockup's names; the research tabs' old segments stay as aliases (plan §2.1).
-export const PANEL_ALIASES: Record<string, string | null> = {
+const PANEL_ALIASES: Record<string, string | null> = {
   sources: 'sources', queue: 'queue', pdfs: 'pdfs', waiting: 'pdfs', table: 'table', evidence: 'table', funnel: 'funnel',
   watch: 'watch', followup: 'watch', cands: 'cands', candidates: 'cands', activity: 'activity', plan: 'plan', citemap: 'citemap', snowball: 'snowball', artifacts: null, answer: null,
 }

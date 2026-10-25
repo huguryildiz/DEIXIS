@@ -153,7 +153,7 @@ export const tableKey = (label: string) => `table:${label.toUpperCase()}`
 // The lines of an algorithm box read by Marker. Subscripts and accents come out on lines of their own ("Q˜A0\n mˆ"), so a
 // line that does not open a numbered step (or Input/Output) continues the step before it.
 const ALGORITHM_STEP = /^(?:\d{1,3}:|(?:Input|Output|Require|Ensure|Initiali[sz]ation|Data|Result)s?:)/
-export function algorithmLines(fence: string) {
+function algorithmLines(fence: string) {
   const lines = fence.replace(/^```[^\n]*\n?|\n?```$/g, '').split('\n').map(line => line.trim()).filter(Boolean)
   if (!lines.some(line => ALGORITHM_STEP.test(line))) return lines
   return lines.reduce<string[]>((steps, line) => {

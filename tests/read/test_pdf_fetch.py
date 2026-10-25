@@ -8,14 +8,12 @@ import httpx
 import pytest
 from deixis.documents import fetch, pdf
 from helpers import make_pdf
-from deixis.documents import fetch
 import json
 from deixis.documents import acquisition
 from deixis.documents.fetch import FetchResult
 from deixis.providers.common import ProviderRecord
 from deixis.storage import db
 from deixis.workflow.run.store import Store
-from helpers import make_pdf
 
 
 @pytest.mark.parametrize(

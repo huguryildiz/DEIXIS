@@ -65,7 +65,6 @@ def test_step_inputs_are_immutable(conn):
 
 
 import errno
-import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
@@ -73,7 +72,7 @@ from fastapi.testclient import TestClient
 from deixis import __main__ as launcher
 from deixis.api.app import create_app
 from deixis.config import Settings
-from deixis.storage import db, upgrades
+from deixis.storage import upgrades
 from deixis.storage.upgrades import Step
 from fakes import FakeAdapter
 from old_library import stand_in_schema
@@ -149,11 +148,9 @@ def test_serve_exits_4_with_the_backup_sentence_when_a_migration_fails(tmp_path,
     assert snapshot(path) == before
 
 
-import sqlite3
 
 import pytest
 
-from deixis.storage import db
 from old_library import PRE_SQUASH as OLD, apply_files, old_library
 
 
@@ -187,10 +184,8 @@ def test_a_library_that_stopped_part_way_through_the_old_files_is_refused_unchan
 
 from dataclasses import replace
 
-from fastapi.testclient import TestClient
 
 from deixis.providers import openalex
-from deixis.storage import db
 from deixis.storage.db import now
 from deixis.workflow.run.store import Store
 from test_api_flow import app_for, session
@@ -223,15 +218,9 @@ def test_only_an_explicit_answer_replaces_the_stored_flag(tmp_path):
     assert flag(store, unknown) == (None, None)
 
 
-import sqlite3
 
 import pytest
-from fastapi.testclient import TestClient
 
-from deixis.config import Settings
-from deixis.storage import db
-from fakes import FakeAdapter
-from test_api_flow import app_for, session
 from test_followup_turns import answered, research
 import json
 from deixis.storage.backup import BackupError

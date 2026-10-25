@@ -973,10 +973,6 @@ class Store:
                           "text_sha256": hashlib.sha256(excerpt.encode()).hexdigest()})
         return given
 
-    def set_seed(self, research_id: str, expected_version: int, source_version_id: str) -> int:
-        """Freeze a bounded reading of one PDF in a new scope revision (D2)."""
-        return self.set_seeds(research_id, expected_version, [source_version_id])
-
     def set_seeds(self, research_id: str, expected_version: int, source_version_ids: list[str] | None, *,
                   all_eligible: bool = False, excluded: Sequence[str] = ()) -> int:
         """Freeze the seed set in a new scope revision: the PDFs named, in that order, or every candidate (D3).
@@ -1961,11 +1957,6 @@ class Store:
             + ((text_source,) if text_source != "text_layer" else ()),
         )
         return pid
-
-    def asset_by_sha(self, sha256: str) -> dict[str, Any] | None:
-        return row_dict(self.conn.execute(
-            "SELECT * FROM source_assets WHERE sha256 = ? AND removed_at IS NULL ORDER BY retrieved_at LIMIT 1", (sha256,)
-        ).fetchone())
 
     def asset(self, asset_id: str) -> dict[str, Any]:
         row = self.conn.execute("SELECT * FROM source_assets WHERE id = ?", (asset_id,)).fetchone()
@@ -3664,12 +3655,6 @@ class Store:
                 "INSERT OR IGNORE INTO passage_embeddings (passage_id, model, dimensions, vector, created_at) VALUES (?, ?, ?, ?, ?)",
                 [(pid, model, dimensions, blob, ts) for pid, blob in vectors.items()],
             )
-
-    def scored_sources(self, research_id: str, scope_revision: int, model: str) -> set[str]:
-        return {r[0] for r in self.conn.execute(
-            "SELECT source_version_id FROM source_similarities WHERE research_id = ? AND scope_revision = ? AND model = ?",
-            (research_id, scope_revision, model),
-        )}
 
     def source_similarities(self, research_id: str, scope_revision: int, model: str) -> dict[str, float]:
         """Every stored similarity of this question revision under one embedding model; empty when none was written."""

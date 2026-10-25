@@ -9,25 +9,12 @@ import httpx
 from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.providers.registry import CONNECTORS
-from deixis.workflow.read import fulltext
 from deixis.workflow.screen.decisions import DecisionStore
 from fakes import FakeAdapter
-from test_abstract_flow import ON_TOPIC, QUESTION, records_of, responder
-from test_fulltext_flow import Fetcher, named_pdf, ok, work
+from test_abstract_flow import QUESTION, records_of, responder
+from test_fulltext_flow import Fetcher
 
 SETTLED = ("completed", "failed", "paused", "cancelled")
-CODE_WORKS = range(1, 7)       # both gate blocks in the title: code keeps them, so they are safe at the code step
-MODEL_WORKS = range(101, 125)  # the model reads these, in two batches
-
-
-def url(n):
-    return f"https://example.org/w{n}.pdf"
-
-
-def library(code_works=CODE_WORKS, model_works=MODEL_WORKS):
-    works = ([work(n, pdf_url=url(n), title=ON_TOPIC) for n in code_works]
-             + [work(n, pdf_url=url(n)) for n in model_works])
-    return works, {url(n): ok(named_pdf(f"10.1/oa.{n}")) for n in [*code_works, *model_works]}
 
 
 class SlowFetcher(Fetcher):
@@ -97,11 +84,6 @@ def fulltext_codes(store, rid):
     decisions = DecisionStore(store)
     return {key: (decisions.current(rid, svid, "fulltext") or {}).get("reason_code")
             for key, svid in sorted(records_of(store, rid).items())}
-
-
-def events(store, rid, type_=None):
-    return [dict(row) | {"payload": json.loads(row["payload_json"])} for row in store.conn.execute(
-        "SELECT * FROM events WHERE research_id = ? ORDER BY id", (rid,)) if type_ is None or row["type"] == type_]
 
 
 class Crash(BaseException):

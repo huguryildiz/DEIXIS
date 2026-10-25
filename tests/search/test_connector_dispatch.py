@@ -7,19 +7,17 @@ chain round. Direct facade equivalence remains separate from admission, secrecy 
 import asyncio
 import json
 import socket
-from dataclasses import replace
 from pathlib import Path
 
 import httpx
 import pytest
 
 import connector_baseline as baseline
-import fast_search_helpers as fast
 import test_connector_contract as conformance
 import test_connector_facade as equality
 from test_connector_contract import dispatch_flow
 from test_provider_records import record
-from deixis.providers import common, contract, facade, registry
+from deixis.providers import common, facade, registry
 from deixis.workflow.run import flow as flow_module
 
 
@@ -41,16 +39,6 @@ def client(flow, handler):
 
 def query(pid="openalex", **fields):
     return {"provider_id": pid, "query_text": baseline.QUERY, **fields}
-
-
-def rows(flow):
-    return [dict(r) for r in flow.store.conn.execute("SELECT * FROM search_runs ORDER BY rowid")]
-
-
-def install(monkeypatch, pid, search, **fields):
-    source = replace(registry.CONNECTORS[pid], search=search, **fields)
-    monkeypatch.setitem(registry.CONNECTORS, pid, source)
-    return source
 
 
 def oa_body(ids=("https://openalex.org/W1",), cursor=None, secret=None):
@@ -111,28 +99,8 @@ def test_workflow_contains_no_registry_search_call():
 
 
 # Named change 2: explicit identifier ownership, independently of dispatch.
-A, B, C, X = [f"10.1/synthetic.{s}" for s in "abcx"]
 def paper(doi, **fields):
     return {"externalIds": {"DOI": doi}, "abstract": f"SYNTHETIC abstract {doi}", **fields}
-
-
-BINDINGS = [
-    ([A, B], [paper(B), paper(A)], ["found", "found"]),
-    ([A, B, C], [paper(C), paper(A), paper(B)], ["found"] * 3),
-    ([A, B], [paper(X), paper(A)], ["found", "failed"]),
-    ([A, B], [paper(A), paper(X)], ["found", "failed"]),
-    ([A, B], [paper(A), paper(A, abstract="SYNTHETIC conflicting abstract")], ["failed", "failed"]),
-    ([A, B], [None, paper(B)], ["not_found", "found"]),
-    ([A, B, C], [None, paper(C), paper(B)], ["failed", "found", "found"]),
-    ([A, B], [paper(A), {"externalIds": []}], ["found", "failed"]),
-    ([A, B], [paper(A), {"externalIds": {"DOI": 17}}], ["found", "failed"]),
-    ([A, B], [paper(A), {"externalIds": {"DOI": " "}}], ["found", "failed"]),
-    ([A, B], [17, paper(B)], ["failed", "found"]),
-    ([A, A], [paper(A), dict(reversed(list(paper(A).items())))], ["found", "found"]),
-    ([A, A], [paper(A), paper(A, abstract="SYNTHETIC conflicting abstract")], ["failed", "failed"]),
-    ([A, A], [None, None], ["not_found", "not_found"]),
-    ([A, B, A], [paper(B), None, paper(A)], ["found", "found", "found"]),
-]
 
 
 def lookup_sources(flow, run, dois):
@@ -150,13 +118,3 @@ def test_record_raw_only_is_sanitized(dispatch_flow):
     sent = sent.outcome if isinstance(sent, facade.Dispatched) else sent
     assert baseline.SYNTHETIC_KEY not in json.dumps(sent.records[0].raw)
     assert sent.records[0].raw["SYNTHETIC_nested"]["key"] == "before/<redacted>/after"
-
-
-# Decision 6: historical NULL continues; invalid provenance is not historical NULL.
-PROVENANCE = [(None, None), ("current", None), (json.dumps({"contract_id": contract.CONTRACT_ID, "adapter_revision": 999}), "adapter_revision_changed"),
-    (json.dumps({"contract_id": "unsupported", "adapter_revision": 2}), "adapter_revision_changed"),
-    ("{", "connector_provenance_invalid"), ("[]", "connector_provenance_invalid"),
-    ("{}", "connector_provenance_invalid"), (json.dumps({"contract_id": 1, "adapter_revision": 2}), "connector_provenance_invalid"),
-    (json.dumps({"contract_id": contract.CONTRACT_ID, "adapter_revision": True}), "connector_provenance_invalid"),
-    (json.dumps({"contract_id": contract.CONTRACT_ID, "adapter_revision": "2"}), "connector_provenance_invalid"),
-    ("missing-row", "connector_provenance_invalid")]

@@ -1,7 +1,7 @@
 import { FileText } from 'lucide-react'
-import type { ReviewEvidence as Evidence } from '../api'
-import { MathText } from '../MathText'
-import { t } from '../i18n'
+import type { ReviewEvidence as Evidence } from '../lib/api'
+import { MathText } from '../components/MathText'
+import { t } from '../lib/i18n'
 
 // A located quote (mockup `.finding .quote` and `.loc`): code found the text in the stored passage; whether it supports
 // the target was not checked. "Open in source" shows the passage with the quote marked.

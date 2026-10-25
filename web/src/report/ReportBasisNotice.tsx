@@ -1,6 +1,6 @@
-import type { ReportBasis } from '../api'
-import { t } from '../i18n'
-import { Notice } from '../Notice'
+import type { ReportBasis } from '../lib/api'
+import { t } from '../lib/i18n'
+import { Notice } from '../components/Notice'
 
 // The report's basis note (D68): what the table was read from, which cells could not be verified against a quote
 // and whose they are, and the advice to upload PDFs. The exports print the same sentences.

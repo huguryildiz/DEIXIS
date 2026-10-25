@@ -1,5 +1,5 @@
-import type { Watch, WatchCheck, WatchGap, WatchKind, WatchObservation } from '../api'
-import { t, uiLocale } from '../i18n'
+import type { Watch, WatchCheck, WatchGap, WatchKind, WatchObservation } from '../lib/api'
+import { t, uiLocale } from '../lib/i18n'
 
 export const kindLabels: Record<WatchKind, string> = {
   protocol_queries: 'Search queries of this research', citing_works: 'Works citing the included sources',

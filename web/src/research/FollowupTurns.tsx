@@ -1,11 +1,11 @@
 import { BookOpen, Copy, MessageSquare, Pause, PencilLine, Play, RotateCw, Search, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { type Claim, type FollowupSearchRequest, type FollowupSearchRun, type FollowupTurn, type FollowupWorkGroups, type Source } from '../api'
-import { locatorText, pauseReasonText, providerName, serviceErrorSentence, serviceKind, versionText } from '../labels'
-import { MathText } from '../MathText'
-import { useToast } from '../Toast'
-import { t } from '../i18n'
-import { writeClipboard } from '../clipboard'
+import { type Claim, type FollowupSearchRequest, type FollowupSearchRun, type FollowupTurn, type FollowupWorkGroups, type Source } from '../lib/api'
+import { locatorText, pauseReasonText, providerName, serviceErrorSentence, serviceKind, versionText } from '../lib/labels'
+import { MathText } from '../components/MathText'
+import { useToast } from '../components/Toast'
+import { t } from '../lib/i18n'
+import { writeClipboard } from '../lib/clipboard'
 import { followupClaim, followupGroupClaims, splitQuotes, workTitle } from './followupData'
 
 // Follow-up questions in the thread (mockup `turnHtml()`, R31, UI parity S22b). Each turn is one stored `followup_answer`

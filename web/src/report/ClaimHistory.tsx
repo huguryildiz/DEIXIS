@@ -1,9 +1,9 @@
 import { useId } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { ReportClaim } from '../api'
-import { t, uiLocale } from '../i18n'
-import { reportRevisionLabels } from '../labels'
+import type { ReportClaim } from '../lib/api'
+import { t, uiLocale } from '../lib/i18n'
+import { reportRevisionLabels } from '../lib/labels'
 import { citationCount } from './editLabels'
 
 export function ClaimHistory({ claim, createdAt, busy, restore }: {

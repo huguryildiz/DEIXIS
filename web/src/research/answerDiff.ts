@@ -1,5 +1,5 @@
-import type { Answer, Claim, Evidence, Limitation } from '../api'
-import { shownVersion } from '../labels'
+import type { Answer, Claim, Evidence, Limitation } from '../lib/api'
+import { shownVersion } from '../lib/labels'
 
 // The answer diff (UI parity S21, P4/F11): what differs between two stored answer versions of one research, computed in
 // the browser from the two records the view already holds. Nothing is inferred: claims are matched by their text

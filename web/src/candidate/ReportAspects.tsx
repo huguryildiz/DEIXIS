@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { api, type CandidateCard, type CandidateListItem, type ReportGap } from '../api'
-import { Notice } from '../Notice'
-import { t } from '../i18n'
+import { api, type CandidateCard, type CandidateListItem, type ReportGap } from '../lib/api'
+import { Notice } from '../components/Notice'
+import { t } from '../lib/i18n'
 import { errorText, kindLabels, label, statusLabels } from './labels'
 
 export function ReportAspects({ researchId, reportId, eventCursor, valid, onOpen }: { researchId: string; reportId: string; eventCursor: number; valid: boolean; onOpen: (candidate: { id: string; card?: CandidateCard }) => void }) {

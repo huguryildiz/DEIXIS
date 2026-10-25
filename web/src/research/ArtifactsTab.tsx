@@ -1,7 +1,7 @@
 import { ArrowUpRight, FileText, Table2 } from 'lucide-react'
-import { type TableSummary } from '../api'
-import { t } from '../i18n'
-import { tableTitle } from '../labels'
+import { type TableSummary } from '../lib/api'
+import { t } from '../lib/i18n'
+import { tableTitle } from '../lib/labels'
 
 const tableFacts = (table: TableSummary) => [t('Table'), t(table.rows === 1 ? '{n} row' : '{n} rows', { n: table.rows }), t(table.columns === 1 ? '{n} column' : '{n} columns', { n: table.columns })].join(' · ')
 

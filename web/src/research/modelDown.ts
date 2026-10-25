@@ -1,4 +1,4 @@
-import type { ModelRole, Run } from '../api'
+import type { ModelRole, Run } from '../lib/api'
 
 // The Settings role whose model runs a step task (api/usage_routes.role_of, domain/rules.LITERATURE_TASKS).
 const LITERATURE_TASKS = new Set(['vocabulary_labels', 'criterion_proposal', 'search_query', 'abstract_screening', 'fulltext_adjudication'])

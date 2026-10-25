@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ApiError, type WatchCommandResult } from '../api'
+import { ApiError, type WatchCommandResult } from '../lib/api'
 import { newCommand, useWriteCommand, type WriteCommand } from '../review/commands'
 
 export function useFollowUpCommand(identity: string, request: (command: WriteCommand) => Promise<WatchCommandResult>, reload: () => Promise<void>, success?: () => void) {

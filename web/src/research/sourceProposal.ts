@@ -1,6 +1,6 @@
-import { type ReadCoverage, type Source } from '../api'
-import { hasQueueReason, queueReasonText, waitingReasonText } from '../labels'
-import { t } from '../i18n'
+import { type ReadCoverage, type Source } from '../lib/api'
+import { hasQueueReason, queueReasonText, waitingReasonText } from '../lib/labels'
+import { t } from '../lib/i18n'
 
 // The "Model proposal" column (mockup P9): what code and the model runs decided about the work, from the view's
 // `screening` (current, not stale decisions; a person's own decision is the next column). Older researches carry the

@@ -1,6 +1,6 @@
-import { type OpenAlexBudgetToday, type Run, type Usage } from '../api'
-import { t, uiLocale } from '../i18n'
-import { providerName } from '../labels'
+import { type OpenAlexBudgetToday, type Run, type Usage } from '../lib/api'
+import { t, uiLocale } from '../lib/i18n'
+import { providerName } from '../lib/labels'
 import { number, roleWords, timeText, useOpenAlexBudget, useRunUsage } from './usageData'
 
 function budgetSentence(budget: OpenAlexBudgetToday): string {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { usageApi, type OpenAlexBudgetToday, type Run, type Usage, type UsageRole } from '../api'
-import { t, uiLocale } from '../i18n'
+import { usageApi, type OpenAlexBudgetToday, type Run, type Usage, type UsageRole } from '../lib/api'
+import { t, uiLocale } from '../lib/i18n'
 
 // What runs spent (R17, RL8; UI parity S27), read from what the app stored: model calls are the run's stored model
 // sessions grouped by Settings role (api/usage_routes.py), never an estimate; the OpenAlex figure is the newest stored

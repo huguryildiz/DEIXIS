@@ -1,5 +1,5 @@
-import type { Source } from '../api'
-import { t } from '../i18n'
+import type { Source } from '../lib/api'
+import { t } from '../lib/i18n'
 import { byRank, shortTag } from './RunCards'
 
 // The Sources panel's Timeline view: one column per publication year, each work a short author-year tag stacked upward

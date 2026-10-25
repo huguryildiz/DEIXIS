@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import type { LineageBaseline, LineageBaselineList } from '../api'
-import { t } from '../i18n'
+import type { LineageBaseline, LineageBaselineList } from '../lib/api'
+import { t } from '../lib/i18n'
 import { WorkName, type WorkProps } from './LinkRow'
 import { dateText } from './labels'
 

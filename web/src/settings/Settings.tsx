@@ -1,0 +1,649 @@
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { BookOpenText, Info, PenLine, RotateCw, ShieldCheck } from 'lucide-react'
+import { api, preferencesApi, shellApi, spendApi, usageApi, type About, type ContactEmailSetting, type Effort, type EffortLimits, type PreferenceChange, type Preferences, type Profile, type Connections, type InstitutionalAccess, type ModelRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Spending, type ConnectionUsage, type ModelUsage, type QuotaWindow, type UsageRole } from '../lib/api'
+import { canRun, connectionModels, modelKey, type ConnectionModel } from '../home/Home'
+import { defaultEffort, exposesEffortControl } from '../lib/modelEffort'
+import { ConnectionsTab } from './Connections'
+import { ConnectionIcon } from '../components/connectionIcons'
+import { DataFlowsSection } from './DataFlows'
+import { useToast } from '../components/Toast'
+import { t, uiLocale, type UiLanguage } from '../lib/i18n'
+import { connectionName, money, reasoningLabel } from '../lib/labels'
+import { Notice } from '../components/Notice'
+import { isLeft } from '../lib/readLimit'
+import { useLeaving } from './useLeaving'
+import '../research/kit.css'
+import './Settings.css'
+
+const NO_DEFAULT = '__none'
+// The mockup's order and words (plan ST3); what each role does is the same in the composer's model menu.
+const ROLES: { role: ModelRole; label: string; desc: string; icon: typeof Info }[] = [
+  { role: 'literature', label: 'Literature', desc: 'Plans searches and screens abstracts', icon: BookOpenText },
+  { role: 'answer', label: 'Answer', desc: 'Writes the source-linked answer', icon: PenLine },
+  { role: 'reviewer', label: 'Reviewer', desc: 'Checks each claim against its passages', icon: ShieldCheck },
+]
+const clock = (iso: string) => new Date(iso).toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit' })
+
+/** The institutional access state the sidebar's access line shows, read and tested by the app shell (App.tsx), so the
+ *  page and the line never disagree and never run two tests at once. Two separate facts (plan §2.3): the proxy host
+ *  answered or not, and Scopus grants its full view on this network or not. */
+/** The name in the sidebar: typed here, else the OS account's. It stays on this computer. */
+function ProfileNameRow({ onProfile }: { onProfile: (profile: Profile) => void }) {
+  const [stored, setStored] = useState<Profile | null>(null)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const toast = useToast()
+  useEffect(() => {
+    let live = true
+    const leaving = new AbortController()
+    shellApi.profile(leaving.signal).then(value => { if (live) { setStored(value); setDraft(value.name_source === 'setting' ? value.full_name : '') } }, (e: Error) => { if (live) setError(e.message) })
+    return () => { live = false; leaving.abort() }
+  }, [])
+  const current = stored?.name_source === 'setting' ? stored.full_name : ''
+  const changed = stored !== null && draft.trim() !== current
+  const save = () => {
+    setBusy(true); setError('')
+    shellApi.saveProfileName(draft.trim() || null).then(value => {
+      setStored(value); setDraft(value.name_source === 'setting' ? value.full_name : ''); onProfile(value)
+      toast('success', t(value.name_source === 'setting' ? 'Name saved.' : 'Name reset to the computer account.'))
+    }).catch((e: Error) => setError(e.message)).finally(() => setBusy(false))
+  }
+  return <form onSubmit={e => { e.preventDefault(); if (changed) save() }}>
+    <b><label htmlFor="profile-name">{t('Name')}</label></b>
+    <p>{t('Shown in the sidebar. It stays on this computer.')}{error && <span className="key-form-error" role="alert"> {error}</span>}</p>
+    <input id="profile-name" className="field" type="text" autoComplete="name" maxLength={80} value={draft} disabled={stored === null || busy}
+      placeholder={stored?.account_name || t('Your name')} onChange={e => { setDraft(e.target.value); setError('') }} />
+    <button type="submit" className="ghost" disabled={busy || !changed}>{busy ? <span className="shimmer-text">{t('Saving…')}</span> : t('Save')}</button>
+  </form>
+}
+
+/** The contact email (F15): sent as `mailto` with OpenAlex and Crossref requests; the setting wins over DEIXIS_CONTACT_EMAIL. */
+function ContactEmailRow({ onSaved }: { onSaved: () => void }) {
+  const [stored, setStored] = useState<ContactEmailSetting | null>(null)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const toast = useToast()
+  useEffect(() => {
+    let live = true
+    const leaving = new AbortController()
+    shellApi.contactEmail(leaving.signal).then(value => { if (live) { setStored(value); setDraft(value.email ?? '') } }, (e: Error) => { if (live) setError(e.message) })
+    return () => { live = false; leaving.abort() }
+  }, [])
+  const changed = stored !== null && draft.trim() !== (stored.email ?? '')
+  const save = () => {
+    setBusy(true); setError('')
+    shellApi.saveContactEmail(draft.trim() || null).then(value => {
+      setStored(value); setDraft(value.email ?? ''); onSaved()
+      toast('success', t(value.email ? 'Contact email saved.' : 'Contact email removed.'))
+    }).catch((e: Error) => setError(e.message)).finally(() => setBusy(false))
+  }
+  return <form onSubmit={e => { e.preventDefault(); if (changed) save() }}>
+    <b><label htmlFor="contact-email">{t('Email')}</label></b>
+    <p>{t('Sent only to OpenAlex and Crossref, which answer faster and more steadily when a request carries an email.')}
+      {error && <span className="key-form-error" role="alert"> {error}</span>}</p>
+    <input id="contact-email" className="field" type="email" autoComplete="email" value={draft} disabled={stored === null || busy} placeholder="you@university.edu"
+      onChange={e => { setDraft(e.target.value); setError('') }} />
+    <button type="submit" className="ghost" disabled={busy || !changed}>{busy ? <span className="shimmer-text">{t('Saving…')}</span> : t('Save')}</button>
+    {stored && !stored.email && <Notice tone="attention">{stored.environment_set ? t('While this field is empty, DEIXIS sends the email that was set when it started.') : t('Without an email, OpenAlex and Crossref answer more slowly at busy times. Searches still run.')}</Notice>}
+  </form>
+}
+
+export type AccessControl = {
+  proxy: ProxySettings | null
+  readFailed: boolean
+  testing: boolean
+  /** The last test request itself failed (no answer from DEIXIS) for this address. */
+  testFailed: boolean
+  scopus: InstitutionalAccess['status'] | null
+  /** A fresh test after any running one; rejects when the request fails. */
+  test: (address?: string) => Promise<ProxySettings | null>
+  /** Saves the address ('' removes it) under the same version as reads and tests; rejects when the save fails. */
+  save: (address: string) => Promise<void>
+  /** Saves the sidebar name ('' returns to the proxy host) under the same version; rejects when the save fails. */
+  saveLabel: (label: string) => Promise<void>
+  reload: () => void
+}
+
+export type SettingsTab = 'models' | 'search' | 'documents' | 'sources' | 'usage' | 'general'
+export type SettingsSection = 'connections' | 'access' | 'openalex' | 'profile' | SettingsTab
+const TABS: { id: SettingsTab; label: string }[] = [
+  { id: 'models', label: 'Language models' }, { id: 'search', label: 'Search & ranking' }, { id: 'documents', label: 'Document reading' }, { id: 'sources', label: 'Sources' }, { id: 'usage', label: 'Usage' }, { id: 'general', label: 'General' },
+]
+// The older section links open the tab that holds their section.
+const SECTION_TAB: Record<SettingsSection, SettingsTab> = {
+  connections: 'models', access: 'sources', openalex: 'sources', profile: 'general', models: 'models', search: 'search', documents: 'documents', sources: 'sources', usage: 'usage', general: 'general',
+}
+
+export type ThemeChoice = 'system' | 'light' | 'dark'
+
+export function SettingsPage({ dark, section, language, onLanguage, theme, onTheme, onProfile, access }: {
+  dark: boolean; section?: SettingsSection; language: UiLanguage; onLanguage: (language: UiLanguage) => void
+  theme: ThemeChoice; onTheme: (theme: ThemeChoice) => void
+  onProfile: (profile: Profile) => void; access: AccessControl
+}) {
+  const toast = useToast()
+  const [models, setModels] = useState<ConnectionModel[] | null>(null)
+  const [anyReady, setAnyReady] = useState<boolean | null>(null)
+  const [defaults, setDefaults] = useState<Record<ModelRole, RoleModelSetting> | null>(null)
+  const [savingRole, setSavingRole] = useState<ModelRole | null>(null)
+  const [error, setError] = useState('')
+  const [emailSaves, setEmailSaves] = useState(0)
+  const [tab, setTab] = useState<SettingsTab>(section ? SECTION_TAB[section] : 'models')
+  const tabRefs = useRef<Partial<Record<SettingsTab, HTMLButtonElement | null>>>({})
+
+  // The model choices come from the connections answer the sections below read, so a key change or a connection test
+  // there updates them too (the sections show their own read error).
+  const onConnections = useCallback((result: Connections) => { setModels(connectionModels(result)); setAnyReady(Object.values(result.models).some(canRun)) }, [])
+  useEffect(() => {
+    const leaving = new AbortController()
+    api.settings(leaving.signal).then(setDefaults).catch((e: Error) => { if (!isLeft(e)) setError(t('The default models could not be read: {message}', { message: e.message })) })
+    return () => leaving.abort()
+  }, [])
+
+  // `#/settings/connections` opens the page at "Model connections", `#/settings/access` at "Institutional access" (ST1);
+  // `#/settings/openalex` opens the OpenAlex sheet (R19's "Add an OpenAlex key"), which takes the focus itself.
+  const scrolled = useRef(false)
+  useEffect(() => {
+    if (!section || section === 'openalex' || TABS.some(x => x.id === section) || scrolled.current || !defaults) return
+    scrolled.current = true
+    const target = document.getElementById(section === 'access' ? 'institutional-access' : section === 'profile' ? 'profile' : 'model-connections')
+    target?.scrollIntoView({ block: 'start' })
+    target?.focus({ preventScroll: true })
+  }, [section, defaults])
+
+  // One save per role at a time; the role's controls stay locked until the server answers.
+  function save(role: ModelRole, next: RoleModelSetting) {
+    if (savingRole) return
+    const label = t(ROLES.find(r => r.role === role)!.label).toLocaleLowerCase(uiLocale())
+    setSavingRole(role)
+    api.saveModelDefault(role, next).then(saved => {
+      setDefaults(old => old && { ...old, [role]: saved[role] ?? next })
+      toast('success', saved[role]?.model ? t('Default {role} model: {model}', { role: label, model: saved[role]!.model! }) : t('No default {role} model', { role: label }))
+    }).catch((e: Error) => toast('error', t('Could not save the default: {message}', { message: e.message })))
+      .finally(() => setSavingRole(null))
+  }
+
+  // The URL names the open tab without a new history entry and without the hashchange that would remount the page.
+  function pick(next: SettingsTab, focus = false) {
+    setTab(next)
+    history.replaceState(null, '', `#/settings/${next}`)
+    if (focus) tabRefs.current[next]?.focus()
+  }
+  function onTabKey(e: KeyboardEvent) {
+    const i = TABS.findIndex(x => x.id === tab)
+    const to = e.key === 'ArrowRight' ? (i + 1) % TABS.length : e.key === 'ArrowLeft' ? (i + TABS.length - 1) % TABS.length
+      : e.key === 'Home' ? 0 : e.key === 'End' ? TABS.length - 1 : -1
+    if (to < 0) return
+    e.preventDefault()
+    pick(TABS[to].id, true)
+  }
+
+  // Default models sit after the model connections (owner-approved connection mockup, 15 Oct 2026): a model is
+  // connected first, then chosen.
+  const defaultsBlock = <>
+    <h2 data-panel="models">{t('Default models')}</h2>
+    <p className="foot-note set-roles-note" data-panel="models">{t('Defaults apply to new researches. Each research keeps the models it was created with.')}</p>
+    <div className="rows set-roles" data-panel="models">
+      {/* Column names for sighted readers; each select carries its own accessible name. */}
+      <div className="set-roles-head" aria-hidden><span>{t('Step')}</span><span>{t('Model')}</span><span>{t('Thinking level')}</span></div>
+      {ROLES.map(({ role, label, desc, icon: Icon }) => {
+        const current = defaults?.[role]
+        const list = models ?? []
+        const value = current?.model ? modelKey(current.model_connection, current.model) : NO_DEFAULT
+        const picked = list.find(m => m.id === value)
+        const efforts = picked && exposesEffortControl(picked) ? picked.reasoning_efforts ?? [] : []
+        const locked = !models || !defaults || !list.length || savingRole !== null
+        const groups = [...new Set(list.map(m => m.connection))]
+        return <div key={role} className="set-role">
+          <span className="set-role-ico" aria-hidden><Icon size={15} /></span>
+          <span className="set-role-text"><b>{t(label)}</b><p>{t(desc)}</p></span>
+          <span className={`set-role-model${picked ? ' has-icon' : ''}`}>
+          {picked && <ConnectionIcon id={picked.connection} />}
+          <select className="select" aria-label={t('{role} model', { role: t(label) })} disabled={locked} value={!list.length ? NO_DEFAULT : value}
+            onChange={e => {
+              if (!current) return
+              const m = list.find(x => x.id === e.target.value)
+              save(role, m ? { model_connection: m.connection, model: m.model, reasoning_effort: defaultEffort(list, m.id) }
+                : { model_connection: current.model_connection, model: null, reasoning_effort: null })
+            }}>
+            {!list.length
+              ? <option value={NO_DEFAULT}>{t(models ? 'Not connected' : 'Checking…')}</option>
+              : <>
+                <option value={NO_DEFAULT}>{t(role === 'reviewer' ? 'No default reviewer' : 'No default')}</option>
+                {current?.model && !picked && <option value={value}>{t('{model} · not listed now', { model: current.model })}</option>}
+                {groups.map(connection => <optgroup key={connection} label={connectionName(connection)}>
+                  {list.filter(m => m.connection === connection).map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
+                </optgroup>)}
+              </>}
+          </select>
+          </span>
+          <select className="select" aria-label={t('{role} effort', { role: t(label) })} disabled={locked || !efforts.length}
+            value={efforts.some(e => e.id === current?.reasoning_effort) ? current!.reasoning_effort! : ''}
+            onChange={e => current && save(role, { ...current, reasoning_effort: e.target.value || null })}>
+            {!efforts.length && <option value="">{t(picked ? 'No thinking levels' : '—')}</option>}
+            {efforts.length > 0 && <option value="">{t('Model default')}</option>}
+            {efforts.map(level => <option key={level.id} value={level.id}>{reasoningLabel(level.id)}</option>)}
+          </select>
+        </div>
+      })}
+    </div>
+  </>
+
+  // Every section is rendered once; `data-panel` names its tab and the page's `data-tab` shows one tab's sections, so the
+  // connections, the open sheet and the forms keep their state when the tab changes.
+  return <section className="settings-page mk" data-tab={tab}>
+    <h1 tabIndex={-1}>{t('Settings')}</h1>
+    <div className="settings-tabs" role="tablist" aria-label={t('Settings sections')} onKeyDown={onTabKey}>
+      {TABS.map(x => <button key={x.id} ref={el => { tabRefs.current[x.id] = el }} type="button" role="tab" id={`settings-tab-${x.id}`}
+        aria-selected={tab === x.id} tabIndex={tab === x.id ? 0 : -1} className={tab === x.id ? 'on' : ''} onClick={() => pick(x.id)}>{t(x.label)}</button>)}
+    </div>
+    {error && <Notice tone="error" panel="models">{error}</Notice>}
+    {anyReady === false && <div className="notice info" data-panel="models"><Info aria-hidden /><span>{t('Connect a model below to start.')}</span></div>}
+
+    <h2 id="profile" tabIndex={-1} data-panel="general">{t('Profile')}</h2>
+    <div className="rows set-profile" data-panel="general">
+      <ProfileNameRow onProfile={onProfile} />
+      <ContactEmailRow onSaved={() => setEmailSaves(n => n + 1)} />
+    </div>
+
+    <ConnectionsTab dark={dark} access={<InstitutionalAccessBlock access={access} />} defaults={defaultsBlock} onConnections={onConnections} openProvider={section === 'openalex' ? 'openalex' : undefined} />
+
+    <UsageThisMonth />
+
+    <SpendingSettings />
+
+    <h2 data-panel="general">{t('Language')}</h2>
+    <div className="rows set-lang" data-panel="general">
+      <div>
+        <b>{t('Interface')}</b>
+        <p>{t('Research content (questions, answers, quotes) stays in the language it was written in.')}</p>
+        <span className="lang" role="group" aria-label={t('Interface language')}>
+          <button type="button" className={language === 'en' ? 'on' : ''} aria-pressed={language === 'en'} lang="en" onClick={() => onLanguage('en')}>English</button>
+          <button type="button" className={language === 'tr' ? 'on' : ''} aria-pressed={language === 'tr'} lang="tr" onClick={() => onLanguage('tr')}>Türkçe</button>
+        </span>
+      </div>
+    </div>
+
+    <h2 data-panel="general">{t('Appearance')}</h2>
+    <div className="rows set-lang" data-panel="general">
+      <div>
+        <b>{t('Theme')}</b>
+        <p>{t('System follows the light or dark setting of this computer.')}</p>
+        <Segment label={t('Theme')} value={theme} onPick={onTheme}
+          options={[{ id: 'system', label: t('System') }, { id: 'light', label: t('Light') }, { id: 'dark', label: t('Dark') }]} />
+      </div>
+    </div>
+
+    <ResearchPreferences />
+
+    <DataFlowsSection defaults={defaults} active={tab === 'general'} refresh={emailSaves} />
+
+    <AboutSection />
+
+    <footer className="settings-footer"><span>{t('© 2026 DEIXIS · Designed & built by')} <a href="https://huguryildiz.com" target="_blank" rel="noopener noreferrer">Hüseyin Uğur Yıldız</a><a className="footer-github" href="https://github.com/huguryildiz/DEIXIS" target="_blank" rel="noopener noreferrer" aria-label={t('DEIXIS on GitHub')} title={t('DEIXIS on GitHub')}><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z" /></svg></a></span></footer>
+  </section>
+}
+
+// About (F2, F5): the version, the licence, this version's source, the third-party licence list and the problem link. The
+// problem link comes from the server, which builds it from the version, OS name and architecture only.
+function AboutSection() {
+  const [about, setAbout] = useState<About | null>(null)
+  const [failed, setFailed] = useState('')
+  useEffect(() => {
+    let live = true
+    const leaving = new AbortController()
+    shellApi.about(leaving.signal).then(value => { if (live) setAbout(value) }, (e: Error) => { if (live) setFailed(e.message) })
+    return () => { live = false; leaving.abort() }
+  }, [])
+  const external = { target: '_blank', rel: 'noopener noreferrer' } as const
+  return <>
+    <h2 id="about" data-panel="general">{t('About')}</h2>
+    {failed && <Notice tone="attention" panel="general">{t('About could not be read: {message}', { message: failed })}</Notice>}
+    <div className="rows set-about" data-panel="general">
+      <div>
+        <b>{t('Version')}</b>
+        <p>{about ? `${about.version} · ${about.os} ${about.arch}` : <span className="shimmer-text">{t('Checking…')}</span>}</p>
+      </div>
+      <div>
+        <b>{t('License')}</b>
+        <p>{t('DEIXIS is free software under the GNU Affero General Public License, version 3 or later ({license}).', { license: about?.license ?? 'AGPL-3.0-or-later' })}</p>
+      </div>
+      <div>
+        <b>{t('Source code')}</b>
+        <p>{about ? <a href={about.source_url} {...external}>{t('Source code for this version')}</a> : <span className="shimmer-text">{t('Checking…')}</span>}
+          {about && !about.source_is_tag && <> {t('This version has no release tag yet, so the link opens the project page.')}</>}</p>
+      </div>
+      <div>
+        <b>{t('Third-party licenses')}</b>
+        <p>{about?.notices_available ? <a href="/api/about/notices" {...external}>{t('Open the list')}</a> : about ? t('The list is not part of this build.') : <span className="shimmer-text">{t('Checking…')}</span>}
+          {about?.notices_available && <> {t('The licenses of the software DEIXIS is built on.')}</>}</p>
+      </div>
+      <div>
+        <b>{t('Report a problem')}</b>
+        <p>{about ? <a href={about.report_url} {...external}>{t('Report a problem on GitHub')}</a> : <span className="shimmer-text">{t('Checking…')}</span>}{' '}
+          {t('The new issue has only the DEIXIS version, your operating system and its architecture filled in. If you have a diagnostic zip, attach it to the issue yourself by dragging it into the text box. Open the zip first and look at what it contains, because GitHub issues are public.')}</p>
+      </div>
+    </div>
+  </>
+}
+
+// Institutional access (plan ST6, §2.3). The proxy address is used only for links the person opens in the browser; Test
+// saves a changed address, then asks the proxy host once (never an article). Its line and the Scopus line are separate
+// measured facts.
+function InstitutionalAccessBlock({ access }: { access: AccessControl }) {
+  const toast = useToast()
+  const saved = access.proxy?.address ?? null
+  const [draft, setDraft] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const field = draft ?? saved ?? ''
+  const test = async () => {
+    const address = field.trim()
+    if (!address || busy || access.testing) return
+    setBusy(true); setMessage('')
+    try {
+      if (address !== (saved ?? '')) {
+        try { await access.save(address) } catch (e) { setMessage(t('Not saved: {message}', { message: (e as Error).message })); return }
+        setDraft(null)
+      }
+      try { await access.test(address) } catch (e) { setMessage(t('The check could not run: {message}', { message: (e as Error).message })) }
+    } finally { setBusy(false); access.reload() }
+  }
+  const remove = () => {
+    if (busy) return
+    setBusy(true); setMessage('')
+    access.save('').then(() => { setDraft(null); toast('success', t('Proxy address removed. Links open directly.')) })
+      .catch((e: Error) => setMessage(t('Not removed: {message}', { message: e.message })))
+      .finally(() => { setBusy(false); access.reload() })
+  }
+
+  const p = access.proxy
+  const test_ = p?.test
+  const current = !!test_ && p!.test_is_current
+  let line: { tone: 'ok' | 'no' | 'warn' | 'checking'; pill: string; text: string }
+  if (access.readFailed) line = { tone: 'no', pill: t('Proxy check could not run'), text: t('The proxy setting could not be read.') }
+  else if (!p) line = { tone: 'checking', pill: '', text: t('Checking…') }
+  else if (!p.address) line = { tone: 'no', pill: t('Not set up'), text: t('Without a proxy, publisher links open directly.') }
+  else if (busy || access.testing) line = { tone: 'checking', pill: '', text: t('Checking: asking the proxy host…') }
+  else if (message) line = { tone: 'no', pill: t('Proxy check could not run'), text: message }
+  else if (access.testFailed && !current) line = { tone: 'no', pill: t('Proxy check could not run'), text: t('The last check got no answer from DEIXIS. Test again.') }
+  else if (!test_ || !current) line = { tone: 'no', pill: t('Not checked'), text: test_?.route_changed_during_test ? t('The network changed during the last check. Test again.') : test_ ? t('The address or the network changed since the last check.') : t('Not checked yet.') }
+  else if (test_.proxy_reachable) line = { tone: 'ok', pill: t('Proxy reachable'), text: t('Article access not checked. The proxy host answered with HTTP {status} at {time}.', { status: test_.proxy_http_status ?? '?', time: clock(test_.tested_at) }) }
+  else if (test_.proxy_error === 'blocked_url') line = { tone: 'no', pill: t('Proxy not asked'), text: t('The address was refused before any request was sent: {detail}', { detail: test_.proxy_error_detail ?? '' }) }
+  else line = { tone: 'warn', pill: t('Proxy did not answer'), text: `${test_.proxy_error === 'unresolved' ? t('Its host name does not resolve on this network.') : test_.proxy_error === 'timeout' ? t('No answer within 10 seconds.') : t('The request failed ({detail}).', { detail: test_.proxy_error_detail ?? test_.proxy_error ?? '' })} ${t('Checked at {time}.', { time: clock(test_.tested_at) })}` }
+  const scopus: { tone: 'ok' | 'no' | 'warn'; pill: string; text: string } | null =
+    access.scopus === 'institutional' ? { tone: 'ok', pill: t('Scopus full view confirmed'), text: t('Scopus grants its full view on this network.') }
+    : access.scopus === 'none' ? { tone: 'warn', pill: t('Scopus full view not confirmed'), text: t('Scopus did not grant its full view on this network.') }
+    : access.scopus === 'unknown' ? { tone: 'no', pill: t('Scopus check could not run'), text: t('Scopus gave no usable answer.') }
+    : access.scopus === 'not_checked' ? { tone: 'no', pill: t('Scopus check could not run'), text: t('No Scopus key is set.') }
+    : null
+
+  return <>
+    <h2 id="institutional-access" tabIndex={-1} data-panel="sources">{t('Institutional access')}</h2>
+    <div className="rows" data-panel="sources"><div className="proxy">
+      <form className="lbl" onSubmit={e => { e.preventDefault(); void test() }}>
+        <label htmlFor="proxy-address">{t('Proxy address (EZproxy or OpenAthens prefix)')}</label>
+        <div className="row">
+          <input id="proxy-address" className="field" type="url" inputMode="url" spellCheck={false} autoComplete="off" value={field} disabled={!p || busy}
+            placeholder="https://login.ezproxy.your-library.edu/login?url=" onChange={e => { setDraft(e.target.value); setMessage('') }} />
+          <button type="submit" className="ghost" disabled={!p || busy || access.testing || !field.trim()}>{busy || access.testing ? <span className="spin" aria-hidden /> : <RotateCw aria-hidden />}{t('Test')}</button>
+          {saved && <button type="button" className="ghost" disabled={busy} onClick={remove}>{t('Remove')}</button>}
+        </div>
+      </form>
+      {p?.address && <ProxyNameRow access={access} proxy={p} />}
+      <div className="row proxy-state" role="status">
+        {line.tone === 'checking' ? <span className="spin" aria-hidden /> : <span className={`st ${line.tone}`}>{line.pill}</span>}
+        <span>{line.tone === 'checking' ? <span className="shimmer-text">{line.text}</span> : line.text}</span>
+        {(access.readFailed) && <button type="button" className="link" onClick={access.reload}>{t('Try again')}</button>}
+      </div>
+      {scopus && <div className="row proxy-state proxy-scopus"><span className={`st ${scopus.tone}`}>{scopus.pill}</span><span>{scopus.text}</span></div>}
+      <p className="foot-note">{t('Publisher links open through this address in your browser, and DEIXIS never stores your library password. Test saves the address and checks once that the proxy answers; it does not open an article.')}</p>
+    </div></div>
+  </>
+}
+
+/** The name the sidebar's access line shows for the proxy: typed here, else the proxy's host. An empty field returns to
+ *  the host. The save goes through the shell's proxy version, so a read that arrives late never shows the old name. */
+function ProxyNameRow({ access, proxy }: { access: AccessControl; proxy: ProxySettings }) {
+  const toast = useToast()
+  const [draft, setDraft] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const current = proxy.label_is_default ? '' : proxy.label ?? ''
+  const field = draft ?? current
+  const changed = field.trim().split(/\s+/).join(' ') !== current
+  const save = () => {
+    if (busy || !changed) return
+    setBusy(true); setError('')
+    access.saveLabel(field.trim()).then(() => {
+      setDraft(null)
+      toast('success', t(field.trim() ? 'Sidebar name saved.' : 'Sidebar name reset to the proxy host.'))
+    }).catch((e: Error) => setError(t('Not saved: {message}', { message: e.message }))).finally(() => setBusy(false))
+  }
+  return <form className="proxy-name" onSubmit={e => { e.preventDefault(); save() }}>
+    <label htmlFor="proxy-name">{t('Name shown in the sidebar')}</label>
+    <div className="row">
+      <input id="proxy-name" className="field" type="text" spellCheck={false} autoComplete="off" maxLength={80} value={field} disabled={busy}
+        placeholder={proxy.label_default ?? ''} onChange={e => { setDraft(e.target.value); setError('') }} />
+      <button type="submit" className="ghost" disabled={busy || !changed}>{busy ? <span className="shimmer-text">{t('Saving…')}</span> : t('Save')}</button>
+      {error && <span className="key-form-error" role="alert">{error}</span>}
+    </div>
+  </form>
+}
+
+// Usage this month (plan ST9, F7/F8): one row per model connection the roles use. A connection paid by API key shows this
+// month's estimated spend; a subscription shows how much of its own usage limit is used (Codex read live, Claude Code as
+// reported on its last call), the bar being the most-used window. OpenAlex's budget today is read live or from its last
+// stored response, shown with that time. A figure that could not be read is "not known", never 0.
+function UsageThisMonth() {
+  const [models, setModels] = useState<{ value: ModelUsage | null; failed: string }>({ value: null, failed: '' })
+  const [budget, setBudget] = useState<{ value: OpenAlexBudgetToday | null; failed: string }>({ value: null, failed: '' })
+  const [loading, setLoading] = useState(true)
+  const seq = useRef(0)
+  const leaving = useLeaving()
+  const read = (again = true) => {
+    const n = ++seq.current
+    if (again) setLoading(true)
+    void Promise.allSettled([usageApi.modelUsage(leaving()), usageApi.openAlexBudgetToday(leaving())]).then(([u, b]) => {
+      if (n !== seq.current || (u.status === 'rejected' && isLeft(u.reason))) return
+      setModels(u.status === 'fulfilled' ? { value: u.value, failed: '' } : old => ({ value: old.value, failed: (u.reason as Error).message }))
+      setBudget(b.status === 'fulfilled' ? { value: b.value, failed: '' } : old => ({ value: old.value, failed: (b.reason as Error).message }))
+      setLoading(false)
+    })
+  }
+  useEffect(() => read(false), [])
+  const words: Record<UsageRole, string> = { literature: 'Literature model', answer: 'Answer model', reviewer: 'Reviewer model' }
+  const order: UsageRole[] = ['literature', 'answer', 'reviewer']
+  const windowWords: Record<QuotaWindow['window'], string> = { five_hour: '{p}% of 5-hour limit', seven_day: '{p}% of weekly limit', other: '{p}% of limit' }
+  const number = (n: number) => n.toLocaleString(uiLocale())
+  // A calendar day (YYYY-MM-DD) as local midnight; `new Date('2026-10-01')` would be UTC midnight, the day before in the Americas.
+  const localDay = (day: string) => { const [y, m, d] = day.split('-').map(Number); return new Date(y, m - 1, d) }
+  const when = (iso: string) => new Date(iso).toDateString() === new Date().toDateString() ? clock(iso)
+    : new Date(iso).toLocaleString(uiLocale(), { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+  const b = budget.value
+  const budgetText = !b ? null
+    : b.used_fraction !== null ? t('{p}% of budget', { p: Math.round(b.used_fraction * 100) })
+    : b.remaining === null ? null
+    : b.unit === 'usd' ? t('${x} left today', { x: b.remaining.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })
+    : t(b.remaining === 1 ? '{n} credit left today' : '{n} credits left today', { n: number(b.remaining) })
+  const failed = models.failed || budget.failed
+  const row = (c: ConnectionUsage) => {
+    const name = connectionName(c.connection)
+    const most = c.quota ? Math.max(...c.quota.windows.map(w => w.used_fraction)) : null
+    let text: string, note = ''
+    if (c.kind === 'api' && c.spend) {
+      // Calls with no listed price have no cost: all of them unpriced is "not known", some of them makes the total a floor.
+      const { priced_calls: priced, unpriced_calls: unpriced } = c.spend
+      text = priced === 0 && unpriced > 0 ? t('not known')
+        : t(unpriced > 0 ? 'at least {x} this month' : '{x} this month', { x: money(c.spend.estimated_usd) })
+      note = priced > 0 ? t(priced === 1 ? 'estimated from {n} call' : 'estimated from {n} calls', { n: number(priced) }) : ''
+      if (unpriced > 0) note += `${note ? ' · ' : ''}${t('{n} with no listed price', { n: number(unpriced) })}`
+      // Calls first booked with no price and priced later from a newer list (D111) are named, with that list's date.
+      if (c.spend.repriced_calls > 0) note += `${note ? ' · ' : ''}${t('{n} priced later from the {date} price list', { n: number(c.spend.repriced_calls), date: c.spend.repriced_price_list ?? '' })}`
+    } else if (c.quota) {
+      text = c.quota.windows.map(w => t(windowWords[w.window], { p: Math.round(w.used_fraction * 100) })).join(' · ')
+      note = t(c.quota.source === 'live' ? 'Read from {name}, {time}' : 'Reported on the last call, {time}', { name, time: when(c.quota.seen_at) })
+    } else {
+      text = t(c.kind === 'local' ? 'On this computer, no charge' : c.connection === 'claude' ? 'Shown after the first call' : 'Limit not reported')
+    }
+    return <div key={c.connection} data-connection={c.connection}>
+      <b>{name}{c.roles.length > 0 && <small>{order.filter(r => c.roles.includes(r)).map(r => t(words[r])).join(', ')}</small>}</b>
+      <div className="bar" aria-hidden style={most === null ? { visibility: 'hidden' } : undefined}><i style={{ width: `${Math.round((most ?? 0) * 100)}%`, background: (most ?? 0) >= 0.9 ? 'var(--tone-exclude)' : undefined }} /></div>
+      <p className="tnum">{text}{note && <small>{note}</small>}</p>
+    </div>
+  }
+  return <>
+    <h2 data-panel="usage">{t('Usage this month')}</h2>
+    {failed && <div className="notice warn" role="alert" data-panel="usage"><Info aria-hidden /><div className="nb"><span>{t('Usage could not be read: {message}', { message: failed })}</span>
+      <div className="acts"><button type="button" className="ghost" disabled={loading} onClick={() => read()}>{t('Try again')}</button></div></div></div>}
+    <div className="rows set-usage" data-panel="usage">
+      {models.value ? models.value.connections.map(row)
+        : <div data-connection=""><b>{t('Models')}</b><div className="bar" aria-hidden style={{ visibility: 'hidden' }}><i /></div><p className="tnum">{loading && !models.failed ? <span className="shimmer-text">{t('Checking…')}</span> : t('not known')}</p></div>}
+      <div data-role="openalex">
+        <b>{t('OpenAlex today')}</b>
+        <div className="bar" aria-hidden style={b && b.used_fraction === null ? { visibility: 'hidden' } : undefined}><i style={{ width: `${Math.round((b?.used_fraction ?? 0) * 100)}%`, background: (b?.used_fraction ?? 0) >= 1 ? 'var(--tone-exclude)' : undefined }} /></div>
+        <p className="tnum">{budgetText ?? (loading && !budget.failed ? <span className="shimmer-text">{t('Checking…')}</span> : t('not known'))}
+          <small>{b?.as_of ? t(b.source === 'live' ? 'Read from OpenAlex, {time}' : 'Last stored response, {time}', { time: clock(b.as_of) }) : b ? t('No OpenAlex response stored today') : ''}</small></p>
+      </div>
+    </div>
+    {models.value && <p className="foot-note set-usage-note" data-panel="usage">{t('Spending is estimated for models paid by API key, from {date}. A subscription shows its own limit: Codex is read when this page opens, Claude Code reports it with each call.', { date: localDay(models.value.month_start).toLocaleDateString(uiLocale(), { day: 'numeric', month: 'long' }) })} {t(b?.source === 'live' ? 'The OpenAlex figure is read from OpenAlex when this page opens.' : 'The OpenAlex figure comes from its last response, not a live reading.')}</p>}
+  </>
+}
+
+// Estimated spending (F4): what today's calls to models paid by API key are estimated to have cost, and an optional daily
+// threshold. Off by default. The threshold is an estimate, not a limit: a run pauses before its next paid call once the
+// estimate has reached it, and a call already sent finishes.
+function SpendingSettings() {
+  const [spending, setSpending] = useState<Spending | null>(null)
+  const [draft, setDraft] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const toast = useToast()
+  const show = (value: Spending) => { setSpending(value); setDraft(value.daily_threshold_usd === null ? '' : String(value.daily_threshold_usd)) }
+  useEffect(() => {
+    let live = true
+    const leaving = new AbortController()
+    spendApi.get(leaving.signal).then(value => { if (live) show(value) }, (e: Error) => { if (live) setError(e.message) })
+    return () => { live = false; leaving.abort() }
+  }, [])
+  const amount = draft.trim() === '' ? null : Number(draft.replace(',', '.'))
+  const valid = amount === null || (Number.isFinite(amount) && amount > 0 && amount <= 100000)
+  const changed = spending !== null && amount !== spending.daily_threshold_usd
+  const save = (next: number | null) => {
+    setBusy(true); setError('')
+    spendApi.setThreshold(next).then(value => {
+      show(value)
+      toast('success', t(next === null ? 'The spending threshold is off.' : 'The spending threshold is saved.'))
+    }).catch((e: Error) => setError(e.message)).finally(() => setBusy(false))
+  }
+  const today = spending?.today
+  return <>
+    <h2 data-panel="usage">{t('Estimated spending')}</h2>
+    <div className="rows set-spending" data-panel="usage">
+      <div data-role="spent-today">
+        <b>{t('Estimated today')}</b>
+        <p>{t('Models you pay for with an API key. Models on a subscription or on this computer cost nothing per call and are not counted.')}</p>
+        <p className="tnum">{today ? <>{money(today.estimated_usd)}
+          <small>{t(today.priced_calls === 1 ? 'from {n} call' : 'from {n} calls', { n: today.priced_calls.toLocaleString(uiLocale()) })}
+            {today.estimated_from_text_calls > 0 && ` · ${t('{n} of them estimated from text length because the provider sent no usage', { n: today.estimated_from_text_calls })}`}</small>
+          {today.repriced_calls > 0 && <small>{t('{n} of them priced later from the {date} price list; the price was not known when they were made.', { n: today.repriced_calls.toLocaleString(uiLocale()), date: today.repriced_price_list ?? '' })}</small>}
+          {today.unpriced_calls > 0 && <small>{t('Not counted: {n} calls on models with no listed price.', { n: today.unpriced_calls.toLocaleString(uiLocale()) })}</small>}</>
+          : error ? t('not known') : <span className="shimmer-text">{t('Checking…')}</span>}</p>
+      </div>
+      <form onSubmit={e => { e.preventDefault(); if (changed && valid) save(amount) }}>
+        <b><label htmlFor="spend-threshold">{t('Stop at an estimated amount per day')}</label></b>
+        <p>{t('Off by default. A research pauses before its next paid call once today’s estimate reaches this amount.')}
+          {error && <span className="key-form-error" role="alert"> {error}</span>}</p>
+        <span className="set-spend-actions">
+          <input id="spend-threshold" className="field" type="text" inputMode="decimal" value={draft} disabled={spending === null || busy} placeholder={t('Off')} aria-invalid={!valid}
+            onChange={e => { setDraft(e.target.value); setError('') }} />
+          <button type="submit" className="ghost" disabled={busy || !changed || !valid}>{busy ? <span className="shimmer-text">{t('Saving…')}</span> : t('Save')}</button>
+          {spending?.daily_threshold_usd != null && <button type="button" className="ghost" disabled={busy} onClick={() => save(null)}>{t('Turn off')}</button>}
+        </span>
+        {!valid && <Notice tone="attention">{t('Enter an amount in US dollars, for example 5.')}</Notice>}
+      </form>
+    </div>
+    {spending && <p className="foot-note" data-panel="usage">{t('A call already sent finishes and is kept. Press Resume run to go on; raising the amount does not resume it. This is an estimate, not a limit.')} {t('Costs are estimated from the usage each provider reports and a price list dated {date}. The provider’s own bill is what counts.', { date: spending.prices.as_of })}</p>}
+  </>
+}
+
+// A small switch of two or three choices, in the language switch's look.
+function Segment<T extends string>({ label, value, options, onPick, disabled }: {
+  label: string; value: T | null; options: { id: T; label: string }[]; onPick: (id: T) => void; disabled?: boolean
+}) {
+  return <span className="lang" role="group" aria-label={label}>
+    {options.map(o => <button key={o.id} type="button" className={value === o.id ? 'on' : ''} aria-pressed={value === o.id} disabled={disabled}
+      onClick={() => { if (value !== o.id) onPick(o.id) }}>{o.label}</button>)}
+  </span>
+}
+
+// Settings → General → Research (api/preference_routes.py). Each change is saved at once and applies to the next run.
+function ResearchPreferences() {
+  const [prefs, setPrefs] = useState<Preferences | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [limits, setLimits] = useState<EffortLimits | null>(null)
+  useEffect(() => {
+    const leaving = new AbortController()
+    api.effortLimits(leaving.signal).then(setLimits, e => { if (!isLeft(e)) setLimits(null) })
+    return () => leaving.abort()
+  }, [])
+  useEffect(() => {
+    let live = true
+    const leaving = new AbortController()
+    preferencesApi.get(leaving.signal).then(p => { if (live) setPrefs(p) }, (e: Error) => { if (live) setError(t('Research settings could not be read: {message}', { message: e.message })) })
+    return () => { live = false; leaving.abort() }
+  }, [])
+  const change = (next: PreferenceChange) => {
+    setBusy(true); setError('')
+    preferencesApi.set(next).then(setPrefs).catch((e: Error) => setError(t('Not saved: {message}', { message: e.message }))).finally(() => setBusy(false))
+  }
+  const onOff: { id: 'auto' | 'off'; label: string }[] = [{ id: 'auto', label: t('On') }, { id: 'off', label: t('Off') }]
+  const arxivNote = !prefs ? '' : !prefs.arxiv_route_possible ? t('Not available on this system.') : ''
+  const off = !prefs || busy
+  // What each depth is for, with the numbers the run is given (`fast_path.MODES`, the same text as Home's depth menu).
+  const depths: { id: Effort; label: string; use: string }[] = [
+    { id: 'quick', label: t('Quick'), use: t('A first look at a question.') },
+    { id: 'standard', label: t('Standard'), use: t('Suits most questions.') },
+    { id: 'detailed', label: t('Detailed'), use: t('Wider coverage for a broad topic; takes longest.') },
+  ]
+  const number = (n: number) => new Intl.NumberFormat(uiLocale()).format(n)
+  return <>
+    <h2 data-panel="general">{t('Research')}</h2>
+    <div className="rows set-research" data-panel="general">
+      <div>
+        <b>{t('Default depth')}</b>
+        <p>{t('New researches start at this depth. You can still change it for each question on the home page.')}
+          {depths.map(d => {
+            const e = limits?.efforts?.[d.id]
+            return <span key={d.id} className="set-depth"><strong>{d.label}</strong> · {d.use}
+              {e && <> {t('About {minutes} min · up to {papers} papers · {fulltext} in full text', { minutes: number(e.minutes), papers: number(e.papers), fulltext: number(e.fulltext ?? 0) })}</>}</span>
+          })}</p>
+        <Segment<Effort> label={t('Default depth')} value={prefs?.default_effort ?? null} disabled={off} onPick={v => change({ default_effort: v })}
+          options={depths} />
+      </div>
+      <div>
+        <b>{t('Full text during search')}</b>
+        <p>{t('Downloads and reads the PDFs of promising works while the abstracts are screened. Off: searches judge abstracts only, so they finish sooner but include fewer sources.')}</p>
+        <Segment label={t('Full text during search')} value={prefs?.fulltext_fetch ?? null} disabled={off} onPick={v => change({ fulltext_fetch: v })} options={onOff} />
+      </div>
+      <div>
+        <b>{t('Equations from arXiv source')}</b>
+        <p>{t("For arXiv PDFs, takes the numbered equations from the authors' LaTeX source instead of the PDF text.")}{arxivNote && <> {arxivNote}</>}</p>
+        <Segment label={t('Equations from arXiv source')} value={prefs?.arxiv_source ?? null} disabled={off || !prefs?.arxiv_route_possible}
+          onPick={v => change({ arxiv_source: v })} options={onOff} />
+      </div>
+      <div>
+        <b>{t('Parallel model calls')}</b>
+        <p>{t('How many model requests run at the same time. Lower it for a local model or a plan with tight rate limits.')}</p>
+        <select className="select" aria-label={t('Parallel model calls')} disabled={off} value={prefs?.model_concurrency ?? ''}
+          onChange={e => change({ model_concurrency: Number(e.target.value) })}>
+          {prefs && Array.from({ length: prefs.model_concurrency_max }, (_, i) => i + 1).map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+      </div>
+    </div>
+    {error && <Notice tone="error" panel="general">{error}</Notice>}
+  </>
+}

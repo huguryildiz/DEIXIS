@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { api, ApiError, type CandidateCard, type CandidateEdit, type CandidateElementKind } from '../api'
-import { Notice } from '../Notice'
-import { t } from '../i18n'
+import { api, ApiError, type CandidateCard, type CandidateEdit, type CandidateElementKind } from '../lib/api'
+import { Notice } from '../components/Notice'
+import { t } from '../lib/i18n'
 import { errorText, kindLabels, label } from './labels'
 
 export function CandidateEditor({ card, researchId, dark, returnFocus, beginMutation, onSaved, onReload, onClose }: {

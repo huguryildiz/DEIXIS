@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { Lightbulb, Pause, PencilLine, Play, TriangleAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { type Run } from '../api'
-import { runKindLabels, runStatusLabels, searchQueryTriesLeft } from '../labels'
-import { t } from '../i18n'
-import { Elapsed } from '../EvidenceTable'
+import { type Run } from '../lib/api'
+import { runKindLabels, runStatusLabels, searchQueryTriesLeft } from '../lib/labels'
+import { t } from '../lib/i18n'
+import { Elapsed } from '../table/EvidenceTable'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 

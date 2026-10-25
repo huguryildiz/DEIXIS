@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { FileText } from 'lucide-react'
-import { scopeRevision, type Answer, type ResearchIntent, type ScopeRevision, type SourceScope } from '../api'
-import { scopeLabels } from '../labels'
-import { scopeOptions } from '../Home'
-import { t, uiLocale } from '../i18n'
+import { scopeRevision, type Answer, type ResearchIntent, type ScopeRevision, type SourceScope } from '../lib/api'
+import { scopeLabels } from '../lib/labels'
+import { scopeOptions } from '../home/Home'
+import { t, uiLocale } from '../lib/i18n'
 
 // The intent chip a research was started with, named in the bubble when it is not the default report (R13).
 const intentLabels: Partial<Record<ResearchIntent, string>> = { papers: 'Find papers', table: 'Evidence table', compare: 'Compare methods' }

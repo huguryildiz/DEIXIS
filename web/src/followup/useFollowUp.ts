@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, type Watch, type WatchItem } from '../api'
+import { api, type Watch, type WatchItem } from '../lib/api'
 
 export function useFollowUpCount(id: string, event: number | undefined) {
   const [state, setState] = useState<{ count: number | null; loading: boolean }>({ count: null, loading: true })

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { ApiError, screenMoreApi, type UnscreenedPage } from '../api'
-import { t } from '../i18n'
+import { ApiError, screenMoreApi, type UnscreenedPage } from '../lib/api'
+import { t } from '../lib/i18n'
 
 // The never-screened works of the ranked list (F12) and "Screen N more" (F13), shared by the Sources panel's "Not read"
 // tab (P5, P7) and the Search funnel panel (P41; UI parity S27). The list and its count come from one route: `total`

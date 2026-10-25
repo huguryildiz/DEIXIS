@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowUp, Plus, X, type LucideIcon } from 'lucide-react'
-import { useToast } from '../Toast'
-import { t } from '../i18n'
+import { useToast } from '../components/Toast'
+import { t } from '../lib/i18n'
 import { withQuotes } from './followupData'
 
 // The sticky follow-up composer at the foot of the thread (mockup `.foot-compose` / `.mini`, R30, UI parity S22b). It asks

@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { CircleCheck, Download, LoaderCircle, Play, RotateCw, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { api, ApiError, statementApi, type CitationEvidence, type CitationPart, type StatementCheckBrief, type StatementCheckItem, type StatementCheckView, type StatementCounters, type StatementPreview, type StatementSupportClass } from '../api'
-import { Notice } from '../Notice'
-import { ModelName } from '../ModelName'
-import { useModelText } from '../modelText'
+import { api, ApiError, statementApi, type CitationEvidence, type CitationPart, type StatementCheckBrief, type StatementCheckItem, type StatementCheckView, type StatementCounters, type StatementPreview, type StatementSupportClass } from '../lib/api'
+import { Notice } from '../components/Notice'
+import { ModelName } from '../components/ModelName'
+import { useModelText } from '../lib/modelText'
 import {
   citationAssessmentLabels, money, pauseDetailText, pauseReasonText, runStatusLabels, statementErrorText, statementExcludedReasons,
   statementClassLabels, statementRefusals, statementStaleReasons,
-} from '../labels'
-import { t, uiLocale } from '../i18n'
-import '../CitationCheck.css'
+} from '../lib/labels'
+import { t, uiLocale } from '../lib/i18n'
+import '../citecheck/CitationCheck.css'
 import './statement.css'
 
 // Reverse citation search R3 (plan `notes/plans/reverse-citation-search-plan.md`, D100, D103): the statement check of a

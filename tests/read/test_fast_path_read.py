@@ -708,7 +708,7 @@ const fs = require('fs'), ts = require('typescript'), assert = require('assert')
 require.extensions['.ts'] = (module, file) => module._compile(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
 }).outputText, file);
-const { limited, isLeft, gaveNoAnswer } = require('./src/readLimit.ts');
+const { limited, isLeft, gaveNoAnswer } = require('./src/lib/readLimit.ts');
 // A read that waits for its signal, as a fetch does: it rejects with an AbortError when the signal fires.
 const hang = signal => new Promise((resolve, reject) => {
   const abort = () => reject(new DOMException('aborted', 'AbortError'));

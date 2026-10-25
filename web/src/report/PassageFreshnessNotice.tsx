@@ -1,6 +1,6 @@
-import type { PassageFreshness } from '../api'
-import { t } from '../i18n'
-import { Notice } from '../Notice'
+import type { PassageFreshness } from '../lib/api'
+import { t } from '../lib/i18n'
+import { Notice } from '../components/Notice'
 
 export function PassageFreshnessNotice({ freshness }: { freshness: PassageFreshness | undefined }) {
   if (!freshness) return null

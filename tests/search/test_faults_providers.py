@@ -19,7 +19,7 @@ from test_api_flow import create, fake_fetch, openalex_client, session, sw_setti
 from test_providers import key_for, run
 from fakes import FakeAdapter
 
-LABELS = (Path(__file__).parents[2] / "web" / "src" / "labels.ts").read_text(encoding="utf-8")
+LABELS = (Path(__file__).parents[2] / "web" / "src" / "lib" / "labels.ts").read_text(encoding="utf-8")
 
 
 def label_sentence(key):

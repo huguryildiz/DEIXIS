@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, type ReviewCard, type ReviewTargetKind } from '../api'
+import { api, type ReviewCard, type ReviewTargetKind } from '../lib/api'
 
 export function useReviewList(researchId: string, kind: ReviewTargetKind, targetId: string, eventCursor: number, enabled = true) {
   const [reviews, setReviews] = useState<ReviewCard[]>([])

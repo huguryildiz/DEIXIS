@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import type { LineageComponent, LineageLink, LineageNode } from '../api'
-import { SourceKey } from '../SourceKey'
-import { t } from '../i18n'
+import type { LineageComponent, LineageLink, LineageNode } from '../lib/api'
+import { SourceKey } from '../components/SourceKey'
+import { t } from '../lib/i18n'
 import { authorText, edgeLabels, relationLabels, staleLabels, supportText, workText } from './labels'
 
 export type PassageTarget = { passageId: string | null; sourceVersionId?: string; workId?: string; assetId?: string; highlightTexts?: string[]; initialPage?: number }

@@ -1,5 +1,5 @@
-import type { CandidateVersion } from '../api'
-import { t } from '../i18n'
+import type { CandidateVersion } from '../lib/api'
+import { t } from '../lib/i18n'
 import { dateText, kindLabels, label } from './labels'
 
 // One card version (mockup `candDetail` "Candidate card"): who wrote it and when, the testable elements E1…, then the

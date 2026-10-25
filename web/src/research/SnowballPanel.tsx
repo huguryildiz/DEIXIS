@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { GitFork, Search } from 'lucide-react'
-import { api, ApiError, screenMoreApi, snowballApi, type SnowballRound, type SnowballSeries, type SnowballSummary, type SnowballView } from '../api'
-import { Notice } from '../Notice'
-import { useToast } from '../Toast'
-import { t, uiLocale } from '../i18n'
+import { api, ApiError, screenMoreApi, snowballApi, type SnowballRound, type SnowballSeries, type SnowballSummary, type SnowballView } from '../lib/api'
+import { Notice } from '../components/Notice'
+import { useToast } from '../components/Toast'
+import { t, uiLocale } from '../lib/i18n'
 import './kit.css'
 import './snowball.css'
 

@@ -1,4 +1,4 @@
-import { createRequestOrder } from '../requestOrder'
+import { createRequestOrder } from '../lib/requestOrder'
 
 // The order overlapping reads of one research's view are shown in (audit F5). An answer a later read has overtaken is
 // kept, not shown: when that later read fails, its ticket is released and the kept answer is shown instead, so a failed

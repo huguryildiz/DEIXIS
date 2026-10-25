@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { MessageSquarePlus } from 'lucide-react'
-import { t } from '../i18n'
+import { t } from '../lib/i18n'
 
 // "Add to chat": text selected in the thread (the answer, a follow-up answer) gets a small button above the selection that
 // puts it in the follow-up composer as a quote chip. Text in the composer and in form fields is left alone.

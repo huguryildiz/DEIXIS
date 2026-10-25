@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { followupApi, type Claim, type Evidence, type FollowupClaim, type FollowupTurn, type Source } from '../api'
+import { followupApi, type Claim, type Evidence, type FollowupClaim, type FollowupTurn, type Source } from '../lib/api'
 
 // The follow-up turns of a research (S22b) and their claims in the Citation panel's shape.
 

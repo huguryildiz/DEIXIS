@@ -176,7 +176,7 @@ def test_xlsx_writer_cells_names_and_limits():
 
 
 def test_turkish_strings_match_the_interface_map():
-    source = (Path(__file__).resolve().parents[2] / "web/src/i18n.ts").read_text(encoding="utf-8")
+    source = (Path(__file__).resolve().parents[2] / "web/src/lib/i18n.ts").read_text(encoding="utf-8")
     body = source[source.index("const tr: Record<string, string> = {"):]
     interface = {m.group(1).replace("\\'", "'"): m.group(2).replace("\\'", "'") for m in re.finditer(
         r"^\s*'((?:[^'\\]|\\.)*)':\s*'((?:[^'\\]|\\.)*)',?\s*$", body, re.M)}
@@ -195,11 +195,11 @@ const options = { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022
 const compile = (source, file) => ts.transpileModule(source, { fileName: file, compilerOptions: options }).outputText;
 require.extensions['.ts'] = require.extensions['.tsx'] = (m, file) => m._compile(compile(fs.readFileSync(file, 'utf8'), file), file);
 const src = path.resolve('src');
-// The real generators: the report's Markdown (research/reportMarkdown.ts) and the table's CSV (tableCsv.ts).
+// The real generators: the report's Markdown (research/reportMarkdown.ts) and the table's CSV (table/tableCsv.ts).
 const probe = `
-import { setUiLanguage } from './i18n'
+import { setUiLanguage } from './lib/i18n'
 import { reportMarkdown } from './research/reportMarkdown'
-import { tableCsv } from './tableCsv'
+import { tableCsv } from './table/tableCsv'
 export { setUiLanguage, tableCsv }
 export const answerMarkdown = reportMarkdown
 `;

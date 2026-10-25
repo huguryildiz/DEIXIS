@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { api, ApiError, type AssetText, type LineageLink, type LineagePairDecision, type LineageRelation, type LineageSupport, type LineageView, type Source } from '../api'
-import { Notice } from '../Notice'
-import { t } from '../i18n'
+import { api, ApiError, type AssetText, type LineageLink, type LineagePairDecision, type LineageRelation, type LineageSupport, type LineageView, type Source } from '../lib/api'
+import { Notice } from '../components/Notice'
+import { t } from '../lib/i18n'
 import { authorText, decisionLabels, relationLabels, supportText, workText } from './labels'
 
 export type EditorTarget = { link?: LineageLink; from?: string; to?: string }

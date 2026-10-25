@@ -1,5 +1,5 @@
-import { t, tc, uiLocale } from '../i18n'
-import type { CandidateComputed } from '../api'
+import { t, tc, uiLocale } from '../lib/i18n'
+import type { CandidateComputed } from '../lib/api'
 
 export const statusLabels: Record<string, string> = { not_run: 'Not searched', undecided: 'Undecided', narrowed: 'Narrowed', closed: 'Closed', open: 'Open' }
 export const kindLabels: Record<string, string> = { stated_limitation: 'stated limitation', conflicting_evidence: 'conflicting evidence', corpus_absence: 'absent from the corpus read', mechanism: 'mechanism', condition: 'condition', outcome: 'outcome', parameter: 'parameter' }

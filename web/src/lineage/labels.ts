@@ -1,5 +1,5 @@
-import type { LineageCurrency, LineageReason, LineageRelation, LineageStaleReason, LineageStepOutcome, LineageNode } from '../api'
-import { t, uiLocale } from '../i18n'
+import type { LineageCurrency, LineageReason, LineageRelation, LineageStaleReason, LineageStepOutcome, LineageNode } from '../lib/api'
+import { t, uiLocale } from '../lib/i18n'
 
 export const relationLabels: Record<LineageRelation, string> = {
   extends: 'extends', relaxes_assumption: 'relaxes an assumption', changes_method: 'changes method',

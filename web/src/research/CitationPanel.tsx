@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
 import { AlignLeft, FileText, Link, Search } from 'lucide-react'
-import { api, type Claim, type Evidence, type Passage, type Source } from '../api'
-import { locatorText, verdictLabels, versionText } from '../labels'
-import { t } from '../i18n'
-import { HighlightedPassageText } from '../PassageSheet'
+import { api, type Claim, type Evidence, type Passage, type Source } from '../lib/api'
+import { locatorText, verdictLabels, versionText } from '../lib/labels'
+import { t } from '../lib/i18n'
+import { HighlightedPassageText } from '../reading/PassageSheet'
 import { StackPanel } from './SplitPanel'
 import { excerpt } from './excerpt'
 

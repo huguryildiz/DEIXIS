@@ -1,5 +1,5 @@
 import { useCallback, useSyncExternalStore } from 'react'
-import { ApiError } from '../api'
+import { ApiError } from '../lib/api'
 
 export type WriteCommand = { key: string; body: string }
 // Keep an uncertain command across mode changes and sheet dismissal. Only an HTTP answer releases its key and body.

@@ -1,7 +1,7 @@
-import type { WatchCheck } from '../api'
-import { ConnectionIcon } from '../connectionIcons'
-import { pauseReasonText, providerName } from '../labels'
-import { t } from '../i18n'
+import type { WatchCheck } from '../lib/api'
+import { ConnectionIcon } from '../components/connectionIcons'
+import { pauseReasonText, providerName } from '../lib/labels'
+import { t } from '../lib/i18n'
 import { coverageText, dateText, reasonText, stateLabels, timeText, triggerLabels } from './labels'
 import { Disclosure } from './Disclosure'
 

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { ArrowRight, Lightbulb, Upload, X } from 'lucide-react'
-import type { Source } from '../api'
-import { t } from '../i18n'
+import type { Source } from '../lib/api'
+import { t } from '../lib/i18n'
 
 // A short author-year tag ("Li24") from the stored record, the way the cards list works; the full key stays in the title.
 export function shortTag(source: Source) {

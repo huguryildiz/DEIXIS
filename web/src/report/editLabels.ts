@@ -1,4 +1,4 @@
-import { t } from '../i18n'
+import { t } from '../lib/i18n'
 
 const ruleLabels: Record<string, string> = {
   banned_word: 'banned word', count_number_mismatch: 'count number mismatch',

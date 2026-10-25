@@ -1,5 +1,5 @@
 import { CircleX } from 'lucide-react'
-import { t } from '../i18n'
+import { t } from '../lib/i18n'
 import type { useFollowUpCommand } from './commands'
 
 // What the server said about a follow-up command: its refusal, that it is still on its way, or that no HTTP answer came

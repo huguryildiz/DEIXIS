@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Info, Search, TriangleAlert, X } from 'lucide-react'
-import { api, ApiError, searchPlanApi, type ResearchView, type SearchPlanProvider, type SearchPlanView, type UserSearchPlan } from '../api'
-import { providerName, wordLeftOutText } from '../labels'
-import { useToast } from '../Toast'
-import { t } from '../i18n'
+import { api, ApiError, searchPlanApi, type ResearchView, type SearchPlanProvider, type SearchPlanView, type UserSearchPlan } from '../lib/api'
+import { providerName, wordLeftOutText } from '../lib/labels'
+import { useToast } from '../components/Toast'
+import { t } from '../lib/i18n'
 import './kit.css'
 import './plan.css'
 

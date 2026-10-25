@@ -1,5 +1,5 @@
-import type { ReviewCard } from '../api'
-import { t } from '../i18n'
+import type { ReviewCard } from '../lib/api'
+import { t } from '../lib/i18n'
 import './review.css'
 
 export function ReviewSummary({ reviews, open }: { reviews: ReviewCard[]; open: () => void }) {

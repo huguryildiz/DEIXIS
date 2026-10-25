@@ -1,8 +1,8 @@
 import { useRef, useState, type ReactNode } from 'react'
 import { ChevronRight, CircleX } from 'lucide-react'
-import type { CandidateCard, CandidateComputed, CandidateStatus } from '../api'
-import { api } from '../api'
-import { t } from '../i18n'
+import type { CandidateCard, CandidateComputed, CandidateStatus } from '../lib/api'
+import { api } from '../lib/api'
+import { t } from '../lib/i18n'
 import { dateText, errorText, label, reasonText, statusLabels, warningLabels } from './labels'
 import { useReturnFocus } from './focus'
 

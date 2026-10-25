@@ -1,6 +1,6 @@
-import { t } from '../i18n'
+import { t } from '../lib/i18n'
 import { kindLabels } from '../candidate/labels'
-import type { ReviewDetail, ReviewResolvedTarget, ReviewTargetRef } from '../api'
+import type { ReviewDetail, ReviewResolvedTarget, ReviewTargetRef } from '../lib/api'
 
 export const reviewFindingLabels = { unsupported: 'Not supported by the cited text', partially_supported: 'Partly supported by the cited text', overstated: 'Overstated', missing_context: 'Missing context', inconsistent: 'Inconsistent', assumption_unstated: 'Unstated assumption', other: 'Other' }
 export const reviewFocusLabels = { source_support: 'Source support', assumptions_and_consistency: 'Assumptions and consistency' }

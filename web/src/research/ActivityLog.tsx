@@ -1,11 +1,11 @@
 import { type ReactNode } from 'react'
 import { Activity, Ban, BookOpenText, CircleCheck, CircleDot, CircleX, FilePlus2, Hand, Info, ListChecks, ListMinus, ListPlus, Replace, RotateCcw, ScanText, Sigma, MessageSquareQuote, Pause, PencilLine, Play, RotateCw, ShieldCheck, Table2, Trash2, UserPen, type LucideIcon } from 'lucide-react'
-import { type ActivityEvent, type RunKind } from '../api'
-import { serviceErrorText, serviceKind, serviceWaitingText, connectionName, fetchReasonText, pauseReasonText, providerName, recoveryDecisionText, recoveryReasonText, runKindLabels, stepLabel } from '../labels'
-import { LATE_REVISION_LABEL, LATE_REVISION_QUEUED, LATE_REVISION_SKIPPED, lateRevisionReasons } from '../labels'
-import { ConnectionIcon } from '../connectionIcons'
-import { ocrLanguagesText } from '../ocr'
-import { t, uiLocale } from '../i18n'
+import { type ActivityEvent, type RunKind } from '../lib/api'
+import { serviceErrorText, serviceKind, serviceWaitingText, connectionName, fetchReasonText, pauseReasonText, providerName, recoveryDecisionText, recoveryReasonText, runKindLabels, stepLabel } from '../lib/labels'
+import { LATE_REVISION_LABEL, LATE_REVISION_QUEUED, LATE_REVISION_SKIPPED, lateRevisionReasons } from '../lib/labels'
+import { ConnectionIcon } from '../components/connectionIcons'
+import { ocrLanguagesText } from '../reading/ocr'
+import { t, uiLocale } from '../lib/i18n'
 
 function activityDayKey(value: string) {
   const date = new Date(value)

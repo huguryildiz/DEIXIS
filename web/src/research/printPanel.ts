@@ -1,5 +1,5 @@
-import { downloadName } from '../downloadName'
-import { t } from '../i18n'
+import { downloadName } from '../lib/downloadName'
+import { t } from '../lib/i18n'
 
 // The "PDF" rows of the export menus (plan §2.4, R8/P2/P30): DEIXIS writes no PDF itself, so the row opens the browser's
 // print dialog on the open side panel, where "Save as PDF" writes the file from the panel as drawn (fonts, math and

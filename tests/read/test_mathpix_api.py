@@ -125,7 +125,7 @@ const fs = require('fs'), ts = require('typescript'), assert = require('assert')
 require.extensions['.ts'] = (module, file) => module._compile(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 }
 }).outputText, file);
-const labels = require('./src/labels.ts'), i18n = require('./src/i18n.ts');
+const labels = require('./src/lib/labels.ts'), i18n = require('./src/lib/i18n.ts');
 const at = { state: 'budget_reached', route: 'mathpix', month: 5, budget: 5, asset: 2 };
 i18n.setUiLanguage('en');
 assert.strictEqual(labels.rereadEquationsLabel({ ...at, stored_answers: true }), 'Read again from saved results · no new requests');
@@ -135,7 +135,7 @@ assert.strictEqual(labels.rereadEquationsLabel({ state: 'failed', route: 'mathpi
 assert.strictEqual(labels.rereadEquationsLabel(undefined), null);
 i18n.setUiLanguage('tr');
 assert.strictEqual(labels.rereadEquationsLabel({ ...at, stored_answers: true }), 'Kayıtlı sonuçlardan yeniden oku · yeni istek gönderilmez');
-for (const file of ['src/PassageSheet.tsx', 'src/research/SourceRow.tsx']) {
+for (const file of ['src/reading/PassageSheet.tsx', 'src/research/SourceRow.tsx']) {
   const source = fs.readFileSync(file, 'utf8');
   assert(source.includes('rereadEquationsLabel(asset.equations)'), file);
   assert(!/equations\?\.state === 'failed' && <(DropdownMenuItem|button)/.test(source), file);

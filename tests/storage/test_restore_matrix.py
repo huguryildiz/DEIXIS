@@ -739,7 +739,7 @@ def test_a_restored_library_shows_the_model_connection_as_not_ready_and_pauses_i
         _, run = wait_run(client, rid, posted.json()["id"], timeout=90)  # 12 s alone; the default 15 s failed under load
         print("connections finding: a run on the restored research ->", run["status"], run["pause_reason"])
         assert (run["status"], run["pause_reason"]) == ("paused", "model_connection_not_ready")
-    labels = (REPO / "web" / "src" / "labels.ts").read_text()
+    labels = (REPO / "web" / "src" / "lib" / "labels.ts").read_text()
     assert "model_connection_not_ready: 'The selected model connection is not ready. Nothing was sent to another model.'" in labels
 
 

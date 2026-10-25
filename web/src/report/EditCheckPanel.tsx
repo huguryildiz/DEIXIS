@@ -1,8 +1,8 @@
 import { useId } from 'react'
 import { ChevronDown, ChevronRight, CircleX, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { ReportDetail } from '../api'
-import { t, uiLocale } from '../i18n'
+import type { ReportDetail } from '../lib/api'
+import { t, uiLocale } from '../lib/i18n'
 import { checkCounts, editRuleLabel, notCheckedLabel, skippedReasonLabel, skippedRuleLabel } from './editLabels'
 
 export function EditCheckPanel({ report, finished, busy, checking, labels, onCheck }: {

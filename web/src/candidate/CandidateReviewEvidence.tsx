@@ -1,10 +1,10 @@
 import { useRef, type RefObject } from 'react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import type { ReviewDetail } from '../api'
-import { HighlightedPassageText } from '../PassageSheet'
-import { pageLocator } from '../labels'
-import { t } from '../i18n'
+import type { ReviewDetail } from '../lib/api'
+import { HighlightedPassageText } from '../reading/PassageSheet'
+import { pageLocator } from '../lib/labels'
+import { t } from '../lib/i18n'
 
 export function CandidateReviewEvidence({ review, passageId, anchor, dark, returnFocus, onClose }: {
   review: ReviewDetail; passageId: string; anchor: string; dark: boolean; returnFocus: RefObject<HTMLElement | null>; onClose: () => void

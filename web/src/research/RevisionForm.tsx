@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { t } from '../i18n'
+import { t } from '../lib/i18n'
 
 // The question bubble turned into the revise form (mockup `.q.edit`, R7): the question, the English key terms, what
 // saving does, Cancel and "Save revision N". Saving creates a new question revision; sources and earlier answers are

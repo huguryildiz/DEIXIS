@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronLeft, Maximize2, Minimize2, X, type LucideIcon } from 'lucide-react'
-import { t } from '../i18n'
+import { t } from '../lib/i18n'
 import { usePanels, type PanelStack } from './usePanelStack'
 
 const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"]),summary'

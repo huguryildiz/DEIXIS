@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { api, type ActivityEvent, type ActivityRun } from '../api'
-import { effortLabels } from '../Home'
-import { runKindLabels, runStatusLabels } from '../labels'
-import { t, uiLocale } from '../i18n'
+import { api, type ActivityEvent, type ActivityRun } from '../lib/api'
+import { effortLabels } from '../home/Home'
+import { runKindLabels, runStatusLabels } from '../lib/labels'
+import { t, uiLocale } from '../lib/i18n'
 import { ActivityLog } from './ActivityLog'
 
 // The Activity panel (UI parity S14, P34; mockup `activity()`): one row per run of the research with its status, how

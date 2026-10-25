@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
-import type { ReportClaim } from '../api'
-import { Notice } from '../Notice'
-import { t } from '../i18n'
+import type { ReportClaim } from '../lib/api'
+import { Notice } from '../components/Notice'
+import { t } from '../lib/i18n'
 
 export type ClaimEditBody = { text?: string; note?: string | null; link_ids?: string[]; restore_from?: string }
 

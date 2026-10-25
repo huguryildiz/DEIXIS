@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, type AnswerCandidate, type AnswerCandidates } from '../api'
-import { t } from '../i18n'
+import { api, type AnswerCandidate, type AnswerCandidates } from '../lib/api'
+import { t } from '../lib/i18n'
 import { errorText, label, statusLabels } from './labels'
 
 // The candidates written from one answer (D98), read again whenever the research's event cursor moves. What is

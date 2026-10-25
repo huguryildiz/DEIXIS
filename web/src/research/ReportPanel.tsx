@@ -4,13 +4,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, FileTypeIcon } from '@/components/ui/dropdown-menu'
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
 import { StackPanel } from './SplitPanel'
-import { answerDocxUrl, type Answer, type Verdict } from '../api'
-import { MathText } from '../MathText'
+import { answerDocxUrl, type Answer, type Verdict } from '../lib/api'
+import { MathText } from '../components/MathText'
 import { BASIS_BADGES, type AnswerDiff, type Basis, type ComparisonBase } from './answerDiff'
-import { verdictLabels } from '../labels'
+import { verdictLabels } from '../lib/labels'
 import { verdictTones } from './reportMarkdown'
-import { citationStyles, formatReference, SAMPLE_REFERENCE, type CitationStyle, type ReferenceFields } from '../citations'
-import { t, uiLanguage, uiLocale } from '../i18n'
+import { citationStyles, formatReference, SAMPLE_REFERENCE, type CitationStyle, type ReferenceFields } from '../lib/citations'
+import { t, uiLanguage, uiLocale } from '../lib/i18n'
 
 // The report panel (mockup `panel()` for `report`, P2/P3). Its head: the version select (when the question has more than
 // one report), the citation style, Review with another model (the claim reviews of this answer, live) and the download

@@ -1,9 +1,9 @@
-import { downloadName } from '../downloadName'
-import { type Answer, type Evidence, type EvidenceLedger, type LedgerReason, type LedgerWork, type Limitation, type Source, type Verdict } from '../api'
-import { equationReaderName, locatorText, pageLocator, verdictLabels } from '../labels'
-import { formatReferenceText, inTextCitation, type CitationStyle } from '../citations'
-import { OCR_LABEL } from '../ocr'
-import { t, uiLocale } from '../i18n'
+import { downloadName } from '../lib/downloadName'
+import { type Answer, type Evidence, type EvidenceLedger, type LedgerReason, type LedgerWork, type Limitation, type Source, type Verdict } from '../lib/api'
+import { equationReaderName, locatorText, pageLocator, verdictLabels } from '../lib/labels'
+import { formatReferenceText, inTextCitation, type CitationStyle } from '../lib/citations'
+import { OCR_LABEL } from '../reading/ocr'
+import { t, uiLocale } from '../lib/i18n'
 
 // The report of a valid answer as parts and as a Markdown file. The report panel (Copy, Download) and the topbar Export
 // menu (UI parity S8) write the same file. Split from AnswerBlock.tsx.

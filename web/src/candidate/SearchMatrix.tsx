@@ -1,8 +1,8 @@
-import type { CandidateCard, CandidateCell, CandidateHit, CandidateMatrix } from '../api'
+import type { CandidateCard, CandidateCell, CandidateHit, CandidateMatrix } from '../lib/api'
 import { ChevronRight, TriangleAlert } from 'lucide-react'
-import { ConnectionIcon as ProviderIcon } from '../connectionIcons'
-import { providerName } from '../labels'
-import { t } from '../i18n'
+import { ConnectionIcon as ProviderIcon } from '../components/connectionIcons'
+import { providerName } from '../lib/labels'
+import { t } from '../lib/i18n'
 import { alignmentLabels, assessmentLabels, depthLabels, kindLabels, label, outcomeLabels, relationLabels, relationTones, runReasonLabels } from './labels'
 
 export function QueryList({ matrix, heading = true }: { matrix: CandidateMatrix; heading?: boolean }) {

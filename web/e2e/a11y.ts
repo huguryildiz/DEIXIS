@@ -41,36 +41,34 @@ export async function axeScan(page: Page, screen: string): Promise<string[]> {
   return found
 }
 
-// What shows that the focused element has focus: its own outline or box shadow, or one on the nearest labelled container
-// that draws it for a focused input inside (the composer, evidence labels). Empty when nothing is drawn.
+// The focus styles of the focused element and its nearest ancestors (an ancestor such as the composer draws the ring for
+// the input inside): outline, box shadow, border colour, and the ::before / ::after lines. Read in the page.
+function focusStyles(el: Element): string[] {
+  const out: string[] = []
+  for (let node: Element | null = el, i = 0; node && i < 4; node = node.parentElement, i++) {
+    const s = getComputedStyle(node)
+    const pseudo = ['::before', '::after'].map(p => { const ps = getComputedStyle(node!, p); return `${ps.backgroundColor} ${ps.boxShadow}` })
+    out.push([s.outlineStyle, s.outlineWidth, s.outlineColor, s.boxShadow, s.borderColor, ...pseudo].join('|'))
+  }
+  return out
+}
+
+// What shows that the focused element has focus: a style of the element or of an ancestor that is there with focus and
+// gone without it, read once transitions have ended. A decoration that is there either way (the composer's resting
+// shadow) is not an indicator. The element gets its focus back afterwards, so the Tab order goes on from it. Empty when
+// nothing changes, or when focus is on the body.
 export async function focusIndicator(page: Page): Promise<string> {
-  const own = await page.evaluate(() => {
-    const el = document.activeElement as HTMLElement | null
-    if (!el || el === document.body) return 'body'
-    const drawn = (node: Element) => {
-      const s = getComputedStyle(node)
-      const outline = s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0 && !/rgba\(.*,\s*0\)$/.test(s.outlineColor)
-      return outline ? `outline ${s.outlineWidth} ${s.outlineStyle}` : s.boxShadow !== 'none' ? 'box-shadow' : ''
-    }
-    for (let node: Element | null = el, i = 0; node && i < 3; node = node.parentElement, i++) {
-      const kind = drawn(node)
-      if (kind) return i ? `${kind} on container` : kind
-    }
-    return ''
-  })
-  if (own) return own === 'body' ? '' : own
-  // A line drawn by a pseudo-element (the sidebar resizer's 2 px accent line, which fades in): counted only when, once
-  // transitions have ended, it differs from the same pseudo-element without focus.
-  const pseudo = () => page.evaluate(() => ['::before', '::after'].map(p => getComputedStyle(document.activeElement ?? document.body, p).backgroundColor).join('|'))
-  const element = await page.evaluateHandle(() => document.activeElement as HTMLElement)
+  const element = await page.evaluateHandle(() => document.activeElement)
+  if (await element.evaluate(el => !el || el === document.body)) return ''
   await quiet(page)
-  const focused = await pseudo()
-  await element.evaluate(el => el.blur())
+  const on = await element.evaluate(focusStyles as (el: Element | null) => string[])
+  await element.evaluate(el => (el as HTMLElement).blur())
   await quiet(page)
-  const unfocused = await element.evaluate(el => ['::before', '::after'].map(p => getComputedStyle(el, p).backgroundColor).join('|'))
-  await element.evaluate(el => el.focus())
+  const off = await element.evaluate(focusStyles as (el: Element | null) => string[])
+  await element.evaluate(el => (el as HTMLElement).focus())
   await quiet(page)
-  return focused !== unfocused ? 'pseudo-element line' : ''
+  const level = on.findIndex((value, i) => value !== off[i])
+  return level < 0 ? '' : level === 0 ? 'own focus style' : `focus style on ancestor ${level}`
 }
 
 const label = (page: Page) => page.evaluate(() => {

@@ -2,7 +2,7 @@ import { expect, test, type Browser, type Page } from '@playwright/test'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import path from 'node:path'
-import { axeScan, layoutProblems, motionAudit, tabTo, type Motion } from './a11y'
+import { axeScan, focusIndicator, layoutProblems, motionAudit, tabTo, type Motion } from './a11y'
 import { nextPort } from './ports'
 import { switchTheme } from './theme'
 import { backPanel, chooseTheme, closePanel, openPanel, openPlanPanel, panel, reportPanel, showAnswer, sourcePanel } from './panels'
@@ -362,10 +362,11 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
   })
 
   // Accessibility (release matrix X01 to X06) on the screens this flow reaches, after A to G so their state is final.
+  let mainResearch = ''  // the research A to G built, read from the URL on first use (later tests leave it)
   const researchUrl = () => {
-    const rid = page.url().match(/#\/research\/([^/]+)/)?.[1]
-    if (!rid) throw new Error('research id missing from URL')
-    return server.url(`#/research/${rid}`)
+    if (!mainResearch) mainResearch = page.url().match(/#\/research\/([^/]+)/)?.[1] ?? ''
+    if (!mainResearch) throw new Error('research id missing from URL')
+    return server.url(`#/research/${mainResearch}`)
   }
   const bisection = (report: ReturnType<typeof reportPanel>) => report.locator('.reference-list li', { hasText: 'SYNTHETIC molecule release scheduling with bisection' }).getByRole('button')
 
@@ -432,6 +433,23 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     await page.waitForURL(/#\/research\//)
     await expect(page.getByText('Ran search & screening')).toBeVisible({ timeout: 60_000 })
     expect(missing, 'focus stops with no visible indicator').toEqual([])
+  })
+
+  test('X05 negative control: the composer without its focus ring, its resting shadow kept, has no focus indicator', async () => {
+    await page.goto(server.url())
+    const question = page.getByLabel('Research question')
+    await tabTo(page, question, [])
+    expect(await focusIndicator(page), 'the shipped composer shows focus').not.toBe('')
+    await question.blur()
+    await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0)
+    const resting = await page.locator('.composer').evaluate(el => getComputedStyle(el).boxShadow)
+    expect(resting, 'the composer has a decorative shadow at rest').not.toBe('none')
+    await page.addStyleTag({ content: '.app .composer:focus-within{border-color:var(--accent-band)!important;box-shadow:var(--shadow-float)!important}.app .composer :focus,.app .composer :focus-visible{outline:none!important;box-shadow:none!important}' })
+    await tabTo(page, question, [])
+    await expect.poll(() => page.evaluate(() => document.getAnimations().length)).toBe(0)
+    expect(await page.locator('.composer').evaluate(el => getComputedStyle(el).boxShadow), 'the decorative shadow is kept').toBe(resting)
+    expect(await focusIndicator(page), 'a shadow that is there with and without focus is no indicator').toBe('')
+    await page.reload()
   })
 
   test('X06: with reduced motion nothing animates on the answer thread, report or cited passage, and without it the same audit sees motion', async ({ browser }) => {

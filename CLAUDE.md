@@ -30,6 +30,7 @@ Python 3.12, native arm64. Runtime data lives in `DEIXIS_DATA_DIR` (default `~/L
 
 ## Search pipeline
 
+- For readers: [docs/search.md](docs/search.md) explains this path in plain words with two diagrams; update it when a rule below changes.
 - A discovery run always takes the fast path (`fast_path_v1`): plan, search, ranking, read and answer stages, each with a soft deadline; unused time carries over, and local-model runs have no read or answer deadline. Mode numbers (N read, K full text, record caps, answer passages 16/48/80) live in `fast_path.MODES` and are frozen into each run's budget.
 - Plan: code picks the search words (`question_words`); models only sort them into blocks, write the query and propose the inclusion criterion. The protocol and search plan freeze (`protocol:freeze`) before any request that fetches results. Up to five seed PDFs (`seed_pdf_v2`) are matched to OpenAlex works first and frozen in the protocol.
 - Search: OpenAlex semantic and keyword requests (plus one Semantic Scholar bulk query in Detailed), one OpenAlex citation-chain round and an embedding consumer run at once until the stage cutoff. Other registry providers are not searched; Crossref, Semantic Scholar and Scopus only fill missing abstracts.

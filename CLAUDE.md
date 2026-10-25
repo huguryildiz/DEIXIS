@@ -7,11 +7,10 @@ DEIXIS is a local, single-user research workspace: question → scholarly search
 ```sh
 uv sync
 uv run pytest --testmon tests          # after a change: only the tests that touch changed Python code
-uv run pytest                          # quick: slow tests left out, 4 workers
-uv run pytest -m "slow or not slow"    # everything; GitHub Actions runs it on every push to main
+uv run pytest                          # everything (~1,500 cases, about two minutes on 4 workers); GitHub Actions runs it on every push to main
 uv run python -m deixis serve          # http://127.0.0.1:8765, serves web/dist
 cd web && npm ci && npm run build && npm run lint
-DEIXIS_ACCEPTANCE_DIR=/tmp/deixis-acceptance npm run test:acceptance   # Playwright, needs a fresh build
+DEIXIS_ACCEPTANCE_DIR=/tmp/deixis-acceptance npm run test:acceptance   # Playwright, five specs, needs a fresh build
 ```
 
 Python 3.12, native arm64. Runtime data lives in `DEIXIS_DATA_DIR` (default `~/Library/Application Support/DEIXIS`), never in the repo; keys come from the macOS Keychain.
@@ -25,7 +24,7 @@ Python 3.12, native arm64. Runtime data lives in `DEIXIS_DATA_DIR` (default `~/L
 - `providers/registry.py`: scholarly sources. `storage/schema.sql`: a schema change edits it, raises its version and adds the step for existing libraries to `storage/upgrades.py`; never add a migration file.
 - `storage/upgrades.py`: never edit an existing step's SQL, name, version or foreign-key flag; append a new step.
 - Repository: `deixis/` (API, worker, storage, providers, model adapters), `web/` (React UI the backend serves), `tests/`, `scripts/` (probes, benchmarks, release checks, real-model case runners; not app features), `docs/` (`decisions.csv`, `benchmark.md`), `STATUS.md` (the owner's status page, Turkish, mirrored to Notion) and the ignored `notes/`.
-- A file that code reads sits next to its reader: the connector ledger `tests/providers/connector-onboarding.md`, the frozen P8 expectation sheets in `tests/model_behavior/` (hashed by the runners), `providers.env.example`. Every non-Python file the app reads at run time is listed in `deixis/package_manifest.py`; a new one goes on that list.
+- A file that code reads sits next to its reader: the frozen P8 expectation sheets in `tests/model_behavior/` (hashed by the runners), `providers.env.example`. Every non-Python file the app reads at run time is listed in `deixis/package_manifest.py`; a new one goes on that list.
 - UI: the shipped screens are the visual reference (D79); follow "UI rules" below.
 
 ## Search pipeline
@@ -82,7 +81,7 @@ Python 3.12, native arm64. Runtime data lives in `DEIXIS_DATA_DIR` (default `~/L
 
 - Port 8765 may be the owner's real library: don't restart it while a run is active; test on another port with a temp `DEIXIS_DATA_DIR`.
 - The worktree may hold someone else's changes; don't stage or revert them. No destructive git.
-- Testing: after a change run `pytest --testmon tests`; it does not see edits to schemas, methods, SQL or fixtures, so after those run the files that read them. Don't run the full suite locally before a push: the `ci` workflow runs it on GitHub in four parallel parts; check its result and fix a red run first.
-- Tests are model-free (`FakeAdapter`, mocked `httpx`, fake fetcher via `create_app`); a new test folder goes into `pythonpath` in `pyproject.toml`. Passing tests show workflow behavior, not model quality.
+- Testing: after a change run `pytest --testmon tests`; it does not see edits to schemas, methods, SQL or fixtures, so after those run the files that read them. `uv run pytest` runs the whole suite, the real-process crash tests included; the `ci` workflow runs it on every push to main: check its result and fix a red run first.
+- Tests are model-free (`FakeAdapter`, mocked `httpx`, fake fetcher via `create_app`). Folders follow the steps and areas: `search`, `screen`, `read`, `answer`, `features` (report, tables, candidates, lineage, watch, citation map), `api`, `models`, `storage`, `contracts`, `rules` (credentials, child processes, crash recovery, release-check scripts). Keep one behavior test per step and feature and the guards of the rules in this file; no line-by-line tests of helpers, no large parametrized grids. Modules import each other by basename, so basenames stay unique; a new folder goes into `pythonpath` in `pyproject.toml`. Playwright keeps five specs in `web/e2e`: question to cited answer, a PDF added and read, a source's passage, Library, Settings. Passing tests show workflow behavior, not model quality.
 - A user-visible feature change or a deliberate choice adds one row to [docs/decisions.csv](docs/decisions.csv) (`id,date,title,area,status,commit,notes`); the why goes in the commit message. The long text up to D119 is `git show f2574f22:docs/decisions.md`. Plans, measurements and design notes go in the ignored `notes/` (links into it resolve only on the owner's machine); a new measurement or pilot folder there is named `YYYY-MM-DD-topic` (fixed-name folders that scripts read, such as `bioasq/` or `release-checks/`, keep their names).
 - Report what changed, which checks ran and passed, what was skipped or left unverified, and whether anything was pushed.

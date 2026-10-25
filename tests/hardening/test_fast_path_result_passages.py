@@ -5,7 +5,7 @@ import asyncio
 import pytest
 
 import test_fast_path_answer
-from deixis.workflow import fast_answer
+from deixis.workflow import answer as fast_answer
 from test_fast_path_answer import answer_run, cutoff, inspected_pdf, setup
 from test_criterion_passage_flow import QUESTION, TOPIC_PAGE, page_source
 from test_fast_path_formula_passages import FORMULA_PAGE

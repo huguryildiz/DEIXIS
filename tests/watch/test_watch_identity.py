@@ -7,7 +7,7 @@ import pytest
 
 from deixis.providers import openalex
 from deixis.storage import db
-from deixis.workflow.watch import check as policy
+from deixis.workflow import watch_check as policy
 from tests.watch.watch_helpers import api, watch_offline, create, now_check, turn, read, page, work, record, add_included
 
 

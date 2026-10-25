@@ -15,8 +15,8 @@ from deixis.domain.rules import RevisionConflict
 from deixis.storage import db
 from deixis.storage.backup import create_backup, restore_backup
 from deixis.storage.db import new_id
-from deixis.workflow.report.export import export_markdown
-from deixis.workflow.report.store import ReportStore
+from deixis.workflow.report_export import export_markdown
+from deixis.workflow.report_store import ReportStore
 from deixis.workflow.store import Store
 from deixis.workflow.tables import TableStore
 from deixis.workflow.views import report_view

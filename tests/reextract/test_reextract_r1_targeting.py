@@ -260,11 +260,11 @@ def test_arxiv_withdrawal_restores_recorded_baseline_or_legacy_latest_red_on_old
 
 @pytest.mark.parametrize("result_kind", ["promoted", "rejected", "no_change", "refused"])
 def test_b1_snapshot_retains_content_and_reports_only_promoted_extraction_staleness(lib, result_kind):
-    from deixis.workflow.report.store import ReportStore
-    from deixis.workflow.review.reader import ReviewReader
-    from deixis.workflow.review.snapshot import build_snapshot
-    from deixis.workflow.review.store import ReviewStore
-    from deixis.workflow.review.stale import stale_reasons
+    from deixis.workflow.report_store import ReportStore
+    from deixis.workflow.review_reader import ReviewReader
+    from deixis.workflow.review_snapshot import build_snapshot
+    from deixis.workflow.review_store import ReviewStore
+    from deixis.workflow.review_stale import stale_reasons
     pid = lib.store.passages_for(lib.svid)[0]["id"]
     answer = cited_answer(lib, pid)
     reader = ReviewReader(lib.store, ReportStore(lib.store)); reviews = ReviewStore(lib.conn)

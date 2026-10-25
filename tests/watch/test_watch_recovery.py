@@ -12,9 +12,9 @@ import pytest
 
 from deixis.providers import common
 from deixis.storage import db
-from deixis.workflow.watch import run as watch_run
-from deixis.workflow.watch import check as policy
-from deixis.workflow.watch.store import WatchStore
+from deixis.workflow import watch_run
+from deixis.workflow import watch_check as policy
+from deixis.workflow.watch_store import WatchStore
 from tests.watch.watch_helpers import api, watch_offline, watch_api, create, now_check, turn, read, control, page, work, rows, add_included
 
 

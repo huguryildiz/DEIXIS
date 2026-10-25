@@ -9,7 +9,7 @@ import pytest
 from deixis.domain import contracts, skill
 from deixis.models import prompt
 from deixis.workflow.flow import RunStopped
-from deixis.workflow.report.sections import run_report
+from deixis.workflow.report_sections import run_report
 from deixis.workflow.views import report_view
 from test_report_flow import report_flow, CELL_QUOTE, PASSAGE
 from test_report_handles import section
@@ -295,7 +295,7 @@ def test_model_repair_cannot_publish_another_cells_quote_or_a_whole_passage(tmp_
 
 @pytest.mark.parametrize("kind", ["other_cell", "nowhere", "whole_passage"])
 def test_assembly_keeps_rejecting_stored_links_whose_quote_is_not_owned_by_the_cell(tmp_path, kind):
-    from deixis.workflow.report.assembly import _check_anchors
+    from deixis.workflow.report_assembly import _check_anchors
     flow, store, reports, _, run, scope, report_id = report_flow(tmp_path)
     asyncio.run(run_report(flow, run, scope))
     quote = {"other_cell": "SYNTHETIC other cell result.", "nowhere": BAD_QUOTE, "whole_passage": PASSAGE}[kind]

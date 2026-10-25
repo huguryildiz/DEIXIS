@@ -32,7 +32,7 @@ from deixis.providers.common import collect_transport, normalize_doi
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import now, transaction
 from deixis.workflow import citation_map, lookups
-from deixis.workflow.lineage.edges import normalize_openalex_id
+from deixis.workflow.lineage_edges import normalize_openalex_id
 
 DOI_BATCH = 50
 ID_BATCH = openalex.MAX_IDS_PER_REQUEST

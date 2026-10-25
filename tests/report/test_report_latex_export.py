@@ -13,10 +13,10 @@ from fastapi.testclient import TestClient
 
 from deixis.domain.rules import RevisionConflict
 from deixis.workflow import queue, views
-from deixis.workflow.report import latex_export
-from deixis.workflow.report.export import export_markdown
-from deixis.workflow.report.latex import LatexBundle, to_latex
-from deixis.workflow.report.store import ReportStore
+from deixis.workflow import report_latex_export as latex_export
+from deixis.workflow.report_export import export_markdown
+from deixis.workflow.report_latex import LatexBundle, to_latex
+from deixis.workflow.report_store import ReportStore
 from test_api_flow import app_for, create, session
 from test_report_api import upload_and_include, create_table, fill_table
 from test_report_export import complete
@@ -279,12 +279,12 @@ def test_build_zip_exact_encodings_and_metadata(tex, bib):
 
 def test_import_boundary():
     tree = ast.parse(Path(latex_export.__file__).read_text())
-    allowed = {"__future__", "io", "json", "zipfile", "deixis.domain.rules", "deixis.workflow.report",
-               "deixis.workflow.report.latex", "deixis.workflow.store", "deixis.workflow",
-               "deixis.workflow.report.store", "deixis.workflow.views"}
+    allowed = {"__future__", "io", "json", "zipfile", "deixis.domain.rules",
+               "deixis.workflow.report_latex", "deixis.workflow.store", "deixis.workflow",
+               "deixis.workflow.report_store", "deixis.workflow.views"}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             assert all(alias.name in allowed for alias in node.names)
         if isinstance(node, ast.ImportFrom):
             assert node.module in allowed
-            assert not (node.module == "deixis.workflow.report" and any(a.name == "export" for a in node.names))
+            assert not (node.module == "deixis.workflow" and any(a.name == "report_export" for a in node.names))

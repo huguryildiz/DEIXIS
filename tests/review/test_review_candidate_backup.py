@@ -9,7 +9,7 @@ from deixis.config import Settings
 from deixis.domain.rules import RevisionConflict
 from deixis.storage import db
 from deixis.storage.backup import create_backup, restore_backup
-from deixis.workflow.review.store import snapshot_referenced_source_versions
+from deixis.workflow.review_store import snapshot_referenced_source_versions
 from tests.support.fakes import FakeAdapter
 from tests.support.helpers import make_pdf
 from tests.review.review_candidate_helpers import report_with_sections, review_lib, candidate_lib, snapshot, candidate_body, candidate_response

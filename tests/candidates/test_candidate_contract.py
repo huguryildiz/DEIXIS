@@ -14,7 +14,7 @@ from deixis.domain.rules import LITERATURE_TASKS, MAX_SCHEMA_REPAIRS, NO_REPAIR_
 from deixis.paths import SKILL_DIR
 from deixis.storage import db
 from deixis.storage.db import transaction
-from deixis.workflow.candidates.store import CandidateStore
+from deixis.workflow.candidates_store import CandidateStore
 from deixis.workflow.flow import FlowDeps, HANDLE_TASKS, ResearchFlow, TIMEOUT_RETRIED_TASKS
 from deixis.workflow.store import Store
 from fakes import FakeAdapter, parse_step_input, valid_response

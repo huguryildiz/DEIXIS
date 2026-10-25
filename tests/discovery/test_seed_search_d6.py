@@ -8,7 +8,7 @@ import json
 import httpx
 
 from deixis.providers.common import ProviderRecord
-from deixis.workflow import fast_search, ranking, search_query, seed_match, small_batch
+from deixis.workflow import search as fast_search, ranking, search_query, seed_match, small_batch
 from test_fetch_overlap_flow import output, wait
 from test_fulltext_flow import work
 from test_seed_pdf import no_upload_lookup  # noqa: F401 - the autouse fixture applies here too

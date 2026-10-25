@@ -11,7 +11,7 @@ from deixis.domain.canonical import canonical_json
 from deixis.domain.rules import RevisionConflict
 from deixis.storage import db
 from deixis.storage.backup import create_backup, restore_backup
-from deixis.workflow.review.store import SnapshotDependencyUnreadable, snapshot_referenced_source_versions
+from deixis.workflow.review_store import SnapshotDependencyUnreadable, snapshot_referenced_source_versions
 from tests.review.review_helpers import report_with_sections, review_lib, stored_review, snapshot, make_answer, rows, all_rows
 from tests.review.test_review_store import TABLES
 from tests.review.test_review_stale import asset_evidence
@@ -181,7 +181,7 @@ def test_snapshot_owner_purge_preserves_other_answer_citation_without_membership
 
 
 def test_research_purge_scans_remaining_snapshots_once_for_all_sources(review_lib, monkeypatch):
-    from deixis.workflow.review import store as review_store
+    from deixis.workflow import review_store
     lib = review_lib; snapshot(lib)
     extra = lib["store"].create_upload_source("SYNTHETIC second source")
     lib["store"].add_to_corpus(lib["rid"], extra, "user_upload", selection_state="included", selection_origin="user")

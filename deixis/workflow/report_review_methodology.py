@@ -1,0 +1,349 @@
+"""Write Review Methodology from immutable workflow records and the frozen corpus snapshot."""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from deixis.providers.registry import CONNECTORS
+from deixis.workflow.chaining import request_outcomes
+from deixis.workflow.report_snapshot import SCREENING_TASKS
+from deixis.workflow.report_store import ReportStore
+from deixis.workflow.store import Store
+
+
+_TEMPLATES = {
+    "en": (
+        "The recorded search used {providers}: {queries}; the compiled query version was {compiler_versions}. "
+        "The frozen corpus contained {found} found, {unique} unique, {screened} screened, and {included} included "
+        "sources; PDF acquisition recorded {fetch_pdf} direct-fetch and {pdf_other_copy} other-copy steps, full text "
+        "was available for {full_text}/{included} included sources ({full_text_ratio:.1%}), and screening used "
+        "{screening_models} with {screening_criteria}."
+    ),
+    "tr": (
+        "Kayıtlı arama {providers} sağlayıcılarını kullandı: {queries}; derlenmiş sorgu sürümü "
+        "{compiler_versions} idi. Dondurulmuş korpus {found} bulunan, {unique} tekil, {screened} taranan ve "
+        "{included} dahil kaynaktan oluştu; PDF ediniminde {fetch_pdf} doğrudan indirme ve {pdf_other_copy} diğer "
+        "kopya adımı kaydedildi, {included} dahil kaynağın {full_text} tanesinde tam metin vardı "
+        "({full_text_ratio:.1%}) ve tarama {screening_criteria} ile {screening_models} modelini kullandı."
+    ),
+}
+
+_ROW_TEMPLATES = {
+    "en": (" Of the {included} included sources, {completed} have a completed evidence-table row and {failed} do not "
+           "(missing table cells: {cells_missing} of {cells_total}); rows that did not complete are left out of "
+           "the report's evidence."),
+    "tr": (" {included} dahil kaynağın {completed} tanesinde kanıt tablosu satırı tamamlandı, {failed} tanesinde "
+           "tamamlanmadı ({cells_total} tablo hücresinin {cells_missing} tanesi eksik); tamamlanmayan satırlar "
+           "raporun kanıt değerlendirmesine alınmadı."),
+}
+
+
+def report_language(store: Store, report: dict[str, Any]) -> str:
+    """The report's language, else its question's language hint, else English; II, VIII and assembly read it alike."""
+    return (report["language"] or store.scope(report["research_id"], report["scope_revision"]).get("language_hint")
+            or "en").lower()
+
+
+def reading_sentence(reading: dict[str, int], included: int, language: str) -> str:
+    """How much of the included sources' extracted text the two-run full-text screening showed the model (audit item 3).
+
+    "Every extracted text part" is not the whole PDF: a page without text has no part. `none` says no screening reading
+    is recorded, not that nobody read the source: the answer path can read an attached PDF without one.
+    """
+    unrecorded, other = reading["unrecorded"], reading["other_version"]
+    if language.startswith("tr"):
+        text = (f" {included} dahil kaynağın {reading['all_parts']} tanesinde tam metin taramasında modele çıkarılan "
+                f"metin parçalarının hepsi, {reading['some_parts']} tanesinde bir kısmı gösterildi")
+        if unrecorded:
+            text += f"; {unrecorded} tanesinde hangi parçaların gösterildiği kaydedilmedi"
+        text += f"; {reading['none']} tanesi için kayıtlı bir tam metin taraması yok."
+        if other:
+            text += f" Bu okumalardan {other} tanesi aynı eserin başka bir sürümüne aitti."
+        return text
+    text = (f" Of the {included} included sources, the full-text screening showed the model every extracted text part "
+            f"of {reading['all_parts']} and some of the parts of {reading['some_parts']}")
+    if unrecorded:
+        text += f"; for {unrecorded}, which parts were shown was not recorded"
+    text += f"; {reading['none']} had no full-text screening recorded."
+    if other:
+        text += f" {other} of these readings {'was' if other == 1 else 'were'} of another version of the same work."
+    return text
+
+
+def failed_reason_text(reason: str, language: str) -> str:
+    if reason == "no_stored_text":
+        return "saklı metin yok" if language.startswith("tr") else "no stored text"
+    return reason.replace("_", " ")
+
+
+# Citation searching (PRISMA-S item 5), written only when a discovery run of this revision closed its fast chain (D95).
+# Choosing a seed is not tracing it: the request outcomes say what was traced. Each request is counted by its own step
+# (`chaining.request_outcomes`). `kept` counts returned records that passed the gate-term filter in a reply that arrived
+# before the cutoff; they are records, not new works, and a record a keyword query also found is among them.
+def _chain_sentence(total: dict[str, int], language: str) -> str:
+    if language.startswith("tr"):
+        text = (f" OpenAlex'te atıf taraması için {total['seeds']} tohum eser seçildi (referansları ve onlara atıf yapan "
+                f"eserler). İsteklerinden {total['sent']} tanesi gönderildi: {total['answered']} tanesi kesim zamanından "
+                f"önce, {total['late']} tanesi sonra yanıtlandı, {total['failed']} tanesi gönderildikten sonra başarısız "
+                f"oldu, {total['unknown']} tanesinin sonucu bilinmiyor; {total['not_sent']} tanesi gönderilmedi.")
+        if total["unproven"]:
+            text += f" {total['unproven']} isteğin hem sonucu hem de gönderilip gönderilmediği bilinmiyor."
+        return text + f" Dönen kayıtlardan {total['kept']} tanesini kapı terimi süzgeci tuttu."
+
+    def was(n: int, one: str, many: str) -> str:
+        return f"{n} {one if n == 1 else many}"
+    text = (f" {was(total['seeds'], 'seed work was', 'seed works were')} chosen for citation searching in OpenAlex "
+            f"(their references and the works citing them). Of its requests, {was(total['sent'], 'was', 'were')} sent: "
+            f"{total['answered']} answered before the cutoff, {total['late']} after it, {total['failed']} failed after "
+            f"sending and {total['unknown']} with an unknown outcome; {was(total['not_sent'], 'was', 'were')} not sent.")
+    if total["unproven"]:
+        text += (f" For {was(total['unproven'], 'request', 'requests')}, neither the outcome nor whether it was sent "
+                 "is recorded.")
+    return text + f" {was(total['kept'], 'returned record was', 'returned records were')} kept by the gate-term filter."
+
+
+def followup_sentence(followups: list[dict[str, Any]], language: str) -> str:
+    """One line for the follow-up searches the report snapshot stored (D92): how many, their dates and the new works
+    their frozen found steps counted. A run whose found step held no count adds nothing to the sum and is counted apart."""
+    dates = ", ".join(sorted({(f.get("completed_at") or f["created_at"])[:10] for f in followups}))
+    known = [f["new_works"] for f in followups if f.get("new_works") is not None]
+    unknown = len(followups) - len(known)
+    n = len(followups)
+    if language.startswith("tr"):
+        text = f" Takip soruları için {n} ek arama yapıldı ({dates}); bunlar {sum(known)} yeni eser ekledi."
+        return text + (f" {unknown} aramanın yeni eser sayısı kaydedilmedi." if unknown else "")
+    text = (f" {n} follow-up {'search' if n == 1 else 'searches'} ({dates}) added {sum(known)} new "
+            f"{'work' if sum(known) == 1 else 'works'}.")
+    return text + (f" The new works of {unknown} of them were not recorded." if unknown else "")
+
+
+def render_review_methodology(numbers: dict[str, Any], language: str, *, providers: str, queries: str,
+                              compiler_versions: str, screening_models: str,
+                              screening_criteria: str, chain_provenance: str) -> str:
+    return _TEMPLATES["tr" if language.startswith("tr") else "en"].format(
+        **numbers["corpus"], full_text_ratio=numbers["full_text_ratio"],
+        fetch_pdf=numbers["fetch_pdf"], pdf_other_copy=numbers["pdf_other_copy"],
+        providers=providers, queries=queries, compiler_versions=compiler_versions,
+        screening_models=screening_models, screening_criteria=screening_criteria,
+    ) + (reading_sentence(numbers["reading"], numbers["corpus"]["included"], language) if "reading" in numbers else "") \
+        + chain_provenance + (followup_sentence(numbers["followup_searches"], language)
+                              if numbers.get("followup_searches") else "") \
+        + (_ROW_TEMPLATES["tr" if language.startswith("tr") else "en"].format(**numbers["rows"])
+           if "rows" in numbers else "") \
+        + (abstract_rows_sentence(numbers["abstract_rows"], language) if numbers.get("abstract_rows") else "")
+
+
+def abstract_rows_sentence(n: int, language: str) -> str:
+    """The table rows read from their abstracts only because no full text was obtained (D114); not included sources."""
+    if language.startswith("tr"):
+        return (f" Özet taramasını geçen ancak tam metni bulunamayan {n} kaynak daha kanıt tablosunda yer aldı ve"
+                " yalnızca özetlerinden okundu; bunlar dahil kaynaklara sayılmadı.")
+    return (f" A further {n} {'source' if n == 1 else 'sources'} passed abstract screening but no full text could be"
+            f" obtained; {'it is' if n == 1 else 'they are'} in the evidence table, read from the abstract only, and"
+            " not counted as included.")
+
+
+def render_limitations(numbers: dict[str, Any], language: str) -> str:
+    del language  # Item text was frozen in the report language with the numbers.
+    return " ".join(f"{item['number']}. {item['text']}" for item in numbers["items"])
+
+
+def limitations_core(store: Store, reports: ReportStore, report_id: str,
+                     snapshot: dict[str, Any]) -> dict[str, Any]:
+    corpus = dict(snapshot["corpus"])
+    included, full_text = corpus["included"], corpus["full_text"]
+    sections = {section["section_id"]: section for section in reports.sections(report_id)
+                if section["section_id"] in ("III", "IV", "V", "VI", "VII")}
+    valid_ids = [section["id"] for section in sections.values() if section["status"] == "valid"]
+    counts = {"analyst_inference": 0, "total": 0, "share": None}
+    if valid_ids:
+        marks = ",".join("?" for _ in valid_ids)
+        for row in store.conn.execute(
+            f"SELECT support_type, COUNT(*) AS n FROM report_claims WHERE report_section_id IN ({marks})"
+            " GROUP BY support_type", valid_ids,
+        ):
+            counts["total"] += row["n"]
+            if row["support_type"] == "analyst_inference":
+                counts["analyst_inference"] = row["n"]
+    if counts["total"]:
+        counts["share"] = counts["analyst_inference"] / counts["total"]
+
+    by_section = {}
+    for section_id in ("III", "IV", "V", "VI", "VII"):
+        section = sections.get(section_id)
+        kinds = {"passage": 0, "cell": 0, "cell_missing_evidence": 0}
+        for record in ((section or {}).get("validation") or {}).get("truncated", []):
+            if record["record_kind"] in kinds:
+                kinds[record["record_kind"]] += 1
+        if any(kinds.values()):
+            by_section[section_id] = kinds
+    truncation = {
+        "budget_cut": sum(k["passage"] + k["cell"] for k in by_section.values()),
+        "missing_evidence": sum(k["cell_missing_evidence"] for k in by_section.values()),
+        "by_section": by_section,
+    }
+    report = reports.report(report_id)
+    language = report_language(store, report)
+    tr = language.startswith("tr")
+    share = (included - full_text) / included if included else 0.0
+    section_cuts = ", ".join(
+        (f"{key}: {value['passage']} pasaj, {value['cell']} hücre, "
+         f"{value['cell_missing_evidence']} eksik kanıt" if tr else
+         f"{key}: {value['passage']} passage, {value['cell']} cell, {value['cell_missing_evidence']} missing")
+        for key, value in by_section.items()
+    ) or ("yok" if tr else "none")
+    texts = (
+        [
+            "Bilinen bir kaynak kümesiyle geri çağırma ölçümü yapılmadı.",
+            f"Dondurulmuş korpusta {corpus['found']} bulunan, {corpus['unique']} tekil, "
+            f"{corpus['screened']} taranan, {included} dahil kaynak vardı; {included} dahil kaynağın "
+            f"{full_text} tanesinde tam metin vardı ve açık erişim kaynaklara yönelme olasılığı vardır.",
+            f"{included} dahil kaynağın {included - full_text} tanesinde PDF metni yoktu ({share:.1%}).",
+            f"Geçerli III–VII bölümlerindeki {counts['total']} iddianın {counts['analyst_inference']} tanesi "
+            f"analist çıkarımıydı ({counts['share']:.1%})." if counts["share"] is not None else
+            "Geçerli III–VII bölümlerinde payı hesaplanacak iddia yoktu.",
+            "Araştırma boşluğu için kill-search çalıştırılmadı.",
+            f"Bütçe nedeniyle {truncation['budget_cut']} kayıt kesildi; {truncation['missing_evidence']} hücrenin "
+            f"kanıt pasajı bulunamadı (bölümler: {section_cuts}).",
+        ] if tr else [
+            "Recall was not measured against a known source set.",
+            f"The frozen corpus had {corpus['found']} found, {corpus['unique']} unique, "
+            f"{corpus['screened']} screened, and {included} included sources; full text was available "
+            f"for {full_text}/{included} included sources and may favor open access sources.",
+            f"{included - full_text} of {included} included sources had no PDF text ({share:.1%}).",
+            f"In valid sections III–VII, {counts['analyst_inference']} of {counts['total']} claims were analyst "
+            f"inferences ({counts['share']:.1%})." if counts["share"] is not None else
+            "No claims in valid sections III–VII were available for an inference share.",
+            "A kill search for research gaps was not run.",
+            f"{truncation['budget_cut']} records were cut for the budget; a cell's evidence passage was not found "
+            f"for {truncation['missing_evidence']} cells (by section: {section_cuts}).",
+        ]
+    )
+    if snapshot.get("reading"):
+        # Item 2 says the full text was available; this says how much of it the screening showed (audit item 3).
+        texts[1] += reading_sentence(snapshot["reading"], included, language)
+    keys = ("recall_measurement", "open_access_bias_note", "no_full_text_share", "analyst_inference_share",
+            "kill_search_status", "truncation")
+    result = {"version": 1, "kind": "limitations", "as_of": "before_viii", "corpus": corpus,
+            "recall_measurement": None, "open_access_bias_note": True, "included": included,
+            "full_text": full_text, "no_full_text_share": share,
+            "analyst_inference_share": counts, "kill_search_status": "not_run",
+            "truncation": truncation,
+            "items": [{"number": i, "key": key, "text": sentence}
+                      for i, (key, sentence) in enumerate(zip(keys, texts), 1)]}
+    if snapshot.get("failed_rows"):
+        result["failed_rows"] = [{"source_version_id": row["source_version_id"],
+                                  "name": row["source_key"] or row["title"], "reason": row["reason"]}
+                                 for row in snapshot["failed_rows"]]
+        names = "; ".join(f"{row['name']} ({failed_reason_text(row['reason'], language)})"
+                          for row in result["failed_rows"])
+        text = (f"Kanıt tablosu satırları tamamlanmadı: {names}. Bu satırlar raporun kanıt değerlendirmesine "
+                "ve toplulaştırma paydalarına alınmadı." if tr else
+                f"The evidence-table rows for {names} did not complete. These rows were excluded from the report's "
+                "evidence assessment and aggregation denominators.")
+        result["items"].append({"number": len(result["items"]) + 1, "key": "failed_rows", "text": text})
+    return result
+
+
+def _chain_provenance(steps: list[dict[str, Any]], language: str) -> str:
+    """The fast chain of every discovery run of the revision that wrote its summary (`fast_chain.Round.summary`): the
+    seeds its seed steps chose, what became of each request by its own step, and the filter count the summary recorded."""
+    summaries = {step["run_id"]: step["output"] for step in steps
+                 if step["operation_key"] == "fast_chain:summary" and step["status"] == "succeeded" and step["output"]}
+    if not summaries:
+        return ""
+    total = {"seeds": sum((step["output"] or {}).get("seed_count", 0) for step in steps if step["run_id"] in summaries
+                          and step["operation_key"] in ("fast_chain:seeds", "fast_chain:seeds_fallback")),
+             **request_outcomes(step for step in steps if step["run_id"] in summaries),
+             "kept": sum(out.get("passed_filter", 0) for out in summaries.values())}
+    return _chain_sentence(total, language)
+
+
+def _all_steps(store: Store, research_id: str, scope_revision: int) -> list[dict[str, Any]]:
+    run_ids = [row["id"] for row in store.conn.execute(
+        "SELECT id FROM runs WHERE research_id = ? AND scope_revision = ? ORDER BY created_at, id",
+        (research_id, scope_revision),
+    )]
+    return [step | {"run_id": run_id} for run_id in run_ids for step in store.run_steps(run_id)]
+
+
+def _search_provenance(store: Store, research_id: str, scope_revision: int) -> tuple[str, str, str]:
+    discovery_runs = [row["id"] for row in store.conn.execute(
+        "SELECT id FROM runs WHERE research_id = ? AND scope_revision = ? AND kind = 'discovery'"
+        " ORDER BY created_at, id", (research_id, scope_revision),
+    )]
+    steps = [step for run_id in discovery_runs for step in store.run_steps(run_id)]
+    search_step_ids = [step["id"] for step in steps if step["kind"].startswith("provider_search:")]
+    searches = []
+    if search_step_ids:
+        marks = ",".join("?" for _ in search_step_ids)
+        searches = list(store.conn.execute(
+            f"SELECT provider, query_text, retrieved_at FROM search_runs WHERE step_id IN ({marks})"
+            " ORDER BY retrieved_at, id", search_step_ids,
+        ))
+    recorded = {row["provider"] for row in searches}
+    providers = [provider for provider in CONNECTORS if provider in recorded]
+    providers.extend(sorted(recorded - set(CONNECTORS)))
+    query_text = "; ".join(
+        f"{row['provider']} — {row['query_text']} ({row['retrieved_at'][:10]})" for row in searches
+    ) or "none recorded"
+    # No discovery step records a compiled query version for this sentence; the old `search_plan` step that did is gone.
+    return ", ".join(providers) or "none recorded", query_text, "not recorded"
+
+
+def _screening_provenance(store: Store, research_id: str, scope_revision: int) -> tuple[str, str]:
+    payloads = [json.loads(row["payload_json"]) for row in store.conn.execute(
+        "SELECT payload_json FROM step_inputs WHERE research_id = ? AND scope_revision = ?"
+        " AND task_type IN (?, ?) ORDER BY created_at, id", (research_id, scope_revision, *SCREENING_TASKS),
+    )]
+    models, criteria = [], []
+    for payload in payloads:
+        model = payload.get("model", {})
+        identity = model.get("requested_model") or model.get("connection")
+        if identity and identity not in models:
+            models.append(identity)
+        supported = payload.get("capabilities", {}).get("supported_tasks", [])
+        limit = payload.get("budget", {}).get("max_model_calls")
+        criterion = f"screening capability; max_model_calls={limit}" if "screening" in supported \
+            else f"recorded screening input; max_model_calls={limit}"
+        if criterion not in criteria:
+            criteria.append(criterion)
+    return ", ".join(models) or "not recorded", ", ".join(criteria) or "no screening input recorded"
+
+
+def write_review_methodology(store: Store, reports: ReportStore, report_id: str, research_id: str,
+                             snapshot: dict[str, Any]) -> None:
+    """Persist Section II without a model step; all corpus counts come from the supplied frozen snapshot."""
+    report = reports.report(report_id)
+    if report["research_id"] != research_id:
+        raise ValueError("The report and research do not match")
+    scope_revision = report["scope_revision"]
+    providers, queries, compiler_versions = _search_provenance(store, research_id, scope_revision)
+    steps = _all_steps(store, research_id, scope_revision)
+    screening_models, screening_criteria = _screening_provenance(store, research_id, scope_revision)
+    corpus = snapshot["corpus"]
+    included = corpus["included"]
+    language = report_language(store, report)
+    numbers = {"version": 1, "kind": "review_methodology", "corpus": dict(corpus),
+               "full_text_ratio": corpus["full_text"] / included if included else 0.0,
+               "fetch_pdf": sum(step["kind"] == "fetch_pdf" for step in steps),
+               "pdf_other_copy": sum(step["kind"] == "pdf_other_copy" for step in steps)}
+    if snapshot.get("reading"):
+        numbers["reading"] = dict(snapshot["reading"])
+    if snapshot.get("failed_rows"):
+        numbers["rows"] = dict(snapshot["row_counts"])
+    if snapshot.get("abstract_rows"):
+        numbers["abstract_rows"] = len(snapshot["abstract_rows"])
+    # From the snapshot only (D92): an older snapshot has no follow-up searches and prints none.
+    if snapshot.get("followup_searches"):
+        numbers["followup_searches"] = [dict(item) for item in snapshot["followup_searches"]]
+    text = render_review_methodology(
+        numbers, language, providers=providers, queries=queries, compiler_versions=compiler_versions,
+        screening_models=screening_models, screening_criteria=screening_criteria,
+        chain_provenance=_chain_provenance(steps, language),
+    )
+    section_id = reports.create_section(report_id, "II", 2)
+    reports.save_section_draft(
+        section_id, None, "valid", {"text": text}, {"ok": True, "issues": [], "numbers": numbers}, len(text.split())
+    )

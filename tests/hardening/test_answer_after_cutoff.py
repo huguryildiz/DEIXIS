@@ -8,7 +8,7 @@ import json
 import pytest
 
 from deixis.providers.common import ProviderRecord
-from deixis.workflow import fast_answer, followup
+from deixis.workflow import answer as fast_answer, followup
 from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.flow import RunStopped
 from test_criterion_passage_flow import TOPIC_PAGE, page_source

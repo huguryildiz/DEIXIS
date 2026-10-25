@@ -363,7 +363,7 @@ class ResearchFlow:
                 if fast_path.enabled(run["budget"]) and run["status"] not in ("running", "pause_requested"):
                     fast_path.close_run(self.store, run_id, "paused" if run["status"] == "paused" else "stopped")
             if run["kind"] == "kill_search":
-                from deixis.workflow.candidates.store import CandidateStore
+                from deixis.workflow.candidates_store import CandidateStore
                 CandidateStore(self.store).sync_search_outcome(run_id)
 
     def _enter_clock_stage(self, run: dict[str, Any], stage: str) -> None:
@@ -407,7 +407,7 @@ class ResearchFlow:
             elif run["kind"] == "answer":
                 await self._answer(run, scope)
             elif run["kind"] == "answer_review":
-                from deixis.workflow import fast_answer
+                from deixis.workflow import answer as fast_answer
                 await fast_answer.review(self, run, scope)
             elif run["kind"] == "pdf_collection":
                 await self._inspect(run, limit=None)
@@ -473,7 +473,7 @@ class ResearchFlow:
         if self.store.run(run_id)["status"] in ("running", "pause_requested") and run["kind"] == "discovery":
             with transaction(self.store.conn):
                 self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
-                from deixis.workflow import fast_answer, intent
+                from deixis.workflow import answer as fast_answer, intent
                 fast_answer.auto_answer(self.store, run)
                 intent.after_discovery(self.store, run)  # `table`/`compare`: the study table instead of the answer
                 from deixis.workflow import statement_check
@@ -481,7 +481,7 @@ class ResearchFlow:
         elif self.store.run(run_id)["status"] in ("running", "pause_requested"):
             if ((run["kind"] == "answer" and fast_path.enforces(run["budget"], "answer"))
                     or run["kind"] == "answer_review"):
-                from deixis.workflow import fast_answer
+                from deixis.workflow import answer as fast_answer
                 with transaction(self.store.conn):
                     self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
                     if run["kind"] == "answer":
@@ -518,7 +518,7 @@ class ResearchFlow:
             if changed:
                 self._pause(run_id, changed)
             if guard.get("fast_answer"):
-                from deixis.workflow import fast_answer
+                from deixis.workflow import answer as fast_answer
                 fast_answer.check_input(self, run_id, guard["input"])
         # getattr: existing tests build the flow with object.__new__ and call the embedding steps, which now checkpoint.
         held = getattr(self, "_held", {}).get(run_id)
@@ -588,7 +588,7 @@ class ResearchFlow:
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
         if scope["source_scope"] == "attached":
             return
-        from deixis.workflow import fast_search
+        from deixis.workflow import search as fast_search
         from deixis.workflow.fast_embedding import Consumer
         self._enter_clock_stage(run, "plan")
         self._fast_consumers[run_id] = Consumer(self, run, scope)
@@ -1429,7 +1429,7 @@ class ResearchFlow:
             self._fail(run_id, "invalid_model_output", {"step": "research_title", "issues": output["issues"]})
 
     async def _report(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
-        from deixis.workflow.report.sections import run_report
+        from deixis.workflow.report_sections import run_report
 
         await run_report(self, run, scope)
 
@@ -2379,7 +2379,7 @@ class ResearchFlow:
         run_id, rid = run["id"], run["research_id"]
         self._enter_clock_stage(run, "answer")
         if fast_path.enforces(run["budget"], "answer"):
-            from deixis.workflow import fast_answer
+            from deixis.workflow import answer as fast_answer
             await fast_answer.answer(self, run, scope)
             return
         if small_batch.enabled(run["budget"]):
@@ -4535,7 +4535,7 @@ class ResearchFlow:
 
     # ---- candidates -------------------------------------------------------------------
     def _candidate_send_gate(self, run: dict[str, Any]) -> None:
-        from deixis.workflow.candidates.store import CandidateStore, TERMINAL_OUTCOMES
+        from deixis.workflow.candidates_store import CandidateStore, TERMINAL_OUTCOMES
         self._checkpoint(run["id"], run["scope_revision"])
         if self.store.run(run["id"])["status"] != "running":
             raise RunStopped
@@ -4580,7 +4580,7 @@ class ResearchFlow:
 
     async def _candidate_model(self, run: dict, scope: dict, key: str, task: str,
                                target: dict, rows: list[dict], frozen_hit: dict | None = None, **kwargs) -> dict:
-        from deixis.workflow.candidates.run import MAX_MESSAGE_CHARS, FrozenPassagesUnavailable, frozen_passages
+        from deixis.workflow.candidates_run import MAX_MESSAGE_CHARS, FrozenPassagesUnavailable, frozen_passages
         # Candidate calls are sequential; app.py's existing cancel path still
         # interrupts adapters for both claim_decomposition and kill_search.
         step = self.store.existing_step(run["id"], key)
@@ -4617,8 +4617,8 @@ class ResearchFlow:
         self.store.finish_step(step["id"], "succeeded", output=output)
 
     async def _claim_decomposition(self, run: dict, scope: dict) -> None:
-        from deixis.workflow.candidates import run as candidates
-        from deixis.workflow.candidates.store import CandidateStore, InvalidCandidateInput
+        from deixis.workflow import candidates_run as candidates
+        from deixis.workflow.candidates_store import CandidateStore, InvalidCandidateInput
         self._candidate_send_gate(run)
         cs = CandidateStore(self.store)
         candidate = cs.candidate(run["target"]["candidate_id"])
@@ -4700,7 +4700,7 @@ class ResearchFlow:
     def _kill_search_record_query(self, run: dict, search: dict, step: dict, position: int,
                                   query: dict, outcome: SearchOutcome | facade.Dispatched,
                                   transport: dict | None = None) -> None:
-        from deixis.workflow.candidates.store import CandidateStore, TERMINAL_OUTCOMES
+        from deixis.workflow.candidates_store import CandidateStore, TERMINAL_OUTCOMES
         dispatched = outcome if isinstance(outcome, facade.Dispatched) else None
         outcome = dispatched.outcome if dispatched else outcome
         ok = outcome.status in ("completed", "zero_results")
@@ -4731,13 +4731,13 @@ class ResearchFlow:
                 | ({"error_kind": outcome.error_kind} if outcome.error_kind is not None else {}))
 
     def _kill_search_summary(self, run: dict, search: dict, outcomes: dict, failure_code=None) -> dict:
-        from deixis.workflow.candidates.run import search_summary
+        from deixis.workflow.candidates_run import search_summary
         summary = search_summary(self.store, search["id"], outcomes, failure_code)
         self._candidate_record(run, "kill_search_summary", summary)
         return summary
 
     def _kill_search_finish(self, run: dict, search: dict, outcomes: dict, failure_code=None) -> None:
-        from deixis.workflow.candidates.store import CandidateStore
+        from deixis.workflow.candidates_store import CandidateStore
         self._candidate_send_gate(run)
         # Deliberately separate durable writes: recovery carries this exact failure code.
         self._kill_search_summary(run, search, outcomes, failure_code)
@@ -4746,8 +4746,8 @@ class ResearchFlow:
             self._fail(run["id"], failure_code)
 
     async def _kill_search(self, run: dict, scope: dict) -> None:
-        from deixis.workflow.candidates import run as candidates, terms
-        from deixis.workflow.candidates.store import CandidateStore
+        from deixis.workflow import candidates_run as candidates, candidates_terms as terms
+        from deixis.workflow.candidates_store import CandidateStore
         self._candidate_send_gate(run)
         cs = CandidateStore(self.store)
         plan = run["target"]
@@ -4899,8 +4899,8 @@ class ResearchFlow:
         self._kill_search_finish(run, search, outcomes, "transport_budget" if refused else None)
 
     async def _watch_check(self, run: dict) -> None:
-        from deixis.workflow.watch.store import WatchStore
-        from deixis.workflow.watch.run import Callbacks, run as watch_run
+        from deixis.workflow.watch_store import WatchStore
+        from deixis.workflow.watch_run import Callbacks, run as watch_run
 
         watches = WatchStore(self.store)
         check = watches.check(run["research_id"], run["target"]["check_id"])
@@ -4950,7 +4950,7 @@ class ResearchFlow:
     # ---- owner-requested review ---------------------------------------------------------
     def _owner_review_send_gate(self, run: dict) -> None:
         from datetime import datetime
-        from deixis.workflow.review.run import ReviewDeadlinePassed
+        from deixis.workflow.review_run import ReviewDeadlinePassed
         self._checkpoint(run["id"])
         if self.store.run(run["id"])["status"] != "running":
             raise RunStopped
@@ -4964,11 +4964,11 @@ class ResearchFlow:
             raise ReviewDeadlinePassed
 
     async def _owner_review(self, run: dict) -> None:
-        from deixis.workflow.review import run as reviews
-        from deixis.workflow.review.reader import ReviewReader
-        from deixis.workflow.review.store import ReviewStore, resolve_finding
-        from deixis.workflow.report.store import ReportStore
-        from deixis.workflow.report.review import REVIEW_BUDGET_TOKENS
+        from deixis.workflow import review_run as reviews
+        from deixis.workflow.review_reader import ReviewReader
+        from deixis.workflow.review_store import ReviewStore, resolve_finding
+        from deixis.workflow.report_store import ReportStore
+        from deixis.workflow.report_review import REVIEW_BUDGET_TOKENS
         rs = ReviewStore(self.store.conn, ReviewReader(self.store, ReportStore(self.store)))
         row = self.store.conn.execute("SELECT * FROM owner_reviews WHERE run_id = ?", (run["id"],)).fetchone()
         if row is None:
@@ -5052,8 +5052,8 @@ class ResearchFlow:
             raise RunStopped
 
     async def _lineage_links(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
-        from deixis.workflow.lineage import run as lineage
-        from deixis.workflow.lineage.store import LineageStore
+        from deixis.workflow import lineage_run as lineage
+        from deixis.workflow.lineage_store import LineageStore
 
         self._lineage_send_gate(run)
         plan = run["target"]
@@ -5837,7 +5837,7 @@ class ResearchFlow:
             self.store.insert_step_input(step["id"], rid, run_id, attempt, payload, base, developer, message, schema, selection_revision)
             measured_chars = None
             if max_request_chars is not None:
-                from deixis.workflow.review.run import request_chars
+                from deixis.workflow.review_run import request_chars
                 measured_chars = request_chars(base, developer, message, schema, adapter.enforces_schema)
             if (max_message_chars is not None and len(message) > max_message_chars
                     or max_request_chars is not None and measured_chars > max_request_chars):

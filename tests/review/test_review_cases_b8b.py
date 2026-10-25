@@ -17,13 +17,13 @@ from deixis.models.adapter import ModelStepResult
 from deixis.providers.common import ProviderRecord
 from deixis.storage import db
 from deixis.workflow import store as store_module
-from deixis.workflow.candidates import store as candidate_module
-from deixis.workflow.candidates.hits import merge_and_cut
-from deixis.workflow.candidates.run import candidate_target
-from deixis.workflow.candidates.store import CandidateStore, InvalidCandidateInput
-from deixis.workflow.review.reader import ReviewReader
-from deixis.workflow.review.snapshot import NotReviewable, _shown_passage, build_snapshot
-from deixis.workflow.report.store import ReportStore
+from deixis.workflow import candidates_store as candidate_module
+from deixis.workflow.candidates_hits import merge_and_cut
+from deixis.workflow.candidates_run import candidate_target
+from deixis.workflow.candidates_store import CandidateStore, InvalidCandidateInput
+from deixis.workflow.review_reader import ReviewReader
+from deixis.workflow.review_snapshot import NotReviewable, _shown_passage, build_snapshot
+from deixis.workflow.report_store import ReportStore
 from scripts.model_behavior import run_candidate_review_cases as runner
 
 

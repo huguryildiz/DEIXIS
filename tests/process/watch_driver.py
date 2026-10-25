@@ -18,8 +18,8 @@ import httpx
 from deixis import __main__ as deixis_main
 from deixis.api.app import create_app
 from deixis.config import Settings
-from deixis.workflow.watch.scheduler import WatchScheduler
-from deixis.workflow.watch.store import WatchStore
+from deixis.workflow.watch_scheduler import WatchScheduler
+from deixis.workflow.watch_store import WatchStore
 from tests.support.fakes import FakeAdapter
 
 

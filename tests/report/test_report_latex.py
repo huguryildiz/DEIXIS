@@ -12,7 +12,7 @@ import re
 import pytest
 
 from deixis.domain.rules import RevisionConflict
-from deixis.workflow.report import export_text, latex, latex_math, latex_text
+from deixis.workflow import report_export_text as export_text, report_latex as latex, report_latex_math as latex_math, report_latex_text as latex_text
 from report_latex_cases import BASES, CASES, COVERAGE, ERRORS, EXCEPTIONS, PAYLOAD, SKIPPED_KEY, build, claim, section, table
 
 FIXTURES = Path(__file__).parent.parent / 'fixtures' / 'report_latex'
@@ -305,17 +305,18 @@ def test_bundle_is_frozen_and_note_count_is_full():
 
 def test_import_boundary():
     allowed = {'__future__', 'dataclasses', 're', 'unicodedata', 'typing', 'collections.abc', 'deixis.domain.rules',
-               'deixis.workflow.bibliography', 'deixis.workflow.report', 'deixis.workflow.report.export_text',
-               'deixis.workflow.report.latex_math', 'deixis.workflow.report.latex_text', 'deixis.workflow.report.latex_preamble',
-               'deixis.workflow.report.store'}
+               'deixis.workflow.bibliography', 'deixis.workflow', 'deixis.workflow.report_export_text',
+               'deixis.workflow.report_latex_math', 'deixis.workflow.report_latex_text', 'deixis.workflow.report_latex_preamble',
+               'deixis.workflow.report_store'}
     for node in ast.walk(ast.parse(Path(latex.__file__).read_text())):
         if isinstance(node, ast.Import):
             assert all(alias.name in allowed for alias in node.names)
         if isinstance(node, ast.ImportFrom):
             assert node.module in allowed
-            if node.module == 'deixis.workflow.report':
-                assert {a.name for a in node.names} <= {'export_text', 'latex_math', 'latex_text', 'latex_preamble'}
-            if node.module == 'deixis.workflow.report.store':
+            if node.module == 'deixis.workflow':
+                assert {a.name for a in node.names} <= {'report_export_text', 'report_latex_math', 'report_latex_text',
+                                                        'report_latex_preamble'}
+            if node.module == 'deixis.workflow.report_store':
                 assert [a.name for a in node.names] == ['DISPLAY_ORDER']
 
 

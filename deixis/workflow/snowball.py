@@ -32,7 +32,7 @@ from deixis.providers.common import FIRST_PAGE, normalize_doi
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import dumps, now, transaction
 from deixis.workflow import abstract_stage, chaining, citation_map_run, lookups
-from deixis.workflow.lineage.edges import normalize_openalex_id
+from deixis.workflow.lineage_edges import normalize_openalex_id
 
 KIND = "snowball"
 POLICY = "snowball_v1"

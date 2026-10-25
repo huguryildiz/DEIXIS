@@ -6,7 +6,7 @@ import pytest
 
 from deixis.domain.skill import SkillPackage
 from deixis.workflow.flow import CAPABILITIES
-from deixis.workflow.review import run
+from deixis.workflow import review_run as run
 from tests.review.review_helpers import si
 
 

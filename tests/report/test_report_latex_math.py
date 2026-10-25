@@ -11,13 +11,13 @@ import pytest
 
 from deixis.documents.arxiv_source import katex_known
 from deixis.domain.contracts import _math_spans
-from deixis.workflow.report import latex_math as lm
-from deixis.workflow.report.latex_math import (
+from deixis.workflow import report_latex_math as lm
+from deixis.workflow.report_latex_math import (
     ALLOWED_ENVIRONMENTS, CELL_COMMANDS, COMMAND_DENY, E_ENVIRONMENTS, TEXT_COMMANDS,
     classify, closed_scan, command_status, convert_text, render, split_text,
 )
-from deixis.workflow.report.latex_preamble import PREAMBLE_SHA256
-from deixis.workflow.report.latex_text import SYMBOLS, Unmapped, escape_text
+from deixis.workflow.report_latex_preamble import PREAMBLE_SHA256
+from deixis.workflow.report_latex_text import SYMBOLS, Unmapped, escape_text
 
 
 CORPUS = ["", "plain", r"\$", "$", "$$", "$ $", "$x$", "$$x$$", r"\text{$x$}",
@@ -359,7 +359,7 @@ def test_names_file_current_provenance():
     path = Path(lm.__file__).with_name("latex_names.json")
     assert path.exists(), "Run scripts/latex_export_names.py"
     names = json.loads(path.read_text())
-    vocabulary = Path(lm.__file__).resolve().parents[2] / "documents/katex_commands.json"
+    vocabulary = Path(lm.__file__).resolve().parents[1] / "documents/katex_commands.json"
     assert names["preamble_sha256"] == PREAMBLE_SHA256, "Run scripts/latex_export_names.py"
     assert names["katex_commands_sha256"] == hashlib.sha256(vocabulary.read_bytes()).hexdigest(), "Run scripts/latex_export_names.py"
     assert isinstance(names["katex_version"], str) and {names["katex_version"]} == katex_known()["version"]
@@ -376,10 +376,10 @@ def test_missing_and_stale_names_raise_and_name_script(tmp_path, monkeypatch):
     original = json.loads(Path(lm.__file__).with_name("latex_names.json").read_text())
     vocabulary = tmp_path / "documents/katex_commands.json"
     vocabulary.parent.mkdir()
-    real_vocabulary = Path(lm.__file__).resolve().parents[2] / "documents/katex_commands.json"
+    real_vocabulary = Path(lm.__file__).resolve().parents[1] / "documents/katex_commands.json"
     vocabulary.write_bytes(real_vocabulary.read_bytes())
-    # Match the module's parents[2] documents lookup with a deeper fake module.
-    fake_module = tmp_path / "workflow/report/latex_math.py"
+    # Match the module's parents[1] documents lookup with a deeper fake module.
+    fake_module = tmp_path / "workflow/report_latex_math.py"
     fake_module.parent.mkdir(parents=True)
     monkeypatch.setattr(lm, "__file__", str(fake_module))
     lm._names.cache_clear()

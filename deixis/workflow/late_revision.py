@@ -8,7 +8,7 @@ import logging
 from typing import Any
 
 from deixis.storage.db import dumps, new_id, transaction
-from deixis.workflow import adjudication, criterion_passages, fast_answer, fast_path, result_passages, small_batch
+from deixis.workflow import adjudication, criterion_passages, answer as fast_answer, fast_path, result_passages, small_batch
 from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.flow import fuse_rankings
 

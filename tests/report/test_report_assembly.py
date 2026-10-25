@@ -10,10 +10,10 @@ import pytest
 
 from deixis.storage import db
 from deixis.storage.db import new_id
-from deixis.workflow.report.assembly import run_assembly_checks
-from deixis.workflow.report import review_methodology
-from deixis.workflow.report import gaps as report_gaps
-from deixis.workflow.report.store import ReportStore
+from deixis.workflow.report_assembly import run_assembly_checks
+from deixis.workflow import report_review_methodology as review_methodology
+from deixis.workflow import report_gaps
+from deixis.workflow.report_store import ReportStore
 from deixis.workflow.store import Store
 from deixis.workflow.tables import TableStore
 

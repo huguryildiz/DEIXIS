@@ -21,9 +21,9 @@ from deixis.domain.skill import load_skill_package
 from deixis.paths import REPO_ROOT
 from deixis.storage.db import new_id, now
 from deixis.workflow import flow
-from deixis.workflow.candidates.status import derive_status
-from deixis.workflow.review.run import plan_groups, request_chars, review_budget, review_step_input
-from deixis.workflow.review.store import resolve_finding
+from deixis.workflow.candidates_status import derive_status
+from deixis.workflow.review_run import plan_groups, request_chars, review_budget, review_step_input
+from deixis.workflow.review_store import resolve_finding
 from scripts.model_behavior import run_review_cases as b4
 from scripts.model_behavior.run_review_cases import (
     MAX_REQUEST_CHARS, _write_results, anchor_audit, build_request, stop_for_result,

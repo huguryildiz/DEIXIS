@@ -1,6 +1,6 @@
 """Pure tests for code-owned fields of the frozen report plan."""
 
-from deixis.workflow.report.plan import ALLOWED_SUPPORT, INDEX_TERMS_MAX_WORDS, freeze_plan, section_budgets
+from deixis.workflow.report_plan import ALLOWED_SUPPORT, INDEX_TERMS_MAX_WORDS, freeze_plan, section_budgets
 
 
 def test_section_budgets_scale_the_total_and_floor_the_scaled_total_at_1200_words():

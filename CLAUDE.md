@@ -18,7 +18,7 @@ Python 3.12, native arm64. Runtime data lives in `DEIXIS_DATA_DIR` (default `~/L
 
 ## Where things are
 
-- `workflow/`: runs and steps. Discovery is the fast path (`fast_path.py`, `fast_search.py`, `fast_chain.py`, `fast_read.py`); answers in `fast_answer.py`. Each step is a row keyed by `operation_key`, so a succeeded step is never re-run.
+- `workflow/`: runs and steps, one flat folder. Discovery is the fast path (`fast_path.py`, `search.py`, `fast_chain.py`, `small_batch.py` for the ranked list and screening batches, `read.py`, with screening rules in `abstract_stage.py`); answers in `answer.py`. Feature modules carry their area as a prefix: `report_*`, `review_*`, `lineage_*`, `candidates_*`, `watch_*`. Each step is a row keyed by `operation_key`, so a succeeded step is never re-run; a module rename never changes a stored key, kind or policy name.
 - `models/` + `flow._model_step`: a model call gets a stored `StepInput` and a strict schema; no tools, no silent model fallback, bounded repair.
 - `deixis/contracts/research/*.schema.json` + `domain/contracts.py`: step I/O and semantic checks. A schema change also updates `tests/fixtures/research/*` and `tests/support/fakes.py::valid_response`.
 - `deixis/methods/deixis-research/`: instructions loaded into model steps; editing them changes `skill_package_hash`.

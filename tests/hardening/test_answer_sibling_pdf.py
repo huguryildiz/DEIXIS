@@ -5,7 +5,7 @@ SYNTHETIC data only."""
 from types import SimpleNamespace
 
 from deixis.providers.common import ProviderRecord
-from deixis.workflow import fast_answer
+from deixis.workflow import answer as fast_answer
 from test_fast_path_answer import answer_run, cutoff, setup
 
 

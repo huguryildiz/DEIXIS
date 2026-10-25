@@ -99,7 +99,7 @@ def to_bibtex(sources: list[dict[str, Any]], keys: list[str] | None = None, *, l
 def bibtex_with_notes(sources: list[dict[str, Any]], keys: list[str] | None = None, *,
                       latex_report: bool = False, unmapped=None) -> tuple[str, list[str]]:
     """Keep D16 bytes by default; the report path has its own field boundary."""
-    from deixis.workflow.report.latex_text import escape_text
+    from deixis.workflow.report_latex_text import escape_text
 
     original = sources
     if latex_report:

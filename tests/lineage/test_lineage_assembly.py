@@ -5,7 +5,7 @@ from itertools import permutations
 
 import pytest
 
-from deixis.workflow.lineage.assembly import Link, REASONS, RowFacts, assemble, unplaceable_reasons
+from deixis.workflow.lineage_assembly import Link, REASONS, RowFacts, assemble, unplaceable_reasons
 
 
 def link(a, b, **kw):

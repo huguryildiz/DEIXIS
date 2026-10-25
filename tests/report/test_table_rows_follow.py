@@ -9,7 +9,7 @@ import json
 import time
 
 from deixis.workflow import table_rows
-from deixis.workflow.report.snapshot import build_snapshot
+from deixis.workflow.report_snapshot import build_snapshot
 from deixis.workflow.tables import report_ready
 from fakes import valid_response
 from test_evidence_tables import PACKET_SIZE

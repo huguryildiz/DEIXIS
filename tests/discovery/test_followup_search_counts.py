@@ -15,8 +15,8 @@ import pytest
 from deixis.storage import db
 from deixis.workflow import method_summary, views
 from deixis.workflow.flow import ResearchFlow
-from deixis.workflow.report.review_methodology import render_review_methodology
-from deixis.workflow.report.snapshot import build_snapshot
+from deixis.workflow.report_review_methodology import render_review_methodology
+from deixis.workflow.report_snapshot import build_snapshot
 from deixis.workflow.store import Store
 from deixis.workflow.tables import TableStore
 from test_method_summary import answered

@@ -6,7 +6,7 @@ import sqlite3
 
 import pytest
 
-from deixis.workflow import fast_answer, fast_path, late_revision
+from deixis.workflow import answer as fast_answer, fast_path, late_revision
 from deixis.workflow.flow import RunStopped
 
 

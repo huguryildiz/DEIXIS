@@ -204,7 +204,7 @@ from copy import deepcopy
 
 import pytest
 
-from deixis.workflow.report.latex_text import Unmapped
+from deixis.workflow.report_latex_text import Unmapped
 
 
 @pytest.mark.parametrize('latex_report', [False, True])

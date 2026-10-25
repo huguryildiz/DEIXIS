@@ -1,7 +1,7 @@
 """The citation map of one research: its works, the reference links between them and the outside works they cite.
 
 `build` is read only; no provider request and no model call. A link means "A's stored OpenAlex reference list holds B". A work
-whose versions never had their list read has no outgoing link: an unread list is not an empty one (lineage/edges.py).
+whose versions never had their list read has no outgoing link: an unread list is not an empty one (lineage_edges.py).
 `add_outside_work` puts one outside work the map lists into the research, from stored records only.
 """
 
@@ -12,7 +12,7 @@ import re
 from typing import Any
 
 from deixis.storage.db import now, transaction
-from deixis.workflow.lineage.edges import normalize_openalex_id
+from deixis.workflow.lineage_edges import normalize_openalex_id
 
 OUTSIDE_LIMIT = 40
 # Excluded sources keep their links, but their references do not make an outside work "often cited": an off-topic

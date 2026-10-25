@@ -433,11 +433,11 @@ class Store:
                 " AND raw_payload_path IS NOT NULL", (research_id,),
             ))
             self.conn.execute("INSERT INTO research_purge_authorizations VALUES (?)", (research_id,))
-            from deixis.workflow.candidates.store import purge_candidates
+            from deixis.workflow.candidates_store import purge_candidates
             purge_candidates(self.conn, research_id)
-            from deixis.workflow.review.store import purge_owner_reviews
+            from deixis.workflow.review_store import purge_owner_reviews
             source_ids.extend(purge_owner_reviews(self.conn, research_id))
-            from deixis.workflow.watch.store import purge_watches
+            from deixis.workflow.watch_store import purge_watches
             payloads.extend(purge_watches(self.conn, research_id))
             self.conn.execute(
                 "DELETE FROM report_edit_checks WHERE report_id IN"
@@ -3282,7 +3282,7 @@ class Store:
             f" UNION SELECT source_version_id FROM followup_turn_links WHERE source_version_id IN ({marks})",
             (*svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids),
         ).fetchall()
-        from deixis.workflow.review.store import snapshot_referenced_source_versions
+        from deixis.workflow.review_store import snapshot_referenced_source_versions
         return {row[0] for row in rows} | snapshot_referenced_source_versions(self.conn, svids)
 
     def purge_sources(self, research_id: str, svids: list[str]) -> tuple[list[str], list[str], list[str]]:

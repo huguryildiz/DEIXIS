@@ -18,13 +18,13 @@ from deixis.workflow import table_sources
 from deixis.workflow import run_card
 from deixis.workflow import overrides as override_rules
 from deixis.workflow import probes as probe_rules
-from deixis.workflow import fast_answer as answer_input, screen_more
+from deixis.workflow import answer as answer_input, screen_more
 from deixis.workflow.chaining import QUERY_PREFIX as CHAIN_PREFIX, policy as chain_policy, request_outcomes
 from deixis.workflow import vocabulary as vocabulary_rules
 from deixis.workflow.equations import chunk_numbers, equation_reader, equation_state, equations_to_check, latex_numbers
 from deixis.workflow.queue import _snapshot as snapshot, context as queue_context, queue_answers, queue_counts, inspection_progress
-from deixis.workflow.report import assembly as report_assembly
-from deixis.workflow.report.store import DISPLAY_ORDER, ReportStore
+from deixis.workflow import report_assembly
+from deixis.workflow.report_store import DISPLAY_ORDER, ReportStore
 from deixis.workflow import waiting as waiting_rules
 from deixis.providers import openalex
 from deixis.providers.registry import search_providers
@@ -32,9 +32,9 @@ from deixis.workflow.store import ENDED_RUN_STATUSES, EVIDENCE_STATUS_SQL, NotFo
 from deixis.workflow import chaining as chaining_rules
 from deixis.workflow import seed_match as seed_match_rules
 from deixis.workflow.evidence_deps import latest_completed_restore, passage_dependencies
-from deixis.workflow.report.passage_freshness import passage_freshness
+from deixis.workflow.report_passage_freshness import passage_freshness
 from deixis.workflow import recovery_view
-from deixis.workflow import fast_path, fast_search
+from deixis.workflow import fast_path, search as fast_search
 from deixis.workflow.expansion import queried_form
 
 
@@ -600,7 +600,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         if fast_path.enabled(run["budget"]):
             run["fast_path"] = fast_path.view(store, run)
             if fast_path.enforces(run["budget"], "read"):
-                from deixis.workflow import fast_read
+                from deixis.workflow import read as fast_read
                 run["fast_path"]["read"] = fast_read.view(store, run)
         if (run["budget"].get("inspection") or {}).get("policy") == "small_batch_fused_v1":
             run["inspection_progress"] = inspection_progress(store, run)

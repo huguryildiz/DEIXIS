@@ -12,8 +12,8 @@ from deixis.domain.rules import RevisionConflict
 from deixis.providers.common import ProviderRecord
 from deixis.storage import db
 from deixis.workflow import links
-from deixis.workflow.candidates.hits import merge_and_cut
-from deixis.workflow.candidates.store import CandidateStore, CANDIDATE_TABLES, InvalidCandidateInput
+from deixis.workflow.candidates_hits import merge_and_cut
+from deixis.workflow.candidates_store import CandidateStore, CANDIDATE_TABLES, InvalidCandidateInput
 from deixis.workflow.store import NotFound
 from test_lineage_store import make_library as lineage_library
 
@@ -658,7 +658,7 @@ def test_candidate_status_uses_stored_rows_for_each_status_and_owner_never_decid
 
 
 def test_latest_failed_search_hides_older_completed_status_and_versions_never_share_results(lib, monkeypatch):
-    monkeypatch.setattr("deixis.workflow.candidates.store.now", lambda: "2026-10-01T00:00:00.000+00:00")
+    monkeypatch.setattr("deixis.workflow.candidates_store.now", lambda: "2026-10-01T00:00:00.000+00:00")
     c = owner(lib)
     v = version(lib, c)
     s, records = with_hits(lib, v)
@@ -740,7 +740,7 @@ def test_delete_guard_requires_owning_research_authorization_and_rejects_table_a
 
 
 def test_owning_research_authorization_allows_the_entire_tree_delete_in_dependency_order(lib):
-    from deixis.workflow.candidates.store import purge_candidates
+    from deixis.workflow.candidates_store import purge_candidates
     guard_library(lib)
     lib.conn.execute("INSERT INTO research_purge_authorizations VALUES (?)", (lib.rid,))
     purge_candidates(lib.conn, lib.rid)

@@ -89,7 +89,7 @@ def _protocol(store: Store, research_id: str, revision: int, until: str) -> dict
 def _search(store: Store, research_id: str, revision: int, until: str) -> dict[str, Any]:
     protocol = _protocol(store, research_id, revision, until)
     groups = prisma_s._groups(store, research_id, revision, until)
-    from deixis.workflow.fast_search import sent_plan
+    from deixis.workflow.search import sent_plan
     planned = sent_plan(protocol["body"]) if protocol else []
     keyword = [g for g in groups if g["kind"] == "keyword"]
     chain = [g for g in groups if g["kind"] == "chain"]

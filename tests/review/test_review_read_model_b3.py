@@ -3,7 +3,7 @@
 import pytest
 
 from deixis.storage import db
-from deixis.workflow.review.store import ReviewStore
+from deixis.workflow.review_store import ReviewStore
 from deixis.workflow.tables import TableStore
 from tests.review.review_helpers import report_with_sections, review_lib
 from tests.review.review_run_helpers import review_api, body, start, read

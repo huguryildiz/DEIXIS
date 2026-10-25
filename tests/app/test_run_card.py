@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from deixis.storage import db
-from deixis.workflow import fast_read, run_card, views
+from deixis.workflow import read as fast_read, run_card, views
 from deixis.workflow.store import Store
 from test_queue import BUDGET, Lib
 

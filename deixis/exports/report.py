@@ -1,4 +1,4 @@
-"""The evidence report as DOCX: the Markdown export (workflow/report/export.py `to_markdown`) block for block.
+"""The evidence report as DOCX: the Markdown export (workflow/report_export.py `to_markdown`) block for block.
 
 It reads the same report view and corpus and takes every sentence from the shared `export_text` helpers, so the
 headings, claims, reference numbers, Table I, references and closing notes match the Markdown and LaTeX files. Stored
@@ -17,8 +17,8 @@ from typing import Any
 from deixis.documents.jats import RENDITION_SQL
 from deixis.exports import ooxml
 from deixis.exports.text import OCR_LABEL, locator_text, translator
-from deixis.workflow.report import export_text
-from deixis.workflow.report.store import DISPLAY_ORDER, ReportStore
+from deixis.workflow import report_export_text as export_text
+from deixis.workflow.report_store import DISPLAY_ORDER, ReportStore
 from deixis.workflow.store import NotFound, Store
 
 

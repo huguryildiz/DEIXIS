@@ -5,35 +5,37 @@ import inspect
 import hashlib
 from pathlib import Path
 
-from deixis.workflow.review.reader import ReviewReader
-from deixis.workflow.review.snapshot import build_snapshot
-from deixis.workflow.review.stale import stale_reasons
+from deixis.workflow.review_reader import ReviewReader
+from deixis.workflow.review_snapshot import build_snapshot
+from deixis.workflow.review_stale import stale_reasons
 from tests.review.review_helpers import report_with_sections, review_lib, all_rows
 
 
 def test_review_package_import_and_write_boundary():
-    root = Path("deixis/workflow/review")
-    assert (root / "run.py").is_file()
-    forbidden = {"deixis.workflow.store", "deixis.workflow.report.store", "deixis.workflow.tables",
-                 "deixis.workflow.candidates.store", "deixis.workflow.lineage.store", "deixis.workflow.flow"}
-    for file in root.glob("*.py"):
+    root = Path("deixis/workflow")
+    assert (root / "review_run.py").is_file()
+    forbidden = {"deixis.workflow.store", "deixis.workflow.report_store", "deixis.workflow.tables",
+                 "deixis.workflow.candidates_store", "deixis.workflow.lineage_store", "deixis.workflow.flow"}
+    for file in root.glob("review_*.py"):
         tree = ast.parse(file.read_text())
         type_only = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.If) and isinstance(node.test, ast.Name) and node.test.id == "TYPE_CHECKING":
                 type_only.update(id(n) for child in node.body for n in ast.walk(child))
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module in forbidden and id(node) not in type_only:
-                assert file.name == "store.py" and {n.name for n in node.names} <= {"NotFound", "RevisionConflict", "purge_owner_reviews"}
+            # `from deixis.workflow import report_store` names the module in the alias, not in `node.module`.
+            imported = {node.module} | {f"{node.module}.{n.name}" for n in node.names} if isinstance(node, ast.ImportFrom) else set()
+            if imported & forbidden and id(node) not in type_only:
+                assert node.module in forbidden and file.name == "review_store.py" and {n.name for n in node.names} <= {"NotFound", "RevisionConflict", "purge_owner_reviews"}
             if isinstance(node, ast.Import) and id(node) not in type_only:
                 assert not any(n.name in forbidden for n in node.names)
             if isinstance(node, ast.Attribute):
                 assert node.attr not in {"edit_claim", "save_claims", "save_answer", "save_review"}
             if isinstance(node, ast.Call):
-                if file.name not in {"reader.py", "store.py"}:
+                if file.name not in {"review_reader.py", "review_store.py"}:
                     assert not (isinstance(node.func, ast.Attribute) and node.func.attr in {"execute", "executemany", "executescript", "commit", "rollback"})
                     assert not (isinstance(node.func, ast.Name) and node.func.id == "transaction")
-                if file.name == "reader.py" and isinstance(node.func, ast.Attribute) and node.func.attr == "execute":
+                if file.name == "review_reader.py" and isinstance(node.func, ast.Attribute) and node.func.attr == "execute":
                     assert isinstance(node.args[0], ast.Constant)
                     assert node.args[0].value.lstrip().upper().startswith(("SELECT", "WITH"))
 

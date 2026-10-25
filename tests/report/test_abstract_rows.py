@@ -22,10 +22,10 @@ from deixis.storage.db import new_id, now, transaction
 from deixis.workflow import table_rows, table_sources
 from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.flow import FlowDeps, ResearchFlow
-from deixis.workflow.report import assembly, export_text, selection
-from deixis.workflow.report.review_methodology import abstract_rows_sentence
-from deixis.workflow.report.snapshot import build_snapshot, countable_row_ids, included_table_rows
-from deixis.workflow.report.store import ReportStore
+from deixis.workflow import report_assembly as assembly, report_export_text as export_text, report_selection as selection
+from deixis.workflow.report_review_methodology import abstract_rows_sentence
+from deixis.workflow.report_snapshot import build_snapshot, countable_row_ids, included_table_rows
+from deixis.workflow.report_store import ReportStore
 from deixis.workflow.store import Store
 from deixis.workflow.tables import TableStore, report_ready
 from fakes import FakeAdapter, valid_response
@@ -547,9 +547,9 @@ def test_a_claim_citing_the_abstract_cell_of_a_row_with_full_text_cells_is_marke
 
 def test_every_output_carries_the_abstract_notes(tmp_path):
     from deixis.exports.report import blocks
-    from deixis.workflow.report.export import to_markdown
-    from deixis.workflow.report.latex import to_latex
-    from deixis.workflow.report.latex_export import read_bib_sources
+    from deixis.workflow.report_export import to_markdown
+    from deixis.workflow.report_latex import to_latex
+    from deixis.workflow.report_latex_export import read_bib_sources
     from deixis.workflow.views import report_view
     from test_report_export import complete
     store, reports, research_id, report_id = complete(tmp_path)

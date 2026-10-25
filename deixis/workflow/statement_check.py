@@ -46,7 +46,7 @@ from deixis.domain.citation_check import DEPTHS, RESULTS, PartAssessment, check_
 from deixis.domain.rules import MAX_SCHEMA_REPAIRS
 from deixis.domain.rules import RevisionConflict
 from deixis.storage.db import dumps, new_id, now, rollback_savepoint, transaction
-from deixis.workflow import citation_check, fast_answer, small_batch
+from deixis.workflow import citation_check, answer as fast_answer, small_batch
 from deixis.workflow.store import NotFound, Store
 
 KIND = TASK = "statement_check"

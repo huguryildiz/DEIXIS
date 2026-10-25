@@ -7,9 +7,9 @@ import sys
 import pytest
 
 from deixis.providers.query_rules import query_issues
-from deixis.workflow.candidates.hits import merge_and_cut
-from deixis.workflow.candidates.status import STATUSES, derive_status
-from deixis.workflow.candidates.terms import InvalidTerms, block_vocabulary, compile_queries
+from deixis.workflow.candidates_hits import merge_and_cut
+from deixis.workflow.candidates_status import STATUSES, derive_status
+from deixis.workflow.candidates_terms import InvalidTerms, block_vocabulary, compile_queries
 from deixis.workflow.vocabulary import TERM_FIELDS
 
 ELEMENTS = ["ele_1", "ele_2"]
@@ -147,7 +147,7 @@ def test_generated_product_never_opens_or_closes_without_the_explicit_gate():
 
 @pytest.mark.parametrize("module", ["status", "hits", "terms"])
 def test_candidate_computations_import_only_the_pure_allowlist(module):
-    path = Path("deixis/workflow/candidates") / f"{module}.py"
+    path = Path("deixis/workflow") / f"candidates_{module}.py"
     allowed = {"deixis.providers.query_compiler", "deixis.providers.query_rules",
                "deixis.workflow.criterion", "deixis.workflow.vocabulary",
                "deixis.workflow.ranking"}  # hits' ranked cut reuses the fast path's pure signal functions

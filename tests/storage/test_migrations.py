@@ -9,7 +9,7 @@ from deixis.storage import db
 
 
 def test_candidate_python_vocabularies_equal_the_real_sql_check_lists(tmp_path):
-    from deixis.workflow.candidates import store as c
+    from deixis.workflow import candidates_store as c
     conn = db.connect(tmp_path / "library.sqlite")
     db.migrate(conn)
     for table, columns in (
@@ -32,7 +32,7 @@ def test_candidate_python_vocabularies_equal_the_real_sql_check_lists(tmp_path):
 
 
 def test_lineage_vocabularies_equal_the_real_sql_check_lists(tmp_path):
-    from deixis.workflow.lineage.store import RELATIONS, SUPPORT_TYPES, DECISIONS, REVISION_KINDS, REJECTION_CODES
+    from deixis.workflow.lineage_store import RELATIONS, SUPPORT_TYPES, DECISIONS, REVISION_KINDS, REJECTION_CODES
 
     conn = db.connect(tmp_path / "library.sqlite")
     db.migrate(conn)

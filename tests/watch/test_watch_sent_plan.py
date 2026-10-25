@@ -1,5 +1,5 @@
 """Which requests of a frozen protocol a watch follows; SYNTHETIC bodies, no provider calls."""
-from deixis.workflow.fast_search import sent_plan
+from deixis.workflow.search import sent_plan
 
 
 def test_a_watch_follows_the_dated_queries_a_fast_plan_sends():

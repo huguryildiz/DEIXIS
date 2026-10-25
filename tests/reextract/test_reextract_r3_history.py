@@ -209,7 +209,7 @@ def frozen_record(lib, kind, raw, owner=None):
             row.update(id=db.new_id("sti"), attempt=1, payload_json=raw)
             lib.conn.execute("INSERT INTO step_inputs (" + ",".join(row) + ") VALUES (" + ",".join("?" for _ in row) + ")", tuple(row.values()))
     else:
-        from deixis.workflow.report.store import ReportStore
+        from deixis.workflow.report_store import ReportStore
         report_id = ReportStore(lib.store).create_report(owner, run["id"], 1, "en")
         encoded = json.dumps(raw) if isinstance(raw, dict) else raw
         if kind == "snapshot":
@@ -292,7 +292,7 @@ def link_frozen_owner(lib, owner, kind):
         lib.conn.execute("INSERT INTO candidates (id, research_id, source_version_id, created_at) VALUES (?, ?, ?, ?)",
                          (db.new_id("can"), owner, lib.svid, db.now()))
     else:
-        from deixis.workflow.candidates.store import CandidateStore
+        from deixis.workflow.candidates_store import CandidateStore
         candidates = CandidateStore(lib.store)
         candidate = candidates.open_from_owner_text(owner, "SYNTHETIC scope claim")
         version = candidates.add_version(owner, candidate["id"], claim_statement="SYNTHETIC scope claim",
@@ -465,7 +465,7 @@ def test_s10_own_snapshot_purge_order_new_contract(tmp_path):
 @pytest.mark.parametrize("case", ["version", "unparsable", "manifest_shape", "sources_shape"])
 @pytest.mark.parametrize("source_only", [False, True])
 def test_s10_unreadable_owner_snapshot_guard(tmp_path, case, source_only):
-    from deixis.workflow.review.store import SnapshotDependencyUnreadable
+    from deixis.workflow.review_store import SnapshotDependencyUnreadable
     with store_library(tmp_path, "partial") as lib:
         rich(lib)
         tear(lib)

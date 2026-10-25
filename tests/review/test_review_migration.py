@@ -6,7 +6,7 @@ import sqlite3
 import pytest
 
 from deixis.storage import db
-from deixis.workflow.review.store import TARGET_KINDS, FOCUSES, DECISIONS
+from deixis.workflow.review_store import TARGET_KINDS, FOCUSES, DECISIONS
 
 
 def test_all_four_tables_have_no_hidden_rowid_and_explicit_foreign_keys(tmp_path):

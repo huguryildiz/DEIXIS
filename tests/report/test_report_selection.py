@@ -1,7 +1,7 @@
 """Synthetic, model-independent tests for report evidence selection."""
 
 from deixis.workflow.store import NotFound
-from deixis.workflow.report.selection import (
+from deixis.workflow.report_selection import (
     CELL_CEILING_TOKENS, CELL_RESERVE_TOKENS, SECTION_BUDGET_TOKENS, _estimated_tokens, select_evidence,
 )
 

@@ -6,7 +6,7 @@ titles and files are SYNTHETIC, transports are mocked and the model is scripted.
 D46 says; it says nothing about whether a person finds the button, or about answer quality from abstracts alone.
 """
 
-from deixis.workflow import fast_answer
+from deixis.workflow import answer as fast_answer
 from deixis.workflow import waiting as waiting_rules
 from test_abstract_flow import records_of
 from test_fulltext_flow import wait, wait_for_all

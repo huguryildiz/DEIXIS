@@ -13,8 +13,8 @@ import pytest
 
 from deixis.domain import contracts
 from deixis.workflow.flow import RunStopped
-from deixis.workflow.report import assembly, sections
-from deixis.workflow.report.sections import run_report
+from deixis.workflow import report_assembly as assembly, report_sections as sections
+from deixis.workflow.report_sections import run_report
 from fakes import envelope
 from test_contracts import STEP_INPUTS
 from test_report_flow import _claim, report_flow

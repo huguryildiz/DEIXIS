@@ -8,8 +8,8 @@ import pytest
 
 from deixis.domain.rules import RevisionConflict
 from deixis.storage import db
-from deixis.workflow.lineage.run import build_node, node_snapshot, stale_link_reasons, stale_link_revisions
-from deixis.workflow.lineage.store import InvalidLineageInput, LineageStore, REJECTION_CODES
+from deixis.workflow.lineage_run import build_node, node_snapshot, stale_link_reasons, stale_link_revisions
+from deixis.workflow.lineage_store import InvalidLineageInput, LineageStore, REJECTION_CODES
 from deixis.workflow.store import NotFound, Store
 from deixis.workflow.tables import InvalidTableInput, TableStore
 
@@ -223,9 +223,9 @@ def test_revision_reads_and_step_replay_keep_insertion_order_within_one_millisec
     pair = lib.lineage.ensure_link(lib.tid, lib.ids["a"], lib.ids["b"])
     p = proposal(lib)
     ids = iter(("llr_z", "llr_y", "llr_a"))  # random ids must not decide the order of writes made in one millisecond
-    monkeypatch.setattr("deixis.workflow.lineage.store.new_id", lambda prefix: next(ids))
+    monkeypatch.setattr("deixis.workflow.lineage_store.new_id", lambda prefix: next(ids))
     for timestamp in ("2026-10-01T00:00:00.000+00:00",) * 3:
-        monkeypatch.setattr("deixis.workflow.lineage.store.now", lambda: timestamp)
+        monkeypatch.setattr("deixis.workflow.lineage_store.now", lambda: timestamp)
         lib.lineage._insert_revision(pair, kind="model_propose", author="model", decision="no_relation",
                                      disposition="accepted", origin="mention", step_input_id=p["step_input_id"],
                                      output_status="structurally_valid")
@@ -235,10 +235,10 @@ def test_revision_reads_and_step_replay_keep_insertion_order_within_one_millisec
 
 def test_active_link_reads_use_oldest_time_then_primary_key(lib, monkeypatch):
     ids = iter(("llk_z", "llr_z", "llk_y", "llr_y", "llk_a", "llr_a"))
-    monkeypatch.setattr("deixis.workflow.lineage.store.new_id", lambda prefix: next(ids))
+    monkeypatch.setattr("deixis.workflow.lineage_store.new_id", lambda prefix: next(ids))
     for (a, b), timestamp in zip((("a", "b"), ("a", "c"), ("a", "d")),
                                  ("2026-10-02T00:00:00+00:00", "2026-10-01T00:00:00+00:00", "2026-10-01T00:00:00+00:00")):
-        monkeypatch.setattr("deixis.workflow.lineage.store.now", lambda: timestamp)
+        monkeypatch.setattr("deixis.workflow.lineage_store.now", lambda: timestamp)
         human(lib, a, b)
     assert [r["id"] for r in lib.lineage.active_links(lib.tid)] == ["llk_a", "llk_y", "llk_z"]
 
@@ -439,7 +439,7 @@ def test_replacing_a_link_removes_its_own_old_edge_for_the_cycle_check(lib):
 def test_batch_applies_in_fixed_order_whatever_the_input_order(lib, order, monkeypatch):
     # Distinct stored times let this assertion observe application order independently of random ids.
     timestamps = iter(f"2026-10-01T00:00:00.{n:03d}+00:00" for n in range(20))
-    monkeypatch.setattr("deixis.workflow.lineage.store.now", lambda: next(timestamps))
+    monkeypatch.setattr("deixis.workflow.lineage_store.now", lambda: next(timestamps))
     proposals = [proposal(lib, a, b) for a, b in (("c", "d"), ("a", "b"), ("a", "d"))]
     results = lib.lineage.apply_model_proposals([proposals[i] for i in order])
     pairs = [lib.lineage.link_by_id(r["link_id"]) for r in results]
@@ -586,8 +586,8 @@ def test_human_cycle_is_refused(lib):
 
 
 def test_human_decided_pairs_is_the_exclusion_set(lib):
-    from deixis.workflow.lineage.candidates import find_candidates, LineageWork
-    from deixis.workflow.lineage.mentions import PassageText
+    from deixis.workflow.lineage_candidates import find_candidates, LineageWork
+    from deixis.workflow.lineage_mentions import PassageText
 
     human(lib)
     human(lib, "c", "d")

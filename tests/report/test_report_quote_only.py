@@ -10,10 +10,10 @@ from deixis.storage import db
 from deixis.storage.db import dumps, new_id
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow.flow import FlowDeps, ResearchFlow
-from deixis.workflow.report import review
-from deixis.workflow.report import sections as report_sections
-from deixis.workflow.report.sections import run_report
-from deixis.workflow.report.store import ReportStore
+from deixis.workflow import report_review as review
+from deixis.workflow import report_sections
+from deixis.workflow.report_sections import run_report
+from deixis.workflow.report_store import ReportStore
 from deixis.workflow.store import Store
 from deixis.workflow.tables import TableStore
 from deixis.models.adapter import ModelStepResult

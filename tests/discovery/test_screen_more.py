@@ -15,7 +15,7 @@ from deixis.domain import skill
 from deixis.domain.rules import RevisionConflict
 from deixis.storage import db
 from deixis.storage.db import new_id, now
-from deixis.workflow import fast_answer, screen_more, small_batch
+from deixis.workflow import answer as fast_answer, screen_more, small_batch
 from deixis.workflow.views import research_view
 from deixis.workflow.flow import FlowDeps, ResearchFlow
 from deixis.workflow.store import Store

@@ -6,11 +6,11 @@ import sqlite3
 import pytest
 
 from deixis.storage import db
-from deixis.workflow.watch.store import TABLES
-from deixis.workflow.watch.store import command_hash
+from deixis.workflow.watch_store import TABLES
+from deixis.workflow.watch_store import command_hash
 from tests.watch.watch_helpers import api, watch_offline, turn, now_check, rows, page, work
 from tests.watch.test_watch_scheduler import baseline, loop, schedule, Clock
-from deixis.workflow.watch.scheduler import WatchScheduler
+from deixis.workflow.watch_scheduler import WatchScheduler
 
 
 def histories(api):

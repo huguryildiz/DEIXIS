@@ -11,9 +11,9 @@ import httpx
 import pytest
 
 from deixis.storage import db
-from deixis.workflow.watch import check as policy, run as watch_run, store as watch_store
-from deixis.workflow.watch.scheduler import WatchScheduler
-from deixis.workflow.watch.store import WatchStore
+from deixis.workflow import watch_check as policy, watch_run, watch_store
+from deixis.workflow.watch_scheduler import WatchScheduler
+from deixis.workflow.watch_store import WatchStore
 from tests.watch.watch_helpers import (api, watch_offline, watch_api, create, now_check, turn, read, control,
                                  page, work, rows, hashes, add_included)
 from tests.watch.test_watch_recovery import Crash

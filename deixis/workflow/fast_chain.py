@@ -15,7 +15,7 @@ from deixis.providers import facade
 from deixis.providers.common import FIRST_PAGE
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import transaction
-from deixis.workflow import chaining, fast_path, fast_search, ranking, seed_match, small_batch
+from deixis.workflow import chaining, fast_path, search as fast_search, ranking, seed_match, small_batch
 
 RETRY_BACKOFF_SECONDS = 1.5  # wait before resending a request that never left, times the attempt number
 

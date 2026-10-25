@@ -6,8 +6,8 @@ import pytest
 
 from deixis.storage import db
 from deixis.storage.db import new_id
-from deixis.workflow.report.review_methodology import limitations_core, render_limitations, write_review_methodology
-from deixis.workflow.report.store import ReportStore
+from deixis.workflow.report_review_methodology import limitations_core, render_limitations, write_review_methodology
+from deixis.workflow.report_store import ReportStore
 from deixis.workflow.store import Store
 from deixis.workflow.views import research_view
 

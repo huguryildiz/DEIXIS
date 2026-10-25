@@ -13,7 +13,7 @@ from deixis.domain import canonical, skill
 from deixis.domain.rules import TEST_EFFORT_BUDGETS
 from deixis.providers.common import ProviderRecord
 from deixis.storage.db import transaction
-from deixis.workflow import fast_answer, fast_path, small_batch, views, report_pipeline
+from deixis.workflow import answer as fast_answer, fast_path, small_batch, views, report_pipeline
 from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.flow import FlowDeps, ResearchFlow, RunStopped
 from fakes import FakeAdapter, valid_response

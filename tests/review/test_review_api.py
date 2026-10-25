@@ -6,8 +6,8 @@ import json
 import pytest
 
 from deixis.storage import db
-from deixis.workflow.report.store import ReportStore
-from deixis.workflow.review.store import ReviewStore
+from deixis.workflow.report_store import ReportStore
+from deixis.workflow.review_store import ReviewStore
 from tests.support.fakes import FakeAdapter
 from tests.review.review_helpers import report_with_sections, review_lib, all_rows
 from tests.review.review_run_helpers import review_api, body, preview, start, read, turn, control
@@ -260,7 +260,7 @@ def test_apply_dependency_change_including_original_omitted_citation_is_409(api,
     # Both report claims fit one call. Script a finding on the cell-citing claim
     # when testing a dependency of that claim.
     if change != "selection":
-        from deixis.workflow.review.store import resolve_finding
+        from deixis.workflow.review_store import resolve_finding
         saved = ReviewStore(api.conn).snapshot(card["snapshot"]["id"])
         payload = api.store.step_input_payload(card["models_that_answered"][0]["step_input_id"])
         original = copy.deepcopy(card["findings"][0]["finding"])

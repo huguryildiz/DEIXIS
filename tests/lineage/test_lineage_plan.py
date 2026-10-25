@@ -17,10 +17,10 @@ from deixis.domain.rules import MAX_RATE_LIMIT_MODEL_RETRIES, RevisionConflict, 
 from deixis.models import prompt
 from deixis.storage import db
 from deixis.workflow.flow import FlowDeps, ResearchFlow
-from deixis.workflow.lineage import run as planning
-from deixis.workflow.lineage.candidates import find_candidates
-from deixis.workflow.lineage.mentions import PassageText, mention_rules
-from deixis.workflow.lineage.store import InvalidLineageInput, LineageStore
+from deixis.workflow import lineage_run as planning
+from deixis.workflow.lineage_candidates import find_candidates
+from deixis.workflow.lineage_mentions import PassageText, mention_rules
+from deixis.workflow.lineage_store import InvalidLineageInput, LineageStore
 from deixis.workflow.store import Store
 from deixis.workflow.tables import TableStore
 from fakes import FakeAdapter

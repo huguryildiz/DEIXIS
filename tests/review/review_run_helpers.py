@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.storage import db
-from deixis.workflow.review.store import ReviewStore
+from deixis.workflow.review_store import ReviewStore
 from tests.support.fakes import FakeAdapter, valid_response
 from tests.app.test_api_flow import session
 
@@ -110,10 +110,10 @@ def resolved_rows(api, card):
 def two_groups(api, monkeypatch):
     from deixis.domain import skill
     from deixis.workflow.flow import CAPABILITIES
-    from deixis.workflow.report.store import ReportStore
-    from deixis.workflow.review import run as reviews
-    from deixis.workflow.review.reader import ReviewReader
-    from deixis.workflow.review.snapshot import build_snapshot
+    from deixis.workflow.report_store import ReportStore
+    from deixis.workflow import review_run as reviews
+    from deixis.workflow.review_reader import ReviewReader
+    from deixis.workflow.review_snapshot import build_snapshot
     saved, _ = build_snapshot(ReviewReader(api.store, ReportStore(api.store)), api.rid, "report", api.report_id)
     row = {"focus": "source_support", "owner_note": None, "requested_connection": "fake", "requested_model": "review-model"}
     sizes = []

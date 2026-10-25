@@ -4,13 +4,13 @@ import copy
 
 import pytest
 
-from deixis.workflow.review.snapshot import ReviewInputTooLarge, review_step_input_parts
+from deixis.workflow.review_snapshot import ReviewInputTooLarge, review_step_input_parts
 from tests.review.review_candidate_helpers import report_with_sections, review_lib, candidate_lib, snapshot
 from tests.review.test_review_run import plan, envelope
 
 
 def test_candidate_packs_by_assessed_source_with_all_shared_elements(candidate_lib, monkeypatch):
-    from deixis.workflow.review import run
+    from deixis.workflow import review_run as run
     c = snapshot(candidate_lib)["content"]
     baseline = plan(c); assert len(baseline["groups"]) == 1
     sizes = []

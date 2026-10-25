@@ -17,12 +17,12 @@ from deixis.domain import contracts, skill
 from deixis.domain.rules import RevisionConflict
 from deixis.storage.db import dumps, new_id
 from deixis.workflow.flow import RunStopped
-from deixis.workflow.report import assembly, sections, review_methodology
-from deixis.workflow.report.export import to_markdown
-from deixis.workflow.report.gaps import generate_corpus_absence_candidates
-from deixis.workflow.report.selection import select_evidence, usable_cells
-from deixis.workflow.report.snapshot import build_snapshot, evidence_row_ids
-from deixis.workflow.report.store import ReportStore
+from deixis.workflow import report_assembly as assembly, report_sections as sections, report_review_methodology as review_methodology
+from deixis.workflow.report_export import to_markdown
+from deixis.workflow.report_gaps import generate_corpus_absence_candidates
+from deixis.workflow.report_selection import select_evidence, usable_cells
+from deixis.workflow.report_snapshot import build_snapshot, evidence_row_ids
+from deixis.workflow.report_store import ReportStore
 from deixis.workflow.tables import TableStore, report_ready
 from deixis.workflow.views import report_view
 from test_api_flow import create, session, wait_run

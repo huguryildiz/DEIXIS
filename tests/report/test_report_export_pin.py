@@ -11,8 +11,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from deixis.domain.rules import RevisionConflict
-from deixis.workflow.report.export import export_markdown, to_markdown
-from deixis.workflow.report.store import ReportStore
+from deixis.workflow.report_export import export_markdown, to_markdown
+from deixis.workflow.report_store import ReportStore
 from deixis.workflow.store import NotFound
 from test_report_export import complete, app_for, create, session, ReportAdapter
 

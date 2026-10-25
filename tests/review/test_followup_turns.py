@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from deixis.api.app import create_app
 from deixis.domain import contracts, skill
 from deixis.domain.rules import RevisionConflict
-from deixis.workflow import fast_answer, followup
+from deixis.workflow import answer as fast_answer, followup
 from fakes import FakeAdapter, valid_response
 from helpers import make_pdf
 from test_api_flow import app_for, create, fake_fetch, session, sw_settings, wait_run

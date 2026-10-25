@@ -550,7 +550,7 @@ def rank_records(store: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
     verified = seed_rows(store, run, scope, versions, in_pool)
     from deixis.workflow import fast_path
     similarities = fast_path.ranking_similarities(store, run, embedding_model) if embedding_model else {}
-    from deixis.workflow.fast_search import graph_rule
+    from deixis.workflow.search import graph_rule
     ranked = rank_pool(pool, verified, query_words, blocks, embedding_model, similarities, off_reason,
                        joint_terms(store, scope, vocabulary), graph_rule(store, run))
     ranks, reasons, graph_seeds = ranked["ranks"], ranked["reasons"], ranked["graph_seeds"]

@@ -14,7 +14,7 @@ import pytest
 from deixis.domain import contracts
 from deixis.storage.db import new_id
 from deixis.workflow.flow import RunStopped
-from deixis.workflow.report.sections import revalidate_section
+from deixis.workflow.report_sections import revalidate_section
 from fakes import valid_response
 from test_contracts import STEP_INPUTS
 from test_report_path_fix import Capture, REPLAY, patch, rebind, run_step, sessions

@@ -8,8 +8,8 @@ import pytest
 from deixis.domain import contracts
 from deixis.domain.canonical import canonical_json, sha256_hex
 from deixis.storage import db
-from deixis.workflow.review.snapshot import build_snapshot, review_step_input_parts, DuplicateReviewRef, NotReviewable, ReviewInputTooLarge
-from deixis.workflow.review.store import NotFound, resolve_finding, applied_matches_suggestion
+from deixis.workflow.review_snapshot import build_snapshot, review_step_input_parts, DuplicateReviewRef, NotReviewable, ReviewInputTooLarge
+from deixis.workflow.review_store import NotFound, resolve_finding, applied_matches_suggestion
 from tests.review.review_helpers import report_with_sections, review_lib, snapshot, step_payload, make_answer, finding
 from tests.report.test_report_claim_links import edit, claim
 
@@ -137,7 +137,7 @@ def test_candidate_snapshot_missing_version_is_not_found(review_lib):
 def test_retracted_flag_is_frozen_in_the_snapshot_and_a_snapshot_without_it_still_loads(review_lib):
     """D27: an owner-review snapshot carries the work's flag only for a flagged work; one stored before D27 has no
     flag and still validates and builds its step input."""
-    from deixis.workflow.review.store import _snapshot_source_ids
+    from deixis.workflow.review_store import _snapshot_source_ids
     lib = review_lib
     lib["conn"].execute("UPDATE source_versions SET is_retracted = 1 WHERE id = ?", (lib["source_id"],))
     saved = snapshot(lib, "report")

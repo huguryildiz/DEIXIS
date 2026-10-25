@@ -7,9 +7,9 @@ import pytest
 
 from deixis.domain import contracts
 from deixis.domain.canonical import canonical_json
-from deixis.workflow.candidates.store import CandidateStore
-from deixis.workflow.review.snapshot import build_snapshot, NotReviewable, review_step_input_parts
-from deixis.workflow.review.store import NotFound, _snapshot_source_ids
+from deixis.workflow.candidates_store import CandidateStore
+from deixis.workflow.review_snapshot import build_snapshot, NotReviewable, review_step_input_parts
+from deixis.workflow.review_store import NotFound, _snapshot_source_ids
 from tests.review.review_candidate_helpers import report_with_sections, review_lib, candidate_lib, snapshot, add_version, search
 from tests.review.test_review_run import envelope
 

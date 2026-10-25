@@ -3,7 +3,7 @@ fallback's log. SYNTHETIC report rows; lexical checks, not proof of misattributi
 
 import logging
 
-from deixis.workflow.report import assembly, latex_math
+from deixis.workflow import report_assembly as assembly, report_latex_math as latex_math
 from test_report_assembly import _add_claim, _link, report_with_sections  # noqa: F401  (pytest fixture)
 
 

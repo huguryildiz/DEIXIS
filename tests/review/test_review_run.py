@@ -9,9 +9,9 @@ from deixis.domain import contracts, skill
 from deixis.domain.rules import schema_repairs
 from deixis.models import prompt
 from deixis.workflow.flow import CAPABILITIES
-from deixis.workflow.report.review import REVIEW_BUDGET_TOKENS
-from deixis.workflow.review import run as reviews
-from deixis.workflow.review.snapshot import build_snapshot
+from deixis.workflow.report_review import REVIEW_BUDGET_TOKENS
+from deixis.workflow import review_run as reviews
+from deixis.workflow.review_snapshot import build_snapshot
 from tests.review.review_helpers import report_with_sections, review_lib, si
 
 

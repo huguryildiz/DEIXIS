@@ -10,9 +10,9 @@ import pytest
 
 from deixis.providers.registry import CONNECTORS
 from deixis.storage import db
-from deixis.workflow.candidates import run as planning
-from deixis.workflow.candidates.hits import merge_and_cut, rank_and_cut
-from deixis.workflow.candidates.store import InvalidCandidateInput
+from deixis.workflow import candidates_run as planning
+from deixis.workflow.candidates_hits import merge_and_cut, rank_and_cut
+from deixis.workflow.candidates_store import InvalidCandidateInput
 from test_candidate_flow import execute, lib, queue_kill, search  # noqa: F401  (lib is a fixture)
 from test_candidate_store import make_library, provider_record, query, start
 

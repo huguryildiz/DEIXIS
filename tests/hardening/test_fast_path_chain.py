@@ -17,7 +17,7 @@ from deixis.providers import facade
 from deixis.providers.common import SearchOutcome
 from deixis.storage.db import transaction
 from deixis.storage import db
-from deixis.workflow import fast_chain, fast_embedding, fast_path, fast_search, lookups, small_batch
+from deixis.workflow import fast_chain, fast_embedding, fast_path, search as fast_search, lookups, small_batch
 from deixis.workflow.flow import ResearchFlow
 from deixis.workflow.store import Store
 from test_fast_path_clock import library, app_for, FakeClock

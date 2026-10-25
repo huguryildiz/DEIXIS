@@ -16,7 +16,7 @@ from deixis.storage import db
 from deixis.storage.db import transaction
 from deixis.workflow.flow import FlowDeps, HANDLE_TASKS, ResearchFlow, step_model
 from deixis.workflow.store import Store
-from deixis.workflow.lineage.store import InvalidLineageInput, LineageStore
+from deixis.workflow.lineage_store import InvalidLineageInput, LineageStore
 from fakes import FakeAdapter, parse_step_input, valid_response
 from test_contracts import CASES, STEP_INPUTS
 

@@ -7,8 +7,8 @@ from fastapi.testclient import TestClient
 
 from deixis.domain.rules import MAX_SCHEMA_REPAIRS, REPORT_SECTION_REPAIRS
 from deixis.storage.db import new_id
-from deixis.workflow.report.sections import ROUNDS, run_report
-from deixis.workflow.report.store import REPORT_CALL_FLOOR, ReportStore
+from deixis.workflow.report_sections import ROUNDS, run_report
+from deixis.workflow.report_store import REPORT_CALL_FLOOR, ReportStore
 from deixis.workflow.tables import TableStore
 from deixis.workflow.views import report_view, research_view
 from helpers import make_pdf
@@ -369,7 +369,7 @@ def test_report_view_numbers_source_versions_and_keeps_frozen_table(tmp_path):
     assert numbered["references"][1]["open_passage_id"] == passage
     # A cell link opens the frozen evidence passage whose quote holds the located anchor, not just the first one.
     from deixis.domain.contracts import locate_anchor
-    from deixis.workflow.report.store import ReportStore
+    from deixis.workflow.report_store import ReportStore
     evidence = next(c for c in ReportStore(store).snapshot(report_id)["cells"] if c["cell_id"] == frozen["cell_id"])["evidence"]
     expected = next((e["passage_id"] for e in evidence if e["quote"] and locate_anchor("SYNTHETIC", e["quote"])), None)
     assert links[2][0]["open_passage_id"] == expected

@@ -358,7 +358,7 @@ def admissions_by_work(admitted: dict[str, dict[str, Any]]) -> dict[str, dict[st
 def answer_view(store: Any, answer_run_id: str | None) -> list[dict[str, Any]]:
     """The works an answer read beyond its read cutoff because a Screen more run made them candidates: abstract-based
     evidence screened after the cutoff, for the answer view to label as such."""
-    from deixis.workflow import fast_answer
+    from deixis.workflow import answer as fast_answer
     from deixis.workflow.late_revision import REVISION_INPUT
 
     if answer_run_id is None:

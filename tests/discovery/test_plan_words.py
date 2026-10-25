@@ -5,7 +5,7 @@ with what the compiler wrote, not that any provider was asked.
 """
 
 from deixis.providers import query_compiler
-from deixis.workflow import fast_search
+from deixis.workflow import search as fast_search
 
 # The [parity] research's code vocabulary: OpenAlex has room for five task words, so the sixth is cut from its query,
 # while the Semantic Scholar bulk query holds all six.

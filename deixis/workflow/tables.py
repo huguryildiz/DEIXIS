@@ -510,8 +510,8 @@ class TableStore:
             ).fetchone():
                 raise InvalidTableInput(f"Another active column already holds the {column['lineage_role']} role")
             if column["lineage_role"] is not None:
-                from deixis.workflow.lineage.run import stale_link_revisions
-                from deixis.workflow.lineage.store import LineageStore
+                from deixis.workflow.lineage_run import stale_link_revisions
+                from deixis.workflow.lineage_store import LineageStore
 
                 before_stale = stale_link_revisions(self.store, table_id)
             self.conn.execute("UPDATE table_columns SET removed_at = NULL, version = version + 1 WHERE id = ?", (column_id,))

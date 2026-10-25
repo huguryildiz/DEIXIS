@@ -4,8 +4,8 @@ from dataclasses import fields, replace
 from pathlib import Path
 import random
 
-from deixis.workflow.lineage import baseline
-from deixis.workflow.lineage.baseline import (
+from deixis.workflow import lineage_baseline as baseline
+from deixis.workflow.lineage_baseline import (
     REVIEW_NOTE, SHOWN, BaselineEntry, BaselineVersion, IncludedCitations, field_baseline,
 )
 
@@ -137,7 +137,7 @@ def test_target_identity_is_union_of_its_versions_ids():
 
 
 def test_no_forbidden_word_anywhere():
-    package_sources = tuple(Path(baseline.__file__).parent.glob("*.py"))
+    package_sources = tuple(Path(baseline.__file__).parent.glob("lineage_*.py"))
     for path in package_sources:
         source = path.read_text().casefold()
         for forbidden in ("foundational", "kurucu"):

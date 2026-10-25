@@ -11,7 +11,7 @@ from deixis.config import Settings
 from deixis.domain.skill import load_skill_package
 from deixis.domain.rules import RevisionConflict
 from deixis.storage import db
-from deixis.workflow.report.snapshot import build_snapshot
+from deixis.workflow.report_snapshot import build_snapshot
 from deixis.workflow.store import Store
 from deixis.workflow.tables import InvalidTableInput, LINEAGE_ROLE_COLUMNS, TableStore, report_ready
 from fakes import FakeAdapter

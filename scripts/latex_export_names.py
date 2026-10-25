@@ -12,10 +12,10 @@ import tempfile
 from pathlib import Path
 
 from deixis.documents.arxiv_source import katex_known
-from deixis.workflow.report.latex_preamble import PREAMBLE, PREAMBLE_SHA256
+from deixis.workflow.report_latex_preamble import PREAMBLE, PREAMBLE_SHA256
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "deixis/workflow/report/latex_names.json"
+OUT = ROOT / "deixis/workflow/latex_names.json"
 VOCABULARY = ROOT / "deixis/documents/katex_commands.json"
 PREAMBLE_FILES = {"IEEEtran.cls", "fontspec.sty", "amsmath.sty", "amssymb.sty", "bm.sty",
                   "xcolor.sty", "cite.sty", "url.sty", "booktabs.sty", "longtable.sty", "array.sty"}

@@ -9,9 +9,9 @@ from types import SimpleNamespace
 import pytest
 
 from deixis.storage import db
-from deixis.workflow.review.snapshot import build_snapshot
-from deixis.workflow.review.stale import REASONS, stale_reasons, claim_text_changed
-from deixis.workflow.review.store import NotFound
+from deixis.workflow.review_snapshot import build_snapshot
+from deixis.workflow.review_stale import REASONS, stale_reasons, claim_text_changed
+from deixis.workflow.review_store import NotFound
 from tests.review.review_helpers import report_with_sections, review_lib, snapshot, make_answer
 from tests.report.test_report_claim_links import edit
 
@@ -72,8 +72,8 @@ def test_newer_report_version(review_lib):
 
 
 def test_report_version_changed_after_draft_finalizes_without_a_newer_report(report_with_sections):
-    from deixis.workflow.review.reader import ReviewReader
-    from deixis.workflow.review.store import ReviewStore
+    from deixis.workflow.review_reader import ReviewReader
+    from deixis.workflow.review_store import ReviewStore
     from tests.report.test_report_edit_check import finish
     lib = report_with_sections; lib["rid"] = finish(lib, status="draft")
     lib["reader"] = ReviewReader(lib["store"], lib["reports"])

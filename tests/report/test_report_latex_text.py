@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 
 from deixis.documents.arxiv_source import katex_known
-from deixis.workflow.report import latex_math, latex_preamble, latex_text
-from deixis.workflow.report.latex_preamble import PREAMBLE, PREAMBLE_SHA256
-from deixis.workflow.report.latex_text import SYMBOLS, Unmapped, escape_text, is_unmapped, symbol_math, symbol_text
+from deixis.workflow import report_latex_math as latex_math, report_latex_preamble as latex_preamble, report_latex_text as latex_text
+from deixis.workflow.report_latex_preamble import PREAMBLE, PREAMBLE_SHA256
+from deixis.workflow.report_latex_text import SYMBOLS, Unmapped, escape_text, is_unmapped, symbol_math, symbol_text
 
 
 @pytest.mark.parametrize("ch,expected", [
@@ -117,7 +117,7 @@ def test_import_layering_and_no_runtime_effects():
         imports = [node for node in ast.walk(tree) if isinstance(node, (ast.Import, ast.ImportFrom))]
         names = [node.module if isinstance(node, ast.ImportFrom) else alias.name
                  for node in imports for alias in (node.names if isinstance(node, ast.Import) else [None])]
-        assert not any(re.search(r"(?:^|\.)(?:export|views|store|httpx|subprocess|storage|models|providers|os)(?:\.|$)", name)
+        assert not any(re.search(r"(?:^|[._])(?:export|views|store|httpx|subprocess|storage|models|providers|os)(?:\.|$)", name)
                        for name in names)
         if module is latex_preamble:
             assert names == ["hashlib"]

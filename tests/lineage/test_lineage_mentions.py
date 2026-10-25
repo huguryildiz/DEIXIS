@@ -7,8 +7,8 @@ from pathlib import Path
 import random
 import sys
 
-from deixis.workflow.lineage import mentions
-from deixis.workflow.lineage.mentions import (
+from deixis.workflow import lineage_mentions as mentions
+from deixis.workflow.lineage_mentions import (
     MentionTarget, PassageText, find_mentions, mention_rules, normalize_tokens,
     prepare_passages, surname_tokens,
 )
@@ -155,15 +155,17 @@ def test_package_imports_no_database_provider_or_model():
     forbidden = ("sqlite3", "httpx", "deixis.providers", "deixis.models", "deixis.workflow.store",
                  "deixis.workflow.flow", "deixis.storage", "deixis.api")
     # Storage, planning and views read the database; assembly remains pure.
-    modules = tuple(p for p in Path(mentions.__file__).parent.glob("*.py") if p.stem not in ("store", "run", "view"))
-    assert {path.stem for path in modules} == {"__init__", "mentions", "edges", "candidates", "baseline", "assembly"}
+    modules = tuple(p for p in Path(mentions.__file__).parent.glob("lineage_*.py")
+                    if p.stem not in ("lineage_store", "lineage_run", "lineage_view"))
+    assert {path.stem for path in modules} == {"lineage_mentions", "lineage_edges", "lineage_candidates",
+                                               "lineage_baseline", "lineage_assembly"}
     for path in modules:
         tree = ast.parse(path.read_text())
         for name in _import_paths(tree):
             assert not any(name == bad or name.startswith(bad + ".") for bad in forbidden), (path, name)
             assert (name.split(".")[0] in sys.stdlib_module_names
                     or name.startswith("deixis.workflow.source_keys")
-                    or name.startswith("deixis.workflow.lineage.")), (path, name)
+                    or name.startswith("deixis.workflow.lineage_")), (path, name)
         # No dynamic import escape through otherwise allowed stdlib modules.
         assert not any(isinstance(n, ast.Call) and
                        ((isinstance(n.func, ast.Name) and n.func.id == "__import__") or
@@ -176,9 +178,9 @@ def test_package_imports_no_database_provider_or_model():
 
 
 def test_functions_do_not_mutate_inputs_and_are_deterministic():
-    from deixis.workflow.lineage.baseline import BaselineVersion, field_baseline
-    from deixis.workflow.lineage.candidates import LineageWork, find_candidates, pack_candidates, passage_budget_fits
-    from deixis.workflow.lineage.edges import EdgeFrom, EdgeTo, derive_edges, edge_counts, unassessed_edges
+    from deixis.workflow.lineage_baseline import BaselineVersion, field_baseline
+    from deixis.workflow.lineage_candidates import LineageWork, find_candidates, pack_candidates, passage_budget_fits
+    from deixis.workflow.lineage_edges import EdgeFrom, EdgeTo, derive_edges, edge_counts, unassessed_edges
 
     passages = [PassageText("p", "pdf_page", "Smith 2015", 1)]
     record = target()

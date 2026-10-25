@@ -18,8 +18,8 @@ from deixis.models import prompt
 from deixis.providers.common import SearchOutcome
 from deixis.providers.registry import CONNECTORS
 from deixis.storage import db
-from deixis.workflow.candidates import hits as candidates_hits, run as candidates, terms
-from deixis.workflow.candidates.store import CandidateStore
+from deixis.workflow import candidates_hits, candidates_run as candidates, candidates_terms as terms
+from deixis.workflow.candidates_store import CandidateStore
 from deixis.workflow.views import research_view
 from deixis.workflow.worker import Worker
 from fakes import FakeAdapter, valid_response
@@ -343,7 +343,7 @@ def test_crash_windows_resume_without_recompiling_remerging_or_reopening(lib, mo
     def forbidden(*args, **kw):
         raise AssertionError("A frozen plan was rebuilt")
     monkeypatch.setattr(terms, "compile_queries", forbidden)
-    monkeypatch.setattr("deixis.workflow.candidates.hits.merge_and_cut", forbidden)
+    monkeypatch.setattr("deixis.workflow.candidates_hits.merge_and_cut", forbidden)
     assert resume(lib, run)["status"] == "completed"
     resumed = search(lib, run)
     assert [resumed[k] for k in ("selection_json", "rendered_queries_json", "skipped_terms_json")] == [frozen[k] for k in ("selection_json", "rendered_queries_json", "skipped_terms_json")]

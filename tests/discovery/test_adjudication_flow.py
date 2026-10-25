@@ -310,7 +310,7 @@ def test_two_not_met_runs_exclude_and_a_disagreement_stays_pending(tmp_path, mon
 
 
 def test_a_human_fulltext_decision_is_not_read(tmp_path, monkeypatch):
-    from deixis.workflow import fast_answer, small_batch
+    from deixis.workflow import answer as fast_answer, small_batch
 
     # No automatic answer, so no late revision (D255) reads W1's file before the person decides.
     monkeypatch.setattr(fast_answer, "auto_answer", lambda store, run: None)
@@ -1039,7 +1039,7 @@ def test_a_split_reading_writes_nothing_while_a_call_has_no_usable_answer(tmp_pa
 def test_a_split_reading_leaves_the_answer_its_file(tmp_path, monkeypatch):
     """`fast_answer.read_file` still names the file a split reading read."""
     for found in read_split(tmp_path, monkeypatch, split_response(unseen_parts=(0, 1))):
-        from deixis.workflow import fast_answer
+        from deixis.workflow import answer as fast_answer
         store, flow = found["app"].state.store, found["app"].state.worker.flow
         records = fast_answer.reading_records(store, found["rid"])
         assert fast_answer.read_file(flow, found["decision"], found["read"], records) == found["plan"]["works"][0]["asset_id"]

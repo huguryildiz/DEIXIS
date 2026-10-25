@@ -7,7 +7,7 @@ import json
 import pytest
 
 from deixis.domain import contracts, skill
-from deixis.workflow.report.sections import run_report
+from deixis.workflow.report_sections import run_report
 from deixis.workflow.flow import RunStopped
 from fakes import parse_step_input
 from test_contracts import CASES, STEP_INPUTS
@@ -344,7 +344,7 @@ def test_viii_failed_row_builder_sends_display_only_sources_and_review_count_bui
     assert payload["report_target"]["limitations_core"]["failed_rows"][0]["source_version_id"] == failed_id
     claim = store.conn.execute("SELECT c.id FROM report_claims c JOIN report_sections s ON s.id = c.report_section_id"
                                " WHERE s.report_id = ? LIMIT 1", (report_id,)).fetchone()
-    from deixis.workflow.report.review import _input
+    from deixis.workflow.report_review import _input
     # A stored count may name records with no cited evidence; display must still conceal their raw IDs.
     count = {"numerator_source_ids": [failed_id], "denominator_source_ids": ["srv_SYNTHCOUNTEXTRA01"],
              "column_id": "col_SYNTHCOUNTEXTRA01"}
@@ -410,7 +410,7 @@ def test_report_bad_id_after_one_repair_stops_section_without_salvage_or_dropped
     def forbidden_salvage(*args):
         pytest.fail("Reports must never call answer salvage")
 
-    from deixis.workflow.report import sections
+    from deixis.workflow import report_sections as sections
     original_links = sections._citation_links
 
     def guarded_links(payload, draft):

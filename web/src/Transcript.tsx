@@ -853,7 +853,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const row = (label: ReactNode, value: ReactNode, key?: string) => <div className="step-row" key={key}><span>{label}</span><span className="step-row-value">{value}</span></div>
   const searchRows = () => {
     // A query read page by page has one search row per page; the row shows it once, with its pages summed. The kind
-    // comes from the operation key of the step that sent it (fast_search.py): the semantic request, one per seed, the
+    // comes from the operation key of the step that sent it (search.py): the semantic request, one per seed, the
     // keyword query numbered as the plan lists it, or the Semantic Scholar bulk query; the text sent is in the plan's rows.
     const planQueries = run.approval?.approved.queries ?? []
     const queryKind = (s: SearchRun) => {

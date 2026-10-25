@@ -12,10 +12,10 @@ import pytest
 
 from deixis.storage import db
 from deixis.workflow import text_retry
-from deixis.workflow.report.store import ReportStore
-from deixis.workflow.review.reader import ReviewReader
-from deixis.workflow.review.snapshot import build_snapshot
-from deixis.workflow.review.store import ReviewStore, resolve_finding
+from deixis.workflow.report_store import ReportStore
+from deixis.workflow.review_reader import ReviewReader
+from deixis.workflow.review_snapshot import build_snapshot
+from deixis.workflow.review_store import ReviewStore, resolve_finding
 from deixis.workflow.tables import TableStore
 from tests.report.test_report_assembly import COLUMN, _claim
 from tests.reextract.reextract_r2a_helpers import head

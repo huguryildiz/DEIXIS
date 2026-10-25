@@ -15,12 +15,12 @@ from deixis.storage import db
 from deixis.storage.db import dumps, new_id
 from deixis.workflow.concurrency import ModelCallLimiter
 from deixis.workflow.flow import FlowDeps, ResearchFlow, RunStopped
-from deixis.workflow.report.sections import _citation_links, _pause_detail, run_report
-from deixis.workflow.report.sections import _report_checkpoint
-from deixis.workflow.report.assembly import run_assembly_checks
-from deixis.workflow.report import assembly, sections
-from deixis.workflow.report.selection import SECTION_BUDGET_TOKENS
-from deixis.workflow.report.store import ReportStore
+from deixis.workflow.report_sections import _citation_links, _pause_detail, run_report
+from deixis.workflow.report_sections import _report_checkpoint
+from deixis.workflow.report_assembly import run_assembly_checks
+from deixis.workflow import report_assembly as assembly, report_sections as sections
+from deixis.workflow.report_selection import SECTION_BUDGET_TOKENS
+from deixis.workflow.report_store import ReportStore
 from deixis.workflow.store import Store
 from deixis.workflow.worker import Worker
 from deixis.workflow import flow as flow_module

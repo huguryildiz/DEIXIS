@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from deixis.workflow.candidates.store import CandidateStore
+from deixis.workflow.candidates_store import CandidateStore
 from tests.support.fakes import FakeAdapter
 from tests.review.review_candidate_helpers import report_with_sections, review_lib, candidate_lib, candidate_body, candidate_response, add_version
 from tests.review.review_run_helpers import review_api, start, read, turn, control

@@ -80,29 +80,29 @@ from deixis.workflow.equations import EquationService, chunk_numbers, equation_r
 from deixis.workflow.local_embedding_service import LocalModelService, ServiceError
 from deixis.workflow.flow import FlowDeps, ResearchFlow
 from deixis.workflow import report_pipeline
-from deixis.workflow.report.store import ReportStore
-from deixis.workflow.report import export as report_export
-from deixis.workflow.report import latex_export
+from deixis.workflow.report_store import ReportStore
+from deixis.workflow import report_export
+from deixis.workflow import report_latex_export as latex_export
 from deixis.workflow.store import (COPIED_SELECTION_REASON, NotASource, NotFound, PdfInUse, RunInProgress, SameFile,
                                    SeedUnavailable, Store, LegacyInspectionPolicyRemoved,
                                    RequestConflict, RecoveryConflict, NotRetryable)
 from deixis.workflow.tables import CELL_STATES, InvalidTableInput, TableStore
 from deixis.workflow import citation_map, citation_map_run
-from deixis.workflow.lineage.run import LineagePlanner, stale_link_revisions
-from deixis.workflow.lineage.store import InvalidLineageInput, LineageStore
-from deixis.workflow.lineage.view import LineageView
-from deixis.workflow.candidates.run import KillSearchPlanner, candidate_evidence, decompose_budget, request_decomposition
-from deixis.workflow.candidates.answer_view import answer_candidates
-from deixis.workflow.candidates.store import CandidateStore, InvalidCandidateInput
+from deixis.workflow.lineage_run import LineagePlanner, stale_link_revisions
+from deixis.workflow.lineage_store import InvalidLineageInput, LineageStore
+from deixis.workflow.lineage_view import LineageView
+from deixis.workflow.candidates_run import KillSearchPlanner, candidate_evidence, decompose_budget, request_decomposition
+from deixis.workflow.candidates_answer_view import answer_candidates
+from deixis.workflow.candidates_store import CandidateStore, InvalidCandidateInput
 from deixis.workflow.views import library_version_to_add, library_view, library_work_view, occurrence_view, passage_view, report_gaps_view, report_view, research_view
 from deixis.workflow.worker import Worker
-from deixis.workflow.review import run as review_run
-from deixis.workflow.review.reader import ReviewReader
-from deixis.workflow.review.snapshot import build_snapshot, NotReviewable
-from deixis.workflow.review.stale import stale_reasons
-from deixis.workflow.review.store import ReviewStore, ReviewRefusal, ReviewConflict, applied_matches_suggestion
+from deixis.workflow import review_run
+from deixis.workflow.review_reader import ReviewReader
+from deixis.workflow.review_snapshot import build_snapshot, NotReviewable
+from deixis.workflow.review_stale import stale_reasons
+from deixis.workflow.review_store import ReviewStore, ReviewRefusal, ReviewConflict, applied_matches_suggestion
 from deixis.workflow import recovery_history
-from deixis.workflow.report.review import REVIEW_BUDGET_TOKENS
+from deixis.workflow.report_review import REVIEW_BUDGET_TOKENS
 from deixis.workflow.flow import CAPABILITIES
 from deixis.domain.canonical import sha256_hex
 
@@ -1018,7 +1018,7 @@ def create_app(
         if owner:
             await reconcile_recovery()
 
-        from deixis.workflow.watch.scheduler import WatchScheduler
+        from deixis.workflow.watch_scheduler import WatchScheduler
         scheduler_stop = asyncio.Event()
         scheduler_task = None
 
@@ -1254,7 +1254,7 @@ def create_app(
     from deixis.api.shell_routes import register_shell_routes
     from deixis.api.usage_routes import register_usage_routes
     from deixis.api.watch_routes import register_watch_routes
-    from deixis.workflow.watch.store import WatchRefusal
+    from deixis.workflow.watch_store import WatchRefusal
     register_watch_routes(app)
     register_shell_routes(app)
     register_usage_routes(app)
@@ -2083,7 +2083,7 @@ def create_app(
             # Two model calls per work the read limit reaches (D85). The same function the flow's auto-queue calls.
             budget = adjudication.read_budget(scope["effort"])
         elif body.kind == "answer":
-            from deixis.workflow.fast_answer import answer_run_budget
+            from deixis.workflow.answer import answer_run_budget
             budget = answer_run_budget(store, research_id, scope)
         key = f"{research_id}:{idempotency_key}" if idempotency_key else None
         run = store.create_run(research_id, body.kind, budget, key, expected_scope_revision=body.expected_scope_revision)

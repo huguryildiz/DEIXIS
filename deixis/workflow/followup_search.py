@@ -117,7 +117,7 @@ def offer(store: Any, turn: dict[str, Any]) -> dict[str, Any]:
 
 
 def _eligible(scope: dict[str, Any]) -> list[str]:
-    from deixis.workflow.candidates import run as candidates
+    from deixis.workflow import candidates_run as candidates
     return candidates.eligible_providers(scope)
 
 
@@ -126,7 +126,7 @@ def budget(providers: list[str]) -> dict[str, Any]:
     semantic reservation, an upper bound that does not depend on the query not yet written. Model calls: the query's
     own ceiling and the abstract screening of at most `SCREEN_MAX` works, read twice per batch and held twice so a
     call a crash left unknown can be sent again (as `screen_more.budget`)."""
-    from deixis.workflow.candidates import run as candidates
+    from deixis.workflow import candidates_run as candidates
     transport = candidates.transport_plan(providers)
     per_query = {row["provider"]: row["per_query"] for row in transport["providers"]}
     requests = transport["max_provider_requests"] + per_query.get("openalex", 0)
@@ -253,7 +253,7 @@ async def _query(flow: Any, run: dict[str, Any], scope: dict[str, Any], card: di
 def request_plan(question: str, blocks: dict[str, Any], providers: list[str]) -> dict[str, Any]:
     """The requests the run may send, in order, frozen before any is sent: OpenAlex's semantic search with the
     follow-up question as written, then the compiled keyword queries. Raises `terms.InvalidTerms`."""
-    from deixis.workflow.candidates import terms
+    from deixis.workflow import candidates_terms as terms
     vocabulary = terms.block_vocabulary([t["term"] for t in blocks["setting"]], [t["term"] for t in blocks["task"]])
     vocabulary["block_assignment"] = KIND
     for term in vocabulary["terms"]:
@@ -609,7 +609,7 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None
             plan = plan_step["output"]
         else:
             output = await _query(flow, run, scope, context["card"])
-            from deixis.workflow.candidates import terms
+            from deixis.workflow import candidates_terms as terms
             try:
                 built = request_plan(run["target"]["question"], output["result"], run["target"]["providers"])
             except terms.InvalidTerms as exc:

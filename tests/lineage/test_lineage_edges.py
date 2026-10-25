@@ -1,4 +1,4 @@
-from deixis.workflow.lineage.edges import (
+from deixis.workflow.lineage_edges import (
     EDGE_STATES, Edge, EdgeFrom, EdgeTo, derive_edges, edge_counts, edge_state,
     unexpected_no_citation_edge, unassessed_edges,
 )
@@ -63,8 +63,8 @@ def test_unscanned_target_edge_is_not_unassessed_but_scanned_without_mention_is(
 
 
 def test_edge_alone_creates_no_candidate():
-    from deixis.workflow.lineage.candidates import LineageWork, find_candidates
-    from deixis.workflow.lineage.mentions import PassageText
+    from deixis.workflow.lineage_candidates import LineageWork, find_candidates
+    from deixis.workflow.lineage_mentions import PassageText
 
     a = LineageWork("a", "wa", 0, "Short title", ("Smith",), 2015, (), False,
                     frozenset(), frozenset({"W1"}), ())

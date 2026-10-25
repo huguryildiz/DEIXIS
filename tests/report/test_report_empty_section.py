@@ -9,7 +9,7 @@ import pytest
 
 from deixis.domain import contracts, skill
 from deixis.workflow.flow import RunStopped
-from deixis.workflow.report.sections import run_report
+from deixis.workflow.report_sections import run_report
 from fakes import FakeAdapter, envelope
 from test_report_flow import ReportAdapter, _claim, report_flow
 

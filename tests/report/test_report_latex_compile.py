@@ -16,7 +16,7 @@ import unicodedata
 
 import pytest
 
-from deixis.workflow.report import export_text, latex, latex_preamble
+from deixis.workflow import report_export_text as export_text, report_latex as latex, report_latex_preamble as latex_preamble
 from report_latex_cases import build, claim, section, table, bibrow
 
 PROGRAMS = ("xelatex", "bibtex", "pdftotext", "kpsewhich")

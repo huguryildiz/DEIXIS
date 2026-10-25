@@ -389,7 +389,7 @@ def test_a9_browser_fixture_answers_patch_in_process(tmp_path, marker):
     """Red on old A9 for the success marker, guard for bad-anchor: real section state after exactly two IV calls."""
     from acceptance.fixture_server import ScriptedCodex, MODEL
     from test_report_flow import report_flow as full_flow
-    from deixis.workflow.report.sections import run_report
+    from deixis.workflow.report_sections import run_report
     flow, store, reports, _, run, scope, report_id = full_flow(tmp_path)
     scope["question"] += " " + marker
     scripted = ScriptedCodex()

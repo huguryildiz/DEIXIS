@@ -9,8 +9,8 @@ import pytest
 from deixis.domain import contracts
 from deixis.domain.rules import RevisionConflict
 from deixis.storage.db import new_id, transaction
-from deixis.workflow.report import assembly, edit_check
-from deixis.workflow.report.store import ReportStore
+from deixis.workflow import report_assembly as assembly, report_edit_check as edit_check
+from deixis.workflow.report_store import ReportStore
 from deixis.workflow.store import NotFound
 from deixis.workflow.views import report_view
 

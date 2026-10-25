@@ -11,8 +11,8 @@ import pytest
 
 from deixis.domain.rules import RevisionConflict
 from deixis.storage.db import new_id, transaction
-from deixis.workflow.report import assembly, edit_check
-from deixis.workflow.report.store import ReportStore
+from deixis.workflow import report_assembly as assembly, report_edit_check as edit_check
+from deixis.workflow.report_store import ReportStore
 from deixis.workflow.store import NotFound
 from deixis.workflow.tables import InvalidTableInput, TableStore
 from deixis.workflow.views import report_view
@@ -312,17 +312,17 @@ def test_insert_count_verification_and_event_failure_roll_back(report_with_secti
 
 
 CITATION_READERS = {
-    ("workflow/report/assembly.py", "_links"), ("workflow/report/assembly.py", "_claim_depths"),
-    ("workflow/report/assembly.py", "_check_gap_bases"), ("workflow/report/sections.py", "_prior_summaries"),
-    ("workflow/report/review.py", "_read"), ("workflow/report/store.py", "ReportStore.save_claims"),
-    ("workflow/report/store.py", "ReportStore.effective_links"), ("workflow/report/store.py", "ReportStore.removed_links"),
-    ("workflow/report/store.py", "ReportStore.original_links"), ("workflow/store.py", "Store.purge_research"),
+    ("workflow/report_assembly.py", "_links"), ("workflow/report_assembly.py", "_claim_depths"),
+    ("workflow/report_assembly.py", "_check_gap_bases"), ("workflow/report_sections.py", "_prior_summaries"),
+    ("workflow/report_review.py", "_read"), ("workflow/report_store.py", "ReportStore.save_claims"),
+    ("workflow/report_store.py", "ReportStore.effective_links"), ("workflow/report_store.py", "ReportStore.removed_links"),
+    ("workflow/report_store.py", "ReportStore.original_links"), ("workflow/store.py", "Store.purge_research"),
     ("workflow/store.py", "Store.cited_source_versions"), ("workflow/store.py", "Store.trash"),
     ("workflow/store.py", "Store.research_cites_asset"), ("workflow/store.py", "Store.asset_impact"),
 }
 REVISION_READERS = {
-    ("workflow/report/store.py", "ReportStore.effective_links"), ("workflow/report/store.py", "ReportStore.claim_revisions"),
-    ("workflow/report/store.py", "ReportStore.edit_claim"), ("workflow/store.py", "Store.purge_research"),
+    ("workflow/report_store.py", "ReportStore.effective_links"), ("workflow/report_store.py", "ReportStore.claim_revisions"),
+    ("workflow/report_store.py", "ReportStore.edit_claim"), ("workflow/store.py", "Store.purge_research"),
 }
 
 

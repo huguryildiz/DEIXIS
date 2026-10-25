@@ -26,10 +26,10 @@ from deixis.models.adapter import CodexAdapter, is_rate_limited
 from deixis.paths import REPO_ROOT
 from deixis.storage.db import new_id, now
 from deixis.workflow import flow
-from deixis.workflow.report.review import REVIEW_BUDGET_TOKENS
-from deixis.workflow.review.run import plan_groups, request_chars, review_budget, review_step_input
-from deixis.workflow.review.snapshot import _shown_passage
-from deixis.workflow.review.store import resolve_finding
+from deixis.workflow.report_review import REVIEW_BUDGET_TOKENS
+from deixis.workflow.review_run import plan_groups, request_chars, review_budget, review_step_input
+from deixis.workflow.review_snapshot import _shown_passage
+from deixis.workflow.review_store import resolve_finding
 
 CASES = REPO_ROOT / "tests/model_behavior/review_cases.json"
 EXPECTATIONS = REPO_ROOT / "tests/model_behavior/p8-review-expectations.md"

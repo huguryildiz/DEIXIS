@@ -201,7 +201,7 @@ def _planned_queries(store: Store, research_id: str, revision: int, latest: dict
       a request was not on the network.
     `recorded` says whether a `search_runs` row of the query's own exists; a sent query without one is a gap.
     """
-    from deixis.workflow.fast_search import sent_plan
+    from deixis.workflow.search import sent_plan
     planned = sent_plan(latest["body"]) if latest else []
     by_key = {query["key"]: index for index, query in enumerate(planned)}
     if not planned:

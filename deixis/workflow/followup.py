@@ -30,7 +30,7 @@ from deixis.domain import contracts
 from deixis.documents.jats import RENDITION_SQL
 from deixis.domain.rules import TEST_EFFORT_BUDGETS, RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, transaction
-from deixis.workflow import fast_answer, followup_search, late_revision, small_batch
+from deixis.workflow import answer as fast_answer, followup_search, late_revision, small_batch
 from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.evidence_deps import EVIDENCE_STATUS_SQL
 from deixis.workflow.late_revision import REVISION_INPUT

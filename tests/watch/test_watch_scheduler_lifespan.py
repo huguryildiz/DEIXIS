@@ -7,7 +7,7 @@ from collections import defaultdict
 from itertools import count
 
 import pytest
-from deixis.workflow.watch.scheduler import WatchScheduler
+from deixis.workflow.watch_scheduler import WatchScheduler
 from deixis.workflow.worker import Worker
 from deixis.workflow.flow import ResearchFlow
 from tests.watch.watch_helpers import watch_offline, watch_api

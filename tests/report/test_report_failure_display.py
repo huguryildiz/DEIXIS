@@ -5,9 +5,9 @@ import json
 
 import pytest
 
-from deixis.workflow.report.export import to_markdown
-from deixis.workflow.report.sections import run_report
-from deixis.workflow.report import assembly
+from deixis.workflow.report_export import to_markdown
+from deixis.workflow.report_sections import run_report
+from deixis.workflow import report_assembly as assembly
 from deixis.workflow.views import report_view
 from test_report_flow import report_flow
 

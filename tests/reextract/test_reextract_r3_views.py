@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from deixis.documents import pdf
-from deixis.workflow.report.export import to_markdown
-from deixis.workflow.report.latex import to_latex
+from deixis.workflow.report_export import to_markdown
+from deixis.workflow.report_latex import to_latex
 from deixis.workflow.views import passage_view, report_view
 from tests.support.helpers import make_pdf
 from tests.reextract.reextract_r2a_helpers import api_library, body, head, seed, store_library, url
@@ -147,7 +147,7 @@ def test_s3_report_freshness_red_on_old(tmp_path):
 @pytest.mark.parametrize("raw", ["{", "[]", "{}", '{"passages": [2], "allowlist": []}'])
 def test_s3_unreadable_records_new_contract(tmp_path, kind, raw):
     """Paired with S3; direct freshness is tolerant, existing snapshot readers retain their policy."""
-    from deixis.workflow.report.passage_freshness import passage_freshness
+    from deixis.workflow.report_passage_freshness import passage_freshness
     with store_library(tmp_path, "partial") as lib:
         rich(lib, reviews=False)
         if kind == "snapshot":

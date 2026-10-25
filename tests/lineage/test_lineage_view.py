@@ -9,9 +9,9 @@ import pytest
 
 from deixis.models import prompt
 from deixis.storage import db
-from deixis.workflow.lineage import view as view_module
-from deixis.workflow.lineage.run import build_node, node_snapshot, stale_link_reasons, stale_link_revisions
-from deixis.workflow.lineage.view import LineageView
+from deixis.workflow import lineage_view as view_module
+from deixis.workflow.lineage_run import build_node, node_snapshot, stale_link_reasons, stale_link_revisions
+from deixis.workflow.lineage_view import LineageView
 from fakes import valid_response
 from test_lineage_flow import (factory, lib, queue, execute, invalid, all_links, publication,
                                reextract, scope_edit, selection_edit, instruction_edit)

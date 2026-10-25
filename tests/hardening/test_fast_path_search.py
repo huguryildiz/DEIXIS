@@ -17,7 +17,7 @@ from deixis.documents import embeddings, local_embedding
 from deixis.providers import facade, openalex, registry
 from deixis.providers.common import ProviderRecord, SearchOutcome
 from deixis.storage.db import transaction
-from deixis.workflow import fast_embedding, fast_path, fast_search, ranking
+from deixis.workflow import fast_embedding, fast_path, search as fast_search, ranking
 from deixis.workflow.flow import ResearchFlow, RunStopped
 from deixis.workflow.worker import Worker
 from test_fast_path_clock import library, stage

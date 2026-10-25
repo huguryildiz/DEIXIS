@@ -10,7 +10,7 @@ from deixis.domain import contracts
 from deixis.domain.rules import MAX_RATE_LIMIT_MODEL_RETRIES, MAX_TRANSIENT_NETWORK_RETRIES, RevisionConflict, schema_repairs
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES
 from deixis.providers.registry import CONNECTORS
-from deixis.workflow.candidates import run as planning
+from deixis.workflow import candidates_run as planning
 from deixis.workflow.store import NotFound
 from test_candidate_flow import lib, queue_kill, execute, search
 from test_candidate_store import version as edit_version

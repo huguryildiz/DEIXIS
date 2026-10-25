@@ -18,7 +18,7 @@ from test_api_flow import app_for, create, session, wait_run
 def test_backup_restore_preserves_removed_restored_citation_sets_and_all_report_rows(tmp_path):
     from deixis.storage import db
     from deixis.workflow.store import Store
-    from deixis.workflow.report.store import ReportStore
+    from deixis.workflow.report_store import ReportStore
     from tests.report.test_report_assembly import report_with_sections
     from tests.report.test_report_claim_links import edit, three_links
     from tests.report.test_report_edit_check import finish

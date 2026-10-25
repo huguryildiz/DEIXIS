@@ -7,7 +7,7 @@ from dataclasses import replace
 
 import pytest
 
-from deixis.workflow import fast_answer, late_revision, views
+from deixis.workflow import answer as fast_answer, late_revision, views
 from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.flow import RunStopped
 from deixis.workflow.worker import Worker

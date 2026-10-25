@@ -358,7 +358,7 @@ def manifest_for(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabula
         " WHERE m.research_id = ? AND m.removed_at IS NULL) GROUP BY work_id", (rid,))}
     for row in list(pool.values()) + priority_pool + verified:
         row["cited_by_count"] = counts.get(row["work_id"])
-    from deixis.workflow.fast_search import graph_rule
+    from deixis.workflow.search import graph_rule
     rule = graph_rule(store, run)
     manifest = {"ranking_version": 3, **({"graph_rule": rule} if rule != "sum_v1" else {}),
                 "scope_revision": run["scope_revision"], "selection_revision": store.selection_revision(rid),
@@ -573,7 +573,7 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                                works=set(flow.store.work_ids(chained).values()), key="chain_record_flags")
         await rerank_list(flow, run, scope, vocabulary)
     listing = freeze_list(flow, run, scope, vocabulary)
-    from deixis.workflow import fast_read
+    from deixis.workflow import read as fast_read
     flow._close_clock_stage(run, "ranking")
     flow._enter_clock_stage(run, "read")
     only = {svid for item in listing["items"][:run["budget"]["fast_path"]["N"]] for svid in item["versions"]}

@@ -7,7 +7,7 @@ import json
 import httpx
 import pytest
 
-from deixis.workflow import fast_chain, fast_search, ranking, seed_match
+from deixis.workflow import fast_chain, search as fast_search, ranking, seed_match
 from deixis.workflow import store as store_module
 from deixis.workflow import views
 from helpers import make_pdf

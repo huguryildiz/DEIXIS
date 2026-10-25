@@ -6,12 +6,12 @@ import subprocess
 
 import pytest
 
-from deixis.workflow.lineage.candidates import (
+from deixis.workflow.lineage_candidates import (
     NOT_SENT_REASONS, Candidate, LineageWork, candidate_priority, eligible_targets,
     find_candidates, pack_candidates, passage_budget_fits,
 )
-from deixis.workflow.lineage.edges import Edge, EdgeFrom, EdgeTo, derive_edges, unassessed_edges
-from deixis.workflow.lineage.mentions import PassageText
+from deixis.workflow.lineage_edges import Edge, EdgeFrom, EdgeTo, derive_edges, unassessed_edges
+from deixis.workflow.lineage_mentions import PassageText
 
 
 def work(svid, position, author="Nobody", year=2020, text="Unrelated text", **changes):
@@ -209,7 +209,7 @@ def test_passage_budget_counts_unique_passages():
 
 
 def test_no_model_or_provider_call_is_possible(monkeypatch):
-    from deixis.workflow.lineage.baseline import BaselineVersion, field_baseline
+    from deixis.workflow.lineage_baseline import BaselineVersion, field_baseline
 
     def forbidden(*args, **kwargs):
         raise AssertionError("pure functions must not start network or process operations")

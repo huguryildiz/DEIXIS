@@ -8,7 +8,7 @@ import pytest
 
 from deixis.storage import db
 from deixis.domain.rules import RevisionConflict
-from deixis.workflow.review.store import applied_matches_suggestion, resolve_finding, TARGET_KINDS, FOCUSES, DECISIONS
+from deixis.workflow.review_store import applied_matches_suggestion, resolve_finding, TARGET_KINDS, FOCUSES, DECISIONS
 from tests.review.review_helpers import report_with_sections, review_lib, stored_review, snapshot, review_run, step_payload, rows
 from tests.report.test_report_claim_links import edit, claim
 

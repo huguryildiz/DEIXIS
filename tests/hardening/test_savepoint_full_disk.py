@@ -5,8 +5,8 @@ import sqlite3
 import pytest
 
 from deixis.storage import db
-from deixis.workflow.candidates.store import CandidateStore
-from deixis.workflow.lineage.store import LineageStore
+from deixis.workflow.candidates_store import CandidateStore
+from deixis.workflow.lineage_store import LineageStore
 from test_lineage_store import make_library
 
 

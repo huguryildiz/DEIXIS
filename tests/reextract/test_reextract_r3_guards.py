@@ -10,8 +10,8 @@ import pytest
 from deixis.documents import pdf
 from deixis.storage import db
 from deixis.workflow import reconcile, text_retry
-from deixis.workflow.review.snapshot import build_snapshot
-from deixis.workflow.review.stale import stale_reasons
+from deixis.workflow.review_snapshot import build_snapshot
+from deixis.workflow.review_stale import stale_reasons
 from deixis.workflow.tables import TableStore
 from deixis.workflow.views import research_view
 from tests.support.helpers import make_pdf
@@ -197,11 +197,11 @@ def test_s14b_frozen_seed_plan_lineage_and_candidate_guard(tmp_path):
     """No model runs: stored synthetic proposals retain their old passage identities."""
     from deixis.domain import skill
     from deixis.workflow import person_reading
-    from deixis.workflow.candidates.store import CandidateStore
+    from deixis.workflow.candidates_store import CandidateStore
     from deixis.workflow.decisions import DecisionStore
     from deixis.workflow.flow import FlowDeps, ResearchFlow
-    from deixis.workflow.lineage.store import LineageStore
-    from deixis.workflow.lineage.view import LineageView
+    from deixis.workflow.lineage_store import LineageStore
+    from deixis.workflow.lineage_view import LineageView
     from tests.candidates.test_candidate_store import version, start, assessment
     with store_library(tmp_path, "partial") as lib:
         rich(lib)

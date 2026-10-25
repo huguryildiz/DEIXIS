@@ -21,7 +21,7 @@ DATAS = (
     ("deixis/storage/schema.sql", "deixis/storage"),  # storage/db.py makes a new library from it
     ("deixis/documents/katex_commands.json", "deixis/documents"),
     ("deixis/documents/latex_kernel_names.json", "deixis/documents"),
-    ("deixis/workflow/report/latex_names.json", "deixis/workflow/report"),
+    ("deixis/workflow/latex_names.json", "deixis/workflow"),
     ("deixis/models/model_prices.json", "deixis/models"),  # workflow/spend.py (F4)
     ("deixis/exports/deixis-mark.png", "deixis/exports"),
     ("THIRD_PARTY_NOTICES", "."),  # api/about_routes.py; written by scripts/licenses/build_notices.py (F2)

@@ -13,7 +13,7 @@ import pytest
 from deixis.config import Settings
 from deixis.providers import registry
 from deixis.storage import backup, db
-from deixis.workflow.watch.store import WatchRefusal, WatchStore, TABLES
+from deixis.workflow.watch_store import WatchRefusal, WatchStore, TABLES
 from tests.watch.watch_helpers import api, watch_offline, watch_api, create, now_check, turn, read, control, page, work, rows, hashes, add_included
 
 
@@ -155,7 +155,7 @@ def test_command_replay_before_expected_revision_after_later_changes_and_changed
 
 
 def test_create_replay_keeps_first_ids_when_a_later_check_clock_is_earlier(api, monkeypatch):
-    from deixis.workflow.watch import store as watch_store
+    from deixis.workflow import watch_store
     body = {"kind": "protocol_queries", "mode": "manual", "expected_scope_revision": 1}
     first = post(api, api.url, body, "clock-replay").json(); turn(api)
     assert api.store.run(first["run_id"])["target"]["request_hash"] == api.watches.watch(api.rid, first["watch_id"])["request_hash"]

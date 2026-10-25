@@ -1,6 +1,6 @@
 """Corpus-absence candidates derived from synthetic frozen snapshots."""
 
-from deixis.workflow.report.gaps import generate_corpus_absence_candidates
+from deixis.workflow.report_gaps import generate_corpus_absence_candidates
 
 
 def test_corpus_absence_requires_at_least_three_full_text_applicable_not_found_rows():

@@ -8,7 +8,7 @@ import pytest
 
 from deixis.providers import common, registry
 from deixis.storage import db
-from deixis.workflow.watch import check as policy
+from deixis.workflow import watch_check as policy
 import test_fast_path_clock
 from tests.watch.watch_helpers import api, watch_offline, watch_api, create, now_check, turn, read, control, work, page, add_included
 
@@ -265,7 +265,7 @@ def test_citing_units_all_versions_work_order_dedup_and_missing_id(api):
 
 
 def test_page_gap_wait_and_units_and_record_order_persist(tmp_path, monkeypatch):
-    from deixis.workflow.watch import run as watch_run
+    from deixis.workflow import watch_run
     connector = registry.CONNECTORS["openalex"]
     monkeypatch.setitem(registry.CONNECTORS, "openalex", replace(connector, page_gap=.25))
     waits = []
@@ -288,7 +288,7 @@ def test_discovery_revision_two_continuation_refused_after_watch_adapter_bump(li
     # page is refused before anything is sent (fast-path search, D252).
     import asyncio
     from deixis.providers.contract import CONTRACT_ID
-    from deixis.workflow import fast_search
+    from deixis.workflow import search as fast_search
     from test_fast_path_search import QUERIES, scripted, setup
     flow, scope, plan = setup(library, tmp_path)
     first = QUERIES[0]["query_text"]

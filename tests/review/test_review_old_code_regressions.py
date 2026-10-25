@@ -11,7 +11,7 @@ from deixis.models.adapter import ModelStepResult
 from deixis.storage import db
 from deixis.workflow import flow as flow_module
 from deixis.workflow.concurrency import ModelCallLimiter
-from deixis.workflow.report.store import ReportStore
+from deixis.workflow.report_store import ReportStore
 from tests.support.fakes import FakeAdapter
 from tests.review.review_helpers import report_with_sections, review_lib, stored_review, snapshot, review_run, step_payload, all_rows
 from tests.review.review_run_helpers import review_api, body
@@ -56,7 +56,7 @@ def test_full_request_limit_refuses_a_message_that_alone_fits(review_lib, tmp_pa
         api.store.update_run(run["id"], status="running")
         # A B1 full contract fixture supplies a builder independently of run.py.
         from tests.review.review_helpers import si
-        from deixis.workflow.review.snapshot import review_step_input_parts
+        from deixis.workflow.review_snapshot import review_step_input_parts
         payload = si("report")
         payload.update(review_step_input_parts(saved["id"], saved["content"], focus="source_support", owner_note=None))
         payload.update(research_id=api.rid, run_id=run["id"], skill_package_hash=skill.package_hash())

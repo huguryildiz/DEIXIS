@@ -15,7 +15,7 @@ from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.providers import common, registry
 from deixis.storage import db
-from deixis.workflow.watch.store import WatchStore
+from deixis.workflow.watch_store import WatchStore
 from tests.support.fakes import FakeAdapter
 from tests.app.test_api_flow import session
 
@@ -130,7 +130,7 @@ def add_included(api, identifier, **changes):
 
 
 def record(provider="openalex", identifier="W1", **changes):
-    from deixis.workflow.watch.check import normalize_record
+    from deixis.workflow.watch_check import normalize_record
     source = asdict(registry.openalex._record(work(identifier)))
     source.update(changes)
     return normalize_record(provider, source, db.now(), source["raw"].get("publication_date") if provider == "openalex" else None)

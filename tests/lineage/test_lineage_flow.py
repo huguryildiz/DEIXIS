@@ -16,8 +16,8 @@ from deixis.models import prompt
 from deixis.models.adapter import ModelStepResult
 from deixis.storage import db
 from deixis.workflow.concurrency import ModelCallLimiter
-from deixis.workflow.lineage import run as lineage
-from deixis.workflow.lineage.store import LineageStore
+from deixis.workflow import lineage_run as lineage
+from deixis.workflow.lineage_store import LineageStore
 from deixis.workflow.worker import Worker
 from fakes import FakeAdapter, valid_response
 from test_lineage_plan import attach, candidate, fill, make_env

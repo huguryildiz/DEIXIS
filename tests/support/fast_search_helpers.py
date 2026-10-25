@@ -5,7 +5,7 @@ round and old chain requests used to carry run here through the fast path's own 
 """
 
 from deixis.storage.db import dumps
-from deixis.workflow import fast_chain, fast_path, fast_search
+from deixis.workflow import fast_chain, fast_path, search as fast_search
 
 
 def plan(queries, *, cap=1000, page_size=100):

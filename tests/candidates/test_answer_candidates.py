@@ -9,12 +9,12 @@ import sqlite3
 import pytest
 
 from deixis.storage import db
-from deixis.workflow.candidates.answer_view import answer_candidates
-from deixis.workflow.candidates.run import candidate_target, decomposition_input
-from deixis.workflow.candidates.store import InvalidCandidateInput, purge_candidates
+from deixis.workflow.candidates_answer_view import answer_candidates
+from deixis.workflow.candidates_run import candidate_target, decomposition_input
+from deixis.workflow.candidates_store import InvalidCandidateInput, purge_candidates
 from deixis.workflow.store import NotFound
-from deixis.workflow.candidates.hits import merge_and_cut
-from deixis.workflow.candidates.store import CandidateStore
+from deixis.workflow.candidates_hits import merge_and_cut
+from deixis.workflow.candidates_store import CandidateStore
 from deixis.workflow.store import Store
 from test_candidate_store import assessment, make_library, provider_record, query, start, version
 

@@ -9,7 +9,7 @@ import pytest
 
 from deixis.domain import canonical
 from deixis.storage.db import transaction
-from deixis.workflow import background_fetch, fast_path, fast_read, fulltext, small_batch
+from deixis.workflow import background_fetch, fast_path, read as fast_read, fulltext, small_batch
 from deixis.workflow.flow import ResearchFlow, RunStopped
 from deixis.workflow.worker import Worker
 from deixis.workflow.store import ACTIVE_RUN_STATUSES, RunInProgress

@@ -6,10 +6,10 @@ import json
 import pytest
 
 from deixis.domain import contracts
-from deixis.workflow.report import assembly, review
-from deixis.workflow.report import store as report_store
-from deixis.workflow.report.sections import run_report
-from deixis.workflow.report import sections as report_sections
+from deixis.workflow import report_assembly as assembly, report_review as review
+from deixis.workflow import report_store
+from deixis.workflow.report_sections import run_report
+from deixis.workflow import report_sections
 from deixis.workflow.flow import RunStopped
 from deixis.workflow.views import report_view
 from deixis.workflow.store import NotFound

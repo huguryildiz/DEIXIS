@@ -1,12 +1,12 @@
 id,date,title,area,status,commit,notes
 D126,2026-10-25,"Find PDF from the Citation panel, chosen while an earlier lookup of that work still runs, waits for it instead of being dropped",ui,accepted,,
-D125,2026-10-25,"web/src root files are grouped into folders (shell, home, library, settings, citecheck, research, table, reading, components, lib); behavior and look unchanged",process,accepted,,notes/plans/web-src-folders.md
+D125,2026-10-25,"web/src root files are grouped into folders (shell, home, library, settings, citecheck, research, table, reading, components, lib); behavior and look unchanged",process,accepted,,
 D124,2026-10-25,"deixis/workflow is split into step folders (run, search, screen, read, answer) and features/; module basenames, log names and stored names unchanged",process,accepted,,
 D123,2026-10-25,"A title the person wrote is no longer replaced by generated titles or later answers",ui,accepted,,
 D122,2026-10-25,A restore's refusal checks run before the folder lock is taken; a refused restore leaves the target untouched,storage,accepted,,
 D121,2026-10-25,The Claude Code and Gemini API version checks get the child-process allowlist instead of the whole environment,privacy,accepted,,
-D120,2026-10-25,"Tests cut to about 1,500 cases and five Playwright specs, grouped by step; one pytest command",testing,accepted,c24d7319,notes/plans/sadelesme-test-ozeti.md
-D119,2026-10-25,One schema file with numbered upgrade steps replaces the 16 migration files,storage,accepted,a62ab5ed,notes/plans/sadelesme-review/sol-asama-2-tur2.md
+D120,2026-10-25,"Tests cut to about 1,500 cases and five Playwright specs, grouped by step; one pytest command",testing,accepted,c24d7319,
+D119,2026-10-25,One schema file with numbered upgrade steps replaces the 16 migration files,storage,accepted,a62ab5ed,
 D118,2026-10-24,"Equation finder: more numbered displays cropped cleanly, unclear regions refused",reading,accepted,ecb812f5,notes/2026-10-24-equation-finder
 D117,2026-10-24,"PDF fetch: 403s counted per host, Elsevier article API for open-access PDFs",reading,accepted,8fbbf7f7,notes/2026-10-24-pdf-403/RESULT.md
 D116,2026-10-24,Check a statement: the claim's field and named authors reach the search,search,accepted,1173ee50,notes/2026-10-24-reverse-citation-r5/RESULT.md
@@ -18,34 +18,34 @@ D111,2026-10-18,Spend ledger: unpriced calls are priced once a price list names 
 D110,2026-10-18,Review queue: one answer to several ticked rows,ui,accepted,0ae2dbb9,
 D109,2026-10-18,"Reverse citation search R4b: pilot meets the bar; R4 closes, R5 stays blocked",search,accepted,d09538ca,notes/2026-10-18-reverse-citation-r4b-pilot/
 D108,2026-10-18,Reverse citation search R4: pilot fails; R4b counts support only on stated part,search,accepted,9551dd27,notes/2026-10-18-reverse-citation-r4-pilot/
-D107,2026-10-18,Reverse citation search R3: a Home mode and a statement-check panel,ui,accepted,1068863c,notes/plans/reverse-citation-search-plan.md
+D107,2026-10-18,Reverse citation search R3: a Home mode and a statement-check panel,ui,accepted,1068863c,
 D106,2026-10-18,The reranker leaves chain-only records in their fused place,search,accepted,86263ec5,
 D105,2026-10-18,"Verify Citations after V5 pilot: table rows, plain claims, negations, freeze",answer,accepted,07686021,notes/2026-10-results.md
 D104,2026-10-18,The record reranker is on by default with Voyage rerank-3-lite,search,accepted,bc7e668a,
-D103,2026-10-18,"Reverse citation search R2: how a statement check starts, resumes and goes stale",search,accepted,8c358455,notes/plans/reverse-citation-search-plan.md
+D103,2026-10-18,"Reverse citation search R2: how a statement check starts, resumes and goes stale",search,accepted,8c358455,
 D102,2026-10-18,"A reranked record past 20,000 characters is cut and counted, not refused",search,accepted,38db53d4,
-D101,2026-10-18,"Verify Citations V4: the screen, a Library tool showing counts, status, result",ui,accepted,216071d9,notes/plans/verify-citations-plan.md
-D100,2026-10-18,Reverse citation search R1: a pasted statement checked against works searched,search,accepted,d35d3672,notes/plans/reverse-citation-search-plan.md
-D99,2026-10-18,Verify Citations V3: a model step per planned pair; the code decides the result,answer,accepted,1af5e83e,notes/plans/verify-citations-plan.md
+D101,2026-10-18,"Verify Citations V4: the screen, a Library tool showing counts, status, result",ui,accepted,216071d9,
+D100,2026-10-18,Reverse citation search R1: a pasted statement checked against works searched,search,accepted,d35d3672,
+D99,2026-10-18,Verify Citations V3: a model step per planned pair; the code decides the result,answer,accepted,1af5e83e,
 D98,2026-10-18,Kill search gets an entry in the answer's Next steps; its live gate failed,ui,accepted,dae4dac7,notes/design/kill-search-next-steps.md
 D97,2026-10-18,Kill search plan v3: backups are searched and the ranked cut counts concepts,search,accepted,af76e51c,notes/killsearch-live-v2/RESULT.md
-D96,2026-10-17,"Verify Citations V2: entry text, frozen passage plan per pair, 200-pair cap",answer,accepted,0db4fd6d,notes/plans/verify-citations-plan.md
+D96,2026-10-17,"Verify Citations V2: entry text, frozen passage plan per pair, 200-pair cap",answer,accepted,0db4fd6d,
 D95,2026-10-17,Kill search ranks its pool before the eight-work cut and asks for stricter terms,search,accepted,ea17db26,notes/killsearch-live-2026-10-17/RESULT.md
 D94,2026-10-17,"The Anthropic schema says how to give null; a bare ""protocol"" is no design term",models,accepted,2916d2bb,notes/killsearch-live-2026-10-17/RESULT.md
 D93,2026-10-17,"Anthropic API: required nullable fields as optional, patterns as descriptions",models,accepted,cf061be0,
 D92,2026-10-17,"A follow-up can search for new works, from a button, as a run of its own",search,accepted,45fea567,
-D91,2026-10-17,"Citation snowballing: person-started rounds from chosen works, nothing included",search,accepted,019bea39,notes/plans/snowballing-plan.md
-D90,2026-10-17,Built-in models run on llama.cpp from a pinned GGUF catalog,models,accepted,0009b9b6,notes/plans/llamacpp-local-models-plan.md
+D91,2026-10-17,"Citation snowballing: person-started rounds from chosen works, nothing included",search,accepted,019bea39,
+D90,2026-10-17,Built-in models run on llama.cpp from a pinned GGUF catalog,models,accepted,0009b9b6,
 D89,2026-10-17,"Search & ranking as model-style cards, with Cohere, Jina and ZeroEntropy",models,accepted,a868f463,
 D88,2026-10-17,Qwen3 replaces bge-small as the built-in model; a reranker and Voyage are added,models,partly superseded by D90,a868f463,notes/rerank-trial-2026-10-17/qwen-voyage-results.md
 D87,2026-10-17,A repair may reword an insufficient-evidence reason only for banned words,answer,accepted,fb977b90,
-D86,2026-10-17,"Verify Citations V1: code reads a draft's markers, bibliography and pairs",answer,accepted,0123e93d,notes/plans/verify-citations-plan.md
-D85,2026-10-17,"The Anthropic API connection streams its answer, 64,000-token output limit",models,accepted,1894bd5f,notes/plans/anthropic-streaming-plan.md
-D84,2026-10-17,A full-text source's first answer slot goes to its most result-dense passage,answer,accepted,5893d1c4,notes/plans/result-passage-plan.md
-D83,2026-10-17,A valid answer that leaves given works unaccounted gets one coverage rewrite,answer,accepted,7a9fa43f,notes/plans/ledger-coverage-plan.md
+D86,2026-10-17,"Verify Citations V1: code reads a draft's markers, bibliography and pairs",answer,accepted,0123e93d,
+D85,2026-10-17,"The Anthropic API connection streams its answer, 64,000-token output limit",models,accepted,1894bd5f,
+D84,2026-10-17,A full-text source's first answer slot goes to its most result-dense passage,answer,accepted,5893d1c4,
+D83,2026-10-17,A valid answer that leaves given works unaccounted gets one coverage rewrite,answer,accepted,7a9fa43f,
 D82,2026-10-17,"Run card: screening readings, full-text gaps and anchor matches in step panels",ui,accepted,fd31f4fb,
 D81,2026-10-17,Measured values a cited passage states are set in bold in the answer,answer,accepted,e4612400,
-D80,2026-10-17,Every work given to an answer is cited or left out with a reason,answer,accepted,e4046042,notes/plans/answer-coverage-2026-10-17.md
+D80,2026-10-17,Every work given to an answer is cited or left out with a reason,answer,accepted,e4046042,
 D79,2026-10-17,The mockup parity check is removed; the mockup stays as a reference,testing,accepted,8952db05,notes/design/elicit-style-mockup/
 D78,2026-10-17,Settings → Usage shows spend and subscription limits per connection,ui,accepted,de39c347,
 D77,2026-10-17,"Mockup v25: question chip, counts strip and ringed phase steps",ui,accepted,0b55d0fe,notes/design/elicit-style-mockup/

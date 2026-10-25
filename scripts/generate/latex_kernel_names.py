@@ -5,7 +5,7 @@ them is never trusted, since the paper may use the name where that definition is
 Candidates are every control word in the kernel's source files (latex.ltx and the files it inputs), article.cls and the
 AMS packages, plus LuaTeX's primitives; a candidate is kept when `\\ifdefined` is true for it after
 `\\begin{document}`. Needs a TeX Live installation (kpsewhich, luatex, pdflatex).
-Run from the repository root: PYTHONPATH=. uv run --no-sync python scripts/latex_kernel_names.py
+Run from the repository root: PYTHONPATH=. uv run --no-sync python scripts/generate/latex_kernel_names.py
 """
 
 import json
@@ -17,7 +17,7 @@ from pathlib import Path
 FILES = ["latex.ltx", "texsys.cfg", "fonttext.ltx", "fontmath.ltx", "preload.ltx", "utf8.def", "latex209.def",
          "article.cls", "size10.clo", "amsmath.sty", "amsopn.sty", "amstext.sty", "amsbsy.sty", "amssymb.sty",
          "amsfonts.sty"]
-OUT = Path(__file__).resolve().parents[1] / "deixis" / "documents" / "latex_kernel_names.json"
+OUT = Path(__file__).resolve().parents[2] / "deixis" / "documents" / "latex_kernel_names.json"
 
 
 def main() -> None:

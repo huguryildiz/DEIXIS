@@ -120,9 +120,6 @@
 .queue-panel .queue-kept-note q{font-style:italic}
 .queue-panel .queue-link{color:var(--accent);font-weight:500;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
 /* The answers (mockup .qopts): bordered choices with what each does under its label. */
-.queue-panel .queue-answers{display:grid;gap:4px}
-.queue-panel .queue-answers [data-slot=button]{justify-content:flex-start;width:100%;height:auto;min-height:36px;padding:7px 12px;border-radius:8px;font-size:13px;text-align:left;white-space:normal}
-.queue-panel .queue-answers [data-slot=button]:not(.bg-primary):hover:not(:disabled){border-color:var(--accent-line)}
 .qopts{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}
 .qopts button{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--strong-line);border-radius:9px;background:transparent;color:var(--ink);font-size:13.5px;font-weight:500;line-height:1.4;text-align:left;cursor:pointer;transition:border-color .14s ease-out,background-color .14s ease-out}
 .qopts button small{display:block;margin-top:2px;color:var(--muted);font-size:12px;font-weight:400;line-height:1.45}
@@ -179,8 +176,6 @@
 .drop{display:grid;justify-items:center;gap:6px;padding:18px;border:1.5px dashed var(--strong-line);border-radius:10px;color:var(--muted);font-size:13px;text-align:center;cursor:pointer}
 .drop:hover,.drop.over{border-color:var(--accent);background:var(--accent-tint)}
 .drop b{color:var(--ink);font-weight:600}
-.thread-pdf-note .link{padding:0;border:0;background:none;color:var(--accent);font:inherit;font-weight:500;cursor:pointer}
-.thread-pdf-note .link:hover{text-decoration:underline;text-underline-offset:2px}
 @media (max-width:760px){.depth{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 /* ---- Search funnel (mockup `funnel()`, P41): six stages with a share of the first, a bar and what was lost ---- */

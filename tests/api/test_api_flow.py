@@ -162,19 +162,6 @@ def test_question_to_cited_answer_and_restart(tmp_path):
         assert leak.status_code == 404  # T08: passage outside research B's corpus
 
 
-def attached_research(client):
-    rid = create(client, source_scope="attached")
-    client.post(f"/api/researches/{rid}/uploads", files={"file": ("a.pdf", make_pdf(["SYNTHETIC molecule release schedule"]), "application/pdf")})
-    return rid
-
-
-def run_to_end(client, rid, kind):
-    run = client.post(f"/api/researches/{rid}/runs", json={"kind": kind}).json()
-    view, run = wait_run(client, rid, run["id"])
-    assert run["status"] == "completed", run
-    return view
-
-
 def test_invalid_output_is_repaired_once_then_kept_as_unverified_draft(tmp_path):
     def bad(si):
         if si["task_type"] != "grounded_answer":

@@ -511,7 +511,7 @@ class Run:
 
     def env(self, **extra: str) -> dict[str, str]:
         env = {"PATH": "%s:%s:/usr/bin:/bin:/usr/sbin:/sbin" % (REPO / ".venv" / "bin", self.shims), "HOME": str(Path.home()), "TMPDIR": os.environ.get("TMPDIR", "/tmp"),
-               "UV_CACHE_DIR": os.environ.get("UV_CACHE_DIR", "/tmp/deixis-uv-cache"), "PYTHONPATH": "backend:.", "PYTHON_KEYRING_BACKEND": KEYRING_NULL,
+               "UV_CACHE_DIR": os.environ.get("UV_CACHE_DIR", "/tmp/deixis-uv-cache"), "PYTHONPATH": ".", "PYTHON_KEYRING_BACKEND": KEYRING_NULL,
                "LANG": os.environ.get("LANG", "en_US.UTF-8"),
                "DEIXIS_DATA_DIR": str(self.out / "no-live-data")}  # a child that forgets its own --data-dir lands here, never in the live library
         env.update(extra)

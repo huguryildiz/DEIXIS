@@ -32,20 +32,11 @@
 .local-tool-output{max-height:140px;overflow:auto;margin:4px 0 0;padding:8px;border:1px solid var(--line);border-radius:5px;background:var(--raised-surface,transparent);font-size:10px;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}
 .local-tool-error{margin:2px 0 0;padding:6px 8px;border:1px solid var(--error-line);border-radius:5px;background:var(--error-surface);color:var(--error-ink);font-size:11px;line-height:1.5;overflow-wrap:anywhere}
 .local-tool-details summary{cursor:pointer;font-size:11px;color:var(--muted)}
-.local-tool-progress-head{display:flex;align-items:center;gap:6px}
 .model-id{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:.92em}
-.local-tool-code{padding:1px 6px;border:1px solid var(--line);border-radius:5px;background:var(--hover-surface);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:11px}
-.semantic-choices{display:flex;flex-direction:column;border:1px solid var(--strong-line);border-radius:7px;overflow:hidden}
-.semantic-option{border-bottom:1px solid var(--line)}
-.semantic-option:last-child{border-bottom:0}
-/* A choice's notes and controls sit under its name, clear of the radio and the icon (slice 21). */
-.semantic-option-body{display:grid;gap:4px;padding:0 13px 11px 49px}
-.semantic-option-body .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
 .semantic-builtin{display:grid;gap:4px}
 .semantic-builtin .status-chip{justify-self:start;margin-top:2px}
 .semantic-builtin .actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .semantic-builtin .actions .btn-pri{border:1px solid transparent}
-@media(max-width:600px){.semantic-option-body{padding-left:13px}}
 .semantic-model{margin-left:auto;border:1px solid var(--strong-line);border-radius:5px;background:transparent;padding:4px 7px;font-size:11px;color:var(--ink)}
 .local-tool-facts dt{margin:0}
 .local-tool-facts dd{font-size:11px}

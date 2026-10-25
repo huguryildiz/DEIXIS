@@ -240,18 +240,3 @@ def run_schema_repairs(run: dict[str, Any], task_type: str) -> int:
 
 def after_invalid_output(repairs_used: int, limit: int = MAX_SCHEMA_REPAIRS) -> str:
     return "repair" if repairs_used < limit else "store_unverified_draft"
-
-
-def effective_selection(
-    model_proposals: dict[str, str], user_choices: dict[str, str]
-) -> dict[str, dict[str, str]]:
-    """User choices always win; a model proposal only fills undecided candidates."""
-    result: dict[str, dict[str, str]] = {}
-    for cid in sorted(set(model_proposals) | set(user_choices)):
-        if cid in user_choices:
-            result[cid] = {"state": user_choices[cid], "origin": "user"}
-        else:
-            proposal = model_proposals[cid]
-            state = {"include": "included", "exclude": "excluded"}.get(proposal, "pending")
-            result[cid] = {"state": state, "origin": "model_proposal"}
-    return result

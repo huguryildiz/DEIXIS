@@ -13,8 +13,6 @@ from __future__ import annotations
 import html
 import re
 
-MATH_CHARS = set("=≤≥≠≈∼∝±×÷·∑∏∫√∞∂∇∈∉⊂⊆∪∩∀∃→←↔⇒⇔αβγδεζηθικλμνξπρστυφχψωΓΔΘΛΞΠΣΦΨΩϵϕℓ′″")
-MATH_FONT = re.compile(r"CMMI|CMSY|CMEX|CMBSY|MSBM|MSAM|TeX-math|Math|Symbol|MTSY|MTMI|Euclid|rtxmi|txsy|txmi|stix|MT.?Extra", re.I)
 SYMBOL_FONT = re.compile(r"TeX-math[ax]|CMEX", re.I)
 MASK = "\x00"
 # Kept apart from math_reader.GREEK because this module cannot import DEIXIS.
@@ -47,10 +45,6 @@ def segment_letters(latex: str) -> set[str]:
     sub_sup = re.sub(r"_(\{[^{}]*\}|\w)\^(\{[^{}]*\}|\w)", r"^\2_\1", latex)
     sup_sub = re.sub(r"\^(\{[^{}]*\}|\w)_(\{[^{}]*\}|\w)", r"_\2^\1", latex)
     return {strip(latex), strip(sub_sup), strip(sup_sub)}
-
-
-def is_mathy(text: str, font: str | None, scripted: bool) -> bool:
-    return scripted or bool(MATH_FONT.search(font or "")) or any(c in MATH_CHARS for c in text)
 
 
 def line_text(spans: list[tuple[str, str | None]]) -> str:

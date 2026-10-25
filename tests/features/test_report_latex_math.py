@@ -44,11 +44,11 @@ def test_converter_wires_labels_notes_and_document_collector():
 
 def test_names_file_current_provenance():
     path = Path(lm.__file__).with_name("latex_names.json")
-    assert path.exists(), "Run scripts/latex_export_names.py"
+    assert path.exists(), "Run scripts/generate/latex_export_names.py"
     names = json.loads(path.read_text())
     vocabulary = Path(lm.__file__).resolve().parents[3] / "documents/katex_commands.json"
-    assert names["preamble_sha256"] == PREAMBLE_SHA256, "Run scripts/latex_export_names.py"
-    assert names["katex_commands_sha256"] == hashlib.sha256(vocabulary.read_bytes()).hexdigest(), "Run scripts/latex_export_names.py"
+    assert names["preamble_sha256"] == PREAMBLE_SHA256, "Run scripts/generate/latex_export_names.py"
+    assert names["katex_commands_sha256"] == hashlib.sha256(vocabulary.read_bytes()).hexdigest(), "Run scripts/generate/latex_export_names.py"
     assert isinstance(names["katex_version"], str) and {names["katex_version"]} == katex_known()["version"]
     for field, known in (("undefined_commands", "commands"), ("undefined_environments", "environments")):
         assert names[field] == sorted(set(names[field])) and set(names[field]) <= katex_known()[known]

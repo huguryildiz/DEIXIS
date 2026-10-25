@@ -1,7 +1,7 @@
 """Generate export compatibility evidence with XeLaTeX; never used at runtime.
 
 Run at the repository root:
-PATH=/Library/TeX/texbin:$PATH PYTHONPATH=. uv run --no-sync python scripts/latex_export_names.py
+PATH=/Library/TeX/texbin:$PATH PYTHONPATH=. uv run --no-sync python scripts/generate/latex_export_names.py
 """
 
 import hashlib
@@ -14,7 +14,7 @@ from pathlib import Path
 from deixis.documents.arxiv_source import katex_known
 from deixis.workflow.features.report.report_latex_preamble import PREAMBLE, PREAMBLE_SHA256
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "deixis/workflow/features/report/latex_names.json"
 VOCABULARY = ROOT / "deixis/documents/katex_commands.json"
 PREAMBLE_FILES = {"IEEEtran.cls", "fontspec.sty", "amsmath.sty", "amssymb.sty", "bm.sty",

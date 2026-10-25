@@ -4,13 +4,13 @@
 // rendering it alone does not fail with "Undefined control sequence" (a missing argument is a different error), and an
 // environment is known when \begin{x}\end{x} does not fail with "No such environment"; a control symbol (\1, \,)
 // the same way as a command. The file carries KaTeX's version.
-// Run from the repository root: node scripts/katex_commands.mjs
+// Run from the repository root: node scripts/generate/katex_commands.mjs
 import { createRequire } from 'node:module'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const require = createRequire(join(root, 'web/package.json'))
 const katex = require('katex')
 const bundle = readFileSync(require.resolve('katex/dist/katex.js'), 'utf8')

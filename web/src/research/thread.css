@@ -566,8 +566,6 @@ button.card-work-title:hover{color:var(--accent);text-decoration:underline;text-
 .step-table th:last-child,.step-table td:last-child{width:auto;text-align:right}
 .step-table td{padding:7px 12px;border-top:1px solid var(--line);vertical-align:middle}
 .step-table td:first-child{width:62%}
-.step-table-title{overflow:hidden;color:var(--ink-2);text-overflow:ellipsis;white-space:nowrap}
-.step-table-title code{margin-right:4px}
 .step-table-cite{display:flex;align-items:center;gap:6px;min-width:0}
 .step-table-cite code{flex:none}
 .step-table-link{min-width:0;padding:0;border:0;background:none;color:var(--ink-2);font:inherit;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -583,7 +581,7 @@ button.step-table-link{cursor:pointer}
   .step-table td{border-top:0;text-align:left!important}
   .step-table tr{border-top:1px solid var(--line);padding:4px 0}
   .step-table td:first-child{width:auto}
-  .step-table-title,.step-table-link{white-space:normal}
+  .step-table-link{white-space:normal}
   .step-verdicts{white-space:normal}
   .step-verdicts>*{margin:0 5px 0 0}
 }

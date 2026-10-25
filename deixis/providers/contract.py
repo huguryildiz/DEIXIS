@@ -212,16 +212,6 @@ class CitingWorksRequest:
 
 
 @runtime_checkable
-class BatchLookupCapable(Protocol):
-    async def lookup_batch(self, request: LookupBatchRequest, context: ConnectorContext) -> LookupBatchOutcome: ...
-
-
-@runtime_checkable
-class CitingWorksCapable(Protocol):
-    async def citing_works(self, request: CitingWorksRequest, context: ConnectorContext) -> SearchOutcome: ...
-
-
-@runtime_checkable
 class ScholarlyConnector(Protocol):
     descriptor: ConnectorDescriptor
 

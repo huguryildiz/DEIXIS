@@ -276,7 +276,7 @@ def closed_scan(span: str) -> ScanResult:
 @cache
 def _names() -> dict:
     """Missing/stale compatibility evidence is an error, never an empty allowlist."""
-    script = "scripts/latex_export_names.py"
+    script = "scripts/generate/latex_export_names.py"
     path = Path(__file__).with_name("latex_names.json")
     try:
         data = json.loads(path.read_text(encoding="utf-8"))

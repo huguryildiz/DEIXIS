@@ -73,7 +73,7 @@ def test_every_service_code_has_english_and_turkish_text():
     block = labels.split('export const serviceErrors:', 1)[1].split('\n}', 1)[0]
     messages = dict(re.findall(r"^  (\w+): '([^']+)',", block, re.M))
     assert set(messages) == SERVICE_ERROR_KINDS
-    translations = (root / 'web/src/lib/i18n.ts').read_text()
+    translations = (root / 'web/src/lib/locales/tr.ts').read_text()
     keys = set(re.findall(r"^  '((?:[^'\\]|\\.)*)':", translations, re.M))
     assert set(messages.values()) <= keys
     # Recovery and effect text needs both languages too.

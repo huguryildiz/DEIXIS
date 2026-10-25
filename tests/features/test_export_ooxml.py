@@ -176,7 +176,7 @@ def test_xlsx_writer_cells_names_and_limits():
 
 
 def test_turkish_strings_match_the_interface_map():
-    source = (Path(__file__).resolve().parents[2] / "web/src/lib/i18n.ts").read_text(encoding="utf-8")
+    source = (Path(__file__).resolve().parents[2] / "web/src/lib/locales/tr.ts").read_text(encoding="utf-8")
     body = source[source.index("const tr: Record<string, string> = {"):]
     interface = {m.group(1).replace("\\'", "'"): m.group(2).replace("\\'", "'") for m in re.finditer(
         r"^\s*'((?:[^'\\]|\\.)*)':\s*'((?:[^'\\]|\\.)*)',?\s*$", body, re.M)}

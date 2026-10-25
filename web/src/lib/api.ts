@@ -1874,7 +1874,6 @@ export type LibraryItemEntry = Omit<LibraryEntry, 'versions'> & {
   versions: LibraryItemVersion[]; representative_source_version_id: string; saved: boolean
 }
 export type LibraryItemsView = Omit<LibraryView, 'entries'> & { entries: LibraryItemEntry[] }
-export type LibraryItemWork = Omit<LibraryWork, 'versions'> & { versions: (LibraryWorkVersion & { library_item: LibraryItem | null })[] }
 export type LibraryBibliographyRequest = { format: 'bibtex' | 'ris'; work_ids?: string[]; source_version_ids?: string[]; every_work?: boolean }
 export type NewResearchFromSetBody = Omit<Parameters<typeof api.create>[0], 'source_scope' | 'seed_mode'> & { work_ids: string[] }
 
@@ -1939,9 +1938,6 @@ export type ReferenceImport = {
   format: ReferenceImportFormat; filename: string | null; entries: ReferenceImportEntry[]
   saved: string[]; already_saved: string[]; errors: ReferenceImportError[]
 }
-// A refused file answers with one of these codes (ApiError.code); 'import_no_entries' carries `errors` in ApiError.details.
-export type ReferenceImportRefusal = 'import_too_large' | 'import_not_text' | 'import_unknown_format'
-  | 'import_too_many_entries' | 'import_expansion_too_large' | 'import_no_entries'
 export type LibraryZoteroImport = ZoteroImport & { saved: string[]; already_saved: string[] }
 
 export const libraryImportsApi = {

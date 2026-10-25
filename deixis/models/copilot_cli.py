@@ -95,9 +95,6 @@ class CopilotCliAdapter:
         # On Windows the launcher is copilot.cmd, never run: its native .exe, else node on the script it names (A4).
         return command_for("copilot", binary or found)
 
-    def _command(self) -> list[str] | None:
-        return self._resolve().argv or None
-
     def _prepare(self) -> dict[str, str]:
         self.home.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.workspace.mkdir(parents=True, exist_ok=True)

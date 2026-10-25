@@ -7,10 +7,3 @@ export function downloadName(title: string, suffixes: string[], extension: strin
   const parts = ['DEIXIS', tidy(title).slice(0, 120).trimEnd() || fallback, ...suffixes.map(tidy).filter(Boolean)]
   return extension ? `${parts.join(' - ')}.${extension}` : parts.join(' - ')
 }
-
-// The file name in a Content-Disposition header: the UTF-8 `filename*` when given, else the plain `filename`.
-export function dispositionName(disposition: string): string | undefined {
-  const encoded = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1]
-  if (encoded) { try { return decodeURIComponent(encoded) } catch { /* fall through to the plain name */ } }
-  return /filename="([^"]+)"/.exec(disposition)?.[1]
-}

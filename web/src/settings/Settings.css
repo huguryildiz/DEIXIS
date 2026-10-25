@@ -163,10 +163,6 @@
 
 /* ── Semantic search (mockup `.rows.opts`) ─────────────────────────────────────────────────────────────── */
 .app .settings-page .rows.opts>div{display:block;padding:0}
-.app .settings-page .opts .semantic-option{border-top:1px solid var(--line)}
-.app .settings-page .opts .semantic-option:first-child{border-top:0;border-radius:9px 9px 0 0}
-.app .settings-page .opts .semantic-option:last-child{border-radius:0 0 9px 9px}
-.app .settings-page .opts .semantic-option:has(>label input:checked){background:var(--accent-tint)}
 .app .settings-page .opts label{display:flex;align-items:flex-start;gap:10px;padding:10px 14px;border-top:0;color:var(--ink);font-size:13.5px;line-height:1.5;cursor:pointer}
 .app .settings-page .opts label:has(input:checked){background:none}
 .app .settings-page .opts label.is-disabled{cursor:default}
@@ -175,13 +171,9 @@
 .app .settings-page .opts label .st,.app .settings-page .opts label .spin{align-self:center;margin-left:auto}
 .app .settings-page .opts input{flex:none;margin:3px 0 0;accent-color:var(--accent)}
 .app .settings-page .opts label:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:-2px}
-.app .settings-page .semantic-option-body{display:grid;gap:4px;padding:0 14px 12px 63px;font-size:12.5px}
-.app .settings-page .semantic-option-body .local-tool-note,.app .settings-page .semantic-option-body .local-tool-error{font-size:12.5px}
-.app .settings-page .semantic-option-body .select{justify-self:start;height:27px}
 /* Search and ranking choices: model-style cards (`.co-grid` / `.co-card`) under a small group head; each opens its sheet. */
 .app .settings-page .choice-groups{display:grid;gap:10px}
 .app .settings-page .choice-head{margin:6px 0 0;color:var(--muted);font-size:12px;font-weight:500;letter-spacing:.02em}
-.connection-sheet .semantic-option-body{display:grid;gap:8px;padding:0}
 .app .settings-page .choice-groups .choice-off{margin-top:8px;padding-top:12px;border-top:1px solid var(--line)}
 
 /* On a phone the status pill drops under the text instead of squeezing it into a few letters. */
@@ -227,8 +219,8 @@
 .connection-sheet .mk .notice{margin:0}
 .connection-sheet .mk .notice p{margin:0}
 .connection-sheet .mk .notice p+p{margin-top:4px}
-.connection-sheet .key-box,.app .settings-page .semantic-option-body .key-box{display:grid;gap:8px}
-.connection-sheet .key-form-error,.app .settings-page .semantic-option-body .key-form-error{margin:0;color:var(--error-ink);font-size:12.5px}
+.connection-sheet .key-box{display:grid;gap:8px}
+.connection-sheet .key-form-error{margin:0;color:var(--error-ink);font-size:12.5px}
 .connection-sheet .key-box .notice{margin:0;color:var(--error-ink)}
 .connection-sheet .ghost.is-danger{color:var(--error-ink)}
 .connection-sheet .signin-cmd{display:grid;gap:6px}
@@ -291,11 +283,11 @@
 .connection-sheet .sheet-card-foot{margin:0 -16px -16px;padding:11px 16px 12px;border-top:1px solid var(--line);border-radius:0 0 12px 12px;background:var(--sidebar-surface);color:var(--muted);font-size:12.5px;line-height:1.55}
 .connection-sheet .key-signup a{display:inline-flex;align-items:center;gap:2px;font-weight:500}
 .connection-sheet .key-signup a svg{width:13px;height:13px}
-.connection-sheet .key-box .lbl,.app .settings-page .semantic-option-body .key-box .lbl{display:grid;gap:6px;color:var(--ink);font-size:12.5px;font-weight:500}
-.connection-sheet .key-box .field,.app .settings-page .semantic-option-body .key-box .field{height:38px;padding:0 12px;border-radius:8px;font-size:13px}
-.connection-sheet .key-box .field::placeholder,.app .settings-page .semantic-option-body .key-box .field::placeholder{color:var(--muted);letter-spacing:.01em}
-.connection-sheet .key-note,.app .settings-page .semantic-option-body .key-note{display:flex;gap:6px;align-items:flex-start;margin:0;color:var(--muted);font-size:12px;line-height:1.5}
-.connection-sheet .key-note svg,.app .settings-page .semantic-option-body .key-note svg{flex:none;width:13px;height:13px;margin-top:2px;color:var(--ok-ink)}
+.connection-sheet .key-box .lbl{display:grid;gap:6px;color:var(--ink);font-size:12.5px;font-weight:500}
+.connection-sheet .key-box .field{height:38px;padding:0 12px;border-radius:8px;font-size:13px}
+.connection-sheet .key-box .field::placeholder{color:var(--muted);letter-spacing:.01em}
+.connection-sheet .key-note{display:flex;gap:6px;align-items:flex-start;margin:0;color:var(--muted);font-size:12px;line-height:1.5}
+.connection-sheet .key-note svg{flex:none;width:13px;height:13px;margin-top:2px;color:var(--ok-ink)}
 .connection-sheet .sheet-facts{display:grid;margin:0;border-radius:12px;background:var(--sidebar-surface)}
 .connection-sheet .sheet-facts>div{display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:11px 16px}
 .connection-sheet .sheet-facts>div+div{border-top:1px solid var(--line)}
@@ -533,7 +525,6 @@
 .connection-sheet .tool-facts dt{padding-right:16px;color:var(--muted)}
 .connection-sheet .tool-facts dd{color:var(--ink);overflow-wrap:anywhere}
 .connection-sheet .tool-facts dl>:nth-child(n+3){border-top:1px solid var(--line)}
-.connection-sheet .tool-facts .local-tool-code{padding:1px 6px;border-radius:5px;background:var(--hover-surface);font-size:12px}
 .connection-sheet .tool-facts-foot{display:flex;align-items:center;gap:7px;margin:0;padding:9px 14px;border-top:1px solid var(--line);background:var(--hover-surface);color:var(--ink-2);font-size:12.5px;line-height:1.45}
 .connection-sheet .tool-facts-foot svg{flex:none;width:14px;height:14px;color:var(--muted)}
 .connection-sheet .tool-facts-foot.is-ok svg{color:var(--ok-ink)}

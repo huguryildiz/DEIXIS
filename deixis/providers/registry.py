@@ -223,11 +223,6 @@ def _configured(searchable: bool | None = None) -> list[str]:
             if c.access_mode() != "not_configured" and (searchable is None or c.searchable == searchable)]
 
 
-def available_providers() -> list[str]:
-    """The providers a search may be sent to, in display order."""
-    return _configured(searchable=True)
-
-
 def verification_providers() -> list[str]:
     """Configured connectors that are never searched: they answer about a record whose DOI is already known (D87)."""
     return _configured(searchable=False)

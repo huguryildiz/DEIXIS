@@ -1001,11 +1001,3 @@ def decision_origin(store: Store, research_id: str, decision_id: str) -> str:
     return _origin_of([_via(row[0]) for row in store.conn.execute(
         "SELECT payload_json FROM events WHERE research_id = ? AND type = 'stage_decision_recorded'"
         " AND json_extract(payload_json, '$.decision_id') = ?", (research_id, decision_id))])
-
-
-def confirmed_pdf(store: Store, asset_id: str | None) -> bool:
-    """Whether a person confirmed this file as the work's own PDF (`flow._user_supplied_pdf`)."""
-    if not asset_id:
-        return False
-    row = store.conn.execute("SELECT identity_confirmed_at FROM source_assets WHERE id = ?", (asset_id,)).fetchone()
-    return bool(row and row[0])

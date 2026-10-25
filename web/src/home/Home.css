@@ -40,9 +40,6 @@
 .home-estimate li{position:relative;margin:0;color:var(--ink-2)}
 .home-estimate li::before{content:'';position:absolute;left:-13px;top:.62em;width:4px;height:4px;border-radius:50%;background:var(--strong-line)}
 .composer-controls{display:flex;align-items:center;gap:8px;padding:8px 10px;border-top:1px solid var(--line);background:var(--sidebar-surface)}
-.app .composer-models{position:relative;padding:10px 40px 10px 10px;border-top:1px solid var(--line);background:var(--sidebar-surface)}
-.models-picker-close{position:absolute;top:10px;right:10px;display:grid;place-items:center;width:24px;height:24px;border-radius:5px;color:var(--muted)}
-.models-picker-close:hover{background:var(--hover-surface);color:var(--ink)}
 /* Row buttons share one quiet look: 30px, hairline border, page surface. */
 .app .composer-controls :is(.composer-add,.models-summary,[data-slot=select-trigger]){display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:0;height:auto;border:1px solid var(--strong-line);border-radius:7px;background:var(--paper);box-shadow:none;color:var(--ink-2);padding:5px 10px;font-size:13px;line-height:1.5;white-space:nowrap}
 .app .composer-controls .composer-add{width:30px;height:30px;padding:5px;flex:none}

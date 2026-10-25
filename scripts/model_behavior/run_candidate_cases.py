@@ -10,7 +10,6 @@ import argparse
 import asyncio
 import copy
 import json
-import os
 import re
 import tempfile
 from datetime import datetime, timezone
@@ -21,8 +20,9 @@ from deixis.config import load_settings
 from deixis.domain import contracts
 from deixis.domain.skill import load_skill_package
 from deixis.models import prompt
-from deixis.models.adapter import CodexAdapter, is_rate_limited
+from deixis.models.adapter import CodexAdapter
 from deixis.paths import REPO_ROOT
+from scripts.model_behavior.runner_common import _stop_for_run, _write_results
 
 FIXTURES = REPO_ROOT / "tests/fixtures/research/step-inputs.json"
 CASES = REPO_ROOT / "tests/model_behavior/candidate_cases.json"
@@ -261,51 +261,6 @@ def summarize(results: list[dict[str, Any]], selected: list[str] | None = None,
                                       r["runs"][0]["validation"]["ok"] for r in results),
             "all_screens_true": sum(screens_true(r) for r in results),
             "screen_note": "Screens are heuristics; human reading decides. Counts are not success rates or K6 measurements."}
-
-
-def _stop_for_run(case_id: str, run: dict[str, Any], adapter_result: Any, model: str) -> str | None:
-    error = run["error"] or ""
-    if run["status"] == "isolation_violation":
-        return f"{case_id}: isolation_violation: {error}"
-    if run.get("tool_item_types"):
-        return f"{case_id}: tool items: {run['tool_item_types']}"
-    normalized_error = re.sub(r"[^a-z0-9]+", " ", error.lower())
-    if is_rate_limited(adapter_result) or re.search(
-        r"\b(?:quota|rate\s?limit\w*|429|usage\s?limit\w*|insufficient\s?quota|overload(?:ed)?|capacity)\b",
-        normalized_error,
-    ):
-        return f"{case_id}: rate, quota, or capacity limit: {error}"
-    if run["resolved_model"] is None and error:
-        return f"{case_id}: {error}"
-    if run["resolved_model"] != model:
-        return f"{case_id}: resolved model {run['resolved_model']!r} differs from {model!r}"
-    return None
-
-
-def _write_results(out_dir: Path, payload: dict[str, Any], out_file: Path | None = None) -> Path:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    body = json.dumps(payload, indent=2, ensure_ascii=False)
-    if out_file is None:
-        out_file = out_dir / "results.json"
-        while True:
-            try:
-                with out_file.open("x"):
-                    pass
-                break
-            except FileExistsError:
-                now = datetime.now(timezone.utc)
-                out_file = out_dir / f"results-{now:%H%M%S%f}.json"
-    temp_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=out_dir,
-                                         prefix=".results-", suffix=".tmp", delete=False) as stream:
-            temp_path = Path(stream.name)
-            stream.write(body)
-        os.replace(temp_path, out_file)
-    finally:
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
-    return out_file
 
 
 async def run_one(adapter: CodexAdapter, package: Any, si: dict[str, Any]) -> tuple[dict[str, Any], Any]:

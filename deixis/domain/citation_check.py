@@ -97,12 +97,3 @@ def check_outcome(parts: Iterable[PartAssessment], covers_whole_sentence: Any) -
         return {"status": "done", "result": derive_result(parts, covers_whole_sentence), "error": None}
     except CouldNotCheck as exc:
         return {"status": "could_not_check", "result": None, "error": exc.reason}
-
-
-def valid_status_result(status: str, result: str | None) -> bool:
-    """A result belongs to `done` only, and `done` always has one."""
-    if status not in STATUSES:
-        return False
-    if status == "done":
-        return result in RESULTS
-    return result is None

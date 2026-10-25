@@ -110,10 +110,6 @@ class AuditState:
     def _draw(self, stratum: str) -> list[str]:
         return sorted(self.members[stratum], key=lambda work_id: (self.digest(stratum, work_id), work_id))[:AUDIT_PER_STRATUM]
 
-    def stratum_of(self, work_id: str) -> str | None:
-        """The stratum whose current sample holds this work, or None."""
-        return next((name for name in STRATA if work_id in self.samples[name]), None)
-
 
 def token(ctx: Any, work_id: str, svid: str, stratum: str, machine_id: str) -> str:
     """D96's row token plus the stratum and the machine decision; the machine decision's id leads, so the write can

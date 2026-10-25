@@ -224,11 +224,6 @@ class ReviewStore:
             self._review(review_id)
             self.conn.execute("UPDATE owner_reviews SET sections_not_reviewed_json = ? WHERE id = ?", (canonical_json(rows), review_id))
 
-    def set_failure(self, review_id, reason):
-        with transaction(self.conn):
-            self._review(review_id)
-            self.conn.execute("UPDATE owner_reviews SET failure_reason = ? WHERE id = ?", (reason, review_id))
-
     def add_findings(self, review_id, rows):
         rows = list(rows)
         if any(not isinstance(row, ResolvedFinding) for row in rows):

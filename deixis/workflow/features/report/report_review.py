@@ -161,13 +161,6 @@ def _target(report_id: str, columns: list[dict[str, Any]], batch: dict[str, Any]
              "review_sections": shown, "limitations_core": None}, list(batch["passages"].values()))
 
 
-def _input(flow: ResearchFlow, reports: ReportStore, report_id: str) -> tuple[list[tuple[dict[str, Any], list[dict[str, Any]]]], list[str], list[dict[str, str]]]:
-    """The review batches as packed now: (target, passages) per batch, the section ids and the omissions."""
-    readable, section_ids, omitted = _read(flow, reports, report_id)
-    columns = reports.snapshot(report_id)["columns"]
-    return [_target(report_id, columns, batch) for batch in _pack(readable, omitted)], section_ids, omitted
-
-
 def _assigned(flow: ResearchFlow, reports: ReportStore, report_id: str, parts: list[dict[str, Any]],
               lost: dict[str, str]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Rebuild one stored batch from current claims; a section of it that can no longer be read is recorded in `lost`."""

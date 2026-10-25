@@ -399,9 +399,6 @@ class CandidateStore:
     def trash_candidate(self, research_id, candidate_id):
         return self._trash(research_id, candidate_id, True)
 
-    def restore_candidate(self, research_id, candidate_id):
-        return self._trash(research_id, candidate_id, False)
-
     def start_kill_search(self, research_id, candidate_version_id, run_id, *, query_block,
                           rendered_queries, skipped_terms, selection) -> dict:
         with self._transaction():

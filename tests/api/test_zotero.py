@@ -219,7 +219,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 
 def _turkish_keys() -> set[str]:
-    source = (REPO / "web" / "src" / "lib" / "i18n.ts").read_text()
+    source = (REPO / "web" / "src" / "lib" / "locales" / "tr.ts").read_text()
     return set(re.findall(r"^  '((?:[^'\\]|\\.)*)':", source, re.M))
 
 

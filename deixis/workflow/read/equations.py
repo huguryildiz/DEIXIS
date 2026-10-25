@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any
 
 from deixis.keys import credentials, key_verification
-from deixis.documents import arxiv_source, equation_model, equation_regions, math_reader, mathpix, pdf
+from deixis.documents import arxiv_source, equation_model, equation_regions, mathpix, pdf
 from deixis.storage.db import new_id, now, transaction
 from deixis.workflow.read import file_restore, recovery, text_retry
 from deixis.workflow.run import spend
@@ -71,13 +71,6 @@ def _reading(store: Store) -> dict[str, Any] | None:
     """The PDF the store's equation service is reading now, for views: {"asset_id", "title", "pages", "started_at"}
     and "route". A store with no service reads nothing."""
     return getattr(getattr(store, "equation_route", None), "reading", None)
-
-
-def target_version(current: str | None = None) -> str:
-    """The version an earlier Marker reading of a PDF has: its text layer, its OCR reading if any, then Marker (D52).
-    Nothing writes it any more (D113); it names the readings PDFs keep."""
-    ocr = OCR_SUFFIX.search(recovery.profile_of(current or ""))
-    return recovery.text_base(current) + (ocr.group(0) if ocr else "") + "+" + math_reader.MATH_VERSION
 
 
 def source_target_version(current: str | None) -> str:

@@ -10,7 +10,6 @@ title (a preprint and its published record) still decide nothing. Nothing is fil
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import httpx
@@ -65,10 +64,6 @@ async def lookup(http: httpx.AsyncClient, head: str, title_region: str, api_key:
         return None
     work = pick(title_region, (found.raw_payload or {}).get("results") or [])
     return (openalex._record(work), "title") if work is not None else None
-
-
-def match_of(source: dict[str, Any]) -> dict[str, Any] | None:
-    return json.loads(source["record_match_json"]) if source.get("record_match_json") else None
 
 
 async def identify(store: Any, http: httpx.AsyncClient, svid: str, api_key: str | None = None,

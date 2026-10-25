@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Iterable, Mapping
+from typing import Callable, Iterable
 
 from deixis.workflow.features.lineage.lineage_edges import EdgeFrom, EdgeTo, edge_state
 from deixis.workflow.features.lineage.lineage_mentions import MentionTarget, PassageText, find_mentions, prepare_passages
@@ -159,23 +159,3 @@ def pack_candidates(
     if current:
         chunks.append(current)
     return Packing(tuple(chunks), tuple(not_sent))
-
-
-def passage_budget_fits(
-    passage_chars: Mapping[str, int], max_passages: int = MAX_PASSAGES_PER_CHUNK,
-    max_chars: int = MAX_CHARS_PER_CHUNK,
-) -> Callable[[tuple[Candidate, ...]], bool]:
-    """Explicit proxy over unique mention-passage text, not the StepInput message.
-
-    L5 owns the real 48,000-character message budget. Missing lengths raise KeyError
-    rather than understating size. Copy lengths so the predicate keeps its snapshot.
-    """
-    lengths = dict(passage_chars)
-    if max_passages < 0 or max_chars < 0 or any(length < 0 for length in lengths.values()):
-        raise ValueError("passage budgets and lengths must be nonnegative")
-
-    def fits(chunk: tuple[Candidate, ...]) -> bool:
-        ids = frozenset(p for candidate in chunk for p in candidate.mention_passage_ids)
-        return len(ids) <= max_passages and sum(lengths[p] for p in sorted(ids)) <= max_chars
-
-    return fits

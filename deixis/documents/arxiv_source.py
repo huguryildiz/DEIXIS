@@ -629,7 +629,7 @@ _katex: dict[str, set[str]] | None = None
 
 
 def katex_known() -> dict[str, set[str]]:
-    """Commands and environments of the web app's KaTeX (`scripts/katex_commands.mjs` writes the file)."""
+    """Commands and environments of the web app's KaTeX (`scripts/generate/katex_commands.mjs` writes the file)."""
     global _katex
     if _katex is None:
         data = json.loads(Path(__file__).with_name("katex_commands.json").read_text(encoding="utf-8"))
@@ -738,7 +738,7 @@ _kernel: set[str] | None = None
 
 def known_names() -> set[str]:
     """Names a paper may use without defining them: the web app's KaTeX commands and symbols, and what the LaTeX kernel,
-    article.cls and the AMS packages define (`latex_kernel_names.json`, written by `scripts/latex_kernel_names.py`)."""
+    article.cls and the AMS packages define (`latex_kernel_names.json`, written by `scripts/generate/latex_kernel_names.py`)."""
     global _kernel
     if _kernel is None:
         data = json.loads(Path(__file__).with_name("latex_kernel_names.json").read_text(encoding="utf-8"))

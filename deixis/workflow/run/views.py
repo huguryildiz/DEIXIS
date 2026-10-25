@@ -153,13 +153,6 @@ def _json(value: str | None) -> Any:
     return json.loads(value) if value else None
 
 
-def _model_outputs(store: Store, run_id: str, kind: str) -> list[dict[str, Any]]:
-    return [json.loads(r["output_json"]) for r in store.conn.execute(
-        "SELECT output_json FROM run_steps WHERE run_id = ? AND kind = ? AND status = 'succeeded' AND output_json IS NOT NULL"
-        " ORDER BY rowid", (run_id, kind),
-    )]
-
-
 def ocr_state(store: Store, asset_id: str) -> dict[str, Any]:
     """Pages of the text in use without text (blank pages included), pages read with OCR, and the latest OCR reading (D51)."""
     conn = store.conn

@@ -57,13 +57,6 @@ def filename(pmcid: str) -> str:
     return f"{pmcid}{FILENAME_SUFFIX}"
 
 
-def is_rendition(origin: str | None, retrieved_from: str | None, original_filename: str | None) -> bool:
-    """The Python reading of `RENDITION_SQL`, for a row already in hand."""
-    url, name = retrieved_from or "", original_filename or ""
-    return (origin == "download" and url.startswith("https://www.ebi.ac.uk/europepmc/webservices/rest/PMC")
-            and url.endswith("/fullTextXML") and name.startswith("PMC") and name.endswith(FILENAME_SUFFIX))
-
-
 def render_pdf(xml: bytes, *, timeout: float = RENDER_TIMEOUT_SECONDS, max_memory: int = MAX_MEMORY_BYTES,
                max_pages: int = MAX_RENDER_PAGES, max_output: int = MAX_RENDER_BYTES,
                max_input: int = MAX_XML_BYTES) -> Rendition:

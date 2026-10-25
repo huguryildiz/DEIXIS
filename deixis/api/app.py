@@ -68,7 +68,7 @@ from deixis.providers import scopus
 from deixis.providers import zotero
 from deixis.providers.registry import CONNECTORS, configured_providers, provider_role
 from deixis.storage import db
-from deixis.workflow.read import adjudication, fulltext
+from deixis.workflow.read import fulltext
 from deixis.workflow.answer import bibliography
 from deixis.exports.text import attachment, download_name
 from deixis.workflow.screen import audit as audit_rules
@@ -2078,13 +2078,6 @@ def create_app(
         elif body.kind == "pdf_collection":
             # Downloads and open-copy lookups only; no model is called and no search is run.
             budget = {"max_model_calls": 0, "max_provider_requests": 0}
-        elif body.kind == "fulltext_fetch":
-            # Downloads and open-copy lookups for the works the rank order reaches (D83). The same function the
-            # flow's auto-queue calls, so neither route can give this run more room than the other.
-            budget = fulltext.fetch_budget(scope["effort"])
-        elif body.kind == "fulltext_adjudication":
-            # Two model calls per work the read limit reaches (D85). The same function the flow's auto-queue calls.
-            budget = adjudication.read_budget(scope["effort"])
         elif body.kind == "answer":
             from deixis.workflow.answer.answer import answer_run_budget
             budget = answer_run_budget(store, research_id, scope)

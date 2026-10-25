@@ -42,8 +42,3 @@ def canonical_rows(rows: Iterable[Mapping[str, Any]], key: str) -> list[dict[str
         if key not in row:
             raise KeyError(key)
     return sorted(listed, key=lambda row: canonical_json(row[key]))
-
-
-def unordered_pair(a: str, b: str) -> tuple[str, str]:
-    """A pair whose two members have no order of their own (two compared records), written one way round."""
-    return (a, b) if a <= b else (b, a)

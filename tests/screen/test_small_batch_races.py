@@ -6,7 +6,7 @@ import pytest
 from deixis.workflow.screen.decisions import DecisionStore
 from fakes import FakeAdapter, valid_response
 from test_abstract_flow import client_of, records_of, work as abstract_work
-from test_adjudication_flow import app_for, discover, wait, papers
+from test_adjudication_flow import app_for, discover, papers
 from deixis.workflow.search import small_batch
 from deixis.workflow.read.background_fetch import FetchSlots
 from deixis.workflow.run.flow import ResearchFlow
@@ -26,7 +26,7 @@ def session(app):
 
 
 @pytest.mark.parametrize("phase,boundary", [("fulltext_adjudication", "late_response")])
-def test_user_decision_at_send_boundaries_stops_new_calls_and_publication(tmp_path, monkeypatch, phase, boundary):
+def test_user_decision_at_send_boundaries_keeps_the_run_going_without_the_decided_work(tmp_path, monkeypatch, phase, boundary):
     holder = {}
 
     def decide():
@@ -68,8 +68,9 @@ def test_user_decision_at_send_boundaries_stops_new_calls_and_publication(tmp_pa
                   reading="off" if phase == "abstract_screening" else "auto")
     holder["app"] = app
     with session(app) as client:
-        rid, run_id, _, paused = discover(client, effort="standard" if boundary == "next_batch" else "quick")
-        assert (paused["status"], paused["pause_reason"]) == ("paused", "selection_changed")
+        # The decision does not pause the run (D127): it finishes, and the decided work gets no model call or proposal.
+        rid, run_id, _, done = discover(client, effort="standard" if boundary == "next_batch" else "quick")
+        assert (done["status"], done["pause_reason"]) == ("completed", None)
         store = app.state.store
         calls = [c for c in adapter.calls if c["task_type"] == phase]
         assert len(calls) == 1
@@ -82,12 +83,6 @@ def test_user_decision_at_send_boundaries_stops_new_calls_and_publication(tmp_pa
         if boundary == "health":
             unsent = [s for s in store.run_steps(run_id) if s["kind"] == "model:" + phase and s["status"] != "succeeded"]
             assert all(store.last_step_input(s["id"]) is None for s in unsent)
-        assert client.post(f"/api/runs/{run_id}/resume").status_code == 200
-        assert wait(client, rid, run_id)[1]["status"] == "completed"
-        later = [c for c in adapter.calls if c["task_type"] == phase][len(calls):]
-        for call in later:
-            shown = sent_records(store, call) if phase == "abstract_screening" else [sent_source(store, call)]
-            assert set(shown).isdisjoint(holder["targets"])
 
 
 # ---- a crash and the restart (was test_small_batch_recovery.py) ------------------------------------------

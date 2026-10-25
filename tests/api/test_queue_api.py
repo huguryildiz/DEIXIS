@@ -103,7 +103,7 @@ def quiet_app(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("phase", ["fulltext_adjudication"])
 @pytest.mark.parametrize("human_code", ["human_include"])
-def test_user_edit_during_small_batch_stops_further_model_reads_and_publication(tmp_path, monkeypatch, human_code, phase):
+def test_user_edit_during_small_batch_keeps_the_run_going_without_further_reads_of_that_work(tmp_path, monkeypatch, human_code, phase):
     holder = {}
 
     def before(si):
@@ -126,7 +126,7 @@ def test_user_edit_during_small_batch_stops_further_model_reads_and_publication(
     client = client_of(app)
     try:
         rid, run_id, _, run = discover(client)
-        assert (run["status"], run["pause_reason"]) == ("paused", "selection_changed")
+        assert (run["status"], run["pause_reason"]) == ("completed", None)
         store = app.state.store
         human = DecisionStore(store).current(rid, holder["decided"], "fulltext")
         assert human["reason_code"] == human_code

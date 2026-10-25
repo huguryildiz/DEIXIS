@@ -158,8 +158,9 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
     order = small_batch.unchanged_heads(store, rid, listing, plan["items"],
                                        **({"versions": read_versions} if read_versions is not None else {}))
     frozen = read_versions if read_versions is not None else listing["manifest"]["versions"]
-    flow._small_batch_guard = {"run_id": run_id, "rid": rid,
-        "user_signature": small_batch.user_signature(store, rid), "reserved_calls": set(),
+    # No user signature: a person's decision during the read does not pause the run. Each send and each write
+    # rechecks it (slice 16), so the run goes on and leaves the decided works as the person set them.
+    flow._small_batch_guard = {"run_id": run_id, "rid": rid, "reserved_calls": set(),
         "versions": {svid: frozen[svid] for item in plan["items"]
                      if item["head"] in order for svid in item["versions"]}}
     held = flow._held[run_id] = _Held(run["scope_revision"])

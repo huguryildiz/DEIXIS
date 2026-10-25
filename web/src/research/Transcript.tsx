@@ -1042,6 +1042,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const resumable = run.status === 'paused' && !(run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0)
     && !(run.kind === 'answer' && run.pause_reason === 'selection_changed')
   const userPaused = run.status === 'paused' && run.pause_reason === 'user_requested'
+  // A search paused by a selection change resumes with the person's choices kept (the guard skips the sources they decided).
+  const selectionStop = run.status === 'paused' && run.pause_reason === 'selection_changed'
   // A model that did not answer (R20): Resume run reads "Retry this step" (it sends the stopped step again), and the
   // person may move the role to another model first; the changes made since the stop are listed on the notice.
   const modelDown = run.status === 'paused' && MODEL_DOWN.has(run.pause_reason ?? '')
@@ -1176,12 +1178,13 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       </>}
     </div>
 
-    {run.status === 'paused' && <div className={`chat-note notice ${userPaused || run.pause_reason === 'spend_threshold' ? 'is-warning' : 'is-error'}`}>
+    {run.status === 'paused' && <div className={`chat-note notice ${userPaused || run.pause_reason === 'spend_threshold' || (selectionStop && resumable) ? 'is-warning' : 'is-error'}`}>
       {userPaused ? <Pause size={16} aria-hidden /> : <TriangleAlert size={16} aria-hidden />}
       <div className="notice-body">
         {userPaused
           ? <p><b>{t('Paused after the current call.')}</b> {t('Nothing was lost: the finished steps are kept and will not run again.')}</p>
           : <p><b>{pauseReasonText(run.pause_reason, run.error)}</b></p>}
+        {selectionStop && <p>{t(resumable ? 'Resume picks up where it stopped and keeps your choices.' : 'It cannot go on with what it started from. Cancel it and start again.')}</p>}
         {pauseDetailText(run).map(line => <p key={line}>{line}</p>)}
         {run.kind === 'pdf_ocr' && failedOcrPages.length > 0 && <p>{t('Pages not read: {pages}', { pages: failedOcrPages.join(', ') })}</p>}
         {resumable && unknownSteps.length > 0 && <p>{t('Unfinished: {steps}. Resuming repeats it; a repeated model call counts against your account usage.', { steps: unknownSteps.map(s => s.kind === 'model:report_review' ? t('Report review') : stepLabel(s.kind, s.operation_key)).join(', ') })}</p>}

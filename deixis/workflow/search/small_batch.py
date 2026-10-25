@@ -407,9 +407,9 @@ def user_signature(store: Any, rid: str) -> str:
 
 
 def guard_reason(store: Any, guard: dict[str, Any]) -> str | None:
-    signatures = guard.get("user_signatures", {"batch": guard["user_signature"]})
-    current_signature = user_signature(store, guard["rid"])
-    if any(current_signature != signature for signature in signatures.values()):
+    # A guard without a user signature (the discovery read) does not stop for a person's decision.
+    signatures = guard.get("user_signatures", {"batch": guard["user_signature"]} if "user_signature" in guard else {})
+    if signatures and any(user_signature(store, guard["rid"]) != signature for signature in signatures.values()):
         return "selection_changed"
     if "versions" in guard:
         current = ranking._versions(store, guard["rid"])

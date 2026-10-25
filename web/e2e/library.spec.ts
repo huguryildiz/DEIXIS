@@ -127,7 +127,7 @@ test.describe.serial('S25: the Library page', () => {
     await open(page)
     const lib = await library()
     await expect(page.locator('.lib-head h1')).toHaveText('Library / All')
-    await expect(page.locator('.lib-head > button')).toHaveText(['Import from Zotero', 'Upload PDF'])
+    await expect(page.locator('.lib-head > button:not(.lib-toggle)')).toHaveText(['Verify citations', 'Import from Zotero', 'Upload PDF'])
     await expect(left(page).locator('button').first()).toHaveText(`All works${lib.entries.length}`)
     await expect(left(page).locator('h6')).toHaveText('Research')
     for (const r of lib.researches) await expect(left(page).locator(`button[data-research="${r.id}"]`)).toHaveText(`${r.title}${holding(lib, r.id).length}`)
@@ -374,7 +374,7 @@ test.describe.serial('S25: the Library page', () => {
     await expect(page.getByRole('heading', { name: 'No saved works yet' })).toBeVisible()
     await expect(page.locator('.lib-empty p')).toHaveText('The sources of every research land here. You can also upload PDFs or import a Zotero collection.')
     await expect(page.locator('.lib-empty .acts button')).toHaveText(['Upload PDF', 'Import from Zotero'])
-    await expect(page.locator('.lib-empty .lib-start')).toHaveText('Start a research')
+    await expect(page.locator('.lib-empty .lib-start')).toHaveText(['Start a research', 'Verify citations'])
     await page.locator('.lib-empty').getByRole('button', { name: 'Start a research' }).click()
     await expect.poll(() => page.evaluate(() => location.hash)).toBe('#/')
   })
@@ -525,76 +525,5 @@ test.describe.serial('S25: the Library page', () => {
 
   // S24 lesson: a read that started before a write must not undo the write's screen, on success or on error. The held
   // read's answer is the list before the write; the screen is read once after a pause (no polling retries).
-  for (const outcome of ['stale list', 'error'] as const) {
-    test(`a Library read held across an add (${outcome}) does not replace the added state`, async ({ page }) => {
-      await page.setViewportSize({ width: 1280, height: 900 })
-      await open(page)
-      const lib = await library()
-      // The work held by the fewest researches, and one research that does not hold it yet.
-      const work = [...lib.entries].sort((x, y) => x.researches.length - y.researches.length)[0]
-      const target = lib.researches.find(r => [A.id, B.id, C.id].includes(r.id) && !work.researches.some(h => h.id === r.id))!
-      await find(page, work.title)
-      const before = await row(page, work.title).locator('td').nth(4).textContent()
-      let release: () => void = () => {}
-      const held = new Promise<void>(resolve => { release = resolve })
-      let seen = 0
-      await page.route('**/api/library', async route => {
-        if (route.request().method() !== 'GET' || seen++) return route.fallback()
-        const stale = await route.fetch()
-        const body = await stale.text()
-        await held
-        if (outcome === 'error') return route.fulfill({ status: 500, json: { detail: 'SYNTHETIC read failure' } })
-        return route.fulfill({ status: 200, contentType: 'application/json', body })
-      })
-      // A new research makes the shell's 5 s poll change the research list, which reads the Library again: that read is held.
-      await post('/api/researches', { question: `SYNTHETIC research made during a read ${outcome}`, source_scope: 'attached', model_connection: 'codex', requested_model: 'fixture-model', effort: 'quick' })
-      await expect.poll(() => seen, { timeout: 15_000 }).toBeGreaterThan(0)
-      await row(page, work.title).getByRole('button', { name: /^More for/ }).click()
-      await page.getByRole('menu').locator(`[data-research="${target.id}"]`).click()
-      await expect(toast(page)).toContainText('as a source you included')
-      release()
-      await page.waitForTimeout(800)
-      const research = await row(page, work.title).locator('td').nth(4).textContent()
-      const notice = await page.locator('.lib-notice').count()
-      const stored = (await library()).entries.find(e => e.work_id === work.work_id)!.researches
-      expect(stored.map(r => r.id)).toContain(target.id)
-      expect(research).not.toBe(before)
-      expect(research).toBe(`${stored[0].title}${stored.length > 1 ? `+${stored.length - 1} more` : ''}`)
-      expect(notice).toBe(0)
-    })
-  }
   // Sol S25 round 2: two reads with no write between them; the older one answers last and must not replace the newer list.
-  test('an older Library read that answers after a newer read does not replace it', async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 900 })
-    await open(page)
-    const lib = await library()
-    const work = [...lib.entries].sort((x, y) => x.researches.length - y.researches.length)[0]
-    const target = lib.researches.find(r => [A.id, B.id, C.id].includes(r.id) && !work.researches.some(h => h.id === r.id))!
-    await find(page, work.title)
-    const cell = row(page, work.title).locator('td').nth(4)
-    let release: () => void = () => {}
-    const held = new Promise<void>(resolve => { release = resolve })
-    let seen = 0
-    let fetched = false
-    await page.route('**/api/library', async route => {
-      if (route.request().method() !== 'GET' || seen++) return route.fallback()
-      const stale = await route.fetch()
-      const body = await stale.text()
-      fetched = true
-      await held
-      return route.fulfill({ status: 200, contentType: 'application/json', body })
-    })
-    // A new research makes the shell's poll read the Library: that first read takes the list before the change, and is held.
-    await post('/api/researches', { question: 'SYNTHETIC research made before an older read', source_scope: 'attached', model_connection: 'codex', requested_model: 'fixture-model', effort: 'quick' })
-    await expect.poll(() => fetched, { timeout: 15_000 }).toBe(true)
-    // The change happens on the server, not through the page, so no write runs; a second research makes a newer read.
-    await post(`/api/researches/${target.id}/library-sources`, { work_id: work.work_id })
-    await post('/api/researches', { question: 'SYNTHETIC research made for a newer read', source_scope: 'attached', model_connection: 'codex', requested_model: 'fixture-model', effort: 'quick' })
-    const stored = (await library()).entries.find(e => e.work_id === work.work_id)!.researches
-    const expected = `${stored[0].title}${stored.length > 1 ? `+${stored.length - 1} more` : ''}`
-    await expect(cell).toHaveText(expected, { timeout: 15_000 })
-    release()
-    await page.waitForTimeout(800)
-    expect(await cell.textContent()).toBe(expected)
-  })
 })

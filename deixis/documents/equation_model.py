@@ -1,4 +1,5 @@
-"""The answer model as the reader of one numbered display equation from its page crop (D113).
+"""A model as the reader of one numbered display equation from its page crop (D113): the equations model set in
+Settings, else the answer model (D136).
 
 Only the crop's PNG and the fixed instruction below are sent: never the PDF, its text or anything about the paper. The
 answer is used only when the call completed, carried no tool item, parses to exactly `{"latex": <text>}` and was given by
@@ -29,12 +30,14 @@ SCHEMA: dict[str, Any] = {"type": "object", "additionalProperties": False, "requ
 
 
 def choice(store: Any) -> dict[str, Any] | None:
-    """The default answer model in Settings ({connection, model, reasoning_effort}), or None when none is named."""
-    saved = store.setting("answer") or {}
-    if not isinstance(saved, dict) or not saved.get("model_connection") or not saved.get("model"):
-        return None
-    return {"connection": saved["model_connection"], "model": saved["model"],
-            "reasoning_effort": saved.get("reasoning_effort") or None}
+    """The equations model in Settings ({connection, model, reasoning_effort}), else the default answer model, or None
+    when neither is named."""
+    for role in ("equations", "answer"):
+        saved = store.setting(role) or {}
+        if isinstance(saved, dict) and saved.get("model_connection") and saved.get("model"):
+            return {"connection": saved["model_connection"], "model": saved["model"],
+                    "reasoning_effort": saved.get("reasoning_effort") or None}
+    return None
 
 
 def accept(result: ModelStepResult, requested_model: str) -> tuple[str | None, str | None]:

@@ -129,6 +129,24 @@ def rows(store):
     return [dict(r) for r in store.conn.execute("SELECT * FROM equation_model_requests ORDER BY rowid")]
 
 
+def test_the_crops_of_a_pdf_are_read_at_once_and_placed_in_order(tmp_path):
+    """D136: the model reads up to MODEL_PARALLEL crops of a PDF at the same time; the answers are placed by their crop."""
+    class SlowModel(FakeImageModel):
+        live = peak = 0
+
+        async def run_step(self, *args, **kwargs):
+            SlowModel.live += 1
+            SlowModel.peak = max(SlowModel.peak, SlowModel.live)
+            await asyncio.sleep(0.05)
+            SlowModel.live -= 1
+            return await super().run_step(*args, **kwargs)
+
+    store, _, aid, papers = library(tmp_path)
+    assert read(service(store, papers, tmp_path, SlowModel()), aid)["state"] == "read"
+    assert SlowModel.peak == 2  # both crops of the page in flight together
+    assert [r["status"] for r in rows(store)] == ["answered", "answered"]
+
+
 def test_only_the_crop_and_the_fixed_instruction_are_sent(tmp_path):
     store, _, aid, papers = library(tmp_path)
     model = FakeImageModel()

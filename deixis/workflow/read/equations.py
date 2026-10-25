@@ -9,9 +9,9 @@ equations found from the PDF's text layer (`documents/equation_regions.py`):
 - the arXiv source route (D104): with `DEIXIS_ARXIV_SOURCE=auto` and on POSIX, a PDF that is an arXiv version gets the
   numbered display equations of the authors' LaTeX source of that version, matched to the page by their numbers;
 - Mathpix (D40): with its switch on and its key pair saved, each equation's page crop is read by Mathpix;
-- the answer model (D113): with its switch on (the default) and a default answer model in Settings whose connection
-  accepts images, each crop is read by that model (`documents/equation_model.py`). A connection without image input
-  turns the route off and the state says why; no other model or connection is asked.
+- the equations model (D113, D136): with its switch on (the default), the equations model set in Settings (else the
+  default answer model) reads each crop, up to MODEL_PARALLEL at once (`documents/equation_model.py`). A connection
+  without image input turns the route off and the state says why; no other model or connection is asked.
 
 Mathpix and the answer model read the crop's image only; a reading is placed only when it passes the gate against the
 PDF's text layer, and its passages carry `text_source = 'equation_ocr'`.
@@ -61,6 +61,7 @@ MAX_ASSET_REQUESTS = 60  # requests one PDF may send across all its attempts (ea
 MODEL_SWITCH = "model_equations"  # app setting, "on" (the default when unset) or "off"; read before every request
 MODEL_BUDGET = "model_equations_monthly_budget"
 DEFAULT_MODEL_MONTHLY_BUDGET = 1000
+MODEL_PARALLEL = 4  # crops of one PDF read by the model at once
 NOTHING_PLACED = "nothing_placed"
 OFFSETS_UNRESOLVED = "offsets_unresolved"
 RECORD_VERSION_CHANGED = "record_version_changed"
@@ -920,34 +921,35 @@ class EquationService:
         instruction. A completed answer that is not accepted refuses that crop; a failure that stops the read is
         `rate_limited`, `network`, `server_error` or `model_refused` (the key was refused: nothing more is sent)."""
         revision, choice, adapter = ctx
-        try:
+        try:  # the lock covers the reservation, so the budget counts every request in flight; the request itself runs
+            # outside it, so up to MODEL_PARALLEL crops of a PDF are read at once
             async with mathpix.request_lock(self.data_dir, folder="equation-model"):
                 reserved = self._reserve_model(asset_id, start_version, start_id, file_sha, revision, choice, crop)
-                if reserved["outcome"] != "send":
-                    return reserved
-                try:
-                    result = await adapter.run_step(equation_model.INSTRUCTION, "", equation_model.MESSAGE, equation_model.SCHEMA,
-                                                    choice["model"], choice["reasoning_effort"], image_png=crop["png"])
-                except Exception:  # noqa: BLE001 - an adapter error after the call left: it may have been processed
-                    self._finish_model(reserved["row_id"], "unknown", reason="network")
-                    return {"outcome": "stop", "reason": "network"}  # a failed attempt, bounded by MAX_ATTEMPTS
-                except BaseException:
-                    self._finish_model(reserved["row_id"], "unknown", reason="network")  # cancelled mid-request
-                    raise
-                if result.status in ("completed", "isolation_violation"):
-                    latex, refused = equation_model.accept(result, choice["model"])
-                    self._finish_model(reserved["row_id"], "answered" if latex is not None else "error", result, latex, refused)
-                    outcome = {"outcome": "answered"} if latex is not None else {"outcome": "refused", "reason": refused}
-                else:
-                    kind = result.error_kind or "unknown"
-                    stop = ("model_refused" if kind in ("auth_failed", "needs_key") else "rate_limited" if kind == "rate_limited"
-                            else "network" if result.delivery_class in ("before_send", "after_send_unknown") else "server_error")
-                    unsent = result.delivery_class == "before_send"
-                    self._finish_model(reserved["row_id"], "unknown" if result.delivery_class == "after_send_unknown" and not unsent
-                                       else "error", result, reason=stop)
-                    outcome = {"outcome": "stop", "reason": stop}
         except TimeoutError:
             return {"outcome": "stop", "reason": "busy"}  # another DEIXIS process held the request lock too long
+        if reserved["outcome"] != "send":
+            return reserved
+        try:
+            result = await adapter.run_step(equation_model.INSTRUCTION, "", equation_model.MESSAGE, equation_model.SCHEMA,
+                                            choice["model"], choice["reasoning_effort"], image_png=crop["png"])
+        except Exception:  # noqa: BLE001 - an adapter error after the call left: it may have been processed
+            self._finish_model(reserved["row_id"], "unknown", reason="network")
+            return {"outcome": "stop", "reason": "network"}  # a failed attempt, bounded by MAX_ATTEMPTS
+        except BaseException:
+            self._finish_model(reserved["row_id"], "unknown", reason="network")  # cancelled mid-request
+            raise
+        if result.status in ("completed", "isolation_violation"):
+            latex, refused = equation_model.accept(result, choice["model"])
+            self._finish_model(reserved["row_id"], "answered" if latex is not None else "error", result, latex, refused)
+            outcome = {"outcome": "answered"} if latex is not None else {"outcome": "refused", "reason": refused}
+        else:
+            kind = result.error_kind or "unknown"
+            stop = ("model_refused" if kind in ("auth_failed", "needs_key") else "rate_limited" if kind == "rate_limited"
+                    else "network" if result.delivery_class in ("before_send", "after_send_unknown") else "server_error")
+            unsent = result.delivery_class == "before_send"
+            self._finish_model(reserved["row_id"], "unknown" if result.delivery_class == "after_send_unknown" and not unsent
+                               else "error", result, reason=stop)
+            outcome = {"outcome": "stop", "reason": stop}
         row = dict(self.store.conn.execute("SELECT * FROM equation_model_requests WHERE id = ?", (reserved["row_id"],)).fetchone())
         return outcome | {"row": row}
 
@@ -1006,21 +1008,25 @@ class EquationService:
                 stop: dict[str, Any] | None = None
                 try:
                     found = await text_retry.drained_thread(equation_regions.detect, path, set(ocr_pages))
-                    for crop in (c for c in found if "png" in c):
+                    crops = [c for c in found if "png" in c]
+                    width = MODEL_PARALLEL if route == equation_model.ENGINE else 1  # Mathpix stays one request at a time
+                    for i in range(0, len(crops), width):
                         if (background and self._waiting) or (run_id and self.store.equation_skip_requested(run_id)):
                             stop = {"reason": "preempted" if background else "skipped"}
                             break
-                        result = await answer(asset_id, start_version, start_id, file_sha, ctx, crop)
-                        if result["outcome"] == "stop" and result["reason"] == "budget_reached":
-                            unsent.append({"page": crop["page"], "n": crop["n"], "reason": "budget_reached"})
-                            continue
-                        if result["outcome"] == "stop":
-                            stop = result
+                        batch = crops[i:i + width]
+                        results = await asyncio.gather(*(answer(asset_id, start_version, start_id, file_sha, ctx, c) for c in batch))
+                        for crop, result in zip(batch, results):  # read in crop order, as one request at a time would be
+                            if result["outcome"] == "stop" and result["reason"] == "budget_reached":
+                                unsent.append({"page": crop["page"], "n": crop["n"], "reason": "budget_reached"})
+                            elif result["outcome"] == "stop":
+                                stop = stop or result
+                            elif result["outcome"] == "refused":
+                                refused_answers.append({"page": crop["page"], "n": crop["n"], "reason": result["reason"]})
+                            else:
+                                answers[(crop["page"], crop["n"])] = result
+                        if stop is not None:
                             break
-                        if result["outcome"] == "refused":
-                            refused_answers.append({"page": crop["page"], "n": crop["n"], "reason": result["reason"]})
-                            continue
-                        answers[(crop["page"], crop["n"])] = result
                 finally:
                     self.reading = None
                 if stop is not None:

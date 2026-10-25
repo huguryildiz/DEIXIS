@@ -167,12 +167,18 @@ test.describe.serial('S24: the Settings page', () => {
   test('default models: role, description, model and effort; a saved default is the stored one', async () => {
     await page.goto(server.url('#/settings'))
     const rows = page.locator('.set-roles > div')
-    await expect(rows.locator('b')).toHaveText(['Literature', 'Answer', 'Reviewer'])
-    await expect(rows.locator('p')).toHaveText(['Plans searches and screens abstracts', 'Writes the source-linked answer', 'Checks each claim against its passages'])
+    await expect(rows.locator('b')).toHaveText(['Literature', 'Answer', 'Reviewer', 'Equations'])
+    await expect(rows.locator('p')).toHaveText(['Plans searches and screens abstracts', 'Writes the source-linked answer', 'Checks each claim against its passages',
+      'Reads numbered equations from PDF pages'])
     const literature = page.getByRole('combobox', { name: 'Literature model' })
     await expect(literature).toBeEnabled()
-    const listed = await (await page.request.get(server.url('api/connections'))).json() as { models: Record<string, { models?: { id: string; display_name: string }[] }> }
+    const listed = await (await page.request.get(server.url('api/connections'))).json() as { models: Record<string, { accepts_images?: boolean; models?: { id: string; display_name: string }[] }> }
     const [connection, health] = Object.entries(listed.models).find(([, h]) => (h.models ?? []).length > 0)!
+    // The equations model (D136) is offered only from connections that send images; with none set, the answer model reads.
+    const equations = page.getByRole('combobox', { name: 'Equations model' })
+    const imageModels = Object.values(listed.models).filter(h => h.accepts_images).flatMap(h => h.models ?? [])
+    await expect(equations.locator('option').first()).toHaveText(imageModels.length ? 'Same as the answer model' : 'No connected model reads images')
+    await expect(equations.locator('option')).toHaveCount(imageModels.length ? imageModels.length + 1 : 1)
     const model = health.models![0]
     await literature.selectOption({ label: model.display_name })
     await expect(page.getByText(`Default literature model: ${model.id}`)).toBeVisible()

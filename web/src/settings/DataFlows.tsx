@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, shellApi, type ContactEmailSetting, type Connections, type ModelRole, type RoleModelSetting, type SemanticSearch } from '../lib/api'
+import { api, shellApi, type ContactEmailSetting, type Connections, type DefaultRole, type RoleModelSetting, type SemanticSearch } from '../lib/api'
 import { t, uiLocale } from '../lib/i18n'
 import { connectionName } from '../lib/labels'
 
@@ -14,7 +14,7 @@ const list = (names: string[]) => new Intl.ListFormat(uiLocale(), { style: 'long
 
 type DataFlowInput = {
   /** The default model of each role; null while unread. */
-  defaults: Record<ModelRole, RoleModelSetting> | null
+  defaults: Record<DefaultRole, RoleModelSetting> | null
   connections: Connections | null
   semantic: SemanticSearch | null
   email: ContactEmailSetting | null
@@ -74,7 +74,7 @@ function dataFlowRows({ defaults, connections, semantic, email, optional }: Data
 
 /** Read again each time the General tab is shown, so a change made on another tab is already in the text, and when `refresh`
  *  changes (the email saved on this tab). */
-export function DataFlowsSection({ defaults, active, refresh }: { defaults: Record<ModelRole, RoleModelSetting> | null; active: boolean; refresh: number }) {
+export function DataFlowsSection({ defaults, active, refresh }: { defaults: Record<DefaultRole, RoleModelSetting> | null; active: boolean; refresh: number }) {
   const [connections, setConnections] = useState<Connections | null>(null)
   const [semantic, setSemantic] = useState<SemanticSearch | null>(null)
   const [email, setEmail] = useState<ContactEmailSetting | null>(null)

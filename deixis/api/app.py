@@ -173,7 +173,7 @@ class CreateResearch(BaseModel):
     field: str | None = Field(default=None, max_length=200)
 
 
-MODEL_ROLES = ("answer", "literature", "reviewer")
+MODEL_ROLES = ("answer", "literature", "reviewer", "equations")
 
 
 class RoleModelSetting(BaseModel):
@@ -181,6 +181,7 @@ class RoleModelSetting(BaseModel):
 
     Answer and literature defaults prefill the composer, and each research stores its own choice when it is created. The
     reviewer applies to every research whose reviewer setting is 'default'. No model: no default (no review, for the reviewer).
+    The equations model reads numbered equations from page crops (D136); with no model the answer model reads them.
     """
     model_connection: str = "codex"
     model: str | None = Field(default=None, min_length=1, max_length=120)
@@ -1336,7 +1337,8 @@ def create_app(
         # The checks run side by side: each waits on its own CLI or HTTP probe, and one after another took ~19 s.
         adapters = request.app.state.adapters
         models = dict(zip(adapters, await asyncio.gather(*(a.health(refresh=refresh) for a in adapters.values()))))
-        models = {c: unusable.health_view(store_of(request), c, status) for c, status in models.items()}
+        models = {c: unusable.health_view(store_of(request), c, status) | {"accepts_images": bool(getattr(adapters[c], "accepts_images", False))}
+                  for c, status in models.items()}
 
         def key_broken(c) -> bool:
             # The variable holds a key no header can carry, or the keychain item was unreadable or invalid and skipped at startup.
@@ -1530,7 +1532,7 @@ def create_app(
         return {role: store.setting(role) or RoleModelSetting().model_dump() for role in MODEL_ROLES}
 
     @app.put("/api/settings/{role}")
-    async def put_model_default(role: Literal["answer", "literature", "reviewer"], body: RoleModelSetting, request: Request) -> dict[str, Any]:
+    async def put_model_default(role: Literal["answer", "literature", "reviewer", "equations"], body: RoleModelSetting, request: Request) -> dict[str, Any]:
         if body.model is None:
             if body.reasoning_effort is not None:
                 raise HTTPException(422, "A reasoning effort needs a model")
@@ -1538,6 +1540,8 @@ def create_app(
             adapter = request.app.state.adapters.get(body.model_connection)
             if adapter is None:
                 raise HTTPException(422, f"Model connection '{body.model_connection}' is not available")
+            if role == "equations" and not getattr(adapter, "accepts_images", False):
+                raise HTTPException(422, f"Model connection '{body.model_connection}' cannot read images")
             check_offered(unusable.usable(store_of(request), body.model_connection, (await adapter.health()).get("models")),
                           body.model_connection, body.model, body.reasoning_effort)
         store_of(request).set_setting(role, body.model_dump())

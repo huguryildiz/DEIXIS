@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { BookOpenText, Info, PenLine, RotateCw, ShieldCheck } from 'lucide-react'
-import { api, preferencesApi, shellApi, spendApi, usageApi, type About, type ContactEmailSetting, type Effort, type EffortLimits, type PreferenceChange, type Preferences, type Profile, type Connections, type InstitutionalAccess, type ModelRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Spending, type ConnectionUsage, type ModelUsage, type QuotaWindow, type UsageRole } from '../lib/api'
+import { BookOpenText, Info, PenLine, RotateCw, ShieldCheck, Sigma } from 'lucide-react'
+import { api, preferencesApi, shellApi, spendApi, usageApi, type About, type ContactEmailSetting, type Effort, type EffortLimits, type PreferenceChange, type Preferences, type Profile, type Connections, type InstitutionalAccess, type DefaultRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Spending, type ConnectionUsage, type ModelUsage, type QuotaWindow, type UsageRole } from '../lib/api'
 import { canRun, connectionModels, modelKey, type ConnectionModel } from '../home/Home'
 import { defaultEffort, exposesEffortControl } from '../lib/modelEffort'
 import { ConnectionsTab } from './Connections'
@@ -17,10 +17,12 @@ import './Settings.css'
 
 const NO_DEFAULT = '__none'
 // The mockup's order and words (plan ST3); what each role does is the same in the composer's model menu.
-const ROLES: { role: ModelRole; label: string; desc: string; icon: typeof Info }[] = [
+const ROLES: { role: DefaultRole; label: string; desc: string; icon: typeof Info }[] = [
   { role: 'literature', label: 'Literature', desc: 'Plans searches and screens abstracts', icon: BookOpenText },
   { role: 'answer', label: 'Answer', desc: 'Writes the source-linked answer', icon: PenLine },
   { role: 'reviewer', label: 'Reviewer', desc: 'Checks each claim against its passages', icon: ShieldCheck },
+  // D136: the model that reads numbered equations from PDF page crops; only connections that send images are offered.
+  { role: 'equations', label: 'Equations', desc: 'Reads numbered equations from PDF pages', icon: Sigma },
 ]
 const clock = (iso: string) => new Date(iso).toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit' })
 
@@ -126,8 +128,9 @@ export function SettingsPage({ dark, section, language, onLanguage, theme, onThe
   const toast = useToast()
   const [models, setModels] = useState<ConnectionModel[] | null>(null)
   const [anyReady, setAnyReady] = useState<boolean | null>(null)
-  const [defaults, setDefaults] = useState<Record<ModelRole, RoleModelSetting> | null>(null)
-  const [savingRole, setSavingRole] = useState<ModelRole | null>(null)
+  const [defaults, setDefaults] = useState<Record<DefaultRole, RoleModelSetting> | null>(null)
+  const [savingRole, setSavingRole] = useState<DefaultRole | null>(null)
+  const [imageConnections, setImageConnections] = useState<string[]>([])
   const [error, setError] = useState('')
   const [emailSaves, setEmailSaves] = useState(0)
   const [tab, setTab] = useState<SettingsTab>(section ? SECTION_TAB[section] : 'models')
@@ -135,7 +138,10 @@ export function SettingsPage({ dark, section, language, onLanguage, theme, onThe
 
   // The model choices come from the connections answer the sections below read, so a key change or a connection test
   // there updates them too (the sections show their own read error).
-  const onConnections = useCallback((result: Connections) => { setModels(connectionModels(result)); setAnyReady(Object.values(result.models).some(canRun)) }, [])
+  const onConnections = useCallback((result: Connections) => {
+    setModels(connectionModels(result)); setAnyReady(Object.values(result.models).some(canRun))
+    setImageConnections(Object.values(result.models).filter(h => h.accepts_images).map(h => h.connection))
+  }, [])
   useEffect(() => {
     const leaving = new AbortController()
     api.settings(leaving.signal).then(setDefaults).catch((e: Error) => { if (!isLeft(e)) setError(t('The default models could not be read: {message}', { message: e.message })) })
@@ -154,7 +160,7 @@ export function SettingsPage({ dark, section, language, onLanguage, theme, onThe
   }, [section, defaults])
 
   // One save per role at a time; the role's controls stay locked until the server answers.
-  function save(role: ModelRole, next: RoleModelSetting) {
+  function save(role: DefaultRole, next: RoleModelSetting) {
     if (savingRole) return
     const label = t(ROLES.find(r => r.role === role)!.label).toLocaleLowerCase(uiLocale())
     setSavingRole(role)
@@ -190,7 +196,7 @@ export function SettingsPage({ dark, section, language, onLanguage, theme, onThe
       <div className="set-roles-head" aria-hidden><span>{t('Step')}</span><span>{t('Model')}</span><span>{t('Thinking level')}</span></div>
       {ROLES.map(({ role, label, desc, icon: Icon }) => {
         const current = defaults?.[role]
-        const list = models ?? []
+        const list = (models ?? []).filter(m => role !== 'equations' || imageConnections.includes(m.connection))
         const value = current?.model ? modelKey(current.model_connection, current.model) : NO_DEFAULT
         const picked = list.find(m => m.id === value)
         const efforts = picked && exposesEffortControl(picked) ? picked.reasoning_efforts ?? [] : []
@@ -209,9 +215,9 @@ export function SettingsPage({ dark, section, language, onLanguage, theme, onThe
                 : { model_connection: current.model_connection, model: null, reasoning_effort: null })
             }}>
             {!list.length
-              ? <option value={NO_DEFAULT}>{t(models ? 'Not connected' : 'Checking…')}</option>
+              ? <option value={NO_DEFAULT}>{t(!models ? 'Checking…' : role === 'equations' && models.length ? 'No connected model reads images' : 'Not connected')}</option>
               : <>
-                <option value={NO_DEFAULT}>{t(role === 'reviewer' ? 'No default reviewer' : 'No default')}</option>
+                <option value={NO_DEFAULT}>{t(role === 'reviewer' ? 'No default reviewer' : role === 'equations' ? 'Same as the answer model' : 'No default')}</option>
                 {current?.model && !picked && <option value={value}>{t('{model} · not listed now', { model: current.model })}</option>}
                 {groups.map(connection => <optgroup key={connection} label={connectionName(connection)}>
                   {list.filter(m => m.connection === connection).map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}

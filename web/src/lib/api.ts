@@ -159,6 +159,8 @@ export type AnswerReview = {
   model: { connection: string; requested_model: string | null; resolved_model: string | null } | null
 }
 export type ModelRole = 'answer' | 'literature' | 'reviewer'
+// The Settings defaults: the three step roles and the equations model (D136), which no research stores.
+export type DefaultRole = ModelRole | 'equations'
 // App-wide default for one role. model null: no default (for the reviewer: answers are not reviewed).
 export type RoleModelSetting = { model_connection: string; model: string | null; reasoning_effort: string | null }
 export type Step = {
@@ -811,6 +813,7 @@ export type ModelHealth = {
   verification?: 'verified' | 'pending' | 'rejected'; broken?: boolean
   connection: string; ready: boolean; reason_code?: string | null; reset_at?: string | null; reason?: string | null; installed?: boolean; cli_version?: string; signed_in?: boolean; key_configured?: boolean
   account_type?: string | null; plan_type?: string | null; models?: ModelOption[]
+  accepts_images?: boolean  // the connection can send a page crop, so it can read equations (D113)
   isolation?: { instruction_sources: number; live_mcp_servers: string[] }
   // 'fixed': the connection cannot list its models; DEIXIS keeps the list (Gemini CLI, D23).
   catalogue?: 'fixed'
@@ -1407,9 +1410,9 @@ export const api = {
     intent?: ResearchIntent  // default 'report'; 'papers' with source_scope 'attached' is refused (422)
     field?: string  // a statement research's field (R5); refused (422) with another intent or with query syntax
   }) => request<ResearchView>('/api/researches', json('POST', body)),
-  settings: (leaving?: AbortSignal) => read<Record<ModelRole, RoleModelSetting>>('/api/settings', leaving),
-  saveModelDefault: (role: ModelRole, setting: RoleModelSetting) =>
-    request<Partial<Record<ModelRole, RoleModelSetting>>>(`/api/settings/${role}`, json('PUT', setting)),
+  settings: (leaving?: AbortSignal) => read<Record<DefaultRole, RoleModelSetting>>('/api/settings', leaving),
+  saveModelDefault: (role: DefaultRole, setting: RoleModelSetting) =>
+    request<Partial<Record<DefaultRole, RoleModelSetting>>>(`/api/settings/${role}`, json('PUT', setting)),
   zoteroCollections: (source: ZoteroSource) => request<{ source: ZoteroSource; collections: ZoteroCollection[] }>(`/api/zotero/collections?source=${source}`),
   zoteroImport: (id: string, source: ZoteroSource, collectionKey: string) =>
     request<ResearchView & { zotero_import: ZoteroImport }>(`/api/researches/${id}/zotero-imports`, json('POST', { source, collection_key: collectionKey })),

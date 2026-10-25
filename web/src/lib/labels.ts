@@ -620,8 +620,8 @@ export function equationReaderName(reader: { engine: 'mathpix' } | { engine: 'mo
 
 // Why the answer model is not reading equations, by the reason code the backend stored.
 const equationOffReasons: Record<string, string> = {
-  switch_off: 'Equations are off in Settings', no_answer_model: 'no default answer model is set', connection_unavailable: 'the connection of the answer model is not available',
-  model_no_images: 'the answer model cannot read images', no_reader: 'no equation reader is available',
+  switch_off: 'Equations are off in Settings', no_answer_model: 'no equations or answer model is set', connection_unavailable: 'the connection of the equations model is not available',
+  model_no_images: 'the equations model cannot read images', no_reader: 'no equation reader is available',
 }
 
 // Mathpix (D40) and the answer model (D113) read the same way: page-image crops matched to the PDF's text. `name` is the reader's name.

@@ -15,7 +15,7 @@ from deixis.documents import equation_regions as er
 from mathpix_helpers import prose, two_equations
 from deixis.documents import inline_math, math_reader, pdf
 import pytest
-from deixis.documents import equation_regions, mathpix, pdf
+from deixis.documents import equation_model, equation_regions, mathpix, pdf
 from mathpix_helpers import PAIR, FakeMathpix, prose, two_equations
 from test_arxiv_source_route import FakeFetch
 from arxiv_helpers import no_network  # noqa: F401  (fixtures used by name)
@@ -88,6 +88,26 @@ def test_the_route_answers_with_the_built_in_connections(tmp_path, monkeypatch):
                                                  "reasoning_effort": None})
         response = client.get("/api/equation-model")
         assert response.status_code == 200 and response.json()["reason"] != "connection_unavailable"
+
+
+def test_the_equations_model_reads_before_the_answer_model_and_must_take_images(tmp_path, monkeypatch):
+    """D136: an equations model in Settings is the one asked; with none set, the answer model is; a connection that
+    sends no image is refused for it."""
+    monkeypatch.setattr(equations.EquationService, "start", lambda self: None)
+    settings = Settings(data_dir=tmp_path / "data", port=8765, arxiv_source="off")
+    app = create_app(settings, http_client=openalex_client(200), fetcher=fake_fetch, extra_hosts=("testserver",),
+                     trusted_clients=("testclient",), start_worker=False)
+    with TestClient(app) as raw:
+        client = session(raw)
+        store = app.state.store
+        client.put("/api/settings/answer", json={"model_connection": "anthropic", "model": "claude-sonnet-5-5", "reasoning_effort": None})
+        assert equation_model.choice(store)["model"] == "claude-sonnet-5-5"  # none set: the answer model reads
+        refused = client.put("/api/settings/equations", json={"model_connection": "claude", "model": "sonnet", "reasoning_effort": None})
+        assert refused.status_code == 422 and "cannot read images" in refused.json()["detail"]
+        assert client.put("/api/settings/equations", json={"model_connection": "anthropic", "model": "claude-haiku-5-5",
+                                                           "reasoning_effort": None}).status_code == 200
+        assert equation_model.choice(store)["model"] == "claude-haiku-5-5"
+        assert client.get("/api/settings").json()["equations"]["model"] == "claude-haiku-5-5"
 
 
 def detect(tmp_path, doc, name="eq.pdf"):

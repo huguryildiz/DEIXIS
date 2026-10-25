@@ -236,10 +236,16 @@ def partial(lib):
     return {first: ("present", "present"), second: ("absent", "absent")}
 
 
-def queued(lib, code="part_without_evidence"):
+def disagree(lib):
+    """Labels for `fulltext_runs_disagree`: every part present in one run and absent in the other."""
+    return {name: ("present", "absent") for name in lib.parts}
+
+
+def queued(lib, code="fulltext_runs_disagree"):
     svid = lib.work()
     lib.text(svid, [lib.field["page"], lib.field["cue"]])
-    lib.read(svid, code, labels=partial(lib) if code == "part_without_evidence" else None)
+    lib.read(svid, code, labels=disagree(lib) if code == "fulltext_runs_disagree" else
+             partial(lib) if code == "part_without_evidence" else None)
     return svid
 
 
@@ -249,7 +255,7 @@ def queued(lib, code="part_without_evidence"):
 def test_each_human_queue_code_is_one_row_per_work_and_no_other_code_is(store, field):
     lib = Lib(store, field)
     routed = [code for code, entry in REASON_CODES.items() if entry.next_step == "human_queue"]
-    assert set(routed) == set(queue.QUEUE_CODES) and len(routed) == 8
+    assert set(routed) == set(queue.QUEUE_CODES) and len(routed) == 3
     by_code = {}
     for code in routed:
         svid = lib.work()
@@ -257,8 +263,14 @@ def test_each_human_queue_code_is_one_row_per_work_and_no_other_code_is(store, f
         if code == "pdf_identity_unconfirmed":
             lib.unconfirmed(svid)
         else:
-            lib.read(svid, code, labels=partial(lib) if code == "part_without_evidence" else None)
+            lib.read(svid, code, labels=disagree(lib) if code == "fulltext_runs_disagree" else None)
         by_code[code] = svid
+    # Partial and unresolved readings are labelled, not asked (D135): none of them is a row.
+    for code in ("part_without_evidence", "fulltext_runs_agree_unresolved", "protocol_title",
+                 "comparator_exclusion_withheld", "abstract_promise_absent"):
+        svid = lib.work()
+        lib.text(svid, [lib.field["page"]])
+        lib.read(svid, code, labels=partial(lib) if code == "part_without_evidence" else None)
     for code in ("all_parts_verified", "criterion_absent", "no_fulltext", "text_unreadable", "not_read_yet"):
         svid = lib.work()
         lib.ds.record(lib.rid, svid, code)
@@ -277,7 +289,7 @@ def test_each_human_queue_code_is_one_row_per_work_and_no_other_code_is(store, f
     assert sorted(row["reason_code"] for row in found["rows"]) == sorted(routed + ["fulltext_runs_disagree"])
     assert {row["source_version_id"] for row in found["rows"]} == set(by_code.values()) | {published}
     assert len({row["work_id"] for row in found["rows"]}) == len(found["rows"])
-    assert found["counts"]["open"] == 9 and found["counts"]["decided"] == {"human_include": 1}
+    assert found["counts"]["open"] == 4 and found["counts"]["decided"] == {"human_include": 1}
     assert found["order"] == "fused_rank"
     # The criterion line reads the frozen protocol the rows are current under, not the newest runs (Sol S14 round 2).
     protocol = store.current_protocol(lib.rid, store.research(lib.rid)["current_scope_revision"])
@@ -318,7 +330,7 @@ def test_undo_leaves_a_selection_the_user_changed_since_even_to_the_same_state(s
     token = queue.row_detail(store, lib.rid, svid)["undo_token"]
     queue.undo(store, lib.rid, svid, token)
     assert lib.selection(svid) == ("included", "user")
-    assert lib.code(svid) == "part_without_evidence"
+    assert lib.code(svid) == "fulltext_runs_disagree"
     # The work is back to its code decision, and the user's own list choice keeps it out of the queue.
     assert lib.rows()["rows"] == [] and lib.rows()["counts"]["user_selected"] == 1
 
@@ -336,7 +348,7 @@ def test_a_row_token_is_rejected_after_a_scope_revision_a_new_code_decision_a_se
         queue.decide(store, lib.rid, svid, "include", None, token)
     # A new code decision written by a later reading run.
     token = lib.row(svid)["row_token"]
-    lib.read(svid, "fulltext_runs_disagree", labels={n: ("present", "absent") for n in lib.parts})
+    lib.read(svid, "include_quote_unverified")
     with pytest.raises(RevisionConflict):
         queue.decide(store, lib.rid, svid, "include", None, token)
     # A selection change on a row the queue still lists: a stale decision stays listed whoever set the selection.

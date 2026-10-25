@@ -37,17 +37,9 @@ from deixis.workflow.run.store import NotASource, Store
 QUEUE_CODES = tuple(code for code, entry in REASON_CODES.items() if entry.next_step == "human_queue")
 # `versions_disagree` is never stored: `work_outcome` derives it from two versions' fresh decisions (Sol's finding).
 VERSIONS_DISAGREE = "versions_disagree"
+# Partial and unresolved readings are labelled, not asked (D135); only these codes reach a person.
 KIND_OF = {"include_quote_unverified": "confirm_quote", "fulltext_runs_disagree": "choose_run",
-           VERSIONS_DISAGREE: "choose_version", "pdf_identity_unconfirmed": "confirm_pdf",
-           "fulltext_runs_agree_unresolved": "find_part",
-           # Two agreeing runs on a version whose title names a study protocol (slice 26): no one part is asked; the
-           # person confirms whether the paper reports results at all.
-           "protocol_title": "confirm_results",
-           # Two all-negative runs on a criterion with a comparator part (slice 28): code did not exclude; the person
-           # confirms the missing parts, and the question names the comparator.
-           "comparator_exclusion_withheld": "confirm_absent",
-           # Unreachable today (no stage writes it); its question is whether the promised part is in the text.
-           "abstract_promise_absent": "find_part"}
+           VERSIONS_DISAGREE: "choose_version", "pdf_identity_unconfirmed": "confirm_pdf"}
 LOOK_AGAIN = "look_again"
 ANSWERS = {"include": "human_include", "criterion_not_met": "human_criterion_not_met",
            "not_sure": "human_not_sure", "pdf_wrong": "human_pdf_wrong"}
@@ -133,9 +125,6 @@ class _Context:
                         **({"inclusion_role": part["role"]} if part.get("role") in ("core", "aspect") else {})}
                        for part in parts] if parts
                       else [{"name": "criterion", "definition": frozen["criterion"]}] if frozen else [])
-        # The part the reading marked as the comparator (slice 28), named by a `comparator_exclusion_withheld` row.
-        self.comparator = adjudication.comparator_part(adjudication.mark_comparator(
-            self.parts, (frozen or {}).get("question_elements") or [], (frozen or {}).get("required_roles") or []))
         self.chained = store.chain_only_works(research_id, self.revision)
         self._place: dict[str, int] | None = None
         self._runs: dict[str, str] | None = None
@@ -239,18 +228,14 @@ def _split_merge(ctx: _Context, run_id: str | None,
 
 
 def _question(ctx: _Context, kind: str, proposals: dict[str, dict[int, dict[str, Any]]],
-              reason_code: str | None = None, merged: dict[str, dict[str, Any]] | None = None) -> dict[str, Any] | None:
+              merged: dict[str, dict[str, Any]] | None = None) -> dict[str, Any] | None:
     """The one part the row asks about: the first, in the criterion's order, the two runs did not settle.
 
-    A withheld exclusion on a comparator criterion asks about the comparator part (slice 28). Under `split_v1`
+    Under `split_v1`
     (`merged`, D76) the part is the first one both calls saw and disagreed on, with `disputed` and that passage's
     page, else the first core part not merged present and verified; a part one call alone found counts as settled."""
     if kind in ("confirm_pdf", "choose_version", LOOK_AGAIN) and not proposals:
         return None
-    if kind == "confirm_results":
-        return None
-    if reason_code == "comparator_exclusion_withheld" and ctx.comparator is not None:
-        return {"part": ctx.comparator, "definition": ctx.definition(ctx.comparator)}
     core = [name for name in ctx.part_names(proposals)
             if not any(p["name"] == name and p.get("inclusion_role") == "aspect" for p in ctx.parts)]
     if merged is not None:
@@ -275,11 +260,7 @@ def _question(ctx: _Context, kind: str, proposals: dict[str, dict[int, dict[str,
     return None
 
 
-def _kind(reason_code: str, proposals: dict[str, dict[int, dict[str, Any]]]) -> str:
-    if reason_code == "part_without_evidence":
-        both_absent = any(len(runs) == 2 and all(row["label"] == "absent" for row in runs.values())
-                          for runs in proposals.values())
-        return "confirm_absent" if both_absent else "find_part"
+def _kind(reason_code: str) -> str:
     return KIND_OF[reason_code]
 
 
@@ -323,15 +304,13 @@ def _row(ctx: _Context, work_id: str, found: dict[str, Any]) -> dict[str, Any]:
     svid = decision["source_version_id"]
     run_id = ctx.run_of_step().get(decision["step_id"] or "")
     proposals = ctx.proposals(svid, run_id)
-    aspects = {p["name"] for p in ctx.parts if p.get("inclusion_role") == "aspect"}
-    core_proposals = {name: runs for name, runs in proposals.items() if name not in aspects}
-    kind = LOOK_AGAIN if found["state"] == LOOK_AGAIN else _kind(found["reason_code"], core_proposals)
+    kind = LOOK_AGAIN if found["state"] == LOOK_AGAIN else _kind(found["reason_code"])
     source = ctx.store.source(svid)
     return {
         "source_version_id": svid, "head": head, "work_id": work_id, "title": source["title"],
         "year": source["year"], "doi": source["doi"], "version_label": source["version_label"],
         "publication_type": source["publication_type"], "reason_code": found["reason_code"], "kind": kind,
-        "question": _question(ctx, kind, proposals, found["reason_code"], _split_merge(ctx, run_id, proposals)),
+        "question": _question(ctx, kind, proposals, _split_merge(ctx, run_id, proposals)),
         "place": ctx.place().get(work_id),
         "arm": "chain" if work_id in ctx.chained else "keyword", "stale": found["stale"],
         "decision_id": decision["id"], "row_token": _token(ctx, work_id, svid, found["reason_code"], head),

@@ -533,7 +533,9 @@ export type Source = {
   provider_records: string[]
   // What code and the model runs decided about the work, current decisions only, a person's left out (UI parity S13);
   // null on other versions. `passed_abstract`: a current abstract-stage `candidate`, the funnel's rule.
-  screening: { stage: 'abstract' | 'fulltext' | null; outcome: string | null; reason_code: string | null; decided_by: 'code' | 'model_agreement' | null; source_version_id: string | null; next_step: string | null; stale: boolean; passed_abstract: boolean; read_coverage: ReadCoverage | null } | null
+  screening: { stage: 'abstract' | 'fulltext' | null; outcome: string | null; reason_code: string | null; decided_by: 'code' | 'model_agreement' | null; source_version_id: string | null; next_step: string | null; stale: boolean; passed_abstract: boolean; read_coverage: ReadCoverage | null
+    // A partial reading (D135): core parts a run found with a verified quote, of all core parts.
+    parts: { found: number; total: number } | null } | null
   // The follow-up searches that found this work (D92), from each run's frozen found step, mapped to the work as it is
   // now; one entry per run, every version of the work carries the same list.
   followup_searches?: SourceFollowupSearch[]
@@ -688,7 +690,7 @@ export type AuditResult = { row: AuditRow | null; selection: QueueAnswerResult['
 // many papers at the top of the ranking it reads.
 export type EffortLimits = { efforts: Record<'quick' | 'standard' | 'detailed', { minutes: number; papers: number; fulltext?: number }> }
 // The human queue of an sw research (slice 16, D96). Rows are derived from stored decisions each time they are read.
-export type QueueKind = 'confirm_quote' | 'choose_run' | 'choose_version' | 'confirm_pdf' | 'confirm_absent' | 'find_part' | 'confirm_results' | 'look_again'
+export type QueueKind = 'confirm_quote' | 'choose_run' | 'choose_version' | 'confirm_pdf' | 'look_again'
 export type QueueAnswer = 'include' | 'criterion_not_met' | 'not_sure' | 'pdf_wrong' | 'pdf_confirmed'
 export type QueueRow = {
   source_version_id: string; head: string; work_id: string; title: string; year: number | null; doi: string | null

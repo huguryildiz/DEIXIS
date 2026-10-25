@@ -83,9 +83,6 @@ const CARD_HEADS: Record<QueueKind, [string, string]> = {
   choose_run: ['Reading', 'the two reading runs disagreed'],
   choose_version: ['Version', 'two versions of this work; they are different sources, not interchangeable'],
   confirm_pdf: ['PDF check', 'is this the right file?'],
-  confirm_absent: ['Missing part', 'both runs read a required part as absent'],
-  find_part: ['Missing part', 'the runs did not find this part'],
-  confirm_results: ['Protocol', 'results, or only a plan?'],
   look_again: ['Look again', 'you decided this under an earlier question'],
 }
 // What each answer does, under its label (mockup `.qopts small`), in the words of the toast it leads to.
@@ -412,11 +409,10 @@ function QueueCard({ row, criterion, picked, onPick, rowView, detailError, unset
   const part = row.question?.part
   const [head, about] = CARD_HEADS[row.kind]
   const earlier = row.kind === 'look_again' ? queueAnswerOfCode[row.reason_code] : undefined
-  // One question for every paper; the part, the protocol title or the versions the reading stopped at come second.
+  // One question for every paper; the part or the versions the reading stopped at come second.
   const question = row.kind === 'confirm_pdf' ? t('Is this PDF the work named here?') : t('Is this paper a source for the question?')
   const context = row.question
     ? t('The reading could not settle the part “{part}”.', { part: row.question.part })
-    : row.kind === 'confirm_results' ? t('The title names a study protocol. Does this paper report results for every part, rather than only planning to measure them?')
     : row.kind === 'choose_version' ? t('The versions of this work were read to opposite decisions. Which one holds?')
     : row.kind === 'look_again' ? t('You decided this work under an earlier question. Does your decision still hold?')
     : null

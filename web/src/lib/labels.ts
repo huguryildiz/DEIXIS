@@ -690,8 +690,7 @@ export function accessParts(source: Source, modelName?: (model: string) => strin
 // What each row asks the person to do, in the order the filter chips list them.
 export const queueKindLabels: Record<Exclude<QueueKind, 'look_again'>, string> = {
   confirm_quote: 'Confirm the quote', choose_run: 'Choose one of the runs', choose_version: 'Choose one of the versions',
-  confirm_pdf: 'Confirm the PDF', confirm_absent: 'Confirm the absence', find_part: 'Find the part',
-  confirm_results: 'Confirm the results',
+  confirm_pdf: 'Confirm the PDF',
 }
 // Why a work is in the queue, by the reason code the backend stored. The code itself is shown only beside this, small.
 const queueReasons: Record<string, string> = {
@@ -703,7 +702,7 @@ const queueReasons: Record<string, string> = {
   comparator_exclusion_withheld: 'Both runs found parts missing, but the criterion has a comparison group, so the reading did not exclude this work.',
   fulltext_runs_agree_unresolved: 'Neither run could tell from the text whether the parts are there.',
   abstract_promise_absent: 'The abstract promises a part the text does not show.',
-  part_without_evidence: 'The runs found some of the criterion’s parts, but not this one.',
+  part_without_evidence: 'The runs found some of the criterion’s parts, not all of them.',
   human_include: 'You included this work under an earlier question or criterion.',
   human_criterion_not_met: 'You excluded this work under an earlier question or criterion.',
   human_not_sure: 'You were not sure about this work under an earlier question or criterion.',

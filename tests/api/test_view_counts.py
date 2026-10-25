@@ -128,7 +128,7 @@ def test_every_bucket_holds_a_work_and_the_buckets_sum_to_the_works(store, field
     assert flow["five"] == {"included": 2, "included_by_agreement": 1, "confirmed": 1, "not_met": 2,
                             "waiting_for_pdf": 1, "queued": 1, "not_read": 2, "not_read_in_reading": 1,
                             "not_read_not_tried": 1}
-    assert flow["queue_by_reason"] == {"part_without_evidence": 1}
+    assert flow["queue_by_reason"] == {"fulltext_runs_disagree": 1}
 
 
 def test_the_research_view_reads_the_flow_boxes_and_overrides_from_one_snapshot_and_writes_nothing(store):

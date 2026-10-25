@@ -58,6 +58,8 @@ export function proposalOf(source: Source): Proposal | null {
     const basis = readingBasis(sc.read_coverage)
     if (sc.outcome === 'include') return { tone: 'include', word: t('include'), reason: t('Both full-text reads found every part of the criterion.'), basis }
     if (sc.outcome === 'criterion_not_met') return { tone: 'exclude', word: t('exclude'), reason: t('The parts of the criterion were not found in the passages read.'), basis }
+    // A partial reading is labelled, not asked (D135): how many core parts a run found with a checked quote.
+    if (code === 'part_without_evidence' && sc.parts) return { tone: 'uncertain', word: t('partly matches'), reason: t('{k} of {n} parts of the criterion found with a checked quote.', { k: sc.parts.found, n: sc.parts.total }), basis }
     return { tone: 'uncertain', word: t('uncertain'), reason: hasQueueReason(code) ? queueReasonText(code) : t('Left open at the full-text stage.'), basis }
   }
   if (sc?.stage === 'abstract') {
@@ -67,6 +69,8 @@ export function proposalOf(source: Source): Proposal | null {
     if (sc.outcome === 'candidate') return { tone: 'passed', word: t('passed abstract'), reason: t(reason ?? 'Kept for the full text.'), basis }
     if (sc.outcome === 'out_of_scope') return { tone: 'exclude', word: t('exclude'), reason: t(reason ?? 'Out of scope at the abstract stage.'), basis }
     if (NOT_READ.has(code)) return { tone: 'none', word: t('not screened'), reason: t(reason), basis }
+    // A partial reading is labelled, not asked (D135): how many core parts a run found with a checked quote.
+    if (code === 'part_without_evidence' && sc.parts) return { tone: 'uncertain', word: t('partly matches'), reason: t('{k} of {n} parts of the criterion found with a checked quote.', { k: sc.parts.found, n: sc.parts.total }), basis }
     return { tone: 'uncertain', word: t('uncertain'), reason: t(reason ?? 'Left open at the abstract stage.'), basis }
   }
   // Decisions made under an earlier question or criterion are left out by the backend; none stands for the current one.

@@ -285,10 +285,19 @@ def machine_screening(ctx: Any, work_id: str) -> dict[str, Any]:
     row = next((d for d in reversed(machine) if chosen.get("stage") == "fulltext" and d["stage"] == "fulltext"
                 and d["source_version_id"] == chosen.get("source_version_id") and d["reason_code"] == code), None)
     coverage = json.loads(row["read_coverage"]) if row is not None and row.get("read_coverage") else None
-    return {"stage": chosen.get("stage"), "outcome": chosen.get("outcome"), "reason_code": code,
+    return {"parts": _parts_found(ctx, row) if code == "part_without_evidence" and row is not None else None,"stage": chosen.get("stage"), "outcome": chosen.get("outcome"), "reason_code": code,
             "decided_by": chosen.get("decided_by"), "source_version_id": chosen.get("source_version_id"),
             "next_step": step, "stale": stale, "passed_abstract": passed_abstract(ctx, work_id),
             "read_coverage": coverage}
+
+
+def _parts_found(ctx: Any, row: dict[str, Any]) -> dict[str, int]:
+    """How many core parts of a partial reading (D135) a run labelled present with a verified quote, of how many."""
+    proposals = ctx.proposals(row["source_version_id"], ctx.run_of_step().get(row["step_id"] or ""))
+    core = [part["name"] for part in ctx.parts if part.get("inclusion_role") != "aspect"]
+    found = sum(any(r["label"] == "present" and r["quote_verified"] for r in proposals.get(name, {}).values())
+                for name in core)
+    return {"found": found, "total": len(core)}
 
 
 def flow_boxes(ctx: Any, flow: dict[str, Any]) -> dict[str, Any]:

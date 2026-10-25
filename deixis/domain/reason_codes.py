@@ -71,20 +71,22 @@ REASON_CODES: dict[str, ReasonCode] = _table(
     ReasonCode("not_read_yet", "fulltext", "unresolved", "code", "reading_queue"),
     ReasonCode("fulltext_runs_disagree", "fulltext", "unresolved", "code", "human_queue"),
     ReasonCode("include_quote_unverified", "fulltext", "unresolved", "code", "human_queue"),
-    ReasonCode("part_without_evidence", "fulltext", "unresolved", "code", "human_queue"),
-    ReasonCode("abstract_promise_absent", "fulltext", "unresolved", "code", "human_queue"),
+    # Partial and unresolved readings are labelled, not asked (D135): the person is asked only about a PDF's identity,
+    # readings that disagree and a quote that was not found. The work stays open, never included or excluded by these.
+    ReasonCode("part_without_evidence", "fulltext", "unresolved", "code", "none"),
+    ReasonCode("abstract_promise_absent", "fulltext", "unresolved", "code", "none"),
     # Both runs read the shown passages and agreed, and still could not tell (slice 12). Not an exclusion.
-    ReasonCode("fulltext_runs_agree_unresolved", "fulltext", "unresolved", "code", "human_queue"),
+    ReasonCode("fulltext_runs_agree_unresolved", "fulltext", "unresolved", "code", "none"),
     # The PDF's first pages name neither this work's DOI nor a long enough title (slice 12). The text stays;
     # the work is not read until a person confirms it, and a file the user uploaded is never given this code.
     ReasonCode("pdf_identity_unconfirmed", "fulltext", "unresolved", "code", "human_queue"),
     # The two runs agreed (every part found, or the criterion absent), but the read version's title names a study
-    # protocol, so code neither includes nor excludes the work; a person answers (slice 26). Never an exclusion.
-    ReasonCode("protocol_title", "fulltext", "unresolved", "code", "human_queue"),
+    # protocol, so code neither includes nor excludes the work (slice 26); labelled, not asked (D135). Never an exclusion.
+    ReasonCode("protocol_title", "fulltext", "unresolved", "code", "none"),
     # Both runs found parts missing (the criterion absent from the passages shown), but on a criterion with a comparator
-    # part code does not exclude: the comparator's label may have decided it. A person answers (slice 28). Never an
-    # exclusion.
-    ReasonCode("comparator_exclusion_withheld", "fulltext", "unresolved", "code", "human_queue"),
+    # part code does not exclude: the comparator's label may have decided it (slice 28); labelled, not asked (D135).
+    # Never an exclusion.
+    ReasonCode("comparator_exclusion_withheld", "fulltext", "unresolved", "code", "none"),
     # ---- what the user decided (SW11.7, SW11.11) ---------------------------------------
     ReasonCode("human_include", "fulltext", "include", "human", "answer"),
     ReasonCode("human_criterion_not_met", "fulltext", "criterion_not_met", "human", "none"),

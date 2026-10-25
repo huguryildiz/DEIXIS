@@ -3897,7 +3897,7 @@ export const tr: Record<string, string> = {
   'Open the Candidates panel to control this run': 'Bu koşuyu yönetmek için Adaylar panelini açın',
   'Open the Follow-up panel to control this run': 'Bu işlemi kontrol etmek için Takip panelini açın',
   'Open the Evidence table panel to control this run': 'Bu işlemi yönetmek için Kanıt tablosu panelini açın',
-  // D131: how the answer was built.
+  // D132: how the answer was built.
   'Found': 'Bulundu',
   'Past this run’s reading limit, not judged': 'Bu çalışmanın okuma sınırının dışında, değerlendirilmedi',
   'No abstract to read': 'Okunacak özet yok',

@@ -2,7 +2,7 @@
 
 This page follows a question from the moment you ask it to the answer. It describes the current code (run policy `fast_path_v1`) for readers; the code is the exact rule. How well the ranking does on three test sets is in [benchmark.md](benchmark.md).
 
-A run has five stages: plan, search, ranking, read and answer. Each stage gets a time allocation, and time a stage leaves unused carries over to the next. Search, ranking, read and answer treat their allocation as a soft deadline; the plan stage does not. Every step is stored, and a step that succeeded is reused instead of being run again. After a crash or restart, steps that were in progress are marked "outcome unknown" and the run waits for you to resume it; a request that was in flight may then be sent again.
+A run has five stages: plan, search, ranking, read and answer. Each stage gets a time allocation, and time a stage leaves unused carries over to the next. Search, ranking and read stop at a cutoff when their time runs out; the plan and answer allocations only record time and stop nothing. Every step is stored, and a step that succeeded is reused instead of being run again. After a crash or restart, steps that were in progress are marked "outcome unknown" and the run waits for you to resume it; a request that was in flight may then be sent again.
 
 ```mermaid
 flowchart TD
@@ -83,7 +83,7 @@ For a question that asks for a report, an answer run normally starts on its own 
 
 ## Depth numbers
 
-From `MODES` in [fast_path.py](../deixis/workflow/fast_path.py), except the answer passage budget, which comes from the effort budgets in [rules.py](../deixis/domain/rules.py); all are frozen into each run when it starts. The plan allocation is not enforced, and a run on a model that runs on your own computer has no read or answer deadline.
+From `MODES` in [fast_path.py](../deixis/workflow/fast_path.py), except the answer passage budget, which comes from the effort budgets in [rules.py](../deixis/domain/rules.py); all are frozen into each run when it starts. Only search, ranking and read apply a cutoff; plan and answer time is recorded, not enforced. A run on a model that runs on your own computer has no read cutoff.
 
 | | Quick | Standard | Detailed |
 |---|---|---|---|

@@ -1,4 +1,4 @@
-"""The Codex adapter: sign-in state, model mismatch, delivery stages, environment allowlist and concurrent turns.
+"""The Codex adapter: sign-in state, model mismatch, image input, delivery stages, environment allowlist and concurrent turns.
 
 A fake app-server; no Codex is started. Passing shows the adapter's handling, not the live CLI's behaviour.
 """
@@ -145,6 +145,15 @@ def test_codex_model_mismatch_is_recorded_and_rejected_by_shared_check(codex, tm
         conn.close()
 
 
+def test_codex_sends_the_equation_crop_before_the_text(codex):
+    connection, server = codex
+    asyncio.run(connection.run_step("BASE", "", "MESSAGE", {"type": "object"}, "requested-model", None, image_png=b"SYNTHETIC-PNG"))
+    turn = next(params for method, params in server.requests if method == "turn/start")
+    assert connection.accepts_images is True
+    assert turn["input"] == [{"type": "image", "url": "data:image/png;base64,U1lOVEhFVElDLVBORw=="},
+                             {"type": "text", "text": "MESSAGE"}]
+
+
 ERRORS = [
     RpcError("SYNTHETIC", {"message": "process error"}),
     ConnectionError("SYNTHETIC closed stdout"),
@@ -223,7 +232,7 @@ def test_codex_adapter_overlaps_turns_starts_one_server_and_cancels_both(monkeyp
                 self.interrupted.append((params["threadId"], params["turnId"]))
             return {}
 
-        async def run_turn(self, thread_id, text, output_schema, timeout=300.0, on_started=None, effort=None):
+        async def run_turn(self, thread_id, text, output_schema, timeout=300.0, on_started=None, effort=None, image_png=None):
             cls = type(self)
             cls.in_flight += 1
             cls.peak = max(cls.peak, cls.in_flight)

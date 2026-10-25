@@ -119,6 +119,7 @@ class CodexAdapter:
     connection = "codex"
     enforces_schema = True
     sends_reasoning_effort = True  # the turn's `effort` (codex_rpc.run_turn)
+    accepts_images = True  # run_step(image_png=...) puts one PNG before the turn's text (D113)
 
     def __init__(self, codex_home: Path, workspace: Path, turn_timeout: float = 300.0):
         self.codex_home = codex_home
@@ -264,15 +265,17 @@ class CodexAdapter:
         return status
 
     async def run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],
-                       requested_model: str | None, reasoning_effort: str | None = None) -> ModelStepResult:
+                       requested_model: str | None, reasoning_effort: str | None = None,
+                       image_png: bytes | None = None) -> ModelStepResult:
         self._steps += 1
         try:
-            return await self._run_step(base, developer, message, output_schema, requested_model, reasoning_effort)
+            return await self._run_step(base, developer, message, output_schema, requested_model, reasoning_effort, image_png)
         finally:
             self._steps -= 1
 
     async def _run_step(self, base: str, developer: str, message: str, output_schema: dict[str, Any],
-                        requested_model: str | None, reasoning_effort: str | None = None) -> ModelStepResult:
+                        requested_model: str | None, reasoning_effort: str | None = None,
+                        image_png: bytes | None = None) -> ModelStepResult:
         try:
             server = await self._ensure_server()
             started = await server.request(
@@ -298,7 +301,7 @@ class CodexAdapter:
 
         try:
             turn = await server.run_turn(thread_id, message, output_schema, timeout=self.turn_timeout, on_started=remember,
-                                         effort=reasoning_effort)
+                                         effort=reasoning_effort, image_png=image_png)
         except (RpcError, ConnectionError, TimeoutError, OSError) as exc:
             return ModelStepResult("failed", resolved_model=resolved, external_thread_id=thread_id,
                                    error=str(exc)[:300], delivery_class="after_send_unknown",

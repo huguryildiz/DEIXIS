@@ -8,6 +8,7 @@ requested on behalf of a model step. Every such request is recorded.
 from __future__ import annotations
 
 import asyncio
+import base64
 import itertools
 import json
 from collections import Counter, deque
@@ -176,12 +177,16 @@ class CodexAppServer:
         timeout: float = 300.0,
         on_started: Callable[[str], Awaitable[None]] | None = None,
         effort: str | None = None,
+        image_png: bytes | None = None,
     ) -> TurnResult:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         if thread_id in self._turn_notifications:
             raise RuntimeError(f"turn already active for thread {thread_id}")
         self._turn_notifications[thread_id] = queue
-        params: dict[str, Any] = {"threadId": thread_id, "input": [{"type": "text", "text": text}]}
+        user_input: list[dict[str, Any]] = [{"type": "text", "text": text}]
+        if image_png is not None:  # one PNG as a data URL before the text (D113)
+            user_input.insert(0, {"type": "image", "url": "data:image/png;base64," + base64.standard_b64encode(image_png).decode()})
+        params: dict[str, Any] = {"threadId": thread_id, "input": user_input}
         if output_schema is not None:
             params["outputSchema"] = output_schema
         if effort is not None:

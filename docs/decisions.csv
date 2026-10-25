@@ -20,7 +20,7 @@ D109,2026-10-18,"Reverse citation search R4b: pilot meets the bar; R4 closes, R5
 D108,2026-10-18,Reverse citation search R4: pilot fails; R4b counts support only on stated part,search,accepted,9551dd27,notes/2026-10-18-reverse-citation-r4-pilot/
 D107,2026-10-18,Reverse citation search R3: a Home mode and a statement-check panel,ui,accepted,1068863c,notes/plans/reverse-citation-search-plan.md
 D106,2026-10-18,The reranker leaves chain-only records in their fused place,search,accepted,86263ec5,
-D105,2026-10-18,"Verify Citations after V5 pilot: table rows, plain claims, negations, freeze",answer,accepted,07686021,notes/2026-10-18-verify-citations-v5-pilot/RESULT-r2.md
+D105,2026-10-18,"Verify Citations after V5 pilot: table rows, plain claims, negations, freeze",answer,accepted,07686021,notes/2026-10-results.md
 D104,2026-10-18,The record reranker is on by default with Voyage rerank-3-lite,search,accepted,bc7e668a,
 D103,2026-10-18,"Reverse citation search R2: how a statement check starts, resumes and goes stale",search,accepted,8c358455,notes/plans/reverse-citation-search-plan.md
 D102,2026-10-18,"A reranked record past 20,000 characters is cut and counted, not refused",search,accepted,38db53d4,

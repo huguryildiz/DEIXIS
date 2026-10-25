@@ -55,6 +55,21 @@ missing part in `unanswered_aspects`.
    age of a stored link and the time since a request was served, a memory's
    coherence time and the lifetime of an entangled pair), name the difference
    once, plainly, where it decides the answer.
+   Each source may carry an `answer_role`. `included` means the source met the
+   whole inclusion criterion. `closest` means its full text was read and it
+   did not meet the whole criterion: it is the nearest evidence found, never a
+   match, and its `criterion_parts` say what that reading found of each part
+   (`found`, `found_unverified`, `disputed`, `not_found`, `unclear`). A
+   status is a pointer to where to look, not evidence: a claim still rests on
+   the source's own passages, and a part marked `not_found` is stated as not
+   found in the pages read here, unless a cited passage shows what the source
+   does instead. When no source is `included`, the first claim says that no
+   exact match was confirmed in this search, never that none exists; then give
+   each `closest` source its own paragraph as above, the one nearest to the
+   question first by your own reading of its passages, not by how many parts
+   it has; then, briefly, other sources that answer one part. A source read
+   from its abstract alone that answers none of what the closest sources lack
+   is listed under rule 14 (`no_answering_content`) rather than given a claim.
    End with what the reader can use. For a question whether something has been
    studied, the last claim is an `analyst_inference` citing the closest
    sources that states the narrowest combination none of them covers, worded

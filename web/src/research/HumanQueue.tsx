@@ -120,6 +120,7 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
   const [kindFilter, setKindFilter] = useState<'all' | QueueKind>('all')
   const [reasonFilter, setReasonFilter] = useState('all')
   const [limit, setLimit] = useState(PAGE)
+  const [notAskedOpen, setNotAskedOpen] = useState(false)
   // A note belongs to the work it was written for and stays with it across refreshes.
   const [notes, setNotes] = useState<Record<string, Note>>({})
   const [busy, setBusy] = useState(false)
@@ -164,7 +165,9 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
   useEffect(() => { void load() }, [load, view.last_event_id])
 
   const rows = queue?.rows ?? []
-  const open = rows.filter(r => r.kind !== 'look_again')
+  // A read asks about at most two works (D137); the others stay listed, folded away, and can still be answered.
+  const open = rows.filter(r => r.kind !== 'look_again' && r.asked !== false)
+  const notAsked = rows.filter(r => r.kind !== 'look_again' && r.asked === false)
   const lookAgain = rows.filter(r => r.kind === 'look_again')
   const shownOpen = open.filter(r => (kindFilter === 'all' || r.kind === kindFilter) && (reasonFilter === 'all' || r.reason_code === reasonFilter))
   const ordered = [...shownOpen, ...(kindFilter === 'all' && reasonFilter === 'all' ? lookAgain : [])]
@@ -195,9 +198,11 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
       setDetailErrors(prev => ({ ...prev, [key]: e instanceof Error ? e.message : String(e) }))
     } finally { inflight.current.delete(key) }
   }, [researchId, load])
-  const shownKeys = shown.map(keyOf).join('|')
+  // Rows not asked load their detail once their fold is open, so each can be answered on its own.
+  const visible = notAskedOpen ? [...shown, ...notAsked] : shown
+  const shownKeys = visible.map(keyOf).join('|')
   useEffect(() => {
-    const waiting = shown.filter(r => !details[keyOf(r)] && !detailErrors[keyOf(r)] && !unsettled.has(keyOf(r)) && !inflight.current.has(keyOf(r)))
+    const waiting = visible.filter(r => !details[keyOf(r)] && !detailErrors[keyOf(r)] && !unsettled.has(keyOf(r)) && !inflight.current.has(keyOf(r)))
     waiting.slice(0, Math.max(0, IN_FLIGHT - inflight.current.size)).forEach(row => { void fetchDetail(row) })
   }, [shownKeys, details, detailErrors, unsettled, fetchDetail])  // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -372,6 +377,10 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
         <h3 id="queue-look-again" className="queue-group-head">{t('Decided under an earlier question; look again')}</h3>
         <div role="list" className="queue-cards">{shownLookAgain.map(card)}</div>
       </section>}
+      {notAsked.length > 0 && <details className="queue-not-asked" open={notAskedOpen} onToggle={e => setNotAskedOpen(e.currentTarget.open)}>
+        <summary>{t('Not asked: {n} more rows, open them if you want', { n: notAsked.length })}</summary>
+        <div role="list" className="queue-cards">{notAsked.map(card)}</div>
+      </details>}
       {ordered.length > shown.length && <button type="button" className="ghost queue-more" onClick={() => setLimit(n => n + PAGE)}>{t('Show {n} more', { n: Math.min(PAGE, ordered.length - shown.length) })}</button>}
       {picked.size > 0 && <div className="queue-selbar" role="region" aria-label={t('Answer the selected rows')}>
         <span className="queue-selbar-count" aria-hidden>{picked.size}</span>

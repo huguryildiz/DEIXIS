@@ -949,6 +949,8 @@ export const statementExcludedReasons: Record<string, string> = {
   fulltext_excluded_after_cutoff: 'Excluded after its full text was read',
   source_changed_after_cutoff: 'Its record changed after the reading',
   user_pending: 'Waiting for your decision',
+  passage_budget: 'Left out: the answer’s passage budget was full',
+  closest_over_cap: 'Left out: more closest works than the answer reads',
 }
 // Why a listed work could not be checked (`error.code`, and for a changed input its reason).
 export const statementErrorText: Record<string, string> = {

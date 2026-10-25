@@ -714,6 +714,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             "screened_after_cutoff": screen_more.answer_view(store, a["run_id"]),
             # Works this answer read because the person included them after the read cutoff (D92).
             "added_after_cutoff": answer_input.added_after_cutoff_view(store, a["run_id"]),
+            # What each work the answer was given stood as: included, closest or abstract-only (D137).
+            "answer_roles": answer_input.roles_view(store, a["run_id"]),
             "limitations": (draft or {}).get("limitations", []) if a["status"] == "structurally_valid" else [],
             "unanswered_aspects": (draft or {}).get("unanswered_aspects", []) if a["status"] == "structurally_valid" else [],
             "capability_notice": (draft or {}).get("capability_notice") if a["status"] == "structurally_valid" else None,

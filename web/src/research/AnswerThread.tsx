@@ -88,6 +88,8 @@ function startLine(answer: Answer) {
 
 // The works an answer cites, each counted once over its versions, by the work id stored with each citation (a source
 // removed from the research since keeps its work).
+const CLOSEST_TITLE = 'Its full text was read and it did not meet the whole criterion: nearest evidence, not a match.'
+const isClosest = (answer: Answer, sourceVersionId: string) => answer.answer_roles?.sources[sourceVersionId] === 'closest'
 function citedWorks(answer: Answer) {
   return new Set(answer.claims.flatMap(c => c.evidence.map(e => e.work_id))).size
 }
@@ -270,6 +272,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
       <ul>{leftOut.map(row => { const name = row.work.title ?? row.work.source_version_id
         return <li key={row.work.source_version_id}>
           {row.passageId ? <button type="button" className="link" onClick={() => onOpen(row.passageId!, row.anchorText, 'ledger')}>{name}</button> : <span>{name}</span>}
+          {isClosest(answer, row.work.source_version_id) && <span className="ref-pill pill is-closest" title={t(CLOSEST_TITLE)}>{t('Closest work')}</span>}
           <span className="answer-ledger-reason">{row.sameAs ? `${row.reason}: ${row.sameAs}` : row.reason}</span>
           {row.note && <span className="answer-ledger-note">{t('Note from the model: {note}', { note: row.note })}</span>}
         </li> })}</ul>
@@ -314,6 +317,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
           <span className="ref-body">
             <span className="ref-text cf">{source ? formatReference(style, source) : e.title}</span>
             <span className="ref-pills pills">
+              {isClosest(answer, e.source_version_id) && <span className="ref-pill pill is-closest" title={t(CLOSEST_TITLE)}>{t('Closest work')}</span>}
               {source && retractionNote(source) && <span className="ref-pill pill is-retracted" title={retractionNote(source) ?? undefined}>{t('Retracted')}</span>}
               <span className={`ref-pill pill ${e.kind === 'abstract' ? 'is-abstract' : 'is-text'}`}>{e.kind === 'abstract' ? <BookOpenText size={12} aria-hidden /> : <FileText size={12} aria-hidden />}{locator.charAt(0).toUpperCase() + locator.slice(1)}</span>
               <span className={`ref-pill pill is-${versionTones[e.version_label ?? ''] ?? 'unstated'}`}><BadgeCheck size={12} aria-hidden />{versionText(e.version_label)}</span>

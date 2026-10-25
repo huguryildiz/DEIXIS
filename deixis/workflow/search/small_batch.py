@@ -23,7 +23,7 @@ MINIMUM = 50
 LIST_KEY = "small_batch:v1:list"
 RERANK_KEY = "rerank:v1:list"  # outside `small_batch:v1:%`, which `steps` reads as batch steps
 GRAPH_SEEDS = 30  # D246: rows with a reference list taken from the top of the fused order
-ANSWER_ALLOCATION_VERSION = 2
+ANSWER_ALLOCATION_VERSION = 3
 
 
 def steps(store: Any, run_id: str) -> list[dict[str, Any]]:

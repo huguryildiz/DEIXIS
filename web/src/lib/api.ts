@@ -569,6 +569,14 @@ export type Claim = {
 }
 export type Limitation = { kind: string; text: string; source_ids: string[] }
 export type ValidationIssue = { code: string; path: string; message: string }
+// included: met the whole criterion or you included it; closest: full text read, did not meet the whole criterion
+// (nearest evidence, not a match); abstract: read from its abstract only.
+export type AnswerRole = 'included' | 'closest' | 'abstract'
+export type AnswerRoles = {
+  works: Record<string, AnswerRole>; sources: Record<string, AnswerRole>; counts: Record<AnswerRole, number>
+  left_out: { passage_budget?: number; closest_over_cap?: number }
+  closest_parts: Record<string, { part: string; status: 'found' | 'found_unverified' | 'disputed' | 'not_found' | 'unclear' }[]>
+}
 export type Answer = {
   late_revision?: { kind: 'updated_with_full_text'; base_answer_id: string; base_report_version: number | null; upgraded_sources: number; late_excluded: number }
   late_revision_status?: { status: 'waiting_fetch' | 'reading' | 'answering' | 'published' | 'skipped' | 'failed'; skip_reason: string | null; revision_answer_id: string | null; late_excluded: number }
@@ -576,6 +584,8 @@ export type Answer = {
   screened_after_cutoff?: ScreenedAfterCutoff[]
   // Works this answer read because the person included them after the read cutoff (D92).
   added_after_cutoff?: { work_id: string; source_version_id: string; head_after_cutoff: string; route: string }[]
+  // What each work the answer was given stood as, from its frozen input plan (D137); null when no plan was kept.
+  answer_roles?: AnswerRoles | null
   id: string; run_id: string; status: 'structurally_valid' | 'unverified_draft' | 'clarification' | 'no_evidence'
   scope_revision: number; applicability: 'current' | 'stale_scope' | 'stale_selection'; answer_language: string | null; created_at: string
   report_version: number | null; report_revision: number | null; report_title: string | null
@@ -697,6 +707,8 @@ export type QueueAnswer = 'include' | 'criterion_not_met' | 'not_sure' | 'pdf_wr
 export type QueueRow = {
   source_version_id: string; head: string; work_id: string; title: string; year: number | null; doi: string | null
   version_label: string | null; publication_type: string | null; reason_code: string; kind: QueueKind
+  // False for an open row past the two a read asks about (D137): listed, not asked.
+  asked?: boolean
   // `disputed` (with the shared passage's page) only when both reads of a split reading saw the part's passage and disagreed (D76).
   question: { part: string; definition: string | null; disputed?: true; page?: number | null } | null; place: number | null; arm: 'keyword' | 'chain'
   stale: boolean; decision_id: string; row_token: string

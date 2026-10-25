@@ -229,7 +229,9 @@ def test_recovery_respects_paused_then_resumes_without_duplicate_calls(tmp_path)
 
 
 @pytest.mark.parametrize("all_excluded", [True])
-def test_read_exclusions_only_trigger_revision_with_an_inclusion(tmp_path, all_excluded):
+def test_late_reads_without_inclusion_revise_as_closest_works(tmp_path, all_excluded):
+    """D137: a base answer that included no work is revised from late readings that read the file without including
+    the work; they join as closest works, read from their pages, and are not counted as late exclusions."""
     lib = prepared(tmp_path, pdfs=2)
     from fakes import FakeAdapter, valid_response
     excluded_source = lib.sources[-1]
@@ -243,8 +245,21 @@ def test_read_exclusions_only_trigger_revision_with_an_inclusion(tmp_path, all_e
     read_late(lib)
     late_revision.advance(lib.flow)
     if all_excluded:
-        assert row(lib)["skip_reason"] == "no_fulltext_inclusion" and row(lib)["answer_run_id"] is None
-        assert views.research_view(lib.store, lib.rid)["answers"][0]["applicability"] == "stale_selection", json.dumps(json.loads(row(lib)["works_json"]))
+        drain(lib)
+        assert row(lib)["status"] == "published", json.dumps(json.loads(row(lib)["works_json"]))
+        plan = lib.store.existing_step(row(lib)["answer_run_id"], late_revision.REVISION_INPUT)["output"]
+        assert plan["late_excluded"] == [] and plan["upgraded"]
+        # A closest work read late never pushes the answer past its frozen budget.
+        assert len(plan["passage_ids"]) <= lib.store.run(row(lib)["answer_run_id"])["budget"]["max_answer_passages"]
+        assert {i["answer_role"] for i in plan["items"] if i.get("upgraded")} == {"closest"}
+        given = {lib.store.passage(pid)["kind"] for pid in plan["passage_ids"]}
+        assert "pdf_page" in given
+        # The person marks a late file wrong: the next answer reads that work from its abstract, never from the file.
+        wrong = next(i for i in plan["items"] if i.get("upgraded"))
+        DecisionStore(lib.store).record(lib.rid, wrong["source_version_id"], "human_pdf_wrong", note="SYNTHETIC wrong file")
+        lib.store.conn.execute("UPDATE runs SET status = 'completed' WHERE status IN ('queued', 'running')")
+        later = fast_answer.input_plan(lib.flow, answer_run(lib), lib.store.scope(lib.rid))
+        assert all(r["route"] == "abstract" for r in later["items"] if r["work_id"] == wrong["work_id"])
     else:
         drain(lib)
         assert row(lib)["status"] == "published"

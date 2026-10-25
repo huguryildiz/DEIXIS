@@ -333,3 +333,7 @@
 @media(prefers-reduced-motion:reduce){.queue-panel .queue-selbar{animation:none}}
 @container (max-width:400px){.queue-panel .queue-selbar-group{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:600px){.queue-panel .queue-selbar{bottom:10px}}
+/* Open rows past the two a read asks about (D137): listed, folded away. */
+.queue-panel .queue-not-asked{border-top:1px solid var(--line)}
+.queue-panel .queue-not-asked>summary{padding:9px 0;color:var(--muted);font-size:12px;font-weight:500;cursor:pointer}
+.queue-panel .queue-not-asked>summary:hover{color:var(--ink)}

@@ -1,5 +1,6 @@
 import { type Answer, type ResearchView } from '../lib/api'
 import { t, uiLocale } from '../lib/i18n'
+import { statementExcludedReasons } from '../lib/labels'
 
 // "How this answer was built": the search-to-answer counts as one list a person can read top down, each step a subset
 // of the one above it. Every number is a stored count (the flow buckets, the funnel, the answer's own citations); the
@@ -33,6 +34,7 @@ export function AnswerBasis({ view, answer, onSources, onAnswer }: {
   const includedWorks = new Set(view.sources.filter(s => s.version_role === 'record' && s.selection.state === 'included').map(s => s.work_id))
   const citedOutside = [...depth.keys()].filter(w => !includedWorks.has(w)).length
 
+  const roles = answer?.answer_roles
   const rows: Row[] = [
     { label: t('Found'), n: funnel.unique, level: 0, onClick: () => onSources('all') },
     { label: t('Not screened'), n: notScreened, level: 1, note: t('Past this run’s reading limit, not judged') },
@@ -46,6 +48,13 @@ export function AnswerBasis({ view, answer, onSources, onAnswer }: {
       forYou && t('{n} waiting for you', { n: num(forYou) })].filter(Boolean).join(' · ') || undefined },
     { label: t('No PDF found'), n: noPdf, level: 2, note: t('Neither included nor excluded; add the PDF to read it') },
     { label: t('Included'), n: included, level: 0, strong: true, onClick: () => onSources('included'), note: t('The report reads these') },
+    ...(roles ? [
+      { label: t('Given as included'), n: roles.counts.included, level: 1, note: t('Met the whole criterion, or you included them') },
+      { label: t('Given as closest work'), n: roles.counts.closest, level: 1, note: t('Full text read, did not meet the whole criterion; nearest evidence, not a match') },
+      { label: t('Given from the abstract only'), n: roles.counts.abstract, level: 1 },
+      { label: t(statementExcludedReasons.passage_budget), n: roles.left_out.passage_budget ?? 0, level: 1 },
+      { label: t(statementExcludedReasons.closest_over_cap), n: roles.left_out.closest_over_cap ?? 0, level: 1 },
+    ] : []),
     ...(answer ? [{ label: t('Cited in the answer'), n: cited, level: 0, strong: true, onClick: onAnswer,
       note: cited ? [t('{n} from full text', { n: num(cited - citedAbstract) }), citedAbstract && t('{n} from the abstract only', { n: num(citedAbstract) }),
         citedOutside && citedOutside !== citedAbstract && t('{n} not included', { n: num(citedOutside) })].filter(Boolean).join(' · ') : undefined }] : []),
@@ -54,7 +63,8 @@ export function AnswerBasis({ view, answer, onSources, onAnswer }: {
   const lead = [t('{found} works found, {n} included.', { found: num(funnel.unique), n: num(included) }),
     answer && cited > 0 && (citedAbstract
       ? t('The answer cites {n} sources, {abstract} of them from the abstract only.', { n: num(cited), abstract: num(citedAbstract) })
-      : t('The answer cites {n} sources, all read in full text.', { n: num(cited) }))].filter(Boolean).join(' ')
+      : t('The answer cites {n} sources, all read in full text.', { n: num(cited) })),
+    roles && roles.counts.closest > 0 && t(roles.counts.closest === 1 ? '{n} closest work was read as nearest evidence, not as a match.' : '{n} closest works were read as nearest evidence, not as matches.', { n: num(roles.counts.closest) })].filter(Boolean).join(' ')
 
   return <section className="answer-basis" aria-labelledby="answer-basis-title">
     <h3 id="answer-basis-title">{t(answer ? 'How this answer was built' : 'From search to sources')}</h3>

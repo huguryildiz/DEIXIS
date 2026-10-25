@@ -1211,6 +1211,44 @@
           "is_retracted": {
             "const": true,
             "description": "Present only when OpenAlex flagged the work as retracted at its last read (D27). Absence means not flagged or unknown, never confirmed sound."
+          },
+          "answer_role": {
+            "type": "string",
+            "enum": [
+              "included",
+              "closest",
+              "abstract"
+            ],
+            "description": "Answer steps only (D137). included: met the whole criterion (or the person included it); closest: its full text was read and it did not meet the whole criterion; abstract: read from its abstract only."
+          },
+          "criterion_parts": {
+            "type": "array",
+            "maxItems": 20,
+            "description": "Closest works only (D137): what the full-text reading found of each criterion part. A pointer to where to look, never evidence.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "part",
+                "status"
+              ],
+              "properties": {
+                "part": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "found",
+                    "found_unverified",
+                    "disputed",
+                    "not_found",
+                    "unclear"
+                  ]
+                }
+              }
+            }
           }
         }
       }

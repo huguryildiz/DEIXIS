@@ -296,6 +296,33 @@ def test_each_human_queue_code_is_one_row_per_work_and_no_other_code_is(store, f
     assert protocol is not None and found["criterion"] and found["criterion"] == protocol["body"]["inclusion_criterion"]
 
 
+def test_a_read_asks_about_two_works_and_never_brings_up_the_next(store):
+    """D137: the read cutoff freezes the first two open rows as asked, once per scope revision; answering one does not
+    ask about the third, a second cutoff of the same scope reuses the frozen two, and the rest stay listed."""
+    lib = Lib(store)
+    rows = [queued(lib) for _ in range(4)]
+    assert all(row["asked"] for row in lib.rows()["rows"])  # before any cutoff every row is asked
+
+    def cutoff():
+        asked = queue.frozen_asked(store, lib.rid)
+        run = lib.new_run("discovery")
+        step = store.step(run, queue.CUTOFF_KEY, "code:fast_path_cutoff")
+        store.finish_step(step["id"], "succeeded",
+                          output={"asked": asked if asked is not None else queue.first_asked(store, lib.rid)})
+
+    cutoff()
+    found = lib.rows()
+    asked = [row["source_version_id"] for row in found["rows"] if row["asked"]]
+    assert len(asked) == queue.ASKED and found["counts"]["not_asked"] == 2
+    assert queue.queue_counts(store, lib.rid)["queue"] == 2
+    queue.decide(store, lib.rid, asked[0], "include", None, lib.row(asked[0])["row_token"])
+    cutoff()
+    after = lib.rows()
+    assert [row["source_version_id"] for row in after["rows"] if row["asked"]] == asked[1:]
+    assert queue.queue_counts(store, lib.rid)["queue"] == 1
+    assert {row["source_version_id"] for row in after["rows"]} == set(rows) - {asked[0]}
+
+
 # ---- what each row asks -------------------------------------------------------------------------------------------
 
 

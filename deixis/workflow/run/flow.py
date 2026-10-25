@@ -5176,6 +5176,11 @@ class ResearchFlow:
                 "identifiers": {"doi": source["doi"]} if source["doi"] else {},
             })
         sources = []
+        # An answer's plan says what each work is to it (D137): included, closest or abstract-only, and for a closest
+        # work what its reading found of each criterion part.
+        guard = getattr(self, "_small_batch_guard", None)
+        planned = ({item["source_version_id"]: item for item in (guard.get("input") or {}).get("items", [])}
+                   if task_type == "grounded_answer" and guard else {})
         for svid in source_ids:
             source = self.store.source(svid)
             kinds = {p["kind"] for p in self.store.passages_for(svid)}
@@ -5197,7 +5202,12 @@ class ResearchFlow:
                             "version_label": source["version_label"], "access_level": access}
                            # Only a flagged work carries the field, so an unflagged source keeps its shape. Any
                            # flagged version marks the work: a preprint of a retracted paper is not sound evidence (D27).
-                           | ({"is_retracted": True} if self.store.work_retracted(source["work_id"]) else {}))
+                           | ({"is_retracted": True} if self.store.work_retracted(source["work_id"]) else {})
+                           # A plan frozen before D137 has no role; its route says what it was (`answer.role_of`).
+                           | ({"answer_role": planned[svid].get("answer_role") or
+                               ("included" if planned[svid]["route"] == "fulltext" else "abstract")} if svid in planned else {})
+                           | ({"criterion_parts": planned[svid]["criterion_parts"]}
+                              if planned.get(svid, {}).get("criterion_parts") else {}))
         passages = [{
             "passage_id": p["id"], "source_id": p["source_version_id"],
             "reading_depth": "abstract" if p["kind"] == "abstract" else "selected_sections",

@@ -380,6 +380,30 @@ def _undo_of(ctx: _Context, work_id: str, svid: str, state: dict[str, Any]) -> d
     return {"undo_token": _state_of(ctx, svid)["token"], "undo_blocked": None}
 
 
+# A read asks the person about at most this many works (D137). The read cutoff freezes which, once per scope revision
+# (`answer.CUTOFF` holds them as `asked`); an answer or an undo never brings the next row up. The other rows stay
+# listed, not asked, and the answer reads them under its own rules.
+ASKED = 2
+CUTOFF_KEY = "fast_path:v1:cutoff"  # answer.CUTOFF; read here by its key, since answer imports the flow
+
+
+def frozen_asked(store: Store, research_id: str, scope_revision: int | None = None) -> list[str] | None:
+    """The works the first read cutoff of the scope revision asked about, or None: no cutoff yet, or one from before
+    D137, and then every row is asked."""
+    if scope_revision is None:
+        scope_revision = store.research(research_id)["current_scope_revision"]
+    row = store.conn.execute(
+        "SELECT s.output_json FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE r.research_id = ?"
+        " AND r.scope_revision = ? AND s.operation_key = ? AND s.status = 'succeeded' ORDER BY s.rowid LIMIT 1",
+        (research_id, scope_revision, CUTOFF_KEY)).fetchone()
+    return json.loads(row[0]).get("asked") if row and row[0] else None
+
+
+def first_asked(store: Store, research_id: str) -> list[str]:
+    """The works a new cutoff asks about: the open rows first in the queue's order, at most ASKED."""
+    return [row["work_id"] for row in queue_rows(store, research_id)["rows"] if row["kind"] != LOOK_AGAIN][:ASKED]
+
+
 def queue_rows(store: Store, research_id: str) -> dict[str, Any]:
     """Every row of the research's queue in the fused order, `look_again` last, with the queue's counts."""
     with _snapshot(store.conn):
@@ -392,9 +416,13 @@ def queue_rows(store: Store, research_id: str) -> dict[str, Any]:
         counts = counts | {"decided": dict(sorted(Counter(
             state["reason_code"] for _, state in answered if state["state"] == "decided").items()))}
         rows = sorted((_row(ctx, work_id, state) for work_id, state in found), key=_order_key)
+        asked = frozen_asked(store, research_id)
+        for row in rows:
+            row["asked"] = asked is None or row["kind"] == LOOK_AGAIN or row["work_id"] in asked
         decided = sorted((_decided(ctx, work_id, state) for work_id, state in answered),
                          key=lambda entry: entry["created_at"], reverse=True)
     counts["by_kind"] = dict(sorted(Counter(row["kind"] for row in rows if row["kind"] != LOOK_AGAIN).items()))
+    counts["not_asked"] = sum(not row["asked"] for row in rows)
     # The inclusion criterion of the frozen protocol the open rows are current under (the staleness key's criterion),
     # read from the protocol record, not from the newest runs the research view lists.
     protocol = store.current_protocol(research_id, store.research(research_id)["current_scope_revision"])
@@ -411,8 +439,11 @@ def context(store: Store, research_id: str) -> _Context:
 def queue_counts(store: Store, research_id: str, ctx: _Context | None = None) -> dict[str, int]:
     """The two numbers the research view shows, from one read of the facts and no row built."""
     with _snapshot(store.conn):
-        _, counts, _ = _scan(ctx if ctx is not None else _Context(store, research_id))
-    return {"queue": counts["open"], "look_again": counts["look_again"]}
+        found, counts, _ = _scan(ctx if ctx is not None else _Context(store, research_id))
+    asked = frozen_asked(store, research_id)
+    open_rows = counts["open"] if asked is None else sum(
+        work_id in asked for work_id, state in found if state["state"] != LOOK_AGAIN)
+    return {"queue": open_rows, "look_again": counts["look_again"]}
 
 
 def queue_answers(store: Store, research_id: str) -> dict[tuple[str, int], str]:

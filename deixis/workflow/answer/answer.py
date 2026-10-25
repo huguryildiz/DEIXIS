@@ -24,6 +24,17 @@ UNRESOLVED_WITHOUT_FULLTEXT = "unresolved_without_fulltext"
 CODE_DECIDED = "code_decided"
 # One review call plus one bounded schema repair.
 ANSWER_REVIEW_MODEL_CALLS = 2
+# A work whose file a reading read and that did not meet the whole criterion is still the nearest evidence a question
+# like "has this been done?" has (D137): the answer reads it as a `closest` work, never as an included one. A person's
+# own decision, an unread or unconfirmed file and versions that disagree are not readings it may stand on.
+CLOSEST_CODES = frozenset({"criterion_absent", "part_without_evidence", "fulltext_runs_agree_unresolved",
+                           "fulltext_runs_disagree", "include_quote_unverified", "comparator_exclusion_withheld",
+                           "protocol_title", "abstract_promise_absent"})
+# How many closest works an answer reads, by its passage budget (quick 16, standard 48, detailed 80), and how many of
+# each one's pages. Included works keep MAX_PASSAGES_PER_SOURCE; an abstract-only work gives its abstract.
+CLOSEST_WORKS = {16: 3, 48: 5, 80: 8}
+CLOSEST_PAGES = 4
+ROLES = ("included", "closest", "abstract")
 
 
 def human_choice(human: dict[str, Any]) -> dict[str, Any]:
@@ -198,6 +209,16 @@ def abstract_sibling(store: Any, rid: str, decisions: Any, facts: dict[str, Any]
     return None
 
 
+def is_closest(full: dict[str, Any] | None, asset: str | None) -> bool:
+    """A model reading of the file in use that did not include the work (D137): a `closest` work for the answer."""
+    return bool(asset and full and full["decided_by"] != "human" and full["reason_code"] in CLOSEST_CODES)
+
+
+def role_of(row: dict[str, Any]) -> str:
+    """A row's answer role; a row frozen before D137 has none, and its route says what it was."""
+    return row.get("answer_role") or ("included" if row["route"] == "fulltext" else "abstract")
+
+
 def text_row(store: Any, item: dict[str, Any], svid: str, text: dict[str, Any], route: str,
              reason: str | None) -> dict[str, Any]:
     """An answer input row for one work read from `svid`, before the person's choice is applied (`apply_user`)."""
@@ -242,7 +263,8 @@ def cutoff_snapshot(flow: Any, run: dict[str, Any], listing: dict[str, Any], clo
         if sibling:
             svid, text = sibling
         fresh, full, asset, abstract = text["fresh"], text["full"], text["asset"], text["abstract"]
-        route = "fulltext" if asset and full["outcome"] == "include" else "abstract"
+        closest = is_closest(full, asset)
+        route = "fulltext" if asset and (full["outcome"] == "include" or closest) else "abstract"
         # A PDF the person attached and the model read stays in the answer whatever the new ranking says.
         uploaded = bool(asset) and store.conn.execute(
             "SELECT 1 FROM source_assets WHERE id = ? AND origin = 'user_upload'", (asset,)).fetchone() is not None
@@ -253,7 +275,7 @@ def cutoff_snapshot(flow: Any, run: dict[str, Any], listing: dict[str, Any], clo
             reason = "not_screened_at_cutoff"
         elif outcome.get("reason_code") == "versions_disagree":
             reason = "versions_disagree"
-        elif outcome.get("outcome") in ("criterion_not_met", "out_of_scope"):
+        elif outcome.get("outcome") in ("criterion_not_met", "out_of_scope") and not closest:
             reason = outcome["outcome"]
         elif route == "abstract" and abstract is None:
             # A work the abstract stage screened and routed to its full text (`abstract_not_found`,
@@ -267,6 +289,7 @@ def cutoff_snapshot(flow: Any, run: dict[str, Any], listing: dict[str, Any], clo
             reason = (UNRESOLVED_WITHOUT_FULLTEXT if routed and unread_text else
                       CODE_DECIDED if set_aside else "not_screened_at_cutoff")
         row = text_row(store, item, svid, text, route, reason)
+        row["answer_role"] = row["base_role"] = "closest" if closest else "included" if route == "fulltext" else "abstract"
         if pdf_version:
             row["abstract_of_unread_pdf_version"] = pdf_version
         apply_user(row, user)
@@ -275,7 +298,11 @@ def cutoff_snapshot(flow: Any, run: dict[str, Any], listing: dict[str, Any], clo
         if row["reason"]:
             excluded[row["reason"]] += 1
         rows.append(row)
+    # The works this read asks the person about, at most two, frozen once per scope revision (D137).
+    from deixis.workflow.screen import queue as human_queue
+    asked = human_queue.frozen_asked(store, rid, run["scope_revision"])
     return {
+        "asked": asked if asked is not None else human_queue.first_asked(store, rid),
         "cutoff_at": closure["read_cutoff_at"], "scope_revision": run["scope_revision"],
         "criterion_hash": facts["stale_key"][1], "selection_revision": store.selection_revision(rid),
         "user_signature": small_batch.user_signature(store, rid), "manifest_hash": listing["manifest_hash"],
@@ -290,6 +317,8 @@ def freeze_cutoff(flow: Any, run: dict[str, Any], listing: dict[str, Any], closu
 
 def apply_user(row: dict[str, Any], user: dict[str, Any] | None) -> None:
     row["reason"], row["route"] = row["base_reason"], row["base_route"]
+    if "base_role" in row:
+        row["answer_role"] = row["base_role"]
     row["user_priority"] = bool(user and user["state"] == "included")
     row["override_reason"] = user.get("user_reason") if user else None
     if not user:
@@ -300,11 +329,15 @@ def apply_user(row: dict[str, Any], user: dict[str, Any] | None) -> None:
         row["reason"] = "user_pending"
     elif user["state"] == "pdf_wrong":
         row["route"] = "abstract"
+        if "base_role" in row:
+            row["answer_role"] = "abstract"
         if row["base_route"] == "fulltext":
             row["reason"] = (row["base_reason"] if row.get("abstract_decision_id")
                              else "not_screened_at_cutoff")
     elif user["state"] == "included":
         row["route"] = "fulltext" if row["fulltext_ids"] else "abstract"
+        if "base_role" in row:
+            row["answer_role"] = "included"
         row["reason"] = None if row["fulltext_ids"] or row["abstract_ids"] else "user_included_no_text"
     if row["route"] == "abstract" and row["base_route"] == "fulltext":
         row["decision_id"] = row.get("abstract_decision_id")
@@ -338,6 +371,7 @@ def after_cutoff_rows(store: Any, flow: Any, rid: str,
         text = version_text(flow, decisions, facts, readings, pools, wid, svid)
         row = text_row(store, {"work_id": wid, "head": head, "position": None}, svid, text,
                        "fulltext" if text["asset"] else "abstract", None)
+        row["answer_role"] = row["base_role"] = "included" if text["asset"] else "abstract"
         apply_user(row, selections.get(head))
         rows.append(row | {"added_after_cutoff": True, "head_after_cutoff": head})
     return rows, missing
@@ -418,12 +452,34 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
             added, no_text = after_cutoff_rows(store, flow, rid, works)
             rows += added
     # Late full text that excluded a work (D255) outranks the abstract screening that admitted it at the cutoff.
+    late_excluded = None
     if not run["budget"].get("late_revision_id"):
         from deixis.workflow.answer import late_revision
         late_excluded = late_revision.excluded_works(store, rid, run["scope_revision"])
         for row in rows:
             if row["work_id"] in late_excluded and not row["reason"] and not row["user_priority"]:
                 row["reason"] = "fulltext_excluded_after_cutoff"
+        # A late reading that did not include the work but read its file makes it a closest work, read from that file
+        # (D137), instead of the abstract the cutoff admitted it on.
+        if late_excluded is not None:
+            late_closest = late_revision.closest_works(store, rid, run["scope_revision"])
+            for row in rows:
+                if row["work_id"] in late_closest and not row["reason"] and not row["user_priority"] \
+                        and role_of(row) == "abstract":
+                    found = late_closest[row["work_id"]]
+                    # Any choice of the person (a wrong PDF above all) and a later decision on the work keep the row
+                    # what it is: only the late reading itself, still current, reads the file.
+                    current = store.conn.execute("SELECT 1 FROM stage_decisions WHERE id = ? AND superseded_at IS NULL",
+                                                 (found["late_decision_id"],)).fetchone()
+                    if (found["source_version_id"] != row["source_version_id"] or current is None
+                            or selections.get(row["head"]) or humans.get(row["work_id"])):
+                        continue
+                    ids = [p["id"] for p in current_pools(store, rid).get(row["source_version_id"], [])
+                           if p["kind"] == "pdf_page" and p["asset_id"] == found["late_asset_id"]]
+                    if ids:
+                        row.update(route="fulltext", answer_role="closest", asset_id=found["late_asset_id"],
+                                   fulltext_ids=ids, fulltext_decision_id=found["late_decision_id"],
+                                   decision_id=found["late_decision_id"], closest_after_cutoff=True)
     members = current_members(store, rid)
     pools = current_pools(store, rid)
     for row in rows:
@@ -439,11 +495,18 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
                 row[key] = [pid for pid in row[key] if pid in current]
             if row["route"] == "fulltext" and not row["fulltext_ids"]:
                 row["route"] = "abstract"
+                if "answer_role" in row:
+                    row["answer_role"] = "abstract"
                 row["decision_id"] = row.get("abstract_decision_id")
                 if not row["decision_id"] and not row["user_priority"]:
                     row["abstract_ids"] = []
             if not row["reason"] and not (row["fulltext_ids"] if row["route"] == "fulltext" else row["abstract_ids"]):
                 row["reason"] = "no_text_at_cutoff"
+    # The closest works past the budget's count stay out, the nearest by the frozen list first (D137).
+    cap = CLOSEST_WORKS.get(run["budget"]["max_answer_passages"], CLOSEST_WORKS[48])
+    closest = [row for row in rows if not row["reason"] and role_of(row) == "closest"]
+    for row in closest[cap:]:
+        row["reason"] = "closest_over_cap"
     excluded = [{"work_id": r["work_id"], "source_version_id": r["source_version_id"], "reason": r["reason"]}
                 for r in rows if r["reason"]] + no_text
     rows = [row for row in rows if not row["reason"]]
@@ -458,7 +521,10 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
     for row in rows:
         ids = row["fulltext_ids"] if row["route"] == "fulltext" else row["abstract_ids"]
         pages = [store.passage(pid) for pid in ids]
-        if row["route"] == "fulltext":
+        if row["route"] == "fulltext" and role_of(row) == "closest":
+            row["criterion_parts"], quoted = closest_parts(store, row)
+            pages = closest_pages(store, row, pages, quoted, fts, patterns)
+        elif row["route"] == "fulltext":
             topic = [p for p in store.search_passages([row["source_version_id"]], fts, len(ids)) if p["id"] in ids]
             criterion = criterion_passages.criterion_order(pages, patterns or [])
             ranked = fuse_rankings(topic, criterion) if criterion else topic
@@ -467,9 +533,17 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
             moved += first
             pages = pages[:MAX_PASSAGES_PER_SOURCE]
         queues.append(pages)
+    limit = run["budget"]["max_answer_passages"]
+    passages = allocate_by_role(rows, queues, limit)
+    given = {p["id"] for p in passages}
+    # A work the budget left without a page is not given to the model, and is listed with why (D137).
+    for row in rows:
+        if not given & set(row["abstract_ids"] + row["fulltext_ids"]):
+            row["reason"] = "passage_budget"
+            excluded.append({"work_id": row["work_id"], "source_version_id": row["source_version_id"],
+                             "reason": "passage_budget"})
+    rows = [row for row in rows if not row["reason"]]
     breadth = len(rows)
-    limit = max(run["budget"]["max_answer_passages"], breadth + sum(r["route"] == "fulltext" for r in rows))
-    passages = small_batch.allocate(queues, limit, MAX_PASSAGES_PER_SOURCE, breadth=breadth)
     return small_batch.save_code(flow, run, INPUT, "code:fast_path_answer_input", lambda: {
         "policy_hash": run["budget"]["fast_path"]["policy_hash"], "cutoff_step_id": cutoff["id"],
         "cutoff_at": frozen["cutoff_at"], "scope_revision": run["scope_revision"],
@@ -479,6 +553,89 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
         "passage_ids": [p["id"] for p in passages], "limit": limit, "breadth": breadth,
         "semantic_retrieval": "skipped: fast_path_lexical", "formula_passages": formulas,
         "result_passages": {**results, "moved": moved}})
+
+
+PART_STATUS = {"present": "found", "disputed": "disputed", "absent": "not_found", "unclear": "unclear"}
+
+
+def closest_parts(store: Any, row: dict[str, Any]) -> tuple[list[dict[str, str]], list[str]]:
+    """What the reading behind a closest work found of each criterion part, and the passages its verified quotes stand
+    on (D137). The two calls are merged as the queue merges them (`adjudication.merge_parts`): a part one call quoted
+    and the other, shown the same text, did not find is `disputed`. A status is a pointer for the answer model, never
+    evidence; no rationale the reading model wrote is passed on."""
+    from deixis.workflow.read import adjudication
+
+    found = store.conn.execute("SELECT s.run_id, s.operation_key FROM stage_decisions d JOIN run_steps s ON s.id = d.step_id"
+                               " WHERE d.id = ?", (row["fulltext_decision_id"],)).fetchone()
+    if found is None:
+        return [], []
+    prefix = found["operation_key"].rsplit(":", 1)[0]
+    rows_by_run: dict[int, dict[str, dict[str, Any]]] = {}
+    shown: dict[int, dict[str, dict[str, Any]]] = {}
+    for number in (1, 2):
+        step = store.conn.execute("SELECT id FROM run_steps WHERE run_id = ? AND operation_key = ?",
+                                  (found["run_id"], f"{prefix}:{number}")).fetchone()
+        if step is None:
+            continue
+        rows_by_run[number] = {p["criterion_part"]: {
+            "label": p["label"], "quote": p["quote"] or "", "quote_verified": bool(p["quote_verified"]),
+            "passage_id": p["quote_passage_id"], "page": p["quote_page"]} for p in store.conn.execute(
+                "SELECT * FROM model_proposals WHERE step_id = ? AND source_version_id = ? AND stage = 'fulltext'"
+                " ORDER BY rowid", (step["id"], row["source_version_id"]))}
+        sent = store.conn.execute("SELECT payload_json FROM step_inputs WHERE step_id = ? ORDER BY attempt DESC,"
+                                  " rowid DESC LIMIT 1", (step["id"],)).fetchone()
+        shown[number] = {p["passage_id"]: {"text": p.get("text") or "",
+                                           "physical_page": (p.get("locator") or {}).get("physical_page")}
+                         for p in (json.loads(sent[0]).get("passages") or [] if sent else [])}
+    merged = adjudication.merge_parts(rows_by_run, shown)
+    parts = [{"part": name, "status": "found_unverified" if m["label"] == "present" and not m["quote_verified"]
+              else PART_STATUS[m["label"]]} for name, m in merged.items() if name]
+    quoted = list(dict.fromkeys(r["passage_id"] for runs in rows_by_run.values() for r in runs.values()
+                                if r["label"] == "present" and r["quote_verified"] and r["passage_id"]))
+    return parts, quoted
+
+
+def closest_pages(store: Any, row: dict[str, Any], pages: list[dict[str, Any]], quoted: list[str], fts: str,
+                  patterns: list[Any]) -> list[dict[str, Any]]:
+    """A closest work's pages for the answer (D137): its abstract, the pages its reading quoted, then the pages the
+    research's topic and criterion rank first, at most CLOSEST_PAGES."""
+    ids = row["fulltext_ids"]
+    abstract = [store.passage(pid) for pid in row["abstract_ids"][:1]]
+    cited = [store.passage(pid) for pid in quoted if pid in ids]
+    topic = [p for p in store.search_passages([row["source_version_id"]], fts, len(ids)) if p["id"] in ids] if fts else []
+    criterion = criterion_passages.criterion_order(pages, patterns or [])
+    ranked = fuse_rankings(topic, criterion) if criterion else topic
+    return list({p["id"]: p for p in [*abstract, *cited, *ranked, *pages]}.values())[:CLOSEST_PAGES]
+
+
+def allocate_by_role(rows: list[dict[str, Any]], queues: list[list[dict[str, Any]]],
+                     limit: int) -> list[dict[str, Any]]:
+    """Fill the passage budget by role (D137), breadth first and in row order within each pass: the first page of every
+    included and closest work, then the other pages of the closest works (up to CLOSEST_PAGES each), then one abstract
+    per abstract-only work, then the deeper pages of the included works (up to MAX_PASSAGES_PER_SOURCE each). Without
+    closest works this is the earlier breadth-first order; the budget is no longer widened to fit every work. A work
+    the person included, or that a Screen more run the person started admitted, always gets its first page, even past
+    the budget."""
+    forced = [bool(row["user_priority"] or row.get("screened_after_cutoff")) for row in rows]
+    selected = [queue[0] for queue, first in zip(queues, forced) if first and queue]
+    entries = list(zip([role_of(row) for row in rows], queues, forced))
+    passes = [(("included", "closest"), range(0, 1)), (("closest",), range(1, CLOSEST_PAGES)),
+              (("abstract",), range(0, 1)), (("included",), range(1, MAX_PASSAGES_PER_SOURCE))]
+    for roles, depths in passes:
+        for depth in depths:
+            for role, queue, first in entries:
+                if role not in roles or depth >= len(queue) or depth == 0 and first:
+                    continue
+                if len(selected) >= limit:
+                    return in_row_order(selected, queues)
+                selected.append(queue[depth])
+    return in_row_order(selected, queues)
+
+
+def in_row_order(selected: list[dict[str, Any]], queues: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    """The chosen passages as the model reads them: by work in row order, each work's in its own order."""
+    place = {p["id"]: (i, depth) for i, queue in enumerate(queues) for depth, p in enumerate(queue)}
+    return sorted(selected, key=lambda p: place[p["id"]])
 
 
 def check_input(flow: Any, run_id: str, plan: dict[str, Any]) -> None:
@@ -530,6 +687,27 @@ def added_after_cutoff_view(store: Any, answer_run_id: str | None) -> list[dict[
     return [{"work_id": row["work_id"], "source_version_id": row["source_version_id"],
              "head_after_cutoff": row["head_after_cutoff"], "route": row["route"]}
             for row in step["output"].get("items", []) if row.get("added_after_cutoff")]
+
+
+def roles_view(store: Any, answer_run_id: str | None) -> dict[str, Any] | None:
+    """What each work the answer was given stood as (D137), read from the frozen plan of its run and never recomputed:
+    the role per work, the work counts per role, what the plan left out for the budget, and the criterion parts of each
+    closest work. A plan frozen before D137 has no roles, and `role_of` reads its routes."""
+    from deixis.workflow.answer.late_revision import REVISION_INPUT
+
+    if answer_run_id is None:
+        return None
+    step = store.existing_step(answer_run_id, REVISION_INPUT) or store.existing_step(answer_run_id, INPUT)
+    if step is None or step["status"] != "succeeded" or not step["output"]:
+        return None
+    items = step["output"].get("items", [])
+    works = {row["work_id"]: role_of(row) for row in items}
+    sources = {row["source_version_id"]: role_of(row) for row in items}
+    left = step["output"].get("excluded_reasons") or {}
+    return {"works": works, "sources": sources, "counts": {role: sum(r == role for r in works.values()) for role in ROLES},
+            "left_out": {k: left[k] for k in ("passage_budget", "closest_over_cap") if left.get(k)},
+            "closest_parts": {row["work_id"]: row["criterion_parts"] for row in items
+                              if role_of(row) == "closest" and row.get("criterion_parts")}}
 
 
 async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:

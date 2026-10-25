@@ -179,8 +179,24 @@ def outcomes(flow: Any, row: dict[str, Any]) -> list[dict[str, Any]]:
         decision = fresh[-1] if fresh else None
         asset = fast_answer.read_file(flow, decision, item["source_version_id"], records)
         result.append(item | {"late_outcome": decision["outcome"] if decision else None,
-                              "late_decision_id": decision["id"] if decision else None, "late_asset_id": asset})
+                              "late_decision_id": decision["id"] if decision else None, "late_asset_id": asset,
+                              "late_reason": decision["reason_code"] if decision else None,
+                              "late_decided_by": decision["decided_by"] if decision else None})
     return result
+
+
+def is_late_closest(item: dict[str, Any]) -> bool:
+    """A late reading of the file that did not include the work: it makes a closest work, not an exclusion (D137).
+    A row saved before D137 carries no reading code and stays what it was."""
+    return fast_answer.is_closest({"decided_by": item.get("late_decided_by"), "reason_code": item.get("late_reason")},
+                                  item.get("late_asset_id"))
+
+
+def late_items(store: Any, rid: str, scope_revision: int) -> list[dict[str, Any]]:
+    return [i for r in store.conn.execute(
+                "SELECT works_json FROM fast_path_late_revisions WHERE research_id = ? AND scope_revision = ?"
+                " AND read_run_id IS NOT NULL", (rid, scope_revision))
+            for i in json.loads(r[0])]
 
 
 def excluded_works(store: Any, rid: str, scope_revision: int) -> set[str]:
@@ -188,11 +204,17 @@ def excluded_works(store: Any, rid: str, scope_revision: int) -> set[str]:
     first). A later answer must not read them from their abstract again."""
     if not available(store):
         return set()
-    return {i["work_id"] for r in store.conn.execute(
-                "SELECT works_json FROM fast_path_late_revisions WHERE research_id = ? AND scope_revision = ?"
-                " AND read_run_id IS NOT NULL", (rid, scope_revision))
-            for i in json.loads(r[0])
-            if i.get("late_outcome") in ("criterion_not_met", "out_of_scope") and not i["user_priority"]}
+    return {i["work_id"] for i in late_items(store, rid, scope_revision)
+            if i.get("late_outcome") in ("criterion_not_met", "out_of_scope") and not i["user_priority"]
+            and not is_late_closest(i)}
+
+
+def closest_works(store: Any, rid: str, scope_revision: int) -> dict[str, dict[str, Any]]:
+    """Works a late reading read without including them, by work: a later answer reads them as closest works (D137)."""
+    if not available(store):
+        return {}
+    return {i["work_id"]: i for i in late_items(store, rid, scope_revision)
+            if is_late_closest(i) and not i["user_priority"]}
 
 
 def advance(flow: Any, rid: str | None = None) -> None:
@@ -256,7 +278,8 @@ def advance(flow: Any, rid: str | None = None) -> None:
                     if not check_candidates(flow, row, works):
                         finish(store, row, "skipped", "source_changed")
                         continue
-                    if not any(i["late_outcome"] == "include" and i["late_asset_id"] for i in works):
+                    if not upgrades_of(works, base_plan(store, row),
+                                       fast_answer.TEST_EFFORT_BUDGETS[scope["effort"]].max_answer_passages):
                         finish(store, row, "skipped", "no_fulltext_inclusion")
                         continue
                     budget = fast_answer.answer_run_budget(store, row["research_id"], scope, discovery_id=row["ledger_run_id"])
@@ -280,6 +303,18 @@ def advance(flow: Any, rid: str | None = None) -> None:
                 _failures.pop(("advance", row["id"]), None)
 
 
+def upgrades_of(works: list[dict[str, Any]], base: dict[str, Any] | None, passages: int) -> dict[str, dict[str, Any]]:
+    """The late readings a revision reads in full: every inclusion, and the works read without inclusion as closest
+    works while the base answer has closest places left by its budget (`passages`, D137)."""
+    upgrades = {i["work_id"]: i for i in works if i["late_outcome"] == "include" and i["late_asset_id"]}
+    if base is not None:
+        room = (fast_answer.CLOSEST_WORKS.get(passages, fast_answer.CLOSEST_WORKS[48])
+                - sum(fast_answer.role_of(i) == "closest" for i in base["items"]))
+        closest = [i for i in works if is_late_closest(i) and i["work_id"] not in upgrades]
+        upgrades |= {i["work_id"]: i for i in closest[:max(0, room)]}
+    return upgrades
+
+
 def revision_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
     store = flow.store
     saved = store.existing_step(run["id"], REVISION_INPUT)
@@ -293,8 +328,9 @@ def revision_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict
     fast_answer.check_input(flow, run["id"], base)
     works = outcomes(flow, row)
     check_candidates(flow, row, works, pause_run=run["id"])
-    upgrades = {i["work_id"]: i for i in works if i["late_outcome"] == "include" and i["late_asset_id"]}
-    excluded = {i["work_id"] for i in works if i["late_outcome"] in ("criterion_not_met", "out_of_scope") and not i["user_priority"]}
+    upgrades = upgrades_of(works, base, run["budget"]["max_answer_passages"])
+    excluded = {i["work_id"] for i in works if i["late_outcome"] in ("criterion_not_met", "out_of_scope")
+                and not i["user_priority"] and i["work_id"] not in upgrades}
     if not upgrades:
         flow._fail(run["id"], "no_fulltext_inclusion")
     patterns = flow._criterion_phrases(run, scope)
@@ -309,6 +345,16 @@ def revision_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict
     pools = fast_answer.current_pools(store, run["research_id"])
     items = []
     base_work_ids = {i["work_id"] for i in base["items"]}
+    # A closest work a revision reads in full uses only the room the base answer's budget left (D137): the abstract
+    # it replaces, and what the frozen 16/48/80 budget has free. A closest work new to the answer needs that room.
+    room = max(0, run["budget"]["max_answer_passages"] - len(base["passage_ids"]))
+    for wid in [w for w, i in upgrades.items() if i["late_outcome"] != "include" and w not in base_work_ids]:
+        if room:
+            room -= 1
+        else:
+            del upgrades[wid]
+    if not upgrades:
+        flow._fail(run["id"], "no_fulltext_inclusion")
     rows = copy.deepcopy(base["items"])
     rows += [copy.deepcopy(i) for wid, i in upgrades.items() if wid not in {r["work_id"] for r in rows}]
     for item in rows:
@@ -322,14 +368,27 @@ def revision_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict
             topic = [p for p in store.search_passages([svid], fts, len(ids)) if p["id"] in ids]
             criterion = criterion_passages.criterion_order(pages, patterns or [])
             ranked = fuse_rankings(topic, criterion) if criterion else topic
+            closest = upgrade["late_outcome"] != "include"
+            parts, quoted = (fast_answer.closest_parts(store, {"fulltext_decision_id": upgrade["late_decision_id"],
+                                                               "source_version_id": svid}) if closest else ([], []))
             ordered = list({p["id"]: p for p in [*ranked, *pages]}.values())
             ordered, first = result_passages.order(ordered, outcome_patterns, formulas)
             moved += first
-            chosen = [p["id"] for p in ordered][:BASE_WORK_PAGES if wid in base_work_ids else NEW_WORK_PAGES]
+            count = BASE_WORK_PAGES if wid in base_work_ids else NEW_WORK_PAGES
+            if closest:
+                # Its quoted pages first (D137), and no more pages than the budget has room for.
+                cited = [pid for pid in quoted if pid in ids]
+                ordered = [store.passage(pid) for pid in cited] + [p for p in ordered if p["id"] not in cited]
+                if wid in base_work_ids:
+                    extra = min(room, count - 1)
+                    room -= extra
+                    count = 1 + extra
+            chosen = [p["id"] for p in ordered][:count]
             if not chosen:
                 flow._pause(run["id"], "source_changed")
             item |= {"route": "fulltext", "decision_id": upgrade["late_decision_id"], "asset_id": upgrade["late_asset_id"],
-                     "fulltext_ids": ids, "abstract_ids": [], "reason": None, "upgraded": True}
+                     "fulltext_ids": ids, "abstract_ids": [], "reason": None, "upgraded": True,
+                     "answer_role": "closest" if closest else "included", **({"criterion_parts": parts} if closest else {})}
         else:
             owned = set(item["abstract_ids"] + item["fulltext_ids"])
             chosen = [pid for pid in base["passage_ids"] if pid in owned]
@@ -384,7 +443,7 @@ def answer_view(store: Any, aid: str) -> dict[str, Any]:
         return {}
     if row["base_answer_id"] == aid:
         excluded = sum(i.get("late_outcome") in ("criterion_not_met", "out_of_scope") and not i["user_priority"]
-                       for i in json.loads(row["works_json"]))
+                       and not is_late_closest(i) for i in json.loads(row["works_json"]))
         return {"late_revision_status": {"status": row["status"], "skip_reason": row["skip_reason"],
                 "revision_answer_id": row["revision_answer_id"], "late_excluded": excluded}}
     plan = store.existing_step(row["answer_run_id"], REVISION_INPUT)["output"]

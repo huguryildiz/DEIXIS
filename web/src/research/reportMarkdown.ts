@@ -119,7 +119,7 @@ export function reportMarkdown(answer: Answer, sources: Source[], title: string,
   if (ledgerOk(answer.evidence_ledger)) {
     const rows = ledgerRows(answer.evidence_ledger)
     lines.push(`## ${t('Works given but not cited')}`, '', ledgerLine(answer.evidence_ledger), '')
-    if (rows.length) lines.push(...rows.map(r => `- ${[markdownText(r.work.title ?? r.work.source_version_id), r.sameAs ? `${r.reason}: ${markdownText(r.sameAs)}` : r.reason,
+    if (rows.length) lines.push(...rows.map(r => `- ${[markdownText(r.work.title ?? r.work.source_version_id), answer.answer_roles?.sources[r.work.source_version_id] === 'closest' && t('Closest work'), r.sameAs ? `${r.reason}: ${markdownText(r.sameAs)}` : r.reason,
       r.note && t('Note from the model: {note}', { note: markdownText(r.note) })].filter(Boolean).join(' · ')}`), '')
   }
   if (limits.length) lines.push(`## ${t('Limits')}`, '', ...limits.map(limit => `- **${t(limit.kind.replace('_', ' '))}:** ${limit.text}`), '')
@@ -127,7 +127,7 @@ export function reportMarkdown(answer: Answer, sources: Source[], title: string,
     lines.push(`## ${t('Cited passages')}`, '')
     refs.forEach(({ n, e }) => {
       const source = sources.find(s => s.source_version_id === e.source_version_id)
-      lines.push(`[${style === 'ieee' ? n : e.source_key ?? n}] ${source ? formatReferenceText(style, source) : e.title} — ${locatorText(e)}${e.text_source === 'ocr' ? ` (${t(OCR_LABEL)})` : ''}${e.text_source === 'latex_source' ? ` (${t('arXiv source')})` : ''}${e.text_source === 'equation_ocr' ? ` (${t('equations read by {name}', { name: equationReaderName(e.equation_reader ?? { engine: 'mathpix' }) })})` : ''}`)
+      lines.push(`[${style === 'ieee' ? n : e.source_key ?? n}] ${source ? formatReferenceText(style, source) : e.title} — ${locatorText(e)}${answer.answer_roles?.sources[e.source_version_id] === 'closest' ? ` (${t('Closest work')})` : ''}${e.text_source === 'ocr' ? ` (${t(OCR_LABEL)})` : ''}${e.text_source === 'latex_source' ? ` (${t('arXiv source')})` : ''}${e.text_source === 'equation_ocr' ? ` (${t('equations read by {name}', { name: equationReaderName(e.equation_reader ?? { engine: 'mathpix' }) })})` : ''}`)
     })
     lines.push('')
   }

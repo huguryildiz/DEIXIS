@@ -25,7 +25,7 @@ Parity-harness markers (compare the app with the UI mockup; `test_parity_markers
 page of 50, the keyword query's cursor pages for the rest, no chaining), the two abstract-screening runs agree on the
 first 34 titles they see and leave the rest of the 50 out of scope, the first three PDFs fetched carry case J's queue
 scripts (choose_run, confirm_quote, find_part) and the other 17 of the 20 read are agreeing includes, and the answer
-cites 12 sources and leaves the rest out with SYNTHETIC ledger reasons, the last with none (`parity_ledger`). "[oa-quota]": the keyword query's first page answers with a next cursor and every later keyword
+cites 12 sources (the three queue works, closest works under D137, by their abstracts) and leaves the rest out with SYNTHETIC ledger reasons, the last with none (`parity_ledger`). "[oa-quota]": the keyword query's first page answers with a next cursor and every later keyword
 page is refused as a spent OpenAlex daily budget (429, `x-ratelimit-remaining-usd: 0`), so the run completes on the
 searches that answered. "[oa-quota-net]" and "[oa-net-quota]": OpenAlex's semantic request is refused as a spent
 budget (or its connection is refused) until `oa-flip` exists in the data directory, then the other way round, so a
@@ -1155,7 +1155,11 @@ class ScriptedCodex:
                     continue
                 if "[parity]" in question and len(claims) >= PARITY_CITED:
                     break
-                chosen = next((p for p in passages if p["reading_depth"] != "abstract"), passages[0])
+                # "[parity]": a closest work (D137, the three queue works) is cited by the abstract given with its pages,
+                # so the answer cites abstracts of works that also have a PDF (S12's abstract cases); any other work by
+                # its first PDF page when it has one. SYNTHETIC: a scripted choice, not model behaviour.
+                by_abstract = "[parity]" in question and source.get("answer_role") == "closest"
+                chosen = next((p for p in passages if (p["reading_depth"] == "abstract") == by_abstract), passages[0])
                 depth = "abstract" if chosen["reading_depth"] == "abstract" else "PDF text"
                 text = ("It has been reported on page 12 that Equation 4 holds." if "[invent-locator]" in question
                         else f"It has been reported that SYNTHETIC statement {n} is supported by the {depth} of {{{{{source['source_id']}}}}}.")

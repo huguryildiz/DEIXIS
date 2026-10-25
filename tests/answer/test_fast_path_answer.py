@@ -207,7 +207,7 @@ def test_end_to_end_unattended_auto_answer_and_backend_abstract_label(tmp_path):
         assert view["answers"][0]["claims"][0]["evidence_basis"] == "abstract"
 
 
-def inspected_pdf(lib):
+def inspected_pdf(lib, code="all_parts_verified"):
     svid = lib.sources[-1]
     item = lib.flow._plan_item(svid, svid)
     plan = lib.store.step(lib.discovery["id"], "synthetic:adjudication_plan", "code:adjudication_plan")
@@ -222,8 +222,40 @@ def inspected_pdf(lib):
                 adjudication_target=target | {"run": n})
     asyncio.run(read())
     step = lib.store.existing_step(lib.discovery["id"], f"fulltext_adjudication:{svid}:2")
-    DecisionStore(lib.store).record(lib.rid, svid, "all_parts_verified", step_id=step["id"])
+    DecisionStore(lib.store).record(lib.rid, svid, code, step_id=step["id"])
     return svid, item
+
+
+def test_read_work_that_missed_the_criterion_is_a_closest_work(tmp_path):
+    """D137: a work whose file both readings read and that met no criterion part is not dropped; the answer reads it
+    from its abstract and pages as a closest work, told only what the reading found of each part."""
+    lib = setup(tmp_path, pdf=True)
+    svid, _ = inspected_pdf(lib, "criterion_absent")
+    for n in (1, 2):
+        step = lib.store.existing_step(lib.discovery["id"], f"fulltext_adjudication:{svid}:{n}")
+        DecisionStore(lib.store).add_proposal(lib.rid, svid, "fulltext", step["id"], n, "absent", criterion_part="model")
+    cutoff(lib)
+    run = answer_run(lib)
+    plan = fast_answer.input_plan(lib.flow, run, lib.store.scope(lib.rid))
+    row = next(r for r in plan["items"] if r["source_version_id"] == svid)
+    assert (row["answer_role"], row["route"]) == ("closest", "fulltext")
+    assert row["criterion_parts"] == [{"part": "model", "status": "not_found"}]
+    given = [lib.store.passage(pid) for pid in plan["passage_ids"] if lib.store.passage(pid)["source_version_id"] == svid]
+    assert 1 < len(given) <= fast_answer.CLOSEST_PAGES and any(p["kind"] == "pdf_page" for p in given)
+    asyncio.run(lib.flow.execute(run["id"]))
+    sent = json.loads(lib.store.conn.execute(
+        "SELECT i.payload_json FROM step_inputs i JOIN run_steps s ON s.id = i.step_id WHERE s.run_id = ?"
+        " AND s.operation_key = 'grounded_answer'", (run["id"],)).fetchone()[0])
+    source = next(s for s in sent["sources"] if s["source_id"] == svid)
+    assert source["answer_role"] == "closest" and source["criterion_parts"] == row["criterion_parts"]
+    roles = fast_answer.roles_view(lib.store, run["id"])
+    assert roles["works"][row["work_id"]] == "closest" and roles["counts"]["closest"] == 1
+    assert roles["closest_parts"][row["work_id"]] == row["criterion_parts"]
+    # The person's own exclusion still wins over the reading.
+    DecisionStore(lib.store).record(lib.rid, svid, "human_criterion_not_met", note="SYNTHETIC human exclusion")
+    lib.store.conn.execute("UPDATE runs SET status = 'completed' WHERE status IN ('queued', 'running')")
+    later = fast_answer.input_plan(lib.flow, answer_run(lib), lib.store.scope(lib.rid))
+    assert svid not in {r["source_version_id"] for r in later["items"]}
 
 
 @pytest.mark.parametrize("defect", [None, "replaced_file"])
@@ -313,7 +345,7 @@ def test_mixed_claim_basis_comes_from_links_and_review_failure_leaves_answer_int
         if si["task_type"] != "grounded_answer":
             return valid_response(si)
         draft = json.loads(valid_response(si))
-        passages = [si["passages"][0], next(p for p in si["passages"] if p["locator"]["kind"] == "pdf_page")]
+        passages = [next(p for p in si["passages"] if p["locator"]["kind"] == kind) for kind in ("abstract", "pdf_page")]
         draft["claims"][0].update(support_type="analyst_inference", passage_ids=[p["passage_id"] for p in passages])
         draft["citation_anchors"] = [{"claim_label": "c1", "passage_id": p["passage_id"], "quote": p["text"][:300]}
                                      for p in passages]
@@ -348,7 +380,9 @@ def test_top_n_bound_can_only_expand_through_recorded_user_choice(tmp_path):
     user(lib, lib.sources[-1], "included")
     run = answer_run(lib)
     plan = fast_answer.input_plan(lib.flow, run, lib.store.scope(lib.rid))
-    assert plan["breadth"] == 26 and plan["limit"] == 26
+    # The budget no longer widens to every listed work (D137): what it leaves out is listed with why.
+    assert plan["limit"] == 16 and plan["breadth"] == 16
+    assert plan["excluded_reasons"]["passage_budget"] == 10
     assert plan["items"][0]["source_version_id"] == lib.sources[-1]
     assert plan["items"][0]["override_reason"] == "SYNTHETIC override reason"
 

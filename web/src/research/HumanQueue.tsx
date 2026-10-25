@@ -377,10 +377,13 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
       </section>}
       {ordered.length > shown.length && <button type="button" className="ghost queue-more" onClick={() => setLimit(n => n + PAGE)}>{t('Show {n} more', { n: Math.min(PAGE, ordered.length - shown.length) })}</button>}
       {picked.size > 0 && <div className="queue-selbar" role="region" aria-label={t('Answer the selected rows')}>
-        <strong>{t(picked.size === 1 ? '{n} row selected' : '{n} rows selected', { n: picked.size })}<span>{t('One answer is recorded as your decision for each.')}</span></strong>
+        <span className="queue-selbar-count" aria-hidden>{picked.size}</span>
+        <strong><span className="sr-only">{picked.size} </span>{t(picked.size === 1 ? 'row selected' : 'rows selected')}<span>{t('One answer is recorded as your decision for each.')}</span></strong>
         <div className="queue-selbar-actions">
-          {BULK_ANSWERS.map(choice => { const Icon = ANSWER_ICONS[choice]; return <button key={choice} type="button" className={`is-${choice}`} disabled={busy} onClick={() => void answerPicked(choice)}><Icon size={14} aria-hidden />{t(bulkWords[choice])}</button> })}
-          <button type="button" className="queue-selbar-clear" disabled={busy} onClick={() => setPicked(new Set())}>{t('Clear')}</button>
+          <span className="queue-selbar-group">
+            {BULK_ANSWERS.map(choice => { const Icon = ANSWER_ICONS[choice]; return <button key={choice} type="button" className={`is-${choice}`} disabled={busy} onClick={() => void answerPicked(choice)}><Icon size={14} aria-hidden /><span>{t(bulkWords[choice])}</span></button> })}
+          </span>
+          <button type="button" className="queue-selbar-clear" disabled={busy} onClick={() => setPicked(new Set())}><X size={14} aria-hidden />{t('Clear')}</button>
         </div>
       </div>}
       <p className="foot-note">{t('Semantic support not checked. Your answer is recorded as your decision; DEIXIS does not say whether it is right.')}</p>

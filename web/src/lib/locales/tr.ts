@@ -185,6 +185,8 @@ export const tr: Record<string, string> = {
   'Answer the selected rows': 'Seçilen satırları yanıtla',
   '{n} row selected': '{n} satır seçildi',
   '{n} rows selected': '{n} satır seçildi',
+  'row selected': 'satır seçildi',
+  'rows selected': 'satır seçildi',
   'One answer is recorded as your decision for each.': 'Her biri için aynı yanıt sizin kararınız olarak kaydedilir.',
   'Yes, include': 'Evet, dahil et',
   'No, does not meet the criterion': 'Hayır, ölçütü karşılamıyor',

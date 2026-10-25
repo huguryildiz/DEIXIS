@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { ChevronRight, ListFilter, RotateCcw } from 'lucide-react'
+import { Check, ChevronRight, FileWarning, Info, ListFilter, RotateCcw, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { api, ApiError, type AuditAbstractRow, type AuditAnswer, type AuditRow, type AuditRowView, type AuditView } from '../lib/api'
 import { auditStratumLabels, pageLocator, queueAnswerLabels, queueAnsweredText, versionText, versionTones } from '../lib/labels'
@@ -12,6 +12,7 @@ import { t, uiLocale } from '../lib/i18n'
 // from the sources only. The current sample and the earlier answers are shown apart, and no rate is drawn from either.
 
 const ANSWERS: AuditAnswer[] = ['include', 'criterion_not_met', 'not_sure', 'pdf_wrong']
+const ANSWER_ICONS: Record<AuditAnswer, typeof Check> = { include: Check, criterion_not_met: X, not_sure: Info, pdf_wrong: FileWarning }
 const count = (n: number) => new Intl.NumberFormat(uiLocale()).format(n)
 
 export function AuditSample({ researchId, lastEvent, onChanged, onOpenSource, onShowInSources }: {
@@ -105,7 +106,7 @@ function AuditRowItem({ researchId, row, busy, onOpen, onAnswer, onUndo }: {
         : <>
           <p className="audit-question">{t('Does this work meet the criterion?')}</p>
           <div className="audit-choices" role="group" aria-label={t('Your answer on {title}', { title: row.title })}>
-            {ANSWERS.map(choice => <button key={choice} type="button" className={`is-${choice}`} disabled={busy} onClick={() => onAnswer(choice)}>{t(queueAnswerLabels[choice])}</button>)}
+            {ANSWERS.map(choice => { const Icon = ANSWER_ICONS[choice]; return <button key={choice} type="button" className={`is-${choice}`} disabled={busy} onClick={() => onAnswer(choice)}><span className="audit-choice-icon" aria-hidden><Icon size={13} /></span>{t(queueAnswerLabels[choice])}</button> })}
           </div>
         </>}
     </div>

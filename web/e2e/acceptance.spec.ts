@@ -338,7 +338,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     await showAnswer(page)
     await page.getByRole('button', { name: /Open report:/ }).click()
     const report = reportPanel(page)
-    expect(await report.locator('.claim').allInnerTexts()).toEqual(claimsBefore)
+    await expect.poll(() => report.locator('.claim').allInnerTexts()).toEqual(claimsBefore)  // the panel fills after it opens
     await report.locator('.reference-list li', { hasText: 'SYNTHETIC molecule schedule letter' }).filter({ hasText: 'submitted manuscript' }).getByRole('button').click()
     await expect(sourcePanel(page)).toContainText('submitted manuscript')
     await backPanel(page)

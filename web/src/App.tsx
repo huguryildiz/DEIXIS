@@ -13,6 +13,7 @@ import { KeysDialog } from './shell/KeysDialog'
 import { RunSlotContext } from './shell/runSlot'
 import { IS_MAC, readSingleKeys, requestResearchPanel, useShortcuts, writeSingleKeys } from './shell/Shortcuts'
 import { BackgroundJobs } from './shell/BackgroundJobs'
+import { SidebarRuns } from './shell/SidebarRuns'
 import { useToast } from './components/Toast'
 import { focusWhenLost } from './lib/focus'
 import { TrashPage } from './library/TrashPage'
@@ -560,7 +561,9 @@ export default function App() {
       </div>
       {actionMessage && route.view !== 'trash' && <p className="sidebar-action-message" role="status">{actionMessage}</p>}
       <div className="sidebar-foot">
-        {!phone && !collapsed && <div ref={setRunSlot} className="sidebar-run-slot" />}
+        {!phone && !collapsed && <div ref={setRunSlot} className="sidebar-run-slot">
+          <SidebarRuns researches={researches} openId={route.view === 'research' ? route.id : null} onOpen={(id, tab) => go({ view: 'research', id, tab })} />
+        </div>}
         <BackgroundJobs researches={researches} dark={dark} onOpenResearch={id => go({ view: 'research', id })} />
         {/* The foot keeps one DOM shape while its reads arrive (profile, proxy, Scopus): only text, inline style and data attributes change. */}
         <button type="button" className="access" onClick={() => go({ view: 'settings', tab: 'access' })} aria-label={accessName} title={t('Institutional access settings')}>

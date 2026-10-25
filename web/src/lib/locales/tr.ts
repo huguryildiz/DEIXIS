@@ -3896,6 +3896,7 @@ export const tr: Record<string, string> = {
   'Open the Follow-up panel to control this run': 'Bu işlemi kontrol etmek için Takip panelini açın',
   'Open the Evidence table panel to control this run': 'Bu işlemi yönetmek için Kanıt tablosu panelini açın',
   'Show this run in the thread': 'Bu işlemi konuşmada göster',
+  'Open this research': 'Bu araştırmayı aç',
   // UI parity S23a: the search plan a person edited.
   'You edited and saved this search plan; it was searched as you saved it.': 'Bu arama planını siz düzenleyip kaydettiniz; kaydettiğiniz gibi arandı.',
   'No record on OpenAlex holds any word of one block of your search plan, backups included, so nothing was searched. Edit the plan and search again.': 'OpenAlex’te arama planınızın bir bloğundaki hiçbir sözcüğü (yedekler dahil) içeren kayıt yok, bu yüzden hiçbir şey aranmadı. Planı düzenleyip yeniden arayın.',

@@ -1,4 +1,4 @@
-# Runs the whole test suite and the web build on every push to main, so the developer's Mac only runs
+# Runs the whole test suite, the web build and the five Playwright specs on every push to main, so the developer's Mac only runs
 # `pytest --testmon tests`. Informational only: no branch rule requires it, so a red run never blocks a push.
 # macOS arm64, the only platform the app supports.
 name: ci
@@ -31,14 +31,17 @@ jobs:
       - run: uv sync --frozen
       - run: uv run --no-sync pytest -n 3
 
-  web:
+  web:  # lint, a fresh build, then the five Playwright specs against that build (tests/acceptance/fixture_server.py)
     runs-on: macos-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: web
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
@@ -47,3 +50,9 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run build
+      - run: uv sync --frozen  # the specs start the fixture server with the repo's .venv python
+        working-directory: .
+      - run: test -d "/Applications/Google Chrome.app" || npx playwright install chrome  # playwright.config.ts uses channel chrome
+      - run: npm run test:acceptance
+        env:
+          DEIXIS_ACCEPTANCE_DIR: ${{ runner.temp }}/deixis-acceptance  # outside the checkout, a fresh folder per run

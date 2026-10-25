@@ -481,7 +481,8 @@ test.describe('S12: report, Citation and Source details panels', () => {
     const latest = [...valid(view)].sort((a, b) => (b.report_version ?? 0) - (a.report_version ?? 0))[0]
     // PATCHED VIEW: the first thread claim whose first citation is an abstract (found in the stored answer, not by the
     // chip's position) has that work shown without its PDF (the fixture fetched one), so its Citation entry offers Find
-    // PDF; each lookup request is counted and answered without a change.
+    // PDF; each lookup request is counted and answered without a change. After the first lookup the page's reload is
+    // held until Find PDF has been chosen again, so the second choice always comes while the first lookup still runs.
     const sections: Claim[][] = []
     for (const claim of latest.claims) {
       const last = sections[sections.length - 1]
@@ -494,13 +495,17 @@ test.describe('S12: report, Citation and Source details panels', () => {
     const claim = chipped[chip]
     const svid = claim.evidence[0].source_version_id
     expect(claim.evidence[0].kind).toBe('abstract')
+    const title = view.sources.find(s => s.source_version_id === svid)!.title
+    let lookups = 0
+    let release!: () => void
+    const held = new Promise<void>(resolve => { release = resolve })
     await page.route(`**/api/researches/${rid}`, async route => {
       const response = await route.fetch()
       const body = await response.json() as View
       for (const s of body.sources) if (s.source_version_id === svid) s.access.assets = []
+      if (lookups === 1) await held
       await route.fulfill({ response, json: body })
     })
-    let lookups = 0
     await page.route(`**/sources/${svid}/pdf-discovery`, route => { lookups += 1; return route.fulfill({ json: {} }) })
     try {
       await visit(page, research())
@@ -511,6 +516,13 @@ test.describe('S12: report, Citation and Source details panels', () => {
       const head = page.locator('[data-split-panel] .split-panel-head')
       for (const n of [1, 2]) {
         await cite.locator('.cite-entry').first().getByRole('button', { name: 'Find PDF' }).click()
+        if (n === 2) {
+          // The second opening has loaded its passage while the first lookup still runs; only then is the reload let go.
+          await expect(sourcePanel(page).locator('.dhead h3')).toHaveText(title)
+          await expect(sourcePanel(page).locator('.find-block')).toContainText('Looking for an open copy…')
+          expect(lookups).toBe(1)
+          release()
+        }
         await expect.poll(() => lookups).toBe(n)
         await expect(sourcePanel(page).locator('.find-block')).toBeVisible()
         await head.getByRole('button', { name: 'Back', exact: true }).click()
@@ -518,6 +530,7 @@ test.describe('S12: report, Citation and Source details panels', () => {
       }
       await page.keyboard.press('Escape')
     } finally {
+      release()
       // In-flight handlers of this case end quietly when the next case navigates.
       await page.unrouteAll({ behavior: 'ignoreErrors' })
     }

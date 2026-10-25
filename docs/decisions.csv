@@ -1,4 +1,5 @@
 id,date,title,area,status,commit,notes
+D126,2026-10-25,"Find PDF from the Citation panel, chosen while an earlier lookup of that work still runs, waits for it instead of being dropped",ui,accepted,,
 D125,2026-10-25,"web/src root files are grouped into folders (shell, home, library, settings, citecheck, research, table, reading, components, lib); behavior and look unchanged",process,accepted,,notes/plans/web-src-folders.md
 D124,2026-10-25,"deixis/workflow is split into step folders (run, search, screen, read, answer) and features/; module basenames, log names and stored names unchanged",process,accepted,,
 D123,2026-10-25,"A title the person wrote is no longer replaced by generated titles or later answers",ui,accepted,,

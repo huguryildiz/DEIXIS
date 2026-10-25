@@ -312,10 +312,11 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
     const ok = await actions.onFind(row)
     setFind(current => (current && current.id === id && current.svid === svid ? (ok ? { ...current, done: true } : null) : current))
   }
-  // Find PDF from the Citation panel: one lookup per opening, for the work of the passage this opening loaded.
+  // Find PDF from the Citation panel: one lookup per opening, for the work of the passage this opening loaded. An
+  // opening while an earlier lookup of that work still runs (its reload included) waits for it, so it is never dropped.
   const findKey = findOnOpen ? `${openPassageId ?? ''}|${openAssetId ?? ''}` : null
   useEffect(() => {
-    if (!findKey || askedFind.current === findKey || !canFind || (openPassageId && passage?.id !== openPassageId)) return
+    if (!findKey || askedFind.current === findKey || !canFind || finding || (openPassageId && passage?.id !== openPassageId)) return
     askedFind.current = findKey
     void startFind()
   })  // eslint-disable-line react-hooks/exhaustive-deps

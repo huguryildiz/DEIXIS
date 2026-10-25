@@ -1,7 +1,7 @@
 """The Method box under an `sw` answer: how the answer was reached, read from stored rows only.
 
 No model is called and nothing is written. The search part reuses `prisma_s` (`_groups`, `_planned_queries`) so the
-box and the PRISMA-S export cannot disagree about which searches ran. Counts stay separate (AGENTS.md): works found,
+box and the PRISMA-S export cannot disagree about which searches ran. Counts stay separate (CLAUDE.md): works found,
 read at abstract, full text tried, included, given to the model and cited answer different questions. What the stored
 rows do not say is returned as `None` or listed in `not_measured`, never filled in.
 """

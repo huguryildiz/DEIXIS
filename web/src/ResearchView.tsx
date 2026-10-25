@@ -863,7 +863,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         conflict={reviseConflict} onRebase={() => setRevising(form => (form ? { ...form, revision: view.research.current_scope_revision } : form))}
         disabled={busy || active} onSubmit={(text, terms) => { void saveRevision(text, terms) }} onCancel={endRevise} />
       : <QuestionBubble question={view.scope.question} sourceScope={view.scope.source_scope} intent={view.research.intent} createdAt={view.scope.created_at} revision={view.research.current_scope_revision} />}
-    {/* The evidence boundaries stay separate counts (AGENTS.md); each one opens the panel that can show it. Scope and depth close the line. */}
+    {/* The evidence boundaries stay separate counts (CLAUDE.md); each one opens the panel that can show it. Scope and depth close the line. */}
     <div className="session-meta research-facts" title={t('Unique, included, given and cited count works: versions of one work count once. “Given to the model” counts works whose passages were sent in the latest answer step; it is not a full-text reading claim.')}>
       <span className="research-revision">{t('Research')} · {t('revision {n}', { n: view.research.current_scope_revision })}</span>
       {view.research.revision_withdrawal.allowed && !active && <button type="button" className="research-revision-undo" disabled={busy}

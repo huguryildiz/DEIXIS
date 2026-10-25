@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-DEIXIS is a local, single-user research workspace: question → scholarly search or attached PDFs → screening → passage reading → an answer whose every citation points to a located passage. FastAPI backend (`deixis`) serves a React/Vite UI (`web`) on loopback. This file is the working agreement for every agent and contributor; `AGENTS.md` points here.
+DEIXIS is a local, single-user research workspace: question → scholarly search or attached PDFs → screening → passage reading → an answer whose every citation points to a located passage. FastAPI backend (`deixis`) serves a React/Vite UI (`web`) on loopback. This file is the working agreement for every agent and contributor.
 
 ## Commands
 

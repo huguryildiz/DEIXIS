@@ -31,7 +31,7 @@ PERSON_PDF_NOTE = "person_pdf:"
 
 
 class HumanDecisionStands(Exception):
-    """Code or a model tried to decide over the user's own decision (AGENTS.md, User Authority; SW11.7)."""
+    """Code or a model tried to decide over the user's own decision (CLAUDE.md, User Authority; SW11.7)."""
 
 
 class DecisionStore:
@@ -325,7 +325,7 @@ class DecisionStore:
         """Write the work's decision onto the selection its head record carries; returns the state written.
 
         Only a research on the `sw` workflow derives selections, and a selection the user set is never changed
-        (AGENTS.md, User Authority). Nothing is written when the state is already the derived one.
+        (CLAUDE.md, User Authority). Nothing is written when the state is already the derived one.
         """
         return self.derive_selections(research_id, [work_id]).get(work_id)
 

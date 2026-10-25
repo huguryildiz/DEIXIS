@@ -1845,7 +1845,7 @@ class ResearchFlow:
                               writes: list[tuple[str, str]]) -> dict[str, int]:
         """Write these abstract-stage decisions and derive the selection of each work they touched.
 
-        The user's own decision is skipped, never swallowed into a code decision (AGENTS.md, User Authority), and
+        The user's own decision is skipped, never swallowed into a code decision (CLAUDE.md, User Authority), and
         a decision that already says this is not closed and written again merely because the step identifier is
         new — so a second discovery run of the same question adds no row for what it re-derives.
         """
@@ -3128,7 +3128,7 @@ class ResearchFlow:
                               writes: list[tuple[str, str]]) -> dict[str, int]:
         """Write these full-text decisions and derive the selection of each work they touched.
 
-        The user's own decision is skipped, never swallowed (AGENTS.md, User Authority), and a decision that
+        The user's own decision is skipped, never swallowed (CLAUDE.md, User Authority), and a decision that
         already says this is not closed and written again merely because the step identifier is new — so a second
         retrieval run adds no row for what it re-derives. Every code written here is `unresolved`, which derives
         to the `pending` the record already had: no work is included or excluded by this run.

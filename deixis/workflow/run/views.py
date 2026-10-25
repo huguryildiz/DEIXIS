@@ -1136,7 +1136,7 @@ def _start_snapshot(store: Store, answer: Any) -> dict[str, Any] | None:
 
 
 # Reading depth of one stored source version. A PDF text layer, an abstract and bare metadata are
-# different evidence levels (AGENTS.md), so the library names the level instead of a generic badge.
+# different evidence levels (CLAUDE.md), so the library names the level instead of a generic badge.
 _HAS_PDF_TEXT = ("EXISTS (SELECT 1 FROM passages p JOIN source_assets a ON a.id = p.asset_id"
                  " WHERE p.source_version_id = v.id AND a.removed_at IS NULL)")
 _HAS_ABSTRACT = "EXISTS (SELECT 1 FROM passages p WHERE p.source_version_id = v.id AND p.kind = 'abstract')"

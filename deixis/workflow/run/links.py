@@ -2,7 +2,7 @@
 
 A link is added, never edited: a verdict that replaces an earlier one closes it with `superseded` instead of
 overwriting it, so the reason a work was joined stays readable. A merge the user undoes is closed with `undone` and is
-never made again by a later search, because the user's decision outranks the rule (AGENTS.md, User Authority).
+never made again by a later search, because the user's decision outranks the rule (CLAUDE.md, User Authority).
 
 Works are library-wide (D46), so links are too: `record_links` carries no research identifier, and a merge made in one
 `sw` research is visible in every research holding the same records. Only a search on the `sw` workflow writes here.

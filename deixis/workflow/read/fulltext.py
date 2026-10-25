@@ -102,7 +102,7 @@ def group_of(work: dict[str, Any], reading: bool = False) -> str | None:
     """Which retrieval group this work belongs to, or None when it is not fetched at all.
 
     1. The works the user named: a selection the user set to `included`. It is read before anything code decided,
-       because the user's decision is above code's (AGENTS.md, User Authority).
+       because the user's decision is above code's (CLAUDE.md, User Authority).
     2. The works code or the two abstract runs left as candidates.
     3. The works the abstract stage left unresolved *and* routed here: `runs_agree_unresolved` and
        `abstract_not_found`, which the reason table already says have `fulltext_fetch` as their next step. A

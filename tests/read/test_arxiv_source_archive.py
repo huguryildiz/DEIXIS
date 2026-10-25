@@ -89,6 +89,11 @@ def test_r11_what_the_scan_cannot_read_fails_closed():
 
 def test_links_devices_and_unsafe_names_are_never_read_and_nothing_is_written_to_disk(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    # A temp folder of this test's own: the shared system one also gets the parallel workers' files.
+    own_tmp = tmp_path / "tmp"
+    own_tmp.mkdir()
+    monkeypatch.setenv("TMPDIR", str(own_tmp))
+    monkeypatch.setattr(tempfile, "tempdir", str(own_tmp))
     before = sorted(os.listdir(tempfile.gettempdir())), sorted(os.listdir(tmp_path))
     link = tarfile.TarInfo("link.tex")
     link.type, link.linkname = tarfile.SYMTYPE, "/etc/passwd"

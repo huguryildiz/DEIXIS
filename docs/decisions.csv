@@ -11,7 +11,7 @@ D118,2026-10-24,"Equation finder: more numbered displays cropped cleanly, unclea
 D117,2026-10-24,"PDF fetch: 403s counted per host, Elsevier article API for open-access PDFs",reading,accepted,8fbbf7f7,notes/2026-10-24-pdf-403/RESULT.md
 D116,2026-10-24,Check a statement: the claim's field and named authors reach the search,search,accepted,1173ee50,notes/2026-10-24-reverse-citation-r5/RESULT.md
 D115,2026-10-24,Equation-reader requests are booked in the spend ledger,models,accepted,a1424deb,
-D114,2026-10-18,"Works read from abstracts only join evidence tables and reports, each marked",table,accepted,fd4d37bf,notes/plans/abstract-rows-plan.md
+D114,2026-10-18,"Works read from abstracts only join evidence tables and reports, each marked",table,accepted,fd4d37bf,
 D113,2026-10-20,Marker removed; the answer model reads numbered equations from page crops,reading,accepted,d99ec273,notes/2026-10-20-equation-bench
 D112,2026-10-20,Heralded-memory run losses: repeated phrase no longer voids a proposal,screening,accepted,2b43e564,
 D111,2026-10-18,Spend ledger: unpriced calls are priced once a price list names the model,models,accepted,ba431df6,

@@ -1,4 +1,4 @@
-"""Electrical-engineering survey benchmark (benchmark plan 3a, notes/plans/benchmark-plan.md): pure helpers.
+"""Electrical-engineering survey benchmark (results in docs/benchmark.md): pure helpers.
 
 Each question comes from one survey article in an EE survey venue (2019–2024, at least 80 references). The gold set is
 the survey's OpenAlex `referenced_works`, kept only when OpenAlex has the work and dates it on or before the survey; the

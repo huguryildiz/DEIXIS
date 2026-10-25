@@ -27,7 +27,7 @@ def _mailto(email: str | None) -> dict[str, str]:
 
 
 # provider id -> (URL, query parameters for the contact email). Every connector that does not require a key is here
-# (tests/providers/test_keyless_check.py checks that against the registry).
+# (tests/search/test_keyless_check.py checks that against the registry).
 REQUESTS: dict[str, tuple[str, Callable[[str | None], dict[str, Any]]]] = {
     "openalex": (openalex.WORKS_URL, lambda email: {"per_page": 1, "select": "id", **_mailto(email)}),
     "biorxiv": (openalex.WORKS_URL, lambda email: {"filter": biorxiv.WORKS_FILTER, "per_page": 1, "select": "id", **_mailto(email)}),

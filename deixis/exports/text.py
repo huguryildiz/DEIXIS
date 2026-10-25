@@ -3,7 +3,7 @@
 The answer report's Markdown and the evidence table's CSV are built in the browser (AnswerBlock.tsx `markdown`,
 EvidenceTable.tsx `tableCsv`). Their DOCX and XLSX twins are written here from the same view models, with the same
 labels in the same language and citation style. The Turkish strings are copies of the `tr` map in web/src/i18n.ts;
-tests/report/test_ooxml_exports.py fails when one of them drifts. The SERVER_ONLY labels exist only in these files.
+tests/features/test_export_ooxml.py fails when one of them drifts. The SERVER_ONLY labels exist only in these files.
 """
 
 from __future__ import annotations

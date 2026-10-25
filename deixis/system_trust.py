@@ -5,7 +5,7 @@ is in the system store (macOS Keychain, Windows certificate store, the Linux sys
 every request would fail with CERTIFICATE_VERIFY_FAILED. `use_system_certificates` makes `ssl` check certificates
 against the system store; it runs once at start, before any HTTP client is built, and httpx then needs no `verify=`.
 
-Precedence, with truststore 0.10 and httpx 0.28 (tests/hardening/test_system_trust.py): the system store is always
+Precedence, with truststore 0.10 and httpx 0.28 (tests/rules/test_system_trust.py): the system store is always
 trusted. A file named by SSL_CERT_FILE (or a folder in SSL_CERT_DIR) is added to it, not used instead of it; httpx
 loads it next to the `certifi` list when a client has trust_env on. So a person who sets SSL_CERT_FILE keeps every
 system root and gains the one in the file.

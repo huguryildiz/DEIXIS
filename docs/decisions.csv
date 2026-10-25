@@ -1,4 +1,5 @@
 id,date,title,area,status,commit,notes
+D120,2026-10-25,"Tests cut to about 1,500 cases and five Playwright specs, grouped by step; one pytest command",testing,accepted,c24d7319,notes/plans/sadelesme-test-ozeti.md
 D119,2026-10-25,One schema file with numbered upgrade steps replaces the 16 migration files,storage,accepted,a62ab5ed,notes/plans/sadelesme-review/sol-asama-2-tur2.md
 D118,2026-10-24,"Equation finder: more numbered displays cropped cleanly, unclear regions refused",reading,accepted,ecb812f5,notes/2026-10-24-equation-finder
 D117,2026-10-24,"PDF fetch: 403s counted per host, Elsevier article API for open-access PDFs",reading,accepted,8fbbf7f7,notes/2026-10-24-pdf-403/RESULT.md

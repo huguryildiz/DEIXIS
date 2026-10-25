@@ -35,7 +35,7 @@ export const revisionText = (column: TableColumn, rev: CellRevision) => (hasValu
 
 // The table as CSV: one value column and one evidence column (quote and locator) per table column. Current values only;
 // proposals waiting for a decision are left out. The BOM lets spreadsheet apps read the file as UTF-8. Exported for
-// tests/report/test_ooxml_exports.py, which runs it in node.
+// tests/features/test_export_ooxml.py, which runs it in node.
 export function tableCsv(table: TableView, sources: Source[]) {
   const byId = new Map(sources.map(s => [s.source_version_id, s]))
   const style = savedStyle()

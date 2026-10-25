@@ -100,7 +100,7 @@ Yapılacak:
 - [ ] Windows'ta PDF alt sürecinin bellek sınırı yok (P10 Job Object maddesi).
 
 ### Test ve platform
-- [ ] Paralel testler yük altında ara sıra düşüyor; `tests/app/test_reference_import_parser.py` tam seri `--testmon`'da 3 test düşüyor, tek başına geçiyor.
+- [ ] Paralel testler yük altında ara sıra düşüyor (25 Ekim test sadeleşmesinde `tests/app/test_reference_import_parser.py` silindi; düşen testler sadeleşmiş pakette yeniden gözlenmeli).
 - [ ] Hızlı cevap akışının duraklat/sürdür testi yok; arama aşaması zincir istekleri sürerken bitmiş görünebiliyor.
 - [ ] Ölçülmedi: ikinci kurulu kullanıcı, ekran okuyucular, sessiz makinede kapasite, elektrik kesintisi, dolu disk.
 

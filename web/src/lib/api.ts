@@ -657,7 +657,7 @@ export type Counts = {
   flow?: FlowCounts | null; flow_boxes?: FlowBoxes | null; overrides?: Overrides | null
   // The search step's funnel for the current revision (D233). A candidate passed the abstract stage; nothing here is "relevant".
   // `unique` and `candidates` leave out works only a follow-up search brought; `unique_in_research` is every work (D92).
-  funnel?: { retrieved: number; chained: number; unique: number; abstracts_read: number; candidates: number; included: number; unique_in_research?: number } | null
+  funnel?: { retrieved: number; chained: number; unique: number; abstracts_read: number; candidates: number; candidates_by_title?: number; included: number; unique_in_research?: number } | null
 }
 // The audit sample of an sw research (slice 20, decisions 5–7): F1 / F2 answered here, A1 / A2 for viewing only.
 export type AuditAnswer = 'include' | 'criterion_not_met' | 'not_sure' | 'pdf_wrong'

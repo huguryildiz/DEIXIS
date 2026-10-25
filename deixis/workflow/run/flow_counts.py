@@ -232,7 +232,8 @@ def funnel(ctx: Any, flow: dict[str, Any], boxes: dict[str, Any]) -> dict[str, A
     the keyword searches brought `unique - chained` works and every later stage is a subset of `unique`. None of the
     counts is "found" or "relevant". `abstracts_read` counts works a model read, not the ones queued. `candidates` are
     works with a current, not stale abstract-stage decision `candidate`, whatever a person or the full text did with them
-    afterwards. `included` is the works whose head record's selection is included, the same count the lists show.
+    afterwards; `candidates_by_title` are the ones code passed on their title holding the search blocks, with no model
+    reading their abstract. `included` is the works whose head record's selection is included, the same count the lists show.
 
     Follow-up searches (D92) are not this search: `unique` and `candidates` leave out the works only a follow-up
     search brought (`followup_only` in the boxes), and `unique_in_research` is every work of the revision. `included`
@@ -242,16 +243,22 @@ def funnel(ctx: Any, flow: dict[str, Any], boxes: dict[str, Any]) -> dict[str, A
     followup_only = set(boxes.get("followup_only_works") or ())
     pool = [work_id for work_id in heads if work_id not in followup_only]
     candidates = sum(1 for work_id in pool if passed_abstract(ctx, work_id))
+    from deixis.workflow.screen.abstract_stage import MODEL_CODES
+    by_title = sum(1 for work_id in pool if passed_abstract(ctx, work_id, reason="blocks_in_title")
+                   and not any(passed_abstract(ctx, work_id, reason=code) for code in MODEL_CODES))
     included = sum(1 for work_id, head in heads.items() if (ctx.selections.get(head) or {}).get("state") == "included")
     return {"retrieved": box["rows_returned"], "chained": len(ctx.chained & set(heads)),
             "unique": box["works"] - len(followup_only & set(heads)),
-            "abstracts_read": box["abstract_read_by_model"], "candidates": candidates, "included": included,
+            "abstracts_read": box["abstract_read_by_model"], "candidates": candidates, "candidates_by_title": by_title,
+            "included": included,
             "unique_in_research": box["works"]}
 
 
-def passed_abstract(ctx: Any, work_id: str) -> bool:
-    """Whether the work has a current, not stale abstract-stage decision `candidate` (the funnel's `candidates`)."""
+def passed_abstract(ctx: Any, work_id: str, reason: str | None = None) -> bool:
+    """Whether the work has a current, not stale abstract-stage decision `candidate` (the funnel's `candidates`); with
+    `reason`, only such a decision with that reason code."""
     return any(d["stage"] == "abstract" and d["outcome"] == "candidate" and not ctx.decisions.is_stale(d, ctx.facts["stale_key"])
+               and (reason is None or d["reason_code"] == reason)
                for d in ctx.facts["decisions"].get(work_id, []))
 
 

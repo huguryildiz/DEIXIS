@@ -126,9 +126,9 @@ export function Rail({ view, researchId, cited, reports, tables, hidden, candida
   // panel. "Full text read" counts each work once over every run of this question; the reading step counts one run.
   // "Cited" counts the works the answer shown in the thread cites (`cited`), as the facts strip does.
   const bars: [string, number, string?][] = funnel ? [
-    ['Unique works', funnel.unique], ['Abstract read', funnel.abstracts_read], ['Passed the abstract stage', funnel.candidates],
+    ['Found', funnel.unique], ['Passed to full text', funnel.candidates],
     ['Full text read', counts.fulltext_read_works ?? 0, 'Works whose two full-text passes both stored a result in one run, over every run of this question'],
-    ['Cited', cited],
+    ['Included', counts.included], ['Cited', cited],
   ] : []
   const widest = Math.max(1, ...bars.map(([, n]) => n))
 

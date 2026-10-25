@@ -824,8 +824,10 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         // works code let through without a read.
         const outOfScope = flowBuckets ? flowBuckets.out_of_scope_model + flowBuckets.out_of_scope_code : null
         const passed = funnel.candidates.toLocaleString(uiLocale())
+        const byTitle = funnel.candidates_by_title ?? 0
         return [screenedText, outOfScope === null ? t('{n} passed the abstract stage', { n: passed })
-          : t('{passed} passed the abstract stage, {out} out of scope', { passed, out: outOfScope.toLocaleString(uiLocale()) })].join(' · ')
+          : t('{passed} passed the abstract stage, {out} out of scope', { passed, out: outOfScope.toLocaleString(uiLocale()) }),
+          byTitle > 0 && t('{n} of them on their title alone', { n: byTitle.toLocaleString(uiLocale()) })].filter(Boolean).join(' · ')
       }
       case 'pdf': {
         if (!group.some(s => s.kind === 'model:fulltext_adjudication' || s.kind === 'code:adjudication_plan')) return fallback()

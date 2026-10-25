@@ -51,6 +51,7 @@ import { RevisionForm } from './RevisionForm'
 import { EarlierRevision, QuestionBubble } from './QuestionBubble'
 import { RunChip, SideRunStatus, TitleButton, TitleEditRow } from './Topbar'
 import { RunSlotContext } from '../shell/runSlot'
+import { AnswerBasis } from './AnswerBasis'
 import { SourcesPanel, type StateFilter } from './SourcesPanel'
 import { SplitPanel, StackPanel } from './SplitPanel'
 import { PanelStackContext, panelFromSegment, usePanelStack, usePhone, URL_PANELS } from './usePanelStack'
@@ -886,10 +887,12 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         title={t('Nothing was searched, answered or read under this revision yet; going back to revision {n} uses the readings made under it again.', { n: view.research.revision_withdrawal.parent_revision ?? 0 })}
         onClick={() => { void withdrawRevision(view.research.current_scope_revision, view.research.version) }}>{t('Undo revision {n}', { n: view.research.current_scope_revision })}</button>}
       {/* A count is shown once it has something to say; a row of zeroes while the run works is noise, not a boundary. */}
-      {counts.length > 0 && <div className="research-counts">{counts.map(([key, label, filter, n]) => <button key={key} type="button" onClick={() => (filter ? showSources(filter) : showAnswer())}><strong>{n}</strong><span>{t(label)}</span></button>)}</div>}
+      {!view.counts.funnel && counts.length > 0 && <div className="research-counts">{counts.map(([key, label, filter, n]) => <button key={key} type="button" onClick={() => (filter ? showSources(filter) : showAnswer())}><strong>{n}</strong><span>{t(label)}</span></button>)}</div>}
       <span title={t('Where DEIXIS looks for sources')}><ScopeIcon size={13} aria-hidden />{t(scopeLabels[view.scope.source_scope])}</span>
       <span title={t('How much searching and reading a run may do')}><EffortIcon size={13} aria-hidden />{t('{effort} depth', { effort: t(effortLabels[view.scope.effort]) })}</span>
     </div>
+    {/* With a search behind it, the counts read as one list from found down to cited (D131); otherwise the strip above. */}
+    <AnswerBasis view={view} answer={answer} onSources={showSources} onAnswer={showAnswer} />
 
       <div className="research-thread">
       {/* Table runs show on the Evidence tab and in Activity; the conversation tells search and answer runs. */}

@@ -171,9 +171,12 @@ def test_no_selection_becomes_included_and_the_run_opens_no_screening_step(tmp_p
         selections = selections_of(store, rid)
         kinds = {s["kind"] for s in store.run_steps(run_id)}
         codes = codes_of(store, rid)
+        funnel = client.get(f"/api/researches/{rid}").json()["counts"]["funnel"]
     finally:
         client.__exit__(None, None, None)
     assert run["status"] == "completed"
+    # Every candidate was passed after a model read its abstract: none counts as passed on its title alone.
+    assert (funnel["abstracts_read"], funnel["candidates"], funnel["candidates_by_title"]) == (4, 4, 0)
     assert set(selections.values()) == {("pending", "code_rule")}
     assert not [state for state, _ in selections.values() if state == "included"]
     assert "model:screening" not in kinds and "model:abstract_screening" in kinds
@@ -355,6 +358,8 @@ def test_the_stage_writes_the_same_rows_when_its_reads_are_batched(tmp_path, mon
         rid, first_run, view, run = discover(client)
         store = app.state.store
         svids = records_of(store, rid)
+        # W1 and W5 pass on their title alone; the funnel tells them apart from the works a model read.
+        assert view["counts"]["funnel"]["candidates_by_title"] == 2
         # A second version of one work, so the stage reads a work with more than one record.
         store.open_lookup_version(rid, svids["W2"], "acceptedVersion", None)
         # The artifact is this paper's data, by a link nobody undid.

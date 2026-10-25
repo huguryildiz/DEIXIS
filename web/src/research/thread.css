@@ -11,6 +11,24 @@
 .research-facts>span>svg{flex:none;opacity:.8}
 /* v25: the evidence counts as one strip of cells under the facts line; each cell opens the tab that can show it. */
 .legacy-research .research-facts{align-items:center;gap:6px 14px;margin-top:16px}
+/* "How this answer was built" (research/AnswerBasis.tsx): one ruled list from found down to cited; indents show subsets. */
+.answer-basis{margin:6px 0 4px;padding:14px 16px 8px;border:1px solid var(--line);border-radius:10px;background:var(--sidebar-surface)}
+.answer-basis h3{margin:0;color:var(--ink);font-size:13.5px;font-weight:600}
+.answer-basis-lead{margin:3px 0 10px;color:var(--ink-2);font-size:13px;line-height:1.5}
+.answer-basis-rows{margin:0;padding:0;list-style:none}
+.answer-basis-rows li{border-top:1px solid var(--line)}
+.answer-basis-rows li>:is(button,div){display:grid;grid-template-columns:minmax(0,190px) 64px minmax(0,1fr);align-items:baseline;gap:2px 12px;width:100%;padding:7px 4px;background:none;color:var(--ink-2);font-size:12.5px;line-height:1.45;text-align:left}
+.answer-basis-rows li>button{border-radius:5px;cursor:pointer}
+.answer-basis-rows li>button:hover{background:var(--hover-surface)}
+.answer-basis-rows li>button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.answer-basis-rows b{color:var(--ink);font-size:13px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+.answer-basis-rows .is-level-1 .answer-basis-label{padding-left:16px}
+.answer-basis-rows .is-level-2 .answer-basis-label{padding-left:32px}
+.answer-basis-rows .is-level-1 .answer-basis-label,.answer-basis-rows .is-level-2 .answer-basis-label{color:var(--muted)}
+.answer-basis-rows .is-level-0 .answer-basis-label{color:var(--ink);font-weight:500}
+.answer-basis-rows .is-strong .answer-basis-label{font-weight:600}
+.answer-basis-note{color:var(--muted)}
+@media (max-width:560px){.answer-basis-rows li>:is(button,div){grid-template-columns:minmax(0,1fr) auto}.answer-basis-note{grid-column:1/-1}.answer-basis-rows .is-level-1 .answer-basis-note{padding-left:16px}.answer-basis-rows .is-level-2 .answer-basis-note{padding-left:32px}}
 .research-counts{order:2;flex-basis:100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(104px,1fr));gap:1px;border:1px solid var(--line);border-radius:10px;background:var(--line);overflow:hidden}
 .research-counts button{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:10px 14px;border:0;background:var(--sidebar-surface);text-align:left}
 .research-counts button:hover{border:0;background:var(--hover-surface)}

@@ -1,22 +1,23 @@
 # How DEIXIS searches, ranks and reads
 
-This page follows a question from the moment you ask it to the answer. It describes the current code (run policy `fast_path_v1`). How well the ranking does on three test sets is in [benchmark.md](benchmark.md).
+This page follows a question from the moment you ask it to the answer. It describes the current code (run policy `fast_path_v1`) for readers; the code is the exact rule. How well the ranking does on three test sets is in [benchmark.md](benchmark.md).
 
-A run has five stages: plan, search, ranking, read and answer. Each stage gets a time allocation, and time a stage leaves unused carries over to the next. Search, ranking, read and answer have a soft deadline; the plan stage has none. Every step is stored, and a step that succeeded is reused, never run again. After a crash or restart, steps that were in progress are marked "outcome unknown" and the run waits for you to resume it; a request that was in flight may then be sent again.
+A run has five stages: plan, search, ranking, read and answer. Each stage gets a time allocation, and time a stage leaves unused carries over to the next. Search, ranking, read and answer treat their allocation as a soft deadline; the plan stage does not. Every step is stored, and a step that succeeded is reused instead of being run again. After a crash or restart, steps that were in progress are marked "outcome unknown" and the run waits for you to resume it; a request that was in flight may then be sent again.
 
 ```mermaid
 flowchart TD
     Q["Your question"] --> SCOPE{"Search or attached PDFs?"}
     SCOPE -->|"attached PDFs only"| ATT["Answer from the attached PDFs<br/>(no search, no ranking)"]
-    SCOPE -->|"scholarly search"| PLAN["Plan: code picks the search words; model steps sort them,<br/>write the query and propose the criterion, unless settings,<br/>your key terms or a saved plan replace them<br/>(frozen before the first search)"]
-    PLAN --> SEARCH["Search: OpenAlex (plus Semantic Scholar at Detailed,<br/>if it is in your sources), one citation-chain round,<br/>embeddings as records arrive"]
+    SCOPE -->|"scholarly search"| PLAN["Plan: search words, query, inclusion criterion<br/>(which model steps run depends on settings,<br/>your key terms or a saved plan)"]
+    PLAN --> SEARCH["Search: OpenAlex (Semantic Scholar too at Detailed,<br/>when set up and routed), a citation-chain round,<br/>embeddings as records arrive"]
     SEARCH --> RANK["Ranking: one ordered list of the whole pool<br/>(nothing removed)"]
     RANK --> SCREEN["Abstract screening of the top N<br/>(can set aside, never includes)"]
     SCREEN --> FT["Full-text reading, aiming at K works<br/>(two model reads, quotes checked by code)"]
     FT --> CUT[["Read cutoff: the evidence the answer may use"]]
-    CUT --> ANS["Answer: every citation located in a passage"]
+    CUT -->|"report questions"| ANS["Answer: every citation located in a passage"]
+    CUT -->|"other kinds of question"| OTHER["Paper list, study table<br/>or statement check"]
     ANS --> REV["Answer review by the reviewer you set<br/>(optional, never changes the answer)"]
-    FT -->|"selected, fetch not finished by the cutoff"| BG["Background full-text fetch"]
+    FT -->|"chosen for full text, fetch unfinished"| BG["Background full-text fetch"]
     BG --> LATE["At most one late revision<br/>(the earlier answer is kept)"]
     ANS -.-> LATE
     FT -->|"full-text reads code cannot settle"| QUEUE["Screening queue"]
@@ -24,27 +25,27 @@ flowchart TD
     YOU -.->|"your choice outranks model and code"| RANK
 ```
 
-You decide in three places. Full-text reads the code cannot settle go to the screening queue: a quote the code could not find in the text, two model reads that disagree, a title that names a study protocol, or a criterion with a comparator part where both reads say no. (At the abstract stage, disagreeing reads or a quote not found keep the work as a candidate for full text instead.) Your include or exclude outranks any model or code decision and keeps its reason. Works you include go to the top of the next ranked list and serve as seeds for the ranking. Screen more, follow-up questions, snowball rounds and the citation map start only when you start them.
+You decide in three places. Full-text reads the code cannot settle go to the screening queue, for example when a quote cannot be found in the text or the two model reads disagree. (At the abstract stage such cases keep the work as a candidate for full text instead.) Your include or exclude outranks any model or code decision and keeps its reason. Works you include go to the top of a later ranked list and act as seeds for the ranking. Screen more, follow-up questions, snowball rounds and the citation map start only when you start them.
 
 ## Where the search goes
 
-The registry ([providers/registry.py](../deixis/providers/registry.py)) holds OpenAlex, Semantic Scholar, Crossref, arXiv, bioRxiv, PubMed, IEEE Xplore, Scopus, CORE and SerpApi. A discovery run searches only OpenAlex: one semantic request (the top 50 for the question's English sentence) and keyword requests in pages of 100, taken in turn across the queries until the record cap or the search deadline. OpenAlex keyword search covers title and abstract, not full text. At Detailed depth one Semantic Scholar bulk request adds up to 500 records, when Semantic Scholar is among the research's sources and the query plan routed a query to it. Queries planned for the other providers are dropped and the plan records why (`openalex_only`). For the top N works that lack an abstract, Semantic Scholar, then Crossref, then Scopus are asked for one, at most 200 requests per run.
+The registry ([providers/registry.py](../deixis/providers/registry.py)) holds OpenAlex, Semantic Scholar, Crossref, arXiv, bioRxiv, PubMed, IEEE Xplore, Scopus, CORE and SerpApi. A discovery run searches OpenAlex: one semantic request with the question's English sentence, and keyword requests taken in turn across the queries until a record cap or the search deadline. OpenAlex keyword search covers title and abstract, not full text. At Detailed depth one Semantic Scholar bulk request can add records, when Semantic Scholar is among the research's sources and the plan routed a query to it. Queries planned for the other providers are not sent, and the plan records why. For works near the top of the list that lack an abstract, Semantic Scholar, Crossref and Scopus can be asked for one, when they are set up and allowed for the research; the number of lookups is bounded.
 
 ## How the query is built
 
-Code picks the search words from your question. It does not translate: a question that is not in English and has no English key terms pauses and asks for them. A model sorts the words into concept blocks (asked three times; skipped when you typed key terms, saved a plan, or there are no phrases or more than 40), and code counts each term on OpenAlex. A second model call writes the keyword query: up to six terms with backups. It is not asked when you typed key terms or when the app is set to search with the code's query only, and a query already written for the same question revision is reused. Code counts each term alone and together with the other block, and a term that finds nothing alone is replaced by its next backup. The model's query and the code's own query are both searched. If the model call fails, the run pauses; the code's query is searched alone only if you choose it. A search plan you saved replaces the model's query. Three model calls propose the inclusion criterion, unless a saved plan sets it or a criterion is already frozen for the same question. The protocol, with its search plan, is frozen before any request that fetches results.
+Code picks the search words from your question. It does not translate: a question that is not in English and has no English key terms pauses and asks for them. A model sorts the words into concept blocks (skipped when, for example, you typed key terms or saved a plan), and code counts each term on OpenAlex. Another model call writes the keyword query, a few terms per block with backups; code counts each term, and a term that finds nothing alone can be replaced by a backup. The model is not asked when you typed key terms or when the app is set to use the code's query only, and a query already written for the same question revision is reused. The code's own query is normally searched beside the model's. If the model call fails, the run pauses; the code's query is searched alone only if you choose it. A search plan you saved replaces the model's query. Model calls propose the inclusion criterion unless a saved plan sets it or one is already frozen for the same question. The protocol, with its search plan, is frozen before the search stage sends its requests.
 
 ## Seed PDFs
 
-You can attach up to five seed PDFs. Before anything else is planned, each is matched to an OpenAlex work from its first two pages: a work counts only when its title (four words or more) stands at the head of the first page and exactly one work fits. A DOI alone never decides. For a seed that comes with a record DOI (from Zotero or the library), page 2 stands in for the title only when page 1 has no text. The match is frozen in the protocol with the rest of the plan. The query writer reads each seed's excerpt, each seed with text sends its own OpenAlex semantic request (top 25), matched seeds become the first citation-chain seeds, and in the ranking seeds count like works you included.
+You can attach up to five seed PDFs. First, before the query is planned, each is matched to an OpenAlex work from its first pages. A match needs the work's title at the start of the PDF and only one work that fits; a DOI printed in the PDF is not enough on its own. The match is frozen in the protocol. The query writer reads each seed's excerpt, each seed with text sends its own semantic request, and matched seeds become the first citation-chain seeds. In the ranking, seed PDFs and works you included act as seeds for the TF-IDF and citation signals; for the citation signal, each work counts only the seed PDF nearest to it.
 
 ## Citation chaining and embeddings
 
-While the keyword pages arrive, one round of citation chaining runs on OpenAlex. Its seeds are the matched seed PDFs, then the works the semantic request returned. Backward requests fetch the works they cite in batches of 50; forward requests fetch up to 25 works that cite each seed. If the round has fewer seeds than the depth allows when the search stage closes, the pool is ranked at that moment and the gap is filled from the top. At the same time an embedding model (Gemini, OpenAI, Voyage, Cohere, Ollama, LM Studio, a built-in model, or none) embeds each record's title and abstract as it lands. A record not embedded by the cutoff gets no embedding score.
+While the keyword pages arrive, one round of citation chaining runs on OpenAlex. Its seeds are the matched seed PDFs, then works the semantic request returned. Backward requests fetch works the seeds cite and forward requests fetch works that cite them; how many depends on the depth. If the round has fewer seeds than the depth allows when the search stage closes, the pool is ranked at that moment and the gap is filled from the top. At the same time an embedding model (Gemini, OpenAI, Voyage, Cohere, Ollama, LM Studio, a built-in model, or none) embeds each record's title and abstract as it lands. A record not embedded by the cutoff gets no embedding score.
 
 ## Ranking
 
-The ranking sets the order in which works are read. It removes nothing and decides nothing.
+The ranking sets the order in which works are read. The ranking itself removes nothing and decides nothing.
 
 ```mermaid
 flowchart TD
@@ -60,56 +61,56 @@ flowchart TD
     G --> F
     J --> F
     E --> F
-    F --> P2["Second pass: citation links to your seeds and the fused top 30,<br/>whole pool fused again; then places 21 to 500 reordered<br/>with citations and cited-by count counted twice;<br/>the original top 20 stays"]
+    F --> P2["Second pass: citation signal redone from your seeds<br/>and up to 30 leading works with reference lists;<br/>cited-by count helps reorder places 21 to 500;<br/>the top 20 stays"]
     P2 --> RR{"Reranker on?"}
-    RR -->|"yes"| RRK["Reranker reorders the first N x pool factor works<br/>(default 4, at most 400), your included works left out;<br/>works only chaining found keep their place"]
+    RR -->|"yes"| RRK["Reranker reorders the leading works<br/>(N x pool factor, at most 400, your included works not counted);<br/>works only chaining found keep their place"]
     RR -->|"no, failed or out of time"| LIST
     RRK --> LIST[["Frozen ranked list: your included works first"]]
-    LIST --> BATCH["Screening batch: the top N<br/>(Screen more: up to 40 more works with an abstract)"]
+    LIST --> BATCH["Screening batch: the top N<br/>(Screen more reads further down later)"]
 ```
 
-Each signal ranks the whole pool on its own, and the ranks are fused, never the raw scores. A signal that cannot run (no seeds, not a comparison question, no embedding model) is left out and the run records why. A work a signal cannot score (TF-IDF without an abstract, the graph without a reference list) is ranked last in that signal but still counts. Ties are broken by record id, so the same input always gives the same list. Everything the list is computed from is stored with it, and the list is rebuilt from those stored inputs (by the current ranking code) rather than from the live database.
+Each signal ranks the whole pool on its own, and the ranks are fused, never the raw scores. A signal that cannot run (no seeds, not a comparison question, no embedding model) is left out and the run records why. A work a signal cannot score (TF-IDF without an abstract, the citation signal without a reference list) is ranked last in that signal but still counts. Ties are broken by record id, so the same input always gives the same list. Everything the list is computed from is stored with it, and the list is rebuilt from those stored inputs rather than from the live database.
 
-The second pass recomputes the citation signal with your seeds plus the 30 best-placed works that have a reference list, counting a seed's citation of a work twice, and fuses the whole pool again. It then adds a signal from each work's OpenAlex cited-by count and reorders places 21 to 500 with the citation and cited-by signals counted twice; the original top 20 stays in front. The reranker is on by default (Voyage `rerank-3-lite`; it needs a Voyage key, and without one nothing is sent and the fused order stands). It scores the first N times the pool factor works of the fused order (default factor 4, at most 400), leaving out works you included and keeping works only chaining found in their place. It reads only the question and each work's title and abstract. If it fails or runs out of time, the list keeps the fused order and no other reranker is tried.
+The second pass recomputes the citation signal from your seeds plus up to 30 of the best-placed works that have a reference list, with a seed's citation of a work counting double, and fuses the pool again (when none of those seeds has a reference list, the first citation signal stands). It then adds a signal from each work's OpenAlex cited-by count and uses it, with the citation signal weighted up, to reorder places 21 to 500; the top 20 stays in front. The reranker is on by default (Voyage `rerank-3-lite`; without a Voyage key nothing is sent and the fused order stands). It scores the leading works of the fused order, not counting works you included: N times the pool factor (default 4), rounded up, and at most 400. Works in that window that only chaining found keep their place. It reads only the question and each work's title and abstract. If it fails or runs out of time, the list keeps the fused order and no other reranker is tried.
 
 ## Reading
 
-Only the top N of the frozen list is screened. The abstract stage reads works in batches of 20, two model reads per batch, after code settles what title and abstract already decide. It can set a work aside or mark it a candidate; it never includes one, because inclusion needs a full-text read. Full text is fetched for K works in list order before the cutoff; K is a target: a work already claimed for full text keeps its slot, so the count can end above K. A work whose text cannot be found, or whose PDF is not confirmed to be that work, gives its slot to the next one. Full-text adjudication makes two model calls; the second is shown the passages the first did not see, topped up with the first call's passages when the text is too short to fill both. Code verifies each quote, and a work is included only when every core part of the criterion is found present with a verified quote, and where both calls saw a part they must agree (parts marked as aspects are recorded but do not decide). Selected works whose fetch had not finished at the cutoff, including fetches still running, go to a background fetch queue.
+The discovery run screens the top N of the frozen list. The abstract stage reads works in small batches, each read twice by the model, after code settles what title and abstract already decide. It can set a work aside or keep it as a candidate; it never includes one, because inclusion needs a full-text read. The run then aims to read K works in full text, in list order. K is a target, not a hard limit: a work already claimed for full text keeps its slot, so the count can end above K, and a work whose text cannot be found, or whose PDF is not confirmed to be that work, gives its slot to the next one. Full-text adjudication asks the model twice, mostly over different passages, and code checks every quote against the text. A work is included without you only when every core part of the criterion is backed by a verified quote and the two reads do not contradict each other. Works chosen for full text whose fetch had not finished at the cutoff keep being fetched in the background.
 
 ## The answer
 
-The automatic answer reads what the cutoff froze: passages from the full text of included works and the abstracts of screened works that remain candidates. An answer you start later can also read works you included since, and candidates from Screen more or a snowball round you included. Full-text passages are ranked by BM25 on the question's terms, fused (RRF) with the passages that match the criterion; there is no semantic passage search here. The passage richest in results goes first, and on a formula question a formula passage is moved up. Passages are shared breadth first, at most 6 per work. A citation must point to an exact anchor in a passage the answer step was given, or the answer stays an unverified draft. If background full text arrives later, it can produce one revision. The attached-PDFs-only path skips search and ranking: the answer ranks the PDFs' passages by BM25, fused with a semantic ranking when one is available, and a short single PDF can go in whole.
+For a question that asks for a report, an answer run normally starts on its own when the discovery run finishes; other kinds of question end with a list of papers, a study table or a statement check instead. The automatic answer reads what the cutoff froze: full-text passages of included works and the abstracts of screened works that are still candidates. An answer you start later can also use works you included since, candidates from Screen more, and snowball candidates once you include them. Full-text passages are ranked by BM25 on the question's terms, fused (RRF) with the passages that match the criterion; there is no semantic passage search here. Passages that report results, and formula passages on a formula question, can be moved up. Passages are shared breadth first, at most 6 per work. A citation must be located in a passage the answer step was given, or the answer stays an unverified draft. If background full text arrives later, it can produce one revision. The attached-PDFs-only path skips search and ranking: the answer ranks the PDFs' passages by keyword match (and by meaning, when an embedding model is set), and a short single PDF can go in whole.
 
 ## Depth numbers
 
-From `MODES` in [fast_path.py](../deixis/workflow/fast_path.py), except the answer passages, which come from the effort budgets in [rules.py](../deixis/domain/rules.py); all are frozen into each run when it starts. Runs on a model that runs on your own computer have no read or answer deadline.
+From `MODES` in [fast_path.py](../deixis/workflow/fast_path.py), except the answer passage budget, which comes from the effort budgets in [rules.py](../deixis/domain/rules.py); all are frozen into each run when it starts. The plan allocation is not enforced, and a run on a model that runs on your own computer has no read or answer deadline.
 
 | | Quick | Standard | Detailed |
 |---|---|---|---|
-| Stage deadlines, plan / search / ranking / read / answer (s) | 30 / 30 / 30 / 60 / 30 | 30 / 45 / 60 / 120 / 45 | 45 / 90 / 120 / 270 / 75 |
-| Works screened by abstract (N) | 25 | 50 | 100 |
-| Works read in full text before the cutoff (K) | 10 | 20 | 40 |
-| Keyword records read | 450 | 1,000 | 2,000 (500 from Semantic Scholar) |
-| Chain seeds; backward / forward requests | 10; 2 / 2 | 20; 4 / 8 | 30; 8 / 16 |
-| Answer passage budget | 16 | 48 | 80 |
+| Stage time allocations, plan / search / ranking / read / answer (s) | 30 / 30 / 30 / 60 / 30 | 30 / 45 / 60 / 120 / 45 | 45 / 90 / 120 / 270 / 75 |
+| Works screened by abstract in the run (N) | 25 | 50 | 100 |
+| Full-text target (K) | 10 | 20 | 40 |
+| OpenAlex keyword records, at most | 450 | 1,000 | 1,500, plus up to 500 from Semantic Scholar when it is searched |
+| Citation-chain seeds, at most | 10 | 20 | 30 |
+| Answer passage budget (base) | 16 | 48 | 80 |
 
-The passage budget is the larger of this number and the number of works in the answer input plus the number read in full text, so every work gets room. The answer gets fewer passages when fewer are available.
+The passage budget grows when the answer input holds many works, so every work gets room; the answer gets fewer passages when fewer are available.
 
 ## What the benchmark measures
 
-The score in [benchmark.md](benchmark.md) is recall@k: the share of a question's gold papers (chosen by experts or survey authors) that appear in the first k places of the ranked list, after the benchmark's own date filtering (for example, records dated after the source survey are removed), averaged over the questions that ran (a failed question counts as zero only in the paired differences). It measures search and ranking only. Screening, full-text reading and answers are not scored.
+The score in [benchmark.md](benchmark.md) is recall@k: the share of a question's gold papers (chosen by experts or survey authors) found in the first k places of the ranked list, averaged over questions. The benchmark page explains its date filtering and how failed questions count. It measures search and ranking only. Screening, full-text reading and answers are not scored.
 
 ## Limits
 
 - Ranks, embeddings, cited-by counts, the reranker and model screening are priority signals, not relevance verdicts. A low place is not a judgement that a work is irrelevant, and it says nothing on its own about whether the work was read (an earlier run may have read it).
 - Found, screened, read in full, given to the model and cited are separate counts, and each work keeps its reading depth (metadata, abstract, passage, full text). A large pool says little about how much was read.
-- Only OpenAlex is searched (plus Semantic Scholar at Detailed), and the keyword search does not match full text.
+- Search goes to OpenAlex, and to Semantic Scholar only at Detailed depth when it is set up and routed. The OpenAlex keyword search does not match full text.
 - Code checks that each citation points to a located passage. It does not check that the passage supports the claim; the optional answer review is one more model's opinion.
 - Deadlines make results depend a little on provider speed, and no search result proves a question is new.
 
 ## Where it lives in the code
 
-- [workflow/fast_path.py](../deixis/workflow/fast_path.py): stages, deadlines, depth numbers
+- [workflow/fast_path.py](../deixis/workflow/fast_path.py): stages, time allocations, depth numbers
 - [workflow/flow.py](../deixis/workflow/flow.py): plan stage and run order
 - [workflow/search.py](../deixis/workflow/search.py), [workflow/fast_chain.py](../deixis/workflow/fast_chain.py), [workflow/fast_embedding.py](../deixis/workflow/fast_embedding.py): search stage
 - [workflow/ranking.py](../deixis/workflow/ranking.py), [workflow/small_batch.py](../deixis/workflow/small_batch.py), [documents/rerankers.py](../deixis/documents/rerankers.py): ranking and the frozen list

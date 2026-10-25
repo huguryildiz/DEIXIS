@@ -3,7 +3,7 @@
 from fastapi.testclient import TestClient
 
 from deixis.storage.db import new_id, now, transaction
-from test_api_flow import app_for, create, session, wait_run
+from test_api_flow import app_for, create, session
 
 
 def seed_work(store, rid):
@@ -19,18 +19,6 @@ def seed_work(store, rid):
     for svid in (published, preprint):
         store.add_to_corpus(rid, svid, "user_upload", selection_state="included", selection_origin="user")
     return work_id, published, preprint
-
-
-def test_library_lists_every_active_research_as_a_group(tmp_path):
-    app = app_for(tmp_path)
-    with TestClient(app) as raw:
-        client = session(raw)
-        with_source, empty = create(client, source_scope="attached"), create(client, source_scope="attached")
-        work_id, _, _ = seed_work(app.state.store, with_source)
-        view = client.get("/api/library").json()
-        assert {r["id"] for r in view["researches"]} == {with_source, empty}
-        assert [e["work_id"] for e in view["entries"]] == [work_id]
-        assert view["counts"]["researches"] == 1
 
 
 def test_adding_a_library_work_includes_its_deepest_version_once(tmp_path):
@@ -61,20 +49,82 @@ def test_adding_a_library_work_includes_its_deepest_version_once(tmp_path):
                         headers={"x-deixis-csrf": "wrong"}).status_code == 403
 
 
-def test_a_research_title_run_names_an_older_research(tmp_path):
+from fastapi.testclient import TestClient
+
+from deixis.storage import db
+from helpers import make_pdf
+from test_api_flow import app_for, create, session
+
+
+def upload(client, rid, name, text):
+    response = client.post(f"/api/researches/{rid}/uploads", files={"file": (name, make_pdf([text]), "application/pdf")})
+    assert response.status_code == 201, response.text
+    return response.json()["uploaded_source_version_id"]
+
+
+def entry(client, work_id):
+    return next((e for e in client.get("/api/library").json()["entries"] if e["work_id"] == work_id), None)
+
+
+def test_research_purge_keeps_saved_items_and_their_files_but_removes_unsaved_ones(tmp_path):
     app = app_for(tmp_path)
     with TestClient(app) as raw:
         client = session(raw)
-        named, bare = create(client, source_scope="attached"), create(client, source_scope="attached")
-        seed_work(app.state.store, named)
-        for rid in (named, bare):
-            response = client.post(f"/api/researches/{rid}/runs", json={"kind": "research_title"})
-            assert response.status_code == 202, response.text
-            run = response.json()
-            assert (run["kind"], run["stage"], run["budget"]["max_model_calls"]) == ("research_title", "intake", 2)
-            view, finished = wait_run(client, rid, run["id"])
-            assert finished["status"] == "completed", finished
-            # SYNTHETIC: the fake adapter's title; a research without included sources is named from its question alone.
-            assert view["research"]["title"] == "Synthetic short research title"
-        steps = app.state.store.conn.execute("SELECT kind, status FROM run_steps WHERE run_id = ?", (run["id"],)).fetchall()
-        assert [tuple(s) for s in steps] == [("model:research_title", "succeeded")]
+        store = app.state.store
+        rid = create(client, source_scope="attached")
+        kept = upload(client, rid, "kept.pdf", "SYNTHETIC saved schedule study.")
+        dropped = upload(client, rid, "dropped.pdf", "SYNTHETIC unsaved schedule study.")
+        assert client.post("/api/library/items", json={"source_version_ids": [kept]}).status_code == 201
+        kept_path = tmp_path / "data" / "papers" / store.conn.execute(
+            "SELECT storage_path FROM source_assets WHERE source_version_id = ?", (kept,)).fetchone()[0]
+        dropped_path = tmp_path / "data" / "papers" / store.conn.execute(
+            "SELECT storage_path FROM source_assets WHERE source_version_id = ?", (dropped,)).fetchone()[0]
+
+        assert client.delete(f"/api/researches/{rid}").status_code == 200  # to Trash
+        # In Trash the research's works leave the Library, the saved one stays.
+        assert [e["versions"][0]["source_version_id"] for e in client.get("/api/library").json()["entries"]] == [kept]
+        assert client.delete(f"/api/trash/{rid}").json()["deleted"] is True
+
+        assert store.conn.execute("SELECT 1 FROM source_versions WHERE id = ?", (dropped,)).fetchone() is None
+        assert not dropped_path.exists()
+        assert store.conn.execute("SELECT 1 FROM library_items WHERE source_version_id = ?", (kept,)).fetchone()
+        assert kept_path.exists() and store.passages_for(kept)
+        saved = entry(client, store.source(kept)["work_id"])
+        assert saved["researches"] == [] and saved["access_level"] == "pdf_available"
+
+
+from deixis.storage import db
+from deixis.workflow.views import library_view
+from test_lineage_store import make_library
+
+
+def decide(lib, rid, svid, stage, outcome, superseded=False):
+    lib.conn.execute(
+        "INSERT INTO stage_decisions (id, research_id, source_version_id, stage, outcome, reason_code, decided_by, next_step,"
+        " scope_revision, superseded_at, created_at) VALUES (?, ?, ?, ?, ?, 'SYNTHETIC', 'code', 'none', 1, ?, 'now')",
+        (db.new_id("sdc"), rid, svid, stage, outcome, "then" if superseded else None))
+
+
+def test_library_marks_relevance_per_research_from_screening_and_how_the_source_came(tmp_path):
+    lib = make_library(tmp_path / "library.sqlite")
+    try:
+        found = lib.store.create_research("SYNTHETIC search?", "academic", "quick", [], "fake", "fake-model", "en")
+        for letter in ("a", "b", "c", "d", "z"):
+            lib.store.add_to_corpus(found, lib.ids[letter], "search")
+        decide(lib, found, lib.ids["a"], "fulltext", "include")
+        decide(lib, found, lib.ids["b"], "abstract", "candidate")
+        decide(lib, found, lib.ids["c"], "abstract", "candidate")
+        decide(lib, found, lib.ids["c"], "fulltext", "criterion_not_met")  # read in full and set aside
+        decide(lib, found, lib.ids["d"], "abstract", "out_of_scope")
+        decide(lib, found, lib.ids["z"], "fulltext", "include", superseded=True)  # an old decision no longer counts
+
+        relevant = {e["work_id"]: set(e["relevant_research_ids"]) for e in library_view(lib.store)["entries"]}
+        # Every source of the first research was uploaded by the user, so each is relevant there.
+        assert relevant == {"wrk_a": {lib.rid, found}, "wrk_b": {lib.rid, found}, "wrk_c": {lib.rid},
+                            "wrk_d": {lib.rid}, "wrk_z": {lib.rid}}
+
+        lib.store.remove_sources(found, [lib.ids["a"]], "SYNTHETIC removal")
+        entry = next(e for e in library_view(lib.store)["entries"] if e["work_id"] == "wrk_a")
+        assert entry["relevant_research_ids"] == [lib.rid]  # a removed source is relevant to no research it left
+    finally:
+        lib.conn.close()

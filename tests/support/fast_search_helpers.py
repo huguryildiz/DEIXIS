@@ -4,8 +4,7 @@ Shared contracts (record writing, continuation refusal, transport accounting, su
 round and old chain requests used to carry run here through the fast path's own entry points. No live provider.
 """
 
-from deixis.storage.db import dumps
-from deixis.workflow import fast_chain, fast_path, search as fast_search
+from deixis.workflow import fast_chain, search as fast_search
 
 
 def plan(queries, *, cap=1000, page_size=100):
@@ -23,19 +22,6 @@ async def search(flow, run, queries, retry_failed=False, **sizes):
     """Run the keyword slots of `queries` through `fast_search.execute`; returns its (pause reason, detail) or None."""
     scope = flow.store.scope(run["research_id"])
     return await fast_search.execute(flow, run, scope, plan(queries, **sizes), retry_failed)
-
-
-def provider_steps(flow, run):
-    """The keyword-slot steps of the run (not the semantic or S2 slot), each with its parsed output."""
-    return [flow.store.existing_step(run["id"], s["operation_key"]) for s in flow.store.run_steps(run["id"])
-            if s["operation_key"].startswith("search:") and not s["operation_key"].startswith("search:fast:")]
-
-
-def fast_chain_run(flow, run, effort="standard"):
-    """The same run with a frozen fast-path policy, which the chain round reads its allowances from."""
-    budget = run["budget"] | {"fast_path": fast_path.freeze_budget({}, effort)}
-    flow.store.update_run(run["id"], budget_json=dumps(budget))
-    return flow.store.run(run["id"])
 
 
 def chain_spec(direction="forward", *, index=0, cites="W9", batch=None, links=(), limit=None):

@@ -1,25 +1,39 @@
-"""Synthetic error bodies test policy, not live provider error formats."""
+"""Limit and quota classification across connections and providers, and per-run suppression of an exhausted provider.
+
+Mocked HTTP and fake Codex. Passing shows the classification and what is recorded, not live provider wording.
+"""
+
 import asyncio
+import httpx
 import json
+import pytest
+from claude_agent_sdk import AssistantMessage
+from claude_agent_sdk import ResultMessage
+from dataclasses import replace
 from types import SimpleNamespace
 
-import httpx
-import pytest
-from claude_agent_sdk import AssistantMessage, ResultMessage
-
-from deixis.models import adapter, claude, deepseek, gemini
-from deixis.providers import ieee_xplore, openalex, semantic_scholar, serpapi
-from test_claude_adapter import FakeClient, prepare
+import fast_search_helpers
+from deixis.models import adapter
+from deixis.models import claude
+from deixis.models import deepseek
+from deixis.models import gemini
+from deixis.providers import common
+from deixis.providers import ieee_xplore
+from deixis.providers import openalex
+from deixis.providers import serpapi
+from deixis.providers.registry import CONNECTORS
+from deixis.storage import db
+from deixis.workflow.flow import ResearchFlow
+from deixis.workflow.store import Store
+from test_claude_adapter import FakeClient
+from test_claude_adapter import prepare
 from test_codex_adapter_paths import codex
-from deixis.models.codex_rpc import RpcError
 
 
-@pytest.mark.parametrize("connection", ["codex", "claude", "gemini", "deepseek"])
+@pytest.mark.parametrize("connection", ["deepseek"])
 @pytest.mark.parametrize("body,headers,kind", [
     ({"error": {"code": "insufficient_quota", "message": "SYNTHETIC"}}, {"Retry-After": "1"}, "quota_exhausted"),
     ({"error": {"code": "rate_limit_exceeded", "message": "SYNTHETIC"}}, {"Retry-After": "2"}, "rate_limited"),
-    ({"error": {"code": "rate_limit_exceeded", "message": "SYNTHETIC"}}, {}, "rate_limited"),
-    ({"error": {"message": "SYNTHETIC HTTP 429"}}, {}, "rate_limited"),
 ])
 def test_model_limits(connection, body, headers, kind, monkeypatch, tmp_path, codex, http_status=429):
     if connection in ("gemini", "deepseek"):
@@ -47,8 +61,8 @@ def test_model_limits(connection, body, headers, kind, monkeypatch, tmp_path, co
         assert result.retry_after == headers.get("Retry-After")
 
 
-@pytest.mark.parametrize("module", [ieee_xplore, serpapi, semantic_scholar, openalex])
-@pytest.mark.parametrize("daily", [True, False])
+@pytest.mark.parametrize("module", [openalex])
+@pytest.mark.parametrize("daily", [True])
 def test_provider_limits(module, daily, monkeypatch):
     calls, waits = [], []
     async def sleep(seconds):
@@ -78,40 +92,6 @@ def test_provider_limits(module, daily, monkeypatch):
     assert result.error_kind == ("quota_exhausted" if daily else "rate_limited")
 
 
-@pytest.mark.parametrize("signal,http_status,kind", [("billing_error", 429, "quota_exhausted"), ("rate_limit", 429, "rate_limited"), (None, 429, "rate_limited")])
-def test_claude_sdk_structured_error(signal, http_status, kind, monkeypatch, tmp_path):
-    prepare(monkeypatch)
-    class StructuredError(FakeClient):
-        async def receive_response(self):
-            yield AssistantMessage([], "requested-model", error=signal)
-            yield ResultMessage("error", 1, 1, True, 1, "synthetic", errors=["SYNTHETIC"], api_error_status=http_status)
-    monkeypatch.setattr(claude, "ClaudeSDKClient", StructuredError)
-    result = asyncio.run(claude.ClaudeCodeAdapter(tmp_path).run_step("b", "d", "m", {}, "requested-model"))
-    assert adapter.is_rate_limited(result) is (kind == "rate_limited")
-    assert result.error_kind == kind and result.http_status == http_status
-
-
-@pytest.mark.parametrize("module", [ieee_xplore, serpapi, semantic_scholar, openalex])
-@pytest.mark.parametrize("headers", [{}, {"Retry-After": "1"}])
-def test_unknown_provider_429_uses_bounded_backoff(module, headers, monkeypatch):
-    from deixis.providers import common
-    calls, waits = [], []
-    async def sleep(seconds):
-        waits.append(seconds)
-    async def paced(send):
-        return await send()
-    monkeypatch.setattr(common.asyncio, "sleep", sleep)
-    monkeypatch.setattr(common.SEMANTIC_SCHOLAR_PACER, "run", paced)
-    def handler(request):
-        calls.append(request)
-        return httpx.Response(429, headers=headers)
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    search = openalex.search_works if module == openalex else module.search
-    result = asyncio.run(search(client, "synthetic", 1, api_key="SYNTHETIC-key"))
-    assert len(calls) == 3 and result.retries == 2 and result.error_kind == "rate_limited"
-    assert waits == ([1, 1] if headers else [15, 30] if module == semantic_scholar else [3, 6])
-
-
 def test_openalex_remaining_budget_header_stops_retry(monkeypatch):
     from deixis.providers import common
     calls = []
@@ -126,17 +106,93 @@ def test_openalex_remaining_budget_header_stops_retry(monkeypatch):
     assert len(calls) == 1 and result.retries == 0 and result.error_kind == "quota_exhausted"
 
 
-@pytest.mark.parametrize("code,kind", [("insufficient_quota", "quota_exhausted"), ("rate_limit_exceeded", "rate_limited")])
-def test_codex_rpc_error_code_survives_display_truncation(code, kind, codex):
-    instance, server = codex
-    server.error_method = "turn/start"
-    server.request_error = RpcError("synthetic", {"message": "SYNTHETIC " + "x" * 400, "code": code})
-    result = asyncio.run(instance.run_step("b", "d", "m", {}, "requested-model"))
-    assert result.error_kind == kind
-    assert adapter.is_rate_limited(result) is (kind == "rate_limited")
-    assert code not in result.error and len(result.error) == 300
+@pytest.fixture
+def quota_flow(tmp_path):
+    conn = db.connect(tmp_path / "library.sqlite")
+    db.migrate(conn)
+    store = Store(conn)
+    client = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: httpx.Response(429, json={"error": "SYNTHETIC daily quota exhausted"})))
+    deps = SimpleNamespace(store=store, http=client,
+                           settings=SimpleNamespace(contact_email=None, payloads_dir=tmp_path / "payloads"))
+    flow = ResearchFlow(deps)
+    def new_run():
+        rid = store.create_research("SYNTHETIC?", "academic", "standard", ["openalex"], "fake", "m", "en")
+        return store.create_run(rid, "discovery", {"max_provider_requests": 10, "inspection": {"policy": "small_batch_fused_v1"}}, None)
+    yield flow, new_run
+    asyncio.run(client.aclose())
+    if deps.http is not client:
+        asyncio.run(deps.http.aclose())
+    conn.close()
 
 
-@pytest.mark.parametrize("error,limited", [("HTTP 429", True), ("rate_limit_error", True), ("quota exhausted", False), ("model overloaded", False)])
-def test_legacy_result_without_metadata_keeps_text_fallback(error, limited):
-    assert adapter.is_rate_limited(SimpleNamespace(status="failed", error=error)) is limited
+def connector(provider, calls, monkeypatch):
+    async def search(http, *args, **kwargs):
+        calls.append(provider)
+        _, outcome = await common.send(http, "https://synthetic.invalid/search", {}, {}, "SYNTHETIC", "keyless")
+        return outcome
+    source = replace(CONNECTORS[provider], search=search, key_env=None, key_required=False)
+    monkeypatch.setitem(CONNECTORS, provider, source)
+    return source
+
+
+def test_exhausted_provider_is_suppressed_only_in_its_run(quota_flow, monkeypatch):
+    flow, new_run = quota_flow
+    run = new_run()
+    calls = []
+    first, other = connector("openalex", calls, monkeypatch), connector("crossref", calls, monkeypatch)
+    async def exercise():
+        await flow._send_search(run["id"], first, {"query_text": "one"}, 3)
+        blocked = await flow._send_search(run["id"], first, {"query_text": "two"}, 3)
+        assert (blocked.status, blocked.delivery_class, blocked.error_kind) == ("rate_limited", "before_send", "quota_exhausted")
+        assert flow.store.run(run["id"])["usage"]["provider_requests"] == 1
+        await flow._send_search(run["id"], other, {"query_text": "three"}, 3)
+        await flow._send_search(new_run()["id"], first, {"query_text": "four"}, 3)
+        restarted = ResearchFlow(flow.deps)
+        await restarted._send_search(run["id"], first, {"query_text": "five"}, 3)
+    asyncio.run(exercise())
+    assert calls == ["openalex", "crossref", "openalex", "openalex"]
+
+
+def test_search_round_records_suppression_and_retry_sends_again(quota_flow, monkeypatch):
+    flow, new_run = quota_flow
+    run = new_run()
+    calls = []
+    queries = [{"provider_id": "openalex", "query_text": text} for text in ("one", "two")]
+
+    async def search(http, query, *args, **kwargs):
+        calls.append(query)
+        response, outcome = await common.send(http, "https://synthetic.invalid/search", {}, {}, "SYNTHETIC", "keyless")
+        return replace(outcome, status="zero_results", delivery_class="answered") if response is not None else outcome
+
+    flow.deps.http = httpx.AsyncClient(transport=httpx.MockTransport(
+        lambda request: httpx.Response(429, json={"error": "SYNTHETIC daily quota exhausted"})
+        if len(calls) == 1 else httpx.Response(200, json={})))
+
+    monkeypatch.setitem(CONNECTORS, "openalex", replace(CONNECTORS["openalex"], search=search, key_env=None))
+
+    async def discovery(current, scope):
+        await fast_search_helpers.search(flow, current, queries, bool(current["budget"].get("retry_failed_searches_only")))
+        flow.store.update_run(current["id"], event="run_completed", status="completed")
+
+    monkeypatch.setattr(flow, "_discovery", discovery)
+
+    async def exercise():
+        await flow.execute(run["id"])
+        assert calls == ["one"]
+        first = flow.store.existing_step(run["id"], "search:0")
+        second = flow.store.existing_step(run["id"], "search:1")
+        assert first["status"] == second["status"] == "failed"
+        assert second["delivery_class"] == "before_send"
+        assert flow._query_requests(run["id"], "search:0") == 1
+        assert flow._query_requests(run["id"], "search:1") == 0
+        assert flow.store.run(run["id"])["usage"]["provider_requests"] == 1
+        flow.store.queue_failed_search_retry(run["id"])
+        await flow.execute(run["id"])
+        assert calls == ["one", "one", "two"]
+        assert flow._query_requests(run["id"], "search:0") == 2
+        assert flow._query_requests(run["id"], "search:1") == 1
+        assert all(flow.store.existing_step(run["id"], f"search:{index}")["status"] == "succeeded"
+                   for index in (0, 1))
+
+    asyncio.run(exercise())

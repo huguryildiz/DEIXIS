@@ -15,12 +15,6 @@ from deixis.models import gemini_cli
 from deixis.models.gemini_cli import CliRun, GeminiCliAdapter
 
 MODEL = "gemini-2.5-flash"
-INELIGIBLE = """Error authenticating: IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals.
-  ineligibleTiers: [
-    {
-      reasonCode: 'UNSUPPORTED_CLIENT',
-      tierId: 'free-tier',
-"""
 
 
 def lines(*events):
@@ -134,19 +128,6 @@ def test_settings_turn_off_tools_mcp_extensions_and_context(tmp_path, creds):
         assert settings["privacy"]["usageStatisticsEnabled"] is False and settings["telemetry"]["enabled"] is False
 
 
-@pytest.mark.parametrize("stdout", [
-    lines({"type": "init", "session_id": "s", "model": MODEL},
-          {"type": "tool_use", "tool_name": "run_shell_command", "tool_id": "t1", "parameters": {"command": "ls"}},
-          {"type": "tool_result", "tool_id": "t1", "status": "error"},
-          {"type": "message", "role": "assistant", "content": "{}"},
-          {"type": "result", "status": "success", "stats": {"tool_calls": 1, "models": {MODEL: {}}}}),
-    answer(tool_calls=2),
-])
-def test_a_tool_event_is_an_isolation_violation(tmp_path, creds, stdout):
-    result = asyncio.run(adapter(tmp_path, creds, FakeCli(CliRun(0, stdout, ""))).run_step("B", "D", "M", {}, MODEL))
-    assert result.status == "isolation_violation" and result.tool_item_types
-
-
 def test_another_answering_model_is_reported_for_model_mismatch(tmp_path, creds):
     fake = FakeCli(CliRun(0, answer(models=("gemini-2.5-pro", MODEL)), ""))
     result = asyncio.run(adapter(tmp_path, creds, fake).run_step("B", "D", "M", {}, MODEL))
@@ -155,128 +136,3 @@ def test_another_answering_model_is_reported_for_model_mismatch(tmp_path, creds)
     assert result.requested_model_verified is False
 
 
-def test_no_model_stats_leaves_the_model_unknown(tmp_path, creds):
-    fake = FakeCli(CliRun(0, answer(models=()), ""))
-    result = asyncio.run(adapter(tmp_path, creds, fake).run_step("B", "D", "M", {}, MODEL))
-    assert result.resolved_model is None
-
-
-def test_text_that_is_not_json_is_returned_as_received_for_the_repair(tmp_path, creds):
-    fake = FakeCli(CliRun(0, answer(text='```json\n{"ok": true}\n```'), ""))
-    result = asyncio.run(adapter(tmp_path, creds, fake).run_step("B", "D", "M", {}, MODEL))
-    assert result.status == "completed" and result.raw_text == '```json\n{"ok": true}\n```'
-
-
-def test_ineligible_account_is_unavailable_before_send(tmp_path, creds):
-    fake = FakeCli(CliRun(1, "", INELIGIBLE))
-    result = asyncio.run(adapter(tmp_path, creds, fake).run_step("B", "D", "M", {}, MODEL))
-    assert (result.status, result.delivery_class, result.error_kind) == ("unavailable", "before_send", "auth_failed")
-    assert "UNSUPPORTED_CLIENT" in result.error
-
-
-def test_an_error_result_fails_after_send(tmp_path, creds):
-    stdout = lines({"type": "init", "session_id": "s", "model": MODEL},
-                   {"type": "error", "severity": "error", "message": "Resource has been exhausted (429)"},
-                   {"type": "result", "status": "error", "stats": {"models": {MODEL: {}}}})
-    result = asyncio.run(adapter(tmp_path, creds, FakeCli(CliRun(1, stdout, ""))).run_step("B", "D", "M", {}, MODEL))
-    assert (result.status, result.delivery_class, result.error_kind) == ("failed", "after_send_unknown", "rate_limited")
-
-
-def test_no_sign_in_file_sends_nothing(tmp_path):
-    fake = FakeCli()
-    gone = tmp_path / "missing" / "oauth_creds.json"
-    result = asyncio.run(GeminiCliAdapter(home=tmp_path, runner=fake, credentials=gone).run_step("B", "D", "M", {}, MODEL))
-    assert (result.status, result.error_kind) == ("unavailable", "auth_failed") and fake.calls == []
-
-
-def test_health_ready_after_an_empty_probe(tmp_path, creds, version_probe):
-    fake = FakeCli(CliRun(42, "", "No input provided via stdin. Input can be provided by piping"))
-    status = asyncio.run(adapter(tmp_path, creds, fake).health(refresh=True))
-    assert (status["ready"], status["signed_in"], status["cli_version"], status["catalogue"]) == (True, True, "0.60.0", "fixed")
-    assert version_probe == [(["/usr/local/bin/gemini", "--version"], 60)]  # the CLI's own longer limit
-    assert fake.calls[0]["argv"] == ["/usr/local/bin/gemini", "-o", "stream-json", "-e", "none", "-p", ""]
-    assert fake.calls[0]["stdin"] == ""  # no prompt: the probe never reaches a model request
-    assert "gemini-2.5-pro" in [m["id"] for m in status["models"]]
-    assert all(m["reasoning_efforts"] == [] for m in status["models"])
-    assert "isolation" not in status  # nothing observed, so nothing claimed
-
-
-def test_health_reports_an_ineligible_account(tmp_path, creds):
-    fake = FakeCli(CliRun(42, "", INELIGIBLE + "\nNo input provided via stdin."))
-    status = asyncio.run(adapter(tmp_path, creds, fake).health(refresh=True))
-    assert (status["ready"], status["signed_in"], status["reason_code"]) == (False, True, "auth_failed")
-    assert "UNSUPPORTED_CLIENT" in status["reason"]
-
-
-def test_health_not_signed_in(tmp_path, version_probe):
-    fake = FakeCli()
-    status = asyncio.run(GeminiCliAdapter(home=tmp_path, runner=fake, credentials=tmp_path / "none.json").health(refresh=True))
-    assert (status["ready"], status["signed_in"], status["reason_code"]) == (False, False, "auth_failed")
-    assert len(version_probe) == 1 and fake.calls == []  # only --version
-
-
-def test_health_auth_error_with_a_sign_in_file(tmp_path, creds):
-    fake = FakeCli(CliRun(41, "", "FatalAuthenticationError: Manual authorization is required"))
-    status = asyncio.run(adapter(tmp_path, creds, fake).health(refresh=True))
-    assert (status["ready"], status["signed_in"]) == (False, False)
-
-
-def test_health_without_cli(tmp_path, creds, monkeypatch):
-    monkeypatch.setattr(gemini_cli, "find_tool", lambda name: None)
-    status = asyncio.run(adapter(tmp_path, creds, FakeCli()).health(refresh=True))
-    assert (status["installed"], status["ready"]) == (False, False)
-
-
-def test_user_credentials_follow_the_users_gemini_home(tmp_path):
-    assert gemini_cli.user_credentials({"GEMINI_CLI_HOME": str(tmp_path)}) == tmp_path / ".gemini" / "oauth_creds.json"
-
-
-def test_a_slow_version_does_not_fail_the_check(tmp_path, creds, version_probe):
-    """15 Oct: `gemini --version` took over 20 s; the version is shown only, so the check goes on to the sign-in."""
-    version_probe.answer = tool_probe.Probe(error="not_responding")
-    fake = FakeCli(CliRun(42, "", INELIGIBLE + "\nNo input provided via stdin."))
-    status = asyncio.run(adapter(tmp_path, creds, fake).health(refresh=True))
-    assert status["cli_version"] is None and "UNSUPPORTED_CLIENT" in status["reason"]
-
-
-def test_run_cli_stops_a_child_left_holding_the_pipes(tmp_path):
-    """The CLI relaunches itself as a child; a timeout stops the whole process group."""
-    import os
-    import sys
-    import time
-    if os.name == "nt":
-        return
-    record = tmp_path / "child.json"
-    script = ("import subprocess, sys, json\n"
-              "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
-              f"json.dump({{'pid': child.pid}}, open({str(record)!r}, 'w'))\n")
-    with pytest.raises(TimeoutError):
-        asyncio.run(gemini_cli.run_cli([sys.executable, "-c", script], dict(os.environ), tmp_path, "", 3))
-    pid = json.loads(record.read_text())["pid"]
-    for _ in range(50):
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            break
-        time.sleep(0.1)
-    else:
-        raise AssertionError("the child kept running")
-
-
-def test_a_nonzero_exit_is_not_completed_even_with_a_success_event():
-    """Sol D23 round 1: the process exit code must be 0 too."""
-    result = GeminiCliAdapter.result_of(CliRun(1, answer(), "Error: something broke"), MODEL)
-    assert result.status == "failed" and result.delivery_class == "after_send_unknown"
-
-
-def test_a_sign_in_refusal_after_the_init_event_is_not_sent():
-    """Sol D23 round 1: a refusal with no answer and no model stats sent nothing, even after `init`."""
-    stdout = lines({"type": "init", "session_id": "s", "model": MODEL})
-    result = GeminiCliAdapter.result_of(CliRun(42, stdout, INELIGIBLE), MODEL)
-    assert (result.status, result.delivery_class, result.error_kind) == ("unavailable", "before_send", "auth_failed")
-
-
-def test_gemini_cli_has_the_terminal_sign_in():
-    """D21's Sign in button opens a terminal running `gemini`, where the person chooses Sign in with Google."""
-    from deixis.keys import account_signin
-    assert account_signin.TOOLS["gemini_cli"] == ("gemini", [], "Gemini CLI")

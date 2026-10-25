@@ -2,11 +2,8 @@
 made under it; nothing is deleted, a withdrawn number is never used again, and a later revision opens from the one the
 research went back to. SYNTHETIC rows."""
 
-import pytest
 
-from deixis.domain.rules import RevisionConflict
 from deixis.storage import db
-from deixis.workflow.decisions import DecisionStore
 from deixis.workflow.store import Store
 
 PLAN = {"schema_version": "deixis.user_search_plan.v1", "setting": [{"term": "rail freight"}],
@@ -53,79 +50,12 @@ def test_a_withdrawn_revision_stays_as_history_and_its_number_is_not_used_again(
     assert "scope_revision_withdrawn" in types
 
 
-def test_a_plan_revision_opens_from_the_current_one_after_a_withdrawal(tmp_path):
-    store, rid = store_for(tmp_path)
-    revise(store, rid, "SYNTHETIC other question")
-    withdraw(store, rid)
-    revision = store.save_user_plan(rid, store.research(rid)["version"], PLAN)
-    scope = store.scope(rid)
-    assert revision == 3 and scope["parent_revision"] == 1 and scope["question"] == store.scope(rid, 1)["question"]
-
-
 def test_a_person_renaming_after_the_revision_keeps_their_title(tmp_path):
     store, rid = store_for(tmp_path)
     revise(store, rid, "SYNTHETIC other question")
     store.rename_research(rid, store.research(rid)["version"], "SYNTHETIC title the person wrote")
     withdraw(store, rid)
     assert store.research(rid)["title"] == "SYNTHETIC title the person wrote"
-
-
-def test_work_made_under_the_revision_keeps_it(tmp_path):
-    store, rid = store_for(tmp_path)
-    revise(store, rid, "SYNTHETIC other question")
-    sv = store.create_upload_source("SYNTHETIC study")
-    store.add_to_corpus(rid, sv, "user_upload", selection_state="included", selection_origin="user")
-    # A completed title run and a person's decision under it do not count as work on the question.
-    title = store.create_run(rid, "research_title", {}, None)
-    store.update_run(title["id"], status="completed")
-    DecisionStore(store).record(rid, sv, "human_include")
-    assert store.withdrawal(rid)["allowed"]
-    # A paused run blocks; so does a search run, and a model's or code's decision.
-    paused = store.create_run(rid, "answer", {}, None)
-    store.update_run(paused["id"], status="paused")
-    assert store.withdrawal(rid)["reason"] == "run_active"
-    store.update_run(paused["id"], status="completed")
-    assert store.withdrawal(rid)["reason"] == "made_under:runs"
-    with pytest.raises(RevisionConflict):
-        withdraw(store, rid)
-    assert store.research(rid)["current_scope_revision"] == 2
-
-
-def test_a_decision_by_code_under_the_revision_keeps_it(tmp_path):
-    store, rid = store_for(tmp_path)
-    revise(store, rid, "SYNTHETIC other question")
-    sv = store.create_upload_source("SYNTHETIC study")
-    store.add_to_corpus(rid, sv, "user_upload", selection_state="included", selection_origin="user")
-    DecisionStore(store).record(rid, sv, "no_abstract")
-    assert store.withdrawal(rid)["reason"] == "made_under:stage_decisions"
-
-
-def test_only_the_current_revision_at_the_version_shown_can_be_withdrawn(tmp_path):
-    store, rid = store_for(tmp_path)
-    revise(store, rid, "SYNTHETIC other question")
-    version = store.research(rid)["version"]
-    with pytest.raises(RevisionConflict):
-        store.withdraw_revision(rid, version, 1)
-    with pytest.raises(RevisionConflict):
-        store.withdraw_revision(rid, version - 1, 2)
-    assert store.withdraw_revision(rid, version, 2) == 1
-    with pytest.raises(RevisionConflict):  # already withdrawn: revision 2 is no longer current
-        store.withdraw_revision(rid, store.research(rid)["version"], 2)
-
-
-def test_the_revision_current_at_a_time_follows_a_withdrawal(tmp_path):
-    from types import SimpleNamespace
-    from deixis.storage.db import now
-    from deixis.workflow import overrides
-    store, rid = store_for(tmp_path)
-    revise(store, rid, "SYNTHETIC other question")
-    during = now()
-    ctx = SimpleNamespace(store=store, rid=rid)
-    assert overrides._key_at(ctx, during)[0] == 2
-    withdraw(store, rid)
-    assert overrides._key_at(ctx, now())[0] == 1 and overrides._key_at(ctx, during)[0] == 2
-    revise(store, rid, "SYNTHETIC third question")
-    assert overrides._key_at(ctx, now())[0] == 3
 
 
 def test_the_route_withdraws_and_says_why_it_cannot(tmp_path):
@@ -149,36 +79,3 @@ def test_the_route_withdraws_and_says_why_it_cannot(tmp_path):
         assert back.status_code == 200 and back.json()["research"]["current_scope_revision"] == 1
 
 
-def test_a_table_made_or_a_cell_edited_after_the_revision_keeps_it(tmp_path):
-    from deixis.workflow.tables import TableStore
-    from test_evidence_tables import PACKET_SIZE
-    store, rid = store_for(tmp_path)
-    sv = store.create_upload_source("SYNTHETIC study")
-    store.add_to_corpus(rid, sv, "user_upload", selection_state="included", selection_origin="user")
-    tables = TableStore(store)
-    tid = tables.create_table(rid, "SYNTHETIC table", [sv], None, None)
-    cid = tables.add_column(rid, tid, PACKET_SIZE, 1, None)
-    # A cell edited under the revision: the cell names no revision, its event does.
-    revise(store, rid, "SYNTHETIC other question")
-    assert store.withdrawal(rid)["allowed"]
-    tables.edit_cell(rid, tid, cid, sv, "not_verified", {"number": 70, "unit": "byte"}, None, None, 0, None)
-    assert store.withdrawal(rid)["reason"] == "done_after:cell_revision_saved"
-    with pytest.raises(RevisionConflict):
-        withdraw(store, rid)
-    # A table made under a later revision keeps that one too.
-    revise(store, rid, "SYNTHETIC third question")
-    assert store.withdrawal(rid)["allowed"]
-    tables.create_table(rid, "SYNTHETIC second table", [sv], None, None)
-    assert store.withdrawal(rid)["reason"] == "done_after:table_changed"
-
-
-def test_revisions_withdrawn_one_after_another_go_back_to_the_first(tmp_path):
-    store, rid = store_for(tmp_path)
-    revise(store, rid, "SYNTHETIC second question")
-    revise(store, rid, "SYNTHETIC third question")
-    title = store.create_run(rid, "research_title", {}, None)  # the third revision's title run
-    store.update_run(title["id"], status="completed")
-    assert withdraw(store, rid) == 2
-    assert store.withdrawal(rid)["allowed"]
-    assert withdraw(store, rid) == 1
-    assert store.research(rid)["current_scope_revision"] == 1

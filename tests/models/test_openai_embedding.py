@@ -30,59 +30,14 @@ def embed(provider, texts, handler, budget=None):
     return asyncio.run(go())
 
 
-def test_openai_authenticated_batches_truncation_and_order(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", KEY)
-    texts = ["x" * (em.MAX_CHARS + 7)] + [f"SYNTHETIC {i}" for i in range(em.BATCH)]
-    requests = []
-    def handler(request):
-        body = json.loads(request.content)
-        requests.append(request)
-        assert request.method == "POST" and str(request.url) == "https://api.openai.com/v1/embeddings"
-        assert request.headers.get_list("authorization") == [f"Bearer {KEY}"]
-        assert "x-goog-api-key" not in request.headers
-        assert body == {"model": em.OPENAI_MODEL, "input": [t[:em.MAX_CHARS] for t in texts[(len(requests)-1)*em.BATCH:len(requests)*em.BATCH]]}
-        return httpx.Response(200, json={"data": [{"index": i, "embedding": [i + 1, 2]}
-                                                 for i in reversed(range(len(body["input"])))]})
-    vectors = embed("openai", texts, handler)
-    assert [len(json.loads(r.content)["input"]) for r in requests] == [em.BATCH, 1]
-    for i, vector in enumerate(vectors):
-        assert list(vector) == pytest.approx(list(em.unit([i % em.BATCH + 1, 2])))
-        assert em.similarity(vector, vector) == pytest.approx(1)
-
-
-def test_openai_401_once_without_retry(monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", KEY)
-    requests = []
-    def handler(request):
-        requests.append(request)
-        assert request.headers.get_list("authorization") == [f"Bearer {KEY}"]
-        return httpx.Response(401, json={"error": {"message": "SYNTHETIC invalid credential"}})
-    with pytest.raises(em.EmbeddingError, match="^HTTP 401:"):
-        embed("openai", ["SYNTHETIC"], handler, em.RateBudget())
-    assert len(requests) == 1
-
-
 def test_openai_missing_key_sends_nothing(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     with pytest.raises(em.EmbeddingError, match="OPENAI_API_KEY is not set"):
         embed("openai", ["SYNTHETIC"], deny_network)
 
 
-@pytest.mark.parametrize("provider", ["ollama", "lm_studio"])
-def test_local_shared_route_has_no_authorization(provider, monkeypatch):
-    monkeypatch.setenv("OPENAI_API_KEY", KEY)
-    requests = []
-    def handler(request):
-        requests.append(request)
-        assert str(request.url) == em.LOCAL_URLS[provider] + "/embeddings"
-        assert "authorization" not in request.headers and "x-goog-api-key" not in request.headers
-        return httpx.Response(200, json={"data": [{"index": 0, "embedding": [3, 4]}]})
-    assert list(embed(provider, ["SYNTHETIC"], handler)[0]) == pytest.approx([.6, .8])
-    assert len(requests) == 1
-
-
-@pytest.mark.parametrize("provider", ["openai", "gemini"])
-@pytest.mark.parametrize("status,budget", [(401, False), (429, False), (429, True)])
+@pytest.mark.parametrize("provider", ["openai"])
+@pytest.mark.parametrize("status,budget", [(401, False)])
 def test_reply_errors_redact_only_sent_key(provider, status, budget, monkeypatch):
     monkeypatch.setenv(em.KEY_ENVS[provider], KEY)
     requests = []

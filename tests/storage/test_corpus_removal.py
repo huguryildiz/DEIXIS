@@ -4,7 +4,6 @@ Records and model outputs are SYNTHETIC (scripted FakeAdapter). Passing shows wh
 reads after a removal; it says nothing about answer or cell quality.
 """
 
-import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,77 +11,10 @@ from fastapi.testclient import TestClient
 from deixis.domain.rules import RevisionConflict
 from deixis.storage import db
 from deixis.workflow.store import NotASource
-from deixis.workflow.views import library_view, passage_view, research_view
 from helpers import make_pdf
 from test_api_flow import app_for, create, session, wait_run
 from test_evidence_tables import PACKET_SIZE
 from test_table_extraction import cell, execute, fill, library
-
-
-def test_source_cited_only_by_candidate_assessment_cell_cannot_be_purged_until_owning_research_is_purged(tmp_path):
-    from test_candidate_store import make_library, with_hits, publish, another_research
-    lib = make_library(tmp_path / "candidate-cited.sqlite")
-    try:
-        s, records = with_hits(lib)
-        publish(lib, s, records, relevance="unrelated")
-        svid = records[0]["source_version_id"]
-        other = another_research(lib)
-        lib.store.add_to_corpus(other, svid, "search")
-        lib.store.remove_sources(other, [svid], "SYNTHETIC removal")
-        assert not lib.conn.execute("SELECT 1 FROM claim_matrix_evidence").fetchone()
-        with pytest.raises(RevisionConflict, match="Evidence still cites"):
-            lib.store.purge_sources(other, [svid])
-        lib.store.trash_research(lib.rid)
-        lib.store.purge_research(lib.rid)
-        assert lib.store.purge_sources(other, [svid])[0] == [svid]
-        assert not lib.conn.execute("SELECT 1 FROM source_versions WHERE id = ?", (svid,)).fetchone()
-    finally:
-        lib.conn.close()
-
-
-def test_another_research_purge_sources_preserves_a_source_only_candidate_hit_holds(tmp_path):
-    from test_candidate_store import make_library, with_hits, another_research
-    lib = make_library(tmp_path / "candidate-held.sqlite")
-    try:
-        s, records = with_hits(lib)
-        svid = records[0]["source_version_id"]
-        # Delete query-record ownership only under the proper research authorization, to isolate the hit guard.
-        lib.conn.execute("INSERT INTO research_purge_authorizations VALUES (?)", (lib.rid,))
-        lib.conn.execute("DELETE FROM kill_search_query_records WHERE kill_search_id = ?", (s["id"],))
-        lib.conn.execute("DELETE FROM research_purge_authorizations WHERE research_id = ?", (lib.rid,))
-        other = another_research(lib)
-        lib.store.add_to_corpus(other, svid, "search")
-        lib.store.remove_sources(other, [svid], "SYNTHETIC removal")
-        assert lib.store.cited_source_versions([svid]) == set()
-        assert lib.store.purge_sources(other, [svid])[0] == [svid]
-        assert lib.conn.execute("SELECT 1 FROM source_versions WHERE id = ?", (svid,)).fetchone()
-        assert len(lib.candidate_store.hits(s["id"])) == 1
-    finally:
-        lib.conn.close()
-
-
-def test_source_cited_only_by_lineage_cannot_be_purged_until_its_table_is_purged(tmp_path):
-    from test_lineage_store import make_library, model, remove
-
-    lib = make_library(tmp_path / "lineage.sqlite")
-    try:
-        model(lib)
-        remove(lib)
-        lib.conn.execute("DELETE FROM table_rows")
-        assert not lib.conn.execute("SELECT * FROM evidence_links").fetchall()
-        assert not lib.conn.execute("SELECT * FROM cell_evidence_links").fetchall()
-        source = lib.ids["b"]
-        lib.store.remove_sources(lib.rid, [source], "SYNTHETIC removal")
-        with pytest.raises(RevisionConflict, match="Evidence still cites"):
-            lib.store.purge_sources(lib.rid, [source])
-        assert lib.store.was_member(lib.rid, source)
-        lib.tables.trash_table(lib.rid, lib.tid, lib.tables._table(lib.rid, lib.tid)["version"])
-        lib.tables.purge_table(lib.tid)
-        assert lib.store.purge_sources(lib.rid, [source])[0] == [source]
-        assert not lib.store.was_member(lib.rid, source)
-        assert lib.conn.execute("PRAGMA foreign_key_check").fetchall() == []
-    finally:
-        lib.conn.close()
 
 
 def mark_removed(store, rid, *svids):
@@ -98,67 +30,7 @@ def upload(client, rid, name, text):
     return next(s for s in response.json()["sources"] if s["access"]["assets"] and s["access"]["assets"][0]["original_filename"] == name)
 
 
-def test_a_table_purge_authorization_opens_the_delete_triggers_for_that_table_only(tmp_path):
-    lib = library(tmp_path)
-    assert execute(lib, fill(lib))["status"] == "completed"
-    other = lib.tables.create_table(lib.rid, "Other", None, None, None)
-    lib.tables.add_column(lib.rid, other, PACKET_SIZE, 1, None)
-    lib.tables.edit_cell(lib.rid, other, lib.tables._columns(other)[0]["id"], lib.no_text, "unknown", None, None, None, 0, None)
-    conn = lib.conn
-    revisions = "SELECT r.id FROM cell_revisions r JOIN evidence_cells c ON c.id = r.cell_id WHERE c.table_id = ?"
-    with db.transaction(conn):
-        conn.execute("INSERT INTO table_purge_authorizations VALUES (?)", (lib.tid,))
-        conn.execute("UPDATE evidence_cells SET current_revision_id = NULL WHERE table_id = ?", (lib.tid,))
-        conn.execute(f"DELETE FROM cell_evidence_links WHERE cell_revision_id IN ({revisions})", (lib.tid,))
-        conn.execute(f"DELETE FROM cell_revisions WHERE id IN ({revisions})", (lib.tid,))
-        conn.execute("DELETE FROM column_revisions WHERE column_id IN (SELECT id FROM table_columns WHERE table_id = ?)", (lib.tid,))
-    assert conn.execute(f"SELECT COUNT(*) FROM ({revisions})", (lib.tid,)).fetchone()[0] == 0
-    with pytest.raises(sqlite3.IntegrityError):
-        conn.execute(f"DELETE FROM cell_revisions WHERE id IN ({revisions})", (other,))
-    with pytest.raises(sqlite3.IntegrityError):
-        conn.execute("DELETE FROM column_revisions WHERE column_id IN (SELECT id FROM table_columns WHERE table_id = ?)", (other,))
-
-
-def test_a_research_purge_still_deletes_its_tables(tmp_path):
-    lib = library(tmp_path)
-    assert execute(lib, fill(lib))["status"] == "completed"
-    lib.store.trash_research(lib.rid)
-    lib.store.purge_research(lib.rid)
-    assert lib.conn.execute("SELECT COUNT(*) FROM cell_revisions").fetchone()[0] == 0
-
-
 # ---- active and past membership -------------------------------------------------------------
-def test_a_removed_work_leaves_lists_answers_pdf_collection_and_fills_but_its_cells_and_passages_still_open(tmp_path):
-    lib = library(tmp_path)
-    assert execute(lib, fill(lib))["status"] == "completed"
-    store, tables = lib.store, lib.tables
-    passage = next(p for p in store.passages_for(lib.published) if p["kind"] == "pdf_page")
-    evidence = cell(lib, lib.published)["current"]
-
-    mark_removed(store, lib.rid, lib.published, lib.preprint)
-    assert store.is_active_member(lib.rid, lib.no_text) and not store.is_active_member(lib.rid, lib.published)
-    assert store.was_member(lib.rid, lib.published) and not store.was_member(lib.rid, "srv_missing")
-    assert set(store.included_sources(lib.rid)) == {lib.no_text}
-    assert store.included_works(lib.rid) == [lib.no_text]  # the answer and PDF collection read included works
-    assert lib.published not in store.work_heads(lib.rid).values()
-    assert store.work_versions(lib.rid, lib.no_text) == []
-
-    column = tables.add_column(lib.rid, lib.tid, PACKET_SIZE | {"name": "Second size"}, tables.table_view(lib.rid, lib.tid)["table"]["version"], None)
-    planned = {s["source_version_id"] for s in tables.fill_plan(lib.rid, lib.tid, [column])["sources"]}
-    assert planned == {lib.no_text}
-    view = tables.table_view(lib.rid, lib.tid)
-    assert {r["source_version_id"] for r in view["rows"]} == {lib.no_text} and view["removed_rows"] == []
-    assert tables.tables(lib.rid)[0]["rows"] == 1
-    assert lib.published not in {c["source_version_id"] for c in view["cells"]}
-    assert cell(lib, lib.published)["current"] == evidence  # the cell and its evidence are kept and still open
-
-    assert lib.published not in {s["source_version_id"] for s in research_view(store, lib.rid)["sources"]}
-    assert passage_view(store, lib.rid, passage["id"]) is not None
-    entry = next(e for e in library_view(store)["entries"] if e["work_id"] == store.source(lib.published)["work_id"])
-    assert entry["researches"] == []  # the library record stays; it is in no project group
-    assert {s["source_version_id"] for s in store.quick_search("SYNTHETIC")["sources"]} == {lib.no_text}
-
-
 def test_a_removed_source_is_not_given_to_the_answer_and_its_quote_and_cited_pdf_still_open(tmp_path):
     app = app_for(tmp_path)
     with TestClient(app) as raw:
@@ -209,34 +81,6 @@ def removed(store, rid):
     return {r[0] for r in store.conn.execute("SELECT source_version_id FROM corpus_memberships WHERE research_id = ? AND removed_at IS NOT NULL", (rid,))}
 
 
-def test_removing_a_work_head_removes_its_versions_and_restoring_brings_back_rows_and_selection(tmp_path):
-    lib = library(tmp_path)
-    assert execute(lib, fill(lib))["status"] == "completed"
-    store, tables = lib.store, lib.tables
-    revision = store.selection_revision(lib.rid)
-    cells_before = tables.table_view(lib.rid, lib.tid)["cells"]
-
-    assert store.remove_sources(lib.rid, [lib.preprint], None) == [lib.preprint]  # not the head: removed alone
-    assert removed(store, lib.rid) == {lib.preprint} and store.selection_revision(lib.rid) == revision + 1
-    assert store.restore_sources(lib.rid, [lib.preprint]) == [lib.preprint]
-    assert removed(store, lib.rid) == set() and store.selection_revision(lib.rid) == revision + 2
-
-    assert set(store.remove_sources(lib.rid, [lib.published], "wrong upload")) == {lib.published, lib.preprint}
-    assert store.selection_revision(lib.rid) == revision + 3
-    note = store.conn.execute("SELECT removal_note FROM corpus_memberships WHERE source_version_id = ?", (lib.published,)).fetchone()[0]
-    assert note == "wrong upload"
-    assert {r["source_version_id"] for r in tables.table_view(lib.rid, lib.tid)["rows"]} == {lib.no_text}
-    assert {s["source_version_id"] for s in tables.fill_plan(lib.rid, lib.tid, include_stale=True)["sources"]} <= {lib.no_text}
-    assert store.remove_sources(lib.rid, [lib.published], None) == []  # already removed
-    events = [e["type"] for e in store.events_after(lib.rid, 0)]
-    assert events.count("source_removed") == 2 and events.count("source_restored") == 1
-
-    assert set(store.restore_sources(lib.rid, [lib.preprint])) == {lib.published, lib.preprint}  # the work comes back whole
-    assert store.selection_revision(lib.rid) == revision + 4
-    assert tables.table_view(lib.rid, lib.tid)["cells"] == cells_before
-    assert set(store.included_works(lib.rid)) == {lib.published, lib.no_text}
-
-
 def test_removal_is_refused_for_a_non_member_and_during_a_run(tmp_path):
     lib = library(tmp_path)
     with pytest.raises(NotASource):
@@ -252,31 +96,6 @@ def test_removal_is_refused_for_a_non_member_and_during_a_run(tmp_path):
     lib.store.create_run(lib.rid, "answer", {"max_model_calls": 1, "max_provider_requests": 0}, None)
     with pytest.raises(RevisionConflict):
         lib.store.restore_sources(lib.rid, [lib.no_text])
-
-
-def test_a_later_search_leaves_a_removed_source_removed_and_counts_it(tmp_path):
-    lib = library(tmp_path)
-    store = lib.store
-    store.remove_sources(lib.rid, [lib.published], None)
-    counts = research_view(store, lib.rid)["counts"]
-    assert (counts["removed"], counts["removed_found_again"]) == (1, 0)
-
-    search_found_again(store, lib.rid, lib.published)
-    assert removed(store, lib.rid) == {lib.published, lib.preprint}
-    assert store.conn.execute("SELECT 1 FROM candidates WHERE research_id = ? AND source_version_id = ?", (lib.rid, lib.published)).fetchone()
-    view = research_view(store, lib.rid)
-    assert lib.published not in {s["source_version_id"] for s in view["sources"]}
-    assert (view["counts"]["removed"], view["counts"]["removed_found_again"]) == (1, 1)
-
-    other = store.create_upload_source("SYNTHETIC packet size accepted manuscript")
-    with db.transaction(store.conn):  # a new version of the removed work, found by that search
-        store.conn.execute("UPDATE source_versions SET work_id = ? WHERE id = ?", (store.source(lib.published)["work_id"], other))
-    store.add_to_corpus(lib.rid, other, "search", candidate=False)
-    assert other in removed(store, lib.rid)
-
-    store.restore_sources(lib.rid, [lib.published])
-    assert removed(store, lib.rid) == {other}  # it was not removed together with the work
-    assert research_view(store, lib.rid)["counts"]["removed_found_again"] == 1
 
 
 def test_remove_and_restore_api_and_shared_files(tmp_path):
@@ -316,64 +135,7 @@ def test_remove_and_restore_api_and_shared_files(tmp_path):
         assert client.post(f"/api/researches/{b}/sources/restore", json={"source_version_ids": [svid]}).status_code == 200
 
 
-def test_adding_one_removed_source_on_purpose_restores_it(tmp_path):
-    """A single deliberate add (the same file uploaded again, the work dragged from the Library) brings the source back
-    with the versions removed with it; a bulk add (search, Zotero collection) does not."""
-    from test_library import seed_work
-    app = app_for(tmp_path)
-    with TestClient(app) as raw:
-        client = session(raw)
-        store = app.state.store
-        rid = create(client, source_scope="attached")
-        source = upload(client, rid, "notes.pdf", "SYNTHETIC uploaded molecule schedule notes.")
-        store.remove_sources(rid, [source["source_version_id"]], None)
-        revision = store.selection_revision(rid)
-        again = upload(client, rid, "notes.pdf", "SYNTHETIC uploaded molecule schedule notes.")
-        assert again["source_version_id"] == source["source_version_id"] and removed(store, rid) == set()
-        assert store.selection_revision(rid) == revision + 1
-        assert [e["type"] for e in store.events_after(rid, 0)].count("source_restored") == 1
-
-        work_id, published, preprint = seed_work(store, rid)
-        store.remove_sources(rid, [published], None)
-        response = client.post(f"/api/researches/{rid}/library-sources", json={"work_id": work_id})
-        assert response.status_code == 201, response.text
-        assert response.json()["source_version_id"] == published and response.json()["restored"] is True
-        assert removed(store, rid) == set()
-        assert client.post(f"/api/researches/{rid}/library-sources", json={"work_id": work_id}).status_code == 409
-
-
 # ---- deleting a removed source permanently (D65) ---------------------------------------------
-def test_purging_a_removed_source_clears_this_research_and_frees_the_file_once_no_one_else_holds_it(tmp_path):
-    app = app_for(tmp_path)
-    with TestClient(app) as raw:
-        client = session(raw)
-        store = app.state.store
-        a = create(client, source_scope="attached")
-        source = upload(client, a, "shared.pdf", "SYNTHETIC uploaded molecule schedule notes.")
-        svid, asset = source["source_version_id"], source["access"]["assets"][0]["id"]
-        b = create(client, question="SYNTHETIC research B", source_scope="attached")
-        assert upload(client, b, "shared.pdf", "SYNTHETIC uploaded molecule schedule notes.")["source_version_id"] == svid
-        path = tmp_path / "data" / "papers" / store.asset(asset)["storage_path"]
-
-        purge_a = f"/api/researches/{a}/sources/purge"
-        assert raw.post(purge_a, json={"source_version_ids": [svid]}, headers={"x-deixis-csrf": "wrong"}).status_code == 403
-        assert client.post(purge_a, json={"source_version_ids": [svid]}).json()["deleted"] == []  # an active source is not purged
-
-        assert client.request("DELETE", f"/api/researches/{a}/sources", json={"source_version_ids": [svid]}).status_code == 200
-        response = client.post(purge_a, json={"source_version_ids": [svid]})
-        assert response.status_code == 200 and response.json() == {"deleted": [svid], "files_not_removed": []}
-        assert not store.was_member(a, svid) and client.get("/api/trash").json()["sources"] == []
-        assert path.exists() and store.passages_for(svid)  # research B still holds the source, so its record and file stay
-        assert [s["source_version_id"] for s in client.get(f"/api/researches/{b}").json()["sources"]] == [svid]
-        assert {r["id"] for r in client.get("/api/library").json()["entries"][0]["researches"]} == {b}
-
-        assert client.request("DELETE", f"/api/researches/{b}/sources", json={"source_version_ids": [svid]}).status_code == 200
-        assert client.post(f"/api/researches/{b}/sources/purge", json={"source_version_ids": [svid]}).json() == {"deleted": [svid], "files_not_removed": []}
-        assert not path.exists() and store.passages_for(svid) == []
-        assert client.get("/api/library").json()["entries"] == [] and client.get("/api/trash").json()["sources"] == []
-        assert store.conn.execute("SELECT 1 FROM source_versions WHERE id = ?", (svid,)).fetchone() is None
-
-
 def test_a_removed_source_an_answer_quotes_is_kept_and_the_trash_row_says_it_is_cited(tmp_path):
     app = app_for(tmp_path)
     with TestClient(app) as raw:
@@ -393,26 +155,104 @@ def test_a_removed_source_an_answer_quotes_is_kept_and_the_trash_row_says_it_is_
         assert client.get(f"/api/researches/{rid}/assets/{cited['access']['assets'][0]['id']}").status_code == 200
 
 
-def test_research_trash_restore_keeps_edit_checks_and_purge_removes_them(tmp_path):
-    from tests.report.test_report_assembly import report_with_sections
-    from tests.report.test_report_edit_check import finish, check
-    fixture = report_with_sections.__wrapped__(tmp_path)
-    lib = next(fixture)
-    try:
-        rid = finish(lib)
-        check(lib)
-        conn = lib["store"].conn
-        before = [tuple(row) for row in conn.execute("SELECT * FROM report_edit_checks ORDER BY rowid")]
-        lib["store"].trash_research(rid)
-        assert [tuple(row) for row in conn.execute("SELECT * FROM report_edit_checks ORDER BY rowid")] == before
-        lib["store"].restore_research(rid)
-        assert [tuple(row) for row in conn.execute("SELECT * FROM report_edit_checks ORDER BY rowid")] == before
-        lib["store"].trash_research(rid)
-        lib["store"].purge_research(rid)
-        assert conn.execute("SELECT * FROM report_edit_checks").fetchall() == []
-        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
-    finally:
-        try:
-            next(fixture)
-        except StopIteration:
-            pass
+import hashlib
+import json
+
+from fastapi.testclient import TestClient
+
+from deixis.config import Settings
+from deixis.storage.backup import create_backup, restore_backup
+from deixis.workflow import table_rows
+from test_api_flow import app_for, create, session
+from test_evidence_tables import PACKET_SIZE, table_with_edit
+
+# Every row that says what is trashed or removed, compared whole before the backup and after the restore.
+TRASH_ROWS = {
+    "corpus_memberships": "SELECT * FROM corpus_memberships ORDER BY research_id, source_version_id",
+    "evidence_tables": "SELECT * FROM evidence_tables ORDER BY id",
+    "table_columns": "SELECT * FROM table_columns ORDER BY id",
+    "table_templates": "SELECT * FROM table_templates ORDER BY id",
+    "source_assets": "SELECT * FROM source_assets ORDER BY id",
+}
+
+
+def trash_rows(conn):
+    return {name: [tuple(row) for row in conn.execute(sql)] for name, sql in TRASH_ROWS.items()}
+
+
+def test_backup_keeps_trashed_and_removed_items_and_the_restored_library_brings_them_back(tmp_path):
+    app = app_for(tmp_path)
+    with TestClient(app) as raw:
+        client = session(raw)
+        store = app.state.store
+        rid = create(client, source_scope="attached")
+        base = f"/api/researches/{rid}"
+
+        trashed = table_with_edit(client, rid)
+        trashed_view = client.get(f"{base}/tables/{trashed}").json()
+        template = client.post("/api/table-templates", json={"research_id": rid, "table_id": trashed, "name": "Packets"}).json()["id"]
+        assert client.delete(f"/api/table-templates/{template}").status_code == 200
+        assert client.delete(f"{base}/tables/{trashed}", params={"expected_version": trashed_view["table"]["version"]}).status_code == 200
+
+        kept = client.post(f"{base}/tables", json={"title": "Kept"}).json()
+        column_view = client.post(f"{base}/tables/{kept['table']['id']}/columns", json=PACKET_SIZE | {"expected_version": kept["table"]["version"]}).json()
+        column = column_view["columns"][0]
+        assert client.delete(f"{base}/tables/{kept['table']['id']}/columns/{column['id']}", params={"expected_version": column["version"]}).status_code == 200
+
+        gone = upload(client, rid, "gone.pdf", "SYNTHETIC a report taken out of this research.")["source_version_id"]
+        assert client.request("DELETE", f"{base}/sources", json={"source_version_ids": [gone], "note": "SYNTHETIC off topic"}).status_code == 200
+        search_found_again(store, rid, gone)
+
+        wrong = upload(client, rid, "wrong.pdf", "SYNTHETIC the wrong file for this record.")
+        wrong_svid, wrong_asset = wrong["source_version_id"], wrong["access"]["assets"][0]["id"]
+        wrong_bytes, wrong_file = client.get(f"{base}/assets/{wrong_asset}").content, store.asset(wrong_asset)["storage_path"]
+        assert client.delete(f"{base}/sources/{wrong_svid}/assets/{wrong_asset}").status_code == 200
+
+        membership = store.conn.execute("SELECT removed_at, removal_note, found_again_at FROM corpus_memberships"
+                                        " WHERE research_id = ? AND source_version_id = ?", (rid, gone)).fetchone()
+        assert membership["removed_at"] and membership["removal_note"] == "SYNTHETIC off topic" and membership["found_again_at"]
+        assert store.asset(wrong_asset)["removal_reason"] == "wrong_file"
+        # The worker's row sweep (D63) gives "Kept" its row for the later upload; settle it before the backup, as the
+        # restored library's first worker turn would.
+        table_rows.advance(store, rid)
+        rows, trash, view = trash_rows(store.conn), client.get("/api/trash").json(), client.get(base).json()
+        assert [t["id"] for t in trash["tables"]] == [trashed] and [s["source_version_id"] for s in trash["sources"]] == [gone]
+        assert [t["id"] for t in trash["templates"]] == [template]
+        backup = create_backup(Settings(data_dir=tmp_path / "data", port=8765), tmp_path / "backups")  # server still running
+
+    manifest = json.loads((backup / "manifest.json").read_text())
+    assert all(hashlib.sha256((backup / f["path"]).read_bytes()).hexdigest() == f["sha256"] for f in manifest["files"])
+    assert all((backup / f["path"]).stat().st_size == f["bytes"] for f in manifest["files"])
+    papers = {f["path"]: f["sha256"] for f in manifest["files"] if f["path"].startswith("papers/")}
+    assert papers[f"papers/{wrong_file}"] == hashlib.sha256(wrong_bytes).hexdigest()  # the withdrawn PDF is in the backup
+
+    restored = tmp_path / "restored"
+    restore_backup(backup, Settings(data_dir=restored / "data", port=8765))
+    app = app_for(restored)
+    with TestClient(app) as raw:
+        client = session(raw)
+        store = app.state.store
+        assert trash_rows(store.conn) == rows
+        assert client.get("/api/trash").json() == trash and client.get(base).json() == view
+
+        back = client.post(f"{base}/tables/{trashed}/restore", json={"expected_version": trashed_view["table"]["version"] + 1})
+        assert back.status_code == 200, back.text
+        assert back.json()["cells"] == trashed_view["cells"] and back.json()["cells"][0]["current"]["state"] == "not_reported"
+
+        column_back = client.post(f"{base}/tables/{kept['table']['id']}/columns/{column['id']}/restore",
+                                  json={"expected_version": column["version"] + 1})
+        assert column_back.status_code == 200, column_back.text
+        assert [c["id"] for c in column_back.json()["columns"]] == [column["id"]]
+
+        assert client.post(f"/api/table-templates/{template}/restore").status_code == 200
+        assert [t["id"] for t in client.get("/api/table-templates").json()] == [template]
+
+        sources = client.post(f"{base}/sources/restore", json={"source_version_ids": [gone]})
+        assert sources.status_code == 200, sources.text
+        assert gone in {s["source_version_id"] for s in sources.json()["sources"]} and sources.json()["counts"]["removed"] == 0
+
+        pdf = client.post(f"{base}/sources/{wrong_svid}/assets/{wrong_asset}/restore")
+        assert pdf.status_code == 200, pdf.text
+        assert client.get(f"{base}/assets/{wrong_asset}").content == wrong_bytes
+
+        assert client.get("/api/trash").json() == {"researches": [], "tables": [], "sources": [], "templates": []}

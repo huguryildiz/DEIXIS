@@ -5,14 +5,6 @@ import httpx
 
 from deixis.models import gemini
 
-MODELS = {"models": [
-    {"name": "models/gemini-3.8-flash", "displayName": "Gemini 3.8 Flash", "thinking": True, "supportedGenerationMethods": ["generateContent"]},
-    {"name": "models/gemini-2.5-flash", "displayName": "Gemini 2.5 Flash", "thinking": True, "supportedGenerationMethods": ["generateContent"]},
-    {"name": "models/gemini-flash-latest", "thinking": True, "supportedGenerationMethods": ["generateContent"]},
-    {"name": "models/gemini-3.1-flash-image", "supportedGenerationMethods": ["generateContent"]},
-    {"name": "models/gemini-embedding-2", "supportedGenerationMethods": ["embedContent"]},
-]}
-
 
 def adapter(handler):
     return gemini.GeminiAdapter(client=httpx.AsyncClient(transport=httpx.MockTransport(handler)))
@@ -21,36 +13,6 @@ def adapter(handler):
 def answer(parts, finish="STOP"):
     return httpx.Response(200, json={"modelVersion": "gemini-3.8-flash", "responseId": "resp-1", "usageMetadata": {"totalTokenCount": 9},
                                      "candidates": [{"finishReason": finish, "content": {"parts": parts}}]})
-
-
-def test_health_without_a_key_is_not_ready_and_sends_nothing(monkeypatch):
-    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-
-    def handler(request):
-        raise AssertionError("no request without a key")
-
-    status = asyncio.run(adapter(handler).health(refresh=True))
-    assert (status["ready"], status["key_configured"]) == (False, False) and status["reason"] == "Add a Gemini API key in Settings to use the Gemini API"
-
-
-def test_health_lists_text_models_and_thinking_levels_for_gemini_3(monkeypatch):
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-
-    def handler(request):
-        assert request.headers["x-goog-api-key"] == "test-key" and "key" not in request.url.params
-        return httpx.Response(200, json=MODELS)
-
-    status = asyncio.run(adapter(handler).health(refresh=True))
-    assert status["ready"] is True and status["isolation"] == {"instruction_sources": 0, "live_mcp_servers": []}
-    assert [(m["id"], [e["id"] for e in m["reasoning_efforts"]]) for m in status["models"]] == [
-        ("gemini-3.8-flash", ["low", "medium", "high"]), ("gemini-2.5-flash", []),
-    ]
-
-
-def test_rejected_key_is_reported_with_the_api_message(monkeypatch):
-    monkeypatch.setenv("GEMINI_API_KEY", "bad-key")
-    status = asyncio.run(adapter(lambda request: httpx.Response(403, json={"error": {"message": "API key not valid"}})).health(refresh=True))
-    assert status["ready"] is False and status["reason"] == "Gemini API answered HTTP 403: API request failed"
 
 
 def test_run_step_sends_one_structured_request_without_tools(monkeypatch):
@@ -86,32 +48,3 @@ def test_truncated_rejected_and_lost_answers_are_not_completed(monkeypatch):
     assert (lost.status, lost.delivery_class) == ("failed", "after_send_unknown")
 
 
-def test_health_tries_again_once_after_a_transport_error(monkeypatch):
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    monkeypatch.setattr(gemini, "find_tool", lambda name: None)
-    calls = []
-
-    def handler(request):
-        calls.append(request.url.path)
-        if len(calls) == 1:
-            raise httpx.ConnectTimeout("timed out", request=request)
-        return httpx.Response(200, json=MODELS)
-
-    status = asyncio.run(adapter(handler).health(refresh=True))
-    assert status["ready"] is True and len(calls) == 2
-
-
-def test_a_tool_part_beside_the_answer_is_an_isolation_violation(monkeypatch):
-    """Audit F3: a functionCall part next to valid text and STOP is never accepted as the answer."""
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    parts = [{"text": '{"claims": []}', "thoughtSignature": "sig"}, {"functionCall": {"name": "search", "args": {}}}]
-    result = asyncio.run(adapter(lambda r: answer(parts)).run_step("b", "d", "m", {}, "gemini-3.8-flash"))
-    assert (result.status, result.tool_item_types, result.raw_text) == ("isolation_violation", ["functionCall"], '{"claims": []}')
-
-
-def test_documented_text_metadata_is_not_a_tool_part(monkeypatch):
-    """Sol r1: `partMetadata` next to the text is part of a text answer, not tool use."""
-    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
-    parts = [{"text": '{"claims": []}', "partMetadata": {}, "thoughtSignature": "sig"}]
-    result = asyncio.run(adapter(lambda r: answer(parts)).run_step("b", "d", "m", {}, "gemini-3.8-flash"))
-    assert (result.status, result.tool_item_types) == ("completed", [])

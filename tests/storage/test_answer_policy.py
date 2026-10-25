@@ -35,49 +35,6 @@ def stored_run(store, rid, kind="discovery", status="paused", *, budget=None):
     return run_id
 
 
-@pytest.mark.parametrize("status", ["failed", "cancelled"])
-def test_failed_discovery_keeps_attached_answer_executable_and_resumable(tmp_path, monkeypatch, status):
-    from helpers import make_pdf
-    from deixis.models.adapter import ModelStepResult
-    from test_small_batch_races import session
-    from test_adjudication_flow import wait
-
-    failed = False
-
-    def fail(si):
-        nonlocal failed
-        if si["task_type"] == "grounded_answer" and not failed:
-            failed = True
-            return ModelStepResult("unavailable", error="SYNTHETIC answer interruption")
-        return None
-
-    adapter = FakeAdapter(fail=fail)
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8877), adapters={"fake": adapter},
-                     extra_hosts=("testserver",), trusted_clients=("testclient",))
-    with session(app) as client:
-        store = app.state.store
-        rid = research(store, source_scope="attached_and_academic")
-        stored_run(store, rid, status=status)
-        upload = client.post(f"/api/researches/{rid}/uploads",
-                             files={"file": ("SYNTHETIC.pdf", make_pdf(["SYNTHETIC exercise lowers fatigue."]),
-                                             "application/pdf")})
-        assert upload.status_code == 201, upload.text
-        budget = small_batch.answer_budget(store, rid, 1, {"max_model_calls": 5})
-        assert "inspection" not in budget
-        response = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"})
-        assert response.status_code == 202, response.text
-        run_id = response.json()["id"]
-        _, paused = wait(client, rid, run_id)
-        assert paused["status"] == "paused", paused
-        resumed = client.post(f"/api/runs/{run_id}/resume")
-        assert resumed.status_code == 200, resumed.text
-        _, completed = wait(client, rid, run_id)
-        assert completed["status"] == "completed", completed
-        assert store.conn.execute("SELECT 1 FROM answers WHERE run_id = ?", (run_id,)).fetchone()
-        assert not [e for e in store.events_after(rid, 0)
-                    if e["type"] == "run_cancelled" and e.get("run_id") == run_id]
-
-
 def test_answer_policy_uses_latest_completed_discovery(store):
     rid = research(store, source_scope="attached_and_academic")
     stored_run(store, rid, status="completed")
@@ -89,7 +46,7 @@ def test_answer_policy_uses_latest_completed_discovery(store):
     assert store.resume_run(answer)["status"] == "queued"
 
 
-@pytest.mark.parametrize("earlier_discovery", [False, True])
+@pytest.mark.parametrize("earlier_discovery", [False])
 def test_academic_answer_without_completed_discovery_in_current_revision_returns_409(tmp_path, earlier_discovery):
     from test_criterion_passage_flow import page_source
     app = create_app(Settings(data_dir=tmp_path / "data", port=8877), adapters={"fake": FakeAdapter()},

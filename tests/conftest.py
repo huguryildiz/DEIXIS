@@ -196,60 +196,8 @@ def memory_keychain(monkeypatch):
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "field_distribution: the test's own transport answers the routing request (D93)")
-    config.addinivalue_line("markers", "process: starts and kills real processes (P9 H2); run with -m process -n 0")
-    config.addinivalue_line("markers", "slow: listed in tests/slow_tests.txt; left out of a run with no -m and no path")
+    config.addinivalue_line("markers", "process: starts and kills real processes (P9 H2); part of the normal run, `-m process` selects them alone")
     config.addinivalue_line("markers", "provider_pacing: the test keeps the real arXiv, Semantic Scholar and OpenAlex semantic request gaps")
-
-
-SLOW_TESTS = Path(__file__).with_name("slow_tests.txt")
-
-
-def pytest_collection_modifyitems(config, items):
-    """Process tests (tests/process) are wall-clock and start real servers: they run only when -m names `process`.
-
-    Tests listed in slow_tests.txt (0.2 s or more each, about 3,000 of them) are marked `slow` and left out of a run that
-    names no `-m` and no path, so the default run stays within a minute or two on four workers. Naming a file or test, or
-    any `-m` expression, runs them too; run everything before a push with `pytest -m "slow or not slow"`. To bring the
-    list up to date, run that once with `--testmon`, then `uv run python scripts/update_slow_tests.py`."""
-    marker = config.getoption("-m") or ""
-    slow = set(line for line in SLOW_TESTS.read_text().splitlines() if line and not line.startswith("#"))
-    for item in items:
-        if item.nodeid in slow:
-            item.add_marker(pytest.mark.slow)
-    if not marker and not config.getoption("file_or_dir"):
-        slow_items = [item for item in items if item.get_closest_marker("slow")]
-        if slow_items:
-            config.hook.pytest_deselected(items=slow_items)
-            items[:] = [item for item in items if not item.get_closest_marker("slow")]
-    if "process" not in marker:
-        skipped = [item for item in items if item.get_closest_marker("process")]
-        if skipped:
-            config.hook.pytest_deselected(items=skipped)
-            items[:] = [item for item in items if item not in skipped]
-    keep_shard(config, items, slow)
-
-
-def keep_shard(config, items, slow):
-    """DEIXIS_TEST_SHARD=i/n keeps the i-th of n parts (from 0), so CI runs the full suite on n machines at once.
-
-    Whole modules go to the lightest part, heaviest first, weighing a slow test as 1 and any other as 0.02; every machine
-    collects the same tests and so makes the same split."""
-    shard = os.environ.get("DEIXIS_TEST_SHARD")
-    if not shard:
-        return
-    index, count = (int(part) for part in shard.split("/"))
-    weights: dict[str, float] = {}
-    for item in items:
-        module = item.nodeid.split("::")[0]
-        weights[module] = weights.get(module, 0.0) + (1.0 if item.nodeid in slow else 0.02)
-    loads, owner = [0.0] * count, {}
-    for module in sorted(weights, key=lambda m: (-weights[m], m)):
-        lightest = loads.index(min(loads))
-        owner[module], loads[lightest] = lightest, loads[lightest] + weights[module]
-    other = [item for item in items if owner[item.nodeid.split("::")[0]] != index]
-    if other:
-        config.hook.pytest_deselected(items=other)
-        items[:] = [item for item in items if owner[item.nodeid.split("::")[0]] == index]
 
 
 @pytest.fixture(autouse=True)

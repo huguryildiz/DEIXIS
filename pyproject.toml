@@ -36,11 +36,12 @@ packages = ["deixis"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Four workers (pytest-xdist): every test builds its own library under tmp_path, so the suite parallelises cleanly.
-# Four keeps the default run (slow tests left out, see tests/conftest.py) within a minute or two while leaving most
-# cores and memory to other work; the full run before a push can pass `-n 6` or more.
+# Four keeps the whole suite (about 1,500 cases, the real-process tests included) within about two minutes while
+# leaving most cores and memory to other work.
 addopts = "-n 4"
 # Each run writes several GB under tmp_path; keep only the directories of failed tests.
 tmp_path_retention_policy = "failed"
 # Explicit path: in synced Documents folders the venv's .pth files can receive the
 # macOS hidden flag, which Python's site module skips.
-pythonpath = [".", "tests", "tests/support", "tests/app", "tests/candidates", "tests/citation_check", "tests/citation_map", "tests/contracts", "tests/statement_check", "tests/discovery", "tests/documents", "tests/hardening", "tests/lineage", "tests/measurement", "tests/models", "tests/process", "tests/providers", "tests/reextract", "tests/report", "tests/review", "tests/storage", "tests/watch"]
+# Test folders follow the steps and areas; modules import each other by basename, so basenames stay unique.
+pythonpath = [".", "tests", "tests/support", "tests/search", "tests/screen", "tests/read", "tests/answer", "tests/features", "tests/api", "tests/models", "tests/storage", "tests/contracts", "tests/rules"]

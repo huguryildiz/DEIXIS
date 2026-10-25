@@ -14,7 +14,7 @@ import httpx
 
 from deixis.documents import builtin_catalog, llama_runtime, local_embedding
 
-FAKE_SERVER = Path(__file__).parent.parent / "documents" / "fake_llama_server.py"
+FAKE_SERVER = Path(__file__).parent.parent / "read" / "fake_llama_server.py"
 BODIES = {m.id: f"SYNTHETIC GGUF {m.id} ".encode() * (5 + i) for i, m in enumerate(builtin_catalog.CATALOG)}
 
 

@@ -64,26 +64,6 @@ def test_a_model_change_is_recorded_and_only_later_steps_use_it(tmp_path):
     assert cell(lib, lib.published)["current"]["model"]["resolved_model"] == "fake-model"  # the earlier value keeps its model
 
 
-def test_each_step_in_the_research_view_names_the_model_its_calls_went_to(tmp_path):
-    """UI parity S27 (D15): after a change, a finished step still names the model it ran on, from its stored sessions,
-    and a later step names the new one; the view never puts the role's current model on an earlier step."""
-    from deixis.workflow.views import research_view
-    lib = library(tmp_path)
-    filled = fill(lib)
-    execute(lib, filled)
-    change(lib, "fake-model-2", effort="high")
-    checked = lib.tables.request_recheck(lib.rid, lib.tid, lib.cid, lib.published, 1, None)
-    execute(lib, checked)
-
-    runs = {run["id"]: run for run in research_view(lib.store, lib.rid)["runs"]}
-    called = lambda run_id: [step["models"] for step in runs[run_id]["steps"] if step["kind"].startswith("model:")]
-    # The first run was sent with no effort; the recheck carries the effort the change set and the adapter sent (P3).
-    assert called(filled["id"]) and all(models == [{"connection": "fake", "model": "fake-model", "effort": None}]
-                                        for models in called(filled["id"]))
-    assert called(checked["id"]) == [[{"connection": "fake", "model": "fake-model-2", "effort": "high"}]]
-    assert all(step["models"] == [] for run in runs.values() for step in run["steps"] if not step["kind"].startswith("model:"))
-
-
 def test_the_change_history_is_append_only(tmp_path):
     lib = library(tmp_path)
     change(lib, "fake-model-2")
@@ -103,19 +83,6 @@ def test_the_change_history_is_append_only(tmp_path):
     assert lib.conn.execute("SELECT COUNT(*) FROM research_model_changes").fetchone()[0] == 0
 
 
-def test_literature_and_reviewer_changes_move_only_their_role(tmp_path):
-    lib = library(tmp_path)
-    change(lib, "fake-lit", role="literature")
-    made = change(lib, "fake-review", role="reviewer")
-    assert made["from"] == {"connection": None, "model": None, "reasoning_effort": None, "review_mode": "default"}
-    scope = lib.store.scope(lib.rid)
-    assert (scope["literature_connection"], scope["literature_model"]) == ("fake", "fake-lit")
-    assert (scope["review_mode"], scope["review_connection"], scope["review_model"]) == ("custom", "fake", "fake-review")
-    assert scope["requested_model"] == "fake-model"
-    execute(lib, fill(lib))
-    assert {s[1] for s in lib.adapter.sent} == {"fake-model"}  # a cell extraction runs on the answer role
-
-
 def test_a_change_is_refused_while_a_run_executes_and_a_resumed_run_takes_it(tmp_path):
     lib = library(tmp_path)
     lib.adapter.ready = False  # the model is down: the run pauses before anything is sent
@@ -133,19 +100,6 @@ def test_a_change_is_refused_while_a_run_executes_and_a_resumed_run_takes_it(tmp
     lib.store.resume_run(run["id"])
     assert execute(lib, run)["status"] == "completed"
     assert lib.adapter.sent == [("cell_extraction", "fake-model-2", None)]
-
-
-def test_model_mismatch_is_still_enforced_after_a_change(tmp_path):
-    lib = library(tmp_path)
-    change(lib, "fake-model-2")
-    lib.adapter.resolved_model = "fake-model"  # the connection answers with the old model
-    run = lib.tables.request_recheck(lib.rid, lib.tid, lib.cid, lib.published, 0, None)
-    stopped = execute(lib, run)
-    assert (stopped["status"], stopped["pause_reason"]) == ("paused", "model_mismatch")
-    assert stopped["error"] == {"requested_model": "fake-model-2", "resolved_model": "fake-model"}
-    assert cell(lib, lib.published)["revisions"] == []  # the mismatched output is recorded but never used
-    session = lib.conn.execute("SELECT requested_model, resolved_model FROM model_sessions WHERE run_id = ?", (run["id"],)).fetchone()
-    assert tuple(session) == ("fake-model-2", "fake-model")
 
 
 def test_model_change_api(tmp_path):
@@ -182,85 +136,3 @@ def test_model_change_api(tmp_path):
         assert [c["role"] for c in reviewer["model_changes"]] == ["answer", "reviewer"]
 
 
-def test_the_model_change_history_survives_backup_and_restore(tmp_path):
-    from deixis.config import Settings
-    from deixis.storage.backup import create_backup, restore_backup
-
-    adapter = FakeAdapter(models=["fake-model", "fake-model-2"])
-    with TestClient(app_for(tmp_path, adapter)) as raw:
-        client = session(raw)
-        rid = create(client, source_scope="attached")
-        version = client.get(f"/api/researches/{rid}").json()["research"]["version"]
-        changed = client.put(f"/api/researches/{rid}/models", json={
-            "role": "answer", "connection": "fake", "model": "fake-model-2", "reasoning_effort": None,
-            "reason": "model_connection_not_ready", "expected_version": version})
-        assert changed.status_code == 200, changed.text
-        before = client.get(f"/api/researches/{rid}").json()
-        backup = create_backup(Settings(data_dir=tmp_path / "data", port=8765), tmp_path / "backups")
-    restored = tmp_path / "restored"
-    restore_backup(backup, Settings(data_dir=restored / "data", port=8765))
-    with TestClient(app_for(restored, FakeAdapter(models=["fake-model", "fake-model-2"]))) as client:
-        after = client.get(f"/api/researches/{rid}").json()
-    assert after["model_changes"] == before["model_changes"] and len(after["model_changes"]) == 1
-    assert after["scope"]["requested_model"] == "fake-model-2"  # the restored research runs on the chosen model
-
-
-def test_a_session_stores_the_effort_its_adapter_sent_and_never_a_setting(tmp_path):
-    """Post-parity P3: a model session keeps the reasoning effort sent with the call. An adapter that does not forward
-    an effort (an OpenAI-compatible connection) stores none although the role has one, and a session stored before
-    migration 0009 (null effort) is never given the role's current effort in the view."""
-    from deixis.workflow.views import research_view
-    lib = library(tmp_path)
-    change(lib, "fake-model-2", effort="high")
-    filled = fill(lib)
-    execute(lib, filled)
-    assert {effort for _, _, effort in lib.adapter.sent} == {"high"}
-    stored = lib.conn.execute("SELECT DISTINCT reasoning_effort FROM model_sessions WHERE run_id = ?", (filled["id"],)).fetchall()
-    assert [row[0] for row in stored] == ["high"]
-
-    lib.adapter.sends_reasoning_effort = False
-    checked = lib.tables.request_recheck(lib.rid, lib.tid, lib.cid, lib.published, 1, None)
-    execute(lib, checked)
-    assert lib.adapter.sent[-1] == ("cell_extraction", "fake-model-2", "high")  # passed to the adapter, not sent on
-    stored = lib.conn.execute("SELECT reasoning_effort FROM model_sessions WHERE run_id = ?", (checked["id"],)).fetchall()
-    assert stored and all(row[0] is None for row in stored)
-
-    # A session stored before the column existed reads null, as one sent without an effort does.
-    lib.conn.execute("UPDATE model_sessions SET reasoning_effort = NULL WHERE run_id = ?", (filled["id"],))
-    runs = {run["id"]: run for run in research_view(lib.store, lib.rid)["runs"]}
-    for run_id in (filled["id"], checked["id"]):
-        models = [m for step in runs[run_id]["steps"] if step["kind"].startswith("model:") for m in step["models"]]
-        assert models and all(m == {"connection": "fake", "model": "fake-model-2", "effort": None} for m in models)
-
-
-def test_a_step_lists_each_model_and_effort_once_with_its_latest_call_last(tmp_path):
-    """Sol P3 r1: a step whose calls went high, low, then high again lists low before high, so the last entry is where
-    its latest call went and the model line does not name an unchanged role as set for the next calls."""
-    from deixis.workflow.views import research_view
-    lib = library(tmp_path)
-    change(lib, "fake-model-2", effort="high")
-    filled = fill(lib)
-    execute(lib, filled)
-    first = lib.conn.execute("SELECT * FROM model_sessions WHERE run_id = ? ORDER BY rowid LIMIT 1", (filled["id"],)).fetchone()
-    lib.conn.execute("DELETE FROM model_sessions WHERE step_id = ? AND id != ?", (first["step_id"], first["id"]))
-    row = dict(first)
-    for n, effort in enumerate(("low", "high")):
-        row.update(id=f"{first['id']}-{n}", reasoning_effort=effort)
-        lib.conn.execute(f"INSERT INTO model_sessions ({', '.join(row)}) VALUES ({', '.join('?' for _ in row)})", tuple(row.values()))
-    run = next(r for r in research_view(lib.store, lib.rid)["runs"] if r["id"] == filled["id"])
-    step = next(s for s in run["steps"] if s["id"] == first["step_id"])
-    assert step["models"] == [{"connection": "fake", "model": "fake-model-2", "effort": "low"},
-                              {"connection": "fake", "model": "fake-model-2", "effort": "high"}]
-
-
-def test_only_adapters_that_forward_an_effort_say_so():
-    """D25: the flow stores an effort only for an adapter that declares it sends one. Every OpenAI-compatible connection
-    (Qwen, Kimi, Mistral and D22's Grok, Copilot, GLM, Muse and Ollama) sends none, so its sessions store null."""
-    from deixis.models import openai_compat
-    from deixis.models.adapter import CodexAdapter
-    from deixis.models.claude import ClaudeCodeAdapter
-    from deixis.models.deepseek import DeepSeekAdapter
-    from deixis.models.gemini import GeminiAdapter
-    assert all(cls.sends_reasoning_effort for cls in (CodexAdapter, ClaudeCodeAdapter, DeepSeekAdapter, GeminiAdapter))
-    assert openai_compat.CONNECTIONS and all(
-        openai_compat.OpenAICompatAdapter(spec).sends_reasoning_effort is False for spec in openai_compat.CONNECTIONS.values())

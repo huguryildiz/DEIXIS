@@ -10,6 +10,7 @@ import { LibraryPage } from './library/LibraryPage'
 import { CitationCheckPage } from './citecheck/CitationCheck'
 import { QuickFind, type PaletteCommand } from './shell/QuickFind'
 import { KeysDialog } from './shell/KeysDialog'
+import { RunSlotContext } from './shell/runSlot'
 import { IS_MAC, readSingleKeys, requestResearchPanel, useShortcuts, writeSingleKeys } from './shell/Shortcuts'
 import { BackgroundJobs } from './shell/BackgroundJobs'
 import { useToast } from './components/Toast'
@@ -494,6 +495,7 @@ export default function App() {
     else requestResearchPanel({ name: command, opener: findOpener.current })
   }
   const themeName = t(dark ? 'Switch to light mode' : 'Switch to dark mode')
+  const [runSlot, setRunSlot] = useState<HTMLDivElement | null>(null)
 
   // The proxy line states only that the host answered; the Scopus line is the separate full-view check (plan §2.3).
   const proxyLabel = proxy?.label ?? proxy?.label_default ?? ''
@@ -558,6 +560,7 @@ export default function App() {
       </div>
       {actionMessage && route.view !== 'trash' && <p className="sidebar-action-message" role="status">{actionMessage}</p>}
       <div className="sidebar-foot">
+        {!phone && !collapsed && <div ref={setRunSlot} className="sidebar-run-slot" />}
         <BackgroundJobs researches={researches} dark={dark} onOpenResearch={id => go({ view: 'research', id })} />
         {/* The foot keeps one DOM shape while its reads arrive (profile, proxy, Scopus): only text, inline style and data attributes change. */}
         <button type="button" className="access" onClick={() => go({ view: 'settings', tab: 'access' })} aria-label={accessName} title={t('Institutional access settings')}>
@@ -581,7 +584,7 @@ export default function App() {
         <button type="button" ref={menuButton} className="mobile-menu" aria-label={t('Open navigation')} onClick={() => setSidebar(true)}><Menu size={16} aria-hidden="true" /></button>
         <b className="mobilebar-brand" aria-hidden="true">DEIXIS</b>
       </div>
-      <main>
+      <main><RunSlotContext.Provider value={!phone && !collapsed ? runSlot : null}>
         {route.view === 'home' && <Home researches={researches} onCreated={id => { refreshList(); go({ view: 'research', id }) }} />}
         {route.view === 'research' && (route.id ? <ResearchPage key={`${route.id}/${route.tab ?? ''}`} id={route.id} initialTab={route.tab} dark={dark} onChanged={refreshList} />
           : <EmptyResearch opened={researches.length > 0} />)}
@@ -591,7 +594,7 @@ export default function App() {
           access={{ proxy, readFailed: proxyReadFailed, testing: proxyBusy, testFailed: !!proxy?.address && proxyFailed === proxy.address, scopus: institutionalStatus,
             test: runProxyTest, save: saveProxy, saveLabel: saveProxyLabel, reload: checkAccess }} />}
         {route.view === 'trash' && <TrashPage dark={dark} onChanged={refreshList} />}
-      </main>
+      </RunSlotContext.Provider></main>
       <QuickFind open={findOpen} onOpenChange={setFindOpen} recent={researches} dark={dark} returnFocus={findOpener} language={language} onLanguage={chooseLanguage}
         research={route.view === 'research' && route.id ? { answer: (openResearch?.answer_count ?? 0) > 0 } : null} singleKeys={singleKeys} onCommand={runCommand} />
       <KeysDialog open={keysOpen} onOpenChange={setKeysOpen} returnFocus={keysOpener} singleKeys={singleKeys} onSingleKeys={chooseSingleKeys} />

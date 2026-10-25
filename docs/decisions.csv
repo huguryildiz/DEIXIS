@@ -1,4 +1,6 @@
 id,date,title,area,status,commit,notes
+D128,2026-10-25,"The research page's run status sits at the sidebar foot above the access card on wide screens; phone and collapsed sidebar keep it in the topbar",ui,accepted,,
+D127,2026-10-25,"A person's include/exclude during the discovery read no longer pauses the run; it goes on and leaves the decided works alone (answer runs still stop)",search,accepted,,
 D126,2026-10-25,"Find PDF from the Citation panel, chosen while an earlier lookup of that work still runs, waits for it instead of being dropped",ui,accepted,,
 D125,2026-10-25,"web/src root files are grouped into folders (shell, home, library, settings, citecheck, research, table, reading, components, lib); behavior and look unchanged",process,accepted,,
 D124,2026-10-25,"deixis/workflow is split into step folders (run, search, screen, read, answer) and features/; module basenames, log names and stored names unchanged",process,accepted,,

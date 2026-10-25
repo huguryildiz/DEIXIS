@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { Lightbulb, Pause, PencilLine, Play, TriangleAlert, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { type Run } from '../lib/api'
 import { runKindLabels, runStatusLabels, searchQueryTriesLeft } from '../lib/labels'
 import { t } from '../lib/i18n'
 import { Elapsed } from '../table/EvidenceTable'
+import { RunSlotContext } from '../shell/runSlot'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 
@@ -87,15 +89,18 @@ export function RunChip({ run, hasAnswer, busy, inThread, controlsInCard = false
 }) {
   const active = ACTIVE.has(run.status)
   const text = chipText(run, hasAnswer)
-  if (run.status === 'failed') return <span className="runchip is-warn"><TriangleAlert size={13} aria-hidden /><span className="runchip-text">{text}</span></span>
+  // On a wide screen with the sidebar open the status sits at the sidebar's foot; the run's buttons stay in the topbar.
+  const slot = useContext(RunSlotContext)
+  const place = (chip: ReactNode) => (slot ? createPortal(chip, slot) : chip)
+  if (run.status === 'failed') return place(<span className="runchip is-warn"><TriangleAlert size={13} aria-hidden /><span className="runchip-text">{text}</span></span>)
   const stopped = run.status === 'paused' && run.pause_reason !== 'user_requested'
   return <div className="run-strip">
-    <span className={`runchip run-strip-status${active ? ' is-live' : ' is-warn'}`} data-run-id={run.id} tabIndex={-1}>
+    {place(<span className={`runchip run-strip-status${active ? ' is-live' : ' is-warn'}`} data-run-id={run.id} tabIndex={-1}>
       {active ? <span className="runchip-dot" aria-hidden /> : stopped ? <TriangleAlert size={13} aria-hidden /> : <Pause size={13} aria-hidden />}
       <span className="runchip-text">{text}</span>
       {active && <Elapsed since={run.created_at} />}
       {active && <span className="runchip-sweep" aria-hidden />}
-    </span>
+    </span>)}
     {active && !controlsInCard && run.status !== 'pause_requested' && <Button variant="ghost" size="sm" className="research-topbar-action run-strip-pause" disabled={busy} onClick={() => onControl('pause')}><Pause size={14} aria-hidden />{t('Pause')}</Button>}
     {!active && !inThread && run.status === 'paused' && !(run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0)
       && <Button variant="default" size="sm" disabled={busy} onClick={() => onControl('resume')}><Play size={14} aria-hidden />{t('Resume')}</Button>}

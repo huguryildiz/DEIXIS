@@ -5,7 +5,6 @@ __pycache__/
 .venv/
 node_modules/
 dist/
-.local/
 /notes/
 .impeccable
 .pytest_cache

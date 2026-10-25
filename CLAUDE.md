@@ -67,13 +67,14 @@ Python 3.12, native arm64. Runtime data lives in `DEIXIS_DATA_DIR` (default `~/L
 - Revisions and old answers are kept; stale scope is marked, not rewritten.
 - Never swap model, provider or search source after a failure unless the fallback is recorded and shown.
 - PDFs, abstracts and provider payloads are untrusted data. Keep URL, size and content-type checks.
-- Person-started runs (follow-up, Screen more, snowball, citation map) never start on their own; interrupted work stays `outcome_unknown`/`paused` until the person resumes it.
-- Automatic writes never overwrite a person's value or decision: an automatic result that meets a person's edit, a changed column or a replaced PDF stays a proposal, re-checked inside the write transaction.
+- Person-started runs (follow-up, Screen more, snowball, citation map) never start on their own. On restart, worker runs that were running or pausing become `paused` (their running steps `outcome_unknown`) until the person resumes them; interrupted background full-text fetches go back to the queue and restart on their own once their run has completed.
+- Automatic writes never overwrite a person's value or decision. A model fill takes only an empty cell; an automatic reread replaces an existing model or system abstract/metadata value only after rechecking the cell and column versions and the cited passages' freshness inside the write transaction, otherwise it stays a proposal. New automatic writers must recheck the same way.
 
 ## Privacy and credentials
 
-- Data leaves the machine only to a provider the person connected, and only what that step needs (a model step gets its stored `StepInput`; an equation request gets only the crop image). A change in what is sent is recorded as a decision.
-- A saved key is never shown again. A key goes only to its own provider; a route that sends one sends it only to the first URL's https origin, never across a redirect to another host, port or plain http. CLI connections run with their own home and an environment allowlist; API keys and tokens are left out or emptied (e.g. `ANTHROPIC_API_KEY` for Claude Code) so an account path never turns into API billing.
+- Research steps contact the providers the person connected, keyless lookup services (Unpaywall, Crossref, Europe PMC) and the public hosts of candidate PDFs. A model step gets its stored `StepInput`; an equation request sends the crop image plus fixed transcription instructions and request parameters. New code sends only what its step needs, and a change in what is sent is recorded as a decision.
+- A saved key is never shown again. A provider key must stay on its provider's https origin: PDF-fetch extra headers go only to the first URL's https origin, never across a redirect to another host, port or plain http, and a new route that sends a key enforces the same. A token DEIXIS generates for a server it starts (the built-in model server) may go over loopback http.
+- Codex, Gemini CLI and Copilot run with a DEIXIS-owned home and an environment allowlist. Claude Code runs in a DEIXIS-owned workspace with the app's environment and `ANTHROPIC_API_KEY` emptied for its SDK sessions (its version check gets the full environment). A new CLI connection gets its own home and an allowlist.
 - The API serves loopback only, with Host, Origin and CSRF checks. Local model servers are reached only on 127.0.0.1, localhost or ::1, with no proxy and no redirects.
 
 ## Working here

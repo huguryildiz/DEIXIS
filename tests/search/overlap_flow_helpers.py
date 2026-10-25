@@ -9,8 +9,8 @@ import httpx
 from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.providers.registry import CONNECTORS
-from deixis.workflow import fulltext
-from deixis.workflow.decisions import DecisionStore
+from deixis.workflow.read import fulltext
+from deixis.workflow.screen.decisions import DecisionStore
 from fakes import FakeAdapter
 from test_abstract_flow import ON_TOPIC, QUESTION, records_of, responder
 from test_fulltext_flow import Fetcher, named_pdf, ok, work

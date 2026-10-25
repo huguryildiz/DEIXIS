@@ -8,12 +8,12 @@ from dataclasses import replace
 
 import pytest
 
-from deixis.workflow import report_assembly as assembly, report_sections as sections
-from deixis.workflow.report_export import to_markdown
-from deixis.workflow.report_selection import select_evidence, usable_cells
-from deixis.workflow.report_snapshot import evidence_row_ids
-from deixis.workflow.tables import TableStore, report_ready
-from deixis.workflow.views import report_view
+from deixis.workflow.features.report import report_assembly as assembly, report_sections as sections
+from deixis.workflow.features.report.report_export import to_markdown
+from deixis.workflow.features.report.report_selection import select_evidence, usable_cells
+from deixis.workflow.features.report.report_snapshot import evidence_row_ids
+from deixis.workflow.features.tables.tables import TableStore, report_ready
+from deixis.workflow.run.views import report_view
 from test_report_flow import PASSAGE, report_flow
 
 

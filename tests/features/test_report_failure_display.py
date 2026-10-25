@@ -4,10 +4,10 @@ import asyncio
 
 import pytest
 
-from deixis.workflow.report_export import to_markdown
-from deixis.workflow.report_sections import run_report
-from deixis.workflow import report_assembly as assembly
-from deixis.workflow.views import report_view
+from deixis.workflow.features.report.report_export import to_markdown
+from deixis.workflow.features.report.report_sections import run_report
+from deixis.workflow.features.report import report_assembly as assembly
+from deixis.workflow.run.views import report_view
 from test_report_flow import report_flow
 
 

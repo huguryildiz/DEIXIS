@@ -2,7 +2,7 @@
 
 import json
 import pytest
-from deixis.workflow.candidates_store import CandidateStore
+from deixis.workflow.features.candidates.candidates_store import CandidateStore
 from fakes import FakeAdapter
 from review_candidate_helpers import report_with_sections, review_lib, candidate_lib, candidate_body, candidate_response, add_version
 from review_run_helpers import review_api, start, read, turn, control
@@ -17,17 +17,17 @@ from deixis.domain import contracts
 from review_helpers import si
 from review_candidate_helpers import candidate_response, candidate_context_fixture
 from deixis.domain.canonical import canonical_json
-from deixis.workflow.review_snapshot import build_snapshot, NotReviewable, review_step_input_parts
-from deixis.workflow.review_store import _snapshot_source_ids
+from deixis.workflow.features.review.review_snapshot import build_snapshot, NotReviewable, review_step_input_parts
+from deixis.workflow.features.review.review_store import _snapshot_source_ids
 from review_candidate_helpers import report_with_sections, review_lib, candidate_lib, snapshot, add_version, search
 from test_review import envelope
-from deixis.workflow.review_stale import stale_reasons
+from deixis.workflow.features.review.review_stale import stale_reasons
 from review_candidate_helpers import report_with_sections, review_lib, candidate_lib, snapshot, search, add_version
-from deixis.workflow.review_snapshot import ReviewInputTooLarge, review_step_input_parts
+from deixis.workflow.features.review.review_snapshot import ReviewInputTooLarge, review_step_input_parts
 from review_candidate_helpers import report_with_sections, review_lib, candidate_lib, snapshot
 from test_review import plan, envelope
 from deixis.domain.rules import RevisionConflict
-from deixis.workflow.review_store import snapshot_referenced_source_versions
+from deixis.workflow.features.review.review_store import snapshot_referenced_source_versions
 from review_candidate_helpers import report_with_sections, review_lib, candidate_lib, snapshot, candidate_body, candidate_response
 from review_helpers import rows, all_rows
 from review_run_helpers import review_api, start, turn, read

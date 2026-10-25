@@ -7,7 +7,7 @@ file and extraction in use; it says nothing about extraction quality.
 from types import SimpleNamespace
 import pytest
 from deixis.storage import db
-from deixis.workflow.store import PdfInUse, Store
+from deixis.workflow.run.store import PdfInUse, Store
 
 
 def extraction(pages, status="succeeded"):
@@ -93,7 +93,7 @@ def test_passages_of_an_extraction_not_in_use_are_not_given_but_still_resolve(st
 
 # ---- re-extraction (D45, D47) ------------------------------------------------------------------
 def test_reextraction_becomes_current_and_shadows_the_old_passages(tmp_path):
-    from deixis.workflow.store import RunInProgress
+    from deixis.workflow.run.store import RunInProgress
 
     conn = db.connect(tmp_path / "library.sqlite")
     db.migrate(conn)

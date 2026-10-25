@@ -10,8 +10,8 @@ import pytest
 from deixis.domain.reason_codes import REASON_CODES
 from deixis.providers.common import ProviderRecord
 from deixis.storage import db
-from deixis.workflow.decisions import DecisionStore, HumanDecisionStands
-from deixis.workflow.store import Store
+from deixis.workflow.screen.decisions import DecisionStore, HumanDecisionStands
+from deixis.workflow.run.store import Store
 
 DOI = "10.1109/synth.2026.2"
 

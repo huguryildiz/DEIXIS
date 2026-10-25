@@ -17,9 +17,10 @@ import pytest
 from deixis.domain.rules import TEST_EFFORT_BUDGETS
 from deixis.providers.common import SearchOutcome
 from deixis.storage import db
-from deixis.workflow import fast_path, ranking, small_batch
-from deixis.workflow.decisions import DecisionStore
-from deixis.workflow.store import Store
+from deixis.workflow.run import fast_path
+from deixis.workflow.search import ranking, small_batch
+from deixis.workflow.screen.decisions import DecisionStore
+from deixis.workflow.run.store import Store
 from test_fast_path_chain import dispatch, scripted, search, setup as chain_setup
 from test_fast_path_clock import FakeClock
 from test_fast_path_search import record

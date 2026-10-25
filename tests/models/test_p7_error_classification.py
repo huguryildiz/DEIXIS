@@ -23,8 +23,8 @@ from deixis.providers import openalex
 from deixis.providers import serpapi
 from deixis.providers.registry import CONNECTORS
 from deixis.storage import db
-from deixis.workflow.flow import ResearchFlow
-from deixis.workflow.store import Store
+from deixis.workflow.run.flow import ResearchFlow
+from deixis.workflow.run.store import Store
 from test_claude_adapter import FakeClient
 from test_claude_adapter import prepare
 from test_codex_adapter_paths import codex

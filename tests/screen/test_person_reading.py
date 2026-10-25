@@ -15,11 +15,12 @@ import pytest
 from deixis.config import Settings
 from deixis.domain import skill
 from deixis.storage import db
-from deixis.workflow import adjudication, fulltext, person_reading, queue
-from deixis.workflow.flow import FlowDeps, ResearchFlow
-from deixis.workflow.store import Store
+from deixis.workflow.read import adjudication, fulltext, person_reading
+from deixis.workflow.screen import queue
+from deixis.workflow.run.flow import FlowDeps, ResearchFlow
+from deixis.workflow.run.store import Store
 from deixis.api.app import create_app
-from deixis.workflow.decisions import DecisionStore
+from deixis.workflow.screen.decisions import DecisionStore
 from fakes import FakeAdapter, valid_response
 from helpers import make_pdf
 from test_abstract_flow import client_of
@@ -319,7 +320,7 @@ def test_after_the_file_is_read_its_decision_is_the_work_s_and_the_other_version
 # ---- UI parity S13: the Sources list's "Model proposal" reads the same merge rules, without the person's decision ----
 
 def screening(r, svid):
-    from deixis.workflow import flow_counts
+    from deixis.workflow.run import flow_counts
     return flow_counts.machine_screening(queue.context(r.store, r.rid), r.lib.work_of(svid))
 
 

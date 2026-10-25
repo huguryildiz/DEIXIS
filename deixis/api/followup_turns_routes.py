@@ -10,7 +10,8 @@ from fastapi import Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from deixis.workflow import followup, followup_search
+from deixis.workflow.answer import followup
+from deixis.workflow.search import followup_search
 
 
 class Ask(BaseModel):

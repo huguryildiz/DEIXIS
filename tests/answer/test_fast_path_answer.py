@@ -11,9 +11,12 @@ from deixis.domain import skill
 from deixis.domain.rules import TEST_EFFORT_BUDGETS
 from deixis.providers.common import ProviderRecord
 from deixis.storage.db import transaction
-from deixis.workflow import answer as fast_answer, fast_path, small_batch, views, report_pipeline
-from deixis.workflow.decisions import DecisionStore
-from deixis.workflow.flow import FlowDeps, ResearchFlow, RunStopped
+from deixis.workflow.answer import answer as fast_answer
+from deixis.workflow.run import fast_path, views
+from deixis.workflow.search import small_batch
+from deixis.workflow.features.report import report_pipeline
+from deixis.workflow.screen.decisions import DecisionStore
+from deixis.workflow.run.flow import FlowDeps, ResearchFlow, RunStopped
 from fakes import FakeAdapter, valid_response
 from test_criterion_passage_flow import library, page_source, TOPIC_PAGE
 from test_fast_path_clock import FakeClock
@@ -22,8 +25,8 @@ from overlap_flow_helpers import discover, wait
 from test_fulltext_flow import Transport, work
 from test_abstract_flow import ON_TOPIC
 from test_answer_resplit import draft_for
-from deixis.workflow import answer as fast_answer, followup
-from deixis.workflow.flow import RunStopped
+from deixis.workflow.answer import answer as fast_answer, followup
+from deixis.workflow.run.flow import RunStopped
 from test_criterion_passage_flow import TOPIC_PAGE, page_source
 from decimal import Decimal as D
 from deixis.documents import pdf

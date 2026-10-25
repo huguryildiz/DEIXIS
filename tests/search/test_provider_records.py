@@ -7,7 +7,7 @@ import pytest
 from deixis.providers import query_rules
 from deixis.providers.common import ProviderRecord
 from deixis.storage import db
-from deixis.workflow.store import Store
+from deixis.workflow.run.store import Store
 
 DOI = "10.1109/synth.2021.1"
 

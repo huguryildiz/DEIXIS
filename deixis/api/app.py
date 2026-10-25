@@ -44,10 +44,13 @@ from deixis.documents import upload_record
 from deixis.documents import draft_parse
 from deixis.domain import proxy, skill, statement
 from deixis.imports import bibtex_ris
-from deixis.workflow import abstract_stage
-from deixis.workflow import source_keys
-from deixis.workflow import fast_path, intent, small_batch, statement_check
-from deixis.workflow import file_restore, spend, text_retry
+from deixis.workflow.screen import abstract_stage
+from deixis.workflow.run import source_keys
+from deixis.workflow.run import fast_path, intent
+from deixis.workflow.search import small_batch
+from deixis.workflow.answer import statement_check
+from deixis.workflow.read import file_restore, text_retry
+from deixis.workflow.run import spend
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS, SEARCH_QUERY_CALLS,
                                  TEST_EFFORT_BUDGETS, RevisionConflict)
 from deixis.models import unusable
@@ -65,45 +68,45 @@ from deixis.providers import scopus
 from deixis.providers import zotero
 from deixis.providers.registry import CONNECTORS, configured_providers, provider_role
 from deixis.storage import db
-from deixis.workflow import adjudication, fulltext
-from deixis.workflow import bibliography
+from deixis.workflow.read import adjudication, fulltext
+from deixis.workflow.answer import bibliography
 from deixis.exports.text import attachment, download_name
-from deixis.workflow import audit as audit_rules
-from deixis.workflow import prisma_s
-from deixis.workflow import queue as human_queue
-from deixis.workflow import person_reading
-from deixis.workflow import waiting as pdf_waiting
-from deixis.workflow.concurrency import ModelCallLimiter
-from deixis.workflow import english_question
-from deixis.workflow import equations as equations_module
-from deixis.workflow.equations import EquationService, chunk_numbers, equation_reader, equation_state, equations_to_check, latex_numbers
-from deixis.workflow.local_embedding_service import LocalModelService, ServiceError
-from deixis.workflow.flow import FlowDeps, ResearchFlow
-from deixis.workflow import report_pipeline
-from deixis.workflow.report_store import ReportStore
-from deixis.workflow import report_export
-from deixis.workflow import report_latex_export as latex_export
-from deixis.workflow.store import (COPIED_SELECTION_REASON, NotASource, NotFound, PdfInUse, RunInProgress, SameFile,
+from deixis.workflow.screen import audit as audit_rules
+from deixis.workflow.search import prisma_s
+from deixis.workflow.screen import queue as human_queue
+from deixis.workflow.read import person_reading
+from deixis.workflow.read import waiting as pdf_waiting
+from deixis.workflow.run.concurrency import ModelCallLimiter
+from deixis.workflow.search import english_question
+from deixis.workflow.read import equations as equations_module
+from deixis.workflow.read.equations import EquationService, chunk_numbers, equation_reader, equation_state, equations_to_check, latex_numbers
+from deixis.workflow.run.local_embedding_service import LocalModelService, ServiceError
+from deixis.workflow.run.flow import FlowDeps, ResearchFlow
+from deixis.workflow.features.report import report_pipeline
+from deixis.workflow.features.report.report_store import ReportStore
+from deixis.workflow.features.report import report_export
+from deixis.workflow.features.report import report_latex_export as latex_export
+from deixis.workflow.run.store import (COPIED_SELECTION_REASON, NotASource, NotFound, PdfInUse, RunInProgress, SameFile,
                                    SeedUnavailable, Store, LegacyInspectionPolicyRemoved,
                                    RequestConflict, RecoveryConflict, NotRetryable)
-from deixis.workflow.tables import CELL_STATES, InvalidTableInput, TableStore
-from deixis.workflow import citation_map, citation_map_run
-from deixis.workflow.lineage_run import LineagePlanner, stale_link_revisions
-from deixis.workflow.lineage_store import InvalidLineageInput, LineageStore
-from deixis.workflow.lineage_view import LineageView
-from deixis.workflow.candidates_run import KillSearchPlanner, candidate_evidence, decompose_budget, request_decomposition
-from deixis.workflow.candidates_answer_view import answer_candidates
-from deixis.workflow.candidates_store import CandidateStore, InvalidCandidateInput
-from deixis.workflow.views import library_version_to_add, library_view, library_work_view, occurrence_view, passage_view, report_gaps_view, report_view, research_view
-from deixis.workflow.worker import Worker
-from deixis.workflow import review_run
-from deixis.workflow.review_reader import ReviewReader
-from deixis.workflow.review_snapshot import build_snapshot, NotReviewable
-from deixis.workflow.review_stale import stale_reasons
-from deixis.workflow.review_store import ReviewStore, ReviewRefusal, ReviewConflict, applied_matches_suggestion
-from deixis.workflow import recovery_history
-from deixis.workflow.report_review import REVIEW_BUDGET_TOKENS
-from deixis.workflow.flow import CAPABILITIES
+from deixis.workflow.features.tables.tables import CELL_STATES, InvalidTableInput, TableStore
+from deixis.workflow.features.citation_map import citation_map, citation_map_run
+from deixis.workflow.features.lineage.lineage_run import LineagePlanner, stale_link_revisions
+from deixis.workflow.features.lineage.lineage_store import InvalidLineageInput, LineageStore
+from deixis.workflow.features.lineage.lineage_view import LineageView
+from deixis.workflow.features.candidates.candidates_run import KillSearchPlanner, candidate_evidence, decompose_budget, request_decomposition
+from deixis.workflow.features.candidates.candidates_answer_view import answer_candidates
+from deixis.workflow.features.candidates.candidates_store import CandidateStore, InvalidCandidateInput
+from deixis.workflow.run.views import library_version_to_add, library_view, library_work_view, occurrence_view, passage_view, report_gaps_view, report_view, research_view
+from deixis.workflow.run.worker import Worker
+from deixis.workflow.features.review import review_run
+from deixis.workflow.features.review.review_reader import ReviewReader
+from deixis.workflow.features.review.review_snapshot import build_snapshot, NotReviewable
+from deixis.workflow.features.review.review_stale import stale_reasons
+from deixis.workflow.features.review.review_store import ReviewStore, ReviewRefusal, ReviewConflict, applied_matches_suggestion
+from deixis.workflow.read import recovery_history
+from deixis.workflow.features.report.report_review import REVIEW_BUDGET_TOKENS
+from deixis.workflow.run.flow import CAPABILITIES
 from deixis.domain.canonical import sha256_hex
 
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
@@ -959,7 +962,7 @@ def create_app(
         builtin = LocalModelService(builtin_paths, embedder, http)
         await builtin.start()  # recovers an install a closed DEIXIS left running; the files' last checks are on disk
         local_embedding.register(embedder)
-        from deixis.workflow.background_fetch import FetchSlots
+        from deixis.workflow.read.background_fetch import FetchSlots
         limiter = ModelCallLimiter(settings.effective_model_concurrency())
         app.state.limiter = limiter  # Settings → Research changes its ceiling while DEIXIS runs
         async def fetch_pdf(url: str) -> fetch_module.FetchResult:
@@ -1008,7 +1011,7 @@ def create_app(
         app.state.reconciled = None
         async def reconcile_recovery() -> None:
             import logging
-            from deixis.workflow import reconcile
+            from deixis.workflow.read import reconcile
 
             try:
                 app.state.reconciled = await reconcile.reconcile_stale(store, settings.papers_dir, settings.recovery_dir)
@@ -1018,7 +1021,7 @@ def create_app(
         if owner:
             await reconcile_recovery()
 
-        from deixis.workflow.watch_scheduler import WatchScheduler
+        from deixis.workflow.features.watch.watch_scheduler import WatchScheduler
         scheduler_stop = asyncio.Event()
         scheduler_task = None
 
@@ -1254,7 +1257,7 @@ def create_app(
     from deixis.api.shell_routes import register_shell_routes
     from deixis.api.usage_routes import register_usage_routes
     from deixis.api.watch_routes import register_watch_routes
-    from deixis.workflow.watch_store import WatchRefusal
+    from deixis.workflow.features.watch.watch_store import WatchRefusal
     register_watch_routes(app)
     register_shell_routes(app)
     register_usage_routes(app)
@@ -2083,7 +2086,7 @@ def create_app(
             # Two model calls per work the read limit reaches (D85). The same function the flow's auto-queue calls.
             budget = adjudication.read_budget(scope["effort"])
         elif body.kind == "answer":
-            from deixis.workflow.answer import answer_run_budget
+            from deixis.workflow.answer.answer import answer_run_budget
             budget = answer_run_budget(store, research_id, scope)
         key = f"{research_id}:{idempotency_key}" if idempotency_key else None
         run = store.create_run(research_id, body.kind, budget, key, expected_scope_revision=body.expected_scope_revision)
@@ -2273,7 +2276,7 @@ def create_app(
     @app.get("/api/researches/{research_id}/answers/{answer_id}/method")
     async def answer_method(research_id: str, answer_id: str, request: Request) -> dict[str, Any]:
         """The Method box under an answer: searches, selection, extraction, limits and evidence base, from stored rows."""
-        from deixis.workflow import method_summary
+        from deixis.workflow.answer import method_summary
         store = store_of(request)
         store.research(research_id)
         try:
@@ -2925,7 +2928,7 @@ def create_app(
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/ocr", status_code=202)
     async def read_with_ocr(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:
         """Start a `pdf_ocr` run that reads the PDF's scanned pages with the local Tesseract; no file leaves the machine (D51)."""
-        from deixis.workflow import recovery
+        from deixis.workflow.read import recovery
 
         store = store_of(request)
         asset = asset_in_use(store, research_id, source_version_id, asset_id)
@@ -3020,7 +3023,7 @@ def create_app(
 
     @app.get("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/text-retry")
     async def text_retry_capability(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:
-        from deixis.workflow.recovery_view import text_recovery
+        from deixis.workflow.read.recovery_view import text_recovery
 
         store = store_of(request)
         store.flush_text_retry_interruptions()
@@ -3029,7 +3032,7 @@ def create_app(
 
     @app.get("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/recovery-history")
     async def asset_recovery_history(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:
-        from deixis.workflow.recovery_view import recovery_history
+        from deixis.workflow.read.recovery_view import recovery_history
 
         store = store_of(request)
         asset = asset_in_use(store, research_id, source_version_id, asset_id)

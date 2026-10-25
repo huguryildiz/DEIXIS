@@ -24,15 +24,17 @@ from deixis.domain.vocabulary import extract
 from deixis.providers.common import ProviderRecord
 from deixis.providers.query_compiler import compile_block_queries
 from deixis.storage import db
-from deixis.workflow.decisions import DecisionStore
-from deixis.workflow import links
-from deixis.workflow.flow import answer_source_order, fuse_rankings
-from deixis.workflow import abstract_stage, adjudication, fulltext, ranking
-from deixis.workflow.protocol import build_protocol
-from deixis.workflow.store import Store
-from deixis.workflow.criterion import consensus
-from deixis.workflow import criterion_passages
-from deixis.workflow.vocabulary import apply_labels, build_vocabulary
+from deixis.workflow.screen.decisions import DecisionStore
+from deixis.workflow.run import links
+from deixis.workflow.run.flow import answer_source_order, fuse_rankings
+from deixis.workflow.screen import abstract_stage
+from deixis.workflow.read import adjudication, fulltext
+from deixis.workflow.search import ranking
+from deixis.workflow.search.protocol import build_protocol
+from deixis.workflow.run.store import Store
+from deixis.workflow.search.criterion import consensus
+from deixis.workflow.answer import criterion_passages
+from deixis.workflow.search.vocabulary import apply_labels, build_vocabulary
 
 CONCEPTS = [
     {"label": "diffusion channel", "role": "core", "synonyms": ["diffusion channel", "molecular channel"]},
@@ -116,7 +118,7 @@ def stage_queue(rows: list[dict[str, Any]]) -> Any:
     the same kind, place and counts, whatever order the decisions were written in. Tokens and decision identifiers
     are random per run and are left out.
     """
-    from deixis.workflow import queue
+    from deixis.workflow.screen import queue
 
     with tempfile.TemporaryDirectory() as directory:
         conn = db.connect(Path(directory) / "library.sqlite")

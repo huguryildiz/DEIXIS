@@ -15,10 +15,10 @@ from deixis.models.adapter import ModelStepResult
 from deixis.providers.common import SearchOutcome
 from deixis.providers.registry import CONNECTORS
 from deixis.storage import db
-from deixis.workflow import candidates_hits, candidates_run as candidates, candidates_terms as terms
-from deixis.workflow.candidates_store import CandidateStore
-from deixis.workflow.views import research_view
-from deixis.workflow.worker import Worker
+from deixis.workflow.features.candidates import candidates_hits, candidates_run as candidates, candidates_terms as terms
+from deixis.workflow.features.candidates.candidates_store import CandidateStore
+from deixis.workflow.run.views import research_view
+from deixis.workflow.run.worker import Worker
 from fakes import FakeAdapter, valid_response
 from test_candidate_store import provider_record, version as edit_version
 from test_lineage_plan import make_env
@@ -30,7 +30,7 @@ class Crash(BaseException):
 
 @pytest.fixture
 def lib(tmp_path, monkeypatch):
-    monkeypatch.setattr("deixis.workflow.flow.RATE_LIMIT_BACKOFF_SECONDS", 0)
+    monkeypatch.setattr("deixis.workflow.run.flow.RATE_LIMIT_BACKOFF_SECONDS", 0)
     lib = make_env(tmp_path, n=2)
     lib.conn.execute("UPDATE scope_revisions SET providers_json = ? WHERE research_id = ?", ('["openalex"]', lib.rid))
     lib.candidate_store = CandidateStore(lib.store)
@@ -130,7 +130,7 @@ def test_kill_search_end_to_end_freezes_and_assesses_without_touching_discovery(
         raise AssertionError("Candidate flow crossed the corpus boundary")
     for name in ("record_search", "add_search_run", "add_to_corpus"):
         monkeypatch.setattr(lib.store, name, forbidden)
-    monkeypatch.setattr("deixis.workflow.links.link_records", forbidden)
+    monkeypatch.setattr("deixis.workflow.run.links.link_records", forbidden)
     run = queue_kill(lib)
     assert execute(lib, run)["status"] == "completed"
     frozen = search(lib, run)
@@ -239,7 +239,7 @@ def test_crash_windows_resume_without_recompiling_remerging_or_reopening(lib, mo
     def forbidden(*args, **kw):
         raise AssertionError("A frozen plan was rebuilt")
     monkeypatch.setattr(terms, "compile_queries", forbidden)
-    monkeypatch.setattr("deixis.workflow.candidates_hits.merge_and_cut", forbidden)
+    monkeypatch.setattr("deixis.workflow.features.candidates.candidates_hits.merge_and_cut", forbidden)
     assert resume(lib, run)["status"] == "completed"
     resumed = search(lib, run)
     assert [resumed[k] for k in ("selection_json", "rendered_queries_json", "skipped_terms_json")] == [frozen[k] for k in ("selection_json", "rendered_queries_json", "skipped_terms_json")]
@@ -449,8 +449,8 @@ import pytest
 from deixis.domain import contracts
 from deixis.domain.rules import RevisionConflict
 from deixis.providers.registry import CONNECTORS
-from deixis.workflow import candidates_run as planning
-from deixis.workflow.store import NotFound
+from deixis.workflow.features.candidates import candidates_run as planning
+from deixis.workflow.run.store import NotFound
 from test_candidate_store import version as edit_version
 
 
@@ -509,8 +509,8 @@ import pytest
 
 from deixis.providers.registry import CONNECTORS
 from deixis.storage import db
-from deixis.workflow import candidates_run as planning
-from deixis.workflow.candidates_hits import merge_and_cut
+from deixis.workflow.features.candidates import candidates_run as planning
+from deixis.workflow.features.candidates.candidates_hits import merge_and_cut
 from test_candidate_store import make_library, provider_record, query, start
 
 CLAIM = {"text": "SYNTHETIC: depth-based routing delivers more packets than vector-based forwarding in underwater "

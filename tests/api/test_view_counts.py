@@ -12,13 +12,13 @@ from datetime import datetime
 from datetime import timedelta
 
 from deixis.storage import db
-from deixis.workflow import flow_counts
-from deixis.workflow import overrides
-from deixis.workflow import probes
-from deixis.workflow import queue
-from deixis.workflow import views
-from deixis.workflow.store import Store
-from deixis.workflow.waiting import waiting_count
+from deixis.workflow.run import flow_counts
+from deixis.workflow.screen import overrides
+from deixis.workflow.search import probes
+from deixis.workflow.screen import queue
+from deixis.workflow.run import views
+from deixis.workflow.run.store import Store
+from deixis.workflow.read.waiting import waiting_count
 from test_probes import Probe
 from test_probes import answered
 from test_queue import BUDGET

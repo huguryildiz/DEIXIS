@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from deixis.api.app import create_app
 from deixis.config import Settings
-from deixis.workflow import bibliography
+from deixis.workflow.answer import bibliography
 from fakes import FakeAdapter
 from helpers import make_pdf
 
@@ -99,7 +99,8 @@ def _exported(lib, answer_id=None):
 
 def test_cited_export_after_a_failed_late_revision_lists_the_shown_answers_works(tmp_path):
     from test_fast_path_late_revision import drain, prepared, read_late
-    from deixis.workflow import late_revision, views
+    from deixis.workflow.answer import late_revision
+    from deixis.workflow.run import views
     lib = prepared(tmp_path)
     read_late(lib)
     late_revision.advance(lib.flow)

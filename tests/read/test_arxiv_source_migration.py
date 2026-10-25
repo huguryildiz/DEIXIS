@@ -57,7 +57,7 @@ def test_the_report_section_draft_is_v3_and_its_equation_origin_is_checked():
 
 def test_a_stored_v2_section_draft_still_revalidates_and_new_output_must_be_v3():
     # Sol r1 finding 4 (D40): the wording rollback re-checks a stored draft with `revalidate_section`.
-    from deixis.workflow.report_sections import revalidate_section
+    from deixis.workflow.features.report.report_sections import revalidate_section
 
     step_input, output = section_case()
     output["schema_version"] = "deixis.report_section_draft.v2"

@@ -14,7 +14,7 @@ from deixis.documents import acquisition
 from deixis.documents.fetch import FetchResult
 from deixis.providers.common import ProviderRecord
 from deixis.storage import db
-from deixis.workflow.store import Store
+from deixis.workflow.run.store import Store
 from helpers import make_pdf
 
 

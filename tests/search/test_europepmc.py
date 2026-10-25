@@ -20,7 +20,7 @@ from deixis.documents import acquisition, jats, pdf
 from deixis.documents.fetch import FetchResult
 from deixis.providers.common import ProviderRecord
 from deixis.storage import db
-from deixis.workflow.store import Store
+from deixis.workflow.run.store import Store
 
 DOI = "10.5555/synthetic.epmc"
 

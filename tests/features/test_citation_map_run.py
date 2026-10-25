@@ -14,10 +14,10 @@ from deixis.domain import skill
 from deixis.domain.rules import RevisionConflict
 from deixis.providers.common import ProviderRecord
 from deixis.storage import db
-from deixis.workflow import citation_map, citation_map_run
-from deixis.workflow.flow import FlowDeps, ResearchFlow
-from deixis.workflow.store import Store
-from deixis.workflow.worker import Worker
+from deixis.workflow.features.citation_map import citation_map, citation_map_run
+from deixis.workflow.run.flow import FlowDeps, ResearchFlow
+from deixis.workflow.run.store import Store
+from deixis.workflow.run.worker import Worker
 from fakes import FakeAdapter
 from test_api_flow import fake_fetch, session, sw_settings
 

@@ -765,7 +765,7 @@ def generate_point(root: Path, n: int, force: bool = False) -> dict[str, Any]:
     from deixis.documents import pdf
     from deixis.providers.common import OtherVersion, ProviderRecord
     from deixis.storage import db
-    from deixis.workflow.store import Store
+    from deixis.workflow.run.store import Store
 
     root = guard_dir(root)
     data_dir = root / f"n{n}"
@@ -917,7 +917,7 @@ def generate_pdf_library(root: Path, force: bool = False) -> dict[str, Any]:
     _deixis()
     from deixis.documents import pdf
     from deixis.storage import db
-    from deixis.workflow.store import Store
+    from deixis.workflow.run.store import Store
 
     root = guard_dir(root)
     data_dir = root / "pdf"

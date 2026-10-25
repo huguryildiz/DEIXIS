@@ -6,8 +6,8 @@ from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.storage import db
 from deixis.storage.db import dumps, now
-from deixis.workflow import small_batch
-from deixis.workflow.store import Store
+from deixis.workflow.search import small_batch
+from deixis.workflow.run.store import Store
 from fakes import FakeAdapter
 
 

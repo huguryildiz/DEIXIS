@@ -3,12 +3,12 @@
 import asyncio
 import pytest
 import test_fast_path_answer
-from deixis.workflow import answer as fast_answer
+from deixis.workflow.answer import answer as fast_answer
 from test_fast_path_answer import answer_run, cutoff, inspected_pdf, setup
 from test_criterion_passage_flow import TOPIC_PAGE, page_source
 from test_criterion_passage_flow import QUESTION, TOPIC_PAGE, page_source
-from deixis.workflow import formula_passages as fp
-from deixis.workflow import result_passages as rp
+from deixis.workflow.answer import formula_passages as fp
+from deixis.workflow.answer import result_passages as rp
 
 
 FORMULA_PAGE = (TOPIC_PAGE + " The holding time is defined as f(d) = 2τ / δ · (R − d), δ ∈ (0, R], where τ = R / v0"
@@ -44,7 +44,7 @@ def test_formula_question_puts_the_formula_page_second(tmp_path, monkeypatch):
 def test_late_full_text_of_a_base_work_brings_its_formula_page_forward(tmp_path, monkeypatch, asks):
     import test_criterion_passage_flow
     from test_fast_path_late_revision import prepared, read_late, row
-    from deixis.workflow import late_revision
+    from deixis.workflow.answer import late_revision
     question = test_criterion_passage_flow.QUESTION + (" Which equations apply?" if asks else "")
     monkeypatch.setattr(test_fast_path_answer, "library",
                         lambda path, **k: test_criterion_passage_flow.library(path, question=question, **k))

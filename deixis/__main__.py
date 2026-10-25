@@ -245,8 +245,8 @@ def reextract(settings: Settings, dry_run: bool, retry: str | None = None, expec
 
     from deixis.documents import pdf
     from deixis.storage import db
-    from deixis.workflow.store import RunInProgress, Store
-    from deixis.workflow.text_retry import FileBusy, file_lock, read_verified_sync
+    from deixis.workflow.run.store import RunInProgress, Store
+    from deixis.workflow.read.text_retry import FileBusy, file_lock, read_verified_sync
 
     if retry is not None:
         return retry_text(settings, retry, expected_extraction, dry_run)
@@ -305,8 +305,8 @@ def _retry_line(result: dict) -> None:
 
 
 def retry_text(settings: Settings, asset_id: str, expected_extraction: str, dry_run: bool) -> int:
-    from deixis.workflow import text_retry
-    from deixis.workflow.store import Store, NotFound, NotRetryable, RecoveryConflict, RequestConflict, RunInProgress
+    from deixis.workflow.read import text_retry
+    from deixis.workflow.run.store import Store, NotFound, NotRetryable, RecoveryConflict, RequestConflict, RunInProgress
 
     if dry_run:
         return plan_text_retry(settings, asset_id, expected_extraction)
@@ -363,8 +363,8 @@ def retry_text(settings: Settings, asset_id: str, expected_extraction: str, dry_
 def plan_text_retry(settings: Settings, asset_id: str, expected_extraction: str) -> int:
     import tempfile
     from deixis.documents import pdf
-    from deixis.workflow import recovery, text_retry
-    from deixis.workflow.store import Store, NotFound
+    from deixis.workflow.read import recovery, text_retry
+    from deixis.workflow.run.store import Store, NotFound
 
     try:
         with text_retry.library_snapshot(settings.db_path) as conn:
@@ -426,8 +426,8 @@ def plan_text_retry(settings: Settings, asset_id: str, expected_extraction: str)
 
 
 def recovery_files(settings: Settings, delete: bool) -> int:
-    from deixis.workflow import reconcile, recovery_history
-    from deixis.workflow.store import Store
+    from deixis.workflow.read import reconcile, recovery_history
+    from deixis.workflow.run.store import Store
 
     if (message := schema_problem(settings.db_path)) is not None:
         print(message, file=sys.stderr)

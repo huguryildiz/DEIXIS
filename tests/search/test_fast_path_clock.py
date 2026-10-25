@@ -12,10 +12,11 @@ from deixis.config import Settings
 from deixis.domain import canonical
 from deixis.domain.rules import TEST_EFFORT_BUDGETS
 from deixis.storage import db
-from deixis.workflow import fast_path, small_batch
-from deixis.workflow.flow import ResearchFlow
-from deixis.workflow.store import Store
-from deixis.workflow.worker import Worker
+from deixis.workflow.run import fast_path
+from deixis.workflow.search import small_batch
+from deixis.workflow.run.flow import ResearchFlow
+from deixis.workflow.run.store import Store
+from deixis.workflow.run.worker import Worker
 from fakes import FakeAdapter, valid_response
 from test_abstract_flow import ON_TOPIC
 from overlap_flow_helpers import discover, wait
@@ -202,7 +203,8 @@ def test_deadlines_use_only_frozen_enforced_stages(library, enforced, name):
 
 
 def test_end_to_end_sw_discovery_answer_with_fake_clock(tmp_path, monkeypatch):
-    from deixis.workflow import read as fast_read, search as fast_search
+    from deixis.workflow.read import read as fast_read
+    from deixis.workflow.search import search as fast_search
     clock = FakeClock()
     for method in ("_vocabulary", "_ranking", "_generate_answer", "_review"):
         original = getattr(ResearchFlow, method)

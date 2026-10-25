@@ -14,8 +14,8 @@ from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.models.adapter import ModelStepResult
 from deixis.providers.registry import CONNECTORS
-from deixis.workflow import adjudication, fulltext
-from deixis.workflow.decisions import DecisionStore
+from deixis.workflow.read import adjudication, fulltext
+from deixis.workflow.screen.decisions import DecisionStore
 from fakes import FakeAdapter, valid_response
 from helpers import make_pdf
 from test_abstract_flow import QUESTION, client_of, records_of
@@ -173,7 +173,7 @@ def test_a_completed_retrieval_run_is_followed_by_a_reading_run_that_includes_on
 ])
 def test_core_gate_and_recorded_source_coverage_through_the_api(tmp_path, monkeypatch, mode, expected):
     """SYNTHETIC model readings exercise persistence and API coverage, not relevance quality."""
-    from deixis.workflow.store import Store
+    from deixis.workflow.run.store import Store
 
     def response(si):
         body = json.loads(valid_response(si))
@@ -239,7 +239,8 @@ def test_core_gate_and_recorded_source_coverage_through_the_api(tmp_path, monkey
 
 
 def test_a_human_fulltext_decision_is_not_read(tmp_path, monkeypatch):
-    from deixis.workflow import answer as fast_answer, small_batch
+    from deixis.workflow.answer import answer as fast_answer
+    from deixis.workflow.search import small_batch
 
     # No automatic answer, so no late revision (D255) reads W1's file before the person decides.
     monkeypatch.setattr(fast_answer, "auto_answer", lambda store, run: None)

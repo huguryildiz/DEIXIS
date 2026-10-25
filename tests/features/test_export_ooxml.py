@@ -25,7 +25,7 @@ from deixis.exports import ooxml
 from deixis.exports import table as table_export
 from deixis.exports.omml import to_omml
 from deixis.exports.text import SERVER_ONLY, TR, number_text
-from deixis.workflow.report_latex_math import split_text
+from deixis.workflow.features.report.report_latex_math import split_text
 from test_api_flow import app_for, attached_research, create, session, wait_run
 from test_report_api import create_table, fill_table, upload_and_include
 from test_report_flow import ReportAdapter
@@ -536,7 +536,7 @@ def test_evidence_report_route_and_refusals(tmp_path):
             assert refused.status_code == status and "content-disposition" not in refused.headers
         pending = store.create_run(rid, "report", {"max_model_calls": 1, "max_provider_requests": 0}, None,
                                    {"table_id": table["table"]["id"]})
-        from deixis.workflow.report_store import ReportStore
+        from deixis.workflow.features.report.report_store import ReportStore
         unfinished = ReportStore(store).create_report(rid, pending["id"], pending["scope_revision"], "en")
         refused = client.get(f"/api/researches/{rid}/reports/{unfinished}/export/docx")
         assert refused.status_code == 409 and refused.json()["detail"] == "The report is still being written"

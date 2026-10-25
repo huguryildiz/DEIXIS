@@ -81,7 +81,7 @@ def test_chain_builds_and_fills_the_table_and_queues_no_report(tmp_path):
 
 
 def test_a_valid_answer_starts_the_chain_once_and_a_replay_does_not_repeat_it(tmp_path):
-    from deixis.workflow import report_pipeline
+    from deixis.workflow.features.report import report_pipeline
     with TestClient(auto_app(tmp_path, PipelineAdapter())) as raw:
         client = session(raw)
         store = raw.app.state.store

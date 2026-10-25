@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from deixis.domain import contracts
-from deixis.workflow import report_assembly as assembly
+from deixis.workflow.features.report import report_assembly as assembly
 from fakes import envelope
 from test_contracts import STEP_INPUTS
 from test_report_flow import _claim

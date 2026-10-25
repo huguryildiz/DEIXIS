@@ -19,7 +19,7 @@ from deixis.domain.skill import load_skill_package
 from deixis.models import prompt
 from deixis.models.adapter import CodexAdapter, is_rate_limited
 from deixis.paths import REPO_ROOT
-from deixis.workflow.flow import HANDLE_TASKS
+from deixis.workflow.run.flow import HANDLE_TASKS
 
 FIXTURES = REPO_ROOT / "tests/fixtures/research/step-inputs.json"
 CASES = REPO_ROOT / "tests/model_behavior/report_cases.json"

@@ -12,30 +12,30 @@ from deixis.domain import contracts, skill
 from deixis.models.adapter import ModelStepResult
 from deixis.storage import db
 from deixis.storage.db import dumps, new_id
-from deixis.workflow.concurrency import ModelCallLimiter
-from deixis.workflow.flow import FlowDeps, ResearchFlow, RunStopped
-from deixis.workflow.report_sections import _citation_links, run_report
-from deixis.workflow.report_assembly import run_assembly_checks
-from deixis.workflow import report_sections as sections
-from deixis.workflow.report_plan import ALLOWED_SUPPORT, freeze_plan, section_budgets
-from deixis.workflow.report_store import ReportStore
-from deixis.workflow.store import Store
-from deixis.workflow.worker import Worker
-from deixis.workflow import flow as flow_module
-from deixis.workflow.tables import TableStore
+from deixis.workflow.run.concurrency import ModelCallLimiter
+from deixis.workflow.run.flow import FlowDeps, ResearchFlow, RunStopped
+from deixis.workflow.features.report.report_sections import _citation_links, run_report
+from deixis.workflow.features.report.report_assembly import run_assembly_checks
+from deixis.workflow.features.report import report_sections as sections
+from deixis.workflow.features.report.report_plan import ALLOWED_SUPPORT, freeze_plan, section_budgets
+from deixis.workflow.features.report.report_store import ReportStore
+from deixis.workflow.run.store import Store
+from deixis.workflow.run.worker import Worker
+from deixis.workflow.run import flow as flow_module
+from deixis.workflow.features.tables.tables import TableStore
 from fakes import FakeAdapter, envelope
 from dataclasses import asdict
 from deixis.domain.rules import TEST_EFFORT_BUDGETS
-from deixis.workflow import small_batch
+from deixis.workflow.search import small_batch
 from test_criterion_passage_flow import library
 import copy
 from pathlib import Path
-from deixis.workflow.report_gaps import generate_corpus_absence_candidates
-from deixis.workflow.report_review_methodology import write_review_methodology
-from deixis.workflow.store import NotFound
-from deixis.workflow.report_selection import CELL_RESERVE_TOKENS
-from deixis.workflow.report_selection import SECTION_BUDGET_TOKENS
-from deixis.workflow.report_selection import select_evidence
+from deixis.workflow.features.report.report_gaps import generate_corpus_absence_candidates
+from deixis.workflow.features.report.report_review_methodology import write_review_methodology
+from deixis.workflow.run.store import NotFound
+from deixis.workflow.features.report.report_selection import CELL_RESERVE_TOKENS
+from deixis.workflow.features.report.report_selection import SECTION_BUDGET_TOKENS
+from deixis.workflow.features.report.report_selection import select_evidence
 
 
 COLUMN = {
@@ -598,7 +598,7 @@ def flow_of(store):
 
 def test_missing_frozen_list_becomes_recorded_failed_answer(tmp_path):
     import asyncio
-    from deixis.workflow.flow import RunStopped
+    from deixis.workflow.run.flow import RunStopped
 
     store, rid = library(tmp_path)
     discovery = store.create_run(rid, "discovery", {"inspection": {"policy": small_batch.POLICY}}, None)

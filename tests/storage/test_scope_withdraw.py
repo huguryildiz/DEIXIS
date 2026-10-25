@@ -4,7 +4,7 @@ research went back to. SYNTHETIC rows."""
 
 
 from deixis.storage import db
-from deixis.workflow.store import Store
+from deixis.workflow.run.store import Store
 
 PLAN = {"schema_version": "deixis.user_search_plan.v1", "setting": [{"term": "rail freight"}],
         "task": [{"term": "timetable"}], "setting_backup": [], "task_backup": [], "criterion": None,

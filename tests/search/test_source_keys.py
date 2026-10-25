@@ -7,7 +7,7 @@ import pytest
 
 from deixis.providers.common import ProviderRecord
 from deixis.storage import db
-from deixis.workflow.store import Store
+from deixis.workflow.run.store import Store
 
 
 def record(rid, authors, year, doi=None, title="SYNTHETIC molecular channel", version_label="publishedVersion", merge_by_doi=True):

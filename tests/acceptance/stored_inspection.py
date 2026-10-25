@@ -19,7 +19,7 @@ def seed(store, connection="codex", model="synthetic-model"):
             (run_id, rid, kind, dumps(fixture["budget"]), now(), now()))
     plan = store.step("run_old_sw_discovery", "fulltext_plan", "code:fulltext_plan")
     store.finish_step(plan["id"], "succeeded", output={"works": [source], "already_text": [], "not_reached": []})
-    from deixis.workflow.decisions import DecisionStore
+    from deixis.workflow.screen.decisions import DecisionStore
     DecisionStore(store).record(rid, source, "no_fulltext", step_id=plan["id"])
     step = store.step("run_old_sw_answer", "answer", "model:grounded_answer")
     passage = store.passage(pid) | {"passage_id": pid, "source_id": source}

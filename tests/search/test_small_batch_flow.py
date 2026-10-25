@@ -9,7 +9,7 @@ import pytest
 from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.providers.registry import CONNECTORS
-from deixis.workflow import small_batch
+from deixis.workflow.search import small_batch
 from fakes import FakeAdapter, valid_response
 from test_abstract_flow import ON_TOPIC, client_of as opened_client
 from overlap_flow_helpers import discover, output, SlowFetcher

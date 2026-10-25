@@ -14,7 +14,7 @@ import httpx
 from deixis.documents import acquisition
 from deixis.providers import common
 from deixis.storage import db
-from deixis.workflow.store import Store
+from deixis.workflow.run.store import Store
 from test_abstract_flow import Pool, app_for, client_of, discover, work
 
 URL = "https://api.openalex.org/works"

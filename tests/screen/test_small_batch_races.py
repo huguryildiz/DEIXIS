@@ -3,13 +3,13 @@ from contextlib import contextmanager
 
 import pytest
 
-from deixis.workflow.decisions import DecisionStore
+from deixis.workflow.screen.decisions import DecisionStore
 from fakes import FakeAdapter, valid_response
 from test_abstract_flow import client_of, records_of, work as abstract_work
 from test_adjudication_flow import app_for, discover, wait, papers
-from deixis.workflow import small_batch
-from deixis.workflow.background_fetch import FetchSlots
-from deixis.workflow.flow import ResearchFlow
+from deixis.workflow.search import small_batch
+from deixis.workflow.read.background_fetch import FetchSlots
+from deixis.workflow.run.flow import ResearchFlow
 from test_abstract_flow import ON_TOPIC, QUESTION
 from overlap_flow_helpers import Crash, app_for as overlap_app_for, fulltext_codes, run_until_crash, work_steps
 from test_fulltext_flow import Fetcher, Transport, named_pdf, ok, work

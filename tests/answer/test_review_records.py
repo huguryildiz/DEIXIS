@@ -5,7 +5,7 @@ import json
 import sqlite3
 import pytest
 from deixis.storage import db
-from deixis.workflow.review_store import applied_matches_suggestion, resolve_finding, TARGET_KINDS, FOCUSES, DECISIONS
+from deixis.workflow.features.review.review_store import applied_matches_suggestion, resolve_finding, TARGET_KINDS, FOCUSES, DECISIONS
 from review_helpers import report_with_sections, review_lib, stored_review, snapshot, review_run, step_payload, rows
 from test_report_claim_links import edit, claim
 from jsonschema import Draft202012Validator
@@ -13,19 +13,19 @@ from deixis.domain import contracts
 from fakes import valid_response
 from review_helpers import si, output, finding
 from deixis.domain.canonical import canonical_json
-from deixis.workflow.review_snapshot import build_snapshot, review_step_input_parts, NotReviewable
-from deixis.workflow.review_store import NotFound, resolve_finding, applied_matches_suggestion
+from deixis.workflow.features.review.review_snapshot import build_snapshot, review_step_input_parts, NotReviewable
+from deixis.workflow.features.review.review_store import NotFound, resolve_finding, applied_matches_suggestion
 from review_helpers import report_with_sections, review_lib, snapshot, step_payload, make_answer, finding
 from review_helpers import report_with_sections, review_lib, stored_review, all_rows
 import hashlib
 from deixis.config import Settings
 from deixis.domain.canonical import canonical_json
 from deixis.storage.backup import create_backup, restore_backup
-from deixis.workflow.review_store import SnapshotDependencyUnreadable
+from deixis.workflow.features.review.review_store import SnapshotDependencyUnreadable
 from review_helpers import report_with_sections, review_lib, stored_review, snapshot, make_answer, rows, all_rows
 from test_review import asset_evidence
 import re
-from deixis.workflow.review_store import TARGET_KINDS, FOCUSES, DECISIONS
+from deixis.workflow.features.review.review_store import TARGET_KINDS, FOCUSES, DECISIONS
 
 
 TABLES = ("owner_review_snapshots", "owner_reviews", "owner_review_findings", "owner_review_decisions")

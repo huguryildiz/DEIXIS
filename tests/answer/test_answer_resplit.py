@@ -9,8 +9,8 @@ import pytest
 from deixis.config import Settings
 from deixis.domain import contracts, skill
 from deixis.storage import db
-from deixis.workflow.flow import RESPLIT_KEY, FlowDeps, ResearchFlow
-from deixis.workflow.store import Store
+from deixis.workflow.run.flow import RESPLIT_KEY, FlowDeps, ResearchFlow
+from deixis.workflow.run.store import Store
 from fakes import FakeAdapter, valid_response
 
 

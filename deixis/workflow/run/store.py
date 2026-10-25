@@ -1,0 +1,3886 @@
+"""Persistence operations for researches, runs, sources, selections and answers.
+
+All writes happen in short synchronous transactions on one connection; callers
+never await inside a transaction, so the API and worker can share the connection
+on the event-loop thread. UI-visible events are written in the same transaction
+as the state they describe.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+import re
+import sqlite3
+from uuid import uuid4
+from pathlib import Path
+from typing import Any, Callable, Sequence
+
+from deixis.domain.canonical import sha256_hex
+from deixis.domain import statement as statement_rule
+from deixis.documents.jats import RENDITION_SQL
+from deixis.domain.rules import RevisionConflict, apply_model_change, check_expected_version, effective_reviewer, role_model, step_model
+from deixis.storage.db import dumps, new_id, now, row_dict, transaction
+from deixis.workflow.run import links, spend
+from deixis.workflow.read import recovery
+from deixis.workflow.run.source_keys import key_stem, suffixes
+from deixis.workflow.run.evidence_deps import EVIDENCE_STATUS_SQL
+
+ACTIVE_RUN_STATUSES = ("queued", "running", "pause_requested")
+# Research rows a feature owns for its run machinery (D86): never listed, searched or opened as a research.
+INTERNAL_RESEARCH_KINDS = ("citation_check",)
+DISCOVERY_RUN_KINDS = ("discovery", "fulltext_fetch", "fulltext_adjudication")
+ENDED_RUN_STATUSES = ("completed", "failed", "cancelled")
+TEXT_RETRY_REFUSALS = ("asset_removed", "no_holding_research", "membership_changed", "asset_replaced",
+                      "baseline_changed", "run_active", "input_not_verified", "file_missing", "file_mismatch")
+TEXT_RETRY_INTERRUPTIONS = ("storage_full", "storage_unavailable", "cancelled", "unexpected_error", "process_ended")
+ARXIV_DOI_PREFIX = "10.48550/arxiv."  # arXiv's DataCite DOI names a preprint with all its versions (D46)
+# Importers whose DOI no provider confirmed (a .bib / .ris entry, S19b): their record never joins another record's work
+# by that DOI, and no other record joins theirs, so a mistyped DOI cannot make an entry a version of another work.
+UNVERIFIED_DOI_PROVIDERS = ("reference_file",)
+# Step kinds whose output the research view carries: small counts the transcript reports, not model prose.
+STEP_OUTPUT_KINDS = ("fetch_pdf", "pdf_other_copy", "ocr_pages", "ocr_merge", "protocol:freeze", "read_equations", "equations_skipped",
+                     "code:fulltext_plan", "code:fulltext_work", "code:fulltext_summary", "code:criterion_phrases",
+                     "code:adjudication_plan", "code:adjudication_summary")
+STEP_OUTPUT_KEYS = ("semantic_retrieval", "source_similarity")
+MAX_SEED_PASSAGES = 4
+MAX_SEED_CHARS = 5600
+MAX_SEEDS = 5  # a seed is an ordered set of at most five PDFs (D3)
+MAX_RECORD_DOIS = 3
+SEED_REASONS = {"not_a_source": "The selected source is not part of this research",
+                "not_added_by_user": "Choose a PDF you added to this research",
+                "no_pdf": "The selected source has no PDF",
+                "no_readable_text": "The selected PDF has no readable text; read its scanned pages with OCR first"}
+
+
+def _step_view_output(row: Any) -> dict[str, Any] | None:
+    """The part of a step's output the research view carries: small counts, plus two slim lists of works for the
+    abstract-reading counter (how many the code queued, which ones the model has read), never the model's prose."""
+    if not row["output_json"]:
+        return None
+    if row["operation_key"] == "fast_chain:summary" or row["operation_key"].startswith("chain:fast:"):
+        return json.loads(row["output_json"])
+    # The fast chain's seeds carry their reference lists; the timeline needs only how many there were.
+    if row["operation_key"] in ("fast_chain:seeds", "fast_chain:seeds_fallback"):
+        return {"seed_count": len(json.loads(row["output_json"]).get("seeds") or [])}
+    if row["operation_key"] == "rerank:v1:list":  # D104: whether the reranker ran, never its scores or candidates
+        out = json.loads(row["output_json"])
+        return {"provider": out.get("provider"), "model": out.get("model"), "error_code": out.get("error_code"),
+                "reranked": len(out.get("candidate_ids") or []), "cut_documents": out.get("cut_documents")}
+    if row["operation_key"] == "small_batch:v1:list":  # whether the frozen order used the rerank (D104), not the order
+        return {"reranker": json.loads(row["output_json"]).get("reranker")}
+    if row["kind"] in STEP_OUTPUT_KINDS or row["operation_key"] in STEP_OUTPUT_KEYS:
+        return json.loads(row["output_json"])
+    if row["kind"] == "code:abstract_stage":
+        return {"batch_sizes": [len(batch) for batch in json.loads(row["output_json"]).get("batches", [])]}
+    if row["kind"] == "model:abstract_screening" and row["status"] == "succeeded":
+        records = (json.loads(row["output_json"]).get("result") or {}).get("records") or []
+        return {"candidate_ids": [r["candidate_id"] for r in records if isinstance(r, dict) and "candidate_id" in r]}
+    return None
+
+
+def _output_digest(raw_output: str) -> str:
+    """Digest of a model's answer, over the parsed value when it is JSON and over its text when it is not.
+
+    The prefix says which was read: two syntactically different JSON texts of one value are the same output, and
+    text that never parsed is not silently compared as if it had.
+    """
+    try:
+        return f"json:{sha256_hex(json.loads(raw_output))}"
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return f"text:{sha256_hex(raw_output)}"
+
+
+# The suffix an equation pass appends to the extraction it was laid on (D36, D40, D46, D113).
+EQUATION_PASS = re.compile(r"\+(?:marker-|arxiv-latex-|mathpix-|model-eq-).*$")
+
+
+def _read_person_file(requests: dict[str, dict[str, Any]]) -> str | None:
+    """The version whose person's file was read and still is as it was read, the newest such request's (slice 18b)."""
+    held = [request for request in requests.values() if request["holds"]]
+    return held[-1]["source_version_id"] if held else None
+
+
+def title_key(title: str | None) -> str:
+    return re.sub(r"\W+", " ", (title or "").casefold()).strip()
+
+
+def seed_key(seeds: list[dict[str, Any]]) -> str:
+    """The identity of an ordered seed set (D3): per seed its source, file, extraction, excerpt, title and record
+    DOIs. A second run reuses a match, and the page matches a protocol to the scope, by this key, not by file hash."""
+    return sha256_hex([{"source_version_id": s["source_version_id"], "asset_id": s["asset_id"],
+                        "asset_sha256": s["asset_sha256"], "extraction_version": s["extraction_version"],
+                        "passages": [p["text_sha256"] for p in s["passages"]], "title_basis": s["title_basis"],
+                        "title_key": title_key(s["title"]), "record_dois": s.get("record_dois") or []} for s in seeds])
+
+
+def read_seed_snapshot(raw: dict[str, Any] | None) -> dict[str, Any]:
+    """A stored seed snapshot in the v2 form (D3). D2's single dict reads as a one-seed set without record DOIs; its
+    excerpt is kept as frozen, never cut again. No snapshot is an empty set."""
+    if not raw:
+        return {"version": 2, "seeds": [], "not_selected": [], "skipped": [], "seed_key": None}
+    if raw.get("version") == 2:
+        return raw
+    seeds = [raw | {"record_dois": raw.get("record_dois") or []}]
+    return {"version": 2, "seeds": seeds, "not_selected": [], "skipped": [], "seed_key": seed_key(seeds)}
+
+
+def seed_source_ids(scope: dict[str, Any]) -> list[str]:
+    """The scope's seed sources in their canonical order (D3)."""
+    return [s["source_version_id"] for s in scope.get("seeds") or []]
+
+
+def is_preprint(source: dict[str, Any]) -> bool:
+    label = source.get("version_label") or ""
+    return (source.get("doi") or "").startswith(ARXIV_DOI_PREFIX) or label == "submittedVersion" or label.startswith("arXiv")
+
+
+def is_published(source: dict[str, Any]) -> bool:
+    """A record under its own registered DOI that is not a preprint's (D48)."""
+    return bool(source.get("doi")) and not is_preprint(source)
+
+
+# The history reason a new head writes when it takes over another version's selection. It is reserved: a person's own
+# reason may not be this text (the API refuses it), so the probe set can tell the copy from a real edit (slice 19).
+COPIED_SELECTION_REASON = "taken from another version of the same work"
+# The events a question revision may have after it was opened and still be withdrawn (D67): a person's selection and
+# decisions, a title they wrote, and the built-in model's English sentence. The title run's own events are allowed by run.
+WITHDRAWABLE_EVENTS = frozenset({"scope_revised", "seed_selected", "selection_changed", "stage_decision_recorded",
+                                 "stage_decision_undone", "research_title_edited", "english_question_saved",
+                                 "scope_revision_withdrawn"})
+
+class NotFound(Exception):
+    pass
+
+
+class PdfInUse(Exception):
+    """A source version has at most one PDF in use; another file replaces it (D46)."""
+
+
+class RunInProgress(Exception):
+    """A research using the source has a queued, running or pause-requested run (D46)."""
+
+
+class RequestConflict(Exception):
+    """An idempotency key was already used for a different request."""
+
+
+class RecoveryConflict(Exception):
+    """The retry baseline moved or another retry owns the asset."""
+
+
+class NotRetryable(Exception):
+    """The current extraction is healthy or still pending."""
+
+
+class SameFile(Exception):
+    """A PDF can only be replaced by a different file (D46)."""
+
+
+class NotASource(Exception):
+    """A source version that was never a source of the research (D50); the API answers 422."""
+
+
+class SeedUnavailable(Exception):
+    """The selected seed is not a readable, current PDF in this research."""
+
+
+class _SeedRefused(Exception):
+    """Why one source cannot be a seed (a key of `SEED_REASONS`)."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+class LegacyInspectionPolicyRemoved(Exception):
+    """D242: an inspection run the current policy cannot execute; the API answers 409."""
+
+
+def provisional_title(question: str) -> str:
+    """The research's name until a model title replaces it: the question's first 15 words, with `…` when cut (D39).
+
+    The full question stays in the scope; only the shown name is short.
+    """
+    words = question.split()
+    return " ".join(words[:15]) + ("…" if len(words) > 15 else "")
+
+
+EQUATION_SKIP_KEY = "equations_skip"
+
+
+def _criterion_of(body: dict[str, Any], protocol_revision: int) -> dict[str, Any]:
+    """A frozen body's criterion as `Store.frozen_criterion` returns it."""
+    origin = body.get("criterion_origin") or {}
+    return {
+        "criterion": body["inclusion_criterion"], "parts": body["criterion_parts"],
+        "cue_phrases": body["cue_phrases"], "exclusion_title_words": body["exclusion_title_words"],
+        # The source record of the run that proposed it travels with it; only `origin` becomes "protocol".
+        "dropped_exclusion_title_words": origin.get("dropped_exclusion_title_words", []),
+        "base_run": origin.get("base_run"), "runs_ok": origin.get("runs_ok", []),
+        "sought_term_in_criterion": origin.get("sought_term_in_criterion"),
+        "question_elements": origin.get("question_elements", []),
+        "required_roles": origin.get("required_roles", []),
+        **({"role_fallback": origin["role_fallback"]} if "role_fallback" in origin else {}),
+        "protocol_revision": protocol_revision,
+    }
+
+class Store:
+    def __init__(self, conn: sqlite3.Connection, clock: Any = None):
+        from deixis.workflow.run import fast_path
+
+        self.conn = conn
+        self.clock = clock if clock is not None else fast_path.SystemClock()
+        self.recovery_dir: Path | None = None
+        self.study_table = "off"  # Settings.study_table, set by create_app; the research view reads it
+        self.pending_text_retry_interruptions: dict[str, str] = {}
+        self.pending_file_restore_interruptions: dict[str, str] = {}
+        self._text_retry_probe_errors: set[tuple[str, int | None]] = set()
+        # Pure functions of rows that are never rewritten, kept for the life of this store (slice 18b): a file's page
+        # digest by (asset, extraction version) — an extraction's passages are written once and shadowed, never
+        # changed — and the file each work of a frozen reading plan read, by run.
+        self._page_digests: dict[tuple[str, str], str] = {}
+        self._plan_files: dict[str, dict[str, tuple[str, str]]] = {}
+
+    # ---- events -----------------------------------------------------------------
+    def _event(self, research_id: str, type_: str, payload: dict[str, Any], run_id: str | None = None) -> int:
+        cur = self.conn.execute(
+            "INSERT INTO events (research_id, run_id, type, payload_json, created_at) VALUES (?, ?, ?, ?, ?)",
+            (research_id, run_id, type_, dumps(payload), now()),
+        )
+        return int(cur.lastrowid)
+
+    def service_waiting(self, run_id: str, connection: str, attempt: int, seconds: float) -> None:
+        with transaction(self.conn):
+            run = self.run(run_id)
+            self._event(run["research_id"], "service_waiting", {
+                "connection": connection, "attempt": attempt, "seconds": seconds,
+                "service_kind": "rate_limited",
+            }, run_id)
+
+    def events_after(self, research_id: str, after_id: int, limit: int = 200) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT * FROM events WHERE research_id = ? AND id > ? ORDER BY id LIMIT ?",
+            (research_id, after_id, limit),
+        ).fetchall()
+        return [{**dict(r), "payload": json.loads(r["payload_json"])} for r in rows]
+
+    # ---- researches ----------------------------------------------------------------
+    def create_research(
+        self,
+        question: str,
+        source_scope: str,
+        effort: str,
+        providers: list[str],
+        model_connection: str,
+        requested_model: str | None,
+        language_hint: str | None,
+        reasoning_effort: str | None = None,
+        literature_model: str | None = None,
+        literature_reasoning_effort: str | None = None,
+        review_mode: str = "default",
+        review_model: str | None = None,
+        review_reasoning_effort: str | None = None,
+        literature_connection: str | None = None,
+        review_connection: str | None = None,
+        seed_mode: str = "question_only",
+        search_workflow: str = "sw",
+        key_terms: str | None = None,
+        intent: str = "report",
+        statement_field: str | None = None,
+    ) -> str:
+        rid, ts = new_id("res"), now()
+        title = provisional_title(question)
+        with transaction(self.conn):
+            self.conn.execute(
+                "INSERT INTO researches (id, title, created_at, updated_at, intent) VALUES (?, ?, ?, ?, ?)",
+                (rid, title, ts, ts, intent),
+            )
+            columns = {
+                "research_id": rid, "revision": 1, "question": question.strip(), "language_hint": language_hint,
+                "source_scope": source_scope, "providers_json": dumps(providers), "effort": effort,
+                "model_connection": model_connection, "requested_model": requested_model,
+                "reasoning_effort": reasoning_effort, "literature_model": literature_model,
+                "literature_reasoning_effort": literature_reasoning_effort, "review_mode": review_mode,
+                "review_model": review_model, "review_reasoning_effort": review_reasoning_effort,
+                "literature_connection": literature_connection, "review_connection": review_connection,
+                "created_at": ts,
+            }
+            columns["seed_mode"] = seed_mode
+            columns["search_workflow"] = search_workflow
+            columns["key_terms"] = key_terms
+            columns["statement_field"] = statement_field
+            names = ", ".join(columns)
+            placeholders = ", ".join("?" for _ in columns)
+            self.conn.execute(
+                f"INSERT INTO scope_revisions ({names}) VALUES ({placeholders})", tuple(columns.values())
+            )
+            self._event(rid, "research_created", {"scope_revision": 1})
+        return rid
+
+    def create_internal_research(self, kind: str, title: str) -> str:
+        """A research row a feature owns (D86): no scope revision, no event, no run. Nothing starts discovery, a scope
+        plan or a title call for it; the lists and research routes leave it out (`is_internal_research`)."""
+        if kind not in INTERNAL_RESEARCH_KINDS:
+            raise ValueError(f"not an internal research kind: {kind!r}")
+        rid, ts = new_id("res"), now()
+        with transaction(self.conn):
+            self.conn.execute("INSERT INTO researches (id, title, created_at, updated_at, kind) VALUES (?, ?, ?, ?, ?)",
+                              (rid, title, ts, ts, kind))
+        return rid
+
+    def is_internal_research(self, research_id: str) -> bool:
+        return self.conn.execute("SELECT 1 FROM researches WHERE id = ? AND kind <> 'research'", (research_id,)).fetchone() is not None
+
+    def research(self, research_id: str) -> dict[str, Any]:
+        row = self.conn.execute("SELECT * FROM researches WHERE id = ? AND trashed_at IS NULL", (research_id,)).fetchone()
+        if row is None:
+            raise NotFound(research_id)
+        return dict(row)
+
+    def trash_research(self, research_id: str) -> None:
+        """Move a research to trash; active work must be finished or cancelled first."""
+        with transaction(self.conn):
+            self.research(research_id)
+            active = self.conn.execute(
+                "SELECT 1 FROM runs WHERE research_id = ? AND status IN ('queued', 'running', 'pause_requested') LIMIT 1",
+                (research_id,),
+            ).fetchone()
+            if active:
+                raise RevisionConflict("Cancel or finish active runs before trashing this research")
+            self.conn.execute("UPDATE researches SET trashed_at = ? WHERE id = ?", (now(), research_id))
+
+    def trash(self) -> dict[str, list[dict[str, Any]]]:
+        """What the Trash page lists, by kind, each with what it holds (D50).
+
+        A trashed research's tables and removed sources are not listed on their own: they go and come back with it.
+        """
+        researches = [dict(r) for r in self.conn.execute(
+            "SELECT id, title, trashed_at FROM researches WHERE trashed_at IS NOT NULL AND kind = 'research'"
+            " ORDER BY trashed_at DESC"
+        )]
+        tables = [dict(r) for r in self.conn.execute(
+            "SELECT t.id, t.title, t.research_id, r.title AS research_title, t.version, t.trashed_at,"
+            " (SELECT COUNT(*) FROM table_rows w WHERE w.table_id = t.id AND w.removed_at IS NULL) AS rows,"
+            " (SELECT COUNT(*) FROM table_columns c WHERE c.table_id = t.id AND c.removed_at IS NULL) AS columns,"
+            " (SELECT COUNT(*) FROM evidence_cells c WHERE c.table_id = t.id AND c.current_revision_id IS NOT NULL) AS cells,"
+            " (SELECT COUNT(*) FROM cell_revisions v JOIN evidence_cells c ON c.id = v.cell_id"
+            "  WHERE c.table_id = t.id AND v.kind IN ('human_edit', 'accept_proposal')) AS human_edits"
+            " FROM evidence_tables t JOIN researches r ON r.id = t.research_id"
+            " WHERE t.trashed_at IS NOT NULL AND r.trashed_at IS NULL ORDER BY t.trashed_at DESC"
+        )]
+        sources = [dict(r) for r in self.conn.execute(
+            "SELECT m.source_version_id, v.work_id, v.title, v.version_label, v.year, m.research_id, r.title AS research_title,"
+            " m.removed_at, m.removal_note, m.found_again_at,"
+            " (SELECT id FROM passages WHERE source_version_id = m.source_version_id AND kind = 'abstract' LIMIT 1) AS abstract_passage_id,"
+            " (SELECT COUNT(*) FROM evidence_links l JOIN claims c ON c.id = l.claim_id JOIN answers a ON a.id = c.answer_id"
+            "  WHERE a.research_id = m.research_id AND l.source_version_id = m.source_version_id) AS quotes,"
+            " (SELECT COUNT(*) FROM evidence_cells c JOIN evidence_tables t ON t.id = c.table_id"
+            "  WHERE t.research_id = m.research_id AND c.source_version_id = m.source_version_id AND c.current_revision_id IS NOT NULL) AS cells,"
+            " EXISTS (SELECT 1 FROM evidence_links WHERE source_version_id = m.source_version_id"
+            "  UNION SELECT 1 FROM table_rows WHERE source_version_id = m.source_version_id"
+            "  UNION SELECT 1 FROM evidence_cells WHERE source_version_id = m.source_version_id"
+            "  UNION SELECT 1 FROM report_citation_links WHERE source_version_id = m.source_version_id"
+            "  UNION SELECT 1 FROM followup_turn_links WHERE source_version_id = m.source_version_id) AS cited"
+            " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id JOIN researches r ON r.id = m.research_id"
+            " WHERE m.removed_at IS NOT NULL AND r.trashed_at IS NULL AND r.kind = 'research' ORDER BY m.removed_at DESC, v.title"
+        )]
+        templates = [dict(r) for r in self.conn.execute(
+            "SELECT id, name, trashed_at, json_array_length(columns_json) AS columns FROM table_templates"
+            " WHERE trashed_at IS NOT NULL ORDER BY trashed_at DESC"
+        )]
+        return {"researches": researches, "tables": tables, "sources": sources, "templates": templates}
+
+    def restore_research(self, research_id: str) -> None:
+        with transaction(self.conn):
+            result = self.conn.execute(
+                "UPDATE researches SET trashed_at = NULL WHERE id = ? AND trashed_at IS NOT NULL", (research_id,)
+            )
+            if not result.rowcount:
+                raise NotFound(research_id)
+
+    def purge_research(self, research_id: str) -> tuple[list[str], list[str]]:
+        """Delete a trashed research and unshared source records; return orphaned file paths for cleanup."""
+        with transaction(self.conn):
+            row = self.conn.execute("SELECT trashed_at FROM researches WHERE id = ?", (research_id,)).fetchone()
+            if row is None or row["trashed_at"] is None:
+                raise NotFound(research_id)
+            active = self.conn.execute(
+                "SELECT 1 FROM runs WHERE research_id = ? AND status IN ('queued', 'running', 'pause_requested') LIMIT 1",
+                (research_id,),
+            ).fetchone()
+            if active:
+                raise RevisionConflict("Active runs prevent permanent deletion")
+            source_ids = [r[0] for r in self.conn.execute(
+                "SELECT source_version_id FROM corpus_memberships WHERE research_id = ? UNION "
+                "SELECT source_version_id FROM candidates WHERE research_id = ?", (research_id, research_id)
+            )]
+            payloads = [r[0] for r in self.conn.execute(
+                "SELECT raw_payload_path FROM search_runs WHERE research_id = ? AND raw_payload_path IS NOT NULL",
+                (research_id,),
+            )]
+            candidate_searches = (
+                "SELECT s.id FROM kill_searches s JOIN candidate_versions v ON v.id = s.candidate_version_id"
+                " JOIN research_candidates c ON c.id = v.candidate_id WHERE c.research_id = ?"
+            )
+            source_ids.extend(r[0] for r in self.conn.execute(
+                f"SELECT source_version_id FROM kill_search_query_records WHERE kill_search_id IN ({candidate_searches})"
+                f" UNION SELECT source_version_id FROM kill_search_hits WHERE kill_search_id IN ({candidate_searches})",
+                (research_id, research_id),
+            ))
+            payloads.extend(r[0] for r in self.conn.execute(
+                f"SELECT raw_payload_path FROM kill_search_queries WHERE kill_search_id IN ({candidate_searches})"
+                " AND raw_payload_path IS NOT NULL", (research_id,),
+            ))
+            self.conn.execute("INSERT INTO research_purge_authorizations VALUES (?)", (research_id,))
+            from deixis.workflow.features.candidates.candidates_store import purge_candidates
+            purge_candidates(self.conn, research_id)
+            from deixis.workflow.features.review.review_store import purge_owner_reviews
+            source_ids.extend(purge_owner_reviews(self.conn, research_id))
+            from deixis.workflow.features.watch.watch_store import purge_watches
+            payloads.extend(purge_watches(self.conn, research_id))
+            self.conn.execute(
+                "DELETE FROM report_edit_checks WHERE report_id IN"
+                " (SELECT id FROM reports WHERE research_id = ?)", (research_id,),
+            )
+            self.conn.execute(
+                "DELETE FROM report_stale_acknowledgements WHERE report_id IN"
+                " (SELECT id FROM reports WHERE research_id = ?)", (research_id,),
+            )
+            self.conn.execute(
+                "UPDATE report_claims SET current_revision_id = NULL WHERE report_section_id IN"
+                " (SELECT s.id FROM report_sections s JOIN reports r ON r.id = s.report_id WHERE r.research_id = ?)",
+                (research_id,),
+            )
+            self.conn.execute(
+                "DELETE FROM report_claim_revision_links WHERE revision_id IN"
+                " (SELECT v.id FROM report_claim_revisions v JOIN report_claims c ON c.id = v.claim_id"
+                " JOIN report_sections s ON s.id = c.report_section_id JOIN reports r ON r.id = s.report_id"
+                " WHERE r.research_id = ?)", (research_id,),
+            )
+            for table in ("report_claim_revisions", "report_citation_links", "report_claim_refs"):
+                self.conn.execute(
+                    f"DELETE FROM {table} WHERE claim_id IN (SELECT c.id FROM report_claims c"
+                    " JOIN report_sections s ON s.id = c.report_section_id JOIN reports r ON r.id = s.report_id"
+                    " WHERE r.research_id = ?)", (research_id,),
+                )
+            self.conn.execute(
+                "DELETE FROM report_claims WHERE report_section_id IN"
+                " (SELECT s.id FROM report_sections s JOIN reports r ON r.id = s.report_id WHERE r.research_id = ?)",
+                (research_id,),
+            )
+            for table in ("report_phrase_repairs", "report_gaps", "report_snapshot", "report_sections"):
+                self.conn.execute(
+                    f"DELETE FROM {table} WHERE report_id IN (SELECT id FROM reports WHERE research_id = ?)",
+                    (research_id,),
+                )
+            self.conn.execute("DELETE FROM reports WHERE research_id = ?", (research_id,))
+            from deixis.workflow.features.tables.tables import purge_tables  # tables builds on this module
+            purge_tables(self.conn, research_id)  # cell revisions reference runs, step inputs and passages deleted below
+            # Follow-up turns and their links (S22a) point at runs, step inputs and passages deleted below.
+            self.conn.execute("DELETE FROM followup_turn_links WHERE turn_id IN (SELECT id FROM followup_turns WHERE research_id = ?)", (research_id,))
+            self.conn.execute("DELETE FROM followup_turns WHERE research_id = ?", (research_id,))
+            # Statement checks (reverse citation search) point at runs and steps deleted below; their items go with them.
+            self.conn.execute("DELETE FROM statement_checks WHERE research_id = ?", (research_id,))
+            self.conn.execute("DELETE FROM evidence_links WHERE claim_id IN (SELECT id FROM claims WHERE answer_id IN (SELECT id FROM answers WHERE research_id = ?))", (research_id,))
+            self.conn.execute("DELETE FROM claims WHERE answer_id IN (SELECT id FROM answers WHERE research_id = ?)", (research_id,))
+            self.conn.execute("DELETE FROM pdf_candidates WHERE discovery_run_id IN (SELECT id FROM pdf_discovery_runs WHERE research_id = ?)", (research_id,))
+            self.conn.execute("DELETE FROM pdf_discovery_runs WHERE research_id = ?", (research_id,))
+            # Stage decisions, proposals and ranks go before the run steps and passages they point at.
+            for table in ("person_pdf_requests", "pdf_skips", "answer_reviews", "answers", "model_sessions", "step_inputs",
+                          "candidate_hits", "candidates", "search_runs",
+                          "selections", "selection_history", "suspected_duplicates", "corpus_memberships", "events",
+                          "source_similarities", "protocol_records", "human_selection_links", "stage_decisions",
+                          "model_proposals", "record_signal_ranks", "record_flags", "chain_links", "scope_english_questions"):
+                self.conn.execute(f"DELETE FROM {table} WHERE research_id = ?", (research_id,))
+            self.conn.execute("DELETE FROM run_steps WHERE run_id IN (SELECT id FROM runs WHERE research_id = ?)", (research_id,))
+            for table in ("provider_requests", "provider_requests_unrecorded_runs", "snowball_admissions"):
+                self.conn.execute(f"DELETE FROM {table} WHERE run_id IN (SELECT id FROM runs WHERE research_id = ?)", (research_id,))
+            for table in ("runs", "scope_revisions"):
+                self.conn.execute(f"DELETE FROM {table} WHERE research_id = ?", (research_id,))
+            self.conn.execute("DELETE FROM researches WHERE id = ?", (research_id,))
+            self.conn.execute("DELETE FROM research_purge_authorizations WHERE research_id = ?", (research_id,))
+            orphan_files: list[str] = []
+            source_ids = list(dict.fromkeys(source_ids))
+            # Remaining citations and snapshots protect evidence even without corpus membership.
+            cited = self.cited_source_versions(source_ids)
+            from deixis.workflow.read.recovery_history import frozen_source_versions
+            frozen = frozen_source_versions(self.conn, source_ids)
+            for source_id in source_ids:
+                # A provider source may be shared by another research or saved in the Library (S19a). Keep its
+                # evidence and files in that case.
+                shared = self.conn.execute(
+                    "SELECT 1 FROM corpus_memberships WHERE source_version_id = ? UNION SELECT 1 FROM candidates WHERE source_version_id = ?"
+                    " UNION SELECT 1 FROM kill_search_query_records WHERE source_version_id = ?"
+                    " UNION SELECT 1 FROM kill_search_hits WHERE source_version_id = ?"
+                    " UNION SELECT 1 FROM library_items WHERE source_version_id = ? LIMIT 1",
+                    (source_id, source_id, source_id, source_id, source_id),
+                ).fetchone()
+                if shared or source_id in cited or source_id in frozen:
+                    continue
+                source = self.conn.execute("SELECT work_id, provider_payload_path FROM source_versions WHERE id = ?", (source_id,)).fetchone()
+                if source is None:
+                    continue
+                orphan_files.extend(self._purge_asset_extractions(source_id))
+                if source["provider_payload_path"]:
+                    payloads.append(source["provider_payload_path"])
+                payloads.extend(r[0] for r in self.conn.execute(
+                    "SELECT payload_ref FROM passages WHERE source_version_id = ?"
+                    " AND kind = 'abstract' AND payload_ref IS NOT NULL", (source_id,),
+                ))
+                orphan_files.extend(r[0] for r in self.conn.execute("SELECT storage_path FROM source_assets WHERE source_version_id = ?", (source_id,)))
+                self.conn.execute("DELETE FROM record_links WHERE source_version_id = ? OR other_source_version_id = ?"
+                                  " OR parent_source_version_id = ?", (source_id, source_id, source_id))
+                self.conn.execute("DELETE FROM record_lookups WHERE source_version_id = ?", (source_id,))
+                self.conn.execute("DELETE FROM record_references WHERE source_version_id = ?", (source_id,))
+                self.conn.execute("DELETE FROM identifier_mappings WHERE source_version_id = ?", (source_id,))
+                self.conn.execute("DELETE FROM passage_embeddings WHERE passage_id IN (SELECT id FROM passages WHERE source_version_id = ?)", (source_id,))
+                self.conn.execute("DELETE FROM passages_fts WHERE rowid IN (SELECT rowid FROM passages WHERE source_version_id = ?)", (source_id,))
+                self.conn.execute("DELETE FROM passages WHERE source_version_id = ?", (source_id,))
+                self.conn.execute("DELETE FROM source_assets WHERE source_version_id = ?", (source_id,))
+                self.conn.execute("DELETE FROM source_versions WHERE id = ?", (source_id,))
+                self.conn.execute("DELETE FROM works WHERE id = ? AND NOT EXISTS (SELECT 1 FROM source_versions WHERE work_id = ?)", (source["work_id"], source["work_id"]))
+            # Files are content-addressed and may be referenced by another asset or search run.
+            orphan_files = [p for p in set(orphan_files) if not self.conn.execute("SELECT 1 FROM source_assets WHERE storage_path = ?", (p,)).fetchone()]
+            payloads = [p for p in set(payloads) if not self.conn.execute(
+                "SELECT 1 FROM search_runs WHERE raw_payload_path = ? UNION SELECT 1 FROM source_versions WHERE provider_payload_path = ?"
+                " UNION SELECT 1 FROM kill_search_queries WHERE raw_payload_path = ?"
+                " UNION SELECT 1 FROM passages WHERE payload_ref = ?", (p, p, p, p)
+            ).fetchone()]
+            payloads = [p for p in payloads if not self.conn.execute(
+                "SELECT 1 FROM watch_reads WHERE raw_payload_path=?", (p,)).fetchone()]
+        return orphan_files, payloads
+
+    def selection_revision(self, research_id: str) -> int:
+        return self.research(research_id)["selection_revision"]
+
+    def _bump_selection_revision(self, research_id: str, old_state: str | None, new_state: str) -> None:
+        if old_state != new_state and "included" in (old_state, new_state):
+            self.conn.execute("UPDATE researches SET selection_revision = selection_revision + 1 WHERE id = ?", (research_id,))
+
+    def list_researches(self) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT r.*, s.question, s.source_scope, s.effort,"
+            " (SELECT status FROM runs WHERE research_id = r.id ORDER BY created_at DESC LIMIT 1) AS last_run_status,"
+            " (SELECT kind FROM runs WHERE research_id = r.id ORDER BY created_at DESC LIMIT 1) AS last_run_kind,"
+            " (SELECT COUNT(*) FROM answers WHERE research_id = r.id AND status = 'structurally_valid') AS answer_count,"
+            " (SELECT COUNT(*) FROM watch_items WHERE research_id = r.id AND status = 'new' AND kind = 'new_record') AS followup_new"
+            " FROM researches r JOIN scope_revisions s ON s.research_id = r.id AND s.revision = r.current_scope_revision"
+            " WHERE r.trashed_at IS NULL AND r.kind = 'research'"
+            " ORDER BY r.updated_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def quick_search(self, text: str, limit: int = 8) -> dict[str, list[dict[str, Any]]]:
+        """Substring match (ASCII case-insensitive) over research titles/questions and the titles of each research's sources."""
+        researches = self.conn.execute(
+            "SELECT r.id, r.title, s.question, r.updated_at FROM researches r"
+            " JOIN scope_revisions s ON s.research_id = r.id AND s.revision = r.current_scope_revision"
+            " WHERE r.trashed_at IS NULL AND r.kind = 'research' AND (instr(lower(r.title), lower(?)) > 0 OR instr(lower(s.question), lower(?)) > 0)"
+            " ORDER BY r.updated_at DESC LIMIT ?", (text, text, limit)
+        ).fetchall()
+        sources = self.conn.execute(
+            "SELECT v.id AS source_version_id, v.title, v.year, v.version_label, m.research_id, r.title AS research_title"
+            " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id JOIN researches r ON r.id = m.research_id"
+            " WHERE r.trashed_at IS NULL AND r.kind = 'research' AND m.removed_at IS NULL AND instr(lower(v.title), lower(?)) > 0 ORDER BY r.updated_at DESC, v.title LIMIT ?", (text, limit * 2)
+        ).fetchall()
+        return {"researches": [dict(r) for r in researches], "sources": [dict(r) for r in sources]}
+
+    def scope(self, research_id: str, revision: int | None = None) -> dict[str, Any]:
+        if revision is None:
+            revision = self.research(research_id)["current_scope_revision"]
+        row = self.conn.execute(
+            "SELECT * FROM scope_revisions WHERE research_id = ? AND revision = ?", (research_id, revision)
+        ).fetchone()
+        if row is None:
+            raise NotFound(f"{research_id} revision {revision}")
+        scope = dict(row)
+        scope["providers"] = json.loads(scope.pop("providers_json"))
+        snapshot = read_seed_snapshot(json.loads(raw) if (raw := scope.pop("seed_snapshot_json", None)) else None)
+        scope["seeds"], scope["seed_key"] = snapshot["seeds"], snapshot["seed_key"]
+        scope["seed_not_selected"], scope["seed_skipped"] = snapshot["not_selected"], snapshot["skipped"]
+        # The search plan a person saved with this revision (UI parity S23a, F18), or None.
+        scope["user_plan"] = json.loads(raw) if (raw := scope.pop("user_plan_json", None)) else None
+        # A person's model changes (UI parity S17, F10) hold for the research, whatever its revision: every scope read
+        # gives the models in effect now, so a step input built after a change carries the new model. What a finished
+        # step ran on stays in its StepInput and model session, never in this read.
+        for change in self.model_changes(research_id):
+            apply_model_change(scope, change["role"], change["to"])
+        return scope
+
+    def model_changes(self, research_id: str) -> list[dict[str, Any]]:
+        """The research's model changes, oldest first: role, the model before and after, why, who and when."""
+        return [{"id": r["id"], "role": r["role"], "from": json.loads(r["from_json"]), "to": json.loads(r["to_json"]),
+                 "reason": r["reason"], "changed_by": r["changed_by"], "changed_at": r["changed_at"]}
+                for r in self.conn.execute("SELECT * FROM research_model_changes WHERE research_id = ? ORDER BY rowid",
+                                           (research_id,))]
+
+    def change_role_model(self, research_id: str, role: str, connection: str, model: str, reasoning_effort: str | None,
+                          expected_version: int, reason: str | None = None) -> dict[str, Any]:
+        """Move one role of a research to another model (UI parity S17, F10), recorded and shown, never silent.
+
+        Refused while a run of the research is executing (running or pause requested): a run keeps the models it
+        started or was resumed with, so every call it sends compares its answer's model with the model that call
+        asked for (`model_mismatch`). A queued run, a paused run once resumed, and every later run send their next
+        model steps to the new model; a step that already succeeded returns its stored output and is not sent again.
+        """
+        to = {"connection": connection, "model": model, "reasoning_effort": reasoning_effort}
+        with transaction(self.conn):
+            research = self.research(research_id)
+            check_expected_version(expected_version, research["version"])
+            executing = self.conn.execute(
+                "SELECT id FROM runs WHERE research_id = ? AND status IN ('running', 'pause_requested') LIMIT 1",
+                (research_id,)).fetchone()
+            if executing:
+                raise RevisionConflict(f"run {executing['id']} is running; pause it before changing a model")
+            before = role_model(self.scope(research_id), role, self.setting("reviewer"))
+            if {k: before[k] for k in to} == to and before.get("review_mode", "custom") == "custom":
+                raise ValueError(f"The {role} role already uses this model")
+            change_id, ts = new_id("rmc"), now()
+            self.conn.execute(
+                "INSERT INTO research_model_changes (id, research_id, role, from_json, to_json, reason, changed_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)", (change_id, research_id, role, dumps(before), dumps(to), reason, ts))
+            self.conn.execute("UPDATE researches SET version = version + 1, updated_at = ? WHERE id = ?", (ts, research_id))
+            self._event(research_id, "research_model_changed",
+                        {"change_id": change_id, "role": role, "from": before, "to": to, "reason": reason})
+        return self.model_changes(research_id)[-1]
+
+    def revise_scope(self, research_id: str, expected_version: int, question: str, steering: str | None,
+                     key_terms: str | None = None) -> int:
+        """The next scope revision. `key_terms` given replaces the previous terms; left out, they carry over."""
+        with transaction(self.conn):
+            research = self.research(research_id)
+            check_expected_version(expected_version, research["version"])
+            current = dict(self.conn.execute(
+                "SELECT * FROM scope_revisions WHERE research_id = ? AND revision = ?",
+                (research_id, research["current_scope_revision"]),
+            ).fetchone())
+            parent = research["current_scope_revision"]
+            current_question = current["question"]
+            if research["intent"] == "statement":
+                statement_rule.check_sentence(question)
+            current.update(question=question.strip(), steering=steering, created_at=now())
+            if key_terms is not None and "key_terms" in current:
+                current["key_terms"] = key_terms
+            # A person's search plan belongs to the revision it was saved with; a new question does not inherit it.
+            current.pop("user_plan_json", None)
+            if current.get("seed_mode") == "uploaded_seed":
+                current["seed_snapshot_json"] = None
+            revision = self._open_revision(research, current)
+            self.conn.execute(
+                "UPDATE researches SET current_scope_revision = ?, version = version + 1, title = ?, updated_at = ? WHERE id = ?",
+                (revision, question.strip().splitlines()[0][:160], now(), research_id),
+            )
+            # The built-in model's English sentence goes with an unchanged question (slice 21): a revision that only
+            # changed key terms or steering keeps it; a changed question needs a sentence of its own.
+            if current_question == question.strip():
+                self.conn.execute(
+                    "INSERT INTO scope_english_questions (research_id, scope_revision, text, origin, created_at)"
+                    " SELECT research_id, ?, text, origin, ? FROM scope_english_questions"
+                    " WHERE research_id = ? AND scope_revision = ?",
+                    (revision, now(), research_id, parent))
+            self._event(research_id, "scope_revised", {"scope_revision": revision})
+        return revision
+
+    def save_user_plan(self, research_id: str, expected_version: int, plan: dict[str, Any]) -> int:
+        """Save a person's search plan as the next scope revision (UI parity S23a, F18); returns that revision.
+
+        Every other field of the current revision is kept, the question's English sentence goes with it, and the
+        plan is stored as given (`user_plan.check` has passed it). A run of an earlier revision stops at its next
+        checkpoint, as with any newer revision; the plan is never edited afterwards.
+        """
+        with transaction(self.conn):
+            research = self.research(research_id)
+            check_expected_version(expected_version, research["version"])
+            current = dict(self.conn.execute(
+                "SELECT * FROM scope_revisions WHERE research_id = ? AND revision = ?",
+                (research_id, research["current_scope_revision"])).fetchone())
+            parent = research["current_scope_revision"]
+            current.update(created_at=now(), user_plan_json=dumps(plan))
+            revision = self._open_revision(research, current)
+            self.conn.execute(
+                "UPDATE researches SET current_scope_revision = ?, version = version + 1, updated_at = ? WHERE id = ?",
+                (revision, now(), research_id))
+            self.conn.execute(
+                "INSERT INTO scope_english_questions (research_id, scope_revision, text, origin, created_at)"
+                " SELECT research_id, ?, text, origin, ? FROM scope_english_questions"
+                " WHERE research_id = ? AND scope_revision = ?", (revision, now(), research_id, parent))
+            self._event(research_id, "scope_revised", {"scope_revision": revision, "user_plan": True})
+        return revision
+
+    def _open_revision(self, research: dict[str, Any], row: dict[str, Any]) -> int:
+        """Insert `row`, a copy of the current revision with its changes, as the next question revision; returns its
+        number. The number is the highest one plus one, so a withdrawn revision's number is never used again; the row
+        names the revision it was opened from and keeps the research title it replaced (D67). The caller moves the
+        research to it and writes its event, in the same transaction."""
+        revision = self.conn.execute("SELECT MAX(revision) FROM scope_revisions WHERE research_id = ?",
+                                     (research["id"],)).fetchone()[0] + 1
+        row.update(revision=revision, parent_revision=research["current_scope_revision"], title_before=research["title"],
+                   withdrawn_at=None)
+        self.conn.execute(f"INSERT INTO scope_revisions ({', '.join(row)}) VALUES ({', '.join('?' for _ in row)})",
+                          tuple(row.values()))
+        return revision
+
+    def _revision_tables(self) -> list[str]:
+        """The tables whose rows carry a research and the question revision they were made under; read once, since
+        migrations run before a store is used."""
+        if getattr(self, "_revision_table_names", None) is None:
+            names = [r[0] for r in self.conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")]
+            self._revision_table_names = [t for t in names if {"research_id", "scope_revision"} <= {
+                c[1] for c in self.conn.execute(f"PRAGMA table_info({t})")}]
+        return self._revision_table_names
+
+    def withdrawal(self, research_id: str, revision: int | None = None, after: tuple[int, ...] = ()) -> dict[str, Any]:
+        """Whether the current question revision can be withdrawn (D67), and if not, why: the first reason found.
+        `revision` asks it of an earlier one as if the revisions `after` it, opened one from another, were withdrawn
+        first (`late_revision.held`).
+
+        A revision can be withdrawn while it is the current one, was opened from another, no run of the research is
+        active or paused, and nothing was made under it but a completed research-title run (with its step inputs), the
+        English sentence copied with it, and a person's selection decisions. Anything else (a search, an answer, a
+        follow-up, a model's decision, a table or link edit, a requested file, a watch) means work was done under the
+        question, and it stays."""
+        if revision is None:
+            revision = self.research(research_id)["current_scope_revision"]
+        row = self.conn.execute("SELECT parent_revision, title_before FROM scope_revisions WHERE research_id = ? AND revision = ?",
+                                (research_id, revision)).fetchone()
+        base = {"revision": revision, "parent_revision": row["parent_revision"], "restores_title": row["title_before"] is not None}
+        if row["parent_revision"] is None:
+            return base | {"allowed": False, "reason": "first_revision"}
+        if self.conn.execute("SELECT 1 FROM runs WHERE research_id = ? AND status IN (?, ?, ?, 'paused') LIMIT 1",
+                             (research_id, *ACTIVE_RUN_STATUSES)).fetchone():
+            return base | {"allowed": False, "reason": "run_active"}
+        title_runs = [r[0] for r in self.conn.execute(
+            "SELECT id FROM runs WHERE research_id = ? AND scope_revision = ? AND kind = 'research_title' AND status = 'completed'",
+            (research_id, revision))]
+        marks = ",".join("?" * len(title_runs))
+        checks = [
+            ("runs", "SELECT 1 FROM runs WHERE research_id = ? AND scope_revision = ?"
+                     f" AND id NOT IN ({marks}) LIMIT 1", title_runs),
+            ("step_inputs", "SELECT 1 FROM step_inputs WHERE research_id = ? AND scope_revision = ?"
+                            f" AND (run_id IS NULL OR run_id NOT IN ({marks})) LIMIT 1", title_runs),
+            ("stage_decisions", "SELECT 1 FROM stage_decisions WHERE research_id = ? AND scope_revision = ?"
+                                " AND decided_by != 'human' LIMIT 1", []),
+            ("cell_revisions", "SELECT 1 FROM cell_revisions r JOIN evidence_cells c ON c.id = r.cell_id"
+                               " JOIN evidence_tables t ON t.id = c.table_id WHERE t.research_id = ? AND r.scope_revision = ? LIMIT 1", []),
+            ("lineage_link_revisions", "SELECT 1 FROM lineage_link_revisions r JOIN lineage_links l ON l.id = r.link_id"
+                                       " JOIN evidence_tables t ON t.id = l.table_id WHERE t.research_id = ? AND r.scope_revision = ? LIMIT 1", []),
+        ]
+        checked = {name for name, _, _ in checks} | {"scope_english_questions"}
+        for table in self._revision_tables():
+            if table not in checked:
+                checks.append((table, f"SELECT 1 FROM {table} WHERE research_id = ? AND scope_revision = ? LIMIT 1", []))
+        for table, sql, extra in checks:
+            if self.conn.execute(sql, (research_id, revision, *extra)).fetchone():
+                return base | {"allowed": False, "reason": f"made_under:{table}"}
+        # A person's edits that name no revision (a table, a column, a cell, a note, a file) show in the research's
+        # events: after the revision was opened, only the title run's events and a person's selection, decision, title
+        # and English-sentence events leave it unused.
+        # A later revision that was itself withdrawn (or is taken as withdrawn, `after`) was unused too (D67): its title
+        # run and its withdrawal are not work.
+        unused_runs = set(title_runs) | {r[0] for r in self.conn.execute(
+            "SELECT r.id FROM runs r JOIN scope_revisions s ON s.research_id = r.research_id AND s.revision = r.scope_revision"
+            " WHERE r.research_id = ? AND r.kind = 'research_title' AND r.status = 'completed'"
+            f" AND (s.withdrawn_at IS NOT NULL OR s.revision IN ({','.join('?' * len(after))}))", (research_id, *after))}
+        for kind, run_id in self.conn.execute("SELECT type, run_id FROM events WHERE research_id = ? AND rowid > ?"
+                                              " ORDER BY rowid", (research_id, self._opened_at(research_id, revision))):
+            if run_id not in unused_runs and kind not in WITHDRAWABLE_EVENTS:
+                return base | {"allowed": False, "reason": f"done_after:{kind}"}
+        return base | {"allowed": True, "reason": None}
+
+    def _opened_at(self, research_id: str, revision: int) -> int:
+        """The rowid of the event that opened this question revision; 0 when none was written."""
+        return self.conn.execute(
+            "SELECT MAX(rowid) FROM events WHERE research_id = ? AND type IN ('scope_revised', 'seed_selected')"
+            " AND json_extract(payload_json, '$.scope_revision') = ?", (research_id, revision)).fetchone()[0] or 0
+
+    def _person_titled(self, research_id: str) -> bool:
+        """Whether the title is the person's: they renamed the research after its question last named it (a question
+        revision that was not withdrawn; a search-plan revision keeps the title). Generated titles then leave it alone."""
+        named = self.conn.execute(
+            "SELECT MAX(e.rowid) FROM events e JOIN scope_revisions s ON s.research_id = e.research_id"
+            " AND s.revision = json_extract(e.payload_json, '$.scope_revision') WHERE e.research_id = ? AND e.type = 'scope_revised'"
+            " AND json_extract(e.payload_json, '$.user_plan') IS NULL AND s.withdrawn_at IS NULL", (research_id,)).fetchone()[0] or 0
+        return self.conn.execute("SELECT 1 FROM events WHERE research_id = ? AND type = 'research_title_edited' AND rowid > ? LIMIT 1",
+                                 (research_id, named)).fetchone() is not None
+
+    def withdraw_revision(self, research_id: str, expected_version: int, revision: int) -> int:
+        """Withdraw the current question revision and go back to the one it was opened from (D67); returns that number.
+
+        Nothing is deleted: the revision stays as history with `withdrawn_at`, and the research title it replaced comes
+        back when it was kept and the person has not renamed the research since. Refused (RevisionConflict) when `revision` is not the current one or `withdrawal` says no."""
+        with transaction(self.conn):
+            research = self.research(research_id)
+            check_expected_version(expected_version, research["version"])
+            if research["current_scope_revision"] != revision:
+                raise RevisionConflict("Only the current question revision can be withdrawn")
+            check = self.withdrawal(research_id)
+            if not check["allowed"]:
+                raise RevisionConflict(f"This question revision cannot be withdrawn ({check['reason']})")
+            title = self.conn.execute("SELECT title_before FROM scope_revisions WHERE research_id = ? AND revision = ?",
+                                      (research_id, revision)).fetchone()[0]
+            # A title the person wrote after the revision was opened is theirs and stays (events in written order).
+            if self.conn.execute("SELECT 1 FROM events WHERE research_id = ? AND type = 'research_title_edited'"
+                                 " AND rowid > ? LIMIT 1", (research_id, self._opened_at(research_id, revision))).fetchone():
+                title = None
+            self.conn.execute("UPDATE scope_revisions SET withdrawn_at = ? WHERE research_id = ? AND revision = ?",
+                              (now(), research_id, revision))
+            self.conn.execute(
+                "UPDATE researches SET current_scope_revision = ?, title = COALESCE(?, title), version = version + 1,"
+                " updated_at = ? WHERE id = ?", (check["parent_revision"], title, now(), research_id))
+            self._event(research_id, "scope_revision_withdrawn",
+                        {"scope_revision": revision, "back_to": check["parent_revision"]})
+        return check["parent_revision"]
+
+    # ---- the built-in model's English sentence (slice 21) ---------------------------------------------
+    def english_question(self, research_id: str, scope_revision: int) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            "SELECT text, origin, created_at FROM scope_english_questions WHERE research_id = ? AND scope_revision = ?",
+            (research_id, scope_revision)).fetchone()
+        return dict(row) if row else None
+
+    def save_english_question(self, research_id: str, expected_version: int, text: str | None) -> dict[str, Any]:
+        """Write the current revision's English sentence once: the person's `text` (origin 'user'), or with `text`
+        None the revision's own question (origin 'question'). Raises RevisionConflict on a stale version or when the
+        revision already has one. Opens no scope revision; raises the research's version."""
+        with transaction(self.conn):
+            research = self.research(research_id)
+            check_expected_version(expected_version, research["version"])
+            revision = research["current_scope_revision"]
+            if self.english_question(research_id, revision) is not None:
+                raise RevisionConflict("This question revision already has its English sentence")
+            origin = "user" if text is not None else "question"
+            if text is None:
+                text = self.scope(research_id, revision)["question"]
+            self.conn.execute(
+                "INSERT INTO scope_english_questions (research_id, scope_revision, text, origin, created_at) VALUES (?, ?, ?, ?, ?)",
+                (research_id, revision, text, origin, now()))
+            self.conn.execute("UPDATE researches SET version = version + 1, updated_at = ? WHERE id = ?", (now(), research_id))
+            self._event(research_id, "english_question_saved", {"scope_revision": revision, "origin": origin})
+        return {"scope_revision": revision, "text": text, "origin": origin}
+
+    def seed_status(self, research_id: str, scope: dict[str, Any] | None = None) -> str:
+        """`ready` when every seed's frozen excerpt is still its source's current text; one changed seed is `stale`."""
+        scope = scope or self.scope(research_id)
+        if not scope["seeds"]:
+            return "missing" if scope["seed_mode"] == "uploaded_seed" else "question_only"
+        return "ready" if all(self._seed_current(research_id, seed) for seed in scope["seeds"]) else "stale"
+
+    def _seed_current(self, research_id: str, snapshot: dict[str, Any]) -> bool:
+        svid, asset_id = snapshot["source_version_id"], snapshot["asset_id"]
+        if not self.is_active_member(research_id, svid):
+            return False
+        asset = self.conn.execute(
+            "SELECT sha256, extraction_version FROM source_assets WHERE id = ? AND source_version_id = ? AND removed_at IS NULL",
+            (asset_id, svid),
+        ).fetchone()
+        if not asset or (asset["sha256"], asset["extraction_version"]) != (
+            snapshot["asset_sha256"], snapshot["extraction_version"]
+        ):
+            return False
+        passage_ids = [p["id"] for p in snapshot["passages"]]
+        marks = ", ".join("?" for _ in passage_ids)
+        current = {row[0] for row in self.conn.execute(
+            f"SELECT id FROM passages WHERE asset_id = ? AND extraction_version IS ? AND id IN ({marks})",
+            (asset_id, asset["extraction_version"], *passage_ids),
+        )}
+        return len(current) == len(passage_ids)
+
+    def _seed_material(self, research_id: str, source_version_id: str,
+                       passages: bool = True) -> tuple[dict[str, Any], Any, list[dict[str, Any]]]:
+        """A seed's source, its PDF in use and that PDF's readable pages; raises `_SeedRefused` with the reason it is
+        not one (D2's checks, in D2's order). The newest file wins, an equal time by file identifier (D3). Without
+        `passages` only whether one readable page exists is read, so listing candidates loads no page text."""
+        if not self.is_active_member(research_id, source_version_id):
+            raise _SeedRefused("not_a_source")
+        source = self.source(source_version_id)
+        added = self.conn.execute(
+            "SELECT added_by FROM corpus_memberships WHERE research_id = ? AND source_version_id = ? AND removed_at IS NULL",
+            (research_id, source_version_id),
+        ).fetchone()
+        if source["origin"] != "user_upload" and (not added or added["added_by"] not in ("zotero_import", "library")):
+            raise _SeedRefused("not_added_by_user")
+        asset = self.conn.execute(
+            "SELECT * FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL"
+            " ORDER BY retrieved_at DESC, id DESC LIMIT 1", (source_version_id,),
+        ).fetchone()
+        if asset is None:
+            raise _SeedRefused("no_pdf")
+        if not passages:
+            pages = self.conn.execute(
+                "SELECT text FROM passages WHERE source_version_id = ? AND asset_id = ? AND extraction_version IS ?"
+                " AND kind = 'pdf_page'", (source_version_id, asset["id"], asset["extraction_version"]))
+            if not any(row[0].strip() for row in pages):
+                raise _SeedRefused("no_readable_text")
+            return source, asset, []
+        readable = [p for p in self.passages_for(source_version_id)
+                    if p["asset_id"] == asset["id"] and p["kind"] == "pdf_page" and p["text"].strip()]
+        if not readable:
+            raise _SeedRefused("no_readable_text")
+        return source, asset, readable
+
+    def seed_candidates(self, research_id: str) -> list[dict[str, Any]]:
+        """The PDFs this research could take as seeds (D3): active sources the user uploaded or brought from Zotero or
+        the library, whose newest file has readable pages, in the order they were added."""
+        rows = self.conn.execute(
+            "SELECT m.source_version_id, m.added_by FROM corpus_memberships m JOIN source_versions v"
+            " ON v.id = m.source_version_id WHERE m.research_id = ? AND m.removed_at IS NULL"
+            " AND (v.origin = 'user_upload' OR m.added_by IN ('zotero_import', 'library'))"
+            " ORDER BY m.created_at, m.source_version_id", (research_id,)).fetchall()
+        candidates = []
+        for row in rows:
+            try:
+                source, _, _ = self._seed_material(research_id, row["source_version_id"], passages=False)
+            except _SeedRefused:
+                continue
+            candidates.append({"source_version_id": row["source_version_id"], "title": source["title"],
+                               "origin": "user_upload" if source["origin"] == "user_upload" else row["added_by"]})
+        return candidates
+
+    def _record_dois(self, source: dict[str, Any]) -> list[str]:
+        """A Zotero or library record's own DOIs, at most three a filter can carry; an upload has none (D3). A Zotero
+        record keeps its DOI on the record alone (it never merges by DOI), so the record's column counts with its
+        `doi` mappings."""
+        if source["origin"] == "user_upload":
+            return []
+        from deixis.providers.common import normalize_doi
+        named = [source.get("doi")] + [row[0] for row in self.conn.execute(
+            "SELECT value FROM identifier_mappings WHERE source_version_id = ? AND scheme = 'doi'", (source["id"],))]
+        values = {doi.casefold() for value in named if (doi := normalize_doi(value)) and not any(c in doi for c in "|,")}
+        return sorted(values)[:MAX_RECORD_DOIS]
+
+    @staticmethod
+    def _seed_excerpt(source_version_id: str, passages: list[dict[str, Any]], terms: set[str], n: int) -> list[dict[str, Any]]:
+        """One seed's bounded reading (D2's rule): its first readable pages, then the pages that share most words with
+        the question. With n seeds each gets `4 // n` pages (at least one) and `5600 // n` characters (D3); one seed
+        gets exactly D2's four pages and 5,600 characters."""
+        limit = MAX_SEED_PASSAGES if n == 1 else max(1, MAX_SEED_PASSAGES // n)
+        chars = MAX_SEED_CHARS // n
+        first = passages[:min(2, limit)]
+        rest = sorted(passages[len(first):], key=lambda p: -len(terms & set(re.findall(r"\w{3,}", p["text"].casefold()))))
+        selected = first + rest[:limit - len(first)]
+        per_passage = chars // len(selected)
+        given = []
+        for passage in selected:
+            excerpt = passage["text"][:per_passage]
+            if not excerpt:
+                continue
+            given.append({"id": passage["id"], "source_version_id": source_version_id,
+                          "kind": "pdf_page", "physical_page": passage["physical_page"],
+                          "printed_label": passage["printed_label"], "abstract_origin": None,
+                          "text_source": passage["text_source"], "text": excerpt,
+                          "text_sha256": hashlib.sha256(excerpt.encode()).hexdigest()})
+        return given
+
+    def set_seed(self, research_id: str, expected_version: int, source_version_id: str) -> int:
+        """Freeze a bounded reading of one PDF in a new scope revision (D2)."""
+        return self.set_seeds(research_id, expected_version, [source_version_id])
+
+    def set_seeds(self, research_id: str, expected_version: int, source_version_ids: list[str] | None, *,
+                  all_eligible: bool = False, excluded: Sequence[str] = ()) -> int:
+        """Freeze the seed set in a new scope revision: the PDFs named, in that order, or every candidate (D3).
+
+        With every candidate, `excluded` are PDFs the person chose not to let guide the search (Home's unchecked rows,
+        UI parity S5b). They are dropped before anything else, so they are neither seeds, not selected nor skipped,
+        and stay the research's sources; the choice of five among the rest is unchanged. The exclusion is recorded on
+        the `seed_selected` event.
+
+        One named PDF that cannot be a seed raises as D2 did; of several, those that cannot are listed as skipped, and
+        none left raises with the first reason. Above five usable PDFs the five whose first two pages share most of
+        the question's words are kept, in their own order, and the rest are listed as not selected. The same request
+        again writes nothing and returns the current revision before the version is checked, so a reply lost on the
+        way does not turn its repeat into a conflict.
+        """
+        with transaction(self.conn):
+            research = self.research(research_id)
+            scope = self.scope(research_id)
+            if scope["source_scope"] != "attached_and_academic":
+                raise SeedUnavailable("A PDF seed requires Files + academic search")
+            left_out = set(excluded)
+            asked = ([c["source_version_id"] for c in self.seed_candidates(research_id)
+                      if c["source_version_id"] not in left_out] if all_eligible
+                     else list(dict.fromkeys(source_version_ids or [])))
+            usable, skipped = [], []
+            for svid in asked:
+                try:
+                    usable.append((svid, *self._seed_material(research_id, svid)))
+                except _SeedRefused as refused:
+                    if len(asked) == 1 and not all_eligible:
+                        if refused.reason == "not_a_source":
+                            raise NotASource(svid) from None
+                        raise SeedUnavailable(SEED_REASONS[refused.reason]) from None
+                    skipped.append({"source_version_id": svid, "reason": refused.reason})
+            if not usable:
+                raise SeedUnavailable(SEED_REASONS[skipped[0]["reason"]] if skipped
+                                      else "No PDF added to this research has readable text")
+            terms = set(re.findall(r"\w{3,}", scope["question"].casefold()))
+            not_selected = []
+            if len(usable) > MAX_SEEDS:
+                scores = [len(terms & set(re.findall(r"\w{3,}", " ".join(
+                    p["text"] for p in passages if p["physical_page"] in (1, 2)).casefold())))
+                          for _, _, _, passages in usable]
+                kept = set(sorted(range(len(usable)), key=lambda i: (-scores[i], i))[:MAX_SEEDS])
+                not_selected = [{"source_version_id": usable[i][0], "title": usable[i][1]["title"], "score": scores[i]}
+                                for i in range(len(usable)) if i not in kept]
+                usable = [usable[i] for i in sorted(kept)]
+            seeds = []
+            for svid, source, asset, passages in usable:
+                seeds.append({"source_version_id": svid, "asset_id": asset["id"],
+                              "asset_sha256": asset["sha256"], "extraction_version": asset["extraction_version"],
+                              "title": source["title"], "year": source["year"], "version_label": source["version_label"],
+                              "title_basis": "filename" if source["origin"] == "user_upload" and not source.get("record_match_json") else "record",
+                              "page_count": asset["page_count"],
+                              "text_pages": len({p["physical_page"] for p in passages}),
+                              "passages": self._seed_excerpt(svid, passages, terms, len(usable)),
+                              "record_dois": self._record_dois(source)})
+            snapshot = {"version": 2, "seeds": seeds, "not_selected": not_selected, "skipped": skipped,
+                        "seed_key": seed_key(seeds)}
+            current = {"version": 2, "seeds": scope["seeds"], "not_selected": scope["seed_not_selected"],
+                       "skipped": scope["seed_skipped"], "seed_key": scope["seed_key"]}
+            if scope["seed_mode"] == "uploaded_seed" and current == snapshot:
+                return scope["revision"]
+            check_expected_version(expected_version, research["version"])
+            row = dict(self.conn.execute(
+                "SELECT * FROM scope_revisions WHERE research_id = ? AND revision = ?", (research_id, scope["revision"])
+            ).fetchone())
+            row.update(seed_mode="uploaded_seed", seed_snapshot_json=dumps(snapshot), created_at=now())
+            row.pop("user_plan_json", None)  # other seeds are a new plan; a person's saved plan is not carried over
+            revision = self._open_revision(research, row)
+            self.conn.execute(
+                "UPDATE researches SET current_scope_revision = ?, version = version + 1, updated_at = ? WHERE id = ?",
+                (revision, now(), research_id),
+            )
+            # The question is unchanged: the built-in model's English sentence goes with it (slice 21).
+            self.conn.execute(
+                "INSERT INTO scope_english_questions (research_id, scope_revision, text, origin, created_at)"
+                " SELECT research_id, ?, text, origin, ? FROM scope_english_questions WHERE research_id = ? AND scope_revision = ?",
+                (revision, now(), research_id, scope["revision"]))
+            self._event(research_id, "seed_selected", {"scope_revision": revision,
+                                                       "source_version_id": seeds[0]["source_version_id"],
+                                                       "asset_id": seeds[0]["asset_id"],
+                                                       **({"source_version_ids": seed_source_ids(snapshot)}
+                                                          if len(seeds) > 1 else {}),
+                                                       **({"excluded_by_user": sorted(left_out)} if left_out else {})})
+            return revision
+
+    # ---- protocol ---------------------------------------------------------------------
+    def freeze_protocol(self, research_id: str, scope_revision: int, body: dict[str, Any],
+                        reason: str | None = None) -> dict[str, Any]:
+        """Freeze what this research searches under, before its first provider request (SW14.1).
+
+        Re-freezing the same body returns the record already stored, so a resumed run keeps one protocol. A different
+        body is a new revision and needs its reason; a record is never edited in place.
+        """
+        digest = sha256_hex(body)
+        with transaction(self.conn):
+            last = self.conn.execute(
+                "SELECT * FROM protocol_records WHERE research_id = ? AND scope_revision = ?"
+                " ORDER BY protocol_revision DESC LIMIT 1", (research_id, scope_revision),
+            ).fetchone()
+            if last is not None and last["body_sha256"] == digest:
+                return {"id": last["id"], "protocol_revision": last["protocol_revision"],
+                        "body": json.loads(last["body_json"]), "hash": last["body_sha256"]}
+            if last is not None and not reason:
+                raise ValueError("A changed protocol needs the reason it changed")
+            highest = self.conn.execute(
+                "SELECT MAX(protocol_revision) FROM protocol_records WHERE research_id = ?", (research_id,)
+            ).fetchone()[0]
+            revision = (highest or 0) + 1
+            pid = new_id("prt")
+            self.conn.execute(
+                "INSERT INTO protocol_records (id, research_id, scope_revision, protocol_revision, reason, body_json,"
+                " body_sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (pid, research_id, scope_revision, revision, reason, dumps(body), digest, now()),
+            )
+            self._event(research_id, "protocol_frozen", {"protocol_revision": revision, "protocol_hash": digest})
+        return {"id": pid, "protocol_revision": revision, "body": body, "hash": digest}
+
+    def current_protocol(self, research_id: str, scope_revision: int) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            "SELECT * FROM protocol_records WHERE research_id = ? AND scope_revision = ?"
+            " ORDER BY protocol_revision DESC LIMIT 1", (research_id, scope_revision),
+        ).fetchone()
+        if row is None:
+            return None
+        return {"id": row["id"], "protocol_revision": row["protocol_revision"],
+                "body": json.loads(row["body_json"]), "hash": row["body_sha256"]}
+
+    def frozen_criterion(self, research_id: str, question: str, steering: str | None,
+                         scope_revision: int | None = None) -> dict[str, Any] | None:
+        """The criterion this research already froze for the same question and steering, or None (SW15, D78).
+
+        Read across scope revisions on purpose: a revision that changed only the providers must not send the model
+        back for a criterion, because the same question answered in other words would mark every decision made under
+        the old criterion stale (`decisions.CRITERION_FIELDS`, SW11.10). A body whose criterion is null is passed
+        over, so a research whose first run could not reach the model asks again.
+
+        A person's saved search plan (S23a) is tied to its own revision. For `scope_revision` holding a plan, the
+        criterion is the one that revision's protocol froze from the plan, or None when the plan set none or no
+        protocol of the revision is frozen yet: an older criterion never stands in for it. For any other revision,
+        a body frozen from a person's plan is passed over, so its criterion is never carried to a later revision.
+        """
+        if scope_revision is not None and self._revision_has_plan(research_id, scope_revision):
+            row = self.conn.execute(
+                "SELECT body_json, protocol_revision FROM protocol_records WHERE research_id = ? AND scope_revision = ?"
+                " AND json_extract(body_json, '$.user_plan') IS NOT NULL ORDER BY protocol_revision DESC LIMIT 1",
+                (research_id, scope_revision)).fetchone()
+            body = json.loads(row["body_json"]) if row else None
+            return _criterion_of(body, row["protocol_revision"]) if body and body.get("inclusion_criterion") else None
+        for row in self.conn.execute(
+                "SELECT body_json, protocol_revision FROM protocol_records WHERE research_id = ?"
+                " ORDER BY protocol_revision DESC", (research_id,)):
+            body = json.loads(row["body_json"])
+            if body.get("inclusion_criterion") is None or body.get("question") != question:
+                continue
+            if body.get("steering") != steering:
+                continue
+            if body.get("user_plan"):
+                continue  # a person's plan holds for its own revision only (S23a)
+            return _criterion_of(body, row["protocol_revision"])
+        return None
+
+    def _revision_has_plan(self, research_id: str, scope_revision: int) -> bool:
+        row = self.conn.execute("SELECT user_plan_json FROM scope_revisions WHERE research_id = ? AND revision = ?",
+                                (research_id, scope_revision)).fetchone()
+        return bool(row and row[0])
+
+    # ---- runs -------------------------------------------------------------------------
+    def create_run(self, research_id: str, kind: str, budget: dict[str, Any], idempotency_key: str | None,
+                   target: dict[str, Any] | None = None, *, expected_scope_revision: int | None = None) -> dict[str, Any]:
+        """Queue a run. Evidence table runs carry their target (table, columns, planned sources or cell).
+
+        With `expected_scope_revision` (D14) the run is created only while that question revision is still the current
+        one; a newer revision raises RevisionConflict and nothing is written. A repeated idempotency key returns the run
+        it created before, whatever the revision is now."""
+        if kind in INTERNAL_RESEARCH_KINDS:
+            # A feature's own run (D96) is opened by that feature as running, never queued: the worker has no handler.
+            raise RevisionConflict(f"A {kind} run is not queued through the generic run path")
+        with transaction(self.conn):
+            research = self.research(research_id)
+            if idempotency_key:
+                existing = self.conn.execute("SELECT * FROM runs WHERE idempotency_key = ?", (idempotency_key,)).fetchone()
+                if existing:
+                    return self.run(existing["id"])
+            if expected_scope_revision is not None and expected_scope_revision != research["current_scope_revision"]:
+                raise RevisionConflict(f"The research is at question revision {research['current_scope_revision']},"
+                                       f" not {expected_scope_revision}")
+            active = self.conn.execute(
+                f"SELECT id FROM runs WHERE research_id = ? AND status IN ({','.join('?' * len(ACTIVE_RUN_STATUSES))})",
+                (research_id, *ACTIVE_RUN_STATUSES),
+            ).fetchone()
+            if active:
+                raise RevisionConflict(f"run {active['id']} is still active")
+            from deixis.workflow.run import fast_path
+
+            run_id = new_id("run")
+            ts = fast_path.timestamp(self.clock) if fast_path.enabled(budget) else now()
+            stage = {"discovery": "discovery", "answer": "inspection", "followup_answer": "answer", "pdf_collection": "inspection",
+                     "fulltext_fetch": "inspection", "fulltext_adjudication": "inspection",
+                     "research_title": "intake", "lineage_links": "synthesis",
+                     "claim_decomposition": "candidate", "kill_search": "candidate", "review": "claim_check",
+                     "watch_check": "discovery", "screen_more": "screening", "followup_search": "discovery",
+                     "citation_map": "synthesis", "snowball": "screening",
+                     "statement_check": "claim_check"}.get(kind, "extraction")
+            self.conn.execute(
+                "INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, idempotency_key, target_json,"
+                " created_at, updated_at) VALUES (?, ?, ?, ?, 'queued', ?, ?, ?, ?, ?, ?)",
+                (run_id, research_id, research["current_scope_revision"], kind, stage, dumps(budget), idempotency_key,
+                 dumps(target) if target is not None else None, ts, ts),
+            )
+            self.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (ts, research_id))
+            fast_path.create_run(self, self.run(run_id))
+            self._event(research_id, "run_queued", {"kind": kind}, run_id)
+        return self.run(run_id)
+
+    def resume_run(self, run_id: str) -> dict[str, Any]:
+        """Resume any kind without renewing usage or bypassing the single-active-run rule."""
+        with transaction(self.conn):
+            run = self.run(run_id)
+            if run["status"] != "paused":
+                raise RevisionConflict("Only a paused run can resume")
+            if run["kind"] in INTERNAL_RESEARCH_KINDS:
+                # Queued, the worker would fail it (no handler, no scope revision); its feature starts a new one (D96).
+                raise RevisionConflict(f"A paused {run['kind']} run is not resumed here; start it again from its feature")
+            active = self.conn.execute(
+                f"SELECT id FROM runs WHERE research_id = ? AND id != ?"
+                f" AND status IN ({','.join('?' * len(ACTIVE_RUN_STATUSES))}) LIMIT 1",
+                (run["research_id"], run_id, *ACTIVE_RUN_STATUSES)).fetchone()
+            if active:
+                raise RevisionConflict(f"run {active['id']} is still active")
+            return self.update_run(run_id, event="run_resumed", status="queued", pause_reason=None, error_json=None)
+
+    def discovery_completed(self, research_id: str) -> bool:
+        """Whether the research's current scope revision has a completed discovery run (SW22, D106).
+
+        An `sw` research may then ask for an answer with no included work: the answer records that none was included
+        when it started, instead of the request being refused.
+        """
+        return self.conn.execute(
+            "SELECT 1 FROM runs r JOIN researches s ON s.id = r.research_id WHERE r.research_id = ?"
+            " AND r.kind = 'discovery' AND r.status = 'completed' AND r.scope_revision = s.current_scope_revision LIMIT 1",
+            (research_id,)).fetchone() is not None
+
+    def run(self, run_id: str) -> dict[str, Any]:
+        row = self.conn.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
+        if row is None:
+            raise NotFound(run_id)
+        run = dict(row)
+        run["budget"] = json.loads(run.pop("budget_json"))
+        run["usage"] = json.loads(run.pop("usage_json"))
+        error = run.pop("error_json")
+        run["error"] = json.loads(error) if error else None
+        target = run.pop("target_json")
+        run["target"] = json.loads(target) if target else None
+        return run
+
+    def next_queued_run(self) -> dict[str, Any] | None:
+        self.flush_text_retry_interruptions()
+        from deixis.workflow.read.text_retry import lock_held
+
+        for row in self.conn.execute("SELECT id, research_id FROM runs WHERE status = 'queued' ORDER BY created_at"):
+            operations = self.conn.execute(
+                "SELECT DISTINCT o.id, o.expected_sha256 FROM asset_recovery_operations o"
+                " JOIN source_assets a ON (o.kind = 'text_retry' AND a.id = o.asset_id)"
+                " OR (o.kind = 'file_restore' AND a.sha256 = o.expected_sha256)"
+                " JOIN corpus_memberships m ON m.source_version_id = a.source_version_id"
+                " WHERE m.research_id = ? AND o.lifecycle = 'running'",
+                (row["research_id"],)).fetchall()
+            live = False
+            for operation in operations:
+                try:
+                    live = self.recovery_dir is None or lock_held(self.recovery_dir, operation["expected_sha256"])
+                except OSError as exc:
+                    # Unknown lock ownership defers this research, not the entire worker queue.
+                    live = True
+                    key = (operation["id"], exc.errno)
+                    if key not in self._text_retry_probe_errors:
+                        self._text_retry_probe_errors.add(key)
+                        logging.getLogger("deixis.workflow.store").warning(
+                            "Could not probe text retry lock for operation %s (errno=%s); deferring its research",
+                            operation["id"], exc.errno)
+                if live:
+                    break
+            if not live:
+                return self.run(row["id"])
+        return None
+
+    def update_run(self, run_id: str, event: str | None = None, **fields: Any) -> dict[str, Any]:
+        columns = {k: (dumps(v) if k in ("usage_json", "error_json") and v is not None else v) for k, v in fields.items()}
+        columns["updated_at"] = now()
+        with transaction(self.conn):
+            run = self.run(run_id)
+            if (run["status"] in ("running", "pause_requested") and "status" in fields
+                    and fields["status"] not in ("running", "pause_requested")):
+                from deixis.workflow.run import fast_path
+
+                if fast_path.enabled(run["budget"]):
+                    fast_path.close_run(self, run_id, "paused" if fields["status"] == "paused" else "stopped")
+            assignments = ", ".join(f"{k} = ?" for k in columns)
+            self.conn.execute(f"UPDATE runs SET {assignments}, version = version + 1 WHERE id = ?", (*columns.values(), run_id))
+            if event:
+                self._event(run["research_id"], event, {k: v for k, v in fields.items() if k != "usage_json"}, run_id)
+            if fields.get("status") in ENDED_RUN_STATUSES and run["status"] not in ENDED_RUN_STATUSES:
+                # A person's files this run held are closed by the write that ends it, whichever path ends it (slice
+                # 18b, decision 5): no crash can come between a run's end and its requests'.
+                from deixis.workflow.read import person_reading  # it builds on this module
+                person_reading.close_run(self, run_id, ended=True)
+        return self.run(run_id)
+
+    def queue_failed_search_retry(self, run_id: str) -> dict[str, Any]:
+        """Queue only the failed provider searches of a completed or paused discovery run."""
+        with transaction(self.conn):
+            run = self.run(run_id)
+            if run["kind"] != "discovery" or run["status"] not in ("completed", "paused"):
+                raise RevisionConflict("Only a completed or paused discovery run can retry failed searches")
+            active = self.conn.execute(
+                f"SELECT 1 FROM runs WHERE research_id = ? AND id != ? AND status IN ({','.join('?' * len(ACTIVE_RUN_STATUSES))}) LIMIT 1",
+                (run["research_id"], run_id, *ACTIVE_RUN_STATUSES),
+            ).fetchone()
+            background_active = self.conn.execute(
+                "SELECT 1 FROM fast_path_background_fetches WHERE run_id = ?"
+                " AND status IN ('queued', 'running') LIMIT 1", (run_id,)
+            ).fetchone()
+            if active or background_active:
+                raise RunInProgress(run["research_id"])
+            # A search closed because its query's share was spent before it asked is retried too: the retry adds
+            # to every query's share, which is what it lacked (D89; review of 13f, 2026-09-23).
+            failed = self.conn.execute(
+                "SELECT COUNT(*) AS n FROM run_steps WHERE run_id = ? AND kind LIKE 'provider_search:%'"
+                " AND (status IN ('failed', 'outcome_unknown')"
+                " OR (status = 'cancelled' AND error_code = 'budget_exhausted'))", (run_id,)
+            ).fetchone()["n"]
+            if not failed:
+                raise RevisionConflict("This discovery run has no failed provider searches")
+            budget = run["budget"]
+            budget["retry_failed_searches_only"] = True
+            budget["retry_provider_requests"] = budget.get("retry_provider_requests", 0) + int(failed)
+            self.conn.execute(
+                "UPDATE runs SET status = 'queued', stage = 'discovery', pause_reason = NULL, error_json = NULL,"
+                " budget_json = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+                (dumps(budget), now(), run_id),
+            )
+            self._event(run["research_id"], "run_retry_failed_searches", {"failed_searches": int(failed)}, run_id)
+        return self.run(run_id)
+
+    def add_usage(self, run_id: str, key: str, amount: int = 1, query: str | None = None) -> dict[str, Any]:
+        """Count `amount` against the run, and against one sw query's own count too when `query` names it.
+
+        The query's count (`usage["query_requests"][query]`, keyed by the query's first step key) is written in the
+        same transaction as the run's, so the two never disagree, and a resumed run finds it (D89).
+        """
+        with transaction(self.conn):
+            run = self.run(run_id)
+            usage = run["usage"]
+            usage[key] = usage.get(key, 0) + amount
+            if query is not None:
+                counts = usage.setdefault("query_requests", {})
+                counts[query] = counts.get(query, 0) + amount
+            self.conn.execute("UPDATE runs SET usage_json = ?, updated_at = ? WHERE id = ?", (dumps(usage), now(), run_id))
+        return usage
+
+    def settle_usage(self, run_id: str, query: str | None, request_delta: int, sends: int, *,
+                     request_key: str = "provider_requests", sends_key: str = "provider_sends") -> dict[str, Any]:
+        """Atomically settle a reservation and record observed sends, which never spend a query's share."""
+        with transaction(self.conn):
+            usage = self.run(run_id)["usage"]
+            usage[request_key] = usage.get(request_key, 0) + request_delta
+            if query is not None:
+                counts = usage.setdefault("query_requests", {})
+                counts[query] = counts.get(query, 0) + request_delta
+            usage[sends_key] = usage.get(sends_key, 0) + sends
+            self.conn.execute("UPDATE runs SET usage_json = ?, updated_at = ? WHERE id = ?", (dumps(usage), now(), run_id))
+        return usage
+
+    # ---- steps --------------------------------------------------------------------------
+    def step(self, run_id: str, operation_key: str, kind: str, output: Any = None) -> dict[str, Any]:
+        """The step with this key, opened `pending` when there is none. `output` is written only on that opening: a
+        claim that must carry its own time, since `run_steps` has no opening time (slice 17a)."""
+        with transaction(self.conn):
+            row = self.conn.execute(
+                "SELECT * FROM run_steps WHERE run_id = ? AND operation_key = ?", (run_id, operation_key)
+            ).fetchone()
+            if row is None:
+                sid = new_id("stp")
+                # A step opened after the protocol was frozen carries its hash; the protocol step and whatever ran
+                # before it (the search plan) keep NULL, because no protocol was frozen when they opened.
+                columns = {"id": sid, "run_id": run_id, "operation_key": operation_key, "kind": kind, "status": "pending"}
+                if output is not None:
+                    columns["output_json"] = dumps(output)
+                run = self.conn.execute("SELECT research_id, scope_revision FROM runs WHERE id = ?", (run_id,)).fetchone()
+                frozen = self.current_protocol(run["research_id"], run["scope_revision"]) if run else None
+                columns["protocol_hash"] = frozen["hash"] if frozen else None
+                self.conn.execute(
+                    f"INSERT INTO run_steps ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+                    tuple(columns.values()),
+                )
+                row = self.conn.execute("SELECT * FROM run_steps WHERE id = ?", (sid,)).fetchone()
+        step = dict(row)
+        step["output"] = json.loads(step.pop("output_json")) if step["output_json"] else None
+        return step
+
+    def request_equation_skip(self, run_id: str) -> bool:
+        """Record that the person chose to answer now with the PDFs' text layer: the run reads no more equations (once).
+
+        A step row carries the choice, so a paused or resumed run keeps it. Returns False when it was already recorded.
+        """
+        if self.existing_step(run_id, EQUATION_SKIP_KEY) is not None:
+            return False
+        step = self.step(run_id, EQUATION_SKIP_KEY, "equations_skip")
+        self.start_step(step["id"])
+        self.finish_step(step["id"], "succeeded", output={"requested_at": now()})
+        return True
+
+    def equation_skip_requested(self, run_id: str) -> bool:
+        return self.existing_step(run_id, EQUATION_SKIP_KEY) is not None
+
+    def existing_step(self, run_id: str, operation_key: str) -> dict[str, Any] | None:
+        """The step with this key, or None; unlike `step`, nothing is written when there is none."""
+        row = self.conn.execute(
+            "SELECT * FROM run_steps WHERE run_id = ? AND operation_key = ?", (run_id, operation_key)).fetchone()
+        if row is None:
+            return None
+        step = dict(row)
+        step["output"] = json.loads(step.pop("output_json")) if step["output_json"] else None
+        return step
+
+    def start_step(self, step_id: str, started_at: str | None = None) -> None:
+        """`started_at` is when the work really started, for a step written after it ended (a search page, D89)."""
+        with transaction(self.conn):
+            row = self.conn.execute(
+                "SELECT s.*, r.research_id FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE s.id = ?", (step_id,)
+            ).fetchone()
+            self.conn.execute(
+                "UPDATE run_steps SET status = 'running', attempt = attempt + 1, started_at = ?, finished_at = NULL,"
+                " error_code = NULL, error_json = NULL, delivery_class = NULL WHERE id = ?",
+                (started_at or now(), step_id),
+            )
+            self._event(row["research_id"], "step_started", {"step_id": step_id, "kind": row["kind"], "operation_key": row["operation_key"]}, row["run_id"])
+
+    def finish_step(
+        self,
+        step_id: str,
+        status: str,
+        output: Any = None,
+        error_code: str | None = None,
+        error: Any = None,
+        delivery_class: str | None = None,
+        finished_at: str | None = None,
+        service_detail: dict[str, Any] | None = None,
+    ) -> None:
+        with transaction(self.conn):
+            row = self.conn.execute(
+                "SELECT s.*, r.research_id FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE s.id = ?", (step_id,)
+            ).fetchone()
+            self.conn.execute(
+                "UPDATE run_steps SET status = ?, output_json = ?, error_code = ?, error_json = ?, delivery_class = ?, finished_at = ? WHERE id = ?",
+                (status, dumps(output) if output is not None else None, error_code,
+                 dumps(error) if error is not None else None, delivery_class, finished_at or now(), step_id),
+            )
+            self._event(
+                row["research_id"], "step_finished",
+                {"step_id": step_id, "kind": row["kind"], "operation_key": row["operation_key"], "status": status, "error_code": error_code,
+                 **({k: error[k] for k in ("http_status", "service_kind", "reset_at") if error.get(k) is not None}
+                    if isinstance(error, dict) else {}),
+                 **({k: v for k, v in service_detail.items() if k in {"service_kind", "connection", "reset_at", "http_status"}}
+                    if service_detail else {})},
+                row["run_id"],
+            )
+
+    def step_output(self, step_id: str) -> Any:
+        """A step's latest stored output, or None."""
+        row = self.conn.execute("SELECT output_json FROM run_steps WHERE id = ?", (step_id,)).fetchone()
+        return json.loads(row[0]) if row and row[0] else None
+
+    def user_upload_assets(self, asset_ids: set[str]) -> set[str]:
+        """Of these files, the ones a person uploaded (slice 21: what semantic search sends of them is counted)."""
+        ids = sorted(asset_ids)
+        found: set[str] = set()
+        for start in range(0, len(ids), 500):
+            chunk = ids[start:start + 500]
+            found |= {row[0] for row in self.conn.execute(
+                f"SELECT id FROM source_assets WHERE origin = 'user_upload' AND id IN ({','.join('?' * len(chunk))})", chunk)}
+        return found
+
+    def set_step_output(self, step_id: str, output: Any) -> None:
+        """Add to a finished step's stored output (the compiled queries of a search plan) without a second step event."""
+        with transaction(self.conn):
+            self.conn.execute("UPDATE run_steps SET output_json = ? WHERE id = ?", (dumps(output), step_id))
+
+    def approval_step(self, run_id: str) -> dict[str, Any] | None:
+        """This run's protocol approval step with its whole stored output, or None (slice 08a).
+
+        Read on its own and not through `run_steps`: the proposal holds every probe the vocabulary step read, which
+        is neither small enough nor the screen's business.
+        """
+        row = self.conn.execute(
+            "SELECT * FROM run_steps WHERE run_id = ? AND operation_key = 'protocol_approval'", (run_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        step = dict(row)
+        step["output"] = json.loads(step.pop("output_json")) if step["output_json"] else None
+        return step
+
+    def search_query_of(self, research_id: str, scope_revision: int, run_id: str,
+                        operation_key: str = "search_query") -> dict[str, Any] | None:
+        """The newest succeeded model-query step of another run of this scope revision (D92), or None; with
+        `operation_key`, the newest succeeded step of that key (the seed match, D2)."""
+        row = self.conn.execute(
+            "SELECT s.run_id, s.output_json FROM run_steps s JOIN runs r ON r.id = s.run_id"
+            " WHERE r.research_id = ? AND r.scope_revision = ? AND r.id != ? AND s.operation_key = ?"
+            " AND s.status = 'succeeded' AND s.output_json IS NOT NULL ORDER BY r.created_at DESC, s.rowid DESC LIMIT 1",
+            (research_id, scope_revision, run_id, operation_key)).fetchone()
+        return {"run_id": row["run_id"], "output": json.loads(row["output_json"])} if row else None
+
+    def choose_code_query(self, run_id: str) -> dict[str, Any]:
+        """Search with the code's query alone after the model's failed, and queue the run, in one transaction (D92).
+
+        Written on the model-query step, which the worker reads when it picks the run up; nothing is compiled here.
+        """
+        with transaction(self.conn):
+            self.run(run_id)  # NotFound for an unknown run
+            row = self.conn.execute(
+                "SELECT id, output_json FROM run_steps WHERE run_id = ? AND operation_key = 'search_query'",
+                (run_id,)).fetchone()
+            if row is None or not row["output_json"]:
+                raise RevisionConflict("This run has no failed model query to replace")
+            research_id = self.conn.execute("SELECT research_id FROM runs WHERE id = ?", (run_id,)).fetchone()[0]
+            self.conn.execute("UPDATE run_steps SET output_json = ? WHERE id = ?",
+                              (dumps(json.loads(row["output_json"]) | {"choice": "code_only"}), row["id"]))
+            self.conn.execute(
+                "UPDATE runs SET status = 'queued', pause_reason = NULL, error_json = NULL, updated_at = ?,"
+                " version = version + 1 WHERE id = ?", (now(), run_id))
+            self._event(research_id, "run_resumed", {"status": "queued", "pause_reason": None}, run_id)
+        return self.run(run_id)
+
+    def run_steps(self, run_id: str) -> list[dict[str, Any]]:
+        rows = self.conn.execute(
+            "SELECT id, operation_key, kind, status, attempt, delivery_class, error_code, error_json, output_json, started_at, finished_at"
+            " FROM run_steps WHERE run_id = ? ORDER BY rowid", (run_id,)
+        ).fetchall()
+        return [{**{k: r[k] for k in r.keys() if k != "output_json"},
+                 "error": json.loads(r["error_json"]) if r["error_json"] else None,
+                 # Only small counting/provenance outputs are carried here; model prose is read through its own view.
+                 "output": _step_view_output(r)}
+                for r in rows]
+
+    # ---- model step records ---------------------------------------------------------
+    def insert_step_input(self, step_id: str, research_id: str, run_id: str, attempt: int, payload: dict[str, Any],
+                          base: str, developer: str, message: str, output_schema: dict[str, Any],
+                          selection_revision: int | None = None) -> None:
+        columns = {
+            "id": payload["step_input_id"], "step_id": step_id, "research_id": research_id, "run_id": run_id,
+            "attempt": attempt, "task_type": payload["task_type"], "scope_revision": payload["scope_revision"],
+            "selection_revision": selection_revision, "skill_package_hash": payload["skill_package_hash"],
+            "payload_json": dumps(payload), "base_instructions": base, "developer_instructions": developer,
+            "user_message": message, "output_schema_json": dumps(output_schema), "created_at": now(),
+        }
+        columns["payload_sha256"] = sha256_hex(payload)
+        with transaction(self.conn):
+            self.conn.execute(
+                f"INSERT INTO step_inputs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+                tuple(columns.values()),
+            )
+
+    def start_model_session(self, research_id: str, run_id: str, step_id: str, step_input_id: str,
+                            connection: str, requested_model: str | None, reasoning_effort: str | None = None) -> str:
+        """Open one model call's session. `reasoning_effort` is the effort the adapter sends with it, None when it sends
+        none; it is stored as given and never filled in from a setting (D25)."""
+        msid = new_id("mss")
+        with transaction(self.conn):
+            self.conn.execute(
+                "INSERT INTO model_sessions (id, research_id, run_id, step_id, step_input_id, connection, requested_model,"
+                " reasoning_effort, status, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'started', ?)",
+                (msid, research_id, run_id, step_id, step_input_id, connection, requested_model, reasoning_effort, now()),
+            )
+            run = self.run(run_id)
+            usage = run["usage"]
+            usage["model_calls"] = usage.get("model_calls", 0) + 1
+            self.conn.execute("UPDATE runs SET usage_json = ? WHERE id = ?", (dumps(usage), run_id))
+            self._event(research_id, "model_call_started", {"step_id": step_id, "connection": connection, "requested_model": requested_model}, run_id)
+        return msid
+
+    def finish_model_session(self, session_id: str, *, accept: Callable[[], bool] | None = None,
+                             request_sent: bool | None = None, **fields: Any) -> bool:
+        """Store a session's result. `request_sent` is not a column: it says whether the call reached the provider
+        (`spend.request_sent`), for the day's spend ledger written in this same transaction (F4)."""
+        encoded = {k: (dumps(v) if k.endswith("_json") and v is not None else v) for k, v in fields.items()}
+        if fields.get("raw_output") is not None:
+            encoded["output_sha256"] = _output_digest(fields["raw_output"])
+        encoded["finished_at"] = now()
+        with transaction(self.conn):
+            accepted = accept is None or accept()
+            if accepted:
+                self.conn.execute(
+                    f"UPDATE model_sessions SET {', '.join(f'{k} = ?' for k in encoded)} WHERE id = ?",
+                    (*encoded.values(), session_id),
+                )
+                if "status" in fields or "token_usage_json" in fields:
+                    spend.record_session(self.conn, session_id, request_sent)
+        return accepted
+
+    def model_session(self, step_input_id: str) -> dict[str, Any]:
+        row = self.conn.execute(
+            "SELECT connection, resolved_model, raw_output FROM model_sessions WHERE step_input_id = ? ORDER BY started_at DESC LIMIT 1",
+            (step_input_id,),
+        ).fetchone()
+        if row is None:
+            raise NotFound(step_input_id)
+        return dict(row)
+
+    def model_attempt_active(self, session_id: str, research_id: str, run_id: str, step_id: str,
+                             step_input_id: str, step_attempt: int) -> bool:
+        """Retries may share an input, so both the latest session and step generation must match."""
+        return self.conn.execute(
+            "SELECT 1 FROM model_sessions m JOIN run_steps s ON s.id = m.step_id"
+            " JOIN step_inputs i ON i.id = m.step_input_id"
+            " WHERE m.id = ? AND m.research_id = ? AND m.run_id = ? AND m.step_id = ?"
+            " AND m.step_input_id = ? AND m.status = 'started' AND m.finished_at IS NULL"
+            " AND s.run_id = m.run_id AND s.status = 'running' AND s.attempt = ?"
+            " AND i.step_id = m.step_id AND i.run_id = m.run_id AND i.research_id = m.research_id"
+            " AND m.rowid = (SELECT MAX(rowid) FROM model_sessions WHERE step_id = s.id)"
+            " AND i.rowid = (SELECT MAX(rowid) FROM step_inputs WHERE step_id = s.id)",
+            (session_id, research_id, run_id, step_id, step_input_id, step_attempt),
+        ).fetchone() is not None
+
+    def complete_model_step(self, session_id: str, session_fields: dict[str, Any], step_id: str, status: str,
+                            *, accept: Callable[[], bool] | None = None, **step_fields: Any) -> bool:
+        """Commit the model session result and the step outcome together, so recovery never finds one without the other."""
+        with transaction(self.conn):
+            accepted = accept is None or accept()
+            if accepted:
+                self.finish_model_session(session_id, **session_fields)
+                self.finish_step(step_id, status, **step_fields)
+        return accepted
+
+    # ---- sources ----------------------------------------------------------------------
+    def find_source_by_identifier(self, scheme: str, value: str) -> str | None:
+        row = self.conn.execute(
+            "SELECT source_version_id FROM identifier_mappings WHERE scheme = ? AND value = ? ORDER BY id LIMIT 1", (scheme, value)
+        ).fetchone()
+        return row["source_version_id"] if row else None
+
+    def provider_source_target(self, provider: str, record: Any) -> str | None:
+        """The stored source version `upsert_provider_source` would reuse for this record (it keeps that record's own
+        fields), or None when it would store a new one."""
+        existing = self.find_source_by_identifier(provider, record.provider_record_id)
+        if existing is None and record.doi and record.merge_by_doi:
+            existing = self.find_source_by_identifier("doi", record.doi)
+        return existing
+
+    def upsert_provider_source(self, provider: str, record: Any, payload_path: str | None) -> tuple[str, bool]:
+        """Reuse the provider's own record mapping, else a source version with the same normalized DOI.
+
+        A DOI names one registered version, so the same DOI from several providers is one source version with a mapping
+        per provider. A record whose DOI covers several file versions (`merge_by_doi` false, e.g. arXiv) never merges,
+        and title matches never merge; `record_search` flags those as suspected duplicates. Records with one arXiv DOI
+        (an arXiv version, or another provider's record of the preprint) are separate versions of one work (D46).
+        Other versions the provider lists for the record become separate source versions of the same work.
+        """
+        existing = self.provider_source_target(provider, record)
+        with transaction(self.conn):
+            if existing:
+                svid, wid = existing, self.source(existing)["work_id"]
+                self._insert_mappings(svid, provider, record, now())
+                self.enrich_source(provider, svid, record)
+                has_abstract = self.conn.execute(
+                    "SELECT 1 FROM passages WHERE source_version_id = ? AND kind = 'abstract'", (svid,)
+                ).fetchone()
+                if record.abstract and not has_abstract:
+                    self._insert_passage(svid, None, "abstract", None, None, record.abstract_origin, payload_path, None, record.abstract)
+                if record.cited_by_count is not None:
+                    # A citation count changes over time; the latest retrieval replaces it, with its date.
+                    self.conn.execute("UPDATE source_versions SET cited_by_count = ?, cited_by_count_at = ? WHERE id = ?",
+                                      (record.cited_by_count, now(), svid))
+                if record.is_retracted is not None:
+                    # Same rule (D27): only an explicit OpenAlex answer replaces the flag; an unknown read never clears it.
+                    self.conn.execute("UPDATE source_versions SET is_retracted = ?, is_retracted_at = ? WHERE id = ?",
+                                      (int(record.is_retracted), now(), svid))
+            else:
+                svid, wid = self._insert_provider_record(provider, record, payload_path)
+            self._store_author_keywords(svid, record)
+            self.set_reference_count(svid, record.reference_count)
+            self._store_references(svid, record)
+            for other in record.other_versions:
+                self._insert_other_version(provider, record, wid, other, payload_path)
+        return svid, existing is None
+
+    def _store_author_keywords(self, svid: str, record: Any) -> None:
+        """Fill the record's author keywords while the column is empty, as a missing abstract is filled.
+
+        One provider's list is never merged into another's: a keyword list belongs to the record the provider
+        described, and the first list read stands.
+        """
+        if not record.author_keywords:
+            return
+        self.conn.execute(
+            "UPDATE source_versions SET author_keywords_json = ? WHERE id = ? AND author_keywords_json IS NULL",
+            (dumps(record.author_keywords), svid),
+        )
+
+    def set_reference_count(self, svid: str, count: int | None) -> None:
+        """Fill the record's reference count while the column is empty; the caller holds the transaction.
+
+        A paper's bibliography does not change, so this is not dated and not overwritten the way the citation count
+        is: the first source that names a count settles it, whether that was a search or a DOI lookup (SW5.1).
+        """
+        if count is None:
+            return
+        self.conn.execute("UPDATE source_versions SET reference_count = ? WHERE id = ? AND reference_count IS NULL",
+                          (count, svid))
+
+    def _store_references(self, svid: str, record: Any) -> None:
+        """Add the works this record's bibliography names and mark its list read; the caller holds the transaction.
+
+        A list is added to, never replaced: a second provider that names none must not unread what the first read
+        (SW7.4).
+        """
+        if record.references is None:
+            return
+        self.conn.executemany(
+            "INSERT OR IGNORE INTO record_references (source_version_id, referenced_id) VALUES (?, ?)",
+            [(svid, referenced) for referenced in record.references],
+        )
+        self.conn.execute("UPDATE source_versions SET references_read = 1 WHERE id = ?", (svid,))
+
+    def other_version_ids(self, provider: str, record: Any) -> list[str]:
+        return [self.find_source_by_identifier(f"{provider}_version", f"{record.provider_record_id}:{o.version_label}")
+                for o in record.other_versions]
+
+    def _insert_other_version(self, provider: str, record: Any, wid: str, other: Any, payload_path: str | None) -> None:
+        # The DOI identifies the record's version and the provider abstract describes the record, so neither is copied.
+        key = f"{record.provider_record_id}:{other.version_label}"
+        if self.find_source_by_identifier(f"{provider}_version", key):
+            return
+        ts, oid = now(), new_id("srv")
+        self.conn.execute(
+            "INSERT INTO source_versions (id, work_id, title, authors_json, year, venue, version_label, publication_type, doi,"
+            " landing_url, oa_pdf_url, oa_pdf_version, origin, provider_payload_path, created_at, volume, issue, pages)"
+            " VALUES (?, ?, ?, ?, NULL, ?, ?, ?, NULL, ?, ?, ?, 'provider', ?, ?, ?, ?, ?)",
+            (oid, wid, record.title, dumps(record.authors), other.venue, other.version_label, record.publication_type,
+             other.landing_url, other.pdf_url, other.version_label, payload_path, ts,
+             record.volume, record.issue, record.pages),
+        )
+        self.conn.execute(
+            "INSERT INTO identifier_mappings (source_version_id, scheme, value, provider, retrieved_at) VALUES (?, ?, ?, ?, ?)",
+            (oid, f"{provider}_version", key, provider, ts),
+        )
+
+    def open_lookup_version(self, research_id: str, svid: str, version_label: str, landing_url: str | None) -> str:
+        """Open the record's own row for a declared other version of the same work, so a copy of that version can be
+        attached to it instead of to the published record (D4, D48, D83).
+
+        Built with `_insert_other_version`'s pattern: the title and the authors are the work's, and neither the DOI
+        nor the abstract is copied, because both describe the version the record itself is. The row is a member of
+        the research the way a provider's other versions are — never a candidate of its own, so it is not screened
+        a second time — and it does not head the work. Called again with the same version label it opens nothing
+        and returns the row it opened the first time.
+        """
+        key = f"{svid}:{version_label}"
+        existing = self.find_source_by_identifier("pdf_lookup_version", key)
+        if existing:
+            # Records are shared by every research: a row another research's lookup opened joins this one too, or
+            # this research would read the work as having no text while the file is in the library.
+            self.add_to_corpus(research_id, existing, "search", None, candidate=False)
+            return existing
+        source = self.source(svid)
+        ts, oid = now(), new_id("srv")
+        with transaction(self.conn):
+            self.conn.execute(
+                "INSERT INTO source_versions (id, work_id, title, authors_json, year, venue, version_label,"
+                " publication_type, doi, landing_url, oa_pdf_url, oa_pdf_version, origin, created_at, volume, issue, pages)"
+                " VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, NULL, ?, NULL, ?, 'provider', ?, ?, ?, ?)",
+                (oid, source["work_id"], source["title"], dumps(source["authors"]), version_label,
+                 source["publication_type"], landing_url, version_label, ts, source["volume"], source["issue"],
+                 source["pages"]),
+            )
+            self.conn.execute(
+                "INSERT INTO identifier_mappings (source_version_id, scheme, value, provider, retrieved_at)"
+                " VALUES (?, 'pdf_lookup_version', ?, 'pdf_lookup', ?)", (oid, key, ts),
+            )
+            self.add_to_corpus(research_id, oid, "search", None, candidate=False)
+            self._event(research_id, "lookup_version_opened",
+                        {"source_version_id": oid, "of": svid, "version_label": version_label})
+        return oid
+
+    def _insert_provider_record(self, provider: str, record: Any, payload_path: str | None) -> tuple[str, str]:
+        ts, svid = now(), new_id("srv")
+        unverified = ", ".join("?" * len(UNVERIFIED_DOI_PROVIDERS))
+        same_preprint = self.conn.execute(
+            "SELECT work_id FROM source_versions v WHERE doi = ? AND NOT EXISTS (SELECT 1 FROM identifier_mappings m"
+            f" WHERE m.source_version_id = v.id AND m.provider IN ({unverified})) ORDER BY created_at, id LIMIT 1",
+            (record.doi, *UNVERIFIED_DOI_PROVIDERS),
+        ).fetchone() if (record.doi and record.doi.startswith(ARXIV_DOI_PREFIX)
+                         and provider not in UNVERIFIED_DOI_PROVIDERS) else None
+        if same_preprint:
+            wid = same_preprint["work_id"]
+        else:
+            wid = new_id("wrk")
+            self.conn.execute("INSERT INTO works (id, created_at) VALUES (?, ?)", (wid, ts))
+        self.conn.execute(
+            "INSERT INTO source_versions (id, work_id, title, authors_json, year, venue, version_label, publication_type, doi,"
+            " landing_url, oa_pdf_url, oa_pdf_version, origin, provider_payload_path, created_at, cited_by_count, cited_by_count_at,"
+            " volume, issue, pages, is_retracted, is_retracted_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'provider', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (svid, wid, record.title, dumps(record.authors), record.year, record.venue, record.version_label,
+             record.publication_type, record.doi, record.landing_url, record.oa_pdf_url, record.oa_pdf_version, payload_path, ts,
+             record.cited_by_count, ts if record.cited_by_count is not None else None,
+             record.volume, record.issue, record.pages,
+             None if record.is_retracted is None else int(record.is_retracted),
+             ts if record.is_retracted is not None else None),
+        )
+        self._insert_mappings(svid, provider, record, ts)
+        if record.abstract:
+            self._insert_passage(svid, None, "abstract", None, None, record.abstract_origin, payload_path, None, record.abstract)
+        if not same_preprint:
+            self._assign_source_key(wid)
+        return svid, wid
+
+    def enrich_source(self, provider: str, svid: str, record: Any) -> None:
+        """Fill absent citation fields from an exact-identity provider lookup; never replace existing metadata.
+
+        The only path that changes a record's identity fields after insert (an empty `landing_url` filled): the arXiv
+        source eligibility of the record's PDFs is decided again in the same transaction (D104)."""
+        ts = now()
+        with transaction(self.conn):
+            had_landing = self.conn.execute("SELECT landing_url FROM source_versions WHERE id = ?", (svid,)).fetchone()
+            self.conn.execute(
+                "UPDATE source_versions SET"
+                " authors_json = CASE WHEN authors_json = '[]' AND ? <> '[]' THEN ? ELSE authors_json END,"
+                " year = COALESCE(year, ?), venue = COALESCE(venue, ?), publication_type = COALESCE(publication_type, ?),"
+                " landing_url = COALESCE(landing_url, ?), volume = COALESCE(volume, ?), issue = COALESCE(issue, ?),"
+                " pages = COALESCE(pages, ?) WHERE id = ?",
+                (dumps(record.authors), dumps(record.authors), record.year, record.venue, record.publication_type,
+                 record.landing_url, record.volume, record.issue, record.pages, svid),
+            )
+            self.conn.execute(
+                "INSERT OR IGNORE INTO identifier_mappings (source_version_id, scheme, value, provider, retrieved_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (svid, provider, record.provider_record_id, provider, ts),
+            )
+            # A key taken from the title gives way to the author an enrichment brings; an author key is never changed (D59).
+            self._assign_source_key(self.source(svid)["work_id"], replace_title_key=True)
+            if had_landing is not None and had_landing["landing_url"] is None and record.landing_url:
+                self._recheck_arxiv_eligibility(svid)
+
+    def _recheck_arxiv_eligibility(self, svid: str) -> None:
+        """Decision 1's record rows again, from the stored file version (no PDF is opened), for each PDF of the record in
+        use that has an eligibility row. A refusal on a PDF whose current text is a source reading withdraws that reading:
+        the route's extraction row is superseded first, then the row current just before it is current again with the
+        asset's four mirrored fields (the one-current index holds throughout); its passages stay, shadowed (D46)."""
+        from deixis.documents import arxiv_source
+
+        record = dict(self.conn.execute("SELECT doi, landing_url, oa_pdf_url, version_label FROM source_versions WHERE id = ?",
+                                        (svid,)).fetchone())
+        researches = [r[0] for r in self.conn.execute("SELECT research_id FROM corpus_memberships WHERE source_version_id = ?", (svid,))]
+        for row in self.conn.execute(
+            "SELECT v.asset_id, v.arxiv_key, v.eligibility, a.extraction_version FROM asset_arxiv_versions v"
+            " JOIN source_assets a ON a.id = v.asset_id WHERE a.source_version_id = ? AND a.removed_at IS NULL AND v.arxiv_key IS NOT NULL",
+            (svid,)).fetchall():
+            result = arxiv_source.record_eligibility(row["arxiv_key"], record)
+            if result == row["eligibility"]:
+                continue
+            self.conn.execute("UPDATE asset_arxiv_versions SET eligibility = ?, record_label = ?, checked_at = ? WHERE asset_id = ?",
+                              (result, record["version_label"], now(), row["asset_id"]))
+            current = row["extraction_version"] or ""
+            if result == "eligible" or not current.endswith("+" + arxiv_source.SOURCE_VERSION):
+                continue
+            withdrawn = self.conn.execute(
+                "SELECT baseline_extraction_id FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?",
+                (row["asset_id"], current)).fetchone()
+            if withdrawn and withdrawn["baseline_extraction_id"] is not None:
+                previous = self.conn.execute(
+                    "SELECT * FROM asset_extractions WHERE id = ? AND asset_id = ? AND outcome = 'superseded'",
+                    (withdrawn["baseline_extraction_id"], row["asset_id"])).fetchone()
+            else:
+                previous = self.conn.execute(
+                    "SELECT * FROM asset_extractions WHERE asset_id = ? AND outcome = 'superseded' AND created_at <="
+                    " (SELECT created_at FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?)"
+                    " AND extraction_version <> ? ORDER BY created_at DESC, rowid DESC LIMIT 1",
+                    (row["asset_id"], row["asset_id"], current, current)).fetchone()
+            if previous is None:
+                continue
+            self.conn.execute("UPDATE asset_extractions SET outcome = 'superseded' WHERE asset_id = ? AND extraction_version = ?",
+                              (row["asset_id"], current))
+            self.conn.execute("UPDATE asset_extractions SET outcome = 'current' WHERE id = ?", (previous["id"],))
+            self.conn.execute("UPDATE source_assets SET extraction_version = ?, extraction_status = ?, extraction_error = ?, page_count = ?"
+                              " WHERE id = ?", (previous["extraction_version"], previous["status"], previous["error"],
+                                                previous["page_count"], row["asset_id"]))
+            for research_id in researches:
+                self._event(research_id, "arxiv_source_withdrawn", {"asset_id": row["asset_id"], "source_version_id": svid,
+                                                                    "eligibility": result, "restored_version": previous["extraction_version"]})
+
+    def _insert_mappings(self, svid: str, provider: str, record: Any, ts: str) -> None:
+        mappings = [(provider, record.provider_record_id)]
+        if record.doi and record.merge_by_doi:
+            mappings.append(("doi", record.doi))
+        if record.identifiers.get("published_doi"):
+            mappings.append(("published_doi", record.identifiers["published_doi"]))
+        for scheme, value in mappings:
+            self.conn.execute(
+                "INSERT OR IGNORE INTO identifier_mappings (source_version_id, scheme, value, provider, retrieved_at) VALUES (?, ?, ?, ?, ?)",
+                (svid, scheme, value, provider, ts),
+            )
+
+    def create_upload_source(self, title: str) -> str:
+        ts, wid, svid = now(), new_id("wrk"), new_id("srv")
+        with transaction(self.conn):
+            self.conn.execute("INSERT INTO works (id, created_at) VALUES (?, ?)", (wid, ts))
+            self.conn.execute(
+                "INSERT INTO source_versions (id, work_id, title, origin, version_label, created_at) VALUES (?, ?, ?, 'user_upload', 'uploaded file', ?)",
+                (svid, wid, title, ts),
+            )
+            self._assign_source_key(wid)
+        return svid
+
+    def fill_upload_record(self, svid: str, record: Any, provider: str, basis: str) -> None:
+        """An uploaded PDF identified as a scholarly record (D37): the record's citation fields replace the file-name
+        title and fill the empty fields, and its abstract becomes the source's abstract. No identifier mapping is
+        written, so a search that later finds the same record keeps its own source version; the match is kept as
+        `record_match_json`, with the file-name title it replaced."""
+        source = self.source(svid)
+        if source["origin"] != "user_upload" or source.get("record_match_json"):
+            return
+        match = {"provider": provider, "work_id": record.provider_record_id, "basis": basis,
+                 "filename_title": source["title"], "matched_at": now()}
+        with transaction(self.conn):
+            self.conn.execute(
+                "UPDATE source_versions SET title = ?, authors_json = ?, year = ?, venue = ?, publication_type = ?, doi = ?,"
+                " landing_url = ?, volume = ?, issue = ?, pages = ?, cited_by_count = ?, cited_by_count_at = ?,"
+                " is_retracted = ?, is_retracted_at = ?, record_match_json = ? WHERE id = ?",
+                (record.title, dumps(record.authors), record.year, record.venue, record.publication_type, record.doi,
+                 record.landing_url, record.volume, record.issue, record.pages, record.cited_by_count,
+                 now() if record.cited_by_count is not None else None,
+                 None if record.is_retracted is None else int(record.is_retracted),
+                 now() if record.is_retracted is not None else None, dumps(match), svid))
+            has_abstract = self.conn.execute(
+                "SELECT 1 FROM passages WHERE source_version_id = ? AND kind = 'abstract'", (svid,)).fetchone()
+            if record.abstract and not has_abstract:
+                self._insert_passage(svid, None, "abstract", None, None, record.abstract_origin, None, None, record.abstract)
+            self._assign_source_key(source["work_id"], replace_title_key=True)
+
+    def _assign_source_key(self, work_id: str, replace_title_key: bool = False) -> None:
+        """Give a work its short author–year key (D59): from its published record's authors when it has one, else from
+        another version's authors, else from the title. A key is kept once given; only a title key may be replaced."""
+        work = self.conn.execute("SELECT source_key, source_key_basis FROM works WHERE id = ?", (work_id,)).fetchone()
+        if work is None or (work["source_key"] and not (replace_title_key and work["source_key_basis"] == "title")):
+            return
+        versions = [self.source(r[0]) for r in self.conn.execute(
+            "SELECT id FROM source_versions WHERE work_id = ? ORDER BY created_at, id", (work_id,))]
+        if not versions:
+            return
+        best = min(versions, key=lambda v: (not v["authors"], not is_published(v), v["year"] is None))
+        stem, basis = key_stem(best["authors"], best["title"], best["year"] or next((v["year"] for v in versions if v["year"]), None))
+        if work["source_key"] and basis == "title":
+            return
+        for suffix in suffixes():
+            key = f"{stem}{suffix}"
+            if not self.conn.execute("SELECT 1 FROM works WHERE source_key = ? COLLATE NOCASE AND id != ?", (key, work_id)).fetchone():
+                self.conn.execute("UPDATE works SET source_key = ?, source_key_basis = ? WHERE id = ?", (key, basis, work_id))
+                return
+
+    def _insert_passage(self, svid: str, asset_id: str | None, kind: str, page: int | None, label: str | None,
+                        abstract_origin: str | None, payload_ref: str | None, extraction_version: str | None, text: str,
+                        text_source: str = "text_layer") -> str:
+        digest = hashlib.sha256(text.encode()).hexdigest()
+        existing = self.conn.execute(
+            "SELECT id FROM passages WHERE source_version_id = ? AND kind = ? AND IFNULL(asset_id, '') = IFNULL(?, '')"
+            " AND IFNULL(physical_page, 0) = IFNULL(?, 0) AND text_sha256 = ? AND extraction_version IS ?",
+            (svid, kind, asset_id, page, digest, extraction_version),
+        ).fetchone()
+        if existing:
+            return existing["id"]
+        pid, ts = new_id("psg"), now()
+        self.conn.execute(
+            "INSERT INTO passages (id, source_version_id, asset_id, kind, physical_page, printed_label, abstract_origin, payload_ref,"
+            " extraction_version, text, text_sha256, retrieved_at, created_at" + (", text_source" if text_source != "text_layer" else "")
+            + ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?" + (", ?" if text_source != "text_layer" else "") + ")",
+            # The text layer is the column's default, so code before migration 0030's text sources writes the same rows.
+            (pid, svid, asset_id, kind, page, label, abstract_origin, payload_ref, extraction_version, text, digest, ts, ts)
+            + ((text_source,) if text_source != "text_layer" else ()),
+        )
+        return pid
+
+    def asset_by_sha(self, sha256: str) -> dict[str, Any] | None:
+        return row_dict(self.conn.execute(
+            "SELECT * FROM source_assets WHERE sha256 = ? AND removed_at IS NULL ORDER BY retrieved_at LIMIT 1", (sha256,)
+        ).fetchone())
+
+    def asset(self, asset_id: str) -> dict[str, Any]:
+        row = self.conn.execute("SELECT * FROM source_assets WHERE id = ?", (asset_id,)).fetchone()
+        if row is None:
+            raise NotFound(asset_id)
+        return dict(row)
+
+    def _purge_asset_extractions(self, svid: str) -> list[str]:
+        from deixis.workflow.read.recovery_history import purge_asset_history
+
+        return purge_asset_history(self.conn, svid)
+
+    def asset_passage_count(self, asset_id: str) -> int:
+        return self.conn.execute("SELECT COUNT(*) FROM passages WHERE asset_id = ?", (asset_id,)).fetchone()[0]
+
+    def add_asset_with_pages(self, svid: str, sha256: str, size: int, storage_path: str, origin: str,
+                             retrieved_from: str | None, filename: str | None, extraction: Any,
+                             extraction_version: str, chunker: Any, *, input_observation_id: str | None = None,
+                             input_observation: dict | None = None) -> str:
+        aid = new_id("ast")
+        with transaction(self.conn):
+            if input_observation is not None:
+                input_observation_id = self.add_file_observation(**input_observation)
+            try:
+                self.conn.execute(
+                    "INSERT INTO source_assets (id, source_version_id, sha256, byte_size, media_type, storage_path, original_filename,"
+                    " retrieved_from, retrieved_at, origin, extraction_status, extraction_version, extraction_error, page_count)"
+                    " VALUES (?, ?, ?, ?, 'application/pdf', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (aid, svid, sha256, size, storage_path, filename, retrieved_from, now(), origin,
+                     extraction.status, extraction_version, extraction.error, extraction.page_count),
+                )
+            except sqlite3.IntegrityError as exc:
+                if self.has_asset(svid):
+                    raise PdfInUse(svid) from exc
+                raise
+            self._write_extraction(svid, aid, extraction, extraction_version, chunker, "current",
+                                   input_observation_id=input_observation_id)
+        return aid
+
+    def _write_extraction(self, svid: str, aid: str, extraction: Any, extraction_version: str, chunker: Any,
+                          outcome: str, rejection_reason: str | None = None, *, baseline_extraction_id: str | None = None,
+                          input_observation_id: str | None = None, recovery_operation_id: str | None = None,
+                          diagnostic_only: bool = False, decision_code: str | None = None) -> str:
+        passage_ids = []
+        for page in extraction.pages:
+            # A chunk holding a placed display equation is labelled per chunk with the placement's label (D104: arXiv
+            # source; Mathpix: equation_ocr): the rest of the page, and the chunk's other text, is the PDF's own text layer.
+            placed = getattr(page, "latex_blocks", None) or ()
+            for start, end, text in chunker(page.text):
+                label = (getattr(page, "placement_label", "latex_source") if any(start <= s and e <= end for s, e, _ in placed)
+                         else getattr(page, "text_source", "text_layer"))
+                passage_ids.append((page.physical_page, self._insert_passage(
+                    svid, aid, "pdf_page", page.physical_page, page.printed_label, None, f"chars:{start}-{end}", extraction_version, text,
+                    label)))
+        math, ocr = getattr(extraction, "math", None), getattr(extraction, "ocr", None)
+        extraction_id = new_id("ext")
+        statement = (
+            "INSERT INTO asset_extractions (id, asset_id, extraction_version, status, error, page_count, text_pages, passage_count,"
+            " outcome, rejection_reason, created_at, math_json, ocr_json, extractor_profile, baseline_extraction_id,"
+            " input_observation_id, recovery_operation_id, diagnostic_only, decision_code)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        values = (extraction_id, aid, extraction_version, extraction.status, extraction.error, extraction.page_count,
+             len({page for page, _ in passage_ids}), len(set(pid for _, pid in passage_ids)), outcome, rejection_reason, now(),
+             dumps(math) if math is not None else None, dumps(ocr) if ocr is not None else None,
+             recovery.profile_of(extraction_version), baseline_extraction_id, input_observation_id,
+             recovery_operation_id, int(diagnostic_only), decision_code)
+        self.conn.execute(statement, values)
+        return extraction_id
+
+    def reextract_asset(self, asset_id: str, extraction: Any, extraction_version: str, chunker: Any,
+                        dry_run: bool = False, allow_run_id: str | None = None, guard: Any = None, *,
+                        input_observation: dict | None = None) -> dict[str, Any]:
+        """Append a tool occurrence under D46, retaining the baseline's text pages.
+
+        All decision inputs are read under the write lock. A dry run evaluates
+        without writing. The optional source-route guard precedes those reads.
+        """
+        manifest = recovery.coverage_manifest(extraction, chunker)
+        text_pages = len(recovery.pages(manifest))
+        ocr = getattr(extraction, "ocr", None) if getattr(extraction, "math", None) is None else None
+
+        def evaluate() -> tuple[dict[str, Any], dict[str, Any] | None, list[str]]:
+            asset = self.asset(asset_id)
+            if asset["removed_at"] is not None:
+                raise NotFound(asset_id)
+            if self.conn.execute("SELECT 1 FROM asset_extractions WHERE asset_id = ? AND extraction_version = ?",
+                                 (asset_id, extraction_version)).fetchone():
+                return {"asset_id": asset_id, "outcome": "unchanged"}, None, []
+            old = row_dict(self.conn.execute(
+                "SELECT * FROM asset_extractions WHERE asset_id = ? AND outcome = 'current'", (asset_id,)).fetchone())
+            reason, code = None, "upgraded"
+            if old is not None:
+                if recovery.STATUS_RANK.get(extraction.status, 0) < recovery.STATUS_RANK.get(old["status"], 0):
+                    reason, code = f"status {extraction.status} is worse than {old['status']}", "status_worse"
+                elif extraction.page_count != old["page_count"]:
+                    reason, code = f"page count {extraction.page_count} differs from {old['page_count']}", "page_count_changed"
+                elif text_pages < old["text_pages"]:
+                    reason, code = f"text on {text_pages} pages, fewer than {old['text_pages']}", "fewer_text_pages"
+                elif not recovery.pages(recovery.stored_manifest(self.conn, asset_id, old["extraction_version"])).issubset(
+                        recovery.pages(manifest)):
+                    reason, code = "an earlier text page is missing", "text_page_lost"
+            if ocr is not None and not reason and not ocr["pages_with_text"]:
+                reason, code = "OCR found no text", "ocr_found_no_text"
+            researches = self._asset_researches(asset["source_version_id"])
+            return {"asset_id": asset_id, "source_version_id": asset["source_version_id"],
+                    "outcome": "rejected" if reason else "current", "rejection_reason": reason,
+                    "decision_code": code, "old_version": asset["extraction_version"], "text_pages": text_pages,
+                    "old_text_pages": old["text_pages"] if old else None}, old, researches
+
+        if dry_run:
+            return evaluate()[0]
+        with transaction(self.conn):
+            if guard is not None and (refusal := guard(self.conn)):
+                return {"asset_id": asset_id, "source_version_id": self.asset(asset_id)["source_version_id"],
+                        "outcome": "refused", "reason": refusal}
+            report, old, researches = evaluate()
+            if report["outcome"] == "unchanged":
+                return report
+            if self._asset_run_active(report["source_version_id"], allow_run_id):
+                raise RunInProgress(asset_id)
+            if report["outcome"] == "current" and old:
+                self.conn.execute("UPDATE asset_extractions SET outcome = 'superseded' WHERE id = ?", (old["id"],))
+            input_observation_id = self.add_file_observation(**input_observation) if input_observation is not None else None
+            self._write_extraction(report["source_version_id"], asset_id, extraction, extraction_version, chunker,
+                                   report["outcome"], report["rejection_reason"],
+                                   baseline_extraction_id=old["id"] if old else None, decision_code=report["decision_code"],
+                                   input_observation_id=input_observation_id)
+            if report["outcome"] == "current":
+                self.conn.execute(
+                    "UPDATE source_assets SET extraction_version = ?, extraction_status = ?, extraction_error = ?, page_count = ?"
+                    " WHERE id = ?", (extraction_version, extraction.status, extraction.error, extraction.page_count, asset_id))
+            payload = {k: report[k] for k in ("asset_id", "source_version_id", "outcome", "rejection_reason")} | {
+                "extraction_version": extraction_version}
+            for research_id in researches:
+                if ocr is not None:
+                    self._event(research_id, "asset_ocr_read", payload | {k: ocr[k] for k in (
+                        "languages", "pages_read", "pages_with_text", "blank_pages", "failed_pages")})
+                else:
+                    self._event(research_id, "asset_reextracted", payload)
+        return report
+
+    def _asset_researches(self, svid: str) -> list[str]:
+        return [r[0] for r in self.conn.execute(
+            "SELECT research_id FROM corpus_memberships WHERE source_version_id = ?", (svid,))]
+
+    def _asset_run_active(self, svid: str, allow_run_id: str | None = None) -> bool:
+        return self.conn.execute(
+            "SELECT 1 FROM corpus_memberships m JOIN runs r ON r.research_id = m.research_id"
+            " WHERE m.source_version_id = ? AND r.status IN ('queued', 'running', 'pause_requested')"
+            " AND r.id IS NOT ? LIMIT 1", (svid, allow_run_id)).fetchone() is not None
+
+    def _asset_run_started(self, svid: str) -> bool:
+        return self.conn.execute(
+            "SELECT 1 FROM corpus_memberships m JOIN runs r ON r.research_id = m.research_id"
+            " WHERE m.source_version_id = ? AND r.status IN ('running', 'pause_requested') LIMIT 1",
+            (svid,)).fetchone() is not None
+
+    def add_file_observation(self, *, kind: str, storage_path: str, expected_sha256: str, expected_byte_size: int,
+                             observed_sha256: str | None, observed_byte_size: int | None, integrity: str,
+                             operation_id: str | None = None, retained_filename: str | None = None) -> str:
+        """Record caller-observed bytes; this method neither reads nor hashes a file."""
+        oid = new_id("obs")
+        with transaction(self.conn):
+            self.conn.execute(
+                "INSERT INTO asset_file_observations (id, operation_id, kind, storage_path, expected_sha256,"
+                " expected_byte_size, observed_sha256, observed_byte_size, integrity, retained_filename, observed_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (oid, operation_id, kind, storage_path, expected_sha256, expected_byte_size, observed_sha256,
+                 observed_byte_size, integrity, retained_filename, now()))
+        return oid
+
+    def _text_retry_operation(self, operation_id: str) -> dict[str, Any]:
+        """Internal reservation state; never serialize this row into a public response."""
+        row = self.conn.execute("SELECT * FROM asset_recovery_operations WHERE id = ?", (operation_id,)).fetchone()
+        if row is None:
+            raise NotFound(operation_id)
+        return dict(row)
+
+    def text_retry_view(self, operation_id: str) -> dict[str, Any]:
+        row = self._text_retry_operation(operation_id)
+        extraction = self.conn.execute(
+            "SELECT id, extraction_version, status FROM asset_extractions WHERE recovery_operation_id = ?",
+            (operation_id,)).fetchone()
+        observation = self.conn.execute("SELECT integrity FROM asset_file_observations WHERE id = ?",
+                                        (row["input_observation_id"],)).fetchone()
+        coverage = None
+        if row["old_coverage_json"] is not None and row["new_coverage_json"] is not None:
+            old, new = json.loads(row["old_coverage_json"]), json.loads(row["new_coverage_json"])
+            coverage = {"old_text_pages": sorted({p[0] for p in old["manifest"]}),
+                        "new_text_pages": sorted({p[0] for p in new["manifest"]}),
+                        "missing_pages": sorted(new["missing_pages"])}
+        result = {k: row[k] for k in ("asset_id", "lifecycle", "outcome", "reason", "decision_code",
+                  "input_observation_id", "baseline_extraction_id", "created_at", "finished_at")}
+        return result | {"operation_id": row["id"], "input_integrity": observation[0] if observation else None,
+                         "extraction_id": extraction["id"] if extraction else None,
+                         "extraction_version": extraction["extraction_version"] if extraction else None,
+                         "candidate_status": extraction["status"] if extraction else None, "coverage": coverage}
+
+    def _retry_result(self, operation_id: str) -> dict[str, Any]:
+        """Internal Store result, retaining the R1 operation-row contract."""
+        return self._text_retry_operation(operation_id) | self.text_retry_view(operation_id)
+
+    def text_retry_by_key(self, idempotency_key: str) -> dict[str, Any] | None:
+        return row_dict(self.conn.execute(
+            "SELECT * FROM asset_recovery_operations WHERE idempotency_key = ?", (idempotency_key,)).fetchone())
+
+    def record_text_retry_input(self, operation_id: str, **fields: Any) -> str:
+        with transaction(self.conn):
+            operation = self._text_retry_operation(operation_id)
+            if operation["kind"] != "text_retry" or operation["lifecycle"] != "running":
+                raise RecoveryConflict("operation_not_running")
+            oid = self.add_file_observation(**fields, kind="extraction_input", operation_id=operation_id)
+            self.conn.execute("UPDATE asset_recovery_operations SET input_observation_id = ? WHERE id = ?",
+                              (oid, operation_id))
+            return oid
+
+    def _text_retry_event(self, operation_id: str) -> None:
+        operation = self.text_retry_view(operation_id)
+        asset = row_dict(self.conn.execute("SELECT * FROM source_assets WHERE id = ?",
+                                           (operation["asset_id"],)).fetchone())
+        if asset:
+            payload = {k: operation[k] for k in ("asset_id", "operation_id", "lifecycle", "outcome", "reason",
+                        "decision_code", "extraction_version", "baseline_extraction_id")}
+            payload["source_version_id"] = asset["source_version_id"]
+            for rid in self._asset_researches(asset["source_version_id"]):
+                self._event(rid, "asset_text_retried", payload)
+
+    def refuse_text_retry(self, operation_id: str, reason: str, *, input_observation_id: str | None = None) -> dict[str, Any]:
+        if reason not in TEXT_RETRY_REFUSALS:
+            raise ValueError("Unknown text retry refusal")
+        with transaction(self.conn):
+            operation = self._text_retry_operation(operation_id)
+            if operation["kind"] != "text_retry":
+                raise RecoveryConflict("operation_not_running")
+            if operation["lifecycle"] == "completed":
+                return self._retry_result(operation_id)
+            if operation["lifecycle"] != "running":
+                raise RecoveryConflict("operation_not_running")
+            code = "input_not_verified" if reason in ("file_missing", "file_mismatch") else None
+            self.conn.execute(
+                "UPDATE asset_recovery_operations SET lifecycle = 'completed', outcome = 'refused', reason = ?,"
+                " decision_code = ?, input_observation_id = COALESCE(input_observation_id, ?), finished_at = ? WHERE id = ?",
+                (reason, code, input_observation_id, now(), operation_id))
+            self._text_retry_event(operation_id)
+            return self._retry_result(operation_id)
+
+    def interrupt_text_retry(self, operation_id: str, reason: str) -> dict[str, Any]:
+        if reason not in TEXT_RETRY_INTERRUPTIONS:
+            raise ValueError("Unknown text retry interruption")
+        with transaction(self.conn):
+            operation = self._text_retry_operation(operation_id)
+            if operation["lifecycle"] != "running":
+                return self._retry_result(operation_id)
+            if operation["kind"] != "text_retry":
+                raise RecoveryConflict("operation_not_running")
+            self.conn.execute("UPDATE asset_recovery_operations SET lifecycle = 'interrupted', reason = ?,"
+                              " finished_at = ? WHERE id = ?", (reason, now(), operation_id))
+            self._text_retry_event(operation_id)
+            return self._retry_result(operation_id)
+
+    def flush_text_retry_interruptions(self) -> None:
+        from deixis.workflow.read.file_restore import transaction as restore_transaction
+
+        for oid, reason in list(self.pending_text_retry_interruptions.items()):
+            try:
+                with restore_transaction(self.conn):
+                    self.interrupt_text_retry(oid, reason)
+            except Exception:
+                logging.getLogger("deixis.workflow.store").exception("Could not persist pending text retry interruption %s", oid)
+            else:
+                self.pending_text_retry_interruptions.pop(oid, None)
+        for oid, reason in list(self.pending_file_restore_interruptions.items()):
+            try:
+                with restore_transaction(self.conn):
+                    self.interrupt_file_restore(oid, reason)
+            except Exception:
+                logging.getLogger("deixis.workflow.store").exception("Could not persist pending file restore interruption %s", oid)
+            else:
+                self.pending_file_restore_interruptions.pop(oid, None)
+
+    def file_restore_assets(self, sha256: str) -> list[dict[str, Any]]:
+        """Every physical-file owner, including removed and replaced assets."""
+        return [dict(row) for row in self.conn.execute(
+            "SELECT id, source_version_id FROM source_assets WHERE sha256 = ? ORDER BY id", (sha256,))]
+
+    def reserve_file_restore(self, sha256: str, byte_size: int, *, caller: str,
+                             research_id: str | None) -> dict[str, Any]:
+        from deixis.workflow.read.file_restore import FILE_WRITERS, FileRestoreRefused, transaction as restore_transaction
+
+        if caller not in FILE_WRITERS:
+            raise ValueError("Unknown PDF writer")
+        with restore_transaction(self.conn):
+            if any(self._asset_run_active(a["source_version_id"]) for a in self.file_restore_assets(sha256)):
+                raise FileRestoreRefused("run_active")
+            oid = new_id("rop")
+            fingerprint = hashlib.sha256(json.dumps({"kind": "file_restore", "sha256": sha256,
+                "caller": caller, "research_id": research_id}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+            self.conn.execute(
+                "INSERT INTO asset_recovery_operations (id, kind, asset_id, research_id, expected_sha256,"
+                " expected_byte_size, mode, idempotency_key, request_fingerprint, lifecycle, created_at)"
+                " VALUES (?, 'file_restore', NULL, ?, ?, ?, NULL, ?, ?, 'running', ?)",
+                (oid, research_id, sha256, byte_size, "restore-" + uuid4().hex, fingerprint, now()))
+            return self._text_retry_operation(oid)
+
+    def record_file_restore_observation(self, operation_id: str, kind: str, **fields: Any) -> str:
+        from deixis.workflow.read.file_restore import transaction as restore_transaction
+
+        if kind not in ("before_restore", "after_restore"):
+            raise ValueError("Unknown file restore observation")
+        with restore_transaction(self.conn):
+            operation = self._text_retry_operation(operation_id)
+            if operation["kind"] != "file_restore" or operation["lifecycle"] != "running":
+                raise RecoveryConflict("operation_not_running")
+            oid = self.add_file_observation(kind=kind, operation_id=operation_id, **fields)
+            column = "before_observation_id" if kind == "before_restore" else "after_observation_id"
+            self.conn.execute(f"UPDATE asset_recovery_operations SET {column} = ? WHERE id = ?", (oid, operation_id))
+            return oid
+
+    def file_restore_view(self, operation_id: str) -> dict[str, Any]:
+        operation = self._text_retry_operation(operation_id)
+        if operation["kind"] != "file_restore":
+            raise RecoveryConflict("operation_not_running")
+        observations = {row["id"]: dict(row) for row in self.conn.execute(
+            "SELECT id, integrity, retained_filename FROM asset_file_observations WHERE operation_id = ?", (operation_id,))}
+        before = observations.get(operation["before_observation_id"], {})
+        after = observations.get(operation["after_observation_id"], {})
+        return {k: operation[k] for k in ("lifecycle", "outcome", "reason", "created_at", "finished_at")} | {
+            "operation_id": operation_id, "sha256": operation["expected_sha256"],
+            "before_integrity": before.get("integrity"), "after_integrity": after.get("integrity"),
+            "retained": before.get("retained_filename") is not None}
+
+    def latest_file_restore(self, sha256: str) -> dict[str, Any] | None:
+        row = self.conn.execute("SELECT id FROM asset_recovery_operations WHERE kind = 'file_restore'"
+            " AND expected_sha256 = ? ORDER BY created_at DESC, id DESC LIMIT 1", (sha256,)).fetchone()
+        return self.file_restore_view(row["id"]) if row else None
+
+    def _file_restore_event(self, operation_id: str) -> None:
+        view = self.file_restore_view(operation_id)
+        assets = self.file_restore_assets(view["sha256"])
+        operation = self._text_retry_operation(operation_id)
+        researches = {rid for a in assets for rid in self._asset_researches(a["source_version_id"])}
+        rid = operation["research_id"]
+        if rid is not None and self.conn.execute("SELECT 1 FROM researches WHERE id = ?", (rid,)).fetchone():
+            researches.add(rid)
+        payload = {k: view[k] for k in ("operation_id", "sha256", "lifecycle", "outcome", "reason",
+                                      "before_integrity", "after_integrity", "retained")}
+        payload["affected_asset_ids"] = [a["id"] for a in assets]
+        for rid in sorted(researches):
+            self._event(rid, "asset_file_restore_finished", payload)
+
+    def complete_file_restore(self, operation_id: str, outcome: str, reason: str | None = None) -> dict[str, Any]:
+        from deixis.workflow.read.file_restore import FILE_RESTORE_REFUSALS, transaction as restore_transaction
+
+        if (outcome not in ("file_restored", "file_reused", "file_refused") or
+                (outcome == "file_refused" and reason not in FILE_RESTORE_REFUSALS) or
+                (outcome != "file_refused" and reason is not None)):
+            raise ValueError("Invalid file restore ending")
+        with restore_transaction(self.conn):
+            operation = self._text_retry_operation(operation_id)
+            if operation["kind"] != "file_restore":
+                raise RecoveryConflict("operation_not_running")
+            if operation["lifecycle"] != "running":
+                return self.file_restore_view(operation_id)
+            self.conn.execute("UPDATE asset_recovery_operations SET lifecycle = 'completed', outcome = ?, reason = ?,"
+                " finished_at = ? WHERE id = ?", (outcome, reason, now(), operation_id))
+            self._file_restore_event(operation_id)
+            return self.file_restore_view(operation_id)
+
+    def interrupt_file_restore(self, operation_id: str, reason: str) -> dict[str, Any]:
+        from deixis.workflow.read.file_restore import transaction as restore_transaction
+
+        if reason not in TEXT_RETRY_INTERRUPTIONS:
+            raise ValueError("Unknown file restore interruption")
+        with restore_transaction(self.conn):
+            operation = self._text_retry_operation(operation_id)
+            if operation["kind"] != "file_restore":
+                raise RecoveryConflict("operation_not_running")
+            if operation["lifecycle"] != "running":
+                return self.file_restore_view(operation_id)
+            self.conn.execute("UPDATE asset_recovery_operations SET lifecycle = 'interrupted', reason = ?,"
+                " finished_at = ? WHERE id = ?", (reason, now(), operation_id))
+            self._file_restore_event(operation_id)
+            return self.file_restore_view(operation_id)
+
+    def _retry_baseline(self, asset_id: str) -> dict[str, Any] | None:
+        row = row_dict(self.conn.execute(
+            "SELECT e.*, o.integrity AS input_integrity FROM asset_extractions e"
+            " LEFT JOIN asset_file_observations o ON o.id = e.input_observation_id"
+            " WHERE e.asset_id = ? AND e.outcome = 'current'", (asset_id,)).fetchone())
+        if row is not None:
+            row["manifest"] = recovery.stored_manifest(self.conn, asset_id, row["extraction_version"])
+        return row
+
+    def reserve_text_retry(self, asset_id: str, *, expected_extraction_id: str, idempotency_key: str,
+                           request_fingerprint: str, research_id: str | None = None) -> dict[str, Any]:
+        with transaction(self.conn):
+            prior = self.conn.execute(
+                "SELECT * FROM asset_recovery_operations WHERE idempotency_key = ?", (idempotency_key,)).fetchone()
+            if prior:
+                if prior["request_fingerprint"] != request_fingerprint:
+                    raise RequestConflict(idempotency_key)
+                return self._retry_result(prior["id"]) | {"replayed": True}
+            asset = self.asset(asset_id)
+            if asset["removed_at"] is not None:
+                raise NotFound(asset_id)
+            baseline = self._retry_baseline(asset_id)
+            if baseline is None or baseline["id"] != expected_extraction_id:
+                raise RecoveryConflict("baseline_changed")
+            if baseline["status"] in ("succeeded", "pending"):
+                raise NotRetryable("already_current" if baseline["status"] == "succeeded" else "pending")
+            if self._asset_run_active(asset["source_version_id"]):
+                raise RunInProgress(asset_id)
+            if self.conn.execute(
+                    "SELECT 1 FROM asset_recovery_operations WHERE asset_id = ? AND kind = 'text_retry'"
+                    " AND lifecycle = 'running'", (asset_id,)).fetchone():
+                raise RecoveryConflict("operation_running")
+            operation_id = new_id("rop")
+            self.conn.execute(
+                "INSERT INTO asset_recovery_operations (id, kind, asset_id, research_id, expected_sha256, expected_byte_size,"
+                " baseline_extraction_id, baseline_profile, mode, idempotency_key, request_fingerprint, lifecycle,"
+                " old_coverage_json, created_at)"
+                " VALUES (?, 'text_retry', ?, ?, ?, ?, ?, ?, 'retry_failed_or_partial', ?, ?, 'running', ?, ?)",
+                (operation_id, asset_id, research_id, asset["sha256"], asset["byte_size"], baseline["id"],
+                 baseline["extractor_profile"], idempotency_key, request_fingerprint,
+                 dumps({"manifest": baseline["manifest"], "missing_pages": []}), now()))
+            return self._retry_result(operation_id) | {"replayed": False}
+
+    def complete_text_retry(self, operation_id: str, extraction: Any, chunker: Any, *,
+                            input_observation_id: str | None) -> dict[str, Any]:
+        """Publish one already parsed candidate atomically; a completed operation is replayed."""
+        with transaction(self.conn):
+            operation = self._text_retry_operation(operation_id)
+            if operation["lifecycle"] == "completed":
+                return self._retry_result(operation_id)
+            if operation["kind"] != "text_retry" or operation["lifecycle"] != "running":
+                raise RecoveryConflict("operation_not_running")
+            if (getattr(extraction, "ocr", None) is not None or getattr(extraction, "math", None) is not None
+                    or recovery.profile_of(extraction.extraction_version) != extraction.extraction_version
+                    or any(getattr(page, "text_source", "text_layer") != "text_layer"
+                           or getattr(page, "latex_blocks", None) for page in extraction.pages)):
+                raise ValueError("Text retry requires a plain text-layer extraction")
+            asset = row_dict(self.conn.execute("SELECT * FROM source_assets WHERE id = ?", (operation["asset_id"],)).fetchone())
+            baseline = self._retry_baseline(operation["asset_id"])
+            observation = row_dict(self.conn.execute("SELECT * FROM asset_file_observations WHERE id = ?",
+                                                    (input_observation_id,)).fetchone())
+            reason = None
+            if asset is None or asset["removed_at"] is not None:
+                reason = "asset_removed"
+            elif not self._asset_researches(asset["source_version_id"]):
+                reason = "no_holding_research"
+            elif operation["research_id"] is not None and not self.is_active_member(operation["research_id"], asset["source_version_id"]):
+                reason = "membership_changed"
+            elif asset["sha256"] != operation["expected_sha256"] or asset["byte_size"] != operation["expected_byte_size"]:
+                reason = "asset_replaced"
+            elif baseline is None or baseline["id"] != operation["baseline_extraction_id"]:
+                reason = "baseline_changed"
+            elif self._asset_run_started(asset["source_version_id"]):
+                reason = "run_active"
+            elif (observation is None or observation["kind"] != "extraction_input" or observation["integrity"] != "verified"
+                  or observation["expected_sha256"] != operation["expected_sha256"]
+                  or observation["expected_byte_size"] != operation["expected_byte_size"]):
+                reason = "input_not_verified"
+            version, decision = None, None
+            if reason:
+                return self.refuse_text_retry(operation_id, reason, input_observation_id=(
+                    observation["id"] if observation else None))
+            else:
+                manifest = recovery.coverage_manifest(extraction, chunker)
+                decision = recovery.decide(baseline, {"status": extraction.status, "error": extraction.error,
+                    "page_count": extraction.page_count, "extractor_profile": extraction.extraction_version, "manifest": manifest})
+                version = recovery.occurrence(extraction.extraction_version, operation_id)
+                code = decision.decision_code
+                outcome = ("diagnosis_updated" if decision.diagnostic_only else "promoted") if decision.promote else (
+                    "no_change" if code == "no_change" else "rejected")
+                if decision.promote:
+                    self.conn.execute("UPDATE asset_extractions SET outcome = 'superseded' WHERE id = ?", (baseline["id"],))
+                self._write_extraction(asset["source_version_id"], asset["id"], extraction, version, chunker,
+                    "current" if decision.promote else "rejected", None if decision.promote else f"Text retry rejected: {code}.",
+                    baseline_extraction_id=baseline["id"], input_observation_id=input_observation_id,
+                    recovery_operation_id=operation_id, diagnostic_only=decision.diagnostic_only, decision_code=code)
+                if decision.promote:
+                    self.conn.execute(
+                        "UPDATE source_assets SET extraction_version = ?, extraction_status = ?, extraction_error = ?, page_count = ?"
+                        " WHERE id = ?", (version, extraction.status, extraction.error, extraction.page_count, asset["id"]))
+                self.conn.execute(
+                    "UPDATE asset_recovery_operations SET lifecycle = 'completed', outcome = ?, decision_code = ?,"
+                    " input_observation_id = COALESCE(input_observation_id, ?), old_coverage_json = ?, new_coverage_json = ?, finished_at = ? WHERE id = ?",
+                    (outcome, code, input_observation_id,
+                     dumps({"manifest": decision.old_coverage, "missing_pages": decision.missing_pages}),
+                     dumps({"manifest": decision.new_coverage, "missing_pages": decision.missing_pages}), now(), operation_id))
+            self._text_retry_event(operation_id)
+            return self._retry_result(operation_id)
+
+    def replace_asset(self, asset_id: str, sha256: str, size: int, storage_path: str, origin: str, retrieved_from: str | None,
+                      filename: str | None, extraction: Any, extraction_version: str, chunker: Any, *,
+                      input_observation: dict | None = None) -> str:
+        """Put another file in use for the source version, in every research that uses it (D46).
+
+        The new file gets its own passages even when its text is the same; the old file is marked replaced, and the evidence
+        that cites its passages keeps them. The selection does not change, so no selection revision is bumped.
+        """
+        asset = self.asset(asset_id)
+        if asset["removed_at"] is not None:
+            raise NotFound(asset_id)
+        if asset["sha256"] == sha256:
+            raise SameFile(asset_id)
+        svid, aid, ts = asset["source_version_id"], new_id("ast"), now()
+        researches = [r[0] for r in self.conn.execute("SELECT research_id FROM corpus_memberships WHERE source_version_id = ?", (svid,))]
+        with transaction(self.conn):
+            if researches and self.conn.execute(
+                f"SELECT 1 FROM runs WHERE research_id IN ({', '.join('?' * len(researches))}) AND status IN"
+                f" ({', '.join('?' * len(ACTIVE_RUN_STATUSES))}) LIMIT 1", (*researches, *ACTIVE_RUN_STATUSES)
+            ).fetchone():
+                raise RunInProgress(asset_id)
+            # The old file leaves use first, so the one-file-in-use index holds throughout the transaction.
+            self.conn.execute("UPDATE source_assets SET removed_at = ?, removal_reason = 'replaced' WHERE id = ?", (ts, asset_id))
+            self.conn.execute(
+                "INSERT INTO source_assets (id, source_version_id, sha256, byte_size, media_type, storage_path, original_filename,"
+                " retrieved_from, retrieved_at, origin, extraction_status, extraction_version, extraction_error, page_count)"
+                " VALUES (?, ?, ?, ?, 'application/pdf', ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (aid, svid, sha256, size, storage_path, filename, retrieved_from, ts, origin,
+                 extraction.status, extraction_version, extraction.error, extraction.page_count),
+            )
+            self.conn.execute("UPDATE source_assets SET replaced_by_asset_id = ? WHERE id = ?", (aid, asset_id))
+            observation_id = self.add_file_observation(**input_observation) if input_observation is not None else None
+            self._write_extraction(svid, aid, extraction, extraction_version, chunker, "current",
+                                   input_observation_id=observation_id)
+            for research_id in researches:
+                self._event(research_id, "asset_replaced", {"source_version_id": svid, "asset_id": asset_id, "replaced_by_asset_id": aid})
+                self.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (ts, research_id))
+        return aid
+
+    def evidence_statuses(self, passage_ids: list[str]) -> dict[str, str]:
+        found: dict[str, str] = {}
+        for start in range(0, len(passage_ids), 500):
+            chunk = passage_ids[start:start + 500]
+            found.update({r[0]: r[1] for r in self.conn.execute(
+                f"SELECT p.id, {EVIDENCE_STATUS_SQL} FROM passages p LEFT JOIN source_assets a ON a.id = p.asset_id"
+                f" WHERE p.id IN ({','.join('?' * len(chunk))})", chunk)})
+        return found
+
+    def research_cites_asset(self, research_id: str, asset_id: str) -> bool:
+        """Whether recorded evidence of this research cites a passage of the file, including restorable report links
+        and follow-up answers (S22a)."""
+        return self.conn.execute(
+            "SELECT 1 FROM evidence_links l JOIN claims c ON c.id = l.claim_id JOIN answers an ON an.id = c.answer_id"
+            " JOIN passages p ON p.id = l.passage_id WHERE an.research_id = ? AND p.asset_id = ?"
+            " UNION ALL SELECT 1 FROM cell_evidence_links l JOIN cell_revisions r ON r.id = l.cell_revision_id"
+            " JOIN evidence_cells ce ON ce.id = r.cell_id JOIN evidence_tables t ON t.id = ce.table_id"
+            " JOIN passages p ON p.id = l.passage_id WHERE t.research_id = ? AND p.asset_id = ?"
+            " UNION ALL SELECT 1 FROM lineage_link_evidence e JOIN lineage_link_revisions r ON r.id = e.link_revision_id"
+            " JOIN lineage_links l ON l.id = r.link_id JOIN evidence_tables t ON t.id = l.table_id"
+            " JOIN passages p ON p.id = e.passage_id WHERE t.research_id = ? AND p.asset_id = ?"
+            " UNION ALL SELECT 1 FROM claim_matrix_evidence e JOIN kill_searches s ON s.id = e.kill_search_id"
+            " JOIN candidate_versions v ON v.id = s.candidate_version_id"
+            " JOIN research_candidates c ON c.id = v.candidate_id JOIN passages p ON p.id = e.passage_id"
+            " WHERE c.research_id = ? AND p.asset_id = ? AND e.evidence_kind = 'passage'"
+            " UNION ALL SELECT 1 FROM report_citation_links l JOIN report_claims c ON c.id = l.claim_id"
+            " JOIN report_sections s ON s.id = c.report_section_id JOIN reports r ON r.id = s.report_id"
+            " JOIN passages p ON p.id = l.passage_id WHERE r.research_id = ? AND p.asset_id = ?"
+            " UNION ALL SELECT 1 FROM followup_turn_links l JOIN followup_turns t ON t.id = l.turn_id"
+            " JOIN passages p ON p.id = l.passage_id WHERE t.research_id = ? AND p.asset_id = ? LIMIT 1",
+            (research_id, asset_id, research_id, asset_id, research_id, asset_id, research_id, asset_id,
+             research_id, asset_id, research_id, asset_id),
+        ).fetchone() is not None
+
+    def asset_impact(self, asset_id: str) -> dict[str, Any]:
+        """What cites this file's passages: researches using its source, evidence table cells and answer quotes."""
+        asset = self.asset(asset_id)
+        researches = [dict(r) for r in self.conn.execute(
+            "SELECT r.id, r.title FROM corpus_memberships m JOIN researches r ON r.id = m.research_id"
+            " WHERE m.source_version_id = ? AND r.trashed_at IS NULL ORDER BY r.updated_at DESC", (asset["source_version_id"],)
+        )]
+        cells = self.conn.execute(
+            "SELECT COUNT(DISTINCT r.cell_id) FROM cell_evidence_links l JOIN cell_revisions r ON r.id = l.cell_revision_id"
+            " JOIN passages p ON p.id = l.passage_id WHERE p.asset_id = ?", (asset_id,)
+        ).fetchone()[0]
+        quotes = self.conn.execute(
+            "SELECT COUNT(*) FROM evidence_links l JOIN passages p ON p.id = l.passage_id WHERE p.asset_id = ?", (asset_id,)
+        ).fetchone()[0]
+        lineage_links = self.conn.execute(
+            "SELECT COUNT(DISTINCT r.link_id) FROM lineage_link_evidence e"
+            " JOIN lineage_link_revisions r ON r.id = e.link_revision_id JOIN passages p ON p.id = e.passage_id"
+            " WHERE p.asset_id = ?", (asset_id,),
+        ).fetchone()[0]
+        candidate_quotes = self.conn.execute(
+            "SELECT COUNT(*) FROM claim_matrix_evidence e JOIN passages p ON p.id = e.passage_id"
+            " WHERE p.asset_id = ?", (asset_id,),
+        ).fetchone()[0]
+        report_citations = self.conn.execute(
+            "SELECT COUNT(*) FROM report_citation_links l JOIN passages p ON p.id = l.passage_id"
+            " WHERE p.asset_id = ?", (asset_id,),
+        ).fetchone()[0]
+        followup_quotes = self.conn.execute(
+            "SELECT COUNT(*) FROM followup_turn_links l JOIN passages p ON p.id = l.passage_id WHERE p.asset_id = ?",
+            (asset_id,),
+        ).fetchone()[0]
+        return {"asset_id": asset_id, "researches": researches, "cells": cells, "quotes": quotes,
+                "lineage_links": lineage_links, "candidate_quotes": candidate_quotes, "report_citations": report_citations,
+                "followup_quotes": followup_quotes}
+
+    def remove_asset(self, research_id: str, svid: str, asset_id: str) -> None:
+        """Withdraw an attachment from future use while retaining its immutable audit evidence."""
+        with transaction(self.conn):
+            asset = self.conn.execute(
+                "SELECT id FROM source_assets WHERE id = ? AND source_version_id = ? AND removed_at IS NULL",
+                (asset_id, svid),
+            ).fetchone()
+            if asset is None:
+                raise NotFound(asset_id)
+            ts = now()
+            self.conn.execute("UPDATE source_assets SET removed_at = ?, removal_reason = 'wrong_file' WHERE id = ?", (ts, asset_id))
+            included = self.conn.execute(
+                "SELECT 1 FROM selections WHERE research_id = ? AND source_version_id = ? AND state = 'included'",
+                (research_id, svid),
+            ).fetchone()
+            if included:
+                self.conn.execute(
+                    "UPDATE researches SET selection_revision = selection_revision + 1, updated_at = ? WHERE id = ?",
+                    (ts, research_id),
+                )
+            else:
+                self.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (ts, research_id))
+            self._event(research_id, "asset_removed", {"source_version_id": svid, "asset_id": asset_id})
+
+    def restore_asset(self, research_id: str, svid: str, asset_id: str) -> None:
+        """Put a PDF removed as the wrong file back in use, with its passages; only while no other PDF is in use (D50).
+
+        A replaced file is not restored this way: replacing it again is the explicit action for that.
+        """
+        researches = [r[0] for r in self.conn.execute("SELECT research_id FROM corpus_memberships WHERE source_version_id = ?", (svid,))]
+        with transaction(self.conn):
+            if not self.conn.execute(
+                "SELECT 1 FROM source_assets WHERE id = ? AND source_version_id = ? AND removal_reason = 'wrong_file'", (asset_id, svid)
+            ).fetchone():
+                raise NotFound(asset_id)
+            if researches and self.conn.execute(
+                f"SELECT 1 FROM runs WHERE research_id IN ({', '.join('?' * len(researches))}) AND status IN"
+                f" ({', '.join('?' * len(ACTIVE_RUN_STATUSES))}) LIMIT 1", (*researches, *ACTIVE_RUN_STATUSES)
+            ).fetchone():
+                raise RunInProgress(asset_id)
+            if self.has_asset(svid):
+                raise PdfInUse(svid)
+            ts = now()
+            self.conn.execute("UPDATE source_assets SET removed_at = NULL, removal_reason = NULL WHERE id = ?", (asset_id,))
+            # As removing it did: an included source's answer input changes, so the selection revision moves.
+            included = self.conn.execute(
+                "SELECT 1 FROM selections WHERE research_id = ? AND source_version_id = ? AND state = 'included'", (research_id, svid)
+            ).fetchone()
+            self.conn.execute(f"UPDATE researches SET updated_at = ?{', selection_revision = selection_revision + 1' if included else ''}"
+                              " WHERE id = ?", (ts, research_id))
+            self._event(research_id, "asset_restored", {"source_version_id": svid, "asset_id": asset_id})
+
+    def source_key(self, work_id: str) -> str | None:
+        row = self.conn.execute("SELECT source_key FROM works WHERE id = ?", (work_id,)).fetchone()
+        return row[0] if row else None
+
+    def work_ids(self, svids: list[str]) -> dict[str, str]:
+        """The work each of these records belongs to, a few hundred at a statement rather than one each."""
+        found: dict[str, str] = {}
+        for start in range(0, len(svids), 500):
+            chunk = svids[start:start + 500]
+            found.update({row[0]: row[1] for row in self.conn.execute(
+                f"SELECT id, work_id FROM source_versions WHERE id IN ({', '.join('?' * len(chunk))})", chunk)})
+        return found
+
+    def work_retracted(self, work_id: str) -> bool | None:
+        """OpenAlex's flag for a whole work (D27), over every stored version whether or not any research shows it.
+
+        True when OpenAlex flags any version, False when some version was read unflagged and none is flagged, None
+        when no version has an OpenAlex answer. False means only that OpenAlex does not flag it.
+        """
+        row = self.conn.execute("SELECT MAX(is_retracted) FROM source_versions WHERE work_id = ?", (work_id,)).fetchone()
+        return None if row[0] is None else bool(row[0])
+
+    def research_works_retracted(self, research_id: str) -> dict[str, bool | None]:
+        """`work_retracted` for every work a research holds, in one statement; a work with no answer is absent."""
+        return {row[0]: bool(row[1]) for row in self.conn.execute(
+            "SELECT work_id, MAX(is_retracted) FROM source_versions WHERE work_id IN (SELECT s.work_id FROM"
+            " corpus_memberships m JOIN source_versions s ON s.id = m.source_version_id WHERE m.research_id = ?"
+            " AND m.removed_at IS NULL) GROUP BY work_id HAVING MAX(is_retracted) IS NOT NULL", (research_id,))}
+
+    def source(self, svid: str) -> dict[str, Any]:
+        row = self.conn.execute("SELECT * FROM source_versions WHERE id = ?", (svid,)).fetchone()
+        if row is None:
+            raise NotFound(svid)
+        source = dict(row)
+        source["authors"] = json.loads(source.pop("authors_json"))
+        return source
+
+    # ---- PDF acquisition -------------------------------------------------------------
+    def record_pdf_discovery(self, research_id: str, svid: str, provider: str, query: str, outcome: Any,
+                             workflow_run_id: str | None = None) -> str:
+        run_id, ts = new_id("pdr"), now()
+        retry_after = getattr(outcome, "reset_at", None)
+        counted = bool(workflow_run_id and outcome.error_code == "quota_exhausted" and retry_after)
+        # An outcome without an identity gets one if the budget caused it, counted or not; any other keeps none.
+        attempt_id = getattr(outcome, "attempt_id", None) or (uuid4().hex if outcome.error_code == "quota_exhausted" else None)
+        with transaction(self.conn):
+            # One attempt is recorded (and counted, for a quota refusal) once, whatever the clock says and whether or
+            # not a run is counting: the same outcome stored again finds its row by the attempt's identity, and every
+            # other attempt is a row of its own (D248).
+            if attempt_id and (held := self.conn.execute(
+                    "SELECT id FROM pdf_discovery_runs WHERE attempt_id = ?", (attempt_id,)).fetchone()):
+                return held["id"]
+            # `retry_after` only when there is one: a library migrated before 0072 has no such column.
+            columns = {"id": run_id, "research_id": research_id, "source_version_id": svid, "provider": provider,
+                       "query_text": query, "status": outcome.status, "result_count": len(outcome.candidates),
+                       "other_title_count": getattr(outcome, "other_title_count", 0), "http_status": outcome.http_status,
+                       "error_code": outcome.error_code, "created_at": ts, "finished_at": ts}
+            if retry_after:
+                columns["retry_after"] = retry_after
+            if attempt_id:
+                columns["attempt_id"] = attempt_id
+            self.conn.execute(
+                f"INSERT INTO pdf_discovery_runs ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
+                tuple(columns.values()))
+            if counted:
+                self.note_openalex_budget(research_id, workflow_run_id, retry_after,
+                                           skipped=outcome.http_status is None)
+            self._event(research_id, "pdf_discovery_recorded", {
+                "source_version_id": svid, "provider": provider, "status": outcome.status,
+                "result_count": len(outcome.candidates), "http_status": outcome.http_status,
+                "error_code": outcome.error_code,
+                "reset_at": retry_after,
+            })
+        return run_id
+
+    def note_openalex_budget(self, research_id: str, run_id: str, reset_at: str, *, skipped: bool) -> None:
+        """Count one OpenAlex lookup the daily budget did not serve, inside the transaction that records its row.
+
+        The run's first one opens its row and its one `openalex_budget_exhausted` event; later ones, in this process or
+        after a resume or restart, add to the counts and bring that same event up to date.
+        """
+        row = self.conn.execute("SELECT refused, skipped, event_id FROM openalex_budget_runs WHERE run_id = ?",
+                                (run_id,)).fetchone()
+        refused, skips = (row["refused"], row["skipped"]) if row else (0, 0)
+        refused, skips = refused + (not skipped), skips + bool(skipped)
+        payload = {"run_id": run_id, "lookups_refused": refused, "lookups_skipped": skips, "reset_at": reset_at}
+        if row is None:
+            event_id = self._event(research_id, "openalex_budget_exhausted", payload, run_id)
+            self.conn.execute("INSERT INTO openalex_budget_runs (run_id, research_id, reset_at, refused, skipped, event_id)"
+                              " VALUES (?, ?, ?, ?, ?, ?)", (run_id, research_id, reset_at, refused, skips, event_id))
+            return
+        self.conn.execute("UPDATE openalex_budget_runs SET reset_at = ?, refused = ?, skipped = ? WHERE run_id = ?",
+                          (reset_at, refused, skips, run_id))
+        self._set_event_payload(row["event_id"], payload)
+
+    def _set_event_payload(self, event_id: int, payload: dict[str, Any]) -> None:
+        self.conn.execute("UPDATE events SET payload_json = ? WHERE id = ?", (dumps(payload), event_id))
+
+    def openalex_budget_reset(self) -> str | None:
+        """The latest time any run was told OpenAlex's daily budget returns; the budget is the key's, not a run's."""
+        return self.conn.execute("SELECT MAX(reset_at) FROM openalex_budget_runs").fetchone()[0]
+
+    def record_pdf_candidates(self, svid: str, run_id: str, candidates: list[Any]) -> list[dict[str, Any]]:
+        with transaction(self.conn):
+            for candidate in candidates:
+                self.conn.execute(
+                    "INSERT INTO pdf_candidates (id, source_version_id, discovery_run_id, provider, candidate_url,"
+                    " landing_url, version_label, license, identity_status, version_status, access_status, discovered_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_attempted', ?)"
+                    " ON CONFLICT(source_version_id, provider, candidate_url) DO UPDATE SET"
+                    " discovery_run_id = excluded.discovery_run_id, provider = excluded.provider,"
+                    " landing_url = COALESCE(excluded.landing_url, pdf_candidates.landing_url),"
+                    " version_label = COALESCE(excluded.version_label, pdf_candidates.version_label),"
+                    " license = COALESCE(excluded.license, pdf_candidates.license),"
+                    " identity_status = excluded.identity_status, version_status = excluded.version_status",
+                    (new_id("pdc"), svid, run_id, candidate.provider, candidate.url, candidate.landing_url,
+                     candidate.version_label, candidate.license, candidate.identity_status, candidate.version_status, now()),
+                )
+        return self.pdf_candidates(svid)
+
+    def pdf_candidates(self, svid: str) -> list[dict[str, Any]]:
+        return [dict(r) for r in self.conn.execute(
+            "SELECT * FROM pdf_candidates WHERE source_version_id = ? ORDER BY discovered_at, rowid", (svid,)
+        )]
+
+    def pdf_discoveries(self, research_id: str, svid: str, *, retry_after: bool = False) -> list[dict[str, Any]]:
+        """Lookup rows; `retry_after` adds each row's retry time for the callers that show or use it."""
+        return [dict(r) for r in self.conn.execute(
+            "SELECT provider, query_text, status, result_count, other_title_count, http_status, error_code,"
+            f" {'retry_after,' if retry_after else ''} created_at, finished_at FROM pdf_discovery_runs"
+            # Insertion order, not the clock: the newest row of a route is the one written last.
+            " WHERE research_id = ? AND source_version_id = ? ORDER BY rowid",
+            (research_id, svid),
+        )]
+
+    def pdf_link_refusal(self, svid: str, url: str) -> dict[str, Any] | None:
+        """The latest refusal of this open-access link in any run. A timeout or lost connection is not a refusal."""
+        return row_dict(self.conn.execute(
+            "SELECT error_code, json_extract(error_json, '$.http_status') AS http_status FROM run_steps"
+            " WHERE operation_key = ? AND kind = 'fetch_pdf' AND status = 'failed'"
+            " AND error_code IN ('fetch_http_error', 'fetch_not_pdf', 'fetch_too_large', 'fetch_blocked_url')"
+            # A failure recorded before the link was stored with it is taken to concern the same link.
+            " AND COALESCE(json_extract(error_json, '$.url'), ?) = ? ORDER BY finished_at DESC LIMIT 1",
+            (f"fetch:{svid}", url, url),
+        ).fetchone())
+
+    def record_pdf_attempt(self, candidate_id: str, result: Any) -> None:
+        with transaction(self.conn):
+            self.conn.execute(
+                "UPDATE pdf_candidates SET access_status = ?, http_status = ?, error_code = ?, final_url = ?, attempted_at = ?"
+                " WHERE id = ?",
+                ("downloaded" if result.status == "ok" else result.status, result.http_status, result.error,
+                 result.final_url, now(), candidate_id),
+            )
+
+    # ---- research corpus -------------------------------------------------------------
+    def record_search(self, search_fields: dict[str, Any], provider: str, records: list[Any], payload_path: str | None,
+                      step_id: str, step_status: str, step_output: dict[str, Any] | None = None, first_rank: int = 0,
+                      keep_found: bool = False, keep_candidate: bool = False, **step_fields: Any) -> str:
+        """Commit the search run, normalized sources, candidates and the step outcome together.
+
+        `first_rank` is how many records the query read on its earlier pages: a candidate's rank is its place in the
+        query, not in the page it arrived on (slice 04c). An unpaged search leaves it at 0. With `keep_found` the
+        step output names the source versions this request wrote, before any is sent to its work's candidate (D6).
+        `keep_candidate` (a follow-up search, D92) leaves a candidate of the same question revision as it was: its rank
+        and search are the first search's.
+        """
+        with transaction(self.conn):
+            srid = self.add_search_run(**search_fields)
+            found = []
+            for rank, record in enumerate(records, start=first_rank):
+                svid, _ = self.upsert_provider_source(provider, record, payload_path)
+                found.append(svid)
+                # A version of a work that already has a candidate here is found again as that candidate (D46).
+                record_svid = self._work_candidate(search_fields["research_id"], svid) or svid
+                self.add_to_corpus(search_fields["research_id"], record_svid, "search", srid, rank,
+                                   scope_revision=search_fields["scope_revision"], keep_candidate=keep_candidate)
+                if record_svid != svid:
+                    self.add_to_corpus(search_fields["research_id"], svid, "search", srid, candidate=False)
+                for other in self.other_version_ids(provider, record):  # kept with the record, not screened as separate candidates
+                    self.add_to_corpus(search_fields["research_id"], other, "search", srid, candidate=False)
+            links.link_records(self, search_fields["research_id"], found)  # D48's narrow rule widens to SW6
+            admission = (step_output or {}).get("fast_path_request")
+            from deixis.workflow.run import fast_path
+            run = self.run(search_fields["run_id"]) if admission else None
+            if run and fast_path.enabled(run["budget"]) and run["kind"] == "discovery":
+                similarity = self.existing_step(run["id"], "source_similarity")
+                identity = (similarity or {}).get("output") or {}
+                model = identity.get("stored_model")
+                stored = self.source_similarities(run["research_id"], run["scope_revision"], model) if model else {}
+                cut = identity.get("cutoff_at")
+                heads = self.work_heads(run["research_id"])
+                ts = fast_path.timestamp(self.clock)
+                for position, svid in enumerate(found):
+                    head = heads.get(self.source(svid)["work_id"], svid)
+                    status = "unembedded_at_cutoff" if cut else "from_store" if head in stored else "pending"
+                    self.conn.execute(
+                        "INSERT OR IGNORE INTO fast_path_embedding_queue"
+                        " (run_id, class, request_index, position, source_version_id, search_run_id, enqueued_at,"
+                        " status, embedded_at, cutoff_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (run["id"], admission["class"], admission["request_index"], position, svid, srid, ts,
+                         status, ts if status == "from_store" else None, cut))
+            output = {**step_output, "search_run_id": srid} if step_output is not None else None
+            if keep_found and output is not None:
+                output["accepted_source_version_ids"] = list(dict.fromkeys(found))
+            self.finish_step(step_id, step_status, output=output, **step_fields)
+        return srid
+
+    def _work_candidate(self, research_id: str, svid: str) -> str | None:
+        """Another source version of svid's work that is a candidate of the research, unless svid is one itself.
+
+        A published record is its own candidate when the work's candidates are only preprints, so it can head the work (D48).
+        """
+        row = self.conn.execute(
+            "SELECT c.source_version_id, c.source_version_id = ? AS own FROM candidates c"
+            " JOIN source_versions v ON v.id = c.source_version_id"
+            " WHERE c.research_id = ? AND v.work_id = (SELECT work_id FROM source_versions WHERE id = ?)"
+            " ORDER BY own DESC, c.created_at LIMIT 1", (svid, research_id, svid)
+        ).fetchone()
+        if not row or row[1]:
+            return None
+        return None if is_published(self.source(svid)) and not is_published(self.source(row[0])) else row[0]
+
+    def _join_works(self, keep_work_id: str, drop_work_id: str) -> dict[str, Any]:
+        """Move every version of one work into another and drop the emptied work; the caller holds the transaction.
+
+        Returns what undoing the join needs: the dropped work's own row and the versions this call moved, so a later
+        undo can tell them from versions that joined the work afterwards.
+        """
+        dropped = dict(self.conn.execute("SELECT * FROM works WHERE id = ?", (drop_work_id,)).fetchone())
+        moved = [r[0] for r in self.conn.execute("SELECT id FROM source_versions WHERE work_id = ? ORDER BY id", (drop_work_id,))]
+        self.conn.execute("UPDATE source_versions SET work_id = ? WHERE work_id = ?", (keep_work_id, drop_work_id))
+        self.conn.execute("DELETE FROM works WHERE id = ?", (drop_work_id,))
+        self.conn.execute(
+            "DELETE FROM suspected_duplicates WHERE (SELECT work_id FROM source_versions WHERE id = source_version_id)"
+            " = (SELECT work_id FROM source_versions WHERE id = other_source_version_id)"
+        )
+        for (research_id,) in self.conn.execute(
+            "SELECT DISTINCT m.research_id FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
+            " WHERE v.work_id = ?", (keep_work_id,)
+        ).fetchall():
+            self._settle_work_head(research_id, keep_work_id)
+        return {"dropped_work": dropped, "moved": moved}
+
+    def chain_only_works(self, research_id: str, scope_revision: int) -> set[str]:
+        """The works of this question revision that only citation chaining found (D95): each has a hit from a chain
+        request and no version with a hit from any other search. Empty for a research that never chained.
+
+        A research older than D93 has no keyword hits in `candidate_hits`, so the search a candidate row names counts
+        as a hit too: a keyword work the chain later reached is still a keyword work. A follow-up search's hits (D92) are
+        not the search's, so they never turn a chain-only work into a keyword work."""
+        found: dict[str, bool] = {}
+        own = " AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.id = sr.run_id AND r.kind = 'followup_search')"
+        for row in self.conn.execute(
+            "SELECT v.work_id, sr.query_text LIKE 'chain:%' AS chained FROM candidate_hits h"
+            " JOIN search_runs sr ON sr.id = h.search_run_id JOIN source_versions v ON v.id = h.source_version_id"
+            " WHERE h.research_id = ? AND h.scope_revision = ?" + own +
+            " UNION ALL SELECT v.work_id, sr.query_text LIKE 'chain:%' FROM candidates c"
+            " JOIN search_runs sr ON sr.id = c.search_run_id JOIN source_versions v ON v.id = c.source_version_id"
+            " WHERE c.research_id = ? AND c.scope_revision = ?" + own,
+            (research_id, scope_revision, research_id, scope_revision)):
+            found[row["work_id"]] = found.get(row["work_id"], True) and bool(row["chained"])
+        return {work_id for work_id, only in found.items() if only}
+
+    def work_heads(self, research_id: str, include_removed: bool = False) -> dict[str, str]:
+        """The record that heads each work in the research: a published record, else the first record (D46, D48).
+
+        A record is a candidate or a source added other than by search; other versions found by search never head a work.
+        Sources removed from the research head nothing unless include_removed (D50).
+        """
+        heads: dict[str, dict[str, Any]] = {}
+        for row in self.conn.execute(
+            "SELECT v.id, v.work_id, v.doi, v.version_label FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
+            " LEFT JOIN candidates c ON c.research_id = m.research_id AND c.source_version_id = m.source_version_id"
+            f" WHERE m.research_id = ?{'' if include_removed else ' AND m.removed_at IS NULL'} AND (c.id IS NOT NULL OR m.added_by != 'search')"
+            " ORDER BY m.created_at, c.rank", (research_id,)
+        ):
+            current = heads.get(row["work_id"])
+            if current is None or (is_published(dict(row)) and not is_published(current)):
+                heads[row["work_id"]] = dict(row)
+        return {wid: row["id"] for wid, row in heads.items()}
+
+    def _settle_work_head(self, research_id: str, work_id: str) -> None:
+        """Give a new head the selection its work already had in this research.
+
+        When a published record joins a work whose preprint was screened or chosen, the head has no decision of its own
+        yet; it takes the other record's user choice, else its model proposal. A head with its own decision keeps it.
+        """
+        head = self.work_heads(research_id).get(work_id)
+        if head is None:
+            return
+        current = self.conn.execute("SELECT * FROM selections WHERE research_id = ? AND source_version_id = ?", (research_id, head)).fetchone()
+        if current is None or current["origin"] != "default":
+            return
+        source = self.conn.execute(
+            "SELECT s.* FROM selections s JOIN source_versions v ON v.id = s.source_version_id"
+            " JOIN candidates c ON c.research_id = s.research_id AND c.source_version_id = s.source_version_id"
+            " JOIN corpus_memberships m ON m.research_id = s.research_id AND m.source_version_id = s.source_version_id AND m.removed_at IS NULL"
+            " WHERE s.research_id = ? AND v.work_id = ? AND s.source_version_id != ? AND s.origin != 'default'"
+            " ORDER BY s.origin = 'user' DESC, s.updated_at DESC LIMIT 1", (research_id, work_id, head)
+        ).fetchone()
+        if source is None:
+            return
+        self.conn.execute(
+            "UPDATE selections SET state = ?, origin = ?, user_reason = ?, proposal = ?, proposal_reason = ?, proposal_basis = ?,"
+            " proposal_step_id = ?, version = version + 1, updated_at = ? WHERE research_id = ? AND source_version_id = ?",
+            (source["state"], source["origin"], source["user_reason"], source["proposal"], source["proposal_reason"],
+             source["proposal_basis"], source["proposal_step_id"], now(), research_id, head),
+        )
+        self.conn.execute(
+            "INSERT INTO selection_history (research_id, source_version_id, old_state, new_state, origin, reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (research_id, head, current["state"], source["state"], source["origin"], COPIED_SELECTION_REASON, now()),
+        )
+        self._bump_selection_revision(research_id, current["state"], source["state"])
+        # A selection a queue decision wrote follows the work to its new head, and so does the decision's link, so
+        # undoing the decision still finds the selection it wrote (slice 16). Only while the link still names the
+        # record and the version copied: a selection the user changed from the source list since is the user's.
+        if source["origin"] == "user":
+            link = self.conn.execute(
+                "SELECT l.decision_id FROM human_selection_links l JOIN stage_decisions d ON d.id = l.decision_id"
+                " WHERE l.research_id = ? AND l.head = ? AND l.selection_version = ? AND d.superseded_at IS NULL"
+                " AND l.rowid = (SELECT MAX(rowid) FROM human_selection_links WHERE decision_id = l.decision_id)",
+                (research_id, source["source_version_id"], source["version"]),
+            ).fetchone()
+            if link is not None:
+                self.conn.execute(
+                    "INSERT INTO human_selection_links (decision_id, research_id, head, selection_version, created_at)"
+                    " VALUES (?, ?, ?, ?, ?)", (link["decision_id"], research_id, head, current["version"] + 1, now()))
+
+    def included_works(self, research_id: str) -> list[str]:
+        """Heads of the works included in the research: a work counts once, by its head's selection (D48)."""
+        heads = set(self.work_heads(research_id).values())
+        return [svid for svid in self.included_sources(research_id) if svid in heads]
+
+    def work_versions(self, research_id: str, svid: str) -> list[str]:
+        """The research's other versions of svid's work, those with a PDF in use first, then in the order found."""
+        return [r[0] for r in self.conn.execute(
+            "SELECT v.id FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
+            " WHERE m.research_id = ? AND m.removed_at IS NULL AND v.id != ? AND v.work_id = (SELECT work_id FROM source_versions WHERE id = ?)"
+            " ORDER BY EXISTS (SELECT 1 FROM source_assets a WHERE a.source_version_id = v.id AND a.removed_at IS NULL) DESC, m.created_at",
+            (research_id, svid, svid)
+        )]
+
+    def answer_version(self, research_id: str, head: str) -> str | None:
+        """The version of a work whose text an answer reads: the head when it has PDF text, else the first other version
+        with PDF text, else the head's abstract (D48). One version per work, so versions never corroborate each other.
+
+        A person's file changes this (slice 18b, decision 8). Once it is read under the current question and
+        criterion, and while it is still in use with the pages it was read as, its version is the one read. Until
+        then its version's PDF text never reaches an answer, whatever key its request was made under: another version
+        with PDF text is read, else a version with no PDF text gives its abstract, else None — the work gives the
+        answer nothing."""
+        work_id = self.source(head)["work_id"]
+        held = _read_person_file(self.person_files(research_id, work_id))
+        if held is not None:
+            return held
+        unread = self.unread_person_versions(research_id, work_id)
+        versions = [head, *self.work_versions(research_id, head)]
+        text = [svid for svid in versions if self.has_pdf_text(svid)]
+        return (next((svid for svid in text if svid not in unread), None)
+                or next((svid for svid in versions if svid not in text), None))
+
+    def answer_versions(self, research_id: str) -> dict[str, str | None]:
+        """`answer_version` for every head of the research at once, in three statements rather than three per work.
+
+        The research view calls this: one query per work blocked the event loop for 30 s on a 7,000-work research
+        (slice 13's smoke run), long enough for a model connection's health check to time out and pause the run.
+        Same rule and same order as `answer_version` and `work_versions` (D48).
+        """
+        heads = self.work_heads(research_id)
+        if not heads:
+            return {}
+        with_text = {r[0] for r in self.conn.execute(
+            "SELECT DISTINCT p.source_version_id FROM passages p JOIN corpus_memberships m ON m.source_version_id = p.source_version_id"
+            " WHERE m.research_id = ? AND m.removed_at IS NULL AND p.kind = 'pdf_page' AND EXISTS"
+            " (SELECT 1 FROM source_assets a WHERE a.id = p.asset_id AND a.removed_at IS NULL AND a.extraction_version IS p.extraction_version)",
+            (research_id,)
+        )}
+        versions: dict[str, list[str]] = {}
+        for row in self.conn.execute(
+            "SELECT v.id, v.work_id FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
+            " WHERE m.research_id = ? AND m.removed_at IS NULL"
+            " ORDER BY EXISTS (SELECT 1 FROM source_assets a WHERE a.source_version_id = v.id AND a.removed_at IS NULL) DESC, m.created_at",
+            (research_id,)
+        ):
+            versions.setdefault(row["work_id"], []).append(row["id"])
+        person = self.person_files(research_id)
+        by_work: dict[str, dict[str, dict[str, Any]]] = {}
+        for svid, request in person.items():
+            by_work.setdefault(request["work_id"], {}).setdefault(svid, request)
+        unread = self.unread_person_versions(research_id)
+
+        def reads(wid: str, head: str) -> str | None:
+            # `answer_version`'s rule, the person's file included (slice 18b); a work with no such file reads as before.
+            held = _read_person_file(by_work.get(wid, {}))
+            if held is not None:
+                return held
+            ordered = [head, *(svid for svid in versions.get(wid, []) if svid != head)]
+            text = [svid for svid in ordered if svid in with_text]
+            return (next((svid for svid in text if svid not in unread), None)
+                    or next((svid for svid in ordered if svid not in with_text), None))
+
+        return {head: reads(wid, head) for wid, head in heads.items()}
+
+    # ---- a person's files and the reading they ask for (slice 18b) ------------------------------
+    def criterion_key(self, research_id: str) -> tuple[int, str | None]:
+        """The question revision and criterion digest a request must carry to still be live."""
+        from deixis.workflow.screen.decisions import DecisionStore  # decisions builds on this module
+        return DecisionStore(self).staleness_key(research_id)
+
+    def asset_page_digest(self, asset_id: str | None, extraction_version: str | None = None) -> str | None:
+        """One file's page texts as its current extraction gives them, as one digest (slice 18b, decision 6).
+
+        A plan freezes it and a reading checks it again, so a file re-extracted since reads as a different file. The
+        pages of a removed file are still digested: the caller checks separately that the file is in use. With
+        `extraction_version`, the pages of that extraction of the file instead of its current one."""
+        if not asset_id:
+            return None
+        if extraction_version is None:
+            row = self.conn.execute("SELECT extraction_version FROM source_assets WHERE id = ?", (asset_id,)).fetchone()
+            extraction_version = row[0] if row is not None else None
+        key = (asset_id, extraction_version) if extraction_version is not None else None
+        if key is not None and key in self._page_digests:
+            return self._page_digests[key]
+        pages: dict[int, list[str]] = {}
+        for row in self.conn.execute(
+                # Through the file's version, which `passages` is indexed by: by the file alone it scans every passage.
+                "SELECT p.physical_page, p.text FROM source_assets a JOIN passages p ON p.source_version_id ="
+                " a.source_version_id AND p.asset_id = a.id AND p.extraction_version IS ?"
+                " WHERE a.id = ? AND p.kind = 'pdf_page' ORDER BY p.physical_page, p.rowid", (extraction_version, asset_id)):
+            pages.setdefault(row["physical_page"] or 0, []).append(row["text"])
+        digest = sha256_hex({"asset_id": asset_id, "pages": [[page, " ".join(texts)] for page, texts in sorted(pages.items())]})
+        if key is not None:
+            self._page_digests[key] = digest
+        return digest
+
+    def page_digest_holds(self, asset_id: str | None, digest: str | None) -> bool:
+        """Whether a file's pages are still those a reading saw (decision 6, D46): its current extraction, or the
+        extraction an equation pass (Marker, arXiv LaTeX, Mathpix, the answer model) was laid on. An equation pass adds the equations and
+        keeps the page text, so a file read just before it is still the file that was read; OCR or a new base
+        extraction is a different file."""
+        if digest is None or not asset_id:
+            return False
+        if self.asset_page_digest(asset_id) == digest:
+            return True
+        row = self.conn.execute("SELECT extraction_version FROM source_assets WHERE id = ?", (asset_id,)).fetchone()
+        base = EQUATION_PASS.sub("", row[0]) if row is not None and row[0] else None
+        return base is not None and base != row[0] and self.asset_page_digest(asset_id, base) == digest
+
+    def person_files(self, research_id: str, work_id: str | None = None) -> dict[str, dict[str, Any]]:
+        """The live reading request of each version that carries one, by version (slice 18b).
+
+        Live: made under the research's current question revision and criterion digest, for a file still in use on a
+        version still in the research. A `read` request also says whether it still `holds`: whether that file's pages
+        are the ones it was read as. Nothing is written here."""
+        revision, criterion_hash = self.criterion_key(research_id)
+        found: dict[str, dict[str, Any]] = {}
+        for row in self.conn.execute(
+                "SELECT q.*, v.work_id, a.retrieved_at AS asset_at FROM person_pdf_requests q"
+                " JOIN source_versions v ON v.id = q.source_version_id"
+                " JOIN source_assets a ON a.id = q.asset_id AND a.source_version_id = q.source_version_id"
+                "  AND a.removed_at IS NULL"
+                " JOIN corpus_memberships m ON m.research_id = q.research_id AND m.source_version_id = q.source_version_id"
+                "  AND m.removed_at IS NULL"
+                " WHERE q.research_id = ? AND q.scope_revision = ? AND q.criterion_hash IS ?"
+                f"{' AND v.work_id = ?' if work_id is not None else ''} ORDER BY q.created_at, q.rowid",
+                (research_id, revision, criterion_hash, *((work_id,) if work_id is not None else ()))):
+            request = dict(row)
+            request["holds"] = (request["status"] == "read"
+                                and self.page_digest_holds(request["asset_id"], request["page_digest"]))
+            found[request["source_version_id"]] = request
+        return found
+
+    def decision_read_file(self, decision: dict[str, Any] | None) -> tuple[str, str] | None:
+        """The file and page digest a reading decision was made from, as its run's frozen plan names them (slice 18b).
+
+        None for a decision no reading plan of slice 18b names a file for: a code, a person's decision, or a reading
+        frozen before the plan named files."""
+        if not decision or not decision.get("step_id"):
+            return None
+        row = self.conn.execute("SELECT run_id FROM run_steps WHERE id = ?", (decision["step_id"],)).fetchone()
+        if row is None:
+            return None
+        files = self._plan_files.get(row[0])
+        if files is None:
+            plan = self.existing_step(row[0], "adjudication_plan")
+            files = {work["read_version"]: (work["asset_id"], work["page_digest"])
+                     for work in ((plan or {}).get("output") or {}).get("works") or [] if work.get("asset_id")}
+            if plan is not None and plan["status"] == "succeeded":  # frozen: it never changes again
+                self._plan_files[row[0]] = files
+        return files.get(decision["source_version_id"])
+
+    def unread_person_versions(self, research_id: str, work_id: str | None = None) -> set[str]:
+        """The versions carrying a person's file in use whose text was not read under the research's current question
+        and criterion (slice 18b, decision 8). Nothing is written, and no request is rewritten.
+
+        A request under the current key says it: read, and the pages still those it was read as. A request made
+        under an older question or criterion is stale and left as it was; its file counts as read only when the
+        version's current reading decision is fresh and its plan read this very file with these very pages."""
+        from deixis.workflow.screen.decisions import DecisionStore  # decisions builds on this module
+        decisions = DecisionStore(self)
+        key = decisions.staleness_key(research_id)
+        unread: set[str] = set()
+        for row in self.conn.execute(
+                "SELECT q.* FROM person_pdf_requests q JOIN source_versions v ON v.id = q.source_version_id"
+                " JOIN source_assets a ON a.id = q.asset_id AND a.source_version_id = q.source_version_id"
+                "  AND a.removed_at IS NULL"
+                " JOIN corpus_memberships m ON m.research_id = q.research_id AND m.source_version_id = q.source_version_id"
+                "  AND m.removed_at IS NULL"
+                f" WHERE q.research_id = ?{' AND v.work_id = ?' if work_id is not None else ''}",
+                (research_id, *((work_id,) if work_id is not None else ()))):
+            if (row["scope_revision"], row["criterion_hash"]) == key:
+                read = row["status"] == "read" and self.page_digest_holds(row["asset_id"], row["page_digest"])
+            else:
+                current = decisions.current(research_id, row["source_version_id"], "fulltext")
+                file = self.decision_read_file(current) if current is not None and not decisions.is_stale(current, key) else None
+                read = file is not None and file[0] == row["asset_id"] and self.page_digest_holds(*file)
+            if not read:
+                unread.add(row["source_version_id"])
+        return unread
+
+    def has_pdf_text(self, svid: str) -> bool:
+        return any(p["kind"] == "pdf_page" for p in self.passages_for(svid))
+
+    def add_search_run(self, **fields: Any) -> str:
+        srid = new_id("srn")
+        fields = {"id": srid, **fields, "retrieved_at": now()}
+        with transaction(self.conn):
+            self.conn.execute(
+                f"INSERT INTO search_runs ({', '.join(fields)}) VALUES ({', '.join('?' * len(fields))})", tuple(fields.values())
+            )
+            self._event(fields["research_id"], "search_recorded",
+                        {"provider": fields["provider"], "status": fields["status"], "result_count": fields["result_count"]}, fields["run_id"])
+        return srid
+
+    def add_to_corpus(self, research_id: str, svid: str, added_by: str, search_run_id: str | None = None,
+                      rank: int | None = None, selection_state: str = "pending", selection_origin: str = "default",
+                      scope_revision: int | None = None, candidate: bool = True, keep_candidate: bool = False) -> None:
+        ts = now()
+        with transaction(self.conn):
+            membership = self.conn.execute(
+                "SELECT removed_at FROM corpus_memberships WHERE research_id = ? AND source_version_id = ?", (research_id, svid)
+            ).fetchone()
+            # A search or a Zotero collection import adds many records at once; it never undoes the user's removal (D50).
+            bulk = added_by in ("search", "zotero_import")
+            if membership is None:
+                # A new version of a work the user removed from this research joins it removed.
+                work_removed = bulk and self.conn.execute(
+                    "SELECT MIN(m.removed_at IS NOT NULL) FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
+                    " WHERE m.research_id = ? AND v.work_id = (SELECT work_id FROM source_versions WHERE id = ?)", (research_id, svid)
+                ).fetchone()[0] == 1
+                self.conn.execute(
+                    "INSERT INTO corpus_memberships (research_id, source_version_id, added_by, created_at, removed_at, found_again_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?)", (research_id, svid, added_by, ts, *((ts, ts) if work_removed else (None, None))),
+                )
+            elif membership["removed_at"] is not None and bulk:
+                # Found again: it stays removed, and the Sources summary counts it (D50).
+                self.conn.execute("UPDATE corpus_memberships SET found_again_at = ? WHERE research_id = ? AND source_version_id = ?",
+                                  (ts, research_id, svid))
+            same_revision = keep_candidate and self.conn.execute(
+                "SELECT 1 FROM candidates WHERE research_id = ? AND source_version_id = ? AND scope_revision = ?",
+                (research_id, svid, scope_revision)).fetchone() is not None
+            if added_by == "search" and candidate and not same_revision:
+                # A record found again under a newer question revision becomes a candidate of that revision; found again
+                # under the same revision (another query or provider), it keeps its best rank and the search that gave it.
+                # A follow-up search (`keep_candidate`, D92) never moves a candidate of its own revision.
+                self.conn.execute(
+                    "INSERT INTO candidates (id, research_id, search_run_id, source_version_id, rank, scope_revision, created_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (research_id, source_version_id) DO UPDATE SET"
+                    " search_run_id = CASE WHEN candidates.scope_revision = excluded.scope_revision AND candidates.rank <= excluded.rank"
+                    " THEN candidates.search_run_id ELSE excluded.search_run_id END,"
+                    " rank = CASE WHEN candidates.scope_revision = excluded.scope_revision AND candidates.rank <= excluded.rank"
+                    " THEN candidates.rank ELSE excluded.rank END, scope_revision = excluded.scope_revision",
+                    (new_id("cnd"), research_id, search_run_id, svid, rank, scope_revision, ts),
+                )
+            if added_by == "search" and candidate:
+                if search_run_id is not None and scope_revision is not None:
+                    # Every search that found the candidate is kept, not only the one the row names (D93).
+                    self.conn.execute(
+                        "INSERT OR IGNORE INTO candidate_hits (research_id, scope_revision, source_version_id,"
+                        " search_run_id) VALUES (?, ?, ?, ?)", (research_id, scope_revision, svid, search_run_id))
+            inserted = self.conn.execute(
+                "INSERT OR IGNORE INTO selections (research_id, source_version_id, state, origin, updated_at) VALUES (?, ?, ?, ?, ?)",
+                (research_id, svid, selection_state, selection_origin, ts),
+            ).rowcount
+            if inserted:
+                self.conn.execute(
+                    "INSERT INTO selection_history (research_id, source_version_id, old_state, new_state, origin, created_at) VALUES (?, ?, NULL, ?, ?, ?)",
+                    (research_id, svid, selection_state, selection_origin, ts),
+                )
+                self._bump_selection_revision(research_id, None, selection_state)
+
+    def remove_sources(self, research_id: str, svids: list[str], note: str | None) -> list[str]:
+        """Take sources out of the research; returns the source versions removed (D50).
+
+        The membership row stays, so the research's answers and cells still open what they cite, and nothing about the
+        source, its files, passages or embeddings changes. Removing a work's head removes every version of the work here.
+        """
+        with transaction(self.conn):
+            self._check_corpus_change(research_id, svids)
+            heads = set(self.work_heads(research_id).values())
+            chosen: list[str] = []
+            for svid in dict.fromkeys(svids):
+                if not self.is_active_member(research_id, svid):
+                    continue
+                chosen += [svid] + (self.work_versions(research_id, svid) if svid in heads else [])
+            chosen = list(dict.fromkeys(chosen))
+            if not chosen:
+                return []
+            ts = now()
+            self.conn.executemany(
+                "UPDATE corpus_memberships SET removed_at = ?, removal_note = ?, found_again_at = NULL WHERE research_id = ? AND source_version_id = ?",
+                [(ts, (note or "").strip() or None, research_id, svid) for svid in chosen],
+            )
+            self._corpus_changed(research_id, "source_removed", chosen, ts)
+        return chosen
+
+    def restore_sources(self, research_id: str, svids: list[str]) -> list[str]:
+        """Put removed sources back; returns the source versions restored.
+
+        A version comes back with the versions of its work removed in the same action, and with its work's head when that
+        was removed, so a version never shows without its record.
+        """
+        with transaction(self.conn):
+            self._check_corpus_change(research_id, svids)
+            removed = {r[0]: r[1] for r in self.conn.execute(
+                "SELECT source_version_id, removed_at FROM corpus_memberships WHERE research_id = ? AND removed_at IS NOT NULL", (research_id,))}
+            heads = self.work_heads(research_id, include_removed=True)
+
+            def group(svid: str) -> list[str]:
+                return [other for other, at in removed.items() if at == removed[svid]
+                        and self.source(other)["work_id"] == self.source(svid)["work_id"]]
+
+            chosen: list[str] = []
+            for svid in dict.fromkeys(svids):
+                if svid not in removed:
+                    continue
+                chosen += group(svid)
+                head = heads.get(self.source(svid)["work_id"])
+                if head in removed:
+                    chosen += group(head)
+            chosen = list(dict.fromkeys(chosen))
+            if not chosen:
+                return []
+            self.conn.executemany(
+                "UPDATE corpus_memberships SET removed_at = NULL, removal_note = NULL, found_again_at = NULL"
+                " WHERE research_id = ? AND source_version_id = ?", [(research_id, svid) for svid in chosen],
+            )
+            self._corpus_changed(research_id, "source_restored", chosen, now())
+        return chosen
+
+    def cited_source_versions(self, svids: list[str]) -> set[str]:
+        """Of these source versions, the ones an answer quote, a follow-up answer, an evidence table or a report still
+        cites (D65).
+
+        The scope is the whole workspace, not one research: evidence stays openable wherever it was written, so a
+        cited source is never deleted on its own. Deleting its research is still the way out (D50).
+        """
+        if not svids:
+            return set()
+        marks = ", ".join("?" * len(svids))
+        rows = self.conn.execute(
+            f"SELECT source_version_id FROM evidence_links WHERE source_version_id IN ({marks})"
+            f" UNION SELECT source_version_id FROM table_rows WHERE source_version_id IN ({marks})"
+            f" UNION SELECT source_version_id FROM evidence_cells WHERE source_version_id IN ({marks})"
+            f" UNION SELECT source_version_id FROM report_citation_links WHERE source_version_id IN ({marks})"
+            f" UNION SELECT from_source_version_id FROM lineage_links WHERE from_source_version_id IN ({marks})"
+            f" UNION SELECT to_source_version_id FROM lineage_links WHERE to_source_version_id IN ({marks})"
+            f" UNION SELECT source_version_id FROM lineage_link_evidence WHERE source_version_id IN ({marks})"
+            f" UNION SELECT source_version_id FROM claim_matrix_cells WHERE source_version_id IN ({marks})"
+            f" UNION SELECT source_version_id FROM claim_matrix_evidence WHERE source_version_id IN ({marks})"
+            f" UNION SELECT source_version_id FROM followup_turn_links WHERE source_version_id IN ({marks})",
+            (*svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids),
+        ).fetchall()
+        from deixis.workflow.features.review.review_store import snapshot_referenced_source_versions
+        return {row[0] for row in rows} | snapshot_referenced_source_versions(self.conn, svids)
+
+    def purge_sources(self, research_id: str, svids: list[str]) -> tuple[list[str], list[str], list[str]]:
+        """Delete removed sources from this research for good; returns (purged, orphan files, orphan payloads) (D65).
+
+        Only a source already removed from the research can be purged, and only while nothing cites it. What goes is
+        this research's record of it: the membership, its screening rows and its PDF lookups. The library record, its
+        passages and its file go too, but only when no other research holds the source any more.
+        """
+        with transaction(self.conn):
+            self._check_corpus_change(research_id, svids)
+            chosen = [svid for svid in dict.fromkeys(svids)
+                      if self.conn.execute(
+                          "SELECT 1 FROM corpus_memberships WHERE research_id = ? AND source_version_id = ?"
+                          " AND removed_at IS NOT NULL", (research_id, svid)).fetchone()]
+            if not chosen:
+                return [], [], []
+            if cited := self.cited_source_versions(chosen):
+                raise RevisionConflict(f"Evidence still cites {len(cited)} of these sources; delete their research instead")
+            from deixis.workflow.read.recovery_history import frozen_source_versions
+            frozen = frozen_source_versions(self.conn, chosen, research_id=research_id) & set(chosen)
+            if frozen:
+                raise RevisionConflict(f"A stored model input or report record still uses passages of {len(frozen)}"
+                                       " of these sources; delete their research instead")
+            ts = now()
+            self._corpus_changed(research_id, "source_purged", chosen, ts)
+            marks = ", ".join("?" * len(chosen))
+            scoped = (research_id, *chosen)
+            payloads: list[str] = []
+            self.conn.execute(
+                f"DELETE FROM pdf_candidates WHERE discovery_run_id IN (SELECT id FROM pdf_discovery_runs"
+                f" WHERE research_id = ? AND source_version_id IN ({marks}))", scoped)
+            # A stage decision is kept unless a purge authorizes removing it; deleting this research's record of these
+            # sources is such a purge (D65), so the same authorization row the research purge uses opens the trigger.
+            self.conn.execute("INSERT OR IGNORE INTO research_purge_authorizations VALUES (?)", (research_id,))
+            # A queue decision's selection links go before the decisions they name, and with the head they name.
+            self.conn.execute(
+                f"DELETE FROM human_selection_links WHERE research_id = ? AND (head IN ({marks}) OR decision_id IN"
+                f" (SELECT id FROM stage_decisions WHERE research_id = ? AND source_version_id IN ({marks})))",
+                (research_id, *chosen, research_id, *chosen))
+            for table in ("person_pdf_requests", "pdf_discovery_runs", "source_similarities", "suspected_duplicates",
+                          "selection_history", "selections", "candidate_hits", "candidates", "stage_decisions",
+                          "model_proposals",
+                          "record_signal_ranks",
+                          "record_flags", "corpus_memberships"):
+                self.conn.execute(f"DELETE FROM {table} WHERE research_id = ? AND source_version_id IN ({marks})", scoped)
+            # A chain link names a record twice: the seed it came from and the record the linked work became (D95).
+            self.conn.execute(f"DELETE FROM chain_links WHERE research_id = ? AND (source_version_id IN ({marks})"
+                              f" OR seed_source_version_id IN ({marks}))", (research_id, *chosen, *chosen))
+            # A snowball round's admission row names the record an identity became; the row stays as history, without it.
+            self.conn.execute(f"UPDATE snowball_admissions SET source_version_id = NULL WHERE source_version_id IN ({marks})"
+                              " AND run_id IN (SELECT id FROM runs WHERE research_id = ?)", (*chosen, research_id))
+            self.conn.execute("DELETE FROM research_purge_authorizations WHERE research_id = ?", (research_id,))
+            orphan_files: list[str] = []
+            for svid in chosen:
+                # The source may still belong to another research or be saved in the Library (S19a); its record,
+                # passages and file stay in that case.
+                if self.conn.execute(
+                    "SELECT 1 FROM corpus_memberships WHERE source_version_id = ?"
+                    " UNION SELECT 1 FROM candidates WHERE source_version_id = ?"
+                    " UNION SELECT 1 FROM kill_search_query_records WHERE source_version_id = ?"
+                    " UNION SELECT 1 FROM kill_search_hits WHERE source_version_id = ?"
+                    " UNION SELECT 1 FROM library_items WHERE source_version_id = ? LIMIT 1", (svid, svid, svid, svid, svid),
+                ).fetchone():
+                    continue
+                source = self.conn.execute("SELECT work_id, provider_payload_path FROM source_versions WHERE id = ?", (svid,)).fetchone()
+                if source is None:
+                    continue
+                orphan_files.extend(self._purge_asset_extractions(svid))
+                if source["provider_payload_path"]:
+                    payloads.append(source["provider_payload_path"])
+                payloads.extend(r[0] for r in self.conn.execute(
+                    "SELECT payload_ref FROM passages WHERE source_version_id = ?"
+                    " AND kind = 'abstract' AND payload_ref IS NOT NULL", (svid,),
+                ))
+                orphan_files.extend(r[0] for r in self.conn.execute("SELECT storage_path FROM source_assets WHERE source_version_id = ?", (svid,)))
+                self.conn.execute("DELETE FROM record_links WHERE source_version_id = ? OR other_source_version_id = ?"
+                                  " OR parent_source_version_id = ?", (svid, svid, svid))
+                self.conn.execute("DELETE FROM record_lookups WHERE source_version_id = ?", (svid,))
+                self.conn.execute("DELETE FROM record_references WHERE source_version_id = ?", (svid,))
+                self.conn.execute("DELETE FROM identifier_mappings WHERE source_version_id = ?", (svid,))
+                self.conn.execute("DELETE FROM passage_embeddings WHERE passage_id IN (SELECT id FROM passages WHERE source_version_id = ?)", (svid,))
+                self.conn.execute("DELETE FROM passages_fts WHERE rowid IN (SELECT rowid FROM passages WHERE source_version_id = ?)", (svid,))
+                self.conn.execute("DELETE FROM passages WHERE source_version_id = ?", (svid,))
+                self.conn.execute("DELETE FROM source_assets WHERE source_version_id = ?", (svid,))
+                self.conn.execute("DELETE FROM source_versions WHERE id = ?", (svid,))
+                self.conn.execute("DELETE FROM works WHERE id = ? AND NOT EXISTS (SELECT 1 FROM source_versions WHERE work_id = ?)",
+                                  (source["work_id"], source["work_id"]))
+            # Files are content-addressed and may be referenced by another asset or search run.
+            orphan_files = [p for p in set(orphan_files) if not self.conn.execute("SELECT 1 FROM source_assets WHERE storage_path = ?", (p,)).fetchone()]
+            payloads = [p for p in set(payloads) if not self.conn.execute(
+                "SELECT 1 FROM search_runs WHERE raw_payload_path = ? UNION SELECT 1 FROM source_versions WHERE provider_payload_path = ?"
+                " UNION SELECT 1 FROM kill_search_queries WHERE raw_payload_path = ?"
+                " UNION SELECT 1 FROM passages WHERE payload_ref = ?", (p, p, p, p)
+            ).fetchone()]
+        return chosen, orphan_files, payloads
+
+    def _check_corpus_change(self, research_id: str, svids: list[str]) -> None:
+        self.research(research_id)
+        if self.conn.execute(
+            f"SELECT 1 FROM runs WHERE research_id = ? AND status IN ({', '.join('?' * len(ACTIVE_RUN_STATUSES))}) LIMIT 1",
+            (research_id, *ACTIVE_RUN_STATUSES),
+        ).fetchone():
+            raise RevisionConflict("Cancel or finish active runs before changing this research's sources")
+        if missing := [svid for svid in dict.fromkeys(svids) if not self.was_member(research_id, svid)]:
+            raise NotASource(", ".join(missing))
+
+    def _corpus_changed(self, research_id: str, event: str, svids: list[str], ts: str) -> None:
+        """An included source entering or leaving the corpus changes what an answer reads, as a selection change does."""
+        marks = ", ".join("?" * len(svids))
+        included = self.conn.execute(
+            f"SELECT 1 FROM selections WHERE research_id = ? AND state = 'included' AND source_version_id IN ({marks}) LIMIT 1",
+            (research_id, *svids),
+        ).fetchone()
+        self.conn.execute(f"UPDATE researches SET updated_at = ?{', selection_revision = selection_revision + 1' if included else ''}"
+                          " WHERE id = ?", (ts, research_id))
+        self._event(research_id, event, {"source_version_ids": svids})
+
+    def is_active_member(self, research_id: str, svid: str) -> bool:
+        """A source of the research now: lists, model inputs and new work (uploads, PDF lookups, table rows) need this."""
+        return self.conn.execute(
+            "SELECT 1 FROM corpus_memberships WHERE research_id = ? AND source_version_id = ? AND removed_at IS NULL", (research_id, svid)
+        ).fetchone() is not None
+
+    def was_member(self, research_id: str, svid: str) -> bool:
+        """A source of the research now or before a removal (D50): opening the research's evidence needs only this."""
+        return self.conn.execute(
+            "SELECT 1 FROM corpus_memberships WHERE research_id = ? AND source_version_id = ?", (research_id, svid)
+        ).fetchone() is not None
+
+    def candidates(self, research_id: str, scope_revision: int | None = None) -> list[dict[str, Any]]:
+        """Candidates of one question revision (all when None); ones without a proposal come first.
+
+        Within that, candidates interleave by their rank in their search, so a candidate limit keeps every query's
+        first results instead of only the earliest query's.
+        """
+        revision_filter = " AND c.scope_revision = ?" if scope_revision is not None else ""
+        params = (research_id, scope_revision) if scope_revision is not None else (research_id,)
+        rows = self.conn.execute(
+            "SELECT c.id AS candidate_id, c.source_version_id, c.rank, s.state, s.origin,"
+            " s.proposal IS NOT NULL AS proposed, s.proposal_step_id, c.created_at FROM candidates c"
+            " JOIN selections s ON s.research_id = c.research_id AND s.source_version_id = c.source_version_id"
+            f" WHERE c.research_id = ?{revision_filter} ORDER BY s.proposal IS NOT NULL, c.rank, c.created_at", params
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def set_research_title(self, research_id: str, scope_revision: int, title: str) -> None:
+        """Apply a discovery-time title for the active question revision, unless the title is the person's
+        (`_person_titled`). A valid answer may rename it later, under the same condition."""
+        with transaction(self.conn):
+            if self._person_titled(research_id):
+                return
+            self.conn.execute(
+                "UPDATE researches SET title = ?, updated_at = ? WHERE id = ? AND current_scope_revision = ?",
+                (title.strip(), now(), research_id, scope_revision),
+            )
+
+    def rename_research(self, research_id: str, expected_version: int, title: str) -> None:
+        """Persist a user-authored title. Generated titles (discovery, answers) no longer replace it; a new question
+        (`revise_scope`) names the research after that question again."""
+        final_title = title.strip()
+        if not final_title:
+            raise ValueError("Title cannot be blank")
+        with transaction(self.conn):
+            research = self.research(research_id)
+            check_expected_version(expected_version, research["version"])
+            if research["title"] == final_title:
+                return
+            self.conn.execute(
+                "UPDATE researches SET title = ?, version = version + 1, updated_at = ? WHERE id = ?",
+                (final_title, now(), research_id),
+            )
+            self._event(research_id, "research_title_edited", {"title": final_title})
+
+    def set_user_selection(self, research_id: str, svid: str, state: str, expected_version: int, reason: str | None) -> dict[str, Any]:
+        with transaction(self.conn):
+            current = self.conn.execute(
+                "SELECT * FROM selections WHERE research_id = ? AND source_version_id = ?", (research_id, svid)
+            ).fetchone()
+            if current is None:
+                raise NotFound(svid)
+            check_expected_version(expected_version, current["version"])
+            self.conn.execute(
+                "UPDATE selections SET state = ?, origin = 'user', user_reason = ?, version = version + 1, updated_at = ?"
+                " WHERE research_id = ? AND source_version_id = ?",
+                (state, reason, now(), research_id, svid),
+            )
+            self.conn.execute(
+                "INSERT INTO selection_history (research_id, source_version_id, old_state, new_state, origin, reason, created_at) VALUES (?, ?, ?, ?, 'user', ?, ?)",
+                (research_id, svid, current["state"], state, reason, now()),
+            )
+            self._bump_selection_revision(research_id, current["state"], state)
+            self.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (now(), research_id))
+            self._event(research_id, "selection_changed", {"source_version_id": svid, "state": state, "origin": "user"})
+        return dict(self.conn.execute(
+            "SELECT * FROM selections WHERE research_id = ? AND source_version_id = ?", (research_id, svid)
+        ).fetchone())
+
+    def release_user_selection(self, research_id: str, svid: str, expected_version: int, reason: str) -> bool:
+        """Give a selection a queue decision wrote back to code, only while it is still at `expected_version`.
+
+        Any change since, from the source list too and even to the same state, moved the version on and the
+        selection stays the user's. The caller derives the state afterwards (`DecisionStore.derive_selection`).
+        """
+        with transaction(self.conn):
+            current = self.conn.execute(
+                "SELECT * FROM selections WHERE research_id = ? AND source_version_id = ?", (research_id, svid)
+            ).fetchone()
+            if current is None or current["version"] != expected_version or current["origin"] != "user":
+                return False
+            ts = now()
+            self.conn.execute(
+                "UPDATE selections SET origin = 'code_rule', user_reason = NULL, version = version + 1, updated_at = ?"
+                " WHERE research_id = ? AND source_version_id = ?", (ts, research_id, svid))
+            self.conn.execute(
+                "INSERT INTO selection_history (research_id, source_version_id, old_state, new_state, origin, reason,"
+                " created_at) VALUES (?, ?, ?, ?, 'code_rule', ?, ?)",
+                (research_id, svid, current["state"], current["state"], reason, ts))
+        return True
+
+    def included_sources(self, research_id: str) -> list[str]:
+        return [r[0] for r in self.conn.execute(
+            "SELECT s.source_version_id FROM selections s JOIN corpus_memberships m"
+            " ON m.research_id = s.research_id AND m.source_version_id = s.source_version_id AND m.removed_at IS NULL"
+            # The selection order an answer reads must come back the same on every call, so equal times order by identifier.
+            " WHERE s.research_id = ? AND s.state = 'included' ORDER BY s.updated_at, s.source_version_id", (research_id,)
+        )]
+
+    def answer_order_facts(self, research_id: str, svids: list[str]) -> dict[str, tuple[bool, int]]:
+        """Per source: whether the user chose its selection, and how many providers returned a record of it.
+
+        bioRxiv is searched through OpenAlex, so the two count as one provider.
+        """
+        facts = {}
+        for svid in svids:
+            origin = self.conn.execute(
+                "SELECT origin FROM selections WHERE research_id = ? AND source_version_id = ?", (research_id, svid)
+            ).fetchone()
+            providers = self.conn.execute(
+                "SELECT COUNT(DISTINCT CASE provider WHEN 'biorxiv' THEN 'openalex' ELSE provider END) FROM identifier_mappings"
+                " WHERE source_version_id = ? AND scheme = provider", (svid,)
+            ).fetchone()[0]
+            facts[svid] = (origin is not None and origin["origin"] == "user", providers)
+        return facts
+
+    def page_texts(self, svid: str) -> dict[int, str]:
+        """The text of each PDF page, fragments of one page joined with a space in rowid order.
+
+        Read only. A quote split across two fragments of a page the model was shown is looked for in this string
+        (D85). Pages of a removed file or of another extraction are not here, the same filter `passages_for` uses.
+        """
+        pages: dict[int, list[str]] = {}
+        for passage in self.passages_for(svid):
+            if passage["kind"] != "pdf_page" or passage["physical_page"] is None:
+                continue
+            pages.setdefault(passage["physical_page"], []).append(passage["text"])
+        return {page: " ".join(parts) for page, parts in pages.items()}
+
+    def passages_for(self, svid: str) -> list[dict[str, Any]]:
+        """Passages a model step may read: an abstract, or text of the PDF in use from its current extraction (D46).
+
+        Passages of a removed file or of another extraction stay resolvable through `passage` for the evidence citing them.
+        """
+        return [dict(r) for r in self.conn.execute(
+            "SELECT p.* FROM passages p WHERE p.source_version_id = ? AND (p.asset_id IS NULL OR EXISTS"
+            " (SELECT 1 FROM source_assets a WHERE a.id = p.asset_id AND a.removed_at IS NULL AND a.extraction_version IS p.extraction_version))"
+            " ORDER BY p.kind, p.physical_page, p.rowid", (svid,)
+        )]
+
+    def search_passages(self, svids: list[str], fts_query: str, limit: int,
+                        frozen: dict[str, list[str]] | None = None) -> list[dict[str, Any]]:
+        """Passages of these sources matching the query, best first.
+
+        A source named in `frozen` (a report row whose passages its snapshot froze, D114) is searched only within those
+        passage ids, inside the same ranking and before the limit, so a passage it gained later is never a hit.
+        """
+        frozen = frozen or {}
+        live = [svid for svid in svids if svid not in frozen]
+        pinned = [pid for svid in svids if svid in frozen for pid in frozen[svid]]
+        if not fts_query or not (live or pinned):
+            return []
+        clauses, params = [], [fts_query]
+        if live:
+            clauses.append(
+                f"(p.source_version_id IN ({','.join('?' * len(live))}) AND (p.asset_id IS NULL OR EXISTS"
+                " (SELECT 1 FROM source_assets a WHERE a.id = p.asset_id AND a.removed_at IS NULL AND a.extraction_version IS p.extraction_version)))")
+            params += live
+        if pinned:
+            clauses.append(f"p.id IN ({','.join('?' * len(pinned))})")
+            params += pinned
+        rows = self.conn.execute(
+            f"SELECT p.* FROM passages_fts f JOIN passages p ON p.rowid = f.rowid"
+            f" WHERE passages_fts MATCH ? AND ({' OR '.join(clauses)})"
+            " ORDER BY bm25(passages_fts), p.id LIMIT ?",  # an equal BM25 score orders by passage identifier (SW14.6)
+            (*params, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def passage(self, passage_id: str) -> dict[str, Any]:
+        row = self.conn.execute("SELECT * FROM passages WHERE id = ?", (passage_id,)).fetchone()
+        if row is None:
+            raise NotFound(passage_id)
+        return dict(row)
+
+    def asset_rendition(self, asset_id: str | None) -> bool:
+        """Whether this file is Europe PMC's full text drawn by DEIXIS (SW21): its pages are not the publisher's.
+
+        Read from the asset row itself, so a removed or replaced file keeps saying so where old evidence cites it.
+        """
+        if asset_id is None:
+            return False
+        row = self.conn.execute(f"SELECT {RENDITION_SQL} FROM source_assets a WHERE a.id = ?", (asset_id,)).fetchone()
+        return bool(row and row[0])
+
+    def passage_rendition(self, passage_id: str | None) -> bool:
+        """`asset_rendition` of the file this passage was cut from; an abstract has none."""
+        if passage_id is None:
+            return False
+        row = self.conn.execute(f"SELECT {RENDITION_SQL} FROM passages p JOIN source_assets a ON a.id = p.asset_id"
+                                " WHERE p.id = ?", (passage_id,)).fetchone()
+        return bool(row and row[0])
+
+    # ---- answers --------------------------------------------------------------------------
+    def latest_step_output(self, research_id: str, operation_key: str, scope_revision: int) -> dict[str, Any] | None:
+        row = self.conn.execute(
+            "SELECT s.output_json FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE r.research_id = ? AND s.operation_key = ?"
+            " AND r.scope_revision = ? AND s.status = 'succeeded' ORDER BY s.finished_at DESC LIMIT 1",
+            (research_id, operation_key, scope_revision),
+        ).fetchone()
+        return json.loads(row["output_json"]) if row and row["output_json"] else None
+
+    def step_input_selection_revision(self, step_input_id: str) -> int | None:
+        row = self.conn.execute("SELECT selection_revision FROM step_inputs WHERE id = ?", (step_input_id,)).fetchone()
+        return row["selection_revision"] if row else None
+
+    def last_step_input(self, step_id: str) -> dict[str, Any] | None:
+        """The newest StepInput a model step sent: its id and the package hash it carried."""
+        row = self.conn.execute("SELECT id, skill_package_hash FROM step_inputs WHERE step_id = ?"
+                                " ORDER BY attempt DESC, rowid DESC LIMIT 1", (step_id,)).fetchone()
+        return dict(row) if row else None
+
+    def step_input_payload(self, step_input_id: str) -> dict[str, Any]:
+        row = self.conn.execute("SELECT payload_json FROM step_inputs WHERE id = ?", (step_input_id,)).fetchone()
+        if row is None:
+            raise NotFound(step_input_id)
+        return json.loads(row["payload_json"])
+
+    def has_asset(self, svid: str) -> bool:
+        return self.conn.execute(
+            "SELECT 1 FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL", (svid,)
+        ).fetchone() is not None
+
+    def passage_embeddings(self, passage_ids: list[str], model: str) -> dict[str, bytes]:
+        found: dict[str, bytes] = {}
+        for start in range(0, len(passage_ids), 500):
+            chunk = passage_ids[start:start + 500]
+            rows = self.conn.execute(
+                f"SELECT passage_id, vector FROM passage_embeddings WHERE model = ? AND passage_id IN ({','.join('?' * len(chunk))})",
+                (model, *chunk),
+            )
+            found.update({row["passage_id"]: row["vector"] for row in rows})
+        return found
+
+    def save_passage_embeddings(self, model: str, dimensions: int, vectors: dict[str, bytes]) -> None:
+        ts = now()
+        with transaction(self.conn):
+            self.conn.executemany(
+                "INSERT OR IGNORE INTO passage_embeddings (passage_id, model, dimensions, vector, created_at) VALUES (?, ?, ?, ?, ?)",
+                [(pid, model, dimensions, blob, ts) for pid, blob in vectors.items()],
+            )
+
+    def scored_sources(self, research_id: str, scope_revision: int, model: str) -> set[str]:
+        return {r[0] for r in self.conn.execute(
+            "SELECT source_version_id FROM source_similarities WHERE research_id = ? AND scope_revision = ? AND model = ?",
+            (research_id, scope_revision, model),
+        )}
+
+    def source_similarities(self, research_id: str, scope_revision: int, model: str) -> dict[str, float]:
+        """Every stored similarity of this question revision under one embedding model; empty when none was written."""
+        return {row[0]: row[1] for row in self.conn.execute(
+            "SELECT source_version_id, similarity FROM source_similarities WHERE research_id = ? AND scope_revision = ?"
+            " AND model = ?", (research_id, scope_revision, model),
+        )}
+
+    def save_source_similarities(self, research_id: str, scope_revision: int, model: str, scores: dict[str, float]) -> None:
+        ts = now()
+        with transaction(self.conn):
+            self.conn.executemany(
+                "INSERT OR IGNORE INTO source_similarities (research_id, source_version_id, scope_revision, model, similarity, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                [(research_id, svid, scope_revision, model, score, ts) for svid, score in scores.items()],
+            )
+
+    def save_answer(self, research_id: str, run_id: str, step_id: str | None, step_input_id: str | None, scope_revision: int,
+                    status: str, draft: dict[str, Any] | None, validation: dict[str, Any],
+                    links: list[dict[str, Any]] | None = None, selection_revision: int | None = None) -> str:
+        aid = new_id("ans")
+        # Same event-loop connection; this synchronous guard precedes the write with no await.
+        from deixis.workflow.answer import late_revision
+        late = late_revision.row_for_run(self, self.run(run_id))
+        if late:
+            reason = late_revision.guard_reason(self, late)
+            if reason:
+                from deixis.workflow.run.flow import RunStopped
+                with transaction(self.conn):
+                    late_revision.finish(self, late, "skipped", reason)
+                    self.update_run(run_id, event="run_cancelled", status="cancelled", pause_reason=reason)
+                raise RunStopped
+        with transaction(self.conn):
+            existing = self.conn.execute(
+                "SELECT id FROM answers WHERE run_id = ? AND IFNULL(step_input_id, '') = IFNULL(?, '') AND status = ?",
+                (run_id, step_input_id, status),
+            ).fetchone()
+            if existing:
+                return existing["id"]  # saved before a restart; a resumed run must not duplicate it
+            report_version = report_revision = None
+            if status == "structurally_valid":
+                # A late full-text answer is the application's update of the version it revises (D57): it keeps that
+                # number and takes the next revision. Every other valid answer opens the next version.
+                base = self.conn.execute("SELECT report_version FROM answers WHERE id = ?",
+                                         (late["base_answer_id"],)).fetchone() if late else None
+                if base is not None and base["report_version"] is not None:
+                    report_version = base["report_version"]
+                    report_revision = self.conn.execute(
+                        "SELECT IFNULL(MAX(report_revision), 0) + 1 FROM answers WHERE research_id = ? AND report_version = ?",
+                        (research_id, report_version)).fetchone()[0]
+                else:
+                    report_version = self.conn.execute(
+                        "SELECT IFNULL(MAX(report_version), 0) + 1 FROM answers WHERE research_id = ?", (research_id,)).fetchone()[0]
+                    report_revision = 0
+            self.conn.execute(
+                "INSERT INTO answers (id, research_id, run_id, step_id, step_input_id, scope_revision, selection_revision, status,"
+                " answer_language, draft_json, validation_json, report_version, report_revision, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (aid, research_id, run_id, step_id, step_input_id, scope_revision, selection_revision, status,
+                 (draft or {}).get("answer_language"), dumps(draft) if draft is not None else None, dumps(validation),
+                 report_version, report_revision, now()),
+            )
+            if status == "structurally_valid" and draft is not None:
+                claim_ids = {}
+                for ordinal, claim in enumerate(draft.get("claims", [])):
+                    cid = new_id("clm")
+                    claim_ids[claim["claim_label"]] = cid
+                    self.conn.execute(
+                        "INSERT INTO claims (id, answer_id, label, ordinal, text, support_type, section) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (cid, aid, claim["claim_label"], ordinal, claim["text"], claim["support_type"], claim.get("section")),
+                    )
+                for link in links or []:
+                    self.conn.execute(
+                        "INSERT INTO evidence_links (id, claim_id, passage_id, source_version_id, step_input_id, anchor_text, anchor_match)"
+                        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (new_id("evl"), claim_ids[link["claim_label"]], link["passage_id"], link["source_id"], step_input_id,
+                         link.get("anchor_text"), link.get("anchor_match")),
+                    )
+                # Only a valid answer for the active question revision may replace the provisional question-as-title,
+                # and never a title the person wrote for this revision.
+                if not self._person_titled(research_id):
+                    self.conn.execute(
+                        "UPDATE researches SET title = ? WHERE id = ? AND current_scope_revision = ?",
+                        (draft["title"], research_id, scope_revision),
+                    )
+            self.conn.execute("UPDATE researches SET updated_at = ? WHERE id = ?", (now(), research_id))
+            self._event(research_id, "answer_saved", {"answer_id": aid, "status": status}, run_id)
+            from deixis.workflow.run import fast_path
+
+            fast_path.save_answer(self, run_id, "no_evidence_at_cutoff"
+                                  if validation.get("reason") == "no_evidence_at_cutoff" else status)
+            late_revision.published(self, self.run(run_id), aid, status)
+        return aid
+
+    def answer_review(self, answer_id: str) -> dict[str, Any] | None:
+        row = self.conn.execute("SELECT * FROM answer_reviews WHERE answer_id = ?", (answer_id,)).fetchone()
+        if row is None:
+            return None
+        review = dict(row)
+        review["review"] = json.loads(review.pop("review_json")) if review["review_json"] else None
+        return review
+
+    def save_answer_review(self, answer_id: str, research_id: str, run_id: str, step_id: str | None, step_input_id: str | None,
+                           status: str, review: dict[str, Any] | None, failure_reason: str | None = None) -> None:
+        with transaction(self.conn):
+            inserted = self.conn.execute(
+                "INSERT OR IGNORE INTO answer_reviews (id, answer_id, research_id, run_id, step_id, step_input_id, status,"
+                " failure_reason, review_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (new_id("rvw"), answer_id, research_id, run_id, step_id, step_input_id, status, failure_reason,
+                 dumps(review) if review is not None else None, now()),
+            ).rowcount
+            if inserted:  # a resumed run finds the review it already saved
+                self._event(research_id, "answer_reviewed", {"answer_id": answer_id, "status": status, "failure_reason": failure_reason}, run_id)
+
+    # ---- app settings -----------------------------------------------------------------------
+    def setting(self, key: str) -> Any:
+        row = self.conn.execute("SELECT value_json FROM app_settings WHERE key = ?", (key,)).fetchone()
+        return json.loads(row["value_json"]) if row else None
+
+    def set_setting(self, key: str, value: Any) -> None:
+        with transaction(self.conn):
+            self.conn.execute(
+                "INSERT INTO app_settings (key, value_json, updated_at) VALUES (?, ?, ?)"
+                " ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at",
+                (key, dumps(value), now()),
+            )
+
+    # ---- usage reads (parity slice S16): counted from what is stored, never estimated ----------------------------------
+
+    def openalex_rate_limit_rows(self, since: str, limit: int = 100) -> list[tuple[str, str | None]]:
+        """(retrieved_at, error_json) of the newest OpenAlex search rows at or after `since` that carry a remaining-budget
+        header, newest first (rows without one never crowd out an older usable row). The headers of each response are
+        inside the error_json (`rate_limit`)."""
+        return [(row["retrieved_at"], row["error_json"]) for row in self.conn.execute(
+            "SELECT retrieved_at, error_json FROM search_runs WHERE provider = 'openalex' AND retrieved_at >= ?"
+            " AND json_valid(error_json) AND (json_extract(error_json, '$.rate_limit.\"x-ratelimit-remaining\"') IS NOT NULL"
+            " OR json_extract(error_json, '$.rate_limit.\"x-ratelimit-remaining-usd\"') IS NOT NULL)"
+            " ORDER BY retrieved_at DESC, id DESC LIMIT ?", (since, limit))]
+
+    def model_call_counts(self, since: str | None = None, until: str | None = None, run_id: str | None = None) -> dict[str, int]:
+        """Model calls per step task type, one per stored model session (a call that failed still counts). Either the
+        window [since, until) over the session's start time, or one run."""
+        where, args = ("m.run_id = ?", (run_id,)) if run_id is not None else ("m.started_at >= ? AND m.started_at < ?", (since, until))
+        return {row["task_type"]: row["calls"] for row in self.conn.execute(
+            "SELECT i.task_type AS task_type, COUNT(*) AS calls FROM model_sessions m"
+            f" JOIN step_inputs i ON i.id = m.step_input_id WHERE {where} GROUP BY i.task_type", args)}
+
+    def begin_provider_request(self, run_id: str, host: str, url: str) -> int | None:
+        """Store one attempt of this run about to be handed to the HTTP client, as not known whether sent (D31); its
+        row id. A run deleted with its research meanwhile keeps nothing (None)."""
+        with transaction(self.conn):
+            cur = self.conn.execute(
+                "INSERT INTO provider_requests (run_id, host, url, started_at) SELECT ?, ?, ?, ?"
+                " WHERE EXISTS (SELECT 1 FROM runs WHERE id = ?)", (run_id, host, url, now(), run_id))
+            return cur.lastrowid if cur.rowcount else None
+
+    def settle_provider_request(self, run_id: str, row_id: int | None, facts: dict[str, Any]) -> None:
+        """Settle a begun attempt of this run with what became of it (`providers.common.settle_request`). Only that
+        run's row, and only while unsettled: a row recovery already closed, or a run deleted meanwhile, is left as is."""
+        if row_id is None:
+            return
+        with transaction(self.conn):
+            self.conn.execute(
+                "UPDATE provider_requests SET sends = ?, refusals = ?, unknown = ?, delivery_class = ?, http_status = ?,"
+                " settled_at = ? WHERE id = ? AND run_id = ? AND settled_at IS NULL",
+                (facts["sends"], facts["refusals"], facts["unknown"], facts["delivery_class"], facts["http_status"],
+                 now(), row_id, run_id))
+
+    def request_log(self, run_id: str) -> Any:
+        """The request log `providers.common.request_log` takes for this run's work."""
+        store = self
+
+        class Log:
+            def begin(self, host: str, url: str) -> int | None:
+                return store.begin_provider_request(run_id, host, url)
+
+            def settle(self, row_id: int | None, facts: dict[str, Any]) -> None:
+                store.settle_provider_request(run_id, row_id, facts)
+        return Log()
+
+    def provider_request_counts(self, run_id: str) -> dict[str, dict[str, int]] | None:
+        """Per host, the attempts this run sent, the refusals among them, and those not known whether sent (cancelled
+        while out, still out, or out when the process stopped), from its stored requests; None for a run that started
+        before requests were stored, whose count is not known."""
+        if self.conn.execute("SELECT 1 FROM provider_requests_unrecorded_runs WHERE run_id = ?", (run_id,)).fetchone():
+            return None
+        return {row["host"]: {"sent": row["sent"], "refused": row["refused"], "unknown": row["unknown"]}
+                for row in self.conn.execute(
+                    "SELECT host, SUM(sends) AS sent, SUM(refusals) AS refused, SUM(unknown) AS unknown"
+                    " FROM provider_requests WHERE run_id = ? GROUP BY host", (run_id,))}
+
+    def active_researches_using(self, connections: set[str], providers: set[str]) -> int:
+        """How many researches have a queued or running run (a pause requested still counts: its step is not over) whose next
+        steps go to one of these model connections, or search one of these sources. The connections are the ones in effect
+        now: the scope read applies the person's model changes, and the reviewer is the one `effective_reviewer` names. Paused
+        runs and trashed researches are not counted: nothing is sent for them until the person resumes (E13)."""
+        counted = set()
+        for research_id, revision in self.conn.execute(
+            "SELECT DISTINCT r.research_id, r.scope_revision FROM runs r"
+            " JOIN researches x ON x.id = r.research_id AND x.trashed_at IS NULL"
+            " WHERE r.status IN ('queued', 'running', 'pause_requested')"
+        ).fetchall():
+            if research_id in counted:
+                continue
+            scope = self.scope(research_id, revision)
+            used = {step_model(scope, "grounded_answer")[0], step_model(scope, "abstract_screening")[0]}
+            if reviewer := effective_reviewer(scope, self.setting("reviewer")):
+                used.add(reviewer[0])
+            if connections & used or providers & set(scope["providers"]):
+                counted.add(research_id)
+        return len(counted)
+
+    def run_exists(self, run_id: str) -> bool:
+        return self.conn.execute("SELECT 1 FROM runs WHERE id = ?", (run_id,)).fetchone() is not None

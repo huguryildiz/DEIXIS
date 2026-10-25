@@ -22,12 +22,12 @@ from deixis.documents.fetch import FetchResult
 from deixis.providers.common import ProviderRecord
 from deixis.providers.registry import CONNECTORS
 from deixis.storage import db
-from deixis.workflow import criterion_passages
-from deixis.workflow.flow import MAX_PASSAGES_PER_SOURCE, ResearchFlow
-from deixis.workflow.store import Store
+from deixis.workflow.answer import criterion_passages
+from deixis.workflow.run.flow import MAX_PASSAGES_PER_SOURCE, ResearchFlow
+from deixis.workflow.run.store import Store
 from fakes import FakeAdapter
 from helpers import make_pdf
-from deixis.workflow import criterion_passages as cp
+from deixis.workflow.answer import criterion_passages as cp
 
 
 QUESTION = "What is the effect of supervised exercise on cancer related fatigue after chemotherapy?"

@@ -10,17 +10,17 @@ from helpers import make_pdf
 from test_api_flow import create, fake_fetch, session, sw_settings
 from test_api_flow import app_for, create, session
 import pytest
-from deixis.workflow.store import NotFound
+from deixis.workflow.run.store import NotFound
 from test_api_flow import app_for, create, session
 from test_table_extraction import cell, execute, fill, library
 from types import SimpleNamespace
 from deixis.providers import crossref
 from deixis.providers.common import ProviderRecord
 from deixis.storage import db
-from deixis.workflow.store import Store
-from deixis.workflow.flow import MAX_PASSAGES_PER_SOURCE
+from deixis.workflow.run.store import Store
+from deixis.workflow.run.flow import MAX_PASSAGES_PER_SOURCE
 from test_criterion_passage_flow import ABSTRACT, QUESTION, TOPIC_PAGE, page_source, retrieve
-from deixis.workflow import waiting as waiting_rules
+from deixis.workflow.read import waiting as waiting_rules
 from test_abstract_flow import records_of
 from test_waiting_flow import confirm, match, named, sw_research
 

@@ -9,8 +9,8 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from deixis.workflow import ranking
-from deixis.workflow.expansion import queried_form, queried_terms, TASK_BLOCK
+from deixis.workflow.search import ranking
+from deixis.workflow.search.expansion import queried_form, queried_terms, TASK_BLOCK
 
 try:
     from .check import connect, rows, selected_ranking

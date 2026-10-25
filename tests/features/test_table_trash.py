@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from deixis.domain.rules import RevisionConflict
-from deixis.workflow.store import NotFound
+from deixis.workflow.run.store import NotFound
 from test_api_flow import app_for, create, session
 from test_evidence_tables import PACKET_SIZE, table_with_edit
 from test_table_extraction import execute, fill, library, recheck, table_version

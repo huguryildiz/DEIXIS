@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from deixis.api.app import create_app
 from deixis.domain import skill
-from deixis.workflow import spend, spend_estimate
+from deixis.workflow.run import spend, spend_estimate
 from fakes import FakeAdapter
 from test_api_flow import create, fake_fetch, openalex_client, session, sw_settings, wait_run
 

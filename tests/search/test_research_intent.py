@@ -4,7 +4,7 @@ Model-free (FakeAdapter, mocked providers). Passing shows which stages are queue
 """
 
 import json
-from deixis.workflow import fast_path, intent
+from deixis.workflow.run import fast_path, intent
 from helpers import make_pdf
 from test_abstract_flow import Pool, app_for, client_of, wait, work
 import httpx
@@ -13,7 +13,7 @@ from deixis.api.app import create_app
 from deixis.api.home_routes import suggestions
 from deixis.config import Settings
 from deixis.storage import db
-from deixis.workflow import intent
+from deixis.workflow.run import intent
 from fakes import FakeAdapter, valid_response
 
 

@@ -6,15 +6,17 @@ from types import SimpleNamespace
 import httpx
 import pytest
 from deixis.storage.db import transaction
-from deixis.workflow import background_fetch, fast_path, read as fast_read, fulltext, small_batch
-from deixis.workflow.flow import ResearchFlow, RunStopped
-from deixis.workflow.worker import Worker
+from deixis.workflow.read import background_fetch, read as fast_read, fulltext
+from deixis.workflow.run import fast_path
+from deixis.workflow.search import small_batch
+from deixis.workflow.run.flow import ResearchFlow, RunStopped
+from deixis.workflow.run.worker import Worker
 from test_fast_path_clock import library, stage
 from test_small_batch_flow import app_for, client_of
 from overlap_flow_helpers import discover, wait
 from fakes import FakeAdapter, valid_response
 from deixis.documents import identity
-from deixis.workflow import fulltext
+from deixis.workflow.read import fulltext
 from test_fast_path_clock import historical_read_policy  # noqa: F401  (fixtures used by name)
 import subprocess
 from pathlib import Path
@@ -331,7 +333,7 @@ def test_identity_failure_from_an_earlier_run_releases_the_slot(library, monkeyp
 
 def test_a_cut_call_is_never_sent_again_on_resume(library):
     """D258: a step closed at the read cutoff reads back as cut; the adapter is not reached again."""
-    from deixis.workflow.flow import _AdjudicationJob
+    from deixis.workflow.run.flow import _AdjudicationJob
     lib = library
     flow = ResearchFlow(SimpleNamespace(store=lib.store))
     for key, kind in (("fulltext_adjudication:h0:1", "model:fulltext_adjudication"), ("s:abstract_screening:0:1", "model:abstract_screening")):
@@ -364,7 +366,7 @@ def test_real_fetch_and_adjudication_are_bounded_by_top_k(tmp_path, monkeypatch)
 def test_budget_skipped_records_are_stored_without_human_decided_ones(library, monkeypatch):
     """D60: the records the model-call budget left unread are stored in their own step, so a restarted read closes
     with the same split; a record a person decided is not among them."""
-    from deixis.workflow.flow import _Held
+    from deixis.workflow.run.flow import _Held
     lib = library
     flow = ResearchFlow(SimpleNamespace(store=lib.store, limiter=SimpleNamespace(limit=1)))
     batches = [["s0", "s1"], ["s2", "s3"]]
@@ -671,7 +673,7 @@ def test_the_result_table_of_one_attempt(attempt, code):
 def test_every_code_this_stage_writes_leaves_the_work_unresolved():
     """Nothing is included or excluded by a retrieval run (SW1.2): all three codes derive to `pending`."""
     from deixis.domain.reason_codes import reason
-    from deixis.workflow.decisions import SELECTION_STATE
+    from deixis.workflow.screen.decisions import SELECTION_STATE
 
     for code in fulltext.OWNED_CODES:
         assert reason(code).stage == "fulltext" and reason(code).outcome == "unresolved"

@@ -38,7 +38,7 @@ except ImportError:  # Windows
     import msvcrt
 
 LOCK_NAME = "library.lock"
-WORKER_LOCK_NAME = "worker.lock"  # held exclusively, whole life, by every DEIXIS server (workflow/worker.py)
+WORKER_LOCK_NAME = "worker.lock"  # held exclusively, whole life, by every DEIXIS server (workflow/run/worker.py)
 HANDSHAKE_SECONDS = 20.0
 SLOTS = 4096  # Windows: byte 0 plus one byte per possible shared holder
 

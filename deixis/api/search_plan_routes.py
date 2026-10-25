@@ -14,7 +14,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from deixis.workflow import user_plan
+from deixis.workflow.search import user_plan
 
 
 class SavePlan(BaseModel):

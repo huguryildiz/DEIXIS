@@ -6,7 +6,7 @@ import json
 import httpx
 import pytest
 
-from deixis.workflow import fast_chain, ranking, seed_match
+from deixis.workflow.search import fast_chain, ranking, seed_match
 from helpers import make_pdf
 from test_abstract_flow import QUESTION, ON_TOPIC
 from overlap_flow_helpers import output, wait

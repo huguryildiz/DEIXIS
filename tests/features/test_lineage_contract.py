@@ -11,8 +11,8 @@ from deixis.config import Settings
 from deixis.domain import contracts, skill
 from deixis.storage import db
 from deixis.storage.db import transaction
-from deixis.workflow.flow import FlowDeps, ResearchFlow
-from deixis.workflow.store import Store
+from deixis.workflow.run.flow import FlowDeps, ResearchFlow
+from deixis.workflow.run.store import Store
 from fakes import FakeAdapter, parse_step_input, valid_response
 from test_contracts import CASES, STEP_INPUTS
 
@@ -198,7 +198,7 @@ from dataclasses import replace
 
 import pytest
 
-from deixis.workflow.lineage_assembly import Link, assemble
+from deixis.workflow.features.lineage.lineage_assembly import Link, assemble
 
 
 def link(a, b, **kw):
@@ -218,9 +218,9 @@ from dataclasses import replace
 
 import pytest
 
-from deixis.workflow.lineage_candidates import Candidate, LineageWork, find_candidates
-from deixis.workflow.lineage_edges import Edge, EdgeFrom, EdgeTo, derive_edges, unassessed_edges
-from deixis.workflow.lineage_mentions import PassageText
+from deixis.workflow.features.lineage.lineage_candidates import Candidate, LineageWork, find_candidates
+from deixis.workflow.features.lineage.lineage_edges import Edge, EdgeFrom, EdgeTo, derive_edges, unassessed_edges
+from deixis.workflow.features.lineage.lineage_mentions import PassageText
 
 
 def work(svid, position, author="Nobody", year=2020, text="Unrelated text", **changes):
@@ -261,12 +261,12 @@ def test_human_decided_pair_is_excluded_by_parameter():
     assert ("A", "D") in pairs(find_candidates(corpus, excluded_pairs=frozenset({("D", "A")})))
 
 
-from deixis.workflow.lineage_edges import Edge, EdgeFrom, EdgeTo, derive_edges, edge_state, unassessed_edges
+from deixis.workflow.features.lineage.lineage_edges import Edge, EdgeFrom, EdgeTo, derive_edges, edge_state, unassessed_edges
 
 
 def test_edge_alone_creates_no_candidate():
-    from deixis.workflow.lineage_candidates import LineageWork, find_candidates
-    from deixis.workflow.lineage_mentions import PassageText
+    from deixis.workflow.features.lineage.lineage_candidates import LineageWork, find_candidates
+    from deixis.workflow.features.lineage.lineage_mentions import PassageText
 
     a = LineageWork("a", "wa", 0, "Short title", ("Smith",), 2015, (), False,
                     frozenset(), frozenset({"W1"}), ())

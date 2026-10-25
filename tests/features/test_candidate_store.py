@@ -10,9 +10,9 @@ from deixis.domain.contracts import GAP_KINDS
 from deixis.domain.rules import RevisionConflict
 from deixis.providers.common import ProviderRecord
 from deixis.storage import db
-from deixis.workflow import links
-from deixis.workflow.candidates_hits import merge_and_cut
-from deixis.workflow.candidates_store import CandidateStore, CANDIDATE_TABLES, InvalidCandidateInput
+from deixis.workflow.run import links
+from deixis.workflow.features.candidates.candidates_hits import merge_and_cut
+from deixis.workflow.features.candidates.candidates_store import CandidateStore, CANDIDATE_TABLES, InvalidCandidateInput
 from test_lineage_store import make_library as lineage_library
 
 TEXT = "SYNTHETIC: A bounded scheduling mechanism reduces packet delay."

@@ -10,8 +10,8 @@ import httpx
 from deixis.documents import embeddings
 from deixis.providers.common import ProviderRecord
 from deixis.storage import db
-from deixis.workflow.flow import ResearchFlow, fuse_rankings
-from deixis.workflow.store import Store
+from deixis.workflow.run.flow import ResearchFlow, fuse_rankings
+from deixis.workflow.run.store import Store
 
 
 def test_rank_fusion_puts_passages_high_in_either_ranking_first():

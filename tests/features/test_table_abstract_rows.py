@@ -18,12 +18,12 @@ from deixis.config import Settings
 from deixis.domain import skill
 from deixis.storage import db, upgrades
 from deixis.storage.db import new_id, now, transaction
-from deixis.workflow import table_sources
-from deixis.workflow.decisions import DecisionStore
-from deixis.workflow.flow import FlowDeps, ResearchFlow
-from deixis.workflow.report_snapshot import included_table_rows
-from deixis.workflow.store import Store
-from deixis.workflow.tables import TableStore, report_ready
+from deixis.workflow.features.tables import table_sources
+from deixis.workflow.screen.decisions import DecisionStore
+from deixis.workflow.run.flow import FlowDeps, ResearchFlow
+from deixis.workflow.features.report.report_snapshot import included_table_rows
+from deixis.workflow.run.store import Store
+from deixis.workflow.features.tables.tables import TableStore, report_ready
 from fakes import FakeAdapter, valid_response
 from test_evidence_tables import PACKET_SIZE
 from test_table_extraction import add_pdf

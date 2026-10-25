@@ -7,10 +7,10 @@ import pytest
 
 from fastapi.testclient import TestClient
 
-from deixis.workflow.report_export import _md, to_markdown
-from deixis.workflow.report_sections import run_report
-from deixis.workflow.report_store import ReportStore
-from deixis.workflow.views import report_view
+from deixis.workflow.features.report.report_export import _md, to_markdown
+from deixis.workflow.features.report.report_sections import run_report
+from deixis.workflow.features.report.report_store import ReportStore
+from deixis.workflow.run.views import report_view
 from test_api_flow import app_for, create, session
 from test_report_api import upload_and_include, create_table, fill_table
 from test_report_flow import ReportAdapter, report_flow

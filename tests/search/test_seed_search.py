@@ -6,7 +6,7 @@ import json
 
 import httpx
 
-from deixis.workflow import search as fast_search, ranking, small_batch
+from deixis.workflow.search import search as fast_search, ranking, small_batch
 from overlap_flow_helpers import output
 from test_fulltext_flow import work
 from test_seed_pdf import QUESTION, SEED_PDF, SEED_TITLE, TITLE_B, SeedTransport, discovery, pdf_of, protocol_body, records, research, seed_work, seeded, select, upload

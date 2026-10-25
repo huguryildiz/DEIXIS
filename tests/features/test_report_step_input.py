@@ -9,8 +9,8 @@ from deixis.config import Settings
 from deixis.domain import contracts, skill
 from deixis.storage import db
 from deixis.storage.db import transaction
-from deixis.workflow.flow import FlowDeps, ResearchFlow, RunStopped
-from deixis.workflow.store import Store
+from deixis.workflow.run.flow import FlowDeps, ResearchFlow, RunStopped
+from deixis.workflow.run.store import Store
 from fakes import FakeAdapter
 
 

@@ -10,8 +10,8 @@ from deixis.documents import pdf
 from deixis.providers.common import OtherVersion
 from deixis.providers.common import ProviderRecord
 from deixis.storage import db
-from deixis.workflow.store import Store
-from deixis.workflow.views import research_view
+from deixis.workflow.run.store import Store
+from deixis.workflow.run.views import research_view
 from test_source_versions import raw_asset
 
 

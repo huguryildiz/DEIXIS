@@ -10,7 +10,7 @@ import httpx
 import pytest
 from deixis.domain import statement
 from deixis.providers import facade, openalex
-from deixis.workflow import search_query
+from deixis.workflow.search import search_query
 from test_search_query import OpenAlex
 
 

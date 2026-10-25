@@ -9,11 +9,11 @@ import pytest
 from deixis.domain import vocabulary
 from deixis.providers import openalex, query_compiler, query_rules
 from deixis.providers.registry import CONNECTORS
-from deixis.workflow.vocabulary import build_vocabulary
+from deixis.workflow.search.vocabulary import build_vocabulary
 import json
 from fastapi.testclient import TestClient
 from deixis.domain.vocabulary import extract
-from deixis.workflow.vocabulary import LABEL_RUNS
+from deixis.workflow.search.vocabulary import LABEL_RUNS
 from fakes import FakeAdapter, envelope, valid_response
 from test_vocabulary_flow import CountingOpenAlex, KEY_TERMS, app_for, start, store_at, wait
 

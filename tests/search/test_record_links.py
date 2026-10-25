@@ -11,8 +11,8 @@ import pytest
 
 from deixis.providers.common import ProviderRecord
 from deixis.storage import db
-from deixis.workflow import links
-from deixis.workflow.store import Store
+from deixis.workflow.run import links
+from deixis.workflow.run.store import Store
 
 TITLE = "SYNTHETIC release scheduling for diffusion channels"
 NEAR_TITLE = "SYNTHETIC release scheduling for diffusion channel"  # title similarity 0.98

@@ -85,7 +85,7 @@ def test_a_key_is_sent_as_a_header_and_never_in_the_description():
 @pytest.fixture
 def store(tmp_path):
     from deixis.storage import db
-    from deixis.workflow.store import Store
+    from deixis.workflow.run.store import Store
     connection = db.connect(tmp_path / "library.sqlite")
     db.migrate(connection)
     yield Store(connection)
@@ -136,7 +136,7 @@ def abstract_of(store, source_version_id):
 
 
 def test_a_found_answer_with_an_abstract_is_stored_with_its_origin_and_its_payload(store):
-    from deixis.workflow import lookups
+    from deixis.workflow.search import lookups
     rid, run_id = research(store)
     search(store, rid, run_id, 0, "openalex", [provider_record()])
     svid = store.find_source_by_identifier("openalex", "W1")
@@ -150,7 +150,7 @@ def test_a_found_answer_with_an_abstract_is_stored_with_its_origin_and_its_paylo
 
 
 def test_an_abstract_the_record_already_has_is_not_written_over(store):
-    from deixis.workflow import lookups
+    from deixis.workflow.search import lookups
     rid, run_id = research(store)
     search(store, rid, run_id, 0, "openalex", [provider_record(abstract=ABSTRACT)])
     svid = store.find_source_by_identifier("openalex", "W1")
@@ -167,7 +167,7 @@ SURVEY_TITLE = "A SYNTHETIC survey of release scheduling for diffusion channels"
 
 def plan(store, rid, providers=("openalex", "semantic_scholar", "crossref"), limit=None):
     from deixis.domain.survey_words import STRONG_TITLE_WORDS
-    from deixis.workflow import lookups
+    from deixis.workflow.search import lookups
     scope = {"providers": list(providers)}
     kwargs = {} if limit is None else {"limit": limit}
     return lookups.plan_semantic_scholar(store, rid, 1, scope, STRONG_TITLE_WORDS, **kwargs)

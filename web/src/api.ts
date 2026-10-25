@@ -1,4 +1,4 @@
-// Client for the local DEIXIS API. Types mirror deixis/workflow/views.py.
+// Client for the local DEIXIS API. Types mirror deixis/workflow/run/views.py.
 import { t } from './i18n'
 import { READ_LIMIT_MS, limited } from './readLimit'
 
@@ -962,7 +962,7 @@ export type ZoteroCollection = { key: string; name: string; items: number | null
 export type ZoteroNote = { title: string; note: string; vars?: Record<string, string> }
 export type ZoteroImport = { items: number; pdfs_added: number; notes: ZoteroNote[] }
 
-// Evidence tables (P5, D37/D38). Types mirror deixis/workflow/tables.py.
+// Evidence tables (P5, D37/D38). Types mirror deixis/workflow/features/tables/tables.py.
 export type AnswerFormat = 'choice' | 'number_unit' | 'yes_no' | 'text'
 export type CellState = 'value' | 'unknown' | 'not_reported' | 'not_verified' | 'not_applicable' | 'inaccessible' | 'not_found_in_inspected_scope'
 export type ColumnOption = { id: string; label: string }
@@ -1209,7 +1209,7 @@ export type ReviewDetail = ReviewCard & {
 }
 export type ReviewApplyResult = { decision: ReviewDecision; revision: { id: string }; applied_matches_suggestion: boolean }
 
-// The citation map (D42, workflow/citation_map.py): a link means "the stored OpenAlex reference list of `from` holds `to`".
+// The citation map (D42, workflow/features/citation_map/citation_map.py): a link means "the stored OpenAlex reference list of `from` holds `to`".
 export type CitationMapNode = {
   work_id: string; source_version_id: string; openalex_ids: string[]; title: string; authors: string[]; authors_short: string
   year: number | null; venue: string | null; doi: string | null; cited_by_count: number | null
@@ -1693,7 +1693,7 @@ export const api = {
   purgeTemplate: (templateId: string) => request<{ deleted: boolean; tables_unlinked: number }>(`/api/trash/templates/${templateId}`, { method: 'DELETE' }),
 }
 
-// The Method box under an answer (workflow/method_summary.py): stored counts only; null means the rows do not say.
+// The Method box under an answer (workflow/answer/method_summary.py): stored counts only; null means the rows do not say.
 export type AnswerMethod = {
   answer_id: string; scope_revision: number
   search: { queries: { provider: string; query: string; records_read: number; provider_total: number | null; date: string; complete: boolean; origin: string | null }[]

@@ -1,6 +1,6 @@
 """SYNTHETIC B3a equality and pre-send refusals; no live-provider evidence.
 
-Dispatcher shapes reproduce workflow/flow.py:2053-2056 and :4681-4682. They
+Dispatcher shapes reproduce workflow/run/flow.py:2053-2056 and :4681-4682. They
 derive from registry fields and endpoint_options, without importing private flow
 code. RetryPolicy is measured against module behavior, not used to drive send.
 """

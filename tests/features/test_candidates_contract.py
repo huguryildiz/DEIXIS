@@ -12,8 +12,8 @@ from deixis.domain import contracts, skill
 from deixis.domain.rules import LITERATURE_TASKS, MAX_SCHEMA_REPAIRS, NO_REPAIR_TASKS, schema_repairs, step_model
 from deixis.storage import db
 from deixis.storage.db import transaction
-from deixis.workflow.flow import FlowDeps, HANDLE_TASKS, ResearchFlow, TIMEOUT_RETRIED_TASKS
-from deixis.workflow.store import Store
+from deixis.workflow.run.flow import FlowDeps, HANDLE_TASKS, ResearchFlow, TIMEOUT_RETRIED_TASKS
+from deixis.workflow.run.store import Store
 from fakes import FakeAdapter, parse_step_input, valid_response
 from test_contracts import CASES, STEP_INPUTS
 

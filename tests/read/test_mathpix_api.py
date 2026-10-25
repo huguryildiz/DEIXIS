@@ -15,7 +15,7 @@ from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.documents import mathpix
 from deixis.domain import contracts
-from deixis.workflow import equations
+from deixis.workflow.read import equations
 from fakes import FakeAdapter
 from mathpix_helpers import FakeMathpix, prose, two_equations
 from test_api_flow import create, fake_fetch, openalex_client, session, wait_run

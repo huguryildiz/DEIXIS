@@ -20,8 +20,8 @@ from deixis.documents import fetch as fetch_module
 from deixis.documents import pdf
 from deixis.documents.fetch import FetchResult
 from deixis.storage import db
-from deixis.workflow.store import Store
-from deixis.workflow.worker import Worker
+from deixis.workflow.run.store import Store
+from deixis.workflow.run.worker import Worker
 from fakes import FakeAdapter
 from helpers import make_pdf
 from test_api_flow import app_for, create, openalex_client, session, wait_run
@@ -365,7 +365,7 @@ def test_o12_enospc_while_storing_an_upload_answers_507_and_leaves_no_partial_fi
         def replace(self, *_):
             raise OSError(errno.ENOSPC, "No space left on device")
 
-    monkeypatch.setattr("deixis.workflow.file_restore.os", FullOs())  # only this module's view of `os`
+    monkeypatch.setattr("deixis.workflow.read.file_restore.os", FullOs())  # only this module's view of `os`
     with TestClient(app_for(tmp_path), raise_server_exceptions=False) as client:
         session(client)
         rid = create(client, source_scope="attached")
@@ -409,7 +409,7 @@ class FakeFlow:
 
 
 def worker_library(tmp_path, monkeypatch, runs=1):
-    monkeypatch.setattr("deixis.workflow.worker.RETRY_SECONDS", 0.01)
+    monkeypatch.setattr("deixis.workflow.run.worker.RETRY_SECONDS", 0.01)
     path = tmp_path / "library.sqlite"
     conn = db.connect(path)
     db.migrate(conn)

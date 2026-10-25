@@ -5,7 +5,7 @@ import json
 import pytest
 
 from deixis.domain.rules import RevisionConflict
-from deixis.workflow import report_assembly as assembly, report_edit_check as edit_check
+from deixis.workflow.features.report import report_assembly as assembly, report_edit_check as edit_check
 
 from test_report_assembly import report_with_sections, _issues, _add_claim
 

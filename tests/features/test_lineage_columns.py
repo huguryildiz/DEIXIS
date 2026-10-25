@@ -10,8 +10,8 @@ from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.domain.rules import RevisionConflict
 from deixis.storage import db
-from deixis.workflow.store import Store
-from deixis.workflow.tables import TableStore
+from deixis.workflow.run.store import Store
+from deixis.workflow.features.tables.tables import TableStore
 from fakes import FakeAdapter
 from test_api_flow import create, session
 

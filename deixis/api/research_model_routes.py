@@ -10,7 +10,7 @@ from typing import Literal
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from deixis.workflow.views import research_view
+from deixis.workflow.run.views import research_view
 
 
 class ModelChange(BaseModel):

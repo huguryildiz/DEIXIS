@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from deixis.domain.rules import RevisionConflict
 from deixis.storage import db
-from deixis.workflow.store import NotASource
+from deixis.workflow.run.store import NotASource
 from helpers import make_pdf
 from test_api_flow import app_for, create, session, wait_run
 from test_evidence_tables import PACKET_SIZE
@@ -162,7 +162,7 @@ from fastapi.testclient import TestClient
 
 from deixis.config import Settings
 from deixis.storage.backup import create_backup, restore_backup
-from deixis.workflow import table_rows
+from deixis.workflow.features.tables import table_rows
 from test_api_flow import app_for, create, session
 from test_evidence_tables import PACKET_SIZE, table_with_edit
 

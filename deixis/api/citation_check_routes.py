@@ -23,7 +23,8 @@ from deixis.api.app import UploadRefused, disk_full_refused, store_upload
 from deixis.config import Settings
 from deixis.documents import draft_parse, pdf
 from deixis.imports import bibtex_ris
-from deixis.workflow import citation_check, file_restore, text_retry
+from deixis.workflow.answer import citation_check
+from deixis.workflow.read import file_restore, text_retry
 
 
 class PlanRequest(BaseModel):

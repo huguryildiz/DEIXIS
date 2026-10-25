@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from deixis.api.app import create_app
 from deixis.config import Settings
-from deixis.workflow import citation_check
+from deixis.workflow.answer import citation_check
 from fakes import FakeAdapter
 import io
 import zipfile

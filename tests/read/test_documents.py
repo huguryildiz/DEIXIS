@@ -9,9 +9,9 @@ import pytest
 from deixis.documents import pdf
 from helpers import make_compressed_page_pdf, make_pdf
 import hashlib
-from deixis.workflow import file_restore
+from deixis.workflow.read import file_restore
 from deixis.storage import db
-from deixis.workflow.store import Store
+from deixis.workflow.run.store import Store
 import pymupdf
 from deixis.documents import figures
 

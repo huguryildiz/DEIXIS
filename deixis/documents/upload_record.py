@@ -18,8 +18,8 @@ import httpx
 from deixis.documents import identity
 from deixis.providers import openalex
 from deixis.providers.common import ProviderRecord
-from deixis.workflow import seed_match
-from deixis.workflow.store import title_key
+from deixis.workflow.search import seed_match
+from deixis.workflow.run.store import title_key
 
 PROVIDER = "openalex"
 

@@ -11,9 +11,9 @@ import pytest
 
 from deixis.domain.reason_codes import reason
 from deixis.storage import db
-from deixis.workflow import adjudication
-from deixis.workflow.decisions import DecisionStore
-from deixis.workflow.store import Store
+from deixis.workflow.read import adjudication
+from deixis.workflow.screen.decisions import DecisionStore
+from deixis.workflow.run.store import Store
 from test_stage_decisions import one_record, record, research, search
 
 # Two fields, so a plan that keeps one and drops the other is not a single-topic accident.

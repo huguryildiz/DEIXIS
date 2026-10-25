@@ -19,7 +19,7 @@ from typing import Any
 
 from deixis.config import Settings
 from deixis.storage.db import now
-from deixis.workflow import recovery_history, text_retry
+from deixis.workflow.read import recovery_history, text_retry
 
 FORMAT = "deixis-backup-v1"
 MANIFEST = "manifest.json"

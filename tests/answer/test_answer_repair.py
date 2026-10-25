@@ -7,11 +7,11 @@ import pytest
 from deixis.config import Settings
 from deixis.domain import contracts, skill
 from deixis.storage import db
-from deixis.workflow.flow import FlowDeps, ResearchFlow
-from deixis.workflow.store import Store
+from deixis.workflow.run.flow import FlowDeps, ResearchFlow
+from deixis.workflow.run.store import Store
 from fakes import FakeAdapter, valid_response
 from test_contracts import STEP_INPUTS
-from deixis.workflow.flow import INFERENCE_CAP_KEY, FlowDeps, ResearchFlow
+from deixis.workflow.run.flow import INFERENCE_CAP_KEY, FlowDeps, ResearchFlow
 from pathlib import Path
 from deixis.domain import contracts
 

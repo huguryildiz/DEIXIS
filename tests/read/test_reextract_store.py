@@ -10,8 +10,8 @@ import pytest
 
 from deixis.documents import pdf, ocr
 from deixis.storage import db
-from deixis.workflow import recovery, equations
-from deixis.workflow.store import Store, NotRetryable, RunInProgress
+from deixis.workflow.read import recovery, equations
+from deixis.workflow.run.store import Store, NotRetryable, RunInProgress
 
 
 def chunk(text):

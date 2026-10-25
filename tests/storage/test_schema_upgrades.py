@@ -15,7 +15,7 @@ import pytest
 from deixis.config import Settings
 from deixis.storage import db, upgrades
 from deixis.storage.backup import create_backup, restore_backup
-from deixis.workflow.store import Store
+from deixis.workflow.run.store import Store
 from old_library import FOREIGN_KEYS_OFF, OLD_MIGRATIONS, master, old_files, old_library, steps_through, version_of
 
 CURRENT = db.schema_version()

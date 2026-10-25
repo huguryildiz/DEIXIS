@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from deixis.workflow.lineage_run import LineagePlanner
-from deixis.workflow.lineage_store import LineageStore
+from deixis.workflow.features.lineage.lineage_run import LineagePlanner
+from deixis.workflow.features.lineage.lineage_store import LineageStore
 from fakes import FakeAdapter
 from fakes import valid_response
 from test_lineage_plan import api as plan_api

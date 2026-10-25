@@ -16,9 +16,9 @@ from deixis.config import Settings
 from deixis.domain import contracts, skill
 from deixis.storage import db
 from deixis.storage.db import new_id, now, transaction
-from deixis.workflow.flow import FlowDeps, ResearchFlow
-from deixis.workflow.store import Store
-from deixis.workflow.tables import InvalidTableInput, TableStore
+from deixis.workflow.run.flow import FlowDeps, ResearchFlow
+from deixis.workflow.run.store import Store
+from deixis.workflow.features.tables.tables import InvalidTableInput, TableStore
 from fakes import FakeAdapter, valid_response
 from test_api_flow import app_for, create, session, wait_run
 from test_contracts import STEP_INPUTS

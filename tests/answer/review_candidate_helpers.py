@@ -5,9 +5,9 @@ import hashlib
 import json
 import pytest
 from deixis.storage import db
-from deixis.workflow.candidates_hits import merge_and_cut
-from deixis.workflow.candidates_store import CandidateStore
-from deixis.workflow.review_snapshot import build_snapshot
+from deixis.workflow.features.candidates.candidates_hits import merge_and_cut
+from deixis.workflow.features.candidates.candidates_store import CandidateStore
+from deixis.workflow.features.review.review_snapshot import build_snapshot
 from review_helpers import report_with_sections, review_lib
 from test_candidate_store import provider_record
 from deixis.documents.pdf import Extraction, PageText, chunk_page

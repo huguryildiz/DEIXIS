@@ -94,7 +94,7 @@ def test_research_purge_keeps_saved_items_and_their_files_but_removes_unsaved_on
 
 
 from deixis.storage import db
-from deixis.workflow.views import library_view
+from deixis.workflow.run.views import library_view
 from test_lineage_store import make_library
 
 

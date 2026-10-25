@@ -14,11 +14,13 @@ from deixis.config import Settings
 from deixis.domain import skill
 from deixis.storage import db
 from deixis.storage.db import new_id, now
-from deixis.workflow import answer as fast_answer, screen_more, small_batch
-from deixis.workflow.views import research_view
-from deixis.workflow.flow import FlowDeps, ResearchFlow
-from deixis.workflow.store import Store
-from deixis.workflow.worker import Worker
+from deixis.workflow.answer import answer as fast_answer
+from deixis.workflow.screen import screen_more
+from deixis.workflow.search import small_batch
+from deixis.workflow.run.views import research_view
+from deixis.workflow.run.flow import FlowDeps, ResearchFlow
+from deixis.workflow.run.store import Store
+from deixis.workflow.run.worker import Worker
 from fakes import FakeAdapter, valid_response
 from overlap_flow_helpers import discover, output
 from test_abstract_flow import HALF
@@ -264,7 +266,7 @@ def admitted_row_on_another_version(lib):
 
 
 def late_revision_of(lib):
-    from deixis.workflow import late_revision
+    from deixis.workflow.answer import late_revision
     from test_fast_path_late_revision import read_late, row as late_row
 
     read_late(lib)
@@ -276,7 +278,7 @@ def late_revision_of(lib):
 
 
 def test_a_late_revision_keeps_a_screen_more_row_on_another_version(tmp_path):
-    from deixis.workflow import late_revision
+    from deixis.workflow.answer import late_revision
     from test_fast_path_late_revision import prepared
 
     lib = prepared(tmp_path)

@@ -8,7 +8,7 @@ import asyncio
 import json
 from fastapi.testclient import TestClient
 from deixis.domain import contracts
-from deixis.workflow import answer as fast_answer, followup
+from deixis.workflow.answer import answer as fast_answer, followup
 from fakes import FakeAdapter, valid_response
 from helpers import make_pdf
 from test_api_flow import app_for, create, session, wait_run
@@ -289,7 +289,7 @@ def test_the_selection_puts_one_passage_per_work_first_and_ranks_the_rest(tmp_pa
     from types import SimpleNamespace
     from deixis.storage import db
     from deixis.storage.db import new_id, now, transaction
-    from deixis.workflow.store import Store
+    from deixis.workflow.run.store import Store
     conn = db.connect(tmp_path / "library.sqlite")
     db.migrate(conn)
     store = Store(conn)

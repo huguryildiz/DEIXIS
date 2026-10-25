@@ -10,12 +10,12 @@ import pytest
 from deixis.config import Settings
 from deixis.domain import skill
 from deixis.storage import db
-from deixis.workflow.flow import LEDGER_COVERAGE_KEY, FlowDeps, ResearchFlow
-from deixis.workflow.store import Store
+from deixis.workflow.run.flow import LEDGER_COVERAGE_KEY, FlowDeps, ResearchFlow
+from deixis.workflow.run.store import Store
 from fakes import FakeAdapter, valid_response
 from deixis.domain import contracts
 from deixis.models.adapter import ModelStepResult
-from deixis.workflow.flow import LEDGER_COVERAGE_KEY
+from deixis.workflow.run.flow import LEDGER_COVERAGE_KEY
 
 
 MISSING = object()
@@ -216,7 +216,7 @@ def test_malformed_ledgers_through_the_whole_pipeline_never_stop_the_answer(tmp_
 
 
 def test_the_view_names_left_out_works_from_their_records_and_null_for_an_answer_without_a_ledger(tmp_path):
-    from deixis.workflow import views
+    from deixis.workflow.run import views
 
     # Source two left out with a located quote and a note naming another title; source three with no entry.
     def quoted(si):

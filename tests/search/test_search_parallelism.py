@@ -25,7 +25,8 @@ import pytest
 from deixis.providers import biorxiv as biorxiv_module
 from deixis.providers import common
 from deixis.providers.registry import CONNECTORS
-from deixis.workflow import flow, search_page
+from deixis.workflow.run import flow
+from deixis.workflow.search import search_page
 from test_search_paging import ALPHA, BETA, PagedProviders, app_for, client_of, discover, keyword_plan, keyword_reader, library, read_pages, wait
 
 QUESTION = "What is the effect of packet size on energy consumption in wireless sensor networks?"

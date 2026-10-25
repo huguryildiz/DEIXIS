@@ -11,10 +11,10 @@ from deixis.config import Settings
 from deixis.domain import skill
 from deixis.storage import db
 from deixis.storage.db import transaction
-from deixis.workflow.concurrency import ModelCallLimiter
-from deixis.workflow.flow import FlowDeps, ResearchFlow
-from deixis.workflow.store import Store
-from deixis.workflow.tables import TableStore
+from deixis.workflow.run.concurrency import ModelCallLimiter
+from deixis.workflow.run.flow import FlowDeps, ResearchFlow
+from deixis.workflow.run.store import Store
+from deixis.workflow.features.tables.tables import TableStore
 from fakes import FakeAdapter, valid_response
 from test_evidence_tables import PACKET_SIZE
 

@@ -16,8 +16,8 @@ import connector_baseline as baseline
 from connector_baseline import SYNTHETIC_KEY, deny_network, response_spec, fake_clock
 from deixis.providers import common, contract, facade, registry
 from deixis.storage import db
-from deixis.workflow.flow import ResearchFlow
-from deixis.workflow.store import Store
+from deixis.workflow.run.flow import ResearchFlow
+from deixis.workflow.run.store import Store
 from test_candidate_flow import queue_kill
 from test_candidate_flow import lib  # noqa: F401  (fixtures used by name)
 

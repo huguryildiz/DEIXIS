@@ -11,9 +11,11 @@ from __future__ import annotations
 import pytest
 
 from deixis.storage import db
-from deixis.workflow import probes, queue, views
-from deixis.workflow.decisions import DecisionStore
-from deixis.workflow.store import Store
+from deixis.workflow.search import probes
+from deixis.workflow.screen import queue
+from deixis.workflow.run import views
+from deixis.workflow.screen.decisions import DecisionStore
+from deixis.workflow.run.store import Store
 from test_queue import Lib, provider_record, queued
 
 

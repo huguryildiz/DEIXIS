@@ -133,8 +133,8 @@ from deixis.documents import fetch as fetch_module  # noqa: E402
 from deixis.documents.fetch import FetchResult  # noqa: E402
 from deixis.models.adapter import ModelStepResult  # noqa: E402
 from deixis.storage import db  # noqa: E402
-from deixis.workflow.store import Store  # noqa: E402
-from deixis.workflow.vocabulary import VERY_LARGE_COUNT  # noqa: E402
+from deixis.workflow.run.store import Store  # noqa: E402
+from deixis.workflow.search.vocabulary import VERY_LARGE_COUNT  # noqa: E402
 from fakes import parse_step_input, valid_response  # noqa: E402
 from keyring.backend import KeyringBackend  # noqa: E402
 from keyring.errors import PasswordDeleteError  # noqa: E402
@@ -1229,7 +1229,7 @@ class ScriptedCodex:
         PDF through `Store.replace_asset`, the call the "Replace PDF" route makes (D45). The frozen seed excerpt then names
         a file no longer in use, so `seed_status` reads `stale`."""
         from deixis.documents import pdf
-        from deixis.workflow.store import ACTIVE_RUN_STATUSES
+        from deixis.workflow.run.store import ACTIVE_RUN_STATUSES
 
         store = self.app.state.store
         papers = self.app.state.worker.flow.deps.settings.papers_dir
@@ -1475,7 +1475,7 @@ def main() -> None:
         import test_fast_path_answer
         test_fast_path_answer.valid_response = late_pdf_answer  # read when prepared() builds its FakeAdapter
         from test_fast_path_late_revision import prepared, read_late, drain
-        from deixis.workflow import late_revision
+        from deixis.workflow.answer import late_revision
         lib = prepared(args.data_dir)
         # The revision's own review run (D255) records a review only when a reviewer is set; V1's ran without one.
         lib.store.set_setting("reviewer", {"model_connection": "fake", "model": "fake-model", "reasoning_effort": None})

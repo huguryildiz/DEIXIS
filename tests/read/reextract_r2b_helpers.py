@@ -68,6 +68,6 @@ def source(lib, rid=None):
 
 
 def write(lib, caller="upload", rid=None):
-    from deixis.workflow import file_restore
+    from deixis.workflow.read import file_restore
     return asyncio.run(file_restore.store_pdf_file(lib.store, lib.settings.papers_dir, lib.settings.recovery_dir,
                        lib.data, caller=caller, research_id=rid or lib.rid))

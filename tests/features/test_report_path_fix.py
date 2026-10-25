@@ -15,7 +15,7 @@ import pytest
 from deixis.domain import contracts
 from deixis.models.adapter import ModelStepResult
 from deixis.storage.db import new_id
-from deixis.workflow.flow import RunStopped
+from deixis.workflow.run.flow import RunStopped
 from fakes import FakeAdapter
 from test_report_step_input import report_flow
 from test_report_anchor_repair import two_cells, issues

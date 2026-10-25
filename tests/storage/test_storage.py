@@ -192,7 +192,7 @@ from fastapi.testclient import TestClient
 from deixis.providers import openalex
 from deixis.storage import db
 from deixis.storage.db import now
-from deixis.workflow.store import Store
+from deixis.workflow.run.store import Store
 from test_api_flow import app_for, session
 
 WORK = {

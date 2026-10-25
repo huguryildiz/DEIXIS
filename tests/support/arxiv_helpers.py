@@ -161,7 +161,7 @@ def fetch_child(db_path: str, data_dir: str, port: int, key: str, results, clock
 
     from deixis.documents import arxiv_source
     from deixis.storage import db
-    from deixis.workflow.store import Store
+    from deixis.workflow.run.store import Store
 
     install_socket_guard()
     point_at_local_server(port)

@@ -1,6 +1,6 @@
 """The built-in embedding models and rerankers: GGUF files from `builtin_catalog`, run by llama.cpp's `llama-server`.
 
-Each catalog model is downloaded, checked, removed and chosen on its own (`workflow/local_embedding_service.py`). A
+Each catalog model is downloaded, checked, removed and chosen on its own (`workflow/run/local_embedding_service.py`). A
 chosen model gets its own `llama-server` process the first time it is asked for, one model per process, on a free
 loopback port with a random API key of that process; `LocalModels` keeps one server per model and stops it after
 LOCAL_IDLE_SECONDS without a request. DEIXIS talks to it through the loopback client (no proxy, no redirects).

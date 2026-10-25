@@ -13,7 +13,7 @@ from fastapi import Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from deixis.documents import embeddings, rerankers
-from deixis.workflow import spend, spend_estimate
+from deixis.workflow.run import spend, spend_estimate
 
 
 class SpendingChange(BaseModel):

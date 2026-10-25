@@ -18,7 +18,7 @@ from deixis.config import Settings
 from deixis.documents import fetch
 from deixis.providers import scopus
 from deixis.storage import data_location
-from deixis.workflow import queue
+from deixis.workflow.screen import queue
 from fakes import FakeAdapter
 from test_api_flow import app_for
 from test_api_flow import create

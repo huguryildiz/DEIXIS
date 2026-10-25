@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.models.adapter import ModelStepResult
-from deixis.workflow import citation_check
+from deixis.workflow.answer import citation_check
 from fakes import FakeAdapter, envelope, valid_response
 from test_citation_check_text import A_PAGES, Net, frozen, pair_rows, session, start, upload
 

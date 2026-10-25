@@ -3,9 +3,9 @@ import itertools
 
 import pytest
 
-from deixis.workflow.candidates_hits import merge_and_cut
-from deixis.workflow.candidates_status import STATUSES, derive_status
-from deixis.workflow.candidates_terms import block_vocabulary, compile_queries
+from deixis.workflow.features.candidates.candidates_hits import merge_and_cut
+from deixis.workflow.features.candidates.candidates_status import STATUSES, derive_status
+from deixis.workflow.features.candidates.candidates_terms import block_vocabulary, compile_queries
 
 ELEMENTS = ["ele_1", "ele_2"]
 
@@ -93,9 +93,9 @@ import json
 import pytest
 
 from deixis.storage import db
-from deixis.workflow.candidates_hits import concept_scores, concepts, merge_and_cut, rank_and_cut, rank_concepts_and_cut
-from deixis.workflow.candidates_store import InvalidCandidateInput
-from deixis.workflow.candidates_terms import compile_queries, block_vocabulary
+from deixis.workflow.features.candidates.candidates_hits import concept_scores, concepts, merge_and_cut, rank_and_cut, rank_concepts_and_cut
+from deixis.workflow.features.candidates.candidates_store import InvalidCandidateInput
+from deixis.workflow.features.candidates.candidates_terms import compile_queries, block_vocabulary
 from test_candidate_store import make_library, provider_record, query, start
 from test_candidate_flow import lib  # noqa: F401  (fixtures used by name)
 

@@ -18,10 +18,10 @@ from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.documents.fetch import FetchResult
 from deixis.models.adapter import ModelStepResult
-from deixis.workflow import lookups
+from deixis.workflow.search import lookups
 from deixis.providers import common
 from deixis.providers.registry import CONNECTORS
-from deixis.workflow.decisions import DecisionStore
+from deixis.workflow.screen.decisions import DecisionStore
 from fakes import FakeAdapter, envelope, valid_response
 
 QUESTION = "What is the effect of packet size on energy consumption in wireless sensor networks?"

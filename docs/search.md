@@ -83,7 +83,7 @@ For a question that asks for a report, an answer run normally starts on its own 
 
 ## Depth numbers
 
-From `MODES` in [fast_path.py](../deixis/workflow/fast_path.py), except the answer passage budget, which comes from the effort budgets in [rules.py](../deixis/domain/rules.py); all are frozen into each run when it starts. Only search, ranking and read apply a cutoff; plan and answer time is recorded, not enforced. A run on a model that runs on your own computer has no read cutoff.
+From `MODES` in [fast_path.py](../deixis/workflow/run/fast_path.py), except the answer passage budget, which comes from the effort budgets in [rules.py](../deixis/domain/rules.py); all are frozen into each run when it starts. Only search, ranking and read apply a cutoff; plan and answer time is recorded, not enforced. A run on a model that runs on your own computer has no read cutoff.
 
 | | Quick | Standard | Detailed |
 |---|---|---|---|
@@ -110,9 +110,9 @@ The score in [benchmark.md](benchmark.md) is recall@k: the share of a question's
 
 ## Where it lives in the code
 
-- [workflow/fast_path.py](../deixis/workflow/fast_path.py): stages, time allocations, depth numbers
-- [workflow/flow.py](../deixis/workflow/flow.py): plan stage and run order
-- [workflow/search.py](../deixis/workflow/search.py), [workflow/fast_chain.py](../deixis/workflow/fast_chain.py), [workflow/fast_embedding.py](../deixis/workflow/fast_embedding.py): search stage
-- [workflow/ranking.py](../deixis/workflow/ranking.py), [workflow/small_batch.py](../deixis/workflow/small_batch.py), [documents/rerankers.py](../deixis/documents/rerankers.py): ranking and the frozen list
-- [workflow/read.py](../deixis/workflow/read.py), [workflow/abstract_stage.py](../deixis/workflow/abstract_stage.py), [workflow/adjudication.py](../deixis/workflow/adjudication.py): reading
-- [workflow/answer.py](../deixis/workflow/answer.py), [workflow/late_revision.py](../deixis/workflow/late_revision.py): answer and late revision
+- [workflow/run/fast_path.py](../deixis/workflow/run/fast_path.py): stages, time allocations, depth numbers
+- [workflow/run/flow.py](../deixis/workflow/run/flow.py): plan stage and run order
+- [workflow/search/search.py](../deixis/workflow/search/search.py), [workflow/search/fast_chain.py](../deixis/workflow/search/fast_chain.py), [workflow/search/fast_embedding.py](../deixis/workflow/search/fast_embedding.py): search stage
+- [workflow/search/ranking.py](../deixis/workflow/search/ranking.py), [workflow/search/small_batch.py](../deixis/workflow/search/small_batch.py), [documents/rerankers.py](../deixis/documents/rerankers.py): ranking and the frozen list
+- [workflow/read/read.py](../deixis/workflow/read/read.py), [workflow/screen/abstract_stage.py](../deixis/workflow/screen/abstract_stage.py), [workflow/read/adjudication.py](../deixis/workflow/read/adjudication.py): reading
+- [workflow/answer/answer.py](../deixis/workflow/answer/answer.py), [workflow/answer/late_revision.py](../deixis/workflow/answer/late_revision.py): answer and late revision

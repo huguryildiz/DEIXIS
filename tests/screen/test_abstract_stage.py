@@ -9,7 +9,7 @@ import pytest
 
 from deixis.domain.reason_codes import REASON_CODES, reason
 from deixis.domain.rules import ABSTRACT_QUOTE_MIN_CHARS
-from deixis.workflow import abstract_stage
+from deixis.workflow.screen import abstract_stage
 
 BLOCKS = {"setting": ["greenhouse tomato"], "task": ["irrigation scheduling"], "outcome": ["marketable yield"]}
 ABSTRACT = "We vary the irrigation scheduling of a greenhouse tomato crop and report the marketable yield."

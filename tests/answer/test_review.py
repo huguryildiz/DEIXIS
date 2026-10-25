@@ -4,15 +4,15 @@ import copy
 import json
 import pytest
 from deixis.storage import db
-from deixis.workflow.report_store import ReportStore
-from deixis.workflow.review_store import ReviewStore
+from deixis.workflow.features.report.report_store import ReportStore
+from deixis.workflow.features.review.review_store import ReviewStore
 from fakes import FakeAdapter
 from review_helpers import report_with_sections, review_lib, all_rows
 from review_run_helpers import review_api, body, preview, start, read, turn, control
 from deixis.domain import contracts
 from deixis.models.adapter import ModelStepResult
-from deixis.workflow import review_run as reviews
-from deixis.workflow.review_store import ReviewStore
+from deixis.workflow.features.review import review_run as reviews
+from deixis.workflow.features.review.review_store import ReviewStore
 from fakes import FakeAdapter
 from review_helpers import report_with_sections, review_lib
 from review_run_helpers import review_api, body, start, read, turn, control, two_groups, finding_response
@@ -22,13 +22,13 @@ import time
 from review_run_helpers import review_api, start, read, control, terminal, two_groups, finding_response
 import ast
 from pathlib import Path
-from deixis.workflow.review_snapshot import build_snapshot
-from deixis.workflow.review_stale import stale_reasons
+from deixis.workflow.features.review.review_snapshot import build_snapshot
+from deixis.workflow.features.review.review_stale import stale_reasons
 from deixis.domain import contracts, skill
-from deixis.workflow.flow import CAPABILITIES
+from deixis.workflow.run.flow import CAPABILITIES
 from review_helpers import report_with_sections, review_lib, si
-from deixis.workflow.review_stale import stale_reasons
-from deixis.workflow.review_store import NotFound
+from deixis.workflow.features.review.review_stale import stale_reasons
+from deixis.workflow.features.review.review_store import NotFound
 from review_helpers import report_with_sections, review_lib, snapshot, make_answer
 from test_report_claim_links import edit
 
@@ -319,10 +319,11 @@ def test_real_worker_api_lifecycle_denies_every_other_write_and_keeps_all_row_ha
 
 
 def test_review_package_import_and_write_boundary():
-    root = Path("deixis/workflow")
+    root = Path("deixis/workflow/features/review")
+    assert list(root.glob("review_*.py"))
     assert (root / "review_run.py").is_file()
-    forbidden = {"deixis.workflow.store", "deixis.workflow.report_store", "deixis.workflow.tables",
-                 "deixis.workflow.candidates_store", "deixis.workflow.lineage_store", "deixis.workflow.flow"}
+    forbidden = {"deixis.workflow.run.store", "deixis.workflow.features.report.report_store", "deixis.workflow.features.tables.tables",
+                 "deixis.workflow.features.candidates.candidates_store", "deixis.workflow.features.lineage.lineage_store", "deixis.workflow.run.flow"}
     for file in root.glob("review_*.py"):
         tree = ast.parse(file.read_text())
         type_only = set()

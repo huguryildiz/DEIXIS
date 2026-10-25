@@ -71,7 +71,7 @@ def runs(*parts: Inline) -> tuple[Run | Math, ...]:
 
 def with_math(text: str, *, bold: bool = False, italic: bool = False) -> tuple[Run | Math, ...]:
     """The text as runs, each `$...$` span (found as the LaTeX export finds them) as a Math part."""
-    from deixis.workflow.report_latex_math import split_text
+    from deixis.workflow.features.report.report_latex_math import split_text
     return runs(*(Math(value) if kind == "math" else Run(value, bold, italic) for kind, value in split_text(text)))
 
 

@@ -5,7 +5,7 @@ the code. Passing shows the rule (which forms are looked for, when the signal ru
 comparison keeps its order), not that the order finds the papers a person would choose.
 """
 
-from deixis.workflow import ranking
+from deixis.workflow.search import ranking
 
 TASK = {"setting": ["diffusion channel"], "task": ["pulse-based release", "rate-based release", "release scheduling"]}
 

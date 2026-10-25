@@ -53,10 +53,10 @@ import sqlite3
 import pytest
 
 from deixis.storage import db
-from deixis.workflow.watch_store import TABLES
+from deixis.workflow.features.watch.watch_store import TABLES
 from watch_helpers import api, watch_offline, turn, now_check, rows, page, work
 from test_watch_scheduler import baseline, loop, schedule, Clock
-from deixis.workflow.watch_scheduler import WatchScheduler
+from deixis.workflow.features.watch.watch_scheduler import WatchScheduler
 
 
 def histories(api):
@@ -147,7 +147,7 @@ import pytest
 
 from deixis.providers import openalex
 from deixis.storage import backup, db
-from deixis.workflow.store import Store
+from deixis.workflow.run.store import Store
 
 
 @pytest.fixture(autouse=True)
@@ -169,7 +169,7 @@ def lib(tmp_path):
 
 
 def test_existing_research_view_with_watch_run(lib):
-    from deixis.workflow.views import research_view
+    from deixis.workflow.run.views import research_view
     conn, store, rid = lib
     run = store.create_run(rid, "watch_check", {}, None)
     assert research_view(store, rid)["research"]["id"] == rid

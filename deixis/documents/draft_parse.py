@@ -12,7 +12,7 @@ Markers, each with the sentence it sits in:
 - author–year `(Zeng et al., 2022)`, `(Zeng and Li, 2022; Kim, 2021)`, `Zeng et al. (2022)`, `2022a/b`.
 A bracket that is not a numeric list but holds a digit, an `@` or a single word is `unrecognized`, as is a `\\cite` whose
 keys cannot be read and a parenthesis that starts like an author–year citation but does not parse. Whether an
-author–year item names exactly one entry is decided later against the bibliography (`workflow/citation_check.py`);
+author–year item names exactly one entry is decided later against the bibliography (`workflow/answer/citation_check.py`);
 nothing here guesses. Known limits: a bracketed interval such as `[0, 1]` reads as two numeric citations; superscript
 and footnote citations are not read; a capitalised word before a bare year, `Results (2022)`, reads as an author.
 

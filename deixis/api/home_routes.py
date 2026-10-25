@@ -11,8 +11,8 @@ from typing import Any
 
 from fastapi import Request
 
-from deixis.workflow.store import Store
-from deixis.workflow.views import answer_is_current
+from deixis.workflow.run.store import Store
+from deixis.workflow.run.views import answer_is_current
 
 MAX_SUGGESTIONS = 2
 

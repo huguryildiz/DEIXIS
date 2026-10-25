@@ -10,8 +10,8 @@ the `sw` workflow; it says nothing about how a real model or a real person reads
 
 import pytest
 
-from deixis.workflow import fulltext
-from deixis.workflow.decisions import DecisionStore
+from deixis.workflow.read import fulltext
+from deixis.workflow.screen.decisions import DecisionStore
 from fakes import FakeAdapter, valid_response
 from test_abstract_flow import records_of, responder
 from test_adjudication_flow import adj_calls, app_for, client_of, discover, disagree_response, papers, wait, wait_kind

@@ -12,7 +12,7 @@ import pytest
 from deixis.documents import ocr, pdf
 from deixis.domain import contracts
 from deixis.storage import db
-from deixis.workflow.store import Store
+from deixis.workflow.run.store import Store
 from helpers import make_scanned_pdf
 import sys
 import time

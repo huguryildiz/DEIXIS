@@ -12,7 +12,7 @@ from typing import Any
 from fastapi import Query, Request
 from fastapi.responses import Response
 
-from deixis.workflow import statement_check
+from deixis.workflow.answer import statement_check
 
 
 def register_statement_check_routes(app) -> None:

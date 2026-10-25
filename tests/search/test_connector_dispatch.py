@@ -20,7 +20,7 @@ import test_connector_facade as equality
 from test_connector_contract import dispatch_flow
 from test_provider_records import record
 from deixis.providers import common, contract, facade, registry
-from deixis.workflow import flow as flow_module
+from deixis.workflow.run import flow as flow_module
 
 
 @pytest.fixture(autouse=True)
@@ -105,7 +105,8 @@ def test_dispatch_equivalence(provider_id, kind, q, cursor_kind, retries, limite
 
 
 def test_workflow_contains_no_registry_search_call():
-    root = Path(flow_module.__file__).parent
+    root = Path(flow_module.__file__).parents[1]  # all of workflow/, not only run/
+    assert len(list(root.rglob("*.py"))) > 100
     assert not [p.name for p in root.rglob("*.py") if "connector.search(" in p.read_text()]
 
 

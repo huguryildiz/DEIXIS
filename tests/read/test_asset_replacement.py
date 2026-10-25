@@ -7,7 +7,7 @@ and that earlier evidence keeps its passages; it says nothing about extraction o
 from collections import Counter
 from types import SimpleNamespace
 import pytest
-from deixis.workflow.store import RunInProgress, SameFile
+from deixis.workflow.run.store import RunInProgress, SameFile
 from test_table_extraction import cell, execute, fill, library, recheck, stored_inputs
 
 

@@ -1,4 +1,4 @@
-"""The evidence report as DOCX: the Markdown export (workflow/report_export.py `to_markdown`) block for block.
+"""The evidence report as DOCX: the Markdown export (workflow/features/report/report_export.py `to_markdown`) block for block.
 
 It reads the same report view and corpus and takes every sentence from the shared `export_text` helpers, so the
 headings, claims, reference numbers, Table I, references and closing notes match the Markdown and LaTeX files. Stored
@@ -17,9 +17,9 @@ from typing import Any
 from deixis.documents.jats import RENDITION_SQL
 from deixis.exports import ooxml
 from deixis.exports.text import OCR_LABEL, locator_text, translator
-from deixis.workflow import report_export_text as export_text
-from deixis.workflow.report_store import DISPLAY_ORDER, ReportStore
-from deixis.workflow.store import NotFound, Store
+from deixis.workflow.features.report import report_export_text as export_text
+from deixis.workflow.features.report.report_store import DISPLAY_ORDER, ReportStore
+from deixis.workflow.run.store import NotFound, Store
 
 
 def plain(value: Any) -> str:
@@ -202,7 +202,7 @@ def blocks(view: dict[str, Any], *, title: str, corpus: dict[str, int] | None,
 
 def export_docx(store: Store, research_id: str, report_id: str) -> tuple[bytes, str]:
     """The DOCX bytes and file name; refuses an unfinished report as the Markdown export does."""
-    from deixis.workflow.views import report_view
+    from deixis.workflow.run.views import report_view
 
     view = report_view(store, research_id, report_id)
     export_text.ensure_report_finished(view)

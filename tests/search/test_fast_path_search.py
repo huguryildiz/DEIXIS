@@ -14,8 +14,9 @@ from deixis.config import Settings
 from deixis.documents import embeddings, local_embedding
 from deixis.providers import facade, openalex
 from deixis.providers.common import ProviderRecord, SearchOutcome
-from deixis.workflow import fast_embedding, fast_path, search as fast_search, ranking
-from deixis.workflow.flow import ResearchFlow
+from deixis.workflow.search import fast_embedding, search as fast_search, ranking
+from deixis.workflow.run import fast_path
+from deixis.workflow.run.flow import ResearchFlow
 from test_fast_path_clock import library
 from deixis.api.app import create_app
 from deixis.providers.registry import CONNECTORS

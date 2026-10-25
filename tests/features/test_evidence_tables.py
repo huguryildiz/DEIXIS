@@ -14,8 +14,8 @@ from deixis.domain.rules import RevisionConflict
 from deixis.storage import db
 from deixis.storage.backup import create_backup, restore_backup
 from deixis.storage.db import new_id, now, transaction
-from deixis.workflow.store import Store
-from deixis.workflow.tables import InvalidTableInput, TableStore
+from deixis.workflow.run.store import Store
+from deixis.workflow.features.tables.tables import InvalidTableInput, TableStore
 from helpers import make_pdf
 from test_api_flow import app_for, create, session
 

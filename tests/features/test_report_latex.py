@@ -10,7 +10,7 @@ import re
 import pytest
 
 from deixis.domain.rules import RevisionConflict
-from deixis.workflow import report_latex as latex
+from deixis.workflow.features.report import report_latex as latex
 from report_latex_cases import CASES, ERRORS, EXCEPTIONS, SKIPPED_KEY
 
 FIXTURES = Path(__file__).parent.parent / 'fixtures' / 'report_latex'

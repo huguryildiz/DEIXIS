@@ -118,7 +118,7 @@ def upload(client, store, rid, title, reason):
 
 
 def test_adding_changes_no_search_count(api):
-    from deixis.workflow import prisma_s
+    from deixis.workflow.search import prisma_s
 
     client, store, rid = api
     store.upsert_provider_source("openalex", record("W50"), None)

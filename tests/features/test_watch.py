@@ -11,7 +11,7 @@ import pytest
 from deixis.config import Settings
 from deixis.providers import registry
 from deixis.storage import backup, db
-from deixis.workflow.watch_store import TABLES
+from deixis.workflow.features.watch.watch_store import TABLES
 from watch_helpers import api, watch_offline, watch_api, create, now_check, turn, read, control, page, work, rows, hashes, add_included
 
 
@@ -221,7 +221,7 @@ import pytest
 
 from deixis.providers import common, registry
 from deixis.storage import db
-from deixis.workflow import watch_check as policy
+from deixis.workflow.features.watch import watch_check as policy
 import test_fast_path_clock
 from watch_helpers import api, watch_offline, watch_api, create, now_check, turn, read, control, work, page, add_included
 
@@ -315,7 +315,7 @@ import pytest
 
 from deixis.providers import openalex
 from deixis.storage import db
-from deixis.workflow import watch_check as policy
+from deixis.workflow.features.watch import watch_check as policy
 from watch_helpers import api, watch_offline, create, now_check, turn, read, page, work, record, add_included
 
 
@@ -401,7 +401,7 @@ def test_followup_new_counts_only_this_researchs_new_records_even_when_disabled(
     assert counts(api) == {api.rid: 3, other: 1}
 
 
-from deixis.workflow.search import sent_plan
+from deixis.workflow.search.search import sent_plan
 
 
 def test_a_watch_follows_the_dated_queries_a_fast_plan_sends():
@@ -424,7 +424,8 @@ import re
 
 
 def test_watch_package_has_no_library_writer_or_sql_mutation():
-    root = Path("deixis/workflow")
+    root = Path("deixis/workflow/features/watch")
+    assert list(root.glob("watch_*.py")), "the watch package moved"
     forbidden_calls = {"record_search", "add_search_run", "upsert_provider_source", "add_to_corpus", "link_records"}
     library = {"sources", "source_versions", "works", "corpus_memberships", "candidates", "candidate_hits",
                "search_runs", "identifier_mappings", "record_links", "selections", "passages"}

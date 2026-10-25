@@ -10,7 +10,7 @@ no completed discovery list or nothing screenable is left. Pause, resume and can
 from fastapi import Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
-from deixis.workflow import screen_more
+from deixis.workflow.screen import screen_more
 
 
 def register_screen_more_routes(app):

@@ -18,8 +18,8 @@ from deixis.documents.fetch import FetchResult
 from deixis.models.adapter import ModelStepResult
 from deixis.providers.registry import CONNECTORS
 from deixis.storage import db
-from deixis.workflow.vocabulary import VERY_LARGE_COUNT
-from deixis.workflow.store import Store
+from deixis.workflow.search.vocabulary import VERY_LARGE_COUNT
+from deixis.workflow.run.store import Store
 from fakes import FakeAdapter
 
 QUESTION = "What is the effect of packet size on energy consumption in wireless sensor networks?"
@@ -109,7 +109,7 @@ def test_the_frozen_protocol_holds_the_concept_blocks_and_is_the_same_on_a_secon
         rid, run_id = start(client, QUESTION)
         wait(client, rid, run_id)
     from deixis.domain.canonical import sha256_hex
-    from deixis.workflow import protocol
+    from deixis.workflow.search import protocol
 
     store = store_at(tmp_path)
     rows = store.conn.execute("SELECT * FROM protocol_records WHERE research_id = ?", (rid,)).fetchall()

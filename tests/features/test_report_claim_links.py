@@ -4,8 +4,8 @@
 import pytest
 
 from deixis.storage.db import new_id
-from deixis.workflow.tables import InvalidTableInput, TableStore
-from deixis.workflow.views import report_view
+from deixis.workflow.features.tables.tables import InvalidTableInput, TableStore
+from deixis.workflow.run.views import report_view
 from test_report_assembly import report_with_sections, _add_claim, _link, _gap
 from test_report_edit_check import finish
 from test_report_store import lib

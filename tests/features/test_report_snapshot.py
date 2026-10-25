@@ -6,10 +6,10 @@ import pytest
 
 from deixis.storage import db
 from deixis.storage.db import new_id, transaction
-from deixis.workflow.report_snapshot import build_snapshot
-from deixis.workflow.report_store import ReportStore
-from deixis.workflow.store import Store
-from deixis.workflow.tables import TableStore, report_ready
+from deixis.workflow.features.report.report_snapshot import build_snapshot
+from deixis.workflow.features.report.report_store import ReportStore
+from deixis.workflow.run.store import Store
+from deixis.workflow.features.tables.tables import TableStore, report_ready
 
 
 COLUMN = {"name": "Packet size", "instruction": "Record packet size", "answer_format": "text",

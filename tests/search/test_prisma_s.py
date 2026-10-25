@@ -14,8 +14,8 @@ import re
 import pytest
 
 from deixis.storage import db
-from deixis.workflow import prisma_s
-from deixis.workflow.store import Store
+from deixis.workflow.search import prisma_s
+from deixis.workflow.run.store import Store
 from test_probes import Probe
 from test_queue import body
 from test_queue_api import quiet_app

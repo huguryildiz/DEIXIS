@@ -15,9 +15,9 @@ from deixis.exports import ooxml
 from deixis.exports import report as report_export
 from deixis.exports import table as table_export
 from deixis.exports.text import attachment
-from deixis.workflow.store import NotFound
-from deixis.workflow.tables import TableStore
-from deixis.workflow.views import research_view
+from deixis.workflow.run.store import NotFound
+from deixis.workflow.features.tables.tables import TableStore
+from deixis.workflow.run.views import research_view
 
 
 def _download(data: bytes, media_type: str, name: str) -> Response:

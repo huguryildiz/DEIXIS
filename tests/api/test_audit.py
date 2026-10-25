@@ -15,8 +15,10 @@ import json
 import pytest
 
 from deixis.storage import db
-from deixis.workflow import audit, probes, queue, views
-from deixis.workflow.store import Store
+from deixis.workflow.screen import audit, queue
+from deixis.workflow.search import probes
+from deixis.workflow.run import views
+from deixis.workflow.run.store import Store
 from test_queue import Lib, queued
 from test_queue_api import quiet_app
 

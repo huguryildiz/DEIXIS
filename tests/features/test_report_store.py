@@ -6,10 +6,10 @@ import pytest
 
 from deixis.domain.rules import RevisionConflict
 from deixis.storage import db
-from deixis.workflow.report_store import ReportStore
-from deixis.workflow.store import Store
-from deixis.workflow.tables import InvalidTableInput, TableStore
-from deixis.workflow.views import report_view
+from deixis.workflow.features.report.report_store import ReportStore
+from deixis.workflow.run.store import Store
+from deixis.workflow.features.tables.tables import InvalidTableInput, TableStore
+from deixis.workflow.run.views import report_view
 from test_report_flow import report_flow
 
 

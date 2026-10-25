@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 
 from deixis.api.app import create_app
 from deixis.documents import ocr, pdf
-from deixis.workflow import equations, text_retry
+from deixis.workflow.read import equations, text_retry
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -98,8 +98,8 @@ def startup(lib):
 def child_main():
     from deixis.config import load_settings
     from deixis.storage import db
-    from deixis.workflow import file_restore
-    from deixis.workflow.store import Store
+    from deixis.workflow.read import file_restore
+    from deixis.workflow.run.store import Store
 
     mode, boundary, aid, eid, rid, svid = sys.argv[1:]
     settings = load_settings()

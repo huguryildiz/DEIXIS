@@ -1,0 +1,267 @@
+"""The protocol body a research freezes before its first provider request (SW14.1).
+
+`build_protocol` is pure: no clock, no randomness, no network, so the same research state gives the same body and the
+same digest on a resumed run. Fields the product does not decide yet are written as null and filled by later slices;
+a null here means "not decided in this version", not "empty".
+"""
+
+from __future__ import annotations
+
+from importlib.metadata import version
+from typing import Any
+
+from deixis.config import Settings
+from deixis.domain.record_identity import THRESHOLDS
+from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS,
+                                 FULLTEXT_CRITERION_PASSAGES, FULLTEXT_PASSAGES_PER_CALL, FULLTEXT_QUOTE_MIN_CHARS,
+                                 FULLTEXT_READ_LIMIT, FULLTEXT_RUNS, FULLTEXT_WORK_LIMIT, PROVIDER_WAIT,
+                                 SCREENING_BATCH, SW_READ_LIMIT, effective_reviewer, step_model)
+from deixis.domain.survey import THRESHOLDS as SURVEY_THRESHOLDS
+from deixis.domain.survey_words import ABSTRACT_SELF_DESCRIPTIONS as SURVEY_PATTERNS
+from deixis.providers import query_compiler
+from deixis.providers.registry import search_providers
+
+PROTOCOL_SCHEMA = "deixis.protocol.v1"
+# What the criterion body says about where it came from. It is kept out of `decisions.CRITERION_FIELDS` on purpose:
+# the same criterion read back from an earlier protocol must not make the decisions taken under it stale (SW11.10).
+CRITERION_ORIGIN_FIELDS = ("origin", "base_run", "runs_ok", "dropped_exclusion_title_words", "sought_term_in_criterion",
+                           "question_elements", "required_roles")
+# A criterion built before SW23 (D106) has neither of these; it named no population or comparator.
+_ORIGIN_DEFAULTS = {"question_elements": [], "required_roles": []}
+
+
+def _model(role: tuple[str, str | None, str | None] | None) -> dict[str, Any] | None:
+    if role is None:
+        return None
+    connection, model, reasoning_effort = role
+    return {"connection": connection, "model": model, "reasoning_effort": reasoning_effort}
+
+
+def _search_query(scope: dict[str, Any], vocabulary: dict[str, Any], queries: list[dict[str, Any]]) -> dict[str, Any]:
+    """What the model-written query step left (D92): the prompt it was asked with, its answer, the counts that decided
+    the query, and whether the code's query was searched beside it. A run whose model failed and whose user chose the
+    code's query alone says that instead."""
+    from deixis.domain.contracts import SCHEMA_VERSIONS
+    from deixis.domain.skill import RUNTIME_FILES
+
+    record = vocabulary["search_query"]
+    if record.get("origin") == "user":
+        # A person's saved plan (S23a): no prompt, no model and no StepInput, because none was asked. The plan itself
+        # is in the body's `user_plan`; this block keeps the counts that decided the query, as for a model's.
+        return {"status": record["status"], "origin": "user", "prompt": None, "model": None, "attempts": [],
+                "plan_sha256": record["plan_sha256"],
+                "code_query_left_out": vocabulary["code_query"].get("left_out"), **_query_outcome(vocabulary, queries)}
+    # An answer written before R5 and reused for the same scope revision is a v1 answer: its own version is kept.
+    version = (record.get("answer") or {}).get("schema_version") or SCHEMA_VERSIONS["SearchQuery"]
+    body = {
+        "status": record["status"],
+        # The prompt version: its method files, whose text `skill_package_hash` above covers, and the answer's schema.
+        "prompt": {"files": list(RUNTIME_FILES["search_query"]), "schema_version": version},
+        "model": _model(step_model(scope, "search_query")),
+        "attempts": record["attempts"],
+    }
+    if record["status"] != "ready":
+        return body | {"choice": record.get("choice"), "code_query_searched": True}
+    body["prompt"]["skill_package_hash"] = record["skill_package_hash"]  # the StepInput's, not the freeze's
+    return body | {"step_input_id": record["step_input_id"], "resolved_model": record["resolved_model"],
+                   **_query_outcome(vocabulary, queries)}
+
+
+def _query_outcome(vocabulary: dict[str, Any], queries: list[dict[str, Any]]) -> dict[str, Any]:
+    """The answer, the counts that decided the query and what came of the code's query beside it."""
+    from deixis.workflow.search.expansion import queried_form, queried_terms
+
+    record, code = vocabulary["search_query"], vocabulary["code_query"]
+    return {
+        "answer": record["answer"], "checks": record["checks"], "warnings": record["warnings"],
+        "terms": record["meta"],
+        # Whether a code-origin query is really among the compiled ones: the switch can be on while the request
+        # limit or an identical model query left none of the code's queries to send.
+        "code_query_searched": any(q.get("origin") == "code" for q in queries),
+        "code_query_switched_on": code["searched"],
+        # The code's own blocks as they were compiled (slice 13g), whether or not the user left them switched on.
+        "code_concept_blocks": {block: [queried_form(t) for t in queried_terms(code["vocabulary"], block)]
+                                for block in ("setting", "task")},
+        # A statement research's field and author queries (R5): where the field came from and which providers took
+        # the author filter. Absent for every other research.
+        **({"statement": vocabulary["statement"]} if vocabulary.get("statement") else {}),
+    }
+
+
+def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str, Any] | None,
+                   queries: list[dict[str, Any]], skill_package_hash: str, settings: Settings,
+                   vocabulary: dict[str, Any] | None = None,
+                   criterion: dict[str, Any] | None = None,
+                   approval: dict[str, Any] | None = None,
+                   embedding_model: str | None = None,
+                   routing: dict[str, Any] | None = None,
+                   fast_path_search: dict[str, Any] | None = None,
+                   seed_match: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The body a research freezes. `vocabulary` is the sw workflow's code vocabulary step output (SW2).
+
+    Its counts are the ones the first run read; they change in the literature over time and are never re-probed, so
+    the body keeps the numbers that actually decided this research's query.
+    `criterion` is what three proposals agreed on (SW15.2); without one the four criterion fields stay null.
+    `embedding_model` is the semantic search
+    model the research was configured with when it froze this body; the flow reads it, because this function sees no
+    store; it says which signals were configured, never which of them really ran — that is in the ranking step's own
+    output — so a research whose embedding failed keeps the body it froze. `approval` is how the vocabulary and the
+    criterion below were agreed (slice 08a): who approved them, whether they were corrected and what the user was
+    asked about. A body without one was frozen before that step existed. `routing` is the
+    source routing the queries were compiled for (D93): the gate query probed, the field shares, the share and table
+    it was decided with, and every source chosen or left out with its reason. A body without one
+    was frozen before D93 and names the scope's searched providers.
+    """
+    # Imported here: flow loads this module, and the thresholds are read from their one definition rather than repeated.
+    from deixis.documents.pdf import CHUNK_CHARS
+    from deixis.workflow.run.flow import (MAX_ABSTRACT_CHARS, MAX_PASSAGES_PER_SOURCE,
+                                      PDF_PAGES_PER_SOURCE, RRF_K)
+    from deixis.workflow.search.criterion import THRESHOLDS as CRITERION_THRESHOLDS
+    from deixis.workflow.answer.criterion_passages import THRESHOLDS as CRITERION_PASSAGE_THRESHOLDS
+    from deixis.workflow.search.lookups import THRESHOLDS as LOOKUP_THRESHOLDS, title_words
+    from deixis.workflow.search.ranking import THRESHOLDS as RANKING_THRESHOLDS
+    from deixis.workflow.search.approval import block_origins
+    from deixis.workflow.search.vocabulary import GATE_BLOCKS, THRESHOLDS as VOCABULARY_THRESHOLDS
+    from deixis.workflow.search.search_query import THRESHOLDS as SEARCH_QUERY_THRESHOLDS
+    from deixis.workflow.search.chaining import policy as chain_policy
+    from deixis.workflow.search import seed_match as seed_match_rules
+    from deixis.workflow.search import user_plan as user_plan_rules
+
+    queried = [t for t in vocabulary["terms"] if not t["dropped"]] if vocabulary else []
+    # The words this research reads a title for a survey with, and the ones its own question took away (SW5.1).
+    kept_words, dropped_words = title_words(vocabulary) if vocabulary else ((), ())
+    # Who put each phrase in its block: the code rule, the model's labelling step (SW17.6), the user's key terms or
+    # the user's own correction at the approval step (SW2.6).
+    default_origin = "user" if vocabulary and vocabulary["block_assignment"] == "user" else "rule"
+    block_origin = block_origins(vocabulary) if vocabulary else {}
+    searched = search_providers(scope["providers"])
+    in_scope = searched
+    if routing is not None:
+        # A routed source is searched only when a query was compiled for it: the effort's query limit can leave a
+        # chosen source none (review of slice 14, 2026-09-23). The routing keeps it among the chosen, apart.
+        with_query = {q["provider_id"] for q in queries}
+        searched = [p for p in routing["providers"] if p in with_query]
+
+    # How this run chains citations (the fast chain), read from the policy its budget froze when it was queued.
+    chaining = chain_policy(budget, scope["effort"])
+
+    # A code vocabulary's queries came from the block compiler, so the body names that compiler, not the plan one.
+    compiler_version = query_compiler.BLOCKS_VERSION
+    return {
+        "schema": PROTOCOL_SCHEMA,
+        **({"inspection": budget["inspection"]} if "inspection" in budget else {}),
+        "search_workflow": "sw",
+        "question": scope["question"],
+        "steering": scope.get("steering"),
+        "language_hint": scope.get("language_hint"),
+        "source_scope": scope["source_scope"],
+        "seed_mode": scope.get("seed_mode", "question_only"),
+        # The seed PDFs' frozen contexts (seed_pdf_v1, D2; seed_pdf_v2, D3): what the chain, the semantic query and
+        # the ranking read. A run that began under D2 freezes D2's single context.
+        **({"seed_match": seed_match_rules.stored(seed_match)} if seed_match else {}),
+        # What a record must contain to be included, and the words an author of such a paper writes (SW15). Null
+        # here means the criterion was not built — no sw workflow, or fewer than two valid proposals.
+        "inclusion_criterion": criterion["criterion"] if criterion else None,
+        "criterion_parts": criterion["parts"] if criterion else None,
+        "cue_phrases": criterion["cue_phrases"] if criterion else None,
+        "exclusion_title_words": criterion["exclusion_title_words"] if criterion else None,
+        **({"criterion_origin": {
+            **{name: criterion[name] if name in criterion else _ORIGIN_DEFAULTS[name]
+               for name in CRITERION_ORIGIN_FIELDS},
+            **({"role_fallback": criterion["role_fallback"]} if "role_fallback" in criterion else {}),
+        }}
+           if criterion else {}),
+        # How this vocabulary and criterion were agreed before the freeze (SW2.6, SW15.3).
+        **({"approval": approval} if approval else {}),
+        # The search plan a person saved, when this revision has one (S23a, F18): the plan, its digest, the revision
+        # holding it and the providers it leaves out. Beside `search_query`, which then says origin `user`.
+        **({"user_plan": user_plan_block} if (user_plan_block := user_plan_rules.protocol_block(scope)) else {}),
+        # Who wrote the query and what came of it, when a model wrote it (D92). A body without it is 13g's.
+        **({"search_query": _search_query(scope, vocabulary, queries)}
+           if vocabulary and vocabulary.get("search_query") else {}),
+        # The blocks a code vocabulary gated the search with, each holding the form of its terms that was queried.
+        "concept_blocks": ({block: [t["root"] if t["in_query"] == "root" else t["phrase"]
+                                    for t in queried if t["block"] == block] for block in GATE_BLOCKS}
+                           if vocabulary else None),
+        "block_assignment": vocabulary["block_assignment"] if vocabulary else None,
+        "claim_words": list(vocabulary["claim_words"]) if vocabulary else None,
+        "exclusion_words": list(vocabulary["exclusion_words"]) if vocabulary else None,
+        "vocabulary": ([{"phrase": t["phrase"], "origin": t["origin"], "block": t["block"],
+                         "block_origin": block_origin.get(t["phrase"], default_origin), "root": t["root"],
+                         "in_query": t["in_query"], "phrase_count": t["phrase_count"], "root_count": t["root_count"],
+                         "and_only": t["and_only"], "dropped": t["dropped"]} for t in vocabulary["terms"]]
+                       if vocabulary else None),
+        "compiled_queries": [{"provider_id": q["provider_id"], "query_text": q["query_text"],
+                              **({"results": q["results"]} if q.get("results") is not None else {}),
+                              # Which vocabulary wrote the query: the model's or the code's beside it (D92).
+                              **({"origin": q["origin"]} if q.get("origin") else {}),
+                              # The endpoint and sort a Semantic Scholar sw query is read with (D93); a query that
+                              # names none goes to the relevance search, as every query did before.
+                              **({"endpoint": q["endpoint"], "sort": q["sort"]} if q.get("endpoint") else {})}
+                             for q in queries],
+        # Which sources were searched and why, read from the field distribution of the gate query before the
+        # approval (D93). The counts each source brought are in the run view, not here: the body is frozen first.
+        **({"source_routing": {**{key: routing[key] for key in ("status", "query", "total", "fields", "route_share",
+                                                                "table_version", "chosen", "left_out")},
+                               "chosen_not_queried": [p for p in routing["providers"] if p not in searched]}}
+           if routing is not None else {}),
+        # The databases searched, which is what the record reports (PRISMA-S item 1); a connector kept in scope only
+        # to verify a known DOI is named apart so that it is not read as a searched source (D87).
+        "providers": sorted(searched),
+        "verification_providers": sorted(p for p in scope["providers"] if p not in in_scope),
+        "arms": ["keyword_search"],
+        **({"citation_chaining": chaining} if chaining is not None else {}),
+        "survey": {"title_words": list(kept_words), "dropped_title_words": list(dropped_words),
+                   "abstract_patterns": list(SURVEY_PATTERNS)},
+        "signals": [{"signal": "bm25"}, {"signal": "blocks"},
+                     {"signal": "tfidf", "seeds": "verified"},
+                     {"signal": "graph", "seeds": "verified_then_code"},
+                     {"signal": "joint", "runs": "comparison_question_with_two_task_terms"},
+                     {"signal": "embedding", "model": embedding_model,
+                      "rescue": False}],
+        "thresholds": {
+            "screening_batch": SCREENING_BATCH,
+            "max_abstract_chars": MAX_ABSTRACT_CHARS,
+            "rrf_k": RRF_K,
+            "chunk_chars": CHUNK_CHARS,
+            "max_passages_per_source": MAX_PASSAGES_PER_SOURCE,
+            "pdf_pages_per_source": PDF_PAGES_PER_SOURCE,
+            "record_identity": THRESHOLDS,
+                # How much of the answer input the criterion order may fill, and how it is split per source (D84).
+                "criterion_passages": CRITERION_PASSAGE_THRESHOLDS,
+                "survey": SURVEY_THRESHOLDS, "lookup": LOOKUP_THRESHOLDS, "criterion": CRITERION_THRESHOLDS,
+                "ranking": RANKING_THRESHOLDS,
+                # How deep the abstract stage reads and what it counts as a verbatim quote (D81). `read_limit` is
+                # this research's own effort: it says how many works the model was asked about, not how many exist.
+                "abstract_screening": {"read_limit": ABSTRACT_READ_LIMIT[scope["effort"]], "batch": ABSTRACT_BATCH,
+                                       "runs": ABSTRACT_RUNS, "quote_min_chars": ABSTRACT_QUOTE_MIN_CHARS},
+                # How many records one query reads and how many 429s the read waits out, both this research's
+                # own effort (D88). No effort stops a run at a time: the minute targets are measured, not enforced.
+                "search_read": {"read_limit_per_query": SW_READ_LIMIT[scope["effort"]],
+                                "rate_limit_retries": PROVIDER_WAIT[scope["effort"]]},
+                # How many works one full-text retrieval run fetches (D83). This research's own effort, so it says
+                # how many works were tried, not how many have a full text.
+                "fulltext_fetch": {"work_limit": FULLTEXT_WORK_LIMIT[scope["effort"]]},
+                # How many works one reading run sends to the model, and what one call is shown (D85).
+                "fulltext_adjudication": {"read_limit": FULLTEXT_READ_LIMIT[scope["effort"]], "runs": FULLTEXT_RUNS,
+                                          "passages_per_call": FULLTEXT_PASSAGES_PER_CALL,
+                                          "criterion_passages": FULLTEXT_CRITERION_PASSAGES,
+                                          "quote_min_chars": FULLTEXT_QUOTE_MIN_CHARS},
+            **({"vocabulary": VOCABULARY_THRESHOLDS} if vocabulary else {}),
+            **({"search_query": SEARCH_QUERY_THRESHOLDS}
+               if vocabulary and (vocabulary.get("search_query") or {}).get("status") == "ready" else {}),
+            **({"chain": {key: chaining[key] for key in ("seeds", "backward_requests", "backward_page_size",
+                                                         "forward_requests", "forward_page_size", "request_limit",
+                                                         "attempt_limit")}}
+               if chaining else {}),
+        },
+        "rule_table_version": "sw",
+        "budget": budget,
+        # The reviewer that follows the app-wide default setting is not resolved here: the body is built without a store.
+        "models": {"research": _model(step_model(scope, "grounded_answer")),
+                   "literature": _model(step_model(scope, "abstract_screening")),
+                   "review": _model(effective_reviewer(scope, None))},
+        "skill_package_hash": skill_package_hash,
+        "code_version": f"deixis/{version('deixis')} {compiler_version}",
+        **({"fast_path_search": fast_path_search} if fast_path_search is not None else {}),
+    }

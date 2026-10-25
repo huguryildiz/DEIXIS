@@ -102,11 +102,11 @@ def control(api, run_id, action):
 
 def two_groups(api, monkeypatch):
     from deixis.domain import skill
-    from deixis.workflow.flow import CAPABILITIES
-    from deixis.workflow.report_store import ReportStore
-    from deixis.workflow import review_run as reviews
-    from deixis.workflow.review_reader import ReviewReader
-    from deixis.workflow.review_snapshot import build_snapshot
+    from deixis.workflow.run.flow import CAPABILITIES
+    from deixis.workflow.features.report.report_store import ReportStore
+    from deixis.workflow.features.review import review_run as reviews
+    from deixis.workflow.features.review.review_reader import ReviewReader
+    from deixis.workflow.features.review.review_snapshot import build_snapshot
     saved, _ = build_snapshot(ReviewReader(api.store, ReportStore(api.store)), api.rid, "report", api.report_id)
     row = {"focus": "source_support", "owner_note": None, "requested_connection": "fake", "requested_model": "review-model"}
     sizes = []

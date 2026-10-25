@@ -11,8 +11,9 @@ import pytest
 from deixis.providers.common import ProviderRecord
 from deixis.providers.lookup import LookupAnswer
 from deixis.storage import db
-from deixis.workflow import links, lookups
-from deixis.workflow.store import Store
+from deixis.workflow.run import links
+from deixis.workflow.search import lookups
+from deixis.workflow.run.store import Store
 
 TITLE = "SYNTHETIC release scheduling for diffusion channels"
 # A title the text rule can never match to TITLE: SW6.4 keeps the link even when the title changed at publication.

@@ -7,8 +7,8 @@ marked; it says nothing about whether the new text supports the old value.
 import time
 
 
-from deixis.workflow import table_refresh
-from deixis.workflow.tables import TableStore
+from deixis.workflow.features.tables import table_refresh
+from deixis.workflow.features.tables.tables import TableStore
 from fakes import valid_response
 from test_asset_replacement import PAGES, extraction, replace
 from test_table_extraction import add_pdf, cell, execute, fill, library

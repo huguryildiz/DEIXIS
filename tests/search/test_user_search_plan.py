@@ -232,7 +232,7 @@ def test_a_saved_plan_is_searched_without_the_three_planning_calls_and_recorded_
 
 
 def test_the_protocol_freezes_before_the_first_request_that_fetches_search_results(tmp_path, monkeypatch):
-    from deixis.workflow.store import Store
+    from deixis.workflow.run.store import Store
 
     events = []
     real = Store.freeze_protocol

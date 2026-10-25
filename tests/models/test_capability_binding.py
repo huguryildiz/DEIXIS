@@ -13,7 +13,7 @@ import pytest
 import connector_baseline as baseline
 import fast_search_helpers as fast
 from deixis.providers import common, contract, facade, lookup, openalex, registry
-from deixis.workflow import lookups
+from deixis.workflow.search import lookups
 from deixis.storage.db import dumps
 from test_connector_contract import FIXTURES, dispatch_flow, check_coverage
 from test_connector_dispatch import client, lookup_sources, paper

@@ -11,7 +11,7 @@ import re
 from typing import Any
 
 from deixis.providers.common import normalize_doi
-from deixis.workflow.store import title_key
+from deixis.workflow.run.store import title_key
 
 DOI_IN_TEXT = re.compile(r"\b10\.\d+/[^\s\"<>]+")
 ARXIV_IN_TEXT = re.compile(r"arXiv:\s*(\d{4}\.\d{4,5})", re.IGNORECASE)

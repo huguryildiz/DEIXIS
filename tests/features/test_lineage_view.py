@@ -6,8 +6,8 @@ import sqlite3
 import pytest
 
 from deixis.storage import db
-from deixis.workflow.lineage_run import build_node, node_snapshot
-from deixis.workflow.lineage_view import LineageView
+from deixis.workflow.features.lineage.lineage_run import build_node, node_snapshot
+from deixis.workflow.features.lineage.lineage_view import LineageView
 from fakes import valid_response
 from test_lineage_flow import lib, queue, execute, invalid, publication, reextract, scope_edit, instruction_edit
 from test_lineage_plan import fill

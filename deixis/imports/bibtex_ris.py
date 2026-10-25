@@ -44,8 +44,8 @@ from deixis.providers import crossref, lookup, openalex
 from deixis.providers.common import ProviderRecord, normalize_doi, year_of
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import new_id, transaction
-from deixis.workflow import library_items
-from deixis.workflow.store import Store
+from deixis.workflow.run import library_items
+from deixis.workflow.run.store import Store
 
 Format = Literal["bibtex", "ris"]
 

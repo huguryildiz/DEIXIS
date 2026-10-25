@@ -20,8 +20,8 @@ from deixis.domain.limits import error_name
 from deixis.providers import core, crossref
 from deixis.providers.common import ProviderRecord, begin_request, normalize_doi, settle_request
 from deixis.storage import db
-from deixis.workflow.store import Store
-from deixis.workflow import file_restore
+from deixis.workflow.run.store import Store
+from deixis.workflow.read import file_restore
 
 OPENALEX_URL = "https://api.openalex.org/works"
 CROSSREF_URL = "https://api.crossref.org/works"
@@ -687,7 +687,7 @@ async def _attach_pdf(store: Store, source_version_id: str, data: bytes, papers_
                       retrieved_from: str | None, filename: str | None = None, *, research_id: str | None = None,
                       recovery_dir: Path | None = None,
                       before_publish: Callable[[], Awaitable[None]] | None = None) -> str:
-    from deixis.workflow import text_retry
+    from deixis.workflow.read import text_retry
 
     recovery_dir = file_restore.resolve_recovery_dir(store, papers_dir, recovery_dir)
     placement = await file_restore.store_pdf_file(store, papers_dir, recovery_dir, data,

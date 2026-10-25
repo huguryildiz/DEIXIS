@@ -1,7 +1,7 @@
 """Character helpers shared by the equation routes, and the label of PDFs Marker read before it was removed (D113).
 
 Marker, the optional local equation reader of D52, is gone: display equations are now read by the answer model from page
-crops (`workflow/equations.py`). A PDF whose current text is an earlier Marker reading keeps it (D45); `MATH_VERSION` is
+crops (`workflow/read/equations.py`). A PDF whose current text is an earlier Marker reading keeps it (D45); `MATH_VERSION` is
 the suffix that names such a reading, and `text_source = 'marker'` stays on its passages.
 """
 

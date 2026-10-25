@@ -36,7 +36,7 @@ REPO = Path(__file__).resolve().parents[2]
 
 def make_source_library(folder: Path) -> Path:
     """A migrated library with one research, closed cleanly (no -wal), journal mode DELETE like a real backup."""
-    from deixis.workflow.store import Store
+    from deixis.workflow.run.store import Store
 
     folder.mkdir(parents=True, exist_ok=True)
     conn = db.connect(folder / "library.sqlite")
@@ -485,8 +485,8 @@ EMPTY_BECAUSE = {
     "pdf_discovery_runs": "same lookup as pdf_candidates",
     "pdf_skips": "written when a person chooses 'Continue without PDF' for a waiting work, which this flow does not",
     "person_pdf_requests": "written by the 'read it yourself' person-reading flow, not exercised here",
-    "record_flags": "written by record lookups (workflow/lookups.py), not run here",
-    "record_links": "written by record linking (workflow/links.py), not run here",
+    "record_flags": "written by record lookups (workflow/search/lookups.py), not run here",
+    "record_links": "written by record linking (workflow/run/links.py), not run here",
     "record_lookups": "written by record lookups, not run here",
     "record_references": "reference lists arrive with citation chaining or lookups, both off",
     "report_stale_acknowledgements": "written only when a person acknowledges stale report changes after an upstream edit",
@@ -602,7 +602,7 @@ def collect_views(client, research_ids: list[str]) -> dict[str, tuple]:
 # Fields removed from both sides before the views are compared. The open of a restored library writes none of the stored
 # rows that a view shows (the table comparison above is exact); this one field is the export's own clock, set when the
 # view is requested and never stored.
-ALLOWED_DIFFERENCES = {"generated_at": "the PRISMA-S export stamps the time of the request (workflow/prisma_s.py), not a stored value"}
+ALLOWED_DIFFERENCES = {"generated_at": "the PRISMA-S export stamps the time of the request (workflow/search/prisma_s.py), not a stored value"}
 
 
 def strip(value, names):
@@ -631,7 +631,7 @@ def test_b01_backup_while_the_app_runs_restores_every_table_and_file_and_every_v
         assert sum(1 for status, _ in views_before.values() if status == 200) > 40
 
         backup = create_backup(settings, tmp_path / "backups")  # the original app is still running
-        # The running worker stamps `worker_owner.heartbeat_at` about once a second (workflow/worker.py); that one table is
+        # The running worker stamps `worker_owner.heartbeat_at` about once a second (workflow/run/worker.py); that one table is
         # left out of the source comparisons. The backup and the restored folder, where no worker runs, are compared exactly.
         heartbeat = ("worker_owner",)
         assert compare_states(before, library_state(settings.data_dir), allow=heartbeat) == [], "the original library moved while it was idle"

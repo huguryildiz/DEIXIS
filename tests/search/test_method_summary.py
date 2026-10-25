@@ -10,9 +10,9 @@ from __future__ import annotations
 import pytest
 
 from deixis.storage import db
-from deixis.workflow.decisions import DecisionStore
-from deixis.workflow import method_summary
-from deixis.workflow.store import Store
+from deixis.workflow.screen.decisions import DecisionStore
+from deixis.workflow.answer import method_summary
+from deixis.workflow.run.store import Store
 from test_prisma_s import Search
 
 

@@ -9,7 +9,7 @@ import pytest
 
 from deixis.domain import proxy
 from deixis.domain.reason_codes import REASON_CODES
-from deixis.workflow import fulltext
+from deixis.workflow.read import fulltext
 
 
 def decision(code, decided_by="code", stale=False, created_at="2026-09-24T10:00:00.000Z"):

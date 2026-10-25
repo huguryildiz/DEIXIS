@@ -4,7 +4,7 @@
 
 ## Kısaca: neredeyiz?
 
-- **25 Ekim, repo sadeleşmesi (davranış değişmedi):** klasörler `deixis/`, `web/`, `tests/`, `docs/`; tek `deixis/storage/schema.sql` + sürümlü yükseltme adımları (D119); karar kaydı `docs/decisions.csv`; arama `docs/search.md`'de iki şemayla; testler 17.041 → ~1.500 durum, Playwright 54 → 5 spec, tek komut ~2 dk (D120); `.local/` → `notes/`. Her aşamayı Sol High inceledi.
+- **25 Ekim, repo sadeleşmesi (davranış değişmedi):** klasörler `deixis/`, `web/`, `tests/`, `docs/`; `deixis/workflow/` adım klasörlerine ayrıldı (`run/`, `search/`, `screen/`, `read/`, `answer/`, `features/`; D124); tek `deixis/storage/schema.sql` + sürümlü yükseltme adımları (D119); karar kaydı `docs/decisions.csv`; arama `docs/search.md`'de iki şemayla; testler 17.041 → ~1.500 durum, Playwright 54 → 5 spec, tek komut ~2 dk (D120); `.local/` → `notes/`. Her aşamayı Sol High inceledi.
 
 Durum kötü değil, ama dengesiz. Uygulama çalışıyor ve özellik bakımından geniş; asıl eksik, son haftalarda eklenen özelliklerin çoğunun gerçek bir modelle ve gerçek kullanımda denenmemiş olması.
 

@@ -4,8 +4,8 @@ import asyncio
 import json
 from deixis.documents import math_reader, pdf
 from deixis.storage import db
-from deixis.workflow import equations
-from deixis.workflow.store import Store
+from deixis.workflow.read import equations
+from deixis.workflow.run.store import Store
 from helpers import make_pdf
 from fastapi.testclient import TestClient
 from deixis.api.app import create_app
@@ -47,7 +47,7 @@ def test_without_a_route_a_pdf_is_off_and_says_why(tmp_path):
 
 
 def test_a_table_fill_waits_for_the_equations_of_the_pdfs_it_reads(tmp_path, monkeypatch):
-    from deixis.workflow import flow
+    from deixis.workflow.run import flow
     from test_table_extraction import execute, fill, library
 
     lib = library(tmp_path)

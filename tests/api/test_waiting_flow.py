@@ -13,9 +13,9 @@ import time
 import pytest
 
 from deixis.storage import db
-from deixis.workflow import waiting
-from deixis.workflow.decisions import DecisionStore
-from deixis.workflow.store import Store
+from deixis.workflow.read import waiting
+from deixis.workflow.screen.decisions import DecisionStore
+from deixis.workflow.run.store import Store
 from helpers import make_pdf
 from test_abstract_flow import client_of, records_of
 from test_fulltext_flow import Fetcher, Transport, app_for, discover, ok, work
@@ -40,7 +40,7 @@ def sw_research(tmp_path, monkeypatch, workflow="sw"):
 
 
 def plan_heads(store, rid):
-    from deixis.workflow import small_batch
+    from deixis.workflow.search import small_batch
     run_id = store.conn.execute("SELECT id FROM runs WHERE research_id = ? AND kind = 'discovery'"
                                 " ORDER BY created_at DESC LIMIT 1", (rid,)).fetchone()[0]
     return store.existing_step(run_id, small_batch.LIST_KEY)["output"]["order"]

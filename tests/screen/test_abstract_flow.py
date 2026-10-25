@@ -18,7 +18,7 @@ from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.documents.fetch import FetchResult
 from deixis.providers.registry import CONNECTORS
-from deixis.workflow.decisions import DecisionStore
+from deixis.workflow.screen.decisions import DecisionStore
 from fakes import FakeAdapter, envelope, valid_response
 
 # Two fields: the question is a greenhouse one, and the pool holds bakery-logistics records that answer nothing.

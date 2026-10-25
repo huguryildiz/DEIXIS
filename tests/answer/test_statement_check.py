@@ -13,9 +13,11 @@ from deixis.domain import contracts, skill
 from deixis.domain.rules import TEST_EFFORT_BUDGETS
 from deixis.models.adapter import ModelStepResult
 from deixis.storage.db import new_id, transaction
-from deixis.workflow import answer as fast_answer, fast_path, small_batch, statement_check
-from deixis.workflow.decisions import DecisionStore
-from deixis.workflow.flow import FlowDeps, ResearchFlow
+from deixis.workflow.answer import answer as fast_answer, statement_check
+from deixis.workflow.run import fast_path
+from deixis.workflow.search import small_batch
+from deixis.workflow.screen.decisions import DecisionStore
+from deixis.workflow.run.flow import FlowDeps, ResearchFlow
 from fakes import FakeAdapter, envelope, valid_response
 from test_contracts import STEP_INPUTS
 from test_criterion_passage_flow import TOPIC_PAGE, library, page_source

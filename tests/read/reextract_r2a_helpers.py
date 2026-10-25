@@ -15,7 +15,7 @@ from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.documents import pdf
 from deixis.storage import db
-from deixis.workflow.store import Store
+from deixis.workflow.run.store import Store
 from tests.support.helpers import make_pdf
 
 
@@ -108,7 +108,7 @@ def store_library(tmp_path, status="failed"):
 def child_lock(lib):
     code = """import sys
 from pathlib import Path
-from deixis.workflow.text_retry import file_lock
+from deixis.workflow.read.text_retry import file_lock
 with file_lock(Path(sys.argv[1]), sys.argv[2]):
     print('locked', flush=True)
     sys.stdin.readline()

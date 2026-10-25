@@ -13,17 +13,17 @@ from fastapi.testclient import TestClient
 from deixis.api.app import create_app
 from deixis.domain import contracts
 from deixis.storage import db
-from deixis.workflow.concurrency import ModelCallLimiter
-from deixis.workflow import lineage_run as lineage
-from deixis.workflow.lineage_store import LineageStore
-from deixis.workflow.worker import Worker
+from deixis.workflow.run.concurrency import ModelCallLimiter
+from deixis.workflow.features.lineage import lineage_run as lineage
+from deixis.workflow.features.lineage.lineage_store import LineageStore
+from deixis.workflow.run.worker import Worker
 from fakes import FakeAdapter, valid_response
 from test_lineage_plan import candidate, fill, make_env
 
 
 @pytest.fixture
 def factory(tmp_path, monkeypatch):
-    monkeypatch.setattr("deixis.workflow.flow.RATE_LIMIT_BACKOFF_SECONDS", 0)
+    monkeypatch.setattr("deixis.workflow.run.flow.RATE_LIMIT_BACKOFF_SECONDS", 0)
     libraries = []
 
     def create(**kw):

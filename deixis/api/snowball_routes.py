@@ -10,7 +10,7 @@ from fastapi import Header, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from deixis.workflow import snowball
+from deixis.workflow.features.citation_map import snowball
 
 
 class SnowballRound(BaseModel):

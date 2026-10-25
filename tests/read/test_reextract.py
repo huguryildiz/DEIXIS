@@ -17,13 +17,13 @@ from deixis.documents import pdf, acquisition, ocr
 from deixis.documents.fetch import FetchResult
 from deixis.providers import zotero
 from deixis.storage import db, backup, upgrades
-from deixis.workflow import text_retry, waiting, equations, file_restore, reconcile
-from deixis.workflow.report_export import to_markdown
-from deixis.workflow.report_latex import to_latex
-from deixis.workflow.review_stale import stale_reasons
-from deixis.workflow.store import Store
-from deixis.workflow.tables import TableStore
-from deixis.workflow.views import research_view, report_view
+from deixis.workflow.read import text_retry, waiting, equations, file_restore, reconcile
+from deixis.workflow.features.report.report_export import to_markdown
+from deixis.workflow.features.report.report_latex import to_latex
+from deixis.workflow.features.review.review_stale import stale_reasons
+from deixis.workflow.run.store import Store
+from deixis.workflow.features.tables.tables import TableStore
+from deixis.workflow.run.views import research_view, report_view
 
 from reextract_r2c_helpers import child, events, forbid_calls, startup
 from reextract_r3_helpers import retry, rich
@@ -37,8 +37,8 @@ from test_report_assembly import report_with_sections  # noqa: F401  (fixtures u
 
 
 try:
-    from deixis.workflow import text_retry
-    from deixis.workflow.store import TEXT_RETRY_REFUSALS
+    from deixis.workflow.read import text_retry
+    from deixis.workflow.run.store import TEXT_RETRY_REFUSALS
 except ImportError:
     text_retry = None
     TEXT_RETRY_REFUSALS = ("asset_removed", "no_holding_research", "membership_changed", "asset_replaced",
@@ -62,7 +62,7 @@ def record(lib, op):
 
 
 try:
-    from deixis.workflow import file_restore
+    from deixis.workflow.read import file_restore
 except ImportError:
     file_restore = None  # The scheduler reproduction must reach its behavioral assertion on 19d0a48.
 
@@ -156,7 +156,7 @@ def call_writer(lib, monkeypatch, writer, destination, svid, record):
 
 
 try:
-    from deixis.workflow import text_retry
+    from deixis.workflow.read import text_retry
 except ImportError:
     text_retry = None  # T1/T3 must reach their behavioral assertions on the R1 base.
 
@@ -238,7 +238,7 @@ def test_precheck_invalid_paths_write_no_operation(tmp_path, kind):
 
 
 try:
-    from deixis.workflow import text_retry
+    from deixis.workflow.read import text_retry
 except ImportError:
     text_retry = None  # The unchanged library-wide selection guard also runs on R1.
 
@@ -362,7 +362,7 @@ def test_r8_startup_ten_turns_capability_and_queue_never_retry_new_contract(tmp_
             async def turns():
                 for _ in range(10): await lib.app.state.worker._turn()
             asyncio.run(turns())
-            from deixis.workflow import reconcile
+            from deixis.workflow.read import reconcile
             asyncio.run(reconcile.reconcile_stale(lib.store, lib.settings.papers_dir, lib.settings.recovery_dir))
             assert lib.client.get(url(lib, "text-retry")).status_code == 200
             assert lib.store.next_queued_run() is None
@@ -452,7 +452,7 @@ def retrieval(lib):
     assert ids.isdisjoint(rejected)
     # The actual lexical inspection ranker takes its rows from current-only Store reads.
     from deixis.domain import skill
-    from deixis.workflow.flow import FlowDeps, ResearchFlow
+    from deixis.workflow.run.flow import FlowDeps, ResearchFlow
     flow = ResearchFlow(FlowDeps(lib.settings, lib.store, {}, skill.load_skill_package(), None))
     # The mixed-corpus scope exercises ranking rather than the small-PDF shortcut.
     ranked = flow._retrieve(lib.rid, lib.store.scope(lib.rid) | {"source_scope": "academic"}, [lib.svid], 500)

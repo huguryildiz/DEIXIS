@@ -11,9 +11,9 @@ import httpx
 import pytest
 
 from deixis.storage import db
-from deixis.workflow import watch_check as policy, watch_run, watch_store
-from deixis.workflow.watch_scheduler import WatchScheduler
-from deixis.workflow.watch_store import WatchStore
+from deixis.workflow.features.watch import watch_check as policy, watch_run, watch_store
+from deixis.workflow.features.watch.watch_scheduler import WatchScheduler
+from deixis.workflow.features.watch.watch_store import WatchStore
 from watch_helpers import (api, watch_offline, watch_api, create, now_check, turn, read, control,
                                  page, work, rows, hashes, add_included)
 
@@ -229,9 +229,9 @@ import httpx
 import pytest
 
 from deixis.storage import db
-from deixis.workflow import watch_run
-from deixis.workflow import watch_check as policy
-from deixis.workflow.watch_store import WatchStore
+from deixis.workflow.features.watch import watch_run
+from deixis.workflow.features.watch import watch_check as policy
+from deixis.workflow.features.watch.watch_store import WatchStore
 from watch_helpers import api, watch_offline, watch_api, create, now_check, turn, read, control, page, work, rows, add_included
 
 
@@ -361,9 +361,9 @@ from collections import defaultdict
 from itertools import count
 
 import pytest
-from deixis.workflow.watch_scheduler import WatchScheduler
-from deixis.workflow.worker import Worker
-from deixis.workflow.flow import ResearchFlow
+from deixis.workflow.features.watch.watch_scheduler import WatchScheduler
+from deixis.workflow.run.worker import Worker
+from deixis.workflow.run.flow import ResearchFlow
 from watch_helpers import watch_offline, watch_api
 
 

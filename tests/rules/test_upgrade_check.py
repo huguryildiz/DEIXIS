@@ -17,7 +17,7 @@ import pytest
 
 from deixis import config
 from deixis.storage import db, upgrades
-from deixis.workflow.store import Store
+from deixis.workflow.run.store import Store
 from test_restore_matrix import add_versions, make_source_library, newer_code_steps
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "release_checks"))

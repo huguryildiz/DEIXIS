@@ -32,7 +32,7 @@ def test_a_stage_gives_one_digest_under_two_hash_seeds_and_two_row_orders(stage)
 
 
 def test_a_fused_score_tie_is_broken_by_the_record_identifier_not_by_argument_order():
-    from deixis.workflow.flow import fuse_rankings
+    from deixis.workflow.run.flow import fuse_rankings
 
     a = [{"id": "psg_b"}, {"id": "psg_a"}]
     b = [{"id": "psg_a"}, {"id": "psg_b"}]  # the same two rows, opposed: both end on the same fused score

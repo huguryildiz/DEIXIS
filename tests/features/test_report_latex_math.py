@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 
 from deixis.documents.arxiv_source import katex_known
-from deixis.workflow import report_latex_math as lm
-from deixis.workflow.report_latex_math import ALLOWED_ENVIRONMENTS, COMMAND_DENY, classify, closed_scan, convert_text, render
-from deixis.workflow.report_latex_preamble import PREAMBLE_SHA256
-from deixis.workflow.report_latex_text import Unmapped, escape_text, is_unmapped
+from deixis.workflow.features.report import report_latex_math as lm
+from deixis.workflow.features.report.report_latex_math import ALLOWED_ENVIRONMENTS, COMMAND_DENY, classify, closed_scan, convert_text, render
+from deixis.workflow.features.report.report_latex_preamble import PREAMBLE_SHA256
+from deixis.workflow.features.report.report_latex_text import Unmapped, escape_text, is_unmapped
 
 
 @pytest.mark.parametrize("span", [r"$\input x$"])
@@ -46,7 +46,7 @@ def test_names_file_current_provenance():
     path = Path(lm.__file__).with_name("latex_names.json")
     assert path.exists(), "Run scripts/latex_export_names.py"
     names = json.loads(path.read_text())
-    vocabulary = Path(lm.__file__).resolve().parents[1] / "documents/katex_commands.json"
+    vocabulary = Path(lm.__file__).resolve().parents[3] / "documents/katex_commands.json"
     assert names["preamble_sha256"] == PREAMBLE_SHA256, "Run scripts/latex_export_names.py"
     assert names["katex_commands_sha256"] == hashlib.sha256(vocabulary.read_bytes()).hexdigest(), "Run scripts/latex_export_names.py"
     assert isinstance(names["katex_version"], str) and {names["katex_version"]} == katex_known()["version"]

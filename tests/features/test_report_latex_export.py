@@ -10,11 +10,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from deixis.domain.rules import RevisionConflict
-from deixis.workflow import queue, views
-from deixis.workflow import report_latex_export as latex_export
-from deixis.workflow.report_export import export_markdown
-from deixis.workflow.report_latex import to_latex
-from deixis.workflow.report_store import ReportStore
+from deixis.workflow.screen import queue
+from deixis.workflow.run import views
+from deixis.workflow.features.report import report_latex_export as latex_export
+from deixis.workflow.features.report.report_export import export_markdown
+from deixis.workflow.features.report.report_latex import to_latex
+from deixis.workflow.features.report.report_store import ReportStore
 from test_api_flow import app_for, create, session
 from test_report_api import upload_and_include, create_table, fill_table
 from test_report_export import complete

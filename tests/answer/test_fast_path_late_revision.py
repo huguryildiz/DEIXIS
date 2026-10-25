@@ -4,10 +4,11 @@ import asyncio
 import copy
 import json
 import pytest
-from deixis.workflow import answer as fast_answer, late_revision, views
-from deixis.workflow.decisions import DecisionStore
-from deixis.workflow.flow import RunStopped
-from deixis.workflow.worker import Worker
+from deixis.workflow.answer import answer as fast_answer, late_revision
+from deixis.workflow.run import views
+from deixis.workflow.screen.decisions import DecisionStore
+from deixis.workflow.run.flow import RunStopped
+from deixis.workflow.run.worker import Worker
 from test_fast_path_answer import setup, cutoff, answer_run, user
 from test_criterion_passage_flow import body_with, TOPIC_PAGE, page_source
 
@@ -22,7 +23,7 @@ def prepared(tmp_path, *, old=False, no_evidence=False, pdfs=1, last_code="runs_
         lib.listing["items"].append({"work_id": lib.store.source(svid)["work_id"], "head": svid,
                                     "position": len(lib.sources), "versions": [svid], "user_priority": False})
     if pdfs > 1:
-        from deixis.workflow import small_batch
+        from deixis.workflow.search import small_batch
         lib.store.finish_step(lib.store.existing_step(lib.discovery["id"], small_batch.LIST_KEY)["id"], "succeeded", output=lib.listing)
     scope = lib.store.scope(lib.rid)
     lib.store.freeze_protocol(lib.rid, 1, body_with(scope["question"], []))

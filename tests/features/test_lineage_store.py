@@ -6,10 +6,10 @@ from types import SimpleNamespace
 import pytest
 
 from deixis.storage import db
-from deixis.workflow.lineage_run import build_node, node_snapshot, stale_link_reasons, stale_link_revisions
-from deixis.workflow.lineage_store import InvalidLineageInput, LineageStore
-from deixis.workflow.store import Store
-from deixis.workflow.tables import InvalidTableInput, TableStore
+from deixis.workflow.features.lineage.lineage_run import build_node, node_snapshot, stale_link_reasons, stale_link_revisions
+from deixis.workflow.features.lineage.lineage_store import InvalidLineageInput, LineageStore
+from deixis.workflow.run.store import Store
+from deixis.workflow.features.tables.tables import InvalidTableInput, TableStore
 
 TEXT = "SYNTHETIC: The later work extends the earlier method with a bounded scheduling rule."
 QUOTE = "extends the earlier method with a bounded scheduling rule"

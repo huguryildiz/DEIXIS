@@ -7,7 +7,7 @@ it says nothing about how many relevant works a real chain reaches, which the sl
 
 import pytest
 
-from deixis.workflow import chaining, ranking
+from deixis.workflow.search import chaining, ranking
 
 IRRIGATION = {"setting": ["greenhouse"], "task": ["irrigation scheduling"]}
 

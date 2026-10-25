@@ -6,7 +6,7 @@ import json
 from deixis.domain import contracts
 from deixis.storage import db
 from deixis.storage.db import dumps
-from deixis.workflow import report_review as review
+from deixis.workflow.features.report import report_review as review
 
 with open("tests/fixtures/research/step-inputs.json", encoding="utf-8") as source:
     STEP_INPUTS = json.load(source)

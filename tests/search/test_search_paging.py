@@ -15,7 +15,7 @@ import pytest
 
 from deixis.providers.common import ProviderRecord
 from deixis.storage import db
-from deixis.workflow.store import Store
+from deixis.workflow.run.store import Store
 
 
 @pytest.fixture
@@ -200,8 +200,9 @@ def rows_of(view, provider="openalex"):
 import asyncio
 from types import SimpleNamespace
 
-from deixis.workflow import fast_path, search as fast_search, views
-from deixis.workflow.flow import ResearchFlow
+from deixis.workflow.run import fast_path, views
+from deixis.workflow.search import search as fast_search
+from deixis.workflow.run.flow import ResearchFlow
 from test_fast_path_clock import library  # noqa: F401  (a fixture: one quick fast-path discovery run on a FakeClock)
 
 ALPHA, BETA = "SYNTHETIC packet size energy", "SYNTHETIC duty cycle relay"

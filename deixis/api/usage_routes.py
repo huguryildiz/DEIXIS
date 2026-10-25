@@ -24,7 +24,7 @@ from fastapi import HTTPException, Query, Request
 from deixis.domain.rules import LITERATURE_TASKS
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import now
-from deixis.workflow import spend
+from deixis.workflow.run import spend
 
 ROLES = ("answer", "literature", "reviewer")  # the three roles the Settings page sets a model for
 REVIEWER_TASKS = ("answer_review",)

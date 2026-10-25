@@ -23,9 +23,9 @@ from referencing import Registry, Resource
 from deixis.domain import wording
 from deixis.domain.lineage import MAX_WHAT_CHANGED, valid_what_changed
 from deixis.paths import CONTRACTS_DIR
-from deixis.workflow.criterion import (MAX_PHRASE_WORDS, PARTS_PER_PROPOSAL, PHRASES_PER_PART,
+from deixis.workflow.search.criterion import (MAX_PHRASE_WORDS, PARTS_PER_PROPOSAL, PHRASES_PER_PART,
                                        holds as criterion_holds, norm as normalize_phrase)
-from deixis.workflow.tables import MAX_COLUMNS_PER_CALL, InvalidTableInput, check_value, column_spec
+from deixis.workflow.features.tables.tables import MAX_COLUMNS_PER_CALL, InvalidTableInput, check_value, column_spec
 
 SCHEMA_FILES = {
     "OwnerReview": "owner-review.schema.json",
@@ -2458,7 +2458,7 @@ def _check_abstract_screening(allow: dict[str, set[str]], draft: dict[str, Any],
 
     A batch is not repaired and is not thrown away for one bad entry: the entry costs that record its proposal for
     this run, the rest of the batch stands, and a record left without two usable proposals stays
-    `abstract_not_proposed` for a later discovery run to read. `workflow/abstract_stage.proposals_of` drops exactly
+    `abstract_not_proposed` for a later discovery run to read. `workflow/screen/abstract_stage.proposals_of` drops exactly
     the entries warned about here; the two must stay in step.
     """
     seen: set[str] = set()
@@ -2479,7 +2479,7 @@ def _check_fulltext_adjudication(step_input: dict[str, Any], allow: dict[str, se
                                  report: ValidationReport) -> None:
     """Record-level defects are warnings, never errors (slice 12).
 
-    One bad part does not throw the call away. `workflow/adjudication.proposals_of` reads the same defects as
+    One bad part does not throw the call away. `workflow/read/adjudication.proposals_of` reads the same defects as
     `unclear` for that part of this run: an unknown part, a part named twice, a part never named, a `present`
     with no quote, and a passage the step did not show. An unverified quote is not a defect here. The quote is
     looked up later, on the page, and a miss keeps the label.

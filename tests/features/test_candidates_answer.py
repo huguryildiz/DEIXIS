@@ -8,11 +8,11 @@ import json
 import pytest
 
 from deixis.storage import db
-from deixis.workflow.candidates_answer_view import answer_candidates
-from deixis.workflow.candidates_run import candidate_target, decomposition_input
-from deixis.workflow.candidates_store import InvalidCandidateInput
-from deixis.workflow.store import NotFound
-from deixis.workflow.candidates_hits import merge_and_cut
+from deixis.workflow.features.candidates.candidates_answer_view import answer_candidates
+from deixis.workflow.features.candidates.candidates_run import candidate_target, decomposition_input
+from deixis.workflow.features.candidates.candidates_store import InvalidCandidateInput
+from deixis.workflow.run.store import NotFound
+from deixis.workflow.features.candidates.candidates_hits import merge_and_cut
 from test_candidate_store import assessment, make_library, provider_record, query, start, version
 
 ASPECTS = ["SYNTHETIC aspect one: delay under mobility.", "SYNTHETIC aspect two: energy under load."]

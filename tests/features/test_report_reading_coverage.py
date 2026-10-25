@@ -12,8 +12,8 @@ import pytest
 
 from deixis.domain import contracts
 from deixis.storage.db import dumps
-from deixis.workflow.decisions import DecisionStore
-from deixis.workflow import report_assembly as assembly, report_review_methodology as review_methodology, report_sections as sections
+from deixis.workflow.screen.decisions import DecisionStore
+from deixis.workflow.features.report import report_assembly as assembly, report_review_methodology as review_methodology, report_sections as sections
 from test_report_flow import PASSAGE, report_flow
 
 

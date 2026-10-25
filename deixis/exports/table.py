@@ -50,7 +50,7 @@ class CellText:
     warnings: tuple[str, ...]
 
 
-# The title every automatic table gets (workflow/intent.py TABLE_TITLE); the files name it as the screen does.
+# The title every automatic table gets (workflow/run/intent.py TABLE_TITLE); the files name it as the screen does.
 DEFAULT_TITLE = "Study table"
 # A Word page holds the source cell and this many table columns; more columns continue in another table below.
 DOCX_COLUMNS_PER_TABLE = 4

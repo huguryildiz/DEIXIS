@@ -10,8 +10,8 @@ import pytest
 
 import connector_baseline as baseline
 from deixis.providers import common, registry
-from deixis.workflow import search_page
-from deixis.workflow.search_page import Page
+from deixis.workflow.search import search_page
+from deixis.workflow.search.search_page import Page
 from test_connector_contract import dispatch_flow, FIXTURES, body_of, endpoint_fixture
 from test_candidate_flow import queue_kill
 

@@ -1,0 +1,600 @@
+"""Full-text adjudication: two model runs propose, code verifies every quote and decides (SW1, D85).
+
+Pure: no database, no clock, no network, no model. The plan is a function of the works, the inspection order and
+the limit. A quote is verified only when `locate_anchor` finds it `exact` or `normalized` on a page the model was
+shown. A label writes nothing by itself.
+
+The model is shown a selection of passages, so `criterion_absent` means "absent from the passages shown", and code
+may exclude on that. A work is included without the user only when both runs label every core part `present`, every
+core quote verifies and its read version's title names no study protocol; a work whose title names one is neither included
+nor excluded by code, it goes to the queue (`protocol_title`, slice 26). On a criterion with a comparator part code
+never excludes: two all-negative runs go to the queue (`comparator_exclusion_withheld`, slice 28).
+Aspects record per-source contribution with the same quote checks but do not gate inclusion (D235).
+
+Read rule `split_v1` (D76, frozen in the reading run's budget): the second call is shown the passages the first did not
+see (`split_lists`), a quote verifies only inside one passage that call was shown (`verify_passages`), and a part only
+one call saw stands on that call's verified quote; a part both calls saw must still be agreed on (`merge_parts`,
+`combine_split`). A run without the rule reads as above: the same list twice, the page check, `combine`.
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Any
+
+from deixis.domain.contracts import locate_anchor
+from deixis.domain.rules import (
+    FULLTEXT_CRITERION_PASSAGES,
+    FULLTEXT_PASSAGES_PER_CALL,
+    FULLTEXT_QUOTE_MIN_CHARS,
+    FULLTEXT_READ_LIMIT,
+    FULLTEXT_READ_RULE,
+    FULLTEXT_RUNS,
+)
+from deixis.workflow.search.criterion import norm
+from deixis.workflow.answer.criterion_passages import compile_phrases, criterion_order
+from deixis.workflow.read.fulltext import GROUPS, group_of
+
+# A fresh decision carrying one of these was written by this stage. The work is not read again until the decision
+# goes stale. `not_read_yet` is absent on purpose: it is the state this stage replaces.
+FRESH_MODEL_CODES = (
+    "all_parts_verified",
+    "criterion_absent",
+    "fulltext_runs_disagree",
+    "include_quote_unverified",
+    "part_without_evidence",
+    "fulltext_runs_agree_unresolved",
+    "pdf_identity_unconfirmed",
+    "protocol_title",
+    "comparator_exclusion_withheld",
+)
+# Codes this stage may replace. A fresh `text_unreadable` or `no_fulltext` belongs to retrieval and is left alone.
+OWNED_CODES = ("not_read_yet", *FRESH_MODEL_CODES)
+
+# Re-exported so the protocol body and the flow read the same numbers this module plans with.
+PASSAGES_PER_CALL = FULLTEXT_PASSAGES_PER_CALL
+CRITERION_PASSAGES = FULLTEXT_CRITERION_PASSAGES
+QUOTE_MIN_CHARS = FULLTEXT_QUOTE_MIN_CHARS
+RUNS = FULLTEXT_RUNS
+READ_RULE = FULLTEXT_READ_RULE
+
+
+def read_budget(effort: str) -> dict[str, Any]:
+    """The budget a full-text reading run is queued with.
+
+    Read by the API route and by the flow's auto-queue, so a run the user starts and a run a retrieval run leaves
+    behind can never be given different room. Two calls per work, and no provider request: the text is already here.
+    The read rule (D76) is frozen here with the room, so a run keeps the rule it was queued with.
+    """
+    limit = FULLTEXT_READ_LIMIT[effort]
+    return {
+        "max_model_calls": FULLTEXT_RUNS * limit,
+        "max_provider_requests": 0,
+        "max_fulltext_reads": limit,
+        "read_rule": READ_RULE,
+    }
+
+
+def should_write(current: dict[str, Any] | None, code: str, stale: bool = False) -> bool:
+    """Whether this stage writes `code` over the record's current full-text decision.
+
+    The same fresh code writes nothing. A code this stage does not own — the user's, or retrieval's
+    `text_unreadable` / `no_fulltext` — is left alone while it is fresh. A stale decision is always rewritten.
+    """
+    if current is None or stale:
+        return True
+    if current["reason_code"] == code:
+        return False
+    return current["reason_code"] in OWNED_CODES
+
+
+def person_should_write(current: dict[str, Any] | None, code: str, note: str) -> bool:
+    """Whether the code a person's newly added file asks for is written over its version's current decision.
+
+    The person's own decision is never written over. Any other decision there was made before this file existed —
+    about the version's earlier file, or its having none — and is replaced, even a fresh model decision: it was not
+    about this file. Only the same code for the same file (`note`) writes nothing (slice 18b, decision 1). A reading
+    decision made after the file was added is kept by `should_write`, which every later writer goes through."""
+    if current is None:
+        return True
+    if current["decided_by"] == "human":
+        return False
+    return not (current["reason_code"] == code and current.get("note") == note)
+
+
+def _fresh_model(work: dict[str, Any]) -> bool:
+    for version in work["versions"]:
+        row = version.get("fulltext")
+        if row and not row.get("stale") and row["reason_code"] in FRESH_MODEL_CODES:
+            return True
+    return False
+
+
+# The states of a person's reading request in which its file has not been read yet (slice 18b).
+UNREAD_REQUESTS = ("waiting", "planned", "unread")
+
+
+def _person_files(work: dict[str, Any]) -> list[dict[str, Any]]:
+    """The versions carrying a person's file with text that has not been read yet, waiting ones first, oldest first."""
+    rows = [version for version in work["versions"]
+            if (version.get("person") or {}).get("status") in UNREAD_REQUESTS and version.get("has_text")]
+    return sorted(rows, key=lambda v: (v["person"]["status"] != "waiting", v["person"]["order"]))
+
+
+def person_version(work: dict[str, Any]) -> str | None:
+    """The version a reading reads for this work when a person's file on it has not been read yet, else None.
+
+    The version carrying the person's file is the one read, whatever another version was decided on (slice 18b,
+    decision 8); a work with no such file reads the version `Store.answer_version` names, as before."""
+    files = _person_files(work)
+    return files[0]["id"] if files else None
+
+
+def read_plan(works: list[dict[str, Any]], order: list[str], limit: int) -> dict[str, list[str]]:
+    """The works this run reads, and the works its limit did not reach. Nothing is dropped.
+
+    Eligible: a retrieval group (`fulltext.group_of`), PDF text on some version, and no fresh decision of this
+    stage. A stale decision re-enters. A work the user excluded, a work the user decided at full text, a work
+    with no text, and a work already carrying `text_unreadable` or `no_fulltext` with no text are not here —
+    the first two because `group_of` returns None, the last because no version has text.
+
+    Order is the group, then the inspection order, then the head identifier. The first `limit` heads are read;
+    the rest are `not_reached`.
+
+    A work whose person's file waits to be read (its version's `person` request is `waiting`) comes before every
+    group, in the order the files were added (`person["order"]`), and counts against the same limit (slice 18b,
+    decision 7). A fresh decision on another version does not keep a person's unread file out; a file whose reading
+    did not happen (`unread`) keeps its work's place in the group order and is not put first again.
+    """
+    place = {head: position for position, head in enumerate(order)}
+    front: list[tuple[Any, str]] = []
+    ranked: list[tuple[int, int, str]] = []
+    for work in works:
+        group = group_of(work, reading=True)
+        if group is None:
+            continue
+        files = _person_files(work)
+        if files and files[0]["person"]["status"] == "waiting":
+            front.append((files[0]["person"]["order"], work["head"]))
+            continue
+        if not files and _fresh_model(work):
+            continue
+        if not any(version.get("has_text") for version in work["versions"]):
+            continue
+        ranked.append((GROUPS.index(group), place.get(work["head"], len(place)), work["head"]))
+    front.sort()
+    ranked.sort()
+    heads = [head for _, head in front] + [head for _, _, head in ranked]
+    return {"works": heads[:limit], "not_reached": heads[limit:]}
+
+
+def _part_patterns(criterion: dict[str, Any] | None) -> tuple[list[Any], dict[Any, list[tuple[str, Any]]]]:
+    """Cue phrases grouped by the part they belong to, in the criterion's part order.
+
+    A phrase whose part is missing or names no part of this criterion joins the unassigned group, which is read
+    after the named parts. `compile_phrases` drops a short or repeated phrase; the part map uses the same
+    normalisation, so a dropped phrase never becomes a group.
+    """
+    phrases = (criterion or {}).get("cue_phrases") or []
+    names = [part["name"] for part in (criterion or {}).get("parts") or []]
+    known = set(names)
+    part_of: dict[str, Any] = {}
+    for row in phrases:
+        part = row.get("part")
+        part_of[norm(row["phrase"])] = part if part in known else None
+    compiled = compile_phrases(phrases)
+    groups: dict[Any, list[tuple[str, Any]]] = {}
+    for phrase, pattern in compiled["patterns"]:
+        groups.setdefault(part_of.get(phrase), []).append((phrase, pattern))
+    order: list[Any] = [name for name in names if name in groups]
+    if None in groups:
+        order.append(None)
+    return order, groups
+
+
+def reading_list(passages: list[dict[str, Any]], criterion: dict[str, Any] | None,
+                 topic_ranked: list[str], per_call: int, criterion_share: int) -> dict[str, Any]:
+    """The passages one call is shown, and whether that was the whole text.
+
+    Abstracts are not given. Fewer pdf passages than `per_call` means the whole text: every one of them, in page
+    order. Exactly `per_call` is the selection path, not the whole text. The selection takes criterion passages
+    in rounds — round *r* takes each part's *r*-th passage, and a passage already taken yields that part's next
+    unchosen one — up to `criterion_share`, then the topic order, then page order. The list never exceeds
+    `per_call` and is returned in page order. No phrases means topic order then page order.
+    """
+    pages = [p for p in passages if p.get("kind", "pdf_page") == "pdf_page"]
+    ordered = sorted(pages, key=lambda p: (_page(p), p["id"]))
+    if len(ordered) < per_call:
+        return {"passages": ordered, "whole_text": True}
+    chosen = _select(ordered, criterion, topic_ranked, per_call, criterion_share)
+    chosen.sort(key=lambda p: (_page(p), p["id"]))
+    return {"passages": chosen, "whole_text": False}
+
+
+def split_lists(passages: list[dict[str, Any]], criterion: dict[str, Any] | None,
+                topic_ranked: list[str], per_call: int, criterion_share: int) -> dict[str, list[dict[str, Any]]]:
+    """The two calls' passages under `split_v1` (D76). Code alone decides both, so both calls can be out together.
+
+    `first` is `reading_list`'s list, unchanged. `second` runs the same selection — criterion passages in rounds up to
+    `criterion_share`, then the topic order, then page order — over the passages `first` left out, and fills any room
+    left with `first`'s passages in the order `first` chose them. Both are returned in page order and neither exceeds
+    `per_call`. Fewer pdf passages than `per_call` gives the whole text twice, as before. `topic_ranked` must rank the
+    passages `first` left out too, or the second call falls back to page order for them.
+    """
+    pages = [p for p in passages if p.get("kind", "pdf_page") == "pdf_page"]
+    ordered = sorted(pages, key=lambda p: (_page(p), p["id"]))
+    if len(ordered) < per_call:
+        return {"first": ordered, "second": list(ordered)}
+    first = _select(ordered, criterion, topic_ranked, per_call, criterion_share)
+    seen = {p["id"] for p in first}
+    rest = [p for p in ordered if p["id"] not in seen]
+    second = _select(rest, criterion, topic_ranked, per_call, criterion_share) if rest else []
+    second += first[:per_call - len(second)]
+
+    def by_page(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return sorted(rows, key=lambda p: (_page(p), p["id"]))
+    return {"first": by_page(first), "second": by_page(second)}
+
+
+def coverage(shown_ids: set[str], passages: list[dict[str, Any]], pdf_pages: int | None) -> dict[str, Any]:
+    """How much of a version's extracted PDF text a reading showed the model (audit item 3).
+
+    `passages` are the version's pdf passages when the reading closed; `shown_ids` the ids the stored calls carried.
+    `all_parts_shown` says every extracted text part was shown, not that the whole PDF was: a page without text has no
+    passage, so `pdf_pages` (the file's page count, None when unknown) is kept beside the pages that have text.
+    """
+    pages = [p for p in passages if p.get("kind", "pdf_page") == "pdf_page"]
+    ids = {p["id"] for p in pages}
+    shown = shown_ids & ids
+    page_of = {p["id"]: p.get("physical_page") for p in pages}
+    with_text = {page for page in page_of.values() if isinstance(page, int)}
+    return {"parts_shown": len(shown), "parts_total": len(ids),
+            "pages_shown": len({page_of[pid] for pid in shown if isinstance(page_of[pid], int)}),
+            "pages_with_text": len(with_text), "pdf_pages": pdf_pages,
+            "all_parts_shown": bool(ids) and shown == ids}
+
+
+def _page(passage: dict[str, Any]) -> int:
+    page = passage.get("physical_page")
+    return page if isinstance(page, int) else 10**9
+
+
+def _select(pages: list[dict[str, Any]], criterion: dict[str, Any] | None, topic_ranked: list[str],
+            per_call: int, criterion_share: int) -> list[dict[str, Any]]:
+    by_id = {passage["id"]: passage for passage in pages}
+    chosen: list[dict[str, Any]] = []
+    chosen_ids: set[str] = set()
+    order, groups = _part_patterns(criterion)
+    if order and criterion_share:
+        buckets = {key: criterion_order(pages, groups[key]) for key in order}
+        pointers = {key: 0 for key in order}
+        while len(chosen) < criterion_share:
+            added = False
+            for key in order:
+                if len(chosen) >= criterion_share:
+                    break
+                bucket, index = buckets[key], pointers[key]
+                while index < len(bucket) and bucket[index]["id"] in chosen_ids:
+                    index += 1
+                pointers[key] = index
+                if index < len(bucket):
+                    chosen.append(bucket[index])
+                    chosen_ids.add(bucket[index]["id"])
+                    pointers[key] = index + 1
+                    added = True
+            if not added:
+                break
+    for passage_id in topic_ranked:
+        if len(chosen) >= per_call:
+            break
+        passage = by_id.get(passage_id)
+        if passage is not None and passage_id not in chosen_ids:
+            chosen.append(passage)
+            chosen_ids.add(passage_id)
+    for passage in pages:
+        if len(chosen) >= per_call:
+            break
+        if passage["id"] not in chosen_ids:
+            chosen.append(passage)
+            chosen_ids.add(passage["id"])
+    return chosen[:per_call]
+
+
+def verify(quote: str | None, pages: dict[int, str], named_page: int | None, min_chars: int) -> dict[str, Any]:
+    """Whether `quote` is verbatim on a page the model was shown.
+
+    The named page is searched first, then the other shown pages. A page that was not shown is not in `pages` and
+    is not searched. `exact` and `normalized` count; a fuzzy match is a paraphrase or a splice and does not. A
+    quote shorter than `min_chars` does not.
+    """
+    text = (quote or "").strip()
+    if len(text) < min_chars:
+        return {"verified": False, "page": None, "kind": None}
+    order = [named_page] if named_page in pages else []
+    order += [page for page in sorted(pages) if page != named_page]
+    for page in order:
+        match = locate_anchor(text, pages[page] or "")
+        if match is not None and match.kind in ("exact", "normalized"):
+            return {"verified": True, "page": page, "kind": match.kind}
+    return {"verified": False, "page": None, "kind": None}
+
+
+def verify_passages(quote: str | None, texts: dict[str, dict[str, Any]], named: str | None,
+                    min_chars: int) -> dict[str, Any]:
+    """Whether `quote` is verbatim inside one passage the call was shown (`split_v1`, D76).
+
+    `texts` maps each shown passage id to `{"text", "physical_page"}` as the call's stored input carried it. Each
+    passage is searched on its own text, the named one first, then the others in the order shown; passages are never
+    joined, so a quote that runs across two parts, or splices parts around one that was not shown, does not verify.
+    `exact` and `normalized` count, as in `verify`.
+    """
+    text = (quote or "").strip()
+    if len(text) < min_chars:
+        return {"verified": False, "passage_id": None, "page": None, "kind": None}
+    order = ([named] if named in texts else []) + [pid for pid in texts if pid != named]
+    for pid in order:
+        match = locate_anchor(text, texts[pid].get("text") or "")
+        if match is not None and match.kind in ("exact", "normalized"):
+            page = texts[pid].get("physical_page")
+            return {"verified": True, "passage_id": pid, "page": page if isinstance(page, int) else None,
+                    "kind": match.kind}
+    return {"verified": False, "passage_id": None, "page": None, "kind": None}
+
+
+def verdict(labels: list[str]) -> str:
+    """One run's reading of the parts: `include`, `not_met`, `partial` or `unclear`."""
+    if not labels:
+        return "unclear"
+    if all(label == "present" for label in labels):
+        return "include"
+    if "present" in labels:
+        return "partial"
+    if "absent" in labels:
+        return "not_met"
+    return "unclear"
+
+
+def run_view(proposals: dict[str, dict[str, Any]], parts: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """`{"verdict", "quotes_verified"}` for one run's usable proposals.
+
+    Only core parts gate inclusion and quote verification. Every aspect still
+    has its independently checked proposal. Without roles all parts are core.
+    """
+    # Missing roles retain the historical AND rule; comparator is a separate
+    # study-design marker. Only explicit aspects are outside the inclusion gate.
+    required = (list(proposals.values()) if parts is None else
+                [proposals.get(part["name"], {"label": "unclear", "quote_verified": False})
+                 for part in parts if part.get("inclusion_role", part.get("role")) != "aspect"])
+    labels = [row["label"] for row in required]
+    present = [row for row in required if row["label"] == "present"]
+    return {"verdict": verdict(labels), "quotes_verified": all(row["quote_verified"] for row in present)}
+
+
+def combine(first: dict[str, Any] | None, second: dict[str, Any] | None) -> str | None:
+    """One reason code from the two runs, or None when a run did not answer.
+
+    Identity is not this function's job. The two verdicts are compared only after both runs returned.
+    """
+    if first is None or second is None:
+        return None
+    if first["verdict"] != second["verdict"]:
+        return "fulltext_runs_disagree"
+    view = first["verdict"]
+    if view == "include":
+        if first["quotes_verified"] and second["quotes_verified"]:
+            return "all_parts_verified"
+        return "include_quote_unverified"
+    if view == "not_met":
+        return "criterion_absent"
+    if view == "partial":
+        return "part_without_evidence"
+    return "fulltext_runs_agree_unresolved"
+
+
+def _core(parts: list[dict[str, Any]] | None, names: list[str]) -> list[str]:
+    """The part names that gate inclusion: every part but an explicit aspect, as in `run_view`."""
+    if parts is None:
+        return list(names)
+    return [part["name"] for part in parts if part.get("inclusion_role", part.get("role")) != "aspect"]
+
+
+def _seen_by(row: dict[str, Any], shown: dict[str, dict[str, Any]], min_chars: int) -> dict[str, Any] | None:
+    """The passage of `shown` that holds the quote of a `present` row, or None when that call was not shown it.
+
+    The quote is looked for in each of the other call's passages on its own (`verify_passages`). A quote that did not
+    verify is held by no passage, so it never makes a part disputed: the part stays present and unverified."""
+    if not row.get("quote_verified"):
+        return None
+    found = verify_passages(row.get("quote"), shown, row.get("passage_id"), min_chars)
+    return {"passage_id": found["passage_id"], "page": found["page"]} if found["verified"] else None
+
+
+UNCLEAR_ROW = {"label": "unclear", "quote": "", "quote_verified": False, "passage_id": None, "page": None}
+
+
+def merge_parts(rows_by_run: dict[int, dict[str, dict[str, Any]]], shown_by_run: dict[int, dict[str, dict[str, Any]]],
+                min_chars: int = QUOTE_MIN_CHARS) -> dict[str, dict[str, Any]]:
+    """One merged reading per part from the two calls of a `split_v1` reading (D76). Pure; the queue uses it too.
+
+    `rows_by_run` holds each call's proposals by part (`label`, `quote`, `quote_verified`, `passage_id`, `page`);
+    `shown_by_run` each call's shown passages by id (`text`, `physical_page`), from its stored input.
+
+    - Both `present`: present, verified only when both quotes verified.
+    - One `present`: when its quote verified and the other call was shown a passage holding it, both saw the same
+      text and disagree, so the part is `disputed` (with that passage and its page); otherwise it is present on the
+      strength of its own call's quote, verified or not.
+    - Neither: `absent` when both said absent, else `unclear`.
+    """
+    runs = sorted(rows_by_run)
+    names: list[str] = []
+    for run_no in runs:
+        names += [name for name in rows_by_run[run_no] if name not in names]
+    merged: dict[str, dict[str, Any]] = {}
+    for name in names:
+        rows = {run_no: rows_by_run[run_no].get(name) or UNCLEAR_ROW for run_no in runs}
+        present = [run_no for run_no in runs if rows[run_no]["label"] == "present"]
+        if present and len(present) == len(runs):
+            merged[name] = {"label": "present", "quote_verified": all(rows[n]["quote_verified"] for n in runs),
+                            "disputed": False}
+        elif present:
+            found, other = present[0], next(n for n in runs if n not in present)
+            shared = _seen_by(rows[found], shown_by_run.get(other) or {}, min_chars)
+            if shared is not None:
+                merged[name] = {"label": "disputed", "quote_verified": False, "disputed": True, **shared}
+            else:
+                merged[name] = {"label": "present", "quote_verified": bool(rows[found]["quote_verified"]),
+                                "disputed": False, "run_no": found}
+        else:
+            absent = all(rows[n]["label"] == "absent" for n in runs)
+            merged[name] = {"label": "absent" if absent else "unclear", "quote_verified": False, "disputed": False}
+    return merged
+
+
+def combine_split(rows_by_run: dict[int, dict[str, dict[str, Any]] | None],
+                  shown_by_run: dict[int, dict[str, dict[str, Any]]], parts: list[dict[str, Any]] | None = None,
+                  min_chars: int = QUOTE_MIN_CHARS) -> str | None:
+    """One reason code from the two calls of a `split_v1` reading whose shown passages differ (D76), or None when a
+    call did not answer.
+
+    Any disputed core part is `fulltext_runs_disagree`. Otherwise the merged core labels are read as one run is
+    (`verdict`): include with every present part verified is `all_parts_verified`, with one unverified
+    `include_quote_unverified`; `not_met` is `criterion_absent`, `partial` `part_without_evidence`, and `unclear`
+    `fulltext_runs_agree_unresolved`. Aspects stay outside the gate. `with_comparator` and `with_title` apply after.
+    """
+    if len(rows_by_run) < FULLTEXT_RUNS or any(rows is None for rows in rows_by_run.values()):
+        return None
+    merged = merge_parts({n: rows for n, rows in rows_by_run.items() if rows is not None}, shown_by_run, min_chars)
+    core = [merged.get(name, {"label": "unclear", "quote_verified": False, "disputed": False})
+            for name in _core(parts, list(merged))]
+    if any(row["disputed"] for row in core):
+        return "fulltext_runs_disagree"
+    view = verdict([row["label"] for row in core])
+    if view == "include":
+        return ("all_parts_verified" if all(row["quote_verified"] for row in core)
+                else "include_quote_unverified")
+    if view == "not_met":
+        return "criterion_absent"
+    if view == "partial":
+        return "part_without_evidence"
+    return "fulltext_runs_agree_unresolved"
+
+
+# A title that names a study protocol, a trial protocol or a "rationale and design" paper (slice 26, SW26). English and
+# hand-written; its coverage is what the slice 26 plan measured on stored medicine, quantum and packet libraries and
+# nothing more. The trial/study anchor after "protocol for the" keeps "... swapping protocol for the quantum Internet"
+# out.
+PROTOCOL_TITLE = re.compile(
+    r"\b(?:study|trial|review|research|clinical|intervention)\s+protocol\b"
+    r"|\bprotocol\s+(?:for|of)\s+(?:a|an|the)\b[^:;.?]*\b(?:trial|study)\b"
+    r"|\bprotocol\s+overview\b"
+    r"|\brationale\s+and\s+design\b|\bdesign\s+and\s+rationale\b",
+    re.IGNORECASE)
+# The two agreeing codes a protocol title withholds: an automatic include and an automatic exclusion alike.
+TITLE_WITHHELD_CODES = ("all_parts_verified", "criterion_absent")
+
+
+def protocol_title(title: str | None) -> str | None:
+    """The words of `title` that name a study protocol, or None."""
+    match = PROTOCOL_TITLE.search(title or "")
+    return match.group(0) if match else None
+
+
+def with_title(code: str | None, title: str | None) -> tuple[str | None, str | None]:
+    """`(code, note)`: `combine`'s code, unless the read version's title names a study protocol.
+
+    Then two agreeing runs (every part found, or the criterion absent) decide nothing by themselves: the code is
+    `protocol_title` and the note keeps the combined code and the matched words. Every other code passes through
+    with no note; they already go to the queue.
+    """
+    if code in TITLE_WITHHELD_CODES and (words := protocol_title(title)) is not None:
+        return "protocol_title", f"protocol_title:{code}:{words}"
+    return code, None
+
+
+def mark_comparator(parts: list[dict[str, Any]], question_elements: list[dict[str, Any]],
+                    required_roles: list[str]) -> list[dict[str, Any]]:
+    """The parts a reading is sent, with `"role": "comparator"` on the part a `comparator` question element names.
+
+    Only when `comparator` is one of the criterion's `required_roles` (slice 25a, D106). The element names its part
+    in the form the criterion check accepts, so names are compared as that check compares them (`criterion.norm`:
+    case, spacing and edge punctuation do not count). Every other part, and every part of a criterion without that
+    role, comes back exactly as it was sent, in order (slice 28, D109).
+    """
+    if "comparator" not in (required_roles or []):
+        return list(parts)
+    names = {norm(element.get("part") or "") for element in question_elements or []
+             if element.get("role") == "comparator"}
+    names.discard("")
+    return [part | {"role": "comparator"} if norm(part["name"]) in names else part for part in parts]
+
+
+def comparator_part(parts: list[dict[str, Any]]) -> str | None:
+    """The name of the part `mark_comparator` marked, or None. A plan frozen before slice 28 has none."""
+    return next((part["name"] for part in parts if part.get("role") == "comparator"), None)
+
+
+def with_comparator(code: str | None, part: str | None) -> tuple[str | None, str | None]:
+    """`(code, note)`: `combine`'s code, unless it is `criterion_absent` on a criterion with a comparator part.
+
+    Then the reading excludes nothing by itself: the comparator's label may have decided that no part was found, and
+    the code is `comparator_exclusion_withheld` with the combined code and the part in the note, for a person to
+    answer (slice 28, D109). Every other code, and every code on a criterion without a comparator part, passes through
+    with no note.
+    """
+    if code == "criterion_absent" and part is not None:
+        return "comparator_exclusion_withheld", f"comparator_exclusion_withheld:criterion_absent:{part}"
+    return code, None
+
+
+def proposals_of(parts: list[dict[str, Any]], records: list[dict[str, Any]], shown: dict[str, dict[str, Any]],
+                 pages: dict[int, str], min_chars: int,
+                 texts: dict[str, dict[str, Any]] | None = None) -> dict[str, dict[str, Any]]:
+    """One run's proposal per criterion part.
+
+    A record-level defect drops that part's proposal for this run and the part is read as `unclear`: an unknown
+    part, a part named twice (both copies, because nothing says which the model meant), a missing part, a
+    `present` with no quote, and a `passage_id` that was not shown. An unverified quote does not flip the label:
+    the part stays `present` and `quote_verified` is false, which is what makes two agreeing include-runs
+    `include_quote_unverified` rather than included. A quote verified on another shown page than the named
+    passage's is stored with the passage on that page, so the passage and page of a proposal always agree.
+
+    With `texts` (`split_v1`, D76: each shown passage's own text from the call's stored input) a quote verifies only
+    inside one shown passage (`verify_passages`), never on the whole text of a shown page, and is stored with the
+    passage it was found in. `pages` is then not read.
+    """
+    expected = [part["name"] for part in parts]
+    known = set(expected)
+    found: dict[str, dict[str, Any]] = {}
+    dropped: set[str] = set()
+    for record in records:
+        name = record.get("part")
+        if name not in known or name in found or name in dropped:
+            if isinstance(name, str):
+                dropped.add(name)
+            found.pop(name, None)
+            continue
+        label = record.get("label")
+        quote = (record.get("quote") or "").strip()
+        passage_id = record.get("passage_id")
+        if label == "present" and (not quote or passage_id not in shown):
+            dropped.add(name)
+            continue
+        if label == "present" and texts is not None:
+            checked = verify_passages(quote, texts, passage_id, min_chars)
+            found[name] = {"label": "present", "quote": quote, "quote_verified": checked["verified"],
+                           "passage_id": checked["passage_id"] or passage_id, "page": checked["page"]}
+        elif label == "present":
+            named = shown[passage_id].get("physical_page")
+            checked = verify(quote, pages, named if isinstance(named, int) else None, min_chars)
+            if checked["page"] is not None and checked["page"] != named:
+                # The quote stands on another shown page: the passage stored is the one it was located in.
+                passage_id = next((pid for pid, row in shown.items() if row.get("physical_page") == checked["page"]),
+                                  passage_id)
+            found[name] = {"label": "present", "quote": quote, "quote_verified": checked["verified"],
+                           "passage_id": passage_id, "page": checked["page"]}
+        elif label in ("absent", "unclear"):
+            found[name] = {"label": label, "quote": "", "quote_verified": False, "passage_id": None, "page": None}
+        else:
+            dropped.add(name)
+    unclear = {"label": "unclear", "quote": "", "quote_verified": False, "passage_id": None, "page": None}
+    return {name: found[name] if name in found and name not in dropped else dict(unclear) for name in expected}

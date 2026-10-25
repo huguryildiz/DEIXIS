@@ -5,8 +5,8 @@ from typing import Literal
 from fastapi import Header, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from deixis.workflow.watch_store import WatchStore
-from deixis.workflow.watch_view import check_view, command_view, item_view, watch_view
+from deixis.workflow.features.watch.watch_store import WatchStore
+from deixis.workflow.features.watch.watch_view import check_view, command_view, item_view, watch_view
 
 
 class Preview(BaseModel):

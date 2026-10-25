@@ -19,10 +19,10 @@ from deixis.documents.local_embedding import LocalEmbeddingError
 from deixis.providers.common import ProviderRecord
 from deixis.providers.registry import CONNECTORS
 from deixis.storage import db
-from deixis.workflow import english_question
-from deixis.workflow.flow import ResearchFlow
-from deixis.workflow.store import Store
-from deixis.workflow.views import research_view
+from deixis.workflow.search import english_question
+from deixis.workflow.run.flow import ResearchFlow
+from deixis.workflow.run.store import Store
+from deixis.workflow.run.views import research_view
 from builtin_helpers import ready
 from fakes import FakeAdapter, valid_response
 from test_ranking_flow import STRONG, Pool, client_of, discover, no_fetch, wait

@@ -8,7 +8,7 @@ cell and only the person's decision changes a value. Pause, resume and cancel ar
 from fastapi import Header, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from deixis.workflow.tables import TableStore
+from deixis.workflow.features.tables.tables import TableStore
 
 
 class ColumnVersion(BaseModel):

@@ -21,7 +21,7 @@ from deixis.domain.rules import LITERATURE_TASKS, SEARCH_QUERY_CALLS, TEST_EFFOR
 from deixis.domain.skill import RUNTIME_FILES
 from deixis.models.adapter import ModelStepResult
 from deixis.providers.registry import CONNECTORS
-from deixis.workflow import search_query
+from deixis.workflow.search import search_query
 from fakes import FakeAdapter
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "research"

@@ -14,13 +14,13 @@ from deixis.config import Settings
 from deixis.domain import skill
 from deixis.domain.rules import MAX_RATE_LIMIT_MODEL_RETRIES, RevisionConflict, schema_repairs
 from deixis.storage import db
-from deixis.workflow.flow import FlowDeps, ResearchFlow
-from deixis.workflow import lineage_run as planning
-from deixis.workflow.lineage_candidates import find_candidates
-from deixis.workflow.lineage_mentions import PassageText, mention_rules
-from deixis.workflow.lineage_store import LineageStore
-from deixis.workflow.store import Store
-from deixis.workflow.tables import TableStore
+from deixis.workflow.run.flow import FlowDeps, ResearchFlow
+from deixis.workflow.features.lineage import lineage_run as planning
+from deixis.workflow.features.lineage.lineage_candidates import find_candidates
+from deixis.workflow.features.lineage.lineage_mentions import PassageText, mention_rules
+from deixis.workflow.features.lineage.lineage_store import LineageStore
+from deixis.workflow.run.store import Store
+from deixis.workflow.features.tables.tables import TableStore
 from fakes import FakeAdapter
 from test_api_flow import session
 from test_lineage_store import decision, human, model

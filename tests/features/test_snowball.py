@@ -13,9 +13,9 @@ from deixis.config import Settings
 from deixis.domain import skill
 from deixis.storage import db
 from deixis.storage.db import now
-from deixis.workflow import snowball
-from deixis.workflow.flow import FlowDeps, ResearchFlow
-from deixis.workflow.store import Store
+from deixis.workflow.features.citation_map import snowball
+from deixis.workflow.run.flow import FlowDeps, ResearchFlow
+from deixis.workflow.run.store import Store
 from fakes import FakeAdapter, valid_response
 from test_fulltext_flow import work
 from test_screen_more import discovered, included, new_answer

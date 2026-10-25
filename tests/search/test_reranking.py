@@ -14,8 +14,8 @@ import httpx
 import pytest
 
 from deixis.documents import embeddings, local_embedding, rerankers
-from deixis.workflow import small_batch
-from deixis.workflow.flow import RunStopped
+from deixis.workflow.search import small_batch
+from deixis.workflow.run.flow import RunStopped
 from test_builtin_embedding_flow import BUILTIN, FakeLocal, Session
 
 RER = "qwen3-reranker-0.6b"

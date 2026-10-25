@@ -4,7 +4,7 @@ Shared contracts (record writing, continuation refusal, transport accounting, su
 round and old chain requests used to carry run here through the fast path's own entry points. No live provider.
 """
 
-from deixis.workflow import fast_chain, search as fast_search
+from deixis.workflow.search import fast_chain, search as fast_search
 
 
 def plan(queries, *, cap=1000, page_size=100):

@@ -5,10 +5,10 @@ import json
 
 
 from deixis.domain import contracts
-from deixis.workflow import report_review as review
-from deixis.workflow.report_sections import run_report
-from deixis.workflow import report_sections
-from deixis.workflow.views import report_view
+from deixis.workflow.features.report import report_review as review
+from deixis.workflow.features.report.report_sections import run_report
+from deixis.workflow.features.report import report_sections
+from deixis.workflow.run.views import report_view
 from deixis.models.adapter import ModelStepResult
 from fakes import valid_response
 from test_report_flow import report_flow

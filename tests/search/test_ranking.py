@@ -6,10 +6,10 @@ Pure functions over SYNTHETIC pools. Passing shows the order rules; a rank is a 
 import random
 import pytest
 from deixis.domain.canonical import sha256_hex
-from deixis.workflow import ranking
+from deixis.workflow.search import ranking
 import json
 from deixis.domain import canonical
-from deixis.workflow import small_batch, ranking
+from deixis.workflow.search import small_batch, ranking
 
 
 # ---- from tests__discovery__test_record_ranking.py ------------------------------------------------------------

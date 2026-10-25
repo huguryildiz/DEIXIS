@@ -10,11 +10,11 @@ import pytest
 
 from deixis.storage import db
 from deixis.storage.db import new_id
-from deixis.workflow.report_assembly import run_assembly_checks
-from deixis.workflow import report_review_methodology as review_methodology
-from deixis.workflow.report_store import ReportStore
-from deixis.workflow.store import Store
-from deixis.workflow.tables import TableStore
+from deixis.workflow.features.report.report_assembly import run_assembly_checks
+from deixis.workflow.features.report import report_review_methodology as review_methodology
+from deixis.workflow.features.report.report_store import ReportStore
+from deixis.workflow.run.store import Store
+from deixis.workflow.features.tables.tables import TableStore
 
 
 COLUMN = {

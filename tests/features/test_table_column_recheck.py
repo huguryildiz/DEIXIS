@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from deixis.workflow.worker import Worker
+from deixis.workflow.run.worker import Worker
 from fakes import FakeAdapter
 from test_api_flow import app_for, create, session, wait_run
 from test_evidence_tables import PACKET_SIZE, upload

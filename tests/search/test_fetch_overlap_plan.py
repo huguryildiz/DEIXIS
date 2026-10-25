@@ -8,7 +8,7 @@ the plan it is computed against. No database, no network, no model.
 
 import random
 
-from deixis.workflow import fulltext
+from deixis.workflow.read import fulltext
 
 OUTCOMES = ("runs_agree_candidate", "runs_agree_out_of_scope", "runs_agree_unresolved", "abstract_not_proposed")
 NO_BASELINE = {"settled": [], "has_text": []}

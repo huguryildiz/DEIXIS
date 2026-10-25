@@ -26,10 +26,12 @@ from deixis.providers.registry import CONNECTORS
 from deixis.imports import bibtex_ris
 from deixis.providers import zotero
 from deixis.storage.db import new_id
-from deixis.workflow import bibliography, file_restore, intent, library_items, text_retry
+from deixis.workflow.answer import bibliography
+from deixis.workflow.read import file_restore, text_retry
+from deixis.workflow.run import intent, library_items
 from deixis.storage.db import transaction
-from deixis.workflow.store import Store
-from deixis.workflow.views import library_version_to_add, library_view, library_work_view, research_view
+from deixis.workflow.run.store import Store
+from deixis.workflow.run.views import library_version_to_add, library_view, library_work_view, research_view
 
 MAX_SET = 500
 

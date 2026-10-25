@@ -16,13 +16,13 @@ from deixis.domain import contracts
 from deixis.domain.canonical import canonical_json
 from deixis.domain.rules import LITERATURE_TASKS, NO_REPAIR_TASKS, schema_repairs
 from deixis.domain.skill import RUNTIME_FILES, integrity_issues, load_skill_package
-from deixis.workflow.criterion import PARTS_PER_PROPOSAL, PHRASES_PER_PART, PROPOSAL_MAJORITY, PROPOSAL_RUNS, THRESHOLDS, consensus
+from deixis.workflow.search.criterion import PARTS_PER_PROPOSAL, PHRASES_PER_PART, PROPOSAL_MAJORITY, PROPOSAL_RUNS, THRESHOLDS, consensus
 import httpx
 from fastapi.testclient import TestClient
 
 from deixis.domain.rules import ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS, TEST_EFFORT_BUDGETS
 from deixis.models.adapter import ModelStepResult
-from deixis.workflow.abstract_stage import model_calls
+from deixis.workflow.screen.abstract_stage import model_calls
 from fakes import FakeAdapter, envelope, valid_response
 from test_vocabulary_flow import CountingOpenAlex, app_for, start, store_at, wait
 

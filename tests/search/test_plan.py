@@ -5,10 +5,10 @@ the chosen words are good ones.
 """
 
 from deixis.providers import query_compiler
-from deixis.workflow import search as fast_search
+from deixis.workflow.search import search as fast_search
 import asyncio
 from deixis.providers.query_compiler import compile_block_queries
-from deixis.workflow.vocabulary import build_vocabulary
+from deixis.workflow.search.vocabulary import build_vocabulary
 from deixis.domain.vocabulary import Extraction
 import json
 import sqlite3
@@ -16,7 +16,7 @@ import pytest
 from deixis.config import Settings
 from deixis.domain.canonical import sha256_hex
 from deixis.storage import db
-from deixis.workflow.store import Store
+from deixis.workflow.run.store import Store
 
 
 # ---- from tests__discovery__test_plan_words.py ------------------------------------------------------------
@@ -63,7 +63,7 @@ def test_a_word_only_an_unsent_query_holds_is_not_sent():
 def test_the_panel_names_the_plan_words_as_the_plan_writes_them():
     """The Search plan panel lists the plan's own words the frozen search records as not searched, matched one way
     written; a protocol frozen before the record lists nothing rather than guessing."""
-    from deixis.workflow import user_plan
+    from deixis.workflow.search import user_plan
 
     plan = {"setting": [{"term": "Synthetic"}], "task": [{"term": "energy"}, {"term": "Modeled"}]}
     words = [{"block": "setting", "term": "synthetic", "searched": True, "left_out": None},
@@ -176,7 +176,7 @@ def vocabulary_for(*phrases, claim_words=(), exclusion_words=()):
 
 
 def sw_body(vocabulary):
-    from deixis.workflow import protocol
+    from deixis.workflow.search import protocol
     return protocol.build_protocol(SW_SCOPE, {}, None, [], "pkg_hash", Settings(data_dir=None),
                                    vocabulary=vocabulary)
 

@@ -1,5 +1,5 @@
 """Downloading, checking and removing the built-in models one at a time, the catalog's Settings routes, and the
-earlier PyTorch install (`workflow/local_embedding_service.py`, `api/app.py`).
+earlier PyTorch install (`workflow/run/local_embedding_service.py`, `api/app.py`).
 
 The runtime archive and the model files are SYNTHETIC, served through httpx.MockTransport as GitHub and Hugging Face
 would; the archive's `llama-server` is `fake_llama_server.py`. A second process holding a lock is a real child process.
@@ -18,7 +18,7 @@ from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.documents import builtin_catalog, llama_runtime, local_embedding
 from deixis.documents.local_embedding import LocalModels
-from deixis.workflow.local_embedding_service import LocalModelService
+from deixis.workflow.run.local_embedding_service import LocalModelService
 from builtin_helpers import Downloads, fake_catalog, install_model, install_runtime, pin_tarball, tarball
 
 

@@ -10,12 +10,13 @@ import json
 import time
 import pytest
 from deixis.models.adapter import ModelStepResult
-from deixis.workflow import fast_path, intent, statement_check
+from deixis.workflow.run import fast_path, intent
+from deixis.workflow.answer import statement_check
 from fakes import valid_response
 from test_abstract_flow import Pool, app_for, client_of
 from test_statement_check import ABSTRACT, MODEL, SENTENCE, build, by_source, cutoff, execute, items, statement_calls, user
 from deixis.domain import statement
-from deixis.workflow import statement_check
+from deixis.workflow.answer import statement_check
 from test_statement_check import ABSTRACT, MODEL, build, execute, items
 from test_statement_check import answer, build, create, cutoff, execute, items, scripted
 

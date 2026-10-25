@@ -13,9 +13,10 @@ from deixis.providers import facade
 from deixis.providers.common import SearchOutcome
 from deixis.storage.db import transaction
 from deixis.storage import db
-from deixis.workflow import fast_chain, fast_path, lookups, small_batch
-from deixis.workflow.flow import ResearchFlow
-from deixis.workflow.store import Store
+from deixis.workflow.search import fast_chain, lookups, small_batch
+from deixis.workflow.run import fast_path
+from deixis.workflow.run.flow import ResearchFlow
+from deixis.workflow.run.store import Store
 from test_fast_path_clock import library, app_for, FakeClock
 from test_fast_path_search import record
 from overlap_flow_helpers import discover
@@ -236,7 +237,7 @@ def test_a_restart_counts_spent_attempts_and_sends_nothing_twice(effort_library,
     `outcome_unknown`; a new process resumes the plan. Only never-sent requests go out, and the budget it checks
     holds every attempt the first process spent or reserved."""
     from deixis.domain.rules import PROVIDER_WAIT
-    from deixis.workflow import chaining
+    from deixis.workflow.search import chaining
     lib = effort_library
     flow, scope, round_ = setup(lib, tmp_path)
     wait = PROVIDER_WAIT[scope['effort']]

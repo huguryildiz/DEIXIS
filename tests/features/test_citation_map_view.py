@@ -4,8 +4,8 @@ import pytest
 
 from deixis.providers.common import ProviderRecord
 from deixis.storage import db
-from deixis.workflow import citation_map
-from deixis.workflow.store import Store
+from deixis.workflow.features.citation_map import citation_map
+from deixis.workflow.run.store import Store
 
 
 @pytest.fixture

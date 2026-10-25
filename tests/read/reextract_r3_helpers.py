@@ -5,12 +5,12 @@ import json
 import pytest
 
 from deixis.storage import db
-from deixis.workflow import text_retry
-from deixis.workflow.report_store import ReportStore
-from deixis.workflow.review_reader import ReviewReader
-from deixis.workflow.review_snapshot import build_snapshot
-from deixis.workflow.review_store import ReviewStore, resolve_finding
-from deixis.workflow.tables import TableStore
+from deixis.workflow.read import text_retry
+from deixis.workflow.features.report.report_store import ReportStore
+from deixis.workflow.features.review.review_reader import ReviewReader
+from deixis.workflow.features.review.review_snapshot import build_snapshot
+from deixis.workflow.features.review.review_store import ReviewStore, resolve_finding
+from deixis.workflow.features.tables.tables import TableStore
 from test_report_assembly import COLUMN, _claim
 from reextract_r2a_helpers import head
 from review_helpers import finding, step_payload, review_run

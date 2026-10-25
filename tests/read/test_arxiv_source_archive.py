@@ -20,7 +20,7 @@ import httpx
 from arxiv_helpers import fetch_child, make_arxiv_pdf, no_network, source_archive
 from deixis.documents import fetch
 from deixis.storage import db
-from deixis.workflow.store import Store
+from deixis.workflow.run.store import Store
 import pymupdf
 from arxiv_helpers import make_arxiv_pdf, no_network, source_archive
 

@@ -12,10 +12,10 @@ from types import SimpleNamespace
 import pytest
 
 from deixis.storage import db
-from deixis.workflow.flow import ResearchFlow
-from deixis.workflow.report_review_methodology import render_review_methodology
-from deixis.workflow.store import Store
-from deixis.workflow.tables import TableStore
+from deixis.workflow.run.flow import ResearchFlow
+from deixis.workflow.features.report.report_review_methodology import render_review_methodology
+from deixis.workflow.run.store import Store
+from deixis.workflow.features.tables.tables import TableStore
 from test_prisma_s import Search
 from test_queue import BUDGET
 
@@ -152,7 +152,7 @@ def test_prisma_s_lists_follow_up_searches_apart_with_every_sent_request(store):
     assert entry["records_kept"] == 3 and entry["new_works"] == 2 and all(r["date"] for r in entry["requests"])
     # Not an "other method": item 7 still reads only what the person brought.
     assert "follow-up" not in next(i for i in export["items"] if i["number"] == 7)["text"].lower()
-    from deixis.workflow import prisma_s
+    from deixis.workflow.search import prisma_s
     text = prisma_s.markdown(export)
     assert "## Follow-up searches" in text and QUESTION in text and "SYNTHETIC second follow-up" in text
 

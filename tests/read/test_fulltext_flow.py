@@ -8,8 +8,8 @@ from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.documents.fetch import FetchResult
 from deixis.providers.registry import CONNECTORS
-from deixis.workflow import fulltext
-from deixis.workflow.decisions import DecisionStore
+from deixis.workflow.read import fulltext
+from deixis.workflow.screen.decisions import DecisionStore
 from fakes import FakeAdapter, valid_response
 from helpers import make_pdf
 from test_abstract_flow import QUESTION, client_of, records_of

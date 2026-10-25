@@ -26,10 +26,10 @@ from deixis.models.gemini import GeminiAdapter
 from deixis.providers.registry import CONNECTORS
 from deixis.storage import db
 from deixis.storage.db import new_id
-from deixis.workflow.flow import FlowDeps
-from deixis.workflow.flow import ResearchFlow
-from deixis.workflow.flow import RunStopped
-from deixis.workflow.store import Store
+from deixis.workflow.run.flow import FlowDeps
+from deixis.workflow.run.flow import ResearchFlow
+from deixis.workflow.run.flow import RunStopped
+from deixis.workflow.run.store import Store
 from fakes import FakeAdapter
 from fakes import valid_response
 from test_abstract_flow import Pool

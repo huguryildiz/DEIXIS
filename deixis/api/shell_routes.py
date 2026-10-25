@@ -28,8 +28,9 @@ from deixis.domain import proxy
 from deixis.providers import scopus
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import now
-from deixis.workflow import queue, waiting
-from deixis.workflow.store import Store
+from deixis.workflow.screen import queue
+from deixis.workflow.read import waiting
+from deixis.workflow.run.store import Store
 
 PROFILE_NAME_SETTING = "profile_name"
 NAME_MAX = 80

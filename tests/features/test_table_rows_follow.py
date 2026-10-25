@@ -9,10 +9,10 @@ import time
 
 import pytest
 
-from deixis.workflow import table_rows
-from deixis.workflow.report_snapshot import build_snapshot
-from deixis.workflow.tables import report_ready
-from deixis.workflow.tables import InvalidTableInput
+from deixis.workflow.features.tables import table_rows
+from deixis.workflow.features.report.report_snapshot import build_snapshot
+from deixis.workflow.features.tables.tables import report_ready
+from deixis.workflow.features.tables.tables import InvalidTableInput
 from test_evidence_tables import PACKET_SIZE
 from test_table_extraction import add_pdf, cell, execute, fill, library, table_version
 

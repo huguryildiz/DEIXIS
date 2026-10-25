@@ -7,8 +7,8 @@ import json
 import pytest
 
 from deixis.domain import contracts
-from deixis.workflow.report_sections import run_report
-from deixis.workflow.flow import RunStopped
+from deixis.workflow.features.report.report_sections import run_report
+from deixis.workflow.run.flow import RunStopped
 from fakes import parse_step_input
 from test_contracts import CASES, STEP_INPUTS
 from test_report_flow import report_flow
@@ -118,7 +118,7 @@ def test_report_bad_id_after_one_repair_stops_section_without_salvage_or_dropped
     def forbidden_salvage(*args):
         pytest.fail("Reports must never call answer salvage")
 
-    from deixis.workflow import report_sections as sections
+    from deixis.workflow.features.report import report_sections as sections
     original_links = sections._citation_links
 
     def guarded_links(payload, draft):

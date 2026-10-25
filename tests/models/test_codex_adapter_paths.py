@@ -17,10 +17,10 @@ from deixis.models.codex_rpc import RpcError
 from deixis.models.codex_rpc import TurnResult
 from deixis.storage import db
 from deixis.tools import tool_probe
-from deixis.workflow.flow import FlowDeps
-from deixis.workflow.flow import ResearchFlow
-from deixis.workflow.flow import RunStopped
-from deixis.workflow.store import Store
+from deixis.workflow.run.flow import FlowDeps
+from deixis.workflow.run.flow import ResearchFlow
+from deixis.workflow.run.flow import RunStopped
+from deixis.workflow.run.store import Store
 
 
 @pytest.fixture

@@ -120,7 +120,9 @@ print(json.dumps({"package": deixis.__file__, "root": str(RESOURCE_ROOT), "issue
 def test_the_manifest_lists_every_data_file_next_to_the_code_and_the_build_record():
     listed = {Path(source).resolve() for source, _ in package_manifest.datas(REPO)}
     package = REPO / "deixis"
-    data_files = {p.resolve() for p in package.rglob("*") if p.is_file() and p.suffix not in (".py", ".pyc")}
+    # Finder's .DS_Store files are not package data; git ignores them, but they sit on disk in a checkout.
+    data_files = {p.resolve() for p in package.rglob("*")
+                  if p.is_file() and p.suffix not in (".py", ".pyc") and p.name != ".DS_Store"}
     assert data_files <= listed
     assert all((REPO / "deixis/contracts/research" / name).resolve() in listed for name in os.listdir(REPO / "deixis/contracts/research"))
     assert (REPO / "deixis/methods/deixis-research/references/report.md").resolve() in listed

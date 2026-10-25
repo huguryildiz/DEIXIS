@@ -42,8 +42,6 @@ INSTALL_TIMEOUT_SECONDS = 20 * 60
 OUTPUT_TAIL_CHARS = 4000
 OUTPUT_TAIL_BYTES = 4 * OUTPUT_TAIL_CHARS  # a UTF-8 character is at most four bytes
 READ_CHUNK_BYTES = 64 * 1024
-# The model the Ollama card offers first when no embedding model is installed: a small one semantic search can use.
-OLLAMA_EMBEDDING_MODEL = "nomic-embed-text"
 # On macOS Ollama installs as the app from ollama.com (it runs the server in the menu bar), not Homebrew's bare CLI.
 OLLAMA_MAC = sys.platform == "darwin"
 OLLAMA_MAC_APP = Path("/Applications/Ollama.app")
@@ -566,9 +564,6 @@ class LocalTools:
         if not ollama["running"]:
             raise ToolError(409, "Ollama is not running: open the Ollama app or run `ollama serve`")
         return ollama
-
-    async def pull_embedding_model(self) -> dict[str, Any]:
-        return await self.pull_model(OLLAMA_EMBEDDING_MODEL)
 
     async def pull_model(self, model: str) -> dict[str, Any]:
         """Download one model through the running Ollama server, one download at a time."""

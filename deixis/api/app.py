@@ -1758,10 +1758,6 @@ def create_app(
     async def install_local_tool(tool_id: str, request: Request) -> dict[str, Any]:
         return {"job": await request.app.state.local_tools.install(tool_id)}
 
-    @app.post("/api/local-tools/ollama/pull-embedding-model", status_code=202)
-    async def pull_ollama_embedding_model(request: Request) -> dict[str, Any]:
-        return {"job": await request.app.state.local_tools.pull_embedding_model()}
-
     @app.post("/api/local-tools/ollama/pull", status_code=202)
     async def pull_ollama_model(body: OllamaModelBody, request: Request) -> dict[str, Any]:
         return {"job": await request.app.state.local_tools.pull_model(body.model)}

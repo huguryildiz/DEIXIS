@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from deixis.api.app import (CreateResearch, UploadRefused, ZoteroImport, attach_zotero_pdf, checked_research_models,
@@ -211,17 +211,3 @@ def register_library_routes(app, settings: Settings) -> None:
             "format": fmt, "filename": Path(file.filename or "").name or None, **result,
             "errors": [e.view() for e in errors]}}
 
-    @app.get("/api/library/assets/{asset_id}")
-    async def get_asset(asset_id: str, request: Request) -> FileResponse:
-        """The PDF in use of a saved item, read-only, for a version no research may hold."""
-        store = store_of(request)
-        asset = store.asset(asset_id)
-        saved = store.conn.execute("SELECT 1 FROM library_items WHERE source_version_id = ?",
-                                   (asset["source_version_id"],)).fetchone()
-        if asset["removed_at"] is not None or saved is None:
-            raise HTTPException(404, "Asset is not part of the library")
-        root = settings.papers_dir.resolve()
-        path = (root / asset["storage_path"]).resolve()
-        if not path.is_relative_to(root) or not path.exists():
-            raise HTTPException(404, "File missing")
-        return FileResponse(path, media_type="application/pdf", headers={"Content-Disposition": "inline", "Cache-Control": "no-cache"})

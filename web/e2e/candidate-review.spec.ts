@@ -195,7 +195,7 @@ test('latest paused search overrides an earlier completed search for the entry',
 from pathlib import Path
 from deixis.storage import db
 from deixis.workflow.store import Store
-from deixis.workflow.candidates.store import CandidateStore
+from deixis.workflow.candidates_store import CandidateStore
 c=db.connect(Path(sys.argv[1])); s=Store(c); cs=CandidateStore(s)
 with db.transaction(c):
  previous=c.execute('SELECT query_block_json, rendered_queries_json, skipped_terms_json, selection_json FROM kill_searches WHERE id = ? AND candidate_version_id = ? AND outcome = ?', (sys.argv[5], sys.argv[4], 'completed')).fetchone()

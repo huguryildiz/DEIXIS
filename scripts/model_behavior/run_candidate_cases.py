@@ -39,7 +39,7 @@ CALL_SHAPE_NOTES = (
     "equality (production also accepts a verified alias). Inputs are synthetic fixture variants, "
     "not database-planned inputs; no workflow persistence, publication, revision guards, frozen-passage "
     "checks, packing or run-budget enforcement is exercised. CB06 supplies three abstract passages of "
-    "one work: the validator accepts them, but workflow/candidates/run.py::shown_passages selects at "
+    "one work: the validator accepts them, but workflow/candidates_run.py::shown_passages selects at "
     "most one abstract per work, with ABSTRACT_CHARS=2500, PAGE_PASSAGES=6, PAGE_TEXT_CHARS=4000; "
     "decomposition packing uses BASIS_ITEMS=24 and BASIS_TEXT_CHARS=1500. "
     "Production _candidate_model passes MAX_MESSAGE_CHARS=48000 and the research model's selected "

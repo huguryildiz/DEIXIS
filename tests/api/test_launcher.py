@@ -175,6 +175,8 @@ def test_staged_database_is_verified_and_removed_on_failure(tmp_path, monkeypatc
             closed.append(True)
 
     def connect(path, *args, **kwargs):
+        if damage == "integrity" and "mode=ro" in str(path):
+            return real_connect(":memory:")  # the read-only preflight passes, so the staged copy's own check is what refuses
         if damage == "integrity" and str(path).endswith(".restoring"):
             kwargs["factory"] = IntegrityFailure
         return real_connect(path, *args, **kwargs)

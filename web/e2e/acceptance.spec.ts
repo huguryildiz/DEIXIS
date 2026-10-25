@@ -371,7 +371,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
   const bisection = (report: ReturnType<typeof reportPanel>) => report.locator('.reference-list li', { hasText: 'SYNTHETIC molecule release scheduling with bisection' }).getByRole('button')
 
   test('X01-X04: axe finds nothing serious or critical on home, the answer thread, Sources, the report and the cited passage (light and dark, 1280 and 390 px)', async () => {
-    test.setTimeout(240_000)
+    test.setTimeout(480_000)  // one scan per screen, theme and width: a shared CI runner can take twice the local time
     const url = researchUrl()
     const found: string[] = []
     await page.goto(server.url())

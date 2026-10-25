@@ -640,7 +640,7 @@ test.describe.serial('S24: the Settings page', () => {
   })
 
   test('X01-X04: axe finds nothing serious or critical on Settings (models, connections, usage, general; light and dark, 1280 and 390 px)', async () => {
-    test.setTimeout(180_000)
+    test.setTimeout(360_000)  // one scan per tab, theme and width: a shared CI runner can take twice the local time
     const found: string[] = []
     for (const tab of ['', '/connections', '/usage', '/general']) {
       await page.goto(server.url(`#/settings${tab}`))

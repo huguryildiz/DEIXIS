@@ -3805,7 +3805,7 @@ export const tr: Record<string, string> = {
   'Follow-up answer': 'Takip sorusu yanıtı',
   'Your source selection changed while this run was working, so it stopped.': 'Bu çalışma sürerken kaynak seçiminiz değişti; çalışma durdu.',
   'Resume picks up where it stopped and keeps your choices.': 'Sürdür, kaldığı yerden devam eder ve seçimlerinizi korur.',
-  'It cannot go on with what it started from. Cancel it and start again.': 'Başladığı seçimle devam edemez. Çalışmayı iptal edip yeniden başlatın.',
+  'Resume publishes this answer, marked as written from your earlier selection, then writes a new one from your current selection.': 'Sürdür, bu cevabı önceki seçiminizle yazıldığı işaretiyle yayımlar, ardından güncel seçiminizle yeni bir cevap yazar.',
   'Your source selection changed while this follow-up was being answered. Ask it again.': 'Bu takip sorusu yanıtlanırken kaynak seçiminiz değişti. Soruyu yeniden sorun.',
   'A source or its PDF changed while this follow-up was being answered. Ask it again.': 'Bu takip sorusu yanıtlanırken bir kaynak ya da PDF’si değişti. Soruyu yeniden sorun.',
   // UI parity S1: sidebar, background work, toast and the language command.

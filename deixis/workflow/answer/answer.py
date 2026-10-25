@@ -547,10 +547,11 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
     # the included set and selection revision were read, so the snapshot is the state they describe.
     rid = run["research_id"]
     flow._answer_start_snapshot(run, flow.store.included_works(rid), flow.store.selection_revision(rid))
-    flow._small_batch_guard = {"run_id": run["id"], "rid": run["research_id"],
-        "user_signature": plan["user_signature"], "fast_answer": True, "input": plan}
+    # A person's selection change no longer stops a first answer (D126): it is written from the plan's selection and
+    # published as out of date, and `after_answer` starts the next one. A late revision keeps its own stop rule.
+    flow._small_batch_guard = {"run_id": run["id"], "rid": run["research_id"], "fast_answer": True, "input": plan}
     if run["budget"].get("late_revision_id"):
-        flow._small_batch_guard["late_revision"] = True
+        flow._small_batch_guard |= {"late_revision": True, "user_signature": plan["user_signature"]}
     try:
         flow._checkpoint(run["id"], run["scope_revision"])
         flow.store.update_run(run["id"], stage="answer")
@@ -583,9 +584,32 @@ def auto_answer(store: Any, run: dict[str, Any]) -> None:
     store.create_run(run["research_id"], "answer", budget, f"fast_path:auto_answer:{run['id']}")
 
 
+def rerun_for_selection(store: Any, run: dict[str, Any]) -> bool:
+    """D126: when the person changed the selection while an answer was written, queue one answer from the current
+    selection. The finished answer stays, marked out of date by its selection revision, and is not reviewed; each
+    rerun needs a new change by the person, so the chain ends once the selection holds still."""
+    from deixis.workflow.run.store import ACTIVE_RUN_STATUSES
+
+    rid = run["research_id"]
+    plan = store.existing_step(run["id"], INPUT)
+    if (run["budget"].get("late_revision_id") or plan is None or plan["status"] != "succeeded"
+            or plan["output"]["user_signature"] == small_batch.user_signature(store, rid)
+            or store.research(rid)["current_scope_revision"] != run["scope_revision"]
+            or store.conn.execute(f"SELECT 1 FROM runs WHERE research_id = ? AND id != ? AND status IN"
+                                  f" ({','.join('?' * len(ACTIVE_RUN_STATUSES))})",
+                                  (rid, run["id"], *ACTIVE_RUN_STATUSES)).fetchone()):
+        return False
+    scope = store.scope(rid, run["scope_revision"])
+    store.create_run(rid, "answer", answer_run_budget(store, rid, scope) | {"rerun_of": run["id"]},
+                     f"answer:selection_rerun:{run['id']}")
+    return True
+
+
 def after_answer(flow: Any, run: dict[str, Any]) -> None:
     store = flow.store
     from deixis.workflow.answer import late_revision
+    if rerun_for_selection(store, run):
+        return
     late_revision.schedule(flow, run)
     row = store.conn.execute("SELECT id FROM answers WHERE run_id = ? AND status = 'structurally_valid'", (run["id"],)).fetchone()
     if not row:

@@ -104,7 +104,7 @@ def test_cutoff_exclusions(tmp_path, code, reason):
     assert frozen["excluded_reasons"] == {reason: 1}
 
 
-def test_user_override_before_freeze_after_freeze_guard_and_reason(tmp_path):
+def test_user_override_before_freeze_and_a_change_during_the_answer_queues_a_rerun(tmp_path):
     lib = setup(tmp_path, 2, codes=("runs_agree_out_of_scope",))
     cutoff(lib)
     user(lib, lib.sources[0], "included")
@@ -113,10 +113,18 @@ def test_user_override_before_freeze_after_freeze_guard_and_reason(tmp_path):
     assert plan["breadth"] == 1 and plan["items"][0]["override_reason"] == "SYNTHETIC override reason"
     assert plan["items"][0]["route"] == "abstract"
     user(lib, lib.sources[0], "excluded")
-    with pytest.raises(RunStopped):
-        asyncio.run(lib.flow._answer(run, lib.store.scope(lib.rid)))
-    assert lib.store.run(run["id"])["pause_reason"] == "selection_changed"
-    assert not lib.store.conn.execute("SELECT 1 FROM model_sessions").fetchone()
+    # D126: the person's change does not stop the answer; it is published from the plan's selection, out of date,
+    # and one answer from the current selection is queued.
+    asyncio.run(lib.flow.execute(run["id"]))
+    assert lib.store.run(run["id"])["status"] == "completed"
+    published, current = lib.store.conn.execute(
+        "SELECT a.selection_revision, r.selection_revision FROM answers a JOIN researches r ON r.id = a.research_id").fetchone()
+    assert published < current
+    queued = [r for r in map(dict, lib.store.conn.execute("SELECT id, kind FROM runs WHERE status = 'queued'"))]
+    rerun = [lib.store.run(r["id"]) for r in queued if r["kind"] == "answer"]
+    assert len(rerun) == 1 and rerun[0]["budget"]["rerun_of"] == run["id"]
+    fast_answer.rerun_for_selection(lib.store, lib.store.run(run["id"]))  # a second call while it is queued adds none
+    assert lib.store.conn.execute("SELECT COUNT(*) FROM runs WHERE kind = 'answer' AND status = 'queued'").fetchone()[0] == 1
 
 
 def test_no_evidence_does_not_call_model_and_records_terminal_outcome(tmp_path):

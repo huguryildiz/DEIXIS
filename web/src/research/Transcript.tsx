@@ -1038,9 +1038,9 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
 
   // The notice under a stopped run's steps (R18, R21): why it stopped, with Resume run and Cancel run, or for a question
   // too broad to search, a field to rewrite it.
-  // An answer paused because the selection changed keeps its stored input, so Resume would stop again at once.
+  // An answer paused because the selection changed (before D126) resumes too: it publishes the answer from the earlier
+  // selection, marked out of date, and a new answer from the current selection follows.
   const resumable = run.status === 'paused' && !(run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0)
-    && !(run.kind === 'answer' && run.pause_reason === 'selection_changed')
   const userPaused = run.status === 'paused' && run.pause_reason === 'user_requested'
   // A search paused by a selection change resumes with the person's choices kept (the guard skips the sources they decided).
   const selectionStop = run.status === 'paused' && run.pause_reason === 'selection_changed'
@@ -1184,7 +1184,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         {userPaused
           ? <p><b>{t('Paused after the current call.')}</b> {t('Nothing was lost: the finished steps are kept and will not run again.')}</p>
           : <p><b>{pauseReasonText(run.pause_reason, run.error)}</b></p>}
-        {selectionStop && <p>{t(resumable ? 'Resume picks up where it stopped and keeps your choices.' : 'It cannot go on with what it started from. Cancel it and start again.')}</p>}
+        {selectionStop && <p>{t(run.kind === 'answer' ? 'Resume publishes this answer, marked as written from your earlier selection, then writes a new one from your current selection.'
+          : 'Resume picks up where it stopped and keeps your choices.')}</p>}
         {pauseDetailText(run).map(line => <p key={line}>{line}</p>)}
         {run.kind === 'pdf_ocr' && failedOcrPages.length > 0 && <p>{t('Pages not read: {pages}', { pages: failedOcrPages.join(', ') })}</p>}
         {resumable && unknownSteps.length > 0 && <p>{t('Unfinished: {steps}. Resuming repeats it; a repeated model call counts against your account usage.', { steps: unknownSteps.map(s => s.kind === 'model:report_review' ? t('Report review') : stepLabel(s.kind, s.operation_key)).join(', ') })}</p>}

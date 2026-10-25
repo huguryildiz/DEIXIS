@@ -968,3 +968,5 @@ export const statementRefusals: Record<string, string> = {
   request_conflict: 'This request belongs to another research.',
   sentence_too_long: 'The statement is longer than 600 characters. Revise the question to one shorter sentence, then check again.',
 }
+// The live line of a table run (Evidence table panel and the sidebar's run slot).
+export const tableRunLabels: Record<string, string> = { table_fill: 'Filling empty cells', cell_recheck: 'Rechecking a cell', table_column_recheck: 'Rechecking a column', table_columns: 'Suggesting columns', lineage_links: 'Development links' }

@@ -178,7 +178,10 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 @media(prefers-reduced-motion:reduce){.spin{animation:none}}
 .sidebar-foot{display:grid;gap:8px;margin-top:auto;padding:10px 12px;border-top:1px solid var(--line)}
 /* The research page's run status (research/Topbar.tsx RunChip) when the sidebar is open on a wide screen. */
-.sidebar-run-slot{display:grid;min-width:0}
+.sidebar-run-slot{display:grid;gap:6px;min-width:0}
+.sidebar-run-slot button.runchip{cursor:pointer;text-align:left}
+.sidebar-run-slot button.runchip:hover{background:color-mix(in srgb,var(--accent),transparent 84%)}
+.sidebar-run-slot button.runchip.is-warn:hover{border-color:var(--warn-line)}
 .sidebar-run-slot:empty{display:none}
 .sidebar-run-slot .runchip{width:100%;white-space:normal}
 .sidebar-run-slot .runchip.is-live{gap:7px;padding:6px 10px;font-size:12px;line-height:1.4}

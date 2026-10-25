@@ -1,4 +1,5 @@
 id,date,title,area,status,commit,notes
+D130,2026-10-25,"Every live run of the research page (table, candidates, follow-up check, the main run) shows its status in the sidebar slot; a click opens the panel with its controls or brings the run's card into view",ui,accepted,,
 D129,2026-10-25,"A person's include/exclude while an answer is written no longer stops it: it is published from the selection it started with, marked out of date, and one answer from the current selection is queued (its review is skipped)",answer,accepted,,
 D128,2026-10-25,"The research page's run status sits at the sidebar foot above the access card on wide screens; phone and collapsed sidebar keep it in the topbar",ui,accepted,,
 D127,2026-10-25,"A person's include/exclude during the discovery read no longer pauses the run; it goes on and leaves the decided works alone (answer runs still stop)",search,accepted,,

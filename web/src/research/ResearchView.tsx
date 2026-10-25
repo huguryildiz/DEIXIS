@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, BookOpen, ChevronRight, Clock, Ellipsis, FileText, FileUp, Funnel, Inbox, Lightbulb, ListMinus, MessageSquareQuote, PencilLine, GitFork, Search, Sparkles, Table2, Trash2, Waypoints } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, ApiError, followupApi, libraryApi, subscribe, type ActivityEvent, type Answer, type AssetImpact, type ResearchView, type Run, type OcrReason, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ZoteroSource } from '../lib/api'
 import { ocrReasonText } from '../reading/ocr'
-import { serviceErrorSentence, serviceKind, fileRestoreNote, fileRestoreText, fileRestoreTone, pauseReasonText, providerName, runKindLabels, runStatusLabels, scopeLabels, researchHeading, seedSkipText, seedUseText, shownVersion, tableTitle } from '../lib/labels'
+import { serviceErrorSentence, serviceKind, fileRestoreNote, fileRestoreText, fileRestoreTone, pauseReasonText, providerName, runKindLabels, runStatusLabels, scopeLabels, tableRunLabels, researchHeading, seedSkipText, seedUseText, shownVersion, tableTitle } from '../lib/labels'
 import { PassageSheet } from '../reading/PassageSheet'
 import { TextRecoveryContext } from './TextRecoveryContext'
 import { EvidenceTab, TABLE_RUN_KINDS } from '../table/EvidenceTable'
@@ -49,7 +49,8 @@ import { useRailWide } from './railData'
 import { ExportLinks, ExportMenu } from './ExportMenu'
 import { RevisionForm } from './RevisionForm'
 import { EarlierRevision, QuestionBubble } from './QuestionBubble'
-import { RunChip, TitleButton, TitleEditRow } from './Topbar'
+import { RunChip, SideRunStatus, TitleButton, TitleEditRow } from './Topbar'
+import { RunSlotContext } from '../shell/runSlot'
 import { SourcesPanel, type StateFilter } from './SourcesPanel'
 import { SplitPanel, StackPanel } from './SplitPanel'
 import { PanelStackContext, panelFromSegment, usePanelStack, usePhone, URL_PANELS } from './usePanelStack'
@@ -95,6 +96,8 @@ export function EmptyResearch({ opened }: { opened: boolean }) {
 
 export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; initialTab?: string; dark: boolean; onChanged: () => void }) {
   const [view, setView] = useState<ResearchView | null>(null)
+  // The sidebar's run slot (shell/runSlot.ts): when present, every live run's status sits there instead of the topbar.
+  const runSlot = useContext(RunSlotContext)
   const [titleEditing, setTitleEditing] = useState(false)
   // The question bubble turns into the revise form (R7); 'terms' opens it on the key-terms field.
   // The revise form, pinned to the question revision it was opened on (see saveRevision).
@@ -363,6 +366,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const active = run ? ACTIVE.has(run.status) : false
   const candidateRun = view.runs.find(r => CANDIDATE_KINDS.has(r.kind) && (ACTIVE.has(r.status) || r.status === 'paused'))
   const watchRun = view.runs.find(r => r.kind === 'watch_check' && (ACTIVE.has(r.status) || r.status === 'paused'))
+  const tableRun = run && (active || run.status === 'paused') && TABLE_RUN_KINDS.has(run.kind) ? run : null
   const answer = shownAnswer(view)
   // The works the shown answer cites, from its stored claims: each citation keeps its work id, so a source since removed
   // from the research still counts as the work it was (the view's `counts.cited` follows the newest draft instead, which
@@ -791,20 +795,24 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   return <PanelStackContext.Provider value={panels}><section className="research-view legacy-research">
     {/* The 46px topbar (mockup `.topbar`, R1–R9): the title, the chip of the latest run, "N waiting for you", Revise
         question, Export and the ⋯ menu. While the title is renamed its row takes the place of the title and the chips. */}
+    {candidateRun && <SideRunStatus run={candidateRun} label={runKindLabels[candidateRun.kind]} opener={t('Open the Candidates panel to control this run')}
+      onOpen={() => { if (candidateRun.target?.candidate_id) setCandidateSelection({ id: candidateRun.target.candidate_id }); openPanel('cands') }} />}
+    {watchRun && <SideRunStatus run={watchRun} label={runKindLabels.watch_check} opener={t('Open the Follow-up panel to control this run')} onOpen={() => openPanel('watch')} />}
+    {tableRun && <SideRunStatus run={tableRun} label={tableRunLabels[tableRun.kind] ?? runKindLabels[tableRun.kind]} opener={t('Open the Evidence table panel to control this run')} onOpen={() => openPanel('table')} />}
     <div className={`research-topbar${titleEditing ? ' is-editing' : ''}`} inert={Boolean(phone && panel)}>
       {titleEditing
         ? <TitleEditRow title={view.research.title} busy={busy} canSuggest={!active} onSave={saveTitle} onCancel={endTitleEdit} onSuggest={suggestTitle} />
         : <>
           <TitleButton text={heading} onStartEdit={beginTitleEdit} />
-          {candidateRun && panel !== 'cands' && <button type="button" className="run-chip" aria-label={t('Open the Candidates panel to control this run')} onClick={() => { if (candidateRun.target?.candidate_id) setCandidateSelection({ id: candidateRun.target.candidate_id }); openPanel('cands') }}>
+          {candidateRun && !runSlot && panel !== 'cands' && <button type="button" className="run-chip" aria-label={t('Open the Candidates panel to control this run')} onClick={() => { if (candidateRun.target?.candidate_id) setCandidateSelection({ id: candidateRun.target.candidate_id }); openPanel('cands') }}>
             <span className={`run-chip-dot${ACTIVE.has(candidateRun.status) ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels[candidateRun.kind])} · {t(runStatusLabels[candidateRun.status])}<ChevronRight size={13} aria-hidden />
           </button>}
-          {watchRun && panel !== 'watch' && <button type="button" className="run-chip" aria-label={t('Open the Follow-up panel to control this run')} onClick={() => openPanel('watch')}>
+          {watchRun && !runSlot && panel !== 'watch' && <button type="button" className="run-chip" aria-label={t('Open the Follow-up panel to control this run')} onClick={() => openPanel('watch')}>
             <span className={`run-chip-dot${ACTIVE.has(watchRun.status) ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels.watch_check)} · {t(runStatusLabels[watchRun.status])}<ChevronRight size={13} aria-hidden />
           </button>}
           {/* A table run is controlled in the Evidence table panel above its table; here its chip only opens that panel. */}
-          {run && (active || run.status === 'paused') && TABLE_RUN_KINDS.has(run.kind) && panel !== 'table' && <button type="button" className="run-chip" title={t('Open the Evidence table panel to control this run')} onClick={() => openPanel('table')}>
-            <span className={`run-chip-dot${active ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels[run.kind])} · {t(runStatusLabels[run.status])}<ChevronRight size={13} aria-hidden />
+          {tableRun && !runSlot && panel !== 'table' && <button type="button" className="run-chip" title={t('Open the Evidence table panel to control this run')} onClick={() => openPanel('table')}>
+            <span className={`run-chip-dot${active ? ' is-live' : ''}`} aria-hidden />{t(runKindLabels[tableRun.kind])} · {t(runStatusLabels[tableRun.status])}<ChevronRight size={13} aria-hidden />
           </button>}
           {mainRun && <RunChip run={mainRun} hasAnswer={hasAnswer} busy={busy} inThread={TRANSCRIPT_KINDS.has(mainRun.kind) || mainRun.kind === 'followup_answer'} controlsInCard={TRANSCRIPT_KINDS.has(mainRun.kind)} onControl={action => controlRun(mainRun, action)} />}
           {queueCount > 0 && <button type="button" className="wait-chip" onClick={showQueue}><Inbox size={16} aria-hidden />{t('{n} waiting for you', { n: queueCount })}</button>}

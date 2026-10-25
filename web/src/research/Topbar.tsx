@@ -7,6 +7,7 @@ import { runKindLabels, runStatusLabels, searchQueryTriesLeft } from '../lib/lab
 import { t } from '../lib/i18n'
 import { Elapsed } from '../table/EvidenceTable'
 import { RunSlotContext } from '../shell/runSlot'
+import { scrollBehavior } from '../lib/motion'
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 
@@ -79,6 +80,20 @@ function chipText(run: Run, hasAnswer: boolean) {
   return `${kind} · ${t(runStatusLabels[run.status])}`
 }
 
+// A side run (Evidence table, Candidates, Follow-up) in the sidebar slot: its status only; the click opens the panel
+// that holds its controls.
+export function SideRunStatus({ run, label, opener, onOpen }: { run: Run; label: string; opener: string; onOpen: () => void }) {
+  const slot = useContext(RunSlotContext)
+  if (!slot) return null
+  const active = ACTIVE.has(run.status)
+  return createPortal(<button type="button" className={`runchip${active ? ' is-live' : ' is-warn'}`} data-run-id={run.id} title={opener} onClick={onOpen}>
+    {active ? <span className="runchip-dot" aria-hidden /> : <Pause size={13} aria-hidden />}
+    <span className="runchip-text">{t(label)}{run.status !== 'running' && ` · ${t(runStatusLabels[run.status])}`}</span>
+    {active && <Elapsed since={run.created_at} />}
+    {active && <span className="runchip-sweep" aria-hidden />}
+  </button>, slot)
+}
+
 // The chip of the research's latest run and its controls. Pause sits beside a live chip as drawn; Cancel of a live run
 // stays beside it (the mockup has no other way to stop a live run; §0 rule 5). A paused or stopped run of the thread is
 // resumed or cancelled from the notice under its steps (R18, S9); a run the thread does not show (a title suggestion)
@@ -94,13 +109,23 @@ export function RunChip({ run, hasAnswer, busy, inThread, controlsInCard = false
   const place = (chip: ReactNode) => (slot ? createPortal(chip, slot) : chip)
   if (run.status === 'failed') return place(<span className="runchip is-warn"><TriangleAlert size={13} aria-hidden /><span className="runchip-text">{text}</span></span>)
   const stopped = run.status === 'paused' && run.pause_reason !== 'user_requested'
+  const body = <>
+    {active ? <span className="runchip-dot" aria-hidden /> : stopped ? <TriangleAlert size={13} aria-hidden /> : <Pause size={13} aria-hidden />}
+    <span className="runchip-text">{text}</span>
+    {active && <Elapsed since={run.created_at} />}
+    {active && <span className="runchip-sweep" aria-hidden />}
+  </>
+  const className = `runchip run-strip-status${active ? ' is-live' : ' is-warn'}`
+  // In the sidebar a run the thread draws is a button that brings its card into view.
+  const toCard = () => {
+    const card = document.querySelector<HTMLElement>(`.chat-turn .chat-toggle[data-run-id="${CSS.escape(run.id)}"]`)
+    card?.scrollIntoView({ behavior: scrollBehavior(), block: 'center' })
+    card?.focus({ preventScroll: true })
+  }
   return <div className="run-strip">
-    {place(<span className={`runchip run-strip-status${active ? ' is-live' : ' is-warn'}`} data-run-id={run.id} tabIndex={-1}>
-      {active ? <span className="runchip-dot" aria-hidden /> : stopped ? <TriangleAlert size={13} aria-hidden /> : <Pause size={13} aria-hidden />}
-      <span className="runchip-text">{text}</span>
-      {active && <Elapsed since={run.created_at} />}
-      {active && <span className="runchip-sweep" aria-hidden />}
-    </span>)}
+    {slot && inThread
+      ? createPortal(<button type="button" className={className} data-run-id={run.id} title={t('Show this run in the thread')} onClick={toCard}>{body}</button>, slot)
+      : place(<span className={className} data-run-id={run.id} tabIndex={-1}>{body}</span>)}
     {active && !controlsInCard && run.status !== 'pause_requested' && <Button variant="ghost" size="sm" className="research-topbar-action run-strip-pause" disabled={busy} onClick={() => onControl('pause')}><Pause size={14} aria-hidden />{t('Pause')}</Button>}
     {!active && !inThread && run.status === 'paused' && !(run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0)
       && <Button variant="default" size="sm" disabled={busy} onClick={() => onControl('resume')}><Play size={14} aria-hidden />{t('Resume')}</Button>}

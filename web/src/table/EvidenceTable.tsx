@@ -9,7 +9,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog'
 import { PassageSheet } from '../reading/PassageSheet'
 import { ModelName } from '../components/ModelName'
 import { useModelText, type ModelText } from '../lib/modelText'
-import { locatorText, researchHeading, runStatusLabels, tableTitle, versionText } from '../lib/labels'
+import { locatorText, researchHeading, runStatusLabels, tableRunLabels, tableTitle, versionText } from '../lib/labels'
 import { OCR_LABEL } from '../reading/ocr'
 import { formatReferenceText, useCitationStyle } from '../lib/citations'
 import { useToast, type ToastAction } from '../components/Toast'
@@ -34,7 +34,6 @@ import { accessLabels, downloadTableCsv, hasValue, reportGate, revisionText, sta
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 // Table runs are controlled where their work shows: the run line under the table's toolbar.
 export const TABLE_RUN_KINDS = new Set(['table_fill', 'cell_recheck', 'table_column_recheck', 'table_columns', 'lineage_links'])
-const tableRunLabels: Record<string, string> = { table_fill: 'Filling empty cells', cell_recheck: 'Rechecking a cell', table_column_recheck: 'Rechecking a column', table_columns: 'Suggesting columns', lineage_links: 'Development links' }
 const MAX_WHOLE_PASSAGES = 48  // a source within this many passages (and 60,000 characters) is read whole
 const MAX_RECHECK_PASSAGES = 16
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))

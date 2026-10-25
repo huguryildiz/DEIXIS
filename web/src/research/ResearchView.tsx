@@ -367,6 +367,14 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const candidateRun = view.runs.find(r => CANDIDATE_KINDS.has(r.kind) && (ACTIVE.has(r.status) || r.status === 'paused'))
   const watchRun = view.runs.find(r => r.kind === 'watch_check' && (ACTIVE.has(r.status) || r.status === 'paused'))
   const tableRun = run && (active || run.status === 'paused') && TABLE_RUN_KINDS.has(run.kind) ? run : null
+  // The sidebar's progress of a table run, from its steps: a fill counts the planned sources whose read succeeded, a
+  // column recheck its finished cells (the panel's line counts filled cells, which it has loaded).
+  const tableSteps = tableRun?.steps ?? []
+  const stepSources = (prefix: string, done: (status: string) => boolean) => new Set(tableSteps.filter(s => s.operation_key.startsWith(prefix) && done(s.status)).map(s => s.operation_key.slice(prefix.length).split(':')[0])).size
+  const tableDetail = tableRun?.kind === 'table_fill' && tableRun.target?.sources?.length
+    ? t('{done} / {n} sources', { done: stepSources('cell_extraction:', st => st === 'succeeded'), n: tableRun.target.sources.length })
+    : tableRun?.kind === 'table_column_recheck' && tableRun.target?.cells?.length
+      ? t('{done} / {n} cells', { done: stepSources('column_recheck:', st => st === 'succeeded' || st === 'failed'), n: tableRun.target.cells.length }) : undefined
   const answer = shownAnswer(view)
   // The works the shown answer cites, from its stored claims: each citation keeps its work id, so a source since removed
   // from the research still counts as the work it was (the view's `counts.cited` follows the newest draft instead, which
@@ -798,7 +806,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     {candidateRun && <SideRunStatus run={candidateRun} label={runKindLabels[candidateRun.kind]} opener={t('Open the Candidates panel to control this run')}
       onOpen={() => { if (candidateRun.target?.candidate_id) setCandidateSelection({ id: candidateRun.target.candidate_id }); openPanel('cands') }} />}
     {watchRun && <SideRunStatus run={watchRun} label={runKindLabels.watch_check} opener={t('Open the Follow-up panel to control this run')} onOpen={() => openPanel('watch')} />}
-    {tableRun && <SideRunStatus run={tableRun} label={tableRunLabels[tableRun.kind] ?? runKindLabels[tableRun.kind]} opener={t('Open the Evidence table panel to control this run')} onOpen={() => openPanel('table')} />}
+    {tableRun && <SideRunStatus run={tableRun} label={tableRunLabels[tableRun.kind] ?? runKindLabels[tableRun.kind]} detail={tableDetail} opener={t('Open the Evidence table panel to control this run')} onOpen={() => openPanel('table')} />}
     <div className={`research-topbar${titleEditing ? ' is-editing' : ''}`} inert={Boolean(phone && panel)}>
       {titleEditing
         ? <TitleEditRow title={view.research.title} busy={busy} canSuggest={!active} onSave={saveTitle} onCancel={endTitleEdit} onSuggest={suggestTitle} />

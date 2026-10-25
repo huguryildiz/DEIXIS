@@ -82,13 +82,14 @@ function chipText(run: Run, hasAnswer: boolean) {
 
 // A side run (Evidence table, Candidates, Follow-up) in the sidebar slot: its status only; the click opens the panel
 // that holds its controls.
-export function SideRunStatus({ run, label, opener, onOpen }: { run: Run; label: string; opener: string; onOpen: () => void }) {
+export function SideRunStatus({ run, label, detail, opener, onOpen }: { run: Run; label: string; detail?: string; opener: string; onOpen: () => void }) {
   const slot = useContext(RunSlotContext)
   if (!slot) return null
   const active = ACTIVE.has(run.status)
   return createPortal(<button type="button" className={`runchip${active ? ' is-live' : ' is-warn'}`} data-run-id={run.id} title={opener} onClick={onOpen}>
     {active ? <span className="runchip-dot" aria-hidden /> : <Pause size={13} aria-hidden />}
     <span className="runchip-text">{t(label)}{run.status !== 'running' && ` · ${t(runStatusLabels[run.status])}`}</span>
+    {detail && <span className="runchip-detail">{detail}</span>}
     {active && <Elapsed since={run.created_at} />}
     {active && <span className="runchip-sweep" aria-hidden />}
   </button>, slot)

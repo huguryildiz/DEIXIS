@@ -2788,6 +2788,7 @@ export const tr: Record<string, string> = {
   'Rechecking a cell': 'Hücre yeniden denetleniyor',
   'Suggesting columns': 'Sütunlar öneriliyor',
   '{done} / {n} sources': '{done} / {n} kaynak',
+  '{done} / {n} cells': '{done} / {n} hücre',
   'From the question and the rows’ abstracts': 'Sorudan ve satırların özetlerinden',
   'Model actions are off until it finishes.': 'Bitene kadar model eylemleri kapalı.',
   'Model actions locked': 'Model eylemleri kilitli',

@@ -3676,6 +3676,9 @@ class Store:
                     status: str, draft: dict[str, Any] | None, validation: dict[str, Any],
                     links: list[dict[str, Any]] | None = None, selection_revision: int | None = None) -> str:
         aid = new_id("ans")
+        from deixis.workflow.answer import source_mentions
+        if draft is not None:
+            draft = source_mentions.fill(self.conn, draft)
         # Same event-loop connection; this synchronous guard precedes the write with no await.
         from deixis.workflow.answer import late_revision
         late = late_revision.row_for_run(self, self.run(run_id))

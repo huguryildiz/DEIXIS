@@ -1867,6 +1867,44 @@ LOCATOR_IN_TEXT = re.compile(
     re.IGNORECASE,
 )
 
+# D131: an answer names a source by its handle in double braces; code writes its authors, year and title from the
+# source record when the answer is saved, so names and titles never come from model prose.
+SOURCE_MENTION = re.compile(r"\{\{\s*(srv_[A-Za-z0-9]+)\s*\}\}")
+AUTHOR_IN_TEXT = re.compile(r"\bet\s+al\b", re.IGNORECASE)
+TITLE_COPY_WORDS = 6  # this many consecutive words of a given title in claim text count as a typed title
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"\w+", text.casefold())
+
+
+def typed_title(text: str, titles: list[str]) -> str | None:
+    """The given title whose TITLE_COPY_WORDS consecutive words claim text repeats, if any."""
+    words = " ".join(_words(SOURCE_MENTION.sub(" ", text)))
+    for title in titles:
+        tw = _words(title)
+        for i in range(len(tw) - TITLE_COPY_WORDS + 1):
+            if f" {' '.join(tw[i:i + TITLE_COPY_WORDS])} " in f" {words} ":
+                return title
+    return None
+
+
+def _check_source_mentions(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any],
+                           report: ValidationReport) -> None:
+    titles = [s["title"] for s in step_input.get("sources", []) if s.get("title")]
+    for i, claim in enumerate(draft["claims"]):
+        for sid in SOURCE_MENTION.findall(claim["text"]):
+            if sid not in allow["source_ids"]:
+                report.issues.append(Issue("unknown_source_mention", f"/claims/{i}/text", sid))
+        if match := AUTHOR_IN_TEXT.search(SOURCE_MENTION.sub(" ", claim["text"])):
+            report.issues.append(Issue("source_name_in_claim_text", f"/claims/{i}/text",
+                                       f"remove {match.group(0)!r}; name a source only by its handle in double "
+                                       "braces, and the application writes its authors, year and title"))
+        elif title := typed_title(claim["text"], titles):
+            report.issues.append(Issue("source_name_in_claim_text", f"/claims/{i}/text",
+                                       f"the text repeats the title {title!r}; name the source only by its handle "
+                                       "in double braces, and the application writes its title"))
+
 ANCHOR_MIN_RATIO = 0.9  # provisional; see D24
 
 
@@ -2927,6 +2965,7 @@ def _check_answer(step_input: dict[str, Any], allow: dict[str, set[str]], draft:
         report.issues.append(Issue("answer_title_too_long", "/title",
                                    f"expected at most 15 words, got {title_words}"))
     _check_cited_claims(step_input, allow, draft, report)
+    _check_source_mentions(step_input, allow, draft, report)
     for i, limitation in enumerate(draft["limitations"]):
         for j, sid in enumerate(limitation["source_ids"]):
             if sid not in allow["source_ids"]:
@@ -3620,8 +3659,12 @@ def answer_with_handles(step_input: dict[str, Any], answer: dict[str, Any]) -> s
     """D260: an accepted answer as the model would write it, with passage IDs back in their citation handles."""
     handles = citation_handles(step_input)
     shown = copy.deepcopy(answer)
+    mentions = shown.pop("mention_texts", None) or {}  # D131: the text as the model wrote it, before names were filled
     for claim in shown.get("claims", []):
         claim["passage_ids"] = [handles.get(pid, pid) for pid in claim.get("passage_ids", [])]
+        text = mentions.get(claim.get("claim_label"), claim.get("text"))
+        if isinstance(text, str):
+            claim["text"] = SOURCE_MENTION.sub(lambda m: "{{" + handles.get(m.group(1), m.group(1)) + "}}", text)
     for anchor in shown.get("citation_anchors", []):
         anchor["passage_id"] = handles.get(anchor.get("passage_id"), anchor.get("passage_id"))
     excluded = shown.get("excluded_sources")  # the resolver's guards: anything else is left as it is
@@ -3827,6 +3870,10 @@ def resolve_citation_handles(step_input: dict[str, Any], raw: str) -> str | dict
         for item in items if isinstance(items, list) else []:
             if isinstance(item, dict) and isinstance(item.get(key), list):
                 item[key] = [real(i) if isinstance(i, str) else i for i in item[key]]
+    claims = data.get("claims")
+    for claim in claims if isinstance(claims, list) else []:
+        if isinstance(claim, dict) and isinstance(claim.get("text"), str):
+            claim["text"] = SOURCE_MENTION.sub(lambda m: "{{" + real(m.group(1)) + "}}", claim["text"])
     anchors = data.get("citation_anchors")
     for anchor in anchors if isinstance(anchors, list) else []:
         if isinstance(anchor, dict) and isinstance(anchor.get("passage_id"), str):

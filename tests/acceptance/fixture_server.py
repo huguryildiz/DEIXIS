@@ -1158,7 +1158,7 @@ class ScriptedCodex:
                 chosen = next((p for p in passages if p["reading_depth"] != "abstract"), passages[0])
                 depth = "abstract" if chosen["reading_depth"] == "abstract" else "PDF text"
                 text = ("It has been reported on page 12 that Equation 4 holds." if "[invent-locator]" in question
-                        else f"It has been reported that SYNTHETIC statement {n} is supported by the {depth} of “{source['title']}”.")
+                        else f"It has been reported that SYNTHETIC statement {n} is supported by the {depth} of {{{{{source['source_id']}}}}}.")
                 claims.append({"claim_label": f"c{n}", "section": "SYNTHETIC findings", "text": text, "support_type": "source_stated", "passage_ids": [chosen["passage_id"]]})
                 anchors.append({"claim_label": f"c{n}", "passage_id": chosen["passage_id"],
                                 "quote": " ".join(chosen["text"].split())[:600]})

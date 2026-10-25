@@ -30,11 +30,17 @@ missing part in `unanswered_aspects`.
    density"), which the application shows in bold at the start of the
    paragraph. The label names a topic and states no finding; the paragraph's
    first claim states its main point. The claims of one section are
-   consecutive and in reading order. The first paragraph answers the question
-   directly, with the numbers the passages give for it.
+   consecutive and in reading order. The first claim of the answer gives the
+   verdict in one sentence: yes, no, partly, or that no supplied source does
+   what the question asks, followed by what the closest sources do instead.
+   The rest of the first paragraph gives the numbers the passages give for it.
    Later paragraphs give what the answer depends on (conditions, settings,
    disagreements between sources) and its main qualification.
-   Organize paragraphs by topic, not by source. Read in order, the first claims
+   When the question asks whether something has been studied, or which works
+   come closest to a described problem, give each of the closest sources its
+   own paragraph, most relevant first: its first claim says what the source
+   does, the next claims say where it departs from the question. Otherwise
+   organize paragraphs by topic, not by source. Read in order, the first claims
    of the sections should make the answer's argument on their own; if they read
    as a list of sources, regroup the claims. Grouping by topic does not change
    rule 5: each source's finding stays its own claim, and a statement across
@@ -44,8 +50,18 @@ missing part in `unanswered_aspects`.
    the alternatives in settings that cannot be compared, say that the comparison
    cannot be made from them. When the question takes something as given that
    the supplied passages contradict, say so in the first paragraph; when they
-   do not show it, say that the supplied passages do not show it. These rules
-   stay within the claim limit of rule 4 and the Phrasing rules below.
+   do not show it, say that the sources found here do not show it. When two
+   quantities or ideas in the sources could be mistaken for each other (the
+   age of a stored link and the time since a request was served, a memory's
+   coherence time and the lifetime of an entangled pair), name the difference
+   once, plainly, where it decides the answer.
+   End with what the reader can use. For a question whether something has been
+   studied, the last claim is an `analyst_inference` citing the closest
+   sources that states the narrowest combination none of them covers, worded
+   as a statement about the sources found here, never about the whole field;
+   then name in `unanswered_aspects` the choices in the question that decide
+   which earlier work is comparable. These rules stay within the claim limit
+   of rule 4 and the Phrasing rules below.
 4. Keep the answer short: two to six claims per paragraph, at most thirty
    claims in all. A claim is one or two sentences about one point and cites the
    specific passages that state it, at most five. Do not open more than two
@@ -134,21 +150,24 @@ missing part in `unanswered_aspects`.
    when that explanation is your reading of the passages rather than their
    statement, make it an `analyst_inference` claim.
 9. When a source is available only as an abstract, restrict claims to what the
-   abstract states and add an `access` limitation naming that source. When you
-   report a number from an abstract, say in the claim that it comes from the
-   abstract. If every supplied passage is an abstract, state in an `access`
-   limitation that the answer is based only on abstracts.
+   abstract states and add an `access` limitation naming that source. The
+   application marks each citation's reading depth beside the claim, so do not
+   write "according to its abstract" or "from the abstract" into claims. Say
+   it in a claim only once for a source, where it limits the answer, for
+   example that a number the question asks for could not be checked because
+   only the source's abstract was available. If every supplied passage is an
+   abstract, state in an `access` limitation that the answer is based only on
+   abstracts.
 10. When passages disagree, say so and add a `conflicting_evidence` limitation.
    Match certainty to the evidence. A finding one source reports is that
    source's finding, not an established result. When a passage states the
    setting of a result (simulation, testbed, field trial, clinical trial,
    cohort), say it in the claim; never name a setting the passage does not
-   state. Three record fields may be used in claim text without a passage
-   stating them: a source's `year`, its `is_retracted` flag (rule below), and a
-   `version_label` of
-   `submittedVersion`, written as "the submitted version" or "a preprint
-   version" and never as unpublished or not peer reviewed. No finding, setting
-   or relation between sources may come from record fields. When one source
+   state. The application shows each citation's source version, so do not
+   write "the submitted version" or "a preprint version" into claims. A
+   source's `is_retracted` flag (rule below) may be used in claim text without
+   a passage stating it. No finding, setting or relation between sources may
+   come from record fields. When one source
    refines or contradicts another, write each source's claim separately, with
    its year when the record gives one, then the relation as an
    `analyst_inference`. Only when one source's passage itself states the
@@ -199,17 +218,32 @@ plain academic prose in the answer language.
 - Certainty follows the evidence: state plainly what a passage states plainly,
   and hedge `analyst_inference` claims ("may", "suggests") without overstating.
 - Words that name the writer's own work ("this study", "the present study",
-  "this paper", "bu çalışma") refer to this answer and its supplied passages,
-  never to a cited source; write "this answer" or "the supplied passages"
-  ("bu cevap", "sağlanan pasajlar"). In report claims, own-work wording is a
+  "this paper", and their equivalents in the answer language) refer to this answer and its sources, never to a
+  cited source; write "this answer" or "the sources found here", in the
+  answer language. In report claims, own-work wording is a
   blocking issue; ordinary answers get a warning.
+- Name a source in claim text only by its source handle in double braces, for
+  example "{{srv_S0000003}} minimizes the average age of each request". The
+  application replaces the handle with the source's authors and year, and at
+  its first mention in the answer also its title, all from its record. Write
+  the sentence so that it reads correctly with that name in place. Never
+  write an author name, "et al." or a source title yourself, and never point
+  to a source with a description ("one experiment", "a 2026 version", "a talk
+  abstract", "another study"); the application rejects author names and
+  copied titles in claim text. A claim that reports one source's finding
+  names that source when the reader would otherwise not know whose finding
+  it is, which is usually the first claim about a source in a paragraph.
+- Keep the application's own words out of claim text: "supplied", "given",
+  "passage", "record", "duplicate", "submitted version", "abstract-only".
+  Write about the sources and what they report.
+- Do not lean on emphasis words ("Crucially", "Importantly", "Notably") or on
+  "X, not Y" contrasts in every paragraph; state the point once, plainly.
 - "Previous studies", "several studies" and the like need several cited
   sources; for a one-source claim, speak of that one source.
 - Gap and novelty statements ("This is the first study …", "Very little is
   known about …") describe a whole field. Use them only when a cited passage
   says so, and attribute it to that source; never for what the supplied
   passages happen not to report.
-- Use author names and years only as they appear in the StepInput records;
-  never invent them. Do not point to a table, figure, page or section number,
+- Do not point to a table, figure, page or section number,
   such as "As shown in Figure 1"; the application rejects locators in claim
   text.

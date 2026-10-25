@@ -472,3 +472,42 @@ def test_the_coverage_call_is_sent_at_most_once_whatever_the_stop(tmp_path, stop
         assert keys.count(LEDGER_COVERAGE_KEY) == 1
     finally:
         store.conn.close()
+
+
+def test_source_names_in_claims_come_from_records_and_typed_names_are_refused(tmp_path):
+    """D131: a `{{source}}` mention is filled from the source record when the answer is saved; a typed name is refused."""
+    def named(si):
+        out = draft(si, [("c1", "source_stated", [0]), ("c2", "source_stated", [0])])
+        sid = si["sources"][0]["source_id"]
+        out["claims"][0]["text"] = "{{" + sid + "}} schedules releases."
+        out["claims"][1]["text"] = "{{" + sid + "}} also sets a budget."
+        return out
+    store, flow, adapter, rid, run_id, sent = setup(tmp_path, [named])
+    try:
+        store.conn.execute("UPDATE source_versions SET authors_json = ?, year = 2024",
+                           (json.dumps(["Ada Lovelace", "Alan Turing", "Grace Hopper"]),))
+        answer = answer_of(store, rid, flow, run_id)
+        first = given(store, answer)[0]
+        title = store.conn.execute("SELECT title FROM source_versions WHERE id = ?", (first,)).fetchone()[0]
+        texts = [r[0] for r in store.conn.execute("SELECT text FROM claims WHERE answer_id = ? ORDER BY ordinal", (answer["id"],))]
+        assert answer["status"] == "structurally_valid"
+        assert texts == [f"Lovelace et al. (2024, “{title}”) schedules releases.", "Lovelace et al. (2024) also sets a budget."]
+        stored = json.loads(answer["draft_json"])
+        assert stored["mention_texts"]["c1"] == "{{" + first + "}} schedules releases."
+        assert "{{srv_S0000001}} schedules releases." in contracts.answer_with_handles(
+            store.step_input_payload(answer["step_input_id"]), stored)
+    finally:
+        store.conn.close()
+
+    def typed(si):
+        out = draft(si, SHAPES["one"])
+        out["claims"][0]["text"] = "Lovelace et al. schedule releases."
+        return out
+    (tmp_path / "typed").mkdir()
+    store, flow, adapter, rid, run_id, sent = setup(tmp_path / "typed", [typed])
+    try:
+        answer = answer_of(store, rid, flow, run_id)
+        assert answer["status"] == "unverified_draft"
+        assert {i["code"] for i in json.loads(answer["validation_json"])["issues"]} == {"source_name_in_claim_text"}
+    finally:
+        store.conn.close()

@@ -32,7 +32,8 @@ suggest new sources.
    conditions under which each does better, when the answer builds on something
    the question takes as given that the cited passages contradict, or when a
    single source's finding is written as an established result.
-7. A claim may give a source's `year` from its record, and may call a source
+7. A claim may name a source by the authors, year and title the application
+   wrote into it from the source's record. A claim may give a source's `year` from its record, and may call a source
    whose record has `version_label` `submittedVersion` the submitted version or
    a preprint version, without a passage stating it. Do not lower a verdict for
    that part alone; judge the rest of the claim against its passages. Calling a

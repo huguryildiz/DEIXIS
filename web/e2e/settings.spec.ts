@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { axeScan } from './a11y'
 import { nextPort } from './ports'
 
 // UI parity S24: the Settings page (mockup ST1-ST11). One column in the mockup's order; the proxy line and the Scopus
@@ -113,7 +114,7 @@ test.describe.serial('S24: the Settings page', () => {
 
   test.beforeAll(async ({ browser }) => {
     await server.start()
-    page = await browser.newPage()
+    page = await (await browser.newContext()).newPage()  // axe needs a page from newContext()
   })
   test.afterAll(async () => { await page?.close(); await server.stop() })
 
@@ -636,5 +637,16 @@ test.describe.serial('S24: the Settings page', () => {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
     await shot(page, 'S24-settings-phone')
     await page.setViewportSize({ width: 1280, height: 900 })
+  })
+
+  test('X01-X04: axe finds nothing serious or critical on Settings (models, connections, usage, general; light and dark, 1280 and 390 px)', async () => {
+    test.setTimeout(180_000)
+    const found: string[] = []
+    for (const tab of ['', '/connections', '/usage', '/general']) {
+      await page.goto(server.url(`#/settings${tab}`))
+      await expect(page.locator('.settings-page')).toBeVisible()
+      found.push(...await axeScan(page, `Settings${tab}`))
+    }
+    expect(found).toEqual([])
   })
 })

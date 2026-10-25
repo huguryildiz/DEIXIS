@@ -122,3 +122,18 @@ def test_f04_orphan_is_not_measured_when_any_one_named_guard_test_is_missing():
     assert rm.rule_junit(cases, patterns, "x")["result"] == PASS
     for i in range(len(cases)):
         assert rm.rule_junit(cases[:i] + cases[i + 1:], patterns, "x")["result"] == NOT, cases[i]
+
+
+def test_every_playwright_rule_names_one_of_the_specs_and_matches_a_test_title_in_it():
+    """A removed spec or a renamed test title must show up here, not as a row that is never measured."""
+    import re
+    unmatched = []
+    for row in rm.rows_ordered():
+        for rule in leaf_rules(row["rule"]):
+            if rule[0] != "pw":
+                continue
+            spec_file = REPO / "web" / "e2e" / rule[1]
+            titles = [m.group(2) for m in re.finditer(r"""\btest\(\s*(['"`])(.*?)\1""", spec_file.read_text())] if spec_file.exists() else []
+            if not any(re.search(rule[2], t) and not (len(rule) > 3 and re.search(rule[3], t)) for t in titles):
+                unmatched.append("%s: %s %s" % (row["id"], rule[1], rule[2]))
+    assert unmatched == []

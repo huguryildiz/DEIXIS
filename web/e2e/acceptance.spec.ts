@@ -2,6 +2,7 @@ import { expect, test, type Browser, type Page } from '@playwright/test'
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync } from 'node:fs'
 import path from 'node:path'
+import { axeScan, layoutProblems, motionAudit, tabTo, type Motion } from './a11y'
 import { nextPort } from './ports'
 import { switchTheme } from './theme'
 import { backPanel, chooseTheme, closePanel, openPanel, openPlanPanel, panel, reportPanel, showAnswer, sourcePanel } from './panels'
@@ -122,7 +123,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
 
   test.beforeAll(async ({ browser }: { browser: Browser }) => {
     await server.start()
-    page = await browser.newPage()
+    page = await (await browser.newContext()).newPage()  // axe needs a page from newContext()
   })
   test.afterAll(async () => { await server.stop() })
 
@@ -358,6 +359,134 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     await server.start()
     await page.reload()
     await expectReopened('after-restart')
+  })
+
+  // Accessibility (release matrix X01 to X06) on the screens this flow reaches, after A to G so their state is final.
+  const researchUrl = () => {
+    const rid = page.url().match(/#\/research\/([^/]+)/)?.[1]
+    if (!rid) throw new Error('research id missing from URL')
+    return server.url(`#/research/${rid}`)
+  }
+  const bisection = (report: ReturnType<typeof reportPanel>) => report.locator('.reference-list li', { hasText: 'SYNTHETIC molecule release scheduling with bisection' }).getByRole('button')
+
+  test('X01-X04: axe finds nothing serious or critical on home, the answer thread, Sources, the report and the cited passage (light and dark, 1280 and 390 px)', async () => {
+    test.setTimeout(240_000)
+    const url = researchUrl()
+    const found: string[] = []
+    await page.goto(server.url())
+    await expect(page.getByLabel('Research question')).toBeVisible()
+    found.push(...await axeScan(page, 'home'))
+    await page.goto(url)
+    await showAnswer(page)
+    const artifact = page.getByRole('button', { name: /Open report:/ })
+    await expect(artifact).toBeVisible()
+    found.push(...await axeScan(page, 'answer thread'))
+    await openPanel(page, 'sources')
+    found.push(...await axeScan(page, 'Sources'))
+    await showAnswer(page)
+    await artifact.click()
+    const report = reportPanel(page)
+    await expect(report).toBeVisible()
+    found.push(...await axeScan(page, 'report'))
+    await bisection(report).click()
+    await expect(sourcePanel(page).locator('mark.citation-highlight')).toBeVisible()
+    found.push(...await axeScan(page, 'cited passage'))
+    await backPanel(page)
+    await closePanel(page)
+    expect(found).toEqual([])
+  })
+
+  test('X05: by keyboard: the report and the cited passage open, Escape returns focus, quick find opens Sources, and a question starts from the composer; every focus stop is visible', async () => {
+    const url = researchUrl()
+    const missing: string[] = []
+    await page.goto('about:blank')
+    await page.goto(url)
+    const artifact = page.getByRole('button', { name: /Open report:/ })
+    await expect(artifact).toBeVisible()
+    await tabTo(page, artifact, missing)
+    await page.keyboard.press('Enter')
+    const report = reportPanel(page)
+    await expect(report).toBeVisible()
+    await tabTo(page, bisection(report), missing)
+    await page.keyboard.press('Enter')
+    await expect(sourcePanel(page).locator('mark.citation-highlight')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.locator('[data-split-panel]')).toHaveCount(0)
+    await expect(artifact).toBeFocused()
+    await page.keyboard.press('ControlOrMeta+k')
+    const find = page.getByLabel('Search research, library, or type a command…')
+    await expect(find).toBeFocused()
+    await find.pressSequentially('visiting hours')
+    await expect(page.getByRole('option', { name: /SYNTHETIC optimization of hospital visiting hours/ })).toBeVisible()
+    for (let i = 0; i < 10 && !(await page.getByRole('option', { name: /SYNTHETIC optimization of hospital visiting hours/ }).getAttribute('aria-selected') === 'true'); i++) await page.keyboard.press('ArrowDown')
+    await page.keyboard.press('Enter')
+    await page.waitForURL(/#\/research\/[^/]+\/sources$/)
+    await expect(panel(page, 'Sources').locator('#split-panel-title')).toBeFocused()
+    await page.goto(server.url())
+    const question = page.getByLabel('Research question')
+    await tabTo(page, question, missing)
+    await page.keyboard.type('SYNTHETIC keyboard: How are molecule release schedules compared?')
+    await expect(page.locator('.models-summary')).toContainText('fixture-model')
+    await tabTo(page, page.getByRole('button', { name: 'Start research' }), missing)
+    await page.keyboard.press('Enter')
+    await page.waitForURL(/#\/research\//)
+    await expect(page.getByText('Ran search & screening')).toBeVisible({ timeout: 60_000 })
+    expect(missing, 'focus stops with no visible indicator').toEqual([])
+  })
+
+  test('X06: with reduced motion nothing animates on the answer thread, report or cited passage, and without it the same audit sees motion', async ({ browser }) => {
+    const url = researchUrl()
+    const audit = async (reducedMotion: 'reduce' | 'no-preference') => {
+      const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion })
+      const p = await context.newPage()
+      const results: Record<string, Motion> = {}
+      try {
+        await p.goto(url)
+        const artifact = p.getByRole('button', { name: /Open report:/ })
+        await expect(artifact).toBeVisible()
+        results['answer thread'] = await motionAudit(p)
+        await artifact.click()
+        await expect(reportPanel(p)).toBeVisible()
+        await p.waitForTimeout(400)
+        results.report = await motionAudit(p)
+        await bisection(reportPanel(p)).click()
+        await expect(sourcePanel(p).locator('mark.citation-highlight')).toBeVisible()
+        await p.waitForTimeout(400)
+        results['cited passage'] = await motionAudit(p)
+      } finally { await context.close() }
+      return results
+    }
+    for (const [screen, result] of Object.entries(await audit('reduce'))) {
+      expect(result.offenders, `${screen}: durations above 0.01 ms`).toEqual([])
+      expect(result.infinite, `${screen}: infinite animations`).toEqual([])
+      expect(result.scrollBehavior, `${screen}: scroll-behavior`).toBe('auto')
+    }
+    const control = await audit('no-preference')
+    expect(Object.values(control).some(r => r.offenders.length > 0), 'the audit sees motion without the preference').toBe(true)
+  })
+
+  test('X06: at 200% (640x450, scale 2) home, the answer thread, the report and the cited passage have no horizontal page scroll and their main controls are visible and uncovered', async ({ browser }) => {
+    const url = researchUrl()
+    const context = await browser.newContext({ viewport: { width: 640, height: 450 }, deviceScaleFactor: 2, reducedMotion: 'reduce' })
+    const p = await context.newPage()
+    const problems: string[] = []
+    try {
+      await p.goto(server.url())
+      problems.push(...await layoutProblems(p, 'home', { 'Research question': p.getByLabel('Research question'), 'Source scope': p.getByLabel('Source scope'), 'Start research': p.getByRole('button', { name: 'Start research' }), 'Open navigation': p.getByRole('button', { name: 'Open navigation' }) }))
+      await p.goto(url)
+      const artifact = p.getByRole('button', { name: /Open report:/ })
+      await expect(artifact).toBeVisible()
+      problems.push(...await layoutProblems(p, 'answer thread', { 'Open report': artifact, 'Research actions': p.getByRole('button', { name: 'Research actions' }) }))
+      await artifact.click()
+      const report = reportPanel(p)
+      await expect(report).toBeVisible()
+      problems.push(...await layoutProblems(p, 'report', { Close: report.getByRole('button', { name: 'Close' }), 'Download report': report.getByRole('button', { name: 'Download report' }), 'reference button': bisection(report) }))
+      await bisection(report).click()
+      const sheet = sourcePanel(p)
+      await expect(sheet.locator('mark.citation-highlight')).toBeVisible()
+      problems.push(...await layoutProblems(p, 'cited passage', { Close: sheet.getByRole('button', { name: 'Close' }), 'Plain text tab': sheet.getByRole('tab', { name: 'Plain text' }), 'PDF tab': sheet.getByRole('tab', { name: 'PDF' }) }))
+    } finally { await context.close() }
+    expect(problems).toEqual([])
   })
 })
 

@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { axeScan } from './a11y'
 import { nextPort } from './ports'
 
 // UI parity S25: the Library page (mockup `.lib`, plan L1-L10). Three panes (All works and the researches, the table,
@@ -165,6 +166,16 @@ test.describe.serial('S25: the Library page', () => {
     await page.screenshot({ path: path.join(OUT, 'S25-library-phone.png'), animations: 'disabled' })
     await page.locator('.lib-project-select').selectOption('')
     await expect(page.locator('.lib-head h1')).toHaveText('Library / All')
+  })
+
+  test('X01-X04: axe finds nothing serious or critical on the Library and Trash (light and dark, 1280 and 390 px)', async ({ page }) => {
+    test.setTimeout(120_000)
+    await open(page)
+    const found = await axeScan(page, 'Library')
+    await page.goto(`${server.url()}/#/trash`)
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
+    found.push(...await axeScan(page, 'Trash'))
+    expect(found).toEqual([])
   })
 
   test('toolbar: search, PDF filter (with its counts) and sort narrow and order the stored list', async ({ page }) => {

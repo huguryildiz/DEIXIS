@@ -210,4 +210,3 @@ def register_library_routes(app, settings: Settings) -> None:
         return {"library": library_view(store), "reference_import": {
             "format": fmt, "filename": Path(file.filename or "").name or None, **result,
             "errors": [e.view() for e in errors]}}
-

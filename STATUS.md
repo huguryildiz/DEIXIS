@@ -6,7 +6,7 @@
 
 Uygulama çalışıyor ve özellik bakımından geniş. Asıl eksik: son haftalarda eklenen özelliklerin çoğu gerçek modelle ve gerçek kullanımda denenmedi. Sıradaki iş yeni özellik değil; görsel kontrol, sonra macOS paketi (P10).
 
-- **25 Ekim:** repo sadeleşti (klasör düzeni, davranış değişmedi; D119, D120, D124). Testler ~1.500 durum, Playwright 5 spec, tek komut ~2 dk. Aynı gün Astra ve Argon'un üç turluk ortak incelemesiyle ölü kod ve kopyalar temizlendi (davranış değişmedi); hiçbir yerden çağrılmayan iki API yolu (Ollama gömme modeli indirme, kütüphane PDF'i) kaldırıldı; kalan sadeleşme işleri ve 6–7 Ekim ölçüm betikleri kararı `notes/2026-10-25-simplify-review/CONSENSUS.md`'de.
+- **25 Ekim:** repo sadeleşti (klasör düzeni, davranış değişmedi; D119, D120, D124). Testler ~1.500 durum, Playwright 5 spec, tek komut ~2 dk. Aynı gün Astra ve Argon'un üç turluk ortak incelemesiyle ölü kod ve kopyalar temizlendi (davranış değişmedi); hiçbir yerden çağrılmayan iki API yolu (Ollama gömme modeli indirme, kütüphane PDF'i) kaldırıldı; 6–7 Ekim ölçüm betikleri kalıyor (sahip kararı); sonraya kalan 11 sadeleşme işi ayrı oturumda Astra ve Argon'la inceleniyor (`notes/2026-10-25-simplify-review/`).
 - **Sağlam:** atıf kuralı. Her atıf, kodun pasajda bulduğu bir yere bağlı; 8 cevaptaki 171 atıf bağlantısının hepsi doğru.
 - **Ölçülmüş, iyi:** arama sırası. İlk 50'de düz OpenAlex'ten belirgin iyi (BioASQ 0,618 / 0,489; LitSearch 0,700 / 0,561).
 - **Ölçülmüş, zayıf:** EE survey seti (0,129 / 0,065) ve reranker orada zarar veriyor; D106 kaybın yarısını kapattı, yalnız kayıtlı koşularla, yeni koşu yok.

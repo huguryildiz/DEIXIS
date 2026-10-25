@@ -452,6 +452,21 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     await page.reload()
   })
 
+  for (const [name, ring] of [['transparent', 'outline:2px solid transparent!important'], ['zero-width', 'outline:0 solid var(--accent)!important']] as const) {
+    test(`X05 negative control: a button whose focus ring is ${name} has no focus indicator`, async () => {
+      await page.goto(server.url())
+      const button = page.getByRole('button', { name: 'Library', exact: true })
+      await tabTo(page, button, [])
+      expect(await focusIndicator(page), 'the shipped button shows focus').not.toBe('')
+      await button.evaluate(el => el.setAttribute('data-a11y-control', ''))
+      await page.addStyleTag({ content: `.app [data-a11y-control]:focus-visible{${ring};box-shadow:none!important}` })
+      await button.blur()
+      await tabTo(page, button, [])
+      expect(await focusIndicator(page), `a ${name} ring is no indicator`).toBe('')
+      await page.reload()
+    })
+  }
+
   test('X06: with reduced motion nothing animates on the answer thread, report or cited passage, and without it the same audit sees motion', async ({ browser }) => {
     const url = researchUrl()
     const audit = async (reducedMotion: 'reduce' | 'no-preference') => {

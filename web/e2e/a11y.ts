@@ -41,34 +41,75 @@ export async function axeScan(page: Page, screen: string): Promise<string[]> {
   return found
 }
 
-// The focus styles of the focused element and its nearest ancestors (an ancestor such as the composer draws the ring for
-// the input inside): outline, box shadow, border colour, and the ::before / ::after lines. Read in the page.
-function focusStyles(el: Element): string[] {
-  const out: string[] = []
+// What the focused element and its nearest ancestors (an ancestor such as the composer draws the ring for the input
+// inside) actually render as decoration: the outline, the box shadows, the borders and the ::before / ::after boxes. A
+// part that draws nothing (no width, style none or hidden, a transparent colour, a shadow with no blur and no spread, a
+// pseudo-element with no content, hidden or at opacity 0) is left empty. Runs in the page, so it is self-contained.
+function renderedDecoration(el: Element): string[][] {
+  const alpha = (color: string) => {
+    if (!color || color === 'transparent') return 0
+    const slash = color.match(/\/\s*([\d.]+)(%?)\s*\)$/)
+    if (slash) return parseFloat(slash[1]) / (slash[2] ? 100 : 1)
+    const rgba = color.match(/^rgba\(([^)]*)\)$/)
+    if (rgba) return parseFloat(rgba[1].split(',')[3])
+    return 1
+  }
+  const visibleStyle = (style: string) => style !== 'none' && style !== 'hidden'
+  const shadows = (value: string) => {
+    if (!value || value === 'none') return ''
+    const parts: string[] = []
+    let depth = 0, current = ''
+    for (const ch of value) {
+      if (ch === '(') depth++
+      if (ch === ')') depth--
+      if (ch === ',' && depth === 0) { parts.push(current.trim()); current = '' } else current += ch
+    }
+    parts.push(current.trim())
+    return parts.filter(part => {
+      const color = part.match(/[a-z-]+\([^)]*\)|transparent/)?.[0] ?? 'rgb(0, 0, 0)'
+      const lengths = part.replace(color, '').replace('inset', '').trim().split(/\s+/).map(parseFloat)
+      return alpha(color) > 0 && ((lengths[2] ?? 0) > 0 || (lengths[3] ?? 0) !== 0)
+    }).join(', ')
+  }
+  const out: string[][] = []
   for (let node: Element | null = el, i = 0; node && i < 4; node = node.parentElement, i++) {
     const s = getComputedStyle(node)
-    const pseudo = ['::before', '::after'].map(p => { const ps = getComputedStyle(node!, p); return `${ps.backgroundColor} ${ps.boxShadow}` })
-    out.push([s.outlineStyle, s.outlineWidth, s.outlineColor, s.boxShadow, s.borderColor, ...pseudo].join('|'))
+    const outline = visibleStyle(s.outlineStyle) && parseFloat(s.outlineWidth) > 0 && alpha(s.outlineColor) > 0 ? `outline ${s.outlineWidth} ${s.outlineStyle} ${s.outlineColor}` : ''
+    const border = (['Top', 'Right', 'Bottom', 'Left'] as const).map(side => {
+      const width = s.getPropertyValue(`border-${side.toLowerCase()}-width`), style = s.getPropertyValue(`border-${side.toLowerCase()}-style`), color = s.getPropertyValue(`border-${side.toLowerCase()}-color`)
+      return visibleStyle(style) && parseFloat(width) > 0 && alpha(color) > 0 ? `${side} ${width} ${style} ${color}` : ''
+    }).filter(Boolean).join(', ')
+    const pseudo = ['::before', '::after'].map(p => {
+      const ps = getComputedStyle(node!, p)
+      if (ps.content === 'none' || ps.content === 'normal' || ps.display === 'none' || ps.visibility !== 'visible' || parseFloat(ps.opacity) <= 0) return ''
+      const fill = alpha(ps.backgroundColor) > 0 ? `background ${ps.backgroundColor}` : ''
+      const shadow = shadows(ps.boxShadow)
+      return fill || shadow ? `${p} ${fill} ${shadow}`.trim() : ''
+    })
+    out.push([outline, shadows(s.boxShadow), border, ...pseudo])
   }
   return out
 }
 
-// What shows that the focused element has focus: a style of the element or of an ancestor that is there with focus and
-// gone without it, read once transitions have ended. A decoration that is there either way (the composer's resting
-// shadow) is not an indicator. The element gets its focus back afterwards, so the Tab order goes on from it. Empty when
-// nothing changes, or when focus is on the body.
+// What shows that the focused element has focus: a decoration of the element or of an ancestor that renders with focus
+// and is not rendered the same way without it, read once transitions have ended. A decoration that is there either way
+// (the composer's resting shadow) or that draws nothing (a transparent or zero-width ring) is not an indicator. The
+// element gets its focus back afterwards, so the Tab order goes on from it. Empty when nothing shows, or on the body.
 export async function focusIndicator(page: Page): Promise<string> {
   const element = await page.evaluateHandle(() => document.activeElement)
   if (await element.evaluate(el => !el || el === document.body)) return ''
   await quiet(page)
-  const on = await element.evaluate(focusStyles as (el: Element | null) => string[])
+  const on = await element.evaluate(renderedDecoration as (el: Element | null) => string[][])
   await element.evaluate(el => (el as HTMLElement).blur())
   await quiet(page)
-  const off = await element.evaluate(focusStyles as (el: Element | null) => string[])
+  const off = await element.evaluate(renderedDecoration as (el: Element | null) => string[][])
   await element.evaluate(el => (el as HTMLElement).focus())
   await quiet(page)
-  const level = on.findIndex((value, i) => value !== off[i])
-  return level < 0 ? '' : level === 0 ? 'own focus style' : `focus style on ancestor ${level}`
+  const kinds = ['outline', 'box-shadow', 'border', '::before', '::after']
+  for (const [level, parts] of on.entries()) for (const [k, value] of parts.entries()) {
+    if (value && value !== off[level]?.[k]) return level === 0 ? kinds[k] : `${kinds[k]} on ancestor ${level}`
+  }
+  return ''
 }
 
 const label = (page: Page) => page.evaluate(() => {

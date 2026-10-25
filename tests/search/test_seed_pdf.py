@@ -9,7 +9,7 @@ import pytest
 from deixis.workflow import fast_chain, ranking, seed_match
 from helpers import make_pdf
 from test_abstract_flow import QUESTION, ON_TOPIC
-from test_fetch_overlap_flow import output, wait
+from overlap_flow_helpers import output, wait
 from test_fulltext_flow import Transport, work
 from test_small_batch_flow import app_for, client_of
 

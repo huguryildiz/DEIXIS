@@ -18,7 +18,7 @@ from fakes import FakeAdapter, valid_response
 from test_criterion_passage_flow import library, page_source, TOPIC_PAGE
 from test_fast_path_clock import FakeClock
 from test_small_batch_flow import client_of
-from test_fetch_overlap_flow import discover, wait
+from overlap_flow_helpers import discover, wait
 from test_fulltext_flow import Transport, work
 from test_abstract_flow import ON_TOPIC
 from test_answer_resplit import draft_for

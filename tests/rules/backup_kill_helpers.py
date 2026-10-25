@@ -1,4 +1,4 @@
-"""P9 H2, F03 (kill part): SIGKILL of `deixis backup` before and after its manifest is published.
+"""Helpers for P9 H2, F03 (kill part): SIGKILL of `deixis backup` before and after its manifest is published.
 
 Real backup process, real restore CLI, a library made through a real server, SYNTHETIC records. Before the manifest the
 folder must be refused by `restore`; after it, restore must work. The full restore comparison (every table, canonical

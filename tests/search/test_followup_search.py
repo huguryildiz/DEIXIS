@@ -13,7 +13,7 @@ from fakes import FakeAdapter, valid_response
 from test_fulltext_flow import Transport, work
 from test_screen_more import settle
 from test_small_batch_flow import app_for, client_of
-from test_fetch_overlap_flow import discover
+from overlap_flow_helpers import discover
 
 QUESTION = "[new-works] Are there other studies on this that also report energy use?"
 

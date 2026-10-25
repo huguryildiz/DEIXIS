@@ -20,7 +20,7 @@ from deixis.workflow.flow import FlowDeps, ResearchFlow
 from deixis.workflow.store import Store
 from deixis.workflow.worker import Worker
 from fakes import FakeAdapter, valid_response
-from test_fetch_overlap_flow import discover, output
+from overlap_flow_helpers import discover, output
 from test_abstract_flow import HALF
 from test_fulltext_flow import Transport, work
 from test_small_batch_flow import app_for, client_of

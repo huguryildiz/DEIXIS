@@ -12,7 +12,7 @@ from deixis.providers.registry import CONNECTORS
 from deixis.workflow import small_batch
 from fakes import FakeAdapter, valid_response
 from test_abstract_flow import ON_TOPIC, client_of as opened_client
-from test_fetch_overlap_flow import discover, output, SlowFetcher
+from overlap_flow_helpers import discover, output, SlowFetcher
 from test_fulltext_flow import Transport, work, named_pdf, ok
 
 

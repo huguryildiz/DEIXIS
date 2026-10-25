@@ -31,7 +31,7 @@ from deixis.__main__ import FORCED_EXIT_CODE
 from restore_compare import compare_states, library_state, sha256_file, tree_snapshot
 from helpers import make_pdf
 from test_restore_matrix import CHILD, hand_backup, manifest_of
-from test_backup_kill import backup_folders, start_backup
+from backup_kill_helpers import backup_folders, start_backup
 
 pytestmark = pytest.mark.process
 REPO = Path(__file__).resolve().parents[2]

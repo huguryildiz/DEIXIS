@@ -18,7 +18,7 @@ from deixis.workflow.store import Store
 from deixis.workflow.worker import Worker
 from fakes import FakeAdapter, valid_response
 from test_abstract_flow import ON_TOPIC
-from test_fetch_overlap_flow import discover, wait
+from overlap_flow_helpers import discover, wait
 from test_fulltext_flow import Transport, work
 from test_small_batch_flow import client_of
 

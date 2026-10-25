@@ -22,8 +22,8 @@ from deixis.providers.registry import CONNECTORS
 from fakes import FakeAdapter
 from test_abstract_flow import ON_TOPIC
 from test_abstract_flow import responder
-from test_fetch_overlap_flow import discover
-from test_fetch_overlap_flow import wait
+from overlap_flow_helpers import discover
+from overlap_flow_helpers import wait
 from test_fulltext_flow import Fetcher
 from test_fulltext_flow import Transport
 from test_fulltext_flow import named_pdf
@@ -36,8 +36,8 @@ from deixis.providers import query_compiler
 from test_api_flow import session
 from test_api_flow import sw_settings
 from test_api_flow import wait_run
-from test_provider_flow import no_fetch
-from test_provider_flow import routed
+from provider_flow_helpers import no_fetch
+from provider_flow_helpers import routed
 
 
 QUERIES = [{"provider_id": "openalex", "query_text": "SYNTHETIC alpha"},

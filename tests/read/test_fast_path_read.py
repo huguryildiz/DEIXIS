@@ -11,7 +11,7 @@ from deixis.workflow.flow import ResearchFlow, RunStopped
 from deixis.workflow.worker import Worker
 from test_fast_path_clock import library, stage
 from test_small_batch_flow import app_for, client_of
-from test_fetch_overlap_flow import discover, wait
+from overlap_flow_helpers import discover, wait
 from fakes import FakeAdapter, valid_response
 from deixis.documents import identity
 from deixis.workflow import fulltext
@@ -466,7 +466,7 @@ def test_source_removed_during_handoff_cancels_claim_and_queue(library, monkeypa
 @pytest.mark.parametrize("interruption", ["recover"])
 def test_abstract_resume_reuses_sent_step_and_excludes_downtime(tmp_path, monkeypatch, interruption):
     from test_fast_path_clock import FakeClock
-    from test_fetch_overlap_flow import wait
+    from overlap_flow_helpers import wait
     holder = {}
     def before(si):
         if si["task_type"] == "abstract_screening" and not holder.get("stopped"):

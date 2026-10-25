@@ -18,7 +18,7 @@ from deixis.workflow.flow import ResearchFlow
 from deixis.workflow.store import Store
 from test_fast_path_clock import library, app_for, FakeClock
 from test_fast_path_search import record
-from test_fetch_overlap_flow import discover
+from overlap_flow_helpers import discover
 from test_small_batch_flow import client_of
 
 

@@ -1,4 +1,4 @@
-"""Discovery across several providers through the API: dispatch, DOI merge and request accounting (mocked HTTP).
+"""Helpers for discovery across several providers through the API: dispatch, DOI merge and request accounting (mocked HTTP).
 
 The two planned providers are OpenAlex and bioRxiv, which OpenAlex serves under a source filter: both answer on the
 same mocked host, and a provider that is only asked about a known DOI is not planned at all (D87).

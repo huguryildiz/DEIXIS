@@ -11,7 +11,7 @@ from deixis.workflow import small_batch
 from deixis.workflow.background_fetch import FetchSlots
 from deixis.workflow.flow import ResearchFlow
 from test_abstract_flow import ON_TOPIC, QUESTION
-from test_fetch_overlap_flow import Crash, app_for as overlap_app_for, fulltext_codes, run_until_crash, work_steps
+from overlap_flow_helpers import Crash, app_for as overlap_app_for, fulltext_codes, run_until_crash, work_steps
 from test_fulltext_flow import Fetcher, Transport, named_pdf, ok, work
 from batch_outputs import stage_output
 from test_queue_api import sent_records, sent_source

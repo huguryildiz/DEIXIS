@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ArrowDown, BookOpen, Check, ChevronDown, ChevronRight, Cpu, FileText, List, ListChecks, LoaderCircle, Minus, Pause, PencilLine, Play, RotateCw, ScanText, Search, ShieldCheck, Sparkles, TriangleAlert, Upload, Waypoints, X, type LucideIcon } from 'lucide-react'
+import { ArrowDown, ArrowRight, BookOpen, Check, ChevronDown, ChevronRight, Cpu, FileText, List, ListChecks, LoaderCircle, Minus, Pause, PencilLine, Play, RotateCw, ScanText, Search, ShieldCheck, Sparkles, TriangleAlert, Upload, Waypoints, X, type LucideIcon } from 'lucide-react'
 import { api, type FulltextGapReason, type ModelRole, type ResearchView, type Run, type Verdict, type ReviewCard, type ReviewTargetKind, type SearchRun } from '../lib/api'
 import { ocrLanguagesText as ocrLanguages } from '../reading/ocr'
 import { serviceWaitRecordText, providerRetryText, serviceErrorSentence, serviceKind, connectionName, failedSectionReasonText, fetchReasonText, pauseDetailText, pauseReasonText, providerName, approvedByText, runStatusLabels, searchQueryTriesLeft, seedUseText, stepLabel, verdictLabels, wordLeftOutText } from '../lib/labels'
@@ -9,7 +9,8 @@ import { ModelName } from '../components/ModelName'
 import { effortLabels, modelRoles } from '../home/Home'
 import { AnswerFlowNote } from './FlowReport'
 import type { ModelText } from '../lib/modelText'
-import { t, uiLocale } from '../lib/i18n'
+import { t, uiLanguage, uiLocale } from '../lib/i18n'
+import { REPORT_HEADINGS } from '../review/reportHeadings'
 import { scrollBehavior } from '../lib/motion'
 import { Button } from '@/components/ui/button'
 import { RunUsageBox } from './usage'
@@ -107,6 +108,10 @@ function Verdict({ label }: { label: string | null }) {
   const tone = label === 'candidate' || label === 'include' ? ' is-ok' : label === 'unresolved' ? ' is-warn' : ' is-bad'
   return <span className={`step-pill${tone}`}>{t(screeningLabels[label] ?? label)}</span>
 }
+// Report sections in the order the report prints them, by their heading in the interface language.
+const SECTION_ORDER = ['abstract', 'index_terms', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'references']
+const sectionRank = (id: string) => { const i = SECTION_ORDER.indexOf(id); return i < 0 ? SECTION_ORDER.length : i }
+const sectionHeading = (id: string) => REPORT_HEADINGS[id]?.[uiLanguage() === 'tr' ? 1 : 0] ?? id
 const durationText = (seconds: number) => (seconds < 60 ? t('{s} s', { s: seconds }) : t('{m} min {s} s', { m: Math.floor(seconds / 60), s: seconds % 60 }))
 // When the run started: the clock alone for today, with the day for anything older, so the wait between runs is visible.
 function startedText(iso: string) {
@@ -565,17 +570,25 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       return <li key={item.group_index} className={`is-${status}`}><span className="chat-step-icon" role="img" aria-label={t(status === 'done' ? 'Done' : status === 'attention' ? 'Stopped here' : status === 'running' ? 'In progress' : 'Waiting')}>{status === 'done' ? <Check size={13} aria-hidden /> : status === 'attention' ? <TriangleAlert size={13} aria-hidden /> : status === 'running' ? <LoaderCircle size={14} aria-hidden /> : <Minus size={13} aria-hidden />}</span><span>{t('Group {i} of {n}', { i: item.group_index, n: item.group_count })}{step?.error_code && <small>{pauseReasonText(step.error_code)}</small>}{step?.status === 'outcome_unknown' && <small>{t('Outcome unknown')}</small>}</span></li>
     })}</ul>
     if (run.kind === 'report' && key === 'assembly' && group.some(step => step.kind === 'model:report_review')) return <p>{t('Report review')}</p>
-    if (run.kind === 'report' && key === 'sections' && group.length) return <>{group.filter(step => step.kind === 'model:report_section').map(step => {
-      const section = step.operation_key.replace('report_section:', '')
+    // One row per section in the report's own order, named by its heading; the state is an icon and, unless written, a word.
+    if (run.kind === 'report' && key === 'sections' && group.length) return <ul className="report-sections">{group.filter(step => step.kind === 'model:report_section')
+      .map(step => ({ step, section: step.operation_key.replace('report_section:', '') }))
+      .sort((a, b) => sectionRank(a.section) - sectionRank(b.section)).map(({ step, section }) => {
       const needsRewrite = run.pause_reason === 'section_must_be_rewritten' &&
         Array.isArray((run.error as { sections?: string[] } | null)?.sections) &&
         (run.error as { sections: string[] }).sections.includes(section)
       const reasons = (run.error as { reasons?: { section_id?: string; code?: string }[] } | null)?.reasons
       const code = Array.isArray(reasons) ? reasons.find(reason => reason?.section_id === section)?.code : undefined
       const reason = typeof code === 'string' && code ? failedSectionReasonText(code) : ''
-      const outcome = needsRewrite ? reason ? t('{section}: must be written again: {reason}', { section, reason }) : t('{section}: must be written again', { section }) : step.status === 'succeeded' ? t('{section} written', { section }) : step.status === 'failed' || step.status === 'outcome_unknown' ? reason ? t('{section} failed: {reason}', { section, reason }) : t('{section} failed', { section }) : step.status === 'running' ? t('{section}: being written', { section }) : t('{section}: waiting', { section })
-      return <p key={step.id} className="chat-report-line">{outcome}</p>
-    })}</>
+      const failed = step.status === 'failed' || step.status === 'outcome_unknown'
+      const status = needsRewrite || failed ? 'attention' : step.status === 'succeeded' ? 'done' : step.status === 'running' ? 'running' : 'waiting'
+      const word = needsRewrite ? t('Must be written again') : failed ? t('Failed') : status === 'running' ? t('Being written') : status === 'waiting' ? t('Waiting') : ''
+      return <li key={step.id} className={`is-${status}`}>
+        <span className="report-section-icon" role="img" aria-label={t(status === 'done' ? 'Done' : status === 'attention' ? 'Stopped here' : status === 'running' ? 'In progress' : 'Waiting')}>{status === 'done' ? <Check size={12} aria-hidden /> : status === 'attention' ? <TriangleAlert size={12} aria-hidden /> : status === 'running' ? <LoaderCircle size={13} className="chat-spin" aria-hidden /> : <Minus size={12} aria-hidden />}</span>
+        <span className="report-section-name">{sectionHeading(section)}{reason && <small>{reason}</small>}</span>
+        {word && <span className="report-section-state">{word}</span>}
+      </li>
+    })}</ul>
     // A search phase reports even when a provider failed: the totals of the providers that did answer still hold.
     if (state !== 'done' && !(key === 'search' && state === 'attention')) return null
     switch (key) {
@@ -958,11 +971,11 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         // This run's readings, not the revision's funnel above: a later run on the same revision reads other works.
         parts.push(row(t('Both readings agreed in this run'), t('{agreed} of {read}', { agreed: passes.agreed, read: passes.read }), 'agreed'))
         if (passes.rows.length) parts.push(<div key="passes" className="step-table-wrap">
-          <table className="step-table"><caption className="sr-only">{t('Abstract readings that did not agree')}</caption>
+          <table className="step-table is-verdicts"><caption className="sr-only">{t('Abstract readings that did not agree')}</caption>
             <thead><tr><th scope="col">{t('Readings that did not agree')}</th><th scope="col">{t('1st → 2nd = decision')}</th></tr></thead>
             <tbody>{shown('passes', passes.rows).map(p => <tr key={p.source_version_id}>
               <td>{sourceTitle(p.source_version_id, p.title)}</td>
-              <td className="step-verdicts"><Verdict label={p.first} /><span aria-hidden>→</span><Verdict label={p.second} /><span aria-hidden>=</span><Verdict label={p.final} /></td>
+              <td className="step-verdicts"><span className="step-readings"><Verdict label={p.first} /><ArrowRight size={12} aria-hidden /><Verdict label={p.second} /></span><span className="step-decision"><Verdict label={p.final} /></span></td>
             </tr>)}</tbody>
           </table>
           {more('passes', passes.rows.length)}

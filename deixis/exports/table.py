@@ -21,7 +21,8 @@ from deixis.exports.text import CitationStyle, Language, Translate, download_nam
 
 ACCESS = {"pdf_available": "PDF text", "abstract": "Abstract only", "metadata": "Metadata only"}
 # Whether a row is in the table's report, and why (D114): an included source, or a work read from its abstract only.
-IN_REPORT = {"included": "Yes", "abstract_only": "Yes, abstract only", None: "No"}
+IN_REPORT = {"included": "Yes", "full_text_read": "Yes, read in full, did not meet the whole criterion",
+             "abstract_only": "Yes, abstract only", None: "No"}
 STATES = {"value": "Value", "not_verified": "Value without linked evidence", "unknown": "Unclear in the source",
           "not_reported": "Not reported", "not_applicable": "Not applicable", "inaccessible": "No text",
           "not_found_in_inspected_scope": "Not found in the text read"}

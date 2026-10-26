@@ -13,7 +13,7 @@ export const stateLabels: Record<CellState, string> = {
   not_applicable: 'Not applicable', inaccessible: 'No text', not_found_in_inspected_scope: 'Not found in the text read',
 }
 // Whether a row is in the table's report, and why (D114); the Python exports write the same words.
-const inReportLabels: Record<string, string> = { included: 'Yes', abstract_only: 'Yes, abstract only', none: 'No' }
+const inReportLabels: Record<string, string> = { included: 'Yes', full_text_read: 'Yes, read in full, did not meet the whole criterion', abstract_only: 'Yes, abstract only', none: 'No' }
 export const accessLabels: Record<TableRow['access_level'], string> = { pdf_available: 'PDF text', abstract: 'Abstract only', metadata: 'Metadata only' }
 
 // A value keeps the shape of the column revision it was made under, so it is read from its own keys.

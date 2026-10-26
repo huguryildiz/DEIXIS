@@ -437,7 +437,9 @@ class ReportStore:
             " WHERE t.table_id = ?", (report["research_id"], report["research_id"], report["research_id"], table_id),
         )}
         removed_changes = {}
-        abstract_only = {row["source_version_id"] for row in snapshot["rows"] if row.get("membership") == "abstract_only"}
+        # A work read in full and not included (D144) leaves the same way.
+        abstract_only = {row["source_version_id"] for row in snapshot["rows"]
+                         if row.get("membership") in ("abstract_only", "full_text_read")}
         for source_id in removed:
             record = stamps.get(source_id)
             departure = [] if record is None else [record["row_removed_at"], record["membership_removed_at"],

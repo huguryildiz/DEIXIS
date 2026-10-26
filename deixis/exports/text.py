@@ -70,6 +70,7 @@ TR: dict[str, str] = {
     "Access": "Erişim",
     "In report": "Raporda",
     "Yes, abstract only": "Evet, yalnızca özet",
+    "Yes, read in full, did not meet the whole criterion": "Evet, tam metni okundu, ölçütün tamamını karşılamadı",
     "{name} — evidence": "{name} — kanıt",
     "published version": "yayımlanmış sürüm",
     "accepted manuscript": "kabul edilmiş makale",

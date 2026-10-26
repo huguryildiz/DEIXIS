@@ -997,8 +997,9 @@ export type TableRow = {
   source_version_id: string; work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; version_label: string | null
   selection_state: 'included' | 'excluded' | 'pending' | null; added_by: 'included_at_creation' | 'included_later' | 'user'; added_at: string; removed_at: string | null
   access_level: 'pdf_available' | 'abstract' | 'metadata'
-  // Why the row is in the table's report (D114): an included source, a work read from its abstract only, or not in it.
-  report_membership?: 'included' | 'abstract_only' | null
+  // Why the row is in the table's report (D114, D144): an included source, a work read in full and not included, a
+  // work read from its abstract only, or not in it.
+  report_membership?: 'included' | 'full_text_read' | 'abstract_only' | null
 }
 export type CellValue = { option_ids?: string[]; number?: number; unit?: string | null; as_stated?: string | null; answer?: 'yes' | 'no'; text?: string }
 export type CellEvidence = {
@@ -1065,8 +1066,8 @@ export type ReportDetail = ReportSummary & { language: string; updated_at: strin
   // `stale`: every cited cell or row that differs from the snapshot, including changes a section marked as seen.
   evidence_changes: { any: boolean; changed_cells: number; removed_sources: number; added_sources: number; revised_columns: number; not_checked: string[]
     stale?: { key: string; kind: 'cell_changed' | 'source_removed'; source_version_id: string; cell_id?: string; column_id?: string }[] }
-  references: { number: number; source_version_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null; doi: string | null; version_label: string | null; open_passage_id: string | null; abstract_only?: boolean }[]
-  table_i: { columns: { column_id: string; name: string; answer_format: AnswerFormat; options: ColumnOption[] | null }[]; rows: { source_version_id: string; ref_number: number | null; source_key: string | null; title: string | null; failed?: boolean; abstract_only?: boolean }[]
+  references: { number: number; source_version_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null; doi: string | null; version_label: string | null; open_passage_id: string | null; abstract_only?: boolean; full_text_read?: boolean }[]
+  table_i: { columns: { column_id: string; name: string; answer_format: AnswerFormat; options: ColumnOption[] | null }[]; rows: { source_version_id: string; ref_number: number | null; source_key: string | null; title: string | null; failed?: boolean; abstract_only?: boolean; full_text_read?: boolean }[]
     cells: { cell_id: string; column_id: string; source_version_id: string; state: CellState; value: CellValue | null; evidence_passage_ids: string[] }[] } | null
   run: { id: string; status: RunStatus; pause_reason: string | null; error?: { rule: string; section_id: string | null; detail: string }[] | null } | null; table_id: string | null }
 export type TableTemplate = { id: string; name: string; columns: ColumnSpec[]; created_at: string }

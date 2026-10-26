@@ -189,7 +189,8 @@ def blocks(view: dict[str, Any], *, title: str, corpus: dict[str, int] | None,
             fields.append(f'DOI: {plain(ref["doi"])}')
         if ref.get("version_label"):
             fields.append(f'({plain(ref["version_label"])})')
-        note = f'. {export_text.abstract_reference_note(tr)}' if ref.get("abstract_only") else ""
+        note = (f'. {export_text.abstract_reference_note(tr)}' if ref.get("abstract_only")
+                else f'. {export_text.full_text_reference_note(tr)}' if ref.get("full_text_read") else "")
         out.append(ooxml.paragraph(f'[{ref["number"]}] ' + ", ".join(fields) + note, style="Bibliography"))
     out += [ooxml.paragraph(export_text.corpus_footer(corpus, tr), style="Small"),
             ooxml.paragraph(f"{export_text.anchor_note(view, tr)} {export_text.review_note(view, tr, plain)}", style="Small")]

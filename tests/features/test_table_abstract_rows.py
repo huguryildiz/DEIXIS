@@ -21,12 +21,13 @@ from deixis.storage.db import new_id, now, transaction
 from deixis.workflow.features.tables import table_sources
 from deixis.workflow.screen.decisions import DecisionStore
 from deixis.workflow.run.flow import FlowDeps, ResearchFlow
-from deixis.workflow.features.report.report_snapshot import included_table_rows
+from deixis.workflow.features.report.report_snapshot import build_snapshot, countable_row_ids, included_table_rows
 from deixis.workflow.run.store import Store
 from deixis.workflow.features.tables.tables import TableStore, report_ready
 from fakes import FakeAdapter, valid_response
 from test_evidence_tables import PACKET_SIZE
 from test_table_extraction import add_pdf
+from test_fast_path_answer import inspected_pdf, setup as closest_setup
 
 ABSTRACT = "SYNTHETIC abstract: packets of 64 bytes were evaluated."
 
@@ -189,6 +190,42 @@ def filled(tmp_path):
     tid = new_table(lib)
     execute(lib, lib.tables.request_fill(lib.rid, tid, None, False, version(lib, tid), None, included_only=True))
     return lib, abstract, tid
+
+
+# ---- works read in full and not included (D144) ---------------------------------------------------------------------
+
+def test_a_work_read_in_full_that_missed_the_criterion_is_a_row_and_a_full_text_report_source(tmp_path):
+    """The answer's closest work (D137) is the table's `full_text_read` row: its read version, filled from its PDF,
+    in the report as a full-text source that is never counted as included. The person's exclusion still wins."""
+    lib = closest_setup(tmp_path, pdf=True)
+    svid, _ = inspected_pdf(lib, "criterion_absent")
+    # `page_source` stands for a PDF the person attached; this one is a search record whose selection the code derives.
+    lib.store.conn.execute("UPDATE selections SET origin = 'default' WHERE source_version_id = ?", (svid,))
+    decisions = DecisionStore(lib.store)
+    assert decisions.derive_selection(lib.rid, lib.store.source(svid)["work_id"]) == "excluded"
+    abstract = lib.sources[0]
+    assert list(table_sources.membership(lib.store, lib.rid).items()) == [(svid, "full_text_read"), (abstract, "abstract_only")]
+
+    lib.store.update_run(lib.discovery["id"], status="completed")
+    tables = TableStore(lib.store)
+    tid = tables.create_table(lib.rid, "Packets", None, None, None)
+    tables.add_column(lib.rid, tid, PACKET_SIZE, 1, None)
+    rows = {row["source_version_id"]: row for row in tables.table_view(lib.rid, tid)["rows"]}
+    assert (rows[svid]["report_membership"], rows[svid]["access_level"]) == ("full_text_read", "pdf_available")
+    assert table_sources.in_table_sources(lib.store, lib.rid, tid, svid)
+    run = tables.request_fill(lib.rid, tid, None, False, tables.table_view(lib.rid, tid)["table"]["version"], None,
+                              included_only=True)
+    lib.store.update_run(run["id"], status="running")
+    asyncio.run(lib.flow.execute(run["id"]))
+    snapshot = build_snapshot(lib.store, lib.rid, tid)
+    row = next(r for r in snapshot["rows"] if r["source_version_id"] == svid)
+    assert row["membership"] == "full_text_read" and "passage_ids" not in row
+    assert row["reading_depth"] in ("selected_sections", "full_text")
+    assert snapshot["basis"]["full_text"] == 1 and svid not in countable_row_ids(snapshot)
+    assert svid not in snapshot.get("abstract_rows", [])
+
+    select(SimpleNamespace(conn=lib.store.conn, store=lib.store, rid=lib.rid), svid, "excluded")
+    assert svid not in table_sources.membership(lib.store, lib.rid, tid)
 
 
 # ---- claim marks ----------------------------------------------------------------------------------------------------

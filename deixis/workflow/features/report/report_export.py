@@ -194,6 +194,8 @@ def to_markdown(view: dict[str, Any], *, title: str, corpus: dict[str, int] | No
         line = f'[{ref["number"]}] ' + ", ".join(fields)
         if ref.get("abstract_only"):
             line += ". " + _md(export_text.abstract_reference_note(tr))  # D114
+        elif ref.get("full_text_read"):
+            line += ". " + _md(export_text.full_text_reference_note(tr))  # D144
         lines.extend([line, ""])
     lines.extend([export_text.corpus_footer(corpus, tr), ""])
     anchor = export_text.anchor_note(view, tr)

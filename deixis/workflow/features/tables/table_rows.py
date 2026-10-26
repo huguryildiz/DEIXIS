@@ -19,7 +19,7 @@ Every following table gets its own fill: a cell belongs to one table's column (i
 report is written from one table, so the same new source is a separate set of questions in each table.
 
 D114: a table made from the research (`follows_included = 2`) also follows the works read from their abstracts only
-(`table_sources`). Such a work gets a row when it has never had one in the table, matched by work, so a new head of a
+and (D144) those read in full that were not included (`table_sources`). Such a work gets a row when it has never had one in the table, matched by work, so a new head of a
 work adds no second row; its cells are due by the same rules as an included source's.
 """
 

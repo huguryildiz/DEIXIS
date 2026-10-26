@@ -596,7 +596,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
                   </div>
                   <span className="src-m evidence-row-meta">{[row.year, versionText(row.version_label), sort?.key === 'similarity' && source?.similarity != null && t('similarity {score}', { score: source.similarity.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })].filter(Boolean).join(' · ')}</span>
                   <DepthBadge depth={row.access_level === 'pdf_available' ? 'full_text' : row.access_level} label={t(accessLabels[row.access_level])} />
-                  <span className="src-m evidence-row-state">{row.report_membership === 'abstract_only' ? t('Undecided in Sources · in the report, read from the abstract only') : row.selection_state && t(rowSelectionLabels[row.selection_state])}</span>
+                  <span className="src-m evidence-row-state">{row.report_membership === 'abstract_only' ? t('Undecided in Sources · in the report, read from the abstract only') : row.report_membership === 'full_text_read' ? t(row.selection_state === 'excluded' ? 'Excluded in Sources · in the report, read in full, did not meet the whole criterion' : 'Undecided in Sources · in the report, read in full, did not meet the whole criterion') : row.selection_state && t(rowSelectionLabels[row.selection_state])}</span>
                 </th>
                 {columns.map((col, c) => {
                   const id = `${col.id}:${row.source_version_id}`

@@ -199,6 +199,9 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
     abstract_read = {row["source_version_id"] for row in (frozen or {}).get("rows", [])
                      if row.get("membership") == "abstract_only"
                      or (row.get("passage_ids") and row.get("reading_depth") in (None, "abstract"))}
+    # D144: the rows read in full that did not meet the whole criterion, noted beside their reference.
+    full_read = {row["source_version_id"] for row in (frozen or {}).get("rows", [])
+                 if row.get("membership") == "full_text_read"}
     effective_by_claim: dict[str, list[dict]] = {}
     removed_by_claim: dict[str, list[dict]] = {}
     for link in reports.effective_links(report_id):
@@ -305,6 +308,7 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
                            "title": source["title"], "authors": json.loads(source["authors_json"]),
                            "year": source["year"], "venue": source["venue"], "doi": source["doi"],
                            "version_label": source["version_label"], "abstract_only": source_id in abstract_read,
+                           "full_text_read": source_id in full_read,
                            "open_passage_id": first_passage.get(source_id) or fallback})
     table_i = None
     missing_rows = None
@@ -335,6 +339,7 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
                       "source_key": frozen_sources[row["source_version_id"]]["source_key"] if frozen_sources[row["source_version_id"]] else None,
                       "title": frozen_sources[row["source_version_id"]]["title"] if frozen_sources[row["source_version_id"]] else None,
                       "abstract_only": row["source_version_id"] in abstract_read,
+                      "full_text_read": row["source_version_id"] in full_read,
                       "membership": row.get("membership", "included"),
                       **({"failed": True} if row["source_version_id"] in failed_ids else {})}
                      for row in frozen["rows"]],

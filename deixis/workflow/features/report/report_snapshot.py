@@ -18,8 +18,8 @@ SCREENING_TASKS = ("screening", "abstract_screening")
 def included_table_rows(store: Store, research_id: str, table_id: str) -> list[str]:
     """Use the same active-row and report-source boundary for snapshots and later comparisons.
 
-    The report sources are the included ones and, in a table made from the research, the works read from their
-    abstracts only (D114, `table_sources`).
+    The report sources are the included ones and, in a table made from the research, the works read in full that were
+    not included (D144) and those read from their abstracts only (D114, `table_sources`).
     """
     included = set(table_sources.table_sources(store, research_id, table_id))
     return [source_id for source_id in TableStore(store).active_rows(table_id) if source_id in included]
@@ -28,8 +28,8 @@ def included_table_rows(store: Store, research_id: str, table_id: str) -> list[s
 def countable_row_ids(snapshot: dict[str, Any]) -> list[str]:
     """The rows a structured count may take members from: the frozen included rows (D114).
 
-    A row read from its abstract only because no full text was obtained is never counted; an ordinary claim may still
-    cite it. A snapshot saved before rows carried `membership` counts every evidence row, as it did.
+    A row read from its abstract only because no full text was obtained, or read in full without being included (D144),
+    is never counted; an ordinary claim may still cite it. A snapshot saved before rows carried `membership` counts every evidence row, as it did.
     """
     rows = evidence_row_ids(snapshot)
     by_id = {row["source_version_id"]: row for row in snapshot.get("rows", [])}
@@ -131,8 +131,8 @@ def build_snapshot(store: Store, research_id: str, table_id: str) -> dict[str, A
     Every included row of the table is evidence, whatever its cells hold: a row whose cells failed is read from its
     abstract or metadata and named in the basis note. Only snapshots saved before this rule carry `failed_rows`.
 
-    D114: each row records why it is in the report (`membership`: included, or abstract_only for a work read from its
-    abstract only), and a row with no text beyond its abstract records its abstract passages (`passage_ids`), so a
+    D114: each row records why it is in the report (`membership`: included, full_text_read for a work read in full that
+    was not included (D144), or abstract_only for a work read from its abstract only), and a row with no text beyond its abstract records its abstract passages (`passage_ids`), so a
     PDF that arrives later never reaches this report: report steps read those ids, not the source's live passages.
     """
     tables = TableStore(store)

@@ -150,7 +150,7 @@ def bibtex_with_notes(sources: list[dict[str, Any]], keys: list[str] | None = No
             ("url", identifiers["url"]),
             ("eprint", identifiers["eprint"]),
             ("eprinttype", "arxiv" if s["arxiv_id"] else ""),
-            ("note", tex(_version_note(s["version_label"], s.get("abstract_only", False)))),
+            ("note", tex(_version_note(s["version_label"], s.get("abstract_only", False), s.get("full_text_read", False)))),
         ]
         body = ",\n".join(f"  {name} = {{{value}}}" for name, value in fields if value)
         entries.append(f"@{entry_type}{{{key},\n{body}\n}}\n")
@@ -174,11 +174,14 @@ def _kind(publication_type: str | None) -> str:
     return next((kind for kind, names in _KINDS.items() if key in names), "other")
 
 
-def _version_note(label: str | None, abstract_only: bool = False) -> str:
-    """The BibTeX note: the version read and, for a report source read from its abstract only, that (D114)."""
+def _version_note(label: str | None, abstract_only: bool = False, full_text_read: bool = False) -> str:
+    """The BibTeX note: the version read and, for a report source read from its abstract only (D114) or read in full
+    without meeting the whole criterion (D144), that."""
     note = f"Source version read in DEIXIS: {_VERSION_NAMES.get(label, label)}" if label else ""
-    if abstract_only:
-        note = f"{note}; read from the abstract only" if note else "Read from the abstract only"
+    extra = ("read from the abstract only" if abstract_only else
+             "read in full, did not meet the whole inclusion criterion" if full_text_read else "")
+    if extra:
+        note = f"{note}; {extra}" if note else extra[0].upper() + extra[1:]
     return note
 
 

@@ -276,12 +276,15 @@ def value_text(value: dict[str, Any] | None, options: list[dict[str, Any]] | Non
 
 
 def source_cell(row: dict[str, Any], tr: bool, esc: Callable[[Any], str]) -> str:
-    """PIECEWISE: Escape the source label before adding a reference prefix and the abstract-only suffix (D114)."""
+    """PIECEWISE: Escape the source label before adding a reference prefix and the abstract-only (D114) or read-in-full
+    (D144) suffix."""
     source = esc(row.get("source_key") or row.get("title") or pick("Source record unavailable", tr, "Kaynak kaydı bulunamadı"))
     if row.get("ref_number") is not None:
         source = f'[{row["ref_number"]}] {source}'
     if row.get("abstract_only"):
         source += pick(" (abstract only)", tr, " (yalnızca özet)")
+    elif row.get("full_text_read"):
+        source += pick(" (read in full, criterion not fully met)", tr, " (tam metin okundu, ölçüt tam karşılanmadı)")
     return source
 
 
@@ -298,6 +301,12 @@ def claim_depth_mark(claim: dict[str, Any], tr: bool) -> str:
 def abstract_reference_note(tr: bool) -> str:
     """PLAIN: The note a reference read from its abstract only ends with (D114)."""
     return pick("Read from the abstract only.", tr, "Yalnızca özetten okundu.")
+
+
+def full_text_reference_note(tr: bool) -> str:
+    """PLAIN: The note a reference read in full that did not meet the whole criterion ends with (D144)."""
+    return pick("Read in full; did not meet the whole inclusion criterion.", tr,
+                "Tam metni okundu; dahil etme ölçütünün tamamını karşılamadı.")
 
 
 def cell_text(cell: dict[str, Any] | None, column: dict[str, Any], tr: bool, esc: Callable[[Any], str]) -> str:

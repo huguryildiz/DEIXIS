@@ -1035,7 +1035,8 @@ class TableStore:
     def table_view(self, research_id: str, table_id: str) -> dict[str, Any]:
         table = self._table(research_id, table_id)
         columns = self._columns(table_id)
-        # Why each row is in the table's report, read live (D114): 'included', 'abstract_only', or None (not in it).
+        # Why each row is in the table's report, read live (D114, D144): 'included', 'full_text_read', 'abstract_only',
+        # or None (not in it).
         report_membership = table_sources.membership(self.store, research_id, table_id)
         rows = []
         for r in self.conn.execute(

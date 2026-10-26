@@ -127,9 +127,10 @@ def _references(view: dict, bib_sources: list[dict]) -> tuple[dict[int, str], li
         keys[number] = key
     if len({key.lower() for key in keys.values()}) != len(keys):
         raise RevisionConflict("Cite keys collide ignoring case")
-    # A reference read from its abstract only carries that note into its BibTeX entry (D114).
+    # A reference read from its abstract only (D114), or read in full without meeting the whole criterion (D144),
+    # carries that note into its BibTeX entry.
     return keys, [by_bib[ref["source_version_id"]] | ({"abstract_only": True} if ref.get("abstract_only") else {})
-                  for ref in refs], notes
+                  | ({"full_text_read": True} if ref.get("full_text_read") else {}) for ref in refs], notes
 
 
 @dataclass(frozen=True)

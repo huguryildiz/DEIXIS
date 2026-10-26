@@ -105,6 +105,25 @@ def test_a_katex_only_name_defined_once_at_the_preamble_top_is_a_user_macro():
     assert found[0]["refused"] == "macro_ambiguous"
 
 
+def test_a_display_shorthand_opens_a_display():
+    # D142, arXiv 2106.00831: 50 of its displays are `\beq … \eeq`, which the scan did not see as displays
+    pre = "\\newcommand{\\beq}{\\begin{equation}}\\newcommand{\\eeq}{\\end{equation}}"
+    found = groups_of(doc("\\beq x = 1 \\eeq and \\begin{equation} y = 2 \\end{equation}", pre))
+    assert [(g["latex"], g["numbered"], g["refused"]) for g in found] == [("x = 1", True, None), ("y = 2", True, None)]
+    # only a safe macro is written out: one defined twice may open something else where it is used
+    found = groups_of(doc("\\beq x = 1 \\eeq", pre + "\\renewcommand{\\beq}{\\begin{align}}\\def\\beq{[}"))
+    assert [g["latex"] for g in found] == []
+    # Sol: not inside a macro's body, not after a line break `\\\\`, not a prefix of `\\begin`, not in an unbounded source
+    for body, extra in (("\\newcommand{\\unused}{\\beq a = l + 1 \\eeq}", ""), ("x \\\\beq a = 1 \\eeq", ""),
+                        ("\\beq a = 1 \\eeq", "\\newcommand{\\mk}[1]{\\expandafter\\def\\csname be#1\\endcsname{}}"),
+                        ("\\beq a = 1 \\eeq", "\\csname foo\\pick\\endcsname")):
+        found = groups_of(doc(body, pre + extra))
+        assert [g["latex"] for g in found if g["numbered"] and not g["refused"]] == [], body + extra
+    # a shorter shorthand `\\be` neither eats `\\begin{document}` nor `\\beq`
+    found = groups_of(doc("\\beq a = 1 \\eeq", pre + "\\newcommand{\\be}{\\begin{equation}}"))
+    assert [(g["latex"], g["refused"]) for g in found] == [("a = 1", None)]
+
+
 def test_links_devices_and_unsafe_names_are_never_read_and_nothing_is_written_to_disk(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     # A temp folder of this test's own: the shared system one also gets the parallel workers' files.

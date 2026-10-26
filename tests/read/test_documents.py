@@ -175,6 +175,23 @@ DATA = b"%PDF-1.4 SYNTHETIC " + b"x" * 5000
 SHA = hashlib.sha256(DATA).hexdigest()
 
 
+def test_plane_dropped_math_letters_are_read_back_unless_the_page_is_korean():
+    # D142, arXiv 2106.00831: a LibertineMath font maps U+1D400-1D7FF to 16 bits, so 𝐴 and 𝜋 came out as 퐴 and 휋
+    def lines(*spans):
+        blocks = [{"lines": [{"spans": [{"text": text, "font": font} for text, font in spans]}]}]
+        return [span["text"] for span in pdf._restore_math_letters(blocks)[0]["lines"][0]["spans"]]
+    assert lines(("SYNTHETIC. Let ", "LinLibertineT"), ("퐴 = 휋푖", "LibertineMathMI")) == ["SYNTHETIC. Let ", "A = πi"]
+    # Sol: real Korean keeps its syllables: in a text font even alone on the page, and beside other Korean
+    assert lines(("피", "NanumGothic")) == ["피"] and lines(("프 푸", "Droid Sans Fallback Regular")) == ["프 푸"]
+    assert lines(("이것은", "NanumGothic"), ("퐴 휋", "LibertineMathMI")) == ["이것은", "퐴 휋"]
+    # only letters: U+D7CE would be the digit 0
+    assert lines(("\ud7ce", "LibertineMathMI")) == ["\ud7ce"]
+    # the page path: a Korean font's text comes through _blocks unchanged
+    page = pymupdf.open().new_page()
+    page.insert_text((72, 100), "피 프", fontname="korea", fontsize=11)
+    assert [line for block in pdf._blocks(page) for line in block["lines"]] == ["피 프"]
+
+
 def place(folder):
     conn = db.connect(folder / "library.sqlite")
     db.migrate(conn)

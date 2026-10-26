@@ -852,6 +852,26 @@ def unsafe_macros(files: dict[str, str], tex: str) -> tuple[set[str], set[str], 
     return unsafe, prefixes, unbounded
 
 
+# A safe macro with no arguments whose whole body opens or closes a display (`\\newcommand{\\beq}{\\begin{equation}}`).
+DISPLAY_SHORTHAND = re.compile(r"\s*\\(begin|end)\{(equation|align|gather|multline|eqnarray|alignat|flalign|displaymath)\*?\}\s*")
+
+
+def _display_shorthands(tex: str, defined: dict[str, tuple[int, str | None, str]], prefixes: set[str], unbounded: bool) -> str:
+    """The document body with display shorthands written out, so `\\beq … \\eeq` is a display like `\\begin{equation} …`
+    (D142, arXiv 2106.00831 writes 50 of its 72 displays so). Only safe macros (`defined`, no unsafe prefix, a bounded
+    source) are written out, and only where they run: in the body, outside braces (a macro's body) and conditionals, and
+    not after a `\\` (a line break followed by letters)."""
+    shorthands = {name: body.strip() for name, (count, _, body) in defined.items()
+                  if count == 0 and DISPLAY_SHORTHAND.fullmatch(body) and re.fullmatch(r"\\[A-Za-z@]+", name)
+                  and not any(name[1:].startswith(p) for p in prefixes)}
+    if unbounded or not shorthands:
+        return tex
+    begin = max(tex.find("\\begin{document}"), 0)
+    levels = top_level_positions(tex)
+    pattern = re.compile(r"(?<!\\)(?:" + "|".join(re.escape(name) for name in shorthands) + r")(?![A-Za-z@])")
+    return pattern.sub(lambda m: shorthands[m.group(0)] if m.start() >= begin and executed(levels, m.start()) else m.group(0), tex)
+
+
 def source_groups(files: dict[str, str]) -> tuple[list[dict[str, Any]] | None, dict[str, Any]]:
     """Every display group with its cleaned LaTeX, letters and, when it cannot be placed, why."""
     from deixis.documents import math_reader
@@ -864,7 +884,7 @@ def source_groups(files: dict[str, str]) -> tuple[list[dict[str, Any]] | None, d
     ambiguous, prefixes, unbounded = unsafe_macros(files, tex)
     defined = {name: definition for _, _, name, definition in definitions(tex) if name not in ambiguous}
     expander = Expander(defined)
-    found = groups(tex)
+    found = groups(_display_shorthands(tex, defined, prefixes, unbounded))
     for group in found:
         expander.used, expander.unreadable = set(), False
         expanded, limit = expander.expand(group["raw"])

@@ -22,7 +22,10 @@ lines or curves. Rules and grids made only of straight horizontal and vertical l
 ("Fig. 4. …", "Table II …") or a section heading is never dropped. From `layout-v5` (D48) a line at least 30% U+FFFD (a symbol
 font without a Unicode map) is replaced by `UNREADABLE`; neighbouring marks become one. From `layout-v6` a block in the
 top or bottom 8% of the page whose text, digits masked, recurs on at least 3 pages and 40% of them (a journal's running
-header or footer such as "J. Mar. Sci. Eng. 2023, 11, 1567 17 of 23") is dropped whatever its type size.
+header or footer such as "J. Mar. Sci. Eng. 2023, 11, 1567 17 of 23") is dropped whatever its type size. From
+`layout-v7` (D142) a math font whose Unicode map dropped the plane of the mathematical letters gives back its letters:
+in a span set in a math font on a page with no Korean text, a Hangul syllable U+D400–D7FF that is a mathematical letter shifted by 0x10000 is read
+as that letter (퐴 → A, 휋 → π).
 
 A page left without text is named: an image page (a scan, which `ocr.py` can read on request, D51) or a blank page.
 
@@ -48,6 +51,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import unicodedata
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -59,7 +63,7 @@ from deixis.documents import child_guard, inline_math
 from deixis.documents.child_guard import _libproc, _resident_bytes  # re-export existing readers
 
 log = logging.getLogger("deixis.pdf")
-EXTRACTION_VERSION = f"pymupdf-{pymupdf.__version__}-layout-v6"  # v6: repeated header/footer lines dropped
+EXTRACTION_VERSION = f"pymupdf-{pymupdf.__version__}-layout-v7"  # v7: plane-dropped math letters read back
 # MuPDF's default text flags without TEXT_PRESERVE_LIGATURES, so "ﬁ" is extracted as "fi".
 TEXT_FLAGS = pymupdf.TEXT_PRESERVE_WHITESPACE | pymupdf.TEXT_MEDIABOX_CLIP
 MAX_PAGES = 400
@@ -122,6 +126,32 @@ class Extraction:
     placement: dict | None = None
 
 
+# layout-v7 (D142): some math fonts (LibertineMath in arXiv 2106.00831) map U+1D400–1D7FF to 16 bits, so their letters
+# come out as Hangul syllables U+D400–D7FF. Only spans in a font named "…Math…" are read back, and none on a page that
+# has Korean syllables below U+D400; there each syllable that is a mathematical letter once shifted back becomes that letter.
+PLANE_DROPPED = re.compile("[\ud400-\ud7ff]")
+KOREAN = re.compile("[\u1100-\u11ff\u3130-\u318f\uac00-\ud3ff]")
+
+
+def _math_letter(m: re.Match) -> str:
+    letter = chr(ord(m.group(0)) + 0x10000)
+    if unicodedata.name(letter, "").startswith("MATHEMATICAL") and unicodedata.category(letter).startswith("L"):
+        return unicodedata.normalize("NFKC", letter)
+    return m.group(0)  # a digit or an operator of that block is not taken back: only letters
+
+
+def _restore_math_letters(blocks: list[dict]) -> list[dict]:
+    """Read plane-dropped mathematical letters back in place: only in a span set in a math font (its name holds "Math")
+    on a page with no other Korean text; a Korean font's syllables U+D400–D7FF (피, 프) stay as they are."""
+    spans = [span for block in blocks for line in block.get("lines", []) for span in line["spans"]]
+    if any(KOREAN.search(span["text"]) for span in spans):
+        return blocks
+    for span in spans:
+        if "math" in span["font"].lower():
+            span["text"] = PLANE_DROPPED.sub(_math_letter, span["text"])
+    return blocks
+
+
 def _blocks(page: pymupdf.Page, textpage: pymupdf.TextPage | None = None, spans: bool = False) -> list[dict]:
     """Text blocks with their box, horizontal lines and the character-weighted type size.
 
@@ -129,7 +159,7 @@ def _blocks(page: pymupdf.Page, textpage: pymupdf.TextPage | None = None, spans:
     box, for matching source equations to the page (D104); neither enters the page text. With `spans`, each line's spans
     (text, size, baseline, box) too, for the equation crops of the Mathpix route."""
     blocks = []
-    for block in page.get_text("dict", flags=TEXT_FLAGS, textpage=textpage)["blocks"]:
+    for block in _restore_math_letters(page.get_text("dict", flags=TEXT_FLAGS, textpage=textpage)["blocks"]):
         lines, masked, boxes, line_spans, weighted, count = [], [], [], [], 0.0, 0
         for line in block.get("lines", []):
             if abs(line["dir"][1]) > 0.1:  # rotated or vertical: margin stamps such as arXiv's identifier

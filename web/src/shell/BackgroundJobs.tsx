@@ -1,19 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, Circle, CirclePause, Clock, Info, Pause, Play, TriangleAlert } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
-import { api, type EquationModel, type ResearchSummary, type ResearchView, type Run, type RunStatus, type Source } from '../lib/api'
+import { api, type ResearchSummary, type ResearchView, type Run, type RunStatus, type Source } from '../lib/api'
 import { t } from '../lib/i18n'
 import { useToast } from '../components/Toast'
 
-// PDF work that keeps going while the user is on another page (PDF collection, OCR, the equation reader over the library): a card at the foot of the sidebar
+// PDF work that keeps going while the user is on another page (PDF collection, OCR): a card at the foot of the sidebar
 // and a 420px sheet with one line per job. The research list names each research's latest run; the views give the progress.
+// The equation reader is not listed: nothing waits on it, and each PDF's equation state is in its source details (D141).
 
 const LIVE = new Set<RunStatus>(['queued', 'running', 'pause_requested', 'paused'])
 const JOB_KINDS = new Set(['pdf_collection', 'pdf_ocr', 'fulltext_fetch', 'fulltext_adjudication'])
 
 type Job = { key: string; research: ResearchSummary | null; run: Run | null; label: string; done: number; total: number; extra: number; unit: string; sub: string; paused: boolean }
 // How a job that left the running list ended: its own run's stored status, looked up by the run id, or `unknown` when
-// that read failed. The equation reader ends when a read of it shows nothing reading or waiting.
+// that read failed.
 type Outcome = RunStatus | 'unknown'
 type Ended = { key: string; label: string; sub: string; detail: string; outcome: Outcome }
 const TERMINAL = new Set<RunStatus>(['completed', 'failed', 'cancelled'])
@@ -67,22 +68,12 @@ export function BackgroundJobs({ researches, dark, onOpenResearch }: {
   const [viewsFailed, setViewsFailed] = useState(false)
   const load = () => Promise.all(candidates.map(r => api.research(r.id).then(view => [r.id, view] as const, () => null)))
     .then(entries => { setViews(Object.fromEntries(entries.filter(e => e !== null))); setViewsFailed(entries.some(e => e === null)) })
-  // A failed read of the equation model keeps the last answer and marks it stale: its job is then of unknown status, never finished.
-  const [reader, setReader] = useState<EquationModel | null>(null)
-  const [readerFailed, setReaderFailed] = useState(false)
   const [outcomes, setOutcomes] = useState<Record<string, Outcome>>({})
   useEffect(() => {
     if (candidates.length || Object.keys(views).length) void load()
-    api.equationModel().then(value => { setReader(value); setReaderFailed(false) }, () => setReaderFailed(true))
   }, [researches]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const runJobs = candidates.flatMap(r => { const view = views[r.id]; const job = view && jobOf(r, view); return job ? [job] : [] })
-  // The answer model reads equations in the library's stored PDFs (D113) while it has one in hand or any waiting.
-  const readerPending = reader ? (reader.pdfs.pending ?? 0) + (reader.pdfs.reading ?? 0) : 0
-  const readerOn = !readerFailed && !!reader?.ready && (!!reader.reading || readerPending > 0)
-  const readerDone = reader ? (reader.pdfs.read ?? 0) + (reader.pdfs.no_math ?? 0) + (reader.pdfs.no_candidates ?? 0) + (reader.pdfs.none_placed ?? 0) + (reader.pdfs.failed ?? 0) : 0
-  const readerJob: Job | null = readerOn && reader ? { key: 'equation-reader', research: null, run: null, label: t('Reading equations'), done: readerDone, total: readerDone + readerPending, extra: 0, unit: t('PDFs'), sub: reader.reading?.title ?? t('PDFs in the library'), paused: !reader.reading } : null
-  const jobs = readerJob ? [...runJobs, readerJob] : runJobs
+  const jobs = candidates.flatMap(r => { const view = views[r.id]; const job = view && jobOf(r, view); return job ? [job] : [] })
 
   // A job that leaves the running list is looked up by its own run id; only that run's stored terminal status says how it
   // ended. The last progress seen is kept for this session only.
@@ -100,16 +91,10 @@ export function BackgroundJobs({ researches, dark, onOpenResearch }: {
       }, () => setOutcomes(old => ({ ...old, [runId]: 'unknown' })))
     }
   }, [unresolved, researches])
-  const labelOf = (job: Job) => job.run?.kind === 'pdf_ocr' ? t('Reading with OCR') : job.run ? t('Collecting PDFs') : t('Reading equations')
+  const labelOf = (job: Job) => job.run?.kind === 'pdf_ocr' ? t('Reading with OCR') : t('Collecting PDFs')
   const ended: Ended[] = left.flatMap(job => {
-    if (job.run) {
-      const outcome = outcomes[job.key]
-      return outcome ? [{ key: job.key, label: labelOf(job), sub: job.sub, detail: `${job.total} ${job.unit}`, outcome }] : []
-    }
-    if (readerFailed || !reader) return [{ key: job.key, label: labelOf(job), sub: job.sub, detail: '', outcome: 'unknown' as const }]
-    if (readerPending > 0 || reader.reading) return []
-    return [{ key: job.key, label: labelOf(job), sub: job.sub, outcome: 'completed' as const,
-      detail: t('{read} read · {none} without equations · {failed} failed', { read: reader.pdfs.read ?? 0, none: reader.pdfs.no_math ?? 0, failed: reader.pdfs.failed ?? 0 }) }]
+    const outcome = outcomes[job.key]
+    return outcome ? [{ key: job.key, label: labelOf(job), sub: job.sub, detail: `${job.total} ${job.unit}`, outcome }] : []
   })
   const finished = ended.filter(item => item.outcome === 'completed')
   const unconfirmed = ended.filter(item => item.outcome !== 'completed')
@@ -136,7 +121,7 @@ export function BackgroundJobs({ researches, dark, onOpenResearch }: {
         <SheetHeader><SheetTitle><Clock size={16} aria-hidden="true" /><span>{title}</span></SheetTitle></SheetHeader>
         <div className="jobs-body">
           {/* "Nothing is running" only when every read answered; after a failed read the state is unknown. */}
-          {!jobs.length && <p className="jobs-none">{t(readerFailed || viewsFailed ? 'Background work could not be read; its status is unknown.' : 'Nothing is running.')}</p>}
+          {!jobs.length && <p className="jobs-none">{t(viewsFailed ? 'Background work could not be read; its status is unknown.' : 'Nothing is running.')}</p>}
           {jobs.map(job => <div key={job.key} className={`job is-live${job.paused ? ' is-paused' : ''}`}>
             <b><span className="job-icon" aria-hidden="true">{job.paused ? <CirclePause size={15} /> : <span className="spin" />}</span><span className="job-name">{job.label}</span>
               <span className="job-count">{progress(job)}</span></b>

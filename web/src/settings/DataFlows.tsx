@@ -49,7 +49,7 @@ function dataFlowRows({ defaults, connections, semantic, email, optional }: Data
 
   const extras = !optional || !connections ? null : [
     ...(optional.mathpix ? [t('Mathpix is on: images of equation areas cut from PDFs are sent to Mathpix.')] : []),
-    ...(optional.equationModel ? [t('Equations are read by the answer model: images of equation areas cut from PDFs are sent to {connection}.', { connection: connectionName(optional.equationModel.connection) })] : []),
+    ...(optional.equationModel ? [t('Equations are read by the equations model: images of equation areas cut from PDFs are sent to {connection}.', { connection: connectionName(optional.equationModel.connection) })] : []),
     ...(access('serpapi') ? [t('SerpApi: when you ask DEIXIS to find a PDF and none is found, the work’s title is sent to SerpApi.')] : []),
     ...(optional.zoteroWeb ? [t('A Zotero web key is saved: when you use your web library, titles and DOIs of works are sent to zotero.org to find their PDFs.')] : []),
   ]

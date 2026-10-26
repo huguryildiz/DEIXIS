@@ -594,7 +594,9 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </div>
-                  <span className="src-m evidence-row-meta">{[row.year, sort?.key === 'similarity' && source?.similarity != null && t('similarity {score}', { score: source.similarity.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }), t(accessLabels[row.access_level]), versionText(row.version_label), row.report_membership === 'abstract_only' ? t('Undecided in Sources · in the report, read from the abstract only') : row.selection_state && t(rowSelectionLabels[row.selection_state])].filter(Boolean).join(' · ')}</span>
+                  <span className="src-m evidence-row-meta">{[row.year, versionText(row.version_label), sort?.key === 'similarity' && source?.similarity != null && t('similarity {score}', { score: source.similarity.toLocaleString(uiLocale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })].filter(Boolean).join(' · ')}</span>
+                  <DepthBadge depth={row.access_level === 'pdf_available' ? 'full_text' : row.access_level} label={t(accessLabels[row.access_level])} />
+                  <span className="src-m evidence-row-state">{row.report_membership === 'abstract_only' ? t('Undecided in Sources · in the report, read from the abstract only') : row.selection_state && t(rowSelectionLabels[row.selection_state])}</span>
                 </th>
                 {columns.map((col, c) => {
                   const id = `${col.id}:${row.source_version_id}`
@@ -668,7 +670,8 @@ function CellButton({ column, row, summary, live, position, focusable, onFocus, 
   ].filter((m): m is { tone: string; label: string } => Boolean(m))
   const value = current && hasValue(current)
   // Under a value: who wrote it and what was read; a value without a linked passage says so in amber (mockup `noev`).
-  const provenance = value ? (current.state === 'not_verified' ? t('No linked quote') : [t(authorLabels[current.author]), current.reading_depth && t(depthLabels[current.reading_depth])].filter(Boolean).join(' · '))
+  const depth = value && current.state !== 'not_verified' ? current.reading_depth : null
+  const provenance = value ? (current.state === 'not_verified' ? t('No linked quote') : [t(authorLabels[current.author]), depth && t(depthLabels[depth])].filter(Boolean).join(' · '))
     : current?.state ? t(stateNotes[current.state]) : current ? '' : t('Empty')
   const liveText = live === 'recheck' ? t('Rechecking…') : live === 'fill' ? t('Filling…') : ''
   return <button type="button" className={`cell evidence-cell${current ? '' : ' is-empty'}${current && !value ? ' is-state' : ''}`} data-cell={position} tabIndex={focusable ? 0 : -1}
@@ -676,10 +679,18 @@ function CellButton({ column, row, summary, live, position, focusable, onFocus, 
     {live === 'fill' ? <span className="evidence-cell-live" aria-hidden><span className="spin" /><span className="shimmer-text">{liveText}</span></span>
       : value ? <span className="evidence-cell-value" aria-hidden>{text}</span>
       : <span className="nrc evidence-cell-value" aria-hidden>{current ? text : '—'}</span>}
-    {live !== 'fill' && <small className={value && current.state === 'not_verified' ? 'warn-t' : current?.state === 'unknown' ? 'warn-t' : undefined} aria-hidden>{provenance}</small>}
+    {live !== 'fill' && (depth ? <span className="evidence-cell-prov" aria-hidden><DepthBadge depth={depth} label={t(depthLabels[depth])} /><small>{t(authorLabels[current!.author])}</small></span>
+      : <small className={value && current.state === 'not_verified' ? 'warn-t' : current?.state === 'unknown' ? 'warn-t' : undefined} aria-hidden>{provenance}</small>)}
     {live === 'recheck' && <span className="evidence-cell-live" aria-hidden><span className="spin" /><span className="shimmer-text">{liveText}</span></span>}
     {marks.length > 0 && <span className="evidence-cell-flags" aria-hidden>{marks.map(m => <span key={m.label} className={`evidence-flag is-${m.tone}`}>{m.label}</span>)}</span>}
   </button>
+}
+
+// How deep a row or a cell was read, as an icon and words: full text, selected pages, abstract or metadata (never colour alone).
+const depthIcons: Record<NonNullable<CellRevision['reading_depth']>, LucideIcon> = { full_text: BookOpenText, selected_sections: FileText, abstract: AlignLeft, metadata: Info }
+function DepthBadge({ depth, label }: { depth: NonNullable<CellRevision['reading_depth']>; label: string }) {
+  const Icon = depthIcons[depth]
+  return <span className={`evidence-depth is-${depth}`}><Icon size={12} aria-hidden />{label}</span>
 }
 
 function AddRows({ sources, table, busy, onAdd, onClose }: { sources: Source[]; table: TableView; busy: boolean; onAdd: (ids: string[]) => void; onClose: () => void }) {

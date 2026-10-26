@@ -109,7 +109,18 @@
 .evidence-cell-value{display:-webkit-box;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:5;overflow-wrap:break-word;text-wrap:pretty}
 .evidence-cell small{color:var(--muted);font-size:11px;letter-spacing:.01em;line-height:1.4}
 .evidence-cell small.warn-t{color:var(--tone-uncertain)}
-.evidence-cell .nrc{color:var(--muted);font-style:italic}
+.evidence-cell .nrc{padding-right:.15em;color:var(--muted);font-style:italic}
+/* Reading depth: full text on the include tint, abstract on the attention tint, metadata neutral; the words carry it. */
+.evidence-depth{display:inline-flex;align-items:center;gap:5px;width:fit-content;padding:1px 8px 1px 6px;border-radius:999px;background:var(--selected-surface);color:var(--ink-2);font-size:11px;font-weight:500;line-height:1.6;white-space:nowrap}
+.evidence-depth>svg{flex:none}
+.evidence-depth:is(.is-full_text,.is-selected_sections){background:var(--ok-surface);color:var(--ok-ink)}
+.evidence-depth.is-abstract{background:var(--warn-surface);color:var(--warn-ink)}
+.evidence-row-head .evidence-depth{margin-top:9px}
+.evidence-grid .evidence-row-state{margin-top:6px;font-size:11.5px;line-height:1.45}
+.evidence-cell-prov{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
+/* In a cell the depth stays quieter than in the source column: tone ink on no fill, so a row of abstracts is not a wall of amber. */
+.evidence-cell-prov .evidence-depth{padding:0;background:none}
+.evidence-cell-prov .evidence-depth+small::before{content:"·";margin-right:8px;color:var(--muted)}
 .evidence-cell-live{display:inline-flex;align-items:center;gap:6px;color:var(--muted)}
 .evidence-cell-flags{display:flex;flex-wrap:wrap;gap:4px}
 .evidence-flag{--flag:var(--tone-uncertain);display:inline-flex;align-items:center;gap:5px;padding:1px 7px 1px 6px;border-radius:999px;background:color-mix(in srgb,var(--flag),transparent 90%);color:color-mix(in srgb,var(--flag),var(--ink) 30%);font-size:10.5px;font-weight:500;line-height:1.5;font-style:normal}

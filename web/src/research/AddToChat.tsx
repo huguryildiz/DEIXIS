@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { MessageSquarePlus } from 'lucide-react'
 import { t } from '../lib/i18n'
 
-// "Add to chat": text selected in the thread (the answer, a follow-up answer) gets a small button above the selection that
+// "Add to chat": text selected in a written answer (the answer, a follow-up answer) gets a small button above the selection that
 // puts it in the follow-up composer as a quote chip. Text in the composer and in form fields is left alone.
 
 const QUOTE_LIMIT = 800
@@ -37,9 +37,9 @@ function selectedIn(root: HTMLElement) {
   const node = range.commonAncestorContainer
   const element = node instanceof Element ? node : node.parentElement
   if (!element || !root.contains(element) || element.closest('.followup-compose, input, textarea, [contenteditable="true"], .add-to-chat')) return null
-  // The artifacts rail sits inside the thread column's grid but is not chat text: a selection touching it gets no button.
-  const inRail = (n: Node) => (n instanceof Element ? n : n.parentElement)?.closest('.research-rail')
-  if (inRail(range.startContainer) || inRail(range.endContainer)) return null
+  // Only the written answer is quotable: both ends of the selection sit in an answer's or a follow-up answer's prose.
+  const inAnswer = (n: Node) => (n instanceof Element ? n : n.parentElement)?.closest('.answer-prose, .followup-prose')
+  if (!inAnswer(range.startContainer) || !inAnswer(range.endContainer)) return null
   const text = selectionText(range).replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
   if (!text) return null
   const rect = range.getBoundingClientRect()

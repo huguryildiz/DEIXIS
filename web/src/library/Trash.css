@@ -81,6 +81,12 @@
 .app .trash-scope button[aria-pressed=true]{background:var(--paper);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgb(24 31 45/.08),0 0 0 1px var(--line)}
 .app .trash-select{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12.5px}
 .app .trash-select [data-slot=select-trigger]{height:32px;max-width:230px;padding:0 10px;border:1px solid var(--strong-line);border-radius:8px;background:var(--field-surface);box-shadow:none;color:var(--ink);font-size:12.5px}
+/* The research menu is wider than its trigger and shows each research's whole title, wrapped, under a hairline after "All". */
+.trash-research-menu{width:min(380px,calc(100vw - 32px));padding:4px}
+.trash-research-menu [data-slot=select-item]{min-height:34px;padding:7px 32px 7px 10px;border-radius:6px;color:var(--ink);font-size:13px}
+.trash-research-menu [data-slot=select-item]>:first-child{flex-shrink:1;min-width:0;white-space:normal;line-height:1.4}
+.trash-research-menu [data-slot=select-item]:first-child{margin-bottom:4px;font-weight:550}
+.trash-research-menu [data-slot=select-item]:first-child::after{content:"";position:absolute;right:6px;bottom:-3px;left:6px;height:1px;background:var(--line)}
 .app .trash-tools .trash-ghost{height:32px;padding:0 12px;font-size:12.5px}
 .app .trash-tools .trash-ghost[aria-pressed=true]{border-color:color-mix(in srgb,var(--accent),transparent 70%);background:color-mix(in srgb,var(--accent),transparent 90%);color:color-mix(in srgb,var(--accent),var(--ink) 25%);font-weight:600}
 .app .trash-pick-all{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:12.5px;cursor:pointer}

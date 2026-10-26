@@ -949,7 +949,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       {      active ? (run?.target?.pipeline ? <p className="pdf-ready-lede" role="status">{t('Building the study table. The app chose its columns itself; open the table to review them.')}</p> : null) : <>{(() => {
         const actions = <>
         {/* With full text read since the answer started, the new answer is an update that names how many works it adds. */}
-        {!answerOffersNew && <Button variant={answer && !newFulltext ? 'outline' : 'default'} disabled={busy || active || !(included || answersWithoutInclude)} onClick={startAnswer}><Sparkles size={15} />{
+        {!answerOffersNew && <Button variant={answer && !newFulltext ? 'outline' : 'default'} className={answer && !newFulltext ? 'search-again' : undefined} disabled={busy || active || !(included || answersWithoutInclude)} onClick={startAnswer}><Sparkles size={15} />{
           !answer ? t('Generate source-linked answer') : newFulltext ? t(newFulltext === 1 ? 'Update the answer with 1 new full text' : 'Update the answer with {n} new full texts', { n: newFulltext }) : t('Generate a new answer')}</Button>}
         {/* Once there is an answer the next step here is a new answer (from the PDFs added since); searching again stays in
            the research menu. Before an answer, searching again is a secondary pill; the first search is an outline button. */}

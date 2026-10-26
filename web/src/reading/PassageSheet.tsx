@@ -239,7 +239,11 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   // The arXiv source version a 'latex_source' passage's equations came from (D104); omitted gracefully if not found.
   const sourceAsset = passage?.asset_id ? row?.access.assets.find(a => a.id === passage.asset_id) : undefined
   const arxivVersion = sourceAsset?.equations?.route === 'arxiv_source' ? sourceAsset.equations.source?.version ?? null : null
-  const abstractId = abstract ? passage!.id : row?.access.abstract_passage_id ?? opened?.access.abstract_passage_id ?? abstractPassageId ?? null
+  // A version without an abstract of its own (a submitted manuscript found with its PDF) shows another version's of the
+  // same work, named by its version; versions stay separate records.
+  const ownAbstractId = row?.access.abstract_passage_id ?? opened?.access.abstract_passage_id ?? abstractPassageId ?? null
+  const abstractSibling = !abstract && !ownAbstractId && row ? sources?.find(s => s.work_id === row.work_id && s.source_version_id !== row.source_version_id && s.access.abstract_passage_id) : undefined
+  const abstractId = abstract ? passage!.id : ownAbstractId ?? abstractSibling?.access.abstract_passage_id ?? null
   const abstractShown = abstract ? passage : abstractPassage || null
   // The text the Plain text tab reads when the opened passage is not a PDF page: the opened file's, else the source's PDF.
   const otherText = assetText ?? (extra || null)
@@ -419,6 +423,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   const abstractTab = abstractShown ? <>
     {abstract && !pdfAssetId && <p className="source-notice"><Info size={15} aria-hidden />{t('No PDF is attached, so only the abstract can be inspected. Claims citing this source rest on the abstract alone.')}</p>}
     <h3 className="source-section">{t('Abstract')}</h3>
+    {!abstract && source && abstractShown.source.id !== source.id && <p className="source-notice"><Info size={15} aria-hidden />{t('This version has no abstract of its own. Shown: the abstract of another version of the same work ({version}).', { version: versionText(abstractShown.source.version_label) })}</p>}
     {abstract && expectHighlight && !highlightAvailable && <div className="citation-highlight-note">{citationLabels?.unmarked ?? t('This saved citation has no exact text anchor, so it cannot be highlighted. Generate a new answer to repair its citation anchors.')}</div>}
     <p className="passage-text abstract"><HighlightedPassageText passage={abstractShown} highlightTexts={abstract ? highlights : []} markLabel={citationLabels?.mark} /></p>
     {abstract && highlightAvailable && <p className="foot-note">{citationLabels?.marked ?? t('Highlighted: the exact text cited in the answer.')}</p>}

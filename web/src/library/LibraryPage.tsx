@@ -1127,7 +1127,10 @@ function NewResearchDialog({ request, dark, busy, count, onClose, onStart }: {
 
 function sheetTarget(work: LibraryWork | null) {
   const withPdf = work?.versions.find(version => version.research_id && version.asset)
-  if (withPdf) return { researchId: withPdf.research_id as string, assetId: (withPdf.asset as { id: string }).id, passageId: null, abstractPassageId: withPdf.abstract_passage_id }
+  // A PDF version without an abstract of its own (a submitted manuscript) shows the abstract of another version in the
+  // same research; the sheet names that version.
+  const sibling = work?.versions.find(version => version.abstract_passage_id && version.research_id === withPdf?.research_id)
+  if (withPdf) return { researchId: withPdf.research_id as string, assetId: (withPdf.asset as { id: string }).id, passageId: null, abstractPassageId: withPdf.abstract_passage_id ?? sibling?.abstract_passage_id ?? null }
   const withAbstract = work?.versions.find(version => version.abstract_passage_id && (version.research_id ?? version.removed_research_id))
   if (withAbstract) return { researchId: (withAbstract.research_id ?? withAbstract.removed_research_id) as string, assetId: null, passageId: withAbstract.abstract_passage_id, abstractPassageId: null }
   return null

@@ -96,6 +96,8 @@ function phaseOf(kind: string): PhaseKey | null {
 }
 
 // A step table lists this many rows; the rest are counted.
+// Boolean operators in a sent query read apart from its words; the text itself is shown unchanged.
+const queryParts = (text: string): ReactNode[] => text.split(/(\bAND\b|\bOR\b|\bNOT\b|(?<=\s)[|+](?=\s))/).map((part, i) => i % 2 ? <span key={i} className="step-query-op">{part}</span> : part)
 const SHOWN_ROWS = 5
 const GAP_REASONS: FulltextGapReason[] = ['no_open_pdf', 'outside_read_limit', 'not_reached_before_cutoff', 'fetch_failed', 'deferred', 'identity_unconfirmed', 'reading_failed', 'unknown']
 const gapReasonLabels: Record<FulltextGapReason, string> = { no_open_pdf: 'No open PDF', outside_read_limit: 'Outside the reading limit',
@@ -655,7 +657,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         return <>
           {similarity && similarityModel && <p className="chat-report-line">
             <span>{similarityText}
-              {similarityScored && <span className="chat-run-model chat-report-model"><ConnectionIcon id={similarityModel.connection} /><span className="sr-only">{connectionName(similarityModel.connection)} · </span>{builtinSim ? t('This computer · built-in') : similarityModel.model}</span>}</span>
+              {similarityScored && <span className="chat-run-model chat-report-model"><ConnectionIcon id={similarityModel.connection} /><span className="sr-only">{connectionName(similarityModel.connection)} · </span>{builtinSim ? t('This computer · built-in') : <span title={similarityModel.model}>{similarityModel.model.replace(/^[^:]+:/, '').replace(/@\d+$/, '')}</span>}</span>}</span>
             {timed(similarity)}
           </p>}
           {rerank && (rerank.status === 'succeeded' || rerank.status === 'failed') && rerankLineText(rerank, listedRerank) && <p className="chat-report-line" data-testid="rerank-line">
@@ -665,7 +667,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
             {timed(rerank)}
           </p>}
           {lines.length > 0 && <p className="chat-report-line"><span>{lines.join(' · ')}</span></p>}
-          {run.signals && <SignalReport table={run.signals} probes={view.probes} />}
+          {/* The signal counts and the person's decisions are for whoever wants to check the order; they stay one click deeper. */}
+          {run.signals && <details className="step-how step-ranking-more"><summary>{t('How the order was made')}</summary><SignalReport table={run.signals} probes={view.probes} /></details>}
           {run.screening_notes.map(note => <p key={note.step_id} className="chat-report-line"><span>{note.text}</span>{timed(steps.find(s => s.id === note.step_id))}</p>)}
         </>
       }
@@ -909,12 +912,15 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       const queries = [...new Map((approved?.queries ?? []).map(q => [q.query_text, q])).values()]
       // A word the frozen plan records as carried by no sent query (D26) is named as not searched, with the stored reason.
       const unsearched = terms.filter(term => term.searched === false)
-      if (terms.length) parts.push(<div key="words">{t('Search words')}: {terms.map(term => <code key={term.phrase} className={term.searched === false ? 'word-unsearched' : undefined}>{term.phrase}</code>)}</div>)
+      if (terms.length) parts.push(<div key="words" className="step-words"><span className="step-words-label">{t('Search words')}</span><span className="step-words-list">{terms.map(term => <span key={term.phrase} className={term.searched === false ? 'step-word word-unsearched' : 'step-word'}>{term.phrase}</span>)}</span></div>)
       if (unsearched.length) parts.push(<div key="unsearched" className="step-row"><span>{t('Words not searched')}</span><span className="step-row-text">{unsearched.map(term => t('{word}: {reason}', { word: term.phrase, reason: wordLeftOutText(term.left_out ?? '') })).join(' · ')}</span></div>)
       // Each provider gets its own query text; with more than one provider the row names whose query it is.
       const severalProviders = new Set(queries.map(q => q.provider_id)).size > 1
       // The query text follows its label on the row, wrapping under it when long (mockup `.row` with a `code`).
-      queries.forEach((query, i) => parts.push(<div key={`query-${i}`} className="step-row"><span>{t('Query {n}', { n: i + 1 })}{severalProviders && <> · {providerName(query.provider_id)}</>}{query.origin && <> · {t(query.origin === 'model' ? 'model' : query.origin === 'user' ? 'your plan' : 'from the question’s words')}</>}</span><code>{query.query_text}</code></div>))
+      queries.forEach((query, i) => parts.push(<div key={`query-${i}`} className="step-query"><div className="step-query-head"><span className="step-query-n">{t('Query {n}', { n: i + 1 })}</span>
+        {severalProviders && <span className="step-query-provider"><ConnectionIcon id={query.provider_id} />{providerName(query.provider_id)}</span>}
+        {query.origin && <span className="step-query-origin">{t(query.origin === 'model' ? 'model' : query.origin === 'user' ? 'your plan' : 'from the question’s words')}</span>}</div>
+        <code className="step-query-text">{queryParts(query.query_text)}</code></div>))
       if (approved?.criterion?.criterion) parts.push(<div key="criterion" className="step-row"><span>{t('Inclusion criterion')}</span><span className="step-row-text">{approved.criterion.criterion}</span></div>)
       // The English sentence the semantic search sent, and the PDFs that guided the search (§2.2), for the current question.
       if (latestDiscovery && view.semantic?.english_question?.text) parts.push(<div key="english" className="step-row"><span>{t('English question for the semantic search')}</span><span className="step-row-text">{view.semantic.english_question.text}</span></div>)

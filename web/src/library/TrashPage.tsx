@@ -326,7 +326,7 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
             <Select value={activeResearch} onValueChange={value => { if (value) setOnlyResearch(value as string) }}>
               <SelectTrigger aria-labelledby="trash-research-filter"><SelectValue>{(value: string) =>
                 value === 'all' ? t('All {n} research', { n: researchOptions.length }) : researchOptions.find(([id]) => id === value)?.[1] ?? ''}</SelectValue></SelectTrigger>
-              <SelectContent align="end">
+              <SelectContent className="trash-research-menu" align="end" alignItemWithTrigger={false}>
                 <SelectItem value="all">{t('All {n} research', { n: researchOptions.length })}</SelectItem>
                 {researchOptions.map(([id, title]) => <SelectItem key={id} value={id}>{title}</SelectItem>)}
               </SelectContent>

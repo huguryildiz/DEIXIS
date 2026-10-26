@@ -478,8 +478,7 @@ function PdfSuggestions({ notes, sources, busy, onAttachPdf }: { notes: Limitati
       <ul className="pdf-suggest-list">{sources.map(source => {
         const href = source.doi ? `https://doi.org/${source.doi}` : source.landing_url
         return <li key={source.source_version_id}>
-          <SourceKey value={source.source_key} />
-          <span className="pdf-suggest-title" title={source.title}>{source.title}</span>
+          <span className="pdf-suggest-work"><SourceKey value={source.source_key} /><span className="pdf-suggest-title">{source.title}</span></span>
           <span className="pdf-suggest-actions">
             {href && <a href={href} target="_blank" rel="noreferrer" title={t('Opens the source page in a new tab')}><ArrowUpRight size={14} aria-hidden />{t('Get PDF')}</a>}
             <button type="button" disabled={busy} onClick={() => onAttachPdf(source)} aria-label={t('Attach a PDF to {title}', { title: source.title })}><Upload size={14} aria-hidden />{t('Attach PDF')}</button>

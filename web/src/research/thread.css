@@ -1,16 +1,16 @@
 /* Research page, thread side: topbar, facts line, tabs, run timeline, answer text, citations. Split from workspace.css (S0b). */
 /* The evidence counts under the question: one line, each count a way into the tab that can show it. */
 .legacy-research .research-facts{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px;margin:12px 0 4px;font-size:12.5px}
-.research-facts .research-revision{color:var(--muted)}
+.research-facts .research-revision{color:var(--ink);font-weight:550;font-variant-numeric:tabular-nums}
 .research-facts .research-revision-undo{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .research-facts .research-revision-undo:disabled{color:var(--muted);text-decoration:none}
 .research-facts button{display:inline-flex;align-items:baseline;gap:5px;padding:1px 0;border:0;border-bottom:1px solid transparent;background:none;color:var(--muted);font:inherit;font-size:12.5px}
 .research-facts button:hover{border-bottom-color:var(--strong-line);color:var(--ink)}
 .research-facts button strong{color:var(--ink);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
-.research-facts>span{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:12.5px}
-.research-facts>span>svg{flex:none;opacity:.8}
+.research-facts>span{display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 11px;border:1px solid var(--line);border-radius:999px;background:var(--sidebar-surface);color:var(--muted);font-size:12px;line-height:1;white-space:nowrap}
+.research-facts>span>svg{flex:none;opacity:.75}
 /* v25: the evidence counts as one strip of cells under the facts line; each cell opens the tab that can show it. */
-.legacy-research .research-facts{align-items:center;gap:6px 14px;margin-top:16px}
+.legacy-research .research-facts{align-items:center;gap:8px;margin-top:16px}
 /* "How this answer was built" (research/AnswerBasis.tsx): one ruled list from found down to cited; indents show subsets. */
 .answer-basis{margin:6px 0 4px;padding:14px 16px 8px;border:1px solid var(--line);border-radius:10px;background:var(--sidebar-surface)}
 .answer-basis h3{margin:0;color:var(--ink);font-size:13.5px;font-weight:600}
@@ -243,6 +243,20 @@
 .chat-step-detail code{display:inline-block;max-width:100%;margin:0 4px 2px 0;padding:2px 6px;border-radius:5px;background:var(--selected-surface);color:var(--ink-2);font-family:ui-monospace,'SFMono-Regular',Menlo,monospace;font-size:12px;overflow-wrap:anywhere}
 /* A plan word no sent query carried (D26); the "Words not searched" row under the words says so in text. */
 .chat-step-detail code.word-unsearched{background:none;box-shadow:inset 0 0 0 1px var(--strong-line);color:var(--muted);text-decoration:line-through}
+/* The plan's words as pills, and each sent query as a labelled block with its operators set apart. */
+.chat-step-detail>.step-words{display:grid;gap:8px;padding:10px 12px 12px}
+.step-words-label,.step-query-n{color:var(--ink-2);font-size:12px;font-weight:550}
+.step-words-list{display:flex;flex-wrap:wrap;gap:6px}
+.step-word{display:inline-flex;align-items:center;height:24px;padding:0 10px;border:1px solid var(--line);border-radius:999px;background:var(--paper);color:var(--ink-2);font-size:12px}
+.step-word.word-unsearched{background:none;border-style:dashed;border-color:var(--strong-line);color:var(--muted);text-decoration:line-through}
+.chat-step-detail>.step-query{display:grid;gap:7px;padding:10px 12px 12px}
+.step-query-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;font-size:12px}
+.step-query-provider{display:inline-flex;align-items:center;gap:5px;color:var(--muted)}
+.step-query-provider .connection-icon{display:inline-flex}
+.step-query-provider .connection-icon svg{width:13px;height:13px}
+.step-query-origin{display:inline-flex;align-items:center;height:20px;padding:0 8px;border-radius:999px;background:var(--selected-surface);color:var(--muted);font-size:11px}
+.chat-step-detail code.step-query-text{display:block;margin:0;padding:9px 11px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink-2);font-size:11.5px;line-height:1.65;white-space:pre-wrap}
+.step-query-op{color:var(--muted);font-weight:650}
 .step-row{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline}
 .step-row>span:first-child{display:inline-flex;align-items:center;gap:6px;min-width:0}
 .step-row>.step-row-value{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}
@@ -355,6 +369,10 @@ button.card-work-title:hover{color:var(--accent);text-decoration:underline;text-
 .chat-step-note .chat-report-line+.chat-report-line{margin-top:4px}
 .chat-report-line time{margin-left:auto;padding-left:10px;font-size:11px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .chat-report-model{margin-left:8px;font-family:ui-monospace,'SFMono-Regular',Menlo,monospace;font-size:11.5px}
+.chat-step-note .chat-report-model{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 8px;border-radius:999px;background:var(--selected-surface);color:var(--ink-2);font-family:var(--font-sans);font-size:11px;vertical-align:1px}
+.step-ranking-more{margin-top:10px;padding-top:8px;border-top:1px solid var(--line)}
+.step-ranking-more summary{font-size:12px}
+.step-ranking-more>.chat-arms{margin-top:8px}
 .chat-provider-totals{display:flex;flex-wrap:wrap;gap:3px 16px}
 .chat-provider-totals span{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .chat-provider-totals .connection-icon{display:inline-flex}
@@ -394,7 +412,7 @@ button.card-work-title:hover{color:var(--accent);text-decoration:underline;text-
 .notice-field:focus-visible{border-color:var(--accent);outline:2px solid var(--accent);outline-offset:1px}
 .notice-label{display:grid;gap:4px;font-size:13px;color:var(--muted)}
 .notice-hint{font-size:12px;color:var(--muted)}
-.pdf-suggest{margin:26px 0 0;border:1px solid var(--strong-line);border-radius:12px;background:var(--raised-surface);overflow:hidden}
+.pdf-suggest{container-type:inline-size;margin:26px 0 0;border:1px solid var(--strong-line);border-radius:12px;background:var(--raised-surface);overflow:hidden}
 .pdf-suggest-head{display:flex;align-items:flex-start;gap:14px;padding:14px 18px;border-bottom:1px solid var(--line)}
 .pdf-suggest-head>svg{flex:none;margin-top:3px;color:var(--muted)}
 .pdf-suggest-head strong{display:flex;align-items:center;gap:7px;color:var(--ink);font-size:15px;font-weight:600}
@@ -402,22 +420,25 @@ button.card-work-title:hover{color:var(--accent);text-decoration:underline;text-
 .pdf-suggest-info{display:inline-grid;place-items:center;color:var(--muted);cursor:help}
 .pdf-suggest-body{padding:14px 18px 16px}
 .legacy-research .pdf-suggest-body>p{margin:0 0 12px;color:var(--muted);font-size:13.5px;line-height:1.65}
-.pdf-suggest-list{display:grid;grid-template-columns:fit-content(15rem) minmax(0,1fr) max-content;gap:8px 12px;align-items:center;margin:14px 0 0;padding:0;list-style:none}
-/* Each row shares the list's columns (key, title, actions), so titles and buttons line up as in a table. */
-.pdf-suggest-list li{display:grid;grid-column:1/-1;grid-template-columns:subgrid;align-items:center;min-width:0}
-.pdf-suggest-list li>.source-key{justify-self:start;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pdf-suggest-list{display:grid;grid-template-columns:minmax(0,1fr) max-content;gap:0 12px;align-items:center;margin:14px 0 0;padding:0;list-style:none}
+/* Each row shares the list's columns (the work: key above its full title; actions), so the buttons line up. */
+.pdf-suggest-list li{display:grid;grid-column:1/-1;grid-template-columns:subgrid;align-items:center;min-width:0;padding:8px 0;border-top:1px solid var(--line)}
+.pdf-suggest-list li:first-child{border-top:0;padding-top:0}
+.pdf-suggest-work{display:grid;justify-items:start;gap:3px;min-width:0}
+.pdf-suggest-work>.source-key{max-width:100%;overflow:hidden;text-overflow:ellipsis}
 .source-key{display:inline-flex;flex:none;align-items:center;padding:0 5px;border:1px solid var(--strong-line);border-radius:5px;color:var(--muted);font-family:var(--font-sans);font-size:11.5px;font-style:normal;font-weight:500;line-height:1.6;letter-spacing:0;font-variant-numeric:tabular-nums;white-space:nowrap}
 .source-sheet .source-venue .source-key{margin-right:2px;padding:0;border:0;color:var(--ink-2);font-size:12.5px}
 .source-sheet .source-venue .source-key::after{content:"·";margin-left:8px;color:var(--muted);font-weight:400}
 .reference-list .ref-key{align-self:start;margin-top:1px;color:var(--accent);border-color:color-mix(in srgb,var(--accent),transparent 70%)}
-.pdf-suggest-title{flex:1;min-width:0;overflow:hidden;color:var(--ink);font-size:13.5px;text-overflow:ellipsis;white-space:nowrap}
+.pdf-suggest-title{min-width:0;color:var(--ink);font-size:13.5px;line-height:1.4;overflow-wrap:anywhere}
 .pdf-suggest-actions{display:flex;flex:none;gap:6px}
 .pdf-suggest-actions :is(a,button){display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 11px;border:1px solid var(--strong-line);border-radius:7px;background:transparent;color:var(--ink);font-size:12.5px;font-weight:500;text-decoration:none;white-space:nowrap;cursor:pointer}
 .pdf-suggest-actions a:hover{background:var(--hover-surface)}
 .pdf-suggest-actions button{border-color:color-mix(in srgb,var(--accent),transparent 60%);background:color-mix(in srgb,var(--accent),transparent 90%);color:var(--accent)}
 .pdf-suggest-actions button:hover{background:color-mix(in srgb,var(--accent),transparent 80%)}
 .pdf-suggest-actions button:disabled{opacity:.55;cursor:wait}
-@media (max-width:650px){.pdf-suggest-list{grid-template-columns:fit-content(9rem) minmax(0,1fr)}.pdf-suggest-list li{row-gap:6px}.pdf-suggest-actions{grid-column:1/-1;justify-content:flex-end}}
+/* In a narrow card (the report sheet, a phone) the buttons go under the work's title. */
+@container (max-width:560px){.pdf-suggest-list{grid-template-columns:minmax(0,1fr)}.pdf-suggest-list li{row-gap:8px}.pdf-suggest-actions{grid-column:1/-1}}
 .chat-spin{flex:none;animation:chat-spin 1s linear infinite}
 .chat-end{height:1px}
 .chat-jump{position:fixed;bottom:24px;left:50%;z-index:30;display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border:1px solid var(--line);border-radius:999px;background:var(--paper);color:var(--ink);font-size:13px;box-shadow:0 8px 24px rgb(0 0 0/.12);transform:translateX(-50%);cursor:pointer}
@@ -433,6 +454,7 @@ button.card-work-title:hover{color:var(--accent);text-decoration:underline;text-
 .answer-actions [data-variant=default]{background:var(--accent);color:var(--paper)}
 .answer-actions .search-again{height:34px;padding:0 15px 0 12px;gap:7px;border:1px solid var(--strong-line);background:var(--paper);color:var(--ink);font-size:13px;font-weight:500;box-shadow:0 1px 2px rgb(16 24 40 / .05);transition:border-color .15s,box-shadow .15s,transform .15s,background-color .15s}
 .answer-actions .search-again svg{color:var(--accent)}
+/* The outline "Generate a new answer" takes the same pill as "Search again". */
 .answer-actions .search-again:hover:not(:disabled){border-color:var(--accent-line);background:var(--accent-tint);box-shadow:var(--shadow-float);transform:translateY(-1px)}
 .answer-actions .search-again:active:not(:disabled){transform:none;box-shadow:0 1px 2px rgb(16 24 40 / .05)}
 .answer-history-note{display:inline-flex;align-items:center;gap:9px;width:fit-content;max-width:100%;margin:2px 0 0;padding:8px 12px 8px 9px;border:1px solid transparent;border-radius:10px;background:var(--warn-surface);color:var(--ink-2);font-size:12.5px;line-height:1.45}

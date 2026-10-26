@@ -62,12 +62,16 @@ CUT_CLEARANCE = 0.75  # pt between a whited-out span and the equation's type: 2 
 DOC_MARGIN_LINES = 3  # prose lines in the document that must share a left edge for it to count as a margin
 MARGIN_SLACK = 1.5  # pt a line's left edge may sit from a paragraph margin and still start there
 TEXT_START = re.compile(r"[A-Za-z]+")
+ABBREVIATION = re.compile(r"(?:i\.\s?e|e\.\s?g|viz|cf)\.?\s*[,:]?")
 LEAD_IN = re.compile(r"[A-Za-z][A-Za-z\s,.;:'’-]*")
 # Words a sentence under a display holds and a display's constraint row does not. Articles and prepositions are not
 # among them: they stand in a constraint row too ("The sum of the powers ≤ P").
 SENTENCE_CUES = {"we", "is", "are", "was", "be", "if", "which", "that", "where", "then", "thus", "hence", "so", "gives",
                  "give", "yields", "find", "have", "has", "holds", "hold", "since", "let", "it", "this", "these", "when",
                  "can", "will", "follows", "obtain", "get", "see", "note"}
+# Words that make a line with no relation sign text ("We also have", "or equivalently,"), never a display's row (D139).
+TEXT_CUES = SENTENCE_CUES | {"also", "there", "exists", "exist", "satisfies", "satisfy", "equivalently", "becomes", "denotes",
+                             "denote"}
 RELATION = re.compile(r"[=<>≤≥≠≈≡∈∉⊂⊆⩽⩾∼≃≅∝]")
 DISPLAY_WORD = re.compile(r"(arg)?(min|max|minimi[sz]e|maximi[sz]e)|subject|sup|inf|lim")
 LIMIT_RELATION = re.compile(r"[=∈≤≥<>⊂⊆∉]")  # a lower limit names its index: i=1, k∈S, x≥0
@@ -367,6 +371,8 @@ def _lead_in(line: dict, margin: list[float]) -> bool:
     a line at a paragraph margin that opens with a word and holds only words and punctuation, or that ends in a colon or
     in a lower-case word (not a function name or a vowelless name; inline math after it is passed over)."""
     text = line["text"]
+    if ABBREVIATION.fullmatch(text):  # "i.e.," on a line of its own, wherever it is set (D139)
+        return True
     if not any(abs(line["box"][0] - x) <= MARGIN_SLACK for x in margin):
         return False
     # After the word only punctuation, a symbol's name (α′) or a reference (`(59)`).
@@ -448,7 +454,13 @@ def _text_below(lines: list[dict], k: int, in_column, margin: list[float]) -> bo
     ("where", "In this case"; with no relation sign: not "average power ≤ P") or is a prose row. The caller still refuses a row opening with an optimisation
     display's word ("minimize", "subject to g(x) ≤ 0")."""
     text = lines[k]["text"]
-    return _starts_text(lines[k], margin, 3) and not RELATION.search(text) or _row_prose(lines, k, in_column, margin)
+    cue = _at_margin(lines[k], margin) and bool({w.lower() for w in re.findall(r"[A-Za-z]+", text)} & TEXT_CUES)
+    return (_starts_text(lines[k], margin, 3) or cue) and not RELATION.search(text) or _row_prose(lines, k, in_column, margin)
+
+
+def _cue_word(line: dict, margin: list[float]) -> bool:
+    """A lone sentence word at a paragraph margin ("where", "then", "thus"): the end of a lead-in, never a display's row."""
+    return _at_margin(line, margin) and re.sub(r"[\s,.:;]", "", line["text"]).lower() in SENTENCE_CUES
 
 
 def _row_text(lines: list[dict], k: int, in_column) -> str:
@@ -559,13 +571,24 @@ def _region(lines, i, only, col, columns, gutter, lh, numbers, taken, margin=(),
     span = _union([lines[k]["box"] for k in content + [i]])
     content += [k for k, line in enumerate(lines) if k not in content and k != i and k not in taken and k not in numbers
                 and span[1] <= line["box"][1] <= span[3] + lh and in_column(k) and _hanging(lines, k, content + [i], body, lh, in_column)]
+    # A line on one of the region's rows that holds no word (a limit `τ=0` or `t` left of a sum the growth stopped at) is a
+    # part of the display: it joins, and the rows it brings are checked again (D139). A line with a word stays out.
+    for _ in range(MAX_REGION_LINES):
+        rows = [lines[k]["box"] for k in content + [i]]
+        joins = [k for k in range(len(lines)) if k not in content and k != i and in_column(k) and k not in taken
+                 and k not in numbers and not _claimed(lines[k], claimed, numbers, lines, i, in_column)
+                 and any(_half_row(lines[k]["box"], box) for box in rows) and not _crosses(lines[k]["box"], gutter)
+                 and lines[k]["kind"] not in ("heading", "page_number", "running_head") and not _words(lines[k]["text"])]
+        if not joins or len(content) + len(joins) > MAX_REGION_LINES:
+            break
+        content += joins
     # The lines just above the region must be text, a heading or another equation's: anything else may be a part of
     # this equation the growth stopped short of (a line the heading pattern caught, `V Qe(t)`), and the crop would miss it.
     # A row opening with an optimisation word ("maximize average rate", "subject to …") is never taken for text.
     top = min(lines[k]["box"][1] for k in content + [i])
     above = [k for k, line in enumerate(lines) if k not in content and k != i and in_column(k)
              and top - GAP_LINES * lh < line["box"][3] <= top + 0.5]
-    unclear_above = any(not (lines[k]["kind"] == "heading" or k in taken or k in numbers
+    unclear_above = any(not (lines[k]["kind"] == "heading" or _cue_word(lines[k], margin) or k in taken or k in numbers
                              or _claimed(lines[k], claimed, numbers, lines, i, in_column)
                              or (arxiv_source.is_prose(lines[k]["text"]) or _row_lead_in(lines, k, in_column, margin, sentence=True)
                                  or _row_prose(lines, k, in_column, margin)) and not _display_word(_row_text(lines, k, in_column)))
@@ -619,8 +642,28 @@ def _candidate(page, page_number, n, lines, i, only, region, gutter, lh, body, n
     if _crosses(box, gutter) or not all(_cuttable(span, core, owner, others) for span in grazing):
         return item | {"refused": "crop_has_other_text"}
     rules, other = _drawings(page, box)
-    if other or any(_touches(tuple(info["bbox"]), box) for info in page.get_image_info()):
+    images = [tuple(info["bbox"]) for info in page.get_image_info() if _touches(tuple(info["bbox"]), box)]
+    # Some PDFs paint a fraction bar as a thin image rather than a drawn rule (D139): an image counts only as a bar, a wide
+    # thin one with the equation's type above and below it; any other image refuses the crop.
+    bars = [rect for rect in images if _rule(rect, box) and rect[2] - rect[0] >= max(2.0, 4 * (rect[3] - rect[1]))]
+    if other or len(bars) < len(images) or _fraction_rules(bars, boxes, lh) < len(bars):
         return item | {"refused": "crop_has_other_content"}
+    rules += bars
+    # A bar in or just below the crop with the equation's type above it and none below is a fraction whose denominator
+    # the region left out (D139).
+    below = (box[0], box[1], box[2], box[3] + GAP_LINES * lh)
+    near = _drawings(page, below)[0] + [tuple(info["bbox"]) for info in page.get_image_info()
+                                        if _touches(tuple(info["bbox"]), below) and _rule(tuple(info["bbox"]), below)]
+    held = set(content) | {i}
+    between = lambda rule: any(k not in held and line["box"][0] < rule[2] and line["box"][2] > rule[0]  # noqa: E731
+                               and core[3] - 0.5 <= line["box"][1] < rule[1] for k, line in enumerate(lines))
+    # Type is above or below a rule by its box's middle: a box may cross the rule (a numerator's descent, a radicand).
+    over = lambda rule: any(b[0] < rule[2] and b[2] > rule[0] and (b[1] + b[3]) / 2 < rule[1]  # noqa: E731
+                            and b[3] >= rule[1] - GAP_LINES * lh for b in boxes)
+    under = lambda rule: any(b[0] < rule[2] and b[2] > rule[0] and (b[1] + b[3]) / 2 > rule[3]  # noqa: E731
+                             and b[1] <= rule[3] + GAP_LINES * lh for b in boxes)
+    if any(over(rule) and not under(rule) and not between(rule) for rule in near):
+        return item | {"refused": "region_unclear"}  # (a bar with another line between it and the crop is that line's)
     chars, signs = _marks(spans, body)
     item |= {"chars": chars, "signs": dict(signs), "rules": _fraction_rules(rules, boxes, lh)}
     dpi = crop_dpi(box)
@@ -661,6 +704,11 @@ def _cuttable(span: tuple, core: tuple, owner: dict, others: set) -> bool:
     return not _touches(span, clear) and owner.get(tuple(round(v, 2) for v in span)) in others
 
 
+def _rule(rect: tuple, box: tuple) -> bool:
+    """A horizontal rule within the box's width (a fraction bar, a vinculum)."""
+    return rect[3] - rect[1] <= RULE_HEIGHT and rect[0] >= box[0] - 0.5 and rect[2] <= box[2] + 0.5
+
+
 def _drawings(page: pymupdf.Page, box: tuple) -> tuple[list[tuple], bool]:
     """Horizontal rules inside the box, and whether any other drawing touches it."""
     rules, other = [], False
@@ -668,20 +716,23 @@ def _drawings(page: pymupdf.Page, box: tuple) -> tuple[list[tuple], bool]:
         rect = tuple(path["rect"])
         if not _touches(rect, box):
             continue
-        if rect[3] - rect[1] <= RULE_HEIGHT and rect[0] >= box[0] - 0.5 and rect[2] <= box[2] + 0.5:
+        if _rule(rect, box):
             rules.append(rect)
         else:
             other = True
     return rules, other
 
 
+def _spans_side(rule: tuple, boxes: list[tuple], lh: float, above: bool) -> bool:
+    """The equation's text stands right above (or below) the rule."""
+    return any(b[0] < rule[2] and b[2] > rule[0]
+               and (rule[1] - GAP_LINES * lh <= b[3] <= rule[1] + 1 if above else rule[3] - 1 <= b[1] <= rule[3] + GAP_LINES * lh)
+               for b in boxes)
+
+
 def _fraction_rules(rules: list[tuple], boxes: list[tuple], lh: float) -> int:
     """Rules with the equation's text above and below them: fraction bars."""
-    def spans_side(rule, above):
-        return any(b[0] < rule[2] and b[2] > rule[0]
-                   and (rule[1] - GAP_LINES * lh <= b[3] <= rule[1] + 1 if above else rule[3] - 1 <= b[1] <= rule[3] + GAP_LINES * lh)
-                   for b in boxes)
-    return sum(1 for rule in rules if spans_side(rule, True) and spans_side(rule, False))
+    return sum(1 for rule in rules if _spans_side(rule, boxes, lh, True) and _spans_side(rule, boxes, lh, False))
 
 
 def data_url(png: bytes) -> str:

@@ -2,7 +2,8 @@
 
 import pytest
 from deixis.documents import equation_regions as er
-from mathpix_helpers import ANSWERS, prose, two_equations
+import pymupdf
+from mathpix_helpers import AFTER, ANSWERS, fraction, number, prose, scripted, two_equations
 import asyncio
 import json
 from deixis.documents import equation_model, pdf
@@ -17,6 +18,73 @@ def detect(tmp_path, doc, name="eq.pdf", **kw):
     path = tmp_path / name
     path.write_bytes(doc.tobytes())
     return path, er.detect(path, **kw)
+
+
+def test_the_finder_crops_displays_beside_lead_in_words_painted_bars_and_page_numbers(tmp_path):
+    # D139: a fraction bar painted as a thin image, a lone "where" above a display and "i.e.," above one refused all
+    # three; each now gets a crop of exactly its own lines. An image that is not a bar still refuses.
+    def page(picture=False):
+        doc = pymupdf.open()
+        pg = doc.new_page(width=612, height=792)
+        y = prose(pg, 90) + 20
+        x = scripted(pg, 250, y, [("y = ", "base")])
+        end = fraction(pg, x, y, "c", "d", bar=False)
+        bar = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 4, 1), False)
+        bar.clear_with(0)
+        pg.insert_image(pymupdf.Rect(x, y - 3.74, end, y - 3.26), pixmap=bar, keep_proportion=False)
+        if picture:
+            square = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 4, 4), False)
+            square.clear_with(0)
+            pg.insert_image(pymupdf.Rect(x + 1, y - 9, x + 5, y + 1), pixmap=square)
+        number(pg, y, "1")
+        y = prose(pg, y + 30, [AFTER, "where"]) + 10
+        scripted(pg, 250, y, [("u = v + w", "base")])
+        number(pg, y, "2")
+        y = prose(pg, y + 24, [AFTER])
+        pg.insert_text((260, y + 4), "i.e.,", fontsize=10, fontname="helv")
+        scripted(pg, 250, y + 24, [("p = q", "base"), ("2", "raised")])
+        number(pg, y + 24, "3")
+        return doc
+    _, found = detect(tmp_path, page(), render=False)
+    assert [(f["n"], f.get("refused"), f["text_layer"]) for f in found] == [
+        ("1", None, "y = c\nd"), ("2", None, "u = v + w"), ("3", None, "p = q2")]
+    assert found[0]["rules"] == 1  # the painted bar counts as the fraction's bar for the gate
+    _, found = detect(tmp_path, page(picture=True), name="picture.pdf", render=False)
+    assert found[0]["refused"] == "crop_has_other_content"
+
+    # Sol r1: a digit just under a display and last on the page may be its denominator; a row under it with a sentence
+    # word and a relation may be its constraint; a small square image is not a bar. None of these is left out of
+    # a crop that is sent.
+    def tricky(kind):
+        doc = pymupdf.open()
+        pg = doc.new_page(width=612, height=792)
+        y = prose(pg, 90) + 20
+        scripted(pg, 250, y, [("y = c", "base")])
+        number(pg, y, "1")
+        if kind == "digit":
+            pg.insert_text((262, y + 11), "7", fontsize=10, fontname="helv")
+        elif kind == "far denominator":  # Sol r2: a bar under `c`, its `7` set low and last on the page
+            pg.draw_line((262, y - 3.5), (270, y - 3.5), width=0.4)
+            pg.insert_text((262, y + 24), "7", fontsize=10, fontname="helv")
+        elif kind == "bar below":  # Sol r3: the bar itself just below the crop, the `7` under it
+            pg.draw_line((262, y + 6), (270, y + 6), width=0.4)
+            pg.insert_text((262, y + 25), "7", fontsize=10, fontname="helv")
+        elif kind == "bar through c":  # Sol r4: the bar crosses `c`'s text box, the `7` far below
+            pg.draw_line((262, y + 1.5), (270, y + 1.5), width=0.4)
+            pg.insert_text((262, y + 25), "7", fontsize=10, fontname="helv")
+        elif kind == "constraint":
+            pg.insert_text((72, y + 14), "average power satisfies x = y", fontsize=10, fontname="helv")
+            prose(pg, y + 40, [AFTER])
+        else:
+            dot = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 1, 1), False)
+            dot.clear_with(0)
+            pg.insert_image(pymupdf.Rect(270, y - 5, 271, y - 4), pixmap=dot)
+            prose(pg, y + 30, [AFTER])
+        return doc
+    for kind in ("digit", "far denominator", "bar below", "bar through c", "constraint", "square"):
+        _, found = detect(tmp_path, tricky(kind), name=kind + ".pdf", render=False)
+        assert found[0].get("refused") in ("region_unclear", "crop_has_other_content") or (
+            "digit" in kind and "7" in found[0]["text_layer"]), kind  # refused, or the digit is in the crop
 
 
 # ---- the gate ----------------------------------------------------------------------------------------------------------

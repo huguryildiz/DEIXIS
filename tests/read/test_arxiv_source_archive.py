@@ -87,6 +87,24 @@ def test_r11_what_the_scan_cannot_read_fails_closed():
     assert found[0]["refused"] == "macro_ambiguous" and (found[1]["latex"], found[1]["refused"]) == ("a\\{w\\}(z)", None)
 
 
+def test_a_katex_only_name_defined_once_at_the_preamble_top_is_a_user_macro():
+    # D138, arXiv 2110.04116: `\newcommand{\Set}` (a name KaTeX knows, LaTeX does not) was never trusted.
+    eq = "\\begin{equation}\\sum_{i\\in\\Set{K}} x_i\\end{equation}"
+    found, _ = src.source_groups({"main.tex": doc(eq, "\\newcommand{\\Set}[1]{\\mathcal{#1}}")})
+    assert (found[0]["latex"], found[0]["refused"]) == ("\\sum_{i\\in\\mathcal{K}} x_i", None)
+    # only from the preamble's top level: not in a group (one a macro opens too, Sol r4), an environment or a
+    # conditional, not in the body, not beside a `\renewcommand`, and never a name LaTeX defines
+    for extra in ("{\\newcommand{\\Set}[1]{\\mathcal{#1}}}", "\\begingroup\\newcommand{\\Set}[1]{#1^2}\\endgroup",
+                  "\\newcommand{\\open}{\\begingroup}\\open\\newcommand{\\Set}[1]{#1^2}\\endgroup",
+                  "\\ifx a b\\newcommand{\\Set}[1]{\\mathcal{#1}}\\fi",
+                  "\\newcommand{\\Set}[1]{\\mathcal{#1}}\\renewcommand{\\Set}[1]{\\mathcal{#1}}",
+                  "\\newcommand{\\sum}{x}\\newcommand{\\Set}[1]{\\mathcal{#1}}"):
+        found, _ = src.source_groups({"main.tex": doc(eq, extra)})
+        assert found[0]["refused"] == "macro_ambiguous", extra
+    found, _ = src.source_groups({"main.tex": doc("\\newcommand{\\Set}[1]{\\mathcal{#1}}" + eq)})
+    assert found[0]["refused"] == "macro_ambiguous"
+
+
 def test_links_devices_and_unsafe_names_are_never_read_and_nothing_is_written_to_disk(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     # A temp folder of this test's own: the shared system one also gets the parallel workers' files.

@@ -734,17 +734,41 @@ def _named(text: str, unsafe: set[str], prefixes: set[str]) -> bool:
 
 
 _kernel: set[str] | None = None
+_latex: set[str] | None = None
 
 
 def known_names() -> set[str]:
     """Names a paper may use without defining them: the web app's KaTeX commands and symbols, and what the LaTeX kernel,
     article.cls and the AMS packages define (`latex_kernel_names.json`, written by `scripts/generate/latex_kernel_names.py`)."""
-    global _kernel
+    global _kernel, _latex
     if _kernel is None:
         data = json.loads(Path(__file__).with_name("latex_kernel_names.json").read_text(encoding="utf-8"))
         known = katex_known()
-        _kernel = {"\\" + n for n in set(data["names"]) | known["commands"] | known["symbols"]}
+        _latex = {"\\" + n for n in data["names"]}
+        _kernel = _latex | {"\\" + n for n in known["commands"] | known["symbols"]}
     return _kernel
+
+
+def latex_names() -> set[str]:
+    """The names `latex_kernel_names.json` lists: what LaTeX defines before the paper's own code runs."""
+    known_names()
+    assert _latex is not None
+    return _latex
+
+
+def _preamble_top(tex: str, position: int) -> bool:
+    """`position` is in the main file's preamble with no group, environment or conditional open (D138): a definition
+    there is in force for the whole document."""
+    begin = tex.find("\\begin{document}")
+    levels = top_level_positions(tex)
+    if begin < 0 or position >= begin or not executed(levels, position):
+        return False
+    before = tex[:position]
+    # Every group token before it counts, in a macro's body or a `\\let` too: the macro may be called before (Sol r4).
+    count = lambda pattern: len(re.findall(pattern, before))  # noqa: E731
+    return all(count(a) == count(b) for a, b in (
+        (r"\\begingroup(?![A-Za-z@])", r"\\endgroup(?![A-Za-z@])"), (r"\\bgroup(?![A-Za-z@])", r"\\egroup(?![A-Za-z@])"),
+        (r"\\begin\s*\{", r"\\end\s*\{")))
 
 
 def unsafe_macros(files: dict[str, str], tex: str) -> tuple[set[str], set[str], bool]:
@@ -757,7 +781,10 @@ def unsafe_macros(files: dict[str, str], tex: str) -> tuple[set[str], set[str], 
     `\\let` and its forms, `\\gdef` / `\\edef` / `\\xdef`, a `\\def` with delimited parameters, `\\DeclareRobustCommand`,
     the document-command forms, a `\\csname … \\endcsname` target or any definer not parsed. A source that compiles uses
     a user macro only where it is defined, and there it has that one body; a known name may be used where the archive's
-    definition is not in force (a group, a macro-opened group), so its definition is never trusted.
+    definition is not in force (a group, a macro-opened group), so its definition is never trusted. One exception: a
+    name only KaTeX knows (`\\Set`), which LaTeX does not define, defined by `\\newcommand` alone and only at the top
+    level of the main file's preamble (`_preamble_top`): `\\newcommand` stops on a name already defined, so a paper that
+    compiles has no other meaning for it in the document; such a name is a user macro (D138).
 
     Definers are recognised broadly (a word ending in "def", a `\\let` form, one containing "command" / "Command" /
     "cmd", one starting with "Declare"), so a test such as `\\ifdef\\x` also marks `\\x`. A `\\csname` or etoolbox
@@ -812,8 +839,13 @@ def unsafe_macros(files: dict[str, str], tex: str) -> tuple[set[str], set[str], 
             if target is not None:
                 unsafe.add(target.group(0))
     known = known_names()
+    latex = latex_names()
+    preamble = {}  # every `\\newcommand` of the name in the main file's text sits at the preamble's top level
+    for position, kind, name, _ in definitions(tex):
+        preamble[name] = preamble.get(name, True) and kind == "newcommand" and _preamble_top(tex, position)
     for name, found in bodies.items():
-        if (name in known or len(found) > 1 or kinds[name] & {"providecommand", "unreadable"}
+        katex_user_macro = name not in latex and kinds[name] == {"newcommand"} and preamble.get(name, False)
+        if ((name in known and not katex_user_macro) or len(found) > 1 or kinds[name] & {"providecommand", "unreadable"}
                 or ("renewcommand" in kinds[name] and not kinds[name] & {"newcommand", "def", "operator"})):
             unsafe.add(name)
     unsafe.discard("")

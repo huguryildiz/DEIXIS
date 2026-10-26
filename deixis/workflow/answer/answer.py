@@ -502,15 +502,25 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
                     row["abstract_ids"] = []
             if not row["reason"] and not (row["fulltext_ids"] if row["route"] == "fulltext" else row["abstract_ids"]):
                 row["reason"] = "no_text_at_cutoff"
-    # The closest works past the budget's count stay out, the nearest by the frozen list first (D137).
+    # A closest work whose reading found no criterion part stays out; the rest are taken by the parts their reading
+    # found, the frozen list's order breaking ties, and those past the budget's count stay out (D137, D145).
     cap = CLOSEST_WORKS.get(run["budget"]["max_answer_passages"], CLOSEST_WORKS[48])
     closest = [row for row in rows if not row["reason"] and role_of(row) == "closest"]
-    for row in closest[cap:]:
+    quoted_by_work = {}
+    for row in closest:
+        row["criterion_parts"], quoted_by_work[row["work_id"]] = closest_parts(store, row)
+        if closest_rank(row) == (0, 0):
+            row["reason"] = "closest_no_part"
+    for row in sorted((row for row in closest if not row["reason"]), key=closest_rank)[cap:]:
         row["reason"] = "closest_over_cap"
     excluded = [{"work_id": r["work_id"], "source_version_id": r["source_version_id"], "reason": r["reason"]}
                 for r in rows if r["reason"]] + no_text
     rows = [row for row in rows if not row["reason"]]
     rows.sort(key=lambda row: not row["user_priority"])
+    # The closest works keep their places among the rows, filled in the order they were taken.
+    slots = [i for i, row in enumerate(rows) if role_of(row) == "closest"]
+    for i, row in zip(slots, sorted((rows[i] for i in slots), key=closest_rank)):
+        rows[i] = row
     patterns = flow._criterion_phrases(run, scope)
     fts = " OR ".join(f'"{term}"' for term in flow._topic_terms(rid, scope))
     formulas = formula_request(store, scope, patterns)
@@ -522,8 +532,7 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
         ids = row["fulltext_ids"] if row["route"] == "fulltext" else row["abstract_ids"]
         pages = [store.passage(pid) for pid in ids]
         if row["route"] == "fulltext" and role_of(row) == "closest":
-            row["criterion_parts"], quoted = closest_parts(store, row)
-            pages = closest_pages(store, row, pages, quoted, fts, patterns)
+            pages = closest_pages(store, row, pages, quoted_by_work[row["work_id"]], fts, patterns)
         elif row["route"] == "fulltext":
             topic = [p for p in store.search_passages([row["source_version_id"]], fts, len(ids)) if p["id"] in ids]
             criterion = criterion_passages.criterion_order(pages, patterns or [])
@@ -593,6 +602,13 @@ def closest_parts(store: Any, row: dict[str, Any]) -> tuple[list[dict[str, str]]
     quoted = list(dict.fromkeys(r["passage_id"] for runs in rows_by_run.values() for r in runs.values()
                                 if r["label"] == "present" and r["quote_verified"] and r["passage_id"]))
     return parts, quoted
+
+
+def closest_rank(row: dict[str, Any]) -> tuple[int, int]:
+    """How a closest work is taken (D145): more criterion parts found with a verified quote first, then more found on
+    an unverified one; `sorted` keeps the frozen list's order between equals. Disputed parts do not count."""
+    statuses = [part["status"] for part in row.get("criterion_parts") or []]
+    return -statuses.count("found"), -statuses.count("found_unverified")
 
 
 def closest_pages(store: Any, row: dict[str, Any], pages: list[dict[str, Any]], quoted: list[str], fts: str,
@@ -705,7 +721,7 @@ def roles_view(store: Any, answer_run_id: str | None) -> dict[str, Any] | None:
     sources = {row["source_version_id"]: role_of(row) for row in items}
     left = step["output"].get("excluded_reasons") or {}
     return {"works": works, "sources": sources, "counts": {role: sum(r == role for r in works.values()) for role in ROLES},
-            "left_out": {k: left[k] for k in ("passage_budget", "closest_over_cap") if left.get(k)},
+            "left_out": {k: left[k] for k in ("passage_budget", "closest_over_cap", "closest_no_part") if left.get(k)},
             "closest_parts": {row["work_id"]: row["criterion_parts"] for row in items
                               if role_of(row) == "closest" and row.get("criterion_parts")}}
 

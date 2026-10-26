@@ -4103,6 +4103,7 @@ export const tr: Record<string, string> = {
   'Waiting for your decision': 'Kararınızı bekliyor',
   'Left out: the answer’s passage budget was full': 'Dışarıda kaldı: cevabın pasaj bütçesi doldu',
   'Left out: more closest works than the answer reads': 'Dışarıda kaldı: cevabın okuduğundan fazla en yakın çalışma var',
+  'Left out: its full-text reading found no part of the criterion': 'Dışarıda kaldı: tam metin okuması ölçütün hiçbir parçasını bulmadı',
   'Closest work': 'En yakın çalışma',
   'Its full text was read and it did not meet the whole criterion: nearest evidence, not a match.': 'Tam metni okundu ve ölçütün tamamını karşılamadı: en yakın kanıt, eşleşme değil.',
   'Given as included': 'Dahil olarak verildi',

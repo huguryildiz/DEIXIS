@@ -54,6 +54,7 @@ export function AnswerBasis({ view, answer, onSources, onAnswer }: {
       { label: t('Given from the abstract only'), n: roles.counts.abstract, level: 1 },
       { label: t(statementExcludedReasons.passage_budget), n: roles.left_out.passage_budget ?? 0, level: 1 },
       { label: t(statementExcludedReasons.closest_over_cap), n: roles.left_out.closest_over_cap ?? 0, level: 1 },
+      { label: t(statementExcludedReasons.closest_no_part), n: roles.left_out.closest_no_part ?? 0, level: 1 },
     ] : []),
     ...(answer ? [{ label: t('Cited in the answer'), n: cited, level: 0, strong: true, onClick: onAnswer,
       note: cited ? [t('{n} from full text', { n: num(cited - citedAbstract) }), citedAbstract && t('{n} from the abstract only', { n: num(citedAbstract) }),

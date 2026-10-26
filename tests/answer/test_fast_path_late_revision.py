@@ -231,15 +231,19 @@ def test_recovery_respects_paused_then_resumes_without_duplicate_calls(tmp_path)
 @pytest.mark.parametrize("all_excluded", [True])
 def test_late_reads_without_inclusion_revise_as_closest_works(tmp_path, all_excluded):
     """D137: a base answer that included no work is revised from late readings that read the file without including
-    the work; they join as closest works, read from their pages, and are not counted as late exclusions."""
+    the work; they join as closest works, read from their pages, and are not counted as late exclusions. D145: a late
+    reading that found no criterion part does not join, and leaves the answer as a late exclusion."""
     lib = prepared(tmp_path, pdfs=2)
     from fakes import FakeAdapter, valid_response
     excluded_source = lib.sources[-1]
     def respond(si):
         output = json.loads(valid_response(si))
         if si["task_type"] == "fulltext_adjudication" and (all_excluded or si["sources"][0]["title"] == lib.store.source(excluded_source)["title"]):
+            partial = all_excluded and si["sources"][0]["title"] != lib.store.source(excluded_source)["title"]
             for part in output["parts"]:
-                part.update(label="absent", quote="", passage_id=None)
+                # One work's reading finds its parts on quotes that cannot be verified; the other's finds none.
+                part.update(label="present", quote="SYNTHETIC words the page does not hold") if partial \
+                    else part.update(label="absent", quote="", passage_id=None)
         return json.dumps(output)
     lib.flow.deps.adapters["fake"] = FakeAdapter(respond)
     read_late(lib)
@@ -248,10 +252,19 @@ def test_late_reads_without_inclusion_revise_as_closest_works(tmp_path, all_excl
         drain(lib)
         assert row(lib)["status"] == "published", json.dumps(json.loads(row(lib)["works_json"]))
         plan = lib.store.existing_step(row(lib)["answer_run_id"], late_revision.REVISION_INPUT)["output"]
-        assert plan["late_excluded"] == [] and plan["upgraded"]
+        partless = lib.store.source(excluded_source)["work_id"]
+        assert plan["late_excluded"] == [partless] and plan["upgraded"]
         # A closest work read late never pushes the answer past its frozen budget.
         assert len(plan["passage_ids"]) <= lib.store.run(row(lib)["answer_run_id"])["budget"]["max_answer_passages"]
         assert {i["answer_role"] for i in plan["items"] if i.get("upgraded")} == {"closest"}
+        assert partless not in plan["upgraded"]
+        status = late_revision.answer_view(lib.store, row(lib)["base_answer_id"])["late_revision_status"]
+        assert status["late_excluded"] == 1
+        # Its file marked wrong, the part-less work comes back to the next answer from its abstract.
+        DecisionStore(lib.store).record(lib.rid, excluded_source, "human_pdf_wrong", note="SYNTHETIC wrong file")
+        lib.store.conn.execute("UPDATE runs SET status = 'completed' WHERE status IN ('queued', 'running')")
+        back = fast_answer.input_plan(lib.flow, answer_run(lib), lib.store.scope(lib.rid))
+        assert [r["route"] for r in back["items"] if r["source_version_id"] == excluded_source] == ["abstract"]
         given = {lib.store.passage(pid)["kind"] for pid in plan["passage_ids"]}
         assert "pdf_page" in given
         # The person marks a late file wrong: the next answer reads that work from its abstract, never from the file.

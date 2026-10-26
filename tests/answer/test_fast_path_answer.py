@@ -57,8 +57,9 @@ def candidate(store, rid, name, abstract, *codes):
 def setup(tmp_path, n=1, codes=("runs_agree_candidate",), pdf=False, abstract="SYNTHETIC exercise improves fatigue."):
     store, rid = library(tmp_path)
     sources = [candidate(store, rid, str(i), abstract, *codes) for i in range(n)]
-    if pdf:
-        sources += [page_source(store, rid, "pdf", [TOPIC_PAGE] * 3, "SYNTHETIC exercise.", included=False)]
+    for i in range(int(pdf)):
+        sources += [page_source(store, rid, "pdf" if i == 0 else f"pdf{i}", [TOPIC_PAGE] * 3, "SYNTHETIC exercise.",
+                                included=False)]
         DecisionStore(store).record(rid, sources[-1], "runs_agree_candidate")
     budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS["quick"].__dict__, "quick", "off")
     budget["fast_path"] = fast_path.freeze_budget(budget, "quick")
@@ -207,10 +208,10 @@ def test_end_to_end_unattended_auto_answer_and_backend_abstract_label(tmp_path):
         assert view["answers"][0]["claims"][0]["evidence_basis"] == "abstract"
 
 
-def inspected_pdf(lib, code="all_parts_verified"):
-    svid = lib.sources[-1]
+def inspected_pdf(lib, code="all_parts_verified", svid=None):
+    svid = svid or lib.sources[-1]
     item = lib.flow._plan_item(svid, svid)
-    plan = lib.store.step(lib.discovery["id"], "synthetic:adjudication_plan", "code:adjudication_plan")
+    plan = lib.store.step(lib.discovery["id"], f"synthetic:adjudication_plan:{svid}", "code:adjudication_plan")
     lib.store.finish_step(plan["id"], "succeeded", output={"works": [item]})
     target = {"source_id": svid, "criterion": "SYNTHETIC model", "parts": [
         {"name": "model", "definition": "SYNTHETIC model"}], "runs": 2, "run": 1}
@@ -226,20 +227,27 @@ def inspected_pdf(lib, code="all_parts_verified"):
     return svid, item
 
 
-def test_read_work_that_missed_the_criterion_is_a_closest_work(tmp_path):
-    """D137: a work whose file both readings read and that met no criterion part is not dropped; the answer reads it
-    from its abstract and pages as a closest work, told only what the reading found of each part."""
-    lib = setup(tmp_path, pdf=True)
-    svid, _ = inspected_pdf(lib, "criterion_absent")
+def read_parts(lib, svid, labels):
+    """Both readings of `svid` give each criterion part this label, with no quote."""
     for n in (1, 2):
         step = lib.store.existing_step(lib.discovery["id"], f"fulltext_adjudication:{svid}:{n}")
-        DecisionStore(lib.store).add_proposal(lib.rid, svid, "fulltext", step["id"], n, "absent", criterion_part="model")
+        for part, label in labels.items():
+            DecisionStore(lib.store).add_proposal(lib.rid, svid, "fulltext", step["id"], n, label, criterion_part=part)
+
+
+def test_read_work_that_missed_the_criterion_is_a_closest_work(tmp_path):
+    """D137: a work whose file both readings read and that did not meet the whole criterion is not dropped; the answer
+    reads it from its abstract and pages as a closest work, told only what the reading found of each part."""
+    lib = setup(tmp_path, pdf=True)
+    svid, _ = inspected_pdf(lib, "part_without_evidence")
+    read_parts(lib, svid, {"model": "present", "setting": "absent"})
     cutoff(lib)
     run = answer_run(lib)
     plan = fast_answer.input_plan(lib.flow, run, lib.store.scope(lib.rid))
     row = next(r for r in plan["items"] if r["source_version_id"] == svid)
     assert (row["answer_role"], row["route"]) == ("closest", "fulltext")
-    assert row["criterion_parts"] == [{"part": "model", "status": "not_found"}]
+    assert row["criterion_parts"] == [{"part": "model", "status": "found_unverified"},
+                                      {"part": "setting", "status": "not_found"}]
     given = [lib.store.passage(pid) for pid in plan["passage_ids"] if lib.store.passage(pid)["source_version_id"] == svid]
     assert 1 < len(given) <= fast_answer.CLOSEST_PAGES and any(p["kind"] == "pdf_page" for p in given)
     asyncio.run(lib.flow.execute(run["id"]))
@@ -256,6 +264,29 @@ def test_read_work_that_missed_the_criterion_is_a_closest_work(tmp_path):
     lib.store.conn.execute("UPDATE runs SET status = 'completed' WHERE status IN ('queued', 'running')")
     later = fast_answer.input_plan(lib.flow, answer_run(lib), lib.store.scope(lib.rid))
     assert svid not in {r["source_version_id"] for r in later["items"]}
+
+
+def test_closest_works_are_taken_by_the_parts_their_reading_found(tmp_path):
+    """D145: a closest work whose reading found no criterion part is left out; the others are taken by the parts found,
+    the list order breaking ties, up to the budget's count (3 in quick), and the answer reads them in that order."""
+    lib = setup(tmp_path, n=0, pdf=5)
+    budget = lib.discovery["budget"] | {"max_model_calls": 20}
+    lib.store.conn.execute("UPDATE runs SET budget_json = ? WHERE id = ?", (json.dumps(budget), lib.discovery["id"]))
+    lib.discovery = lib.store.run(lib.discovery["id"])
+    none, first, second, most, past = lib.sources
+    found = {none: {"model": "absent", "setting": "absent"}, first: {"model": "present", "setting": "absent"},
+             second: {"model": "absent", "setting": "present"}, most: {"model": "present", "setting": "present"},
+             past: {"model": "present", "setting": "absent"}}
+    for svid, labels in found.items():
+        inspected_pdf(lib, "criterion_absent" if svid == none else "part_without_evidence", svid=svid)
+        read_parts(lib, svid, labels)
+    cutoff(lib)
+    plan = fast_answer.input_plan(lib.flow, answer_run(lib), lib.store.scope(lib.rid))
+    assert [r["source_version_id"] for r in plan["items"]] == [most, first, second]
+    assert {e["source_version_id"]: e["reason"] for e in plan["excluded"]} == {
+        none: "closest_no_part", past: "closest_over_cap"}
+    owners = list(dict.fromkeys(lib.store.passage(pid)["source_version_id"] for pid in plan["passage_ids"]))
+    assert owners == [most, first, second]
 
 
 @pytest.mark.parametrize("defect", [None, "replaced_file"])

@@ -574,7 +574,7 @@ export type ValidationIssue = { code: string; path: string; message: string }
 export type AnswerRole = 'included' | 'closest' | 'abstract'
 export type AnswerRoles = {
   works: Record<string, AnswerRole>; sources: Record<string, AnswerRole>; counts: Record<AnswerRole, number>
-  left_out: { passage_budget?: number; closest_over_cap?: number }
+  left_out: { passage_budget?: number; closest_over_cap?: number; closest_no_part?: number }
   closest_parts: Record<string, { part: string; status: 'found' | 'found_unverified' | 'disputed' | 'not_found' | 'unclear' }[]>
 }
 export type Answer = {

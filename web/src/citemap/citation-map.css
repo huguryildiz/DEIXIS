@@ -111,12 +111,13 @@
 
 /* The two ranked lists under the map. */
 .citemap .cm-cols{display:grid;grid-template-columns:1fr 1fr;gap:28px}
-.citemap .cm-cols section{min-width:0}
+.citemap .cm-cols section{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-content:start;min-width:0}
+.citemap .cm-cols section>*{grid-column:1/-1}
 .mk.citemap .cm-cols h3{margin:0 0 4px;font-size:14px;font-weight:600}
 .mk.citemap .cm-cols .sub{margin:0 0 10px;color:var(--muted);font-size:12.5px}
-.citemap .cm-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
+.citemap .cm-row{display:grid;grid-template-columns:subgrid;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line)}
 .citemap .cm-row:first-of-type{border-top:0}
-.citemap .cm-row .k{padding:0 6px;border:1px solid var(--strong-line);border-radius:5px;color:var(--muted);font-size:12px;white-space:nowrap}
+.citemap .cm-row .k{justify-self:start;padding:0 6px;border:1px solid var(--strong-line);border-radius:5px;color:var(--muted);font-size:12px;white-space:nowrap}
 .citemap .cm-row .t{min-width:0}
 .citemap .cm-row .t button{display:block;max-width:100%;overflow:hidden;color:var(--ink);font-size:13px;text-align:left;white-space:nowrap;text-overflow:ellipsis;cursor:pointer}
 .citemap .cm-row .t button:hover{color:var(--accent);text-decoration:underline;text-underline-offset:2px}

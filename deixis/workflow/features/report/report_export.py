@@ -157,6 +157,8 @@ def to_markdown(view: dict[str, Any], *, title: str, corpus: dict[str, int] | No
             lines.extend([_table(table, tr), ""])
         if sid in ("II", "VIII") and section.get("draft") and section["draft"].get("text"):
             lines.extend([_md(section["draft"]["text"]), ""])
+            if queries := export_text.query_lines(section):
+                lines.extend([*(f"- {_md(line)}" for line in queries), ""])
         paragraphs = dict.fromkeys(claim["paragraph"] for claim in claims)
         first_table_paragraph = next((claim["paragraph"] for claim in claims if claim.get("table_ref") == "TABLE_I"), None)
         for paragraph in paragraphs:

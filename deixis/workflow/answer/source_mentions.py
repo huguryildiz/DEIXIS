@@ -25,15 +25,37 @@ def name(record: dict[str, Any], first: bool) -> str:
     return f"{who} ({inside})" if inside else who
 
 
+def _records(conn: Any, ids: set[str]) -> dict[str, dict[str, Any]]:
+    return {row["id"]: {"title": row["title"], "year": row["year"], "authors": json.loads(row["authors_json"])}
+            for row in conn.execute(f"SELECT id, title, year, authors_json FROM source_versions"
+                                    f" WHERE id IN ({','.join('?' * len(ids))})", sorted(ids))}
+
+
+def fill_texts(conn: Any, texts: list[str]) -> list[str]:
+    """Texts read in order (a report's claims) with every mention named; a source's first mention carries its title."""
+    ids = {sid for text in texts for sid in SOURCE_MENTION.findall(text or "")}
+    if not ids:
+        return texts
+    records = _records(conn, ids)
+    seen: set[str] = set()
+
+    def replace(match: Any) -> str:
+        record = records.get(match.group(1))
+        if record is None:
+            return match.group(0)
+        first = match.group(1) not in seen
+        seen.add(match.group(1))
+        return name(record, first)
+    return [SOURCE_MENTION.sub(replace, text) if text else text for text in texts]
+
+
 def fill(conn: Any, draft: dict[str, Any]) -> dict[str, Any]:
     """The draft with every mention replaced by its record's name; unchanged when no claim mentions a source."""
     claims = draft.get("claims") or []
     ids = {sid for claim in claims for sid in SOURCE_MENTION.findall(claim.get("text") or "")}
     if not ids:
         return draft
-    records = {row["id"]: {"title": row["title"], "year": row["year"], "authors": json.loads(row["authors_json"])}
-               for row in conn.execute(f"SELECT id, title, year, authors_json FROM source_versions"
-                                       f" WHERE id IN ({','.join('?' * len(ids))})", sorted(ids))}
+    records = _records(conn, ids)
     seen: set[str] = set()
 
     def replace(match: Any) -> str:

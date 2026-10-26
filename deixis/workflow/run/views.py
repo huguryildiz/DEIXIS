@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import re
 from functools import cache
 from typing import Any
 
 from deixis.documents import embeddings, local_embedding, pdf
 from deixis.documents.jats import RENDITION_SQL
-from deixis.domain.contracts import locate_anchor, name_sources_in_prose, step_output_schema
+from deixis.domain.contracts import SOURCE_MENTION, citation_handles, locate_anchor, name_sources_in_prose, step_output_schema
 from deixis.domain.numbers import quoted_measures
 from deixis.domain.rules import FULLTEXT_RUNS, effective_reviewer, result_applicability
 from deixis.workflow.search import english_question as english_question_rules
@@ -18,7 +19,7 @@ from deixis.workflow.features.tables import table_sources
 from deixis.workflow.run import run_card
 from deixis.workflow.screen import overrides as override_rules
 from deixis.workflow.search import probes as probe_rules
-from deixis.workflow.answer import answer as answer_input
+from deixis.workflow.answer import answer as answer_input, source_mentions
 from deixis.workflow.screen import screen_more
 from deixis.workflow.search.chaining import QUERY_PREFIX as CHAIN_PREFIX, policy as chain_policy, request_outcomes
 from deixis.workflow.search import vocabulary as vocabulary_rules
@@ -290,6 +291,24 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
         sections.append({key: section[key] for key in (
             "section_id", "status", "word_count", "draft", "validation",
         )} | {"claims": claims, "evidence_changes": changes["sections"][section["section_id"]]})
+    # D131 for the report: the model writes `{{srv_S…}}`, its section's short handle, where a claim names a source; the
+    # handle is read back to the source through the section's stored StepInput and the view names it from the record.
+    real: dict[str, dict[str, str]] = {}
+    handled = {section["section_id"] for section in sections for claim in section["claims"]
+               if re.search(r"\{\{\s*srv_S\d{7}\s*\}\}", (claim["text"] or "") + (claim["model_text"] or ""))}
+    for section in reports.sections(report_id):
+        if section["section_id"] not in handled:
+            continue
+        row = store.conn.execute("SELECT payload_json FROM step_inputs WHERE step_id = ? ORDER BY attempt DESC LIMIT 1",
+                                 (section["step_id"],)).fetchone() if section["step_id"] else None
+        real[section["section_id"]] = {handle: sid for sid, handle in (
+            citation_handles(json.loads(row["payload_json"])).items() if row else ()) if handle.startswith("srv_")}
+    shown = [(section["section_id"], claim) for section in sections for claim in section["claims"]]
+    for key in ("text", "model_text"):
+        texts = [SOURCE_MENTION.sub(lambda m, ids=real.get(sid, {}): "{{" + ids.get(m.group(1), m.group(1)) + "}}",
+                                    claim[key] or "") for sid, claim in shown]
+        for (_, claim), text in zip(shown, source_mentions.fill_texts(store.conn, texts)):
+            claim[key] = text
     edited = store.conn.execute(
         "SELECT 1 FROM report_claim_revisions v JOIN report_claims c ON c.id = v.claim_id"
         " JOIN report_sections s ON s.id = c.report_section_id WHERE s.report_id = ? LIMIT 1", (report_id,),

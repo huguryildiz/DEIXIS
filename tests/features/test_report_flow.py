@@ -709,7 +709,8 @@ def test_review_methodology_reports_corpus_counts_and_provider_dates_without_a_m
     section = reports.section(report_id, "II")
     assert section["status"] == "valid" and section["step_id"] is None
     assert str(snapshot["corpus"]["found"]) in section["draft"]["text"]
-    assert "synthetic methods" in section["draft"]["text"]
+    assert [item["query"] for item in section["draft"]["queries"]] == ["synthetic methods"]
+    assert "the 1 distinct query listed below" in section["draft"]["text"]
     # No fast-path step records the compiled query version this sentence names (slice 3b).
     assert "the compiled query version was not recorded" in section["draft"]["text"]
     numbers = section["validation"]["numbers"]

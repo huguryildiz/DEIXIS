@@ -415,3 +415,9 @@ def report_stem(view: dict[str, Any], title: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", slug).strip("-")[:60].rstrip("-") or "report"
     suffix = "draft" if view["status"] == "draft" else f'v{view["report_version"]}'
     return f"report-{slug}-{suffix}"
+
+
+def query_lines(section: dict) -> list[str]:
+    """Section II's distinct search queries, one line each: provider, query, date sent (stored with the section)."""
+    return [f"{item['provider']} · {item['query']} · {item['date']}"
+            for item in (section.get("draft") or {}).get("queries") or [] if section["section_id"] == "II"]

@@ -290,6 +290,8 @@ class _Writer:
         draft_text = (section.get("draft") or {}).get("text") if sid in ("II", "VIII") else None
         if draft_text:
             blocks.append(self.body(draft_text, None))
+            if queries := export_text.query_lines(section):
+                blocks.append(_itemize([self.line(line) for line in queries]))
         if sid == "index_terms" and claims:
             blocks.append(", ".join(self.fragment(c, keyword=True) for c in claims))
         else:

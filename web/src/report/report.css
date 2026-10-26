@@ -2,6 +2,12 @@
 .evidence-report-section h2{margin:0 0 8px;color:var(--ink);font-family:var(--font-sans);font-size:15px;font-weight:600;line-height:1.4;text-wrap:balance}
 .evidence-report-paragraph{margin:0 0 12px;color:var(--ink);font-family:var(--font-sans);font-size:14.5px;line-height:1.65}
 .evidence-report-paragraph-group{margin-bottom:12px}
+.evidence-report-queries{margin:0 0 16px;padding:0;list-style:none;border:1px solid var(--line);border-radius:8px;background:var(--field-surface);counter-reset:query}
+.evidence-report-queries li{display:grid;grid-template-columns:22px minmax(0,1fr);column-gap:8px;padding:9px 12px;border-top:1px solid var(--line);counter-increment:query}
+.evidence-report-queries li:first-child{border-top:0}
+.evidence-report-queries li::before{content:counter(query);grid-row:span 2;font-size:11px;line-height:1.6;color:var(--muted);font-variant-numeric:tabular-nums}
+.evidence-report-query-meta{font-size:11px;line-height:1.6;color:var(--muted)}
+.evidence-report-query-text{font-size:13px;line-height:1.55;color:var(--ink-2);overflow-wrap:anywhere}
 .evidence-report-equation{display:block;text-align:right;font-family:var(--font-sans);font-size:12px}
 .evidence-report-fine,.evidence-report-provenance{font-family:var(--font-sans);font-size:11px;line-height:1.55;color:var(--muted)}
 .evidence-report-provenance{margin:35px 0 0;padding-top:18px;border-top:1px solid var(--line)}

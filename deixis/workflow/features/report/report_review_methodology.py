@@ -14,14 +14,14 @@ from deixis.workflow.run.store import Store
 
 _TEMPLATES = {
     "en": (
-        "The recorded search used {providers}: {queries}; the compiled query version was {compiler_versions}. "
+        "The recorded search used {providers} with {queries}; the compiled query version was {compiler_versions}. "
         "The frozen corpus contained {found} found, {unique} unique, {screened} screened, and {included} included "
         "sources; PDF acquisition recorded {fetch_pdf} direct-fetch and {pdf_other_copy} other-copy steps, full text "
         "was available for {full_text}/{included} included sources ({full_text_ratio:.1%}), and screening used "
         "{screening_models} with {screening_criteria}."
     ),
     "tr": (
-        "Kayıtlı arama {providers} sağlayıcılarını kullandı: {queries}; derlenmiş sorgu sürümü "
+        "Kayıtlı arama {providers} sağlayıcısında {queries} ile yapıldı; derlenmiş sorgu sürümü "
         "{compiler_versions} idi. Dondurulmuş korpus {found} bulunan, {unique} tekil, {screened} taranan ve "
         "{included} dahil kaynaktan oluştu; PDF ediniminde {fetch_pdf} doğrudan indirme ve {pdf_other_copy} diğer "
         "kopya adımı kaydedildi, {included} dahil kaynağın {full_text} tanesinde tam metin vardı "
@@ -285,11 +285,26 @@ def _search_provenance(store: Store, research_id: str, scope_revision: int) -> t
     recorded = {row["provider"] for row in searches}
     providers = [provider for provider in CONNECTORS if provider in recorded]
     providers.extend(sorted(recorded - set(CONNECTORS)))
-    query_text = "; ".join(
-        f"{row['provider']} — {row['query_text']} ({row['retrieved_at'][:10]})" for row in searches
-    ) or "none recorded"
+    # One entry per distinct query: a query sent again in later rounds is listed once, with the date it was first sent.
+    queries: dict[tuple[str, str], dict[str, str]] = {}
+    for row in searches:
+        queries.setdefault((row["provider"], row["query_text"]), {
+            "provider": _provider_name(row["provider"]), "query": row["query_text"], "date": row["retrieved_at"][:10]})
     # No discovery step records a compiled query version for this sentence; the old `search_plan` step that did is gone.
-    return ", ".join(providers) or "none recorded", query_text, "not recorded"
+    return ", ".join(map(_provider_name, providers)) or "none recorded", list(queries.values()), "not recorded"
+
+
+def _provider_name(provider: str) -> str:
+    connector = CONNECTORS.get(provider)
+    return (connector.display_name if connector else None) or provider
+
+
+def queries_phrase(queries: list[dict[str, str]], language: str) -> str:
+    """The sentence names how many distinct queries ran; the queries themselves are listed under it (draft `queries`)."""
+    n = len(queries)
+    if language.startswith("tr"):
+        return f"aşağıda listelenen {n} farklı sorgu" if n else "kayıtlı sorgu yok"
+    return f"the {n} distinct {'query' if n == 1 else 'queries'} listed below" if n else "no recorded query"
 
 
 def _screening_provenance(store: Store, research_id: str, scope_revision: int) -> tuple[str, str]:
@@ -339,11 +354,11 @@ def write_review_methodology(store: Store, reports: ReportStore, report_id: str,
     if snapshot.get("followup_searches"):
         numbers["followup_searches"] = [dict(item) for item in snapshot["followup_searches"]]
     text = render_review_methodology(
-        numbers, language, providers=providers, queries=queries, compiler_versions=compiler_versions,
+        numbers, language, providers=providers, queries=queries_phrase(queries, language), compiler_versions=compiler_versions,
         screening_models=screening_models, screening_criteria=screening_criteria,
         chain_provenance=_chain_provenance(steps, language),
     )
     section_id = reports.create_section(report_id, "II", 2)
     reports.save_section_draft(
-        section_id, None, "valid", {"text": text}, {"ok": True, "issues": [], "numbers": numbers}, len(text.split())
+        section_id, None, "valid", {"text": text, "queries": queries}, {"ok": True, "issues": [], "numbers": numbers}, len(text.split())
     )

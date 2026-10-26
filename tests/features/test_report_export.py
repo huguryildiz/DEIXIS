@@ -182,3 +182,23 @@ def test_math_content_cannot_insert_html_or_claim_citation_markers():
 # X1 text contracts: these assertions describe escape boundaries, not scientific support.
 
 
+
+
+def test_report_view_names_a_mentioned_source_from_its_record(tmp_path):
+    """D131 for the report: `{{srv_…}}` the model wrote is shown as the record's name, with its title at first mention."""
+    from test_report_assembly import report_with_sections, _claim
+    fixture = report_with_sections.__wrapped__(tmp_path)
+    lib = next(fixture)
+    try:
+        mention = "{{" + lib["source_id"] + "}}"
+        lib["reports"].save_claims(lib["section_ids"]["III"], [
+            _claim("III.1", f"In {mention}, capacity is assigned.", "analyst_inference"),
+            _claim("III.2", f"{mention} also schedules requests.", "analyst_inference")], [])
+        view = report_view(lib["store"], lib["store"].conn.execute("SELECT research_id FROM reports WHERE id = ?",
+                                                                   (lib["report_id"],)).fetchone()[0], lib["report_id"])
+        texts = [c["text"] for s in view["sections"] if s["section_id"] == "III" for c in s["claims"]]
+        assert texts == ["In “SYNTHETIC method study”, capacity is assigned.", "“SYNTHETIC method study” also schedules requests."]
+        assert all("srv_" not in text for text in texts)
+    finally:
+        with pytest.raises(StopIteration):
+            next(fixture)

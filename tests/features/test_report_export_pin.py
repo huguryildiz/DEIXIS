@@ -364,7 +364,7 @@ FILE_EXPECTED = {
         '\n'
         '## II. İnceleme Yöntemi\n'
         '\n'
-        'The recorded search used none recorded: none recorded; the compiled query version was not recorded. The frozen corpus contained 0 found, 1 unique, 0 screened, and 1 included sources; PDF acquisition recorded 0 direct-fetch and 0 other-copy steps, full text was available for 0/1 included sources (0.0%), and screening used not recorded with no screening input recorded.\n'
+        'The recorded search used none recorded with no recorded query; the compiled query version was not recorded. The frozen corpus contained 0 found, 1 unique, 0 screened, and 1 included sources; PDF acquisition recorded 0 direct-fetch and 0 other-copy steps, full text was available for 0/1 included sources (0.0%), and screening used not recorded with no screening input recorded.\n'
         '\n'
         '## III. Arka Plan ve Sınıflandırma\n'
         '\n'

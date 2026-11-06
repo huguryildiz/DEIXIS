@@ -49,7 +49,8 @@ if "--acp" in args:
                 {"modelId": "auto", "name": "Auto"},
                 {"modelId": "gpt-5-mini", "name": "GPT-5 mini", "_meta": {"copilotUsage": "0x", "copilotEnablement": "enabled"}},
                 {"modelId": "claude-sonnet-5.5", "name": "Claude Sonnet 5.5", "_meta": {"copilotUsage": "1x"}},
-                {"modelId": "locked", "name": "Locked", "_meta": {"copilotEnablement": "disabled"}}]}}}), flush=True)
+                {"modelId": "locked", "name": "Locked", "_meta": {"copilotEnablement": "disabled"}}]},
+                "pad": "x" * fake.get("pad", 0)}}), flush=True)
     sys.exit(0)
 record = fake["record"]
 with open(record, "w") as f:
@@ -112,6 +113,11 @@ def test_run_step_sends_the_prompt_on_stdin_with_every_tool_off(tmp_path, monkey
     assert Path(sent["cwd"]).resolve() == (tmp_path / "ws").resolve()
     assert sent["env"]["COPILOT_HOME"] == str(tmp_path / "home")
     assert not {"GITHUB_TOKEN", "GH_TOKEN", "COPILOT_GITHUB_TOKEN"} & set(sent["env"])
+
+
+def test_health_reads_a_model_list_longer_than_the_default_line_limit(tmp_path, monkeypatch):
+    status = asyncio.run(make(tmp_path, monkeypatch, pad=200_000).health())
+    assert status["ready"] is True and [m["id"] for m in status["models"]] == ["gpt-5-mini", "claude-sonnet-5.5"]
 
 
 def test_a_connected_mcp_server_is_an_isolation_violation():

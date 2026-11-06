@@ -112,7 +112,7 @@ class CopilotCliAdapter:
         proc = await asyncio.create_subprocess_exec(
             *cmd, "--acp", "--disable-builtin-mcps", "--no-custom-instructions", "--no-auto-update",
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-            cwd=self.workspace, env=env, **spawn_options())
+            cwd=self.workspace, env=env, limit=64 * 1024 * 1024, **spawn_options())  # session/new's model list is one line, past the 64 KiB default
         track(proc)
         assert proc.stdin and proc.stdout
 
@@ -169,7 +169,7 @@ class CopilotCliAdapter:
             version = re.search(r"\d+(?:\.\d+)+", done.stdout)
             status["cli_version"] = version.group(0) if version else None
             session = await self._acp_catalogue(cmd, env)
-        except (OSError, RuntimeError, TimeoutError) as exc:
+        except (OSError, RuntimeError, TimeoutError, ValueError) as exc:  # ValueError: an ACP line past the read limit
             text = safe_error(str(exc))[:200]
             status["signed_in"] = False if "auth" in text.lower() or "login" in text.lower() else None
             status["reason_code"] = "auth_failed" if status["signed_in"] is False else service_error_kind(exc=exc)

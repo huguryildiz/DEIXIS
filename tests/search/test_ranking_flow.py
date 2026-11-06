@@ -22,6 +22,7 @@ from deixis.workflow.search import ranking
 from deixis.workflow.screen.decisions import DecisionStore
 from deixis.workflow.run.store import Store
 from fakes import FakeAdapter, valid_response
+from windows_env import WAIT_FACTOR
 
 QUESTION = "What is the effect of packet size on energy consumption in wireless sensor networks?"
 # The one record whose title answers the question. The provider returns it last, so the provider's own order and the
@@ -123,7 +124,7 @@ def app_for(tmp_path, monkeypatch, handler, workflow="sw", adapter=None, embeddi
 
 
 def wait(client, rid, run_id):
-    deadline = time.time() + 30
+    deadline = time.time() + 30 * WAIT_FACTOR
     while time.time() < deadline:
         view = client.get(f"/api/researches/{rid}").json()
         run = next(r for r in view["runs"] if r["id"] == run_id)

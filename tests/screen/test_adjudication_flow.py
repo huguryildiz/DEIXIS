@@ -20,6 +20,7 @@ from fakes import FakeAdapter, valid_response
 from helpers import make_pdf
 from test_abstract_flow import QUESTION, client_of, records_of
 from test_fulltext_flow import Fetcher, Transport, named_pdf, ok, work
+from windows_env import WAIT_FACTOR
 
 SETTLED = ("completed", "failed", "paused", "cancelled")
 
@@ -44,7 +45,7 @@ def app_for(tmp_path, monkeypatch, transport, fetcher, *, workflow="sw", fetch="
 
 
 def wait(client, rid, run_id):
-    deadline = time.time() + 30
+    deadline = time.time() + 30 * WAIT_FACTOR
     while time.time() < deadline:
         view = client.get(f"/api/researches/{rid}").json()
         run = next(r for r in view["runs"] if r["id"] == run_id)
@@ -69,7 +70,7 @@ def runs_of(client, rid, kind):
 def wait_kind(client, rid, kind, index=0):
     if kind == "fulltext_adjudication":
         kind = "discovery"
-    deadline = time.time() + 30
+    deadline = time.time() + 30 * WAIT_FACTOR
     while time.time() < deadline:
         found = sorted(runs_of(client, rid, kind), key=lambda r: r["created_at"])
         if len(found) > index and found[index]["status"] in SETTLED:

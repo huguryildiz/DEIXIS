@@ -17,6 +17,7 @@ from deixis.documents.fetch import FetchResult
 from deixis.storage import db
 from fakes import FakeAdapter, envelope, valid_response
 from helpers import make_pdf
+from windows_env import WAIT_FACTOR
 
 WORKS = [
     {
@@ -73,7 +74,7 @@ def session(client):
 
 
 def wait_run(client, rid, run_id, statuses=("completed", "failed", "paused", "cancelled"), timeout=15):
-    deadline = time.time() + timeout
+    deadline = time.time() + timeout * WAIT_FACTOR
     while time.time() < deadline:
         view = client.get(f"/api/researches/{rid}").json()
         run = next(r for r in view["runs"] if r["id"] == run_id)

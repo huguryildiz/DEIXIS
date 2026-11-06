@@ -19,6 +19,7 @@ from deixis.workflow.run.store import Store
 from helpers import make_pdf
 from test_abstract_flow import client_of, records_of
 from test_fulltext_flow import Fetcher, Transport, app_for, discover, ok, work
+from windows_env import WAIT_FACTOR
 
 PREFIX = "https://login.proxy.synthetic.edu/login?url="
 
@@ -47,7 +48,7 @@ def plan_heads(store, rid):
 
 
 def settled_runs(client, rid):
-    deadline = time.time() + 30
+    deadline = time.time() + 30 * WAIT_FACTOR
     while time.time() < deadline:
         runs = client.get(f"/api/researches/{rid}").json()["runs"]
         if all(r["status"] in ("completed", "failed", "paused", "cancelled") for r in runs):

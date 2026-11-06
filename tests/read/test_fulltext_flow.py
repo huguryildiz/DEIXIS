@@ -13,6 +13,7 @@ from deixis.workflow.screen.decisions import DecisionStore
 from fakes import FakeAdapter, valid_response
 from helpers import make_pdf
 from test_abstract_flow import QUESTION, client_of, records_of
+from windows_env import WAIT_FACTOR
 
 
 # A file whose first page names nothing, and one that names the work it was asked for (SW10.2).
@@ -105,7 +106,7 @@ SETTLED = ("completed", "failed", "paused", "cancelled")
 
 def wait(client, rid, run_id):
     """Like the abstract stage's waiter, with `cancelled`: a question revision cancels a retrieval run."""
-    deadline = time.time() + 30
+    deadline = time.time() + 30 * WAIT_FACTOR
     while time.time() < deadline:
         view = client.get(f"/api/researches/{rid}").json()
         run = next(r for r in view["runs"] if r["id"] == run_id)
@@ -134,7 +135,7 @@ def wait_for_retrieval(client, rid, index=0):
 def wait_for_all(client, rid):
     """Every run of the research settled, with the fast path's own: the answer its discovery queues (D254) and a
     late revision that reads the files the answer did not (D255)."""
-    deadline = time.time() + 30
+    deadline = time.time() + 30 * WAIT_FACTOR
     while time.time() < deadline:
         view = client.get(f"/api/researches/{rid}").json()
         late = {(a.get("late_revision_status") or {}).get("status") for a in view["answers"]}

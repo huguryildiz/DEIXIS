@@ -20,6 +20,7 @@ from deixis.documents.fetch import FetchResult
 from deixis.providers.registry import CONNECTORS
 from deixis.workflow.screen.decisions import DecisionStore
 from fakes import FakeAdapter, envelope, valid_response
+from windows_env import WAIT_FACTOR
 
 # Two fields: the question is a greenhouse one, and the pool holds bakery-logistics records that answer nothing.
 QUESTION = "How does irrigation scheduling affect marketable yield in greenhouse tomato production?"
@@ -85,7 +86,7 @@ def client_of(app):
 
 
 def wait(client, rid, run_id):
-    deadline = time.time() + 30
+    deadline = time.time() + 30 * WAIT_FACTOR
     while time.time() < deadline:
         view = client.get(f"/api/researches/{rid}").json()
         run = next(r for r in view["runs"] if r["id"] == run_id)

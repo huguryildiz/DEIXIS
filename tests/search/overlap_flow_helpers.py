@@ -13,6 +13,7 @@ from deixis.workflow.screen.decisions import DecisionStore
 from fakes import FakeAdapter
 from test_abstract_flow import QUESTION, records_of, responder
 from test_fulltext_flow import Fetcher
+from windows_env import WAIT_FACTOR
 
 SETTLED = ("completed", "failed", "paused", "cancelled")
 
@@ -47,7 +48,7 @@ def app_for(tmp_path, monkeypatch, transport, fetcher, *, adapter=None, reading=
 
 
 def wait(client, rid, run_id, statuses=SETTLED):
-    deadline = time.time() + 30
+    deadline = time.time() + 30 * WAIT_FACTOR
     while time.time() < deadline:
         view = client.get(f"/api/researches/{rid}").json()
         run = next(r for r in view["runs"] if r["id"] == run_id)

@@ -29,6 +29,7 @@ from deixis.domain import survey
 from deixis.domain.record_identity import record_kind
 from deixis.domain.rules import PROVIDER_WAIT
 from deixis.providers import facade, lookup, scopus
+from deixis.providers import common
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import dumps, now, transaction
@@ -156,14 +157,15 @@ def _wanted(row: dict[str, Any], words: tuple[str, ...]) -> str | None:
 
 
 def plan_semantic_scholar(store: Store, research_id: str, scope_revision: int, scope: dict[str, Any],
-                          words: tuple[str, ...], limit: int = MAX_LOOKUP_REQUESTS, *, only: set[str] | None = None) -> dict[str, Any]:
-    """Who Semantic Scholar is asked about, split into batches; `outside_limit` counts the records left over."""
+                          words: tuple[str, ...], limit: int = MAX_LOOKUP_REQUESTS, *, only: set[str] | None = None,
+                          size: int = lookup.S2_LOOKUP_BATCH) -> dict[str, Any]:
+    """Who Semantic Scholar is asked about, split into batches of `size`; `outside_limit` counts the records left
+    over."""
     if not in_scope(scope, "semantic_scholar"):
         return {"batches": [], "outside_limit": 0, "skipped": _not_asked(scope, "semantic_scholar")} | _outside_shortlist(store, research_id, scope_revision, only)
     wanted = [{"source_version_id": row["source_version_id"], "doi": row["doi"], "reason": reason}
               for row in _records(store, research_id, scope_revision, only)
               if (reason := _wanted(row, words)) and not answered(store, row["source_version_id"], "semantic_scholar")]
-    size = lookup.S2_LOOKUP_BATCH
     batches = [wanted[start:start + size] for start in range(0, len(wanted), size)]
     return {"batches": batches[:limit], "outside_limit": len(wanted) - sum(len(b) for b in batches[:limit]),
             "skipped": None} | _outside_shortlist(store, research_id, scope_revision, only)
@@ -286,7 +288,8 @@ def linked_dois(store: Store, source_version_id: str) -> list[str]:
 async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
                              scope: dict[str, Any], words: tuple[str, ...],
                              checkpoint: Callable[[], None], limit: int = MAX_LOOKUP_REQUESTS, *, only: set[str] | None = None,
-                             prefix: str = "", crossref_in_flight: int = 1) -> None:
+                             prefix: str = "", crossref_in_flight: int = 1, s2_waits: int | None = None,
+                             s2_batch: int = lookup.S2_LOOKUP_BATCH, s2_cooldown_skip: bool = False) -> None:
     """Plan and send this run's DOI lookups. A failed request is recorded and the run goes on (D18).
 
     No request is sent twice: a step that already succeeded is skipped whole, and inside a chunk a record the
@@ -294,16 +297,22 @@ async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Se
     `prefix` keeps a second round of the same run (the lookup before the rerank, D152) under steps of its own.
     `crossref_in_flight` is how many of Crossref's single requests one chunk has out at once (4 before the rerank under
     D153's rule; 1, one after another, everywhere else).
+
+    D155, for the runs whose frozen rule says so: `s2_waits` replaces the effort's 429 waits for Semantic Scholar alone
+    (0 before the rerank, so a refused batch fails at once and Crossref gets the time left), `s2_batch` is its batch
+    size, and `s2_cooldown_skip` sends no Semantic Scholar batch while a 429 anywhere in this process holds its pacer
+    in a cooldown: the step stores that it skipped, and Crossref and Scopus are asked as when Semantic Scholar fails.
     """
     run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
     # How many 429s one batch waits out is this research's effort (D88). `quick` waits for none: the refused batch
     # is recorded with its status, its records stay without an abstract, and the next batch is still sent.
     waits = PROVIDER_WAIT[scope["effort"]]
     plan = _code_step(store, run_id, f"{prefix}lookup_plan:semantic_scholar", "code:lookup_plan",
-                      lambda: plan_semantic_scholar(store, rid, revision, scope, words, limit, only=only))
+                      lambda: plan_semantic_scholar(store, rid, revision, scope, words, limit, only=only, size=s2_batch))
     for number, batch in enumerate(plan["batches"]):
         checkpoint()
-        await _semantic_scholar_step(store, http, settings, run, number, batch, waits, prefix)
+        await _semantic_scholar_step(store, http, settings, run, number, batch,
+                                     waits if s2_waits is None else s2_waits, prefix, s2_cooldown_skip)
     plan_cr = _code_step(store, run_id, f"{prefix}lookup_plan:crossref", "code:lookup_plan",
                          lambda: plan_crossref(store, rid, revision, scope, words, len(plan["batches"]), limit, only=only))
     for number, chunk in enumerate(plan_cr["chunks"]):
@@ -331,11 +340,13 @@ def _code_step(store: Store, run_id: str, key: str, kind: str, build: Callable[[
 
 async def _semantic_scholar_step(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
                                  number: int, batch: list[dict[str, Any]], waits: int = MAX_RATE_LIMIT_RETRIES,
-                                 prefix: str = "") -> None:
+                                 prefix: str = "", cooldown_skip: bool = False) -> None:
     """One batch request. The whole batch shares one request, so one failure leaves every record in it `failed`.
 
     `waits` is how many 429s this effort waits out (D88); it is written on the step, so a skipped wait is on the
-    record of the run and not silent.
+    record of the run and not silent. With `cooldown_skip` (D155) a batch due, or queued, while the Semantic Scholar pacer
+    is in a 429 cooldown is not sent: each record is stored `failed` as after a refused batch, and the step says it
+    was skipped for the cooldown and for how many records.
     """
     step = store.step(run["id"], f"{prefix}record_lookup:semantic_scholar:{number}", "provider_lookup:semantic_scholar")
     if step["status"] == "succeeded":
@@ -349,8 +360,12 @@ async def _semantic_scholar_step(store: Store, http: httpx.AsyncClient, settings
     reserved = 1 + waits
     store.add_usage(run["id"], "lookup_requests", reserved)
     api_key = connector.api_key()
-    dispatched = await facade.dispatch_lookup("semantic_scholar", "doi_lookup", http,
-        tuple(row["doi"] for row in asking), api_key, settings.contact_email, waits)
+    token = common.s2_skip_in_cooldown.set(cooldown_skip)
+    try:
+        dispatched = await facade.dispatch_lookup("semantic_scholar", "doi_lookup", http,
+            tuple(row["doi"] for row in asking), api_key, settings.contact_email, waits)
+    finally:
+        common.s2_skip_in_cooldown.reset(token)
     settle_dispatch(store, run["id"], step, dispatched, reserved, "lookup_requests", "lookup_sends")
     answers, outcome = dispatched.answers, dispatched.outcome
     # A file of this request's own, never overwritten: a batch resumed after some of its answers were stored asks the
@@ -359,9 +374,13 @@ async def _semantic_scholar_step(store: Store, http: httpx.AsyncClient, settings
     added = [store_answer(store, row["source_version_id"], "semantic_scholar", answers[row["doi"]], step["id"],
                           payload_ref) for row in asking]
     # The step succeeded whatever the source answered: a failure is an answer stored on the record, not a broken run.
+    # D155: a batch not sent because a 429 holds the pacer in a cooldown leaves each record `failed`, as a refused
+    # batch does, so the record goes on exactly as after a real 429; the step says it was skipped and for how many.
+    skipped = ({"skipped": common.S2_COOLDOWN, "not_asked": len(asking)}
+               if outcome.error_kind == common.S2_COOLDOWN else {})
     store.finish_step(step["id"], "succeeded",
                       output=transport_output(store, step, _counts(added, asked=len(asking), status=outcome.status)
-                                              | {"rate_limit_retries": waits}))
+                                              | {"rate_limit_retries": waits} | skipped))
 
 
 async def _crossref_step(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],

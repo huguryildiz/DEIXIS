@@ -47,9 +47,9 @@ def test_a_bulk_request_passes_the_semantic_scholar_gate_and_its_bounded_429_ret
     gated = []
     real_run = common.SEMANTIC_SCHOLAR_PACER.run
 
-    async def recording(factory):
+    async def recording(factory, **options):
         gated.append(True)
-        return await real_run(factory)
+        return await real_run(factory, **options)
 
     async def no_sleep(seconds):
         return None
@@ -132,3 +132,61 @@ def test_semantic_scholar_endpoints_share_one_gate_across_clients(monkeypatch):
     assert {path.rsplit("/", 1)[-1] for path, _ in starts} == {"search", "references"}
     assert peak_active == 1
     assert starts[1][1] - starts[0][1] >= 0.055
+
+
+# ---- D155: the 429 cooldown -------------------------------------------------------------------------------------------
+
+def test_a_queued_lookup_skips_a_cooldown_set_ahead_of_it_and_a_search_waits_it_out(monkeypatch):
+    """A Semantic Scholar 429 sets the cooldown while its attempt still holds the gate. A lookup queued behind it that
+    skips cooldowns comes back at once, not sent and marked `s2_cooldown`; a caller that does not skip waits."""
+    pacer = SerialRequestPacer(0.0)
+    monkeypatch.setattr(common, "SEMANTIC_SCHOLAR_PACER", pacer)
+    monkeypatch.setattr("deixis.providers.pacing.S2_COOLDOWN_SECONDS", 0.5)
+    sent = []
+
+    async def handler(request):
+        sent.append(request.url.path)
+        if len(sent) == 1:
+            await asyncio.sleep(0.2)  # the refused request holds the gate while the others queue
+            return httpx.Response(429, text="SYNTHETIC refusal")
+        return httpx.Response(200, json={})
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            url = "https://api.semanticscholar.org/graph/v1/paper/batch"
+
+            async def lookup():
+                await asyncio.sleep(0.05)  # queued behind the first request
+                token = common.s2_skip_in_cooldown.set(True)
+                try:
+                    started = time.monotonic()
+                    _, outcome = await common.send(client, url, {}, {}, "lookup", "keyless", max_rate_limit_retries=0,
+                                                   json_body={"ids": []})
+                    return outcome, time.monotonic() - started
+                finally:
+                    common.s2_skip_in_cooldown.reset(token)
+
+            async def search():
+                await asyncio.sleep(0.05)
+                started = time.monotonic()
+                _, outcome = await common.send(client, url, {}, {}, "search", "keyless", json_body={"ids": []})
+                return outcome, time.monotonic() - started
+            return await asyncio.gather(
+                common.send(client, url, {}, {}, "refused", "keyless", max_rate_limit_retries=0, json_body={"ids": []}),
+                lookup(), search())
+
+    (_, refused), (skipped, skip_took), (waited, wait_took) = asyncio.run(go())
+    assert refused.status == "rate_limited" and refused.http_status == 429
+    assert (skipped.status, skipped.error_kind, skipped.delivery_class) == ("rate_limited", common.S2_COOLDOWN, "before_send")
+    assert skip_took < 0.4  # back when the refusal came, not after the 0.5 s cooldown
+    assert waited.status == "completed" and wait_took >= 0.5
+    assert len(sent) == 2  # the refused request and the search; the skipped lookup sent nothing
+
+
+def test_concurrent_cooldowns_keep_the_later_deadline():
+    """Updates from many threads never shorten a cooldown: the longest one set stands."""
+    from concurrent.futures import ThreadPoolExecutor
+    pacer = SerialRequestPacer(0.0)
+    with ThreadPoolExecutor(8) as pool:
+        list(pool.map(pacer.cool_down, [60.0 if i % 7 == 0 else 15.0 for i in range(2000)]))
+    assert pacer.cooling() > 59

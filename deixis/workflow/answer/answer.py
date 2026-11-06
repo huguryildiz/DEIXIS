@@ -36,6 +36,8 @@ CLOSEST_WORKS = {16: 3, 48: 5, 80: 8}
 CLOSEST_PAGES = 4
 # The selection marker of the one closest work taken although its reading found no criterion part (D152).
 CLOSEST_FALLBACK = "closest_zero_part_fallback"
+# Since D155 (allocation version 6) that work gives at most its first passage and one page.
+CLOSEST_FALLBACK_PAGES = 2
 ROLES = ("included", "closest", "abstract")
 
 
@@ -518,7 +520,8 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
     # it away (Jia & Chen, 6 Nov). It stays a closest work with its reading's findings, its full-text decision is not
     # touched, and the row says why it was taken. An answer bound before D152 (allocation version 4) leaves it out.
     fallback = None
-    if run["budget"]["inspection"].get("answer_allocation_version", 0) >= 5:
+    allocation = run["budget"]["inspection"].get("answer_allocation_version", 0)
+    if allocation >= 5:
         fallback = next((row for row in closest if row["reason"] == "closest_no_part"
                          and row.get("abstract_decision_id")), None)
     if fallback is not None:
@@ -546,6 +549,8 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
         pages = [store.passage(pid) for pid in ids]
         if row["route"] == "fulltext" and role_of(row) == "closest":
             pages = closest_pages(store, row, pages, quoted_by_work[row["work_id"]], fts, patterns)
+            if allocation >= 6 and row.get("closest_selection") == CLOSEST_FALLBACK:
+                pages = pages[:CLOSEST_FALLBACK_PAGES]  # D155: its reading found nothing to quote
         elif row["route"] == "fulltext":
             topic = [p for p in store.search_passages([row["source_version_id"]], fts, len(ids)) if p["id"] in ids]
             criterion = criterion_passages.criterion_order(pages, patterns or [])
@@ -556,7 +561,7 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
             pages = pages[:MAX_PASSAGES_PER_SOURCE]
         queues.append(pages)
     limit = run["budget"]["max_answer_passages"]
-    passages = allocate_by_role(rows, queues, limit)
+    passages = allocate_by_role(rows, queues, limit, abstracts_first=allocation >= 6)
     given = {p["id"] for p in passages}
     # A work the budget left without a page is not given to the model, and is listed with why (D137).
     for row in rows:
@@ -638,18 +643,21 @@ def closest_pages(store: Any, row: dict[str, Any], pages: list[dict[str, Any]], 
 
 
 def allocate_by_role(rows: list[dict[str, Any]], queues: list[list[dict[str, Any]]],
-                     limit: int) -> list[dict[str, Any]]:
+                     limit: int, *, abstracts_first: bool = False) -> list[dict[str, Any]]:
     """Fill the passage budget by role (D137), breadth first and in row order within each pass: the first page of every
     included and closest work, then the other pages of the closest works (up to CLOSEST_PAGES each), then one abstract
     per abstract-only work, then the deeper pages of the included works (up to MAX_PASSAGES_PER_SOURCE each). Without
     closest works this is the earlier breadth-first order; the budget is no longer widened to fit every work. A work
     the person included, or that a Screen more run the person started admitted, always gets its first page, even past
-    the budget."""
+    the budget. `abstracts_first` (allocation version 6, D155) gives the abstract-only works their abstract before the
+    closest works their second to fourth pages."""
     forced = [bool(row["user_priority"] or row.get("screened_after_cutoff")) for row in rows]
     selected = [queue[0] for queue, first in zip(queues, forced) if first and queue]
     entries = list(zip([role_of(row) for row in rows], queues, forced))
     passes = [(("included", "closest"), range(0, 1)), (("closest",), range(1, CLOSEST_PAGES)),
               (("abstract",), range(0, 1)), (("included",), range(1, MAX_PASSAGES_PER_SOURCE))]
+    if abstracts_first:
+        passes[1], passes[2] = passes[2], passes[1]
     for roles, depths in passes:
         for depth in depths:
             for role, queue, first in entries:

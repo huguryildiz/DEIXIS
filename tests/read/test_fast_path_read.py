@@ -78,6 +78,25 @@ def test_top_k_counts_cached_text_and_keeps_frozen_order():
     assert fast_read.selected(works, order, 2, set(), baseline) == ["w1", "w0"]
 
 
+def test_k_admission_takes_unresolved_works_after_candidates_since_d155():
+    """D155: a work the abstract stage left without an abstract (`abstract_not_found`) no longer takes a fetch slot
+    ahead of a candidate, a pending work counting as one; the person's work stays first. A policy frozen without
+    `admission_order` keeps the list order."""
+    works = [candidate(0, "abstract_not_found"), candidate(1, "abstract_not_found"), candidate(2), candidate(3),
+             candidate(4) | {"selection": {"state": "included", "origin": "user"}}]
+    order = ["h4", "h0", "h1", "h2", "h3"]
+    baseline = fulltext.baseline_of(works)
+    assert fast_read.selected(works, order, 3, set(), baseline) == ["w4", "w0", "w1"]
+    assert fast_read.selected(works, order, 3, set(), baseline, unresolved_last=True) == ["w4", "w2", "w3"]
+    # w3 is still being screened: it holds its slot, ahead of the unresolved works, and is not fetched yet.
+    assert fast_read.selected(works, order, 4, {"w3"}, baseline, unresolved_last=True) == ["w4", "w2", "w0"]
+    assert fast_path.freeze_budget({}, "quick")["admission_order"] == "unresolved_last"
+    # A chained work with no abstract is unresolved too: it does not take the slot ahead of a candidate.
+    chained = [candidate(5, "abstract_not_found", chained=True), candidate(6)]
+    assert fast_read.selected(chained, ["h5", "h6"], 1, set(), fulltext.baseline_of(chained),
+                              unresolved_last=True) == ["w6"]
+
+
 def test_queue_publication_is_atomic_unique_and_recoverable(library, tmp_path):
     lib = library
     item = {"work_id": "synthetic", "head": "synthetic", "position": 1}

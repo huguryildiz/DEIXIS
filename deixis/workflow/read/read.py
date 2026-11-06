@@ -19,18 +19,33 @@ log = logging.getLogger("deixis.fast_read")
 
 
 def selected(works: list[dict[str, Any]], order: list[str], k: int,
-             pending: set[str], baseline: dict[str, Any], without_text: set[str] = frozenset()) -> list[str]:
+             pending: set[str], baseline: dict[str, Any], without_text: set[str] = frozenset(),
+             unresolved_last: bool = False) -> list[str]:
     """Worst-case pending admission, counting cached text in the same K slots.
 
-    A work whose settled attempt found no text gives its slot to the next eligible work in list order.
+    A work whose settled attempt found no text gives its slot to the next eligible work in list order. With
+    `unresolved_last` (a policy frozen with `admission_order`, D155) the works the abstract stage left unresolved
+    (`abstract_not_found`, `runs_agree_unresolved`) come after every other eligible work, as `fulltext.GROUPS` orders
+    them, so a work with no abstract does not take a fetch slot ahead of a candidate; the person's works stay first.
+    A chained work counts by its abstract outcome too, not by its `chain` group.
     """
     frozen = fulltext.as_of_baseline(works, baseline, pending)
     by_head = {work["head"]: work for work in frozen}
     excluded = set(baseline.get("fulltext_excluded", []))
-    wanted = [wid for wid in (by_head[head]["work_id"] for head in order
-                              if head in by_head and fulltext.group_of(by_head[head]) is not None)
+    eligible = [head for head in order if head in by_head and fulltext.group_of(by_head[head]) is not None]
+    if unresolved_last:
+        eligible.sort(key=lambda head: _unresolved(by_head[head]))
+    wanted = [wid for wid in (by_head[head]["work_id"] for head in eligible)
               if wid not in excluded and wid not in without_text][:k]
     return [wid for wid in wanted if wid not in pending]
+
+
+def _unresolved(work: dict[str, Any]) -> bool:
+    """Whether the abstract stage left this work unresolved, whatever its group (a chained one included)."""
+    if (work.get("selection") or {}).get("origin") == "user":
+        return False
+    abstract = fulltext.abstract_outcome(work)
+    return abstract is not None and fulltext.reason(abstract["reason_code"]).outcome == "unresolved"
 
 
 def without_text(policy: dict[str, Any], claims: dict[str, Any]) -> set[str]:
@@ -145,6 +160,7 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
 
     store, rid, run_id = flow.store, run["research_id"], run["id"]
     policy = run["budget"]["fast_path"]
+    last = policy.get("admission_order") == "unresolved_last"  # D155; a policy frozen without it keeps list order
     fetch_allowed = run["budget"]["inspection"]["fetch_limit"] > 0
     read_allowed = run["budget"]["inspection"]["read_limit"] > 0
     key = f"small_batch:v1:{listing['manifest_hash']}:fast"
@@ -246,7 +262,7 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
             works = corpus()
             claims = flow._claims(run_id)
             released = without_text(policy, claims) | identity_unconfirmed(store, policy, run_id, key, baseline)
-            safe = selected(works, order, policy["K"], pending(), baseline, released)
+            safe = selected(works, order, policy["K"], pending(), baseline, released, last)
             background_wids = {row["work_id"] for row in store.conn.execute(
                 "SELECT work_id FROM fast_path_background_fetches WHERE run_id = ?"
                 " AND status IN ('queued', 'running')", (run_id,))}
@@ -296,11 +312,11 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
         empty = without_text(policy, claims)
         unconfirmed = identity_unconfirmed(store, policy, run_id, key, baseline) - empty
         released = empty | unconfirmed
-        final = selected(works, order, policy["K"], set(), baseline, released)
+        final = selected(works, order, policy["K"], set(), baseline, released, last)
         # Paid-for claims cannot lose a slot after their full-text result arrives.
         final = list(dict.fromkeys([wid for wid in plan["work_ids"] if wid in claims and wid not in released] + final))
         # A release is why K is short only when, without it, the released work would have held one of the K slots.
-        short_of_text = bool(set(selected(works, order, policy["K"], set(), baseline)) & released)
+        short_of_text = bool(set(selected(works, order, policy["K"], set(), baseline, unresolved_last=last)) & released)
         from deixis.workflow.run.flow import budget_stops
         budget_cut = budget_skipped(abstract_plan["batches"], budget_stops(store, run_id, prefix),
                                     {svid: wid for batch in abstract_plan["batches"]

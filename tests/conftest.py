@@ -225,7 +225,7 @@ def pytest_configure(config):
 
 @pytest.fixture(autouse=True)
 def no_provider_pacing(request, monkeypatch):
-    """arXiv's 3 s, Semantic Scholar's 2 s and OpenAlex semantic search's 1.5 s request gaps are real time; a test not
+    """arXiv's 3 s, Semantic Scholar's 3 s and OpenAlex semantic search's 1.5 s request gaps are real time; a test not
     about them does not wait them out."""
     if request.node.get_closest_marker("provider_pacing"):
         return
@@ -233,6 +233,9 @@ def no_provider_pacing(request, monkeypatch):
 
     monkeypatch.setattr(arxiv, "MIN_INTERVAL_SECONDS", 0.0)
     monkeypatch.setattr(pacing.SEMANTIC_SCHOLAR_PACER, "interval_seconds", 0.0)
+    # D155's 429 cooldown is real time too; a test about it removes this instance attribute to get the class's.
+    monkeypatch.setattr(pacing.SEMANTIC_SCHOLAR_PACER, "_cooldown_until", 0.0)
+    monkeypatch.setattr(pacing.SEMANTIC_SCHOLAR_PACER, "cool_down", lambda seconds: None)
     monkeypatch.setattr(openalex.SEMANTIC_PACER, "interval_seconds", 0.0)
     monkeypatch.setattr(openalex.SEMANTIC_PACER, "_next", 0.0)
 

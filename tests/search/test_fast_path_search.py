@@ -90,12 +90,16 @@ def scripted(flow, calls, *, advance=None, fail_at=None, short=False):
     flow._send_search = send
 
 
-@pytest.mark.parametrize("frozen", ["block_semantic", "before_d154"])
+@pytest.mark.parametrize("frozen", ["block_semantic", "since_d155"])
 def test_frozen_plan_cap_rotation_page_admission_and_resume(library, tmp_path, frozen):
     # D154: a plan frozen with the block terms' semantic request sends it once, after the question's, and its hits
-    # enter the pool; a plan frozen before it (no `block_semantic`) sends what it always sent.
+    # enter the pool. D155 turned it off: a new plan freezes that it is off and sends what a plan before D154 sent.
     lib = library
-    flow, scope, plan = setup(lib, tmp_path, VOCABULARY if frozen == "block_semantic" else None)
+    flow, scope, plan = setup(lib, tmp_path, VOCABULARY)
+    if frozen == "block_semantic":
+        plan = plan | {"block_semantic": {"rule": "block_terms_v1", "provider_id": "openalex", "endpoint": "semantic",
+                                          "query_text": "synthetic setting words synthetic task words", "limit": 50,
+                                          "query_origin": "block_terms"}}
     calls = []
     scripted(flow, calls)
     asyncio.run(fast_search.execute(flow, lib.run, scope, plan, False))
@@ -110,10 +114,10 @@ def test_frozen_plan_cap_rotation_page_admission_and_resume(library, tmp_path, f
     arms = [q["arm"] for q in fast_search.sent_plan({"fast_path_search": plan, "compiled_queries": QUERIES})]
     if frozen == "block_semantic":
         assert calls[1] == ('semantic', 'synthetic setting words synthetic task words', 0, 50)
-        assert plan["block_semantic"]["rule"] == fast_search.BLOCK_SEMANTIC_RULE and [tuple(r) for r in block] == [(2,)]
+        assert [tuple(r) for r in block] == [(2,)]
         assert arms[:2] == ["semantic", "block_semantic"]
     else:
-        assert "block_semantic" not in plan and not block and "block_semantic" not in arms
+        assert plan["block_semantic"] == fast_search.BLOCK_SEMANTIC_OFF and not block and "block_semantic" not in arms
     assert len(rows(lib)) == 450 + 2 * semantic
     assert [r['request_index'] for r in rows(lib)[::100]][:2] == [0, semantic]
     assert plan['dropped'][0]['reason'] == 'openalex_only'
@@ -336,7 +340,7 @@ def test_sw_failed_provider_is_retained_and_retry_reuses_queries_and_protocol(tm
         keyword = lambda view: [(s["provider"], s["status"]) for s in view["search_runs"] if s["query_text"] == attempts[0]]
         assert keyword(view) == [("openalex", "rate_limited")]
         assert [(s["operation_key"], s["status"]) for s in run["steps"] if s["operation_key"].startswith("search:")] == [
-            ("search:fast:semantic", "succeeded"), ("search:fast:semantic:blocks", "succeeded"), ("search:0", "failed")]
+            ("search:fast:semantic", "succeeded"), ("search:0", "failed")]
         assert view["counts"]["unique"] == 1
         assert run["budget"]["inspection"]["policy"] == "small_batch_fused_v1"
         assert any(s["operation_key"].startswith("small_batch:v1:")

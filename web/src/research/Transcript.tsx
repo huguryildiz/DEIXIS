@@ -135,8 +135,14 @@ const embeddingOf = (stored: string) => {
 // A 429 the embedding step waited out stays visible (slice 21).
 // What the record reranker did for a run (D104): the records the frozen order reranked, or why the fused order was kept.
 // The frozen list decides: a rerank that succeeded is not used when the list moved while it ran.
+// D153, D155: the records without an abstract the rerank did not score and left in their fused place, by why.
+const heldText = (held: NonNullable<Step['output']>['held']) => [
+  held?.no_abstract ? plural(held.no_abstract, '{n} record without an abstract kept its place.', '{n} records without an abstract kept their place.') : '',
+  held?.no_abstract_text_route ? plural(held.no_abstract_text_route, '{n} record without an abstract kept its place: its text can still be fetched.', '{n} records without an abstract kept their place: their text can still be fetched.') : '',
+  held?.no_abstract_lookup_open ? plural(held.no_abstract_lookup_open, '{n} record without an abstract kept its place: its abstract lookup did not finish.', '{n} records without an abstract kept their place: their abstract lookup did not finish.') : '',
+].filter(Boolean).join(' ')
 const rerankLineText = (step: Step, listed: NonNullable<Step['output']>['reranker'] | null) => {
-  if (step.status === 'succeeded' && listed?.applied) return plural(listed.reranked ?? step.output?.reranked ?? 0, '{n} record reordered by the reranker', '{n} records reordered by the reranker')
+  if (step.status === 'succeeded' && listed?.applied) return [plural(listed.reranked ?? step.output?.reranked ?? 0, '{n} record reordered by the reranker', '{n} records reordered by the reranker'), heldText(step.output?.held)].filter(Boolean).join('. ')
   const kept = t('The records kept their fused order.')
   if (step.status === 'succeeded') return listed ? `${t('The reranker’s scores were not used: the list changed while it ran.')} ${kept}` : ''
   const provider = step.output?.provider ?? ''

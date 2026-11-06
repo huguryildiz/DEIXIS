@@ -70,7 +70,7 @@ def test_provider_limits(module, daily, monkeypatch):
     from deixis.providers import common
     monkeypatch.setattr(common.asyncio, "sleep", sleep)
     # Avoid real pacing time without changing the bounded retry policy.
-    async def paced(send):
+    async def paced(send, **options):
         return await send()
     monkeypatch.setattr(common.SEMANTIC_SCHOLAR_PACER, "run", paced)
     def handler(request):

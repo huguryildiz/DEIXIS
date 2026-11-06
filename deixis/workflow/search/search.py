@@ -21,9 +21,12 @@ from deixis.workflow.search.expansion import queried_form
 S2_RESERVED_RECORDS = 500
 KEYWORD_PAGE_SIZE = 100  # records one OpenAlex keyword page asks for
 # D154: one more OpenAlex semantic request, its text the searched setting and task terms joined, sent after the
-# question's. A plan frozen without `block_semantic` sends none.
+# question's. A plan frozen without `block_semantic`, or with one whose `query_text` is empty, sends none.
+# D155 turned it off for new plans (113 works added, 3 in the top 50, no reference paper in the 6 Nov pilot): they
+# freeze BLOCK_SEMANTIC_OFF and send no such request; a plan frozen under D154 (rule `block_terms_v1`) still sends its
+# request on resume.
 BLOCK_SEMANTIC_KEY = "search:fast:semantic:blocks"
-BLOCK_SEMANTIC_RULE = "block_terms_v1"
+BLOCK_SEMANTIC_OFF = {"rule": "block_terms_off_v2", "query_text": None, "skipped": "turned_off"}
 
 
 def seed_query(question, envelope):
@@ -62,19 +65,6 @@ def seed_requests(envelope, limit):
 
 def seed_key(spec):
     return f"search:fast:semantic:seed:{spec['index']}"
-
-
-def block_semantic(vocabulary, semantic, limit):
-    """The semantic request of the searched block terms (D154): the setting terms and then the task terms the query is
-    searched with, as phrases, joined by spaces and cut to what OpenAlex accepts. It is skipped, with its reason, when
-    no block term is searched or when its text is the question's request's own."""
-    phrases = [t["phrase"] for block in ("setting", "task") for t in (vocabulary or {}).get("terms") or []
-               if t["block"] == block and not t["dropped"]]
-    text = openalex.semantic_text(" ".join(phrases)) if phrases else None
-    skipped = "no_block_terms" if not text else "same_as_question" if text == semantic.get("query_text") else None
-    return {"rule": BLOCK_SEMANTIC_RULE, "provider_id": "openalex", "endpoint": "semantic",
-            "query_text": None if skipped else text, "limit": limit, "query_origin": "block_terms",
-            **({"skipped": skipped} if skipped else {})}
 
 
 def sent_plan(body):
@@ -138,8 +128,9 @@ def graph_rule(store, run):
 
 
 def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
-    """The frozen search plan. With `vocabulary` (every discovery run since D154) it also freezes the block terms'
-    semantic request (`block_semantic`); a plan built without it, as every plan before D154 was, has none."""
+    """The frozen search plan. With `vocabulary` (every discovery run since D154) it also freezes `block_semantic`:
+    under D154 the block terms' semantic request, since D155 the record that it is off (`BLOCK_SEMANTIC_OFF`). A plan
+    built without a vocabulary, as every plan before D154 was, has none."""
     policy = run["budget"]["fast_path"]
     sentence = english_question.embedding_query(store, scope)
     if seed_context and seed_context.get("rule") == seed_match.RULE:
@@ -164,8 +155,7 @@ def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
                 "query_origin": sentence[1] if sentence else english_question.MISSING,
                 **({"seed_text": seed} if seed else {}), **({"seed_parts": parts} if seed_context else {})}
     return {"version": 1, "semantic": semantic,
-            **({"block_semantic": block_semantic(vocabulary, semantic, policy["semantic_top"])}
-               if vocabulary is not None else {}),
+            **({"block_semantic": dict(BLOCK_SEMANTIC_OFF)} if vocabulary is not None else {}),
             "keywords": keyword, "keyword_cap": policy["keyword_record_cap"] - (S2_RESERVED_RECORDS if deep else 0),
             "page_size": KEYWORD_PAGE_SIZE, "order": "page_then_query", "s2_bulk": s2 if deep else None,
             "s2_bulk_index": s2_index,
@@ -204,8 +194,8 @@ def plan_words(vocabulary, plan):
     """Every setting and task word of the frozen vocabulary and whether a query the plan sends carries it (D26).
 
     The queries sent are the OpenAlex keyword queries and, at Detailed depth, the Semantic Scholar bulk query; the
-    semantic requests send the question's sentence and, since D154, these words joined (`block_semantic`), so they are
-    not counted here. `searched` is false with `left_out` naming why:
+    semantic requests send the question's sentence and, in a plan frozen under D154 (not since D155), these words joined
+    (`block_semantic`), so they are not counted here. `searched` is false with `left_out` naming why:
     the word's own drop reason (a count of zero, too broad), `query_limit` when a sent query that held the word had no
     room for it, or `not_sent` when only a query the plan does not send held it. It is null when a sent query could
     not be read back (`_carried`), so an unknown is never shown as searched or as left out. A plan with

@@ -54,6 +54,23 @@ SEED_REASONS = {"not_a_source": "The selected source is not part of this researc
                 "no_readable_text": "The selected PDF has no readable text; read its scanned pages with OCR first"}
 
 
+# D155: why a step that succeeded did less than it was planned to, carried on its `step_finished` event.
+SURFACED_SKIPS = ("s2_cooldown",)
+HOLD_REASONS = ("no_abstract", "no_abstract_text_route", "no_abstract_lookup_open")
+
+
+def _surfaced(output: Any) -> dict[str, Any]:
+    """A skip reason and how many records it left, and how many records the rerank held without an abstract, by why."""
+    if not isinstance(output, dict):
+        return {}
+    found: dict[str, Any] = {}
+    if output.get("skipped") in SURFACED_SKIPS:
+        found |= {"skipped": output["skipped"], "skipped_count": output.get("not_asked")}
+    reasons = list((output.get("kept_reasons") or {}).values()) if isinstance(output.get("kept_reasons"), dict) else []
+    found |= {f"held_{code}": reasons.count(code) for code in HOLD_REASONS if code in reasons}
+    return found
+
+
 def _step_view_output(row: Any) -> dict[str, Any] | None:
     """The part of a step's output the research view carries: small counts, plus two slim lists of works for the
     abstract-reading counter (how many the code queued, which ones the model has read), never the model's prose."""
@@ -67,7 +84,11 @@ def _step_view_output(row: Any) -> dict[str, Any] | None:
     if row["operation_key"] == "rerank:v1:list":  # D104: whether the reranker ran, never its scores or candidates
         out = json.loads(row["output_json"])
         return {"provider": out.get("provider"), "model": out.get("model"), "error_code": out.get("error_code"),
-                "reranked": len(out.get("candidate_ids") or []), "cut_documents": out.get("cut_documents")}
+                "reranked": len(out.get("candidate_ids") or []), "cut_documents": out.get("cut_documents"),
+                # D153, D155: how many records without an abstract kept their place, by why (never which ones).
+                **({"held": {code: n for code in HOLD_REASONS
+                             if (n := list(out["kept_reasons"].values()).count(code))}}
+                   if isinstance(out.get("kept_reasons"), dict) else {})}
     if row["operation_key"] == "small_batch:v1:list":  # whether the frozen order used the rerank (D104), not the order
         return {"reranker": json.loads(row["output_json"]).get("reranker")}
     if row["kind"] in STEP_OUTPUT_KINDS or row["operation_key"] in STEP_OUTPUT_KEYS:
@@ -1475,7 +1496,8 @@ class Store:
                  **({k: error[k] for k in ("http_status", "service_kind", "reset_at") if error.get(k) is not None}
                     if isinstance(error, dict) else {}),
                  **({k: v for k, v in service_detail.items() if k in {"service_kind", "connection", "reset_at", "http_status"}}
-                    if service_detail else {})},
+                    if service_detail else {}),
+                 **_surfaced(output)},
                 row["run_id"],
             )
 

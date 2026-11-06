@@ -84,6 +84,8 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         "checkpoint_ms": 5000, "floor_ratio": 0.25,
         # D152: search always gets at least its own base; an earlier overrun is charged to the later stages instead.
         "protected_stages": ["search"],
+        # D155: K admission takes the abstract stage's unresolved works after the candidates (`read.selected`).
+        "admission_order": "unresolved_last",
     }
     if local_model:
         # Still fast-path stages (`enforces` routes on them); only their deadline is gone.

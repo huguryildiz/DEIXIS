@@ -32,14 +32,25 @@ PRERANK_PREFIX = "prerank:"  # the lookup steps of the round before the rerank, 
 # access check and its OR queries (2 + 400 + 1 + 16 = 419). A budget frozen with D152's rule ({"max_records": 20,
 # "seconds": 5}, no version) keeps it and the read stage's 200 requests. Hand-picked, not measured.
 PRERANK_RECORDS = 400
-PRERANK_LOOKUP = {"version": 2, "max_records": PRERANK_RECORDS, "seconds": 8, "crossref_in_flight": 4,
-                  "max_requests": (math.ceil(PRERANK_RECORDS / S2_LOOKUP_BATCH) + PRERANK_RECORDS + 1
+# D155 (version 3): Semantic Scholar waits out no 429 here, so a refused batch fails at once and Crossref gets the time
+# left; its batch holds the whole window (400 of the 500 ids `/paper/batch` takes, one request); and while a 429
+# anywhere in the process holds the Semantic Scholar pacer in a cooldown, this round and the read stage's lookups skip
+# it and say so. Version 2 budgets keep 200 ids a batch, the effort's waits and no skip.
+PRERANK_S2_BATCH = 400
+PRERANK_LOOKUP = {"version": 3, "max_records": PRERANK_RECORDS, "seconds": 8, "crossref_in_flight": 4,
+                  "s2_waits": 0, "s2_batch": PRERANK_S2_BATCH, "s2_cooldown_skip": True,
+                  "max_requests": (math.ceil(PRERANK_RECORDS / PRERANK_S2_BATCH) + PRERANK_RECORDS + 1
                                    + math.ceil(PRERANK_RECORDS / SCOPUS_LOOKUP_BATCH))}
 # D153: the reranker's window is 8x what a run reads (400 at Standard, under rerankers.MAX_CANDIDATES), and a record
 # of it still without an abstract keeps its fused place. A budget frozen without `rerank` keeps the rule before D153.
-RERANK_RULE = {"version": 2, "pool_factor": 8.0, "max_pool_factor": 8.0, "hold_without_abstract": True}
+# D155 (version 3): it keeps its place only with a route to text (an open PDF on a version of its work, or a file
+# stored for it) or while its lookup before the rerank did not settle; otherwise the reranker scores its title, as
+# before D153. A version 2 rule holds every such record.
+RERANK_RULE = {"version": 3, "pool_factor": 8.0, "max_pool_factor": 8.0, "hold_without_abstract": "with_text_route"}
 RERANK_RULE_BEFORE_D153 = {"version": 1, "pool_factor": 4.0, "max_pool_factor": 4.0, "hold_without_abstract": False}
-ANSWER_ALLOCATION_VERSION = 5  # 5: one closest place for a work whose reading found no criterion part (D152)
+# 5: one closest place for a work whose reading found no criterion part (D152). 6: every abstract-only work's
+# abstract before the closest works' second to fourth pages, and that zero-part work at most 2 passages (D155).
+ANSWER_ALLOCATION_VERSION = 6
 
 
 def steps(store: Any, run_id: str) -> list[dict[str, Any]]:
@@ -530,8 +541,9 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
     as many as the run reads (its N) times the setting's pool factor, so the reranker decides which records fall above
     the read cutoff, not only their order within it; each is sent as its title and abstract with the question. A
     record of that window that only citation chaining brought (`chain_heads`) is not sent and keeps its place (D106);
-    under the rule frozen since D153, so does one still without an abstract after the lookup before the rerank, and
-    `kept_reasons` says which rule kept each. The scores are stored in this step and read into the list's manifest.
+    under the rule frozen since D153, so does one still without an abstract after the lookup before the rerank (since
+    D155 only one with a route to text or an unsettled lookup, `text_routes`), and `kept_reasons` says which rule kept
+    each. The scores are stored in this step and read into the list's manifest.
     A reranker that fails, answers wrongly, runs out of time (its own limit, or what is left of the ranking stage)
     never hands over to another reranker: the step is `failed`, says why, and the list keeps the
     fused order. A pause or a cancellation stops the request (the built-in runner is killed) and the run stops. A rerank
@@ -556,7 +568,19 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
     reasons = {rid: "chained_only" for rid in window if rid in chained}
     if hold:
         # D153: a record scored on its title alone fell (Humphreys 36 -> 109, 6 Nov); it keeps its fused place.
-        reasons |= {rid: "no_abstract" for rid in window if rid not in reasons and not rows[rid]["abstract"]}
+        bare = [rid for rid in window if rid not in reasons and not rows[rid]["abstract"]]
+        if hold == "with_text_route":
+            # D155: only while text can still come: an open PDF or a stored file on its work, or a lookup before the
+            # rerank that did not settle. A record no source can fill is scored on its title, as before D153, and
+            # takes no read place it cannot use (four Elsevier works, 6 Nov pilot).
+            lookup = (store.existing_step(run["id"], PRERANK_LOOKUP_KEY) or {}).get("output") or {}
+            unsettled = set(lookup.get("unsettled") or ())
+            routed = text_routes(store, [manifest["versions"][rid]["work_id"] for rid in bare])
+            reasons |= {rid: "no_abstract_text_route" if manifest["versions"][rid]["work_id"] in routed
+                        else "no_abstract_lookup_open" for rid in bare
+                        if rid in unsettled or manifest["versions"][rid]["work_id"] in routed}
+        else:
+            reasons |= {rid: "no_abstract" for rid in bare}
     candidates = [rid for rid in window if rid not in reasons]
     kept = [rid for rid in window if rid in reasons]
     texts = [rerankers.document(rows[rid]["title"], rows[rid]["abstract"]) for rid in candidates]
@@ -614,6 +638,18 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
         raise error
 
 
+def text_routes(store: Any, work_ids: list[str]) -> set[str]:
+    """The works among these with a route to their text (D155): a version with an open PDF URL (another version's
+    copy included), a person's upload, or a file already stored for a version."""
+    if not work_ids:
+        return set()
+    marks = ",".join("?" * len(work_ids))
+    return {row[0] for row in store.conn.execute(
+        f"SELECT DISTINCT v.work_id FROM source_versions v WHERE v.work_id IN ({marks})"
+        " AND (COALESCE(v.oa_pdf_url, '') != '' OR v.origin = 'user_upload' OR EXISTS (SELECT 1 FROM source_assets a"
+        " WHERE a.source_version_id = v.id AND a.removed_at IS NULL))", list(dict.fromkeys(work_ids)))}
+
+
 async def prerank_lookups(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> None:
     """Ask the lookup sources for the missing abstracts of the first records the reranker will score (D152).
 
@@ -625,7 +661,9 @@ async def prerank_lookups(flow: Any, run: dict[str, Any], scope: dict[str, Any],
     `seconds` in all (or what is left of the ranking stage). What did not come back in time stays missing: under D152's
     rule the record is scored on its title, and under the rule since D153 it keeps its fused place (`rerank_list`).
     D153's rule (version 2) asks about every such record of the window, up to 400, within 8 s, with Crossref's single
-    requests 4 in flight; D152's (no version) the first 20 within 5 s, one request at a time. Nothing runs when no
+    requests 4 in flight; D152's (no version) the first 20 within 5 s, one request at a time. D155's (version 3) is
+    version 2 with Semantic Scholar failing fast (no 429 wait, one batch of 400, skipped in a cooldown) and the asked
+    records no source answered about stored as `unsettled`. Nothing runs when no
     reranker would be sent anything, or for a run frozen before D152 (no `prerank_lookup` in its budget). The chosen
     records and what was filled are stored on `prerank_lookups`; a run resumed after it succeeded asks nothing again.
     A filled record's open `no_abstract` decision, if an earlier run wrote one, is replaced by the read stage's
@@ -666,7 +704,9 @@ async def prerank_lookups(flow: Any, run: dict[str, Any], scope: dict[str, Any],
                 store, flow.deps.http, flow.deps.settings, run, scope, words,
                 lambda: flow._checkpoint(run["id"], run["scope_revision"]),
                 rule.get("max_requests", lookups.MAX_LOOKUP_REQUESTS), only=set(asked), prefix=PRERANK_PREFIX,
-                crossref_in_flight=rule.get("crossref_in_flight", 1)), timeout=seconds)
+                crossref_in_flight=rule.get("crossref_in_flight", 1), s2_waits=rule.get("s2_waits"),
+                s2_batch=rule.get("s2_batch", S2_LOOKUP_BATCH), s2_cooldown_skip=bool(rule.get("s2_cooldown_skip"))),
+                timeout=seconds)
         except TimeoutError:
             status = "time_ceiling"
             # The request cut short is not asked again by this round: its step says it ran out of time.
@@ -676,7 +716,43 @@ async def prerank_lookups(flow: Any, run: dict[str, Any], scope: dict[str, Any],
                                   error={"error": f"the lookups before the rerank had {seconds:g} s in all"})
     filled = [svid for svid in asked if store.conn.execute(
         "SELECT 1 FROM passages WHERE source_version_id = ? AND kind = 'abstract'", (svid,)).fetchone()]
-    store.finish_step(step["id"], "succeeded", output=output | {"status": status, "filled": filled})
+    settled = {}
+    if rule.get("version", 0) >= 3:
+        settled = {"unsettled": unsettled(store, run, scope, [svid for svid in asked if svid not in filled])}
+    store.finish_step(step["id"], "succeeded", output=output | {"status": status, "filled": filled} | settled)
+
+
+def unsettled(store: Any, run: dict[str, Any], scope: dict[str, Any], records: list[str]) -> list[str]:
+    """Of these records still without an abstract, those the lookup before the rerank did not settle (D155).
+
+    Each source the research asks is settled for a record when its stored plan did not list the record, or listed it
+    and the record has its answer: `found` or `not_found` from any run, or a `failed` row this round wrote (a refused
+    batch, or one skipped in Semantic Scholar's cooldown, which a later round asks again). A source whose plan was never
+    stored (the round ran out of time first), or that listed the record and wrote nothing for it (its request was cut
+    short), leaves the record unsettled."""
+    from deixis.workflow.search import lookups
+    plans = {}
+    for provider in ("semantic_scholar", "crossref", "scopus"):
+        if lookups.in_scope(scope, provider):
+            step = store.existing_step(run["id"], f"{PRERANK_PREFIX}lookup_plan:{provider}")
+            plans[provider] = step["output"] if step and step["status"] == "succeeded" else None
+    rounds = {row[0] for row in store.conn.execute(
+        "SELECT id FROM run_steps WHERE run_id = ? AND operation_key LIKE ?", (run["id"], PRERANK_PREFIX + "%"))}
+
+    def answered(svid: str, provider: str) -> bool:
+        return any(row["status"] in ("found", "not_found") or row["step_id"] in rounds for row in store.conn.execute(
+            "SELECT status, step_id FROM record_lookups WHERE source_version_id = ? AND provider = ?", (svid, provider)))
+
+    left = []
+    for svid in records:
+        for provider, plan in plans.items():
+            listed = plan is not None and any(row["source_version_id"] == svid
+                                              for group in plan.get("batches") or plan.get("chunks") or []
+                                              for row in group)
+            if plan is None or (listed and not answered(svid, provider)):
+                left.append(svid)
+                break
+    return left
 
 
 async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> None:

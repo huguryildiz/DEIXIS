@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from deixis.providers.pacing import SEMANTIC_SCHOLAR_PACER
+from deixis.providers.pacing import SEMANTIC_SCHOLAR_PACER, CoolingDown
 from deixis.domain.limits import error_name, limit_kind, service_error_kind, retry_at
 
 MAX_RATE_LIMIT_RETRIES = 2
@@ -36,6 +36,10 @@ send_blocked: ContextVar[Callable[[], str | None] | None] = ContextVar("send_blo
 # ends; one the process never settled stays not known. The log has `begin(host, url) -> id | None` and
 # `settle(id, facts)`.
 request_log: ContextVar[Any] = ContextVar("request_log", default=None)
+# D155: set by a lookup whose run froze the rule: its Semantic Scholar request is not sent while a 429's cooldown holds
+# the pacer, queued or not, and comes back `rate_limited` with `error_kind` S2_COOLDOWN instead of waiting.
+s2_skip_in_cooldown: ContextVar[bool] = ContextVar("s2_skip_in_cooldown", default=False)
+S2_COOLDOWN = "s2_cooldown"
 
 
 def begin_request(location: str) -> Any:
@@ -210,6 +214,7 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
     run's quota ran out or the run stopped meanwhile.
     """
     retries = 0
+    s2 = urlsplit(url).hostname == "api.semanticscholar.org"
     gated = False  # the last attempt was stopped at its start gate and is not counted
     pool_wait = False  # the last attempt timed out waiting for a pooled connection: not sent
     begun: Any = None  # the stored row of the attempt now with the HTTP client (D31)
@@ -257,14 +262,31 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
                 begun = begin_request(location)
                 try:
                     if json_body is not None:
-                        return await client.post(url, params=params, headers=headers, json=json_body, timeout=timeout)
-                    return await client.get(url, params=params, headers=headers, timeout=timeout)
+                        reply = await client.post(url, params=params, headers=headers, json=json_body, timeout=timeout)
+                    else:
+                        reply = await client.get(url, params=params, headers=headers, timeout=timeout)
+                    if s2 and reply.status_code in rate_limit_statuses:
+                        # D155: set while this attempt still holds the gate, so no caller queued behind it is let
+                        # through first. Every Semantic Scholar caller holds off; one that will retry holds them off
+                        # for its whole wait, so nobody sends while it sleeps.
+                        wait = _retry_wait(reply.headers.get("retry-after"), retries, unstated_wait, max_retry_wait)
+                        retrying = retry_rate_limit and retries < max_rate_limit_retries and wait is not None
+                        SEMANTIC_SCHOLAR_PACER.cool_down(max(_cooldown(reply.headers.get("retry-after")),
+                                                             wait if retrying else 0.0))
+                    return reply
                 except asyncio.CancelledError:
                     settle_request(begun, False, False, "cancelled", None, unknown=True)
                     raise
 
-            if urlsplit(url).hostname == "api.semanticscholar.org":
-                response = await SEMANTIC_SCHOLAR_PACER.run(attempt)
+            if s2:
+                try:
+                    response = await SEMANTIC_SCHOLAR_PACER.run(attempt, skip_in_cooldown=s2_skip_in_cooldown.get())
+                except CoolingDown as cooling:
+                    # D155: not sent, and not counted as an attempt; the caller records why.
+                    gated = True
+                    return finish(None, SearchOutcome("rate_limited", "before_send", description, access_mode,
+                                                      error_kind=S2_COOLDOWN, retries=retries,
+                                                      error=f"Not sent: Semantic Scholar cooldown, {cooling.seconds:.1f} s left"))
             else:
                 response = await attempt()
         except httpx.PoolTimeout as exc:
@@ -315,6 +337,16 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
             delivery = "rejected_not_executed" if 400 <= response.status_code < 500 else "after_send_unknown"
             return finish(None, SearchOutcome("failed", delivery, **base, error=redact(response.text[:300], *secrets)))
         return finish(response, SearchOutcome("completed", None, **base))
+
+
+def _cooldown(retry_after: str | None) -> float:
+    """The Semantic Scholar cooldown a 429 sets (D155): its Retry-After in seconds when it names one, bounded, else 15 s."""
+    from deixis.providers.pacing import S2_COOLDOWN_SECONDS, S2_MAX_COOLDOWN_SECONDS
+    try:
+        seconds = float(retry_after) if retry_after is not None else S2_COOLDOWN_SECONDS
+    except ValueError:
+        seconds = S2_COOLDOWN_SECONDS
+    return min(max(seconds, 0.0), S2_MAX_COOLDOWN_SECONDS) if seconds == seconds else S2_COOLDOWN_SECONDS
 
 
 def _retry_wait(retry_after: str | None, retries: int, unstated_wait: float,

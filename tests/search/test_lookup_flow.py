@@ -233,6 +233,37 @@ def test_semantic_scholar_fills_one_abstract_and_crossref_the_one_it_did_not(tmp
     assert sources.lookups == ["10.1/b"]  # the record Semantic Scholar answered is not asked again
 
 
+def test_a_batch_skipped_in_the_cooldown_leaves_its_records_as_a_refused_batch_does(tmp_path, monkeypatch):
+    """D155: during a Semantic Scholar 429 cooldown the read stage's lookup sends it nothing; its records are stored
+    `failed`, as after a refused batch, so in Quick they reach `abstract_not_found` (and full-text admission) instead
+    of waiting for a lookup the succeeded step will never send again. The step says why and for how many."""
+    sources = Sources(works=[work(1, doi="10.1/a"), work(2, doi="10.1/b")],
+                      s2={"10.1/a": paper(abstract=ABSTRACT, doi="10.1/a")})
+    monkeypatch.delattr(common.SEMANTIC_SCHOLAR_PACER, "cool_down")  # the real cooldown, off elsewhere in the suite
+    common.SEMANTIC_SCHOLAR_PACER.cool_down(60)
+    app = app_for(tmp_path, monkeypatch, sources)
+    client = client_of(app)
+    try:
+        rid, run_id, view, run = discover(client)
+        store = app.state.store
+        by_id = records_of(store, rid)
+        s2_step = step_output(store, run_id, "record_lookup:semantic_scholar:0")
+        rows = {r[0]: r[1] for r in store.conn.execute(
+            "SELECT source_version_id, status FROM record_lookups WHERE provider = 'semantic_scholar'")}
+        codes = {n: decision_of(store, rid, by_id[n])["reason_code"] for n in ("W1", "W2")}
+        event = next(json.loads(e[0]) for e in store.conn.execute(
+            "SELECT payload_json FROM events WHERE run_id = ? AND type = 'step_finished'", (run_id,))
+            if json.loads(e[0])["operation_key"] == "record_lookup:semantic_scholar:0")
+    finally:
+        client.__exit__(None, None, None)
+    assert run["status"] == "completed" and sources.batches == []  # nothing reached Semantic Scholar
+    assert (s2_step["skipped"], s2_step["not_asked"], s2_step["failed"]) == ("s2_cooldown", 2, 2)
+    assert rows == {by_id["W1"]: "failed", by_id["W2"]: "failed"}
+    assert sorted(sources.lookups) == ["10.1/a", "10.1/b"]  # Crossref was asked about both
+    assert codes == {"W1": "abstract_not_found", "W2": "abstract_not_found"}
+    assert (event["skipped"], event["skipped_count"]) == ("s2_cooldown", 2)
+
+
 def test_a_resumed_run_asks_no_doi_twice(tmp_path, monkeypatch):
     """Acceptance 3: the stored plan and the stored answers together keep every request to one.
 

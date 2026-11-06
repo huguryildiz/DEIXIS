@@ -16,7 +16,7 @@ from test_seed_pdf import no_upload_lookup  # noqa: F401  (fixtures used by name
 SEED_ONLY_TITLE = "SYNTHETIC a work only a seed's own request found"
 PLAN_KEYS = {"version", "semantic", "keywords", "keyword_cap", "page_size", "order", "s2_bulk", "s2_bulk_index",
              "s2_reserved", "dropped", "expansion", "words",  # words: which plan words a sent query carries (D26)
-             "block_semantic"}  # the block terms' semantic request (D154)
+             "block_semantic"}  # the block terms' semantic request (D154), frozen as off since D155
 
 
 class Scripted(SeedTransport):
@@ -79,13 +79,12 @@ def test_a_seeded_run_asks_the_unseeded_question_then_each_seed_then_the_keyword
         assert [(s["source_version_id"], s["limit"]) for s in plan["seed_semantic"]] == [(a, 25), (b, 25)]
         semantic = [entry for entry in transport.log if entry[0] == "semantic"]
         question = semantic.index(("semantic", QUESTION, 50))
-        # B had no DOI: its lookup (D3) went before the plan; then the question, the block terms (D154), then A and B
-        # by their own text.
-        assert semantic[question + 1] == ("semantic", plan["block_semantic"]["query_text"], 50)
-        # Every word a keyword query carries is in that request's text too, and the plan's word record says so.
-        assert {w["semantic"] for w in plan["words"] if w["searched"]} == {True}
-        assert [entry[1] for entry in semantic[question + 2:]] == [s["query_text"] for s in plan["seed_semantic"]]
-        assert [entry[2] for entry in semantic[question + 2:]] == [25, 25]
+        # B had no DOI: its lookup (D3) went before the plan; then the question, then A and B by their own text. The
+        # block terms' request (D154) is off since D155, and no plan word is recorded as part of a semantic request.
+        assert plan["block_semantic"] == fast_search.BLOCK_SEMANTIC_OFF
+        assert {w["semantic"] for w in plan["words"]} == {False}
+        assert [entry[1] for entry in semantic[question + 1:]] == [s["query_text"] for s in plan["seed_semantic"]]
+        assert [entry[2] for entry in semantic[question + 1:]] == [25, 25]
         first_keyword = next(i for i, entry in enumerate(transport.log) if entry[0] == "keyword")
         assert transport.log.index(semantic[-1]) < first_keyword
         for i in (0, 1):

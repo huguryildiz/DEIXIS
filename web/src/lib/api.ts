@@ -190,6 +190,8 @@ export type Step = {
     works?: unknown[]
     // The record reranker (`rerank:v1:list`, D104): how many records it was given, its error code when it did not run.
     reranked?: number; error_code?: string | null; cut_documents?: number | null
+    // How many records without an abstract the rerank kept in place, by why (D153, D155).
+    held?: Partial<Record<'no_abstract' | 'no_abstract_text_route' | 'no_abstract_lookup_open', number>>
     // The frozen list (`small_batch:v1:list`): whether its order used the rerank, and why not (D104).
     reranker?: { applied: boolean; reason?: string | null; reranked?: number; provider?: string | null; model?: string | null } | null } | null
 }

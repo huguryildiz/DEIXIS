@@ -693,8 +693,11 @@ class ResearchFlow:
         """
         run_id, revision = run["id"], run["scope_revision"]
         words, _ = lookups.title_words(vocabulary)
+        # D155: a run whose lookup rule froze it skips Semantic Scholar while a 429 holds its pacer in a cooldown.
+        skip = bool(((run["budget"].get("inspection") or {}).get("prerank_lookup") or {}).get("s2_cooldown_skip"))
         await lookups.ask_second_sources(self.store, self.deps.http, self.deps.settings, run, scope, words,
-                                         lambda: self._checkpoint(run_id, revision), **({"only": only} if only is not None else {}))
+                                         lambda: self._checkpoint(run_id, revision), **({"only": only} if only is not None else {}),
+                                         s2_cooldown_skip=skip)
         lookups.external_links(self.store, run)
         lookups.flag_and_decide(self.store, run, scope, words)
 

@@ -26,6 +26,7 @@ from overlap_flow_helpers import discover, output
 from test_abstract_flow import HALF
 from test_fulltext_flow import Transport, work
 from test_small_batch_flow import app_for, client_of
+from windows_env import WAIT_FACTOR
 
 ACTIVE = ("queued", "running", "pause_requested")
 
@@ -36,7 +37,7 @@ class Crash(BaseException):
 
 def settle(client, rid, timeout=60):
     """Wait until no run of the research is active (the discovery queues an answer and its review)."""
-    deadline = time.time() + timeout
+    deadline = time.time() + timeout * WAIT_FACTOR
     while time.time() < deadline:
         view = client.get(f"/api/researches/{rid}").json()
         if all(run["status"] not in ACTIVE for run in view["runs"]):

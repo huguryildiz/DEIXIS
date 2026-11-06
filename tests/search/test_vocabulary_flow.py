@@ -21,6 +21,7 @@ from deixis.storage import db
 from deixis.workflow.search.vocabulary import VERY_LARGE_COUNT
 from deixis.workflow.run.store import Store
 from fakes import FakeAdapter
+from windows_env import WAIT_FACTOR
 
 QUESTION = "What is the effect of packet size on energy consumption in wireless sensor networks?"
 TURKISH = "Kablosuz alıcı ağlarında paket boyu enerji tüketimini nasıl etkiler?"
@@ -70,7 +71,7 @@ def app_for(tmp_path, monkeypatch, handler, adapter, workflow="sw"):
 
 
 def wait(client, rid, run_id):
-    deadline = time.time() + 15
+    deadline = time.time() + 15 * WAIT_FACTOR
     while time.time() < deadline:
         view = client.get(f"/api/researches/{rid}").json()
         run = next(r for r in view["runs"] if r["id"] == run_id)

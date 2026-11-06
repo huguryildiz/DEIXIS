@@ -27,6 +27,7 @@ from builtin_helpers import ready
 from fakes import FakeAdapter, valid_response
 from test_ranking_flow import STRONG, Pool, client_of, discover, no_fetch, wait
 from test_semantic_retrieval import two_page_research
+from windows_env import WAIT_FACTOR
 
 
 EMB = "qwen3-embedding-0.6b"
@@ -131,7 +132,7 @@ class Session:
 
     def settled(self, rid, run_id):
         # Read through the API: the worker's runs (the fast path queues more of them) share the store's connection.
-        deadline = time.time() + 30
+        deadline = time.time() + 30 * WAIT_FACTOR
         while time.time() < deadline:
             run = next(r for r in self.client.get(f"/api/researches/{rid}").json()["runs"] if r["id"] == run_id)
             if run["status"] in ("completed", "failed", "paused", "cancelled"):

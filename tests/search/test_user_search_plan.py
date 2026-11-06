@@ -18,6 +18,7 @@ from deixis.api.app import create_app
 from deixis.config import Settings
 from deixis.providers.registry import CONNECTORS
 from fakes import FakeAdapter
+from windows_env import WAIT_FACTOR
 
 QUESTION = "SYNTHETIC: which scheduling methods have been proposed for rail freight timetables?"
 PLANNING_TASKS = ("vocabulary_labels", "search_query", "criterion_proposal")
@@ -99,7 +100,7 @@ def discover(client, rid):
     response = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"})
     assert response.status_code == 202, response.text
     run_id = response.json()["id"]
-    deadline = time.time() + 20
+    deadline = time.time() + 20 * WAIT_FACTOR
     while time.time() < deadline:
         run = next(r for r in client.get(f"/api/researches/{rid}").json()["runs"] if r["id"] == run_id)
         if run["status"] in ("completed", "failed", "paused"):

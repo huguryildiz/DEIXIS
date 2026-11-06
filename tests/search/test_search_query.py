@@ -23,6 +23,7 @@ from deixis.models.adapter import ModelStepResult
 from deixis.providers.registry import CONNECTORS
 from deixis.workflow.search import search_query
 from fakes import FakeAdapter
+from windows_env import WAIT_FACTOR
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "research"
 STEP_INPUT = json.loads((FIXTURES / "step-inputs.json").read_text(encoding="utf-8"))["H_search_query"]
@@ -180,7 +181,7 @@ def start(client, **body):
 
 
 def wait(client, rid, run_id, status=("completed", "failed", "paused")):
-    deadline = time.time() + 15
+    deadline = time.time() + 15 * WAIT_FACTOR
     while time.time() < deadline:
         view = client.get(f"/api/researches/{rid}").json()
         run = next(r for r in view["runs"] if r["id"] == run_id)

@@ -75,6 +75,7 @@ from dataclasses import replace
 
 from deixis.providers.registry import CONNECTORS
 from fakes import FakeAdapter
+from windows_env import WAIT_FACTOR
 
 QUESTION = "What is the effect of packet size on energy consumption in wireless sensor networks?"
 
@@ -167,7 +168,7 @@ def app_for(tmp_path, monkeypatch, handler, workflow="sw", adapter=None):
 
 
 def wait(client, rid, run_id):
-    deadline = time.time() + 30
+    deadline = time.time() + 30 * WAIT_FACTOR
     while time.time() < deadline:
         view = client.get(f"/api/researches/{rid}").json()
         run = next(r for r in view["runs"] if r["id"] == run_id)

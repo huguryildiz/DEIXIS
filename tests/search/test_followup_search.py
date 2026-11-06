@@ -14,6 +14,7 @@ from test_fulltext_flow import Transport, work
 from test_screen_more import settle
 from test_small_batch_flow import app_for, client_of
 from overlap_flow_helpers import discover
+from windows_env import WAIT_FACTOR
 
 QUESTION = "[new-works] Are there other studies on this that also report energy use?"
 
@@ -35,7 +36,7 @@ class Switch(Transport):
 
 
 def wait(client, rid, run_id, timeout=60):
-    deadline = time.time() + timeout
+    deadline = time.time() + timeout * WAIT_FACTOR
     while time.time() < deadline:
         run = next(r for r in client.get(f"/api/researches/{rid}").json()["runs"] if r["id"] == run_id)
         if run["status"] in ("completed", "failed", "paused", "cancelled"):

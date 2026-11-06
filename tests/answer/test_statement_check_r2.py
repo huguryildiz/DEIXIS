@@ -19,6 +19,7 @@ from deixis.domain import statement
 from deixis.workflow.answer import statement_check
 from test_statement_check import ABSTRACT, MODEL, build, execute, items
 from test_statement_check import answer, build, create, cutoff, execute, items, scripted
+from windows_env import WAIT_FACTOR
 
 
 LITERATURE = {"model_connection": "fake", "model": "fake-model", "reasoning_effort": None}
@@ -176,7 +177,7 @@ def attached(lib):
 
 
 def wait_run(client, rid, run_id, statuses=("completed", "failed", "paused")):
-    deadline = time.time() + 30
+    deadline = time.time() + 30 * WAIT_FACTOR
     while time.time() < deadline:
         run = next(r for r in client.get(f"/api/researches/{rid}").json()["runs"] if r["id"] == run_id)
         if run["status"] in statuses:

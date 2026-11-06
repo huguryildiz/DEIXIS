@@ -28,6 +28,7 @@ from deixis.workflow.run.store import Store
 from fakes import FakeAdapter
 from helpers import make_pdf
 from deixis.workflow.answer import criterion_passages as cp
+from windows_env import WAIT_FACTOR
 
 
 QUESTION = "What is the effect of supervised exercise on cancer related fatigue after chemotherapy?"
@@ -101,7 +102,7 @@ def research_with_pdf(client, question=QUESTION, pages=(CRITERION_PAGE, TOPIC_PA
 
 
 def wait_run(client, rid, run_id, timeout=20):
-    deadline = time.time() + timeout
+    deadline = time.time() + timeout * WAIT_FACTOR
     while time.time() < deadline:
         view = client.get(f"/api/researches/{rid}").json()
         run = next(r for r in view["runs"] if r["id"] == run_id)

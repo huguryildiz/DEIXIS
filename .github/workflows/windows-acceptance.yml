@@ -1,0 +1,57 @@
+# P10 Windows (W5): acceptance of the INSTALLED app on a Windows x64 runner. Started by hand only
+# (`gh workflow run windows-acceptance.yml -f run_id=<windows-desktop run>`). Downloads the NSIS installer artifact that
+# windows-desktop.yml built in that run (the installer under test is that exact file; its SHA-256 is in the result),
+# installs it silently as the runner's user and runs scripts/p10/windows_acceptance.py: install, open, in-window rows
+# over WebView2's DevTools port, second launch, close, Quit / killed shell / killed backend under a hanging fake codex
+# and a PDF child, downloads, uninstall. The fake codex needs the repo's Python packages (uv sync); Node runs its
+# npm-shaped launcher. Evidence (results.json, screenshots, logs, downloaded files) is kept as an artifact.
+name: windows-acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "windows-desktop.yml run whose deixis-windows-installer artifact is tested"
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: windows-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installed:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: uv sync --frozen
+      - name: Installer from the windows-desktop run
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh run download "${{ inputs.run_id }}" -n deixis-windows-installer -D installer --repo "${{ github.repository }}"
+          ls -la installer
+      - name: Acceptance
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem installer\*-setup.exe | Select-Object -First 1
+          uv run --no-sync python scripts/p10/windows_acceptance.py --installer $setup.FullName --evidence evidence 2>&1 | Tee-Object acceptance.txt
+          exit $LASTEXITCODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: deixis-windows-acceptance
+          path: |
+            acceptance.txt
+            evidence/

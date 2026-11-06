@@ -40,7 +40,9 @@ PRERANK_S2_BATCH = 400
 # D156 (version 4): Crossref's single requests go 8 in flight, not 4 (the 8 s round ran out in 4 of 6 D155 pilot runs),
 # and each request stores the records it was sent for, so only a record whose request went out and did not come back
 # in time is `lookup_open`; one never sent is settled. The request count is unchanged: one per record either way.
-PRERANK_LOOKUP = {"version": 4, "max_records": PRERANK_RECORDS, "seconds": 8, "crossref_in_flight": 8,
+# D159 (version 5): Crossref back to 4 in flight. At 8 the D156 pilot got no more answers into the 8 s round and three
+# times the 429s (notes/2026-11-06-answer-quality/pilot3); version 4 budgets keep 8. Version 5 keeps D156's rule.
+PRERANK_LOOKUP = {"version": 5, "max_records": PRERANK_RECORDS, "seconds": 8, "crossref_in_flight": 4,
                   "s2_waits": 0, "s2_batch": PRERANK_S2_BATCH, "s2_cooldown_skip": True,
                   "max_requests": (math.ceil(PRERANK_RECORDS / PRERANK_S2_BATCH) + PRERANK_RECORDS + 1
                                    + math.ceil(PRERANK_RECORDS / SCOPUS_LOOKUP_BATCH))}

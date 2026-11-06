@@ -350,7 +350,7 @@ def test_missing_abstracts_are_looked_up_before_the_rerank_and_unfilled_records_
                          filler=200 if case == "window_above_200" else 20 if case in D156 else 0,
                          refuse_s2=case == "s2_refused", pdf=case == "text_route")
     if case in D156:
-        handler.slow = 8 if case == "never_sent" else 4  # the requests the round has out at once
+        handler.slow = 4  # the requests the round has out at once
     if case in ("crossref_cut", *D156):
         handler.wait = 3.0 * WAIT_FACTOR  # Semantic Scholar answers at once; Crossref is still out when the round's time ends
     local = RerankingLocal()
@@ -384,9 +384,9 @@ def test_missing_abstracts_are_looked_up_before_the_rerank_and_unfilled_records_
         assert step["output"]["rule"]["max_requests"] == 418 and step["output"]["lookup_open"] == []
         assert "unsettled" not in step["output"]
         assert [len(batch) for batch in handler.lookups] == [204]
-        # D156: Crossref's single requests 8 in flight, frozen in the run's rule.
-        assert step["output"]["rule"]["crossref_in_flight"] == 8 and step["output"]["rule"]["version"] == 4
-        assert len(handler.crossref) == len(set(handler.crossref)) == 202 and handler.peak == 8
+        # D159: Crossref's single requests 4 in flight again (8 under D156), frozen in the run's rule.
+        assert step["output"]["rule"]["crossref_in_flight"] == 4 and step["output"]["rule"]["version"] == 5
+        assert len(handler.crossref) == len(set(handler.crossref)) == 202 and handler.peak == 4
         assert rerank["kept_reasons"] == {}
         return
     if case in D156:
@@ -404,13 +404,13 @@ def test_missing_abstracts_are_looked_up_before_the_rerank_and_unfilled_records_
             assert "lookup_open" not in step["output"]
             assert rerank["kept_reasons"] == {rid: "no_abstract_lookup_open" for rid in bare}
             return
-        # D156: only the 8 sent and unanswered keep their place; the 14 never asked go to the reranker on their title.
-        assert handler.peak == len(sent) == 8 and sorted(step["output"]["lookup_open"]) == sent
+        # D156: only the 4 sent and unanswered keep their place; the 18 never asked go to the reranker on their title.
+        assert handler.peak == len(sent) == 4 and sorted(step["output"]["lookup_open"]) == sent
         assert "unsettled" not in step["output"]
         assert rerank["kept_reasons"] == {rid: "no_abstract_lookup_open" for rid in sent}
         assert sorted(rid for rid in bare if rid not in sent) == sorted(rid for rid in rerank["candidate_ids"] if rid in bare)
         held = next(e for e in events if e["operation_key"] == small_batch.RERANK_KEY)
-        assert held["held_no_abstract_lookup_open"] == 8
+        assert held["held_no_abstract_lookup_open"] == 4
         return
     if case == "before_d152":
         assert step is None and not prerank_steps and "kept_reasons" not in rerank

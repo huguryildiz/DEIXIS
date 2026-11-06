@@ -9,6 +9,7 @@ the child record and the desktop watchdog (M2). Run from the repository, not a P
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import re
@@ -363,7 +364,9 @@ def test_a_group_is_never_signalled_once_its_leader_id_belongs_to_another_proces
         assert found == unrelated and all(gone(i) for i in unrelated)
     finally:
         if other.poll() is None:
-            os.killpg(other.pid, signal.SIGKILL)
+            # The group may already be gone or hold only the unreaped leader: macOS then answers EPERM.
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(other.pid, signal.SIGKILL)
         other.wait()
 
 

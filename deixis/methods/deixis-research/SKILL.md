@@ -41,6 +41,7 @@ one; `report_section` also gets the source-grounded answer file.
 | `report_plan`, `report_section`, `report_review` | [report](references/report.md) | Write or review one part of a fixed-skeleton report. |
 | `owner_review` | [owner review](references/review.md) | Assess a stored copy as an additional model assessment; empty findings are valid and suggestions never change the original text. |
 | `research_title` | [research title](references/research-title.md) | Name the research before an answer exists. |
+| `question_translation` | [question translation](references/question-translation.md) | Translate a question that is not in English into one English sentence; add, narrow and explain nothing. |
 | `vocabulary_labels` | [vocabulary labels](references/vocabulary-labels.md) | Sort the phrases the application extracted into concept blocks; propose none of your own. |
 | `criterion_proposal` | [criterion proposal](references/criterion-proposal.md) | State from the question alone what an included paper must contain, and the words its authors would write. |
 | `search_query` | [search query](references/search-query.md) | Choose the terms of the two keyword blocks, with backups; the application counts them and writes the query. |

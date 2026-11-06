@@ -332,7 +332,7 @@ const pauseReasons: Record<string, string> = {
   asset_removed: 'The PDF was removed from the source before OCR finished. Nothing was stored.',
   extraction_failed: 'The PDF could not be opened to find its pages without text.',
   // The sw workflow's own stops: the run has searched nothing yet (D80).
-  key_terms_needed: 'DEIXIS reads search terms from an English question and does not translate. Revise the question in English, or give the English key terms above.',
+  key_terms_needed: 'The question is not in English and could not be translated into English, so nothing was searched. Resume to try the translation again, revise the question in English, or give the English key terms above.',
   vocabulary_empty: 'No search term could be built from the question, so nothing was searched. Revise the question above, for example with other words for the topic or with key terms, and search again.',
   vocabulary_too_broad: 'Every search term in the question is too common to search on its own, so nothing was searched. Revise the question above with a narrower topic or with key terms, and search again.',
   search_query_failed: 'The model could not write the search query, and nothing has been searched. Resume to ask it once more, or search with the query DEIXIS built from the question’s words.',
@@ -345,6 +345,8 @@ export const pauseReasonText = (reason: string | null, detail?: unknown) => {
     const service = typeof error.provider === 'string' ? providerName(error.provider) : error.connection ? connectionName(String(error.connection)) : t('The selected service')
     return serviceErrorText({ kind: error.service_kind || error.error_kind, service }).what
   }
+  // The same stop when the person's own key terms could not be read; no translation was asked for then.
+  if (reason === 'key_terms_needed' && typeof error.error === 'string') return t('The English key terms could not be read, so nothing was searched. Change them above and search again.')
   return reason ? t(pauseReasons[reason] ?? 'An operation stopped this run. Completed work is saved.') : ''
 }
 // An older pause kept only the raw Retry-After header; a date in it is usable, a bare number of seconds has no anchor.
@@ -371,6 +373,9 @@ export const pauseDetailText = (run: { pause_reason: string | null; error: unkno
   if (run.pause_reason === 'model_call_failed') {
     return [t('The connection did not complete this call. Check it in Settings before resuming.')]
   }
+  // Why the translation step did not give an English sentence (D149), from its stored reason.
+  const translation = run.pause_reason === 'key_terms_needed' && error.translation && typeof error.translation === 'object' ? error.translation as Record<string, unknown> : null
+  if (translation && typeof translation.reason === 'string') return [t('Translation step: {reason}', { reason: pauseReasonText(translation.reason, translation.detail) })]
   return []
 }
 export const failedRowReasonText = (reason: string) => reason === 'no_stored_text' ? t('no stored text') : reason.replaceAll('_', ' ')
@@ -472,6 +477,7 @@ export const stepLabel = (kind: string, key: string, candidate = false) => {
   if (kind === 'model:report_section_anchor_repair') return t('Fixing report citations (model)')
   if (kind === 'model:report_review') return t('Checking the report (model)')
   if (kind === 'model:search_query') return t('Search query (model)')
+  if (kind === 'model:question_translation') return t('Translating the question into English (model)')
   if (kind === 'model:vocabulary_labels') return t('Grouping search words (model)')
   if (kind === 'model:criterion_proposal') return t('Inclusion criterion proposal (model)')
   if (kind === 'model:followup_answer') return t('Answer to a follow-up question (model)')

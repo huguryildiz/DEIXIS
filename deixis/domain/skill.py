@@ -22,6 +22,7 @@ RUNTIME_FILES = {
     "cell_extraction": ("SKILL.md", "references/evidence-table.md"),
     "table_columns": ("SKILL.md", "references/evidence-table.md"),
     "research_title": ("SKILL.md", "references/research-title.md"),
+    "question_translation": ("SKILL.md", "references/question-translation.md"),
     "vocabulary_labels": ("SKILL.md", "references/vocabulary-labels.md"),
     "criterion_proposal": ("SKILL.md", "references/criterion-proposal.md"),
     "search_query": ("SKILL.md", "references/search-query.md"),

@@ -72,6 +72,9 @@ def _step_view_output(row: Any) -> dict[str, Any] | None:
         return {"reranker": json.loads(row["output_json"]).get("reranker")}
     if row["kind"] in STEP_OUTPUT_KINDS or row["operation_key"] in STEP_OUTPUT_KEYS:
         return json.loads(row["output_json"])
+    if row["kind"] == "code:vocabulary":  # the English sentence the words came from (D149), never the counts
+        english = (json.loads(row["output_json"]).get("vocabulary") or {}).get("english_question")
+        return {"english_question": english} if english else None
     if row["kind"] == "code:abstract_stage":
         return {"batch_sizes": [len(batch) for batch in json.loads(row["output_json"]).get("batches", [])]}
     if row["kind"] == "model:abstract_screening" and row["status"] == "succeeded":
@@ -647,8 +650,10 @@ class Store:
         return self.model_changes(research_id)[-1]
 
     def revise_scope(self, research_id: str, expected_version: int, question: str, steering: str | None,
-                     key_terms: str | None = None) -> int:
-        """The next scope revision. `key_terms` given replaces the previous terms; left out, they carry over."""
+                     key_terms: str | None = None, english_question: str | None = None) -> int:
+        """The next scope revision. `key_terms` given replaces the previous terms; left out, they carry over.
+        `english_question` is the person's English sentence for the new revision (origin 'user', D149), written in the
+        same transaction instead of any copied one; '' writes none, so a model translates the new revision."""
         with transaction(self.conn):
             research = self.research(research_id)
             check_expected_version(expected_version, research["version"])
@@ -672,13 +677,18 @@ class Store:
                 "UPDATE researches SET current_scope_revision = ?, version = version + 1, title = ?, updated_at = ? WHERE id = ?",
                 (revision, question.strip().splitlines()[0][:160], now(), research_id),
             )
-            # The built-in model's English sentence goes with an unchanged question (slice 21): a revision that only
-            # changed key terms or steering keeps it; a changed question needs a sentence of its own.
-            if current_question == question.strip():
+            # The person's English sentence goes with an unchanged question (slice 21): a revision that only changed
+            # key terms or steering keeps it; a changed question needs a sentence of its own. A model's is never
+            # copied (D149): the new revision is translated again unless the person writes one here.
+            if english_question:
+                self.conn.execute(
+                    "INSERT INTO scope_english_questions (research_id, scope_revision, text, origin, created_at)"
+                    " VALUES (?, ?, ?, 'user', ?)", (research_id, revision, english_question, now()))
+            elif english_question is None and current_question == question.strip():
                 self.conn.execute(
                     "INSERT INTO scope_english_questions (research_id, scope_revision, text, origin, created_at)"
                     " SELECT research_id, ?, text, origin, ? FROM scope_english_questions"
-                    " WHERE research_id = ? AND scope_revision = ?",
+                    " WHERE research_id = ? AND scope_revision = ? AND origin != 'model'",
                     (revision, now(), research_id, parent))
             self._event(research_id, "scope_revised", {"scope_revision": revision})
         return revision
@@ -705,7 +715,7 @@ class Store:
             self.conn.execute(
                 "INSERT INTO scope_english_questions (research_id, scope_revision, text, origin, created_at)"
                 " SELECT research_id, ?, text, origin, ? FROM scope_english_questions"
-                " WHERE research_id = ? AND scope_revision = ?", (revision, now(), research_id, parent))
+                " WHERE research_id = ? AND scope_revision = ? AND origin != 'model'", (revision, now(), research_id, parent))
             self._event(research_id, "scope_revised", {"scope_revision": revision, "user_plan": True})
         return revision
 
@@ -859,6 +869,31 @@ class Store:
             self.conn.execute("UPDATE researches SET version = version + 1, updated_at = ? WHERE id = ?", (now(), research_id))
             self._event(research_id, "english_question_saved", {"scope_revision": revision, "origin": origin})
         return {"scope_revision": revision, "text": text, "origin": origin}
+
+    def save_model_english_question(self, research_id: str, scope_revision: int, text: str, run_id: str) -> dict[str, Any]:
+        """Write the English sentence a model translated the question into (origin 'model', D149) for this revision,
+        unless the revision already has one; returns the revision's sentence either way. A sentence the person saved
+        first stays theirs. Written by the run, not the person: no expected version is checked and the research's
+        version is not raised, so a form the person has open is not made stale by it."""
+        with transaction(self.conn):
+            self.conn.execute(
+                "INSERT INTO scope_english_questions (research_id, scope_revision, text, origin, created_at)"
+                " VALUES (?, ?, ?, 'model', ?) ON CONFLICT (research_id, scope_revision) DO NOTHING",
+                (research_id, scope_revision, text, now()))
+            if self.conn.execute("SELECT changes()").fetchone()[0]:
+                self._event(research_id, "english_question_saved", {"scope_revision": scope_revision, "origin": "model"},
+                            run_id=run_id)
+        return self.english_question(research_id, scope_revision)
+
+    def english_question_model(self, research_id: str, scope_revision: int) -> dict[str, Any] | None:
+        """The model that wrote the revision's model sentence (D149): the last session of the revision's succeeded
+        translation step, as its session stored it; None when no such step is stored."""
+        row = self.conn.execute(
+            "SELECT m.connection, COALESCE(m.resolved_model, m.requested_model) AS model, m.reasoning_effort AS effort"
+            " FROM model_sessions m JOIN step_inputs si ON si.id = m.step_input_id JOIN run_steps st ON st.id = si.step_id"
+            " WHERE si.research_id = ? AND si.scope_revision = ? AND si.task_type = 'question_translation'"
+            " AND st.status = 'succeeded' ORDER BY m.rowid DESC LIMIT 1", (research_id, scope_revision)).fetchone()
+        return dict(row) if row else None
 
     def seed_status(self, research_id: str, scope: dict[str, Any] | None = None) -> str:
         """`ready` when every seed's frozen excerpt is still its source's current text; one changed seed is `stale`."""
@@ -1047,10 +1082,11 @@ class Store:
                 "UPDATE researches SET current_scope_revision = ?, version = version + 1, updated_at = ? WHERE id = ?",
                 (revision, now(), research_id),
             )
-            # The question is unchanged: the built-in model's English sentence goes with it (slice 21).
+            # The question is unchanged: the person's English sentence goes with it (slice 21); a model's is not copied (D149).
             self.conn.execute(
                 "INSERT INTO scope_english_questions (research_id, scope_revision, text, origin, created_at)"
-                " SELECT research_id, ?, text, origin, ? FROM scope_english_questions WHERE research_id = ? AND scope_revision = ?",
+                " SELECT research_id, ?, text, origin, ? FROM scope_english_questions WHERE research_id = ? AND scope_revision = ?"
+                " AND origin != 'model'",
                 (revision, now(), research_id, scope["revision"]))
             self._event(research_id, "seed_selected", {"scope_revision": revision,
                                                        "source_version_id": seeds[0]["source_version_id"],

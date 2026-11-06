@@ -447,6 +447,9 @@ class ScopeRevision(BaseModel):
     steering: str | None = Field(default=None, max_length=2000)
     expected_version: int
     key_terms: str | None = Field(default=None, max_length=500)  # left out, the revision keeps the previous terms
+    # The person's English sentence for the new revision (D149); left out, a person's sentence of an unchanged question
+    # carries over; '' writes none, so a model translates the new revision.
+    english_question: str | None = Field(default=None, max_length=english_question.MAX_CHARS)
 
 
 class ScopeWithdrawal(BaseModel):
@@ -1967,8 +1970,14 @@ def create_app(
     @app.post("/api/researches/{research_id}/scope")
     async def revise_scope(research_id: str, body: ScopeRevision, request: Request) -> dict[str, Any]:
         store = store_of(request)
+        sentence = None if body.english_question is None else " ".join(body.english_question.split())
+        if sentence and english_question.is_english(body.question, store.scope(research_id).get("language_hint")):
+            sentence = ""  # an English question is searched as written; the sentence would never be read (D103)
+        if sentence and not english_question.is_english(sentence):
+            raise HTTPException(422, "The sentence does not read as English")
         try:
-            store.revise_scope(research_id, body.expected_version, body.question, body.steering, body.key_terms)
+            store.revise_scope(research_id, body.expected_version, body.question, body.steering, body.key_terms,
+                               english_question=sentence)
         except statement.StatementTooLong as exc:  # a statement research's revised sentence keeps the same limit
             raise HTTPException(422, str(exc)) from exc
         return research_view(store, research_id)

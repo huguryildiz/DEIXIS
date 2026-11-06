@@ -43,6 +43,8 @@ def _tasks(effort: str, reading_on: bool) -> list[dict[str, Any]]:
     answer_chars = (passages // 2 * PASSAGE_CHARS[0], passages * PASSAGE_CHARS[1])
     tasks = [
         ("research_title", "answer", (1, 1), (1000, 6000), (30, 150), True),
+        # Only a question that is not in English and has no key terms is translated (D149).
+        ("question_translation", "literature", (0, 1), (300, 1500), (20, 200), True),
         ("vocabulary_labels", "literature", (0, 3), (500, 2000), (100, 600), False),
         ("search_query", "literature", (1, 2), (1000, 4000), (200, 1200), True),
         ("criterion_proposal", "literature", (0, 3), (500, 2500), (150, 800), True),

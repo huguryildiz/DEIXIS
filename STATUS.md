@@ -1,6 +1,6 @@
 # DEIXIS durumu
 
-**Son güncelleme:** 26 Ekim 2026. Kararlar [docs/decisions.csv](docs/decisions.csv), ölçümler [docs/benchmark.md](docs/benchmark.md). Ölçüm ayrıntılarıyla uzun hali Git geçmişinde (commit c3ec6ded).
+**Son güncelleme:** 6 Kasım 2026. Kararlar [docs/decisions.csv](docs/decisions.csv), ölçümler [docs/benchmark.md](docs/benchmark.md). Ölçüm ayrıntılarıyla uzun hali Git geçmişinde (commit c3ec6ded).
 
 ## Neredeyiz?
 
@@ -15,6 +15,8 @@ Uygulama çalışıyor. Son haftalarda eklenenlerin çoğu gerçek kullanımda d
 - Denklemler Codex'le de okunuyor ve daha hızlı; daha çok denklem bulunuyor (D134, D136, D138, D139, D142).
 - Tabloda her kaynağın okunma derinliği yazıyor; rapor kaynakları adıyla anıyor (D140, D143).
 - Görsel kontrolden düzeltmeler: kendi özeti olmayan sürüm diğer sürümün özetini gösteriyor; "Add to chat" yalnız cevapta; birkaç ekran sadeleşti (D146, D147).
+
+- Türkçe (İngilizce olmayan) soru artık durmuyor: model soruyu tek İngilizce cümleye çeviriyor, arama kelimeleri o cümleden seçiliyor; cümle plan adımında görünüyor ve düzeltilebiliyor. Çevirinin arama kalitesine etkisi ölçülmedi (D149).
 
 **Ne kadar biliyoruz**
 

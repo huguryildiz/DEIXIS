@@ -14,7 +14,7 @@ import { REPORT_HEADINGS } from '../review/reportHeadings'
 import { scrollBehavior } from '../lib/motion'
 import { Button } from '@/components/ui/button'
 import { RunUsageBox } from './usage'
-import { MODEL_DOWN, roleOfTask, stoppedRole } from './modelDown'
+import { modelDownPause, roleOfTask, stoppedRole } from './modelDown'
 import { byRank, OpenAllButton, WorkRows } from './RunCards'
 import { includedReading } from './includedReading'
 
@@ -74,7 +74,7 @@ function phaseOf(kind: string): PhaseKey | null {
   if (kind === 'model:report_review') return 'assembly'
   if (kind === 'model:search_plan' || kind === 'model:search_query') return 'plan'
   // An sw run plans its search in code before it searches; those steps are its plan phase.
-  if (['code:vocabulary', 'model:vocabulary_labels', 'model:criterion_proposal', 'code:criterion', 'code:protocol_approval'].includes(kind)) return 'plan'
+  if (['code:vocabulary', 'model:question_translation', 'model:vocabulary_labels', 'model:criterion_proposal', 'code:criterion', 'code:protocol_approval'].includes(kind)) return 'plan'
   if (kind.startsWith('provider_search')) return 'search'
   if (kind === 'model:screening') return 'screen'
   // An sw run screens abstracts in two steps: code classifies every record, then the model proposes.
@@ -152,7 +152,7 @@ const troubled = (s: Step) => s.status === 'failed' || s.status === 'outcome_unk
 const plural = (n: number, one: string, many: string, vars: Record<string, string | number> = {}) => t(n === 1 ? one : many, { n, ...vars })
 const compact = (n: number) => new Intl.NumberFormat(uiLocale(), { notation: 'compact', maximumFractionDigits: 1 }).format(n)
 const tally = (values: string[]) => { const counts = new Map<string, number>(); values.forEach(v => counts.set(v, (counts.get(v) ?? 0) + 1)); return [...counts] }
-export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, queueCount = 0, onOpenQueue, onOpenPdfs, onOpenFunnel, onEditPlan, onControlRun, onChooseModel, onRewrite, onOpenPassage, onOpenSource, onOpenSourceList, busy = false }: {
+export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onGiveKeyTerms, onReviseQuestion, onChooseCodeQuery, queueCount = 0, onOpenQueue, onOpenPdfs, onOpenFunnel, onEditPlan, onControlRun, onChooseModel, onRewrite, onOpenPassage, onOpenSource, onOpenSourceList, busy = false }: {
   view: ResearchView; emptyText: string; latestAnswer: ReactNode; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
   // Resume run and Cancel run of the notice under a stopped run's steps (R18); Pause stays in the topbar.
@@ -172,6 +172,8 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   busy?: boolean
   // The way out of a `key_terms_needed` stop: the revision form in the question bubble, on its key-terms field.
   onGiveKeyTerms?: () => void
+  // "Edit" beside the English sentence a search used (D149): the revision form in the question bubble, on its question.
+  onReviseQuestion?: () => void
   // The way on after the model could not write the query: search with the code's query alone (D92).
   onChooseCodeQuery?: (run: Run) => Promise<void>
   // An sw research's works awaiting a person, named once under the latest reading run (slice 17).
@@ -206,7 +208,7 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   return <>
   <div className={`chat${runs.length ? '' : ' is-empty'}`}>
     {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} keepOpen={run.id === latestAnswerRun || run.id === latestDiscovery}
-      modelText={modelText} onRetryFailedSearches={onRetryFailedSearches} onGiveKeyTerms={onGiveKeyTerms} onChooseCodeQuery={onChooseCodeQuery}
+      modelText={modelText} onRetryFailedSearches={onRetryFailedSearches} onGiveKeyTerms={onGiveKeyTerms} onReviseQuestion={onReviseQuestion} onChooseCodeQuery={onChooseCodeQuery}
       onControlRun={onControlRun} onChooseModel={onChooseModel} onRewrite={onRewrite} onOpenPdfs={onOpenPdfs} onOpenFunnel={onOpenFunnel} onEditPlan={onEditPlan} onOpenPassage={onOpenPassage} onOpenSource={onOpenSource} onOpenSourceList={onOpenSourceList} busy={busy}
       queueLine={run.id === (latestDiscovery ?? lastReading) && queueCount > 0 && onOpenQueue ? { count: queueCount, open: onOpenQueue } : null}>
       {view.answers[0]?.run_id === run.id ? latestAnswer : null}
@@ -218,10 +220,11 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   </>
 }
 
-function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSearches, onGiveKeyTerms, onChooseCodeQuery, onControlRun, onChooseModel, onRewrite, onOpenPdfs, onOpenFunnel, onEditPlan, onOpenPassage, onOpenSource, onOpenSourceList, busy, queueLine = null, children }: {
+function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSearches, onGiveKeyTerms, onReviseQuestion, onChooseCodeQuery, onControlRun, onChooseModel, onRewrite, onOpenPdfs, onOpenFunnel, onEditPlan, onOpenPassage, onOpenSource, onOpenSourceList, busy, queueLine = null, children }: {
   run: Run; view: ResearchView; now: number; latest: boolean; keepOpen: boolean; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
   onGiveKeyTerms?: () => void
+  onReviseQuestion?: () => void
   onChooseCodeQuery?: (run: Run) => Promise<void>
   onControlRun?: (run: Run, action: 'pause' | 'resume' | 'cancel') => void
   onChooseModel?: (run: Run, role: ModelRole, opener: HTMLElement, review?: { card: ReviewCard; kind: ReviewTargetKind }) => void
@@ -913,6 +916,13 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       const queries = [...new Map((approved?.queries ?? []).map(q => [q.query_text, q])).values()]
       // A word the frozen plan records as carried by no sent query (D26) is named as not searched, with the stored reason.
       const unsearched = terms.filter(term => term.searched === false)
+      // A question not in English gets its search words from its English sentence (D149): the model's, with the model
+      // its step stored, or the person's own. "Edit" opens the revision form; the frozen plan itself never changes.
+      const english = group.find(s => s.kind === 'code:vocabulary')?.output?.english_question
+      const translator = english?.model
+      if (english) parts.push(<div key="english-search" className="step-row"><span>{t('English sentence for the search')}</span><span className="step-row-text" dir="auto">“{english.text}”
+        {english.origin === 'model' ? translator?.model && <> · <ModelName connection={translator.connection} text={modelText(translator.model, translator.effort ?? null)} /></> : <> · {t('your sentence')}</>}
+        {latestDiscovery && onReviseQuestion && <> · <button type="button" className="step-link" onClick={onReviseQuestion}>{t('Edit')}</button></>}</span></div>)
       if (terms.length) parts.push(<div key="words" className="step-words"><span className="step-words-label">{t('Search words')}</span><span className="step-words-list">{terms.map(term => <span key={term.phrase} className={term.searched === false ? 'step-word word-unsearched' : 'step-word'}>{term.phrase}</span>)}</span></div>)
       if (unsearched.length) parts.push(<div key="unsearched" className="step-row"><span>{t('Words not searched')}</span><span className="step-row-text">{unsearched.map(term => t('{word}: {reason}', { word: term.phrase, reason: wordLeftOutText(term.left_out ?? '') })).join(' · ')}</span></div>)
       // Each provider gets its own query text; with more than one provider the row names whose query it is.
@@ -924,7 +934,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         <code className="step-query-text">{queryParts(query.query_text)}</code></div>))
       if (approved?.criterion?.criterion) parts.push(<div key="criterion" className="step-row"><span>{t('Inclusion criterion')}</span><span className="step-row-text">{approved.criterion.criterion}</span></div>)
       // The English sentence the semantic search sent, and the PDFs that guided the search (§2.2), for the current question.
-      if (latestDiscovery && view.semantic?.english_question?.text) parts.push(<div key="english" className="step-row"><span>{t('English question for the semantic search')}</span><span className="step-row-text">{view.semantic.english_question.text}</span></div>)
+      if (latestDiscovery && view.semantic?.english_question?.text && view.semantic.english_question.text !== english?.text) parts.push(<div key="english" className="step-row"><span>{t('English question for the semantic search')}</span><span className="step-row-text">{view.semantic.english_question.text}</span></div>)
       if (latestDiscovery && view.scope.seeds.length) parts.push(<div key="seeds" className="step-seeds"><span>{t('PDFs guiding the search')}</span>
         {view.scope.seeds.map(seed => row(seed.title, seedUseText(seed.use), seed.source_version_id))}</div>)
       // "Edit plan" (mockup step detail) on the current question's latest search only: the panel shows that revision's plan.
@@ -1068,7 +1078,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const selectionStop = run.status === 'paused' && run.pause_reason === 'selection_changed'
   // A model that did not answer (R20): Resume run reads "Retry this step" (it sends the stopped step again), and the
   // person may move the role to another model first; the changes made since the stop are listed on the notice.
-  const modelDown = run.status === 'paused' && MODEL_DOWN.has(run.pause_reason ?? '')
+  const modelDown = run.status === 'paused' && modelDownPause(run)
   const changesSinceStop = modelDown ? (view.model_changes ?? []).filter(change => change.changed_at > run.updated_at) : []
   const vocabularyEnd = run.status === 'failed' && (run.pause_reason === 'vocabulary_too_broad' || run.pause_reason === 'vocabulary_empty')
   // A live run is a progress card: the phase now running names its icon, the bar shows the stage reached, and the phases
@@ -1227,7 +1237,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         <div className="notice-actions">
           {resumable && onControlRun && <Button size="sm" disabled={busy} onClick={() => onControlRun(run, 'resume')}>{modelDown ? <RotateCw size={14} aria-hidden /> : <Play size={14} aria-hidden />}{t(modelDown ? 'Retry this step' : 'Resume run')}</Button>}
           {modelDown && resumable && onChooseModel && (run.kind !== 'review' || ownerReview) && <Button variant="outline" size="sm" className="notice-ghost" disabled={busy} aria-haspopup="dialog" onClick={e => onChooseModel(run, stoppedRole(run), e.currentTarget, run.kind === 'review' && ownerReview ? ownerReview : undefined)}><Cpu size={14} aria-hidden />{t(run.kind === 'review' ? 'Review again with another model' : 'Choose another model')}</Button>}
-          {/* Code does not translate a question, so this stop is answered in the revision form and nowhere else (SW2.1). */}
+          {/* The question could not be translated (D149): Resume asks the model again; the revision form takes English key terms (SW2.1). */}
           {quotaPause && addOpenAlexKey}
           {run.pause_reason === 'key_terms_needed' && onGiveKeyTerms && <Button variant="outline" size="sm" className="notice-ghost" onClick={onGiveKeyTerms}>{t('Give the English key terms')}</Button>}
           {/* Resume asks the model once more while a try is left; this button never asks it again (D92). */}

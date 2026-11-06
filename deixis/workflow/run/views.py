@@ -1036,7 +1036,9 @@ def semantic_view(store: Store, research_id: str, scope: dict[str, Any]) -> dict
         arm = "on"
     return {"provider": provider, "stored_model": stored_model, "arm": arm,
             "english_question": {"text": row["text"], "origin": row["origin"]} if row else None,
-            "needs_english_question": needs}
+            "needs_english_question": needs,
+            # Whether the search words are read from the question itself; else from the English sentence (D149).
+            "question_english": english_question_rules.is_english(scope["question"], scope.get("language_hint"))}
 
 
 def _given_depth(given: dict[str, Any]) -> dict[str, int]:

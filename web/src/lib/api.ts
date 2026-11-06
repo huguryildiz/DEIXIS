@@ -175,6 +175,8 @@ export type Step = {
     image_pages?: number[]; blank_pages?: number[]; asset_id?: string; outcome?: 'current' | 'rejected' | 'unchanged' | 'file_busy'; rejection_reason?: string | null
     // The fast chain's seed steps: how many works it started from (their reference lists stay out of the view).
     seed_count?: number
+    // The vocabulary step of a question not in English: the English sentence its words came from (D149).
+    english_question?: { text: string; origin: 'user' | 'question' | 'model'; model?: { connection: string; model: string | null; effort: string | null } | null }
     // The full-text retrieval summary (D83), also written by a discovery run that fetched beside its screening (17a).
     fetched?: number
     // An embedding step (slice 21): the model it froze, what it read from the store, what it still misses, its 429 waits,
@@ -780,7 +782,9 @@ export type ResearchView = {
 }
 export type SemanticArm = {
   provider: SemanticSearchProvider; stored_model: string | null; arm: 'on' | 'off' | 'english_question_missing' | 'not_installed'
-  english_question: { text: string; origin: 'user' | 'question' } | null; needs_english_question: boolean
+  english_question: { text: string; origin: 'user' | 'question' | 'model' } | null; needs_english_question: boolean
+  // False: the search words come from the English sentence, not the question (D149).
+  question_english?: boolean
 }
 export type ResearchSummary = {
   id: string; title: string; question: string; version: number; source_scope: SourceScope; effort: Effort; last_run_status: RunStatus | null
@@ -1544,8 +1548,10 @@ export const api = {
     request<AuditResult>(`/api/researches/${id}/audit/${sourceId}/undo`, json('POST', { audit_token: auditToken })),
   effortLimits: (leaving?: AbortSignal) => read<EffortLimits>('/api/effort-limits', leaving),
   activityRuns: (id: string) => request<ActivityRuns>(`/api/researches/${encodeURIComponent(id)}/activity-runs`),
-  reviseScope: (id: string, question: string, expectedVersion: number, keyTerms?: string | null) =>
-    request<ResearchView>(`/api/researches/${id}/scope`, json('POST', { question, expected_version: expectedVersion, key_terms: keyTerms ?? null })),
+  // englishQuestion (D149): undefined leaves the sentence rule as it is, '' writes none (a model translates), text is the person's.
+  reviseScope: (id: string, question: string, expectedVersion: number, keyTerms?: string | null, englishQuestion?: string) =>
+    request<ResearchView>(`/api/researches/${id}/scope`, json('POST', { question, expected_version: expectedVersion, key_terms: keyTerms ?? null,
+      ...(englishQuestion === undefined ? {} : { english_question: englishQuestion }) })),
   // Withdraw the current question revision while nothing was made under it; the research goes back to the one before (D67).
   withdrawScope: (id: string, revision: number, expectedVersion: number) =>
     request<ResearchView>(`/api/researches/${id}/scope/withdraw`, json('POST', { revision, expected_version: expectedVersion })),

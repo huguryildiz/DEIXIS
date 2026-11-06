@@ -702,4 +702,22 @@ ALTER TABLE scope_revisions ADD COLUMN statement_field TEXT;
 -- included-source tables (`db.check_schema_known`).
 SELECT 1;
 """),
+    17: Step("0017_model_english_question.sql", False, """\
+-- D149: a question that is not English and has no key terms is translated by a model into one English sentence, stored
+-- as the revision's English sentence with the new origin `model`. SQLite cannot change a CHECK in place, so the table
+-- is rebuilt (SQLite's 12-step procedure) with every row copied unchanged by column name and the origin list widened by
+-- that one value. No other table references it and no index or trigger reads it, so foreign keys stay on.
+CREATE TABLE scope_english_questions_new (
+  research_id TEXT NOT NULL REFERENCES researches(id),
+  scope_revision INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('user', 'question', 'model')),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (research_id, scope_revision)
+);
+INSERT INTO scope_english_questions_new (research_id, scope_revision, text, origin, created_at)
+  SELECT research_id, scope_revision, text, origin, created_at FROM scope_english_questions;
+DROP TABLE scope_english_questions;
+ALTER TABLE scope_english_questions_new RENAME TO scope_english_questions;
+"""),
 }

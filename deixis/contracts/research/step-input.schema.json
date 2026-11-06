@@ -1011,6 +1011,7 @@
         "cell_extraction",
         "table_columns",
         "research_title",
+        "question_translation",
         "vocabulary_labels",
         "criterion_proposal",
         "search_query",

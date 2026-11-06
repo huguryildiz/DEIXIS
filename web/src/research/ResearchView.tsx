@@ -663,11 +663,11 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // revision is unchanged the research version may move (a rename); the backend's expected_version still refuses a change
   // this view has not received yet.
   const reviseConflict = revising && !savingRevision && revising.revision !== view.research.current_scope_revision ? view.research.current_scope_revision : null
-  const saveRevision = async (text: string, terms: string | null) => {
+  const saveRevision = async (text: string, terms: string | null, english?: string) => {
     if (!revising || revising.revision !== view.research.current_scope_revision) return
     setSavingRevision(true)
     let opened: ResearchView | null = null
-    const saved = await act(async () => { opened = await api.reviseScope(id, text, view.research.version, terms) })
+    const saved = await act(async () => { opened = await api.reviseScope(id, text, view.research.version, terms, english) })
     setSavingRevision(false)
     if (saved && opened) {
       endRevise()
@@ -876,9 +876,10 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     <div className="research-body thread-inner">
     {earlierRevision > 0 && <EarlierRevision key={earlierRevision} researchId={id} revision={earlierRevision} intent={view.research.intent} answer={earlierReport} onOpenReport={setOpenReportId} />}
     {revising
-      ? <RevisionForm question={view.scope.question} keyTerms={view.scope.key_terms ?? ''} nextRevision={view.research.next_scope_revision} focus={revising.focus} focusRequest={revising.ask}
+      ? <RevisionForm question={view.scope.question} keyTerms={view.scope.key_terms ?? ''}
+        englishQuestion={view.semantic && view.semantic.question_english === false ? view.semantic.english_question?.text ?? '' : null} nextRevision={view.research.next_scope_revision} focus={revising.focus} focusRequest={revising.ask}
         conflict={reviseConflict} onRebase={() => setRevising(form => (form ? { ...form, revision: view.research.current_scope_revision } : form))}
-        disabled={busy || active} onSubmit={(text, terms) => { void saveRevision(text, terms) }} onCancel={endRevise} />
+        disabled={busy || active} onSubmit={(text, terms, english) => { void saveRevision(text, terms, english) }} onCancel={endRevise} />
       : <QuestionBubble question={view.scope.question} sourceScope={view.scope.source_scope} intent={view.research.intent} createdAt={view.scope.created_at} revision={view.research.current_scope_revision} />}
     {/* The evidence boundaries stay separate counts (CLAUDE.md); each one opens the panel that can show it. Scope and depth close the line. */}
     <div className="session-meta research-facts" title={t('Unique, included, given and cited count works: versions of one work count once. “Given to the model” counts works whose passages were sent in the latest answer step; it is not a full-text reading claim.')}>
@@ -900,6 +901,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         onRetryFailedSearches={async target => { await act(() => api.controlRun(target.id, 'retry_failed'), t('Failed searches queued again.')) }}
         onChooseCodeQuery={async target => { await act(() => api.chooseCodeQuery(target.id), t('The run searches with the query built from the question’s words.')) }}
         onGiveKeyTerms={() => reviseQuestion('terms')}
+        onReviseQuestion={() => reviseQuestion('question')}
         queueCount={queueCount} onOpenQueue={showQueue} onOpenPdfs={() => openPanel('pdfs')} onOpenFunnel={() => openPanel('funnel')}
         onOpenSource={svid => setPdfTarget({ assetId: null, sourceVersionId: svid, view: 'text' })}
         onOpenSourceList={filter => showSources(filter)}

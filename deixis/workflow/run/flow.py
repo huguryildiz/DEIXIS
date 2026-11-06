@@ -605,6 +605,10 @@ class ResearchFlow:
         seed_context = await self._seed_match(run, scope)
         # The first search's words come from code, so no model runs before the search (SW2.3).
         vocabulary, queries = await self._vocabulary(run, scope)
+        consumer = self._fast_consumers[run_id]
+        if consumer.embedder is not None and consumer.query is None and self.store.english_question(rid, revision):
+            # The vocabulary step has just stored the model's English sentence (D149): the built-in model reads it too.
+            self._fast_consumers[run_id] = Consumer(self, run, scope)
         vocabulary, queries = await self._search_query(run, scope, vocabulary, queries)
         vocabulary, queries = await self._source_routing(run, scope, vocabulary, queries)
         criterion = await self._criterion(run, scope, vocabulary)
@@ -717,7 +721,8 @@ class ResearchFlow:
         """The sw workflow's search words and queries, taken from the question by code (SW2).
 
         A step that already succeeded returns its stored output whole, so a resumed run sends no count request twice
-        and searches exactly the queries the first run compiled.
+        and searches exactly the queries the first run compiled. A question that is not English and has no key terms
+        is read through the revision's English sentence (`_english_question`, D149).
         """
         run_id, revision, budget = run["id"], run["scope_revision"], run["budget"]
         step = self.store.step(run_id, "vocabulary", "code:vocabulary")
@@ -730,9 +735,12 @@ class ResearchFlow:
                                                 statement=statement)
         except ValueError as exc:
             self._pause(run_id, "key_terms_needed", {"error": str(exc)})
+        english = None
         if extraction is None:
-            # Code does not translate. The run waits for the user's English terms in a new scope revision (SW2.1).
-            self._pause(run_id, "key_terms_needed", {"language": scope.get("language_hint") or "other"})
+            # Code does not translate: a model writes the question as one English sentence and code picks the words from
+            # it (D149). Without that sentence the run waits for the user's English terms (SW2.1).
+            english = await self._english_question(run, scope)
+            extraction = question_words.extract(english["text"], "en", None, statement=statement)
         extraction, labelling = await self._vocabulary_labels(run, scope, extraction)
         if statement and scope.get("statement_field") and extraction.block_assignment != "user":
             # The field the person typed leads the setting block (R5); it is not labelled, the person placed it.
@@ -740,12 +748,46 @@ class ResearchFlow:
         self.store.start_step(step["id"])
         built = await vocabulary_rules.build_vocabulary(extraction, self._count_probe(scope, run_id))
         built["labelling"] = labelling
+        if english is not None:
+            # The sentence the words came from, for the transcript, with the model that wrote it as its step stored it
+            # (a later run of the revision reads the sentence back and calls none); every model step reads the question.
+            built["english_question"] = {"text": english["text"], "origin": english["origin"], "model": (
+                self.store.english_question_model(run["research_id"], revision) if english["origin"] == "model" else None)}
         self._checkpoint(run_id, revision)
         queries = query_compiler.compile_block_queries(built, _planned_providers(scope), budget["max_provider_requests"])
         self.store.finish_step(step["id"], "succeeded", output={
             "vocabulary": built, "queries": queries, "query_compiler": query_compiler.BLOCKS_VERSION})
         # The counts are stored before the run stops, so resuming re-reads them instead of paying for them again.
         return self._code_proposed(run_id, built, queries)
+
+    async def _english_question(self, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
+        """The revision's English sentence for a question that is not English and has no key terms (D149).
+
+        A sentence already stored for the revision is used as it is: the person's own outranks any model, and a model's
+        written by an earlier or interrupted run is read back, so no model is asked twice. Otherwise one model call, with
+        the one repair `_model_step` allows, under the usual spend gate; its step, once succeeded, is read back on resume
+        too. A call that fails or stays invalid stops the run with `key_terms_needed`, its reason in the detail: no
+        word is searched that neither the person nor a valid translation gave.
+        """
+        run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
+        stored = self.store.english_question(rid, revision)
+        if stored is not None:
+            return stored
+        failure: dict[str, Any] | None = None
+        try:
+            # `optional` only so a failure is caught here and named below; the run never goes on without the sentence.
+            answer = await self._model_step(run, scope, "question_translation", "question_translation", optional=True)
+        except OptionalStepFailed as exc:
+            failure = {"reason": exc.reason, "detail": exc.detail}
+        else:
+            if answer.get("invalid"):
+                failure = {"reason": "invalid_model_output", "detail": answer.get("issues")}
+        if failure is not None:
+            self._pause(run_id, "key_terms_needed", {"language": scope.get("language_hint") or "other",
+                                                     "translation": failure})
+        self._checkpoint(run_id, revision)
+        text = " ".join(answer["result"]["english_question"].split())
+        return self.store.save_model_english_question(rid, revision, text, run_id)
 
     def _code_proposed(self, run_id: str, built: dict[str, Any], queries: list[dict[str, Any]]
                        ) -> tuple[dict[str, Any], list[dict[str, Any]]]:

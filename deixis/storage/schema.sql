@@ -1,9 +1,9 @@
--- The whole library schema at version 16 (D119). A new library is made from this file in one transaction and
--- records versions 1 to 16; a library at an older version is brought here by the steps in storage/upgrades.py.
+-- The whole library schema at version 17 (D119). A new library is made from this file in one transaction and
+-- records versions 1 to 17; a library at an older version is brought here by the steps in storage/upgrades.py.
 -- A schema change edits this file, raises the version below and adds the upgrade step with that number.
--- Objects are in the order the old migration chain (0001_schema.sql to 0016_abstract_rows.sql) created them: the
--- triggers on one table fire in that order.
--- deixis:schema-version 16
+-- Objects are in the order the old migration chain (0001_schema.sql to 0016_abstract_rows.sql) and the upgrade steps
+-- after it created them: the triggers on one table fire in that order.
+-- deixis:schema-version 17
 
 CREATE TABLE scope_revisions (
   research_id TEXT NOT NULL REFERENCES researches(id),
@@ -653,15 +653,6 @@ CREATE TABLE person_pdf_requests (
   unread_reason TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
-);
-
-CREATE TABLE scope_english_questions (
-  research_id TEXT NOT NULL REFERENCES researches(id),
-  scope_revision INTEGER NOT NULL,
-  text TEXT NOT NULL,
-  origin TEXT NOT NULL CHECK (origin IN ('user', 'question')),
-  created_at TEXT NOT NULL,
-  PRIMARY KEY (research_id, scope_revision)
 );
 
 CREATE TABLE arxiv_sources (
@@ -2446,3 +2437,12 @@ CREATE INDEX pdf_discovery_source ON pdf_discovery_runs(source_version_id, creat
 CREATE UNIQUE INDEX pdf_discovery_attempt ON pdf_discovery_runs(attempt_id) WHERE attempt_id IS NOT NULL;
 
 CREATE INDEX pdf_candidates_source ON pdf_candidates(source_version_id, discovered_at);
+
+CREATE TABLE "scope_english_questions" (
+  research_id TEXT NOT NULL REFERENCES researches(id),
+  scope_revision INTEGER NOT NULL,
+  text TEXT NOT NULL,
+  origin TEXT NOT NULL CHECK (origin IN ('user', 'question', 'model')),
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (research_id, scope_revision)
+);

@@ -122,6 +122,11 @@ def valid_response(si: dict[str, Any]) -> str:
         })
     if task == "research_title":
         return json.dumps(envelope(si, "deixis.research_title.v1") | {"title": "Synthetic short research title"})
+    if task == "question_translation":
+        # SYNTHETIC and field-independent: a fixed English question that code can pick search words from.
+        return json.dumps(envelope(si, "deixis.question_translation.v1") | {
+            "english_question": "What is the effect of packet size on energy consumption in wireless sensor networks?",
+        })
     if task == "vocabulary_labels":
         return json.dumps(envelope(si, "deixis.vocabulary_labels.v1") | {
             "labels": [{"phrase": p["phrase"], "block": p["rule_block"]} for p in si["vocabulary_target"]["phrases"]],

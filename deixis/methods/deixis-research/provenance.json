@@ -219,6 +219,13 @@
    "derived_from": [],
    "date": "2026-10-18",
    "change": "Reverse citation search R2: a paragraph says that in a statement research the criterion, search-term, abstract-screening and full-text steps get a user_steering line naming the question a claim, and that they judge a work by the claim's topic, not by whether it agrees. Not measured."
+  },
+  {
+   "deixis_file": "references/question-translation.md",
+   "derived_from": [],
+   "date": "2026-11-06",
+   "decision": "D149",
+   "change": "Written for DEIXIS, not upstream text. Loaded only for question_translation: translate a question that is not in English into one faithful English sentence in the field's English terms, adding, narrowing and explaining nothing, with no rationale. Code picks the search words from that sentence; every other step still reads the question as written. SKILL.md routes the new task_type. Not measured; the wording was tried against no model."
   }
  ],
  "phrasebank": {

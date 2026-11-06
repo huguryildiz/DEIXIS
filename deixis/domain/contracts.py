@@ -25,6 +25,7 @@ from deixis.domain.lineage import MAX_WHAT_CHANGED, valid_what_changed
 from deixis.paths import CONTRACTS_DIR
 from deixis.workflow.search.criterion import (MAX_PHRASE_WORDS, PARTS_PER_PROPOSAL, PHRASES_PER_PART,
                                        holds as criterion_holds, norm as normalize_phrase)
+from deixis.workflow.search import english_question
 from deixis.workflow.features.tables.tables import MAX_COLUMNS_PER_CALL, InvalidTableInput, check_value, column_spec
 
 SCHEMA_FILES = {
@@ -35,6 +36,7 @@ SCHEMA_FILES = {
     "EvidenceCellDraft": "evidence-cell-draft.schema.json",
     "TableColumnProposal": "table-column-proposal.schema.json",
     "ResearchTitle": "research-title.schema.json",
+    "QuestionTranslation": "question-translation.schema.json",
     "VocabularyLabels": "vocabulary-labels.schema.json",
     "CriterionProposal": "criterion-proposal.schema.json",
     "SearchQuery": "search-query.schema.json",
@@ -62,6 +64,7 @@ SCHEMA_VERSIONS = {
     "EvidenceCellDraft": "deixis.evidence_cell_draft.v1",
     "TableColumnProposal": "deixis.table_column_proposal.v1",
     "ResearchTitle": "deixis.research_title.v1",
+    "QuestionTranslation": "deixis.question_translation.v1",
     "VocabularyLabels": "deixis.vocabulary_labels.v1",
     "CriterionProposal": "deixis.criterion_proposal.v3",
     "SearchQuery": "deixis.search_query.v2",
@@ -89,6 +92,7 @@ TASK_OUTPUTS = {
     "cell_extraction": ("EvidenceCellDraft",),
     "table_columns": ("TableColumnProposal",),
     "research_title": ("ResearchTitle",),
+    "question_translation": ("QuestionTranslation",),
     "vocabulary_labels": ("VocabularyLabels",),
     "criterion_proposal": ("CriterionProposal",),
     "search_query": ("SearchQuery",),
@@ -1132,6 +1136,8 @@ def _semantic_checks(step_input: dict[str, Any], output_type: str, result: dict[
         _check_column_proposal(step_input, result, report)
     elif output_type == "ResearchTitle":
         _check_title(step_input, result, report)
+    elif output_type == "QuestionTranslation":
+        _check_question_translation(result, report)
     elif output_type == "VocabularyLabels":
         _check_vocabulary_labels(allow, result, report)
     elif output_type == "CriterionProposal":
@@ -2285,6 +2291,13 @@ def _check_title(step_input: dict[str, Any], draft: dict[str, Any], report: Vali
         report.issues.append(Issue("title_too_long", "/title", f"expected at most 15 words, got {words}"))
     if title and title == step_input["question"]["text"].strip():
         report.issues.append(Issue("title_copies_question", "/title", "rewrite the title from the question and sources"))
+
+
+def _check_question_translation(draft: dict[str, Any], report: ValidationReport) -> None:
+    """The sentence must read as English by the same rule the search words are read with (D149): code picks the words
+    from it, and a sentence it reads as another language would leave nothing to pick."""
+    if not english_question.is_english(draft["english_question"]):
+        report.issues.append(Issue("translation_not_english", "/english_question", "the sentence does not read as English"))
 
 
 def _check_vocabulary_labels(allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:

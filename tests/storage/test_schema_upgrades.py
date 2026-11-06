@@ -184,6 +184,24 @@ def test_a_failing_upgrade_step_is_undone_and_the_library_stays_at_its_version(t
     conn.close()
 
 
+def test_step_17_keeps_the_english_sentences_and_takes_a_models_one(tmp_path):
+    """D149: the rebuilt table keeps every sentence a person or a question wrote and now takes the origin `model`."""
+    conn = old_library(tmp_path / "library.sqlite", LAST_FILE)
+    fill(conn)
+    insert = "INSERT INTO scope_english_questions (research_id, scope_revision, text, origin, created_at) VALUES (?, ?, ?, ?, 'n')"
+    conn.execute(insert, ("res_SYNTHETIC", 1, "SYNTHETIC person sentence", "user"))
+    conn.execute(insert, ("res_SYNTHETIC", 2, "SYNTHETIC question as written", "question"))
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(insert, ("res_SYNTHETIC", 3, "SYNTHETIC model sentence", "model"))
+    before = conn.execute("SELECT * FROM scope_english_questions ORDER BY scope_revision").fetchall()
+    assert db.migrate(conn) == list(range(LAST_FILE + 1, CURRENT + 1))
+    assert conn.execute("SELECT * FROM scope_english_questions ORDER BY scope_revision").fetchall() == before
+    conn.execute(insert, ("res_SYNTHETIC", 3, "SYNTHETIC model sentence", "model"))
+    with pytest.raises(sqlite3.IntegrityError):
+        conn.execute(insert, ("res_SYNTHETIC", 4, "SYNTHETIC", "other"))
+    conn.close()
+
+
 def test_a_backup_of_an_older_library_restores_and_then_upgrades_with_its_paper(tmp_path):
     settings = Settings(data_dir=tmp_path / "data", port=8765)
     settings.data_dir.mkdir()

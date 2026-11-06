@@ -458,6 +458,34 @@
    }
   },
   {
+   "name": "question_translation_valid",
+   "step_input": "Q_question_translation",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.question_translation.v1",
+    "step_input_id": "sti_SYNTHQ0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "english_question": "SYNTHETIC: How does irrigation scheduling affect marketable yield in greenhouse tomato production?"
+   }
+  },
+  {
+   "name": "question_translation_not_english",
+   "step_input": "Q_question_translation",
+   "expect_ok": false,
+   "expect_codes": [
+    "translation_not_english"
+   ],
+   "output": {
+    "schema_version": "deixis.question_translation.v1",
+    "step_input_id": "sti_SYNTHQ0001",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "english_question": "SYNTHETIC: Sera domatesi üretiminde sulama zamanlaması pazarlanabilir verimi nasıl etkiler?"
+   }
+  },
+  {
    "name": "vocabulary_labels_valid",
    "step_input": "D_vocabulary_labels",
    "expect_ok": true,

@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from deixis.domain.vocabulary import extract
 from deixis.workflow.search.vocabulary import LABEL_RUNS
 from fakes import FakeAdapter, envelope, valid_response
+from deixis.models.adapter import ModelStepResult
 from test_vocabulary_flow import CountingOpenAlex, KEY_TERMS, app_for, start, store_at, wait
 
 
@@ -182,3 +183,108 @@ def test_two_runs_of_three_agreeing_put_the_models_block_in_the_query(tmp_path, 
     record = next(p for p in vocabulary["labelling"]["phrases"] if p["phrase"] == "distributed ledgers")
     assert record == {"phrase": "distributed ledgers", "rule_block": "claim", "block": "setting", "origin": "model",
                       "runs": ["claim", "setting", "setting"]}
+
+
+# ---- a question that is not English, translated by a model (D149) ------------------------------------------------
+
+TRANSLATED = json.loads(valid_response({"task_type": "question_translation", "step_input_id": "sti_x", "scope_revision": 1,
+                                        "skill_package_hash": "h"}))["english_question"]
+
+
+def translations(adapter):
+    return [si for si in adapter.calls if si["task_type"] == "question_translation"]
+
+
+def test_a_turkish_question_is_translated_once_and_the_run_searches_its_words(tmp_path, monkeypatch):
+    openalex, adapter = CountingOpenAlex(), FakeAdapter()
+    app = app_for(tmp_path, monkeypatch, openalex, adapter)
+
+    def pause_once(si):  # as the pause button does, while the translation is out: the run stops at its next checkpoint
+        if si["task_type"] == "question_translation" and len(translations(adapter)) == 1:
+            app.state.store.update_run(si["run_id"], event="run_pause_requested", status="pause_requested",
+                                       pause_reason="user_requested")
+    adapter.before = pause_once
+    with TestClient(app) as client:
+        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
+        rid, run_id = start(client, TURKISH)
+        _, run = wait(client, rid, run_id)
+        assert (run["status"], run["pause_reason"]) == ("paused", "user_requested")
+        assert client.post(f"/api/runs/{run_id}/resume").status_code == 200
+        view, run = wait(client, rid, run_id)
+    assert run["status"] == "completed", run
+    # Asked once: the resumed run read the succeeded step back instead of calling the model again.
+    assert len(translations(adapter)) == 1
+    sent = translations(adapter)[0]
+    assert sent["question"] == {"text": TURKISH, "language_hint": None}
+    assert not sent["candidates"] and not sent["sources"] and not sent["passages"]
+    # Every other model step still reads the question as written.
+    assert all(si["question"]["text"] == TURKISH for si in adapter.calls)
+    store = store_at(tmp_path)
+    assert {k: v for k, v in store.english_question(rid, 1).items() if k != "created_at"} == {"text": TRANSLATED, "origin": "model"}
+    vocabulary = stored_vocabulary(tmp_path, rid)
+    translator = vocabulary["english_question"].pop("model")
+    assert vocabulary["english_question"] == {"text": TRANSLATED, "origin": "model"}
+    assert (translator["connection"], translator["model"]) == ("fake", "fake-model")
+    assert "packet size" in [t["phrase"] for t in vocabulary["terms"]]
+    assert any(query and "packet" in query for query in openalex.searches), openalex.searches
+    step = next(s for s in run["steps"] if s["operation_key"] == "vocabulary")
+    assert step["output"] == {"english_question": {"text": TRANSLATED, "origin": "model", "model": translator}}
+
+    # A revision of the same question with the person's own sentence (D149): it is theirs for the new revision, the
+    # model's is not carried over, and the new revision's search asks no model to translate.
+    with TestClient(app) as client:
+        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
+        version = client.get(f"/api/researches/{rid}").json()["research"]["version"]
+        mine = "How do relay nodes change throughput in wireless mesh networks?"
+        revised = client.post(f"/api/researches/{rid}/scope", json={"question": TURKISH, "expected_version": version,
+                                                                     "english_question": mine})
+        assert revised.status_code == 200, revised.text
+        run_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+        wait(client, rid, run_id)
+    assert len(translations(adapter)) == 1
+    store = store_at(tmp_path)
+    assert (store.english_question(rid, 2)["text"], store.english_question(rid, 2)["origin"]) == (mine, "user")
+    assert store.latest_step_output(rid, "vocabulary", 2)["vocabulary"]["english_question"] == {
+        "text": mine, "origin": "user", "model": None}
+
+
+def test_the_persons_english_sentence_is_used_and_no_model_translates(tmp_path, monkeypatch):
+    adapter = FakeAdapter()
+    with TestClient(app_for(tmp_path, monkeypatch, CountingOpenAlex(), adapter)) as client:
+        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
+        created = client.post("/api/researches", json={"question": TURKISH, "model_connection": "fake",
+                                                       "requested_model": "fake-model", "effort": "quick"}).json()
+        rid = created["research"]["id"]
+        mine = "How do relay nodes change throughput in wireless mesh networks?"
+        saved = client.put(f"/api/researches/{rid}/english-question",
+                           json={"text": mine, "expected_version": created["research"]["version"]})
+        assert saved.status_code == 200, saved.text
+        run_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+        wait(client, rid, run_id)
+    assert translations(adapter) == []
+    vocabulary = stored_vocabulary(tmp_path, rid)
+    assert vocabulary["english_question"] == {"text": mine, "origin": "user", "model": None}
+    assert "relay nodes" in [t["phrase"] for t in vocabulary["terms"]]
+
+
+@pytest.mark.parametrize("failure", ["invalid", "down"])
+def test_a_translation_that_fails_stops_the_run_for_key_terms(tmp_path, monkeypatch, failure):
+    def answer(si):
+        if si["task_type"] == "question_translation":  # still not English after the one repair
+            return json.dumps(envelope(si, "deixis.question_translation.v1") | {"english_question": TURKISH})
+        return valid_response(si)
+
+    def down(si):
+        return ModelStepResult("failed", error="SYNTHETIC model connection is down") \
+            if si["task_type"] == "question_translation" else None
+    adapter = FakeAdapter(answer) if failure == "invalid" else FakeAdapter(fail=down)
+    openalex = CountingOpenAlex()
+    with TestClient(app_for(tmp_path, monkeypatch, openalex, adapter)) as client:
+        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
+        rid, run_id = start(client, TURKISH)
+        _, run = wait(client, rid, run_id)
+    assert (run["status"], run["pause_reason"]) == ("paused", "key_terms_needed"), run
+    assert run["error"]["translation"]["reason"] == ("invalid_model_output" if failure == "invalid" else "model_call_failed")
+    assert len(translations(adapter)) == (2 if failure == "invalid" else 1)
+    assert store_at(tmp_path).english_question(rid, 1) is None
+    assert not openalex.searches and not openalex.counts

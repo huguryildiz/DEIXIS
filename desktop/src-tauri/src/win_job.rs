@@ -12,13 +12,15 @@ use std::os::windows::ffi::OsStrExt;
 use std::os::windows::io::FromRawHandle;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use windows_sys::Win32::Foundation::{
     CloseHandle, SetHandleInformation, HANDLE, HANDLE_FLAG_INHERIT, INVALID_HANDLE_VALUE, WAIT_OBJECT_0,
 };
 use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
 use windows_sys::Win32::System::JobObjects::{
-    CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject, TerminateJobObject,
+    CreateJobObjectW, JobObjectBasicAccountingInformation, JobObjectExtendedLimitInformation, QueryInformationJobObject,
+    SetInformationJobObject, TerminateJobObject, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
 };
 use windows_sys::Win32::System::Pipes::CreatePipe;
@@ -69,9 +71,31 @@ impl Backend {
         Waiter(self.process.clone())
     }
 
-    /// End every process in the job: the backend and all its descendants.
-    pub fn terminate_job(&self) {
+    /// End every process in the job (the backend and all its descendants) and wait, at most `wait`, until the job is
+    /// empty: termination is asynchronous, and a restart must not race processes that still hold the library's locks.
+    /// True when no process is left.
+    pub fn terminate_job(&self, wait: Duration) -> bool {
         unsafe { TerminateJobObject(self.job.0, 1) };
+        let ends = Instant::now() + wait;
+        loop {
+            let mut info: JOBOBJECT_BASIC_ACCOUNTING_INFORMATION = unsafe { std::mem::zeroed() };
+            let ok = unsafe {
+                QueryInformationJobObject(
+                    self.job.0,
+                    JobObjectBasicAccountingInformation,
+                    &mut info as *mut _ as *mut core::ffi::c_void,
+                    std::mem::size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
+                    std::ptr::null_mut(),
+                )
+            };
+            if ok != 0 && info.ActiveProcesses == 0 {
+                return true;
+            }
+            if Instant::now() >= ends {
+                return false;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
     }
 }
 
@@ -331,7 +355,7 @@ mod tests {
         let spawned = spawn(&cmd(), &["/c", "ping", "-n", "60", "127.0.0.1"], env, None).expect("spawn");
         assert!(!spawned.backend.exited());
         let started = Instant::now();
-        spawned.backend.terminate_job();
+        assert!(spawned.backend.terminate_job(Duration::from_secs(5)), "the job still has processes");
         spawned.backend.waiter().wait();
         assert!(spawned.backend.exited());
         assert!(started.elapsed() < Duration::from_secs(5));

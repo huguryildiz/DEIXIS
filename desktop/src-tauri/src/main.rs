@@ -394,13 +394,14 @@ fn start(app: AppHandle) {
     if !running {
         return failed(stopped_before(&shell));
     }
-    if let (Some(window), Ok(url)) = (app.get_webview_window(MAIN), Url::parse(&format!("http://127.0.0.1:{port}/"))) {
-        let _ = window.navigate(url);
-    }
-    // The watcher may have shown "stopped" between the check above and this navigation: show it again then.
-    let gone = !shell.backend.lock().unwrap().as_ref().is_some_and(|b| b.generation == generation);
-    if gone && !shell.quitting.load(Ordering::SeqCst) {
-        show_local(&app, "stopped");
+    // Navigate while holding the backend slot: the exit watcher takes the same lock, so either it ran first (the slot
+    // no longer holds this generation, it showed "stopped", nothing is navigated) or it runs after this navigation and
+    // shows "stopped" then. A newer start (Restart) owns the slot too, so a stale start never covers its page.
+    let slot = shell.backend.lock().unwrap();
+    if slot.as_ref().is_some_and(|b| b.generation == generation && b.running) && shell.current(generation) {
+        if let (Some(window), Ok(url)) = (app.get_webview_window(MAIN), Url::parse(&format!("http://127.0.0.1:{port}/"))) {
+            let _ = window.navigate(url);
+        }
     }
 }
 
@@ -816,6 +817,8 @@ mod platform {
     pub const SIDECAR_EXE: &str = "deixis-backend.exe";
     /// Token shutdown, 8 s, then TerminateJobObject.
     pub const STOP_WAIT: Duration = super::SHUTDOWN_WAIT;
+    /// After TerminateJobObject: how long to wait for the job to be empty (termination is asynchronous).
+    const JOB_EMPTY_WAIT: Duration = Duration::from_secs(5);
 
     pub struct Sidecar(win_job::Backend);
 
@@ -844,7 +847,9 @@ mod platform {
             if !self.0.exited() {
                 eprintln!("DEIXIS: the backend did not finish in time; ending its job");
             }
-            self.0.terminate_job();
+            if !self.0.terminate_job(JOB_EMPTY_WAIT) {
+                eprintln!("DEIXIS: processes of the backend's job were still ending after {JOB_EMPTY_WAIT:?}");
+            }
         }
     }
 

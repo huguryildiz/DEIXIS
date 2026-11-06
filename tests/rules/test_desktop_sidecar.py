@@ -503,3 +503,10 @@ def test_a_known_launchers_late_child_is_killed_before_the_launcher_and_its_line
         if backend.poll() is None:
             backend.kill()
             backend.wait()
+
+
+def test_the_desktop_lines_are_ascii_so_a_windows_code_page_never_garbles_a_path(capsys):
+    # The shell reads the pipe as UTF-8; Windows writes stdout in the console code page (cp1254 on a Turkish system).
+    cli.emit({"event": "listening", "data_dir": "C:\\Users\\Uğur José\\AppData\\Local\\DEIXIS"})
+    line = capsys.readouterr().out
+    assert line.isascii() and json.loads(line)["data_dir"].endswith("Uğur José\\AppData\\Local\\DEIXIS")

@@ -6,7 +6,8 @@
     "windows": {
       "webviewInstallMode": { "type": "embedBootstrapper" },
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "template": "windows/installer.nsi"
       }
     }
   }

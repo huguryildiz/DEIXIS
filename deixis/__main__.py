@@ -184,7 +184,7 @@ EMITTED: list[str] = []  # the events this process has printed, so a start repor
 def emit(event: dict) -> None:
     """One JSON line on stdout, flushed at once: the shell waits for it."""
     EMITTED.append(event["event"])
-    sys.stdout.write(json.dumps(event, ensure_ascii=False) + "\n")
+    sys.stdout.write(json.dumps(event) + "\n")  # ASCII only: the pipe's code page (cp1254 on a Turkish Windows) never garbles a path
     sys.stdout.flush()
 
 

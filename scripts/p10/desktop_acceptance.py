@@ -635,9 +635,9 @@ def main() -> int:
                 exported = wait_for(lambda: press("Export", exact=True), 20, 1)
                 markdown = wait_for(lambda: press("Markdown"), 10, 0.5)
                 md = wait_for(lambda: sorted(downloads.glob("*.md")), 15)
-                # The Sources panel (the rail's Sources) and its "Download the N rows shown as CSV".
-                sources = wait_for(lambda: press("Sources"), 10, 0.5)
-                csv_pressed = wait_for(lambda: press("shown as CSV"), 10, 0.5)
+                # The evidence table's CSV from the same Export menu (an attached-PDF research has no Sources panel).
+                export_again = wait_for(lambda: press("Export", exact=True), 10, 0.5)
+                csv_pressed = wait_for(lambda: press("Comma-separated values"), 10, 0.5)
                 csv = wait_for(lambda: sorted(downloads.glob("*.csv")), 15)
                 (work / "download-texts.json").write_text(json.dumps(ui("texts", pid) or [], indent=1))
                 md_text = md[0].read_text(encoding="utf-8") if md else ""
@@ -645,7 +645,7 @@ def main() -> int:
                 shell_err = (work / "shell-download.err").read_text(encoding="utf-8", errors="replace")
                 row("download", bool(md and title in md_text and csv and "synthetic" in csv_text.lower()),
                     run=finished["status"], title=title, opened=bool(opened), export_pressed=bool(exported),
-                    markdown_pressed=bool(markdown), sources_pressed=bool(sources), csv_pressed=bool(csv_pressed),
+                    markdown_pressed=bool(markdown), export_again_pressed=bool(export_again), csv_pressed=bool(csv_pressed),
                     files=[p.name for p in downloads.glob("*")] if downloads.exists() else [],
                     report_bytes=len(md_text), csv_lines=len(csv_text.splitlines()),
                     shell_says=[line for line in shell_err.splitlines() if "Download" in line][:4], steps=steps[-3:])

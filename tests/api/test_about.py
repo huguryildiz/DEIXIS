@@ -35,7 +35,9 @@ def test_about_names_the_version_the_licence_and_the_source(served):
     assert body["version"] == about_routes.app_version() and body["version"] != "unknown"
     assert body["license"] == "AGPL-3.0-or-later"
     assert body["repo_url"] == "https://github.com/huguryildiz/DEIXIS"
-    assert body["source_url"] == body["repo_url"] and body["source_is_tag"] is False  # no version tag is known yet
+    tagged = body["version"] in about_routes.TAGGED_VERSIONS  # a released version links its tag, any other the repository
+    assert body["source_is_tag"] is tagged
+    assert body["source_url"] == (f"{body['repo_url']}/tree/v{body['version']}" if tagged else body["repo_url"])
     assert body["notices_available"] is True
 
 

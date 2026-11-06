@@ -21,7 +21,8 @@ PASS or MANUAL:
                  page's session cookie + CSRF header); a PUT without the header is refused 403
   second_launch  deixis-desktop.exe again exits 0, the DEIXIS process set is unchanged, the window is visible
   close_keeps    WM_CLOSE to the window hides it; every process stays; health still 200; a further launch shows it again
-  tray           the notification-area button "DEIXIS" found with UI Automation and its menu opened with a real click;
+  tray           the shell's notification icon found (Shell_NotifyIconGetRect; the overflow opened when it is there)
+                 and its menu opened with a real click, its items read;
                  MANUAL when the menu does not open that way
   quit_plain     Quit under load (a hanging fake-codex answer and a PDF extraction child): the tray menu's Quit when
                  the tray row opened it, else the local page's Quit link (the same quit() in the shell); nothing left
@@ -135,11 +136,18 @@ def folder_size(path: Path) -> tuple[int, int]:
 
 # ---------------------------------------------------------------------------------------------------- PowerShell ---
 
+POWERSHELL_ERRORS: list[str] = []
+
+
 def powershell(script: str, timeout: float = 120) -> str:
-    encoded = base64.b64encode(("[Console]::OutputEncoding = [Text.Encoding]::UTF8\n" + script).encode("utf-16-le")).decode()
+    """Its stdout; stderr (progress records, errors) is kept in POWERSHELL_ERRORS for the evidence."""
+    prelude = "[Console]::OutputEncoding = [Text.Encoding]::UTF8\n$ProgressPreference = 'SilentlyContinue'\n"
+    encoded = base64.b64encode((prelude + script).encode("utf-16-le")).decode()
     done = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand",
                            encoded], capture_output=True, encoding="utf-8", errors="replace", timeout=timeout)
-    return done.stdout.strip() + (f"\nSTDERR: {done.stderr.strip()[-600:]}" if done.stderr.strip() else "")
+    if done.stderr.strip() and "<Objs" not in done.stderr[:200]:
+        POWERSHELL_ERRORS.append(done.stderr.strip()[-600:])
+    return done.stdout.strip()
 
 
 def last_json(text: str):
@@ -199,6 +207,26 @@ def process_info(pid: int) -> tuple[int | None, str]:
         buffer = ctypes.create_unicode_buffer(1024)
         path = buffer.value if kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)) else ""
         return created, path
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+ntdll = ctypes.WinDLL("ntdll")
+
+
+def command_line(pid: int) -> str:
+    """A live process's command line (NtQueryInformationProcess, ProcessCommandLineInformation): fast, unlike CIM."""
+    handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+    if not handle:
+        return ""
+    try:
+        buffer = ctypes.create_string_buffer(1 << 16)
+        size = wintypes.ULONG()
+        if ntdll.NtQueryInformationProcess(wintypes.HANDLE(handle), 60, buffer, len(buffer), ctypes.byref(size)) != 0:
+            return ""
+        length = struct.unpack_from("<H", buffer.raw, 0)[0]
+        address = struct.unpack_from("<Q", buffer.raw, 8)[0]
+        return ctypes.wstring_at(address, length // 2)
     finally:
         kernel32.CloseHandle(handle)
 
@@ -561,67 +589,93 @@ def cdp_connect(port: int, seconds: float = 30) -> tuple[Cdp | None, str]:
 
 # ------------------------------------------------------------------------------------------- UI Automation ---
 
-TRAY = r"""
-Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
-Add-Type @'
-using System; using System.Runtime.InteropServices;
-public static class Mouse {
-  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
-  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
-  [DllImport("user32.dll")] public static extern void mouse_event(uint f, uint x, uint y, uint d, UIntPtr e);
-  public static void Click(int x, int y) { SetCursorPos(x, y); mouse_event(2, 0, 0, 0, UIntPtr.Zero); mouse_event(4, 0, 0, 0, UIntPtr.Zero); }
-}
-'@
-[Mouse]::SetProcessDPIAware() | Out-Null
-$A = [System.Windows.Automation.AutomationElement]
-$scope = [System.Windows.Automation.TreeScope]::Descendants
-function Named($root, $name) { $root.FindAll($scope, (New-Object System.Windows.Automation.PropertyCondition($A::NameProperty, $name))) }
-function Center($e) { $r = $e.Current.BoundingRectangle; [Mouse]::Click([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)) }
-$out = @{ found = $false; clicked = $false; menu = @(); quit = $false; where = $null }
-$tray = $A::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children,
-  (New-Object System.Windows.Automation.PropertyCondition($A::ClassNameProperty, 'Shell_TrayWnd')))
-$button = $null
-if ($tray) {
-  $notify = $tray.FindFirst($scope, (New-Object System.Windows.Automation.PropertyCondition($A::ClassNameProperty, 'TrayNotifyWnd')))
-  if ($notify) { $tray = $notify }
-}
-if ($tray) { $button = @(Named $tray 'DEIXIS') | Where-Object { -not $_.Current.IsOffscreen } | Select-Object -First 1 }
-if ($button) { $out.where = 'taskbar' }
-if (-not $button -and $tray) {
-  $chevron = @(Named $tray 'Show Hidden Icons') + @(Named $tray 'Show hidden icons') | Select-Object -First 1
-  if ($chevron) { Center $chevron; Start-Sleep -Milliseconds 800 }
-  foreach ($cls in 'NotifyIconOverflowWindow', 'TopLevelWindowForOverflowXamlIsland') {
-    $over = $A::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children,
-      (New-Object System.Windows.Automation.PropertyCondition($A::ClassNameProperty, $cls)))
-    if ($over) { $button = @(Named $over 'DEIXIS') | Select-Object -First 1; if ($button) { $out.where = "overflow:$cls"; break } }
-  }
-}
-if ($button) {
-  $out.found = $true
-  Center $button; $out.clicked = $true
-  Start-Sleep -Milliseconds 1200
-  $menu = $A::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children,
-    (New-Object System.Windows.Automation.PropertyCondition($A::ClassNameProperty, '#32768')))
-  if ($menu) {
-    $items = $menu.FindAll($scope, (New-Object System.Windows.Automation.PropertyCondition($A::ControlTypeProperty,
-      [System.Windows.Automation.ControlType]::MenuItem)))
-    $out.menu = @($items | ForEach-Object { $_.Current.Name })
-    if ($env:DEIXIS_TRAY_QUIT -eq '1') {
-      $quit = @($items | Where-Object { $_.Current.Name -eq 'Quit DEIXIS' }) | Select-Object -First 1
-      if ($quit) { Center $quit; $out.quit = $true }
-    } else {
-      Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{ESC}')
-    }
-  }
-}
-$out | ConvertTo-Json -Compress
-"""
+class NOTIFYICONIDENTIFIER(ctypes.Structure):
+    _fields_ = [("cbSize", wintypes.DWORD), ("hWnd", wintypes.HWND), ("uID", wintypes.UINT), ("guidItem", GUID)]
 
 
-def tray(quit_now: bool) -> dict:
-    os.environ["DEIXIS_TRAY_QUIT"] = "1" if quit_now else "0"
-    said = powershell(TRAY, timeout=90)
-    return last_json(said) or {"said": said[-400:]}
+user32.FindWindowExW.restype = wintypes.HWND
+user32.FindWindowExW.argtypes = (wintypes.HWND, wintypes.HWND, wintypes.LPCWSTR, wintypes.LPCWSTR)
+user32.SendMessageW.restype = ctypes.c_ssize_t
+user32.SendMessageW.argtypes = (wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
+user32.GetMenuItemRect.argtypes = (wintypes.HWND, wintypes.HMENU, wintypes.UINT, ctypes.POINTER(wintypes.RECT))
+user32.GetMenuStringW.argtypes = (wintypes.HMENU, wintypes.UINT, wintypes.LPWSTR, ctypes.c_int, wintypes.UINT)
+shell32.Shell_NotifyIconGetRect.argtypes = (ctypes.POINTER(NOTIFYICONIDENTIFIER), ctypes.POINTER(wintypes.RECT))
+HWND_MESSAGE, MN_GETHMENU, MF_BYPOSITION = wintypes.HWND(-3), 0x01E1, 0x400
+
+
+def click_at(x: int, y: int) -> None:
+    """A real left click (the cursor moves there): the shell sends the icon its mouse messages."""
+    user32.SetCursorPos(x, y)
+    time.sleep(0.1)
+    user32.mouse_event(0x0002, 0, 0, 0, 0)
+    user32.mouse_event(0x0004, 0, 0, 0, 0)
+
+
+def icon_rect(pid: int) -> tuple[list[int], int, int] | None:
+    """The notification icon of `pid` (Shell_NotifyIconGetRect over its windows, message-only ones included, and
+    the first icon ids); UI Automation does not list the Windows 11 overflow's icons."""
+    owned = []
+    for parent in (HWND_MESSAGE, None):
+        child = None
+        while (child := user32.FindWindowExW(parent, child, None, None)):
+            owner = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(child, ctypes.byref(owner))
+            if owner.value == pid:
+                owned.append(child)
+    for hwnd in owned:
+        for uid in range(0, 16):
+            nid = NOTIFYICONIDENTIFIER(cbSize=ctypes.sizeof(NOTIFYICONIDENTIFIER), hWnd=hwnd, uID=uid)
+            rect = wintypes.RECT()
+            if shell32.Shell_NotifyIconGetRect(ctypes.byref(nid), ctypes.byref(rect)) == 0:
+                return [rect.left, rect.top, rect.right, rect.bottom], hwnd, uid
+    return None
+
+
+def window_rect(hwnd) -> list[int]:
+    rect = wintypes.RECT()
+    user32.GetWindowRect(hwnd, ctypes.byref(rect))
+    return [rect.left, rect.top, rect.right, rect.bottom]
+
+
+def tray(pid: int, quit_now: bool) -> dict:
+    """Open the tray icon's menu with a real click (from the overflow when the icon is hidden there), read its items
+    and either choose Quit DEIXIS or close the menu with Escape."""
+    out: dict = {"icon": None, "where": None, "menu": [], "quit": False}
+    found = icon_rect(pid)
+    if not found:
+        return out | {"reason": "no notification icon of the shell found"}
+    rect, _hwnd, uid = found
+    taskbar = user32.FindWindowExW(None, None, "Shell_TrayWnd", None)
+    bar = window_rect(taskbar) if taskbar else [0, 0, 0, 0]
+    inside = bar[1] <= (rect[1] + rect[3]) // 2 <= bar[3] and bar[0] <= (rect[0] + rect[2]) // 2 <= bar[2]
+    overflow = user32.FindWindowExW(None, None, "NotifyIconOverflowWindow", None)
+    if not inside and not (overflow and user32.IsWindowVisible(overflow)):
+        notify = user32.FindWindowExW(taskbar, None, "TrayNotifyWnd", None)
+        chevron = user32.FindWindowExW(notify, None, "Button", None) if notify else None
+        if chevron:
+            c = window_rect(chevron)
+            click_at((c[0] + c[2]) // 2, (c[1] + c[3]) // 2)
+            time.sleep(1.0)
+            rect, _hwnd, uid = icon_rect(pid) or (rect, None, uid)
+    out |= {"icon": rect, "uid": uid, "where": "taskbar" if inside else "overflow"}
+    click_at((rect[0] + rect[2]) // 2, (rect[1] + rect[3]) // 2)
+    menu_window = wait_for(lambda: user32.FindWindowExW(None, None, "#32768", None), 5, 0.1)
+    if not menu_window:
+        return out | {"reason": "no popup menu after the click"}
+    hmenu = user32.SendMessageW(menu_window, MN_GETHMENU, 0, 0)
+    for index in range(user32.GetMenuItemCount(wintypes.HMENU(hmenu))):
+        text = ctypes.create_unicode_buffer(128)
+        user32.GetMenuStringW(wintypes.HMENU(hmenu), index, text, 128, MF_BYPOSITION)
+        out["menu"].append(text.value)
+    if quit_now and "Quit DEIXIS" in out["menu"]:
+        item = wintypes.RECT()
+        user32.GetMenuItemRect(None, wintypes.HMENU(hmenu), out["menu"].index("Quit DEIXIS"), ctypes.byref(item))
+        click_at((item.left + item.right) // 2, (item.top + item.bottom) // 2)
+        out["quit"] = True
+    else:
+        user32.keybd_event(0x1B, 0, 0, 0)
+        user32.keybd_event(0x1B, 0, 2, 0)
+    return out
 
 
 # --------------------------------------------------------------------------------------------------- scenario ---
@@ -727,8 +781,9 @@ class Scenario:
         return self.cdp
 
     def backend_pids(self) -> list[int]:
-        return [p["pid"] for p in fast_table().values()
-                if p["name"].lower() == "deixis-backend.exe" and p["path"].lower().startswith(str(INSTALL).lower())]
+        """The serving backend: deixis-backend.exe started by the shell (its own children are deixis-backend.exe too)."""
+        return [p["pid"] for p in fast_table().values() if p["name"].lower() == "deixis-backend.exe"
+                and p["ppid"] == self.proc.pid and p["path"].lower().startswith(str(INSTALL).lower())]
 
     def family(self) -> list[int]:
         return sorted(p["pid"] for p in self.watch.alive())
@@ -827,12 +882,26 @@ def start_load(sc: Scenario, bin_dir: Path) -> dict:
         facts["answer_run"] = api.json("POST", f"/api/researches/{rid}/runs", {"kind": "answer"})[0]
     facts["codex_hanging"] = bool(wait_for(lambda: (bin_dir / "codex-hang.json").exists(), 120, 0.5))
     pid_rid = new_research(api, f"{sc.name} pdf")
-    pages = [f"SYNTHETIC page {i}: " + "a bounded molecule release schedule minimizes error. " * 40 for i in range(1500)]
+    pages = [f"SYNTHETIC page {i}: " + "a bounded molecule release schedule minimizes error. " * 40 for i in range(4000)]
     pdf = make_pdf(pages)
     facts["pdf_mb"] = round(len(pdf) / 1e6, 1)
+    serve = set(sc.backend_pids())
     threading.Thread(target=lambda: sc_upload(sc, pid_rid, pdf), daemon=True).start()
-    running = wait_for(lambda: any("deixis.documents.pdf" in c for c in cim_command_lines("deixis-backend.exe")), 90, 0.5)
-    facts["pdf_child_running"] = bool(running)
+    # The extraction child, seen by the fast table (parent = the serving backend) and named by its command line, so
+    # the trigger comes while it runs.
+    asked: dict[int, str] = {}
+
+    def extraction():
+        for proc in fast_table().values():
+            if proc["name"].lower() == "deixis-backend.exe" and proc["ppid"] in serve:
+                asked.setdefault(proc["pid"], command_line(proc["pid"]))
+                if "deixis.documents.pdf" in asked[proc["pid"]]:
+                    return proc["pid"]
+        return None
+    child = wait_for(extraction, 120, 0.05)
+    facts["pdf_child_running"] = bool(child)
+    facts["pdf_child"] = asked.get(child, "").split(".exe", 1)[-1].strip()[:80] if child else None
+    facts["other_backend_children"] = [c.split(".exe", 1)[-1].strip()[:60] for pid, c in asked.items() if pid != child]
     facts["hanging"] = facts["codex_hanging"] and facts["pdf_child_running"]
     facts["load_processes"] = sorted(p["name"] for p in sc.watch.alive())
     return facts
@@ -847,11 +916,14 @@ def sc_upload(sc: Scenario, rid: str | None, pdf: bytes) -> None:
 
 def quit_app(sc: Scenario, use_tray: bool) -> dict:
     """The shell's quit(): the tray menu's Quit when it opened in the tray row, else the local page's Quit link."""
+    said = None
     if use_tray:
-        said = tray(quit_now=True)
+        said = tray(sc.proc.pid, quit_now=True)
         if said.get("quit"):
-            return {"quit_via": "tray menu Quit DEIXIS (UI Automation + real click)", "tray": said}
+            return {"quit_via": "tray menu Quit DEIXIS (real clicks on the icon and the item)", "tray": said}
     cdp = sc.connect()
+    if said is not None:
+        print(f"     tray quit not reached, local page instead: {json.dumps(said)}", flush=True)
     if cdp is None:
         return {"quit_via": None, "error": f"no DevTools: {sc.cdp_error}"}
     try:
@@ -1015,11 +1087,12 @@ def main() -> int:
                 processes=len(after_close), same_processes=after_close == count_before, health=healthy,
                 shown_again_by_launch=bool(reshown))
 
-            said = tray(quit_now=False)
+            said = tray(sc.proc.pid, quit_now=False)
             tray_opens = "Quit DEIXIS" in (said.get("menu") or [])
             row("tray", True if tray_opens else MANUAL, **said,
-                **({} if tray_opens else {"note": "the tray menu did not open through UI Automation and a click; a person "
-                                                   "checks Open, the running count and Quit"}))
+                **({"note": "opened with a real click on the icon (Shell_NotifyIconGetRect); Quit is used by quit_plain"}
+                   if tray_opens else {"note": "the tray menu did not open with a click on the icon; a person checks "
+                                                "Open, the running count and Quit"}))
 
             facts = start_load(sc, bin_dir)
             trigger = time.monotonic()
@@ -1096,29 +1169,38 @@ def main() -> int:
                     done = cdp.click(text, exact)
                     steps.append({"want": text, "got": done})
                     return done
-                opened = wait_for(lambda: press(title), 30, 1)
+                cdp.eval(f"location.hash = '#/research/{rid}'")  # the research's own route, as a link to it opens
+                opened = wait_for(lambda: title[:40] in cdp.text(), 30, 1)
                 time.sleep(2)
                 exported = wait_for(lambda: press("Export", True), 20, 1)
                 markdown = wait_for(lambda: press("Markdown"), 10, 0.5)
                 fresh = lambda suffix: sorted(p for p in downloads.glob(f"*{suffix}") if p.name not in before)  # noqa: E731
                 md = wait_for(lambda: fresh(".md"), 20) or []
-                time.sleep(1)
+                shell_err = work / "shell-download.err"
+                said = lambda name: [ln for ln in shell_err.read_text(encoding="utf-8", errors="replace").splitlines()  # noqa: E731
+                                     if ln.startswith("DEIXIS: Download") and name in ln]
+                # The shell's own word on each file (WebView2's Finished event) before anything touches the file.
+                wait_for(lambda: md and said(md[0].name), 20, 0.5)
                 again = wait_for(lambda: press("Export", True), 10, 0.5)
                 csv_pressed = wait_for(lambda: press("Comma-separated values"), 10, 0.5)
                 csv = wait_for(lambda: fresh(".csv"), 20) or []
+                wait_for(lambda: csv and said(csv[0].name), 20, 0.5)
+                shell_says = (said(md[0].name) if md else []) + (said(csv[0].name) if csv else [])
                 md_text = md[0].read_text(encoding="utf-8") if md else ""
                 csv_text = csv[0].read_text(encoding="utf-8-sig") if csv else ""
                 kept = []
                 for path in md[:1] + csv[:1]:
                     shutil.move(str(path), evidence / f"download-{path.name}")
                     kept.append(f"download-{path.name}")
-                shell_err = (work / "shell-download.err").read_text(encoding="utf-8", errors="replace")
-                row("download", bool(md and title in md_text and csv and "synthetic" in csv_text.lower()),
+                saved_both = len(shell_says) == 2 and all("Download saved" in ln for ln in shell_says)
+                row("download", bool(md and title in md_text and csv and "synthetic" in csv_text.lower() and saved_both),
                     run=(finished or {}).get("status"), title=title, opened=bool(opened), export=bool(exported),
                     markdown=bool(markdown), export_again=bool(again), csv_pressed=bool(csv_pressed),
                     downloads_folder=str(downloads), report_bytes=len(md_text), csv_lines=len(csv_text.splitlines()),
-                    moved_to_evidence=kept, shell_says=[ln for ln in shell_err.splitlines() if "Download" in ln][:4],
-                    steps=steps[-4:])
+                    moved_to_evidence=kept, shell_says=shell_says, shell_saved_both=saved_both,
+                    steps=steps[-4:], **({} if md and csv else {"buttons": cdp.eval(
+                        "[...document.querySelectorAll('button,[role=menuitem]')].map(e => (e.getAttribute('aria-label')"
+                        " || e.innerText || '').trim().slice(0, 40)).filter(Boolean).slice(0, 60)")}))
             else:
                 row("download", None, reason=f"in-window export needs DevTools ({sc.cdp_error})",
                     run=(finished or {}).get("status"))
@@ -1140,7 +1222,8 @@ def main() -> int:
                    "not_done": [n for n, r in results.items() if r["ok"] is None],
                    "manual": [n for n, r in results.items() if r["ok"] == MANUAL]}
         print(json.dumps(summary), flush=True)
-        (evidence / "results.json").write_text(json.dumps({"summary": summary, "rows": results}, indent=1, default=str),
+        (evidence / "results.json").write_text(json.dumps({"summary": summary, "rows": results,
+                                                           "powershell_errors": POWERSHELL_ERRORS[-20:]}, indent=1, default=str),
                                                encoding="utf-8")
         for err in work.glob("shell-*.err"):
             shutil.copy(err, evidence / err.name)

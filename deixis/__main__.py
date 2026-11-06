@@ -4,8 +4,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import copy
 import dataclasses
+import json
+import logging
+import logging.handlers
 import os
+import secrets
 import socket
 import sqlite3
 import sys
@@ -106,15 +111,24 @@ def port_available(host: str, port: int) -> bool:
     return True
 
 
-def schema_problem(db_path: Path) -> str | None:
-    """Why the library at `db_path` must not be opened (written by a newer DEIXIS, or unreadable), or None. Writes nothing."""
+def schema_refusal(db_path: Path) -> tuple[str, str] | None:
+    """The startup code and sentence why the library at `db_path` must not be opened (written by a newer DEIXIS, or
+    unreadable), or None. Writes nothing."""
     try:
         check_schema_known(db_path)
-    except (UnknownSchemaError, SchemaCheckUnreadable) as exc:
-        return str(exc)
+    except UnknownSchemaError as exc:
+        return "schema_newer", str(exc)
+    except SchemaCheckUnreadable as exc:
+        return "schema_unreadable", str(exc)
     except sqlite3.DatabaseError:  # a damaged file: db.open_problem below names it in one sentence
         return None
     return None
+
+
+def schema_problem(db_path: Path) -> str | None:
+    """Why the library at `db_path` must not be opened (written by a newer DEIXIS, or unreadable), or None. Writes nothing."""
+    refusal = schema_refusal(db_path)
+    return refusal[1] if refusal else None
 
 
 LOCATION_ATTEMPTS = 5
@@ -155,16 +169,181 @@ def hold_current_folder(settings: Settings) -> Settings | str:
     return "The data location kept changing while DEIXIS started. Try again."
 
 
+# `serve --desktop` (P10 M1): the packaged app's shell (Tauri) starts the backend and reads its stdout, which then carries
+# only one-line JSON events: `listening` once the socket is bound and the app's lifespan start has passed, or
+# `startup_failed` (a code and the same sentence a person reads on stderr) for every refusal. Human text stays on stderr.
+DESKTOP_PORT_FILE = "desktop-port.json"
+LOG_FILE_BYTES = 5 * 1024 * 1024
+LOG_FILES = 5
+
+
+EMITTED: list[str] = []  # the events this process has printed, so a start reports at most one outcome
+
+
+def emit(event: dict) -> None:
+    """One JSON line on stdout, flushed at once: the shell waits for it."""
+    EMITTED.append(event["event"])
+    sys.stdout.write(json.dumps(event, ensure_ascii=False) + "\n")
+    sys.stdout.flush()
+
+
+def desktop_start(start) -> int:
+    """The error boundary of a desktop start: an error no refusal names (a socket that cannot listen, a log folder that
+    cannot be made, a setting with a bad value) still gives the shell one `startup_failed` line before the process ends
+    as it does today (the exception and its traceback, exit 1). Nothing is printed once `listening` or a refusal was."""
+    EMITTED.clear()  # one start per process
+    try:
+        return start()
+    except (Exception, SystemExit) as exc:
+        if not EMITTED and not (isinstance(exc, SystemExit) and exc.code in (0, None)):
+            message = f"{type(exc).__name__}: {exc}" if not isinstance(exc, SystemExit) else f"exit {exc.code}"
+            emit({"event": "startup_failed", "code": "start_error", "message": message})
+        raise
+
+
+def refusal(desktop: bool, code: str, message: str, exit_code: int = 2) -> int:
+    """A start that stops: the sentence on stderr, as always; in desktop mode also a `startup_failed` line."""
+    print(message, file=sys.stderr)
+    if desktop:
+        emit({"event": "startup_failed", "code": code, "message": str(message)})
+    return exit_code
+
+
+def saved_port(data_dir: Path) -> int | None:
+    try:
+        port = json.loads((data_dir / DESKTOP_PORT_FILE).read_text(encoding="utf-8")).get("port")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return port if isinstance(port, int) and 0 < port < 65536 else None
+
+
+def save_port(data_dir: Path, port: int) -> None:
+    target = data_dir / DESKTOP_PORT_FILE
+    partial = target.with_name(target.name + ".partial")
+    partial.write_text(json.dumps({"port": port}) + "\n", encoding="utf-8")
+    os.replace(partial, target)
+
+
+def bind_listener(host: str, port: int) -> socket.socket | None:
+    """A socket bound to (host, port), handed to uvicorn as is: no probe-then-bind gap. None when the port is taken."""
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    if sys.platform != "win32":  # like uvicorn; lingering closed connections must not look like a running server
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.bind((host, port))
+    except OSError:
+        sock.close()
+        return None
+    return sock
+
+
+def desktop_listener(settings: Settings, given_port: int | None) -> socket.socket | None:
+    """The preferred port (the one given, else the one saved in the data folder, else the configured one, 8765 by
+    default), else any free port; the port bound is saved as the next start's preference."""
+    saved = saved_port(settings.data_dir)
+    sock = bind_listener(settings.host, given_port or saved or settings.port) or bind_listener(settings.host, 0)
+    if sock is not None and (port := sock.getsockname()[1]) != saved:
+        try:
+            save_port(settings.data_dir, port)
+        except OSError:
+            pass  # the next start picks again
+    return sock
+
+
+def watch_stdin(server, read=None) -> None:
+    """Desktop mode: the shell holds the backend's stdin open; at EOF (the shell quit or was killed) shut down gracefully.
+    `watch_shutdown` still bounds the shutdown."""
+    read = read or (lambda: os.read(sys.stdin.fileno(), 65536))
+    try:
+        while read():
+            pass
+    except (OSError, ValueError, AttributeError):
+        pass
+    print("stdin closed; stopping", file=sys.stderr)
+    server.should_exit = True
+
+
+class LifespanFailure:
+    """ASGI wrapper that keeps the last line of the lifespan start's failure (Starlette sends the traceback text)."""
+
+    def __init__(self, app):
+        self.app = app
+        self.message: str | None = None
+
+    def __getattr__(self, name):
+        return getattr(self.app, name)
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "lifespan":
+            return await self.app(scope, receive, send)
+
+        async def watched(message):
+            if message.get("type") == "lifespan.startup.failed":
+                lines = [line for line in str(message.get("message") or "").splitlines() if line.strip()]
+                self.message = lines[-1].strip() if lines else "The app did not start."
+            await send(message)
+
+        await self.app(scope, receive, watched)
+
+
+def desktop_server(config, on_started, on_failed):
+    """A uvicorn server that calls `on_started` once its start (lifespan included) has passed and `on_failed` when the
+    lifespan start fails (uvicorn then exits the process with its startup code)."""
+
+    class DesktopServer(uvicorn.Server):
+        async def startup(self, sockets=None):
+            try:
+                await super().startup(sockets=sockets)
+            except SystemExit:
+                on_failed()
+                raise
+            if self.started:
+                on_started()
+
+    return DesktopServer(config)
+
+
+def desktop_log_config() -> dict:
+    """uvicorn's logging setup with the access log on stderr: in desktop mode stdout carries only the JSON events."""
+    config = copy.deepcopy(uvicorn.config.LOGGING_CONFIG)
+    config["handlers"]["access"]["stream"] = "ext://sys.stderr"
+    return config
+
+
+def add_log_file(data_dir: Path) -> None:
+    """Desktop mode: the app's and uvicorn's log lines also go to `logs/backend.log` in the data folder, rotated at 5 MB,
+    five files kept. Keys are redacted when a record is made (`log_redaction`), before any handler sees it."""
+    folder = data_dir / "logs"
+    folder.mkdir(parents=True, exist_ok=True)
+    handler = logging.handlers.RotatingFileHandler(folder / "backend.log", maxBytes=LOG_FILE_BYTES,
+                                                   backupCount=LOG_FILES - 1, encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    root = logging.getLogger()
+    if root.level > logging.INFO or root.level == logging.NOTSET:
+        root.setLevel(logging.INFO)
+    if not root.handlers:  # keep warnings on stderr, where they went before a handler existed
+        stream = logging.StreamHandler(sys.stderr)
+        stream.setLevel(logging.WARNING)
+        root.addHandler(stream)
+    for logger in (root, logging.getLogger("uvicorn"), logging.getLogger("uvicorn.access")):
+        logger.addHandler(handler)
+
+
 def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...], reread_location: bool = False,
-          idle_exit: float | None = None) -> int:
+          idle_exit: float | None = None, desktop: bool = False, control_token: str | None = None,
+          given_port: int | None = None) -> int:
     """`reread_location`: the settings came from `load_settings`, so the location is read again under the folder lock (a caller
     that builds its own settings has no location to read). `idle_exit`: seconds without a request after which an idle
-    server stops itself (see `watch_idle`); None keeps it running."""
+    server stops itself (see `watch_idle`); None keeps it running. `desktop`: started by the packaged app's shell (see
+    `emit`); the port is chosen after the library checks, bound once and saved, `control_token` enables the shutdown
+    route and stdin EOF stops the server."""
+    def refuse(code: str, message: str, exit_code: int = 2) -> int:
+        return refusal(desktop, code, message, exit_code)
+
     url = f"http://{settings.host}:{settings.port}/"
     if settings.host not in ("127.0.0.1", "localhost"):
-        print("DEIXIS binds to loopback only; set DEIXIS_HOST=127.0.0.1.", file=sys.stderr)
-        return 2
-    if not port_available(settings.host, settings.port):
+        return refuse("host_not_loopback", "DEIXIS binds to loopback only; set DEIXIS_HOST=127.0.0.1.")
+    if not desktop and not port_available(settings.host, settings.port):
         print(f"Port {settings.port} is in use. DEIXIS may already be running at {url} — "
               "open it, stop the other process, or set DEIXIS_PORT.", file=sys.stderr)
         return 2
@@ -180,42 +359,67 @@ def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...], re
             print(postponed.message(), file=sys.stderr)
             settings = dataclasses.replace(settings, data_dir=postponed.old)
         elif message is not None:
-            print(message, file=sys.stderr)
-            return 2
+            return refuse("move_refused", message)
         if problem := data_dir_problem(settings.data_dir):
-            print(f"Cannot use the data directory {settings.data_dir}: it {problem}. "
-                  "Set DEIXIS_DATA_DIR to a folder you can write to.", file=sys.stderr)
-            return 2
+            return refuse("data_dir_unusable", f"Cannot use the data directory {settings.data_dir}: it {problem}. "
+                          "Set DEIXIS_DATA_DIR to a folder you can write to.")
         # The folder's shared lock is held from here, before the library is opened, until this process ends.
         if not library_lock.hold_shared(settings.data_dir):
-            print(f"Another DEIXIS is moving the library in {settings.data_dir}. Start DEIXIS again when it has finished.", file=sys.stderr)
-            return 2
+            return refuse("library_locked", f"Another DEIXIS is moving the library in {settings.data_dir}. "
+                          "Start DEIXIS again when it has finished.")
         if not reread_location or (changed := location_changed(wanted, postponed)) is None:
             break
         library_lock.release(settings.data_dir)
         if isinstance(changed, str):
-            print(changed, file=sys.stderr)
-            return 2
+            return refuse("pointer_damaged", changed)
         settings = dataclasses.replace(settings, data_dir=changed)
     else:
-        print("The data location kept changing while DEIXIS started. Start DEIXIS again.", file=sys.stderr)
-        return 2
-    if (message := schema_problem(settings.db_path)) is not None:
-        print(message, file=sys.stderr)
-        return 2
+        return refuse("location_changing", "The data location kept changing while DEIXIS started. Start DEIXIS again.")
+    if (schema := schema_refusal(settings.db_path)) is not None:
+        return refuse(*schema)
     # P9 H3: a library that cannot be opened is one sentence and exit 2, not a traceback. H4's read-only precheck above
     # runs first because this block's db.connect creates -wal/-shm files and switches the journal mode. A failing
     # migration is its own case (E24): exit 4, a sentence that points at the backup.
     if (problem := db.open_problem(settings.db_path)) is not None:
-        print(problem, file=sys.stderr)
-        return EXIT_MIGRATION_FAILED if getattr(problem, "code", None) == db.MigrationFailed.code else 2
+        if getattr(problem, "code", None) == db.MigrationFailed.code:
+            return refuse(db.MigrationFailed.code, problem, EXIT_MIGRATION_FAILED)
+        return refuse("library_cannot_open", problem)
     if not settings.web_dist.exists():
-        print("UI build not found (web/dist). The API will run; build the UI with `npm run build` in web.")
+        print("UI build not found (web/dist). The API will run; build the UI with `npm run build` in web.",
+              file=sys.stderr if desktop else sys.stdout)
+    listener = None
+    if desktop:
+        if (listener := desktop_listener(settings, given_port)) is None:
+            return refuse("port_unavailable", f"No free port on {settings.host} for DEIXIS.")
+        settings = dataclasses.replace(settings, port=listener.getsockname()[1])
+    nonce = secrets.token_urlsafe(16) if desktop else None
     # Open event streams would otherwise hold graceful shutdown (and the port) until the browser disconnects.
-    app = create_app(settings, extra_hosts=dev_hosts)
+    shutdown_holder: list = []
+    if desktop:
+        app = create_app(settings, extra_hosts=dev_hosts, control_token=control_token, start_nonce=nonce,
+                         request_shutdown=lambda: setattr(shutdown_holder[0], "should_exit", True))
+    else:
+        app = create_app(settings, extra_hosts=dev_hosts)
     if postponed is not None:
         app.state.move_postponed = {"path": str(postponed.new), "busy": str(postponed.busy)}
     tracked = LastRequest(app)
+    if desktop:
+        watched = LifespanFailure(tracked)
+        config = uvicorn.Config(watched, host=settings.host, port=settings.port, log_level="info",
+                                timeout_graceful_shutdown=3, log_config=desktop_log_config())
+        add_log_file(settings.data_dir)
+        server = desktop_server(
+            config,
+            on_started=lambda: emit({"event": "listening", "port": settings.port, "pid": os.getpid(), "nonce": nonce}),
+            on_failed=lambda: refuse("lifespan_failed", watched.message or "The app did not start."))
+        shutdown_holder.append(server)
+        threading.Thread(target=watch_shutdown, args=(server, SHUTDOWN_EXIT_SECONDS, os._exit, threading.Event()), daemon=True).start()
+        threading.Thread(target=watch_stdin, args=(server,), daemon=True).start()
+        try:
+            server.run(sockets=[listener])
+        finally:
+            listener.close()
+        return 0
     server = uvicorn.Server(uvicorn.Config(tracked, host=settings.host, port=settings.port, log_level="info",
                                            timeout_graceful_shutdown=3))
 
@@ -455,6 +659,12 @@ def main(argv: list[str] | None = None) -> int:
     given = sys.argv[1:] if argv is None else argv
     if given[:1] == ["hold-folder"]:  # the Windows holder of a child's folder lock (library_lock.holder_main); not a user command
         return library_lock.holder_main(given[1:])
+    if given[:1] == ["--check-resources"]:  # read-only: the packaged app's files and modules, from inside the process (P10 M1)
+        from deixis import resource_check
+        return resource_check.main()
+    # The packaged app's shell passes the shutdown token in the environment; it is read once and removed, so no child
+    # this process starts (the Claude SDK copies os.environ) inherits it.
+    control_token = os.environ.pop("DEIXIS_CONTROL_TOKEN", None) or None
     parser = argparse.ArgumentParser(prog="deixis")
     sub = parser.add_subparsers(dest="command", required=True)
     run = sub.add_parser("serve", help="Start the local API, worker and UI")
@@ -463,6 +673,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--idle-exit", type=float, metavar="MINUTES",
                      help="Stop after this many minutes with no browser request and no run working")
     run.add_argument("--dev", action="store_true", help="Also accept requests proxied from the Vite dev server (port 5178)")
+    run.add_argument("--desktop", action="store_true", help=argparse.SUPPRESS)  # only the packaged app's shell passes it
     save = sub.add_parser("backup", help="Write a consistent backup of the local library (safe while serving)")
     save.add_argument("destination", type=Path, help="Folder in which a new dated backup folder is created")
     load = sub.add_parser("restore", help="Restore a backup into a data directory that has no library yet")
@@ -474,6 +685,12 @@ def main(argv: list[str] | None = None) -> int:
     retained = sub.add_parser("recovery-files", help="List unreferenced retained recovery files")
     retained.add_argument("--delete", action="store_true", help="Delete listed files through the guarded recovery unlink")
     args = parser.parse_args(argv)
+    if args.command == "serve" and args.desktop:
+        return desktop_start(lambda: run_command(args, parser, control_token))
+    return run_command(args, parser, control_token)
+
+
+def run_command(args: argparse.Namespace, parser: argparse.ArgumentParser, control_token: str | None) -> int:
     use_system_certificates()  # before any HTTP client is built (F1)
     log_redaction.install()  # E27
     if args.command == "reextract" and bool(args.retry) != bool(args.expected_extraction):
@@ -481,8 +698,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         settings = load_settings()
     except PointerDamaged as exc:  # E23: never an empty default library in place of the one the pointer named
-        print(str(exc), file=sys.stderr)
-        return 2
+        return refusal(args.command == "serve" and args.desktop, "pointer_damaged", str(exc))
     if args.command == "restore":  # refused before the folder lock exists, so a refusal leaves the target as it was
         try:
             backup.check_restore(args.backup, settings)
@@ -515,6 +731,9 @@ def main(argv: list[str] | None = None) -> int:
         settings = dataclasses.replace(settings, port=args.port)
     dev_hosts = ("127.0.0.1:5178", "localhost:5178") if args.dev else ()
     idle_exit = args.idle_exit * 60 if args.idle_exit else None
+    if args.desktop:
+        return serve(settings, False, dev_hosts, reread_location=True, desktop=True, control_token=control_token,
+                     given_port=args.port)
     return serve(settings, not args.no_browser, dev_hosts, reread_location=True, idle_exit=idle_exit)
 
 

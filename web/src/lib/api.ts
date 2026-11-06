@@ -2226,11 +2226,15 @@ export const dataLocationApi = {
 }
 
 // Settings → General → Research (api/preference_routes.py): stored values come before the ones DEIXIS started with.
+// Language and theme are kept in the library too (P10 M1): the browser's copy is per origin, and the packaged app's
+// port can change; null until chosen.
 export type Preferences = {
   default_effort: Effort; fulltext_fetch: 'auto' | 'off'; arxiv_source: 'auto' | 'off'; arxiv_route_possible: boolean
   model_concurrency: number; model_concurrency_max: number
+  language: 'en' | 'tr' | null; theme: 'system' | 'light' | 'dark' | null
 }
-export type PreferenceChange = Partial<Pick<Preferences, 'default_effort' | 'fulltext_fetch' | 'arxiv_source' | 'model_concurrency'>>
+export type PreferenceChange = Partial<Pick<Preferences, 'default_effort' | 'fulltext_fetch' | 'arxiv_source' | 'model_concurrency'>
+  & { language: 'en' | 'tr'; theme: 'system' | 'light' | 'dark'; fill_only: boolean }>
 export const preferencesApi = {
   get: (leaving?: AbortSignal) => read<Preferences>('/api/settings/preferences', leaving),
   set: (change: PreferenceChange) => request<Preferences>('/api/settings/preferences', json('PUT', change)),

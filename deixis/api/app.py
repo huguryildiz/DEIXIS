@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -115,6 +116,10 @@ MATCH_MAX_FILES = 50
 UPLOAD_CHUNK_BYTES = 1024 * 1024
 CSRF_COOKIE = "deixis_csrf"
 CSRF_HEADER = "x-deixis-csrf"
+# The packaged app's shell stops the backend with the token it started it with (P10 M1); the one route the cookie CSRF
+# check skips, because it has its own check: the token, compared in constant time.
+SHUTDOWN_PATH = "/api/internal/shutdown"
+CONTROL_HEADER = "x-deixis-control"
 # The pauses an approval answers: the proposal itself, and a correction that left nothing searchable (slice 08a).
 INSTITUTIONAL_ACCESS_TTL_SECONDS = 600
 INSTITUTIONAL_ACCESS_RETRY_SECONDS = 30
@@ -902,6 +907,9 @@ def create_app(
     clock: fast_path.Clock | None = None,
     signin_launcher: account_signin.Launcher | None = None,
     signin_platform: str | None = None,
+    control_token: str | None = None,
+    start_nonce: str | None = None,
+    request_shutdown: Callable[[], None] | None = None,
 ) -> FastAPI:
     log_redaction.install()  # a key in a URL query never reaches a log line (E27)
     settings = settings or load_settings()
@@ -1130,7 +1138,8 @@ def create_app(
             if origin and origin not in allowed_origins:
                 return JSONResponse({"detail": "Origin not allowed"}, status_code=403)
             cookie = request.cookies.get(CSRF_COOKIE, "")
-            if not cookie or not secrets.compare_digest(cookie, request.headers.get(CSRF_HEADER, "")):
+            shutdown = request.method == "POST" and request.url.path == SHUTDOWN_PATH  # checked by its route
+            if not shutdown and (not cookie or not secrets.compare_digest(cookie, request.headers.get(CSRF_HEADER, ""))):
                 return JSONResponse({"detail": "Missing or invalid CSRF token"}, status_code=403)
             if (limit := upload_limit(request.method, request.url.path)) is not None:
                 # Checked before the multipart body is read and spooled to disk.
@@ -1323,8 +1332,21 @@ def create_app(
 
     @app.get("/api/health")
     async def health(request: Request) -> dict[str, Any]:
-        return {"status": "ok", "worker": "owner" if request.app.state.owner else "not_owner",
-                "recovered": request.app.state.recovered, "skill_package_hash": request.app.state.package.package_hash}
+        status = {"status": "ok", "worker": "owner" if request.app.state.owner else "not_owner",
+                  "recovered": request.app.state.recovered, "skill_package_hash": request.app.state.package.package_hash}
+        # The packaged app's shell compares this with the nonce of the `listening` line: a 200 from another server on
+        # the same port is not its backend.
+        return status | ({"nonce": start_nonce} if start_nonce else {})
+
+    @app.post(SHUTDOWN_PATH)
+    async def internal_shutdown(request: Request) -> JSONResponse:
+        """Graceful shutdown for the packaged app's shell. Off (404) unless the backend was started with a token."""
+        if not control_token or request_shutdown is None:
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
+        if not hmac.compare_digest(request.headers.get(CONTROL_HEADER, "").encode(), control_token.encode()):
+            return JSONResponse({"detail": "Missing or invalid control token"}, status_code=403)
+        request_shutdown()
+        return JSONResponse({"status": "stopping"}, status_code=202)
 
     @app.get("/api/session")
     async def session() -> JSONResponse:

@@ -3821,6 +3821,14 @@ class Store:
                 (key, dumps(value), now()),
             )
 
+    def set_setting_if_unset(self, key: str, value: Any) -> bool:
+        """Store `value` only when `key` has no value yet, in one statement; whether it was stored."""
+        with transaction(self.conn):
+            return self.conn.execute(
+                "INSERT INTO app_settings (key, value_json, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING",
+                (key, dumps(value), now()),
+            ).rowcount == 1
+
     # ---- usage reads (parity slice S16): counted from what is stored, never estimated ----------------------------------
 
     def openalex_rate_limit_rows(self, since: str, limit: int = 100) -> list[tuple[str, str | None]]:

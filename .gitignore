@@ -22,3 +22,7 @@ web/playwright-report/
 .vscode/
 # pytest-testmon's record of which tests touch which code.
 .testmondata*
+
+# P10 sidecar build output (packaging/sidecar/build.py).
+/packaging/sidecar/build/
+/packaging/sidecar/dist/

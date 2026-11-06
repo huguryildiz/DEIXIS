@@ -25,6 +25,9 @@ dev = [
     "pytest-testmon>=2.2.0",
     "pytest-xdist>=3",
 ]
+packaging = [
+    "pyinstaller>=6.22.3",
+]
 
 [build-system]
 requires = ["hatchling"]

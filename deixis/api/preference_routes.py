@@ -1,15 +1,19 @@
-"""Settings → General → Research: the default depth of a new research and three background behaviors.
+"""Settings → General → Research: the default depth of a new research and three background behaviors; and the
+interface language and theme.
 
 Each value is stored in `app_settings` and comes before the value DEIXIS started with (its environment variable or
 default). The full-text fetch is read when a discovery run is queued, so a run already queued keeps its mode; the
-arXiv route and the model-call ceiling change at once.
+arXiv route and the model-call ceiling change at once. Language and theme are kept here rather than only in the
+browser (P10 M1): browser storage is per origin, and the packaged app's port can change; the browser keeps a copy as a
+cache. Each reads None until the person chooses one. `fill_only` is the browser's one-time copy of its cached choice:
+it writes language and theme only where the library holds none yet, so it never replaces a newer choice.
 """
 
 from __future__ import annotations
 
 from typing import Any, Literal
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from deixis.config import (ARXIV_SOURCE_SETTING, DEFAULT_EFFORT_SETTING, FULLTEXT_FETCH_SETTING, MODEL_CONCURRENCY_MAX,
@@ -17,6 +21,10 @@ from deixis.config import (ARXIV_SOURCE_SETTING, DEFAULT_EFFORT_SETTING, FULLTEX
 from deixis.documents import arxiv_source
 
 EFFORTS = ("quick", "standard", "detailed")
+UI_LANGUAGE_SETTING = "ui_language"
+UI_THEME_SETTING = "ui_theme"
+LANGUAGES = ("en", "tr")
+THEMES = ("system", "light", "dark")
 
 
 class Preferences(BaseModel):
@@ -25,6 +33,9 @@ class Preferences(BaseModel):
     fulltext_fetch: Literal["auto", "off"] | None = None
     arxiv_source: Literal["auto", "off"] | None = None
     model_concurrency: int | None = Field(default=None, ge=1, le=MODEL_CONCURRENCY_MAX)
+    language: Literal["en", "tr"] | None = None
+    theme: Literal["system", "light", "dark"] | None = None
+    fill_only: bool = False
 
 
 def register_preference_routes(app) -> None:
@@ -40,6 +51,8 @@ def register_preference_routes(app) -> None:
             "arxiv_route_possible": arxiv_source.posix_available(),
             "model_concurrency": settings.effective_model_concurrency(),
             "model_concurrency_max": MODEL_CONCURRENCY_MAX,
+            "language": language if (language := store.setting(UI_LANGUAGE_SETTING)) in LANGUAGES else None,
+            "theme": theme if (theme := store.setting(UI_THEME_SETTING)) in THEMES else None,
         }
 
     @app.get("/api/settings/preferences")
@@ -50,9 +63,16 @@ def register_preference_routes(app) -> None:
     async def put_preferences(body: Preferences, request: Request) -> dict[str, Any]:
         state = request.app.state
         store = state.store
-        changes = body.model_dump(exclude_none=True)
+        changes = body.model_dump(exclude_none=True, exclude={"fill_only"})
+        if body.fill_only:
+            if set(changes) - {"language", "theme"}:
+                raise HTTPException(422, "fill_only takes only language and theme")
+            for name, value in changes.items():
+                store.set_setting_if_unset({"language": UI_LANGUAGE_SETTING, "theme": UI_THEME_SETTING}[name], value)
+            return view(request)
         keys = {"default_effort": DEFAULT_EFFORT_SETTING, "fulltext_fetch": FULLTEXT_FETCH_SETTING,
-                "arxiv_source": ARXIV_SOURCE_SETTING, "model_concurrency": MODEL_CONCURRENCY_SETTING}
+                "arxiv_source": ARXIV_SOURCE_SETTING, "model_concurrency": MODEL_CONCURRENCY_SETTING,
+                "language": UI_LANGUAGE_SETTING, "theme": UI_THEME_SETTING}
         for name, value in changes.items():
             store.set_setting(keys[name], value)
         if "arxiv_source" in changes and (equations := getattr(state, "equations", None)) is not None:

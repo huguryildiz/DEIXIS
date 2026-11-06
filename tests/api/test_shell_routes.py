@@ -211,6 +211,19 @@ def test_a_stored_preference_comes_before_the_start_value_and_applies_at_once(cl
     assert state.limiter.limit == 2
 
 
+def test_language_and_theme_are_kept_in_the_library_until_chosen_again(client):
+    view = client.get("/api/settings/preferences").json()
+    assert (view["language"], view["theme"]) == (None, None)  # never chosen: the browser's cached choice is moved up
+    assert client.put("/api/settings/preferences", json={"theme": "system", "fill_only": True}).json()["theme"] == "system"
+    assert client.put("/api/settings/preferences", json={"language": "tr"}).json()["language"] == "tr"
+    view = client.put("/api/settings/preferences", json={"theme": "dark"}).json()
+    assert (view["language"], view["theme"]) == ("tr", "dark")  # a later write of the other one keeps it
+    assert client.put("/api/settings/preferences", json={"theme": "sepia"}).status_code == 422
+    # The browser's one-time copy of its cached choice fills only an empty value; it never replaces a newer choice.
+    view = client.put("/api/settings/preferences", json={"language": "en", "theme": "light", "fill_only": True}).json()
+    assert (view["language"], view["theme"]) == ("tr", "dark")
+
+
 @pytest.mark.parametrize("bad", [{"model_concurrency": 0}])
 def test_an_invalid_preference_is_refused_and_nothing_is_stored(client, bad):
     assert client.put("/api/settings/preferences", json=bad).status_code == 422

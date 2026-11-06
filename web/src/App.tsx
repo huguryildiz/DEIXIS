@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { Check, Circle, Clock, Ellipsis, Inbox, Keyboard, LibraryBig, Menu, Moon, PanelLeft, Pause, PencilLine, Plus, Search, SlidersHorizontal, Sun, Trash2, TriangleAlert } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { api, ApiError, shellApi, type InstitutionalAccess, type Profile, type ProxySettings, type ResearchSummary, type RunStatus } from './lib/api'
+import { api, ApiError, shellApi, type InstitutionalAccess, type Profile, type ProxySettings, type ResearchSummary, type RunStatus, preferencesApi, type PreferenceChange } from './lib/api'
 import { runStatusLabels } from './lib/labels'
 import { Home } from './home/Home'
 import { EmptyResearch, ResearchPage } from './research/ResearchView'
@@ -17,7 +17,7 @@ import { SidebarRuns } from './shell/SidebarRuns'
 import { useToast } from './components/Toast'
 import { focusWhenLost } from './lib/focus'
 import { TrashPage } from './library/TrashPage'
-import { setUiLanguage, t, uiLanguage, type UiLanguage } from './lib/i18n'
+import { languageCached, setUiLanguage, t, uiLanguage, type UiLanguage } from './lib/i18n'
 import './App.css'
 import './home/Home.css'
 import './research/ResearchPage.css'
@@ -76,8 +76,16 @@ function go(route: Route) {
     : `/${route.view}`
 }
 
+// The theme in this origin's cache; the library keeps the choice itself (/api/ui-preferences, P10 M1).
 function readTheme(): ThemeChoice {
   try { const value = localStorage.getItem('deixis-theme'); return value === 'light' || value === 'dark' ? value : 'system' } catch { return 'system' }
+}
+
+function cacheTheme(next: ThemeChoice) {
+  try {
+    if (next === 'system') localStorage.removeItem('deixis-theme')
+    else localStorage.setItem('deixis-theme', next)
+  } catch { /* the choice still applies for this tab */ }
 }
 
 // Short "how long ago" for the recent list (mockup: 5m 2h 1d 1w 1mo); a research with a live run shows "now".
@@ -181,6 +189,28 @@ export default function App() {
     try { localStorage.setItem('deixis-current', currentId) } catch { /* still kept for this tab */ }
   }, [currentId])
   useEffect(() => { shellApi.profile().then(setProfile, () => setProfile(null)) }, [])
+  // Language and theme come from the library, so a new port (a new origin, an empty cache) keeps them; a choice made
+  // before the library kept it is copied up once, only where the library has none (`fill_only`). A choice the person
+  // makes while a read is out wins: each field counts its changes, and a read that started before one is ignored for it.
+  // Unreadable: the cached choice applies.
+  const preferenceChanges = useRef({ language: 0, theme: 0 })
+  useEffect(() => {
+    const at = { ...preferenceChanges.current }
+    const apply = (stored: { language: UiLanguage | null; theme: ThemeChoice | null }) => {
+      if (stored.language && preferenceChanges.current.language === at.language && stored.language !== uiLanguage()) {
+        setUiLanguage(stored.language)
+        setLanguage(stored.language)
+      }
+      if (stored.theme && preferenceChanges.current.theme === at.theme) { setTheme(stored.theme); cacheTheme(stored.theme) }
+    }
+    preferencesApi.get().then(stored => {
+      apply(stored)
+      const missing: PreferenceChange = {}
+      if (!stored.language && languageCached()) missing.language = uiLanguage()
+      if (!stored.theme && readTheme() !== 'system') missing.theme = readTheme()
+      if (missing.language || missing.theme) preferencesApi.set({ ...missing, fill_only: true }).then(apply, () => { /* kept in the cache */ })
+    }, () => { /* the cached choice applies */ })
+  }, [])
 
   const refreshList = useCallback(() => {
     api.researches().then(list => { setResearches(list); setListError('') }).catch((error: Error) => setListError(error.message))
@@ -380,18 +410,19 @@ export default function App() {
   }, [checkAccess])
 
   function chooseTheme(next: ThemeChoice) {
+    preferenceChanges.current.theme++
     setTheme(next)
-    try {
-      if (next === 'system') localStorage.removeItem('deixis-theme')
-      else localStorage.setItem('deixis-theme', next)
-    } catch { /* the choice still applies for this tab */ }
+    cacheTheme(next)
+    preferencesApi.set({ theme: next }).catch(() => { /* the choice still applies here and in the cache */ })
   }
   function toggleTheme() { chooseTheme(dark ? 'light' : 'dark') }
 
   // t() reads the module-level language, so it is set before the state change re-renders the tree.
   function chooseLanguage(next: UiLanguage) {
+    preferenceChanges.current.language++
     setUiLanguage(next)
     setLanguage(next)
+    preferencesApi.set({ language: next }).catch(() => { /* the choice still applies here and in the cache */ })
   }
 
   // The phone drawer closes with its own button or Escape, and hands focus back to the menu button. While it is closed

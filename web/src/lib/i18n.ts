@@ -5,6 +5,7 @@ import { tr } from './locales/tr'
 
 export type UiLanguage = 'en' | 'tr'
 
+// This origin's cache of the choice; the library keeps the choice itself (/api/ui-preferences, P10 M1).
 const STORAGE_KEY = 'deixis-ui-language'
 
 function readStored(): UiLanguage {
@@ -15,6 +16,11 @@ let current: UiLanguage = readStored()
 
 export const uiLanguage = () => current
 export const uiLocale = () => (current === 'tr' ? 'tr-TR' : 'en-US')
+
+// Whether this browser holds a language chosen before the library kept it (moved up once by App).
+export function languageCached(): boolean {
+  try { return localStorage.getItem(STORAGE_KEY) !== null } catch { return false }
+}
 
 export function setUiLanguage(next: UiLanguage) {
   current = next

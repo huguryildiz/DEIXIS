@@ -1,12 +1,17 @@
-"""Smoke run of the BUILT backend sidecar (P10 M1 acceptance), macOS arm64.
+r"""Smoke run of the BUILT backend sidecar (P10 M1 acceptance, macOS arm64; P10 W3, Windows x64).
 
     uv run python scripts/p10/sidecar_smoke.py [--sidecar packaging/sidecar/dist/deixis-backend] [--keep]
 
 The onedir build is copied to a temp folder outside the checkout and run from there with a temp DEIXIS_DATA_DIR, no
 DEIXIS_REPO_ROOT, a minimal environment, a port other than 8765 (saved in the data folder before the start), the null
-keyring backend and outbound HTTP(S) sent to a closed local port. A stand-in `codex` (fake_codex.py, run by this
-checkout's Python) is first on PATH. Tesseract is the one installed on this Mac (Homebrew), found by the app's own
-tool lookup. Rows, each printed as passed or failed:
+keyring backend and outbound HTTP(S) sent to a closed local port. The control token is the first stdin line, as the
+shell sends it. A stand-in `codex` (fake_codex.py, run by this checkout's Python) is first on PATH: on macOS a shell
+script; on Windows an npm install as `tool_paths._windows_command` reads one (`codex.cmd` whose entry line points at
+`node_modules\@fake\codex\bin\codex.js`, a Node script that runs fake_codex.py with stdio passed through), so node
+and Python are real grandchildren. Tesseract is the one installed on this computer (Homebrew; on Windows the UB
+Mannheim installer's folder), found by the app's own tool lookup; on Windows the ocr row is skipped without it.
+Processes are listed with `ps` on macOS and `Get-CimInstance Win32_Process` on Windows. Rows, each printed as passed
+or failed:
 
   resources    `deixis-backend --check-resources` passes
   listening    the `listening` line arrives; health 200 with its nonce; index.html served; cold start timed
@@ -22,6 +27,15 @@ tool lookup. Rows, each printed as passed or failed:
                (less the worker lease and the citation keys every start writes), PDF hash, integrity_check,
                foreign_key_check, and the version record and schema as a new library's
   stdin_exit   stdin closed -> exit within 6 s + 4 s margin
+
+Windows only (P10 W3):
+  startup_failed  a second backend on the same data folder prints a `startup_failed` line and exits non-zero
+  runtime      `deixis-backend --check-runtime` after the frozen entry's DLL search reset: a PDF opened and rendered,
+               a throwaway Credential Locker entry written, read and deleted, an https request through the system trust
+               store, and the DLL probe: `probe-<name>.exe` (scripts/p10/dll_probe, built here with rustc) outside the
+               package, started by the backend as an external tool, loads `<name>.dll` by name, where <name> is a DLL
+               of `_internal`; the only copy with the marker export sits in a folder on PATH, so the probe passes only
+               when no package folder is in its DLL search (inherited SetDllDirectory, PATH)
 
 Before anything runs, the build must be current (row build_current): the build identity the binary reports (through
 `--check-resources`) equals the identity file in the folder, its per-file sha256 list equals this working tree's
@@ -52,6 +66,10 @@ from pathlib import Path
 import httpx
 
 REPO = Path(__file__).resolve().parents[2]
+WINDOWS = sys.platform == "win32"
+BINARY = "deixis-backend.exe" if WINDOWS else "deixis-backend"
+HTTPS_URL = "https://api.openalex.org/works?per-page=1"
+PROBE_NAMES = ("sqlite3", "libffi-8", "libcrypto-3", "libssl-3")  # DLLs a Windows onedir build holds in _internal
 sys.path[:0] = [str(REPO), str(REPO / "tests" / "support"), str(REPO / "tests" / "storage")]
 from helpers import make_pdf  # noqa: E402
 from old_library import master, old_library  # noqa: E402
@@ -90,17 +108,42 @@ def free_port() -> int:
             return port
 
 
-def lstart(pid: int) -> str | None:
-    done = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True)
-    return done.stdout.strip() or None
+# Every process: pid -> (parent pid, start time, command line). PowerShell starts in about a second, so on Windows a
+# child that lives less than that can be missed by the watch; what is left at the end is always in the last listing.
+CIM = ("[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-CimInstance Win32_Process | ForEach-Object "
+       "{ '{0}`t{1}`t{2}`t{3}' -f $_.ProcessId, $_.ParentProcessId, $_.CreationDate.Ticks, $_.CommandLine }")
 
 
-def descendants(pid: int) -> set[int]:
+def processes() -> dict[int, tuple[int, str, str]]:
+    table: dict[int, tuple[int, str, str]] = {}
+    if WINDOWS:
+        out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", CIM], capture_output=True,
+                             encoding="utf-8", errors="replace", timeout=120).stdout
+        for line in out.splitlines():
+            parts = line.split("\t", 3)
+            if len(parts) == 4 and parts[0].isdigit() and parts[1].isdigit():
+                table[int(parts[0])] = (int(parts[1]), parts[2], parts[3])
+        return table
+    out = subprocess.run(["ps", "-A", "-ww", "-o", "pid=,ppid=,lstart=,command="], capture_output=True, text=True).stdout
+    for line in out.splitlines():
+        parts = line.split(None, 7)  # pid ppid, lstart (five words), command
+        if len(parts) >= 7 and parts[0].isdigit() and parts[1].isdigit():
+            table[int(parts[0])] = (int(parts[1]), " ".join(parts[2:7]), parts[7] if len(parts) > 7 else "")
+    return table
+
+
+def lstart(pid: int, table: dict | None = None) -> str | None:
+    found = (processes() if table is None else table).get(pid)
+    return found[1] if found else None
+
+
+def descendants(pid: int, table: dict | None = None) -> set[int]:
+    table = processes() if table is None else table
     found, todo = set(), [pid]
     while todo:
-        done = subprocess.run(["pgrep", "-P", str(todo.pop())], capture_output=True, text=True)
-        for child in map(int, done.stdout.split()):
-            if child not in found:
+        parent = todo.pop()
+        for child, (ppid, _, _) in table.items():
+            if ppid == parent and child not in found:
                 found.add(child)
                 todo.append(child)
     return found
@@ -113,10 +156,13 @@ class Sidecar:
         port = free_port()
         data.mkdir(parents=True, exist_ok=True)
         (data / "desktop-port.json").write_text(json.dumps({"port": port}))
-        self.env = env | {"DEIXIS_DATA_DIR": str(data), "DEIXIS_PORT": str(free_port()), "DEIXIS_CONTROL_TOKEN": TOKEN}
+        self.env = env | {"DEIXIS_DATA_DIR": str(data), "DEIXIS_PORT": str(free_port())}
         self.started = time.monotonic()
         self.proc = subprocess.Popen([str(binary), "serve", "--desktop"], cwd=binary.parent.parent, env=self.env,
-                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=open(data / "stderr.txt", "wb"))
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                     stderr=open(data / f"stderr-{os.urandom(3).hex()}.txt", "wb"))
+        self.proc.stdin.write(f"{TOKEN}\n".encode())  # the control token as the first stdin line, as the shell sends it
+        self.proc.stdin.flush()
         self.lines: queue.Queue[str] = queue.Queue()
         threading.Thread(target=self._read, daemon=True).start()
         self.seen: dict[int, str | None] = {self.proc.pid: lstart(self.proc.pid)}
@@ -129,12 +175,11 @@ class Sidecar:
         """For the process's whole life (M2, Sol backlog from M1): every 0.2 s its descendants, and every process whose
         command names the bundle or the data folder, so an orphan or a child in its own session is seen too."""
         while self.proc.poll() is None:
-            self.remember_children()
-            done = subprocess.run(["ps", "-axww", "-o", "pid=,command="], capture_output=True, text=True)
-            for line in done.stdout.splitlines():
-                pid, _, command = line.strip().partition(" ")
-                if pid.isdigit() and int(pid) != os.getpid() and any(m in command for m in self.marks):
-                    self.seen.setdefault(int(pid), lstart(int(pid)))
+            table = processes()
+            self.remember_children(table)
+            for pid, (_, start, command) in table.items():
+                if pid != os.getpid() and any(m in command for m in self.marks):
+                    self.seen.setdefault(pid, start)
             time.sleep(0.2)
 
     def _read(self) -> None:
@@ -148,12 +193,14 @@ class Sidecar:
         self.url = f"http://127.0.0.1:{self.event.get('port')}"
         return self.event
 
-    def remember_children(self) -> None:
-        for pid in descendants(self.proc.pid):
-            self.seen.setdefault(pid, lstart(pid))
+    def remember_children(self, table: dict | None = None) -> None:
+        table = processes() if table is None else table
+        for pid in descendants(self.proc.pid, table):
+            self.seen.setdefault(pid, lstart(pid, table))
 
     def leftovers(self) -> list[tuple[int, str]]:
-        return [(pid, start) for pid, start in self.seen.items() if start and lstart(pid) == start]
+        table = processes()
+        return [(pid, start) for pid, start in self.seen.items() if start and lstart(pid, table) == start]
 
     def kill(self) -> None:
         if self.proc.poll() is None:
@@ -238,19 +285,29 @@ def main() -> int:
     work = Path(tempfile.mkdtemp(prefix="deixis-sidecar-smoke-"))
     assert not work.resolve().is_relative_to(REPO.resolve())
     shutil.copytree(args.sidecar, work / "deixis-backend", symlinks=True)
-    binary = work / "deixis-backend" / "deixis-backend"
+    binary = work / "deixis-backend" / BINARY
     bin_dir = work / "bin"
     bin_dir.mkdir()
-    codex = bin_dir / "codex"
-    codex.write_text(f"#!/bin/sh\n_FAKE_CODEX_DIR={bin_dir} exec {sys.executable} {REPO / 'scripts' / 'p10' / 'fake_codex.py'} \"$@\"\n")
-    codex.chmod(0o755)
     home = work / "home"
     home.mkdir()
-    env = {"HOME": str(home), "PATH": f"{bin_dir}:/usr/bin:/bin:/usr/sbin:/sbin", "TMPDIR": str(work), "LANG": "en_US.UTF-8",
-           "USER": os.environ.get("USER", "smoke"), "SHELL": "/bin/sh",
-           "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring",
-           # outbound HTTP(S) goes to a closed local port; loopback stays direct
-           "HTTP_PROXY": "http://127.0.0.1:9", "HTTPS_PROXY": "http://127.0.0.1:9", "NO_PROXY": "127.0.0.1,localhost"}
+    proxies = {  # outbound HTTP(S) goes to a closed local port; loopback stays direct
+        "HTTP_PROXY": "http://127.0.0.1:9", "HTTPS_PROXY": "http://127.0.0.1:9", "NO_PROXY": "127.0.0.1,localhost"}
+    if WINDOWS:
+        fake_codex_npm(bin_dir)
+        system = os.environ.get("SYSTEMROOT", r"C:\Windows")
+        base = {k: os.environ[k] for k in ("SYSTEMROOT", "WINDIR", "PATHEXT", "COMSPEC", "ProgramFiles", "PROGRAMFILES")
+                if k in os.environ}
+        env = base | {"USERPROFILE": str(home), "HOME": str(home), "TEMP": str(work), "TMP": str(work),
+                      "LOCALAPPDATA": str(home / "AppData" / "Local"), "APPDATA": str(home / "AppData" / "Roaming"),
+                      "PATH": os.pathsep.join([str(bin_dir), str(Path(shutil.which("node")).parent), f"{system}\\System32", system]),
+                      "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring", **proxies}
+    else:
+        codex = bin_dir / "codex"
+        codex.write_text(f"#!/bin/sh\n_FAKE_CODEX_DIR={bin_dir} exec {sys.executable} {REPO / 'scripts' / 'p10' / 'fake_codex.py'} \"$@\"\n")
+        codex.chmod(0o755)
+        env = {"HOME": str(home), "PATH": f"{bin_dir}:/usr/bin:/bin:/usr/sbin:/sbin", "TMPDIR": str(work), "LANG": "en_US.UTF-8",
+               "USER": os.environ.get("USER", "smoke"), "SHELL": "/bin/sh",
+               "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring", **proxies}
     sidecars: list[Sidecar] = []
     try:
         done = subprocess.run([str(binary), "--check-resources"], cwd=work, env=env, capture_output=True, text=True, timeout=120)
@@ -320,22 +377,13 @@ def main() -> int:
         row("token_env", names is not None and "DEIXIS_CONTROL_TOKEN" not in names, codex_started=names is not None,
             variables=len(names or []))
 
-        made = client.post("/api/researches", json={"question": QUESTION + " (scanned)", "source_scope": "attached",
-                                                    "effort": "quick", "model_connection": "codex",
-                                                    "requested_model": "gpt-fake", "reasoning_effort": "medium"})
-        orid = made.json()["research"]["id"]
-        uploaded = client.post(f"/api/researches/{orid}/uploads", files={"file": (
-            "synthetic-scan.pdf", scanned_pdf("SYNTHETIC scanned page about bounded release schedules"), "application/pdf")})
-        osvid = uploaded.json()["uploaded_source_version_id"]
-        oasset = asset_of(data, osvid)
-        started = client.post(f"/api/researches/{orid}/sources/{osvid}/assets/{oasset['id']}/ocr")
-        if started.status_code == 202:
-            oview, orun = wait_run(client, orid, started.json()["id"])
-            text = sc_text(data, oasset["id"])
-            row("ocr", orun["status"] == "completed" and "release" in text.lower(), run=orun["status"],
-                pause=orun.get("pause_reason"), failure=orun.get("failure_reason"), text=text[:80])
+        if WINDOWS and not tesseract_installed():
+            print("SKIP ocr {\"reason\": \"Tesseract is not installed in the UB Mannheim installer's folders\"}", flush=True)
         else:
-            row("ocr", False, start=started.status_code, detail=started.text[:300], extraction=oasset.get("extraction_status"))
+            ocr_row(client, data)
+        if WINDOWS:
+            startup_failed_row(binary, work, env)
+            runtime_row(work, binary, env)
 
         jats_dir = work / "jats"
         jats_dir.mkdir()
@@ -405,6 +453,115 @@ def main() -> int:
         if not args.keep:
             shutil.rmtree(work, ignore_errors=True)
     return 0 if results and all(r["ok"] for r in results.values()) else 1
+
+
+def ocr_row(client: httpx.Client, data: Path) -> None:
+    """A scanned page read by the app's OCR run (the frozen `-m deixis.documents.ocr` child)."""
+    made = client.post("/api/researches", json={"question": QUESTION + " (scanned)", "source_scope": "attached",
+                                                "effort": "quick", "model_connection": "codex",
+                                                "requested_model": "gpt-fake", "reasoning_effort": "medium"})
+    orid = made.json()["research"]["id"]
+    uploaded = client.post(f"/api/researches/{orid}/uploads", files={"file": (
+        "synthetic-scan.pdf", scanned_pdf("SYNTHETIC scanned page about bounded release schedules"), "application/pdf")})
+    osvid = uploaded.json()["uploaded_source_version_id"]
+    oasset = asset_of(data, osvid)
+    started = client.post(f"/api/researches/{orid}/sources/{osvid}/assets/{oasset['id']}/ocr")
+    if started.status_code == 202:
+        oview, orun = wait_run(client, orid, started.json()["id"])
+        text = sc_text(data, oasset["id"])
+        row("ocr", orun["status"] == "completed" and "release" in text.lower(), run=orun["status"],
+            pause=orun.get("pause_reason"), failure=orun.get("failure_reason"), text=text[:80])
+    else:
+        row("ocr", False, start=started.status_code, detail=started.text[:300], extraction=oasset.get("extraction_status"))
+
+
+def fake_codex_npm(bin_dir: Path) -> None:
+    """Windows: the fake codex laid out as an npm global install (`tool_paths._windows_command` runs node on the entry
+    script its `codex.cmd` names); the Node script runs fake_codex.py with this checkout's Python, stdio passed through."""
+    entry = bin_dir / "node_modules" / "@fake" / "codex" / "bin" / "codex.js"
+    entry.parent.mkdir(parents=True)
+    (bin_dir / "codex.cmd").write_text(  # the tail of npm's own launcher
+        '@ECHO off\r\nSETLOCAL\r\nSET dp0=%~dp0\r\nSET "_prog=node"\r\n'
+        'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@fake\\codex\\bin\\codex.js" %*\r\n')
+    entry.write_text(
+        "const { spawnSync } = require('child_process');\n"
+        f"const python = {json.dumps(sys.executable)};\n"
+        f"const script = {json.dumps(str(REPO / 'scripts' / 'p10' / 'fake_codex.py'))};\n"
+        "const done = spawnSync(python, [script, ...process.argv.slice(2)],\n"
+        f"  {{ stdio: 'inherit', env: {{ ...process.env, _FAKE_CODEX_DIR: {json.dumps(str(bin_dir))} }} }});\n"
+        "process.exit(done.status === null ? 1 : done.status);\n")
+
+
+def startup_failed_row(binary: Path, work: Path, env: dict[str, str]) -> None:
+    """Windows: a desktop start on a data folder that is a file prints one `startup_failed` line and exits non-zero."""
+    not_a_folder = work / "not-a-folder"
+    not_a_folder.write_text("SYNTHETIC")
+    done = subprocess.run([str(binary), "serve", "--desktop"], cwd=work, env=env | {"DEIXIS_DATA_DIR": str(not_a_folder)},
+                          input=f"{TOKEN}\n".encode(), capture_output=True, timeout=120)
+    lines = [line for line in done.stdout.decode(errors="replace").splitlines() if line.strip()]
+    try:
+        event = json.loads(lines[0]) if len(lines) == 1 else {}
+    except ValueError:
+        event = {}
+    row("startup_failed", event.get("event") == "startup_failed" and done.returncode != 0, code=event.get("code"),
+        exit=done.returncode, lines=len(lines), message=str(event.get("message"))[:200])
+
+
+def tesseract_installed() -> bool:
+    places = [Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Tesseract-OCR"]
+    if local := os.environ.get("LOCALAPPDATA"):
+        places.append(Path(local) / "Programs" / "Tesseract-OCR")
+    return any((place / "tesseract.exe").is_file() for place in places)
+
+
+def runtime_row(work: Path, binary: Path, env: dict[str, str]) -> None:
+    """Windows: `--check-runtime` (in-process native code after the DLL search reset) with the DLL probe."""
+    internal = binary.parent / "_internal"
+    system32 = Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32"
+    name = next((n for n in PROBE_NAMES if (internal / f"{n}.dll").is_file() and not (system32 / f"{n}.dll").exists()), None)
+    rustc = shutil.which("rustc")
+    folder, dll_dir, exe_dir = work / "runtime", work / "probe-dll", work / "probe-exe"
+    for made in (folder, dll_dir, exe_dir):
+        made.mkdir()
+    args = [str(binary), "--check-runtime", str(folder), "--https", HTTPS_URL]
+    probe = {"dll": name, "rustc": rustc}
+    if name and rustc:
+        source = REPO / "scripts" / "p10" / "dll_probe"
+        static = ["-C", "target-feature=+crt-static", "-O"]
+        built = [subprocess.run([rustc, "--crate-type", "cdylib", *static, "-o", str(dll_dir / f"{name}.dll"),
+                                 str(source / "probe_dll.rs")], capture_output=True, text=True),
+                 subprocess.run([rustc, *static, "-o", str(exe_dir / f"probe-{name}.exe"), str(source / "probe.rs")],
+                                capture_output=True, text=True)]
+        probe["build"] = [b.returncode for b in built]
+        if all(b.returncode == 0 for b in built):
+            args += ["--probe", str(exe_dir / f"probe-{name}.exe")]
+            # Negative control: with the package folder as an inherited DLL directory, as PyInstaller's bootloader sets
+            # it, the probe must get the package's copy (exit 3); this shows the probe can see what the check rules out.
+            import ctypes
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.SetDllDirectoryW.argtypes = (ctypes.c_wchar_p,)
+            kernel32.SetDllDirectoryW(str(internal))
+            try:
+                control = subprocess.run([str(exe_dir / f"probe-{name}.exe")], capture_output=True, text=True, timeout=60,
+                                         env=env | {"PATH": os.pathsep.join([env["PATH"], str(dll_dir)])})
+            finally:
+                kernel32.SetDllDirectoryW(None)
+            probe["control"] = {"exit": control.returncode, "said": control.stdout.strip()[-200:]}
+        else:
+            probe["build_error"] = "\n".join(b.stderr for b in built)[-400:]
+    # The real keyring and the network for this one call; the probe DLL's folder last on PATH, after the system's.
+    run_env = {k: v for k, v in env.items() if k not in ("PYTHON_KEYRING_BACKEND", "HTTP_PROXY", "HTTPS_PROXY")}
+    run_env["PATH"] = os.pathsep.join([env["PATH"], str(dll_dir)])
+    done = subprocess.run(args, cwd=work, env=run_env, capture_output=True, text=True, timeout=180)
+    try:
+        report = json.loads(done.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        report = {"ok": False, "stdout": done.stdout[-400:], "stderr": done.stderr[-400:]}
+    checks = report.get("checks", {})
+    row("runtime", done.returncode == 0 and report.get("ok") is True and "dll_probe" in checks
+        and probe.get("control", {}).get("exit") == 3, exit=done.returncode,
+        probe=probe, checks=checks, **({} if checks else {"report": report}))
 
 
 def sc_passages(data: Path, asset_id: str | None) -> int:

@@ -69,6 +69,10 @@ def known_places() -> list[str]:
         appdata, local = os.environ.get("APPDATA"), os.environ.get("LOCALAPPDATA")
         places += [str(Path(appdata) / "npm")] if appdata else []
         places += [str(Path(local) / "Programs")] if local else []
+        # Tesseract is not bundled on Windows (W3): the UB Mannheim installer's places, all users and current user.
+        program_files = os.environ.get("ProgramFiles") or os.environ.get("PROGRAMFILES")
+        places += [str(Path(program_files) / "Tesseract-OCR")] if program_files else []
+        places += [str(Path(local) / "Programs" / "Tesseract-OCR")] if local else []
         fnm_root = Path(fnm) if fnm else Path(appdata) / "fnm" if appdata else None
         places += [str(fnm_root / "aliases" / "default")] if fnm_root else []
     else:
@@ -203,12 +207,22 @@ def is_bundled(path: str | None) -> bool:
     return Path(os.path.abspath(path)).parent == Path(os.path.abspath(resource_root() / "bin"))
 
 
-def child_path(tool: str | None = None, base: str | None = None) -> str:
-    """A PATH for a tool's child process: the tool's folder, node's folder, then `base` (the process PATH)."""
+def _package_folder() -> Path | None:
+    """The packaged app's own folder (`deixis-backend.exe` and `_internal`) on Windows; None elsewhere."""
+    return Path(os.path.abspath(sys.executable)).parent if sys.platform == "win32" and is_frozen() else None
+
+
+def child_path(tool: str | None = None, base: str | None = None, bundled: bool = False) -> str:
+    """A PATH for a tool's child process: the tool's folder, node's folder, then `base` (the process PATH). Every child
+    PATH DEIXIS builds comes from here (a rules test holds it). On Windows a program that is not part of the package
+    (`bundled` False) gets no folder of the packaged app from `base` (P10 W3): it must not load the package's DLLs."""
     base = os.environ.get("PATH", "") if base is None else base
     node = find_tool("node")
     folders = [str(Path(p).parent) for p in (tool, node) if p]
-    return os.pathsep.join(dict.fromkeys([*folders, *(d for d in base.split(os.pathsep) if d)]))
+    rest = [d for d in base.split(os.pathsep) if d]
+    if not bundled and (package := _package_folder()) is not None:
+        rest = [d for d in rest if not Path(os.path.abspath(d)).is_relative_to(package)]
+    return os.pathsep.join(dict.fromkeys([*folders, *rest]))
 
 
 # --- starting a tool on Windows (A4) ------------------------------------------------------------------------------

@@ -1,7 +1,9 @@
-# PyInstaller spec of the DEIXIS backend sidecar (P10 M1): one folder (onedir), macOS arm64.
+# PyInstaller spec of the DEIXIS backend sidecar (P10 M1, W3): one folder (onedir), macOS arm64 or Windows x64
+# (deixis-backend.exe and _internal\).
 # Built by packaging/sidecar/build.py, which first builds the web app and writes the build identity it passes in
 # DEIXIS_BUILD_IDENTITY; run that script, not this file directly.
 import os
+import sys
 from pathlib import Path
 
 from PyInstaller.utils.hooks import copy_metadata
@@ -37,7 +39,7 @@ exe = EXE(
     exclude_binaries=True,
     name="deixis-backend",
     console=True,
-    target_arch="arm64",
+    target_arch="arm64" if sys.platform == "darwin" else None,
     codesign_identity=None,
     upx=False,
 )

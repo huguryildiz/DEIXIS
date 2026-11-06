@@ -7,6 +7,12 @@ real argument, as under `python -m`). Any other `-m` module is refused. Everythi
 line (`serve`, `hold-folder`, `--check-resources`, ...).
 
 Imports stay minimal before routing: `runpy` would warn about, and run a second copy of, a module already imported.
+
+Windows (P10 W3): the macOS process layer (`desktop_reaper`, `session_launcher`) is refused; there each child's Job
+Object owns it (`tools/win_job.py`). PyInstaller's bootloader calls `SetDllDirectoryW(_internal)`, which every child
+process inherits, so an outside program (Tesseract, node, a model CLI) would load the bundle's copy of a DLL that shares
+a name with its own. First thing, before any thread or child exists, `SetDllDirectoryW(NULL)` undoes it, and the bundle's
+folders are registered with `os.add_dll_directory`, which children do not inherit.
 """
 
 from __future__ import annotations
@@ -24,11 +30,13 @@ CHILD_MODULES = frozenset({
     "deixis.session_launcher",  # leads each recorded session (P10 M2), see tools/child_record.py
 })
 EXIT_REFUSED = 2
+POSIX_ONLY_MODULES = frozenset({"deixis.desktop_reaper", "deixis.session_launcher"})
+_DLL_DIRECTORIES: list = []  # kept: closing one removes its folder from the search
 
 
 def run_child(module: str, args: list[str]) -> int:
     """Run one allowed child module as `__main__`; refuse any other with exit 2."""
-    if module not in CHILD_MODULES:
+    if module not in CHILD_MODULES or (sys.platform == "win32" and module in POSIX_ONLY_MODULES):
         print(f"deixis-backend: module {module!r} cannot be run in the packaged app", file=sys.stderr)
         return EXIT_REFUSED
     import runpy
@@ -37,8 +45,28 @@ def run_child(module: str, args: list[str]) -> int:
     return 0
 
 
+def reset_dll_search() -> None:
+    """Windows, frozen: no DLL directory a child would inherit; the bundle's own folders through add_dll_directory."""
+    import ctypes
+    import os
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.SetDllDirectoryW.argtypes = (ctypes.c_wchar_p,)
+    if not kernel32.SetDllDirectoryW(None):
+        raise OSError(f"SetDllDirectoryW(NULL) failed (Windows error {ctypes.get_last_error()})")
+    root = sys._MEIPASS
+    folders = [root] + sorted(entry.path for entry in os.scandir(root) if entry.is_dir() and any(
+        name.lower().endswith(".dll") for name in os.listdir(entry.path)))
+    _DLL_DIRECTORIES.extend(os.add_dll_directory(folder) for folder in folders)
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
+    if sys.platform == "win32" and getattr(sys, "frozen", False) and not _DLL_DIRECTORIES:
+        reset_dll_search()
+    if argv[:1] == ["--check-runtime"]:  # the Windows release smoke's in-process checks (scripts/p10/sidecar_smoke.py)
+        from deixis import resource_check
+        return resource_check.runtime_main(argv[1:])
     if len(argv) >= 2 and argv[0] == "-m":
         return run_child(argv[1], argv[2:])
     from deixis.__main__ import main as deixis_main

@@ -73,3 +73,77 @@ def main() -> int:
         print(line, file=sys.stderr)
     print(json.dumps({"event": "resources", "ok": not found, "missing": len(found), "build_identity_sha256": identity_sha256()}))
     return 1 if found else 0
+
+
+def runtime_main(args: list[str]) -> int:
+    """`deixis-backend --check-runtime FOLDER [--https URL] [--probe EXE]` (P10 W3): the native code the packaged backend
+    loads in its own process, run after the frozen entry's DLL search reset, for the Windows release smoke. In FOLDER a
+    synthetic PDF is written, opened and one page rendered (MuPDF); a throwaway Credential Locker entry is written, read
+    and deleted (keyring); an https request goes to URL through the system trust store (truststore, ssl); and EXE, a
+    program outside the package, is started the way an external tool is (`child_env`) and its output reported. One JSON
+    line; exit 0 when every check asked for passed."""
+    import secrets
+    import subprocess
+
+    folder = Path(args[0])
+    options = dict(zip(args[1::2], args[2::2]))
+    checks: dict[str, dict] = {}
+
+    def check(name: str, run) -> None:
+        try:
+            checks[name] = {"ok": True, **run()}
+        except Exception as exc:  # noqa: BLE001 - every failure is reported, none stops the check
+            checks[name] = {"ok": False, "error": f"{type(exc).__name__}: {exc}"[:400]}
+
+    def pdf() -> dict:
+        import pymupdf
+
+        path = folder / "runtime-check.pdf"
+        doc = pymupdf.open()
+        doc.new_page().insert_text((72, 72), "SYNTHETIC runtime check")
+        doc.save(path)
+        with pymupdf.open(path) as opened:
+            pixmap = opened[0].get_pixmap(dpi=72)
+            text = opened[0].get_text()
+        return {"pixels": pixmap.width * pixmap.height, "text": "SYNTHETIC" in text}
+
+    def credentials() -> dict:
+        import keyring
+
+        service, value = f"DEIXIS-runtime-check-{secrets.token_hex(6)}", secrets.token_hex(8)
+        keyring.set_password(service, "check", value)
+        try:
+            read = keyring.get_password(service, "check")
+        finally:
+            keyring.delete_password(service, "check")
+        if read != value or keyring.get_password(service, "check") is not None:
+            raise RuntimeError("the stored value did not come back, or was not deleted")
+        return {"backend": type(keyring.get_keyring()).__name__}
+
+    def https() -> dict:
+        import httpx
+
+        from deixis.system_trust import use_system_certificates
+
+        use_system_certificates()
+        response = httpx.get(options["--https"], timeout=30, follow_redirects=False)
+        return {"status": response.status_code}
+
+    def probe() -> dict:
+        from deixis.tools.child_env import child_env
+
+        done = subprocess.run([options["--probe"]], env=child_env(), capture_output=True, text=True, timeout=60,
+                              creationflags=0x08000000 if sys.platform == "win32" else 0)
+        if done.returncode != 0:
+            raise RuntimeError(f"exit {done.returncode}: {(done.stdout + done.stderr).strip()[-300:]}")
+        return {"said": done.stdout.strip()[-300:]}
+
+    check("pdf_render", pdf)
+    check("credential_locker", credentials)
+    if "--https" in options:
+        check("https", https)
+    if "--probe" in options:
+        check("dll_probe", probe)
+    ok = all(c["ok"] for c in checks.values())
+    print(json.dumps({"event": "runtime", "ok": ok, "checks": checks}))
+    return 0 if ok else 1

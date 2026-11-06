@@ -1,11 +1,11 @@
-"""Build the DEIXIS backend sidecar for macOS arm64 (P10 M1).
+"""Build the DEIXIS backend sidecar for macOS arm64 (P10 M1) or Windows x64 (P10 W3).
 
     uv run --group packaging python packaging/sidecar/build.py [--skip-web]
 
 Steps: `npm run build` in web (the bundle serves web/dist), the build identity (sha256 of every package file, read by
-PRISMA-S exports), PyInstaller with deixis-backend.spec into packaging/sidecar/dist/deixis-backend/, an ad-hoc signature
-(`codesign --force --sign -`) on every Mach-O file in it, and last `deixis-backend --check-resources` run from the
-output. Prints the folder size and the build time.
+PRISMA-S exports), PyInstaller with deixis-backend.spec into packaging/sidecar/dist/deixis-backend/, on macOS an ad-hoc
+signature (`codesign --force --sign -`) on every Mach-O file in it, and last `deixis-backend --check-resources` run
+from the output. Prints the folder size and the build time. Windows builds are unsigned.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import time
 from pathlib import Path
@@ -58,12 +59,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-web", action="store_true", help="use the existing web/dist")
     args = parser.parse_args()
-    if sys.platform != "darwin" or platform.machine() != "arm64":
-        print(f"This build is for macOS arm64; this Python is {sys.platform} {platform.machine()}.", file=sys.stderr)
+    windows = sysconfig.get_platform() == "win-amd64"  # this interpreter's own build (an ARM64 host emulates x64)
+    if not windows and (sys.platform != "darwin" or platform.machine() != "arm64"):
+        print(f"This build is for macOS arm64 or Windows x64; this Python is {sys.platform} {platform.machine()}.",
+              file=sys.stderr)
         return 2
     started = time.monotonic()
     if not args.skip_web:
-        run(["npm", "run", "build"], cwd=REPO / "web")
+        run([shutil.which("npm") or "npm", "run", "build"], cwd=REPO / "web")  # npm.cmd on Windows
     if not (REPO / "web" / "dist" / "index.html").is_file():
         print("web/dist/index.html is missing; run `npm run build` in web.", file=sys.stderr)
         return 2
@@ -76,11 +79,18 @@ def main() -> int:
         run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--log-level", "WARN",
              "--distpath", str(DIST), "--workpath", str(WORK), str(HERE / "deixis-backend.spec")],
             env=os.environ | {"DEIXIS_BUILD_IDENTITY": str(identity)})
-    signed = sign_all(OUTPUT)
-    run(["codesign", "--verify", str(OUTPUT / "deixis-backend")])
-    env = {k: v for k, v in os.environ.items() if k in ("HOME", "TMPDIR", "LANG", "LC_ALL", "USER")}
-    env["PATH"] = "/usr/bin:/bin"
-    run([str(OUTPUT / "deixis-backend"), "--check-resources"], cwd=Path(tempfile.gettempdir()), env=env)
+    if windows:
+        signed = 0
+        env = {k: v for k, v in os.environ.items() if k in ("SYSTEMROOT", "WINDIR", "TEMP", "TMP", "USERPROFILE", "LOCALAPPDATA",
+                                                             "APPDATA", "PATHEXT", "COMSPEC")}
+        env["PATH"] = str(Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32")
+    else:
+        signed = sign_all(OUTPUT)
+        run(["codesign", "--verify", str(OUTPUT / "deixis-backend")])
+        env = {k: v for k, v in os.environ.items() if k in ("HOME", "TMPDIR", "LANG", "LC_ALL", "USER")}
+        env["PATH"] = "/usr/bin:/bin"
+    run([str(OUTPUT / ("deixis-backend.exe" if windows else "deixis-backend")), "--check-resources"],
+        cwd=Path(tempfile.gettempdir()), env=env)
     print(f"signed {signed} Mach-O files; {OUTPUT}: {folder_bytes(OUTPUT) / 1e6:.1f} MB; "
           f"build {time.monotonic() - started:.0f} s")
     return 0

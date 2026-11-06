@@ -44,7 +44,7 @@ def child_env(extra: Mapping[str, str] | None = None, *, keep: Iterable[str] = (
     source = os.environ if source is None else source
     names = OS_VARIABLES | set(keep) | (NETWORK_VARIABLES if network else frozenset()) | (BUNDLED_VARIABLES if bundled else frozenset())
     env = {k: v for k, v in source.items() if k in names or k.startswith(OS_PREFIXES)}
-    env["PATH"] = child_path(tool, source.get("PATH", ""))
+    env["PATH"] = child_path(tool, source.get("PATH", ""), bundled=bundled)
     if not is_frozen():
         env.update({k: source[k] for k in LIBRARY_PATHS if k in source})  # the person's own setting, kept
     else:

@@ -65,6 +65,34 @@ def test_no_child_process_is_started_with_the_whole_environment():
     assert offenders == []
 
 
+def test_every_child_path_is_built_by_child_path():
+    """P10 W3: `tool_paths.child_path` is the one place a child's PATH is built, so the packaged app's folders are dropped
+    for every outside program on Windows. A source line that sets a PATH entry must call it; the only other one is the
+    POSIX login shell's environment (`tool_paths._shell_env`), which never runs on Windows."""
+    import re
+
+    root = Path(env_module.__file__).parents[1]
+    sets_path = re.compile(r"""(\[["']PATH["']\]\s*=|["']PATH["']\s*:|\bPATH\s*=)""")
+    found = [(p.relative_to(root).as_posix(), line.strip()) for p in root.rglob("*.py")
+             for line in p.read_text(encoding="utf-8").splitlines() if sets_path.search(line) and "child_path(" not in line]
+    assert found == [("tools/tool_paths.py", 'env["PATH"] = os.environ.get("PATH", "")')]  # `_shell_env`
+
+
+def test_outside_programs_get_no_folder_of_the_packaged_app_on_windows(monkeypatch, tmp_path):
+    from deixis.tools import tool_paths
+
+    package = tmp_path / "DEIXIS" / "sidecar" / "deixis-backend"
+    inside = [str(package), str(package / "_internal"), str(package / "_internal" / "pywin32_system32")]
+    monkeypatch.setattr(tool_paths, "_package_folder", lambda: package)
+    monkeypatch.setattr(tool_paths, "find_tool", lambda name: None)
+    base = os.pathsep.join([*inside, str(tmp_path / "bin")])
+    assert tool_paths.child_path(None, base) == str(tmp_path / "bin")
+    assert tool_paths.child_path(None, base, bundled=True) == base  # an in-package `-m` child keeps them
+    monkeypatch.setattr(env_module, "child_path", tool_paths.child_path)
+    assert child_env(source=source(PATH=base))["PATH"] == str(tmp_path / "bin")
+    assert child_env(source=source(PATH=base), bundled=True)["PATH"] == base
+
+
 def dump_env(path: Path, name: str, folder: Path) -> Path:
     folder.mkdir(parents=True, exist_ok=True)
     program = folder / name

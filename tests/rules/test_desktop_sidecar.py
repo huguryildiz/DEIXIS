@@ -56,6 +56,13 @@ def test_the_frozen_entry_runs_only_listed_child_modules_with_the_child_argv(mon
     assert seen == []
 
 
+def test_the_frozen_entry_refuses_the_macos_process_layer_on_windows(monkeypatch):
+    # P10 W3: on Windows each child's Job Object owns it; the watchdog and the session launcher are not children there.
+    monkeypatch.setattr(frozen_entry.sys, "platform", "win32")
+    for module in ("deixis.desktop_reaper", "deixis.session_launcher"):
+        assert frozen_entry.run_child(module, []) == frozen_entry.EXIT_REFUSED
+
+
 def test_the_control_token_is_read_once_and_removed_from_the_environment(monkeypatch, tmp_path):
     monkeypatch.setenv("DEIXIS_DATA_DIR", str(tmp_path))
     monkeypatch.setenv("DEIXIS_CONTROL_TOKEN", "SYNTHETIC-control-token")

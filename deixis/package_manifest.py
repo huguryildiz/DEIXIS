@@ -54,6 +54,7 @@ HIDDEN_IMPORTS = (
     "uvicorn.lifespan.off",
     # keyring finds its backends through entry points; credentials.py names fail and chainer itself
     "keyring.backends.macOS",
+    "keyring.backends.Windows",  # the Credential Locker (P10 W3)
     "keyring.backends.fail",
     "keyring.backends.null",
     "keyring.backends.chainer",

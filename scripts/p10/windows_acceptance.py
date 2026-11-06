@@ -1275,7 +1275,9 @@ def uninstall_row(work: Path, scenarios: list[Scenario]) -> None:
     default_before = listing(DEFAULT_LIBRARY) if DEFAULT_LIBRARY.exists() else None
     done = subprocess.run([str(INSTALL / "uninstall.exe"), "/S"], capture_output=True, timeout=120)
     gone = wait_for(lambda: not INSTALL.exists() or not any(INSTALL.iterdir()), 60, 0.5)
-    registered = powershell(f"Test-Path 'HKCU:\\{UNINSTALL_KEY}'")
+    # The uninstaller runs on as a copy in TEMP after uninstall.exe returns; its registry entry goes last.
+    registered = wait_for(lambda: (r := powershell(f"Test-Path 'HKCU:\\{UNINSTALL_KEY}'")).strip().lower() == "false" and r,
+                          30, 1) or powershell(f"Test-Path 'HKCU:\\{UNINSTALL_KEY}'")
     kept = {str(d.name): (d / "library.sqlite").is_file() and listing(d) == before for d, before in libraries.items()}
     default_after = listing(DEFAULT_LIBRARY) if DEFAULT_LIBRARY.exists() else None
     row("uninstall", bool(done.returncode == 0 and gone and registered.strip().lower() == "false" and all(kept.values())

@@ -96,7 +96,21 @@ class _JobSpawns:
         except OSError:
             await proc.aclose()  # terminated unrun by track; its pipes are closed here
             raise
+        _JOINED.add(proc.pid)
         return proc
+
+
+# Pids _JobSpawns started suspended and put in a job before they ran: the caller checks its own process is among them,
+# so a library that started it some other way (an update) is caught after the fact too.
+_JOINED: set[int] = set()
+
+
+def joined_job(proc: Any) -> bool:
+    """Whether _JobSpawns started `proc` inside a job (Windows; asked once per process, then forgotten)."""
+    if proc is None or proc.pid not in _JOINED:
+        return False
+    _JOINED.discard(proc.pid)
+    return True
 
 
 def spawn_in_jobs(module: Any) -> bool:

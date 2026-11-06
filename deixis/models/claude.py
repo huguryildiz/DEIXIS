@@ -4,6 +4,11 @@ The SDK control plane supplies the signed-in account's current model catalogue
 and per-model effort levels without sending a model prompt. Research steps run
 in fresh, non-persistent sessions with built-in tools, MCP servers, skills and
 filesystem settings disabled. No fallback model is configured.
+
+Claude Code delivers JSON-schema output through its internal StructuredOutput tool, which checks the answer against
+the schema and, when it does not match, lets the model try again in a further turn. A step gets MAX_TURNS turns for
+that (D157): a session that ends at the limit or at the CLI's retry limit without a valid answer hands its last
+StructuredOutput attempt to DEIXIS's own validation, which accepts it or starts the step's bounded repair.
 """
 
 from __future__ import annotations
@@ -15,6 +20,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import claude_agent_sdk
 from claude_agent_sdk import (
     AssistantMessage,
     ClaudeAgentOptions,
@@ -24,7 +30,10 @@ from claude_agent_sdk import (
     RateLimitEvent,
     ResultMessage,
     TextBlock,
+    ThinkingBlock,
+    ToolResultBlock,
     ToolUseBlock,
+    UserMessage,
 )
 
 from claude_agent_sdk._internal.transport import subprocess_cli
@@ -36,6 +45,12 @@ from deixis.domain.limits import limit_kind, service_error_kind, safe_error
 from deixis.tools.tool_paths import child_path, command_for, find_tool
 from deixis.tools.tool_probe import probe
 from deixis.tools import win_job
+
+
+# The first turn and up to two more for the CLI's StructuredOutput retries (D157).
+MAX_TURNS = 3
+# Result subtypes that mean the model answered but no StructuredOutput call passed the CLI's schema check.
+NO_VALID_STRUCTURED_OUTPUT = ("error_max_turns", "error_max_structured_output_retries")
 
 
 def _model_matches(actual: str | None, expected: str) -> bool:
@@ -53,6 +68,9 @@ TELEMETRY_OFF = {"DISABLE_TELEMETRY": "1", "DISABLE_ERROR_REPORTING": "1", "CLAU
 # kill-on-close job of its own before it runs (`cli_process.spawn_in_jobs`); on macOS the CLI stays in the backend's
 # process group, where the desktop watchdog finds it (P10 M2).
 JOBS_ON = cli_process.spawn_in_jobs(subprocess_cli)
+# The SDK versions whose transport was read and tested with this hook (tests/rules/test_windows_jobs.py). Another
+# version may start its processes some other way, so on Windows it is refused until it is checked and added here.
+JOB_HOOK_SDK = frozenset({"0.2.152"})
 
 
 class NotInJob(CLIConnectionError):
@@ -64,9 +82,16 @@ class JobTransport(subprocess_cli.SubprocessCLITransport):
     ending the CLI's job when it closes, so whatever the CLI started goes too, also after the CLI's own clean exit."""
 
     async def connect(self) -> None:
-        if not JOBS_ON:  # an SDK whose transport no longer starts processes through `anyio`: nothing is started (fail closed)
+        # Fail closed before anything starts: an SDK whose transport no longer starts processes through `anyio`, or a
+        # version this hook was not checked against.
+        if not JOBS_ON or claude_agent_sdk.__version__ not in JOB_HOOK_SDK:
             raise NotInJob("Claude Code was not started: its process could not be put in a job")
         await super().connect()
+        if not cli_process.joined_job(self._process):  # started some other way after all: stop it, report nothing sent
+            proc, self._process = self._process, None
+            if proc is not None:
+                cli_process.stop_group(proc)
+            raise NotInJob("Claude Code was stopped: its process did not start inside a job")
 
     async def close(self) -> None:
         proc = self._process
@@ -227,16 +252,39 @@ class ClaudeCodeAdapter:
             effort=reasoning_effort,
             system_prompt=f"{base}\n\n{developer}",
             output_format={"type": "json_schema", "schema": output_schema},
-            max_turns=1,
+            max_turns=MAX_TURNS,
         )
         text_parts: list[str] = []
         tool_types: list[str] = []
-        structured_output_received = False
+        attempts: list[Any] = []  # every StructuredOutput call's input, in order
+        carrier_ids: set[str] = set()
 
         def external_tools() -> list[str]:
-            # Claude's JSON-schema output is an internal StructuredOutput block.
-            # Accept it only when the SDK also delivered the structured result.
-            return [name for name in tool_types if not (structured_output_received and name == "StructuredOutput")]
+            # StructuredOutput is the CLI's own carrier for JSON-schema output (offered only because of output_format;
+            # built-in tools and MCP servers are off). Any other tool action is an isolation violation.
+            return [name for name in tool_types if name != "StructuredOutput"]
+
+        def note_block(block: Any, from_user: bool = False) -> None:
+            # Fail closed (D157), in assistant and user messages alike: text, thinking, the model's StructuredOutput
+            # calls and the results of those calls pass; every other block the SDK parses (another tool call, a
+            # StructuredOutput call in a user message, a server tool use such as web_search, a server tool result, a
+            # result for an unknown call, a block type this adapter does not know) is recorded as a tool action.
+            # A user message's text is not the model's answer and is not kept.
+            if isinstance(block, TextBlock):
+                if not from_user:
+                    text_parts.append(block.text)
+            elif isinstance(block, ThinkingBlock):
+                pass
+            elif isinstance(block, ToolUseBlock) and block.name == "StructuredOutput" and not from_user:
+                tool_types.append(block.name)
+                carrier_ids.add(block.id)
+                attempts.append(block.input)
+            elif isinstance(block, ToolResultBlock) and block.tool_use_id in carrier_ids:
+                pass
+            else:
+                name = getattr(block, "name", None)
+                tool_types.append(name if isinstance(name, str) and name and name != "StructuredOutput"
+                                  else type(block).__name__)
 
         actual_model: str | None = None
         assistant_error: str | None = None
@@ -265,22 +313,34 @@ class ClaudeCodeAdapter:
                                 actual_model = item.model or actual_model
                             usage = item.usage or usage
                             for block in item.content:
-                                if isinstance(block, TextBlock):
-                                    text_parts.append(block.text)
-                                elif isinstance(block, ToolUseBlock):
-                                    tool_types.append(block.name)
+                                note_block(block)
+                        elif isinstance(item, UserMessage):
+                            for block in item.content if isinstance(item.content, list) else []:
+                                note_block(block, from_user=True)
                         elif isinstance(item, RateLimitEvent):
                             self._note_quota(item.rate_limit_info.raw)
                         elif isinstance(item, ResultMessage):
                             session_id = item.session_id
                             usage = item.usage or usage
                             if item.structured_output is not None:
-                                structured_output_received = True
                                 text_parts = [json.dumps(item.structured_output, ensure_ascii=False)]
                             elif item.result and not text_parts:
                                 text_parts = [item.result]
                             if item.is_error:
                                 error = "; ".join(item.errors or []) or item.result or item.subtype
+                                if (item.subtype in NO_VALID_STRUCTURED_OUTPUT and item.structured_output is None
+                                        and item.api_error_status is None and assistant_error is None
+                                        and attempts and not external_tools()):
+                                    # D157: the model answered, but no attempt passed the CLI's schema check within the
+                                    # turn limit. Its last attempt goes to DEIXIS's normalisation and validation, which
+                                    # accept it or start the bounded repair; the CLI's verdict is kept with the record.
+                                    return ModelStepResult(
+                                        "completed", raw_text=json.dumps(attempts[-1], ensure_ascii=False),
+                                        resolved_model=actual_model, external_thread_id=session_id, token_usage=usage,
+                                        error=error, requested_model_verified=_model_matches(actual_model, expected_model),
+                                        transport={"structured_output": {"rejected_by_cli": item.subtype, "error": safe_error(error),
+                                                                         "attempts": len(attempts), "turns": item.num_turns}},
+                                    )
                                 kind = service_error_kind(item.api_error_status or assistant_error,
                                                           payload={"type": assistant_error}, text=error, surface="model")
                                 return ModelStepResult(
@@ -293,12 +353,12 @@ class ClaudeCodeAdapter:
                                 )
         except TimeoutError:
             return ModelStepResult("failed", resolved_model=actual_model, external_thread_id=session_id,
-                                   token_usage=usage, tool_item_types=tool_types, error="Claude Code turn timed out",
+                                   token_usage=usage, tool_item_types=external_tools(), error="Claude Code turn timed out",
                                    delivery_class="after_send_unknown",
                                    requested_model_verified=_model_matches(actual_model, expected_model))
         except (ClaudeSDKError, OSError) as exc:
             return ModelStepResult("failed", resolved_model=actual_model, external_thread_id=session_id,
-                                   token_usage=usage, tool_item_types=tool_types, error=safe_error(str(exc))[:300],
+                                   token_usage=usage, tool_item_types=external_tools(), error=safe_error(str(exc))[:300],
                                    delivery_class="before_send" if _not_started(exc) else "after_send_unknown",
                                    requested_model_verified=_model_matches(actual_model, expected_model))
         finally:

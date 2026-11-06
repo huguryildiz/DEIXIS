@@ -30,9 +30,10 @@ NETWORK_VARIABLES = frozenset({
 # Python's system-certificate setting (system_trust.py) does not reach other programs; these do for uv and Node.
 UV_TLS = {"UV_NATIVE_TLS": "1"}
 NODE_TLS = {"NODE_USE_SYSTEM_CA": "1"}  # Node 22.19 / 24.6 and later; older Node ignores it
-# DEIXIS's own switches that the app's Python children read (the memory guard, the repo root); none holds a secret.
+# DEIXIS's own switches that the app's Python children read (the memory guard, the repo root, the child record's path
+# and owner, `child_record.py`); none holds a secret.
 BUNDLED_VARIABLES = frozenset({"DEIXIS_REPO_ROOT", "DEIXIS_CHILD_LIFETIME_SECONDS", "DEIXIS_CHILD_GUARD_DISABLED",
-                               "DEIXIS_CHILD_GUARD_LOG"})
+                               "DEIXIS_CHILD_GUARD_LOG", "DEIXIS_CHILD_RECORD", "DEIXIS_CHILD_OWNER"})
 LIBRARY_PATHS = ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH", "LIBPATH")
 
 

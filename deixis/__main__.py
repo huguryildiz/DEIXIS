@@ -32,6 +32,7 @@ from deixis.storage.data_location import PointerDamaged, Postponed, apply_pendin
 from deixis.storage import backup, db
 from deixis.storage.db import SchemaCheckUnreadable, UnknownSchemaError, check_schema_known
 from deixis.system_trust import use_system_certificates
+from deixis.tools import child_record
 
 
 SHUTDOWN_EXIT_SECONDS = 6.0
@@ -259,8 +260,31 @@ def watch_stdin(server, read=None) -> None:
             pass
     except (OSError, ValueError, AttributeError):
         pass
-    print("stdin closed; stopping", file=sys.stderr)
-    server.should_exit = True
+    server.should_exit = True  # first: with the shell gone, stderr may be a closed pipe and the print below fail
+    try:
+        print("stdin closed; stopping", file=sys.stderr)
+    except (OSError, ValueError):
+        pass
+
+
+TOKEN_LINE_LIMIT = 4096
+
+
+def read_stdin_token(read=None) -> str | None:
+    """Desktop mode (P10 M2): the shell writes the control token as the first line on stdin, where `ps eww` cannot show
+    it. Read byte by byte up to the newline, so nothing after it is taken from `watch_stdin`, which then waits for EOF.
+    An empty line, EOF or an unreadable stdin means no token (the shutdown route stays off)."""
+    read = read or (lambda: os.read(sys.stdin.fileno(), 1))
+    line = b""
+    try:
+        while len(line) < TOKEN_LINE_LIMIT:
+            byte = read()
+            if not byte or byte == b"\n":
+                break
+            line += byte
+    except (OSError, ValueError, AttributeError):
+        return None
+    return line.decode("utf-8", "replace").strip() or None
 
 
 class LifespanFailure:
@@ -393,6 +417,17 @@ def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...], re
             return refuse("port_unavailable", f"No free port on {settings.host} for DEIXIS.")
         settings = dataclasses.replace(settings, port=listener.getsockname()[1])
     nonce = secrets.token_urlsafe(16) if desktop else None
+    # P10 M2: every process started in a session of its own is recorded from here on; what a backend that ended left
+    # running is stopped first, before this one starts any child.
+    if desktop and os.environ.pop(child_record.ACK_ENV, None) == "1" and child_record.ON:
+        # Started by the desktop watchdog: it learns the record's path, and says so, before any child can be recorded.
+        print(json.dumps({"event": "child_record", "path": str(child_record.record_path(settings.data_dir))}), flush=True)
+        if read_stdin_token() != "ack":
+            return refuse("watchdog_gone", "The DEIXIS watchdog did not answer; DEIXIS did not start.")
+    recovered = child_record.recover(child_record.configure(settings.data_dir))
+    if recovered:
+        print(f"Stopped {len(recovered)} processes left running by a DEIXIS that ended: {', '.join(recovered)}",
+              file=sys.stderr)
     # Open event streams would otherwise hold graceful shutdown (and the port) until the browser disconnects.
     shutdown_holder: list = []
     if desktop:
@@ -408,9 +443,13 @@ def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...], re
         config = uvicorn.Config(watched, host=settings.host, port=settings.port, log_level="info",
                                 timeout_graceful_shutdown=3, log_config=desktop_log_config())
         add_log_file(settings.data_dir)
+        if recovered:
+            logging.getLogger("deixis.child_record").warning("stopped %d processes left by a DEIXIS that ended: %s",
+                                                             len(recovered), ", ".join(recovered))
         server = desktop_server(
             config,
-            on_started=lambda: emit({"event": "listening", "port": settings.port, "pid": os.getpid(), "nonce": nonce}),
+            on_started=lambda: emit({"event": "listening", "port": settings.port, "pid": os.getpid(), "nonce": nonce,
+                                     "data_dir": str(settings.data_dir)}),
             on_failed=lambda: refuse("lifespan_failed", watched.message or "The app did not start."))
         shutdown_holder.append(server)
         threading.Thread(target=watch_shutdown, args=(server, SHUTDOWN_EXIT_SECONDS, os._exit, threading.Event()), daemon=True).start()
@@ -662,8 +701,9 @@ def main(argv: list[str] | None = None) -> int:
     if given[:1] == ["--check-resources"]:  # read-only: the packaged app's files and modules, from inside the process (P10 M1)
         from deixis import resource_check
         return resource_check.main()
-    # The packaged app's shell passes the shutdown token in the environment; it is read once and removed, so no child
-    # this process starts (the Claude SDK copies os.environ) inherits it.
+    # The packaged app's shell passes the shutdown token as the first stdin line (read below, P10 M2); the environment
+    # is still read (tests, M1 smoke) and the name removed either way, so no child this process starts (the Claude SDK
+    # copies os.environ) inherits it.
     control_token = os.environ.pop("DEIXIS_CONTROL_TOKEN", None) or None
     parser = argparse.ArgumentParser(prog="deixis")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -686,6 +726,8 @@ def main(argv: list[str] | None = None) -> int:
     retained.add_argument("--delete", action="store_true", help="Delete listed files through the guarded recovery unlink")
     args = parser.parse_args(argv)
     if args.command == "serve" and args.desktop:
+        if control_token is None:
+            control_token = read_stdin_token()
         return desktop_start(lambda: run_command(args, parser, control_token))
     return run_command(args, parser, control_token)
 

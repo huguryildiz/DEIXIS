@@ -24,7 +24,7 @@ from typing import Any
 
 from deixis.tools.child_env import NODE_TLS
 from deixis.models.adapter import CODEX_ENV_ALLOWLIST, ModelStepResult
-from deixis.models.cli_process import reap, spawn_options, stop_group_async, track
+from deixis.models.cli_process import launch, reap, refused, spawn_options, stop_group_async, track
 from deixis.domain.limits import safe_error, service_error_kind
 from deixis.tools.tool_paths import CliCommand, child_path, command_for, find_tool
 from deixis.tools.tool_probe import probe
@@ -110,7 +110,7 @@ class CopilotCliAdapter:
     async def _acp_catalogue(self, cmd: list[str], env: dict[str, str]) -> dict[str, Any]:
         """`session/new`'s result: the signed-in account's models. Raises RuntimeError with the agent's error text."""
         proc = await asyncio.create_subprocess_exec(
-            *cmd, "--acp", "--disable-builtin-mcps", "--no-custom-instructions", "--no-auto-update",
+            *launch([*cmd, "--acp", "--disable-builtin-mcps", "--no-custom-instructions", "--no-auto-update"]),
             stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
             cwd=self.workspace, env=env, limit=64 * 1024 * 1024, **spawn_options())  # session/new's model list is one line, past the 64 KiB default
         track(proc)
@@ -211,7 +211,7 @@ class CopilotCliAdapter:
         if reasoning_effort:
             args += ["--reasoning-effort", reasoning_effort]
         try:
-            proc = await asyncio.create_subprocess_exec(*args, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+            proc = await asyncio.create_subprocess_exec(*launch(args), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                                                         stderr=asyncio.subprocess.PIPE, cwd=self.workspace, env=env,
                                                         **spawn_options())
         except OSError as exc:
@@ -232,6 +232,8 @@ class CopilotCliAdapter:
         finally:
             self._active.discard(proc)
             await stop_group_async(proc)  # anything the binary started and left running
+        if why := refused(proc.returncode, err.decode(errors="replace")):
+            return ModelStepResult("unavailable", error=safe_error(why)[:300], delivery_class="before_send")
         return parse_events(out.decode(errors="replace"), err.decode(errors="replace"), proc.returncode, requested_model)
 
     async def cancel(self) -> bool:

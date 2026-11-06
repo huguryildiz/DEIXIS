@@ -54,6 +54,7 @@ from deixis.documents.builtin_catalog import CTX, Model
 from deixis.documents.llama_runtime import DownloadError, RuntimePaths, now_iso  # noqa: F401 (re-exported)
 from deixis.models.openai_compat import loopback_client
 from deixis.storage import library_lock
+from deixis.tools import child_record
 from deixis.tools.child_env import child_env
 
 LOCAL_BATCH = 16  # records per request (a starting value, not measured), so a pause waits at most one batch
@@ -325,6 +326,7 @@ class LlamaServer:
     def __init__(self, paths: BuiltinPaths, model: Model, client: httpx.AsyncClient, threads: int | None = None):
         self.paths, self.model, self.client, self.threads = paths, model, client, threads
         self.process: asyncio.subprocess.Process | None = None
+        self._leader: str | None = None  # the started leader's pid:start (`tools/child_record.stop_group`)
         self.port: int | None = None
         self._key: str | None = None
 
@@ -377,10 +379,12 @@ class LlamaServer:
             try:
                 with open(log, "wb") as handle:
                     self.process = await asyncio.create_subprocess_exec(
-                        "/bin/sh", "-c", WATCHER, "deixis-llama", str(server), *self.argv(port, key),
+                        *child_record.launcher_argv(["/bin/sh", "-c", WATCHER, "deixis-llama", str(server),
+                                                     *self.argv(port, key)], "local_model_server"),
                         stdin=asyncio.subprocess.PIPE, stdout=handle, stderr=handle, cwd=str(server.parent),
                         env=child_env(), start_new_session=True,
                         pass_fds=(model_fd, runtime_fd, *library_lock.child_fds()))
+                    self._leader = child_record.leader(self.process.pid)
             except OSError as exc:
                 raise LocalEmbeddingError("builtin_unavailable", f"llama-server did not start: {exc}") from exc
             finally:
@@ -513,16 +517,19 @@ class LlamaServer:
         process, self.process = self.process, None
         if process is None:
             return
-        _signal_group(process, signal.SIGKILL)
+        found = _signal_group(process, self._leader, signal.SIGKILL)
         await process.wait()
-        await _group_gone(process.pid)
+        if child_record.ON:  # what was found in the verified group and session, by identity
+            await asyncio.to_thread(child_record.wait_gone, found, 10)
+        else:
+            await _group_gone(process.pid)
 
     async def stop(self) -> None:
         """End the server gently (SIGTERM to its group), killing it after 10 s."""
         process = self.process
         if process is None:
             return
-        _signal_group(process, signal.SIGTERM)
+        _signal_group(process, self._leader, signal.SIGTERM)
         try:
             await asyncio.wait_for(process.wait(), 10)
         except asyncio.TimeoutError:
@@ -531,16 +538,21 @@ class LlamaServer:
         await self.kill()  # whatever of the group is left; waits until it is gone
 
 
-def _signal_group(process: asyncio.subprocess.Process, sig: int) -> None:
+def _signal_group(process: asyncio.subprocess.Process, leader: str | None, sig: int) -> set[str]:
+    """Its own session: the group id is the leader's pid, signalled only while that leader is verified (macOS)."""
+    if child_record.ON:
+        return child_record.stop_group(process.pid, leader, sig)
     try:
-        os.killpg(process.pid, sig)  # started in its own session: the group id is the watcher's pid
+        os.killpg(process.pid, sig)
     except (ProcessLookupError, PermissionError):
         if process.returncode is None:
             process.send_signal(sig)
+    return set()
 
 
 async def _group_gone(pgid: int, seconds: float = 10) -> None:
-    """Wait until no process of the group is left (the server may outlive its watcher by a moment), killing again."""
+    """Where the record layer is off: wait until no process of the group is left (the server may outlive its watcher by
+    a moment), killing again."""
     loop = asyncio.get_running_loop()
     ends = loop.time() + seconds
     while loop.time() < ends:

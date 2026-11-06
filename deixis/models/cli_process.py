@@ -16,16 +16,35 @@ import sys
 import weakref
 from typing import Any
 
+from deixis.tools import child_record
+
 KILL = signal.SIGKILL if hasattr(signal, "SIGKILL") else signal.SIGTERM
 WINDOWS = sys.platform == "win32"
 # Windows: the job object holding each tracked CLI and everything it starts, closed when the process object goes.
 _JOBS: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
+# POSIX: each tracked process's identity (pid:start) read when it was started; its group is signalled only while that
+# process is still the leader (`tools/child_record.stop_group`).
+_LEADERS: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
 # Windows process creation flags and job limits (winbase.h, winnt.h); named here because Python defines only some.
 CREATE_SUSPENDED, CREATE_NEW_PROCESS_GROUP = 0x00000004, 0x00000200
 JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_EXTENDED_LIMIT_INFORMATION = 0x00002000, 9
 PROCESS_ACCESS = 0x0001 | 0x0100 | 0x0800  # PROCESS_TERMINATE | PROCESS_SET_QUOTA | PROCESS_SUSPEND_RESUME
+
+
+def launch(argv) -> list[str]:
+    """The argv to start with spawn_options(): on macOS the program runs under the session launcher, which records the
+    new session before the program starts (while the record is on) and empties it after (`tools/child_record.py`)."""
+    return child_record.launcher_argv(list(argv), "cli")
+
+
+def refused(returncode: int | None, stderr: str) -> str | None:
+    """The launcher's refusal (the program never started, nothing was sent): its sentence, else None."""
+    from deixis.session_launcher import RECORD_FAILED, REFUSED
+
+    line = next((x for x in stderr.splitlines() if x.startswith(REFUSED)), None)
+    return line if returncode == RECORD_FAILED and line and child_record.ON else None
 
 
 def spawn_options() -> dict[str, Any]:
@@ -82,9 +101,10 @@ def _kill_on_close() -> Any:
 
 
 def track(proc: asyncio.subprocess.Process, require_job: bool = False) -> None:
-    """Windows: puts the CLI started by spawn_options() in a job object, then lets it run. stop_group then ends the
+    """POSIX: keeps the started leader's identity for stop_group. Windows: puts the CLI started by spawn_options() in a
+    job object, then lets it run. stop_group then ends the
     CLI and everything it started, also after the CLI itself has exited (taskkill /T finds a child only through its
-    running parent). POSIX needs nothing: the process group outlives its leader.
+    running parent).
 
     Why suspended: a process's children join its job only if it is in the job when it creates them, so the CLI is
     created with CREATE_SUSPENDED (no code of its own has run, it cannot have started a child or exited, so its pid
@@ -94,6 +114,7 @@ def track(proc: asyncio.subprocess.Process, require_job: bool = False) -> None:
     `require_job` (the folder-lock holder's command, which must never run outside the job): a job that cannot be made
     or joined kills the process without resuming it and raises OSError."""
     if not WINDOWS:
+        _LEADERS[proc] = child_record.leader(proc.pid)
         return
     import ctypes
 
@@ -149,10 +170,8 @@ def stop_group(proc: asyncio.subprocess.Process, sig: int = KILL) -> None:
             except (ProcessLookupError, OSError):
                 pass
         return
-    try:
-        os.killpg(proc.pid, sig)  # the group id is the CLI's pid (start_new_session)
-    except (ProcessLookupError, PermissionError, OSError):
-        pass
+    # The group id is the leader's pid (start_new_session), signalled only while that leader is verified.
+    child_record.stop_group(proc.pid, _LEADERS.get(proc), sig)
 
 
 async def stop_group_async(proc: asyncio.subprocess.Process, sig: int = KILL) -> None:

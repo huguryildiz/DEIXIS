@@ -122,6 +122,20 @@ class Sidecar:
         self.seen: dict[int, str | None] = {self.proc.pid: lstart(self.proc.pid)}
         self.event: dict | None = None
         self.url = ""
+        self.marks = (str(binary.parent), str(data))  # a child started on its own names the bundle or the data folder
+        threading.Thread(target=self._watch, daemon=True).start()
+
+    def _watch(self) -> None:
+        """For the process's whole life (M2, Sol backlog from M1): every 0.2 s its descendants, and every process whose
+        command names the bundle or the data folder, so an orphan or a child in its own session is seen too."""
+        while self.proc.poll() is None:
+            self.remember_children()
+            done = subprocess.run(["ps", "-axww", "-o", "pid=,command="], capture_output=True, text=True)
+            for line in done.stdout.splitlines():
+                pid, _, command = line.strip().partition(" ")
+                if pid.isdigit() and int(pid) != os.getpid() and any(m in command for m in self.marks):
+                    self.seen.setdefault(int(pid), lstart(int(pid)))
+            time.sleep(0.2)
 
     def _read(self) -> None:
         for line in self.proc.stdout:
@@ -292,11 +306,7 @@ def main() -> int:
 
         run = client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"})
         if run.status_code in (200, 201, 202):
-            stopper = threading.Event()
-            threading.Thread(target=lambda: [sc.remember_children() or time.sleep(0.5) for _ in iter(stopper.is_set, True)],
-                             daemon=True).start()
             view, finished = wait_run(client, rid, run.json()["id"])
-            stopper.set()
             answer = (view.get("answers") or [{}])[0]
             claims = answer.get("claims") or []
             cited = [e for c in claims for e in c.get("evidence") or [] if e.get("anchor_text")]

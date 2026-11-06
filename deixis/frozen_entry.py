@@ -20,6 +20,8 @@ CHILD_MODULES = frozenset({
     "deixis.documents.ocr",
     "deixis.documents.arxiv_source",
     "deixis.documents.child_guard",
+    "deixis.desktop_reaper",  # the packaged app's watchdog (P10 M2), started by the shell
+    "deixis.session_launcher",  # leads each recorded session (P10 M2), see tools/child_record.py
 })
 EXIT_REFUSED = 2
 

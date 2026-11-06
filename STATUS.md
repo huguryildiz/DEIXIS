@@ -16,7 +16,8 @@ Uygulama çalışıyor. Son haftalarda eklenenlerin çoğu gerçek kullanımda d
 - Tabloda her kaynağın okunma derinliği yazıyor; rapor kaynakları adıyla anıyor (D140, D143).
 - Görsel kontrolden düzeltmeler: kendi özeti olmayan sürüm diğer sürümün özetini gösteriyor; "Add to chat" yalnız cevapta; birkaç ekran sadeleşti (D146, D147).
 
-- **Mac paketi, 1. adım:** backend artık Python kurulmadan tek klasörlük bir program olarak çalışıyor (107 MB, ~1 sn'de açılıyor). Bu Mac'te 13 kontrolün hepsi geçti: PDF, OCR, soru → atıflı cevap, eski kütüphanenin yükseltilmesi, kapanışta açık süreç kalmaması. Pencere ve DMG henüz yok (D150).
+- **Mac paketi, 1. adım:** backend artık Python kurulmadan tek klasörlük bir program olarak çalışıyor (107 MB, ~1 sn'de açılıyor). Bu Mac'te 13 kontrolün hepsi geçti: PDF, OCR, soru → atıflı cevap, eski kütüphanenin yükseltilmesi, kapanışta açık süreç kalmaması. (D150)
+- **Mac paketi, 2. adım:** kendi penceresi, menü çubuğu simgesi ve DMG'si olan DEIXIS.app (57,7 MB). Çıkışta, çökmede ya da zorla öldürmede DEIXIS'in başlattığı her süreç kapanıyor; bu Mac'te sahte Codex/Gemini/Copilot ve PDF işleriyle ölçüldü (en uzun 6,6 sn). Pencere testleri (açılış, pencere içi kayıt, indirme) ekran kilitli olduğu için henüz koşmadı; release bunlardan sonra (D151).
 - Türkçe (İngilizce olmayan) soru artık durmuyor: model soruyu tek İngilizce cümleye çeviriyor, arama kelimeleri o cümleden seçiliyor; cümle plan adımında görünüyor ve düzeltilebiliyor. Çevirinin arama kalitesine etkisi ölçülmedi (D149).
 
 **Ne kadar biliyoruz**
@@ -30,7 +31,7 @@ Uygulama çalışıyor. Son haftalarda eklenenlerin çoğu gerçek kullanımda d
 
 ## Sırayla yapılacaklar
 
-1. **P10, Mac paketi** (plan `notes/plans/p10-mac-first.md`): M1 bitti; sırada M2 (Tauri penceresi, menü çubuğu, DMG), sonra M3 (Tesseract paket içinde, tema ve sürüm kontrolü), M4 (ilk aday sürüm). Intel Mac, Windows, Linux sonra. OpenAI, Gemini, DeepSeek fiyatları yayından önce doğrulanacak.
+1. **P10, Mac paketi** (plan `notes/plans/p10-mac-first.md`): M1 bitti, M2 kodda (pencere testleri ve `v0.1.0` ön sürüm release'i bekliyor); sonra M3 (Tesseract paket içinde, tema ve sürüm kontrolü), M4 (ilk aday sürüm). Intel Mac, Windows, Linux sonra. OpenAI, Gemini, DeepSeek fiyatları yayından önce doğrulanacak.
 2. **Görsel kontrol** (sahip, paralel): liste `notes/visual-check-2026-10-24.md`, 28 madde.
 3. **D106'yı gerçek koşuyla doğrula** (BioASQ, LitSearch, EE survey): ~12 USD OpenAlex + 1–3 USD Voyage, ön ödemeli bakiye ister. Bu bitmeden reranker ayarı değişmesin.
 4. **Kill search ve kartopu kesimi:** doğru makale havuzda ama okunan ilk 8 / ilk 80'in dışında. İlk denenecek: aynı makalenin sürümlerini birleştirmek, sonra kesimden önce rerank. Ayrıntı `notes/2026-10-results.md`, "Live pilots" bölümü.

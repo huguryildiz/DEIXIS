@@ -119,6 +119,7 @@ CSRF_HEADER = "x-deixis-csrf"
 # The packaged app's shell stops the backend with the token it started it with (P10 M1); the one route the cookie CSRF
 # check skips, because it has its own check: the token, compared in constant time.
 SHUTDOWN_PATH = "/api/internal/shutdown"
+STATUS_PATH = "/api/internal/status"  # read-only, for the shell's menu-bar item (P10 M2); a GET needs no CSRF token
 CONTROL_HEADER = "x-deixis-control"
 # The pauses an approval answers: the proposal itself, and a correction that left nothing searchable (slice 08a).
 INSTITUTIONAL_ACCESS_TTL_SECONDS = 600
@@ -1347,6 +1348,16 @@ def create_app(
             return JSONResponse({"detail": "Missing or invalid control token"}, status_code=403)
         request_shutdown()
         return JSONResponse({"status": "stopping"}, status_code=202)
+
+    @app.get(STATUS_PATH)
+    async def internal_status(request: Request) -> JSONResponse:
+        """How many researches have a run queued or working, for the packaged app's menu-bar item. Read-only; the same
+        control token as the shutdown route, off (404) without one."""
+        if not control_token:
+            return JSONResponse({"detail": "Not Found"}, status_code=404)
+        if not hmac.compare_digest(request.headers.get(CONTROL_HEADER, "").encode(), control_token.encode()):
+            return JSONResponse({"detail": "Missing or invalid control token"}, status_code=403)
+        return JSONResponse({"running_researches": store_of(request).active_research_count()})
 
     @app.get("/api/session")
     async def session() -> JSONResponse:

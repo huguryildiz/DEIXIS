@@ -3,7 +3,8 @@
 `--version` prints a version; `app-server` speaks the JSON-RPC lines `models/codex_rpc.py` sends and answers every
 turn with `tests/support/fakes.valid_response` for the StepInput in the turn's text (SYNTHETIC output that passes the
 step's checks). On start it writes the names of the environment variables it was given to `env-seen.json` next to its
-launcher, so the smoke run can show which variables reach a model CLI.
+launcher, so the smoke run can show which variables reach a model CLI. With `_FAKE_CODEX_HANG` set (by the desktop
+acceptance's launcher) a turn never completes: a long model call.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 from itertools import count
 from pathlib import Path
 
@@ -62,6 +64,9 @@ def main() -> int:
         if method == "turn/start":
             turn = f"turn_{next(ids)}"
             send({"id": message["id"], "result": {"turn": {"id": turn}}})
+            if os.environ.get("_FAKE_CODEX_HANG"):  # desktop acceptance: a model call that does not end
+                (launcher / "codex-hang.json").write_text(json.dumps({"pid": os.getpid(), "pgid": os.getpgrp()}))
+                time.sleep(3600)
             text = next(i["text"] for i in params["input"] if i.get("type") == "text")
             output = valid_response(parse_step_input(text))
             thread = params["threadId"]

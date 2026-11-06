@@ -3821,6 +3821,12 @@ class Store:
                 (key, dumps(value), now()),
             )
 
+    def active_research_count(self) -> int:
+        """Researches with a run queued, running or asked to pause (the packaged app's menu-bar count, P10 M2)."""
+        return self.conn.execute(
+            f"SELECT COUNT(DISTINCT research_id) FROM runs WHERE status IN ({','.join('?' * len(ACTIVE_RUN_STATUSES))})",
+            ACTIVE_RUN_STATUSES).fetchone()[0]
+
     def set_setting_if_unset(self, key: str, value: Any) -> bool:
         """Store `value` only when `key` has no value yet, in one statement; whether it was stored."""
         with transaction(self.conn):

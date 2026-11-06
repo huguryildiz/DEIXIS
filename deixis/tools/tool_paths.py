@@ -79,11 +79,10 @@ def known_places() -> list[str]:
     return places
 
 
-def _stop(proc: subprocess.Popen) -> None:
-    try:
-        os.killpg(proc.pid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError, OSError):
-        pass
+def _stop(proc: subprocess.Popen, leader: str | None) -> None:
+    from deixis.tools import child_record
+
+    child_record.stop_group(proc.pid, leader, signal.SIGKILL)  # only while `leader` is still that process
 
 
 def _shell_env() -> dict[str, str]:
@@ -101,11 +100,15 @@ def _read_shell_path() -> list[str]:
     try:
         # Interactive and login, so both .zprofile and .zshrc (where nvm usually sits) run; a new session keeps the
         # shell away from the terminal DEIXIS may have been started from.
-        proc = subprocess.Popen([shell, "-i", "-l", "-c", SHELL_COMMAND], stdin=subprocess.DEVNULL,
+        from deixis.tools import child_record  # here: child_record's imports come back to this module
+
+        proc = subprocess.Popen(child_record.launcher_argv([shell, "-i", "-l", "-c", SHELL_COMMAND], "login_shell"),
+                                stdin=subprocess.DEVNULL,
                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, start_new_session=True,
                                 env=_shell_env())
     except OSError:
         return []
+    leader = child_record.leader(proc.pid)
     data = b""
     deadline = time.monotonic() + SHELL_TIMEOUT
     try:
@@ -121,7 +124,7 @@ def _read_shell_path() -> list[str]:
     except (OSError, ValueError):
         return []
     finally:
-        _stop(proc)
+        _stop(proc, leader)
         proc.stdout.close()
         try:
             proc.wait(1)

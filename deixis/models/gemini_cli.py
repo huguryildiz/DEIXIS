@@ -34,7 +34,7 @@ from typing import Any
 
 from deixis.tools.child_env import NODE_TLS
 from deixis.models.adapter import ModelStepResult
-from deixis.models.cli_process import reap, spawn_options, stop_group_async, track
+from deixis.models.cli_process import launch, reap, refused, spawn_options, stop_group_async, track
 from deixis.domain.limits import limit_kind, safe_error, service_error_kind
 from deixis.tools import tool_probe
 from deixis.tools.tool_paths import child_path, command_for, find_tool
@@ -172,7 +172,7 @@ def parse_events(stdout: str) -> list[dict[str, Any]]:
 
 async def run_cli(argv: list[str], env: Mapping[str, str], cwd: Path, stdin: str, timeout: float,
                   active: set[asyncio.subprocess.Process] | None = None) -> CliRun:
-    proc = await asyncio.create_subprocess_exec(*argv, cwd=str(cwd), env=dict(env), stdin=asyncio.subprocess.PIPE,
+    proc = await asyncio.create_subprocess_exec(*launch(argv), cwd=str(cwd), env=dict(env), stdin=asyncio.subprocess.PIPE,
                                                 stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
                                                 **spawn_options())
     track(proc)
@@ -189,6 +189,8 @@ async def run_cli(argv: list[str], env: Mapping[str, str], cwd: Path, stdin: str
         if active is not None:
             active.discard(proc)
         await stop_group_async(proc)  # anything the CLI started and left running
+    if why := refused(proc.returncode, err.decode("utf-8", "replace")):
+        raise OSError(why)  # the CLI never started: a local start error, nothing was sent
     return CliRun(proc.returncode, out.decode("utf-8", "replace"), err.decode("utf-8", "replace"))
 
 

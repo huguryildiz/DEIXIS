@@ -206,6 +206,20 @@ def main() -> None:
     child = process_info(guard.child_pid)
     if child is None or child.start != guard.child_start:
         return
+    from deixis.tools import child_record  # its own session: in the child record (P10 M2) while it watches
+
+    try:
+        recorded = child_record.register_self("child_guard")  # never forks; no line, no guard (the child fails closed)
+    except child_record.RecordFailed:
+        return
+    try:
+        watch(guard, record)
+    finally:
+        if recorded:
+            child_record.remove(Path(os.environ[child_record.RECORD_ENV]), recorded)
+
+
+def watch(guard: Guard, record) -> None:
     record("ready", _resident_bytes(guard.child_pid))
     guard.last_under_at = time.monotonic()
     ready_fd = int(sys.argv[7])

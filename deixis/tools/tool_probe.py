@@ -13,7 +13,7 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from deixis.models.cli_process import reap, spawn_options, stop_group_async, track
+from deixis.models.cli_process import launch, reap, spawn_options, stop_group_async, track
 
 PROBE_TIMEOUT = 5.0
 OUTPUT_LIMIT = 64 * 1024
@@ -41,7 +41,7 @@ async def _bounded(stream: asyncio.StreamReader) -> bytes:
 
 async def probe(argv: Sequence[str], timeout: float | None = None, env: Mapping[str, str] | None = None) -> Probe:
     try:
-        proc = await asyncio.create_subprocess_exec(*argv, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+        proc = await asyncio.create_subprocess_exec(*launch(argv), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                                     stderr=subprocess.PIPE, env=dict(env) if env is not None else None,
                                                     **spawn_options())
     except (OSError, ValueError) as exc:

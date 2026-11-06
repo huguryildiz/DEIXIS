@@ -888,9 +888,12 @@ mod platform {
         };
     }
 
-    /// The install folder (NSIS puts resources next to the executable).
+    /// The install folder (NSIS puts resources next to the executable), as a plain `C:\...` path. Tauri gives it
+    /// canonicalized, `\\?\C:\...`: Windows does not resolve `..` in such a path, so the backend started from it
+    /// found none of its relative files (`references\..\SKILL.md`) and refused to start.
     pub fn resource_folder(app: &AppHandle) -> Result<PathBuf, String> {
-        app.path().resource_dir().map_err(|e| format!("no resource folder: {e}"))
+        let dir = app.path().resource_dir().map_err(|e| format!("no resource folder: {e}"))?;
+        Ok(dunce::simplified(&dir).to_path_buf())
     }
 }
 

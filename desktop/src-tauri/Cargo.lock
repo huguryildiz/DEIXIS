@@ -688,6 +688,7 @@ name = "deixis-desktop"
 version = "0.1.0"
 dependencies = [
  "dirs",
+ "dunce",
  "getrandom 0.3.4",
  "serde_json",
  "tauri",

@@ -266,9 +266,14 @@ def test_read_work_that_missed_the_criterion_is_a_closest_work(tmp_path):
     assert svid not in {r["source_version_id"] for r in later["items"]}
 
 
-def test_closest_works_are_taken_by_the_parts_their_reading_found(tmp_path):
-    """D145: a closest work whose reading found no criterion part is left out; the others are taken by the parts found,
-    the list order breaking ties, up to the budget's count (3 in quick), and the answer reads them in that order."""
+@pytest.mark.parametrize("allocation", ["d152", "before_d152"])
+def test_closest_works_are_taken_by_the_parts_their_reading_found(tmp_path, monkeypatch, allocation):
+    """D145: the closest works are taken by the parts their reading found, the list order breaking ties, up to the
+    budget's count (3 in quick), and the answer reads them in that order. D152: one of those places goes to the first
+    work whose reading found no part but whose abstract screening made it a candidate; an answer bound before D152
+    leaves that work out."""
+    if allocation == "before_d152":
+        monkeypatch.setattr(small_batch, "ANSWER_ALLOCATION_VERSION", 4)
     lib = setup(tmp_path, n=0, pdf=5)
     budget = lib.discovery["budget"] | {"max_model_calls": 20}
     lib.store.conn.execute("UPDATE runs SET budget_json = ? WHERE id = ?", (json.dumps(budget), lib.discovery["id"]))
@@ -281,12 +286,35 @@ def test_closest_works_are_taken_by_the_parts_their_reading_found(tmp_path):
         inspected_pdf(lib, "criterion_absent" if svid == none else "part_without_evidence", svid=svid)
         read_parts(lib, svid, labels)
     cutoff(lib)
-    plan = fast_answer.input_plan(lib.flow, answer_run(lib), lib.store.scope(lib.rid))
-    assert [r["source_version_id"] for r in plan["items"]] == [most, first, second]
-    assert {e["source_version_id"]: e["reason"] for e in plan["excluded"]} == {
-        none: "closest_no_part", past: "closest_over_cap"}
+    run = answer_run(lib)
+    plan = fast_answer.input_plan(lib.flow, run, lib.store.scope(lib.rid))
     owners = list(dict.fromkeys(lib.store.passage(pid)["source_version_id"] for pid in plan["passage_ids"]))
-    assert owners == [most, first, second]
+    if allocation == "before_d152":
+        assert [r["source_version_id"] for r in plan["items"]] == [most, first, second]
+        assert {e["source_version_id"]: e["reason"] for e in plan["excluded"]} == {
+            none: "closest_no_part", past: "closest_over_cap"}
+        assert owners == [most, first, second]
+        return
+    # The zero-part work takes the last of the 3 places; the cap is not exceeded.
+    assert [r["source_version_id"] for r in plan["items"]] == [most, first, none] and owners == [most, first, none]
+    assert {e["source_version_id"]: e["reason"] for e in plan["excluded"]} == {
+        second: "closest_over_cap", past: "closest_over_cap"}
+    row = plan["items"][-1]
+    assert (row["answer_role"], row["closest_selection"]) == ("closest", fast_answer.CLOSEST_FALLBACK)
+    assert {p["status"] for p in row["criterion_parts"]} == {"not_found"}
+    asyncio.run(lib.flow.execute(run["id"]))
+    sent = json.loads(lib.store.conn.execute(
+        "SELECT i.payload_json FROM step_inputs i JOIN run_steps s ON s.id = i.step_id WHERE s.run_id = ?"
+        " AND s.operation_key = 'grounded_answer'", (run["id"],)).fetchone()[0])
+    assert next(s for s in sent["sources"] if s["source_id"] == none)["answer_role"] == "closest"
+    # Its reading's decision is untouched: it is read as the nearest evidence, never as an included work.
+    assert DecisionStore(lib.store).current(lib.rid, none, "fulltext")["reason_code"] == "criterion_absent"
+    assert fast_answer.roles_view(lib.store, run["id"])["closest_fallback"] == [row["work_id"]]
+    # The person's own exclusion still wins: the place goes back to the work with the next most parts found.
+    DecisionStore(lib.store).record(lib.rid, none, "human_criterion_not_met", note="SYNTHETIC human exclusion")
+    lib.store.conn.execute("UPDATE runs SET status = 'completed' WHERE status IN ('queued', 'running')")
+    later = fast_answer.input_plan(lib.flow, answer_run(lib), lib.store.scope(lib.rid))
+    assert [r["source_version_id"] for r in later["items"]] == [most, first, second]
 
 
 @pytest.mark.parametrize("defect", [None, "replaced_file"])

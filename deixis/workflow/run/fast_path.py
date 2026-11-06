@@ -82,6 +82,8 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         "chain_in_flight": 5, "chain_rule": "fast_chain_v1",
         "embedding_threads": 4, "fetch_slots": 12, "slot_refill": True, "read_drain_ms": 5000, "arrival_margin_ms": 5000,
         "checkpoint_ms": 5000, "floor_ratio": 0.25,
+        # D152: search always gets at least its own base; an earlier overrun is charged to the later stages instead.
+        "protected_stages": ["search"],
     }
     if local_model:
         # Still fast-path stages (`enforces` routes on them); only their deadline is gone.
@@ -252,7 +254,9 @@ def enter_stage(store: Any, run: dict[str, Any], stage: str) -> str | None:
                 "SELECT COALESCE(SUM(base_ms - used_ms), 0) FROM fast_path_stages"
                 " WHERE ledger_run_id = ? AND seq > 0 AND seq < ? AND status IN ('done', 'skipped')", (ledger_id, seq)).fetchone()[0]
             base = policy["stage_base_ms"].get(stage, 0)
-            alloc = max(int(base * policy["floor_ratio"]), base + balance) if seq else 0
+            # A protected stage's floor is its whole base (D152); a policy frozen without the field keeps the 25% floor.
+            floor = base if stage in policy.get("protected_stages", ()) else int(base * policy["floor_ratio"])
+            alloc = max(floor, base + balance) if seq else 0
             conn.execute(
                 "INSERT INTO fast_path_stages (ledger_run_id, stage, seq, base_ms, balance_before_ms, alloc_ms, opened_at, status)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?, 'open')", (ledger_id, stage, seq, base, balance, alloc, ts))

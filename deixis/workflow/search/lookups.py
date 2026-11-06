@@ -284,32 +284,34 @@ def linked_dois(store: Store, source_version_id: str) -> list[str]:
 
 async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
                              scope: dict[str, Any], words: tuple[str, ...],
-                             checkpoint: Callable[[], None], limit: int = MAX_LOOKUP_REQUESTS, *, only: set[str] | None = None) -> None:
+                             checkpoint: Callable[[], None], limit: int = MAX_LOOKUP_REQUESTS, *, only: set[str] | None = None,
+                             prefix: str = "") -> None:
     """Plan and send this run's DOI lookups. A failed request is recorded and the run goes on (D18).
 
     No request is sent twice: a step that already succeeded is skipped whole, and inside a chunk a record the
     library already has an answer for is passed over, so a run resumed mid-chunk carries on where it stopped.
+    `prefix` keeps a second round of the same run (the lookup before the rerank, D152) under steps of its own.
     """
     run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
     # How many 429s one batch waits out is this research's effort (D88). `quick` waits for none: the refused batch
     # is recorded with its status, its records stay without an abstract, and the next batch is still sent.
     waits = PROVIDER_WAIT[scope["effort"]]
-    plan = _code_step(store, run_id, "lookup_plan:semantic_scholar", "code:lookup_plan",
+    plan = _code_step(store, run_id, f"{prefix}lookup_plan:semantic_scholar", "code:lookup_plan",
                       lambda: plan_semantic_scholar(store, rid, revision, scope, words, limit, only=only))
     for number, batch in enumerate(plan["batches"]):
         checkpoint()
-        await _semantic_scholar_step(store, http, settings, run, number, batch, waits)
-    plan_cr = _code_step(store, run_id, "lookup_plan:crossref", "code:lookup_plan",
+        await _semantic_scholar_step(store, http, settings, run, number, batch, waits, prefix)
+    plan_cr = _code_step(store, run_id, f"{prefix}lookup_plan:crossref", "code:lookup_plan",
                          lambda: plan_crossref(store, rid, revision, scope, words, len(plan["batches"]), limit, only=only))
     for number, chunk in enumerate(plan_cr["chunks"]):
         checkpoint()
-        await _crossref_step(store, http, settings, run, number, chunk)
+        await _crossref_step(store, http, settings, run, number, chunk, prefix)
     checkpoint()
     spent = len(plan["batches"]) + sum(len(chunk) for chunk in plan_cr["chunks"])
-    plan_sc = await _scopus_plan(store, http, run, scope, words, spent, limit, only=only)
+    plan_sc = await _scopus_plan(store, http, run, scope, words, spent, limit, only=only, prefix=prefix)
     for number, chunk in enumerate(plan_sc["chunks"]):
         checkpoint()
-        await _scopus_step(store, http, settings, run, number, chunk, waits)
+        await _scopus_step(store, http, settings, run, number, chunk, waits, prefix)
     checkpoint()
 
 
@@ -325,13 +327,14 @@ def _code_step(store: Store, run_id: str, key: str, kind: str, build: Callable[[
 
 
 async def _semantic_scholar_step(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
-                                 number: int, batch: list[dict[str, Any]], waits: int = MAX_RATE_LIMIT_RETRIES) -> None:
+                                 number: int, batch: list[dict[str, Any]], waits: int = MAX_RATE_LIMIT_RETRIES,
+                                 prefix: str = "") -> None:
     """One batch request. The whole batch shares one request, so one failure leaves every record in it `failed`.
 
     `waits` is how many 429s this effort waits out (D88); it is written on the step, so a skipped wait is on the
     record of the run and not silent.
     """
-    step = store.step(run["id"], f"record_lookup:semantic_scholar:{number}", "provider_lookup:semantic_scholar")
+    step = store.step(run["id"], f"{prefix}record_lookup:semantic_scholar:{number}", "provider_lookup:semantic_scholar")
     if step["status"] == "succeeded":
         return
     store.start_step(step["id"])
@@ -357,9 +360,9 @@ async def _semantic_scholar_step(store: Store, http: httpx.AsyncClient, settings
 
 
 async def _crossref_step(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
-                         number: int, chunk: list[dict[str, Any]]) -> None:
+                         number: int, chunk: list[dict[str, Any]], prefix: str = "") -> None:
     """One chunk of single-record requests; each answer is written before the next request is sent."""
-    step = store.step(run["id"], f"record_lookup:crossref:{number}", "provider_lookup:crossref")
+    step = store.step(run["id"], f"{prefix}record_lookup:crossref:{number}", "provider_lookup:crossref")
     if step["status"] == "succeeded":
         return
     store.start_step(step["id"])
@@ -385,7 +388,8 @@ async def _crossref_step(store: Store, http: httpx.AsyncClient, settings: Settin
 
 
 async def _scopus_plan(store: Store, http: httpx.AsyncClient, run: dict[str, Any], scope: dict[str, Any],
-                       words: tuple[str, ...], spent: int, limit: int, *, only: set[str] | None = None) -> dict[str, Any]:
+                       words: tuple[str, ...], spent: int, limit: int, *, only: set[str] | None = None,
+                       prefix: str = "") -> dict[str, Any]:
     """The Scopus plan, after one access check of this run's network (D91); a resumed run reads the stored plan.
 
     Scopus gives abstracts only in the complete view, which Elsevier entitles by the caller's IP range. Without it
@@ -395,7 +399,7 @@ async def _scopus_plan(store: Store, http: httpx.AsyncClient, run: dict[str, Any
     """
     if not in_scope(scope, "scopus"):
         return {"chunks": [], "outside_limit": 0, "skipped": _not_asked(scope, "scopus")}
-    step = store.step(run["id"], "lookup_plan:scopus", "code:lookup_plan")
+    step = store.step(run["id"], f"{prefix}lookup_plan:scopus", "code:lookup_plan")
     if step["status"] == "succeeded":
         return step["output"]
     # A check a run sent before it died without its plan is counted: the plans the caller summed do not hold it.
@@ -423,12 +427,13 @@ async def _scopus_plan(store: Store, http: httpx.AsyncClient, run: dict[str, Any
 
 
 async def _scopus_step(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
-                       number: int, chunk: list[dict[str, Any]], waits: int = MAX_RATE_LIMIT_RETRIES) -> None:
+                       number: int, chunk: list[dict[str, Any]], waits: int = MAX_RATE_LIMIT_RETRIES,
+                       prefix: str = "") -> None:
     """One planned chunk: one OR-query request for its safe DOIs and one single request per unsafe DOI.
 
     Each request's answers are written before the next request is sent; usage is reserved per request.
     """
-    step = store.step(run["id"], f"record_lookup:scopus:{number}", "provider_lookup:scopus")
+    step = store.step(run["id"], f"{prefix}record_lookup:scopus:{number}", "provider_lookup:scopus")
     if step["status"] == "succeeded":
         return
     store.start_step(step["id"])

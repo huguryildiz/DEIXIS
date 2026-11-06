@@ -23,7 +23,10 @@ MINIMUM = 50
 LIST_KEY = "small_batch:v1:list"
 RERANK_KEY = "rerank:v1:list"  # outside `small_batch:v1:%`, which `steps` reads as batch steps
 GRAPH_SEEDS = 30  # D246: rows with a reference list taken from the top of the fused order
-ANSWER_ALLOCATION_VERSION = 4
+PRERANK_LOOKUP_KEY = "prerank_lookups"
+PRERANK_PREFIX = "prerank:"  # the lookup steps of the round before the rerank, apart from the read stage's (D152)
+PRERANK_LOOKUP = {"max_records": 20, "seconds": 5}  # D152: hand-picked caps, not measured
+ANSWER_ALLOCATION_VERSION = 5  # 5: one closest place for a work whose reading found no criterion part (D152)
 
 
 def steps(store: Any, run_id: str) -> list[dict[str, Any]]:
@@ -102,6 +105,7 @@ def freeze_budget(budget: dict[str, Any], effort: str, reading: str) -> dict[str
         "fetch_limit": fetch.get("max_fulltext_works", 0) + fetch.get("chain_room", 0),
         "read_limit": body["max_fulltext_reads"], "max_model_calls": body["max_model_calls"],
         "fetch_attempts": fulltext.FULLTEXT_WORK_ATTEMPTS,
+        "prerank_lookup": dict(PRERANK_LOOKUP),
     }
     return body
 
@@ -566,6 +570,66 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
         raise error
 
 
+async def prerank_lookups(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> None:
+    """Ask the lookup sources for the missing abstracts of the first records the reranker will score (D152).
+
+    A record without an abstract is sent to the reranker as its title alone and falls (Humphreys 36 -> 109, 6 Nov);
+    the read stage's lookup came too late for it, after the list froze and for the top N only. So before the rerank,
+    the first `max_records` records of the reranker's window (the fused order without the person's records and the
+    chained ones the rerank keeps in place) that have no abstract in any version and a DOI on their head are asked
+    about, with the sources and requests `ask_second_sources` already uses, under steps of their own, and within
+    `seconds` in all (or what is left of the ranking stage). What did not come back in time stays missing: the record
+    keeps its fused place and is scored on its title, as before. Nothing runs when no reranker would be sent anything,
+    or for a run frozen before D152 (no `prerank_lookup` in its budget). The chosen records and what was filled are
+    stored on `prerank_lookups`; a run resumed after it succeeded asks nothing again."""
+    rule = (run["budget"].get("inspection") or {}).get("prerank_lookup")
+    store = flow.store
+    if not rule or (store.existing_step(run["id"], PRERANK_LOOKUP_KEY) or {}).get("status") == "succeeded":
+        return
+    choice = rerankers.chosen(store.setting(rerankers.SETTING))
+    if choice is None or not rerankers.can_run(choice, getattr(flow.deps, "local_embedder", None)):
+        return
+    flow._checkpoint(run["id"], run["scope_revision"])
+    step = store.step(run["id"], PRERANK_LOOKUP_KEY, "code:lookup_plan")
+    asked = (step["output"] or {}).get("asked")  # a resumed run asks about the records it chose the first time
+    if asked is None:
+        manifest = json_value(manifest_for(flow, run, scope, vocabulary))
+        priority, chained = set(manifest["user_priority"]), set(manifest.get("chain_heads") or ())
+        window = [rid for rid in replay(manifest)["fused"] if rid not in priority][
+            :choice.pool_size(run["budget"]["fast_path"]["N"])]
+        rows = {row["id"]: row for row in manifest["pool"]}
+        asked = [rid for rid in window if rid not in chained and not rows[rid]["abstract"]
+                 and manifest["versions"][rid].get("doi")][:rule["max_records"]]
+    store.start_step(step["id"])
+    output = {"rule": rule, "asked": asked}
+    store.set_step_output(step["id"], output)
+    seconds = float(rule["seconds"])
+    deadline = fast_path.stage_deadline(store, run, "ranking")
+    if deadline is not None:
+        seconds = min(seconds, (deadline - store.clock.now()).total_seconds())
+    status = "done" if asked else "nothing_to_ask"
+    if asked and seconds <= 0:
+        status = "no_time_left"
+    elif asked:
+        from deixis.workflow.search import lookups
+        words, _ = lookups.title_words(vocabulary)
+        try:
+            await asyncio.wait_for(lookups.ask_second_sources(
+                store, flow.deps.http, flow.deps.settings, run, scope, words,
+                lambda: flow._checkpoint(run["id"], run["scope_revision"]), only=set(asked), prefix=PRERANK_PREFIX),
+                timeout=seconds)
+        except TimeoutError:
+            status = "time_ceiling"
+            # The request cut short is not asked again by this round: its step says it ran out of time.
+            for row in store.conn.execute("SELECT id FROM run_steps WHERE run_id = ? AND operation_key LIKE ?"
+                                          " AND status = 'running'", (run["id"], PRERANK_PREFIX + "%")).fetchall():
+                store.finish_step(row["id"], "failed", error_code="lookup_time_ceiling",
+                                  error={"error": f"the lookups before the rerank had {seconds:g} s in all"})
+    filled = [svid for svid in asked if store.conn.execute(
+        "SELECT 1 FROM passages WHERE source_version_id = ? AND kind = 'abstract'", (svid,)).fetchone()]
+    store.finish_step(step["id"], "succeeded", output=output | {"status": status, "filled": filled})
+
+
 async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> None:
     if flow.store.existing_step(run["id"], LIST_KEY) is None:
         chained = flow._chain_filter(run)
@@ -573,6 +637,7 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
         words, _ = lookups.title_words(vocabulary)
         lookups.flag_and_decide(flow.store, run, scope, words,
                                works=set(flow.store.work_ids(chained).values()), key="chain_record_flags")
+        await prerank_lookups(flow, run, scope, vocabulary)
         await rerank_list(flow, run, scope, vocabulary)
     listing = freeze_list(flow, run, scope, vocabulary)
     from deixis.workflow.read import read as fast_read

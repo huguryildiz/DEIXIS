@@ -34,6 +34,8 @@ CLOSEST_CODES = frozenset({"criterion_absent", "part_without_evidence", "fulltex
 # each one's pages. Included works keep MAX_PASSAGES_PER_SOURCE; an abstract-only work gives its abstract.
 CLOSEST_WORKS = {16: 3, 48: 5, 80: 8}
 CLOSEST_PAGES = 4
+# The selection marker of the one closest work taken although its reading found no criterion part (D152).
+CLOSEST_FALLBACK = "closest_zero_part_fallback"
 ROLES = ("included", "closest", "abstract")
 
 
@@ -511,7 +513,18 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
         row["criterion_parts"], quoted_by_work[row["work_id"]] = closest_parts(store, row)
         if closest_rank(row) == (0, 0):
             row["reason"] = "closest_no_part"
-    for row in sorted((row for row in closest if not row["reason"]), key=closest_rank)[cap:]:
+    # D152: one of those places is kept for the first such work in the list order whose own abstract screening made
+    # it a candidate: as an abstract it was the nearest neighbour the answer read, and reading its file must not take
+    # it away (Jia & Chen, 6 Nov). It stays a closest work with its reading's findings, its full-text decision is not
+    # touched, and the row says why it was taken. An answer bound before D152 (allocation version 4) leaves it out.
+    fallback = None
+    if run["budget"]["inspection"].get("answer_allocation_version", 0) >= 5:
+        fallback = next((row for row in closest if row["reason"] == "closest_no_part"
+                         and row.get("abstract_decision_id")), None)
+    if fallback is not None:
+        fallback.update(reason=None, closest_selection=CLOSEST_FALLBACK)
+    taken = sorted((row for row in closest if not row["reason"] and row is not fallback), key=closest_rank)
+    for row in taken[cap - (fallback is not None):]:
         row["reason"] = "closest_over_cap"
     excluded = [{"work_id": r["work_id"], "source_version_id": r["source_version_id"], "reason": r["reason"]}
                 for r in rows if r["reason"]] + no_text
@@ -723,7 +736,9 @@ def roles_view(store: Any, answer_run_id: str | None) -> dict[str, Any] | None:
     return {"works": works, "sources": sources, "counts": {role: sum(r == role for r in works.values()) for role in ROLES},
             "left_out": {k: left[k] for k in ("passage_budget", "closest_over_cap", "closest_no_part") if left.get(k)},
             "closest_parts": {row["work_id"]: row["criterion_parts"] for row in items
-                              if role_of(row) == "closest" and row.get("criterion_parts")}}
+                              if role_of(row) == "closest" and row.get("criterion_parts")},
+            # D152: the closest work taken although its reading found no criterion part, apart from the others.
+            "closest_fallback": [row["work_id"] for row in items if row.get("closest_selection") == CLOSEST_FALLBACK]}
 
 
 async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:

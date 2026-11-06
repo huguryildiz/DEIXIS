@@ -151,6 +151,30 @@ def test_04_unused_time_carries_forward(library):
     assert (stage(library, "search")["balance_before_ms"], stage(library, "search")["alloc_ms"]) == (18000, 48000)
 
 
+@pytest.mark.parametrize("frozen", ["d152", "before_d152"])
+def test_plan_debt_is_charged_after_search(library, frozen):
+    budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS["standard"].__dict__, "standard", "off")
+    policy = fast_path.freeze_budget(budget, "standard")
+    if frozen == "before_d152":
+        policy = {k: v for k, v in policy.items() if k not in ("protected_stages", "policy_hash")}
+        policy["policy_hash"] = canonical.sha256_hex(policy)
+    library.store.update_run(library.run["id"], status="completed")
+    run = library.store.create_run(library.rid, "discovery", budget | {"fast_path": policy}, None)
+    library.store.update_run(run["id"], status="running")
+    lib = SimpleNamespace(**(vars(library) | {"run": library.store.run(run["id"])}))
+    finish(lib, "plan", 57)
+    fast_path.enter_stage(lib.store, lib.run, "search")
+    if frozen == "before_d152":
+        # A run frozen before D152 keeps the old arithmetic on resume: the plan's 27 s overrun shrinks search.
+        assert (stage(lib, "search")["balance_before_ms"], stage(lib, "search")["alloc_ms"]) == (-27000, 18000)
+        return
+    assert (stage(lib, "search")["balance_before_ms"], stage(lib, "search")["alloc_ms"]) == (-27000, 45000)
+    lib.clock.advance(45)
+    fast_path.close_stage(lib.store, lib.run["id"], "search")
+    fast_path.enter_stage(lib.store, lib.run, "ranking")
+    assert (stage(lib, "ranking")["balance_before_ms"], stage(lib, "ranking")["alloc_ms"]) == (-27000, 33000)
+
+
 def test_07_crash_charges_last_checkpoint_and_excludes_downtime(library, tmp_path):
     lib = library
     interval_id = fast_path.enter_stage(lib.store, lib.run, "search")

@@ -155,6 +155,14 @@ def blocked(choice: Choice | None, offered: list[dict[str, Any]]) -> dict[str, A
     return {"reason_code": option.get("reason_code") or "key_missing", "reason": option["reason"]}
 
 
+def can_run(choice: Choice, local: Any) -> bool:
+    """Whether a rerank with `choice` would be sent at all, read as `_rerank` reads it before sending (no request)."""
+    if choice.provider == "builtin":
+        return local is not None and builtin_catalog.resolve(choice.model, "reranker") is not None
+    key = os.environ.get(KEY_ENVS[choice.provider])
+    return bool(key) and key_verification.is_valid_key(key)
+
+
 def document(title: str | None, abstract: str | None) -> str:
     """What a reranker reads for one record: its title, then its abstract when it has one."""
     return "\n\n".join(part for part in ((title or "").strip(), (abstract or "").strip()) if part)

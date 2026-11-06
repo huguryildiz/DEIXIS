@@ -17,6 +17,7 @@ from deixis.documents import embeddings, local_embedding, rerankers
 from deixis.workflow.search import small_batch
 from deixis.workflow.run.flow import RunStopped
 from test_builtin_embedding_flow import BUILTIN, FakeLocal, Session
+from test_ranking_flow import STRONG, Pool, pool, work
 
 RER = "qwen3-reranker-0.6b"
 
@@ -221,6 +222,82 @@ def test_a_discovery_run_reranks_its_list_or_keeps_the_fused_order_and_says_so(t
         # The fake scores the reverse of the order it was given: the candidates come back reversed, the rest in place.
         assert listing["order"][len(priority):len(priority) + len(candidates)] == candidates[::-1]
         assert listing["order"][len(priority) + len(candidates):] == automatic[len(candidates):]
+
+
+LOOKED_UP = "We SYNTHETIC measure the packet size that lowers the energy of a sensor node."
+
+
+class LookupPool(Pool):
+    """The ranking fixture's OpenAlex, with one record that has no abstract and Semantic Scholar holding it.
+
+    `delay` holds back Semantic Scholar's first answer that long (the lookup before the rerank runs out of time)."""
+
+    def __init__(self, delay=0.0):
+        target = work(90, STRONG, "x") | {"abstract_inverted_index": None}
+        super().__init__(works=pool(8) + [target])
+        self.delay, self.lookups = delay, []
+
+    def __call__(self, request):
+        if request.url.host != "api.semanticscholar.org":
+            return super().__call__(request)
+        ids = json.loads(request.content)["ids"]
+        self.lookups.append(ids)
+        reply = httpx.Response(200, json=[{"paperId": f"s2-{i}", "externalIds": {"DOI": doi.removeprefix("DOI:")},
+                                           "abstract": LOOKED_UP if doi == "DOI:10.1/oa.90" else None,
+                                           "referenceCount": None} for i, doi in enumerate(ids)])
+        if self.delay and len(self.lookups) == 1:
+            async def late():
+                await asyncio.sleep(self.delay)
+                return reply
+            return late()
+        return reply
+
+
+@pytest.mark.parametrize("case", ["filled", "time_ceiling", "before_d152"])
+def test_a_missing_abstract_is_looked_up_before_the_rerank_within_its_frozen_caps(tmp_path, monkeypatch, case):
+    # D152: the record without an abstract reaches the reranker with the abstract a lookup source holds; one the
+    # lookup could not fill in time is scored on its title, as a run frozen before D152 still does.
+    if case == "time_ceiling":
+        monkeypatch.setattr(small_batch, "PRERANK_LOOKUP", {"max_records": 20, "seconds": 0.2})
+    if case == "before_d152":
+        freeze = small_batch.freeze_budget
+
+        def older(*args):
+            budget = freeze(*args)
+            budget["inspection"].pop("prerank_lookup")
+            return budget
+        monkeypatch.setattr(small_batch, "freeze_budget", older)
+    handler = LookupPool(delay=3.0 if case == "time_ceiling" else 0.0)
+    local = RerankingLocal()
+    s = Session(tmp_path, monkeypatch, handler=handler, local=local, setting=BUILTIN)
+    s.store.set_setting(rerankers.SETTING, {"enabled": True, "provider": "builtin", "model": RER, "pool_factor": 2, "timeout_seconds": 60})
+    try:
+        rid, run_id, view, run = s.discover()
+        listing = s.store.existing_step(run_id, small_batch.LIST_KEY)["output"]
+        step = s.store.existing_step(run_id, small_batch.PRERANK_LOOKUP_KEY)
+        prerank_steps = {row["operation_key"]: dict(row) for row in s.store.conn.execute(
+            "SELECT operation_key, status, error_code FROM run_steps WHERE run_id = ? AND operation_key LIKE 'prerank:%'",
+            (run_id,))}
+    finally:
+        s.close()
+    title = f"{STRONG} 90"
+    target = next(r for r in listing["manifest"]["pool"] if r["title"] == title)
+    documents = local.reranked[0]
+    assert sorted(listing["order"]) == sorted(dict.fromkeys(listing["manifest"]["user_priority"] + listing["automatic_order"]))
+    if case == "before_d152":
+        assert step is None and not prerank_steps
+        assert rerankers.document(title, None) in documents and target["abstract"] is None
+        return
+    assert step["status"] == "succeeded" and step["output"]["asked"] == [target["id"]]
+    assert step["output"]["rule"] == small_batch.PRERANK_LOOKUP
+    if case == "filled":
+        assert (step["output"]["status"], step["output"]["filled"]) == ("done", [target["id"]])
+        assert rerankers.document(title, LOOKED_UP) in documents and target["abstract"] == LOOKED_UP
+        assert handler.lookups[0] == ["DOI:10.1/oa.90"]  # only the record without an abstract was asked about
+    else:
+        assert (step["output"]["status"], step["output"]["filled"]) == ("time_ceiling", [])
+        assert prerank_steps["prerank:record_lookup:semantic_scholar:0"]["error_code"] == "lookup_time_ceiling"
+        assert rerankers.document(title, None) in documents and target["abstract"] is None
 
 
 # ---- Settings ----------------------------------------------------------------------------------------

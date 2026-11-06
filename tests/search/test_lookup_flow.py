@@ -24,6 +24,7 @@ from deixis.providers import common
 from deixis.providers.registry import CONNECTORS
 from deixis.workflow.screen.decisions import DecisionStore
 from fakes import FakeAdapter, envelope, valid_response
+from windows_env import WAIT_FACTOR
 
 QUESTION = "What is the effect of packet size on energy consumption in wireless sensor networks?"
 # A second field, so the fixtures are not one topic: the survey title is molecular, the rest is wireless sensing.
@@ -393,7 +394,8 @@ def test_a_lookup_request_counts_as_out_only_while_its_own_headers_are_written_a
         try:
             async with httpx.AsyncClient(transport=transport) as http:
                 return await asyncio.wait_for(common.send(http, "https://api.crossref.org/works/10.1/7", {}, {},
-                                                          "SYNTHETIC lookup", "public"), 0.3)
+                                                          "SYNTHETIC lookup", "public"),
+                                              (5.0 if case == "connects" else 0.3) * WAIT_FACTOR)
         finally:
             common.on_send.reset(token)
     if case == "connects":
@@ -437,7 +439,8 @@ def test_a_retry_after_resume_cut_short_keeps_its_record_open_whatever_the_earli
         async with httpx.AsyncClient(transport=httpx.MockTransport(crossref)) as http:
             with pytest.raises(TimeoutError):
                 await asyncio.wait_for(lookups._crossref_step(store, http, settings, store.run(run_id), 0, chunk,
-                                                              small_batch.PRERANK_PREFIX, 8, record_sent=True), 0.3)
+                                                              small_batch.PRERANK_PREFIX, 8, record_sent=True),
+                                       0.3 * WAIT_FACTOR)
     try:
         asyncio.run(round_())  # 7 fails, 8 is out: the run stops
         failed = store.conn.execute("SELECT status FROM record_lookups WHERE source_version_id = ? AND provider = ?",

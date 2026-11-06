@@ -21,6 +21,7 @@ from deixis.workflow.run.flow import RunStopped
 from test_builtin_embedding_flow import BUILTIN, FakeLocal, Session
 from test_lookup_flow import headers_back, headers_out, written
 from test_ranking_flow import STRONG, Pool, pool, work
+from windows_env import WAIT_FACTOR
 
 RER = "qwen3-reranker-0.6b"
 
@@ -324,11 +325,11 @@ def test_missing_abstracts_are_looked_up_before_the_rerank_and_unfilled_records_
     def frozen(*args):
         budget = freeze(*args)
         if case == "time_ceiling":
-            budget["inspection"]["prerank_lookup"] |= {"seconds": 0.2}
+            budget["inspection"]["prerank_lookup"] |= {"seconds": 0.2 * WAIT_FACTOR}
         if case in ("crossref_cut", *D156):
-            budget["inspection"]["prerank_lookup"] |= {"seconds": 0.5}
+            budget["inspection"]["prerank_lookup"] |= {"seconds": 0.5 * WAIT_FACTOR}
         if case == "never_sent_v3":
-            budget["inspection"]["prerank_lookup"] = dict(PRERANK_V3) | {"seconds": 0.5}
+            budget["inspection"]["prerank_lookup"] = dict(PRERANK_V3) | {"seconds": 0.5 * WAIT_FACTOR}
         if case == "window_above_200" and sys.platform == "win32":
             # 200-odd lookups and their SQLite writes, in real time: on the loaded Windows runner they
             # took over 32 s (the whole test: 14 s alone in the Windows VM). The case is about every record being asked,
@@ -345,13 +346,13 @@ def test_missing_abstracts_are_looked_up_before_the_rerank_and_unfilled_records_
     monkeypatch.setattr(small_batch, "freeze_budget", frozen)
     if case == "s2_refused":  # the real cooldown, which the suite otherwise turns off
         monkeypatch.delattr(pacing.SEMANTIC_SCHOLAR_PACER, "cool_down")
-    handler = LookupPool(delay=3.0 if case == "time_ceiling" else 0.0,
+    handler = LookupPool(delay=3.0 * WAIT_FACTOR if case == "time_ceiling" else 0.0,
                          filler=200 if case == "window_above_200" else 20 if case in D156 else 0,
                          refuse_s2=case == "s2_refused", pdf=case == "text_route")
     if case in D156:
         handler.slow = 8 if case == "never_sent" else 4  # the requests the round has out at once
     if case in ("crossref_cut", *D156):
-        handler.wait = 3.0  # Semantic Scholar answers at once; Crossref is still out when the round's time ends
+        handler.wait = 3.0 * WAIT_FACTOR  # Semantic Scholar answers at once; Crossref is still out when the round's time ends
     local = RerankingLocal()
     s = Session(tmp_path, monkeypatch, handler=handler, local=local, setting=BUILTIN)
     # No factor saved: the run's frozen rule gives it (8 since D153, 4 before).

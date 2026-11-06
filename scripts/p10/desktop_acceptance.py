@@ -1,6 +1,6 @@
 """Acceptance of the packaged DEIXIS.app on this Mac (P10 M2), macOS arm64.
 
-    uv run python scripts/p10/desktop_acceptance.py [--dmg desktop/src-tauri/target/release/bundle/dmg/DEIXIS_0.1.0_aarch64.dmg]
+    uv run python scripts/p10/desktop_acceptance.py [--dmg desktop/src-tauri/target/release/bundle/dmg/DEIXIS_<version>_aarch64.dmg]
                                                     [--only ROW,...] [--keep]
 
 The app is installed by copying DEIXIS.app out of the DMG into a temp folder outside the checkout and started there
@@ -76,7 +76,8 @@ from helpers import make_pdf  # noqa: E402
 from deixis.tools import child_record  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
-DMG = REPO / "desktop" / "src-tauri" / "target" / "release" / "bundle" / "dmg" / "DEIXIS_0.1.0_aarch64.dmg"
+VERSION = json.loads((REPO / "desktop" / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))["version"]
+DMG = REPO / "desktop" / "src-tauri" / "target" / "release" / "bundle" / "dmg" / f"DEIXIS_{VERSION}_aarch64.dmg"
 OWNER_PORT = 8765
 LEFT_LIMIT = 15.0
 QUESTION = "How is molecule release scheduling optimized in SYNTHETIC diffusion channels?"

@@ -28,7 +28,6 @@ jobs:
         working-directory: web
       - run: uv sync --frozen
       - run: uv run --no-sync pytest -n 4 -p no:cacheprovider --junitxml=windows-pytest.xml -o junit_family=xunit2 -rfE
-        continue-on-error: true
       - uses: actions/upload-artifact@v4
         if: always()
         with:

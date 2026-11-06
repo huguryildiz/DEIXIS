@@ -19,6 +19,7 @@ from deixis.workflow.search import small_batch
 from deixis.workflow.run.flow import RunStopped
 from test_builtin_embedding_flow import BUILTIN, FakeLocal, Session
 from test_ranking_flow import STRONG, Pool, pool, work
+from windows_env import WAIT_FACTOR
 
 RER = "qwen3-reranker-0.6b"
 
@@ -311,6 +312,8 @@ def test_missing_abstracts_are_looked_up_before_the_rerank_and_unfilled_records_
             budget["inspection"]["prerank_lookup"] |= {"seconds": 0.2}
         if case == "crossref_cut":
             budget["inspection"]["prerank_lookup"] |= {"seconds": 0.5}
+        if case == "window_above_200":  # 200-odd lookups in real time: the Windows runner needs a longer ceiling
+            budget["inspection"]["prerank_lookup"]["seconds"] *= WAIT_FACTOR
         if case == "d153":
             budget["inspection"] |= {"prerank_lookup": dict(PRERANK_V2), "rerank": dict(RERANK_V2)}
         if case in ("d152", "before_d152"):

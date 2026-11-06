@@ -68,12 +68,16 @@ def render_pdf(xml: bytes, *, timeout: float = RENDER_TIMEOUT_SECONDS, max_memor
     with tempfile.TemporaryDirectory(prefix="deixis-jats-") as folder:
         source, target = Path(folder) / "in.xml", Path(folder) / "out.pdf"
         source.write_bytes(xml)
+        argv = [sys.executable, "-m", "deixis.documents.jats", str(source), str(target), str(max_memory), str(max_pages),
+                str(max_output)]
+        env = child_env({"PYTHONPATH": str(Path(__file__).resolve().parents[2])}, bundled=True)
         try:
-            completed = subprocess.run(
-                [sys.executable, "-m", "deixis.documents.jats", str(source), str(target), str(max_memory),
-                 str(max_pages), str(max_output)],
-                capture_output=True, timeout=timeout,
-                env=child_env({"PYTHONPATH": str(Path(__file__).resolve().parents[2])}, bundled=True))
+            if sys.platform == "win32":  # in its own job with the memory limit (P10 W2)
+                from deixis.documents import pdf
+
+                completed = pdf._run_watched(argv, env, timeout, max_memory)
+            else:
+                completed = subprocess.run(argv, capture_output=True, timeout=timeout, env=env)
         except subprocess.TimeoutExpired:
             return Rendition("jats_render_timeout")
         code = completed.returncode

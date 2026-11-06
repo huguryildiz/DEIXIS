@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from deixis.documents import pdf
 from helpers import make_compressed_page_pdf, make_pdf
+from windows_env import system_env
 import hashlib
 from deixis.workflow.read import file_restore
 from deixis.storage import db
@@ -80,7 +81,6 @@ def test_extraction_stops_at_the_text_limit(tmp_path):
     assert sum(len(p.text) for p in result.pages) <= 300 and len(result.pages) < 6
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="W2: extraction children get their memory limit from a Job Object on Windows; until then only the timeout stops them")
 def test_extraction_is_stopped_when_it_exceeds_the_memory_limit(tmp_path):
     # ~70 MB of decoded page content in a file of well under 1 MB.
     path = tmp_path / "expands.pdf"
@@ -96,10 +96,9 @@ def _child(code: str) -> list[str]:
     return [sys.executable, "-c", code]
 
 
-PLAIN_ENV = {"PATH": os.environ.get("PATH", "")}
+PLAIN_ENV = {"PATH": os.environ.get("PATH", ""), **system_env()}
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="W2: extraction children get their memory limit from a Job Object on Windows; until then only the timeout stops them")
 def test_the_parent_stops_a_child_that_holds_the_interpreter_lock_past_the_limit():
     # The in-child watchdog is a thread and cannot run while a C call holds the lock (D138). This child reserves 300 MiB with
     # `calloc` (untouched pages are not resident), reports `ready` while at about 30 MiB, then touches all of it inside
@@ -111,6 +110,13 @@ def test_the_parent_stops_a_child_that_holds_the_interpreter_lock_past_the_limit
             "small = bytearray(30 * 1024 * 1024)\nfor i in range(0, len(small), 4096): small[i] = 1\n"
             "big = lib.calloc(1, 300 * 1024 * 1024)\nsys.stdout.write('ready'); sys.stdout.flush()\n"
             "lib.memset(big, 1, 300 * 1024 * 1024)\nlib.sleep(30)\n")
+    if sys.platform == "win32":
+        # The job's limit is on committed memory (P10 W2): the 300 MiB commit fails inside VirtualAlloc, called with the
+        # lock held (PyDLL), and the child then sleeps 30 s in kernel32's Sleep, still holding it.
+        code = ("import ctypes, sys\nk = ctypes.PyDLL('kernel32')\nk.VirtualAlloc.restype = ctypes.c_void_p\n"
+                "k.VirtualAlloc.argtypes = [ctypes.c_void_p, ctypes.c_size_t, ctypes.c_uint32, ctypes.c_uint32]\n"
+                "small = bytearray(30 * 1024 * 1024)\nsys.stdout.write('ready'); sys.stdout.flush()\n"
+                "k.VirtualAlloc(None, 300 * 1024 * 1024, 0x3000, 4)\nk.Sleep(30000)\n")
     started = time.monotonic()
     completed = pdf._run_watched(_child(code), PLAIN_ENV, timeout=60, max_memory=200 * 1024 * 1024)
     assert completed.returncode == pdf.MEMORY_EXIT_CODE and b"memory limit exceeded" in completed.stderr

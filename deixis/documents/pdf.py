@@ -29,9 +29,12 @@ as that letter (퐴 → A, 휋 → π).
 
 A page left without text is named: an image page (a scan, which `ocr.py` can read on request, D51) or a blank page.
 
-The child process is limited in time, pages, total extracted text and memory. The memory
+The child process is limited in time, pages, total extracted text and memory. On macOS and Linux the memory
 limit is a watchdog on the child's resident size: it stops the child shortly after the
-limit is crossed rather than preventing the allocation. There is no memory limit on Windows yet.
+limit is crossed rather than preventing the allocation. On Windows (P10 W2) the child runs in a Job Object of its own
+(`tools/win_job.py`) whose per-process committed-memory limit makes the allocation past it fail; the parent's timeout
+terminates the job, grandchildren included. There a crash that is not a memory limit is named as the reader stopping,
+with its exit code, never as an unreadable PDF.
 
 The watchdog that stops the child runs in the parent (`_run_watched`), not in the child (D138). A thread inside the
 child cannot be relied on: MuPDF's C calls hold the interpreter lock for as long as they run, and on a PDF whose
@@ -58,6 +61,7 @@ from pathlib import Path
 
 import pymupdf
 
+from deixis.tools import win_job
 from deixis.tools.child_env import child_env
 from deixis.documents import child_guard, inline_math
 from deixis.documents.child_guard import _libproc, _resident_bytes  # re-export existing readers
@@ -75,6 +79,7 @@ ERROR_PASSWORD = "password-protected PDF"
 ERROR_NO_PAGES = "PDF has no pages"
 ERROR_UNREADABLE = "PDF could not be read"
 CHILD_ERRORS = frozenset({ERROR_PASSWORD, ERROR_NO_PAGES, ERROR_UNREADABLE})
+READER_STOPPED = "the PDF reader stopped"  # Windows: a crash that is not a memory limit (P10 W2)
 TIMEOUT_SECONDS = 90
 CHILD_LIFETIME_SECONDS = 100  # above the longest parent clock (this module's 90 s); every child that calls `_watch_memory` gets it
 CHUNK_CHARS = 1400
@@ -441,14 +446,26 @@ class MemoryWatchLost(Exception):
 
 
 def _watch_supported() -> bool:
-    return sys.platform == "darwin" or sys.platform.startswith("linux")  # Windows has no memory limit yet
+    """Whether the resident size is watched from outside the child; Windows limits memory with a Job Object instead."""
+    return sys.platform == "darwin" or sys.platform.startswith("linux")
+
+
+def reader_stopped(code: int) -> str:
+    """A Windows extraction child that ended with neither success nor a memory limit (P10 W2): the reader stopped."""
+    return f"{READER_STOPPED} (exit code {code if 0 <= code < 256 else hex(code & 0xFFFFFFFF)})"
 
 
 def _run_watched(argv: list[str], env: dict, timeout: float, max_memory: int) -> subprocess.CompletedProcess:
     """Run a child to its end, killing it when it passes `timeout` seconds (TimeoutExpired), when its resident size
     passes `max_memory` (returncode MEMORY_EXIT_CODE, stderr says so) or, where the size is supposed to be readable,
     when it has been unreadable for WATCH_LOST_TURNS turns in a row (MemoryWatchLost). The check runs here, outside the
-    child, every WATCH_INTERVAL_SECONDS, so it works while the child sits in a long C call (D138)."""
+    child, every WATCH_INTERVAL_SECONDS, so it works while the child sits in a long C call (D138). On Windows the child runs in
+    its own job (`win_job.run`): a memory limit the job reported or reached gives MEMORY_EXIT_CODE as here."""
+    if sys.platform == "win32":
+        done = win_job.run(argv, env, timeout, max_memory)
+        if done.memory_limit:
+            return subprocess.CompletedProcess(argv, MEMORY_EXIT_CODE, done.stdout, b"memory limit exceeded\n")
+        return subprocess.CompletedProcess(argv, done.returncode, done.stdout, done.stderr)
     deadline = time.monotonic() + timeout
     supported = _watch_supported()
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
@@ -516,7 +533,7 @@ def extract_pdf(path: Path, max_chars: int = MAX_TEXT_CHARS, max_memory: int = M
     if completed.returncode != 0:
         # A crash or a signal: the stderr tail is for the log, not for the person.
         log.warning("PDF extraction child exited %s: %s", completed.returncode, completed.stderr.decode(errors="replace")[-400:])
-        return Extraction("failed", error=ERROR_UNREADABLE)
+        return Extraction("failed", error=reader_stopped(completed.returncode) if sys.platform == "win32" else ERROR_UNREADABLE)
     raw = json.loads(completed.stdout)
     if "error" in raw:
         return Extraction("failed", error=raw["error"] if raw["error"] in CHILD_ERRORS else ERROR_UNREADABLE)

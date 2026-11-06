@@ -661,6 +661,8 @@ export function rereadEquationsLabel(equations: Source['access']['assets'][numbe
 export function pdfFailureText(error: string | null | undefined): string {
   if (error === 'password-protected PDF') return t('PDF is password-protected')
   if (error === 'PDF has no pages') return t('PDF has no pages')
+  if (error === 'extraction exceeded the memory limit') return t('PDF reading passed its memory limit')
+  if (error?.startsWith('the PDF reader stopped')) return t('The PDF reader stopped')
   return t('PDF could not be read')
 }
 

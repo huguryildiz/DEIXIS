@@ -16,7 +16,6 @@ from pathlib import Path
 
 from deixis.api.app import create_app
 from deixis.config import Settings
-from deixis.models import cli_process
 from deixis.models import copilot_cli
 from deixis.models.adapter import CodexAdapter
 from deixis.models.copilot_cli import CopilotCliAdapter
@@ -151,22 +150,6 @@ def gone(pid):
             return True
         time.sleep(0.05)
     return False
-
-
-def windows(monkeypatch, **answers):
-    """Windows with stand-ins for kernel32 and ntdll that record each call; the real Windows ABI cannot run here."""
-    monkeypatch.setattr(cli_process, "WINDOWS", True)
-    monkeypatch.setattr(cli_process.subprocess, "run", lambda *a, **k: pytest.fail("taskkill was used despite the job"))
-    answers = {"OpenProcess": 9, "CreateJobObjectW": 7, "NtResumeProcess": 0} | answers
-    calls = []
-
-    class Library:
-        def __getattr__(self, name):
-            return lambda *args: calls.append((name, *args)) or answers.get(name, 1)
-
-    monkeypatch.setattr(cli_process, "_kernel32", Library)
-    monkeypatch.setattr(cli_process, "_ntdll", Library)
-    return calls
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="the fake codex is a shell script")

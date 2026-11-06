@@ -212,7 +212,7 @@ def holder_main(args: list[str]) -> int:
         return 3
     try:
         process = subprocess.Popen(command, **cli_process.spawn_options())
-        cli_process.track(process, require_job=True)  # a command that cannot join the job is killed unrun, never left free of the lock
+        cli_process.track(process)  # a command that cannot join the job is killed unrun, never left free of the lock
     except OSError:
         ready.write_text("failed")
         return 1

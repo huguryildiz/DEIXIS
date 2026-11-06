@@ -3778,6 +3778,8 @@ export const tr: Record<string, string> = {
   "PDF is password-protected": "PDF parola korumalı",
   "PDF has no pages": "PDF'de sayfa yok",
   "PDF could not be read": "PDF okunamadı",
+  "PDF reading passed its memory limit": "PDF okuma bellek sınırını aştı",
+  "The PDF reader stopped": "PDF okuyucu durdu",
   "The PDF file is missing from the data folder. Add the PDF again.": "PDF dosyası veri klasöründe yok. PDF'yi yeniden ekleyin.",
   // UI port S4: the research top row.
   'Revise question': 'Soruyu revize et',

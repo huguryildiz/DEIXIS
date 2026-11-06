@@ -44,9 +44,9 @@ async def probe(argv: Sequence[str], timeout: float | None = None, env: Mapping[
         proc = await asyncio.create_subprocess_exec(*launch(argv), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                                     stderr=subprocess.PIPE, env=dict(env) if env is not None else None,
                                                     **spawn_options())
+        track(proc)  # Windows: a tool that cannot join its job is stopped unrun (OSError)
     except (OSError, ValueError) as exc:
         return Probe(stderr=str(exc), error="failed")
-    track(proc)
     try:
         async with asyncio.timeout(timeout or PROBE_TIMEOUT):
             out, err = await asyncio.gather(_bounded(proc.stdout), _bounded(proc.stderr))

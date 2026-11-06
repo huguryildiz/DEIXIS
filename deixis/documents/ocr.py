@@ -82,15 +82,15 @@ def tesseract_status(langs=LANGUAGES) -> dict:
 
 def read_page(path: Path, page: int, langs, timeout: float = TIMEOUT_SECONDS, max_memory: int = MAX_MEMORY_BYTES) -> OcrPage:
     """OCR one physical page (1-based) in a child process limited in time and memory."""
+    argv = [sys.executable, "-m", "deixis.documents.ocr", str(path), str(page), "+".join(langs), str(max_memory)]
+    # PyMuPDF finds the Tesseract data through TESSDATA_PREFIX or by running `tesseract`, so the child needs both.
+    env = child_env({"PYTHONPATH": str(Path(__file__).resolve().parents[2])}, keep=("TESSDATA_PREFIX",), bundled=True,
+                    tool=find_tool("tesseract"))
     try:
-        completed = subprocess.run(
-            [sys.executable, "-m", "deixis.documents.ocr", str(path), str(page), "+".join(langs), str(max_memory)],
-            capture_output=True,
-            timeout=timeout,
-            # PyMuPDF finds the Tesseract data through TESSDATA_PREFIX or by running `tesseract`, so the child needs both.
-            env=child_env({"PYTHONPATH": str(Path(__file__).resolve().parents[2])}, keep=("TESSDATA_PREFIX",), bundled=True,
-                          tool=find_tool("tesseract")),
-        )
+        if sys.platform == "win32":  # in its own job with the memory limit (P10 W2)
+            completed = pdf._run_watched(argv, env, timeout, max_memory)
+        else:
+            completed = subprocess.run(argv, capture_output=True, timeout=timeout, env=env)
     except subprocess.TimeoutExpired:
         return OcrPage(page, "failed", error="OCR timed out")
     if completed.returncode == pdf.MEMORY_EXIT_CODE:

@@ -214,9 +214,9 @@ class CopilotCliAdapter:
             proc = await asyncio.create_subprocess_exec(*launch(args), stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
                                                         stderr=asyncio.subprocess.PIPE, cwd=self.workspace, env=env,
                                                         **spawn_options())
+            track(proc)  # Windows: a CLI that cannot join its job is stopped unrun (OSError)
         except OSError as exc:
             return ModelStepResult("unavailable", error=safe_error(str(exc))[:300], delivery_class="before_send")
-        track(proc)
         self._active.add(proc)
         try:
             out, err = await asyncio.wait_for(proc.communicate(prompt.encode()), self.turn_timeout)

@@ -1,7 +1,7 @@
 r"""Acceptance of the installed DEIXIS on Windows (P10 W5), the NSIS installer as built by windows-desktop.yml.
 
     python scripts\p10\windows_acceptance.py --installer DEIXIS_0.1.0_x64-setup.exe [--evidence DIR] [--only ROW,...]
-                                             [--fake-python PATH] [--keep-installed]
+                                             [--fake-python PATH] [--keep-installed] [--webview2-policy]
 
 Standard library only (plus tests/support/helpers.make_pdf, which is too); run with any Windows Python as the user
 who will own the install. The fake codex runs with --fake-python (default: this Python), which must import the repo's
@@ -37,8 +37,10 @@ PASS or MANUAL:
 
 Inside the window the page is driven over the Chrome DevTools Protocol of WebView2 (WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS
 =--remote-debugging-port, the channel msedgedriver uses for WebView2), so no driver has to match the WebView2 version;
-when that port does not answer, the in-window rows are NOT_DONE with the reason and csrf_save falls back to the page's
-own CSRF flow over HTTP (marked so).
+when that port does not answer, the in-window rows are NOT_DONE with the reason (the WebView2 browser's arguments are
+recorded) and csrf_save falls back to the page's own CSRF flow over HTTP (marked so). --webview2-policy (a throwaway CI
+machine only) also writes the port into WebView2's HKCU AdditionalBrowserArguments policy for deixis-desktop.exe and
+removes it at the end.
 
 "Nothing left" is checked three ways: every process the watcher saw for the scenario (the shell, its descendants by
 parent pid and creation time, anything run from the install folder; Toolhelp32 every 0.2 s) is gone within 15 s; the
@@ -68,6 +70,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+import winreg
 from ctypes import wintypes
 from pathlib import Path
 
@@ -88,6 +91,10 @@ GENERIC = ("python", "pythonw", "node", "cmd", "deixis-backend", "deixis-desktop
 LIBRARY_FILES = ("library.sqlite", "library.sqlite-wal", "library.sqlite-shm", "library.lock", "desktop-port.json",
                  str(Path("logs") / "backend.log"))
 results: dict[str, dict] = {}
+# Opt-in (--webview2-policy, for a throwaway CI machine): WebView2's per-program AdditionalBrowserArguments policy
+# carries the DevTools port when the environment variable is not taken.
+WEBVIEW2_POLICY = r"Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments"
+use_policy = False
 
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 user32 = ctypes.WinDLL("user32", use_last_error=True)
@@ -745,6 +752,9 @@ class Scenario:
         return INSTALL / "deixis-desktop.exe"
 
     def launch(self) -> None:
+        if use_policy:
+            with winreg.CreateKey(winreg.HKEY_CURRENT_USER, WEBVIEW2_POLICY) as key:
+                winreg.SetValueEx(key, "deixis-desktop.exe", 0, winreg.REG_SZ, f"--remote-debugging-port={self.cdp_port}")
         self.started = time.monotonic()
         self.proc = subprocess.Popen([str(self.exe)], env=self.env, cwd=str(self.work), stdin=subprocess.DEVNULL,
                                      stdout=subprocess.DEVNULL,
@@ -776,8 +786,12 @@ class Scenario:
         return self.api
 
     def connect(self) -> Cdp | None:
-        if self.cdp is None:
+        if self.cdp is None and not self.cdp_error:
             self.cdp, self.cdp_error = cdp_connect(self.cdp_port)
+            if self.cdp is None:
+                browsers = [c for c in cim_command_lines("msedgewebview2.exe") if "--type=" not in c]
+                self.cdp_error += (f"; WebView2 browser process args: {[b.split('.exe', 1)[-1][:300] for b in browsers]}"
+                                   f"; elevated: {elevated()}")
         return self.cdp
 
     def backend_pids(self) -> list[int]:
@@ -833,6 +847,7 @@ class Scenario:
             terminate(proc["pid"])
         if self.proc and self.proc.poll() is None:
             self.proc.kill()
+        wait_for(lambda: not self.watch.alive(), 10)
         self.watch.close()
         if self.cdp:
             self.cdp.close()
@@ -979,7 +994,11 @@ def main() -> int:
     parser.add_argument("--only", default="", help="comma-separated rows to run (install and uninstall always run)")
     parser.add_argument("--fake-python", default=sys.executable)
     parser.add_argument("--keep-installed", action="store_true")
+    parser.add_argument("--webview2-policy", action="store_true",
+                        help="also give the DevTools port through WebView2's HKCU policy (throwaway machines only)")
     args = parser.parse_args()
+    global use_policy
+    use_policy = args.webview2_policy
     only = {r for r in args.only.split(",") if r}
     wanted = lambda name: not only or name in only  # noqa: E731
     work = Path(tempfile.mkdtemp(prefix="deixis-win-acceptance-"))
@@ -1098,8 +1117,10 @@ def main() -> int:
             trigger = time.monotonic()
             how = quit_app(sc, tray_opens)
             left = sc.check_left(trigger)
-            row("quit_plain", left.pop("ok") and facts["hanging"] and bool(how.get("quit_via")), **how, **facts, **left,
-                shell_exit=sc.proc.poll())
+            ok = left.pop("ok") and facts["hanging"]
+            row("quit_plain", (ok if how.get("quit_via") else None), **how, **facts, **left, shell_exit=sc.proc.poll(),
+                **({} if how.get("quit_via") else {"reason": "no Quit path could be driven (tray menu and DevTools)"}))
+            sc.kill_all()
 
         if wanted("kill_shell") and (sc := launched("kill_shell")):
             facts = start_load(sc, bin_dir)
@@ -1107,6 +1128,7 @@ def main() -> int:
             killed = terminate(sc.proc.pid)
             left = sc.check_left(trigger)
             row("kill_shell", left.pop("ok") and facts["hanging"] and killed, terminated=killed, **facts, **left)
+            sc.kill_all()
 
         if wanted("kill_backend") and (sc := launched("kill_backend")):
             facts = start_load(sc, bin_dir)
@@ -1137,6 +1159,7 @@ def main() -> int:
                 stopped_page=(stopped_page or "")[:200], old_backend_family_left=old_left, screenshot=shot,
                 restart_pressed=bool(pressed), restarted_s=round(restarted_s, 2) if restarted_s else None,
                 old_backend=backend, new_backend=new_backend, then_quit=how, **facts, after_quit=left)
+            sc.kill_all()
 
         if wanted("download") and (sc := launched("download")):
             for marker in bin_dir.glob("*.json"):
@@ -1207,6 +1230,7 @@ def main() -> int:
             (bin_dir / "no-hang").unlink(missing_ok=True)
             how = quit_app(sc, tray_opens)
             left = sc.check_left(time.monotonic())
+            sc.kill_all()
             results["download"]["quit"] = how.get("quit_via")
             results["download"]["left_ok"] = left["ok"]
             if not left["ok"] and results["download"]["ok"]:
@@ -1215,6 +1239,12 @@ def main() -> int:
     finally:
         for sc in scenarios:
             sc.kill_all()
+        if use_policy:
+            try:
+                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, WEBVIEW2_POLICY, 0, winreg.KEY_SET_VALUE) as key:
+                    winreg.DeleteValue(key, "deixis-desktop.exe")
+            except OSError:
+                pass
         if INSTALL.exists() and not args.keep_installed:
             uninstall_row(work, scenarios)
         passed = sum(1 for r in results.values() if r["ok"] is True)

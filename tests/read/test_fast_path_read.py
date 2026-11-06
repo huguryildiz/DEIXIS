@@ -726,7 +726,7 @@ const late = () => Object.assign(new Error('late'), { code: 'read_timed_out' });
 def run_node(body: str):
     root = Path(__file__).resolve().parents[2]
     # Node exits 0 when the script ends with a promise still pending, so the script must say it ran to the end.
-    result = subprocess.run(["node", "-e", PRELUDE % body], cwd=root / "web", capture_output=True, text=True, timeout=60)
+    result = subprocess.run(["node", "-e", PRELUDE % body], cwd=root / "web", capture_output=True, text=True, encoding="utf-8", timeout=60)
     assert result.returncode == 0, result.stderr
     assert "FINISHED" in result.stdout, "the script did not run to its end"
 

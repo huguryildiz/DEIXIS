@@ -32,6 +32,7 @@ from typing import Any, Callable
 
 import httpx
 import pytest
+from windows_env import system_env
 
 REPO = Path(__file__).resolve().parents[2]
 HERE = Path(__file__).resolve().parent
@@ -40,6 +41,10 @@ BACKUP_DRIVER = HERE / "backup_driver.py"
 RESTORE_DRIVER = HERE / "restore_driver.py"
 REFUSED_PORTS = {8765, *range(8858, 8865)}
 QUESTION = "How is molecule release scheduling optimized?"
+# The harness names processes by `ps` (pid, start time, command) and kills with POSIX signals; on Windows a crash is
+# TerminateProcess and ownership is a Job Object, which W2 (child protection on Windows) builds and tests.
+POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="W2: the real-process kill harness reads `ps` and sends "
+                                "POSIX signals; its Windows form comes with the Job Object work")
 
 
 # ---- processes ------------------------------------------------------------------------------------------------
@@ -145,7 +150,7 @@ def child_env(home: Path, **extra: str) -> dict[str, str]:
     path = f"{bin_dir}:/usr/bin:/bin"
     assert shutil.which("codex", path=path) is None, "a codex binary is on the child's PATH"
     env = {"PATH": path, "HOME": str(home), "PYTHONPATH": str(REPO),
-           "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring"}
+           "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring", **system_env()}
     for name, value in extra.items():
         assert name.startswith("P9_") or name in ("DEIXIS_DATA_DIR", "FAKE_LLAMA", "DEIXIS_CHILD_LIFETIME_SECONDS"), name
         env[name] = value
@@ -284,7 +289,7 @@ class ServerProc:
     def calls(self) -> list[dict[str, Any]]:
         if not self.calls_path.exists():
             return []
-        return [json.loads(line) for line in self.calls_path.read_text().splitlines() if line.strip()]
+        return [json.loads(line) for line in self.calls_path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
     def wait_held(self, what: str, seconds: float = 60, **match: Any) -> dict[str, Any]:
         """The `held` line of `what` (and any other fields in `match`) in the call log."""

@@ -5,6 +5,9 @@ from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUse
 
 from deixis.tools import tool_probe
 from deixis.models import claude
+import sys
+
+EXE = ".exe" if sys.platform == "win32" else ""  # on Windows a fake CLI path must be a native program (tool_paths)
 
 
 PROBED_CATALOGUE = {
@@ -65,7 +68,7 @@ def prepare(monkeypatch):
     FakeClient.messages = []
     FakeClient.options = []
     monkeypatch.setattr(claude, "ClaudeSDKClient", FakeClient)
-    monkeypatch.setattr(claude, "find_tool", lambda name: "/SYNTHETIC/bin/claude")
+    monkeypatch.setattr(claude, "find_tool", lambda name: "/SYNTHETIC/bin/claude" + EXE)
     async def version(argv, timeout=None, env=None):
         return tool_probe.Probe(0, "2.1.270 (Claude Code)")
 

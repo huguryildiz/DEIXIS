@@ -11,7 +11,7 @@ import query_baseline as baseline
 from deixis.providers import facade, query_compiler as compiler, query_rules as rules, registry
 
 ROOT = Path(__file__).resolve().parents[2]
-FROZEN = json.loads(baseline.BASELINE.read_text())
+FROZEN = json.loads(baseline.BASELINE.read_text(encoding="utf-8"))
 
 
 @pytest.fixture(autouse=True)

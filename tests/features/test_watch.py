@@ -430,7 +430,7 @@ def test_watch_package_has_no_library_writer_or_sql_mutation():
     library = {"sources", "source_versions", "works", "corpus_memberships", "candidates", "candidate_hits",
                "search_runs", "identifier_mappings", "record_links", "selections", "passages"}
     for path in root.glob("watch_*.py"):
-        tree = ast.parse(path.read_text())
+        tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
                 assert node.func.attr not in forbidden_calls and not node.func.attr.startswith("add_asset"), (path, node.lineno)

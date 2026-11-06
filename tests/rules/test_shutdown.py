@@ -19,9 +19,9 @@ import time
 import httpx
 import pytest
 from deixis import __main__ as deixis_main
-from process_harness import answer_run, create_research, descendants, discovery_to_answer_ready, harness, is_same_and_live, port_is_free, run_row
+from process_harness import answer_run, create_research, descendants, discovery_to_answer_ready, harness, is_same_and_live, port_is_free, run_row, POSIX_ONLY
 
-pytestmark = pytest.mark.process
+pytestmark = [pytest.mark.process, POSIX_ONLY]
 FORCED = getattr(deixis_main, "FORCED_EXIT_CODE", 1)
 LIMIT_SECONDS = 10
 

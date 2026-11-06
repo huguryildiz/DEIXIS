@@ -37,10 +37,10 @@ PLAIN_ENV = {"PATH": os.environ.get("PATH", "")}
 
 def _wait_for_pid(pid_file) -> int:
     deadline = time.monotonic() + 10
-    while not (pid_file.exists() and pid_file.read_text()):
+    while not (pid_file.exists() and pid_file.read_text(encoding="utf-8")):
         assert time.monotonic() < deadline, "the child never wrote its pid"
         time.sleep(0.05)
-    return int(pid_file.read_text())
+    return int(pid_file.read_text(encoding="utf-8"))
 
 
 def resolver(*answers):

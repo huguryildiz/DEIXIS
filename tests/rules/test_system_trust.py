@@ -18,6 +18,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
 from deixis.domain.limits import certificate_failure, error_name, service_error_kind
+from windows_env import system_env
 
 BACKEND = str(Path(__file__).resolve().parents[2])
 
@@ -91,7 +92,7 @@ SCRIPT = textwrap.dedent('''
 def run_case(tmp_path, *, inject, store=None, env_file=None, server=None):
     pem, key = server or certificate(tmp_path, "server")
     mode = {"inject": inject, "store": None if store is None else [str(p) for p in store], "server_cert": str(pem), "server_key": str(key)}
-    env = {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path), "PYTHONPATH": BACKEND}
+    env = {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path), "PYTHONPATH": BACKEND, **system_env()}
     if env_file:
         env["SSL_CERT_FILE"] = str(env_file)
     done = subprocess.run([sys.executable, "-c", SCRIPT.format(backend=BACKEND), json.dumps(mode)], env=env,
@@ -113,7 +114,7 @@ def test_a_certificate_the_system_store_does_not_have_is_refused_with_the_reason
 
 
 def test_the_main_entry_point_turns_the_system_store_on_before_anything_else():
-    source = (Path(BACKEND) / "deixis" / "__main__.py").read_text()
+    source = (Path(BACKEND) / "deixis" / "__main__.py").read_text(encoding="utf-8")
     assert source.index("use_system_certificates()") < source.index("settings = load_settings()")
 
 

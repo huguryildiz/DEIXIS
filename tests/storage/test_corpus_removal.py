@@ -220,7 +220,7 @@ def test_backup_keeps_trashed_and_removed_items_and_the_restored_library_brings_
         assert [t["id"] for t in trash["templates"]] == [template]
         backup = create_backup(Settings(data_dir=tmp_path / "data", port=8765), tmp_path / "backups")  # server still running
 
-    manifest = json.loads((backup / "manifest.json").read_text())
+    manifest = json.loads((backup / "manifest.json").read_text(encoding="utf-8"))
     assert all(hashlib.sha256((backup / f["path"]).read_bytes()).hexdigest() == f["sha256"] for f in manifest["files"])
     assert all((backup / f["path"]).stat().st_size == f["bytes"] for f in manifest["files"])
     papers = {f["path"]: f["sha256"] for f in manifest["files"] if f["path"].startswith("papers/")}

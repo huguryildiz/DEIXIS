@@ -17,5 +17,5 @@ def test_no_test_name_is_defined_twice_in_one_scope():
             for node in body:
                 if isinstance(node, ast.ClassDef):
                     scan(node.body, f"{node.name}.")
-        scan(ast.parse(path.read_text()).body, "")
+        scan(ast.parse(path.read_text(encoding="utf-8")).body, "")
     assert duplicates == []

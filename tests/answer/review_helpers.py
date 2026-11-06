@@ -13,7 +13,7 @@ from test_report_assembly import report_with_sections
 from test_report_edit_check import finish
 
 
-INPUTS = json.loads((Path(__file__).parent.parent / "fixtures/research/step-inputs.json").read_text())
+INPUTS = json.loads((Path(__file__).parent.parent / "fixtures/research/step-inputs.json").read_text(encoding="utf-8"))
 
 
 def si(kind="answer"):

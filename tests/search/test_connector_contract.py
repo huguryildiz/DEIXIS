@@ -23,8 +23,8 @@ from test_candidate_flow import lib  # noqa: F401  (fixtures used by name)
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE_DIR = baseline.FIXTURES / "conformance"
-FIXTURES = {p.stem: json.loads(p.read_text()) for p in FIXTURE_DIR.glob("*.json")}
-FROZEN = json.loads(baseline.BASELINE.read_text())
+FIXTURES = {p.stem: json.loads(p.read_text(encoding="utf-8")) for p in FIXTURE_DIR.glob("*.json")}
+FROZEN = json.loads(baseline.BASELINE.read_text(encoding="utf-8"))
 
 
 PAIRS = [
@@ -217,7 +217,7 @@ def body_of(spec, prefix=""):
         if spec.get("name") == "root_string":
             return json.dumps(body)
         return body if isinstance(body, str) else json.dumps(body)
-    return (baseline.FIXTURES / "responses" / spec[prefix + "body_file"]).read_text()
+    return (baseline.FIXTURES / "responses" / spec[prefix + "body_file"]).read_text(encoding="utf-8")
 
 
 def assert_auth(request, fixture, key):
@@ -411,7 +411,7 @@ def test_registration_schema_and_purity(memory_keychain, tmp_path):
     asyncio.run(run())
     assert registry.Connector("synthetic", deny_network, 1).adapter_revision == 1
     assert all(c.adapter_revision == (3 if c.provider_id == "openalex" else 2) for c in registry.CONNECTORS.values())
-    enum = json.loads((ROOT / "deixis/contracts/research/common.schema.json").read_text())["$defs"]["provider_id"]["enum"]
+    enum = json.loads((ROOT / "deixis/contracts/research/common.schema.json").read_text(encoding="utf-8"))["$defs"]["provider_id"]["enum"]
     assert set(enum) == set(registry.CONNECTORS)
     assert os.environ == before_env and memory_keychain.items == before_keys and list(tmp_path.iterdir()) == before_files
 

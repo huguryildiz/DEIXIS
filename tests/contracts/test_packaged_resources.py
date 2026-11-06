@@ -69,7 +69,12 @@ def run_frozen(root: Path, tmp_path: Path, body: str) -> dict:
     prints one JSON line."""
     env = {k: os.environ[k] for k in CHILD_ENV if k in os.environ}
     env |= {"DEIXIS_DATA_DIR": str(tmp_path / "data"), "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring"}
-    script = (f"import sys\nsys.path[:0] = [{str(root)!r}, {str(dependencies(tmp_path))!r}]\n"
+    site = dependencies(tmp_path)
+    # pywin32's .pth (skipped by -S) puts win32 and win32/lib on the path, and a frozen pywintypes looks for its DLL on
+    # sys.path; PyInstaller's pywin32 hooks lay the bundle out the same way.
+    win32 = [site / "win32", site / "win32" / "lib", site / "pywin32_system32"] if sys.platform == "win32" else []
+    folders = [root, site, *win32]
+    script = (f"import sys\nsys.path[:0] = {[str(f) for f in folders]!r}\n"
               f"sys.frozen = True\nsys._MEIPASS = {str(root)!r}\n" + body)
     done = subprocess.run([sys.executable, "-I", "-S", "-B", "-c", script], cwd=tmp_path, env=env, capture_output=True,
                           text=True, timeout=120)
@@ -113,7 +118,7 @@ print(json.dumps({"package": deixis.__file__, "root": str(RESOURCE_ROOT), "issue
     assert seen["health"]["skill_package_hash"] == skill.package_hash(REPO / "deixis" / "methods" / "deixis-research")
     assert "SYNTHETIC web build" in seen["page"] or "<div id=\"root\">" in seen["page"]
     assert seen["metadata"].startswith(str(root)) and seen["version"] == importlib.metadata.version("deixis")
-    assert seen["key_set"] is False and (root / ".env").read_text() == "OPENALEX_API_KEY=SYNTHETIC-dotenv-key\n"
+    assert seen["key_set"] is False and (root / ".env").read_text(encoding="utf-8") == "OPENALEX_API_KEY=SYNTHETIC-dotenv-key\n"
     assert not list(root.rglob("*.env.*"))
 
 
@@ -126,7 +131,7 @@ def test_the_manifest_lists_every_data_file_next_to_the_code_and_the_build_recor
     assert data_files <= listed
     assert all((REPO / "deixis/contracts/research" / name).resolve() in listed for name in os.listdir(REPO / "deixis/contracts/research"))
     assert (REPO / "deixis/methods/deixis-research/references/report.md").resolve() in listed
-    assert package_manifest.datas(REPO, Path("/b/build_identity.json"))[-1] == ("/b/build_identity.json", "deixis")
+    assert package_manifest.datas(REPO, Path("/b/build_identity.json"))[-1] == (str(Path("/b/build_identity.json")), "deixis")
 
 
 # ---- .env (A2) --------------------------------------------------------------------------------------------------------
@@ -166,4 +171,4 @@ def test_a_run_from_the_repository_still_reads_dotenv_and_moves_its_keys(dotenv,
     config.load_settings()
     assert credentials.dotenv_path == dotenv and os.environ["OPENALEX_API_KEY"] == "openalex-dotenv-key"
     assert memory_keychain.get_password("DEIXIS", "OPENALEX_API_KEY") == "openalex-dotenv-key"
-    assert dotenv.read_text() == "# SYNTHETIC\n"  # moved into the keychain (D19), as before
+    assert dotenv.read_text(encoding="utf-8") == "# SYNTHETIC\n"  # moved into the keychain (D19), as before

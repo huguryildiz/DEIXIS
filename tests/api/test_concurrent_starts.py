@@ -17,6 +17,8 @@ from deixis.tools import local_tools
 from deixis.keys.account_signin import AccountSignIn
 from deixis.tools.local_tools import LocalTools, ToolError
 
+EXE = ".exe" if sys.platform == "win32" else ""  # on Windows a fake CLI path must be a native program (tool_paths)
+
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="the fake installers are shell scripts")
 
 
@@ -48,7 +50,7 @@ def installer(path, body="sleep 0.3\n"):
 
 def runs(path):
     log = type(path)(str(path) + ".log")
-    return log.read_text().count("ran") if log.exists() else 0
+    return log.read_text(encoding="utf-8").count("ran") if log.exists() else 0
 
 
 async def finish(tools_, tool_id):
@@ -86,7 +88,7 @@ def sign_in(tmp_path, monkeypatch, find):
 def test_two_sign_ins_at_once_open_one_terminal(tmp_path, monkeypatch):
     def slow(name):
         time.sleep(0.3)
-        return f"/usr/local/bin/{name}"
+        return f"/usr/local/bin/{name}{EXE}"
     signin, launched = sign_in(tmp_path, monkeypatch, slow)
     monkeypatch.setattr(account_signin, "build_launch", lambda *a, **k: ["terminal", "codex", "login"])
 

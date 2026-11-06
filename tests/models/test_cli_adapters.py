@@ -93,7 +93,7 @@ def make(tmp_path, monkeypatch, env=None, **fake):
 
 
 def record(tmp_path):
-    return json.loads((tmp_path / "record.json").read_text())
+    return json.loads((tmp_path / "record.json").read_text(encoding="utf-8"))
 
 
 def test_run_step_sends_the_prompt_on_stdin_with_every_tool_off(tmp_path, monkeypatch):
@@ -130,7 +130,7 @@ def test_copilot_environment_keeps_only_the_allowlist(monkeypatch):
     monkeypatch.setattr(copilot_cli, "find_tool", lambda name: None)
     monkeypatch.setattr("deixis.tools.tool_paths.find_tool", lambda name: None)  # no real copilot or node folder joins PATH
     env = copilot_environment(Path("/h"), {"PATH": "/bin", "LC_ALL": "C", "GITHUB_TOKEN": "x", "DEEPSEEK_API_KEY": "y"})
-    assert env == {"PATH": "/bin", "LC_ALL": "C", "COPILOT_HOME": "/h", "COPILOT_AUTO_UPDATE": "false", "NO_COLOR": "1",
+    assert env == {"PATH": "/bin", "LC_ALL": "C", "COPILOT_HOME": str(Path("/h")), "COPILOT_AUTO_UPDATE": "false", "NO_COLOR": "1",
                    "NODE_USE_SYSTEM_CA": "1"}
 
 
@@ -169,6 +169,7 @@ def windows(monkeypatch, **answers):
     return calls
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="the fake codex is a shell script")
 def test_a_hung_codex_does_not_hold_up_the_api_or_the_other_connections(tmp_path, monkeypatch):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()

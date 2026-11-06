@@ -11,8 +11,8 @@ import pytest
 from deixis.domain import contracts, wording
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "research"
-STEP_INPUTS = json.loads((FIXTURES / "step-inputs.json").read_text())
-CASES = json.loads((FIXTURES / "fake-outputs.json").read_text())["cases"]
+STEP_INPUTS = json.loads((FIXTURES / "step-inputs.json").read_text(encoding="utf-8"))
+CASES = json.loads((FIXTURES / "fake-outputs.json").read_text(encoding="utf-8"))["cases"]
 
 
 def anchored(draft):

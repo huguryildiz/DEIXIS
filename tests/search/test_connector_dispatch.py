@@ -95,7 +95,7 @@ def test_dispatch_equivalence(provider_id, kind, q, cursor_kind, retries, limite
 def test_workflow_contains_no_registry_search_call():
     root = Path(flow_module.__file__).parents[1]  # all of workflow/, not only run/
     assert len(list(root.rglob("*.py"))) > 100
-    assert not [p.name for p in root.rglob("*.py") if "connector.search(" in p.read_text()]
+    assert not [p.name for p in root.rglob("*.py") if "connector.search(" in p.read_text(encoding="utf-8")]
 
 
 # Named change 2: explicit identifier ownership, independently of dispatch.

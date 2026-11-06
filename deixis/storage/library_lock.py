@@ -159,7 +159,7 @@ class Guard:
         deadline = time.monotonic() + timeout
         while True:
             try:
-                answer = self._ready.read_text()
+                answer = self._ready.read_text(encoding="utf-8")
             except OSError:
                 answer = ""
             if answer == "ready":

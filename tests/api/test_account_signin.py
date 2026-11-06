@@ -20,6 +20,10 @@ from deixis.keys import account_signin
 from deixis.api.app import create_app
 from deixis.config import Settings
 from fakes import FakeAdapter
+import os
+import sys
+
+EXE = ".exe" if sys.platform == "win32" else ""  # on Windows a fake CLI path must be a native program (tool_paths)
 
 
 class Health(FakeAdapter):
@@ -66,7 +70,7 @@ class Window:
 
 @pytest.fixture
 def served(tmp_path, monkeypatch):
-    monkeypatch.setattr(account_signin, "find_tool", lambda name: f"/usr/local/bin/{name}")
+    monkeypatch.setattr(account_signin, "find_tool", lambda name: f"/usr/local/bin/{name}{EXE}")
     launched = []
     clock = Clock()
     codex, claude = Health(), Health()
@@ -94,7 +98,8 @@ def test_codex_launch_waits_then_succeeds_only_after_the_command_exits_0_and_hea
     assert client.get("/api/accounts/codex/sign-in").json() == {"state": "idle", "message": None}
     assert client.post("/api/accounts/codex/sign-in").json() == {"state": "waiting", "message": None}
     assert launched[0][:3] == ["open", "-a", "Terminal"] and Path(launched[0][3]).parent == settings.codex_home.parent / "sign-in"
-    assert f"CODEX_HOME={shlex.quote(str(settings.codex_home))} /usr/local/bin/codex login" in Path(launched[0][3]).read_text()
+    codex = shlex.quote(os.path.abspath("/usr/local/bin/codex" + EXE))  # the found path, made absolute by command_for
+    assert f"CODEX_HOME={shlex.quote(str(settings.codex_home))} {codex} login" in Path(launched[0][3]).read_text(encoding="utf-8")
     # The command has not ended: no status file, so no health check is made, however long it takes.
     tools["codex"].signed_in = True  # an account that was already signed in
     clock.now += 60
@@ -110,10 +115,10 @@ def test_gemini_sign_in_window_reads_a_deixis_written_system_settings_file(serve
     # off; HOME and the person's own Gemini files are not touched.
     _, client, launched, settings, _, _ = served
     client.post("/api/accounts/gemini_cli/sign-in")
-    script = Path(launched[0][3]).read_text()
+    script = Path(launched[0][3]).read_text(encoding="utf-8")
     path = settings.codex_home.parent / "sign-in" / "gemini-system-settings.json"
     assert f"GEMINI_CLI_SYSTEM_SETTINGS_PATH={shlex.quote(str(path))} " in script and "HOME=" not in script
-    assert json.loads(path.read_text()) == {"privacy": {"usageStatisticsEnabled": False}, "telemetry": {"enabled": False}}
+    assert json.loads(path.read_text(encoding="utf-8")) == {"privacy": {"usageStatisticsEnabled": False}, "telemetry": {"enabled": False}}
 
 
 def test_a_non_zero_exit_fails_even_when_health_says_signed_in(served):

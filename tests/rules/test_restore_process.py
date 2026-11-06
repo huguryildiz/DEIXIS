@@ -24,7 +24,7 @@ from pathlib import Path
 
 import httpx
 import pytest
-from process_harness import (RESTORE_DRIVER, child_env, count, create_research, discovery_to_answer_ready,  # noqa: F401
+from process_harness import (POSIX_ONLY, RESTORE_DRIVER, child_env, count, create_research, discovery_to_answer_ready,  # noqa: F401
                         foreign_key_check, free_port, harness, integrity_check, port_is_free, run_row, start_run, upload,
                         wait_for, wait_run)
 from deixis.__main__ import FORCED_EXIT_CODE
@@ -33,7 +33,7 @@ from helpers import make_pdf
 from test_restore_matrix import CHILD, hand_backup, manifest_of
 from backup_kill_helpers import backup_folders, start_backup
 
-pytestmark = pytest.mark.process
+pytestmark = [pytest.mark.process, POSIX_ONLY]
 REPO = Path(__file__).resolve().parents[2]
 
 
@@ -289,8 +289,8 @@ def start_restore(harness, backup: Path, data: Path, mode: str, tmp_path: Path, 
     env = child_env(harness.home, DEIXIS_DATA_DIR=str(data), P9_RESTORE_HOLD=mode, P9_RESTORE_HELD=str(held), P9_RESTORE_NTH=str(nth))
     proc = harness.popen([sys.executable, str(RESTORE_DRIVER), str(backup)], env, tmp_path / f"restore-{mode}-{nth}.log")
     wait_for(lambda: held.exists() or proc.poll() is not None, 60, f"the restore reaching {mode} {nth}")
-    assert held.exists(), f"the restore driver ended with {proc.returncode} before {mode} {nth}: {(tmp_path / f'restore-{mode}-{nth}.log').read_text()[-500:]}"
-    print(f"restore held at {mode} {nth}: {held.read_text()}")
+    assert held.exists(), f"the restore driver ended with {proc.returncode} before {mode} {nth}: {(tmp_path / f'restore-{mode}-{nth}.log').read_text(encoding="utf-8")[-500:]}"
+    print(f"restore held at {mode} {nth}: {held.read_text(encoding="utf-8")}")
     return proc
 
 

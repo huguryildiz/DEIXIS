@@ -26,6 +26,7 @@ from arxiv_helpers import make_arxiv_pdf, no_network, source_archive
 
 
 REPO = Path(__file__).resolve().parents[2]
+NO_SOURCE_LOCK = pytest.mark.skipif(sys.platform == "win32", reason="the arXiv source route needs fcntl file locks; on Windows it is off whatever the flag says (the product shows not_available_on_this_system)")
 
 
 def groups_of(tex: str) -> list[dict]:
@@ -251,6 +252,7 @@ def sources_with(tmp_path, handler, seen=None):
     return src.SourceStore(store_at(tmp_path), tmp_path / "data", client=client)
 
 
+@NO_SOURCE_LOCK
 def test_a_source_is_fetched_once_stored_through_a_part_file_and_then_read_back(tmp_path, clock, public):
     seen = []
     sources = sources_with(tmp_path, lambda r: ok(), seen)
@@ -261,6 +263,7 @@ def test_a_source_is_fetched_once_stored_through_a_part_file_and_then_read_back(
     assert asyncio.run(sources.ensure(KEY))["status"] == "downloaded" and len(seen) == 1  # never fetched twice
 
 
+@NO_SOURCE_LOCK
 @pytest.mark.parametrize("response, status", [
     pytest.param(lambda: httpx.Response(200, content=b"x" * (fetch.MAX_BYTES + 1), headers={"content-type": "application/gzip"}), "too_large", id="<lambda>-too_large"),
 ])
@@ -271,6 +274,7 @@ def test_each_answer_has_its_download_status(tmp_path, clock, public, response, 
     assert not (tmp_path / "data/arxiv-sources" / f"{KEY}.src").exists()
 
 
+@NO_SOURCE_LOCK
 def test_a_host_resolving_to_a_private_address_is_refused_without_a_request(tmp_path, clock, monkeypatch):
     async def private(host, port):
         return ["10.0.0.7"]

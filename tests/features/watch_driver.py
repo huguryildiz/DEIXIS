@@ -74,7 +74,7 @@ async def openalex(request):
     if ready := os.environ.get("P9_READY_FILE"):
         # Keep HTTP startup responsive until the test is ready to cut completion.
         while not Path(ready).exists(): await asyncio.sleep(.01)
-    return httpx.Response(200, json=json.loads(Path(os.environ["P9_ANSWERS"]).read_text()))
+    return httpx.Response(200, json=json.loads(Path(os.environ["P9_ANSWERS"]).read_text(encoding="utf-8")))
 
 
 def hold_completion():

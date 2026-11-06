@@ -176,7 +176,7 @@ def replay(case, through_facade=False):
         step = remaining.pop(0)
         assert request.method == "GET" and str(request.url.copy_with(query=None)) == step["url"]
         requests.append(recorded_request(request))
-        body = (FIXTURES / "responses" / step["body_file"]).read_text() if "body_file" in step else step["text"]
+        body = (FIXTURES / "responses" / step["body_file"]).read_text(encoding="utf-8") if "body_file" in step else step["text"]
         return httpx.Response(step["status"], text=body, headers=step["headers"])
 
     async def run():

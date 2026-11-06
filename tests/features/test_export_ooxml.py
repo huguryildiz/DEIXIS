@@ -218,7 +218,8 @@ def browser_exports(*, lang, style, sources, answer=None, title="", version=0, t
     root = Path(__file__).resolve().parents[2]
     payload = json.dumps({"lang": lang, "style": style, "sources": sources, "answer": answer, "title": title,
                           "version": version, "table": table})
-    done = subprocess.run(["node", "-e", BROWSER], input=payload, cwd=root / "web", capture_output=True, text=True)
+    done = subprocess.run(["node", "-e", BROWSER], input=payload, cwd=root / "web", capture_output=True, text=True,
+                          encoding="utf-8")
     assert done.returncode == 0, done.stderr
     return json.loads(done.stdout)
 

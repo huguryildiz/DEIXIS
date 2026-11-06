@@ -19,10 +19,10 @@ from test_citation_check_run import make  # noqa: F401  (fixtures used by name)
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "research"
 
 
-SI = json.loads((FIXTURES / "step-inputs.json").read_text())["V_citation_check"]
+SI = json.loads((FIXTURES / "step-inputs.json").read_text(encoding="utf-8"))["V_citation_check"]
 
 
-VALID = next(c for c in json.loads((FIXTURES / "fake-outputs.json").read_text())["cases"]
+VALID = next(c for c in json.loads((FIXTURES / "fake-outputs.json").read_text(encoding="utf-8"))["cases"]
              if c["name"] == "citation_check_valid")["output"]
 
 
@@ -51,9 +51,9 @@ def test_the_task_is_registered_with_its_schema_and_method_file():
                  "Text that is merely compatible with the part, or from which the part could be inferred, is not `stated`.",
                  "Do not use the work's title, what you know of the work, or what an abstract hints at"):
         assert rule in text
-    assert "| `citation_check` | [citation check](references/citation-check.md) |" in (SKILL_DIR / "SKILL.md").read_text()
+    assert "| `citation_check` | [citation check](references/citation-check.md) |" in (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
     assert skill.integrity_issues() == []
-    provenance = json.loads((SKILL_DIR / "provenance.json").read_text())
+    provenance = json.loads((SKILL_DIR / "provenance.json").read_text(encoding="utf-8"))
     entry = next(e for e in provenance["adaptations"] if e["deixis_file"] == "references/citation-check.md")
     assert "D99" in entry["change"] and "tried against no model" in entry["change"]
 

@@ -27,6 +27,7 @@ from deixis.storage import backup as backup_module
 from deixis.storage import db, upgrades
 from deixis.storage.backup import BackupError, MANIFEST, create_backup, restore_backup
 from restore_compare import compare_states, library_state, sha256_file, tree_snapshot
+from windows_env import system_env
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -76,7 +77,7 @@ def hand_backup(tmp: Path, papers: int = 3, payloads: int = 2) -> Path:
 
 
 def manifest_of(folder: Path) -> dict:
-    return json.loads((folder / MANIFEST).read_text())
+    return json.loads((folder / MANIFEST).read_text(encoding="utf-8"))
 
 
 def refused(backup: Path, target: Path, fragment: str) -> None:
@@ -127,7 +128,7 @@ def test_b01n_manifest_path_that_escapes_is_refused_unchanged(tmp_path, bad):
 
 def test_b01n_truncated_manifest_is_refused_unchanged(tmp_path):
     backup = hand_backup(tmp_path)
-    text = (backup / MANIFEST).read_text()
+    text = (backup / MANIFEST).read_text(encoding="utf-8")
     (backup / MANIFEST).write_text(text[: len(text) // 2])
     refused(backup, tmp_path / "target", "not a complete DEIXIS backup")
 
@@ -273,7 +274,7 @@ os._exit(0)  # no checkpoint, no close: the committed row lives only in the -wal
 def library_with_id_only_in_the_wal(folder: Path) -> Path:
     path = migrated_library(folder / "library.sqlite")
     subprocess.run([sys.executable, "-c", CHILD, str(path), str(REPO)], check=True, timeout=60,
-                   env={"PATH": "/usr/bin:/bin", "HOME": str(folder), "PYTHONPATH": str(REPO)})
+                   env={"PATH": "/usr/bin:/bin", "HOME": str(folder), "PYTHONPATH": str(REPO), **system_env()})
     assert (folder / "library.sqlite-wal").stat().st_size > 0 and (folder / "library.sqlite-shm").exists()
     with sqlite3.connect(path.resolve().as_uri() + "?mode=ro&immutable=1", uri=True) as conn:
         in_main = {r[0] for r in conn.execute("SELECT version FROM schema_migrations")}
@@ -739,7 +740,7 @@ def test_a_restored_library_shows_the_model_connection_as_not_ready_and_pauses_i
         _, run = wait_run(client, rid, posted.json()["id"], timeout=90)  # 12 s alone; the default 15 s failed under load
         print("connections finding: a run on the restored research ->", run["status"], run["pause_reason"])
         assert (run["status"], run["pause_reason"]) == ("paused", "model_connection_not_ready")
-    labels = (REPO / "web" / "src" / "lib" / "labels.ts").read_text()
+    labels = (REPO / "web" / "src" / "lib" / "labels.ts").read_text(encoding="utf-8")
     assert "model_connection_not_ready: 'The selected model connection is not ready. Nothing was sent to another model.'" in labels
 
 

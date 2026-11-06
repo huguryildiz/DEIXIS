@@ -18,7 +18,7 @@ from test_report_flow import _claim
 from test_report_path_fix import run_step, rebind, first_issues, sessions
 
 
-REPLAY = json.loads((Path(__file__).parent.parent / "fixtures/research/report-rf4-replay.json").read_text())
+REPLAY = json.loads((Path(__file__).parent.parent / "fixtures/research/report-rf4-replay.json").read_text(encoding="utf-8"))
 PID, SID, CID, COL = "psg_SYNTHRF4001", "srv_SYNTHRF4001", "cel_SYNTHRF4001", "col_SYNTHR0001"
 
 

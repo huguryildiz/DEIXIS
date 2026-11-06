@@ -80,6 +80,7 @@ def test_extraction_stops_at_the_text_limit(tmp_path):
     assert sum(len(p.text) for p in result.pages) <= 300 and len(result.pages) < 6
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="W2: extraction children get their memory limit from a Job Object on Windows; until then only the timeout stops them")
 def test_extraction_is_stopped_when_it_exceeds_the_memory_limit(tmp_path):
     # ~70 MB of decoded page content in a file of well under 1 MB.
     path = tmp_path / "expands.pdf"
@@ -98,6 +99,7 @@ def _child(code: str) -> list[str]:
 PLAIN_ENV = {"PATH": os.environ.get("PATH", "")}
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="W2: extraction children get their memory limit from a Job Object on Windows; until then only the timeout stops them")
 def test_the_parent_stops_a_child_that_holds_the_interpreter_lock_past_the_limit():
     # The in-child watchdog is a thread and cannot run while a C call holds the lock (D138). This child reserves 300 MiB with
     # `calloc` (untouched pages are not resident), reports `ready` while at about 30 MiB, then touches all of it inside
@@ -118,10 +120,10 @@ def test_the_parent_stops_a_child_that_holds_the_interpreter_lock_past_the_limit
 
 def _wait_for_pid(pid_file) -> int:
     deadline = time.monotonic() + 10
-    while not (pid_file.exists() and pid_file.read_text()):
+    while not (pid_file.exists() and pid_file.read_text(encoding="utf-8")):
         assert time.monotonic() < deadline, "the child never wrote its pid"
         time.sleep(0.05)
-    return int(pid_file.read_text())
+    return int(pid_file.read_text(encoding="utf-8"))
 
 
 def test_a_lost_memory_watch_is_reported_as_a_failed_extraction(tmp_path, monkeypatch):

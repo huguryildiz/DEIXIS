@@ -101,7 +101,7 @@ class Round:
         if not path:
             return {}, None
         try:
-            payload = json.loads((self.flow.deps.settings.payloads_dir / path).read_text())
+            payload = json.loads((self.flow.deps.settings.payloads_dir / path).read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return {}, None
         digest = canonical.sha256_hex(payload)

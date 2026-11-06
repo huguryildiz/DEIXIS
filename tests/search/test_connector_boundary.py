@@ -15,9 +15,10 @@ import pytest
 
 import connector_baseline as baseline
 from deixis.providers import contract as c, facade, registry, semantic_scholar
+from windows_env import system_env
 
 ROOT = Path(__file__).resolve().parents[2]
-FROZEN = json.loads(baseline.BASELINE.read_text())
+FROZEN = json.loads(baseline.BASELINE.read_text(encoding="utf-8"))
 
 
 @pytest.fixture(autouse=True)
@@ -33,9 +34,18 @@ def offline(monkeypatch):
 
 def test_cold_import_purity(tmp_path):
     code = '''
-import socket, asyncio, os
+import socket, asyncio, os, sys
 def forbidden(*args, **kwargs):
     raise AssertionError("socket or DNS during cold import")
+if sys.platform == "win32":  # asyncio's loop makes its wake-up pipe as a loopback socketpair through connect()
+    real_connect, real_pair = socket.socket.connect, socket.socketpair
+    def socketpair(*args, **kwargs):
+        socket.socket.connect = real_connect
+        try:
+            return real_pair(*args, **kwargs)
+        finally:
+            socket.socket.connect = forbidden
+    socket.socketpair = socketpair
 socket.socket.connect = forbidden
 socket.getaddrinfo = forbidden
 from deixis.providers import contract, facade, registry
@@ -54,7 +64,7 @@ asyncio.run(run())
 '''
     # -S excludes sitecustomize; explicitly provide only package and dependency paths.
     paths = [str(ROOT), *(p for p in sys.path if "site-packages" in p)]
-    env = {"PATH": os.environ.get("PATH", ""), "PYTHONPATH": os.pathsep.join(paths), "PYTHONDONTWRITEBYTECODE": "1"}
+    env = {"PATH": os.environ.get("PATH", ""), "PYTHONPATH": os.pathsep.join(paths), "PYTHONDONTWRITEBYTECODE": "1", **system_env()}
     result = subprocess.run([sys.executable, "-S", "-c", code], env=env, cwd=tmp_path,
                             capture_output=True, text=True, timeout=30)
     assert result.returncode == 0, result.stderr

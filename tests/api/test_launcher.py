@@ -85,7 +85,8 @@ def run_serve(monkeypatch, tmp_path, data_dir):
     return cli.main(["serve", "--no-browser"])
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root can write to a read-only directory")
+@pytest.mark.skipif(sys.platform == "win32" or os.geteuid() == 0,
+                    reason="root, and any user on Windows (a folder's read-only mode does not stop writes there), can write to it")
 def test_serve_names_an_unwritable_data_directory_and_stops(monkeypatch, tmp_path, capsys):
     data = tmp_path / "data"
     data.mkdir()
@@ -247,9 +248,9 @@ def test_the_login_shell_gets_a_minimal_environment_and_no_key_or_proxy(tmp_path
     monkeypatch.setenv("LC_ALL", "C")
     monkeypatch.setenv("PATH", "/usr/bin:/bin:/process/path")
     tool_paths.login_shell_path()
-    given = dict(line.split("=", 1) for line in seen.read_text().splitlines() if "=" in line)
+    given = dict(line.split("=", 1) for line in seen.read_text(encoding="utf-8").splitlines() if "=" in line)
     assert not {"OPENAI_API_KEY", "GITHUB_TOKEN", "MATHPIX_CREDENTIALS", "HTTPS_PROXY", "no_proxy", "FOO"} & set(given)
-    assert "secret" not in seen.read_text() and "proxy" not in seen.read_text().lower()
+    assert "secret" not in seen.read_text(encoding="utf-8") and "proxy" not in seen.read_text(encoding="utf-8").lower()
     assert given["PATH"].startswith("/usr/bin:/bin:/process/path") and given["LC_ALL"] == "C" and given["SHELL"] == str(login)
     assert {"HOME"} <= set(given)
 
@@ -257,7 +258,7 @@ def test_the_login_shell_gets_a_minimal_environment_and_no_key_or_proxy(tmp_path
 def test_no_module_looks_for_a_tool_with_shutil_which_any_more():
     root = Path(tool_paths.__file__).parents[1]
     offenders = [str(p.relative_to(root)) for p in root.rglob("*.py")
-                 if p.name != "tool_paths.py" and "shutil.which" in p.read_text()]
+                 if p.name != "tool_paths.py" and "shutil.which" in p.read_text(encoding="utf-8")]
     assert offenders == []
 
 
@@ -324,11 +325,11 @@ def script_of(argv: list[str]) -> str:
 
 
 def test_windows_sign_in_hands_powershell_an_encoded_script_and_no_cmd_line():
-    home = Path(f"C:/Users/{HOSTILE}/it's/codex-home")
+    home = Path(f"C:\\Users\\{HOSTILE}\\it's\\codex-home")  # one string on POSIX, a Windows path on Windows: same text
     argv = build_launch("win32", f"C:\\{HOSTILE}\\node.exe", [f"C:\\{HOSTILE}\\o'brien\\codex.js", "login"], home, which=lambda n: None)
     assert argv[0] == "powershell.exe" and "-NoExit" in argv and no_batch(argv)
     script = script_of(argv)
-    assert f"$env:CODEX_HOME = 'C:/Users/{HOSTILE}/it''s/codex-home'" in script
+    assert f"$env:CODEX_HOME = 'C:\\Users\\{HOSTILE}\\it''s\\codex-home'" in script
     assert script.endswith(f"& 'C:\\{HOSTILE}\\node.exe' 'C:\\{HOSTILE}\\o''brien\\codex.js' 'login'")
     plain = script_of(build_launch("win32", "C:\\bin\\claude.exe", ["auth", "login"], None, which=lambda n: "C:\\ps\\powershell.exe"))
     assert "CODEX_HOME" not in plain and plain.endswith("& 'C:\\bin\\claude.exe' 'auth' 'login'")
@@ -343,6 +344,7 @@ def load_install():
     return mod
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="install_check.py is the macOS release check (ps table, POSIX paths)")
 def test_foreign_process_naming_the_profile_path_is_not_signalled(tmp_path, monkeypatch):
     mod = load_install()
     audit = mod.Audit.__new__(mod.Audit)

@@ -7,7 +7,7 @@ from deixis.domain import contracts, skill
 from arxiv_helpers import no_network  # noqa: F401  (fixtures used by name)
 
 
-STEP_INPUTS = json.loads((__import__("pathlib").Path(__file__).parent.parent / "fixtures/research/step-inputs.json").read_text())
+STEP_INPUTS = json.loads((__import__("pathlib").Path(__file__).parent.parent / "fixtures/research/step-inputs.json").read_text(encoding="utf-8"))
 
 
 OLD_HASH = "sha256:7d4e238c3e9feebd451c77fb997aff717a3617008bd4165be56f9fba46bf6fca"
@@ -16,7 +16,7 @@ OLD_HASH = "sha256:7d4e238c3e9feebd451c77fb997aff717a3617008bd4165be56f9fba46bf6
 # ---- contracts ------------------------------------------------------------------------------------------------------------
 def section_case():
     step_input = copy.deepcopy(STEP_INPUTS["C_report_section_IV"])
-    cases = json.loads((__import__("pathlib").Path(__file__).parent.parent / "fixtures/research/fake-outputs.json").read_text())["cases"]
+    cases = json.loads((__import__("pathlib").Path(__file__).parent.parent / "fixtures/research/fake-outputs.json").read_text(encoding="utf-8"))["cases"]
     case = next(c for c in cases if c["step_input"] == "C_report_section_IV" and c["expect_ok"])
     return step_input, copy.deepcopy(case["output"])
 
@@ -71,6 +71,6 @@ def test_a_stored_v2_section_draft_still_revalidates_and_new_output_must_be_v3()
 def test_the_method_package_names_latex_source_and_its_hash_moved():
     assert skill.package_hash() != OLD_HASH and skill.integrity_issues() == []
     for name in ("source-grounded-answer.md", "evidence-table.md"):
-        text = (skill.SKILL_DIR / "references" / name).read_text()
+        text = (skill.SKILL_DIR / "references" / name).read_text(encoding="utf-8")
         assert "`latex_source` is the PDF's own text of a passage" in text
         assert "did not check that the source compiles to" in text and "verified" not in text.split("`latex_source`")[1][:600]

@@ -21,7 +21,7 @@ from test_report_step_input import report_flow
 from test_report_anchor_repair import two_cells, issues
 
 
-REPLAY = json.loads((Path(__file__).parent.parent / "fixtures/research/h9-report-replay.json").read_text())
+REPLAY = json.loads((Path(__file__).parent.parent / "fixtures/research/h9-report-replay.json").read_text(encoding="utf-8"))
 for _record in REPLAY["sections"].values():
     _record["step_input"]["report_target"].setdefault("validation_context", None)
     _record["repair_step_input"]["report_target"].setdefault("validation_context", None)

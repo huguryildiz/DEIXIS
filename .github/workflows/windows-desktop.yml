@@ -1,0 +1,52 @@
+# P10 Windows (W4): the Tauri shell on a Windows x64 runner. Started by hand only (`gh workflow run windows-desktop.yml`).
+# Lints and tests the shell (the pure origin/generation rules and the Job Object spawn against real processes), then
+# builds the NSIS installer and keeps it as an artifact. The Windows sidecar (W3) does not exist yet: a placeholder
+# folder stands in for it so the bundle builds; that installer cannot start a backend and is for the build check only.
+name: windows-desktop
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: windows-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shell:
+    runs-on: windows-2025
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+        working-directory: desktop
+      - name: Placeholder sidecar (until W3 builds the real one)
+        run: |
+          mkdir -p packaging/sidecar/dist/deixis-backend
+          echo "placeholder: the Windows sidecar is built in W3" > packaging/sidecar/dist/deixis-backend/deixis-backend.exe
+      - run: cargo clippy --all-targets --locked -- -D warnings
+        working-directory: desktop/src-tauri
+      - run: cargo test --locked
+        working-directory: desktop/src-tauri
+      - run: npx tauri build --ci
+        working-directory: desktop
+      - name: Installer size
+        run: ls -l desktop/src-tauri/target/release/bundle/nsis/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deixis-windows-installer
+          path: desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error

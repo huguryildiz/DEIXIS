@@ -55,7 +55,7 @@ def test_workflow_has_no_bound_helper_calls():
     forbidden = {"crossref_work", "semantic_scholar_batch", "scopus_abstract", "works_by_ids", "citing_works"}
     calls = []
     for path in (ROOT / "deixis/workflow").rglob("*.py"):
-        for node in ast.walk(ast.parse(path.read_text())):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             if isinstance(node, ast.Call):
                 name = node.func.attr if isinstance(node.func, ast.Attribute) else node.func.id if isinstance(node.func, ast.Name) else None
                 if name in forbidden:

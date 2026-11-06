@@ -14,6 +14,9 @@ import pytest
 from deixis.tools import child_env as env_module
 from deixis.tools import local_tools
 from deixis.tools.child_env import child_env
+from windows_env import system_env
+
+EXE = ".exe" if sys.platform == "win32" else ""  # on Windows a fake CLI path must be a native program (tool_paths)
 
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="the fake tools are shell scripts")
 
@@ -57,7 +60,7 @@ def test_no_child_process_is_started_with_the_whole_environment():
     their --version probes this one)."""
     root = Path(env_module.__file__).parents[1]
     offenders = [f"{p.relative_to(root)}:{n}" for p in root.rglob("*.py")
-                 for n, line in enumerate(p.read_text().splitlines(), 1)
+                 for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
                  if "**os.environ" in line]
     assert offenders == []
 
@@ -71,7 +74,7 @@ def dump_env(path: Path, name: str, folder: Path) -> Path:
 
 
 def seen_by(path: Path) -> dict[str, str]:
-    return dict(line.split("=", 1) for line in path.read_text().splitlines() if "=" in line)
+    return dict(line.split("=", 1) for line in path.read_text(encoding="utf-8").splitlines() if "=" in line)
 
 
 def assert_clean(seen: dict[str, str]):
@@ -130,7 +133,7 @@ def test_the_claude_and_gemini_version_probes_never_see_a_key(tmp_path, secrets,
         return Probe(error="not_responding")
     for module in (claude, gemini):
         monkeypatch.setattr(module, "probe", capture)
-        monkeypatch.setattr(module, "find_tool", lambda name: f"/opt/fake/{name}")
+        monkeypatch.setattr(module, "find_tool", lambda name: f"/opt/fake/{name}{EXE}")
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     asyncio.run(claude.ClaudeCodeAdapter(tmp_path / "claude")._check())
     asyncio.run(gemini.GeminiAdapter()._check(None))
@@ -156,7 +159,7 @@ def fake(tmp_path, body):
 def test_the_production_allowlist_has_no_test_prefix():
     """tests/conftest.py widens it with FAKE_ for the fake tools; a fresh interpreter shows what ships."""
     done = subprocess.run([sys.executable, "-c", "from deixis.tools import child_env; print(child_env.OS_PREFIXES)"],
-                          env={"PYTHONPATH": str(Path(env_module.__file__).parents[2]), "PATH": "/usr/bin:/bin"},
+                          env={"PYTHONPATH": str(Path(env_module.__file__).parents[2]), "PATH": "/usr/bin:/bin", **system_env()},
                           capture_output=True, text=True, check=True)
     assert done.stdout.strip() == "('LC_',)"
-    assert "FAKE_" not in Path(env_module.__file__).read_text()
+    assert "FAKE_" not in Path(env_module.__file__).read_text(encoding="utf-8")

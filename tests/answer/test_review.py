@@ -321,7 +321,7 @@ def test_review_package_import_and_write_boundary():
     forbidden = {"deixis.workflow.run.store", "deixis.workflow.features.report.report_store", "deixis.workflow.features.tables.tables",
                  "deixis.workflow.features.candidates.candidates_store", "deixis.workflow.features.lineage.lineage_store", "deixis.workflow.run.flow"}
     for file in root.glob("review_*.py"):
-        tree = ast.parse(file.read_text())
+        tree = ast.parse(file.read_text(encoding="utf-8"))
         type_only = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.If) and isinstance(node.test, ast.Name) and node.test.id == "TYPE_CHECKING":

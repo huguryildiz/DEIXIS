@@ -15,6 +15,29 @@ if os.environ.pop("PYTHONDONTWRITEBYTECODE", None):
 # keys or move `.env` keys into the real keychain (D19). In this process `memory_keychain` sets its own backend.
 os.environ["PYTHON_KEYRING_BACKEND"] = "keyring.backends.null.Keyring"
 
+import socket
+
+if sys.platform == "win32":
+    # On Windows asyncio's event loop makes its wake-up pipe with `socket.socketpair()`, a loopback connect in Python
+    # code. The tests that forbid the network patch `socket.socket.connect`, which would refuse that internal connect;
+    # this pair is made with the unpatched one and only ever joins 127.0.0.1 to itself.
+    _real_connect = socket.socket.connect
+
+    def _loopback_socketpair(family=socket.AF_INET, type=socket.SOCK_STREAM, proto=0):
+        with socket.socket(family, type, proto) as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen()
+            client = socket.socket(family, type, proto)
+            try:
+                _real_connect(client, listener.getsockname())
+                server, _ = listener.accept()
+            except BaseException:
+                client.close()
+                raise
+        return server, client
+
+    socket.socketpair = _loopback_socketpair
+
 import keyring
 import pytest
 from keyring.backend import KeyringBackend

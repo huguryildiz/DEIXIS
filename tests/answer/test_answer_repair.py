@@ -280,10 +280,10 @@ def test_an_unavailable_connection_for_the_rewrite_publishes_the_first_answer_wi
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "research"
 
 
-SI = json.loads((FIXTURES / "step-inputs.json").read_text())["A_answer"]
+SI = json.loads((FIXTURES / "step-inputs.json").read_text(encoding="utf-8"))["A_answer"]
 
 
-VALID = next(c for c in json.loads((FIXTURES / "fake-outputs.json").read_text())["cases"] if c["name"] == "answer_valid")["output"]
+VALID = next(c for c in json.loads((FIXTURES / "fake-outputs.json").read_text(encoding="utf-8"))["cases"] if c["name"] == "answer_valid")["output"]
 
 
 A1, A2, A3PRE, A3PUB, A5 = "srv_SYNA1pub01", "srv_SYNA2pub01", "srv_SYNA3pre01", "srv_SYNA3pub01", "srv_SYNA5pub01"

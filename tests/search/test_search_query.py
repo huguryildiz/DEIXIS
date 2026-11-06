@@ -25,7 +25,7 @@ from deixis.workflow.search import search_query
 from fakes import FakeAdapter
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "research"
-STEP_INPUT = json.loads((FIXTURES / "step-inputs.json").read_text())["H_search_query"]
+STEP_INPUT = json.loads((FIXTURES / "step-inputs.json").read_text(encoding="utf-8"))["H_search_query"]
 
 
 def term(phrase, kind="topic", why="SYNTHETIC reason"):

@@ -29,7 +29,7 @@ def wait_for(call, seconds=10):
 def log_rows(path):
     if not path.exists():
         return []
-    return [json.loads(row) for row in path.read_text().splitlines() if row]
+    return [json.loads(row) for row in path.read_text(encoding="utf-8").splitlines() if row]
 
 
 @pytest.mark.parametrize("parent,rss,want", [(cg.ProcessInfo("parent", 1), 200, "wait"),
@@ -52,6 +52,7 @@ def test_unreadable_orphan_rss_fails_closed_after_bounded_turns():
     assert guard.turn(0, read, lambda _: None)[0] == "kill"
 
 
+@SUPPORTED
 def test_final_start_time_check_refuses_pid_reuse():
     sent = []
     guard = cg.Guard(10, "child", 20, "parent", 100, 10)
@@ -69,7 +70,7 @@ def test_guard_start_failure_exits_before_any_extraction(tmp_path):
             "pdf.child_guard.start_guard=fail\npdf._watch_memory(10**12)\n"
             f"Path({str(target)!r}).write_text('extracted')")
     if old := os.environ.get("RR_B_OLD_PDF"):
-        source = Path(old).read_text()
+        source = Path(old).read_text(encoding="utf-8")
         function = source[source.index("def _watch_memory("):source.index("\n\nWATCH_INTERVAL_SECONDS")]
         code = "from deixis.documents import pdf\nexec(" + repr(function) + ",pdf.__dict__)\n" + code
     done = subprocess.run([sys.executable, "-c", code], env={"PYTHONPATH": BACKEND}, timeout=15)

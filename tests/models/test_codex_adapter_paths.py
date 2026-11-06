@@ -21,6 +21,9 @@ from deixis.workflow.run.flow import FlowDeps
 from deixis.workflow.run.flow import ResearchFlow
 from deixis.workflow.run.flow import RunStopped
 from deixis.workflow.run.store import Store
+import sys
+
+EXE = ".exe" if sys.platform == "win32" else ""  # on Windows a fake CLI path must be a native program (tool_paths)
 
 
 @pytest.fixture
@@ -85,7 +88,7 @@ def codex(monkeypatch, tmp_path):
             return {}
 
     monkeypatch.setattr(adapter, "CodexAppServer", FakeServer)
-    monkeypatch.setattr(adapter, "find_tool", lambda name: "/SYNTHETIC/bin/codex")
+    monkeypatch.setattr(adapter, "find_tool", lambda name: "/SYNTHETIC/bin/codex" + EXE)
     disk = {"version": "SYNTHETIC codex version"}  # what `codex --version` prints now
 
     async def version(argv, timeout=None, env=None):
@@ -189,7 +192,7 @@ def test_codex_environment_keeps_runtime_variables_and_drops_secrets(monkeypatch
     }
     env = codex_environment(Path("/tmp/deixis-codex-home"), source)
     assert env == {"PATH": "/usr/bin", "HOME": "/Users/someone", "LC_ALL": "C", "HTTPS_PROXY": "http://proxy.local:3128",
-                   "CODEX_HOME": "/tmp/deixis-codex-home"}
+                   "CODEX_HOME": str(Path("/tmp/deixis-codex-home"))}
 
 
 def test_codex_app_server_starts_with_analytics_and_feedback_off(tmp_path):

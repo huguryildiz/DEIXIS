@@ -33,6 +33,10 @@ from deixis.config import Settings
 from fakes import FakeAdapter
 
 REPO = Path(__file__).resolve().parents[2]
+# The desktop process layer (child record, watchdog, session launcher) is macOS only; the Windows sidecar start and its
+# Job Object ownership come in W3 and W4.
+MAC_DESKTOP = pytest.mark.skipif(sys.platform == "win32", reason="W3: the desktop sidecar process layer (child record, "
+                                 "watchdog, session launcher) is macOS only; Windows uses a Job Object instead")
 
 
 def test_the_frozen_entry_runs_only_listed_child_modules_with_the_child_argv(monkeypatch, tmp_path):
@@ -81,7 +85,8 @@ def test_a_saved_port_that_is_taken_is_replaced_by_a_free_one_and_saved(tmp_path
         second.close()
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root can write to a read-only directory")
+@pytest.mark.skipif(sys.platform == "win32" or os.geteuid() == 0,
+                    reason="root, and any user on Windows (a folder's read-only mode does not stop writes there), can write to it")
 def test_a_refused_desktop_start_prints_one_startup_failed_line_with_the_same_sentence(monkeypatch, tmp_path, capsys):
     data = tmp_path / "data"
     data.mkdir()
@@ -134,6 +139,7 @@ def free_port() -> int:
 
 
 @pytest.mark.process
+@MAC_DESKTOP
 def test_a_desktop_start_reports_listening_after_startup_and_stops_when_stdin_closes(tmp_path):
     data = tmp_path / "data"
     data.mkdir()
@@ -176,6 +182,7 @@ def test_a_desktop_start_reports_listening_after_startup_and_stops_when_stdin_cl
 
 
 @pytest.mark.process
+@MAC_DESKTOP
 def test_a_failed_lifespan_start_prints_startup_failed_and_no_listening_line(tmp_path):
     data = tmp_path / "data"
     data.mkdir()
@@ -219,13 +226,14 @@ def record_on(monkeypatch, tmp_path, owner: str | None = None) -> Path:
 
 
 @pytest.mark.process
+@MAC_DESKTOP
 def test_a_session_is_recorded_before_its_program_runs_and_emptied_before_its_line_goes(monkeypatch, tmp_path):
     # The program checks the record for its own session, leaves a grandchild in another process group of that session
     # and exits at once (before any watchdog scan could see it). The launcher outlives it and kills the grandchild.
     record = record_on(monkeypatch, tmp_path)
     program = ("import json, os, subprocess, sys\n"
                "from pathlib import Path\n"
-               "lines = Path(os.environ['DEIXIS_CHILD_RECORD']).read_text().splitlines()\n"
+               "lines = Path(os.environ['DEIXIS_CHILD_RECORD']).read_text(encoding='utf-8').splitlines()\n"
                "mine = [json.loads(l) for l in lines if json.loads(l)['sid'] == os.getsid(0)]\n"
                "left = subprocess.Popen(['/bin/sleep', '60'], process_group=0)\n"
                "print(json.dumps({'mine': mine, 'left': left.pid}), flush=True)\n")
@@ -240,6 +248,7 @@ def test_a_session_is_recorded_before_its_program_runs_and_emptied_before_its_li
 
 
 @pytest.mark.process
+@MAC_DESKTOP
 def test_a_program_whose_session_cannot_be_recorded_never_runs(monkeypatch, tmp_path):
     marker = tmp_path / "ran"
     program = [sys.executable, "-c", f"open({str(marker)!r}, 'w')"]
@@ -265,6 +274,7 @@ def gone(ident: str, seconds: float = 3) -> bool:
 
 
 @pytest.mark.process
+@MAC_DESKTOP
 def test_the_watchdog_kills_what_a_dead_backend_left_through_live_launchers_and_seen_identities(tmp_path):
     # A stand-in backend (its own process group, as the watchdog starts it) with the record on: a CLI through the
     # session launcher that has put a process in another group of its session, and an unrecorded child in a session
@@ -306,6 +316,7 @@ def test_the_watchdog_kills_what_a_dead_backend_left_through_live_launchers_and_
 
 
 @pytest.mark.process
+@MAC_DESKTOP
 def test_a_recorded_id_whose_leader_is_another_process_now_is_never_used(tmp_path):
     # A line whose pid now belongs to an unrelated session leader (another start time: the pid was reused), owned by a
     # backend that is gone. Neither recovery nor the watchdog may touch that session or its group.
@@ -340,6 +351,7 @@ def test_the_watchdog_takes_the_record_path_before_any_child_and_answers_it():
 
 
 @pytest.mark.process
+@MAC_DESKTOP
 def test_a_group_is_never_signalled_once_its_leader_id_belongs_to_another_process():
     # The leader DEIXIS started has been reaped and its pid now leads an unrelated group (another start time).
     other = subprocess.Popen(["/bin/sh", "-c", "sleep 30 & exec sleep 31"], start_new_session=True)
@@ -396,6 +408,7 @@ PROGRAM = "import subprocess, time; subprocess.Popen(['/bin/sleep', '63'], proce
 
 
 @pytest.mark.process
+@MAC_DESKTOP
 def test_a_launcher_recorded_after_the_last_scan_is_stopped_and_another_owners_line_kept(tmp_path):
     record = child_record.record_path(tmp_path)
     foreign = subprocess.Popen(["/bin/sleep", "30"], start_new_session=True)  # another DEIXIS's recorded session
@@ -426,6 +439,7 @@ def test_a_launcher_recorded_after_the_last_scan_is_stopped_and_another_owners_l
 
 
 @pytest.mark.process
+@MAC_DESKTOP
 def test_a_launcher_whose_owner_dies_empties_its_session_on_its_own(tmp_path):
     record = child_record.record_path(tmp_path)
     backend = backend_with_launcher(tmp_path, PROGRAM)
@@ -452,6 +466,7 @@ def test_the_record_layer_is_off_and_imports_work_without_fcntl():
 
 
 @pytest.mark.process
+@MAC_DESKTOP
 def test_a_known_launchers_late_child_is_killed_before_the_launcher_and_its_line(tmp_path):
     # The last scan sees the launcher and its program; the program then starts a child in another group of the same
     # session just before the backend dies. The launcher is stopped (SIGSTOP), so only the watchdog can clean up.

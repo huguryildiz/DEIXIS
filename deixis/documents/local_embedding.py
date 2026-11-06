@@ -200,7 +200,7 @@ class ModelIntegrity:
 
     def _read(self) -> dict[str, Any] | None:
         try:
-            record = json.loads(self._record_path.read_text())
+            record = json.loads(self._record_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
         return record if isinstance(record, dict) else None

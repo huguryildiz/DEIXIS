@@ -12,10 +12,10 @@ import hashlib
 import threading
 
 import pytest
-from process_harness import ASSET_COLUMNS, PASSAGE_COLUMNS, count, create_research, digest, foreign_key_check, harness, integrity_check, papers_files, rows, upload, wait_for
+from process_harness import ASSET_COLUMNS, PASSAGE_COLUMNS, count, create_research, digest, foreign_key_check, harness, integrity_check, papers_files, rows, upload, wait_for, POSIX_ONLY
 from helpers import make_pdf
 
-pytestmark = pytest.mark.process
+pytestmark = [pytest.mark.process, POSIX_ONLY]
 
 
 def assert_library_sound(data) -> None:

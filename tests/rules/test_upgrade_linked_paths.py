@@ -114,7 +114,7 @@ def test_marker_links_are_refused_before_the_marker_is_read(dirs, monkeypatch, c
     make_source_library(live)
     uc.copy_live(str(live), str(work))
     marker = work / uc.MARKER
-    text = marker.read_text()
+    text = marker.read_text(encoding="utf-8")
     marker.unlink()
     if case == "marker-hardlink":
         source = live / "synthetic-marker"

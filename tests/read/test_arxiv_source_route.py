@@ -18,6 +18,8 @@ from deixis.workflow.read import equations
 from deixis.workflow.run.store import Store
 from arxiv_helpers import no_network  # noqa: F401  (fixtures used by name)
 
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="the arXiv source route needs fcntl file locks; on Windows it is off whatever the flag says (the product shows not_available_on_this_system)")
+
 
 KEY = "2101.00001v2"
 

@@ -10,10 +10,10 @@ from jsonschema import Draft202012Validator
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "research"
 
 
-STEP_INPUTS = json.loads((FIXTURES / "step-inputs.json").read_text())
+STEP_INPUTS = json.loads((FIXTURES / "step-inputs.json").read_text(encoding="utf-8"))
 
 
-CASES = {c["name"]: c for c in json.loads((FIXTURES / "fake-outputs.json").read_text())["cases"]}
+CASES = {c["name"]: c for c in json.loads((FIXTURES / "fake-outputs.json").read_text(encoding="utf-8"))["cases"]}
 
 
 def test_the_followup_contract_is_registered_and_its_step_input_is_valid():

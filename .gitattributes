@@ -1,0 +1,3 @@
+# Every text file is checked out with LF on every platform: fixtures, goldens and hashed resources (the skill package,
+# katex_commands.json) must be the same bytes on Windows as on the Mac.
+* text=auto eol=lf

@@ -12,9 +12,9 @@ from __future__ import annotations
 import time
 
 import pytest
-from process_harness import answer_run, count, create_research, harness, integrity_check, kind_count, rows, run_row, start_run, task_counts, wait_for, wait_run
+from process_harness import answer_run, count, create_research, harness, integrity_check, kind_count, rows, run_row, start_run, task_counts, wait_for, wait_run, POSIX_ONLY
 
-pytestmark = pytest.mark.process
+pytestmark = [pytest.mark.process, POSIX_ONLY]
 
 
 def answer_step_and_sessions(data_dir, run_id):

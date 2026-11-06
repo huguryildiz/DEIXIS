@@ -7,13 +7,17 @@ its own test and, in the refusal tests, to show that it relaxes nothing it must 
 
 from __future__ import annotations
 
-import fcntl
 import os
 import sqlite3
 import sys
 from pathlib import Path
 
 import pytest
+
+try:
+    import fcntl
+except ImportError:  # Windows: os.listdir never takes a descriptor there
+    fcntl = None
 
 from deixis import config
 from deixis.storage import db, upgrades

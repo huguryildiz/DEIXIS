@@ -97,8 +97,8 @@ def upload(client, rid):
 
 def test_an_anchor_found_only_in_a_fallback_is_a_contract_error():
     fixtures = __import__("pathlib").Path(__file__).parent.parent / "fixtures/research"
-    step_input = json.loads((fixtures / "step-inputs.json").read_text())["A_answer"]
-    case = next(c for c in json.loads((fixtures / "fake-outputs.json").read_text())["cases"]
+    step_input = json.loads((fixtures / "step-inputs.json").read_text(encoding="utf-8"))["A_answer"]
+    case = next(c for c in json.loads((fixtures / "fake-outputs.json").read_text(encoding="utf-8"))["cases"]
                 if c["step_input"] == "A_answer" and c["expect_ok"])
     output = case["output"]
     anchor = output["citation_anchors"][1]
@@ -141,7 +141,7 @@ for (const file of ['src/reading/PassageSheet.tsx', 'src/research/SourceRow.tsx'
   assert(!/equations\?\.state === 'failed' && <(DropdownMenuItem|button)/.test(source), file);
 }
 """
-    result = subprocess.run(["node", "-e", script], cwd=root / "web", capture_output=True, text=True)
+    result = subprocess.run(["node", "-e", script], cwd=root / "web", capture_output=True, text=True, encoding="utf-8")
     assert result.returncode == 0, result.stderr
 
 
@@ -149,7 +149,7 @@ def test_every_step_that_takes_passages_accepts_their_equation_fallbacks():
     # Sol r1 (fallback scope): `_step_input` builds passages for every model step, so each one carries the field for an
     # equation_ocr passage. Every task shares the one StepInput passage schema; this checks each fixture task accepts it.
     fixtures = __import__("pathlib").Path(__file__).parent.parent / "fixtures/research"
-    inputs = json.loads((fixtures / "step-inputs.json").read_text())
+    inputs = json.loads((fixtures / "step-inputs.json").read_text(encoding="utf-8"))
     tasks = set()
     for name, step_input in inputs.items():
         pdf_passages = [p for p in (step_input.get("passages") or []) if p.get("text_source")] if isinstance(step_input, dict) else []
@@ -165,8 +165,8 @@ def test_every_step_that_takes_passages_accepts_their_equation_fallbacks():
 def test_an_anchor_inside_a_mathpix_equation_is_warned_and_one_outside_is_not():
     # Sol r1 finding 5 (r3): the answer validator names a quote that rests on Mathpix's reading of the page image.
     fixtures = __import__("pathlib").Path(__file__).parent.parent / "fixtures/research"
-    step_input = json.loads((fixtures / "step-inputs.json").read_text())["A_answer"]
-    case = next(c for c in json.loads((fixtures / "fake-outputs.json").read_text())["cases"]
+    step_input = json.loads((fixtures / "step-inputs.json").read_text(encoding="utf-8"))["A_answer"]
+    case = next(c for c in json.loads((fixtures / "fake-outputs.json").read_text(encoding="utf-8"))["cases"]
                 if c["step_input"] == "A_answer" and c["expect_ok"])
     output = case["output"]
     anchor = output["citation_anchors"][1]
@@ -200,7 +200,7 @@ def test_the_contracts_and_the_method_package_name_equation_ocr():
     assert "equation_origin_mismatch" in {i.code for i in validate(step_input, output).issues}
     assert skill.integrity_issues() == []
     for name in ("source-grounded-answer.md", "evidence-table.md"):
-        text = (skill.SKILL_DIR / "references" / name).read_text()
+        text = (skill.SKILL_DIR / "references" / name).read_text(encoding="utf-8")
         assert "`equation_ocr` is the PDF's own text of a passage" in text and "cannot be cited" in text
 
 

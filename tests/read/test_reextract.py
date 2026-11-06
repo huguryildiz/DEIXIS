@@ -411,7 +411,8 @@ def test_r10_real_parser_limits_through_retry_guard(tmp_path, monkeypatch, limit
                 assert sum(len(p["text"]) for p in lib.store.passages_for(lib.svid)) <= 15
         for process in processes:
             assert process.returncode is not None
-            with pytest.raises(ChildProcessError): os.waitpid(process.pid, os.WNOHANG)
+            if hasattr(os, "WNOHANG"):  # POSIX: reaped, so no zombie is left; Windows has no zombies to check
+                with pytest.raises(ChildProcessError): os.waitpid(process.pid, os.WNOHANG)
         assert not text_retry.lock_held(lib.settings.recovery_dir, lib.sha)
 
 
@@ -546,7 +547,7 @@ def test_s8_backup_retained_roundtrip_red_on_old(tmp_path, monkeypatch):
         retry(lib)
         saved = history(lib.conn)
         archive = backup.create_backup(lib.settings, tmp_path / "backups")
-        manifest = json.loads((archive / backup.MANIFEST).read_text())
+        manifest = json.loads((archive / backup.MANIFEST).read_text(encoding="utf-8"))
         name = "retained-" + lib.torn_sha + ".bin"
         assert any(f["path"] == "papers/" + name and f["sha256"] == lib.torn_sha for f in manifest["files"])
         restored = Settings(data_dir=tmp_path / "restored")

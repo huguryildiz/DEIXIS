@@ -55,12 +55,12 @@ async def embedding(busy: bool) -> None:
     task = None
     if busy:  # the request is in flight when the parent dies (FAKE_LLAMA slow:S holds the reply)
         task = asyncio.create_task(models.embed("qwen3-embedding-0.6b", ["alpha beta"], "document"))
-        while record.read_text().count('"/v1/embeddings"') < 2 if record.exists() else True:
+        while record.read_text(encoding="utf-8").count('"/v1/embeddings"') < 2 if record.exists() else True:
             await asyncio.sleep(0.05)
     else:
         await models.embed("qwen3-embedding-0.6b", ["alpha"], "document")
     await asyncio.sleep(0.3)
-    started = [json.loads(line) for line in record.read_text().splitlines() if '"argv"' in line]
+    started = [json.loads(line) for line in record.read_text(encoding="utf-8").splitlines() if '"argv"' in line]
     say(child_pid=started[-1]["pid"])
     await asyncio.sleep(3600)
     del task

@@ -617,7 +617,7 @@ def test_missing_frozen_list_becomes_recorded_failed_answer(tmp_path):
 
 # RF3 synthetic replay and repair behavior; no real-model or evidence-quality claim.
 
-REPLAY = json.loads((Path(__file__).parent.parent / "fixtures/research/report-empty-vi-replay.json").read_text())
+REPLAY = json.loads((Path(__file__).parent.parent / "fixtures/research/report-empty-vi-replay.json").read_text(encoding="utf-8"))
 
 
 EMPTY_MESSAGE = (

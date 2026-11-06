@@ -18,6 +18,7 @@ import time
 from pathlib import Path
 
 import pytest
+from windows_env import system_env
 
 pytestmark = pytest.mark.process
 
@@ -43,6 +44,7 @@ def launcher_env(data_dir: Path, home: Path) -> dict[str, str]:
         "PYTHONPATH": str(REPO),
         "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring",
         "DEIXIS_DATA_DIR": str(data_dir),
+        **system_env(),
     }
 
 

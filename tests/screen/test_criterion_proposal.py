@@ -27,7 +27,7 @@ from fakes import FakeAdapter, envelope, valid_response
 from test_vocabulary_flow import CountingOpenAlex, app_for, start, store_at, wait
 
 FIXTURES = Path(__file__).parent.parent / "fixtures" / "research"
-STEP_INPUT = json.loads((FIXTURES / "step-inputs.json").read_text())["E_criterion_proposal"]
+STEP_INPUT = json.loads((FIXTURES / "step-inputs.json").read_text(encoding="utf-8"))["E_criterion_proposal"]
 
 # Two SYNTHETIC questions from two fields. Neither is a question of the prompt measurement, so nothing here can be
 # made to pass by copying that trial's answers.
@@ -105,9 +105,9 @@ def test_no_core_consensus_restores_base_roles_and_records_fallback():
     ("criterion_proposal_one_part", ["schema_invalid"]),
 ])
 def test_the_fixture_cases_are_judged_as_the_slice_says(name, codes):
-    cases = json.loads((FIXTURES / "fake-outputs.json").read_text())["cases"]
+    cases = json.loads((FIXTURES / "fake-outputs.json").read_text(encoding="utf-8"))["cases"]
     case = next(c for c in cases if c["name"] == name)
-    step_input = json.loads((FIXTURES / "step-inputs.json").read_text())[case["step_input"]]
+    step_input = json.loads((FIXTURES / "step-inputs.json").read_text(encoding="utf-8"))[case["step_input"]]
     report = contracts.validate_model_output(step_input, case["output"])
     assert report.codes() == codes and report.ok is (codes == [])
 
@@ -131,7 +131,7 @@ def test_the_package_hash_covers_the_new_file(tmp_path):
     shutil.copytree(SKILL_DIR, copy)
     before = skill.package_hash(copy)
     target = copy / "references" / "criterion-proposal.md"
-    target.write_text(target.read_text() + "\nchanged\n")
+    target.write_text(target.read_text(encoding="utf-8") + "\nchanged\n")
     assert skill.package_hash(copy) != before
 
 

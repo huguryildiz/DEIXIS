@@ -133,7 +133,7 @@ def test_every_playwright_rule_names_one_of_the_specs_and_matches_a_test_title_i
             if rule[0] != "pw":
                 continue
             spec_file = REPO / "web" / "e2e" / rule[1]
-            titles = [m.group(2) for m in re.finditer(r"""\btest\(\s*(['"`])(.*?)\1""", spec_file.read_text())] if spec_file.exists() else []
+            titles = [m.group(2) for m in re.finditer(r"""\btest\(\s*(['"`])(.*?)\1""", spec_file.read_text(encoding="utf-8"))] if spec_file.exists() else []
             if not any(re.search(rule[2], t) and not (len(rule) > 3 and re.search(rule[3], t)) for t in titles):
                 unmatched.append("%s: %s %s" % (row["id"], rule[1], rule[2]))
     assert unmatched == []
@@ -148,7 +148,7 @@ def test_x06_needs_both_the_motion_and_the_layout_test():
         assert rm.evaluate(row, {"web_ok": True, "playwright": alone})["result"] == NOT, alone
     # Each pattern names a test title of its own in the spec, so removing either test is caught by the title guard above.
     import re
-    titles = re.findall(r"""\btest\(\s*'(X06:[^']*)'""", (REPO / "web" / "e2e" / "acceptance.spec.ts").read_text())
+    titles = re.findall(r"""\btest\(\s*'(X06:[^']*)'""", (REPO / "web" / "e2e" / "acceptance.spec.ts").read_text(encoding="utf-8"))
     patterns = [rule[2] for rule in leaf_rules(row["rule"])]
     assert len(patterns) == 2 and [sum(bool(re.search(p, t)) for t in titles) for p in patterns] == [1, 1]
     assert not any(re.search(patterns[0], t) and re.search(patterns[1], t) for t in titles)

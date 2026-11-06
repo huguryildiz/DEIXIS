@@ -13,6 +13,10 @@ import pytest
 from deixis.tools import tool_probe
 from deixis.models import gemini_cli
 from deixis.models.gemini_cli import CliRun, GeminiCliAdapter
+import os
+import sys
+
+EXE = ".exe" if sys.platform == "win32" else ""  # on Windows a fake CLI path must be a native program (tool_paths)
 
 MODEL = "gemini-2.5-flash"
 
@@ -43,9 +47,9 @@ class FakeCli:
         self.calls.append({
             "argv": argv, "env": dict(env), "cwd": cwd, "stdin": stdin, "timeout": timeout,
             "cwd_entries": sorted(p.name for p in cwd.iterdir()),
-            "settings": json.loads((home / ".gemini" / "settings.json").read_text()),
-            "system_settings": json.loads((home / "system-settings.json").read_text()),
-            "system_md": (home / "system.md").read_text(),
+            "settings": json.loads((home / ".gemini" / "settings.json").read_text(encoding="utf-8")),
+            "system_settings": json.loads((home / "system-settings.json").read_text(encoding="utf-8")),
+            "system_md": (home / "system.md").read_text(encoding="utf-8"),
             "home_entries": sorted(p.name for p in (home / ".gemini").iterdir()),
         })
         return self.runs.pop(0)
@@ -61,7 +65,7 @@ def creds(tmp_path):
 
 @pytest.fixture(autouse=True)
 def cli_on_path(monkeypatch):
-    monkeypatch.setattr(gemini_cli, "find_tool", lambda name: "/usr/local/bin/gemini" if name == "gemini" else None)
+    monkeypatch.setattr(gemini_cli, "find_tool", lambda name: "/usr/local/bin/gemini" + EXE if name == "gemini" else None)
 
 
 @pytest.fixture(autouse=True)
@@ -93,7 +97,7 @@ def test_run_step_argv_env_and_isolated_home(tmp_path, creds, monkeypatch):
     assert (result.status, result.raw_text, result.resolved_model, result.external_thread_id) == (
         "completed", '{"ok": true}', MODEL, "s-1")
     call = fake.calls[0]
-    assert call["argv"] == ["/usr/local/bin/gemini", "-m", MODEL, "-o", "stream-json", "-e", "none",
+    assert call["argv"] == [os.path.abspath("/usr/local/bin/gemini" + EXE), "-m", MODEL, "-o", "stream-json", "-e", "none",
                             "--approval-mode", "default", "-p", ""]
     assert call["stdin"] == "MESSAGE @x"  # the message goes on stdin, never on the command line
     home = Path(call["env"]["GEMINI_CLI_HOME"])
@@ -110,7 +114,7 @@ def test_run_step_argv_env_and_isolated_home(tmp_path, creds, monkeypatch):
     assert call["system_md"] == "BASE\n\nDEVELOPER\n\nReturn only a JSON object."
     assert call["home_entries"] == ["settings.json"]  # no copied sign-in file
     assert not home.exists()  # the per-call home, with anything the CLI wrote into it, is deleted
-    assert creds.read_text() == "SYNTHETIC, never read by DEIXIS"
+    assert creds.read_text(encoding="utf-8") == "SYNTHETIC, never read by DEIXIS"
     assert GeminiCliAdapter(home=tmp_path).enforces_schema is False
 
 

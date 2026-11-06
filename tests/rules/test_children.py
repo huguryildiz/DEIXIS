@@ -18,9 +18,9 @@ import sys
 import time
 
 import pytest
-from process_harness import HERE, child_env, descendants, harness, ident_of, is_same_and_live, wait_for, wait_gone  # noqa: F401
+from process_harness import HERE, child_env, descendants, harness, ident_of, is_same_and_live, wait_for, wait_gone, POSIX_ONLY  # noqa: F401
 
-pytestmark = pytest.mark.process
+pytestmark = [pytest.mark.process, POSIX_ONLY]
 PARENT = HERE / "child_parent.py"
 
 
@@ -35,7 +35,7 @@ def run_parent(harness, tmp_path, args, env):
     harness.track(ident_of(proc.pid))
 
     def first_line():
-        text = out.read_text() if out.exists() else ""
+        text = out.read_text(encoding="utf-8") if out.exists() else ""
         if proc.poll() is not None and not text:
             pytest.fail(f"the helper parent ended with {proc.returncode} before it printed:\n{text}")
         return json.loads(text.splitlines()[0]) if text.strip() else None
@@ -90,7 +90,7 @@ def pdf_case(tmp_path, lifetime="60", guard=True, limit=250 * 1024**2):
         parent = subprocess.Popen([sys.executable, str(PARENT), "pdf-gated", str(big), str(ready), str(gate)],
                                   env=env, stdout=fh, stderr=subprocess.STDOUT)
     try:
-        line = native_wait(lambda: json.loads(ready.read_text()) if ready.exists() and ready.stat().st_size else None, 30)
+        line = native_wait(lambda: json.loads(ready.read_text(encoding="utf-8")) if ready.exists() and ready.stat().st_size else None, 30)
         child = line["pid"]
         identity = cg.process_info(child)
         assert identity and identity.ppid == parent.pid == line["parent"]

@@ -119,7 +119,7 @@ class RuntimePaths:
     def record(self) -> dict[str, Any] | None:
         """What the install wrote when it put this build in place, or None when it is not (fully) there."""
         try:
-            record = json.loads(self.marker.read_text())
+            record = json.loads(self.marker.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
         return record if isinstance(record, dict) and record.get("tag") == TAG and record.get("server") else None

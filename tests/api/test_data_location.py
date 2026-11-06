@@ -72,14 +72,17 @@ def test_a_fresh_folder_receives_every_entry_and_the_pointer_is_cleared(default,
     new = tmp_path / "new" / "DEIXIS"
     data_location.write_pointer(new, default)
     assert data_location.apply_pending_move(new) is None
-    assert (new / "library.sqlite").read_text() == "old" and (new / "library.sqlite-wal").exists()
+    assert (new / "library.sqlite").read_text(encoding="utf-8") == "old" and (new / "library.sqlite-wal").exists()
     assert (new / "papers" / "a.pdf").read_bytes() == b"%PDF SYNTHETIC"
     assert sorted(p.name for p in default.iterdir()) == ["library.lock", "location.json", "worker.lock"]
-    assert json.loads((default / "location.json").read_text()) == {"path": str(new)}
+    assert json.loads((default / "location.json").read_text(encoding="utf-8")) == {"path": str(new)}
     assert config.default_data_dir() == new
 
 
 def test_a_cross_disk_move_interrupted_after_a_copy_finishes_at_the_next_start(default, tmp_path, monkeypatch):
+    # The order under test is the one that deletes each original right after its copy; Windows defers that deletion to a
+    # later start (`_defers_deletion`), so the same order is checked there with the deferral off.
+    monkeypatch.setattr(data_location, "_defers_deletion", lambda: False)
     library(default)
     new = tmp_path / "new"
     data_location.write_pointer(new, default)
@@ -99,10 +102,10 @@ def test_a_cross_disk_move_interrupted_after_a_copy_finishes_at_the_next_start(d
     message = data_location.apply_pending_move(new)
     assert "start DEIXIS again" in message
     assert (default / "papers" / "a.pdf").exists() and (new / "papers" / "a.pdf").exists()  # copied, original kept
-    assert json.loads((default / "location.json").read_text())["moved"] == ["papers"]
+    assert json.loads((default / "location.json").read_text(encoding="utf-8"))["moved"] == ["papers"]
     assert data_location.apply_pending_move(new) is None
     monkeypatch.setattr(data_location.os, "rename", real_rename)
-    assert (new / "papers" / "a.pdf").exists() and (new / "library.sqlite").read_text() == "old"
+    assert (new / "papers" / "a.pdf").exists() and (new / "library.sqlite").read_text(encoding="utf-8") == "old"
     assert sorted(p.name for p in default.iterdir()) == ["library.lock", "location.json", "worker.lock"]
 
 
@@ -175,6 +178,9 @@ def test_a_change_needs_the_csrf_token(client, tmp_path):
 
 
 def test_nothing_is_deleted_from_the_source_before_the_copy_and_its_record_are_on_disk(default, tmp_path, monkeypatch):
+    # The order under test is the one that deletes each original right after its copy; Windows defers that deletion to a
+    # later start (`_defers_deletion`), so the same order is checked there with the deferral off.
+    monkeypatch.setattr(data_location, "_defers_deletion", lambda: False)
     library(default)
     (default / "papers" / "sub").mkdir()
     (default / "papers" / "sub" / "b.pdf").write_bytes(b"%PDF SYNTHETIC 2")

@@ -295,7 +295,7 @@ def test_a_crossref_chunk_stopped_between_two_answers_keeps_the_first_answer_s_e
         client.__exit__(None, None, None)
     assert sources.lookups == ["10.1/7", "10.1/8"]  # each record was asked once
     for n, word in ((7, "seven"), (8, "eight")):
-        payload = json.loads((settings.payloads_dir / stored[n]["payload_ref"]).read_text())
+        payload = json.loads((settings.payloads_dir / stored[n]["payload_ref"]).read_text(encoding="utf-8"))
         assert stored[n]["text"] == f"SYNTHETIC {word}."
         assert payload[f"10.1/{n}"]["abstract"] == crossref[f"10.1/{n}"]["abstract"]
 

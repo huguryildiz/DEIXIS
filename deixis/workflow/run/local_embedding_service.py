@@ -115,7 +115,7 @@ class LocalModelService:
 
     def read_job(self) -> dict[str, Any] | None:
         try:
-            job = json.loads(self.paths.job_file.read_text())
+            job = json.loads(self.paths.job_file.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return None
         return job if isinstance(job, dict) else None

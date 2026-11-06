@@ -240,10 +240,10 @@ def test_a_source_key_is_tested_with_one_request_and_a_refused_one_is_not_saved(
 ROOT = Path(__file__).resolve().parents[2]
 
 
-SCHEMA = json.loads((ROOT / "deixis/contracts/research/step-input.schema.json").read_text())
+SCHEMA = json.loads((ROOT / "deixis/contracts/research/step-input.schema.json").read_text(encoding="utf-8"))
 
 
-STEP_INPUTS = json.loads((ROOT / "tests/fixtures/research/step-inputs.json").read_text())
+STEP_INPUTS = json.loads((ROOT / "tests/fixtures/research/step-inputs.json").read_text(encoding="utf-8"))
 
 
 def registered_connections(tmp_path):

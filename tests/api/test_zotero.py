@@ -150,7 +150,7 @@ def test_web_import_reads_pages_and_sends_the_key_only_to_zotero_org(tmp_path, m
         assert all(r.url.host == "api.zotero.org" and r.url.path.startswith("/users/12345/") for r in seen)
         assert all(r.headers["zotero-api-key"] == "zkey-secret-value" for r in seen)
         assert [r.url.params["start"] for r in seen if r.url.path.endswith("/items")] == ["0", "2", "4", "6"]
-        stored = "".join(p.read_text() for p in (tmp_path / "data" / "provider-payloads").iterdir())
+        stored = "".join(p.read_text(encoding="utf-8") for p in (tmp_path / "data" / "provider-payloads").iterdir())
         assert "LNKD1234" in stored and "zkey-secret-value" not in stored
 
 
@@ -219,14 +219,14 @@ REPO = Path(__file__).resolve().parents[2]
 
 
 def _turkish_keys() -> set[str]:
-    source = (REPO / "web" / "src" / "lib" / "locales" / "tr.ts").read_text()
+    source = (REPO / "web" / "src" / "lib" / "locales" / "tr.ts").read_text(encoding="utf-8")
     return set(re.findall(r"^  '((?:[^'\\]|\\.)*)':", source, re.M))
 
 
 def _note_templates() -> set[str]:
     found = {"PDF input not verified: " + text_retry.INPUT_CHANGED}
-    app = ast.parse((REPO / "deixis" / "api" / "app.py").read_text())
-    zotero = ast.parse((REPO / "deixis" / "providers" / "zotero.py").read_text())
+    app = ast.parse((REPO / "deixis" / "api" / "app.py").read_text(encoding="utf-8"))
+    zotero = ast.parse((REPO / "deixis" / "providers" / "zotero.py").read_text(encoding="utf-8"))
     for node in ast.walk(app):
         if isinstance(node, ast.Dict) and any(isinstance(k, ast.Constant) and k.value == "note" for k in node.keys):
             value = node.values[[k.value if isinstance(k, ast.Constant) else None for k in node.keys].index("note")]

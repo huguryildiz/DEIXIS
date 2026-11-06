@@ -90,7 +90,7 @@ def setup(tmp_path, monkeypatch):
     monkeypatch.setenv("FAKE_LLAMA_STATE", str(tmp_path / "state"))
 
     def lines():
-        return [json.loads(line) for line in record.read_text().splitlines()] if record.exists() else []
+        return [json.loads(line) for line in record.read_text(encoding="utf-8").splitlines()] if record.exists() else []
     return paths, lines
 
 

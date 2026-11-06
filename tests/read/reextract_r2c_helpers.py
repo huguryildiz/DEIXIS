@@ -3,9 +3,10 @@
 import asyncio
 import json
 import os
-import select
+import queue
 import subprocess
 import sys
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -44,12 +45,15 @@ def child(lib, mode, boundary="parser", *, parked=False):
     process = subprocess.Popen([sys.executable, "-c", code, mode, boundary, lib.aid, lib.eid, lib.rid, lib.svid],
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
     try:
-        ready, _, _ = select.select([process.stdout], [], [], 30)
-        if not ready:
+        # A reader thread instead of select(): Windows select() takes sockets only, not pipes.
+        first = queue.Queue()
+        threading.Thread(target=lambda: first.put(process.stdout.readline()), daemon=True).start()
+        try:
+            line = first.get(timeout=30).strip()
+        except queue.Empty:
             process.kill()
             out, err = process.communicate(timeout=10)
             pytest.fail(f"R2c child handshake timed out: {out} {err}")
-        line = process.stdout.readline().strip()
         if line != "boundary:" + boundary:
             if process.poll() is None:
                 process.kill()

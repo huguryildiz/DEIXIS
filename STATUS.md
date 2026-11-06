@@ -32,7 +32,7 @@ Uygulama çalışıyor. Son haftalarda eklenenlerin çoğu gerçek kullanımda d
 
 ## Sırayla yapılacaklar
 
-1. **P10, Mac paketi** (plan `notes/plans/p10-mac-first.md`): M1 bitti, M2 kodda (pencere testleri ve `v0.1.0` ön sürüm release'i bekliyor); sonra M3 (Tesseract paket içinde, tema ve sürüm kontrolü), M4 (ilk aday sürüm). Intel Mac, Windows, Linux sonra. OpenAI, Gemini, DeepSeek fiyatları yayından önce doğrulanacak.
+1. **P10, Mac paketi** (plan `notes/plans/p10-mac-first.md`): M1 ve M2 bitti; pencere testleri geçti (menü çubuğu menüsü elle bakılacak), [`v0.1.0`](https://github.com/huguryildiz/DEIXIS/releases/tag/v0.1.0) ön sürüm olarak GitHub'da (DMG sha256 `1e2ff2c5…`); sıradaki Windows denemesi (Parallels + GitHub Actions), sonra M3 (Tesseract paket içinde, tema ve sürüm kontrolü), M4 (ilk aday sürüm). Intel Mac, Windows, Linux sonra. OpenAI, Gemini, DeepSeek fiyatları yayından önce doğrulanacak.
 2. **Görsel kontrol** (sahip, paralel): liste `notes/visual-check-2026-10-24.md`, 28 madde.
 3. **D106'yı gerçek koşuyla doğrula** (BioASQ, LitSearch, EE survey): ~12 USD OpenAlex + 1–3 USD Voyage, ön ödemeli bakiye ister. Bu bitmeden reranker ayarı değişmesin.
 4. **Kill search ve kartopu kesimi:** doğru makale havuzda ama okunan ilk 8 / ilk 80'in dışında. İlk denenecek: aynı makalenin sürümlerini birleştirmek, sonra kesimden önce rerank. Ayrıntı `notes/2026-10-results.md`, "Live pilots" bölümü.

@@ -1054,8 +1054,10 @@ def main() -> int:
                              and t, 20, 0.5) if page else None
             time.sleep(1)
             shot = screenshot(window["hwnd"], evidence / "open-window.png") if window else None
-            row("open", bool(window and body and body.get("nonce") and health_s <= 60 and page and texts
+            # Without DevTools the page half (its URL and texts) is not checked here; csrf_save and the rest say so.
+            row("open", bool(window and body and body.get("nonce") and health_s <= 60 and (page and texts or not cdp)
                              and shot and shot.get("saved")),
+                research_screen="checked in the page" if cdp else "NOT_DONE: no DevTools (see the screenshot)",
                 launch_to_window_s=round(window_s, 2) if window_s else None,
                 launch_to_health_s=round(health_s, 2) if health_s else None, port=sc.port, saved_port=sc.saved_port,
                 port_is_saved=sc.port == sc.saved_port, health_has_nonce=bool(body and body.get("nonce")),

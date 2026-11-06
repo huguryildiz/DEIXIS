@@ -462,7 +462,13 @@ def _run_watched(argv: list[str], env: dict, timeout: float, max_memory: int) ->
     child, every WATCH_INTERVAL_SECONDS, so it works while the child sits in a long C call (D138). On Windows the child runs in
     its own job (`win_job.run`): a memory limit the job reported or reached gives MEMORY_EXIT_CODE as here."""
     if sys.platform == "win32":
-        done = win_job.run(argv, env, timeout, max_memory)
+        try:
+            done = win_job.run(argv, env, timeout, max_memory)
+        except win_job.JobError as exc:
+            # The child could not be put in its job and never ran: the same failure as a memory guard that could not
+            # start on POSIX (GUARD_EXIT_CODE), which every reader (PDF, figures, OCR, JATS) records as its own failure.
+            log.warning("Extraction child not started: %s", exc)
+            return subprocess.CompletedProcess(argv, child_guard.GUARD_EXIT_CODE, b"", str(exc).encode())
         if done.memory_limit:
             return subprocess.CompletedProcess(argv, MEMORY_EXIT_CODE, done.stdout, b"memory limit exceeded\n")
         return subprocess.CompletedProcess(argv, done.returncode, done.stdout, done.stderr)

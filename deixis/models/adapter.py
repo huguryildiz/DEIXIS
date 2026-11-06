@@ -150,6 +150,9 @@ class CodexAdapter:
                 return self._server
             await self._server.close()
             self._server = None
+        elif self._server:  # it ended on its own: on Windows whatever it left in its job goes now, not when it is collected
+            await self._server.close()
+            self._server = None
         self.codex_home.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.workspace.mkdir(parents=True, exist_ok=True)
         overrides, _ = isolation_overrides(config_path=self.codex_home / "config.toml")

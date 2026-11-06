@@ -77,6 +77,39 @@ def stop_group(proc: asyncio.subprocess.Process, sig: int = KILL) -> None:
     child_record.stop_group(proc.pid, _LEADERS.get(proc), sig)
 
 
+class _JobSpawns:
+    """Stands in for `anyio` inside a library's own process starter on Windows (the Claude Agent SDK's transport, whose
+    `anyio.open_process` cannot be handed creation flags from outside): every process it opens starts suspended and is
+    put in a kill-on-close job of its own (`track`) before it runs; one that cannot join is terminated unrun and the
+    JobError raised. Everything else is anyio's own."""
+
+    def __init__(self, anyio_module: Any):
+        self._anyio = anyio_module
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._anyio, name)
+
+    async def open_process(self, command: Any, *, creationflags: int = 0, **options: Any) -> Any:
+        proc = await self._anyio.open_process(command, creationflags=creationflags | spawn_options()["creationflags"], **options)
+        try:
+            track(proc)
+        except OSError:
+            await proc.aclose()  # terminated unrun by track; its pipes are closed here
+            raise
+        return proc
+
+
+def spawn_in_jobs(module: Any) -> bool:
+    """Windows: routes `module`'s `anyio.open_process` through _JobSpawns (P10 W2). Whether it now does; a module that
+    no longer starts processes through a module-level `anyio` is left as it is and gives False, so its caller can refuse
+    to start anything (fail closed). Elsewhere nothing changes and the answer is False."""
+    if not WINDOWS or not hasattr(module, "anyio"):
+        return False
+    if not isinstance(module.anyio, _JobSpawns):
+        module.anyio = _JobSpawns(module.anyio)
+    return True
+
+
 async def stop_group_async(proc: asyncio.subprocess.Process, sig: int = KILL) -> None:
     """stop_group from async code; neither path waits on a child process."""
     stop_group(proc, sig)

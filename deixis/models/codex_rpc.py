@@ -15,6 +15,8 @@ from collections import Counter, deque
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
+from deixis.models import cli_process
+
 TOOL_ITEM_TYPES = frozenset(
     {
         "commandExecution",
@@ -79,6 +81,9 @@ class CodexAppServer:
         self._tasks: list[asyncio.Task] = []
 
     async def start(self) -> None:
+        """On Windows the app-server starts suspended in a kill-on-close job of its own (P10 W2, `cli_process.track`): one
+        that cannot join it is terminated unrun and JobError (an OSError) is raised, a local start error. On macOS it
+        stays in the backend's process group, where the desktop watchdog finds it (P10 M2)."""
         self.proc = await asyncio.create_subprocess_exec(
             *self.argv,
             cwd=self.cwd,
@@ -87,7 +92,14 @@ class CodexAppServer:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             limit=64 * 1024 * 1024,
+            **(cli_process.spawn_options() if cli_process.WINDOWS else {}),
         )
+        if cli_process.WINDOWS:
+            try:
+                cli_process.track(self.proc)
+            except OSError:
+                await self.proc.wait()  # terminated unrun by track
+                raise
         self._tasks = [asyncio.create_task(self._read_stdout()), asyncio.create_task(self._read_stderr())]
 
     async def initialize(self, client_name: str, version: str) -> dict[str, Any]:
@@ -235,19 +247,24 @@ class CodexAppServer:
         return result
 
     async def close(self) -> None:
+        """Ends the app-server; on Windows its job too, so whatever it started goes with it, also after a clean exit."""
         if not self.proc:
             return
-        if self.proc.returncode is None:
-            if self.proc.stdin:
-                self.proc.stdin.close()
-            try:
-                await asyncio.wait_for(self.proc.wait(), 5)
-            except TimeoutError:
-                self.proc.terminate()
+        try:
+            if self.proc.returncode is None:
+                if self.proc.stdin:
+                    self.proc.stdin.close()
                 try:
                     await asyncio.wait_for(self.proc.wait(), 5)
                 except TimeoutError:
-                    self.proc.kill()
-                    await self.proc.wait()
+                    self.proc.terminate()
+                    try:
+                        await asyncio.wait_for(self.proc.wait(), 5)
+                    except TimeoutError:
+                        self.proc.kill()
+                        await self.proc.wait()
+        finally:
+            if cli_process.WINDOWS:
+                cli_process.stop_group(self.proc)
         for task in self._tasks:
             task.cancel()

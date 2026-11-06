@@ -132,6 +132,20 @@ def test_guard_failure_is_a_clear_error_in_every_parent_api(tmp_path, monkeypatc
     else: assert jats.render_pdf(b"<article/>").error == "render memory limit could not be watched"
 
 
+def test_a_windows_child_that_cannot_join_its_job_is_the_same_clear_error(tmp_path, monkeypatch):
+    """P10 W2: a job that cannot be made, limited or joined is a recorded reader failure, not an exception (no HTTP 500)."""
+    from deixis.tools import win_job
+
+    def refused(*args, **kwargs):
+        raise win_job.JobError("AssignProcessToJobObject failed (Windows error 5)")
+
+    monkeypatch.setattr(win_job, "run", refused)
+    monkeypatch.setattr(pdf, "child_env", lambda *a, **k: {})
+    monkeypatch.setattr(sys, "platform", "win32")
+    result = pdf.extract_pdf(tmp_path / "in.pdf")
+    assert (result.status, result.error) == ("failed", "extraction memory limit could not be watched")
+
+
 CHILD = ("import sys, time; sys.path[:0] = [%r]; from deixis.documents import pdf; pdf._watch_memory(10**12); "
          "print('armed', flush=True); time.sleep(30)" % BACKEND)
 

@@ -14,6 +14,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import re
 import shlex
 import tempfile
@@ -27,7 +28,7 @@ from typing import Any
 
 from deixis.models.claude import TELEMETRY_OFF as CLAUDE_TELEMETRY_OFF
 from deixis.models.codex_isolation import TELEMETRY_OVERRIDES
-from deixis.tools.tool_paths import command_for, find_tool
+from deixis.tools.tool_paths import child_path, command_for, find_tool
 
 log = logging.getLogger(__name__)
 
@@ -66,16 +67,25 @@ class SignInError(Exception):
         self.status = status
 
 
+def signin_environment() -> dict[str, str]:
+    """The sign-in window's environment: the app's own, as the model connections' CLIs get it (the person's settings
+    reach the login command), with its PATH built by `child_path`, so no folder of the packaged app reaches PowerShell or
+    the CLI on Windows (P10 W3)."""
+    env = dict(os.environ)
+    env["PATH"] = child_path()
+    return env
+
+
 def start_process(spec: LaunchSpec) -> Any:
     """Start the terminal launcher and let it go; its window belongs to the person from here on."""
     if sys.platform == "win32":
         # PowerShell is a console program: its new window owns the standard streams, so the prompts and errors of the
         # login show there. They are not redirected. The process is the window, so its end means the window was closed.
-        return subprocess.Popen(spec, creationflags=subprocess.CREATE_NEW_CONSOLE)
+        return subprocess.Popen(spec, creationflags=subprocess.CREATE_NEW_CONSOLE, env=signin_environment())
     # On macOS `open` hands the script to Terminal.app and ends; on Linux the terminal program may fork away. Neither
     # process is the window, so a closed window cannot be seen here; cancel and the timeout are what end that wait.
     subprocess.Popen(spec, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                     start_new_session=True)
+                     start_new_session=True, env=signin_environment())
     return None
 
 

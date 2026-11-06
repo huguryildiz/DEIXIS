@@ -78,6 +78,23 @@ def test_every_child_path_is_built_by_child_path():
     assert found == [("tools/tool_paths.py", 'env["PATH"] = os.environ.get("PATH", "")')]  # `_shell_env`
 
 
+def test_every_child_is_started_with_an_environment_built_for_it():
+    """P10 W3: a process DEIXIS starts is handed its environment (`env=`, or the options a helper built), never the
+    backend's own by default, whose PATH may hold the packaged app's folders. The sign-in window is one of them."""
+    import ast
+
+    root = Path(env_module.__file__).parents[1]
+    starts = {"subprocess.Popen", "subprocess.run", "asyncio.create_subprocess_exec", "anyio.open_process"}
+    found = []
+    for p in root.rglob("*.py"):
+        for node in ast.walk(ast.parse(p.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Call) and ast.unparse(node.func) in starts:
+                given = {k.arg for k in node.keywords}
+                found.append((p.relative_to(root).as_posix(), node.lineno, "env" in given or None in given))
+    assert ("keys/account_signin.py", True) in {(f, ok) for f, _, ok in found}
+    assert [f"{f}:{n}" for f, n, ok in found if not ok] == []
+
+
 def test_outside_programs_get_no_folder_of_the_packaged_app_on_windows(monkeypatch, tmp_path):
     from deixis.tools import tool_paths
 

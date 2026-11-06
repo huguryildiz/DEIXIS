@@ -20,18 +20,22 @@ from claude_agent_sdk import (
     ClaudeAgentOptions,
     ClaudeSDKClient,
     ClaudeSDKError,
+    CLIConnectionError,
     RateLimitEvent,
     ResultMessage,
     TextBlock,
     ToolUseBlock,
 )
 
+from claude_agent_sdk._internal.transport import subprocess_cli
+
 from deixis.tools.child_env import NODE_TLS, child_env
-from deixis.models import quota
+from deixis.models import cli_process, quota
 from deixis.models.adapter import ModelStepResult
 from deixis.domain.limits import limit_kind, service_error_kind, safe_error
 from deixis.tools.tool_paths import child_path, command_for, find_tool
 from deixis.tools.tool_probe import probe
+from deixis.tools import win_job
 
 
 def _model_matches(actual: str | None, expected: str) -> bool:
@@ -44,6 +48,45 @@ def _model_matches(actual: str | None, expected: str) -> bool:
 # documentation lists (code.claude.com/docs/en/env-vars: DISABLE_TELEMETRY, DISABLE_ERROR_REPORTING and
 # CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, which also covers auto-updates and /feedback). Any non-empty value turns them on (F3).
 TELEMETRY_OFF = {"DISABLE_TELEMETRY": "1", "DISABLE_ERROR_REPORTING": "1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}
+
+# P10 W2: on Windows every process the SDK's transport opens (the CLI and its own --version check) starts suspended in a
+# kill-on-close job of its own before it runs (`cli_process.spawn_in_jobs`); on macOS the CLI stays in the backend's
+# process group, where the desktop watchdog finds it (P10 M2).
+JOBS_ON = cli_process.spawn_in_jobs(subprocess_cli)
+
+
+class NotInJob(CLIConnectionError):
+    """Nothing was started: this SDK's processes cannot be put in a job."""
+
+
+class JobTransport(subprocess_cli.SubprocessCLITransport):
+    """Windows: the SDK's own subprocess transport, refusing to start when its processes would not go into a job, and
+    ending the CLI's job when it closes, so whatever the CLI started goes too, also after the CLI's own clean exit."""
+
+    async def connect(self) -> None:
+        if not JOBS_ON:  # an SDK whose transport no longer starts processes through `anyio`: nothing is started (fail closed)
+            raise NotInJob("Claude Code was not started: its process could not be put in a job")
+        await super().connect()
+
+    async def close(self) -> None:
+        proc = self._process
+        try:
+            await super().close()
+        finally:
+            if proc is not None:
+                cli_process.stop_group(proc)
+
+
+def sdk_client(options: ClaudeAgentOptions) -> ClaudeSDKClient:
+    """The SDK client; on Windows over JobTransport (no prompt: DEIXIS sends its message with `query`)."""
+    if not cli_process.WINDOWS:
+        return ClaudeSDKClient(options)
+    return ClaudeSDKClient(options, transport=JobTransport(prompt="", options=options))
+
+
+def _not_started(exc: BaseException) -> bool:
+    """The CLI was never run (P10 W2): it could not join its job and was terminated unrun, so nothing was sent."""
+    return isinstance(exc, (win_job.JobError, NotInJob)) or isinstance(exc.__cause__, win_job.JobError)
 
 
 class ClaudeCodeAdapter:
@@ -131,7 +174,7 @@ class ClaudeCodeAdapter:
         status["cli_version"] = version.stdout.strip() or None
         try:
             async with self._lock:
-                async with ClaudeSDKClient(self._options(cli, system_prompt="DEIXIS model catalogue probe.")) as client:
+                async with sdk_client(self._options(cli, system_prompt="DEIXIS model catalogue probe.")) as client:
                     info = await client.get_server_info() or {}
                     mcp = await client.get_mcp_status()
         except (ClaudeSDKError, OSError, TimeoutError) as exc:
@@ -202,7 +245,7 @@ class ClaudeCodeAdapter:
         usage: dict[str, Any] | None = None
         client: ClaudeSDKClient | None = None
         try:
-            async with ClaudeSDKClient(options) as client:
+            async with sdk_client(options) as client:
                 self._active.add(client)
                 # Resolve selectors from this session's catalogue, not cached health
                 # or a guessed model-name prefix. AssistantMessage.model comes from
@@ -256,7 +299,7 @@ class ClaudeCodeAdapter:
         except (ClaudeSDKError, OSError) as exc:
             return ModelStepResult("failed", resolved_model=actual_model, external_thread_id=session_id,
                                    token_usage=usage, tool_item_types=tool_types, error=safe_error(str(exc))[:300],
-                                   delivery_class="after_send_unknown",
+                                   delivery_class="before_send" if _not_started(exc) else "after_send_unknown",
                                    requested_model_verified=_model_matches(actual_model, expected_model))
         finally:
             if client is not None:

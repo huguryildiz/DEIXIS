@@ -35,7 +35,7 @@ class FakeClient:
     messages = []
     options = []
 
-    def __init__(self, options):
+    def __init__(self, options, transport=None):  # transport: the Windows job transport (P10 W2)
         self.options.append(options)
 
     async def __aenter__(self):

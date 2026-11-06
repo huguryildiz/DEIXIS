@@ -208,3 +208,89 @@ def test_a_cli_that_cannot_join_its_job_is_a_local_start_error(tmp_path, monkeyp
     marker = tmp_path / "ran"
     found = tool_probe.probe_blocking(python(f"open(r'{marker}', 'w').write('ran')"), env=ENV)
     assert found.error == "failed" and not marker.exists()
+
+
+def left_behind(folder: Path) -> list[str]:
+    """A stand-in for a model CLI: it starts a sleeping grandchild that keeps no pipe of DEIXIS, writes both pids, and
+    exits once DEIXIS closes its stdin, leaving the grandchild behind."""
+    return python(f"""
+        import os, subprocess, sys
+        g = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        open(r"{folder / 'pids'}", "w").write(f"{{os.getpid()}} {{g.pid}}")
+        sys.stdin.read()
+    """)
+
+
+def test_closing_the_codex_app_server_ends_what_it_started(tmp_path):
+    from deixis.models.codex_rpc import CodexAppServer
+
+    async def run() -> list[int]:
+        server = CodexAppServer(left_behind(tmp_path), cwd=str(tmp_path), env=ENV)
+        await server.start()
+        assert cli_process._JOBS.get(server.proc) is not None
+        pids = [int(p) for p in (await asyncio.to_thread(wait_for, tmp_path / "pids")).split()]
+        assert all(alive(p) for p in pids)
+        await server.close()  # stdin closed: the stand-in exits on its own, its grandchild does not
+        return pids
+
+    gone_within(asyncio.run(run()), 2)
+
+
+def claude_stand_in(argv: list[str]):
+    """The Claude transport DEIXIS uses on Windows, starting `argv` instead of the CLI's command line."""
+    from deixis.models import claude
+
+    class StandIn(claude.JobTransport):
+        def _build_command(self) -> list[str]:
+            return argv
+
+    return StandIn
+
+
+def test_closing_the_claude_cli_connection_ends_what_the_cli_started(tmp_path, monkeypatch):
+    from claude_agent_sdk import ClaudeAgentOptions
+
+    monkeypatch.setenv("CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK", "1")  # the stand-in is no CLI that answers --version
+    transport = claude_stand_in(left_behind(tmp_path))(prompt="", options=ClaudeAgentOptions(cli_path=sys.executable,
+                                                                                               cwd=tmp_path, env=ENV))
+
+    async def run() -> list[int]:
+        await transport.connect()  # the SDK's own spawn, put in a job before the CLI runs
+        assert cli_process._JOBS.get(transport._process) is not None
+        pids = [int(p) for p in (await asyncio.to_thread(wait_for, tmp_path / "pids")).split()]
+        assert all(alive(p) for p in pids)
+        await transport.close()
+        return pids
+
+    gone_within(asyncio.run(run()), 2)
+
+
+def test_a_claude_cli_that_cannot_join_its_job_never_runs(tmp_path, monkeypatch):
+    from claude_agent_sdk import ClaudeAgentOptions, CLIConnectionError
+
+    from deixis.models import claude
+
+    class Refuses:
+        def NtResumeProcess(self, handle):  # noqa: N802 - the ntdll name
+            return -1
+
+    monkeypatch.setenv("CLAUDE_AGENT_SDK_SKIP_VERSION_CHECK", "1")
+    monkeypatch.setattr(win_job, "_ntdll", Refuses)
+    marker = tmp_path / "ran"
+    transport = claude_stand_in(python(f"open(r'{marker}', 'w').write('ran')"))(
+        prompt="", options=ClaudeAgentOptions(cli_path=sys.executable, cwd=tmp_path, env=ENV))
+    with pytest.raises(CLIConnectionError) as failed:
+        asyncio.run(transport.connect())
+    assert claude._not_started(failed.value) and not marker.exists()  # nothing was sent
+
+
+def test_a_pdf_reader_that_cannot_join_its_job_is_a_recorded_failure(tmp_path, monkeypatch):
+    class Refuses:
+        def NtResumeProcess(self, handle):  # noqa: N802 - the ntdll name
+            return -1
+
+    monkeypatch.setattr(win_job, "_ntdll", Refuses)
+    (tmp_path / "x.pdf").write_bytes(b"%PDF-1.4\n")
+    result = pdf.extract_pdf(tmp_path / "x.pdf")
+    assert (result.status, result.error) == ("failed", "extraction memory limit could not be watched")

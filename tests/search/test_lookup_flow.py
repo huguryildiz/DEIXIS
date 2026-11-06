@@ -6,6 +6,7 @@ records reach the screening model — not how often a second source really holds
 survey rule is right about real literature. A `legacy` research is exercised too, because nothing about it may change.
 """
 
+import asyncio
 import json
 import time
 from dataclasses import replace
@@ -252,6 +253,51 @@ def test_a_resumed_run_asks_no_doi_twice(tmp_path, monkeypatch):
         client.__exit__(None, None, None)
     assert sources.batches == asked_batches and sources.lookups == asked_lookups
     assert len(asked_lookups) == 3
+
+
+@pytest.mark.parametrize("in_flight", [1, 4])
+def test_a_crossref_chunk_stopped_between_two_answers_keeps_the_first_answer_s_evidence(tmp_path, monkeypatch, in_flight):
+    """D153 review: the worker stops after Crossref answered one record of a chunk and before the other; the resumed
+    chunk asks only the other, and the first stored abstract's payload file still holds its own answer (one after
+    another as at the read stage and before D153, and 4 in flight as before the rerank)."""
+    crossref = {"10.1/7": {"abstract": "<jats:p>SYNTHETIC seven.</jats:p>"},
+                "10.1/8": {"abstract": "<jats:p>SYNTHETIC eight.</jats:p>"}}
+    sources = Sources(works=[work(0, abstract=ABSTRACT, doi="10.1/0"), work(7, doi="10.1/7"), work(8, doi="10.1/8")],
+                      crossref=crossref, crossref_status=500)
+    app = app_for(tmp_path, monkeypatch, sources)
+    client = client_of(app)
+    rid, run_id, _, _ = discover(client)  # Crossref fails for the run itself, so both records are still to ask
+    store, settings = app.state.store, app.state.settings
+    sources.crossref_status, sources.lookups = 200, []
+    by_id = records_of(store, rid)
+    chunk = [{"source_version_id": by_id[f"W{n}"], "doi": f"10.1/{n}"} for n in (7, 8)]
+    dispatch = lookups.facade.dispatch_lookup
+    stopped = []
+
+    async def stopping(provider, operation, http, dois, *args, **kwargs):
+        if dois == ("10.1/8",) and not stopped:
+            await asyncio.sleep(0.05)  # the other answer is in by then
+            stopped.append(True)
+            raise RuntimeError("SYNTHETIC worker stopped")
+        return await dispatch(provider, operation, http, dois, *args, **kwargs)
+    monkeypatch.setattr(lookups.facade, "dispatch_lookup", stopping)
+
+
+    async def chunk_step():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(sources)) as http:
+            await lookups._crossref_step(store, http, settings, store.run(run_id), 0, chunk, "test:", in_flight)
+    try:
+        with pytest.raises(RuntimeError, match="SYNTHETIC worker stopped"):
+            asyncio.run(chunk_step())
+        asyncio.run(chunk_step())  # the resume
+        stored = {n: abstract_of(store, by_id[f"W{n}"]) for n in (7, 8)}
+    finally:
+        client.__exit__(None, None, None)
+    assert sources.lookups == ["10.1/7", "10.1/8"]  # each record was asked once
+    for n, word in ((7, "seven"), (8, "eight")):
+        payload = json.loads((settings.payloads_dir / stored[n]["payload_ref"]).read_text())
+        assert stored[n]["text"] == f"SYNTHETIC {word}."
+        assert payload[f"10.1/{n}"]["abstract"] == crossref[f"10.1/{n}"]["abstract"]
 
 
 # ---- the flags and what they route ------------------------------------------------------------

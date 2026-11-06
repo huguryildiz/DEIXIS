@@ -20,6 +20,10 @@ from deixis.workflow.search.expansion import queried_form
 # At Detailed depth one Semantic Scholar bulk request reads up to this many records, taken off the keyword cap.
 S2_RESERVED_RECORDS = 500
 KEYWORD_PAGE_SIZE = 100  # records one OpenAlex keyword page asks for
+# D154: one more OpenAlex semantic request, its text the searched setting and task terms joined, sent after the
+# question's. A plan frozen without `block_semantic` sends none.
+BLOCK_SEMANTIC_KEY = "search:fast:semantic:blocks"
+BLOCK_SEMANTIC_RULE = "block_terms_v1"
 
 
 def seed_query(question, envelope):
@@ -60,11 +64,25 @@ def seed_key(spec):
     return f"search:fast:semantic:seed:{spec['index']}"
 
 
+def block_semantic(vocabulary, semantic, limit):
+    """The semantic request of the searched block terms (D154): the setting terms and then the task terms the query is
+    searched with, as phrases, joined by spaces and cut to what OpenAlex accepts. It is skipped, with its reason, when
+    no block term is searched or when its text is the question's request's own."""
+    phrases = [t["phrase"] for block in ("setting", "task") for t in (vocabulary or {}).get("terms") or []
+               if t["block"] == block and not t["dropped"]]
+    text = openalex.semantic_text(" ".join(phrases)) if phrases else None
+    skipped = "no_block_terms" if not text else "same_as_question" if text == semantic.get("query_text") else None
+    return {"rule": BLOCK_SEMANTIC_RULE, "provider_id": "openalex", "endpoint": "semantic",
+            "query_text": None if skipped else text, "limit": limit, "query_origin": "block_terms",
+            **({"skipped": skipped} if skipped else {})}
+
+
 def sent_plan(body):
     """The requests a frozen protocol body plans to send, each with the step key its pages are stored under.
 
-    A fast path body sends its `fast_path_search` plan: the semantic request, one per seed at version 2, the OpenAlex
-    keyword queries and, at Detailed depth, the Semantic Scholar bulk query. The plan's dropped queries are left out:
+    A fast path body sends its `fast_path_search` plan: the semantic request, the block terms' semantic request when the
+    plan froze one (D154), one per seed at version 2, the OpenAlex keyword queries and, at Detailed depth, the Semantic
+    Scholar bulk query. The plan's dropped queries are left out:
     they stand in `compiled_queries` but were never meant to be sent. A body without the plan sends every compiled
     query under `search:<index>`. `arm` says which kind of request it is; `watchable` that a watch can follow it by
     date (a semantic request ranks by meaning, not by date); a watchable request names its `compiled_index`, the place in
@@ -78,6 +96,11 @@ def sent_plan(body):
     sent = [{"provider_id": "openalex", "endpoint": "semantic", "query_text": semantic.get("query_text"),
              "origin": semantic.get("query_origin"), "key": "search:fast:semantic", "arm": "semantic",
              "watchable": False}]
+    blocks = plan.get("block_semantic") or {}
+    if blocks.get("query_text"):
+        sent.append({"provider_id": "openalex", "endpoint": "semantic", "query_text": blocks["query_text"],
+                     "origin": blocks["query_origin"], "key": BLOCK_SEMANTIC_KEY, "arm": "block_semantic",
+                     "watchable": False})
     sent += [{"provider_id": spec["provider_id"], "endpoint": "semantic", "query_text": spec["query_text"],
               "origin": spec["origin"], "key": seed_key(spec), "arm": "seed_semantic", "watchable": False}
              for spec in plan.get("seed_semantic") or []]
@@ -114,12 +137,14 @@ def graph_rule(store, run):
     return "seed_max_v2" if plan_version(store, run) == 2 else "sum_v1"
 
 
-def build_plan(store, run, scope, queries, seed_context=None):
+def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
+    """The frozen search plan. With `vocabulary` (every discovery run since D154) it also freezes the block terms'
+    semantic request (`block_semantic`); a plan built without it, as every plan before D154 was, has none."""
     policy = run["budget"]["fast_path"]
     sentence = english_question.embedding_query(store, scope)
     if seed_context and seed_context.get("rule") == seed_match.RULE:
         # D6: the question's request is the unseeded one; each seed asks OpenAlex on its own, after it.
-        plan = build_plan(store, run, scope, queries)
+        plan = build_plan(store, run, scope, queries, vocabulary=vocabulary)
         return plan | {"version": 2, "seed_semantic": seed_requests(seed_context, policy["semantic_top"] // 2)}
     seed, parts = None, []
     if sentence and seed_context:
@@ -134,10 +159,13 @@ def build_plan(store, run, scope, queries, seed_context=None):
                      if deep and q["provider_id"] == "semantic_scholar" and q.get("endpoint") == "bulk"
                      and "semantic_scholar" not in excluded), None)
     s2 = queries[s2_index] if s2_index is not None else None
-    return {"version": 1, "semantic": {"provider_id": "openalex", "endpoint": "semantic",
-            "query_text": openalex.semantic_text(sentence[0]) if sentence else None, "limit": policy["semantic_top"],
-            "query_origin": sentence[1] if sentence else english_question.MISSING,
-            **({"seed_text": seed} if seed else {}), **({"seed_parts": parts} if seed_context else {})},
+    semantic = {"provider_id": "openalex", "endpoint": "semantic",
+                "query_text": openalex.semantic_text(sentence[0]) if sentence else None, "limit": policy["semantic_top"],
+                "query_origin": sentence[1] if sentence else english_question.MISSING,
+                **({"seed_text": seed} if seed else {}), **({"seed_parts": parts} if seed_context else {})}
+    return {"version": 1, "semantic": semantic,
+            **({"block_semantic": block_semantic(vocabulary, semantic, policy["semantic_top"])}
+               if vocabulary is not None else {}),
             "keywords": keyword, "keyword_cap": policy["keyword_record_cap"] - (S2_RESERVED_RECORDS if deep else 0),
             "page_size": KEYWORD_PAGE_SIZE, "order": "page_then_query", "s2_bulk": s2 if deep else None,
             "s2_bulk_index": s2_index,
@@ -176,11 +204,15 @@ def plan_words(vocabulary, plan):
     """Every setting and task word of the frozen vocabulary and whether a query the plan sends carries it (D26).
 
     The queries sent are the OpenAlex keyword queries and, at Detailed depth, the Semantic Scholar bulk query; the
-    semantic request sends the question's sentence, not these words. `searched` is false with `left_out` naming why:
+    semantic requests send the question's sentence and, since D154, these words joined (`block_semantic`), so they are
+    not counted here. `searched` is false with `left_out` naming why:
     the word's own drop reason (a count of zero, too broad), `query_limit` when a sent query that held the word had no
     room for it, or `not_sent` when only a query the plan does not send held it. It is null when a sent query could
-    not be read back (`_carried`), so an unknown is never shown as searched or as left out."""
+    not be read back (`_carried`), so an unknown is never shown as searched or as left out. A plan with
+    `block_semantic` (D154) also records `semantic`: whether the word's phrase stands in the text of the block terms'
+    semantic request it sends, so a word left out of every keyword query is not shown as never sent."""
     sent = [spec["query"] for spec in plan["keywords"]] + ([plan["s2_bulk"]] if plan.get("s2_bulk") else [])
+    semantic = (plan["block_semantic"].get("query_text") or "") if "block_semantic" in plan else None
     carried = [_carried(vocabulary, query) for query in sent]
     known = all(c is not None for c in carried)
     held = {(t["block"], queried_form(t)) for q in sent if q.get("origin") != "author" for t in
@@ -200,7 +232,8 @@ def plan_words(vocabulary, plan):
             searched, left_out = None, None
         else:
             searched, left_out = False, "query_limit" if key in held else "not_sent"
-        words.append({"block": key[0], "term": key[1], "searched": searched, "left_out": left_out})
+        words.append({"block": key[0], "term": key[1], "searched": searched, "left_out": left_out,
+                      **({"semantic": not term["dropped"] and term["phrase"] in semantic} if semantic is not None else {})})
     return words
 
 
@@ -378,6 +411,19 @@ async def execute(flow, run, scope, plan, retry_failed):
     if chain:
         chain.initial()
     flow._checkpoint(run_id, run["scope_revision"])
+    # D154: the block terms' semantic request, after the question's (whose page alone chooses the first chain seeds);
+    # a plan frozen without it, or one that skipped it, sends nothing and keeps its request indexes.
+    blocks = plan.get("block_semantic") or {}
+    if blocks.get("query_text"):
+        result, _ = await send_page(blocks, BLOCK_SEMANTIC_KEY, limit=blocks["limit"], klass=0, index=request_index,
+                                    terminal="single_page")
+        if result is None and not flow._stop_requested(run_id, run["scope_revision"]):
+            cancel_step(store, run_id, BLOCK_SEMANTIC_KEY, "provider_search:openalex", "deadline", None)
+        consumer = flow._fast_consumers.get(run_id)
+        if consumer:
+            consumer.notify()
+        request_index += 1
+        flow._checkpoint(run_id, run["scope_revision"])
     # D6: each seed's own semantic request, after the chain chose its first seeds from the question's page and before
     # the keyword pages; an unseeded plan has none, so its indexes are unchanged. The requests start one pacer gap
     # apart and their replies overlap (`openalex.SEMANTIC_PACER`); each is written after the one before it, so

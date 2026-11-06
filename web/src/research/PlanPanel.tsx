@@ -63,7 +63,7 @@ function issueText(issue: Issue, plan: UserSearchPlan | null): string {
   const withField = (text: string) => (field ? `${field}: ${text}` : text)
   switch (issue.code) {
     case 'empty_query_block': return withField(t('add at least one word.'))
-    case 'too_many_query_terms': return t('Use at most 6 search words in all.')
+    case 'too_many_query_terms': return t('Use at most 8 search words in all.')
     case 'query_term_too_long': return t('“{term}” is longer than four words.', { term })
     case 'query_syntax_in_term': return t('“{term}” holds quotation marks, brackets or AND, OR, NOT.', { term })
     case 'query_term_empty': return withField(t('one word is empty.'))
@@ -240,7 +240,9 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
   const wordsChanged = Boolean(plan && draft && (draft.setting.join('\n') !== plan.setting.map(r => r.term).join('\n') || draft.task.join('\n') !== plan.task.map(r => r.term).join('\n')))
   const backups = plan ? [...plan.setting_backup, ...plan.task_backup].map(row => row.term) : []
   // The stored plan's words its frozen search did not carry (D26); a chip is marked while its word is the stored one.
-  const unsearched = loaded.unsearched ?? []
+  // A word no keyword query carried may still have been sent in the block terms' semantic request (D154).
+  const semanticOnly = (loaded.unsearched ?? []).filter(w => w.semantic === true)
+  const unsearched = (loaded.unsearched ?? []).filter(w => w.semantic !== true)
   const disabledReason = active ? t('Available when the run ends.') : !searchReady ? t('Choose a readable PDF to guide the search first.') : null
   const locked = saving || busy
 
@@ -271,7 +273,8 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
           {!draft[name].length && <em>{t('no word')}</em>}
         </div>)}
         {unsearched.length > 0 && <small className="plan-unsearched">{t('Words the frozen plan did not search')}: {unsearched.map(w => t('{word}: {reason}', { word: w.term, reason: wordLeftOutText(w.left_out) })).join(' · ')}</small>}
-        {backups.length > 0 && <small className="plan-backups">{t('Backup words, used in order when a word finds no record on OpenAlex: {words}', { words: backups.join(', ') })}</small>}
+        {semanticOnly.length > 0 && <small className="plan-unsearched">{t('Not in a keyword query, part of the planned semantic search')}: {semanticOnly.map(w => t('{word}: {reason}', { word: w.term, reason: wordLeftOutText(w.left_out) })).join(' · ')}</small>}
+        {backups.length > 0 && <small className="plan-backups">{t('Backup words, used in order when a word finds no record on OpenAlex alone, or none together with the other part: {words}', { words: backups.join(', ') })}</small>}
       </div>
       <div className="plan-add">
         <label className="lbl">{t('Add a word')}<input ref={addField} className="field" value={word} disabled={locked} maxLength={80} placeholder={t('e.g. acoustic, disjoint paths · press Enter')}
@@ -285,7 +288,7 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
       {/* The English sentence the semantic search sends for this question revision (§2.2), as stored; read only here. */}
       {view.semantic?.english_question?.text && <div className="lbl plan-english">{t('English question for the semantic search')}<span>{view.semantic.english_question.text}</span></div>}
       <p className="plan-note">{[
-        loaded.queries_preview && t('A preview: the query is compiled again from the words when the search starts, and a backup word takes the place of a word OpenAlex counts at zero.'),
+        loaded.queries_preview && t('A preview: the query is compiled again from the words when the search starts. A backup word takes the place of a word OpenAlex counts at zero, and is added beside a word that finds no record together with the other part, while the query stays within 8 words.'),
         wordsChanged && t('The queries above are the stored ones; the edited words are compiled into a new query when the search starts.'),
         !own && t('Saved, the plan is searched with its own words only: the query built from the question’s words is not searched beside it.'),
       ].filter(Boolean).join(' ')}</p>

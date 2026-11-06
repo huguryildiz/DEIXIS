@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://deixis.local/contracts/research/user-search-plan.schema.json",
   "title": "UserSearchPlan",
-  "description": "A search plan a person edited and saved as a new scope revision (UI parity S23a, F18). It is not a model output: a discovery run of that revision builds its query, block labels and criterion from it instead of asking a model. Terms follow the SearchQuery term rules (at most 6 chosen terms in total, at most 4 words each, no quotation marks, brackets or Boolean operators, no term twice); code counts every term on OpenAlex, puts a backup in place of a term no record holds and compiles the query. OpenAlex is required; the other providers may be left out.",
+  "description": "A search plan a person edited and saved as a new scope revision (UI parity S23a, F18). It is not a model output: a discovery run of that revision builds its query, block labels and criterion from it instead of asking a model. Terms follow the SearchQuery term rules (at most 8 chosen terms in total, at most 4 words each, no quotation marks, brackets or Boolean operators, no term twice); code counts every term on OpenAlex, puts a backup in place of a term no record holds and compiles the query. OpenAlex is required; the other providers may be left out.",
   "type": "object",
   "additionalProperties": false,
   "required": [

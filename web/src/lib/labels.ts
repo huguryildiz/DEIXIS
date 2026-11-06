@@ -837,6 +837,7 @@ export function wordLeftOutText(reason: string) {
     case 'query_limit': return t('cut to keep the query within its length and syntax limits')
     case 'not_sent': return t('only a query this run does not send held it')
     case 'zero_results': return t('OpenAlex counted no record with it')
+    case 'no_records_with_other_block': return t('OpenAlex counted no record with it and the other part')
     default: return reason
   }
 }

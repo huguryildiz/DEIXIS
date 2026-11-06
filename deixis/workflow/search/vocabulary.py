@@ -12,6 +12,7 @@ what the literature held on the day of the first run, not today.
 
 from __future__ import annotations
 
+import asyncio
 from collections import Counter
 from dataclasses import replace
 from typing import Any, Awaitable, Callable
@@ -21,6 +22,7 @@ from deixis.domain.vocabulary_words import GENERAL_WORDS
 from deixis.providers.query_compiler import quoted
 
 MAX_PROBES = 40  # count requests one vocabulary step may send
+PROBES_IN_FLIGHT = 4  # D154: independent count requests out at once; hand-picked, not measured
 LABEL_RUNS = 3  # SW17.3: the block labelling is asked this many times
 LABEL_MAJORITY = 2  # and a label is kept when it appears in at least this many runs
 MAX_LABELLED_PHRASES = 40  # a longer phrase list is not sent: the rule's assignment stands
@@ -41,6 +43,25 @@ THRESHOLDS = {
 # is kept for ranking, so the gate is setting AND task (SW1.3).
 GATE_BLOCKS = ("setting", "task")
 TERM_FIELDS = ("phrase", "block", "origin", "root", "in_query", "phrase_count", "root_count", "and_only", "dropped")
+
+
+async def counts_in_flight(count: Callable[[str], Awaitable[int | None]], queries: list[str]) -> list[int | None]:
+    """The counts of `queries`, in their order, with at most PROBES_IN_FLIGHT requests out at once (D154).
+
+    The same requests are sent as when they are asked one by one: the caller decides which queries are asked and
+    records them in its own order, so only the waiting overlaps. A stop or a failure cancels the requests still out."""
+    gate = asyncio.Semaphore(PROBES_IN_FLIGHT)
+
+    async def one(query: str) -> int | None:
+        async with gate:
+            return await count(query)
+    tasks = [asyncio.ensure_future(one(query)) for query in queries]
+    try:
+        return list(await asyncio.gather(*tasks))
+    finally:
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def _distinctive(phrase: str) -> list[str]:
@@ -134,19 +155,32 @@ async def build_vocabulary(extraction: Extraction, count: Callable[[str], Awaita
     probes: list[dict[str, Any]] = []
     skipped = asked = 0
 
-    async def probe(query: str) -> int | None:
-        """One count request, or nothing once the budget is spent. An unspent answer is never invented."""
+    async def probe_all(queries: list[str]) -> list[int | None]:
+        """One count request per query not known yet, or nothing once the budget is spent; an unspent answer is never
+        invented. The budget and the probe record follow the list's order; the requests run PROBES_IN_FLIGHT at once."""
         nonlocal skipped, asked
-        if query in known:
-            probes.append({"query": query, "count": known[query]})
-            return known[query]
-        if asked >= MAX_PROBES:
-            skipped += 1
-            return None
-        asked += 1
-        value = await count(query)
-        probes.append({"query": query, "count": value})
-        return value
+        plan: list[str | None] = []
+        for query in queries:
+            if query in known:
+                plan.append(query)
+            elif asked >= MAX_PROBES:
+                skipped += 1
+                plan.append(None)
+            else:
+                asked += 1
+                plan.append(query)
+        sent = [query for query in plan if query is not None and query not in known]
+        answered = dict(zip(sent, await counts_in_flight(count, sent)))
+        values = []
+        for query in plan:
+            value = None if query is None else known[query] if query in known else answered[query]
+            if query is not None:
+                probes.append({"query": query, "count": value})
+            values.append(value)
+        return values
+
+    async def probe(query: str) -> int | None:
+        return (await probe_all([query]))[0]
 
     terms: list[dict[str, Any]] = []
     for block in GATE_BLOCKS:
@@ -156,19 +190,16 @@ async def build_vocabulary(extraction: Extraction, count: Callable[[str], Awaita
                           "and_only": False, "dropped": None})
     words_of = {term["phrase"]: _distinctive(term["phrase"]) for term in terms}
 
-    for term in terms:
-        term["phrase_count"] = await probe(quoted(term["phrase"]))
+    for term, value in zip(terms, await probe_all([quoted(term["phrase"]) for term in terms])):
+        term["phrase_count"] = value
         if term["phrase_count"] == 0:
             term["dropped"] = "zero_results"
 
     # A dropped phrase never enters the query, so its words are not probed: the budget belongs to terms that can.
-    word_counts: dict[str, int | None] = {}
-    for term in terms:
-        if term["dropped"] or len(words_of[term["phrase"]]) <= 1:
-            continue
-        for word in words_of[term["phrase"]]:
-            if word not in word_counts:
-                word_counts[word] = await probe(quoted(word))  # a word with punctuation is a literal, never syntax
+    wanted = list(dict.fromkeys(word for term in terms if not term["dropped"] and len(words_of[term["phrase"]]) > 1
+                                for word in words_of[term["phrase"]]))
+    # A word with punctuation is a literal, never syntax.
+    word_counts: dict[str, int | None] = dict(zip(wanted, await probe_all([quoted(word) for word in wanted])))
 
     for term in terms:
         if term["dropped"]:

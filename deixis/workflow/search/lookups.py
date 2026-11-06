@@ -19,6 +19,7 @@ filter keeps it away from the model rather than letting the model's `exclude` re
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Callable
 
 import httpx
@@ -285,12 +286,14 @@ def linked_dois(store: Store, source_version_id: str) -> list[str]:
 async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
                              scope: dict[str, Any], words: tuple[str, ...],
                              checkpoint: Callable[[], None], limit: int = MAX_LOOKUP_REQUESTS, *, only: set[str] | None = None,
-                             prefix: str = "") -> None:
+                             prefix: str = "", crossref_in_flight: int = 1) -> None:
     """Plan and send this run's DOI lookups. A failed request is recorded and the run goes on (D18).
 
     No request is sent twice: a step that already succeeded is skipped whole, and inside a chunk a record the
     library already has an answer for is passed over, so a run resumed mid-chunk carries on where it stopped.
     `prefix` keeps a second round of the same run (the lookup before the rerank, D152) under steps of its own.
+    `crossref_in_flight` is how many of Crossref's single requests one chunk has out at once (4 before the rerank under
+    D153's rule; 1, one after another, everywhere else).
     """
     run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
     # How many 429s one batch waits out is this research's effort (D88). `quick` waits for none: the refused batch
@@ -305,7 +308,7 @@ async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Se
                          lambda: plan_crossref(store, rid, revision, scope, words, len(plan["batches"]), limit, only=only))
     for number, chunk in enumerate(plan_cr["chunks"]):
         checkpoint()
-        await _crossref_step(store, http, settings, run, number, chunk, prefix)
+        await _crossref_step(store, http, settings, run, number, chunk, prefix, crossref_in_flight)
     checkpoint()
     spent = len(plan["batches"]) + sum(len(chunk) for chunk in plan_cr["chunks"])
     plan_sc = await _scopus_plan(store, http, run, scope, words, spent, limit, only=only, prefix=prefix)
@@ -350,7 +353,9 @@ async def _semantic_scholar_step(store: Store, http: httpx.AsyncClient, settings
         tuple(row["doi"] for row in asking), api_key, settings.contact_email, waits)
     settle_dispatch(store, run["id"], step, dispatched, reserved, "lookup_requests", "lookup_sends")
     answers, outcome = dispatched.answers, dispatched.outcome
-    payload_ref = _write_payload(settings, step["id"], outcome.raw_payload)
+    # A file of this request's own, never overwritten: a batch resumed after some of its answers were stored asks the
+    # rest in a new request, which must not replace the evidence those answers point at (D153 review).
+    payload_ref = _write_new_payload(settings, step["id"], outcome.raw_payload) if outcome.raw_payload is not None else None
     added = [store_answer(store, row["source_version_id"], "semantic_scholar", answers[row["doi"]], step["id"],
                           payload_ref) for row in asking]
     # The step succeeded whatever the source answered: a failure is an answer stored on the record, not a broken run.
@@ -360,16 +365,19 @@ async def _semantic_scholar_step(store: Store, http: httpx.AsyncClient, settings
 
 
 async def _crossref_step(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
-                         number: int, chunk: list[dict[str, Any]], prefix: str = "") -> None:
-    """One chunk of single-record requests; each answer is written before the next request is sent."""
+                         number: int, chunk: list[dict[str, Any]], prefix: str = "", in_flight: int = 1) -> None:
+    """One chunk of single-record requests, `in_flight` of them out at once (D153; 1 sends them one after another).
+    Each answer is written as soon as it comes back, before the request that waits for its place is sent."""
     step = store.step(run["id"], f"{prefix}record_lookup:crossref:{number}", "provider_lookup:crossref")
     if step["status"] == "succeeded":
         return
     store.start_step(step["id"])
-    added, asked, payloads = [], 0, {}
-    for row in chunk:
+    added, asked = [], 0
+
+    async def ask(row: dict[str, Any]) -> None:
+        nonlocal asked
         if answered(store, row["source_version_id"], "crossref"):
-            continue
+            return
         asked += 1
         reserved = 1 + MAX_RATE_LIMIT_RETRIES
         store.add_usage(run["id"], "lookup_requests", reserved)
@@ -379,11 +387,28 @@ async def _crossref_step(store: Store, http: httpx.AsyncClient, settings: Settin
         answer, outcome = dispatched.answers[row["doi"]], dispatched.outcome
         payload_ref = None
         if outcome.raw_payload is not None:
-            # The chunk's answers share one file, rewritten before the passage that points into it, so a stored
-            # abstract never names a file a crash left unwritten.
-            payloads[row["doi"]] = outcome.raw_payload
-            payload_ref = _write_payload(settings, step["id"], payloads)
+            # Each answer gets a file of its own, written before the passage that points at it and never overwritten,
+            # so a chunk resumed after a stop cannot replace the evidence of an answer already stored (D153 review).
+            payload_ref = _write_new_payload(settings, step["id"], {row["doi"]: outcome.raw_payload})
         added.append(store_answer(store, row["source_version_id"], "crossref", answer, step["id"], payload_ref))
+
+    if in_flight <= 1:
+        for row in chunk:
+            await ask(row)
+    else:
+        gate = asyncio.Semaphore(in_flight)
+
+        async def gated(row: dict[str, Any]) -> None:
+            async with gate:
+                await ask(row)
+        tasks = [asyncio.ensure_future(gated(row)) for row in chunk]
+        try:
+            await asyncio.gather(*tasks)
+        finally:
+            # A stop or a time ceiling cancels the requests still out; none of them is left running unread.
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
     store.finish_step(step["id"], "succeeded", output=transport_output(store, step, _counts(added, asked=asked)))
 
 
@@ -549,7 +574,10 @@ def external_links(store: Store, run: dict[str, Any]) -> dict[str, Any]:
     # were linked when they were found. Without the origin this would read every record of the run a second time.
     origins = tuple(ABSTRACT_ORIGINS.values())
     filled = [row[0] for row in store.conn.execute(
-        "SELECT DISTINCT p.source_version_id FROM passages p JOIN run_steps s ON p.payload_ref = s.id || '.json'"
+        "SELECT DISTINCT p.source_version_id FROM passages p JOIN run_steps s ON (p.payload_ref = s.id || '.json'"
+        # Since the D153 review a Semantic Scholar or Crossref answer has a per-request file, `<step>.r<n>.json`.
+        # Scopus's per-request files were never read here; that is kept as it was.
+        "  OR (p.abstract_origin != 'lookup_scopus' AND substr(p.payload_ref, 1, length(s.id) + 2) = s.id || '.r'))"
         f" WHERE s.run_id = ? AND p.kind = 'abstract' AND p.abstract_origin IN ({', '.join('?' * len(origins))})"
         " ORDER BY p.source_version_id", (run_id, *origins))]
     with transaction(store.conn):

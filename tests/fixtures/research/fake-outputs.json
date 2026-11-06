@@ -1534,11 +1534,38 @@
    }
   },
   {
-   "name": "search_query_too_many_terms",
+   "name": "search_query_eight_terms_four_per_block",
+   "step_input": "H_search_query",
+   "expect_ok": true,
+   "expect_codes": [],
+   "output": {
+    "schema_version": "deixis.search_query.v2",
+    "step_input_id": "sti_SYNTHE0002",
+    "scope_revision": 1,
+    "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+    "field": "SYNTHETIC field",
+    "setting": [
+     {"term": "wind integrated transmission grid", "kind": "topic", "why": "SYNTHETIC reason"},
+     {"term": "wind farm", "kind": "topic", "why": "SYNTHETIC reason"},
+     {"term": "DFIG", "kind": "topic", "why": "SYNTHETIC abbreviation"},
+     {"term": "offshore wind", "kind": "topic", "why": "SYNTHETIC variant"}
+    ],
+    "task": [
+     {"term": "subsynchronous oscillation", "kind": "topic", "why": "SYNTHETIC reason"},
+     {"term": "SSO", "kind": "topic", "why": "SYNTHETIC abbreviation"},
+     {"term": "damping controller", "kind": "method", "why": "SYNTHETIC reason"},
+     {"term": "torsional interaction", "kind": "topic", "why": "SYNTHETIC reason"}
+    ],
+    "setting_backup": [],
+    "task_backup": []
+   }
+  },
+  {
+   "name": "search_query_too_many_terms_in_a_block",
    "step_input": "H_search_query",
    "expect_ok": false,
    "expect_codes": [
-    "too_many_query_terms"
+    "schema_invalid"
    ],
    "output": {
     "schema_version": "deixis.search_query.v2",

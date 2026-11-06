@@ -882,6 +882,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       const key = steps.find(step => step.id === s.step_id)?.operation_key ?? ''
       const seed = /^search:fast:semantic:seed:(\d+)/.exec(key)
       if (seed) return t('semantic, seed {n}', { n: Number(seed[1]) + 1 })
+      if (key === 'search:fast:semantic:blocks') return t('semantic, search words')
       if (key.startsWith('search:fast:semantic')) return t('semantic')
       const keyword = /^search:(\d+)(?::page:\d+)?$/.exec(key)
       const index = keyword ? Number(keyword[1]) : key.startsWith('search:fast:s2_bulk') ? planQueries.findIndex(q => q.provider_id === 'semantic_scholar') : -1
@@ -915,7 +916,9 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       const terms = approved?.terms.filter(term => !term.dropped) ?? []
       const queries = [...new Map((approved?.queries ?? []).map(q => [q.query_text, q])).values()]
       // A word the frozen plan records as carried by no sent query (D26) is named as not searched, with the stored reason.
-      const unsearched = terms.filter(term => term.searched === false)
+      // A word no keyword query carries may still be sent in the block terms' semantic request (D154).
+      const semanticOnly = terms.filter(term => term.searched === false && term.semantic === true)
+      const unsearched = terms.filter(term => term.searched === false && term.semantic !== true)
       // A question not in English gets its search words from its English sentence (D149): the model's, with the model
       // its step stored, or the person's own. "Edit" opens the revision form; the frozen plan itself never changes.
       const english = group.find(s => s.kind === 'code:vocabulary')?.output?.english_question
@@ -923,8 +926,9 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       if (english) parts.push(<div key="english-search" className="step-row"><span>{t('English sentence for the search')}</span><span className="step-row-text" dir="auto">“{english.text}”
         {english.origin === 'model' ? translator?.model && <> · <ModelName connection={translator.connection} text={modelText(translator.model, translator.effort ?? null)} /></> : <> · {t('your sentence')}</>}
         {latestDiscovery && onReviseQuestion && <> · <button type="button" className="step-link" onClick={onReviseQuestion}>{t('Edit')}</button></>}</span></div>)
-      if (terms.length) parts.push(<div key="words" className="step-words"><span className="step-words-label">{t('Search words')}</span><span className="step-words-list">{terms.map(term => <span key={term.phrase} className={term.searched === false ? 'step-word word-unsearched' : 'step-word'}>{term.phrase}</span>)}</span></div>)
+      if (terms.length) parts.push(<div key="words" className="step-words"><span className="step-words-label">{t('Search words')}</span><span className="step-words-list">{terms.map(term => <span key={term.phrase} className={term.searched === false && term.semantic !== true ? 'step-word word-unsearched' : 'step-word'}>{term.phrase}</span>)}</span></div>)
       if (unsearched.length) parts.push(<div key="unsearched" className="step-row"><span>{t('Words not searched')}</span><span className="step-row-text">{unsearched.map(term => t('{word}: {reason}', { word: term.phrase, reason: wordLeftOutText(term.left_out ?? '') })).join(' · ')}</span></div>)
+      if (semanticOnly.length) parts.push(<div key="semantic-only" className="step-row"><span>{t('Not in a keyword query, part of the planned semantic search')}</span><span className="step-row-text">{semanticOnly.map(term => t('{word}: {reason}', { word: term.phrase, reason: wordLeftOutText(term.left_out ?? '') })).join(' · ')}</span></div>)
       // Each provider gets its own query text; with more than one provider the row names whose query it is.
       const severalProviders = new Set(queries.map(q => q.provider_id)).size > 1
       // The query text follows its label on the row, wrapping under it when long (mockup `.row` with a `code`).

@@ -56,7 +56,8 @@ def _approval_side(vocabulary: dict[str, Any], criterion: dict[str, Any] | None,
 
     def searched(term: dict[str, Any]) -> dict[str, Any]:
         word = carried.get((term["block"], queried_form(term)))
-        return {"searched": word["searched"] if word else None, "left_out": word["left_out"] if word else None}
+        return {"searched": word["searched"] if word else None, "left_out": word["left_out"] if word else None,
+                **({"semantic": word["semantic"]} if word and "semantic" in word else {})}
 
     side = {
         "terms": [{field: term[field] for field in vocabulary_rules.TERM_FIELDS}

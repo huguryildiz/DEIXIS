@@ -243,9 +243,12 @@ def _unsearched(plan: dict[str, Any], body: dict[str, Any]) -> list[dict[str, An
     words = (body.get("fast_path_search") or {}).get("words")
     if words is None:
         return None
-    left = {(w["block"], criterion_rules.norm(w["term"])): w["left_out"] for w in words if w["searched"] is False}
-    return [{"block": block, "term": row["term"], "left_out": left[(block, criterion_rules.norm(row["term"]))]}
-            for block in GATE_BLOCKS for row in plan[block] if (block, criterion_rules.norm(row["term"])) in left]
+    left = {(w["block"], criterion_rules.norm(w["term"])): w for w in words if w["searched"] is False}
+    # `semantic` (D154): left out of every keyword query, but sent in the block terms' semantic request.
+    return [{"block": block, "term": row["term"], "left_out": word["left_out"],
+             **({"semantic": word["semantic"]} if "semantic" in word else {})}
+            for block in GATE_BLOCKS for row in plan[block]
+            if (word := left.get((block, criterion_rules.norm(row["term"])))) is not None]
 
 
 def view(store: Any, research_id: str) -> dict[str, Any]:

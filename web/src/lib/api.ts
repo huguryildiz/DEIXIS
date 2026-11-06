@@ -318,6 +318,8 @@ export type ApprovalTerm = {
   // 'query_limit' (cut from every sent query that held it) or 'not_sent' (only an unsent query held it). Both null
   // where the frozen plan recorded nothing (frozen before the record, or not frozen yet).
   searched?: boolean | null; left_out?: WordLeftOut | null
+  // D154: the frozen plan's block-terms semantic request carries this word; absent on a plan frozen before it.
+  semantic?: boolean
 }
 export type WordLeftOut = 'query_limit' | 'not_sent' | (string & {})
 export type CriterionPart = { name: string; definition: string }
@@ -2185,7 +2187,7 @@ export type SearchPlanView = {
   queries_preview: boolean  // true while a saved plan has not run: compiled again when the run starts
   // The plan's words the frozen search did not carry (D26), as the plan writes them; null where the protocol recorded
   // nothing (a preview, or a plan frozen before the record).
-  unsearched: { block: 'setting' | 'task'; term: string; left_out: WordLeftOut }[] | null
+  unsearched: { block: 'setting' | 'task'; term: string; left_out: WordLeftOut; semantic?: boolean }[] | null
   providers: {
     provider_id: SearchPlanProvider; required: boolean; checked: boolean; in_scope: boolean; configured: boolean
     not_covered: 'pdf_link_lookup'[]  // still asked when left out: Crossref is used to find PDF links

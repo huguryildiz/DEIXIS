@@ -55,11 +55,17 @@ def record(identity):
                           identifiers={"openalex": identity}, raw={"id": identity})
 
 
-def setup(lib, tmp_path):
+# The searched block terms, one of them dropped; the block terms' semantic request (D154) joins the other two.
+VOCABULARY = {"terms": [{"phrase": "synthetic setting words", "block": "setting", "dropped": None},
+                        {"phrase": "synthetic zero words", "block": "task", "dropped": "zero_results"},
+                        {"phrase": "synthetic task words", "block": "task", "dropped": None}]}
+
+
+def setup(lib, tmp_path, vocabulary=None):
     scope = lib.store.scope(lib.rid)
     settings = Settings(data_dir=tmp_path / "data")
     flow = ResearchFlow(SimpleNamespace(store=lib.store, clock=lib.clock, settings=settings, local_embedder=None))
-    plan = fast_search.build_plan(lib.store, lib.run, scope, QUERIES)
+    plan = fast_search.build_plan(lib.store, lib.run, scope, QUERIES, vocabulary=vocabulary)
     fast_path.enter_stage(lib.store, lib.run, "search")
     return flow, scope, plan
 
@@ -84,19 +90,32 @@ def scripted(flow, calls, *, advance=None, fail_at=None, short=False):
     flow._send_search = send
 
 
-def test_frozen_plan_cap_rotation_page_admission_and_resume(library, tmp_path):
+@pytest.mark.parametrize("frozen", ["block_semantic", "before_d154"])
+def test_frozen_plan_cap_rotation_page_admission_and_resume(library, tmp_path, frozen):
+    # D154: a plan frozen with the block terms' semantic request sends it once, after the question's, and its hits
+    # enter the pool; a plan frozen before it (no `block_semantic`) sends what it always sent.
     lib = library
-    flow, scope, plan = setup(lib, tmp_path)
+    flow, scope, plan = setup(lib, tmp_path, VOCABULARY if frozen == "block_semantic" else None)
     calls = []
     scripted(flow, calls)
     asyncio.run(fast_search.execute(flow, lib.run, scope, plan, False))
-    assert [(q, p, n) for _, q, p, n in calls[1:]] == [
+    semantic = 2 if frozen == "block_semantic" else 1
+    assert [(q, p, n) for _, q, p, n in calls[semantic:]] == [
         (QUERIES[0]['query_text'], 0, 100), (QUERIES[1]['query_text'], 0, 100),
         (QUERIES[0]['query_text'], 1, 100), (QUERIES[1]['query_text'], 1, 100),
         (QUERIES[0]['query_text'], 2, 50)]
     assert calls[0][0] == 'semantic'
-    assert len(rows(lib)) == 452
-    assert [r['request_index'] for r in rows(lib)[::100]][:2] == [0, 1]
+    block = lib.conn.execute("SELECT sr.result_count FROM search_runs sr JOIN run_steps s ON s.id = sr.step_id"
+                             " WHERE s.operation_key = ?", (fast_search.BLOCK_SEMANTIC_KEY,)).fetchall()
+    arms = [q["arm"] for q in fast_search.sent_plan({"fast_path_search": plan, "compiled_queries": QUERIES})]
+    if frozen == "block_semantic":
+        assert calls[1] == ('semantic', 'synthetic setting words synthetic task words', 0, 50)
+        assert plan["block_semantic"]["rule"] == fast_search.BLOCK_SEMANTIC_RULE and [tuple(r) for r in block] == [(2,)]
+        assert arms[:2] == ["semantic", "block_semantic"]
+    else:
+        assert "block_semantic" not in plan and not block and "block_semantic" not in arms
+    assert len(rows(lib)) == 450 + 2 * semantic
+    assert [r['request_index'] for r in rows(lib)[::100]][:2] == [0, semantic]
     assert plan['dropped'][0]['reason'] == 'openalex_only'
     assert lib.store.existing_step(lib.run['id'], 'vocabulary_expansion') is None
     searches = [dict(r) for r in lib.conn.execute('SELECT * FROM search_runs ORDER BY rowid')]
@@ -317,7 +336,7 @@ def test_sw_failed_provider_is_retained_and_retry_reuses_queries_and_protocol(tm
         keyword = lambda view: [(s["provider"], s["status"]) for s in view["search_runs"] if s["query_text"] == attempts[0]]
         assert keyword(view) == [("openalex", "rate_limited")]
         assert [(s["operation_key"], s["status"]) for s in run["steps"] if s["operation_key"].startswith("search:")] == [
-            ("search:fast:semantic", "succeeded"), ("search:0", "failed")]
+            ("search:fast:semantic", "succeeded"), ("search:fast:semantic:blocks", "succeeded"), ("search:0", "failed")]
         assert view["counts"]["unique"] == 1
         assert run["budget"]["inspection"]["policy"] == "small_batch_fused_v1"
         assert any(s["operation_key"].startswith("small_batch:v1:")

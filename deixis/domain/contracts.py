@@ -1142,8 +1142,10 @@ def _semantic_checks(step_input: dict[str, Any], output_type: str, result: dict[
         _check_vocabulary_labels(allow, result, report)
     elif output_type == "CriterionProposal":
         _check_criterion_proposal(step_input, result, report)
-    elif output_type in ("SearchQuery", "KillSearchQuery", "FollowupSearchQuery"):
+    elif output_type == "SearchQuery":
         _check_search_query(result, report)
+    elif output_type in ("KillSearchQuery", "FollowupSearchQuery"):
+        _check_search_query(result, report, OTHER_QUERY_MAX_TERMS)
     elif output_type == "AbstractScreening":
         _check_abstract_screening(allow, result, report)
     elif output_type == "FulltextAdjudication":
@@ -2386,21 +2388,23 @@ def _check_question_elements(step_input: dict[str, Any], draft: dict[str, Any], 
                                    f"population and comparator both point at {part!r}"))
 
 
-SEARCH_QUERY_MAX_TERMS = 6  # chosen terms of both blocks together (D92)
+SEARCH_QUERY_MAX_TERMS = 8  # chosen terms of both blocks together (D154; 6 under D92), at most 4 a block by schema
+OTHER_QUERY_MAX_TERMS = 6  # the kill-search and follow-up queries keep D92's six (their own method texts)
 SEARCH_QUERY_MAX_WORDS = 4
 # Characters and operator words that belong to a query, not to a term; code writes every operator itself.
 QUERY_SYNTAX = re.compile(r'["()\[\]{}*?:]|\b(?:AND|OR|NOT)\b')
 
 
-def _check_search_query(draft: dict[str, Any], report: ValidationReport) -> None:
-    """The bounds code enforces on a model-written query (D92): at most six chosen terms, both blocks filled, no term
-    twice, and no term that carries query syntax or runs past four words. Each is an error, and the step gets one
-    repair. What a term finds is not checked here: that is a count, read by code after the answer is accepted."""
+def _check_search_query(draft: dict[str, Any], report: ValidationReport, max_terms: int = SEARCH_QUERY_MAX_TERMS) -> None:
+    """The bounds code enforces on a model-written query (D92): at most `max_terms` chosen terms (eight for the
+    discovery query and a person's plan since D154, six for the others), both blocks filled, no term twice, and no
+    term that carries query syntax or runs past four words. Each is an error, and the step gets one repair. What a
+    term finds is not checked here: that is a count, read by code after the answer is accepted."""
     chosen = [(block, index, term["term"]) for block in ("setting", "task")
               for index, term in enumerate(draft[block])]
-    if len(chosen) > SEARCH_QUERY_MAX_TERMS:
+    if len(chosen) > max_terms:
         report.issues.append(Issue("too_many_query_terms", "/",
-                                   f"{len(chosen)} chosen terms; at most {SEARCH_QUERY_MAX_TERMS} in total"))
+                                   f"{len(chosen)} chosen terms; at most {max_terms} in total"))
     for block in ("setting", "task"):
         if not draft[block]:
             report.issues.append(Issue("empty_query_block", f"/{block}", "the block holds no term"))

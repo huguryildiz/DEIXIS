@@ -1051,11 +1051,11 @@ function RerankingSettings({ refresh, dark, keyField, builtin, onBuiltinChanged 
     <div className="rerank-limit">
       <span id="rerank-factor-label">{t('Records reranked')}</span>
       <span className="seg" role="group" aria-labelledby="rerank-factor-label">
-        {[1, 2, 4].map(f => <button key={f} type="button" className={shown.factor === f ? 'on' : ''} aria-pressed={shown.factor === f} disabled={busy}
-          onClick={() => { if (shown.factor !== f) save({ ...shown, factor: f }) }}>{f === 4 ? t('{n}× (recommended)', { n: f }) : `${f}×`}</button>)}
+        {[1, 2, 4, 8].map(f => <button key={f} type="button" className={shown.factor === f ? 'on' : ''} aria-pressed={shown.factor === f} disabled={busy}
+          onClick={() => { if (shown.factor !== f) save({ ...shown, factor: f }) }}>{f === 8 ? t('{n}× (recommended)', { n: f }) : `${f}×`}</button>)}
       </span>
     </div>
-    <p className="foot-note">{t('× the papers a run reads. On Standard, 200 records are reranked for 50 read.')}</p>
+    <p className="foot-note">{t('× the papers a run reads, at most 400. On Standard, up to 400 records are reranked for 50 read.')}</p>
     <div className="rerank-limit">
       <label htmlFor="rerank-timeout">{t('Time limit')}</label>
       <span className="rerank-timeout">

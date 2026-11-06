@@ -59,6 +59,46 @@ def test_the_task_is_registered_with_its_schema_its_method_file_and_one_repair()
 
 # ---- what code checks and counts ----------------------------------------------------------------------------
 
+def test_a_term_that_finds_nothing_with_the_other_block_brings_its_backup_and_counts_run_four_at_a_time():
+    # D154: "integer programming" finds records alone and none with the setting block, so the next task backup is
+    # searched beside it; it stays, with its warning. The counts overlap, at most 4 out, and every row keeps its order.
+    out, peak, asked = [0], [0], []
+
+    async def count(query):
+        asked.append(query)
+        out[0] += 1
+        peak[0] = max(peak[0], out[0])
+        await asyncio.sleep(0.1)
+        out[0] -= 1
+        return 0 if query == '"integer programming" AND ("rail freight" OR "freight railway")' else 50
+    model = answer(["rail freight", "freight railway"], ["timetable", "integer programming", "train dispatching"],
+                   task_backup=["train scheduling", "crew rostering"])
+    started = time.monotonic()
+    checked = asyncio.run(search_query.check(model, count))
+    elapsed = time.monotonic() - started
+    setting, task = '("rail freight" OR "freight railway")', '(timetable OR "integer programming" OR "train dispatching")'
+    wider = task[:-1] + ' OR "train scheduling")'
+    assert asked == ['"rail freight"', '"freight railway"', 'timetable', '"integer programming"', '"train dispatching"',
+                     f'"rail freight" AND {task}', f'"freight railway" AND {task}', f'timetable AND {setting}',
+                     f'"integer programming" AND {setting}', f'"train dispatching" AND {setting}',
+                     '"train scheduling"', f'"train scheduling" AND {setting}',
+                     # the setting terms' counts are read again against the task block they are searched with
+                     f'"rail freight" AND {wider}', f'"freight railway" AND {wider}', f"{setting} AND {wider}"]
+    assert [p["query"] for p in checked["probes"]] == asked  # the record follows the order the queries were asked in
+    assert 1 < peak[0] <= 4 and elapsed < 0.1 * len(asked) * 0.75
+    assert [(c["phrase"], c["with_other_block"], c["backup_for"]) for c in checked["checks"]] == [
+        ("rail freight", 50, None), ("freight railway", 50, None), ("timetable", 50, None),
+        ("integer programming", 0, None), ("train dispatching", 50, None), ("train scheduling", 50, "integer programming")]
+    assert checked["checks"][-1]["used_because"] == search_query.ZERO_WITH_OTHER
+    assert [t["phrase"] for t in checked["terms"] if not t["dropped"]] == [
+        "rail freight", "freight railway", "timetable", "integer programming", "train dispatching", "train scheduling"]
+    assert checked["meta"]["train scheduling"] == {"kind": None, "why": None, "backup_for": "integer programming",
+                                                   "used_because": search_query.ZERO_WITH_OTHER}
+    assert checked["backups_left"] == {"setting": [], "task": ["crew rostering"]}
+    assert checked["warnings"] == [{"phrase": "integer programming", "block": "task",
+                                    "warning": "no_records_with_other_block"}]
+    assert checked["searchable"] and checked["gate_count"] == 50
+
 
 # ---- the proposal, its queries and its correction ------------------------------------------------------------
 

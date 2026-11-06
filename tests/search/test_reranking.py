@@ -225,26 +225,43 @@ def test_a_discovery_run_reranks_its_list_or_keeps_the_fused_order_and_says_so(t
 
 
 LOOKED_UP = "We SYNTHETIC measure the packet size that lowers the energy of a sensor node."
+CROSSREF_ABSTRACT = "We SYNTHETIC report the energy a sensor node spends per packet."
+# Four records without an abstract: Semantic Scholar holds 90 and 91, Crossref holds 92, nobody holds 93.
+EMPTY = (90, 91, 92, 93)
 
 
 class LookupPool(Pool):
-    """The ranking fixture's OpenAlex, with one record that has no abstract and Semantic Scholar holding it.
+    """The ranking fixture's OpenAlex, with four records that have no abstract, Semantic Scholar and Crossref.
 
-    `delay` holds back Semantic Scholar's first answer that long (the lookup before the rerank runs out of time)."""
+    `delay` holds back Semantic Scholar's first answer that long (the lookup before the rerank runs out of time);
+    `peak` is the most Crossref requests that were out at once. `filler` more records without an abstract, which no
+    source holds, make the window wider than the 200 requests the read stage's lookup may send; OpenAlex then pages."""
 
-    def __init__(self, delay=0.0):
-        target = work(90, STRONG, "x") | {"abstract_inverted_index": None}
-        super().__init__(works=pool(8) + [target])
-        self.delay, self.lookups = delay, []
+    def __init__(self, delay=0.0, filler=0):
+        targets = [work(n, STRONG, "x") | {"abstract_inverted_index": None} for n in EMPTY]
+        unread = [work(1000 + n, "SYNTHETIC unread record", "x") | {"abstract_inverted_index": None} for n in range(filler)]
+        super().__init__(works=pool(8) + targets + unread)
+        self.delay, self.lookups, self.crossref, self.out, self.peak = delay, [], [], 0, 0
+        self.wait = 0.01 if filler else 0.05
 
     def __call__(self, request):
+        if request.url.host == "api.crossref.org":
+            return self._crossref(request)
+        params = request.url.params
+        if (request.url.host == "api.openalex.org" and "search.semantic" not in params
+                and not (params.get("per_page") == "1" and params.get("select") == "id")):
+            start, size = int(params.get("cursor", "0").replace("*", "0")), int(params.get("per_page", "100"))
+            more = start + size < len(self.works)
+            return httpx.Response(200, json={"meta": {"count": len(self.works),
+                                                      "next_cursor": str(start + size) if more else None},
+                                             "results": self.works[start:start + size]})
         if request.url.host != "api.semanticscholar.org":
             return super().__call__(request)
         ids = json.loads(request.content)["ids"]
         self.lookups.append(ids)
+        held = {"DOI:10.1/oa.90": LOOKED_UP, "DOI:10.1/oa.91": LOOKED_UP + " 91"}
         reply = httpx.Response(200, json=[{"paperId": f"s2-{i}", "externalIds": {"DOI": doi.removeprefix("DOI:")},
-                                           "abstract": LOOKED_UP if doi == "DOI:10.1/oa.90" else None,
-                                           "referenceCount": None} for i, doi in enumerate(ids)])
+                                           "abstract": held.get(doi), "referenceCount": None} for i, doi in enumerate(ids)])
         if self.delay and len(self.lookups) == 1:
             async def late():
                 await asyncio.sleep(self.delay)
@@ -252,52 +269,100 @@ class LookupPool(Pool):
             return late()
         return reply
 
+    def _crossref(self, request):
+        doi = request.url.path.removeprefix("/works/").replace("%2F", "/")
+        self.crossref.append(doi)
 
-@pytest.mark.parametrize("case", ["filled", "time_ceiling", "before_d152"])
-def test_a_missing_abstract_is_looked_up_before_the_rerank_within_its_frozen_caps(tmp_path, monkeypatch, case):
-    # D152: the record without an abstract reaches the reranker with the abstract a lookup source holds; one the
-    # lookup could not fill in time is scored on its title, as a run frozen before D152 still does.
-    if case == "time_ceiling":
-        monkeypatch.setattr(small_batch, "PRERANK_LOOKUP", {"max_records": 20, "seconds": 0.2})
-    if case == "before_d152":
-        freeze = small_batch.freeze_budget
+        async def answer():
+            self.out += 1
+            self.peak = max(self.peak, self.out)
+            await asyncio.sleep(self.wait)
+            self.out -= 1
+            if doi != "10.1/oa.92":
+                return httpx.Response(404)
+            return httpx.Response(200, json={"message": {"DOI": doi, "abstract": f"<jats:p>{CROSSREF_ABSTRACT}</jats:p>"}})
+        return answer()
 
-        def older(*args):
-            budget = freeze(*args)
+
+@pytest.mark.parametrize("case", ["d153", "window_above_200", "time_ceiling", "d152", "before_d152"])
+def test_missing_abstracts_are_looked_up_before_the_rerank_and_unfilled_records_keep_their_place(tmp_path, monkeypatch, case):
+    # D152: a record without an abstract reaches the reranker with the abstract a lookup source holds. D153: every such
+    # record of the window is asked about (Semantic Scholar's batch, then Crossref 4 in flight), the window is 8x, and
+    # one still without an abstract keeps its fused place instead of being scored on its title. A budget frozen with
+    # D152's rule, or before D152, keeps what it did.
+    freeze = small_batch.freeze_budget
+
+    def frozen(*args):
+        budget = freeze(*args)
+        if case == "time_ceiling":
+            budget["inspection"]["prerank_lookup"] |= {"seconds": 0.2}
+        if case in ("d152", "before_d152"):
+            budget["inspection"].pop("rerank")
+            budget["inspection"]["prerank_lookup"] = {"max_records": 20, "seconds": 5}
+        if case == "before_d152":
             budget["inspection"].pop("prerank_lookup")
-            return budget
-        monkeypatch.setattr(small_batch, "freeze_budget", older)
-    handler = LookupPool(delay=3.0 if case == "time_ceiling" else 0.0)
+        return budget
+    monkeypatch.setattr(small_batch, "freeze_budget", frozen)
+    handler = LookupPool(delay=3.0 if case == "time_ceiling" else 0.0, filler=200 if case == "window_above_200" else 0)
     local = RerankingLocal()
     s = Session(tmp_path, monkeypatch, handler=handler, local=local, setting=BUILTIN)
-    s.store.set_setting(rerankers.SETTING, {"enabled": True, "provider": "builtin", "model": RER, "pool_factor": 2, "timeout_seconds": 60})
+    # No factor saved: the run's frozen rule gives it (8 since D153, 4 before).
+    s.store.set_setting(rerankers.SETTING, {"enabled": True, "provider": "builtin", "model": RER, "timeout_seconds": 60})
     try:
-        rid, run_id, view, run = s.discover()
+        rid, run_id, view, run = s.discover(**({"effort": "standard"} if case == "window_above_200" else {}))
         listing = s.store.existing_step(run_id, small_batch.LIST_KEY)["output"]
         step = s.store.existing_step(run_id, small_batch.PRERANK_LOOKUP_KEY)
+        rerank = s.store.existing_step(run_id, small_batch.RERANK_KEY)["output"]
         prerank_steps = {row["operation_key"]: dict(row) for row in s.store.conn.execute(
             "SELECT operation_key, status, error_code FROM run_steps WHERE run_id = ? AND operation_key LIKE 'prerank:%'",
             (run_id,))}
     finally:
         s.close()
-    title = f"{STRONG} 90"
-    target = next(r for r in listing["manifest"]["pool"] if r["title"] == title)
+    heads = {n: next(r for r in listing["manifest"]["pool"] if r["title"] == f"{STRONG} {n}") for n in EMPTY}
     documents = local.reranked[0]
-    assert sorted(listing["order"]) == sorted(dict.fromkeys(listing["manifest"]["user_priority"] + listing["automatic_order"]))
-    if case == "before_d152":
-        assert step is None and not prerank_steps
-        assert rerankers.document(title, None) in documents and target["abstract"] is None
+    automatic, order = listing["automatic_order"], listing["order"]
+    assert sorted(order) == sorted(dict.fromkeys(listing["manifest"]["user_priority"] + automatic))
+    assert rerank["pool_factor"] == (8.0 if case in ("d153", "window_above_200", "time_ceiling") else 4.0)
+    if case == "window_above_200":
+        # Standard reads 50, so the window is 400 places: all 212 records, 204 of them without an abstract. Every one
+        # is asked about: Semantic Scholar in two batches, Crossref about all 202 it left, beyond the read stage's 200.
+        assert len(rerank["candidate_ids"]) + len(rerank["kept_in_place"]) == len(listing["manifest"]["pool"]) == 212
+        assert step["output"]["status"] == "done" and len(step["output"]["asked"]) == 204
+        assert step["output"]["rule"]["max_requests"] == 419
+        assert [len(batch) for batch in handler.lookups] == [200, 4]
+        assert len(handler.crossref) == len(set(handler.crossref)) == 202 and handler.peak == 4
+        assert len(rerank["kept_reasons"]) == 201  # Semantic Scholar filled two and Crossref one
         return
-    assert step["status"] == "succeeded" and step["output"]["asked"] == [target["id"]]
-    assert step["output"]["rule"] == small_batch.PRERANK_LOOKUP
-    if case == "filled":
-        assert (step["output"]["status"], step["output"]["filled"]) == ("done", [target["id"]])
-        assert rerankers.document(title, LOOKED_UP) in documents and target["abstract"] == LOOKED_UP
-        assert handler.lookups[0] == ["DOI:10.1/oa.90"]  # only the record without an abstract was asked about
-    else:
+    if case == "before_d152":
+        assert step is None and not prerank_steps and "kept_reasons" not in rerank
+        assert all(rerankers.document(f"{STRONG} {n}", None) in documents for n in EMPTY)
+        return
+    assert step["status"] == "succeeded" and sorted(step["output"]["asked"]) == sorted(h["id"] for h in heads.values())
+    assert sorted(handler.lookups[0]) == [f"DOI:10.1/oa.{n}" for n in EMPTY]  # only the records without an abstract
+    if case == "time_ceiling":
         assert (step["output"]["status"], step["output"]["filled"]) == ("time_ceiling", [])
         assert prerank_steps["prerank:record_lookup:semantic_scholar:0"]["error_code"] == "lookup_time_ceiling"
-        assert rerankers.document(title, None) in documents and target["abstract"] is None
+        assert all(heads[n]["abstract"] is None for n in EMPTY)
+    else:
+        assert step["output"]["status"] == "done"
+        assert sorted(step["output"]["filled"]) == sorted(heads[n]["id"] for n in (90, 91, 92))
+        assert [heads[n]["abstract"] for n in EMPTY] == [LOOKED_UP, LOOKED_UP + " 91", CROSSREF_ABSTRACT, None]
+        # Semantic Scholar filled two; Crossref was asked about the other two only, 4 in flight under D153's rule.
+        assert sorted(handler.crossref) == ["10.1/oa.92", "10.1/oa.93"]
+        assert handler.peak == (2 if case == "d153" else 1)
+        for n, text in ((90, LOOKED_UP), (91, LOOKED_UP + " 91"), (92, CROSSREF_ABSTRACT)):
+            assert rerankers.document(f"{STRONG} {n}", text) in documents
+    unfilled = [n for n in EMPTY if heads[n]["abstract"] is None]
+    if case == "d152":
+        # D152's rule still sends the record nobody could fill on its title alone.
+        assert rerankers.document(f"{STRONG} 93", None) in documents and "kept_reasons" not in rerank
+        return
+    # D153: a record still without an abstract is not sent, keeps its fused place, and the step says why.
+    assert not any(f"{STRONG} {n}" in text for n in unfilled for text in documents)
+    assert rerank["kept_reasons"] == {heads[n]["id"]: "no_abstract" for n in unfilled}
+    assert listing["reranker"]["applied"] is True
+    for n in unfilled:
+        assert order.index(heads[n]["id"]) == automatic.index(heads[n]["id"])
 
 
 # ---- Settings ----------------------------------------------------------------------------------------

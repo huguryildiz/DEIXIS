@@ -23,9 +23,10 @@ does not name its field is still searched within it.
 
 Write the query:
 
-1. Pick the best query of AT MOST 6 terms in total, with at least 1 term in
-   each block (for example 2 + 4 or 3 + 3). Fewer is fine when fewer terms
-   describe the question well; never add a term just to fill a place.
+1. Pick the best query of AT MOST 8 terms in total and AT MOST 4 in a block,
+   with at least 1 term in each block (for example 3 + 4 or 4 + 4). Fewer is
+   fine when fewer terms describe the question well; never add a term just to
+   fill a place.
 2. The task block holds at least one term that names the topic or the work
    done — the problem, the object designed or optimised, the process studied —
    in words any relevant paper would use. Method, algorithm or model-family
@@ -35,14 +36,17 @@ Write the query:
    specific method may keep that method as a main term.
 3. Every term, together with a term of the other block, should find papers
    worth screening. Prefer the terms authors of that field actually write in
-   titles and abstracts, including common synonyms and abbreviations (e.g.
-   "ILP" beside "integer linear programming").
+   titles and abstracts. When the main term of a block has a common synonym,
+   variant or abbreviation that authors use instead of it, put that in the same
+   block too (e.g. "UWSN" beside "underwater sensor network", "seawater"
+   beside "underwater", "ILP" beside "integer linear programming").
 4. Give every chosen term its `kind`: `topic` (the subject, problem, object or
    process), `method` (a method, algorithm or model family), `population` (the
    people, organisms or group studied) or `other`; and a short `why`, at most
    8 words.
 5. Then add up to 3 backup terms per block (`setting_backup`, `task_backup`),
-   in order, to be used if a chosen term finds nothing.
+   in order, to be used if a chosen term finds nothing, alone or together with
+   the other block.
 6. Order every list from the most important term to the least.
 
 Leave out:

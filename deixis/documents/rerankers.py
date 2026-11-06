@@ -60,11 +60,13 @@ NAMES = {"voyage": "Voyage AI", "cohere": "Cohere", "jina": "Jina AI", "zeroentr
 VOYAGE_TOTAL_TOKENS = 500_000  # estimated "query × documents + documents" per request, under the API's 600K
 # How many records are reranked, as a multiple of how many a run reads (the depth's N): 2 means the reranker sees twice
 # what is read, so a record just below the read cutoff can move above it and one above can move out. 1 only reorders
-# what would be read anyway. 4 is the default: on 100 BioASQ questions reranking the first 200 of a Standard run
-# (factor 4) raised recall@50 about twice as much as the first 100 (factor 2), for Qwen3 and Voyage alike (D83). It is
-# not a measured optimum; 3 and higher pools were not tried.
-DEFAULT_POOL_FACTOR = 4.0
-MIN_POOL_FACTOR, MAX_POOL_FACTOR = 1.0, 4.0
+# what would be read anyway. On 100 BioASQ questions reranking the first 200 of a Standard run (factor 4) raised
+# recall@50 about twice as much as the first 100 (factor 2), for Qwen3 and Voyage alike (D83). Since D153 the default
+# is 8 (400 at Standard, the MAX_CANDIDATES cap), so a work the fused order put between 200 and 400 can still be lifted;
+# 8 was not measured. A run reads its factor through the rule its budget froze (`small_batch.rerank_choice`): a budget
+# frozen before D153 keeps 4 and never more.
+DEFAULT_POOL_FACTOR = 8.0
+MIN_POOL_FACTOR, MAX_POOL_FACTOR = 1.0, 8.0
 MAX_CANDIDATES = 400  # never more records than this in one rerank, whatever the depth and factor
 DEFAULT_TIMEOUT_SECONDS = 180
 MIN_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS = 10, 900

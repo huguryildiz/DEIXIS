@@ -1,11 +1,14 @@
 """The keyword query a model writes for an sw discovery run, and what code does with it (D92, slice 13h).
 
-The model chooses at most six terms for the setting and task blocks, with a kind, a short reason and up to three
-backups per block (`references/search-query.md`). Code counts every chosen term twice, alone and together with the
-terms the other block is searched with. A term no record holds on its own is replaced by the next backup of its block; a term
-that finds nothing together with the other block stays and is shown as a warning, because an automatic swap there
-was not measured. No count removes a term for being large: the one-million rule of the code vocabulary does not
-apply to what the model wrote.
+The model chooses at most eight terms for the setting and task blocks, at most four in a block, with a kind, a short
+reason and up to three backups per block (`references/search-query.md`, D154; six in all before). Code counts every
+chosen term twice, alone and together with the terms the other block is searched with. A term no record holds on its
+own is replaced by the next backup of its block. A term that finds records alone but none together with the other
+block stays, shown as a warning, and since D154 the next unused backup of its block that does find records with the
+other block is searched beside it, while the query stays within eight terms. No count removes a term for being large:
+the one-million rule and the manageable-total narrowing of the code vocabulary do not apply to what the model wrote.
+The counts are asked four at a time (`vocabulary.counts_in_flight`); which queries are asked, and the order of every
+stored row, are those of asking them one by one.
 
 The model's terms become the proposal's vocabulary and the code's own query (slice 13g) is searched beside it, as
 the second measurement's "model + code" arm did (`notes/archive/sw/sw-model-query-experiment-2026-09-24/`). The code vocabulary
@@ -17,16 +20,20 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable
 
+from deixis.domain.contracts import SEARCH_QUERY_MAX_TERMS
 from deixis.domain.vocabulary import words
 from deixis.providers import query_compiler
 from deixis.providers.query_compiler import quoted
 from deixis.workflow.search.approval import SIDE_LISTS
 from deixis.workflow.search.criterion import norm
-from deixis.workflow.search.vocabulary import GATE_BLOCKS
+from deixis.workflow.search.vocabulary import GATE_BLOCKS, counts_in_flight
 
 ASSIGNMENT = "search_query"  # the vocabulary's `block_assignment`, and the origin of the model's own terms
 ATTEMPTS = 2  # the first call, and one more when the user asks for it after a failure
-MAX_COUNT_REQUESTS = 24  # six chosen terms and six backups, each counted alone and with the other block
+# Eight chosen terms and six backups, each counted alone and with the other block, the gate, and the recounts a
+# backup used beside a term (D154) asks for. Was 24 for six chosen terms.
+MAX_COUNT_REQUESTS = 40
+ZERO_WITH_OTHER = "no_records_with_other_block"  # why a backup was tried beside a term (D154), and why it was not kept
 KINDS = ("topic", "method", "population", "other")
 THRESHOLDS = {"attempts": ATTEMPTS, "max_count_requests": MAX_COUNT_REQUESTS}
 # The providers whose keyword search takes an author filter (a statement research's named authors, R5). Semantic
@@ -73,22 +80,34 @@ class _Counter:
         self.count, self.known, self.asked, self.skipped = count, {}, 0, 0
         self.probes: list[dict[str, Any]] = []
 
+    async def many(self, queries: list[str]) -> list[int | None]:
+        """The counts of `queries` in their order, the new ones asked at once (D154). The ceiling, the cache and the
+        probe record follow the list's order, as asking them one by one would."""
+        plan: list[str | None] = []
+        asking: list[str] = []
+        for query in queries:
+            if query in self.known or query in asking:
+                plan.append(query)
+            elif self.asked >= MAX_COUNT_REQUESTS:
+                self.skipped += 1
+                plan.append(None)
+            else:
+                self.asked += 1
+                asking.append(query)
+                plan.append(query)
+        self.known.update(zip(asking, await counts_in_flight(self.count, asking)))
+        values = [None if query is None else self.known[query] for query in plan]
+        self.probes += [{"query": query, "count": value} for query, value in zip(plan, values) if query is not None]
+        return values
+
     async def __call__(self, query: str) -> int | None:
-        if query in self.known:
-            value = self.known[query]
-        elif self.asked >= MAX_COUNT_REQUESTS:
-            self.skipped += 1
-            return None
-        else:
-            self.asked += 1
-            value = self.known[query] = await self.count(query)
-        self.probes.append({"query": query, "count": value})
-        return value
+        return (await self.many([query]))[0]
 
 
-async def _with_other(phrase: str, alone: int | None, other: list[str], counter: _Counter) -> int | None:
-    """The count of a term together with the terms the other block is searched with, once no swap changes them."""
-    return await counter(f"{quoted(phrase)} AND {_group(other)}") if other and alone != 0 else None
+def _with_other(phrase: str, alone: int | None, other: list[str]) -> str | None:
+    """The query that counts a term together with the terms the other block is searched with, or None when it is not
+    asked (the term finds nothing alone, or the other block has no term)."""
+    return f"{quoted(phrase)} AND {_group(other)}" if other and alone != 0 else None
 
 
 def _queried(terms: list[dict[str, Any]]) -> dict[str, list[str]]:
@@ -104,13 +123,17 @@ def _warnings(row: dict[str, Any]) -> list[str]:
 
 
 async def check(answer: dict[str, Any], count: Callable[[str], Awaitable[int | None]]) -> dict[str, Any]:
-    """Count the answer's chosen terms and put a backup in place of each one no record holds (D92).
+    """Count the answer's chosen terms, put a backup in place of each one no record holds (D92), and search a backup
+    beside a term that finds nothing together with the other block (D154).
 
     Every term is counted alone first, so every swap is made before any term is counted with the other block; the
-    count with the other block then reads the terms that block is really searched with. Every count, every
-    replacement and every warning is returned, so the approval card and the protocol show the numbers that decided
-    the query. A block left with no term is returned as it is: the caller treats that answer as one that cannot be
-    searched.
+    count with the other block then reads the terms that block is really searched with. A backup is then tried beside
+    each kept term whose count with the other block is 0, setting block first, in order: it is searched when it finds
+    records together with the other block and the query has room (SEARCH_QUERY_MAX_TERMS), and otherwise left out with
+    its reason. Since a backup only adds records, a count read before it was added is read again against the final
+    query. Every count, every replacement and every warning is returned, so the approval card and the protocol show
+    the numbers that decided the query. A block left with no term is returned as it is: the caller treats that answer
+    as one that cannot be searched.
     """
     chosen, backups = answer_terms(answer)
     counter = _Counter(count)
@@ -118,14 +141,14 @@ async def check(answer: dict[str, Any], count: Callable[[str], Awaitable[int | N
             for block in GATE_BLOCKS for row in chosen[block]}
     terms: list[dict[str, Any]] = []
     checks: list[dict[str, Any]] = []
+    counted = iter(await counter.many([quoted(row["phrase"]) for block in GATE_BLOCKS for row in chosen[block]]))
     for block in GATE_BLOCKS:
         spare = list(backups[block])
         for row in chosen[block]:
-            phrase, replaced = row["phrase"], None
+            phrase, replaced, alone = row["phrase"], None, next(counted)
             while True:
-                alone = await counter(quoted(phrase))
                 checks.append({"phrase": phrase, "block": block, "alone": alone, "with_other_block": None,
-                               "backup_for": replaced})
+                               "backup_for": replaced, **({"used_because": "zero_results"} if replaced else {})})
                 if alone != 0:
                     terms.append(_term(phrase, block, ASSIGNMENT, alone))
                     break
@@ -133,11 +156,52 @@ async def check(answer: dict[str, Any], count: Callable[[str], Awaitable[int | N
                 if not spare:
                     break
                 replaced, phrase = phrase, spare.pop(0)
-                meta[phrase] = {"kind": None, "why": None, "backup_for": replaced}
+                meta[phrase] = {"kind": None, "why": None, "backup_for": replaced, "used_because": "zero_results"}
+                alone = await counter(quoted(phrase))
         backups[block] = spare
     queried = _queried(terms)
-    for row in checks:
-        row["with_other_block"] = await _with_other(row["phrase"], row["alone"], queried[_other(row["block"])], counter)
+    against: dict[int, str | None] = {}  # the query each row's count with the other block was read with
+
+    async def pair(rows: list[dict[str, Any]]) -> None:
+        queries = [_with_other(row["phrase"], row["alone"], queried[_other(row["block"])]) for row in rows]
+        asked = [query for query in queries if query is not None]
+        found = iter(await counter.many(asked))
+        for row, query in zip(rows, queries):
+            row["with_other_block"], against[id(row)] = (next(found) if query is not None else None), query
+
+    def kept(row: dict[str, Any]) -> bool:
+        return any(t["phrase"] == row["phrase"] and not t["dropped"] for t in terms)
+
+    await pair(checks)
+    for block in GATE_BLOCKS:
+        spare = backups[block]
+        for row in [r for r in checks if r["block"] == block and kept(r)]:
+            if row["with_other_block"] != 0 or not spare:
+                continue
+            if _with_other(row["phrase"], row["alone"], queried[_other(block)]) != against[id(row)]:
+                await pair([row])  # the other block gained a backup since this count was read
+                if row["with_other_block"] != 0:
+                    continue
+            while spare and sum(map(len, queried.values())) < SEARCH_QUERY_MAX_TERMS:
+                backup = spare[0]
+                alone = await counter(quoted(backup))
+                entry = {"phrase": backup, "block": block, "alone": alone, "with_other_block": None,
+                         "backup_for": row["phrase"], "used_because": ZERO_WITH_OTHER}
+                await pair([entry])
+                if alone is None or (alone != 0 and entry["with_other_block"] is None):
+                    break  # a count that could not be read decides nothing: the backup stays unused
+                spare.pop(0)
+                checks.append(entry)
+                found = isinstance(entry["with_other_block"], int) and entry["with_other_block"] > 0
+                terms.append(_term(backup, block, ASSIGNMENT, alone,
+                                   None if found else "zero_results" if alone == 0 else ZERO_WITH_OTHER))
+                if found:
+                    meta[backup] = {"kind": None, "why": None, "backup_for": row["phrase"], "used_because": ZERO_WITH_OTHER}
+                    queried = _queried(terms)
+                    break
+    # A backup searched beside a term only adds records, so a count read before it was added is read again.
+    await pair([row for row in checks if kept(row)
+                and _with_other(row["phrase"], row["alone"], queried[_other(row["block"])]) != against[id(row)]])
     gate = f"{_group(queried['setting'])} AND {_group(queried['task'])}" if all(queried.values()) else None
     return {
         "terms": terms,

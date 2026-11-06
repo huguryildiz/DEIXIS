@@ -6,6 +6,7 @@ import gzip
 import logging
 import sqlite3
 import subprocess
+import sys
 import time
 import tracemalloc
 from contextlib import contextmanager
@@ -111,7 +112,8 @@ def test_d4_corrupt_or_truncated_pdf_says_it_could_not_be_read(tmp_path, data):
 
 
 def test_d4_a_crashed_pdf_child_says_it_could_not_be_read_and_keeps_stderr_in_the_log(tmp_path, monkeypatch, caplog):
-    """D4: the child exits non-zero: `failed` with the fixed sentence; its stderr tail goes to the log, never to `error`."""
+    """D4: the child exits non-zero: `failed` with the fixed sentence (on Windows, P10 W2: the reader stopped, with its exit
+    code, never an unreadable PDF); its stderr tail goes to the log, never to `error`."""
     stderr = b"Traceback (most recent call last): boom in secret/path/doc.pdf"
 
     def crashed(argv, env, timeout, max_memory):
@@ -120,7 +122,8 @@ def test_d4_a_crashed_pdf_child_says_it_could_not_be_read_and_keeps_stderr_in_th
     monkeypatch.setattr(pdf, "_run_watched", crashed)
     with caplog.at_level(logging.WARNING, logger=pdf.log.name):
         result = pdf.extract_pdf(write(tmp_path, make_pdf(["SYNTHETIC page"])))
-    assert (result.status, result.error, result.page_count) == ("failed", UNREADABLE, 0)
+    expected = "the PDF reader stopped (exit code 1)" if sys.platform == "win32" else UNREADABLE
+    assert (result.status, result.error, result.page_count) == ("failed", expected, 0)
     assert "secret/path" not in result.error and "Traceback" not in result.error
     assert "secret/path" in caplog.text
 

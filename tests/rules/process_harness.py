@@ -41,10 +41,12 @@ BACKUP_DRIVER = HERE / "backup_driver.py"
 RESTORE_DRIVER = HERE / "restore_driver.py"
 REFUSED_PORTS = {8765, *range(8858, 8865)}
 QUESTION = "How is molecule release scheduling optimized?"
-# The harness names processes by `ps` (pid, start time, command) and kills with POSIX signals; on Windows a crash is
-# TerminateProcess and ownership is a Job Object, which W2 (child protection on Windows) builds and tests.
-POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="W2: the real-process kill harness reads `ps` and sends "
-                                "POSIX signals; its Windows form comes with the Job Object work")
+# The harness names processes by `ps` (pid, start time, process group) and kills with POSIX signals (SIGKILL, SIGTERM,
+# SIGINT). Not ported to Windows: there a crash is TerminateProcess and ownership is a Job Object, whose child cases
+# (timeout, parent killed, grandchildren, breakaway) are tested in test_windows_jobs.py; the restart-after-kill
+# integrity cases stay POSIX-only until the installed-app acceptance (W5) kills the sidecar on Windows.
+POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="the real-process kill harness reads `ps` and sends "
+                                "POSIX signals; Windows child kills are tested in test_windows_jobs.py")
 
 
 # ---- processes ------------------------------------------------------------------------------------------------

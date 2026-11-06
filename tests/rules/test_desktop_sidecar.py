@@ -33,10 +33,11 @@ from deixis.config import Settings
 from fakes import FakeAdapter
 
 REPO = Path(__file__).resolve().parents[2]
-# The desktop process layer (child record, watchdog, session launcher) is macOS only; the Windows sidecar start and its
-# Job Object ownership come in W3 and W4.
-MAC_DESKTOP = pytest.mark.skipif(sys.platform == "win32", reason="W3: the desktop sidecar process layer (child record, "
-                                 "watchdog, session launcher) is macOS only; Windows uses a Job Object instead")
+# The desktop process layer (child record, watchdog, session launcher) is macOS only; on Windows the shell starts the
+# sidecar in a Job Object (W4) and the frozen entry refuses those modules (W3).
+MAC_DESKTOP = pytest.mark.skipif(sys.platform == "win32", reason="the desktop sidecar process layer (child record, "
+                                 "watchdog, session launcher) is macOS only; Windows owns children with Job Objects "
+                                 "(tests/rules/test_windows_jobs.py)")
 
 
 def test_the_frozen_entry_runs_only_listed_child_modules_with_the_child_argv(monkeypatch, tmp_path):

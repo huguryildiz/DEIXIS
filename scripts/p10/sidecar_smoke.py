@@ -49,6 +49,7 @@ real model, a clean machine or the window.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -111,14 +112,17 @@ def free_port() -> int:
 # Every process: pid -> (parent pid, start time, command line). PowerShell starts in about a second, so on Windows a
 # child that lives less than that can be missed by the watch; what is left at the end is always in the last listing.
 CIM = ("[Console]::OutputEncoding = [Text.Encoding]::UTF8; Get-CimInstance Win32_Process | ForEach-Object "
-       "{ '{0}`t{1}`t{2}`t{3}' -f $_.ProcessId, $_.ParentProcessId, $_.CreationDate.Ticks, $_.CommandLine }")
+       '{ "{0}`t{1}`t{2}`t{3}" -f $_.ProcessId, $_.ParentProcessId, $_.CreationDate.Ticks, $_.CommandLine }')
 
 
 def processes() -> dict[int, tuple[int, str, str]]:
     table: dict[int, tuple[int, str, str]] = {}
     if WINDOWS:
-        out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", CIM], capture_output=True,
-                             encoding="utf-8", errors="replace", timeout=120).stdout
+        encoded = base64.b64encode(CIM.encode("utf-16-le")).decode()  # no quoting through the Windows command line
+        out = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
+                             capture_output=True, encoding="utf-8", errors="replace", timeout=120).stdout
+        if not out.strip():
+            raise RuntimeError("Get-CimInstance Win32_Process listed no process")
         for line in out.splitlines():
             parts = line.split("\t", 3)
             if len(parts) == 4 and parts[0].isdigit() and parts[1].isdigit():
@@ -199,8 +203,11 @@ class Sidecar:
             self.seen.setdefault(pid, lstart(pid, table))
 
     def leftovers(self) -> list[tuple[int, str]]:
+        """Every process seen while it ran that still lives, and every process now naming the bundle or the data folder."""
         table = processes()
-        return [(pid, start) for pid, start in self.seen.items() if start and lstart(pid, table) == start]
+        named = {(pid, start) for pid, (_, start, command) in table.items()
+                 if pid != os.getpid() and any(m in command for m in self.marks)}
+        return sorted({(pid, start) for pid, start in self.seen.items() if start and lstart(pid, table) == start} | named)
 
     def kill(self) -> None:
         if self.proc.poll() is None:

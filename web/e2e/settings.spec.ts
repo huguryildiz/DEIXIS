@@ -380,9 +380,11 @@ test.describe.serial('S24: the Settings page', () => {
     await page.goto(server.url('#/settings/general'))
     const about = page.locator('.set-about')
     await expect(about).toContainText('AGPL-3.0-or-later')
-    await expect(about.getByRole('link', { name: 'Source code for this version' })).toHaveAttribute('href', 'https://github.com/huguryildiz/DEIXIS')
     await expect(about.getByRole('link', { name: 'Open the list' })).toHaveAttribute('href', '/api/about/notices')
     const url = new URL((await about.getByRole('link', { name: 'Report a problem on GitHub' }).getAttribute('href'))!)
+    // A released version (about_routes.TAGGED_VERSIONS) links its tag; any other the repository.
+    const source = await about.getByRole('link', { name: 'Source code for this version' }).getAttribute('href')
+    expect(['https://github.com/huguryildiz/DEIXIS', `https://github.com/huguryildiz/DEIXIS/tree/v${url.searchParams.get('version')}`]).toContain(source)
     expect(url.origin + url.pathname).toBe('https://github.com/huguryildiz/DEIXIS/issues/new')
     expect([...url.searchParams.keys()].sort()).toEqual(['body', 'os', 'template', 'version'])
     expect(url.searchParams.get('body')).toBe(`DEIXIS version: ${url.searchParams.get('version')}\nOS: ${url.searchParams.get('os')}`)

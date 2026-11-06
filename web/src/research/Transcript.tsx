@@ -811,7 +811,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const lineText = (key: PhaseKey, state: PhaseState, group: Step[]): string => {
     const fallback = () => [title(key, state, group), detail(key, state, group)].filter(Boolean).join(' · ')
     if (run.kind !== 'discovery' && !(run.kind === 'answer' && (key === 'answer' || key === 'review'))) return fallback()
-    if (state === 'attention' && run.status !== 'completed') return stopText(key)
+    // A phase that needs attention in a run still at work (a provider failed, the run went on) did not stop it (D148).
+    if (state === 'attention' && run.status !== 'completed' && !active) return stopText(key)
     const live = state === 'running'
     const ongoing = (text: string, progress = '') => [`${text}…`, progress].filter(Boolean).join(' · ')
     switch (key) {
@@ -1157,7 +1158,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
           return <li key={key} className={`chat-step step is-${state}${detailsOpen ? ' open' : ''}${state === 'attention' ? ' att' : ''}`}>
             <button type="button" className="chat-step-line" disabled={!details} aria-expanded={details ? detailsOpen : undefined}
               onClick={() => setOpenPhases(phases => ({ ...phases, [key]: !detailsOpen }))}>
-              <span className="chat-step-icon ico" role="img" aria-label={t(state === 'done' ? 'Done' : state === 'running' ? 'In progress' : 'Stopped here')}>
+              <span className="chat-step-icon ico" role="img" aria-label={t(state === 'done' ? 'Done' : state === 'running' ? 'In progress' : run.status === 'completed' || active ? 'Needs attention' : 'Stopped here')}>
                 {state === 'running' ? <span className="step-spin base" /> : state === 'attention' ? <TriangleAlert size={16} className="base" /> : <Icon size={16} className="base" />}
                 {details && <ChevronRight size={16} className="chev" />}
               </span>
@@ -1165,7 +1166,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
                 {missed.length > 0 && <> · <em className="chat-step-missed">{missed.map(([id]) => <ConnectionIcon key={id} id={id} />)}{missed.map(([id, name]) => {
                   const failure = searches.filter(row => row.provider === id && !['completed', 'zero_results'].includes(row.status)).at(-1)
                   return serviceErrorSentence({ kind: serviceKind(failure?.error?.service_kind ?? failure?.error?.error_kind ?? failure?.status, failure?.error?.http_status),
-                    service: name, resetAt: failure?.error?.reset_at, effect: run.status === 'completed' ? 'continued' : undefined })
+                    service: name, resetAt: failure?.error?.reset_at, effect: run.status === 'completed' || active ? 'continued' : undefined })
                 }).join(' ')}</em></>}</span>
               {noFullText && <span className="step-flag"><TriangleAlert size={11} aria-hidden />{t('No full text')}</span>}
             </button>

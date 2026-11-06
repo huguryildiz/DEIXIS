@@ -85,6 +85,9 @@ CAPABILITIES = {
     "unsupported_tasks": ["synthesis", "candidate_development", "claim_check", "experiment"],
 }
 MAX_DOWNLOADS_PER_RUN = 8
+# D148: a search request the provider answered with a 5xx is sent once more after this wait. A search is a read, so a
+# second send changes nothing at the provider; it is counted like every other attempt.
+SERVER_ERROR_RETRY_SECONDS = 2.0
 # Steps whose repairs are counted from their stored sessions across a stop and a resume (D249), so an output already
 # judged invalid twice is recovered without a new call. The follow-up answer joined in S22a.
 STORED_REPAIR_TASKS = ("grounded_answer", "followup_answer", "followup_search_query")
@@ -2201,11 +2204,15 @@ class ResearchFlow:
 
         With `stop`, a stop asked during the wait before a network retry sends nothing more and returns None: the
         page is left unwritten and a resumed run asks for it again (second review of 13f, 2026-09-23). The 429 waits
-        inside a connector's own `send` are not interrupted."""
+        inside a connector's own `send` are not interrupted.
+
+        A 5xx reply is sent once more after `SERVER_ERROR_RETRY_SECONDS` while the query has allowance left (D148); a
+        stop or the stage cutoff during that wait keeps the failed reply as the page's outcome."""
         query_key = page.query_key if page else None
         transport = transport if transport is not None else {}
         reserve = connector.requests_per_search * (1 + (page.rate_limit_retries if page else MAX_RATE_LIMIT_RETRIES))
         attempts = 0
+        server_retried = False
         while True:
             key = connector.api_key()
             if connector.key_required and not key:
@@ -2252,6 +2259,13 @@ class ResearchFlow:
                 if stop is not None and stop():
                     return None
                 continue
+            if (not server_retried and outcome.status == "failed" and (outcome.http_status or 0) >= 500
+                    and (page is None or self._query_requests(run_id, page.query_key) < page.allowance)
+                    and not (stop is not None and stop())):
+                server_retried = True
+                await asyncio.sleep(SERVER_ERROR_RETRY_SECONDS)
+                if stop is None or not stop():
+                    continue
             return dispatched
 
     def _record_search(self, run: dict[str, Any], step: dict[str, Any], query: dict[str, Any], outcome: SearchOutcome | facade.Dispatched,

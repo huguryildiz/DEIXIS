@@ -293,3 +293,27 @@ def _without_total(providers):
     return handler
 
 
+
+
+def test_a_page_the_provider_answers_with_a_server_error_is_sent_once_more(library, tmp_path, monkeypatch):
+    # D148: a 5xx is sent again once, after a short wait; a second 5xx is the page's outcome and nothing more is sent.
+    from deixis.workflow.run import flow as flow_module
+    monkeypatch.setattr(flow_module, "SERVER_ERROR_RETRY_SECONDS", 0)
+    providers = PagedProviders(openalex_total=5)
+    failures = {ALPHA: 1, BETA: 2}
+
+    def handler(request):
+        text = request.url.params.get("search.title_and_abstract")
+        if "per_page" in request.url.params and failures.get(text, 0) > 0:
+            failures[text] -= 1
+            providers.queries.append((text, "503"))
+            return httpx.Response(503, text="SYNTHETIC service unavailable")
+        return providers(request)
+
+    research_flow, scope = keyword_reader(library, tmp_path, handler)
+    plan = keyword_plan(library, scope, (ALPHA, BETA))
+    rows = read_pages(research_flow, library, scope, plan)
+    assert [(r["query_text"], r["status"], r["result_count"]) for r in rows] == [
+        (ALPHA, "completed", 5), (BETA, "failed", 0)]
+    assert [p for p in providers.queries if p[0] == ALPHA] == [(ALPHA, "503"), (ALPHA, 0)]
+    assert [p for p in providers.queries if p[0] == BETA] == [(BETA, "503"), (BETA, "503")]

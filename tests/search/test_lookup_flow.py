@@ -331,6 +331,128 @@ def test_a_crossref_chunk_stopped_between_two_answers_keeps_the_first_answer_s_e
         assert payload[f"10.1/{n}"]["abstract"] == crossref[f"10.1/{n}"]["abstract"]
 
 
+async def headers_out(request):
+    """What a real connection reports once the request's own headers are written to it (D156): httpcore's trace."""
+    import httpcore
+    if (trace := request.extensions.get("trace")) is not None:
+        await trace("http11.send_request_headers.started", {"request": httpcore.Request(request.method, str(request.url))})
+        await trace("http11.send_request_headers.complete", {})
+
+
+async def headers_back(request):
+    """What it reports once the response headers came back (D156)."""
+    if (trace := request.extensions.get("trace")) is not None:
+        await trace("http11.receive_response_headers.complete", {})
+
+
+def written(request, reply=None):
+    """A reply the way a real connection gives it: headers out, then the answer's headers back. `reply` None never
+    answers."""
+    async def answer():
+        await headers_out(request)
+        if reply is None:
+            await asyncio.sleep(3600)
+        await headers_back(request)
+        return reply
+    return answer()
+
+
+@pytest.mark.parametrize("case", ["connects", "never_connects", "proxy_tunnel_stalls", "retry_wait"])
+def test_a_lookup_request_counts_as_out_only_while_its_own_headers_are_written_and_unanswered(case):
+    """D156, through httpx and httpcore themselves: a request still waiting for its connection, or whose HTTPS proxy
+    answered CONNECT but whose own request never went out, was never sent; one whose headers went out is, until its
+    response headers come back, so a 429 waiting for its retry is not out."""
+    import httpcore
+
+    class NeverConnects(httpcore.AsyncNetworkBackend):
+        async def connect_tcp(self, *args, **kwargs):
+            await asyncio.sleep(3600)
+
+    class StallingTls(httpcore.AsyncMockStream):
+        async def start_tls(self, *args, **kwargs):
+            await asyncio.sleep(3600)
+
+    class Tunnel(httpcore.AsyncMockBackend):
+        async def connect_tcp(self, *args, **kwargs):
+            return StallingTls(list(self._buffer))
+
+    ok = [b"HTTP/1.1 200 OK\r\n", b"Content-Length: 2\r\n\r\n", b"{}"]
+    events = []
+
+    async def one():
+        transport = httpx.AsyncHTTPTransport()
+        if case == "proxy_tunnel_stalls":
+            transport._pool = httpcore.AsyncHTTPProxy("http://proxy.invalid:3128",
+                                                      network_backend=Tunnel([b"HTTP/1.1 200 OK\r\n\r\n"]))
+        else:
+            backend = {"connects": httpcore.AsyncMockBackend(ok), "never_connects": NeverConnects(),
+                       "retry_wait": httpcore.AsyncMockBackend([b"HTTP/1.1 429 Too Many Requests\r\n",
+                                                                b"Retry-After: 5\r\nContent-Length: 0\r\n\r\n"])}[case]
+            transport._pool = httpcore.AsyncConnectionPool(network_backend=backend)
+        token = common.on_send.set(events.append)
+        try:
+            async with httpx.AsyncClient(transport=transport) as http:
+                return await asyncio.wait_for(common.send(http, "https://api.crossref.org/works/10.1/7", {}, {},
+                                                          "SYNTHETIC lookup", "public"), 0.3)
+        finally:
+            common.on_send.reset(token)
+    if case == "connects":
+        response, _ = asyncio.run(one())
+        assert response.status_code == 200 and events == ["sent", "answered"]
+        return
+    with pytest.raises(TimeoutError):
+        asyncio.run(one())  # cut short: still connecting, in the tunnel, or waiting out the 429
+    assert events == (["sent", "answered"] if case == "retry_wait" else [])
+
+
+def test_a_retry_after_resume_cut_short_keeps_its_record_open_whatever_the_earlier_attempt_answered(tmp_path, monkeypatch):
+    """D156 review: Crossref fails for 7 while 8 is still out, the round stops, and the resumed chunk asks 7 again; that
+    retry is still out when the round's time ends. 7 is open: its latest request went out and has no answer, even
+    though an earlier attempt of the same step stored a failure for it. A record whose request never went out is not,
+    nor one whose 429 came back and whose retry wait the round cut short."""
+    from deixis.workflow.search import small_batch
+    sources = Sources(works=[work(0, abstract=ABSTRACT, doi="10.1/0"), work(7, doi="10.1/7"), work(8, doi="10.1/8"),
+                             work(9, doi="10.1/9"), work(6, doi="10.1/6")], crossref_status=500)
+    app = app_for(tmp_path, monkeypatch, sources)
+    client = client_of(app)
+    rid, run_id, _, _ = discover(client)
+    store, settings = app.state.store, app.state.settings
+    by_id = records_of(store, rid)
+    chunk = [{"source_version_id": by_id[f"W{n}"], "doi": f"10.1/{n}"} for n in (7, 8, 9, 6)]
+    phase = []
+
+    def crossref(request):
+        doi = request.url.path.removeprefix("/works/").replace("%2F", "/")
+        if doi == "10.1/9":  # never connects: no headers are written, nothing is sent
+            async def hang():
+                await asyncio.sleep(3600)
+            return hang()
+        if doi == "10.1/6":  # answered with a 429; its retry wait is cut short, so nothing of it is out
+            return written(request, httpx.Response(429, headers={"retry-after": "2"}, text="SYNTHETIC rate limit"))
+        if doi == "10.1/7" and not phase:
+            return written(request, httpx.Response(500, text="SYNTHETIC failure"))
+        return written(request)  # 8 both times, and 7's retry: out until the round's time ends
+
+    async def round_():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(crossref)) as http:
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(lookups._crossref_step(store, http, settings, store.run(run_id), 0, chunk,
+                                                              small_batch.PRERANK_PREFIX, 8, record_sent=True), 0.3)
+    try:
+        asyncio.run(round_())  # 7 fails, 8 is out: the run stops
+        failed = store.conn.execute("SELECT status FROM record_lookups WHERE source_version_id = ? AND provider = ?",
+                                    (by_id["W7"], "crossref")).fetchone()["status"]
+        phase.append("resumed")
+        asyncio.run(round_())  # the resume retries 7 and asks 8 again; both are out at the ceiling
+        open_ = small_batch.lookup_open(store, store.run(run_id), [by_id[f"W{n}"] for n in (7, 8, 9, 6)])
+        step = store.existing_step(run_id, f"{small_batch.PRERANK_PREFIX}record_lookup:crossref:0")
+    finally:
+        client.__exit__(None, None, None)
+    assert failed == "failed"
+    assert sorted(step["output"]["sent"]) == sorted(by_id[f"W{n}"] for n in (7, 8, 6))
+    assert sorted(open_) == sorted(by_id[f"W{n}"] for n in (7, 8))
+
+
 # ---- the flags and what they route ------------------------------------------------------------
 
 

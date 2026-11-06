@@ -37,7 +37,10 @@ PRERANK_RECORDS = 400
 # anywhere in the process holds the Semantic Scholar pacer in a cooldown, this round and the read stage's lookups skip
 # it and say so. Version 2 budgets keep 200 ids a batch, the effort's waits and no skip.
 PRERANK_S2_BATCH = 400
-PRERANK_LOOKUP = {"version": 3, "max_records": PRERANK_RECORDS, "seconds": 8, "crossref_in_flight": 4,
+# D156 (version 4): Crossref's single requests go 8 in flight, not 4 (the 8 s round ran out in 4 of 6 D155 pilot runs),
+# and each request stores the records it was sent for, so only a record whose request went out and did not come back
+# in time is `lookup_open`; one never sent is settled. The request count is unchanged: one per record either way.
+PRERANK_LOOKUP = {"version": 4, "max_records": PRERANK_RECORDS, "seconds": 8, "crossref_in_flight": 8,
                   "s2_waits": 0, "s2_batch": PRERANK_S2_BATCH, "s2_cooldown_skip": True,
                   "max_requests": (math.ceil(PRERANK_RECORDS / PRERANK_S2_BATCH) + PRERANK_RECORDS + 1
                                    + math.ceil(PRERANK_RECORDS / SCOPUS_LOOKUP_BATCH))}
@@ -45,7 +48,8 @@ PRERANK_LOOKUP = {"version": 3, "max_records": PRERANK_RECORDS, "seconds": 8, "c
 # of it still without an abstract keeps its fused place. A budget frozen without `rerank` keeps the rule before D153.
 # D155 (version 3): it keeps its place only with a route to text (an open PDF on a version of its work, or a file
 # stored for it) or while its lookup before the rerank did not settle; otherwise the reranker scores its title, as
-# before D153. A version 2 rule holds every such record.
+# before D153. A version 2 rule holds every such record. Which lookups did not settle is the lookup rule's: `unsettled`
+# under its version 3, `lookup_open` since version 4 (D156).
 RERANK_RULE = {"version": 3, "pool_factor": 8.0, "max_pool_factor": 8.0, "hold_without_abstract": "with_text_route"}
 RERANK_RULE_BEFORE_D153 = {"version": 1, "pool_factor": 4.0, "max_pool_factor": 4.0, "hold_without_abstract": False}
 # 5: one closest place for a work whose reading found no criterion part (D152). 6: every abstract-only work's
@@ -574,7 +578,8 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
             # rerank that did not settle. A record no source can fill is scored on its title, as before D153, and
             # takes no read place it cannot use (four Elsevier works, 6 Nov pilot).
             lookup = (store.existing_step(run["id"], PRERANK_LOOKUP_KEY) or {}).get("output") or {}
-            unsettled = set(lookup.get("unsettled") or ())
+            # D156: a lookup rule since version 4 stores only the records whose request went out and was not answered.
+            unsettled = set(lookup["lookup_open"] if "lookup_open" in lookup else lookup.get("unsettled") or ())
             routed = text_routes(store, [manifest["versions"][rid]["work_id"] for rid in bare])
             reasons |= {rid: "no_abstract_text_route" if manifest["versions"][rid]["work_id"] in routed
                         else "no_abstract_lookup_open" for rid in bare
@@ -663,7 +668,8 @@ async def prerank_lookups(flow: Any, run: dict[str, Any], scope: dict[str, Any],
     D153's rule (version 2) asks about every such record of the window, up to 400, within 8 s, with Crossref's single
     requests 4 in flight; D152's (no version) the first 20 within 5 s, one request at a time. D155's (version 3) is
     version 2 with Semantic Scholar failing fast (no 429 wait, one batch of 400, skipped in a cooldown) and the asked
-    records no source answered about stored as `unsettled`. Nothing runs when no
+    records no source answered about stored as `unsettled`. D156's (version 4) has Crossref 8 in flight and stores, as
+    `lookup_open`, only the records a request of this round was sent for and did not answer. Nothing runs when no
     reranker would be sent anything, or for a run frozen before D152 (no `prerank_lookup` in its budget). The chosen
     records and what was filled are stored on `prerank_lookups`; a run resumed after it succeeded asks nothing again.
     A filled record's open `no_abstract` decision, if an earlier run wrote one, is replaced by the read stage's
@@ -694,6 +700,7 @@ async def prerank_lookups(flow: Any, run: dict[str, Any], scope: dict[str, Any],
     if deadline is not None:
         seconds = min(seconds, (deadline - store.clock.now()).total_seconds())
     status = "done" if asked else "nothing_to_ask"
+    version = rule.get("version", 0)
     if asked and seconds <= 0:
         status = "no_time_left"
     elif asked:
@@ -705,19 +712,23 @@ async def prerank_lookups(flow: Any, run: dict[str, Any], scope: dict[str, Any],
                 lambda: flow._checkpoint(run["id"], run["scope_revision"]),
                 rule.get("max_requests", lookups.MAX_LOOKUP_REQUESTS), only=set(asked), prefix=PRERANK_PREFIX,
                 crossref_in_flight=rule.get("crossref_in_flight", 1), s2_waits=rule.get("s2_waits"),
-                s2_batch=rule.get("s2_batch", S2_LOOKUP_BATCH), s2_cooldown_skip=bool(rule.get("s2_cooldown_skip"))),
-                timeout=seconds)
+                s2_batch=rule.get("s2_batch", S2_LOOKUP_BATCH), s2_cooldown_skip=bool(rule.get("s2_cooldown_skip")),
+                record_sent=version >= 4), timeout=seconds)
         except TimeoutError:
             status = "time_ceiling"
             # The request cut short is not asked again by this round: its step says it ran out of time.
             for row in store.conn.execute("SELECT id FROM run_steps WHERE run_id = ? AND operation_key LIKE ?"
                                           " AND status = 'running'", (run["id"], PRERANK_PREFIX + "%")).fetchall():
-                store.finish_step(row["id"], "failed", error_code="lookup_time_ceiling",
+                # D156: a version 4 step keeps what it stored, its `sent` records among it.
+                store.finish_step(row["id"], "failed", output=store.step_output(row["id"]) if version >= 4 else None,
+                                  error_code="lookup_time_ceiling",
                                   error={"error": f"the lookups before the rerank had {seconds:g} s in all"})
     filled = [svid for svid in asked if store.conn.execute(
         "SELECT 1 FROM passages WHERE source_version_id = ? AND kind = 'abstract'", (svid,)).fetchone()]
     settled = {}
-    if rule.get("version", 0) >= 3:
+    if version >= 4:
+        settled = {"lookup_open": lookup_open(store, run, [svid for svid in asked if svid not in filled])}
+    elif version == 3:
         settled = {"unsettled": unsettled(store, run, scope, [svid for svid in asked if svid not in filled])}
     store.finish_step(step["id"], "succeeded", output=output | {"status": status, "filled": filled} | settled)
 
@@ -753,6 +764,29 @@ def unsettled(store: Any, run: dict[str, Any], scope: dict[str, Any], records: l
                 left.append(svid)
                 break
     return left
+
+
+def lookup_open(store: Any, run: dict[str, Any], records: list[str]) -> list[str]:
+    """Of these records still without an abstract, those whose latest request of the lookup before the rerank went out
+    and whose answer did not come in time (D156): it was still out at the round's ceiling, or its step was cut short.
+
+    "Went out" means the request's own headers were written to an open connection (httpcore's trace event); each
+    request then puts its records on its step's stored `out`, and its response headers or its stored answer (`found`,
+    `not_found` or `failed`) take them off again, so a 429 waiting for its retry is not out, and a record retried after
+    a resume is out again until that retry answers. A `found` or `not_found` from a source in any run settles the
+    record for that source. A record no request of the round went out for is not open, whatever the reason (the round
+    ran out first, it waited for a connection or a proxy tunnel, its transport reports no trace events, or every source
+    already had its answer), so the reranker scores it on its title unless it has a route to text."""
+    out: set[tuple[str, str]] = set()
+    for row in store.conn.execute("SELECT operation_key, output_json FROM run_steps WHERE run_id = ?"
+                                  " AND operation_key LIKE ?", (run["id"], PRERANK_PREFIX + "record_lookup:%")):
+        provider = row["operation_key"].removeprefix(PRERANK_PREFIX).split(":")[1]
+        out |= {(svid, provider) for svid in (json.loads(row["output_json"]) if row["output_json"] else {}).get("out")
+                or ()}
+    return [svid for svid in records if any(not store.conn.execute(
+        "SELECT 1 FROM record_lookups WHERE source_version_id = ? AND provider = ?"
+        " AND status IN ('found', 'not_found')",
+        (svid, provider)).fetchone() for record, provider in out if record == svid)]
 
 
 async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> None:

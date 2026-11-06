@@ -20,6 +20,7 @@ filter keeps it away from the model rather than letting the model's `exclude` re
 from __future__ import annotations
 
 import asyncio
+from contextlib import contextmanager
 from typing import Any, Callable
 
 import httpx
@@ -289,7 +290,8 @@ async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Se
                              scope: dict[str, Any], words: tuple[str, ...],
                              checkpoint: Callable[[], None], limit: int = MAX_LOOKUP_REQUESTS, *, only: set[str] | None = None,
                              prefix: str = "", crossref_in_flight: int = 1, s2_waits: int | None = None,
-                             s2_batch: int = lookup.S2_LOOKUP_BATCH, s2_cooldown_skip: bool = False) -> None:
+                             s2_batch: int = lookup.S2_LOOKUP_BATCH, s2_cooldown_skip: bool = False,
+                             record_sent: bool = False) -> None:
     """Plan and send this run's DOI lookups. A failed request is recorded and the run goes on (D18).
 
     No request is sent twice: a step that already succeeded is skipped whole, and inside a chunk a record the
@@ -302,6 +304,9 @@ async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Se
     (0 before the rerank, so a refused batch fails at once and Crossref gets the time left), `s2_batch` is its batch
     size, and `s2_cooldown_skip` sends no Semantic Scholar batch while a 429 anywhere in this process holds its pacer
     in a cooldown: the step stores that it skipped, and Crossref and Scopus are asked as when Semantic Scholar fails.
+    D156: with `record_sent`, each request stores on its step, as `sent` and `out`, the records it is about once its own
+    headers are written to an open connection, and takes them off `out` when its response headers or its stored answer
+    come back, so a round cut short can tell a request still out from one never sent or already answered.
     """
     run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
     # How many 429s one batch waits out is this research's effort (D88). `quick` waits for none: the refused batch
@@ -312,18 +317,18 @@ async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Se
     for number, batch in enumerate(plan["batches"]):
         checkpoint()
         await _semantic_scholar_step(store, http, settings, run, number, batch,
-                                     waits if s2_waits is None else s2_waits, prefix, s2_cooldown_skip)
+                                     waits if s2_waits is None else s2_waits, prefix, s2_cooldown_skip, record_sent)
     plan_cr = _code_step(store, run_id, f"{prefix}lookup_plan:crossref", "code:lookup_plan",
                          lambda: plan_crossref(store, rid, revision, scope, words, len(plan["batches"]), limit, only=only))
     for number, chunk in enumerate(plan_cr["chunks"]):
         checkpoint()
-        await _crossref_step(store, http, settings, run, number, chunk, prefix, crossref_in_flight)
+        await _crossref_step(store, http, settings, run, number, chunk, prefix, crossref_in_flight, record_sent)
     checkpoint()
     spent = len(plan["batches"]) + sum(len(chunk) for chunk in plan_cr["chunks"])
     plan_sc = await _scopus_plan(store, http, run, scope, words, spent, limit, only=only, prefix=prefix)
     for number, chunk in enumerate(plan_sc["chunks"]):
         checkpoint()
-        await _scopus_step(store, http, settings, run, number, chunk, waits, prefix)
+        await _scopus_step(store, http, settings, run, number, chunk, waits, prefix, record_sent)
     checkpoint()
 
 
@@ -340,7 +345,7 @@ def _code_step(store: Store, run_id: str, key: str, kind: str, build: Callable[[
 
 async def _semantic_scholar_step(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
                                  number: int, batch: list[dict[str, Any]], waits: int = MAX_RATE_LIMIT_RETRIES,
-                                 prefix: str = "", cooldown_skip: bool = False) -> None:
+                                 prefix: str = "", cooldown_skip: bool = False, record_sent: bool = False) -> None:
     """One batch request. The whole batch shares one request, so one failure leaves every record in it `failed`.
 
     `waits` is how many 429s this effort waits out (D88); it is written on the step, so a skipped wait is on the
@@ -362,8 +367,9 @@ async def _semantic_scholar_step(store: Store, http: httpx.AsyncClient, settings
     api_key = connector.api_key()
     token = common.s2_skip_in_cooldown.set(cooldown_skip)
     try:
-        dispatched = await facade.dispatch_lookup("semantic_scholar", "doi_lookup", http,
-            tuple(row["doi"] for row in asking), api_key, settings.contact_email, waits)
+        with _marking(store, step["id"], [row["source_version_id"] for row in asking], record_sent):
+            dispatched = await facade.dispatch_lookup("semantic_scholar", "doi_lookup", http,
+                tuple(row["doi"] for row in asking), api_key, settings.contact_email, waits)
     finally:
         common.s2_skip_in_cooldown.reset(token)
     settle_dispatch(store, run["id"], step, dispatched, reserved, "lookup_requests", "lookup_sends")
@@ -373,6 +379,7 @@ async def _semantic_scholar_step(store: Store, http: httpx.AsyncClient, settings
     payload_ref = _write_new_payload(settings, step["id"], outcome.raw_payload) if outcome.raw_payload is not None else None
     added = [store_answer(store, row["source_version_id"], "semantic_scholar", answers[row["doi"]], step["id"],
                           payload_ref) for row in asking]
+    _answered(store, step["id"], [row["source_version_id"] for row in asking], record_sent)
     # The step succeeded whatever the source answered: a failure is an answer stored on the record, not a broken run.
     # D155: a batch not sent because a 429 holds the pacer in a cooldown leaves each record `failed`, as a refused
     # batch does, so the record goes on exactly as after a real 429; the step says it was skipped and for how many.
@@ -384,7 +391,8 @@ async def _semantic_scholar_step(store: Store, http: httpx.AsyncClient, settings
 
 
 async def _crossref_step(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
-                         number: int, chunk: list[dict[str, Any]], prefix: str = "", in_flight: int = 1) -> None:
+                         number: int, chunk: list[dict[str, Any]], prefix: str = "", in_flight: int = 1,
+                         record_sent: bool = False) -> None:
     """One chunk of single-record requests, `in_flight` of them out at once (D153; 1 sends them one after another).
     Each answer is written as soon as it comes back, before the request that waits for its place is sent."""
     step = store.step(run["id"], f"{prefix}record_lookup:crossref:{number}", "provider_lookup:crossref")
@@ -400,8 +408,9 @@ async def _crossref_step(store: Store, http: httpx.AsyncClient, settings: Settin
         asked += 1
         reserved = 1 + MAX_RATE_LIMIT_RETRIES
         store.add_usage(run["id"], "lookup_requests", reserved)
-        dispatched = await facade.dispatch_lookup("crossref", "doi_lookup", http, (row["doi"],),
-                                                   None, settings.contact_email)
+        with _marking(store, step["id"], [row["source_version_id"]], record_sent):
+            dispatched = await facade.dispatch_lookup("crossref", "doi_lookup", http, (row["doi"],),
+                                                       None, settings.contact_email)
         settle_dispatch(store, run["id"], step, dispatched, reserved, "lookup_requests", "lookup_sends")
         answer, outcome = dispatched.answers[row["doi"]], dispatched.outcome
         payload_ref = None
@@ -410,6 +419,7 @@ async def _crossref_step(store: Store, http: httpx.AsyncClient, settings: Settin
             # so a chunk resumed after a stop cannot replace the evidence of an answer already stored (D153 review).
             payload_ref = _write_new_payload(settings, step["id"], {row["doi"]: outcome.raw_payload})
         added.append(store_answer(store, row["source_version_id"], "crossref", answer, step["id"], payload_ref))
+        _answered(store, step["id"], [row["source_version_id"]], record_sent)
 
     if in_flight <= 1:
         for row in chunk:
@@ -472,7 +482,7 @@ async def _scopus_plan(store: Store, http: httpx.AsyncClient, run: dict[str, Any
 
 async def _scopus_step(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
                        number: int, chunk: list[dict[str, Any]], waits: int = MAX_RATE_LIMIT_RETRIES,
-                       prefix: str = "") -> None:
+                       prefix: str = "", record_sent: bool = False) -> None:
     """One planned chunk: one OR-query request for its safe DOIs and one single request per unsafe DOI.
 
     Each request's answers are written before the next request is sent; usage is reserved per request.
@@ -495,8 +505,9 @@ async def _scopus_step(store: Store, http: httpx.AsyncClient, settings: Settings
         reserved = 1 + waits
         store.add_usage(run["id"], "lookup_requests", reserved)
         dois = tuple(dict.fromkeys(row["doi"] for row in group))
-        dispatched = await facade.dispatch_lookup("scopus", "doi_lookup", http, dois,
-                                                   api_key, settings.contact_email, waits)
+        with _marking(store, step["id"], [row["source_version_id"] for row in group], record_sent):
+            dispatched = await facade.dispatch_lookup("scopus", "doi_lookup", http, dois,
+                                                       api_key, settings.contact_email, waits)
         settle_dispatch(store, run["id"], step, dispatched, reserved, "lookup_requests", "lookup_sends")
         outcome = dispatched.outcome
         payload_ref = None
@@ -511,6 +522,7 @@ async def _scopus_step(store: Store, http: httpx.AsyncClient, settings: Settings
         for row in group:
             added.append(store_answer(store, row["source_version_id"], "scopus", dispatched.answers[row["doi"]],
                                       step["id"], payload_ref))
+        _answered(store, step["id"], [row["source_version_id"] for row in group], record_sent)
     store.finish_step(step["id"], "succeeded", output=transport_output(store, step, _counts(added, asked=asked)
                                                                      | {"rate_limit_retries": waits}))
 
@@ -536,7 +548,43 @@ def settle_dispatch(store, run_id, step, dispatched, reserved, request_key, send
 
 def transport_output(store, step, output):
     stored = store.step_output(step["id"]) or {}
-    return output | ({"transport": stored["transport"]} if "transport" in stored else {})
+    return output | {key: stored[key] for key in ("transport", "sent", "out") if key in stored}
+
+
+@contextmanager
+def _marking(store: Store, step_id: str, records: list[str], on: bool):
+    """D156: while `on`, every attempt of the request sent inside, once its own headers are written to an open
+    connection (`common.on_send`), adds these records to the step's stored `sent` (every record a request went out for) and `out`
+    (sent, no answer yet); its response headers take them off `out` again, so a 429 waiting for its retry is not out.
+    A wait at a pacer, a start gate or for a connection stores nothing, and so does a transport that reports no trace
+    events: its records count as never sent."""
+    if not on:
+        yield
+        return
+
+    def mark(event: str) -> None:
+        if event == "answered":
+            _answered(store, step_id, records, True)
+            return
+        output = store.step_output(step_id) or {}
+        for key in ("sent", "out"):
+            listed = output.setdefault(key, [])
+            listed += [record for record in records if record not in listed]
+        store.set_step_output(step_id, output)
+    token = common.on_send.set(mark)
+    try:
+        yield
+    finally:
+        common.on_send.reset(token)
+
+
+def _answered(store: Store, step_id: str, records: list[str], on: bool) -> None:
+    """D156: these records' answers are stored, so their latest request is no longer out. A record retried after a
+    resume goes back into `out` when the retry is sent, whatever an earlier attempt answered."""
+    output = store.step_output(step_id) if on else None
+    if output and output.get("out"):
+        output["out"] = [record for record in output["out"] if record not in records]
+        store.set_step_output(step_id, output)
 
 
 def _counts(added: list[dict[str, int]], asked: int, status: str | None = None) -> dict[str, Any]:

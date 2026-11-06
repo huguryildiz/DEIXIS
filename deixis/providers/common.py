@@ -40,6 +40,13 @@ request_log: ContextVar[Any] = ContextVar("request_log", default=None)
 # the pacer, queued or not, and comes back `rate_limited` with `error_kind` S2_COOLDOWN instead of waiting.
 s2_skip_in_cooldown: ContextVar[bool] = ContextVar("s2_skip_in_cooldown", default=False)
 S2_COOLDOWN = "s2_cooldown"
+# D156: set by a lookup before the rerank whose run froze the rule, and called with "sent" once an attempt's own request
+# headers are written to an open connection and with "answered" once its response headers came back (httpcore's trace
+# events for that request, not for a proxy's CONNECT), so the step stores which records have a request out. A wait at
+# a pacer, a start gate, for a connection or before a 429's retry has nothing out. A transport that emits no such trace
+# event marks nothing: its records count as never sent, the conservative side (scored on their titles).
+SENT_EVENT, ANSWERED_EVENT = "send_request_headers.complete", "receive_response_headers.complete"
+on_send: ContextVar[Callable[[str], None] | None] = ContextVar("on_send", default=None)
 
 
 def begin_request(location: str) -> Any:
@@ -260,11 +267,28 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
                 # Stored before the client has it: a stop or a crash from here on leaves it "not known whether sent".
                 # A stop during a wait before this point (a pacer, the start gate) sent nothing and leaves no row.
                 begun = begin_request(location)
+                traced = {}
+                if (mark := on_send.get()) is not None:
+                    method, host, ours = (b"POST" if json_body is not None else b"GET"), (parts.hostname or ""), False
+
+                    async def trace(name: str, info: dict[str, Any]) -> None:
+                        nonlocal ours
+                        if name.endswith("send_request_headers.started"):
+                            # A proxy's CONNECT is another request, to the proxy: only this request's own events count.
+                            request = info.get("request")
+                            ours = (request is not None and request.method == method
+                                    and request.url.host.decode("ascii", "replace").lower() == host.lower())
+                        elif ours and name.endswith(SENT_EVENT):
+                            mark("sent")
+                        elif ours and name.endswith(ANSWERED_EVENT):
+                            mark("answered")
+                    traced = {"extensions": {"trace": trace}}
                 try:
                     if json_body is not None:
-                        reply = await client.post(url, params=params, headers=headers, json=json_body, timeout=timeout)
+                        reply = await client.post(url, params=params, headers=headers, json=json_body, timeout=timeout,
+                                                  **traced)
                     else:
-                        reply = await client.get(url, params=params, headers=headers, timeout=timeout)
+                        reply = await client.get(url, params=params, headers=headers, timeout=timeout, **traced)
                     if s2 and reply.status_code in rate_limit_statuses:
                         # D155: set while this attempt still holds the gate, so no caller queued behind it is let
                         # through first. Every Semantic Scholar caller holds off; one that will retry holds them off

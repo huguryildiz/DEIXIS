@@ -139,11 +139,13 @@ def proc_table() -> dict[str, dict]:
     return table
 
 
+RUNNER_FOLDERS = ("_diag", "_temp", "_actions", "_tool", "runners")  # the CI runner's own, written while a job runs
+
+
 def download_roots(home: Path, work: Path) -> list[tuple[Path, bool]]:
-    """Where a misdirected download could land: the home folder's own files, the usual user folders, the shell's
-    current folder (this checkout: Wry's default without a Downloads folder) and the scenario folder."""
-    user = [home / d for d in ("Documents", "Desktop", "Pictures", "Music", "Videos", "Templates", "Public")]
-    return [(home, False), *((d, True) for d in user if d.is_dir()), (Path.cwd(), True), (work, True)]
+    """Where a misdirected download could land: the whole home folder (this checkout, the shell's current folder and
+    Wry's default without a Downloads folder, is inside it) and the scenario folder."""
+    return [(home, True), (work, True)]
 
 
 def files_state(roots: list[tuple[Path, bool]], skip: set[Path]) -> dict[Path, tuple[int, int]]:
@@ -154,7 +156,8 @@ def files_state(roots: list[tuple[Path, bool]], skip: set[Path]) -> dict[Path, t
     for root, deep in roots:
         for folder, dirs, names in os.walk(root):
             here = Path(folder)
-            dirs[:] = [d for d in dirs if deep and not d.startswith(".") and d != "__pycache__" and here / d not in skip]
+            dirs[:] = [d for d in dirs if deep and not d.startswith(".") and d not in ("__pycache__", *RUNNER_FOLDERS)
+                       and here / d not in skip]
             for name in names:
                 if here / name in skip:
                     continue
@@ -746,7 +749,9 @@ def format_rows(fmt: str, exe: str, marks: list[str], work: Path, env: dict[str,
             row(f"{fmt}_download", None if drv is None else False,
                 reason=f"no health within 60 s or no WebDriver ({sc.driver_error})")
         else:
-            before = {p.name for p in downloads.glob("*")} if downloads.exists() else set()
+            downloads.mkdir(exist_ok=True)
+            (downloads / f"SYNTHETIC earlier download {fmt}.md").write_text("SYNTHETIC: must stay as it is\n")
+            before = {p.name for p in downloads.glob("*")}
             api = sc.session()
             rid = new_research(api, f"{fmt} download")
             api.upload(f"/api/researches/{rid}/uploads", "synthetic.pdf", make_pdf(
@@ -760,6 +765,7 @@ def format_rows(fmt: str, exe: str, marks: list[str], work: Path, env: dict[str,
             opened = wait_for(lambda: title[:40] in drv.text(), 30, 1)
             time.sleep(2)
             fresh = lambda suffix: sorted(p for p in downloads.glob(f"*{suffix}") if p.name not in before)  # noqa: E731
+            kept_downloads = {p: sha256(p) for p in downloads.glob("*") if p.is_file()} if downloads.exists() else {}
             skip = {downloads, evidence, bin_dir, Path.cwd() / "acceptance.txt", *(x.data for x in scenarios),
                     *work.glob("driver-*.log"), *work.glob("shell-*.err")}  # this script's own logs
             roots = download_roots(Path(env["HOME"]), work)
@@ -784,16 +790,20 @@ def format_rows(fmt: str, exe: str, marks: list[str], work: Path, env: dict[str,
             md_text = md[0].read_text(encoding="utf-8") if md else ""
             csv_text = csv[0].read_text(encoding="utf-8-sig") if csv else ""
             after_state = files_state(roots, skip)
-            elsewhere = sorted(str(p) for p, st in after_state.items() if elsewhere_before.get(p) != st)[:20]
+            elsewhere = sorted(str(p) for p in set(after_state) | set(elsewhere_before)  # added, changed or removed
+                               if elsewhere_before.get(p) != after_state.get(p))[:20]
+            downloads_kept = all(p.is_file() and sha256(p) == digest for p, digest in kept_downloads.items())
             shell_log = work / f"driver-{fmt}-download.log"
             shell_said = [ln for ln in shell_log.read_text(errors="replace").splitlines() if "DEIXIS: Download" in ln
                           or "DEIXIS: download" in ln] if shell_log.exists() else []
             for path in md + csv:
                 shutil.move(str(path), evidence / f"{fmt}-download-{path.name}")
             row(f"{fmt}_download", bool(all(steps.values()) and md and title in md_text and csv
-                                        and "synthetic" in csv_text.lower() and kept_first and free_names and not elsewhere),
+                                        and "synthetic" in csv_text.lower() and kept_first and free_names and not elsewhere
+                                        and downloads_kept),
                 run=(finished or {}).get("status"), opened=bool(opened), steps=steps, files=[p.name for p in md + csv],
                 first_files_unchanged=kept_first, second_got_free_name=free_names, written_elsewhere=elsewhere,
+                earlier_downloads_unchanged=downloads_kept, earlier_downloads=len(kept_downloads),
                 downloads_folder=str(downloads), report_bytes=len(md_text), csv_lines=len(csv_text.splitlines()),
                 shell_said=shell_said[:8])
 

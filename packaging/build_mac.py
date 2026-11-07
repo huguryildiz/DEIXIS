@@ -42,7 +42,7 @@ IDENTITY = "DEIXIS Self-Signed"  # packaging/mac_signing_identity.py makes it (D
 BACKEND_ID = "org.deixis.backend"
 
 sys.path.insert(0, str(SIDECAR))
-from build import folder_bytes, is_macho, run  # noqa: E402
+from build import folder_bytes, is_macho, run, stale_sources  # noqa: E402
 
 
 def files(folder: Path) -> dict[str, str]:
@@ -98,6 +98,14 @@ def main() -> int:
     if not (built / "deixis-backend").is_file():
         print(f"No sidecar build in {built}; run without --skip-sidecar.", file=sys.stderr)
         return 2
+    if args.skip_sidecar:
+        stale = stale_sources(built)
+        if stale:
+            print(f"The sidecar in {built} was built from source that has changed since "
+                  f"({len(stale)} file(s)):\n" + "\n".join(f"  {name}" for name in stale[:20])
+                  + ("\n  ..." if len(stale) > 20 else "") + "\nBuild it again without --skip-sidecar.",
+                  file=sys.stderr)
+            return 2
     # The backend reads the Keychain: one certificate and a fixed identifier keep its designated requirement the same
     # from build to build, so the person's "Always Allow" survives an update (D171).
     run(["codesign", "--force", "--sign", identity, "--identifier", BACKEND_ID, str(built / "deixis-backend")])

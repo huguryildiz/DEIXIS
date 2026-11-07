@@ -89,6 +89,30 @@ def folder_bytes(folder: Path) -> int:
     return sum(p.stat().st_size for p in folder.rglob("*") if p.is_file() and not p.is_symlink())
 
 
+def stale_sources(built: Path, repo: Path = REPO) -> list[str]:
+    """The package's Python files that have changed since this sidecar was built, newest first in no order.
+
+    `--skip-sidecar` reuses `dist/deixis-backend` as it stands, and nothing else compares it with the working tree, so
+    a build made after an edit ships the old Python without a word. That cost a day once: the packaged app kept a query
+    that was already fixed in the repo, and the app looked frozen for half a minute at every start. The sidecar carries
+    the sha256 of every file it was built from (`package_manifest.write_build_identity`), so this is a dict compare.
+    """
+    sys.path.insert(0, str(repo))
+    from deixis.runtime import package_manifest
+
+    found = next(built.rglob(package_manifest.BUILD_IDENTITY), None)
+    if found is None:
+        return [f"<no {package_manifest.BUILD_IDENTITY} in the sidecar>"]
+    try:
+        built_files = json.loads(found.read_text(encoding="utf-8"))["files"]
+    except (OSError, ValueError, KeyError):
+        return [f"<{found} could not be read>"]
+    now = {path.relative_to(repo).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+           for path in sorted((repo / "deixis").rglob("*.py")) if "__pycache__" not in path.parts}
+    return sorted(set(built_files) ^ set(now) | {name for name in built_files.keys() & now.keys()
+                                                 if built_files[name] != now[name]})
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-web", action="store_true", help="use the existing web/dist")

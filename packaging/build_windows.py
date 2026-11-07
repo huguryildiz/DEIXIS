@@ -27,7 +27,7 @@ DESKTOP = REPO / "desktop"
 NSIS = DESKTOP / "src-tauri" / "target" / "release" / "bundle" / "nsis"
 
 sys.path.insert(0, str(SIDECAR))
-from build import folder_bytes, run  # noqa: E402
+from build import folder_bytes, run, stale_sources  # noqa: E402
 
 
 def sha256(path: Path) -> str:
@@ -63,6 +63,14 @@ def main() -> int:
     if not (built / "deixis-backend.exe").is_file():
         print(f"No sidecar build in {built}; run without --skip-sidecar.", file=sys.stderr)
         return 2
+    if args.skip_sidecar:
+        stale = stale_sources(built)
+        if stale:
+            print(f"The sidecar in {built} was built from source that has changed since "
+                  f"({len(stale)} file(s)):\n" + "\n".join(f"  {name}" for name in stale[:20])
+                  + ("\n  ..." if len(stale) > 20 else "") + "\nBuild it again without --skip-sidecar.",
+                  file=sys.stderr)
+            return 2
     npm, npx = shutil.which("npm"), shutil.which("npx")  # npm.cmd, npx.cmd
     if not npm or not npx:
         print("npm is not on PATH.", file=sys.stderr)

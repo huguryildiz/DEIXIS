@@ -1,4 +1,36 @@
+<div align="center">
+
+<img src="desktop/src-tauri/icons/128x128@2x.png" alt="DEIXIS" width="160">
+
 # DEIXIS
+
+### Local Research Workspace
+
+A desktop app that answers questions from the scientific literature, with every citation pointing to a passage you can open.
+
+<img src="https://img.shields.io/badge/Python%20·%20FastAPI-0f1a2e?style=for-the-badge&logo=fastapi&logoColor=009688" alt="Python · FastAPI">
+<img src="https://img.shields.io/badge/React%20·%20Vite-0f1a2e?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React · Vite">
+<img src="https://img.shields.io/badge/TypeScript-0f1a2e?style=for-the-badge&logo=typescript&logoColor=3178C6" alt="TypeScript">
+<img src="https://img.shields.io/badge/Tauri-0f1a2e?style=for-the-badge&logo=tauri&logoColor=FFC131" alt="Tauri">
+<img src="https://img.shields.io/badge/OpenAlex-0f1a2e?style=for-the-badge&logo=openaccess&logoColor=F68212" alt="OpenAlex">
+<img src="https://img.shields.io/badge/SQLite-0f1a2e?style=for-the-badge&logo=sqlite&logoColor=4FA3D9" alt="SQLite">
+<img src="https://img.shields.io/badge/pytest%20·%20Playwright-0f1a2e?style=for-the-badge&logo=pytest&logoColor=0A9EDC" alt="pytest · Playwright">
+<br>
+<a href="https://deixis-app.vercel.app"><img src="https://img.shields.io/badge/deixis--app.vercel.app-0f1a2e?style=for-the-badge&logo=vercel&logoColor=white" alt="deixis-app.vercel.app"></a>
+<a href="https://github.com/huguryildiz/DEIXIS/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/huguryildiz/DEIXIS/ci.yml?branch=main&style=for-the-badge&label=checks" alt="checks"></a>
+<a href="https://github.com/huguryildiz/DEIXIS/releases"><img src="https://img.shields.io/github/v/release/huguryildiz/DEIXIS?include_prereleases&style=for-the-badge&label=release&color=3f63a8" alt="release"></a>
+
+<h3>
+<a href="#install-the-mac-app">Mac</a> ·
+<a href="#install-on-windows">Windows</a> ·
+<a href="#install-on-linux">Linux</a> ·
+<a href="#run-from-source">Run from source</a> ·
+<a href="STATUS.md">Status</a>
+</h3>
+
+</div>
+
+<br>
 
 A local research workspace for scientific literature. You ask a question; DEIXIS searches OpenAlex and Semantic Scholar, reads abstracts and full texts, and writes an answer in which every citation points to a located passage you can open. It runs on your computer (Python backend, React UI on `127.0.0.1`); searches and model calls go to the providers you connect. Code checks that each citation points to a real passage; it does not check that the passage supports the claim, and no search result proves a question is new.
 

@@ -140,29 +140,53 @@ def runtime_main(args: list[str]) -> int:
         return {"said": done.stdout.strip()[-300:]}
 
     def library_paths() -> dict:
-        """Linux (P10 L3): the LD_LIBRARY_PATH an outside program gets on each route DEIXIS starts one by. None may name
-        a folder of the package: `child_env` (tools, probes), a copy of this process's environment (what the Claude SDK
-        passes its CLI) and the session launcher (the model CLIs), which is itself a frozen child of this binary."""
+        """Linux (P10 L3): which copy of a library an outside program loads, on each route DEIXIS starts one by. The probe
+        (scripts/p10/dll_probe/linux_probe.c) loads by soname a library the package also holds and logs the file the
+        loader picked and the LD_LIBRARY_PATH it got. Routes: `child_env` (tools, probes); a model CLI as `cli_process`
+        starts one (Codex's allowlist, through the session launcher, itself a frozen child of this binary); the Claude
+        Agent SDK's own transport (which copies this process's environment). None may load the package's copy."""
+        import anyio
+
+        from claude_agent_sdk import ClaudeAgentOptions
+        from claude_agent_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
+        from deixis.models.adapter import codex_environment
+        from deixis.models.cli_process import spawn_options
         from deixis.tools import child_record
         from deixis.tools.child_env import child_env
+        from deixis.tools.tool_paths import child_path
 
         package = Path(sys.executable).resolve().parent
-        program = [options["--library-probe"]]
+        probe = options["--library-probe"]
+        log = Path(probe + ".log")
 
-        def seen(argv: list[str], env: dict) -> str:
-            done = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=60)
-            lines = done.stdout.strip().splitlines()
-            if done.returncode != 0 or not lines:
-                raise RuntimeError(f"{argv[0]}: exit {done.returncode}: {(done.stdout + done.stderr).strip()[-300:]}")
-            return lines[-1].partition("=")[2]
+        async def sdk() -> None:
+            transport = SubprocessCLITransport("", ClaudeAgentOptions(cli_path=probe, env={"PATH": child_path(probe)}))
+            try:
+                await transport.connect()
+                for _ in range(100):
+                    if log.exists() and log.read_text().strip():
+                        break
+                    await anyio.sleep(0.05)
+            finally:
+                await transport.close()
 
-        routes = {"child_env": seen(program, child_env()), "environ_copy": seen(program, dict(os.environ)),
-                  "launcher": seen(child_record.launcher_argv(program, "cli"), child_env())}
-        leaked = {route: value for route, value in routes.items()
-                  if any(Path(d).resolve().is_relative_to(package) for d in value.split(":") if d)}
+        routes = {
+            "child_env": lambda: subprocess.run([probe, "child_env"], env=child_env(), timeout=60, check=True),
+            "cli": lambda: subprocess.run(child_record.launcher_argv([probe, "cli"], "cli"), timeout=60, check=True,
+                                          env=codex_environment(folder / "codex-home"), **spawn_options()),
+            "sdk": lambda: anyio.run(sdk),
+        }
+        seen: dict[str, dict] = {}
+        for name, start in routes.items():
+            log.unlink(missing_ok=True)
+            start()
+            fields = log.read_text().strip().splitlines()[-1].split("\t")
+            seen[name] = {"ld_library_path": fields[1], "loaded": fields[2]}
+        inside = lambda value: any(Path(d).resolve().is_relative_to(package) for d in value.split(":") if d)  # noqa: E731
+        leaked = {n: s for n, s in seen.items() if inside(s["ld_library_path"]) or (s["loaded"] != "-" and inside(s["loaded"]))}
         if leaked:
-            raise RuntimeError(f"the package's library folder reached an outside program: {leaked}")
-        return {"routes": routes, "own": os.environ.get("LD_LIBRARY_PATH", "")}
+            raise RuntimeError(f"an outside program got the package's library folder: {leaked}")
+        return {"routes": seen}
 
     check("pdf_render", pdf)
     check("credential_locker", credentials)

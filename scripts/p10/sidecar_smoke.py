@@ -395,6 +395,7 @@ def main() -> int:
         if LINUX:
             startup_failed_row(binary, work, env)
             linux_runtime_row(work, binary, env)
+            keychain_rows(binary, work, env)
 
         jats_dir = work / "jats"
         jats_dir.mkdir()
@@ -575,20 +576,33 @@ def runtime_row(work: Path, binary: Path, env: dict[str, str]) -> None:
         probe=probe, checks=checks, **({} if checks else {"report": report}))
 
 
+LINUX_PROBE_LIBS = ("libssl.so.3", "libcrypto.so.3", "libffi.so.8", "libz.so.1", "liblzma.so.5", "libbz2.so.1.0")
+
+
 def linux_runtime_row(work: Path, binary: Path, env: dict[str, str]) -> None:
-    """Linux (P10 L3): `--check-runtime` with a library probe, a shell script outside the package that reports the
-    LD_LIBRARY_PATH it was started with, on the three routes an outside program is started by (`child_env`, a copy of
-    the backend's environment as the Claude SDK makes, the session launcher): each must get the person's own value
-    back, without the package folder the bootloader put first. The keychain check counts only where a
-    session bus is there (CI runs the smoke inside dbus-run-session with gnome-keyring); otherwise it is reported as
-    not measured. Negative control: started with the package folder on LD_LIBRARY_PATH, the probe reports it."""
+    """Linux (P10 L3): `--check-runtime` with the library probe (scripts/p10/dll_probe/linux_probe.c, built here with
+    gcc), which loads by soname a library the package also holds in _internal/ and logs the file the loader picked and
+    the LD_LIBRARY_PATH it got, on the three routes an outside program is started by (`child_env`, a model CLI through
+    Codex's allowlist and the session launcher, the Claude Agent SDK's own transport). The person's own LD_LIBRARY_PATH
+    must come back unchanged (Codex's allowlist drops the name altogether), and no route may load the package's copy. Negative control: started with
+    _internal on LD_LIBRARY_PATH, the probe loads the package's copy. The in-process keychain check counts only where a
+    session bus is there (CI: dbus-run-session with gnome-keyring); the `keychain` rows cover the rest."""
     folder = work / "runtime"
     folder.mkdir()
-    probe = work / "library-probe.sh"
-    probe.write_text('#!/bin/sh\nprintf "LD_LIBRARY_PATH=%s\\n" "${LD_LIBRARY_PATH-}"\n')
-    probe.chmod(0o755)
     internal = binary.parent / "_internal"
-    control = subprocess.run([str(probe)], env=env | {"LD_LIBRARY_PATH": str(internal)}, capture_output=True, text=True)
+    lib = next((name for name in LINUX_PROBE_LIBS if (internal / name).is_file()), None)
+    probe = work / "probe-bin" / "linux-probe"
+    probe.parent.mkdir()
+    built = subprocess.run(["gcc", "-O2", f'-DPROBE_LIB="{lib}"', "-o", str(probe),
+                            str(REPO / "scripts" / "p10" / "dll_probe" / "linux_probe.c"), "-ldl"],
+                           capture_output=True, text=True) if lib and shutil.which("gcc") else None
+    if built is None or built.returncode != 0:
+        row("runtime", False, library=lib, gcc=shutil.which("gcc"), build=built.stderr[-400:] if built else None)
+        return
+    log = Path(f"{probe}.log")
+    subprocess.run([str(probe), "control"], env=env | {"LD_LIBRARY_PATH": str(internal)}, check=True)
+    control = log.read_text().strip().split("\t")[-1]
+    log.unlink()
     keychain = bool(os.environ.get("DBUS_SESSION_BUS_ADDRESS"))
     person = "/opt/deixis-smoke-person-libs"  # the person's own LD_LIBRARY_PATH: every route must get it back unchanged
     run_env = {k: v for k, v in env.items() if k not in ("PYTHON_KEYRING_BACKEND", "HTTP_PROXY", "HTTPS_PROXY")}
@@ -607,8 +621,74 @@ def linux_runtime_row(work: Path, binary: Path, env: dict[str, str]) -> None:
     needed = ["pdf_render", "https", "library_paths"] + (["credential_locker"] if keychain else [])
     routes = checks.get("library_paths", {}).get("routes", {})
     row("runtime", all(checks.get(name, {}).get("ok") for name in needed) and len(routes) == 3
-        and all(value == person for value in routes.values()) and str(internal) in control.stdout, exit=done.returncode, keychain="measured" if keychain else "not measured",
-        control=control.stdout.strip()[-200:], checks=checks, **({} if checks else {"report": report}))
+        and all(r["ld_library_path"] == person for n, r in routes.items() if n != "cli")
+        and routes.get("cli", {}).get("ld_library_path") in ("", person)  # Codex's allowlist does not pass it on at all
+        and Path(control).resolve().is_relative_to(internal.resolve()), exit=done.returncode, library=lib,
+        control=control, keychain="measured" if keychain else "not measured", checks=checks,
+        **({} if checks else {"report": report}))
+
+
+def keychain_rows(binary: Path, work: Path, env: dict[str, str]) -> None:
+    """Linux (P10 L3): where a saved key lives and whether it survives a restart of the backend.
+    keychain_secret_service (only inside a session bus with a keyring, as CI runs it): Settings names the keychain, a key
+    saved through the API is read back by a new backend on the same data folder, then deleted.
+    keychain_none (no session bus): Settings says there is no keychain and keeps keys for this run; after the person
+    chooses the unencrypted file, a saved key is in a 0600 file in the data folder and a new backend reads it back."""
+    def backend(data: Path, extra: dict[str, str]) -> tuple[Sidecar, httpx.Client]:
+        sc = Sidecar(binary, data, extra)
+        sc.wait_listening()
+        client = httpx.Client(base_url=sc.url, timeout=30, trust_env=False)
+        session(client)
+        return sc, client
+
+    def stop(sc: Sidecar, client: httpx.Client) -> None:
+        client.post("/api/internal/shutdown", headers={"X-Deixis-Control": TOKEN})
+        try:
+            sc.proc.wait(20)
+        finally:
+            sc.kill()
+            client.close()
+
+    base = {k: v for k, v in env.items() if k not in ("PYTHON_KEYRING_BACKEND", "DBUS_SESSION_BUS_ADDRESS")}
+    key, value = "ZOTERO_LIBRARY_ID", "7340021"
+    if os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
+        bus = base | {k: os.environ[k] for k in ("DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR") if k in os.environ}
+        data = work / "keychain-ss"
+        sc, client = backend(data, bus)
+        try:
+            first = client.get("/api/credentials").json()["keychain"]
+            saved = client.put(f"/api/credentials/{key}", json={"value": value}).status_code
+        finally:
+            stop(sc, client)
+        sc, client = backend(data, bus)
+        try:
+            again = next(k for k in client.get("/api/credentials").json()["keys"] if k["env"] == key)
+            deleted = client.delete(f"/api/credentials/{key}").status_code
+        finally:
+            stop(sc, client)
+        row("keychain_secret_service", first.get("available") is True and first.get("mode") == "keychain" and saved == 200
+            and again.get("configured") is True and again.get("source") == "keychain" and deleted in (200, 204),
+            keychain=first.get("name"), saved=saved, read_back=again.get("source"), deleted=deleted)
+    else:
+        row("keychain_secret_service", True, measured=False, reason="no session bus here; CI runs this row")
+    data = work / "keychain-none"
+    sc, client = backend(data, base)
+    try:
+        first = client.get("/api/credentials").json()["keychain"]
+        chosen = client.put("/api/credentials/file-store", json={"enabled": True}).status_code
+        saved = client.put(f"/api/credentials/{key}", json={"value": value}).status_code
+        files = [p for p in data.rglob("*") if p.is_file() and value in p.read_text(errors="ignore")]
+        modes = sorted(oct(p.stat().st_mode & 0o777) for p in files)
+    finally:
+        stop(sc, client)
+    sc, client = backend(data, base)
+    try:
+        again = next(k for k in client.get("/api/credentials").json()["keys"] if k["env"] == key)
+    finally:
+        stop(sc, client)
+    row("keychain_none", first.get("available") is False and first.get("mode") == "session" and chosen == 200 and saved == 200
+        and modes == ["0o600"] and again.get("configured") is True and again.get("source") == "file",
+        mode=first.get("mode"), chosen=chosen, saved=saved, file_modes=modes, read_back=again.get("source"))
 
 
 def sc_passages(data: Path, asset_id: str | None) -> int:

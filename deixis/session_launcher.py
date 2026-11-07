@@ -24,6 +24,7 @@ from pathlib import Path
 
 RECORD_FAILED = 125
 REFUSED = "DEIXIS did not start "
+CANCEL = signal.SIGUSR1  # Linux `child_record.stop_group`: start nothing more, empty the session, then end
 CLEAN_SECONDS = 10.0
 WATCH_SECONDS = 0.5
 
@@ -38,6 +39,8 @@ def main(argv: list[str] | None = None) -> int:
         print("usage: session_launcher RECORD OWNER KIND -- PROGRAM ARGS...", file=sys.stderr)
         return 2
     record, owner, kind, program = Path(argv[0]), argv[1], argv[2], argv[4:]
+    cancelled: list[bool] = []
+    signal.signal(CANCEL, lambda *_: cancelled.append(True))  # before this line its default action ends this process
     from deixis.tools import child_record
 
     recorded = child_record.NONE not in (argv[0], owner)
@@ -46,6 +49,13 @@ def main(argv: list[str] | None = None) -> int:
     except child_record.RecordFailed as exc:
         print(f"{REFUSED}{Path(program[0]).name}: {exc}", file=sys.stderr)
         return RECORD_FAILED
+    if ident is None:  # nothing could stop its session by identity (Linux without a boot id)
+        print(f"{REFUSED}{Path(program[0]).name}: this process's identity cannot be read", file=sys.stderr)
+        return RECORD_FAILED
+    if cancelled:  # cancelled before PROGRAM started: it never runs
+        if recorded:
+            child_record.remove(record, ident)
+        return 128 + signal.SIGKILL
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, lambda *_: None)  # a handler, not SIG_IGN: PROGRAM starts with the default action
     try:
@@ -64,8 +74,8 @@ def main(argv: list[str] | None = None) -> int:
             code = child.wait(WATCH_SECONDS)
             break
         except subprocess.TimeoutExpired:
-            if recorded and not child_record.alive(owner):
-                child_record.sweep_members(ident)  # the owner is gone: nobody else will stop this session
+            if cancelled or (recorded and not child_record.alive(owner)):
+                child_record.sweep_members(ident)  # cancelled, or the owner is gone: nobody else will stop this session
         except InterruptedError:
             continue
     child_record.sweep_members(ident, CLEAN_SECONDS)  # until a scan finds none

@@ -313,9 +313,11 @@ def stop_group(pid: int, leader: str | None, sig: int) -> set[str]:
         for ident in sorted(found):
             kill_identity(ident) if sig == signal.SIGKILL else signal_identity(
                 int(ident.partition(":")[0]), ident.partition(":")[2], sig)
-        if sig != signal.SIGKILL:  # the launcher ignores TERM, INT and HUP while its program runs
-            signal_identity(pid, leader.partition(":")[2], sig)
-        return found | {leader}  # SIGKILL leaves the launcher: it empties its session (a late fork too), then ends
+        # TERM: the launcher ignores it while its program runs. SIGKILL: the launcher is told to cancel instead
+        # (`session_launcher.CANCEL`): it starts no program after this, and empties its session (a late fork too) until
+        # a scan finds nothing, retrying what could not be signalled, then ends.
+        signal_identity(pid, leader.partition(":")[2], signal.SIGUSR1 if sig == signal.SIGKILL else sig)
+        return found | {leader}
     if sig == signal.SIGKILL:
         for ident in sorted(found):
             kill_identity(ident)
@@ -328,14 +330,16 @@ def stop_group(pid: int, leader: str | None, sig: int) -> set[str]:
 
 
 def sweep(leader: str, seconds: float = CLEAN_SECONDS) -> tuple[list[str], set[str]]:
-    """Empty the group and session `leader` leads while it is alive (`sweep_members`, for up to `seconds`), and only
-    once a scan finds no member, kill the leader. (signalled, still alive: members a scan still finds, or the leader)"""
+    """Empty the group and session `leader` leads while it is alive (`sweep_members`), and only once a scan finds no
+    member, kill the leader; all of it within `seconds`. (signalled, still alive: members a scan still finds, or the
+    leader)"""
+    ends = time.monotonic() + seconds
     killed = sweep_members(leader, seconds)
     if left := members(leader):
         return killed, left | {leader}  # the leader stays, so its session can still be found and its line stays
     if kill_identity(leader):
         killed.append(leader)
-    return killed, wait_gone({leader}, min(GONE_WAIT_SECONDS, max(0.1, seconds)))
+    return killed, wait_gone({leader}, min(GONE_WAIT_SECONDS, max(0.0, ends - time.monotonic())))
 
 
 def recover(path: Path | None) -> list[str]:

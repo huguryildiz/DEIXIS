@@ -210,3 +210,34 @@ def test_without_a_boot_id_the_watchdog_refuses_and_no_identity_is_read(monkeypa
     assert child_guard.process_info(os.getpid()) is None and child_record.identity(os.getpid()) is None
     assert desktop_reaper.main([]) == 1
     assert json.loads(capsys.readouterr().out.strip())["code"] == "process_guard"
+
+
+def run_launcher_with(tmp_path, patch: str) -> tuple[int, bool]:
+    """session_launcher.main in a fresh process with `patch` applied first; (exit code, whether PROGRAM ran)."""
+    marker = tmp_path / "program-ran"
+    script = textwrap.dedent(f"""
+        import os, signal, sys
+        sys.path.insert(0, {BACKEND!r})
+        from deixis import session_launcher
+        from deixis.tools import child_record
+        real_identity = child_record.identity
+        {patch}
+        sys.exit(session_launcher.main(["-", "-", "cli", "--", "/usr/bin/touch", {str(marker)!r}]))
+    """)
+    done = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=60)
+    return done.returncode, marker.exists()
+
+
+def test_a_cancel_that_reaches_the_launcher_before_its_program_starts_means_the_program_never_runs(tmp_path):
+    patch = ("def identity(pid):\n"
+             "            os.kill(os.getpid(), session_launcher.CANCEL)  # stop_group's cancel, before Popen\n"
+             "            return real_identity(pid)\n"
+             "        child_record.identity = identity")
+    code, ran = run_launcher_with(tmp_path, patch)
+    assert (code, ran) == (128 + signal.SIGKILL, False)
+
+
+def test_a_launcher_whose_own_identity_cannot_be_read_starts_nothing(tmp_path):
+    code, ran = run_launcher_with(tmp_path, "child_record.identity = lambda pid: None")
+    assert (code, ran) == (125, False)  # RECORD_FAILED
+    assert run_launcher_with(tmp_path, "pass") == (0, True)  # the same launch with an identity runs

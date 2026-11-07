@@ -1,36 +1,34 @@
-.DS_Store
+# Python and Node
 __pycache__/
 *.py[cod]
-.env
 .venv/
+.pytest_cache
+# pytest-testmon's record of which tests touch which code.
+.testmondata*
 node_modules/
 dist/
-/notes/
-.impeccable
-.pytest_cache
+.env
+
+# Playwright output (web/playwright.config.ts)
 web/test-results/
 web/playwright-report/
 /test-results/
 
-# Private design evidence; do not publish.
-/local-reference/
-/docs/desktop/screenshots/
-
-# Local instruction and planning files.
-/.claude/
-/TODO.md
-.vscode/
-# pytest-testmon's record of which tests touch which code.
-.testmondata*
-
-# P10 sidecar build output (packaging/sidecar/build.py).
+# Desktop build output: sidecar (packaging/sidecar/build.py), Linux AppImage smoke (packaging/build_linux.py),
+# Tauri shell (desktop/)
 /packaging/sidecar/build/
 /packaging/sidecar/dist/
 /packaging/linux-unpacked/
-
-# P10 desktop shell build output (packaging/build_mac.py).
 /desktop/src-tauri/target/
 /desktop/src-tauri/gen/
+
+# The owner's local files: notes, status, decisions, agent instructions, editor and tool settings
+/notes/
 /STATUS.md
 /docs/decisions.csv
 /CLAUDE.md
+/TODO.md
+/.claude/
+.vscode/
+.impeccable
+.DS_Store

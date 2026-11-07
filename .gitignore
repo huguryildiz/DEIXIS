@@ -31,3 +31,4 @@ web/playwright-report/
 # P10 desktop shell build output (packaging/build_mac.py).
 /desktop/src-tauri/target/
 /desktop/src-tauri/gen/
+/STATUS.md

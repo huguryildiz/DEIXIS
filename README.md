@@ -24,8 +24,7 @@ A desktop app that answers questions from the scientific literature, with every 
 <a href="#install-the-mac-app">Mac</a> ·
 <a href="#install-on-windows">Windows</a> ·
 <a href="#install-on-linux">Linux</a> ·
-<a href="#run-from-source">Run from source</a> ·
-<a href="STATUS.md">Status</a>
+<a href="#run-from-source">Run from source</a>
 </h3>
 
 </div>
@@ -85,6 +84,6 @@ uv run pytest                        # model-free tests
 
 Connect a model and sources in Settings; keys go to the system keychain ([`providers.env.example`](providers.env.example) lists the names). Data lives in `~/Library/Application Support/DEIXIS` (or `DEIXIS_DATA_DIR`), never in the repository.
 
-The working agreement, layout and commands are in [CLAUDE.md](CLAUDE.md); decisions in [docs/decisions.csv](docs/decisions.csv), how search, ranking and reading work in [docs/search.md](docs/search.md), search benchmark results in [docs/benchmark.md](docs/benchmark.md), project status in [STATUS.md](STATUS.md).
+The working agreement, layout and commands are in [CLAUDE.md](CLAUDE.md); decisions in [docs/decisions.csv](docs/decisions.csv), how search, ranking and reading work in [docs/search.md](docs/search.md) and search benchmark results in [docs/benchmark.md](docs/benchmark.md).
 
 License: [AGPL-3.0-or-later](LICENSE).

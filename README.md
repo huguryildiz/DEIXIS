@@ -64,7 +64,7 @@ Not in the Windows preview: the built-in local models in Settings (keyword searc
 
 ## Install on Linux
 
-A preview for 64-bit x86 PCs with Ubuntu 22.04 or newer (or a distribution of the same age). It has been tried on GitHub's Ubuntu 22.04 and 24.04 runners under a virtual display, not yet on a desktop. The Linux packages are built by CI but not yet attached to a release.
+A preview for 64-bit x86 PCs with Ubuntu 22.04 or newer (or a distribution of the same age). It has been tried on GitHub's Ubuntu 22.04 and 24.04 runners under a virtual display, not yet on a desktop. Download the package from [Releases](https://github.com/huguryildiz/DEIXIS/releases) and check its SHA-256 against the release page: `sha256sum DEIXIS_*_amd64.*`.
 
 - `.deb` (Ubuntu, Debian and their relatives): `sudo apt install ./DEIXIS_<version>_amd64.deb`. apt pulls in WebKitGTK and the tray library. `sudo apt remove deixis` removes the app.
 - AppImage (any distribution): `chmod +x DEIXIS_<version>_amd64.AppImage`, then run it. It needs FUSE 2 (`sudo apt install libfuse2`, on Ubuntu 24.04 `libfuse2t64`); without it, start it with `--appimage-extract-and-run`.

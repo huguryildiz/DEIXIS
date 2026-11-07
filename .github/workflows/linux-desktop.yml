@@ -24,7 +24,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf \
-            libxdo-dev libssl-dev file tesseract-ocr tesseract-ocr-eng tesseract-ocr-tur gnome-keyring dbus-x11 libfuse2
+            libxdo-dev libssl-dev file gnome-keyring dbus-x11 libfuse2
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy

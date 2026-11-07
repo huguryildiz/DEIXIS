@@ -58,14 +58,15 @@ def main(argv: list[str] | None = None) -> int:
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, lambda *_: None)  # a handler, not SIG_IGN: PROGRAM starts with the default action
     env = program_env()
-    # A cancel is held back from the last check until PROGRAM has started: one that came earlier is seen by the check
-    # (PROGRAM never runs); one that comes later is delivered after the start and seen by the first turn of the loop.
-    # PROGRAM itself starts with the cancel signal unblocked again.
+    # The start decision: with the cancel signal held back, a cancel that came before this point has either run the
+    # handler or is pending, and either way PROGRAM never runs. One sent after the decision reaches a started PROGRAM:
+    # it is delivered once the signal is unblocked and the first turn of the loop kills the session. PROGRAM itself
+    # starts with the signal unblocked again.
     held = {CANCEL} if CANCEL is not None else set()
     if held:
         signal.pthread_sigmask(signal.SIG_BLOCK, held)
     try:
-        if cancelled:  # cancelled before PROGRAM started: it never runs
+        if cancelled or (held and CANCEL in signal.sigpending()):  # cancelled before the start: PROGRAM never runs
             if recorded:
                 child_record.remove(record, ident)
             return 128 + signal.SIGKILL

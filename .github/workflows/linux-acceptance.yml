@@ -42,7 +42,7 @@ jobs:
           fuse=libfuse2; dpkg --compare-versions "$(lsb_release -rs)" ge 24.04 && fuse=libfuse2t64
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends xvfb openbox wmctrl imagemagick dbus-x11 webkit2gtk-driver \
-            "$fuse" tesseract-ocr tesseract-ocr-eng
+            "$fuse"
           cargo install tauri-driver --locked
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - name: Packages from the linux-desktop run

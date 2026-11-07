@@ -590,7 +590,7 @@ class PrivateKeyring:
         self.env: dict[str, str] | None = None
         if not (shutil.which("dbus-daemon") and shutil.which("gnome-keyring-daemon")):
             return
-        home = work / "keyring-home"
+        home = Path(tempfile.mkdtemp(prefix="keyring-home-", dir=work))  # one per instance (runtime row, keychain rows)
         runtime = home / "run"
         runtime.mkdir(parents=True)
         runtime.chmod(0o700)

@@ -278,3 +278,14 @@ def test_a_stop_whose_signals_cannot_be_sent_at_first_tries_again_until_they_are
         if launcher.poll() is None:
             os.killpg(launcher.pid, signal.SIGKILL)
             launcher.wait()
+
+
+def test_a_cancel_that_arrives_while_its_signal_is_held_back_before_the_start_still_means_it_never_runs(tmp_path):
+    patch = ("real_mask = signal.pthread_sigmask\n"
+             "        def mask(how, signals):\n"
+             "            old = real_mask(how, signals)\n"
+             "            if how == signal.SIG_BLOCK:\n"
+             "                os.kill(os.getpid(), session_launcher.CANCEL)  # pending, not yet handled\n"
+             "            return old\n"
+             "        signal.pthread_sigmask = mask")
+    assert run_launcher_with(tmp_path, patch) == (128 + signal.SIGKILL, False)

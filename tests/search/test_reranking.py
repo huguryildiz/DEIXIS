@@ -184,6 +184,29 @@ def test_a_failed_rerank_is_recorded_with_the_fused_order_as_its_fallback_and_no
     assert sent == []  # Voyage has a key here and was not asked instead
 
 
+# D106's hold, which a budget frozen with D155's rule (version 3) keeps.
+RERANK_V3 = {"version": 3, "pool_factor": 8.0, "max_pool_factor": 8.0, "hold_without_abstract": "with_text_route"}
+
+
+@pytest.mark.parametrize("rule, held", [(small_batch.RERANK_RULE, False), (RERANK_V3, True)])
+def test_a_chain_only_record_is_reranked_since_d170_and_keeps_its_place_under_an_earlier_rule(monkeypatch, rule, held):
+    # D170: a record only citation chaining brought goes to the reranker like any other; a budget frozen with an
+    # earlier rule keeps D106's hold (not sent, its fused place kept, `chained_only`). The rerank step only, with an
+    # abstract present: the lookup before the rerank (which asks about chain-only records since D170) is not covered.
+    flow, store, _ = rerank_flow(monkeypatch, {"enabled": True, "provider": "builtin", "model": RER, "pool_factor": 2},
+                                 RerankingLocal())
+    built = small_batch.manifest_for()
+    monkeypatch.setattr(small_batch, "manifest_for", lambda *args: built | {"chain_heads": ["b"]})
+    run = RUN | {"budget": RUN["budget"] | {"inspection": {"rerank": dict(rule)}}}
+    asyncio.run(small_batch.rerank_list(flow, run, SCOPE, {}))
+    output = store.steps[small_batch.RERANK_KEY]["output"]
+    assert store.steps[small_batch.RERANK_KEY]["status"] == "succeeded"
+    if held:
+        assert (output["candidate_ids"], output["kept_in_place"], output["kept_reasons"]) == (["a"], ["b"], {"b": "chained_only"})
+    else:
+        assert (output["candidate_ids"], output["kept_in_place"], output["kept_reasons"]) == (["a", "b"], [], {})
+
+
 # ---- through a real discovery run (fake model, fake local runner) ------------------------------------
 
 class RerankingLocal(FakeLocal):

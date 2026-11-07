@@ -52,7 +52,12 @@ PRERANK_LOOKUP = {"version": 5, "max_records": PRERANK_RECORDS, "seconds": 8, "c
 # stored for it) or while its lookup before the rerank did not settle; otherwise the reranker scores its title, as
 # before D153. A version 2 rule holds every such record. Which lookups did not settle is the lookup rule's: `unsettled`
 # under its version 3, `lookup_open` since version 4 (D156).
-RERANK_RULE = {"version": 3, "pool_factor": 8.0, "max_pool_factor": 8.0, "hold_without_abstract": "with_text_route"}
+# D170 (version 4): a record only citation chaining brought is sent to the reranker like any other (`hold_chained`
+# False), and the lookup before the rerank asks about it too; the no-abstract hold applies to it as to every record.
+# Replaying the 18 Oct BioASQ and LitSearch runs offline, D106's hold cost recall@50 (-3.5 and -3.3 points); D106's
+# own check had used mislabelled routes. A rule without `hold_chained` (version 3 and earlier) keeps D106's hold.
+RERANK_RULE = {"version": 4, "pool_factor": 8.0, "max_pool_factor": 8.0, "hold_without_abstract": "with_text_route",
+               "hold_chained": False}
 RERANK_RULE_BEFORE_D153 = {"version": 1, "pool_factor": 4.0, "max_pool_factor": 4.0, "hold_without_abstract": False}
 # 5: one closest place for a work whose reading found no criterion part (D152). 6: every abstract-only work's
 # abstract before the closest works' second to fourth pages, and that zero-part work at most 2 passages (D155).
@@ -144,6 +149,12 @@ def freeze_budget(budget: dict[str, Any], effort: str, reading: str) -> dict[str
 def rerank_rule(run: dict[str, Any]) -> dict[str, Any]:
     """The rerank rule this run froze, or the one before D153 for a budget frozen without it."""
     return (run["budget"].get("inspection") or {}).get("rerank") or RERANK_RULE_BEFORE_D153
+
+
+def held_chained(run: dict[str, Any], manifest: dict[str, Any]) -> set[str]:
+    """The records only citation chaining brought that keep their fused place: all of them under a rule without
+    `hold_chained` (D106: the reranker pushed them down on the EE survey benchmark, 18 Oct), none since D170."""
+    return set(manifest.get("chain_heads") or ()) if rerank_rule(run).get("hold_chained", True) else set()
 
 
 def rerank_choice(store: Any, run: dict[str, Any]) -> rerankers.Choice | None:
@@ -266,7 +277,7 @@ def reranked(manifest: dict[str, Any], fused: list[str]) -> tuple[list[str], dic
     """The automatic order after the stored rerank, and what was done; the fused order itself when there was none.
 
     The rerank only reorders the records it scored, among their own places in the fused order. It applies only when
-    the records it scored, with the chained records it kept in place (D106), are still the first records of that order
+    the records it scored, with the records it kept in place (`kept_in_place`), are still the first records of that order
     that the person did not include themselves; when
     the list moved since (a selection changed while the reranker ran) or the reranker failed, the fused order stands
     and the listing says why. Everything here is read from the manifest, so the list replays exactly."""
@@ -546,9 +557,10 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
     The candidates are the first records of the automatic (fused) order that the person did not include themselves,
     as many as the run reads (its N) times the setting's pool factor, so the reranker decides which records fall above
     the read cutoff, not only their order within it; each is sent as its title and abstract with the question. A
-    record of that window that only citation chaining brought (`chain_heads`) is not sent and keeps its place (D106);
-    under the rule frozen since D153, so does one still without an abstract after the lookup before the rerank (since
-    D155 only one with a route to text or an unsettled lookup, `text_routes`), and `kept_reasons` says which rule kept
+    record of that window that only citation chaining brought (`chain_heads`) is sent like any other since D170; under
+    a rule frozen before it (version 3 and earlier) it is not sent and keeps its place (D106). Under the rule frozen
+    since D153, a record still without an abstract after the lookup before the rerank keeps its place too (since D155
+    only one with a route to text or an unsettled lookup, `text_routes`), and `kept_reasons` says which rule kept
     each. The scores are stored in this step and read into the list's manifest.
     A reranker that fails, answers wrongly, runs out of time (its own limit, or what is left of the ranking stage)
     never hands over to another reranker: the step is `failed`, says why, and the list keeps the
@@ -567,9 +579,7 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
     read_top = run["budget"]["fast_path"]["N"]
     window = [rid for rid in replay(manifest)["fused"] if rid not in priority][:choice.pool_size(read_top)]
     rows = {row["id"]: row for row in manifest["pool"]}
-    # D106: a record only citation chaining brought keeps its fused place; the reranker reads title and abstract only
-    # and pushed such records down (EE survey benchmark, 18 Oct), while search records still move among theirs.
-    chained = set(manifest.get("chain_heads") or ())
+    chained = held_chained(run, manifest)
     hold = rerank_rule(run)["hold_without_abstract"]
     reasons = {rid: "chained_only" for rid in window if rid in chained}
     if hold:
@@ -662,8 +672,8 @@ async def prerank_lookups(flow: Any, run: dict[str, Any], scope: dict[str, Any],
 
     A record without an abstract is sent to the reranker as its title alone and falls (Humphreys 36 -> 109, 6 Nov);
     the read stage's lookup came too late for it, after the list froze and for the top N only. So before the rerank,
-    the first `max_records` records of the reranker's window (the fused order without the person's records and the
-    chained ones the rerank keeps in place) that have no abstract in any version and a DOI on their head are asked
+    the first `max_records` records of the reranker's window (the fused order without the person's records and, under
+    a rerank rule before D170, the chained ones the rerank keeps in place) that have no abstract in any version and a DOI on their head are asked
     about, with the sources and requests `ask_second_sources` already uses, under steps of their own, and within
     `seconds` in all (or what is left of the ranking stage). What did not come back in time stays missing: under D152's
     rule the record is scored on its title, and under the rule since D153 it keeps its fused place (`rerank_list`).
@@ -688,7 +698,7 @@ async def prerank_lookups(flow: Any, run: dict[str, Any], scope: dict[str, Any],
     asked = (step["output"] or {}).get("asked")  # a resumed run asks about the records it chose the first time
     if asked is None:
         manifest = json_value(manifest_for(flow, run, scope, vocabulary))
-        priority, chained = set(manifest["user_priority"]), set(manifest.get("chain_heads") or ())
+        priority, chained = set(manifest["user_priority"]), held_chained(run, manifest)
         window = [rid for rid in replay(manifest)["fused"] if rid not in priority][
             :choice.pool_size(run["budget"]["fast_path"]["N"])]
         rows = {row["id"]: row for row in manifest["pool"]}

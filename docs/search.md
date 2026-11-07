@@ -73,7 +73,7 @@ flowchart TD
     E --> F
     F --> P2["Second pass: citation signal redone from your seeds<br/>and up to 30 leading works with reference lists;<br/>cited-by count helps reorder places 21 to 500;<br/>the first-pass top 20 stays"]
     P2 --> RR{"Reranker on?"}
-    RR -->|"yes"| RRK["Reranker reorders the leading works<br/>(N x pool factor, at most 400, your included works not counted);<br/>works only chaining found, and works without an abstract<br/>that still have a route to text or an unfinished lookup, keep their place"]
+    RR -->|"yes"| RRK["Reranker reorders the leading works<br/>(N x pool factor, at most 400, your included works not counted);<br/>works without an abstract that still have a route to text<br/>or an unfinished lookup keep their place"]
     RR -->|"no, failed or out of time"| LIST
     RRK --> LIST[["Frozen ranked list: your included works first"]]
     LIST --> BATCH["Screening batch: the top N<br/>(Screen more reads further down later)"]
@@ -83,7 +83,7 @@ Each signal ranks the whole pool on its own, and the ranks are fused, never the 
 
 The second pass recomputes the citation signal from your seeds plus up to 30 of the best-placed works that have a reference list, with a seed's citation of a work counting double. When none of those seeds has a reference list, the first citation signal stands. It then adds a signal from each work's cited-by count and reorders places 21 to 500 over all signals, with the citation and cited-by signals counting double. The first pass's top 20 stays in front, even when the second pass would lift another work above them.
 
-The reranker is on by default (Voyage `rerank-3-lite`; without a Voyage key nothing is sent and the fused order stands). It scores the leading works of the fused order, not counting works you included: N times the pool factor (default 8, so 400 at Standard depth), rounded up, and at most 400. A pool factor you saved in Settings is used up to 8. Works in that window that only chaining found keep their place, and so do works without an abstract that have a route to text or an unfinished lookup (see [Where the search goes](#where-the-search-goes)); other works without an abstract are scored on their title. The list stores which works were kept and why. The reranker reads only the question and each work's title and abstract. It has 180 seconds or the ranking time left, whichever is shorter. If it fails or runs out of time, the list keeps the fused order and no other reranker is tried.
+The reranker is on by default (Voyage `rerank-3-lite`; without a Voyage key nothing is sent and the fused order stands). It scores the leading works of the fused order, not counting works you included: N times the pool factor (default 8, so 400 at Standard depth), rounded up, and at most 400. A pool factor you saved in Settings is used up to 8. Works in that window that only chaining found are scored like the others. Works without an abstract that have a route to text or an unfinished lookup keep their place (see [Where the search goes](#where-the-search-goes)); other works without an abstract are scored on their title. The list stores which works were kept and why. The reranker reads only the question and each work's title and abstract. It has 180 seconds or the ranking time left, whichever is shorter. If it fails or runs out of time, the list keeps the fused order and no other reranker is tried.
 
 ## Reading
 
@@ -136,6 +136,7 @@ A run keeps the rules frozen when it started. The ones still met on resume:
 - **D153 and D154:** every work left without an abstract keeps its place, and Semantic Scholar is waited for as the depth allows. Plans made under D154 also send a second semantic request with the setting and task terms joined (new plans do not: in the 6 November pilot it added 113 works and no reference paper).
 - **Before D155:** an answer gives the closest works their further pages before the candidates' abstracts, and the exception's closest work up to 4. Under D155 a work also keeps its rerank place when a source that was to be asked about it had not answered, whether or not the request went out.
 - **D156:** Crossref has eight requests out at once instead of four.
+- **Before D170:** works in the reranker's window that only chaining found keep their place and are not looked up before the rerank. An offline replay of the 18 October BioASQ and LitSearch runs showed this hold cost about 3 points of recall at 50.
 - **First seed-PDF rule (`seed_pdf_v1`):** one seed, whose text is added to the question's semantic request.
 - **`m1` search method** (not an older rule, but off by default; only the D163 measurement selects it): the code's query is also left out when one of its blocks has no term or its counted total is unknown or above 250,000 works, and chaining admission splits hyphens and slashes, reduces plain plurals and uses every setting and task term the query step wrote, unused backups too; these terms are frozen in the protocol.
 

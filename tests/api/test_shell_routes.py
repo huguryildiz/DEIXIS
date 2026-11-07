@@ -11,10 +11,10 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from deixis import config
+from deixis.runtime import config
 from deixis.api import shell_routes
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.documents import fetch
 from deixis.providers import scopus
 from deixis.storage import data_location

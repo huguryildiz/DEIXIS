@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pymupdf
 
-from deixis.paths import is_frozen, resource_root
+from deixis.runtime.paths import is_frozen, resource_root
 from deixis.tools.child_env import child_env
 from deixis.documents import pdf
 from deixis.tools.tool_paths import find_tool, is_bundled

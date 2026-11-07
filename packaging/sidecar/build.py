@@ -107,7 +107,7 @@ def main() -> int:
         return 2
     tessdata = fetch_tessdata()
     sys.path.insert(0, str(REPO))
-    from deixis import package_manifest
+    from deixis.runtime import package_manifest
 
     with tempfile.TemporaryDirectory(prefix="deixis-identity-") as folder:
         identity = package_manifest.write_build_identity(REPO, Path(folder))

@@ -12,7 +12,7 @@ import sqlite3
 
 import pytest
 
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.storage import db, upgrades
 from deixis.storage.backup import create_backup, restore_backup
 from deixis.workflow.run.store import Store

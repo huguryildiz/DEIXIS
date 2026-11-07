@@ -22,7 +22,7 @@ from referencing import Registry, Resource
 
 from deixis.domain import wording
 from deixis.domain.lineage import MAX_WHAT_CHANGED, valid_what_changed
-from deixis.paths import CONTRACTS_DIR
+from deixis.runtime.paths import CONTRACTS_DIR
 from deixis.workflow.search.criterion import (MAX_PHRASE_WORDS, PARTS_PER_PROPOSAL, PHRASES_PER_PART,
                                        holds as criterion_holds, norm as normalize_phrase)
 from deixis.workflow.search import english_question

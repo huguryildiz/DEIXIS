@@ -10,7 +10,7 @@ from __future__ import annotations
 from importlib.metadata import version
 from typing import Any
 
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.domain.record_identity import THRESHOLDS
 from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_QUOTE_MIN_CHARS, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS,
                                  FULLTEXT_CRITERION_PASSAGES, FULLTEXT_PASSAGES_PER_CALL, FULLTEXT_QUOTE_MIN_CHARS,

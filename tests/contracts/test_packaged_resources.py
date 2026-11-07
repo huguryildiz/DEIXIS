@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-from deixis import config, package_manifest, paths
+from deixis.runtime import config, package_manifest, paths
 from deixis.keys import credentials
 from deixis.domain import skill
 
@@ -101,9 +101,9 @@ import importlib.metadata, json, os
 from fastapi.testclient import TestClient
 import deixis
 from deixis.api.app import create_app
-from deixis.config import load_settings
+from deixis.runtime.config import load_settings
 from deixis.domain import skill
-from deixis.paths import RESOURCE_ROOT
+from deixis.runtime.paths import RESOURCE_ROOT
 app = create_app(load_settings(), start_worker=False, extra_hosts=("testserver",), trusted_clients=("testclient",))
 with TestClient(app) as client:
     health = client.get("/api/health").json()

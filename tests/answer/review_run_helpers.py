@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import httpx
 from fastapi.testclient import TestClient
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.storage import db
 from fakes import FakeAdapter, valid_response
 from test_api_flow import session

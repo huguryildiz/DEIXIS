@@ -15,7 +15,7 @@ import httpx
 from fastapi.testclient import TestClient
 
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.domain import contracts
 from deixis.domain.rules import LITERATURE_TASKS, SEARCH_QUERY_CALLS, TEST_EFFORT_BUDGETS, schema_repairs
 from deixis.domain.skill import RUNTIME_FILES

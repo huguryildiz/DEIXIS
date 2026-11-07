@@ -14,7 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from test_api_flow import create, fake_fetch, openalex_client, session, sw_settings, wait_run
 from test_providers import key_for, run
 from fakes import FakeAdapter

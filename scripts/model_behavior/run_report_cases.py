@@ -13,12 +13,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from deixis.config import load_settings
+from deixis.runtime.config import load_settings
 from deixis.domain import contracts, wording
 from deixis.domain.skill import load_skill_package
 from deixis.models import prompt
 from deixis.models.adapter import CodexAdapter, is_rate_limited
-from deixis.paths import REPO_ROOT
+from deixis.runtime.paths import REPO_ROOT
 from deixis.workflow.run.flow import HANDLE_TASKS
 
 FIXTURES = REPO_ROOT / "tests/fixtures/research/step-inputs.json"

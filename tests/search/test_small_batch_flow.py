@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.providers.registry import CONNECTORS
 from deixis.workflow.search import small_batch
 from fakes import FakeAdapter, valid_response

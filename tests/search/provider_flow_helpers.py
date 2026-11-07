@@ -11,7 +11,7 @@ import httpx
 from fastapi.testclient import TestClient
 
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.documents.fetch import FetchResult
 from deixis.providers import biorxiv as biorxiv_module
 from deixis.providers.registry import CONNECTORS

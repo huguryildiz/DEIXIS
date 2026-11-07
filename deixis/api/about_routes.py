@@ -15,7 +15,7 @@ from urllib.parse import urlencode
 from fastapi import HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
-from deixis import paths, update_check
+from deixis.runtime import paths, update_check
 
 REPO_URL = "https://github.com/huguryildiz/DEIXIS"
 LICENSE_ID = "AGPL-3.0-or-later"

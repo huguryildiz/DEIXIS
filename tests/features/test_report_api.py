@@ -20,7 +20,7 @@ from test_report_flow import COLUMN, FUTURE_WORK_COLUMN, LIMITATIONS_COLUMN, Rep
 def test_citation_edit_route_without_models_or_worker(tmp_path, case, expected):
     import httpx
     from deixis.api.app import create_app
-    from deixis.config import Settings
+    from deixis.runtime.config import Settings
     from test_report_assembly import report_with_sections
     from test_report_edit_check import finish
     fixture = report_with_sections.__wrapped__(tmp_path)
@@ -85,7 +85,7 @@ def test_citation_edit_route_without_models_or_worker(tmp_path, case, expected):
 def test_check_edits_route_without_model_or_worker(tmp_path, case, expected):
     import httpx
     from deixis.api.app import create_app
-    from deixis.config import Settings
+    from deixis.runtime.config import Settings
     from test_report_assembly import report_with_sections
     from test_report_edit_check import finish, edit
     fixture = report_with_sections.__wrapped__(tmp_path)

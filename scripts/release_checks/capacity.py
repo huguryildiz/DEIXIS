@@ -1374,7 +1374,7 @@ def limits_table(measured: dict[str, Any] | None = None) -> list[dict[str, Any]]
     """K07: one row per limit with kind, value (and file:line), and the measured peak, from the code's own constants."""
     _deixis()
     from deixis.api import app as api_app
-    from deixis.config import Settings
+    from deixis.runtime.config import Settings
     from deixis.documents import fetch, pdf
 
     backend = REPO / "deixis"

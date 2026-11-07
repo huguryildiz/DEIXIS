@@ -16,9 +16,9 @@ from typing import Any, Literal
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from deixis.config import (ARXIV_SOURCE_SETTING, DEFAULT_EFFORT_SETTING, FULLTEXT_FETCH_SETTING, MODEL_CONCURRENCY_MAX,
+from deixis.runtime.config import (ARXIV_SOURCE_SETTING, DEFAULT_EFFORT_SETTING, FULLTEXT_FETCH_SETTING, MODEL_CONCURRENCY_MAX,
                            MODEL_CONCURRENCY_SETTING)
-from deixis import update_check
+from deixis.runtime import update_check
 from deixis.documents import arxiv_source
 
 EFFORTS = ("quick", "standard", "detailed")

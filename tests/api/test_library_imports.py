@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.imports import bibtex_ris
 from fakes import FakeAdapter
 from helpers import make_pdf

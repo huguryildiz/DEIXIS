@@ -25,11 +25,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from deixis import __main__ as cli
-from deixis import desktop_reaper, frozen_entry
+from deixis.tools import desktop_reaper
+from deixis.runtime import frozen_entry
 from deixis.models import cli_process
 from deixis.tools import child_record
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from fakes import FakeAdapter
 
 REPO = Path(__file__).resolve().parents[2]
@@ -60,7 +61,7 @@ def test_the_frozen_entry_runs_only_listed_child_modules_with_the_child_argv(mon
 def test_the_frozen_entry_refuses_the_macos_process_layer_on_windows(monkeypatch):
     # P10 W3: on Windows each child's Job Object owns it; the watchdog and the session launcher are not children there.
     monkeypatch.setattr(frozen_entry.sys, "platform", "win32")
-    for module in ("deixis.desktop_reaper", "deixis.session_launcher"):
+    for module in ("deixis.tools.desktop_reaper", "deixis.tools.session_launcher"):
         assert frozen_entry.run_child(module, []) == frozen_entry.EXIT_REFUSED
 
 
@@ -529,7 +530,7 @@ def test_the_sidecar_build_stops_on_language_data_that_is_not_the_pinned_file(tm
     check refuses a file that is not the one its PINS.json names."""
     import hashlib
     import importlib.util
-    from deixis import resource_check
+    from deixis.runtime import resource_check
 
     spec = importlib.util.spec_from_file_location("sidecar_build", Path(__file__).resolve().parents[2] / "packaging" / "sidecar" / "build.py")
     build = importlib.util.module_from_spec(spec)

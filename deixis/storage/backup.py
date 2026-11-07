@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.storage.db import now
 from deixis.workflow.read import recovery_history, text_retry
 

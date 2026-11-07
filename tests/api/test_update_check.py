@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
-from deixis import update_check
+from deixis.runtime import update_check
 from deixis.storage import db
 from deixis.workflow.run.store import Store
 

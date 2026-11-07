@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.domain import canonical
 from deixis.domain.rules import TEST_EFFORT_BUDGETS
 from deixis.storage import db

@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, Callable
 
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.documents.pdf import chunk_page
 from deixis.domain.canonical import canonical_rows, sha256_hex
 from deixis.domain import survey

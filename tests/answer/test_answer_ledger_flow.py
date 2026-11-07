@@ -7,7 +7,7 @@ published, and which attempt's ledger is stored; they say nothing about whether 
 import asyncio
 import json
 import pytest
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.domain import skill
 from deixis.storage import db
 from deixis.workflow.run.flow import LEDGER_COVERAGE_KEY, FlowDeps, ResearchFlow

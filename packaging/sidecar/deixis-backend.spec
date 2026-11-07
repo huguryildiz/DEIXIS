@@ -8,7 +8,7 @@ from pathlib import Path
 
 from PyInstaller.utils.hooks import copy_metadata
 
-from deixis import package_manifest
+from deixis.runtime import package_manifest
 
 REPO = Path(SPECPATH).resolve().parents[1]
 identity = Path(os.environ["DEIXIS_BUILD_IDENTITY"])
@@ -22,7 +22,7 @@ EXCLUDES = ["pytest", "_pytest", "testmon", "pytest_testmon", "xdist", "execnet"
             "tkinter", "_tkinter", "PyInstaller", "IPython", "pip", "setuptools", "wheel", "tests"]
 
 a = Analysis(
-    [str(REPO / "deixis" / "frozen_entry.py")],
+    [str(REPO / "deixis" / "runtime" / "frozen_entry.py")],
     pathex=[str(REPO)],
     binaries=[],
     datas=package_manifest.datas(REPO, identity) + copy_metadata("deixis") + [(str(tessdata / n), "tessdata") for n in TESSDATA_FILES],

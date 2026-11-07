@@ -160,7 +160,7 @@ import json
 
 from fastapi.testclient import TestClient
 
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.storage.backup import create_backup, restore_backup
 from deixis.workflow.features.tables import table_rows
 from test_api_flow import app_for, create, session

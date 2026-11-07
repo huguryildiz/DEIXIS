@@ -20,10 +20,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from deixis import __main__ as cli
-from deixis import config
+from deixis.runtime import config
 from deixis.storage import data_location, library_lock
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from fakes import FakeAdapter
 
 
@@ -247,7 +247,7 @@ def test_nothing_is_deleted_from_the_source_before_the_copy_and_its_record_are_o
 
 
 
-from deixis.config import platform_data_dir as real_platform_data_dir  # noqa: E402  (before conftest's stand-in)
+from deixis.runtime.config import platform_data_dir as real_platform_data_dir  # noqa: E402  (before conftest's stand-in)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Path.home() ignores HOME on Windows")

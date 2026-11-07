@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.providers import keyless_check, registry
 from deixis.providers.pacing import SerialRequestPacer
 from fakes import FakeAdapter

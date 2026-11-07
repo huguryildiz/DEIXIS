@@ -25,7 +25,7 @@ from typing import Any, Awaitable, Callable, Iterator
 
 import httpx
 
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition, embeddings, identity, local_embedding, ocr, pdf
 from deixis.domain import canonical, contracts, statement as statement_rule, vocabulary as question_words

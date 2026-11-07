@@ -20,12 +20,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from deixis.config import load_settings
+from deixis.runtime.config import load_settings
 from deixis.domain import contracts
 from deixis.domain.skill import load_skill_package
 from deixis.models import prompt
 from deixis.models.adapter import CodexAdapter
-from deixis.paths import REPO_ROOT
+from deixis.runtime.paths import REPO_ROOT
 
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "research" / "step-inputs.json"
 CASES = REPO_ROOT / "tests" / "model_behavior" / "cases.json"

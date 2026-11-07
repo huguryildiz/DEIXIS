@@ -33,7 +33,7 @@ def launch(argv) -> list[str]:
 
 def refused(returncode: int | None, stderr: str) -> str | None:
     """The launcher's refusal (the program never started, nothing was sent): its sentence, else None."""
-    from deixis.session_launcher import RECORD_FAILED, REFUSED
+    from deixis.tools.session_launcher import RECORD_FAILED, REFUSED
 
     line = next((x for x in stderr.splitlines() if x.startswith(REFUSED)), None)
     return line if returncode == RECORD_FAILED and line and child_record.ON else None

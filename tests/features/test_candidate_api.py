@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.storage import db
 from deixis.workflow.features.candidates.candidates_store import CandidateStore
 from fakes import FakeAdapter, valid_response

@@ -8,7 +8,7 @@ import sqlite3
 import httpx
 import pytest
 
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.providers import registry
 from deixis.storage import backup, db
 from deixis.workflow.features.watch.watch_store import TABLES

@@ -83,7 +83,7 @@ def test_a_logged_http_error_traceback_leaves_no_key(caplog):
 def test_the_app_installs_the_redaction_at_start(tmp_path, monkeypatch):
     monkeypatch.setattr(logging, "_logRecordFactory", logging.LogRecord)  # a plain factory, as if nothing had installed it
     from deixis.api.app import create_app
-    from deixis.config import Settings
+    from deixis.runtime.config import Settings
     from fakes import FakeAdapter
     create_app(Settings(data_dir=tmp_path / "data"), adapters={"fake": FakeAdapter()})
     assert getattr(logging.getLogRecordFactory(), "redacts_keys", False)

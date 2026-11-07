@@ -29,7 +29,7 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 
-from deixis.paths import is_frozen
+from deixis.runtime.paths import is_frozen
 
 log = logging.getLogger(__name__)
 

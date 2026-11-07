@@ -1,7 +1,7 @@
 //! The DEIXIS desktop shell (P10 M2 macOS, W4 Windows): one window, a tray item and the backend's lifetime.
 //!
 //! The backend ships inside the app (`sidecar/deixis-backend/` in the resource folder). On macOS the shell starts it
-//! through its watchdog (`deixis-backend -m deixis.desktop_reaper`, which starts `serve --desktop`); on Windows it
+//! through its watchdog (`deixis-backend -m deixis.tools.desktop_reaper`, which starts `serve --desktop`); on Windows it
 //! starts `deixis-backend.exe serve --desktop` directly, created inside a kill-on-close Job Object (`win_job.rs`), so the
 //! job, not a watchdog, ends the backend and its descendants when the shell goes. Either way the shell writes a fresh
 //! control token as the first stdin line and keeps stdin open: EOF on that pipe tells the backend the shell is gone. The
@@ -901,7 +901,7 @@ mod platform {
             #[cfg(target_os = "linux")]
             command.env_clear().envs(super::outside_env(std::env::vars()));
             let mut child = command
-                .args(["-m", "deixis.desktop_reaper"])
+                .args(["-m", "deixis.tools.desktop_reaper"])
                 .env_remove("DEIXIS_CONTROL_TOKEN")
                 .current_dir(home)
                 .stdin(Stdio::piped())

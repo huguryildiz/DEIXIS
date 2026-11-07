@@ -113,7 +113,7 @@ class Settings:
 
     @property
     def web_dist(self) -> Path:
-        from deixis.paths import RESOURCE_ROOT
+        from deixis.runtime.paths import RESOURCE_ROOT
 
         return RESOURCE_ROOT / "web" / "dist"
 
@@ -146,7 +146,7 @@ def load_dotenv(path: Path) -> set[str]:
 
 
 def load_settings() -> Settings:
-    from deixis.paths import RESOURCE_ROOT, is_frozen
+    from deixis.runtime.paths import RESOURCE_ROOT, is_frozen
 
     from deixis.keys import credentials
 

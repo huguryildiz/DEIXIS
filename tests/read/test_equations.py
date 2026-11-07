@@ -9,7 +9,7 @@ from deixis.workflow.run.store import Store
 from helpers import make_pdf
 from fastapi.testclient import TestClient
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from test_api_flow import fake_fetch, openalex_client, session
 from deixis.documents import equation_regions as er
 from mathpix_helpers import prose, two_equations

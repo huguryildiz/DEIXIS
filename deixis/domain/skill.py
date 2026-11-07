@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from deixis.paths import SKILL_DIR
+from deixis.runtime.paths import SKILL_DIR
 
 RUNTIME_FILES = {
     "owner_review": ("SKILL.md", "references/review.md"),

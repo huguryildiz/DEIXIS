@@ -27,7 +27,7 @@ from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 
-from deixis.paths import is_frozen
+from deixis.runtime.paths import is_frozen
 from deixis.providers import query_compiler, registry
 from deixis.storage.db import now
 from deixis.workflow.run import flow_counts as flow_rules

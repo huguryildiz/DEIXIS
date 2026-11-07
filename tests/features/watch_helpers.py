@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.providers import registry
 from deixis.storage import db
 from deixis.workflow.features.watch.watch_store import WatchStore

@@ -78,7 +78,7 @@ from helpers import make_pdf  # noqa: E402
 from old_library import master, old_library  # noqa: E402
 from test_schema_upgrades import PAPER, fill, rows, user_tables  # noqa: E402
 
-from deixis import package_manifest  # noqa: E402
+from deixis.runtime import package_manifest  # noqa: E402
 from deixis.documents import jats as jats_module  # noqa: E402
 from deixis.storage import db  # noqa: E402
 

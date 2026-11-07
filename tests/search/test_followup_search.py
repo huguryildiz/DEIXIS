@@ -156,7 +156,7 @@ def prepared(tmp_path, monkeypatch, responder=valid_response):
     import asyncio  # noqa: F401  (the harness drives the flow with asyncio.run)
     from types import SimpleNamespace
     import httpx
-    from deixis.config import Settings
+    from deixis.runtime.config import Settings
     from deixis.domain import skill
     from deixis.storage import db
     from deixis.workflow.run.flow import FlowDeps, ResearchFlow

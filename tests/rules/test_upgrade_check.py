@@ -19,7 +19,7 @@ try:
 except ImportError:  # Windows: os.listdir never takes a descriptor there
     fcntl = None
 
-from deixis import config
+from deixis.runtime import config
 from deixis.storage import db, upgrades
 from deixis.workflow.run.store import Store
 from test_restore_matrix import add_versions, make_source_library, newer_code_steps

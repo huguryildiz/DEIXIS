@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.domain import contracts, skill
 from deixis.models.adapter import ModelStepResult
 from deixis.storage import db

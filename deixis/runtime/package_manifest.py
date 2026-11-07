@@ -38,12 +38,12 @@ HIDDEN_IMPORTS = (
     "deixis.documents.ocr",
     "deixis.documents.arxiv_source",
     "deixis.documents.child_guard",
-    "deixis.desktop_reaper",
-    "deixis.session_launcher",
+    "deixis.tools.desktop_reaper",
+    "deixis.tools.session_launcher",
     # `pdf_child.CALLS` imports the module of each bounded read by name
     "deixis.documents.figures",
     "deixis.documents.equation_regions",
-    "deixis.resource_check",
+    "deixis.runtime.resource_check",
     # uvicorn resolves its loop, protocol and lifespan classes from config strings
     "uvicorn.logging",
     "uvicorn.loops.auto",

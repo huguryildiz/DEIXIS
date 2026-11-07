@@ -17,13 +17,13 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from deixis.config import default_data_dir, load_settings
+from deixis.runtime.config import default_data_dir, load_settings
 from deixis.domain import contracts
 from deixis.domain.rules import after_invalid_output, schema_repairs
 from deixis.domain.skill import load_skill_package
 from deixis.models import prompt
 from deixis.models.adapter import CodexAdapter, is_rate_limited
-from deixis.paths import REPO_ROOT
+from deixis.runtime.paths import REPO_ROOT
 from deixis.storage.db import new_id, now
 from deixis.workflow.run import flow
 from deixis.workflow.features.report.report_review import REVIEW_BUDGET_TOKENS

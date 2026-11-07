@@ -5,7 +5,7 @@ L2). On Windows this layer is off and the job objects stand in for it (`tools/wi
 
 A model CLI or tool probe (`models/cli_process.py`), a local model server (`documents/local_embedding.py`) and the
 login-shell PATH read (`tools/tool_paths.py`) leave the backend's process group on purpose, so a kill of that group
-does not reach them. On macOS and Linux each is started through `deixis.session_launcher`: a small process that leads the new
+does not reach them. On macOS and Linux each is started through `deixis.tools.session_launcher`: a small process that leads the new
 session and, while the record is on, writes its own line here (pid, kernel start time, group, session, and the
 identity of the backend that owns it) and only then starts the program, which stays in its group and session. If the
 line cannot be written, or the owning backend is already gone, the program is never started. The launcher outlives the
@@ -47,7 +47,7 @@ RECORD_ENV = "DEIXIS_CHILD_RECORD"
 OWNER_ENV = "DEIXIS_CHILD_OWNER"
 RECORD_NAME = Path("run") / "children.jsonl"
 ACK_ENV = "DEIXIS_CHILD_RECORD_ACK"  # set by the desktop watchdog: the backend tells it the record path first
-LAUNCHER = "deixis.session_launcher"
+LAUNCHER = "deixis.tools.session_launcher"
 NONE = "-"  # the launcher's record and owner arguments while the record is off
 GONE_WAIT_SECONDS = 3.0
 CLEAN_SECONDS = 10.0

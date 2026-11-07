@@ -25,7 +25,7 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from deixis import config
+from deixis.runtime import config
 from deixis.storage import library_lock
 from deixis.tools.child_env import child_env
 

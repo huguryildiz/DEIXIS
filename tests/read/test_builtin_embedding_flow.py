@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.documents import builtin_catalog, embeddings, local_embedding
 from deixis.documents.local_embedding import LocalEmbeddingError
 from deixis.providers.common import ProviderRecord

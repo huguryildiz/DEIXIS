@@ -3,7 +3,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.storage import db
 from deixis.storage.db import dumps, now
 from deixis.workflow.search import small_batch

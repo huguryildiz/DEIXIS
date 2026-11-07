@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 from deixis.api import usage_routes
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.providers import openalex
 from fakes import FakeAdapter
 

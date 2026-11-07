@@ -19,7 +19,7 @@ from pathlib import Path
 
 
 def problems() -> list[str]:
-    from deixis import package_manifest, paths
+    from deixis.runtime import package_manifest, paths
     from deixis.domain import skill
     from deixis.storage import db
 
@@ -77,7 +77,7 @@ def tessdata_problems(folder: Path) -> list[str]:
 
 
 def identity_sha256() -> str | None:
-    from deixis import package_manifest, paths
+    from deixis.runtime import package_manifest, paths
 
     identity = paths.RESOURCE_ROOT / "deixis" / package_manifest.BUILD_IDENTITY
     return hashlib.sha256(identity.read_bytes()).hexdigest() if identity.is_file() else None
@@ -139,7 +139,7 @@ def runtime_main(args: list[str]) -> int:
     def https() -> dict:
         import httpx
 
-        from deixis.system_trust import use_system_certificates
+        from deixis.runtime.system_trust import use_system_certificates
 
         use_system_certificates()
         response = httpx.get(options["--https"], timeout=30, follow_redirects=False)

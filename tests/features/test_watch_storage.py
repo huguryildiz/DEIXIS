@@ -127,7 +127,7 @@ def test_schedule_coherence_triggers_recursive_off_all_write_forms(api, operatio
 
 def test_backup_restore_keeps_nonempty_schedule_and_gap_histories(api, tmp_path):
     from deixis.storage import backup
-    from deixis.config import Settings
+    from deixis.runtime.config import Settings
     histories(api); turn(api)
     before = rows(api.conn, TABLES)
     saved = backup.create_backup(api.settings, tmp_path / "backups")

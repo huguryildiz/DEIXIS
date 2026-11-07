@@ -13,10 +13,10 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from deixis import paths
+from deixis.runtime import paths
 from deixis.api import about_routes
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from fakes import FakeAdapter
 
 

@@ -71,7 +71,7 @@ from fastapi.testclient import TestClient
 
 from deixis import __main__ as launcher
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.storage import upgrades
 from deixis.storage.upgrades import Step
 from fakes import FakeAdapter

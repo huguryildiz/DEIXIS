@@ -14,7 +14,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.domain import skill
 from deixis.storage import db, upgrades
 from deixis.storage.db import new_id, now, transaction

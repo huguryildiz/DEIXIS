@@ -24,7 +24,7 @@ from types import SimpleNamespace
 
 from deixis import __main__ as cli
 from deixis import __main__ as launcher
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.keys import account_signin
 from deixis.keys.account_signin import build_launch
 from deixis.models import claude

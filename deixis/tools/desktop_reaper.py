@@ -1,6 +1,6 @@
 """Watchdog between the packaged app's shell and the backend, macOS (P10 M2) and Linux (L2).
 
-    deixis-backend -m deixis.desktop_reaper [serve options...]
+    deixis-backend -m deixis.tools.desktop_reaper [serve options...]
 
 The shell (Tauri) starts this process and writes the control token as the first line on its stdin, then holds stdin
 open. The watchdog moves into a session of its own (so it outlives the shell's process group), starts the backend

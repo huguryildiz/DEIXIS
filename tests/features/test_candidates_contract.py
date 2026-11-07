@@ -7,7 +7,7 @@ import json
 import pytest
 from jsonschema import Draft202012Validator
 
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.domain import contracts, skill
 from deixis.domain.rules import LITERATURE_TASKS, MAX_SCHEMA_REPAIRS, NO_REPAIR_TASKS, schema_repairs, step_model
 from deixis.storage import db

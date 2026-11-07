@@ -232,7 +232,7 @@ def main():
     os.environ['DEIXIS_DATA_DIR'], os.environ['DEIXIS_PORT'] = str(data_dir), str(args.port)
     import uvicorn
     from deixis.api.app import create_app
-    from deixis.config import load_settings
+    from deixis.runtime.config import load_settings
     from deixis.models.claude import ClaudeCodeAdapter
 
     if args.connection != 'claude':

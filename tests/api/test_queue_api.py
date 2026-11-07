@@ -92,7 +92,7 @@ def quiet_app(tmp_path, monkeypatch):
     """The API over a library the test writes itself, with no worker: rows come from `test_queue.Lib`, not a run."""
     import httpx
     from deixis.api.app import create_app
-    from deixis.config import Settings
+    from deixis.runtime.config import Settings
     monkeypatch.setenv("DEIXIS_CONTACT_EMAIL", "synthetic@example.org")
     app = create_app(Settings(data_dir=tmp_path / "data", port=8765),
                      adapters={"fake": FakeAdapter(valid_response)},

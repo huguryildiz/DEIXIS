@@ -12,7 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 from deixis import __main__ as cli
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.documents import pdf, acquisition, ocr
 from deixis.documents.fetch import FetchResult
 from deixis.providers import zotero

@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from deixis.api.app import (CreateResearch, UploadRefused, ZoteroImport, attach_zotero_pdf, checked_research_models,
                             create_research_row, disk_full_refused, store_upload)
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.documents import pdf, upload_record
 from deixis.providers.registry import CONNECTORS
 from deixis.imports import bibtex_ris

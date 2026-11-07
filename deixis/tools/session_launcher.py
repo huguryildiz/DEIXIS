@@ -1,6 +1,6 @@
 """Leader of a session DEIXIS starts for an outside program (P10 M2); see `tools/child_record.py`.
 
-    <python or deixis-backend> -m deixis.session_launcher RECORD OWNER KIND -- PROGRAM ARGS...
+    <python or deixis-backend> -m deixis.tools.session_launcher RECORD OWNER KIND -- PROGRAM ARGS...
 
 Started with `start_new_session`, so this process leads the new session and process group. While the record is on
 (RECORD and OWNER are not `-`) it writes its own line to the child record first; if that fails, or the owner (the

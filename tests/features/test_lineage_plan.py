@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.domain import skill
 from deixis.domain.rules import MAX_RATE_LIMIT_MODEL_RETRIES, RevisionConflict, schema_repairs
 from deixis.storage import db

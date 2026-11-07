@@ -36,7 +36,7 @@ import fixture_server as fx  # noqa: E402
 import httpx  # noqa: E402
 from deixis import __main__ as deixis_main  # noqa: E402
 from deixis.api.app import create_app  # noqa: E402
-from deixis.config import Settings  # noqa: E402
+from deixis.runtime.config import Settings  # noqa: E402
 from deixis.documents import fetch as fetch_module  # noqa: E402
 from deixis.documents import pdf  # noqa: E402
 from deixis.documents import pdf_files  # noqa: E402

@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.providers import facade
 from deixis.providers.common import SearchOutcome
 from deixis.storage.db import transaction

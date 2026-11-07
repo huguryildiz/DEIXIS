@@ -18,7 +18,7 @@ from deixis.workflow.features.review.review_store import NotFound
 from review_helpers import make_answer
 from review_helpers import all_rows
 import hashlib
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.storage.backup import create_backup, restore_backup
 from deixis.workflow.features.review.review_store import SnapshotDependencyUnreadable
 from test_review import asset_evidence

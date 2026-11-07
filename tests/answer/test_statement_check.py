@@ -8,7 +8,7 @@ import copy
 import json
 from types import SimpleNamespace
 import pytest
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.domain import contracts, skill
 from deixis.domain.rules import TEST_EFFORT_BUDGETS
 from deixis.models.adapter import ModelStepResult

@@ -5,7 +5,7 @@ import time
 import httpx
 import pytest
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.documents.fetch import FetchResult
 from deixis.providers.registry import CONNECTORS
 from deixis.workflow.read import fulltext

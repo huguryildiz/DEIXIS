@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 from collections.abc import Iterable, Mapping
 
-from deixis.paths import is_frozen
+from deixis.runtime.paths import is_frozen
 from deixis.tools.tool_paths import child_path
 
 OS_VARIABLES = frozenset({

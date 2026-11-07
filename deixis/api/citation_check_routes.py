@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from deixis.api.app import UploadRefused, disk_full_refused, store_upload
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.documents import draft_parse, pdf
 from deixis.imports import bibtex_ris
 from deixis.workflow.answer import citation_check

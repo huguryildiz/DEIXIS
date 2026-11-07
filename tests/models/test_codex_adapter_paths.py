@@ -8,7 +8,7 @@ import pytest
 from pathlib import Path
 from types import SimpleNamespace
 
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.domain import skill
 from deixis.models import adapter
 from deixis.models.adapter import codex_environment

@@ -25,7 +25,7 @@ from typing import Any, Callable
 
 import httpx
 
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.domain import survey
 from deixis.domain.record_identity import record_kind
 from deixis.domain.rules import PROVIDER_WAIT

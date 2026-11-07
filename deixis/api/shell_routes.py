@@ -22,7 +22,7 @@ from fastapi import HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from deixis.tools.child_env import child_env
-from deixis.config import CONTACT_EMAIL_SETTING
+from deixis.runtime.config import CONTACT_EMAIL_SETTING
 from deixis.documents import fetch
 from deixis.domain import proxy
 from deixis.providers import scopus

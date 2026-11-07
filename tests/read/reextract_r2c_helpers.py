@@ -100,7 +100,7 @@ def startup(lib):
 
 
 def child_main():
-    from deixis.config import load_settings
+    from deixis.runtime.config import load_settings
     from deixis.storage import db
     from deixis.workflow.read import file_restore
     from deixis.workflow.run.store import Store

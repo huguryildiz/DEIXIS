@@ -125,7 +125,7 @@ def test_the_package_hash_covers_the_new_file(tmp_path):
     import shutil
 
     from deixis.domain import skill
-    from deixis.paths import SKILL_DIR
+    from deixis.runtime.paths import SKILL_DIR
 
     copy = tmp_path / "deixis-research"
     shutil.copytree(SKILL_DIR, copy)

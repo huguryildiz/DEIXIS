@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from deixis.domain import contracts, skill
 from deixis.domain.contracts import locate_anchor, quote_meaning_differs
-from deixis.paths import SKILL_DIR
+from deixis.runtime.paths import SKILL_DIR
 from deixis.domain.citation_check import MAX_PARTS, PartAssessment as P, check_outcome, derive_result, CouldNotCheck
 from deixis.documents import draft_parse, pdf
 from deixis.domain import contracts

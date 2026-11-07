@@ -11,7 +11,7 @@ import httpx
 from fastapi.testclient import TestClient
 from deixis.api.app import create_app
 from deixis.api.home_routes import suggestions
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.storage import db
 from deixis.workflow.run import intent
 from fakes import FakeAdapter, valid_response

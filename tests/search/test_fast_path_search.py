@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.documents import embeddings, local_embedding
 from deixis.providers import facade, openalex
 from deixis.providers.common import ProviderRecord, SearchOutcome

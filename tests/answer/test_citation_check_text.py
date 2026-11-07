@@ -7,7 +7,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.documents.fetch import FetchResult
 from deixis.workflow.answer import citation_check
 from fakes import FakeAdapter

@@ -1,7 +1,7 @@
 ; DEIXIS copy of the Tauri NSIS template from tauri-cli v2.12.4
 ; (crates/tauri-bundler/src/bundle/windows/nsis/installer.nsi). One change, marked DEIXIS below: a per-user install
 ; goes to %LOCALAPPDATA%\Programs\DEIXIS, not %LOCALAPPDATA%\DEIXIS, which is the library folder
-; (deixis/config.py). Re-copy and re-apply when the pinned @tauri-apps/cli version changes.
+; (deixis/runtime/config.py). Re-copy and re-apply when the pinned @tauri-apps/cli version changes.
 Unicode true
 ManifestDPIAware true
 ; Add in `dpiAwareness` `PerMonitorV2` to manifest for Windows 10 1607+ (note this should not affect lower versions since they should be able to ignore this and pick up `dpiAware` `true` set by `ManifestDPIAware true`)

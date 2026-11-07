@@ -50,7 +50,7 @@ SCRIPT = textwrap.dedent('''
     server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)  # made first: truststore would replace the class
     server_context.load_cert_chain(cert, key)
     if mode["inject"]:
-        from deixis.system_trust import use_system_certificates
+        from deixis.runtime.system_trust import use_system_certificates
         use_system_certificates()
     if mode["store"] is not None:  # a stand-in for the operating system's verifier
         import truststore._api as api

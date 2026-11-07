@@ -126,8 +126,8 @@ def no_repository_dotenv(monkeypatch):
     """`load_settings()` fills unset variables from the repository's own `.env`, which holds the developer's real keys, and
     those stay in the worker's environment for every later test (an OPENALEX_API_KEY turned a later keyless OpenAlex 401
     into a keyed one). Tests never read that file; a test that needs a `.env` writes its own."""
-    from deixis import config
-    from deixis.paths import RESOURCE_ROOT
+    from deixis.runtime import config
+    from deixis.runtime.paths import RESOURCE_ROOT
 
     real, repository = config.load_dotenv, (RESOURCE_ROOT / ".env").resolve()
     monkeypatch.setattr(config, "load_dotenv", lambda path: set() if Path(path).resolve() == repository else real(path))
@@ -137,7 +137,7 @@ def no_repository_dotenv(monkeypatch):
 def no_real_platform_data_dir(monkeypatch, tmp_path_factory):
     """The platform default folder holds the location pointer (D32); tests never read or write the real one. A test
     that needs a pointer patches `config.platform_data_dir` to its own temp folder."""
-    from deixis import config
+    from deixis.runtime import config
 
     monkeypatch.setattr(config, "platform_data_dir", lambda: tmp_path_factory.getbasetemp() / "no-platform-default")
 

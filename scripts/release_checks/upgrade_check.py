@@ -40,8 +40,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(REPO)]
 
-from deixis import config  # noqa: E402
-from deixis.config import Settings  # noqa: E402
+from deixis.runtime import config  # noqa: E402
+from deixis.runtime.config import Settings  # noqa: E402
 from deixis.storage import db  # noqa: E402
 from deixis.storage.backup import BackupError, _referenced_files, create_backup, restore_backup  # noqa: E402
 

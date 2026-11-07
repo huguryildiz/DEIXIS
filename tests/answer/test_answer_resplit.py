@@ -6,7 +6,7 @@ Scripted FakeAdapter and synthetic sources: these show workflow and persistence 
 import asyncio
 import json
 import pytest
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.domain import contracts, skill
 from deixis.storage import db
 from deixis.workflow.run.flow import RESPLIT_KEY, FlowDeps, ResearchFlow

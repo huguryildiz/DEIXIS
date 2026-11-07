@@ -7,7 +7,7 @@ from claude_agent_sdk import (AssistantMessage, ClaudeSDKError, ResultMessage, S
 
 from claude_agent_sdk._internal.message_parser import parse_message
 
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.domain import skill
 from deixis.storage import db
 from deixis.tools import tool_probe

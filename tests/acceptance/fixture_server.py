@@ -128,7 +128,7 @@ import keyring  # noqa: E402
 import uvicorn  # noqa: E402
 
 from deixis.api.app import create_app  # noqa: E402
-from deixis.config import Settings  # noqa: E402
+from deixis.runtime.config import Settings  # noqa: E402
 from deixis.documents import fetch as fetch_module  # noqa: E402
 from deixis.documents.fetch import FetchResult  # noqa: E402
 from deixis.models.adapter import ModelStepResult  # noqa: E402

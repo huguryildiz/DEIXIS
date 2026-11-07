@@ -16,7 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 from deixis.api import app as app_module
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import pdf
 from deixis.documents.fetch import FetchResult

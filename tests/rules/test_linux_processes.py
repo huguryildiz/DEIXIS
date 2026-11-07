@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from deixis import desktop_reaper
+from deixis.tools import desktop_reaper
 from deixis.documents import child_guard
 from deixis.tools import child_record
 
@@ -29,7 +29,7 @@ def test_an_orphan_that_left_with_setsid_after_the_last_scan_is_adopted_killed_a
     script = textwrap.dedent(f"""
         import json, os, subprocess, sys, time
         sys.path.insert(0, {BACKEND!r})
-        from deixis import desktop_reaper
+        from deixis.tools import desktop_reaper
         from deixis.tools import child_record
         assert desktop_reaper.become_subreaper()
         backend = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
@@ -157,7 +157,7 @@ def test_a_child_a_scan_missed_is_still_found_because_the_kernel_counts_it(tmp_p
     script = textwrap.dedent(f"""
         import json, os, subprocess, sys
         sys.path.insert(0, {BACKEND!r})
-        from deixis import desktop_reaper
+        from deixis.tools import desktop_reaper
         from deixis.tools import child_record
         assert desktop_reaper.become_subreaper()
         backend = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
@@ -218,7 +218,7 @@ def run_launcher_with(tmp_path, patch: str) -> tuple[int, bool]:
     script = textwrap.dedent(f"""
         import os, signal, sys
         sys.path.insert(0, {BACKEND!r})
-        from deixis import session_launcher
+        from deixis.tools import session_launcher
         from deixis.tools import child_record
         real_identity = child_record.identity
         {patch}

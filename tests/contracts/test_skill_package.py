@@ -4,7 +4,7 @@ import json
 import shutil
 
 from deixis.domain import skill
-from deixis.paths import SKILL_DIR
+from deixis.runtime.paths import SKILL_DIR
 
 
 def test_package_integrity():

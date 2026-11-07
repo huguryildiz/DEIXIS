@@ -22,16 +22,16 @@ from uuid import uuid4
 
 import uvicorn
 
-from deixis import config
+from deixis.runtime import config
 from deixis.keys import log_redaction
 from deixis.storage import library_lock
 from deixis.api.app import create_app
-from deixis.config import Settings, load_settings
+from deixis.runtime.config import Settings, load_settings
 from deixis.storage import data_location
 from deixis.storage.data_location import PointerDamaged, Postponed, apply_pending_move, data_dir_problem, read_pointer
 from deixis.storage import backup, db
 from deixis.storage.db import SchemaCheckUnreadable, UnknownSchemaError, check_schema_known
-from deixis.system_trust import use_system_certificates
+from deixis.runtime.system_trust import use_system_certificates
 from deixis.tools import child_record
 
 
@@ -699,7 +699,7 @@ def main(argv: list[str] | None = None) -> int:
     if given[:1] == ["hold-folder"]:  # the Windows holder of a child's folder lock (library_lock.holder_main); not a user command
         return library_lock.holder_main(given[1:])
     if given[:1] == ["--check-resources"]:  # read-only: the packaged app's files and modules, from inside the process (P10 M1)
-        from deixis import resource_check
+        from deixis.runtime import resource_check
         return resource_check.main()
     # The packaged app's shell passes the shutdown token as the first stdin line (read below, P10 M2); the environment
     # is still read (tests, M1 smoke) and the name removed either way, so no child this process starts (the Claude SDK

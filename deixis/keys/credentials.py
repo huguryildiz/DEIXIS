@@ -46,7 +46,7 @@ from deixis.keys import key_verification
 from deixis.models.anthropic_api import API_URL as ANTHROPIC_API_URL, KEY_ENV as ANTHROPIC_KEY_ENV, headers as anthropic_headers
 from deixis.models.gemini import API_URL as GEMINI_API_URL
 from deixis.models.openai_compat import BY_KEY_ENV as COMPAT_BY_KEY_ENV
-from deixis.paths import is_frozen
+from deixis.runtime.paths import is_frozen
 from deixis.storage.db import now
 from deixis.domain.limits import service_error_kind, http_limit, retry_at
 

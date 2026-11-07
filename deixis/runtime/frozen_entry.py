@@ -27,11 +27,11 @@ CHILD_MODULES = frozenset({
     "deixis.documents.ocr",
     "deixis.documents.arxiv_source",
     "deixis.documents.child_guard",
-    "deixis.desktop_reaper",  # the packaged app's watchdog (P10 M2), started by the shell
-    "deixis.session_launcher",  # leads each recorded session (P10 M2), see tools/child_record.py
+    "deixis.tools.desktop_reaper",  # the packaged app's watchdog (P10 M2), started by the shell
+    "deixis.tools.session_launcher",  # leads each recorded session (P10 M2), see tools/child_record.py
 })
 EXIT_REFUSED = 2
-POSIX_ONLY_MODULES = frozenset({"deixis.desktop_reaper", "deixis.session_launcher"})
+POSIX_ONLY_MODULES = frozenset({"deixis.tools.desktop_reaper", "deixis.tools.session_launcher"})
 _DLL_DIRECTORIES: list = []  # kept: closing one removes its folder from the search
 
 
@@ -84,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
     if sys.platform.startswith("linux") and getattr(sys, "frozen", False):
         reset_library_path()
     if argv[:1] == ["--check-runtime"]:  # the Windows release smoke's in-process checks (scripts/desktop/sidecar_smoke.py)
-        from deixis import resource_check
+        from deixis.runtime import resource_check
         return resource_check.runtime_main(argv[1:])
     if len(argv) >= 2 and argv[0] == "-m":
         return run_child(argv[1], argv[2:])

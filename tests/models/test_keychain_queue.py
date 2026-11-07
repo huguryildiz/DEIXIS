@@ -20,7 +20,7 @@ from keyring.errors import PasswordDeleteError
 from keyring.errors import PasswordSetError
 
 from deixis.api.app import create_app
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.keys import credentials
 from fakes import FakeAdapter
 

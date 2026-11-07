@@ -17,7 +17,7 @@ def resource_root() -> Path:
         return Path(env)
     if is_frozen():
         return Path(sys._MEIPASS)
-    return Path(__file__).resolve().parents[1]
+    return Path(__file__).resolve().parents[2]
 
 
 RESOURCE_ROOT = resource_root()

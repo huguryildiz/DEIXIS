@@ -29,7 +29,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from deixis.keys import account_signin, credentials, key_verification, log_redaction
 from deixis.tools import local_tools
-from deixis.config import Settings, load_settings
+from deixis.runtime.config import Settings, load_settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition
 from deixis.documents import embeddings, rerankers
@@ -1054,7 +1054,7 @@ def create_app(
             await worker.run_forever()
 
         task = asyncio.create_task(worker.run_forever() if owner else take_over_when_released()) if start_worker else None
-        from deixis import update_check
+        from deixis.runtime import update_check
         from deixis.api.about_routes import app_version, clean_version
         app.state.update_check = update_check.UpdateCheck(store, clean_version(app_version()))
         update_stop = asyncio.Event()

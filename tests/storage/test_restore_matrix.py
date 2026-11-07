@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 
 from deixis import __main__ as deixis_main
-from deixis.config import Settings
+from deixis.runtime.config import Settings
 from deixis.storage import backup as backup_module
 from deixis.storage import db, upgrades
 from deixis.storage.backup import BackupError, MANIFEST, create_backup, restore_backup

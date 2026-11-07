@@ -30,7 +30,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from deixis.paths import is_frozen, resource_root
+from deixis.runtime.paths import is_frozen, resource_root
 
 SHELL_TIMEOUT = 3.0
 SHELL_OUTPUT_LIMIT = 64 * 1024

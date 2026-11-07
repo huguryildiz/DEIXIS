@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="DEIXIS is a local research workspace: ask a question, and every citation in the answer opens the exact passage it came from.">
+<link rel="icon" href="live/favicon.svg" type="image/svg+xml">
+<link rel="preload" as="image" href="media/hero-poster.jpg">
+<title>DEIXIS · Answers you can trace to the page</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: product-led dark landing (Orca pattern). Centered hero, tabbed real app screenshots in a device frame,
+   chip clouds, feature tabs with text + screenshot, check table, FAQ, closing call. One deliberate dark look. */
+:root {
+  color-scheme: dark;
+  --bg: #0b0c0e;
+  --bg-2: #111316;
+  --panel: #15171b;
+  --line: rgb(255 255 255 / .09);
+  --line-2: rgb(255 255 255 / .16);
+  --ink: #eceef1;
+  --ink-2: #b9bec6;
+  --muted: #8b919b;
+  --accent: #93acdf;
+  --accent-ink: #0b0c0e;
+  --ok: #6cc48f;
+  --mark: #fdf1b8;
+  --sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } *, *::before, *::after { transition: none !important; animation: none !important; } }
+body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 30; background: var(--bg); }
+a { color: inherit; text-decoration: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+button { font: inherit; color: inherit; }
+.wrap { max-width: 1160px; margin: 0 auto; padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
+
+/* Nav */
+.nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: rgb(11 12 14 / .82); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid transparent; }
+.nav.scrolled { border-bottom-color: var(--line); }
+.nav .wrap { display: flex; align-items: center; gap: 28px; height: 60px; }
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 16px; letter-spacing: .02em; }
+.brand svg { width: 22px; height: 22px; color: var(--accent); }
+.nav .links { display: flex; gap: 22px; font-size: 14px; color: var(--muted); }
+.nav .links a:hover { color: var(--ink); }
+.nav .right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+.btn { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: 8px; font-size: 14px; font-weight: 500; border: 1px solid var(--line-2); background: transparent; cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s; }
+.btn:hover { background: rgb(255 255 255 / .06); }
+.btn.solid { background: var(--ink); color: #0b0c0e; border-color: var(--ink); }
+.btn.solid:hover { background: #fff; }
+.btn.lg { height: 44px; padding: 0 18px; font-size: 15px; border-radius: 9px; }
+.btn svg { width: 16px; height: 16px; flex: none; }
+
+/* Hero */
+.hero-band { position: relative; }
+.hero-bg { position: absolute; inset: 0 0 -80px; overflow: hidden; z-index: 0; pointer-events: none; }
+.hero-bg video { width: 100%; height: 100%; object-fit: cover; object-position: center 40%; opacity: .48; filter: blur(1.2px) saturate(1.2); transform: scale(1.04); }
+.hero-bg::after { content: ""; position: absolute; inset: 0; background:
+  radial-gradient(70% 60% at 50% 42%, rgb(11 12 14 / .3), rgb(11 12 14 / .8) 78%),
+  linear-gradient(180deg, rgb(11 12 14 / .6) 0%, transparent 25%, transparent 60%, var(--bg) 100%); }
+.hero { position: relative; z-index: 1; text-align: center; padding-block: 76px 40px; }
+.badge { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.badge b { color: var(--accent); font-weight: 500; }
+.badge i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); display: block; box-shadow: 0 0 0 3px rgb(108 196 143 / .18); }
+h1 { font-size: clamp(38px, 6.4vw, 68px); line-height: 1.04; letter-spacing: -.035em; font-weight: 600; margin: 22px auto 20px; max-width: 900px; text-wrap: balance; }
+.lede { font-size: clamp(16px, 1.6vw, 19px); color: var(--ink-2); max-width: 640px; margin: 0 auto; text-wrap: pretty; }
+.cta { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; margin-top: 32px; }
+.also-wrap { position: relative; display: flex; justify-content: center; margin-top: 12px; }
+.also { display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; font-size: 13px; color: var(--muted); cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+.also:hover, .also[aria-expanded="true"] { color: var(--ink); }
+.also svg { width: 14px; height: 14px; transition: transform .15s; }
+.also[aria-expanded="true"] svg { transform: rotate(180deg); }
+.dl-menu { position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); z-index: 15; width: min(360px, calc(100vw - 40px)); text-align: left;
+  background: var(--panel); border: 1px solid var(--line-2); border-radius: 10px; padding: 6px; box-shadow: 0 16px 40px rgb(0 0 0 / .45); display: grid; gap: 2px; }
+.dl-item { display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto; column-gap: 12px; padding: 9px 10px; border-radius: 7px; }
+a.dl-item:hover { background: rgb(255 255 255 / .06); }
+.dl-item.current { background: rgb(255 255 255 / .04); }
+.dl-os { font-size: 14px; font-weight: 500; color: var(--ink); }
+.dl-note { grid-column: 1; font-size: 12.5px; color: var(--muted); }
+.dl-state { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 12.5px; color: var(--muted); }
+.dl-state.ok { color: var(--accent); font-weight: 500; }
+.dl-item.off .dl-os { color: var(--ink-2); }
+.dl-pre { font-size: 11px; font-weight: 500; color: var(--muted); border: 1px solid var(--line-2); border-radius: 999px; padding: 0 6px; margin-left: 4px; vertical-align: 1px; }
+
+/* Showcase */
+.show { padding-bottom: 40px; }
+.pills { display: flex; justify-content: center; gap: 4px; flex-wrap: wrap; margin: 0 auto 22px; padding: 4px; border: 1px solid var(--line); border-radius: 11px; background: var(--bg-2); width: fit-content; max-width: 100%; }
+.pill { border: 0; background: none; height: 32px; padding: 0 12px; border-radius: 8px; font-size: 13.5px; color: var(--muted); cursor: pointer; display: inline-flex; gap: 7px; align-items: center; }
+.pill svg { width: 15px; height: 15px; }
+.pill:hover { color: var(--ink); }
+.pill[aria-selected="true"] { background: rgb(255 255 255 / .09); color: var(--ink); box-shadow: inset 0 0 0 1px var(--line-2); }
+.device { position: relative; border-radius: 16px; padding: 10px; background: linear-gradient(180deg, rgb(255 255 255 / .10), rgb(255 255 255 / .03)); border: 1px solid var(--line-2);
+  box-shadow: 0 40px 120px -30px rgb(147 172 223 / .25), 0 20px 60px rgb(0 0 0 / .5); }
+.screen { position: relative; border-radius: 9px; overflow: hidden; aspect-ratio: 1440 / 900; background: #16181b; max-width: 100%; }
+.screen img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top left; opacity: 0; transition: opacity .25s ease; }
+.screen img.on { opacity: 1; }
+.hot { position: absolute; transform: translate(-50%, -50%); width: 30px; height: 30px; border-radius: 50%; border: 0; background: rgb(147 172 223 / .25); cursor: pointer; display: none; }
+.hot.on { display: block; }
+.hot::before { content: ""; position: absolute; inset: 9px; border-radius: 50%; background: var(--accent); }
+.hot::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--accent); animation: ping 1.6s ease-out infinite; }
+@keyframes ping { from { transform: scale(.6); opacity: 1; } to { transform: scale(1.7); opacity: 0; } }
+.hot-label { position: absolute; transform: translate(14px, -50%); background: var(--ink); color: #0b0c0e; font-size: 12.5px; font-weight: 500; padding: 5px 9px; border-radius: 7px; white-space: nowrap; pointer-events: none; display: none; }
+.hot-label.on { display: block; }
+.screen.live iframe { position: absolute; top: 0; left: 0; width: 1440px; height: 900px; border: 0; transform-origin: 0 0; background: #16181b; }
+.demo-toast { position: absolute; left: 50%; bottom: 22px; transform: translate(-50%, 10px); opacity: 0; transition: opacity .18s, transform .18s; pointer-events: none;
+  background: var(--ink); color: #0b0c0e; font-size: 13px; font-weight: 500; padding: 8px 14px; border-radius: 8px; box-shadow: 0 8px 24px rgb(0 0 0 / .4); max-width: 86%; text-align: center; }
+.demo-toast.on { opacity: 1; transform: translate(-50%, 0); }
+.live-note { text-align: center; color: var(--muted); font-size: 13px; margin: 6px auto 0; max-width: 620px; }
+.cap { text-align: center; color: var(--muted); font-size: 14px; margin-top: 18px; min-height: 2.6em; max-width: 680px; margin-inline: auto; }
+.cap b { color: var(--ink); font-weight: 500; }
+
+/* Sections */
+section.block { padding-block: 96px; border-top: 1px solid var(--line); }
+.h2 { font-size: clamp(30px, 4.2vw, 46px); letter-spacing: -.03em; line-height: 1.1; font-weight: 600; text-align: center; margin: 0 0 14px; text-wrap: balance; }
+.sub { text-align: center; color: var(--ink-2); max-width: 620px; margin: 0 auto; font-size: 17px; text-wrap: pretty; }
+.chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: 900px; margin: 34px auto 0; }
+.chip { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg-2); font-size: 14px; color: var(--ink-2); }
+.chip .ico { width: 18px; height: 18px; display: inline-grid; place-items: center; flex: none; color: var(--ink); }
+.chip .ico svg { width: 18px; height: 18px; display: block; }
+.chip i { width: 7px; height: 7px; border-radius: 2px; background: var(--accent); display: block; opacity: .8; }
+.chip.dash { border-style: dashed; color: var(--muted); background: none; }
+.marquee { overflow: hidden; margin: 34px auto 0; max-width: 1000px; -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); }
+.marquee .track { display: flex; width: max-content; gap: 8px; animation: slide 38s linear infinite; }
+.marquee.rev .track { animation-direction: reverse; animation-duration: 44s; }
+.marquee .dup { display: contents; }
+.marquee:hover .track { animation-play-state: paused; }
+.marquee .track > .chip, .marquee .dup > .chip { white-space: nowrap; }
+.marquee .track::after { content: ""; width: 0; }
+@keyframes slide { from { transform: translateX(0); } to { transform: translateX(calc(-50% - 4px)); } }
+@media (prefers-reduced-motion: reduce) {
+  .marquee { -webkit-mask-image: none; mask-image: none; }
+  .marquee .track { width: auto; flex-wrap: wrap; justify-content: center; animation: none; }
+  .marquee .dup { display: none; }
+}
+.chip-row-label { text-align: center; font-size: 13px; color: var(--muted); margin: 36px 0 -18px; }
+
+/* Feature tabs */
+.ftabs { display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; margin: 34px auto 34px; }
+.ftab { border: 1px solid transparent; background: none; height: 34px; padding: 0 12px; border-radius: 8px; font-size: 14px; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; gap: 7px; }
+.ftab svg { width: 15px; height: 15px; }
+.ftab:hover { color: var(--ink); }
+.ftab[aria-selected="true"] { background: var(--ink); color: #0b0c0e; }
+.feature { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 48px; align-items: center; }
+.feature h3 { font-size: 28px; letter-spacing: -.02em; line-height: 1.15; font-weight: 600; margin: 0 0 12px; }
+.feature p { color: var(--ink-2); margin: 0 0 16px; }
+.feature ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.feature li { display: grid; grid-template-columns: 18px 1fr; gap: 10px; color: var(--ink-2); font-size: 15px; }
+.feature li svg { width: 16px; height: 16px; color: var(--ok); margin-top: 3px; }
+.card { border-radius: 14px; border: 1px solid var(--line-2); background: var(--panel); padding: 8px; box-shadow: 0 20px 60px rgb(0 0 0 / .4); }
+.card .screen { border-radius: 8px; }
+.crop { aspect-ratio: 16 / 11; }
+.crop img { object-fit: cover; }
+
+/* Check table */
+.tbl-wrap { overflow-x: auto; margin-top: 40px; border: 1px solid var(--line); border-radius: 12px; }
+table.check { width: 100%; border-collapse: collapse; font-size: 15px; min-width: 560px; }
+.check th, .check td { padding: 15px 18px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+.check tr:last-child td { border-bottom: 0; }
+.check th { font-size: 13px; font-weight: 500; color: var(--muted); background: var(--bg-2); }
+.check td:nth-child(2), .check td:nth-child(3), .check th:nth-child(2), .check th:nth-child(3) { text-align: center; width: 150px; }
+.check td:first-child { color: var(--ink); }
+.check td small { display: block; color: var(--muted); font-size: 13px; margin-top: 3px; }
+.yes { color: var(--ok); font-weight: 600; }
+.you { color: var(--accent); font-weight: 600; }
+.no { color: var(--muted); }
+
+/* FAQ */
+.faq { max-width: 760px; margin: 40px auto 0; border-top: 1px solid var(--line); }
+.faq details { border-bottom: 1px solid var(--line); }
+.faq summary { list-style: none; cursor: pointer; padding: 20px 4px; font-size: 16.5px; font-weight: 500; display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: "+"; font-weight: 400; font-size: 22px; color: var(--muted); transition: transform .15s; line-height: 1; }
+.faq details[open] summary::after { transform: rotate(45deg); }
+.faq .a { padding: 0 4px 22px; color: var(--ink-2); max-width: 680px; }
+.faq code { font-family: var(--mono); font-size: 13px; background: var(--bg-2); border: 1px solid var(--line); padding: 1px 6px; border-radius: 5px; }
+
+/* Closing */
+.final { text-align: center; padding-block: 110px 120px; border-top: 1px solid var(--line); background: radial-gradient(60% 80% at 50% 0%, rgb(147 172 223 / .10), transparent 70%); }
+.final .h2 { font-size: clamp(34px, 5vw, 56px); }
+footer { border-top: 1px solid var(--line); padding-block: 36px 48px; font-size: 13.5px; color: var(--muted); }
+footer .wrap { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: center; }
+footer a:hover { color: var(--ink); }
+footer .grow { flex: 1; }
+
+@media (max-width: 860px) {
+  .nav .links { display: none; }
+  .feature { grid-template-columns: 1fr; gap: 28px; }
+  .hero { padding-block: 56px 32px; }
+  section.block { padding-block: 72px; }
+  .device { padding: 6px; border-radius: 12px; }
+  .hot-label { display: none !important; }
+}
+@media (max-width: 480px) {
+  .nav .right .btn:not(.solid) { display: none; }
+  .pill { padding: 0 9px; font-size: 13px; }
+  .pill svg { display: none; }
+}
+</style>
+<style>html,body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+<header class="nav" id="nav">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="DEIXIS home">
+      <svg viewBox="3 0 64 64" fill="none" aria-hidden="true"><path d="M17 52V12H29C42.255 12 53 20.954 53 32S42.255 52 32 52C28.5 52 27 50 27 46.5V42" stroke="currentColor" stroke-width="6"/><circle cx="27" cy="34" r="5" fill="currentColor"/></svg>
+      DEIXIS
+    </a>
+    <nav class="links" aria-label="Sections">
+      <a href="#product">Product</a>
+      <a href="#how">How it reads</a>
+      <a href="#checks">What is checked</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/huguryildiz/DEIXIS/blob/main/docs/search.md">Docs</a>
+    </nav>
+    <div class="right">
+      <a class="btn" href="https://github.com/huguryildiz/DEIXIS">
+        <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.52-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.09 0 4.42-2.7 5.39-5.26 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z"/></svg>
+        GitHub
+      </a>
+      <a class="btn solid" href="https://github.com/huguryildiz/DEIXIS/releases">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+        Download
+      </a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+  <div class="hero-band">
+  <div class="hero-bg" aria-hidden="true"><video id="heroVideo" autoplay muted loop playsinline preload="auto" poster="media/hero-poster.jpg"><source src="media/hero.mp4" type="video/mp4"></video></div>
+  <div class="wrap hero">
+    <span class="badge"><i></i><span>Open source · <b>v0.1.1</b> for Mac and Windows</span></span>
+    <h1>Answers you can trace to the page.</h1>
+    <p class="lede">Ask a research question. DEIXIS searches the literature, reads the full texts and writes an answer in which every citation opens the exact passage it came from.</p>
+    <div class="cta">
+      <a class="btn solid lg dl-main" href="https://github.com/huguryildiz/DEIXIS/releases">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+        <span class="dl-label">Download for Mac</span>
+      </a>
+      <a class="btn lg" href="https://github.com/huguryildiz/DEIXIS">View on GitHub</a>
+    </div>
+    <div class="also-wrap">
+      <button class="also" id="alsoBtn" aria-expanded="false" aria-controls="dlMenu"><span id="alsoText">Also for Windows · Linux</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="dl-menu" id="dlMenu" hidden>
+        <a class="dl-item" data-os="mac" href="https://github.com/huguryildiz/DEIXIS/releases/download/v0.1.1/DEIXIS_0.1.1_aarch64.dmg"><span class="dl-os">macOS</span><span class="dl-note">Apple Silicon · macOS 13 or later · 58 MB</span><span class="dl-state ok">Download</span></a>
+        <a class="dl-item" data-os="windows" href="https://github.com/huguryildiz/DEIXIS/releases/download/v0.1.1/DEIXIS_0.1.1_x64-setup.exe"><span class="dl-os">Windows <small class="dl-pre">Preview</small></span><span class="dl-note">64-bit installer · 43 MB</span><span class="dl-state ok">Download</span></a>
+        <div class="dl-item off" data-os="linux"><span class="dl-os">Linux</span><span class="dl-note">AppImage and .deb</span><span class="dl-state">Coming soon</span></div>
+      </div>
+    </div>
+  </div>
+
+  </div>
+  <div class="wrap show" id="product">
+    <div class="pills" role="tablist" aria-label="Product screens" id="pills"></div>
+    <div class="device">
+      <div class="screen live" id="screen">
+        <iframe id="app" title="DEIXIS app, interactive preview with a recorded research" src="live/index.html#/research/res_sxteRYtN7okYNvNDyCA7" loading="lazy"></iframe>
+        <div class="demo-toast" id="demoToast" role="status" aria-live="polite"></div>
+      </div>
+    </div>
+    <p class="cap" id="cap" aria-live="polite"></p>
+    <p class="live-note">This is the real app running a recorded research. Click anything: citations, sources, the evidence table, menus and settings. Starting a new search needs the download.</p>
+  </div>
+
+  <section class="block" id="sources">
+    <div class="wrap">
+      <h2 class="h2">Bring your own model</h2>
+      <p class="sub">Use the subscription you already pay for, or an API key, or a model on your own Mac. DEIXIS records which model wrote each step and never swaps it after a failure without telling you.</p>
+      <div class="marquee"><div class="track">
+        <span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z" fill="#D97757" /></svg></span>Claude Code</span><span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.0757.0757 0 0 1 .0392.0533v5.5849a4.504 4.504 0 0 1-4.4948 4.4939zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.8956zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.7948.7948 0 0 0-.407-.6765zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.0392-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.4592a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997z" fill="currentColor" /></svg></span>Codex</span><span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 24A14.304 14.304 0 000 12 14.304 14.304 0 0012 0a14.305 14.305 0 0012 12 14.305 14.305 0 00-12 12" fill="url(#deixis-gemini-sparkle)" /><defs><linearGradient id="deixis-gemini-sparkle" x1="0%" x2="68.73%" y1="100%" y2="30.395%"><stop offset="0%" stop-color="#1C7DFF" /><stop offset="52.021%" stop-color="#1C69FF" /><stop offset="100%" stop-color="#F0DCD6" /></linearGradient></defs></svg></span>Gemini CLI</span>
+        <span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M19.245 5.364c1.322 1.36 1.877 3.216 2.11 5.817.622 0 1.2.135 1.592.654l.73.964c.21.278.323.61.323.955v2.62c0 .339-.173.669-.453.868C20.239 19.602 16.157 21.5 12 21.5c-4.6 0-9.205-2.583-11.547-4.258-.28-.2-.452-.53-.453-.868v-2.62c0-.345.113-.679.321-.956l.73-.963c.392-.517.974-.654 1.593-.654l.029-.297c.25-2.446.81-4.213 2.082-5.52 2.461-2.54 5.710-2.851 7.146-2.864h.198c1.436.013 4.685.323 7.146 2.864zm-7.244 4.328c-.284 0-.613.016-.962.05-.123.447-.305.85-.57 1.108-1.050 1.023-2.316 1.18-2.994 1.18-.638 0-1.306-.13-1.851-.464-.516.165-1.012.403-1.044.996a65.882 65.882 0 00-.063 2.884l-.002.48c-.002.563-.005 1.126-.013 1.690.002.326.204.63.51.765 2.482 1.102 4.830 1.657 6.990 1.657 2.156 0 4.504-.555 6.985-1.657a.854.854 0 00.51-.766c.03-1.682.006-3.372-.076-5.053-.031-.596-.528-.83-1.046-.996-.546.333-1.212.464-1.850.464-.677 0-1.942-.157-2.993-1.18-.266-.258-.447-.661-.57-1.108-.32-.032-.64-.049-.96-.05zm-2.525 4.013c.539 0 .976.426.976.95v1.753c0 .525-.437.95-.976.95a.964.964 0 01-.976-.95v-1.752c0-.525.437-.951.976-.951zm5 0c.539 0 .976.426.976.95v1.753c0 .525-.437.95-.976.95a.964.964 0 01-.976-.95v-1.752c0-.525.437-.951.976-.951zM7.635 5.087c-1.050.102-1.935.438-2.385.906-.975 1.037-.765 3.668-.21 4.224.405.394 1.170.657 1.995.657h.09c.649-.013 1.785-.176 2.730-1.110.435-.41.705-1.433.675-2.470-.03-.834-.27-1.520-.63-1.813-.39-.336-1.275-.482-2.265-.394zm6.465.394c-.36.292-.6.980-.63 1.813-.03 1.037.24 2.060.675 2.470.968.957 2.136 1.104 2.776 1.110h.044c.825 0 1.590-.263 1.995-.657.555-.556.765-3.187-.21-4.224-.45-.468-1.335-.804-2.385-.906-.99-.088-1.875.058-2.265.394zM12 7.615c-.24 0-.525.015-.84.044.03.16.045.336.06.526l-.001.159a2.940 2.940 0 01-.014.25c.225-.022.425-.027.612-.028h.366c.187 0 .387.006.612.028-.015-.146-.015-.277-.015-.409.015-.19.03-.365.06-.526a9.290 9.290 0 00-.84-.044z" fill="currentColor" fill-rule="evenodd" /></svg></span>GitHub Copilot</span><span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z" fill="#D97757" /></svg></span>Anthropic API</span><span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.0757.0757 0 0 1 .0392.0533v5.5849a4.504 4.504 0 0 1-4.4948 4.4939zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.8956zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.7948.7948 0 0 0-.407-.6765zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.0392-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.4592a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997z" fill="currentColor" /></svg></span>OpenAI API</span>
+        <span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 24A14.304 14.304 0 000 12 14.304 14.304 0 0012 0a14.305 14.305 0 0012 12 14.305 14.305 0 00-12 12" fill="url(#deixis-gemini-sparkle)" /><defs><linearGradient id="deixis-gemini-sparkle" x1="0%" x2="68.73%" y1="100%" y2="30.395%"><stop offset="0%" stop-color="#1C7DFF" /><stop offset="52.021%" stop-color="#1C69FF" /><stop offset="100%" stop-color="#F0DCD6" /></linearGradient></defs></svg></span>Gemini API</span><span class="chip dash"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10"/><path d="M2 20h20"/></svg></span>A model running on this Mac</span>
+<span class="dup" aria-hidden="true">
+        <span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z" fill="#D97757" /></svg></span>Claude Code</span><span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.0757.0757 0 0 1 .0392.0533v5.5849a4.504 4.504 0 0 1-4.4948 4.4939zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.8956zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.7948.7948 0 0 0-.407-.6765zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.0392-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.4592a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997z" fill="currentColor" /></svg></span>Codex</span><span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 24A14.304 14.304 0 000 12 14.304 14.304 0 0012 0a14.305 14.305 0 0012 12 14.305 14.305 0 00-12 12" fill="url(#deixis-gemini-sparkle)" /><defs><linearGradient id="deixis-gemini-sparkle" x1="0%" x2="68.73%" y1="100%" y2="30.395%"><stop offset="0%" stop-color="#1C7DFF" /><stop offset="52.021%" stop-color="#1C69FF" /><stop offset="100%" stop-color="#F0DCD6" /></linearGradient></defs></svg></span>Gemini CLI</span>
+        <span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M19.245 5.364c1.322 1.36 1.877 3.216 2.11 5.817.622 0 1.2.135 1.592.654l.73.964c.21.278.323.61.323.955v2.62c0 .339-.173.669-.453.868C20.239 19.602 16.157 21.5 12 21.5c-4.6 0-9.205-2.583-11.547-4.258-.28-.2-.452-.53-.453-.868v-2.62c0-.345.113-.679.321-.956l.73-.963c.392-.517.974-.654 1.593-.654l.029-.297c.25-2.446.81-4.213 2.082-5.52 2.461-2.54 5.710-2.851 7.146-2.864h.198c1.436.013 4.685.323 7.146 2.864zm-7.244 4.328c-.284 0-.613.016-.962.05-.123.447-.305.85-.57 1.108-1.050 1.023-2.316 1.18-2.994 1.18-.638 0-1.306-.13-1.851-.464-.516.165-1.012.403-1.044.996a65.882 65.882 0 00-.063 2.884l-.002.48c-.002.563-.005 1.126-.013 1.690.002.326.204.63.51.765 2.482 1.102 4.830 1.657 6.990 1.657 2.156 0 4.504-.555 6.985-1.657a.854.854 0 00.51-.766c.03-1.682.006-3.372-.076-5.053-.031-.596-.528-.83-1.046-.996-.546.333-1.212.464-1.850.464-.677 0-1.942-.157-2.993-1.18-.266-.258-.447-.661-.57-1.108-.32-.032-.64-.049-.96-.05zm-2.525 4.013c.539 0 .976.426.976.95v1.753c0 .525-.437.95-.976.95a.964.964 0 01-.976-.95v-1.752c0-.525.437-.951.976-.951zm5 0c.539 0 .976.426.976.95v1.753c0 .525-.437.95-.976.95a.964.964 0 01-.976-.95v-1.752c0-.525.437-.951.976-.951zM7.635 5.087c-1.050.102-1.935.438-2.385.906-.975 1.037-.765 3.668-.21 4.224.405.394 1.170.657 1.995.657h.09c.649-.013 1.785-.176 2.730-1.110.435-.41.705-1.433.675-2.470-.03-.834-.27-1.520-.63-1.813-.39-.336-1.275-.482-2.265-.394zm6.465.394c-.36.292-.6.980-.63 1.813-.03 1.037.24 2.060.675 2.470.968.957 2.136 1.104 2.776 1.110h.044c.825 0 1.590-.263 1.995-.657.555-.556.765-3.187-.21-4.224-.45-.468-1.335-.804-2.385-.906-.99-.088-1.875.058-2.265.394zM12 7.615c-.24 0-.525.015-.84.044.03.16.045.336.06.526l-.001.159a2.940 2.940 0 01-.014.25c.225-.022.425-.027.612-.028h.366c.187 0 .387.006.612.028-.015-.146-.015-.277-.015-.409.015-.19.03-.365.06-.526a9.290 9.290 0 00-.84-.044z" fill="currentColor" fill-rule="evenodd" /></svg></span>GitHub Copilot</span><span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z" fill="#D97757" /></svg></span>Anthropic API</span><span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.0757.0757 0 0 1 .0392.0533v5.5849a4.504 4.504 0 0 1-4.4948 4.4939zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.8956zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.7948.7948 0 0 0-.407-.6765zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.0392-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.4592a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997z" fill="currentColor" /></svg></span>OpenAI API</span>
+        <span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 24A14.304 14.304 0 000 12 14.304 14.304 0 0012 0a14.305 14.305 0 0012 12 14.305 14.305 0 00-12 12" fill="url(#deixis-gemini-sparkle)" /><defs><linearGradient id="deixis-gemini-sparkle" x1="0%" x2="68.73%" y1="100%" y2="30.395%"><stop offset="0%" stop-color="#1C7DFF" /><stop offset="52.021%" stop-color="#1C69FF" /><stop offset="100%" stop-color="#F0DCD6" /></linearGradient></defs></svg></span>Gemini API</span><span class="chip dash"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10"/><path d="M2 20h20"/></svg></span>A model running on this Mac</span></span></div></div>
+      <p class="chip-row-label">Built on open scholarly data</p>
+      <div class="marquee rev"><div class="track">
+        <span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 520 488"><path fill="currentColor" d="M60.6 472.92Q44.31 461.94 39.89 458.09Q28.22 447.93 17.66 431.33Q9.41 418.37 5.66 402.53Q2.49 389.14 1.91 385.5Q-.33 371.35 1.97 356.64Q2.47 353.49 6.99 335.01Q7.31 333.67 8.9 329.03Q9.92 326.04 11.17 323.22Q14.92 314.76 20.8 306.36C28.11 295.93 34.54 288.17 44.59 280.59Q54.19 273.35 62.06 268.85Q64.95 267.2 71.68 264.39Q73.63 263.58 74.14 263.63A.34 .32 22.1 0 0 74.43 263.52Q74.55 263.37 74.58 263.21Q74.59 263.15 74.74 263.11Q86.53 259.6 100.17 256.75A1.7 1.66-72.4 0 0 100.99 256.31Q101.19 256.12 101.46 255.95Q101.74 255.78 102.05 255.76Q116.24 255.04 128.54 248.31Q144.46 239.58 153.08 223.88Q153.3 223.46 153.54 223.21Q153.95 222.77 153.85 222.3A.65 .65 0 0 1 154.2 221.59Q154.94 221.22 154.85 220.1A.5 .44 63.4 0 1 154.93 219.8Q155.07 219.61 155.31 219.47Q155.42 219.41 155.48 219.27Q166.05 195.09 156.16 170.63Q155.3 168.49 154.47 166.45Q154.26 165.94 154.43 165.13Q154.55 164.51 154.26 163.8Q152.69 159.9 151.93 157.79Q151.03 155.32 150.14 151.63Q149.67 149.69 147.26 139.7Q145.37 131.83 144.96 127.67Q143.62 114.01 145.11 105.04Q147.16 92.64 150.35 81.07Q152.39 73.66 156.14 65.62Q158.89 59.71 164.01 52.48Q170.55 43.23 173.15 40.14C181.01 30.76 191.28 23.41 201.23 16.98Q208.92 12.02 221 7.86Q223.78 6.9 237.13 3.77Q247.52 1.33 253.51 1.03Q265.67 .41 274.5 1.91Q278.68 2.62 295.5 6.78C310.8 10.56 324.2 19.38 336.63 29.63C346.71 37.95 355.29 49.73 361.92 61.05Q366.36 68.64 369.85 80.15Q370.03 80.77 371.96 88.86Q373.32 94.6 373.57 95.6Q376.98 109.5 375.93 123.57C375.24 132.8 372.29 144.14 370.07 152.59Q367.84 161.06 363.27 169.92A1.06 1.05-36.2 0 0 363.17 170.55Q363.32 171.53 362.63 173.6Q357.23 189.96 360.19 205.26Q363.35 221.56 373.85 233.96Q386.08 248.42 405.57 253.89A5.79 5.41 63.7 0 1 406.58 254.27Q410.04 255.97 414.47 255.85A4.32 3.99 47.3 0 1 415.33 255.92Q426.34 257.95 438.96 261.29Q445.8 263.1 452.55 266.14Q458.52 268.84 465.04 273.2C473.5 278.87 482.52 285.32 489.33 293.42Q497.17 302.74 503.59 313.15Q509.19 322.23 512.73 334.02Q513.58 336.86 516.36 348.82Q518.52 358.08 518.93 363.84Q519.91 377.75 517.13 390.49Q514.13 404.26 511.67 411.72Q507.96 422.93 501.63 432.39Q496.78 439.63 491.92 445.91Q488.09 450.85 479.67 458.42Q475.48 462.19 461.42 471.56Q460.04 472.49 457.11 473.91Q455.15 474.87 452.77 476.19Q452.05 476.59 451.37 476.85Q446.57 478.68 445.63 479.03Q442.36 480.27 439.79 480.91Q437.86 481.39 425.86 484.31Q417.34 486.38 411.79 486.81Q399.03 487.81 389.27 486.09Q379.21 484.32 364 480.14Q363.34 479.96 358.82 478.24Q358.46 478.1 358.11 478.13Q357.7 478.16 357.56 477.73A.61 .61 0 0 0 356.98 477.3Q356.25 477.3 355.42 476.93Q347.32 473.27 339.01 467.5C329.25 460.72 321 454.24 313.79 444.76Q307.98 437.11 305.19 432.82Q297.59 421.1 294.24 409.79Q292.55 404.07 289.04 388Q285.69 372.72 288.89 355.02Q289.61 351.05 292.94 337.44Q295.5 326.96 300.42 317.56Q304.45 309.86 305.36 306.64Q307.96 297.4 307.88 291.78Q307.64 274.75 298.44 262.54Q290.27 251.7 278.04 246.72Q265.56 241.63 252.34 243.81Q238.83 246.05 228.62 254.93C217.16 264.9 210.85 280.1 212.37 295.2Q213.44 305.81 217.39 312.96Q222.57 322.34 225.04 330.48Q229.87 346.46 232.04 360.7Q232.75 365.36 232.55 375.25Q232.42 381.68 230.63 389.66Q227.41 404.01 226.09 408.6Q222.67 420.46 215.94 430.97Q213.46 434.86 206.54 444.29C198.88 454.72 189.11 461.95 178.61 469.1Q172.45 473.31 164.57 476.91Q163.66 477.33 163.37 477.24Q162.91 477.11 162.67 477.55A.57 .52-1.3 0 1 162.43 477.78Q157.84 479.98 139.97 484.24Q123.67 488.13 110.19 486.99Q102.63 486.34 94.97 484.51Q82.02 481.4 79.95 480.85Q79.47 480.73 73.7 478.93A.13 .12 79.4 0 1 73.61 478.86Q73.54 478.74 73.52 478.62A.22 .22 0 0 0 73.39 478.48L66.88 476.09A.43 .39-.4 0 1 66.64 475.88Q66.29 475.16 65.27 475.22A.77 .75-15.8 0 1 64.55 474.83Q64.21 474.21 63.33 474.24A.75 .75 0 0 1 62.62 473.8Q62.37 473.26 61.36 473.18A1.45 1.42-25.6 0 1 60.6 472.92Z" /></svg></span>OpenAlex</span><span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M24 8.609c-.848.536-1.436.83-2.146 1.245-4.152 2.509-8.15 5.295-11.247 8.981l-1.488 1.817-4.568-7.268c1.021.814 3.564 3.098 4.603 3.599l3.356-2.526c2.336-1.644 8.946-5.226 11.49-5.848ZM8.046 15.201c.346.277.692.537.969.744.761-3.668.121-7.613-1.886-11.039 3.374-.052 6.731-.087 10.105-.139a14.794 14.794 0 0 1 1.298 5.295c.294-.156.588-.294.883-.433-.104-1.868-.641-3.91-1.662-6.263-4.602-.018-9.188-.018-13.790-.018 2.993 3.547 4.360 7.839 4.083 11.853Zm-.623-.484c.087.086.191.155.277.225-.138-3.409-1.419-6.887-3.824-9.881H1.73c3.098 2.855 4.984 6.299 5.693 9.656Zm-.744-.658c.104.087.208.173.329.277-.9-2.526-2.492-5.018-4.741-7.198H0c2.89 2.076 5.122 4.481 6.679 6.921Z" fill="#1857B6" /></svg></span>Semantic Scholar</span>
+        <span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 46.6 67.9"><polygon fill="#3EB1C8" points="0,67.9 0,47.4 16.8,41.9 46.6,52.1" /><polygon fill="#D8D2C4" points="29.8,26.1 0,36.4 16.8,41.9 46.6,31.7" /><polygon fill="#4F5858" points="16.8,41.9 46.6,31.7 46.6,52.1" /><polygon fill="#FFC72C" points="46.6,0.2 46.6,20.6 29.8,26.1 0,15.9" /><polygon fill="#EF3340" points="29.8,26.1 0,36.4 0,15.9" /></svg></span>Crossref</span><span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#2E8B57" /><path d="M8.2 10V7.8a3.8 3.8 0 0 1 7.1-1.9" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="2" /><rect x="7" y="9.5" width="10" height="8.8" rx="1.6" fill="#fff" /><circle cx="12" cy="13.4" r="1.15" fill="#2E8B57" /><path d="M12 14.4v1.7" stroke="#2E8B57" stroke-linecap="round" stroke-width="1.25" /></svg></span>Unpaywall</span>
+        <span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="7" cy="8" r="6" fill="#8cbf4a"/><circle cx="7.5" cy="18" r="5" fill="#b9d4ee"/><circle cx="18" cy="3" r="2.2" fill="#b9d4ee"/><circle cx="15" cy="13" r="8.5" fill="#e2231a"/><path d="M11.6 11.2h5.2M11.6 14.6h3.6" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/></svg></span>Europe PMC</span><span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.8423 0a1.0037 1.0037 0 0 0-.922.6078c-.1536.3687-.0438.6275.2938 1.1113l6.9185 8.3597-1.0223 1.1058a1.0393 1.0393 0 0 0 .003 1.4229l1.2292 1.3135-5.4391 6.4444c-.2803.299-.4538.823-.2971 1.1986a1.0253 1.0253 0 0 0 .9585.635.9133.9133 0 0 0 .6891-.3405l5.783-6.126 7.4902 8.0051a.8527.8527 0 0 0 .6835.2597.9575.9575 0 0 0 .8777-.6138c.1577-.377-.017-.7502-.306-1.1407l-7.0518-8.3418 1.0632-1.13a.9626.9626 0 0 0 .0089-1.3165L4.6336.4639s-.3733-.4535-.768-.463zm0 .272h.0166c.2179.0052.4874.2715.5644.3639l.005.006.0052.0055 10.169 10.9905a.6915.6915 0 0 1-.0072.945l-1.0666 1.133-1.4982-1.7724-8.5994-10.39c-.3286-.472-.352-.6183-.2592-.841a.7307.7307 0 0 1 .6704-.4401Zm14.341 1.5701a.877.877 0 0 0-.6554.2418l-5.6962 6.1584 1.6944 1.8319 5.3089-6.5138c.3251-.4335.479-.6603.3247-1.0292a1.1205 1.1205 0 0 0-.9763-.689zm-7.6557 12.2823 1.3186 1.4135-5.7864 6.1295a.6494.6494 0 0 1-.4959.26.7516.7516 0 0 1-.706-.4669c-.1119-.2682.0359-.6864.2442-.9083l.0051-.0055.0047-.0055z" fill="#B31B1B" /></svg></span>arXiv</span>
+        <span class="chip dash"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M6 3h8l5 5v13H6z"/></svg></span>Your own PDFs</span>
+<span class="dup" aria-hidden="true">
+        <span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 520 488"><path fill="currentColor" d="M60.6 472.92Q44.31 461.94 39.89 458.09Q28.22 447.93 17.66 431.33Q9.41 418.37 5.66 402.53Q2.49 389.14 1.91 385.5Q-.33 371.35 1.97 356.64Q2.47 353.49 6.99 335.01Q7.31 333.67 8.9 329.03Q9.92 326.04 11.17 323.22Q14.92 314.76 20.8 306.36C28.11 295.93 34.54 288.17 44.59 280.59Q54.19 273.35 62.06 268.85Q64.95 267.2 71.68 264.39Q73.63 263.58 74.14 263.63A.34 .32 22.1 0 0 74.43 263.52Q74.55 263.37 74.58 263.21Q74.59 263.15 74.74 263.11Q86.53 259.6 100.17 256.75A1.7 1.66-72.4 0 0 100.99 256.31Q101.19 256.12 101.46 255.95Q101.74 255.78 102.05 255.76Q116.24 255.04 128.54 248.31Q144.46 239.58 153.08 223.88Q153.3 223.46 153.54 223.21Q153.95 222.77 153.85 222.3A.65 .65 0 0 1 154.2 221.59Q154.94 221.22 154.85 220.1A.5 .44 63.4 0 1 154.93 219.8Q155.07 219.61 155.31 219.47Q155.42 219.41 155.48 219.27Q166.05 195.09 156.16 170.63Q155.3 168.49 154.47 166.45Q154.26 165.94 154.43 165.13Q154.55 164.51 154.26 163.8Q152.69 159.9 151.93 157.79Q151.03 155.32 150.14 151.63Q149.67 149.69 147.26 139.7Q145.37 131.83 144.96 127.67Q143.62 114.01 145.11 105.04Q147.16 92.64 150.35 81.07Q152.39 73.66 156.14 65.62Q158.89 59.71 164.01 52.48Q170.55 43.23 173.15 40.14C181.01 30.76 191.28 23.41 201.23 16.98Q208.92 12.02 221 7.86Q223.78 6.9 237.13 3.77Q247.52 1.33 253.51 1.03Q265.67 .41 274.5 1.91Q278.68 2.62 295.5 6.78C310.8 10.56 324.2 19.38 336.63 29.63C346.71 37.95 355.29 49.73 361.92 61.05Q366.36 68.64 369.85 80.15Q370.03 80.77 371.96 88.86Q373.32 94.6 373.57 95.6Q376.98 109.5 375.93 123.57C375.24 132.8 372.29 144.14 370.07 152.59Q367.84 161.06 363.27 169.92A1.06 1.05-36.2 0 0 363.17 170.55Q363.32 171.53 362.63 173.6Q357.23 189.96 360.19 205.26Q363.35 221.56 373.85 233.96Q386.08 248.42 405.57 253.89A5.79 5.41 63.7 0 1 406.58 254.27Q410.04 255.97 414.47 255.85A4.32 3.99 47.3 0 1 415.33 255.92Q426.34 257.95 438.96 261.29Q445.8 263.1 452.55 266.14Q458.52 268.84 465.04 273.2C473.5 278.87 482.52 285.32 489.33 293.42Q497.17 302.74 503.59 313.15Q509.19 322.23 512.73 334.02Q513.58 336.86 516.36 348.82Q518.52 358.08 518.93 363.84Q519.91 377.75 517.13 390.49Q514.13 404.26 511.67 411.72Q507.96 422.93 501.63 432.39Q496.78 439.63 491.92 445.91Q488.09 450.85 479.67 458.42Q475.48 462.19 461.42 471.56Q460.04 472.49 457.11 473.91Q455.15 474.87 452.77 476.19Q452.05 476.59 451.37 476.85Q446.57 478.68 445.63 479.03Q442.36 480.27 439.79 480.91Q437.86 481.39 425.86 484.31Q417.34 486.38 411.79 486.81Q399.03 487.81 389.27 486.09Q379.21 484.32 364 480.14Q363.34 479.96 358.82 478.24Q358.46 478.1 358.11 478.13Q357.7 478.16 357.56 477.73A.61 .61 0 0 0 356.98 477.3Q356.25 477.3 355.42 476.93Q347.32 473.27 339.01 467.5C329.25 460.72 321 454.24 313.79 444.76Q307.98 437.11 305.19 432.82Q297.59 421.1 294.24 409.79Q292.55 404.07 289.04 388Q285.69 372.72 288.89 355.02Q289.61 351.05 292.94 337.44Q295.5 326.96 300.42 317.56Q304.45 309.86 305.36 306.64Q307.96 297.4 307.88 291.78Q307.64 274.75 298.44 262.54Q290.27 251.7 278.04 246.72Q265.56 241.63 252.34 243.81Q238.83 246.05 228.62 254.93C217.16 264.9 210.85 280.1 212.37 295.2Q213.44 305.81 217.39 312.96Q222.57 322.34 225.04 330.48Q229.87 346.46 232.04 360.7Q232.75 365.36 232.55 375.25Q232.42 381.68 230.63 389.66Q227.41 404.01 226.09 408.6Q222.67 420.46 215.94 430.97Q213.46 434.86 206.54 444.29C198.88 454.72 189.11 461.95 178.61 469.1Q172.45 473.31 164.57 476.91Q163.66 477.33 163.37 477.24Q162.91 477.11 162.67 477.55A.57 .52-1.3 0 1 162.43 477.78Q157.84 479.98 139.97 484.24Q123.67 488.13 110.19 486.99Q102.63 486.34 94.97 484.51Q82.02 481.4 79.95 480.85Q79.47 480.73 73.7 478.93A.13 .12 79.4 0 1 73.61 478.86Q73.54 478.74 73.52 478.62A.22 .22 0 0 0 73.39 478.48L66.88 476.09A.43 .39-.4 0 1 66.64 475.88Q66.29 475.16 65.27 475.22A.77 .75-15.8 0 1 64.55 474.83Q64.21 474.21 63.33 474.24A.75 .75 0 0 1 62.62 473.8Q62.37 473.26 61.36 473.18A1.45 1.42-25.6 0 1 60.6 472.92Z" /></svg></span>OpenAlex</span><span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M24 8.609c-.848.536-1.436.83-2.146 1.245-4.152 2.509-8.15 5.295-11.247 8.981l-1.488 1.817-4.568-7.268c1.021.814 3.564 3.098 4.603 3.599l3.356-2.526c2.336-1.644 8.946-5.226 11.49-5.848ZM8.046 15.201c.346.277.692.537.969.744.761-3.668.121-7.613-1.886-11.039 3.374-.052 6.731-.087 10.105-.139a14.794 14.794 0 0 1 1.298 5.295c.294-.156.588-.294.883-.433-.104-1.868-.641-3.91-1.662-6.263-4.602-.018-9.188-.018-13.790-.018 2.993 3.547 4.360 7.839 4.083 11.853Zm-.623-.484c.087.086.191.155.277.225-.138-3.409-1.419-6.887-3.824-9.881H1.73c3.098 2.855 4.984 6.299 5.693 9.656Zm-.744-.658c.104.087.208.173.329.277-.9-2.526-2.492-5.018-4.741-7.198H0c2.89 2.076 5.122 4.481 6.679 6.921Z" fill="#1857B6" /></svg></span>Semantic Scholar</span>
+        <span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 46.6 67.9"><polygon fill="#3EB1C8" points="0,67.9 0,47.4 16.8,41.9 46.6,52.1" /><polygon fill="#D8D2C4" points="29.8,26.1 0,36.4 16.8,41.9 46.6,31.7" /><polygon fill="#4F5858" points="16.8,41.9 46.6,31.7 46.6,52.1" /><polygon fill="#FFC72C" points="46.6,0.2 46.6,20.6 29.8,26.1 0,15.9" /><polygon fill="#EF3340" points="29.8,26.1 0,36.4 0,15.9" /></svg></span>Crossref</span><span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="#2E8B57" /><path d="M8.2 10V7.8a3.8 3.8 0 0 1 7.1-1.9" fill="none" stroke="#fff" stroke-linecap="round" stroke-width="2" /><rect x="7" y="9.5" width="10" height="8.8" rx="1.6" fill="#fff" /><circle cx="12" cy="13.4" r="1.15" fill="#2E8B57" /><path d="M12 14.4v1.7" stroke="#2E8B57" stroke-linecap="round" stroke-width="1.25" /></svg></span>Unpaywall</span>
+        <span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="7" cy="8" r="6" fill="#8cbf4a"/><circle cx="7.5" cy="18" r="5" fill="#b9d4ee"/><circle cx="18" cy="3" r="2.2" fill="#b9d4ee"/><circle cx="15" cy="13" r="8.5" fill="#e2231a"/><path d="M11.6 11.2h5.2M11.6 14.6h3.6" stroke="#fff" stroke-width="1.7" stroke-linecap="round"/></svg></span>Europe PMC</span><span class="chip"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.8423 0a1.0037 1.0037 0 0 0-.922.6078c-.1536.3687-.0438.6275.2938 1.1113l6.9185 8.3597-1.0223 1.1058a1.0393 1.0393 0 0 0 .003 1.4229l1.2292 1.3135-5.4391 6.4444c-.2803.299-.4538.823-.2971 1.1986a1.0253 1.0253 0 0 0 .9585.635.9133.9133 0 0 0 .6891-.3405l5.783-6.126 7.4902 8.0051a.8527.8527 0 0 0 .6835.2597.9575.9575 0 0 0 .8777-.6138c.1577-.377-.017-.7502-.306-1.1407l-7.0518-8.3418 1.0632-1.13a.9626.9626 0 0 0 .0089-1.3165L4.6336.4639s-.3733-.4535-.768-.463zm0 .272h.0166c.2179.0052.4874.2715.5644.3639l.005.006.0052.0055 10.169 10.9905a.6915.6915 0 0 1-.0072.945l-1.0666 1.133-1.4982-1.7724-8.5994-10.39c-.3286-.472-.352-.6183-.2592-.841a.7307.7307 0 0 1 .6704-.4401Zm14.341 1.5701a.877.877 0 0 0-.6554.2418l-5.6962 6.1584 1.6944 1.8319 5.3089-6.5138c.3251-.4335.479-.6603.3247-1.0292a1.1205 1.1205 0 0 0-.9763-.689zm-7.6557 12.2823 1.3186 1.4135-5.7864 6.1295a.6494.6494 0 0 1-.4959.26.7516.7516 0 0 1-.706-.4669c-.1119-.2682.0359-.6864.2442-.9083l.0051-.0055.0047-.0055z" fill="#B31B1B" /></svg></span>arXiv</span>
+        <span class="chip dash"><span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v5h5"/><path d="M6 3h8l5 5v13H6z"/></svg></span>Your own PDFs</span></span></div></div>
+    </div>
+  </section>
+
+  <section class="block" id="how">
+    <div class="wrap">
+      <h2 class="h2">Your literature review, with receipts.</h2>
+      <p class="sub">Every stage is stored, every count is kept apart, and every decision you make outranks the model.</p>
+      <div class="ftabs" role="tablist" aria-label="Features" id="ftabs"></div>
+      <div class="feature" id="feature">
+        <div id="ftext"></div>
+        <div class="card"><div class="screen crop" id="fscreen"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="checks">
+    <div class="wrap">
+      <h2 class="h2">What is checked, and by whom</h2>
+      <p class="sub">DEIXIS says plainly what its code verifies and what it leaves to you. "Located" never means "verified".</p>
+      <div class="tbl-wrap">
+        <table class="check">
+          <thead><tr><th>For every answer</th><th>Checked by code</th><th>Left to you</th></tr></thead>
+          <tbody>
+            <tr><td>The cited words exist in the passage<small>An exact anchor, in the version that was read</small></td><td class="yes">Yes</td><td class="no">—</td></tr>
+            <tr><td>Titles, DOIs, pages and authors<small>Taken from stored records, never from model prose</small></td><td class="yes">Yes</td><td class="no">—</td></tr>
+            <tr><td>Quotes behind an include decision<small>Two model reads of the full text, quotes found by code</small></td><td class="yes">Yes</td><td class="no">—</td></tr>
+            <tr><td>The passage supports the claim<small>Shown once per answer as "semantic support not checked"</small></td><td class="no">No</td><td class="you">You read it</td></tr>
+            <tr><td>Include or exclude a disputed paper<small>Your choice outranks model and code, with your reason</small></td><td class="no">—</td><td class="you">You decide</td></tr>
+            <tr><td>The question has not been studied<small>No search result proves novelty</small></td><td class="no">No</td><td class="you">You judge</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" id="faq">
+    <div class="wrap">
+      <h2 class="h2">Questions</h2>
+      <div class="faq">
+        <details><summary>Is DEIXIS free?</summary><div class="a">The app is open source under AGPL-3.0. You pay only for the model you connect, through your own subscription or API key. Scholarly search through OpenAlex needs no payment.</div></details>
+        <details><summary>Where does my data go?</summary><div class="a">The app and your library stay on your Mac. Searches go to the scholarly sources you connect, and model steps go to the model you connect, each with only the input that step needs. Keys are kept in the macOS Keychain.</div></details>
+        <details><summary>Does it check that a source supports the claim?</summary><div class="a">No. Code checks that every cited span exists in a passage the model was given. Whether the passage supports the sentence is for you to read, and each answer says so.</div></details>
+        <details><summary>What happens when a full text cannot be found?</summary><div class="a">The source stays at abstract depth and is labelled that way. An abstract cannot support details it does not state. Missing full texts keep downloading in the background, and a late full text can lead to one revision of the answer, with the earlier answer kept.</div></details>
+        <details><summary>Can I add my own PDFs?</summary><div class="a">Yes. Attach up to five seed PDFs to guide a search, or ask a question about PDFs you attach. A PDF citation opens the document on the cited page.</div></details>
+        <details><summary>Why does macOS block the first launch?</summary><div class="a">The app is not signed with an Apple Developer ID yet. Open it once, then choose Open Anyway in System Settings → Privacy &amp; Security.</div></details>
+      </div>
+    </div>
+  </section>
+
+  <section class="final">
+    <div class="wrap">
+      <h2 class="h2">Start with one question.</h2>
+      <p class="sub">Download DEIXIS, connect a model, and ask what you are working on.</p>
+      <div class="cta">
+        <a class="btn solid lg dl-main" href="https://github.com/huguryildiz/DEIXIS/releases"><span class="dl-label">Download for Mac</span></a>
+        <a class="btn lg" href="https://github.com/huguryildiz/DEIXIS">Read the source</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span class="brand" style="font-size:14px">DEIXIS</span>
+    <span class="grow">© 2026 · Developed by Hüseyin Uğur Yıldız</span>
+    <a href="https://github.com/huguryildiz/DEIXIS/releases">Releases</a>
+    <a href="https://github.com/huguryildiz/DEIXIS/blob/main/docs/search.md">How search works</a>
+    <a href="https://github.com/huguryildiz/DEIXIS">Source</a>
+  </div>
+</footer>
+
+<script>
+(() => {
+  const I = {
+    q: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
+    a: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>',
+    p: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3v5h5"/><path d="M6 3h8l5 5v13H6z"/><path d="M9 13h6M9 17h4"/></svg>',
+    f: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4h18l-7 9v6l-4 2v-8z"/></svg>',
+    t: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16"/></svg>',
+    l: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5V5a2 2 0 0 1 2-2h12v16H6a2 2 0 0 0-2 2"/></svg>',
+    s: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+    ok: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 5 5 9-10"/></svg>',
+  };
+
+  /* Hero screens: real screenshots of the app. HOT is the citation chip in answer-dark.jpg, as a share of the 1440x900 frame. */
+  const R = "#/research/res_sxteRYtN7okYNvNDyCA7";
+  const SHOTS = [
+    { id: "research", hash: R, icon: I.a, label: "Research", cap: "<b>Every citation is a passage.</b> Click a citation chip in the answer to open the exact span it came from." },
+    { id: "home", hash: "#/", icon: I.q, label: "Ask", cap: "<b>Ask a question</b> in your own words. Choose academic search or your own PDFs, and how deep to read." },
+    { id: "library", hash: "#/library", icon: I.l, label: "Library", cap: "<b>Everything stays in your library</b>, on your Mac, with every earlier answer and revision kept." },
+    { id: "settings", hash: "#/settings/models", icon: I.t, label: "Settings", cap: "<b>Connect the model you already use</b>, the sources you search and how documents are read." },
+  ];
+  const screen = document.getElementById("screen"), pills = document.getElementById("pills"), cap = document.getElementById("cap");
+  const frame = document.getElementById("app"), demoToast = document.getElementById("demoToast");
+  const fit = () => { frame.style.transform = `scale(${screen.clientWidth / 1440})`; };
+  fit(); addEventListener("resize", fit);
+  let toastT;
+  function toast(text) { demoToast.textContent = text; demoToast.classList.add("on"); clearTimeout(toastT); toastT = setTimeout(() => demoToast.classList.remove("on"), 2800); }
+  function mark(id) {
+    const s = SHOTS.find(x => x.id === id) || SHOTS[0];
+    pills.querySelectorAll(".pill").forEach(p => { const on = p.id === "pill-" + s.id; p.setAttribute("aria-selected", on); p.tabIndex = on ? 0 : -1; });
+    cap.innerHTML = s.cap;
+  }
+  function idForHash(h) {
+    h = h || "";
+    if (h.startsWith("#/research/")) return "research";
+    if (h.startsWith("#/library")) return "library";
+    if (h.startsWith("#/settings")) return "settings";
+    if (h === "" || h === "#/" || h === "#") return "home";
+    return null;
+  }
+  addEventListener("message", e => {
+    if (e.source !== frame.contentWindow || !e.data || e.data.type !== "deixis-demo") return;
+    if (e.data.action === "nav") { const id = idForHash(e.data.hash); if (id) mark(id); }
+    if (e.data.action === "unavailable") toast("This preview shows a recorded research. Download DEIXIS to " + (e.data.label === "PDF" ? "open this PDF" : "run it") + ".");
+    if (e.data.action === "note") toast(String(e.data.text || "").slice(0, 160));
+  });
+  SHOTS.forEach((s, i) => {
+    const b = document.createElement("button");
+    b.className = "pill"; b.role = "tab"; b.id = "pill-" + s.id; b.innerHTML = s.icon + s.label;
+    b.addEventListener("click", () => { try { frame.contentWindow.location.hash = s.hash; } catch (_) { frame.src = "live/index.html" + s.hash; } mark(s.id); });
+    b.addEventListener("keydown", e => {
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+      const n = SHOTS[(i + (e.key === "ArrowRight" ? 1 : SHOTS.length - 1)) % SHOTS.length];
+      document.getElementById("pill-" + n.id).click(); document.getElementById("pill-" + n.id).focus();
+    });
+    pills.appendChild(b);
+  });
+  mark("research");
+
+  /* Feature tabs */
+  const FEATS = [
+    { id: "search", icon: I.q, label: "Search", img: "shots/funnel-dark.jpg", pos: "0% 0%",
+      h: "A search plan you can read", p: "Code picks the search words from your question, a model sorts them into blocks and writes the query, and the plan is frozen before any request goes out.",
+      li: ["OpenAlex semantic and keyword search plus a citation-chain round", "Up to five seed PDFs to steer the search", "Ranking orders the list and never removes a work"] },
+    { id: "screen", icon: I.s, label: "Screening", img: "shots/sources-dark.jpg", pos: "50% 0%",
+      h: "Inclusion needs the full text", p: "Abstract screening can set a work aside, but it can never include one. Inclusion takes two model reads of the full text, with every quote found by code.",
+      li: ["Disputed reads go to your queue", "Your include or exclude keeps its reason", "Reading depth is written next to every source"] },
+    { id: "answer", icon: I.a, label: "Answer", img: "shots/answer-dark.jpg", pos: "50% 0%",
+      h: "Citations that fail closed", p: "Each citation needs an exact anchor located in a passage the step was given. If a citation cannot be repaired, the answer stays an unverified draft.",
+      li: ["Limits and unanswered parts are shown apart from claims", "A late full text can lead to one revision", "Earlier answers are kept"] },
+    { id: "passage", icon: I.p, label: "Passages", img: "shots/passage-dark.jpg", pos: "100% 0%",
+      h: "The span, not the paper", p: "A citation opens the stored passage and source version it was made from. A PDF citation opens the document on the cited page.",
+      li: ["Only the located span is marked", "If the span cannot be found, nothing is marked and the page says so", "Preprint, publisher and upload versions stay apart"] },
+    { id: "table", icon: I.t, label: "Tables", img: "shots/table-dark.jpg", pos: "0% 0%",
+      h: "Evidence tables you control", p: "Turn the included sources into a table of the columns you care about. A model fills only empty cells, and every filled cell cites its passage.",
+      li: ["Your own values are never overwritten", "Cells re-read when a full text arrives", "Export to CSV"] },
+  ];
+  const ftabs = document.getElementById("ftabs"), ftext = document.getElementById("ftext"), fscreen = document.getElementById("fscreen");
+  FEATS.forEach((f, i) => {
+    const b = document.createElement("button");
+    b.className = "ftab"; b.role = "tab"; b.id = "ftab-" + f.id; b.innerHTML = f.icon + f.label;
+    b.addEventListener("click", () => feat(i));
+    ftabs.appendChild(b);
+  });
+  function feat(i) {
+    const f = FEATS[i];
+    ftabs.querySelectorAll(".ftab").forEach((b, j) => { b.setAttribute("aria-selected", i === j); b.tabIndex = i === j ? 0 : -1; });
+    ftext.innerHTML = `<h3>${f.h}</h3><p>${f.p}</p><ul>${f.li.map(t => `<li>${I.ok}<span>${t}</span></li>`).join("")}</ul>`;
+    fscreen.innerHTML = `<img class="on" src="${f.img}" alt="${f.label} in the DEIXIS app" style="object-position:${f.pos}">`;
+  }
+  feat(0);
+
+  /* Download: the main button names the visitor's system; the menu lists all three with their state. */
+  const ua = ((navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent || "").toLowerCase();
+  const os = /win/.test(ua) ? "windows" : /linux|x11|cros/.test(ua) && !/android/.test(ua) ? "linux" : "mac";
+  const OS_NAME = { mac: "Mac", windows: "Windows", linux: "Linux" };
+  const ready = { mac: true, windows: true, linux: false };
+  const URL_FOR = { mac: "https://github.com/huguryildiz/DEIXIS/releases/download/v0.1.1/DEIXIS_0.1.1_aarch64.dmg", windows: "https://github.com/huguryildiz/DEIXIS/releases/download/v0.1.1/DEIXIS_0.1.1_x64-setup.exe" };
+  document.querySelectorAll(".dl-main").forEach(a => {
+    a.querySelector(".dl-label").textContent = ready[os] ? `Download for ${OS_NAME[os]}` : `${OS_NAME[os]} version coming soon`;
+    if (ready[os]) a.href = URL_FOR[os];
+    if (!ready[os]) a.addEventListener("click", e => { e.preventDefault(); openMenu(true); });
+  });
+  const others = Object.keys(OS_NAME).filter(k => k !== os).map(k => OS_NAME[k]);
+  document.getElementById("alsoText").textContent = (ready[os] ? "Also for " : "Other systems: ") + others.join(" · ");
+  const alsoBtn = document.getElementById("alsoBtn"), dlMenu = document.getElementById("dlMenu");
+  dlMenu.querySelector(`[data-os="${os}"]`).classList.add("current");
+  function openMenu(on) { dlMenu.hidden = !on; alsoBtn.setAttribute("aria-expanded", on); if (on) document.getElementById("top").scrollIntoView ? alsoBtn.scrollIntoView({ block: "nearest" }) : 0; }
+  alsoBtn.addEventListener("click", e => { e.stopPropagation(); openMenu(dlMenu.hidden); });
+  document.addEventListener("click", e => { if (!dlMenu.hidden && !dlMenu.contains(e.target) && e.target !== alsoBtn) openMenu(false); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !dlMenu.hidden) { openMenu(false); alsoBtn.focus(); } });
+
+  const hv = document.getElementById("heroVideo");
+  if (hv && matchMedia("(prefers-reduced-motion: reduce)").matches) { hv.removeAttribute("autoplay"); hv.pause(); }
+  const nav = document.getElementById("nav");
+  addEventListener("scroll", () => nav.classList.toggle("scrolled", scrollY > 8), { passive: true });
+})();
+</script>
+
+</body>
+</html>

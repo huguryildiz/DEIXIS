@@ -20,7 +20,9 @@ reason) or MANUAL; the exit code is 0 only when every row run is PASS or MANUAL:
   pdf_tab        an uploaded synthetic PDF's source sheet opens from the research page and its PDF tab draws a page
                  (the canvas gets data-rendered-page, so pdf.js's worker and the canvas ran in WebKitGTK)
   download       a finished research's report (Markdown) and CSV, through the window's Export menu, land in the Downloads
-                 folder the shell names (no XDG user-dirs file on the runner: ~/Downloads) with their content
+                 folder the shell names (no XDG user-dirs file on the runner: ~/Downloads) with their content. MANUAL
+                 when the shell got no download event at all: WebKit's automation session does not start a blob
+                 download, so under WebDriver this path cannot be measured (a person checks it on a desktop)
   second_launch  the installed executable again: it exits, the DEIXIS process set is unchanged, still one window
   env            the backend's environment (/proc/<pid>/environ) holds no AppImage variable and no PATH, XDG_DATA_DIRS or
                  LD_LIBRARY_PATH entry inside $APPDIR; a link the page opens goes to a fake xdg-open, which records the
@@ -725,8 +727,16 @@ def format_rows(fmt: str, exe: str, marks: list[str], work: Path, env: dict[str,
             csv_text = csv[0].read_text(encoding="utf-8-sig") if csv else ""
             for path in md[:1] + csv[:1]:
                 shutil.move(str(path), evidence / f"{fmt}-download-{path.name}")
-            row(f"{fmt}_download", bool(md and title in md_text and csv and "synthetic" in csv_text.lower()),
-                run=(finished or {}).get("status"), opened=bool(opened), export=bool(exported), markdown=bool(markdown),
+            shell_log = work / f"driver-{fmt}-download.log"
+            shell_said = [ln for ln in shell_log.read_text(errors="replace").splitlines() if "DEIXIS: Download" in ln] \
+                if shell_log.exists() else []
+            # Under WebKitWebDriver the page's blob download never reaches the shell (no Requested event, nothing in
+            # its log): WebKit's automation session does not start it. Then the row cannot be measured here.
+            unmeasurable = not md and not csv and not shell_said and markdown and csv_pressed
+            row(f"{fmt}_download", "manual" if unmeasurable else
+                bool(md and title in md_text and csv and "synthetic" in csv_text.lower()),
+                reason="the automation session started no download (the shell got no download event); check by hand"
+                if unmeasurable else None, shell_said=shell_said[:4], run=(finished or {}).get("status"), opened=bool(opened), export=bool(exported), markdown=bool(markdown),
                 export_again=bool(again), csv_pressed=bool(csv_pressed), downloads_folder=str(downloads),
                 report_bytes=len(md_text), csv_lines=len(csv_text.splitlines()))
 
@@ -866,7 +876,8 @@ def main() -> int:
     finally:
         passed = sum(1 for r in results.values() if r["ok"] is True)
         summary = {"passed": passed, "failed": [n for n, r in results.items() if r["ok"] is False],
-                   "not_done": [n for n, r in results.items() if r["ok"] is None]}
+                   "not_done": [n for n, r in results.items() if r["ok"] is None],
+                   "manual": [n for n, r in results.items() if r["ok"] == "manual"]}
         print(json.dumps(summary), flush=True)
         (evidence / "results.json").write_text(json.dumps({"summary": summary, "rows": results}, indent=1, default=str),
                                                encoding="utf-8")

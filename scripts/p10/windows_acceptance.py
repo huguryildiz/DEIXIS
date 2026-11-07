@@ -65,6 +65,7 @@ import os
 import shutil
 import socket
 import sqlite3
+from contextlib import closing
 import struct
 import subprocess
 import sys
@@ -973,7 +974,7 @@ def ocr_check(sc: "Scenario", python: str) -> dict:
     _, uploaded = api.upload(f"/api/researches/{rid}/uploads", "synthetic-scan.pdf", made.stdout)
     svid = uploaded.get("uploaded_source_version_id")
     library = f"file:{sc.data / 'library.sqlite'}?mode=ro"
-    with sqlite3.connect(library, uri=True) as conn:
+    with closing(sqlite3.connect(library, uri=True)) as conn:
         asset = conn.execute("SELECT id FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL", (svid,)).fetchone()
     status, run = api.json("POST", f"/api/researches/{rid}/sources/{svid}/assets/{asset[0] if asset else ''}/ocr")
     finished = None
@@ -984,7 +985,7 @@ def ocr_check(sc: "Scenario", python: str) -> dict:
         if finished and finished["status"] in ("completed", "failed", "paused", "cancelled"):
             break
         time.sleep(1)
-    with sqlite3.connect(library, uri=True) as conn:
+    with closing(sqlite3.connect(library, uri=True)) as conn:
         text = " ".join(r[0] for r in conn.execute("SELECT text FROM passages WHERE asset_id = ? AND text_source = 'ocr'",
                                                    (asset[0] if asset else "",)))
     return {"ok": bool(finished and finished["status"] == "completed" and "release" in text.lower()), **facts,
@@ -1211,7 +1212,7 @@ def main() -> int:
                 how = quit_app(sc, False)
                 left = sc.check_left(time.monotonic())  # gone before the next scenario launches
                 sc.kill_all()
-            row("ocr", facts.pop("ok") and left["ok"], **facts, quit=how.get("quit_via"), left_ok=left["ok"])
+            row("ocr", facts.pop("ok") and left.pop("ok"), **facts, quit=how.get("quit_via"), **left)
 
         if wanted("download") and (sc := launched("download")):
             for marker in bin_dir.glob("*.json"):

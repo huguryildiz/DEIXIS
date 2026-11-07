@@ -67,6 +67,7 @@ import shutil
 import signal
 import socket
 import sqlite3
+from contextlib import closing
 import subprocess
 import sys
 import tempfile
@@ -635,12 +636,12 @@ def main() -> int:
                 uploaded = client.post(f"/api/researches/{rid}/uploads", files={"file": ("synthetic-scan.pdf", make_scanned_pdf(
                     [("scan", "SYNTHETIC scanned page about bounded release schedules")]), "application/pdf")}).json()
                 svid = uploaded.get("uploaded_source_version_id")
-                with sqlite3.connect(f"file:{sc.data / 'library.sqlite'}?mode=ro", uri=True) as conn:
+                with closing(sqlite3.connect(f"file:{sc.data / 'library.sqlite'}?mode=ro", uri=True)) as conn:
                     asset = conn.execute("SELECT id FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL",
                                          (svid,)).fetchone()
                 started = client.post(f"/api/researches/{rid}/sources/{svid}/assets/{asset[0] if asset else ''}/ocr")
                 run = wait_run(client, rid, started.json()["id"])[1] if started.status_code == 202 else {}
-                with sqlite3.connect(f"file:{sc.data / 'library.sqlite'}?mode=ro", uri=True) as conn:
+                with closing(sqlite3.connect(f"file:{sc.data / 'library.sqlite'}?mode=ro", uri=True)) as conn:
                     text = " ".join(r[0] for r in conn.execute(
                         "SELECT text FROM passages WHERE asset_id = ? AND text_source = 'ocr'", (asset[0] if asset else "",)))
                 asked = [p["command"][:100] for p in sc.watch.seen.values() if "tesseract" in Path(p["command"].split(" ")[0]).name]

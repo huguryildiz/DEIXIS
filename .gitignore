@@ -22,10 +22,9 @@ web/playwright-report/
 /desktop/src-tauri/target/
 /desktop/src-tauri/gen/
 
-# The owner's local files: notes, status, decisions, agent instructions, editor and tool settings
+# The owner's local files: notes, status, agent instructions, editor and tool settings
 /notes/
 /STATUS.md
-/docs/decisions.csv
 /CLAUDE.md
 /TODO.md
 /.claude/

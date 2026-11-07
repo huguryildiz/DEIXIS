@@ -113,9 +113,12 @@ export function OverridesLine({ overrides }: { overrides: Overrides | null | und
   return <p className="overrides-line">
     {overrides.decisions === 0
       ? t('You have not decided yet; this line says nothing about how right code or the model is.')
-      : t(overrides.decisions === 1 ? 'Of your {n} decision, you changed a decision of code or the model runs in {m} (code {code}, model runs {model}).' : 'Of your {n} decisions, you changed a decision of code or the model runs in {m} (code {code}, model runs {model}).', {
-        n: count(overrides.decisions), m: count(overrides.changed), code: count(overrides.changed_by.code), model: count(overrides.changed_by.model_agreement) })}
-    {(overrides.changed_by.single_read ?? 0) > 0 && ` ${t('Of these, {n} changed a single model read.', { n: count(overrides.changed_by.single_read ?? 0) })}`}
+      : (overrides.changed_by.single_read ?? 0) > 0
+        // D173: a changed single model read is its own part, so the parts still add up to {m}.
+        ? t(overrides.decisions === 1 ? 'Of your {n} decision, you changed a decision of code or the model runs in {m} (code {code}, model runs {model}, one model read {once}).' : 'Of your {n} decisions, you changed a decision of code or the model runs in {m} (code {code}, model runs {model}, one model read {once}).', {
+          n: count(overrides.decisions), m: count(overrides.changed), code: count(overrides.changed_by.code), model: count(overrides.changed_by.model_agreement), once: count(overrides.changed_by.single_read ?? 0) })
+        : t(overrides.decisions === 1 ? 'Of your {n} decision, you changed a decision of code or the model runs in {m} (code {code}, model runs {model}).' : 'Of your {n} decisions, you changed a decision of code or the model runs in {m} (code {code}, model runs {model}).', {
+          n: count(overrides.decisions), m: count(overrides.changed), code: count(overrides.changed_by.code), model: count(overrides.changed_by.model_agreement) })}
     {apart.length > 0 && ` ${t('Counted apart: {list}.', { list: apart.join(' · ') })}`}
   </p>
 }
@@ -162,12 +165,15 @@ export function FunnelPanel({ researchId, view, answer, cited, queueCount, busy,
   const screenable = page?.screenable ?? 0
   const nextBatch = Math.min(SCREEN_MORE_SIZE, screenable)
   const waiting = counts.waiting_for_pdf ?? 0
-  // D173: what the latest discovery of this revision read, from that run's stored read closure (`read.view`): its N, and
-  // its deeper window when it was queued with one. An earlier run's window never speaks for a later run without one.
-  const latestDiscovery = view.runs.filter(r => r.kind === 'discovery' && r.scope_revision === view.research.current_scope_revision)
+  // D173: what the latest discovery of this revision that reached its read cutoff read, from that run's stored read
+  // closure (`read.view`): its N, and its deeper window when it was queued with one and screened some of it. An earlier
+  // run's window never speaks for a later run without one.
+  const closureOf = (run: unknown) => (run as { fast_path?: { read?: { cutoff?: ReadClosure | null } | null } } | undefined)?.fast_path?.read?.cutoff
+  const latestDiscovery = view.runs.filter(r => r.kind === 'discovery' && r.scope_revision === view.research.current_scope_revision && closureOf(r))
     .sort((a, b) => a.created_at.localeCompare(b.created_at)).at(-1)
-  const closure = (latestDiscovery as unknown as { fast_path?: { read?: { cutoff?: ReadClosure | null } | null } } | undefined)?.fast_path?.read?.cutoff
-  const deepRecord = closure?.deep
+  const closure = closureOf(latestDiscovery)
+  const deepRecord = closure?.deep && closure.deep.screened_by_model_count > 0 ? closure.deep : undefined
+  const readOnce = funnel.abstracts_read_once ?? 0
 
   const lostItem = (n: number, text: string) => n > 0 ? <span key={text}><b className="tnum">{number(n)}</b> {t(text)}</span> : null
   const link = (label: string, onClick: (opener: HTMLElement) => void) => <button type="button" className="link" onClick={e => onClick(e.currentTarget)}>{t(label)}</button>
@@ -185,7 +191,7 @@ export function FunnelPanel({ researchId, view, answer, cited, queueCount, busy,
       about: closure && deepRecord
         ? t('Works a model read at the abstract stage. The latest search read the top {n} of the ranked list, and list places {first}–{last} once.', { n: number(closure.N), first: number(deepRecord.first), last: number(deepRecord.last) })
         : mode ? t('Works a model read at the abstract stage. {depth} depth reads the top {n} of the ranked list.', { depth: t(effortLabels[effort]), n: number(mode.papers) }) : t('Works a model read at the abstract stage.'),
-      extra: deepRecord && deepRecord.screened_by_model_count > 0 ? <p>{t('{n} of them read once, at list places {first}–{last}', { n: number(deepRecord.screened_by_model_count), first: number(deepRecord.first), last: number(deepRecord.last) })}</p> : undefined,
+      extra: readOnce > 0 ? <p>{t('{n} of them read once, by a single model read', { n: number(readOnce) })}</p> : undefined,
       lost: notScreened !== null && notScreened > 0 ? <>
         <span><b className="tnum">{number(notScreened)}</b> {t('never screened')}</span>
         {page && page.total > 0 && link('Show them', opener => onShowSources('notread', opener))}

@@ -314,18 +314,23 @@ async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Se
     # How many 429s one batch waits out is this research's effort (D88). `quick` waits for none: the refused batch
     # is recorded with its status, its records stay without an abstract, and the next batch is still sent.
     waits = PROVIDER_WAIT[scope["effort"]]
-    plan = _code_step(store, run_id, f"{prefix}lookup_plan:semantic_scholar", "code:lookup_plan",
-                      lambda: plan_semantic_scholar(store, rid, revision, scope, words, limit, only=only, size=s2_batch))
 
     def halted() -> bool:
         checkpoint()
         return stop is not None and stop()
 
+    # No plan step starts after the cutoff either; a round without `stop` checks as before, at each request only.
+    if stop is not None and halted():
+        return
+    plan = _code_step(store, run_id, f"{prefix}lookup_plan:semantic_scholar", "code:lookup_plan",
+                      lambda: plan_semantic_scholar(store, rid, revision, scope, words, limit, only=only, size=s2_batch))
     for number, batch in enumerate(plan["batches"]):
         if halted():
             return
         await _semantic_scholar_step(store, http, settings, run, number, batch,
                                      waits if s2_waits is None else s2_waits, prefix, s2_cooldown_skip, record_sent)
+    if stop is not None and halted():
+        return
     plan_cr = _code_step(store, run_id, f"{prefix}lookup_plan:crossref", "code:lookup_plan",
                          lambda: plan_crossref(store, rid, revision, scope, words, len(plan["batches"]), limit, only=only))
     for number, chunk in enumerate(plan_cr["chunks"]):

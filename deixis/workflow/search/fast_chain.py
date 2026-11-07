@@ -380,11 +380,12 @@ def manifest(store, run):
                 " WHERE run_id = ? AND status = 'unembedded_at_cutoff' ORDER BY class, request_index, position", (run["id"],))]}
 
 
-def read_versions(flow, run, listing, items=None, key="fast_chain:read_versions"):
+def read_versions(flow, run, listing, items=None, key="fast_chain:read_versions", with_order=False):
     """Freeze sanctioned lookup enrichment without rewriting the ranking input.
 
     `items` defaults to the read window's first N items; D173's deeper screening freezes its own window's items under
-    a key of its own, after its own lookups."""
+    a key of its own, after its own lookups, and with `with_order` also freezes the heads still unchanged then, so a
+    resumed run screens and guards exactly those."""
     window = listing["items"][:run["budget"]["fast_path"]["N"]] if items is None else items
 
     def build():
@@ -408,5 +409,5 @@ def read_versions(flow, run, listing, items=None, key="fast_chain:read_versions"
         unchanged = small_batch.unchanged_heads(flow.store, run["research_id"], view, window)
         return small_batch.json_value({"versions": versions, "lookup_enriched": enriched,
                 "changed_items": len(window) - len(unchanged),
-                "ranking_manifest_hash": listing["manifest_hash"]})
+                "ranking_manifest_hash": listing["manifest_hash"]} | ({"order": unchanged} if with_order else {}))
     return small_batch.save_code(flow, run, key, "code:fast_chain_read_versions", build)

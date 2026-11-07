@@ -126,13 +126,20 @@ def deep_plan(listing: dict[str, Any], deep: dict[str, Any], policy: dict[str, A
     return body | {"hash": canonical.sha256_hex(body)}
 
 
+# The codes code or a lookup alone writes on a head, which settle a deep work without a model read (D173). An unread
+# code or an earlier model reading does not: this run did not read that work.
+SETTLED_CODES = abstract_stage.LOOKUP_CODES + tuple(
+    code for code in abstract_stage.OWNED_CODES
+    if code not in abstract_stage.MODEL_CODES + abstract_stage.UNREAD_CODES)
+
+
 def deep_closure(flow: Any, run: dict[str, Any], listing: dict[str, Any], deep: dict[str, Any],
                  state: dict[str, Any], closed: set[int]) -> dict[str, Any]:
     """What the deeper screening (D173) did by the cutoff, for the closure's `deep` record and the snapshot.
 
     Every work of the frozen list's places `first`..`last` is exactly one of: decided by a person; screened by a deep
-    batch this run closed; settled by this run's deep code stage (its head unchanged, in no batch, and holding a
-    current abstract decision); or unscreened at the cutoff. Whatever this run cannot show is unscreened, so it stays out
+    batch this run closed (its head holding that read's own outcome); settled by this run's deep code stage (its head
+    unchanged, in no batch, and holding a fresh code or lookup decision); or unscreened at the cutoff. Whatever this run cannot show is unscreened, so it stays out
     of the answer whatever older decision it holds: every work when the deep plan or code stage never ran before the
     cutoff, a work whose head changed since the list froze (also listed in `dropped_heads`), and a work of a batch the
     cutoff or the model-call budget left open. Work ids are the listing's, as the snapshot's rows carry them."""
@@ -153,16 +160,22 @@ def deep_closure(flow: Any, run: dict[str, Any], listing: dict[str, Any], deep: 
     screened: set[str] = set()
     settled: set[str] = set()
     if abstract_plan is not None and order is not None:
-        screened = {work_of[svid] for n, batch in enumerate(batches) if n in closed for svid in batch} - person
-        in_batch = set(work_of.values())
+        closed_heads = {svid for n, batch in enumerate(batches) if n in closed for svid in batch}
+        in_batch = {svid for batch in batches for svid in batch}
         decisions = DecisionStore(store)
         key = decisions.staleness_key(rid)
         for item in window:
-            wid = item["work_id"]
-            if wid in person or wid in in_batch or item["head"] not in order:
+            wid, head = item["work_id"], item["head"]
+            if wid in person or head not in order:
                 continue
-            if any((held := decisions.current(rid, svid, "abstract")) is not None and not decisions.is_stale(held, key)
-                   for svid in item["versions"]):
+            held = decisions.current(rid, head, "abstract")
+            if held is None or decisions.is_stale(held, key):
+                continue
+            # Screened needs the one read's own outcome on the head; a batch whose call failed validation leaves
+            # `abstract_not_proposed`, so its works stay unread.
+            if head in closed_heads and held["reason_code"] in abstract_stage.SINGLE_READ_CODES:
+                screened.add(wid)
+            elif head not in in_batch and held["reason_code"] in SETTLED_CODES:
                 settled.add(wid)
     unread = set(works) - person - screened - settled
     budget_cut = budget_skipped(batches, budget_stops(store, run_id, prefix), work_of, unread) if batches else set()
@@ -277,8 +290,8 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
             await flow._abstract_stage(run, scope, vocabulary, order=order, batch_key=key,
                                        read_limit=policy["N"], cutoff=cutoff)
             held.model_done = True
-            held.wake.set()
         finally:
+            held.wake.set()
             screened.set()
 
     def may_start(step_key: str) -> bool:
@@ -306,9 +319,12 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                                            works=set(dplan["work_ids"]), stop=cutoff)
             if not may_start(versions_key):
                 return
-            snapshot = freeze_versions(flow, run, listing, dplan["items"], versions_key)
-            dorder = deep_state["order"] = small_batch.unchanged_heads(store, rid, listing, dplan["items"],
-                                                                       versions=snapshot["versions"])
+            snapshot = freeze_versions(flow, run, listing, dplan["items"], versions_key, with_order=True)
+            # The heads unchanged when the versions froze, read back on resume, less any changed since: a record
+            # changed while the run was paused leaves the order (so the closure counts it unscreened and lists it in
+            # `dropped_heads`, whatever its batch wrote) and the guard (so the resumed run goes on, as the top N's does).
+            live = set(small_batch.unchanged_heads(store, rid, listing, dplan["items"], versions=snapshot["versions"]))
+            dorder = deep_state["order"] = [head for head in snapshot["order"] if head in live]
             # A deep record that changes from here on stops the run as a top-N one does.
             flow._small_batch_guard["versions"].update({svid: snapshot["versions"][svid] for item in dplan["items"]
                                                         if item["head"] in dorder for svid in item["versions"]})
@@ -320,6 +336,9 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                 runs=deep["runs"])
             flow._wake_fetch(run_id)
             await screened.wait()
+            if not held.model_done:
+                # The top N's screening failed: the deep window sends nothing, and the main loop ends the run.
+                return
             flow._checkpoint(run_id, run["scope_revision"])
             # The plan is the stored one (`_abstract_code_stage` reads it back), with its one run per batch.
             await flow._abstract_stage(run, scope, vocabulary, order=dorder, batch_key=deep_key,

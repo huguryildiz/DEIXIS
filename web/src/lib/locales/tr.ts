@@ -6009,8 +6009,9 @@ export const tr: Record<string, string> = {
   'Language data': 'Dil verisi',
   // D173: the deeper screening (one model read of list places past N).
   'out of scope by one model read': 'tek model okumasıyla kapsam dışı',
-  '{n} of them read once, at list places {first}–{last}': '{n} tanesi bir kez okundu, liste sırası {first}–{last}',
-  'Of these, {n} changed a single model read.': 'Bunların {n} tanesinde tek bir model okumasını değiştirdiniz.',
+  '{n} of them read once, by a single model read': '{n} tanesi tek bir model okumasıyla bir kez okundu',
+  'Of your {n} decision, you changed a decision of code or the model runs in {m} (code {code}, model runs {model}, one model read {once}).': '{n} kararınızın {m} tanesinde kodun ya da model koşularının kararını değiştirdiniz (kod {code}, model koşuları {model}, tek model okuması {once}).',
+  'Of your {n} decisions, you changed a decision of code or the model runs in {m} (code {code}, model runs {model}, one model read {once}).': '{n} kararınızın {m} tanesinde kodun ya da model koşularının kararını değiştirdiniz (kod {code}, model koşuları {model}, tek model okuması {once}).',
   'Out of scope (one model read)': 'Kapsam dışı (tek model okuması)',
   'Out of scope at the abstract stage (one model read)': 'Özet aşamasında kapsam dışı (tek model okuması)',
   'One read found that the abstract may meet the criterion.': 'Tek okuma özetin ölçütü karşılayabileceğini buldu.',

@@ -174,16 +174,26 @@ def test_deep_window_is_read_once_and_reaches_only_the_answer(tmp_path, monkeypa
     assert all(off["position_of"][row["work_id"]] <= N for row in off["input"]["items"])
 
 
+def deep_plan_of(store, run_id):
+    step = steps_of(store, run_id, "%:fast:deep:abstract_stage")
+    return store.existing_step(run_id, step[0]["operation_key"])["output"] if step else None
+
+
 def test_a_cut_deep_batch_leaves_its_works_unscreened_and_out_of_the_answer(tmp_path, monkeypatch, small_standard):
     """(2) The read cutoff passes while the first one-read call is out: the works of the batches it cut are
     `deep.not_screened_at_cutoff`, none of them reaches the answer, and every deep step finished before the snapshot.
-    A deep work unscreened in this run stays out even when it holds a fresh candidate decision from before."""
+    A work of a cut batch given a fresh one-read candidate decision during the read, before its batch could be sent,
+    stays out too."""
     holder = {}
 
     def before(si):
         if si["task_type"] == "abstract_screening" and one_read(si) and not holder.get("cut"):
             holder["cut"] = True
-            holder["app"].state.store.clock.advance(5000)
+            store = holder["app"].state.store
+            # The second batch's first work gets a fresh candidate decision before its batch could be sent.
+            head = holder["head"] = deep_plan_of(store, si["run_id"])["batches"][1][0]
+            DecisionStore(store).record(si["research_id"], head, "single_read_candidate")
+            store.clock.advance(5000)
 
     adapter = FakeAdapter(responder, before=before)
     app = holder["app"] = app_with(tmp_path, monkeypatch, deep=True, adapter=adapter)
@@ -202,18 +212,59 @@ def test_a_cut_deep_batch_leaves_its_works_unscreened_and_out_of_the_answer(tmp_
         assert not set(unread) & {row["work_id"] for row in answer_input(client, store, rid)["items"]}
         deep_steps = steps_of(store, run_id, "%:fast:deep:%")
         assert deep_steps and all(s["finished_at"] and s["finished_at"] <= cutoff["finished_at"] for s in deep_steps)
+        # The run's own closure keeps that work out: its batch was cut, so the candidate decision never counts.
+        assert store.source(holder["head"])["work_id"] in unread
 
-        # An unscreened deep work holding a fresh candidate decision: the snapshot reads the deep unread set.
-        flow = app.state.worker.flow
-        listing = store.existing_step(run_id, small_batch.LIST_KEY)["output"]
-        item = next(i for i in listing["items"] if i["work_id"] == unread[0])
-        head = item["head"]
-        DecisionStore(store).record(rid, head, "single_read_candidate")
-        frozen = store.run(run_id)
-        with_deep = fast_answer.cutoff_snapshot(flow, frozen, listing, closure)
-        without = fast_answer.cutoff_snapshot(flow, frozen, listing, {k: v for k, v in closure.items() if k != "deep"})
-        assert next(r for r in with_deep["items"] if r["work_id"] == unread[0])["reason"] == "not_screened_at_cutoff"
-        assert next(r for r in without["items"] if r["work_id"] == unread[0])["reason"] is None
+
+def test_a_deep_record_changed_while_the_run_is_paused_stays_out_of_the_answer(tmp_path, monkeypatch, small_standard):
+    """(2c) A pause lands during the first one-read batch; while the run is paused a person edits the title of a work
+    in the next, unsent batch. The resumed run completes; the work is dropped from the frozen order, counted
+    unscreened, and not given to the answer, whatever its batch then wrote."""
+    holder = {}
+
+    def before(si):
+        if si["task_type"] == "abstract_screening" and one_read(si) and not holder.get("paused"):
+            holder["paused"] = True
+            holder["app"].state.store.update_run(si["run_id"], status="pause_requested")
+
+    adapter = FakeAdapter(responder, delay=0.01, before=before)
+    app = holder["app"] = app_with(tmp_path, monkeypatch, deep=True, adapter=adapter, model_concurrency=1)
+    with deep_client(app) as client:
+        rid, run_id, _, run = discover(client, effort="standard")
+        assert run["status"] == "paused", run
+        store = app.state.store
+        # The second record of the unsent batch: one read would keep it a candidate.
+        head = deep_plan_of(store, run_id)["batches"][1][1]
+        store.conn.execute("UPDATE source_versions SET title = title || ' SYNTHETIC EDITED' WHERE id = ?", (head,))
+        assert client.post(f"/api/runs/{run_id}/resume").status_code == 200
+        _, run = wait(client, rid, run_id)
+        assert run["status"] == "completed", run
+        record = closure_of(store, run_id)["deep"]
+        work_id = store.source(head)["work_id"]
+        assert record["dropped_heads"] == [head] and work_id in record["not_screened_at_cutoff"]
+        rows = {row["work_id"]: row for row in store.existing_step(run_id, fast_answer.CUTOFF)["output"]["items"]}
+        assert rows[work_id]["reason"] == "not_screened_at_cutoff"
+        assert work_id not in {row["work_id"] for row in answer_input(client, store, rid)["items"]}
+
+
+def test_a_failed_top_n_screening_sends_no_one_read_call(tmp_path, monkeypatch, small_standard):
+    """(2d) The top N's abstract screening fails: the deeper window waits on it, sends no one-read call, and the run
+    fails on that error."""
+    original = ResearchFlow._abstract_stage
+
+    async def failing(self, run, scope, vocabulary, **kwargs):
+        if ":deep" not in (kwargs.get("batch_key") or ""):
+            raise RuntimeError("SYNTHETIC top-N screening failure")
+        return await original(self, run, scope, vocabulary, **kwargs)
+
+    monkeypatch.setattr(ResearchFlow, "_abstract_stage", failing)
+    adapter = FakeAdapter(responder)
+    app = app_with(tmp_path, monkeypatch, deep=True, adapter=adapter)
+    with deep_client(app) as client:
+        _, run_id, _, run = discover(client, effort="standard")
+        assert run["status"] == "failed", run
+        assert not [c for c in adapter.calls if one_read(c)]
+        assert not steps_of(app.state.store, run_id, "%:fast:deep:abstract_screening:%")
 
 
 @pytest.mark.parametrize("effort", ["quick", "standard"])

@@ -43,7 +43,7 @@ button { font: inherit; color: inherit; }
 .nav.scrolled { border-bottom-color: var(--line); }
 .nav .wrap { display: flex; align-items: center; gap: 28px; height: 60px; }
 .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 16px; letter-spacing: .02em; }
-.brand svg { width: 22px; height: 22px; color: var(--accent); }
+.brand svg, .brand img { width: 22px; height: 22px; color: var(--accent); }
 .nav .links { display: flex; gap: 22px; font-size: 14px; color: var(--muted); }
 .nav .links a:hover { color: var(--ink); }
 .btn { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: 8px; font-size: 14px; font-weight: 500; border: 1px solid var(--line-2); background: transparent; cursor: pointer; white-space: nowrap; transition: background .15s, border-color .15s; }
@@ -204,7 +204,7 @@ footer .grow { flex: 1; }
 <header class="nav" id="nav">
   <div class="wrap">
     <a class="brand" href="#top" aria-label="DEIXIS home">
-      <svg viewBox="3 0 64 64" fill="none" aria-hidden="true"><path d="M17 52V12H29C42.255 12 53 20.954 53 32S42.255 52 32 52C28.5 52 27 50 27 46.5V42" stroke="currentColor" stroke-width="6"/><circle cx="27" cy="34" r="5" fill="currentColor"/></svg>
+      <img src="live/deixis-icon-glass.svg" alt="" aria-hidden="true" width="22" height="22">
       DEIXIS
     </a>
     <nav class="links" aria-label="Sections">

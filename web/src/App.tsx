@@ -121,8 +121,8 @@ function readCurrent(): string | null {
   try { return localStorage.getItem('deixis-current') } catch { return null }
 }
 
-// The DEIXIS mark in the ink of the brand text, so it follows the theme.
-const brandLogo = <svg className="brand-logo" viewBox="3 0 64 64" fill="none" aria-hidden="true"><path d="M17 52V12H29C42.255 12 53 20.954 53 32S42.255 52 32 52C28.5 52 27 50 27 46.5V42" stroke="currentColor" strokeWidth="6" /><circle cx="27" cy="34" r="5" fill="currentColor" /></svg>
+// The app icon, the same file the window and the installer use.
+const brandLogo = <img className="brand-logo" src="/deixis-icon-glass.svg" alt="" aria-hidden="true" />
 
 // The sidebar shows the name on two lines: given names, then the surname, so a long name is not cut off.
 const nameLines = (full: string) => { const name = full.trim(); const cut = name.lastIndexOf(' '); return cut > 0 ? [name.slice(0, cut), name.slice(cut + 1)] : [name] }

@@ -91,9 +91,9 @@
      report's. */
   @page report {
     size: A4; margin: 22mm 22mm 20mm;
-    /* The DEIXIS mark (public/deixis-icon.svg) in black, then the name, as Elicit puts its logo in the footer. */
-    @bottom-left { content: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='3 0 64 64' width='13' height='13' fill='none'%3E%3Cpath d='M17 52V12H29C42.255 12 53 20.954 53 32S42.255 52 32 52C28.5 52 27 50 27 46.5V42' stroke='%23111' stroke-width='5'/%3E%3Ccircle cx='27' cy='34' r='4.5' fill='%23111'/%3E%3C/svg%3E") "\2002 DEIXIS"; font: 600 8pt 'Inter Variable', sans-serif; letter-spacing: .08em;
-      color: #111; vertical-align: middle; }
+    /* The app icon (public/deixis-icon-glass.svg), then the name, as Elicit puts its logo in the footer. */
+    @bottom-left { content: url("/deixis-icon-glass.svg") "\2002 DEIXIS"; font: 600 8pt 'Inter Variable', sans-serif;
+      letter-spacing: .08em; color: #111; vertical-align: middle; }
     @bottom-right { content: counter(page); font: 400 8.5pt 'Source Serif 4 Variable', serif; color: #111; }
   }
   html[data-print="panel"] .report-document {

@@ -269,7 +269,7 @@ def _table_xml(table: Table, text_width: int) -> str:
             f'{header}{"".join(row(r) for r in table.rows)}</w:tbl><w:p/>')
 
 
-_MARK = Path(__file__).with_name("deixis-mark.png")  # public/deixis-icon.svg in black, 128 px
+_MARK = Path(__file__).with_name("deixis-mark.png")  # public/deixis-icon-glass.svg, 128 px
 _MARK_EMU = 9 * 12700  # drawn 9 pt square
 
 

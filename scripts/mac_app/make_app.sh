@@ -23,9 +23,9 @@ PLIST
 sed "s|__REPO__|$REPO|" "$HERE/launch.zsh" > "$APP/Contents/MacOS/launch"
 chmod +x "$APP/Contents/MacOS/launch"
 
-# Icon from the UI's SVG (Quick Look renders it to PNG).
+# Icon from the app icon (Quick Look renders the SVG to PNG).
 TMP=$(mktemp -d)
-qlmanage -t -s 1024 -o "$TMP" "$REPO/web/dist/deixis-icon.svg" >/dev/null 2>&1 || true
+qlmanage -t -s 1024 -o "$TMP" "$REPO/web/dist/deixis-icon-glass.svg" >/dev/null 2>&1 || true
 PNG=$(ls "$TMP"/*.png 2>/dev/null | head -1 || true)
 if [[ -n "$PNG" ]]; then
   SET="$TMP/deixis.iconset"; mkdir "$SET"

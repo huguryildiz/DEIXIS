@@ -1,7 +1,7 @@
 /* P10 L3 library probe, the outside program on Linux: loads PROBE_LIB (a library the packaged backend also holds in
  * _internal/) by its soname through the normal search order, as any outside tool would, and appends one line to
  * <its own path>.log: the first argument (the route), the LD_LIBRARY_PATH it got, and the file the loader picked
- * ("-" when the system has none). Built by scripts/p10/sidecar_smoke.py with gcc -DPROBE_LIB='"libssl.so.3"'. */
+ * ("-" when nothing loaded, and then it exits 7, so a route that loads nothing fails). Built by scripts/p10/sidecar_smoke.py with gcc -DPROBE_LIB='"libssl.so.3"'. */
 #define _GNU_SOURCE
 #include <dlfcn.h>
 #include <link.h>
@@ -24,5 +24,5 @@ int main(int argc, char **argv) {
     if (!out) return 6;
     fprintf(out, "%s\t%s\t%s\n", argc > 1 ? argv[1] : "-", path ? path : "", loaded);
     fclose(out);
-    return 0;
+    return loaded[0] == '-' ? 7 : 0;
 }

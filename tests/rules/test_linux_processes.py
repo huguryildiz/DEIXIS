@@ -241,3 +241,40 @@ def test_a_launcher_whose_own_identity_cannot_be_read_starts_nothing(tmp_path):
     code, ran = run_launcher_with(tmp_path, "child_record.identity = lambda pid: None")
     assert (code, ran) == (125, False)  # RECORD_FAILED
     assert run_launcher_with(tmp_path, "pass") == (0, True)  # the same launch with an identity runs
+
+
+def test_a_cancel_that_arrives_while_the_launcher_prepares_the_program_still_means_it_never_runs(tmp_path):
+    patch = ("real_env = session_launcher.program_env\n"
+             "        def program_env():\n"
+             "            os.kill(os.getpid(), session_launcher.CANCEL)  # after the identity, before the start\n"
+             "            return real_env()\n"
+             "        session_launcher.program_env = program_env")
+    assert run_launcher_with(tmp_path, patch) == (128 + signal.SIGKILL, False)
+
+
+def test_a_stop_whose_signals_cannot_be_sent_at_first_tries_again_until_they_are(monkeypatch):
+    program = "import subprocess, time; subprocess.Popen(['/bin/sleep', '65']); time.sleep(61)"
+    launcher = subprocess.Popen(child_record.launcher_argv([sys.executable, "-c", program], "cli"),
+                                start_new_session=True, env=os.environ | {"PYTHONPATH": BACKEND})
+    try:
+        leader = child_record.identity(launcher.pid)
+        ends = time.monotonic() + 10
+        while len(child_record.members(leader)) < 2 and time.monotonic() < ends:
+            time.sleep(0.05)
+        session = child_record.members(leader)
+        failures = iter([OSError(errno.EMFILE, "Too many open files")] * 4)  # every member and the cancel fail once
+        real = os.pidfd_open
+
+        def flaky(pid):
+            error = next(failures, None)
+            if error:
+                raise error
+            return real(pid)
+        monkeypatch.setattr(os, "pidfd_open", flaky)
+        child_record.stop_group(launcher.pid, leader, signal.SIGKILL)
+        assert launcher.wait(15) == -signal.SIGKILL
+        assert not any(child_record.alive(i) for i in session)
+    finally:
+        if launcher.poll() is None:
+            os.killpg(launcher.pid, signal.SIGKILL)
+            launcher.wait()

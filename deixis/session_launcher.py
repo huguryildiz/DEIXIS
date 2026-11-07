@@ -24,7 +24,9 @@ from pathlib import Path
 
 RECORD_FAILED = 125
 REFUSED = "DEIXIS did not start "
-CANCEL = signal.SIGUSR1  # Linux `child_record.stop_group`: start nothing more, empty the session, then end
+# `child_record.stop_group` on Linux: start nothing more, empty the session, then end. None on Windows (no SIGUSR1; this
+# module is imported there only for REFUSED and RECORD_FAILED).
+CANCEL = getattr(signal, "SIGUSR1", None)
 CLEAN_SECONDS = 10.0
 WATCH_SECONDS = 0.5
 
@@ -40,7 +42,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     record, owner, kind, program = Path(argv[0]), argv[1], argv[2], argv[4:]
     cancelled: list[bool] = []
-    signal.signal(CANCEL, lambda *_: cancelled.append(True))  # before this line its default action ends this process
+    if CANCEL is not None:
+        signal.signal(CANCEL, lambda *_: cancelled.append(True))  # before this line its default action ends this process
     from deixis.tools import child_record
 
     recorded = child_record.NONE not in (argv[0], owner)
@@ -52,30 +55,43 @@ def main(argv: list[str] | None = None) -> int:
     if ident is None:  # nothing could stop its session by identity (Linux without a boot id)
         print(f"{REFUSED}{Path(program[0]).name}: this process's identity cannot be read", file=sys.stderr)
         return RECORD_FAILED
-    if cancelled:  # cancelled before PROGRAM started: it never runs
-        if recorded:
-            child_record.remove(record, ident)
-        return 128 + signal.SIGKILL
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, lambda *_: None)  # a handler, not SIG_IGN: PROGRAM starts with the default action
+    env = program_env()
+    # A cancel is held back from the last check until PROGRAM has started: one that came earlier is seen by the check
+    # (PROGRAM never runs); one that comes later is delivered after the start and seen by the first turn of the loop.
+    # PROGRAM itself starts with the cancel signal unblocked again.
+    held = {CANCEL} if CANCEL is not None else set()
+    if held:
+        signal.pthread_sigmask(signal.SIG_BLOCK, held)
     try:
-        child = subprocess.Popen(program, env=program_env(), close_fds=False)
-    except OSError as exc:
-        if recorded:
-            child_record.remove(record, ident)
-        print(f"{program[0]}: {exc}", file=sys.stderr)
-        return 127
+        if cancelled:  # cancelled before PROGRAM started: it never runs
+            if recorded:
+                child_record.remove(record, ident)
+            return 128 + signal.SIGKILL
+        try:
+            child = subprocess.Popen(program, env=env, close_fds=False,
+                                     preexec_fn=(lambda: signal.pthread_sigmask(signal.SIG_UNBLOCK, held)) if held else None)
+        except OSError as exc:
+            if recorded:
+                child_record.remove(record, ident)
+            print(f"{program[0]}: {exc}", file=sys.stderr)
+            return 127
+    finally:
+        if held:
+            signal.pthread_sigmask(signal.SIG_UNBLOCK, held)
     null = os.open(os.devnull, os.O_RDWR)
     for fd in (0, 1, 2):
         os.dup2(null, fd)  # PROGRAM alone holds the pipes, so its caller sees EOF when PROGRAM is done
     os.closerange(3, 1 << 16)  # the inherited locks and pipes stay with PROGRAM only
     while True:
+        if cancelled or (recorded and not child_record.alive(owner)):
+            child_record.sweep_members(ident)  # cancelled, or the owner is gone: nobody else will stop this session
         try:
             code = child.wait(WATCH_SECONDS)
             break
         except subprocess.TimeoutExpired:
-            if cancelled or (recorded and not child_record.alive(owner)):
-                child_record.sweep_members(ident)  # cancelled, or the owner is gone: nobody else will stop this session
+            continue
         except InterruptedError:
             continue
     child_record.sweep_members(ident, CLEAN_SECONDS)  # until a scan finds none

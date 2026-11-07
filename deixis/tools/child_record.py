@@ -51,6 +51,7 @@ LAUNCHER = "deixis.session_launcher"
 NONE = "-"  # the launcher's record and owner arguments while the record is off
 GONE_WAIT_SECONDS = 3.0
 CLEAN_SECONDS = 10.0
+SIGNAL_RETRY_SECONDS = 2.0  # Linux stop_group: how long a signal that could not be sent is tried again
 LINUX = sys.platform.startswith("linux")
 ON = (sys.platform == "darwin" or LINUX) and fcntl is not None
 
@@ -310,13 +311,25 @@ def stop_group(pid: int, leader: str | None, sig: int) -> set[str]:
         return set()
     found = members(leader)
     if LINUX:  # no killpg: asyncio may reap the launcher on its own; each verified member by pidfd
-        for ident in sorted(found):
-            kill_identity(ident) if sig == signal.SIGKILL else signal_identity(
-                int(ident.partition(":")[0]), ident.partition(":")[2], sig)
         # TERM: the launcher ignores it while its program runs. SIGKILL: the launcher is told to cancel instead
         # (`session_launcher.CANCEL`): it starts no program after this, and empties its session (a late fork too) until
-        # a scan finds nothing, retrying what could not be signalled, then ends.
-        signal_identity(pid, leader.partition(":")[2], signal.SIGUSR1 if sig == signal.SIGKILL else sig)
+        # a scan finds nothing, then ends. A signal that could not be sent (no descriptor left) is tried again while its
+        # process lives, for up to SIGNAL_RETRY_SECONDS.
+        def send(ident: str, number: int) -> bool:
+            if number == signal.SIGKILL:
+                return kill_identity(ident)
+            target, _, start = ident.partition(":")
+            return signal_identity(int(target), start, number)
+
+        to_leader = signal.SIGUSR1 if sig == signal.SIGKILL else sig
+        pending, told = set(found), False
+        ends = time.monotonic() + SIGNAL_RETRY_SECONDS
+        while True:
+            pending = {i for i in pending if not send(i, sig) and alive(i)}
+            told = told or send(leader, to_leader) or not alive(leader)
+            if (not pending and told) or time.monotonic() >= ends:
+                break
+            time.sleep(0.02)
         return found | {leader}
     if sig == signal.SIGKILL:
         for ident in sorted(found):

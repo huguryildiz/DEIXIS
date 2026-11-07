@@ -294,3 +294,11 @@ def test_a_pdf_reader_that_cannot_join_its_job_is_a_recorded_failure(tmp_path, m
     (tmp_path / "x.pdf").write_bytes(b"%PDF-1.4\n")
     result = pdf.extract_pdf(tmp_path / "x.pdf")
     assert (result.status, result.error) == ("failed", "extraction memory limit could not be watched")
+
+
+def test_a_refusal_check_on_windows_imports_the_launcher_module_without_its_cancel_signal():
+    # cli_process.refused() imports deixis.session_launcher after every Gemini/Copilot run; Windows has no SIGUSR1.
+    from deixis.models import cli_process
+    from deixis.session_launcher import CANCEL
+
+    assert CANCEL is None and cli_process.refused(0, "") is None

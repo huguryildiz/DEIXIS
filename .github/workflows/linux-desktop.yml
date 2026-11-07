@@ -1,7 +1,7 @@
 # P10 Linux (L3, L4): the real backend sidecar and the Tauri shell on a Linux x64 runner. Started by hand only
 # (`gh workflow run linux-desktop.yml`). Built on ubuntu-22.04, the oldest supported base (glibc 2.35). Builds the
-# sidecar (PyInstaller onedir: deixis-backend + _internal/), runs the sidecar smoke against it inside a D-Bus session
-# with an unlocked gnome-keyring (so the Secret Service row is measured), lints and tests the shell, builds the .deb and
+# sidecar (PyInstaller onedir: deixis-backend + _internal/), runs the sidecar smoke against it (the smoke starts its own
+# D-Bus session and throwaway gnome-keyring for the Secret Service rows), lints and tests the shell, builds the .deb and
 # the AppImage around that sidecar (packaging/build_linux.py: the .deb's sidecar equals the build, the AppImage's
 # linuxdeploy-rewritten files are named, SHA-256 printed), runs the smoke a second time against the sidecar unpacked
 # from the AppImage, and keeps both packages as artifacts.
@@ -46,12 +46,10 @@ jobs:
       - run: uv sync --frozen --group packaging
       - name: Sidecar
         run: uv run --no-sync python packaging/sidecar/build.py
-      - name: Sidecar smoke (inside a D-Bus session with an unlocked keyring)
+      - name: Sidecar smoke
         id: smoke
         continue-on-error: true
-        run: |
-          dbus-run-session -- bash -c 'printf "" | gnome-keyring-daemon --unlock --components=secrets >/dev/null; \
-            uv run --no-sync python scripts/p10/sidecar_smoke.py' 2>&1 | tee sidecar-smoke.txt; exit ${PIPESTATUS[0]}
+        run: uv run --no-sync python scripts/p10/sidecar_smoke.py 2>&1 | tee sidecar-smoke.txt; exit ${PIPESTATUS[0]}
       - run: cargo clippy --all-targets --locked -- -D warnings
         working-directory: desktop/src-tauri
       - run: cargo test --locked
@@ -62,8 +60,7 @@ jobs:
         id: smoke_appimage
         continue-on-error: true
         run: |
-          dbus-run-session -- bash -c 'printf "" | gnome-keyring-daemon --unlock --components=secrets >/dev/null; \
-            uv run --no-sync python scripts/p10/sidecar_smoke.py --sidecar packaging/linux-unpacked/appimage-sidecar' \
+          uv run --no-sync python scripts/p10/sidecar_smoke.py --sidecar packaging/linux-unpacked/appimage-sidecar \
             2>&1 | tee sidecar-smoke-appimage.txt; exit ${PIPESTATUS[0]}
       - uses: actions/upload-artifact@v4
         if: always()

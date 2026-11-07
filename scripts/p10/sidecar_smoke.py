@@ -580,6 +580,46 @@ def runtime_row(work: Path, binary: Path, env: dict[str, str]) -> None:
         probe=probe, checks=checks, **({} if checks else {"report": report}))
 
 
+class PrivateKeyring:
+    """A D-Bus session bus and a gnome-keyring of this smoke's own (in a temp HOME, unlocked with a throwaway password),
+    so the Secret Service rows never reach the caller's bus or keyring. `env` is None where dbus-daemon or
+    gnome-keyring-daemon is not installed (those rows are then not measured)."""
+
+    def __init__(self, work: Path):
+        self.procs: list[subprocess.Popen] = []
+        self.env: dict[str, str] | None = None
+        if not (shutil.which("dbus-daemon") and shutil.which("gnome-keyring-daemon")):
+            return
+        home = work / "keyring-home"
+        runtime = home / "run"
+        runtime.mkdir(parents=True)
+        runtime.chmod(0o700)
+        env = {"HOME": str(home), "XDG_RUNTIME_DIR": str(runtime), "XDG_DATA_HOME": str(home / "share"),
+               "PATH": os.environ.get("PATH", "/usr/bin:/bin")}
+        bus = subprocess.Popen(["dbus-daemon", "--session", "--nofork", "--print-address=1"], env=env,
+                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        self.procs.append(bus)
+        env["DBUS_SESSION_BUS_ADDRESS"] = bus.stdout.readline().strip()
+        keyring = subprocess.Popen(["gnome-keyring-daemon", "--foreground", "--unlock", "--components=secrets"], env=env,
+                                   stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
+        self.procs.append(keyring)
+        keyring.stdin.write("deixis-smoke-throwaway")  # an empty password leaves no default collection (a prompt)
+        keyring.stdin.close()
+        ends = time.monotonic() + 10
+        while not (home / "share" / "keyrings" / "login.keyring").exists() and time.monotonic() < ends:
+            time.sleep(0.1)
+        self.env = {k: env[k] for k in ("DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR")}
+
+    def close(self) -> None:
+        for proc in reversed(self.procs):
+            proc.terminate()
+            try:
+                proc.wait(5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+
+
 LINUX_PROBE_LIBS = ("libssl.so.3", "libcrypto.so.3", "libffi.so.8", "libz.so.1", "liblzma.so.5", "libbz2.so.1.0")
 
 
@@ -588,13 +628,21 @@ def linux_runtime_row(work: Path, binary: Path, env: dict[str, str]) -> None:
     gcc), which loads by soname a library the package also holds in _internal/ and logs the file the loader picked and
     the LD_LIBRARY_PATH it got, on the three routes an outside program is started by (`child_env`, a model CLI through
     Codex's allowlist and the session launcher, the Claude Agent SDK's own transport). The person's own LD_LIBRARY_PATH
-    must come back unchanged (Codex's allowlist drops the name altogether), and no route may load the package's copy. Negative control: started with
-    _internal on LD_LIBRARY_PATH, the probe loads the package's copy. The in-process keychain check counts only where a
-    session bus is there (CI: dbus-run-session with gnome-keyring); the `keychain` rows cover the rest."""
+    must come back unchanged (Codex's allowlist drops the name altogether), and no route may load the package's copy.
+    The person's folder holds a copy of the system's library (the marker): the routes that keep the person's
+    LD_LIBRARY_PATH must load that copy, the CLI route the system's; a probe that loads nothing fails. Negative control:
+    started with _internal on LD_LIBRARY_PATH, the probe loads the package's copy. The in-process keychain check runs
+    against this smoke's own bus and keyring (`PrivateKeyring`), never the caller's; without gnome-keyring it is not
+    measured."""
     folder = work / "runtime"
     folder.mkdir()
     internal = binary.parent / "_internal"
-    lib = next((name for name in LINUX_PROBE_LIBS if (internal / name).is_file()), None)
+    system = {}
+    for line in subprocess.run(["ldconfig", "-p"], capture_output=True, text=True).stdout.splitlines():
+        name, _, target = line.strip().partition(" => ")
+        if "64" in name:  # "(libc6,x86-64)" / "(libc6,AArch64)": this machine's own libraries
+            system.setdefault(name.split(" ")[0], target.strip())
+    lib = next((name for name in LINUX_PROBE_LIBS if (internal / name).is_file() and name in system), None)
     probe = work / "probe-bin" / "linux-probe"
     probe.parent.mkdir()
     built = subprocess.run(["gcc", "-O2", f'-DPROBE_LIB="{lib}"', "-o", str(probe),
@@ -607,16 +655,24 @@ def linux_runtime_row(work: Path, binary: Path, env: dict[str, str]) -> None:
     subprocess.run([str(probe), "control"], env=env | {"LD_LIBRARY_PATH": str(internal)}, check=True)
     control = log.read_text().strip().split("\t")[-1]
     log.unlink()
-    keychain = bool(os.environ.get("DBUS_SESSION_BUS_ADDRESS"))
-    person = "/opt/deixis-smoke-person-libs"  # the person's own LD_LIBRARY_PATH: every route must get it back unchanged
-    run_env = {k: v for k, v in env.items() if k not in ("PYTHON_KEYRING_BACKEND", "HTTP_PROXY", "HTTPS_PROXY")}
+    marker = work / "person-libs"  # the person's own LD_LIBRARY_PATH, with the marker copy of the system's library
+    marker.mkdir()
+    shutil.copy2(system[lib], marker / lib)
+    person = str(marker)
+    private = PrivateKeyring(work)
+    keychain = private.env is not None
+    run_env = {k: v for k, v in env.items() if k not in ("PYTHON_KEYRING_BACKEND", "HTTP_PROXY", "HTTPS_PROXY",
+                                                          "DBUS_SESSION_BUS_ADDRESS")}
     run_env["LD_LIBRARY_PATH"] = person
     if keychain:
-        run_env |= {k: os.environ[k] for k in ("DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR") if k in os.environ}
+        run_env |= private.env
     else:
         run_env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.null.Keyring"
-    done = subprocess.run([str(binary), "--check-runtime", str(folder), "--https", HTTPS_URL, "--library-probe", str(probe)],
-                          cwd=work, env=run_env, capture_output=True, text=True, timeout=180)
+    try:
+        done = subprocess.run([str(binary), "--check-runtime", str(folder), "--https", HTTPS_URL, "--library-probe",
+                               str(probe)], cwd=work, env=run_env, capture_output=True, text=True, timeout=180)
+    finally:
+        private.close()
     try:
         report = json.loads(done.stdout.strip().splitlines()[-1])
     except (ValueError, IndexError):
@@ -624,9 +680,15 @@ def linux_runtime_row(work: Path, binary: Path, env: dict[str, str]) -> None:
     checks = report.get("checks", {})
     needed = ["pdf_render", "https", "library_paths"] + (["credential_locker"] if keychain else [])
     routes = checks.get("library_paths", {}).get("routes", {})
+    def loaded(route: str) -> Path | None:
+        value = routes.get(route, {}).get("loaded", "-")
+        return Path(value).resolve() if value not in ("", "-") else None
+
     row("runtime", all(checks.get(name, {}).get("ok") for name in needed) and len(routes) == 3
-        and all(r["ld_library_path"] == person for n, r in routes.items() if n != "cli")
+        and all(r["ld_library_path"] == person and loaded(n) == (marker / lib).resolve()
+                for n, r in routes.items() if n != "cli")
         and routes.get("cli", {}).get("ld_library_path") in ("", person)  # Codex's allowlist does not pass it on at all
+        and loaded("cli") in (Path(system[lib]).resolve(), (marker / lib).resolve())
         and Path(control).resolve().is_relative_to(internal.resolve()), exit=done.returncode, library=lib,
         control=control, keychain="measured" if keychain else "not measured", checks=checks,
         **({} if checks else {"report": report}))
@@ -634,10 +696,12 @@ def linux_runtime_row(work: Path, binary: Path, env: dict[str, str]) -> None:
 
 def keychain_rows(binary: Path, work: Path, env: dict[str, str]) -> None:
     """Linux (P10 L3): where a saved key lives and whether it survives a restart of the backend.
-    keychain_secret_service (only inside a session bus with a keyring, as CI runs it): Settings names the keychain, a key
-    saved through the API is read back by a new backend on the same data folder, then deleted.
-    keychain_none (no session bus): Settings says there is no keychain and keeps keys for this run; after the person
-    chooses the unencrypted file, a saved key is in a 0600 file in the data folder and a new backend reads it back."""
+    keychain_secret_service (against this smoke's own bus and throwaway keyring, `PrivateKeyring`; not measured without
+    gnome-keyring): Settings names the keychain, a key saved through the API is read back by a new backend on the same
+    data folder, then deleted.
+    keychain_none (no session bus): Settings says there is no keychain; a saved key works for this run (source
+    `session`) and is gone after a restart; after the person chooses the unencrypted file, a saved key is in a 0600 file
+    in the data folder and a new backend reads it back."""
     def backend(data: Path, extra: dict[str, str]) -> tuple[Sidecar, httpx.Client]:
         sc = Sidecar(binary, data, extra)
         sc.wait_listening()
@@ -655,30 +719,45 @@ def keychain_rows(binary: Path, work: Path, env: dict[str, str]) -> None:
 
     base = {k: v for k, v in env.items() if k not in ("PYTHON_KEYRING_BACKEND", "DBUS_SESSION_BUS_ADDRESS")}
     key, value = "ZOTERO_LIBRARY_ID", "7340021"
-    if os.environ.get("DBUS_SESSION_BUS_ADDRESS"):
-        bus = base | {k: os.environ[k] for k in ("DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR") if k in os.environ}
-        data = work / "keychain-ss"
-        sc, client = backend(data, bus)
-        try:
-            first = client.get("/api/credentials").json()["keychain"]
-            saved = client.put(f"/api/credentials/{key}", json={"value": value}).status_code
-        finally:
-            stop(sc, client)
-        sc, client = backend(data, bus)
-        try:
-            again = next(k for k in client.get("/api/credentials").json()["keys"] if k["env"] == key)
-            deleted = client.delete(f"/api/credentials/{key}").status_code
-        finally:
-            stop(sc, client)
-        row("keychain_secret_service", first.get("available") is True and first.get("mode") == "keychain" and saved == 200
-            and again.get("configured") is True and again.get("source") == "keychain" and deleted in (200, 204),
-            keychain=first.get("name"), saved=saved, read_back=again.get("source"), deleted=deleted)
-    else:
-        row("keychain_secret_service", True, measured=False, reason="no session bus here; CI runs this row")
+    def key_status(client: httpx.Client) -> dict:
+        return next(k for k in client.get("/api/credentials").json()["keys"] if k["env"] == key)
+
+    private = PrivateKeyring(work)
+    try:
+        if private.env is not None:
+            bus = base | private.env
+            data = work / "keychain-ss"
+            sc, client = backend(data, bus)
+            try:
+                first = client.get("/api/credentials").json()["keychain"]
+                saved = client.put(f"/api/credentials/{key}", json={"value": value}).status_code
+            finally:
+                stop(sc, client)
+            sc, client = backend(data, bus)
+            try:
+                again = key_status(client)
+                deleted = client.delete(f"/api/credentials/{key}").status_code
+            finally:
+                stop(sc, client)
+            row("keychain_secret_service", first.get("available") is True and first.get("mode") == "keychain"
+                and saved == 200 and again.get("configured") is True and again.get("source") == "keychain"
+                and deleted in (200, 204), keychain=first.get("name"), saved=saved, read_back=again.get("source"),
+                deleted=deleted, bus="this smoke's own")
+        else:
+            row("keychain_secret_service", True, measured=False, reason="dbus-daemon or gnome-keyring not installed here")
+    finally:
+        private.close()
     data = work / "keychain-none"
     sc, client = backend(data, base)
     try:
         first = client.get("/api/credentials").json()["keychain"]
+        in_session = client.put(f"/api/credentials/{key}", json={"value": value}).status_code
+        session_source = key_status(client).get("source")
+    finally:
+        stop(sc, client)
+    sc, client = backend(data, base)
+    try:
+        after_restart = key_status(client).get("configured")
         chosen = client.put("/api/credentials/file-store", json={"enabled": True}).status_code
         saved = client.put(f"/api/credentials/{key}", json={"value": value}).status_code
         files = [p for p in data.rglob("*") if p.is_file() and value in p.read_text(errors="ignore")]
@@ -690,9 +769,11 @@ def keychain_rows(binary: Path, work: Path, env: dict[str, str]) -> None:
         again = next(k for k in client.get("/api/credentials").json()["keys"] if k["env"] == key)
     finally:
         stop(sc, client)
-    row("keychain_none", first.get("available") is False and first.get("mode") == "session" and chosen == 200 and saved == 200
+    row("keychain_none", first.get("available") is False and first.get("mode") == "session" and in_session == 200
+        and session_source == "session" and after_restart is False and chosen == 200 and saved == 200
         and modes == ["0o600"] and again.get("configured") is True and again.get("source") == "file",
-        mode=first.get("mode"), chosen=chosen, saved=saved, file_modes=modes, read_back=again.get("source"))
+        mode=first.get("mode"), session_saved=in_session, session_source=session_source,
+        session_after_restart=after_restart, chosen=chosen, saved=saved, file_modes=modes, read_back=again.get("source"))
 
 
 def sc_passages(data: Path, asset_id: str | None) -> int:

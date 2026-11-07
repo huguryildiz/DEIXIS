@@ -197,8 +197,10 @@ def runtime_main(args: list[str]) -> int:
             start()
             fields = log.read_text().strip().splitlines()[-1].split("\t")
             seen[name] = {"ld_library_path": fields[1], "loaded": fields[2]}
+        if empty := [n for n, s in seen.items() if s["loaded"] in ("", "-")]:
+            raise RuntimeError(f"the probe loaded no library on: {empty}")
         inside = lambda value: any(Path(d).resolve().is_relative_to(package) for d in value.split(":") if d)  # noqa: E731
-        leaked = {n: s for n, s in seen.items() if inside(s["ld_library_path"]) or (s["loaded"] != "-" and inside(s["loaded"]))}
+        leaked = {n: s for n, s in seen.items() if inside(s["ld_library_path"]) or inside(s["loaded"])}
         if leaked:
             raise RuntimeError(f"an outside program got the package's library folder: {leaked}")
         return {"routes": seen}

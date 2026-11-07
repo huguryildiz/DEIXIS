@@ -22,7 +22,7 @@ LICENSE_ID = "AGPL-3.0-or-later"
 NOTICES_FILE = "THIRD_PARTY_NOTICES"
 # Versions that have a `v<version>` tag on GitHub, whose page holds that version's source. P10 adds a version here when it
 # cuts the release (and attaches the source archive); until then the link goes to the repository.
-TAGGED_VERSIONS: frozenset[str] = frozenset({"0.1.0", "0.1.1"})
+TAGGED_VERSIONS: frozenset[str] = frozenset({"0.1.0", "0.1.1", "0.1.2"})
 VERSION_SHAPE = re.compile(r"^\d+\.\d+\.\d+[0-9A-Za-z.+\-]{0,30}$")
 OS_NAMES = {"Darwin": "macOS", "Windows": "Windows", "Linux": "Linux"}
 ARCHITECTURES = {"arm64": "arm64", "aarch64": "arm64", "x86_64": "x86_64", "amd64": "x86_64"}

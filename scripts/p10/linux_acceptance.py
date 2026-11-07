@@ -1,6 +1,6 @@
 """Acceptance of the installed DEIXIS on Linux x64 (P10 L5): the .deb and the AppImage as built by linux-desktop.yml.
 
-    python scripts/p10/linux_acceptance.py --deb DEIXIS_0.1.1_amd64.deb --appimage DEIXIS_0.1.1_amd64.AppImage
+    python scripts/p10/linux_acceptance.py --deb DEIXIS_0.1.2_amd64.deb --appimage DEIXIS_0.1.2_amd64.AppImage
                                            [--evidence DIR] [--only ROW,...] [--formats deb,appimage]
 
 Runs inside an X display with a window manager and a D-Bus session (CI: xvfb-run + dbus-run-session + Openbox), as a

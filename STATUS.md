@@ -8,7 +8,7 @@ Uygulama çalışıyor ve masaüstü uygulaması olarak kuruluyor. Son haftalard
 
 - **Masaüstü paketi (P10):** Mac (Apple Silicon), Windows ve Linux paketleri hazır. GitHub'daki son ön sürüm [`v0.1.1`](https://github.com/huguryildiz/DEIXIS/releases/tag/v0.1.1) (Mac + Windows). Kodda sürüm 0.1.2 (Linux paketleri, Tesseract kurmadan OCR, temaya uyan pencere, yeni sürüm uyarısı), ama henüz GitHub'da yayımlanmadı.
 - **Kurulu uygulama testleri:** Mac 17/17, Windows sanal makinede 12/12, Linux GitHub'ın Ubuntu 22.04 ve 24.04 makinelerinde 23/23 geçti. Windows 10, gerçek bir x64 PC ve gerçek bir Linux masaüstü denenmedi. Windows'ta yerleşik yerel modeller ve arXiv kaynak okuma yok.
-- **Tanıtım sitesi:** [deixis-app.vercel.app](https://deixis-app.vercel.app), içinde arayüzün kayıtlı, salt okunur bir demosu var (D162).
+- **Tanıtım sitesi:** [deixis.huguryildiz.com](https://deixis.huguryildiz.com), içinde arayüzün kayıtlı, salt okunur bir demosu var (D162).
 - **Cevap kalitesi:** 6 Kasım'daki ilk ölçümde 128 iddianın %93'ü pasajıyla tam destekleniyordu. Asıl sorun kanıtın cevaba ulaşmadan kaybolması: referans makalelerin çoğu sıralamada ilk 50'nin dışında kalıyor. Bunun için yapılan düzeltmeler (D152–D156) ölçümde kazanç göstermedi, zarar da göstermedi.
 - **Yeni ölçüm yöntemi (D163):** sahip 30 soru yazacak, her soru için cevapta bulunması gereken 3–4 nokta. Üç iyileştirme sırayla denenecek; ilki kodlandı ama kapalı duruyor (D164). Ölçüm sorular hazır olunca başlayacak.
 - Türkçe soru artık durmuyor: model soruyu İngilizceye çeviriyor, arama o cümleyle yapılıyor (D149). Arama kalitesine etkisi ölçülmedi.

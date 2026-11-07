@@ -16,7 +16,7 @@ A desktop app that answers questions from the scientific literature, with every 
 <img src="https://img.shields.io/badge/SQLite-0f1a2e?style=for-the-badge&logo=sqlite&logoColor=4FA3D9" alt="SQLite">
 <img src="https://img.shields.io/badge/pytest%20·%20Playwright-0f1a2e?style=for-the-badge&logo=pytest&logoColor=0A9EDC" alt="pytest · Playwright">
 <br>
-<a href="https://deixis-app.vercel.app"><img src="https://img.shields.io/badge/deixis--app.vercel.app-0f1a2e?style=for-the-badge&logo=vercel&logoColor=white" alt="deixis-app.vercel.app"></a>
+<a href="https://deixis.huguryildiz.com"><img src="https://img.shields.io/badge/deixis.huguryildiz.com-0f1a2e?style=for-the-badge&logo=googlechrome&logoColor=white" alt="deixis.huguryildiz.com"></a>
 <a href="https://github.com/huguryildiz/DEIXIS/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/huguryildiz/DEIXIS/ci.yml?branch=main&style=for-the-badge&label=checks" alt="checks"></a>
 <a href="https://github.com/huguryildiz/DEIXIS/releases"><img src="https://img.shields.io/github/v/release/huguryildiz/DEIXIS?include_prereleases&style=for-the-badge&label=release&color=3f63a8" alt="release"></a>
 

@@ -642,14 +642,18 @@ def linux_runtime_row(work: Path, binary: Path, env: dict[str, str]) -> None:
         name, _, target = line.strip().partition(" => ")
         if "64" in name:  # "(libc6,x86-64)" / "(libc6,AArch64)": this machine's own libraries
             system.setdefault(name.split(" ")[0], target.strip())
-    lib = next((name for name in LINUX_PROBE_LIBS if (internal / name).is_file() and name in system), None)
+    # The listed ones first; a uv-installed Python links OpenSSL and zlib statically, so then any library the package
+    # holds under a soname the system also has.
+    held = sorted(p.name for p in internal.glob("lib*.so*") if p.is_file() and p.name in system)
+    lib = next((name for name in LINUX_PROBE_LIBS if name in held), held[0] if held else None)
     probe = work / "probe-bin" / "linux-probe"
     probe.parent.mkdir()
     built = subprocess.run(["gcc", "-O2", f'-DPROBE_LIB="{lib}"', "-o", str(probe),
                             str(REPO / "scripts" / "p10" / "dll_probe" / "linux_probe.c"), "-ldl"],
                            capture_output=True, text=True) if lib and shutil.which("gcc") else None
     if built is None or built.returncode != 0:
-        row("runtime", False, library=lib, gcc=shutil.which("gcc"), build=built.stderr[-400:] if built else None)
+        row("runtime", False, library=lib, gcc=shutil.which("gcc"), build=built.stderr[-400:] if built else None,
+            system_libraries=len(system), package_libraries=sorted(p.name for p in internal.glob("lib*.so*"))[:40])
         return
     log = Path(f"{probe}.log")
     subprocess.run([str(probe), "control"], env=env | {"LD_LIBRARY_PATH": str(internal)}, check=True)

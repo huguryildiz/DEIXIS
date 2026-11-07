@@ -63,8 +63,10 @@ WAITING_SQL = ("EXISTS (SELECT 1 FROM cell_revisions q WHERE q.id = (SELECT lp.i
 # no automatic re-read planned it since that text. The sweep's candidate query and the refresh plan share it, so cells an
 # earlier run covered (failed, paused, or left unanswered) are skipped and a table with more due sources than one run
 # reads moves on to the next ones.
-DUE_SQL = ("(" + REFRESHABLE_SQL + " AND " + NEWER_TEXT_SQL + " AND NOT " + WAITING_SQL
-           + " AND NOT EXISTS (" + AUTO_RUNS_SQL + "))")
+# The CASE makes SQLite test the cheap conditions first: as a plain AND it ran the runs scan for every cell, 1.2 s on a
+# 3,000-cell library, once a second on the event loop, so the app answered nothing for seconds (D172).
+DUE_SQL = ("(CASE WHEN " + REFRESHABLE_SQL + " AND " + NEWER_TEXT_SQL + " AND NOT " + WAITING_SQL
+           + " THEN NOT EXISTS (" + AUTO_RUNS_SQL + ") ELSE 0 END)")
 SOURCE_ACTIVE_SQL = ("EXISTS (SELECT 1 FROM corpus_memberships m JOIN evidence_tables et ON et.research_id = m.research_id"
                      " WHERE et.id = t.table_id AND m.source_version_id = t.source_version_id AND m.removed_at IS NULL)")
 

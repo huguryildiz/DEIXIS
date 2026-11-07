@@ -169,6 +169,8 @@ class Watcher:
     def __init__(self, marks: list[str]):
         self.marks = marks
         self.roots: set[int] = set()
+        self.harness_roots: set[int] = set()
+        self.harness: dict[str, dict] = {}  # tauri-driver and its WebKitWebDriver: followed to the app, not DEIXIS
         self.seen: dict[str, dict] = {}
         self.stop = threading.Event()
         self.thread = threading.Thread(target=self.run, daemon=True)
@@ -178,12 +180,15 @@ class Watcher:
         changed = True
         while changed:
             changed = False
-            parents = {p["pid"]: p["t"] for i, p in self.seen.items() if i in procs}
+            parents = {p["pid"]: p["t"] for i, p in (self.seen | self.harness).items() if i in procs}
             for ident, proc in procs.items():
-                if ident in self.seen or proc["pid"] == os.getpid():
+                if ident in self.seen or ident in self.harness or proc["pid"] == os.getpid():
                     continue
                 child = proc["ppid"] in parents and proc["t"] >= parents[proc["ppid"]]
-                if proc["pid"] in self.roots or child or any(m in proc["cmd"] or m in proc["exe"] for m in self.marks):
+                if proc["pid"] in self.harness_roots or (child and proc["exe"].endswith("/WebKitWebDriver")):
+                    self.harness[ident] = proc
+                    changed = True
+                elif child or any(m in proc["cmd"] or m in proc["exe"] for m in self.marks):
                     self.seen[ident] = proc
                     changed = True
 
@@ -368,7 +373,7 @@ class Scenario:
         if driven:
             try:
                 self.driver = Driver(self.exe, self.env, self.work / f"driver-{self.fmt}-{self.name}.log")
-                self.watch.roots.add(self.driver.proc.pid)
+                self.watch.harness_roots.add(self.driver.proc.pid)
             except RuntimeError as error:
                 self.driver_error = str(error)
         if self.driver is None:
@@ -429,7 +434,7 @@ class Scenario:
         held = holders(self.data)
         after = proc_table()
         seen_pids = {p["pid"] for p in self.watch.seen.values()}
-        driver = {self.driver.proc.pid} if self.driver else set()
+        driver = {p["pid"] for p in self.watch.harness.values()}
         explained, unexplained = [], []
         for ident, proc in after.items():
             if ident in self.before:
@@ -439,7 +444,7 @@ class Scenario:
             if ident in self.watch.seen and proc["pid"] not in driver:
                 unexplained.append(proc | {"why": "seen as DEIXIS of this scenario"})
             elif proc["pid"] == os.getpid() or proc["ppid"] == os.getpid() or proc["pid"] in driver:
-                explained.append(f"{proc['pid']} this acceptance script's own child: {cmd[:80]}")
+                explained.append(f"{proc['pid']} this acceptance script's own child or WebDriver: {cmd[:80]}")
             elif str(self.data) in cmd or str(self.work / "bin") in cmd or self.exe in cmd:
                 unexplained.append(proc | {"why": "names this scenario's folders or the installed app"})
             elif proc["ppid"] in seen_pids - driver:
@@ -490,10 +495,15 @@ def fake_tools(bin_dir: Path, python: str) -> None:
         tool.chmod(0o755)
 
 
+REFUSALS: list = []
+
+
 def new_research(api: Http, tag: str) -> str | None:
     status, made = api.json("POST", "/api/researches", {
         "question": f"{QUESTION} ({tag})", "source_scope": "attached", "effort": "quick", "model_connection": "codex",
         "requested_model": "gpt-fake", "reasoning_effort": "medium"})
+    if status != 201:
+        REFUSALS.append({"tag": tag, "status": status, "body": json.dumps(made)[:300]})
     return made["research"]["id"] if status == 201 else None
 
 
@@ -510,6 +520,8 @@ def start_load(sc: Scenario, bin_dir: Path) -> dict:
                    make_pdf([f"SYNTHETIC page: a bounded molecule release schedule ({sc.name})."]))
         facts["answer_run"] = api.json("POST", f"/api/researches/{rid}/runs", {"kind": "answer"})[0]
     facts["research"] = rid
+    if not rid:
+        facts["refused"] = REFUSALS[-1:]
     facts["codex_hanging"] = bool(wait_for(lambda: (bin_dir / "codex-hang.json").exists(), 120, 0.5))
     facts["setsid_orphan"] = bool(wait_for(lambda: [p for p in proc_table().values() if p["cmd"] == "/bin/sleep 307"], 10))
     pdf_rid = new_research(api, f"{sc.fmt} {sc.name} pdf")
@@ -619,55 +631,22 @@ def format_rows(fmt: str, exe: str, marks: list[str], work: Path, env: dict[str,
             else:
                 api = sc.session()
                 rid = new_research(api, f"{fmt} pdf tab")
-                title = "SYNTHETIC release schedules"
-                status, made = api.upload(f"/api/researches/{rid}/uploads", f"{title}.pdf", make_pdf(
+                title = f"SYNTHETIC release schedules {fmt}"
+                status, _ = api.upload(f"/api/researches/{rid}/uploads", f"{title}.pdf", make_pdf(
                     [f"{title}: page one of a synthetic paper.", "SYNTHETIC page two: the bounded schedule."]))
-                ready = wait_for(lambda: any(s.get("extraction") in ("succeeded", "completed") or s.get("passages")
-                                             for s in api.json("GET", f"/api/researches/{rid}")[1].get("sources", [])), 60, 1)
-                drv.go(f"http://127.0.0.1:{sc.port}/#/research/{rid}")
-                opened = wait_for(lambda: drv.click("SYNTHETIC release schedules") and True, 30, 1)
-                tab = wait_for(lambda: drv.click("PDF", True), 20, 1)
-                drawn = wait_for(lambda: drv.eval("const c = document.querySelector('canvas[data-rendered-page]');"
-                                                  " return c ? c.dataset.renderedPage : null"), 30, 0.5)
-                screenshot(evidence / f"{fmt}-pdf-tab.png")
-                row(f"{fmt}_pdf_tab", bool(status == 201 and opened and tab and drawn), upload=status,
-                    extracted=bool(ready), sheet_opened=bool(opened), pdf_tab=bool(tab), rendered_page=drawn)
 
-        if wanted("download"):
-            downloads = Path(env["HOME"]) / "Downloads"
-            if sc.api is None or drv is None:
-                row(f"{fmt}_download", None, reason=f"no backend or no WebDriver ({sc.driver_error})")
-            else:
-                (bin_dir / "no-hang").write_text("")
-                before = {p.name for p in downloads.glob("*")} if downloads.exists() else set()
-                api = sc.session()
-                rid = new_research(api, f"{fmt} download")
-                api.upload(f"/api/researches/{rid}/uploads", "synthetic.pdf", make_pdf(
-                    ["SYNTHETIC page: a bounded molecule release schedule minimizes the decoding error."]))
-                _, run = api.json("POST", f"/api/researches/{rid}/runs", {"kind": "answer"})
-                finished = wait_for(lambda: (r := next((x for x in api.json("GET", f"/api/researches/{rid}")[1].get("runs", [])
-                                                        if x["id"] == run.get("id")), None))
-                                    and r["status"] in ("completed", "failed", "paused", "cancelled") and r, 240, 1)
-                title = api.json("GET", f"/api/researches/{rid}")[1]["research"]["title"]
-                drv.go(f"http://127.0.0.1:{sc.port}/#/research/{rid}")
-                opened = wait_for(lambda: title[:40] in drv.text(), 30, 1)
-                time.sleep(2)
-                fresh = lambda suffix: sorted(p for p in downloads.glob(f"*{suffix}") if p.name not in before)  # noqa: E731
-                exported = wait_for(lambda: drv.click("Export", True), 20, 1)
-                markdown = wait_for(lambda: drv.click("Markdown"), 10, 0.5)
-                md = wait_for(lambda: fresh(".md"), 30) or []
-                again = wait_for(lambda: drv.click("Export", True), 10, 0.5)
-                csv_pressed = wait_for(lambda: drv.click("Comma-separated values"), 10, 0.5)
-                csv = wait_for(lambda: fresh(".csv"), 30) or []
-                md_text = md[0].read_text(encoding="utf-8") if md else ""
-                csv_text = csv[0].read_text(encoding="utf-8-sig") if csv else ""
-                for path in md[:1] + csv[:1]:
-                    shutil.move(str(path), evidence / f"{fmt}-download-{path.name}")
-                row(f"{fmt}_download", bool(md and title in md_text and csv and "synthetic" in csv_text.lower()),
-                    run=(finished or {}).get("status"), opened=bool(opened), export=bool(exported), markdown=bool(markdown),
-                    export_again=bool(again), csv_pressed=bool(csv_pressed), downloads_folder=str(downloads),
-                    report_bytes=len(md_text), csv_lines=len(csv_text.splitlines()))
-                (bin_dir / "no-hang").unlink(missing_ok=True)
+                def open_from_library():  # Library: the title opens the source sheet once its text is stored
+                    drv.go(f"http://127.0.0.1:{sc.port}/#/library")
+                    time.sleep(1.5)
+                    return drv.click(title)
+                opened = wait_for(open_from_library, 60, 2)
+                pressed = wait_for(lambda: drv.click("Open PDF"), 20, 1) if opened else False
+                drawn = wait_for(lambda: drv.eval("const c = document.querySelector('canvas[data-rendered-page]');"
+                                                  " return c ? c.dataset.renderedPage : null"), 30, 0.5) if pressed else None
+                screenshot(evidence / f"{fmt}-pdf-tab.png")
+                row(f"{fmt}_pdf_tab", bool(status == 201 and opened and pressed and drawn), upload=status,
+                    sheet_opened=bool(opened), open_pdf=bool(pressed), rendered_page=drawn,
+                    page_text=None if drawn else drv.text()[:300])
 
         if wanted("second_launch"):
             count_before = sc.family()
@@ -680,7 +659,10 @@ def format_rows(fmt: str, exe: str, marks: list[str], work: Path, env: dict[str,
 
         if wanted("env"):
             backend = sc.backend_pids()
-            seen = environ_of(backend[0]) if backend else {}
+            # The bootloader sets _PYI_* and LD_LIBRARY_PATH (its own _internal) for the backend itself and keeps what
+            # it inherited in LD_LIBRARY_PATH_ORIG; child_env takes those back out for every child (sidecar smoke).
+            seen = {k: v for k, v in (environ_of(backend[0]) if backend else {}).items()
+                    if not k.startswith("_PYI_") and k != "LD_LIBRARY_PATH"}
             if drv:
                 (bin_dir / "xdg-open.env").unlink(missing_ok=True)
                 try:
@@ -707,6 +689,50 @@ def format_rows(fmt: str, exe: str, marks: list[str], work: Path, env: dict[str,
             row(f"{fmt}_close_quits", left.pop("ok") and facts["hanging"] and closed, closed=closed, **facts, **left)
         sc.kill_all()
 
+    if wanted("download"):
+        # A launch of its own with the fake codex answering: its app-server keeps the hang setting it started with.
+        for marker in bin_dir.glob("*.json"):
+            marker.unlink()
+        (bin_dir / "no-hang").write_text("")
+        sc = scenario("download")
+        downloads = Path(env["HOME"]) / "Downloads"
+        drv = sc.driver
+        if sc.wait_health()[0] is None or drv is None:
+            row(f"{fmt}_download", None if drv is None else False,
+                reason=f"no health within 60 s or no WebDriver ({sc.driver_error})")
+        else:
+            before = {p.name for p in downloads.glob("*")} if downloads.exists() else set()
+            api = sc.session()
+            rid = new_research(api, f"{fmt} download")
+            api.upload(f"/api/researches/{rid}/uploads", "synthetic.pdf", make_pdf(
+                ["SYNTHETIC page: a bounded molecule release schedule minimizes the decoding error."]))
+            _, run = api.json("POST", f"/api/researches/{rid}/runs", {"kind": "answer"})
+            finished = wait_for(lambda: (r := next((x for x in api.json("GET", f"/api/researches/{rid}")[1].get("runs", [])
+                                                    if x["id"] == run.get("id")), None))
+                                and r["status"] in ("completed", "failed", "paused", "cancelled") and r, 240, 1)
+            title = api.json("GET", f"/api/researches/{rid}")[1]["research"]["title"]
+            drv.go(f"http://127.0.0.1:{sc.port}/#/research/{rid}")
+            opened = wait_for(lambda: title[:40] in drv.text(), 30, 1)
+            time.sleep(2)
+            fresh = lambda suffix: sorted(p for p in downloads.glob(f"*{suffix}") if p.name not in before)  # noqa: E731
+            exported = wait_for(lambda: drv.click("Export", True), 20, 1)
+            markdown = wait_for(lambda: drv.click("Markdown"), 10, 0.5)
+            md = wait_for(lambda: fresh(".md"), 30) or []
+            again = wait_for(lambda: drv.click("Export", True), 10, 0.5)
+            csv_pressed = wait_for(lambda: drv.click("Comma-separated values"), 10, 0.5)
+            csv = wait_for(lambda: fresh(".csv"), 30) or []
+            md_text = md[0].read_text(encoding="utf-8") if md else ""
+            csv_text = csv[0].read_text(encoding="utf-8-sig") if csv else ""
+            for path in md[:1] + csv[:1]:
+                shutil.move(str(path), evidence / f"{fmt}-download-{path.name}")
+            row(f"{fmt}_download", bool(md and title in md_text and csv and "synthetic" in csv_text.lower()),
+                run=(finished or {}).get("status"), opened=bool(opened), export=bool(exported), markdown=bool(markdown),
+                export_again=bool(again), csv_pressed=bool(csv_pressed), downloads_folder=str(downloads),
+                report_bytes=len(md_text), csv_lines=len(csv_text.splitlines()))
+
+        sc.kill_all()
+        (bin_dir / "no-hang").unlink(missing_ok=True)
+
     if wanted("kill_shell"):
         sc = scenario("kill_shell")
         if sc.wait_health()[0] is None:
@@ -731,8 +757,8 @@ def format_rows(fmt: str, exe: str, marks: list[str], work: Path, env: dict[str,
             facts = start_load(sc, bin_dir)
             backend = sc.backend_pids()
             shell = sc.shell_pid()
-            old = {i: p for i, p in sc.watch.seen.items() if p["pid"] not in (shell, drv.proc.pid)
-                   and "WebKit" not in p["name"] and p["name"] not in ("WebKitWebDriver",)}
+            old = {i: p for i, p in sc.watch.seen.items() if p["pid"] != shell and "WebKit" not in p["name"]
+                   and p["exe"] != exe and not p["name"].startswith("DEIXIS_")}  # the AppImage runtime: the shell's
             trigger = time.monotonic()
             killed = len(backend) == 1 and os.kill(backend[0], signal.SIGKILL) is None
             old_gone = wait_for(lambda: not [i for i in old if alive(i)], LEFT_LIMIT, 0.2)

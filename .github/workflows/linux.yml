@@ -1,0 +1,35 @@
+# P10 Linux (L1): the whole test suite on a Linux x64 runner, to measure what fails before the Linux port.
+# Started by hand only (`gh workflow run linux.yml`), so a red run never shows on main's push checks while the port is
+# under way. The junit report is kept as an artifact; the failing tests are classified in notes/plans/p10-linux.md.
+name: linux
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: uv sync --frozen
+      - run: uv run --no-sync pytest -n 4 -p no:cacheprovider --junitxml=linux-pytest.xml -o junit_family=xunit2 -rfE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-pytest
+          path: linux-pytest.xml

@@ -38,6 +38,7 @@ import time
 import urllib.request
 from pathlib import Path
 
+from deixis.documents import child_guard
 from deixis.tools import child_record
 
 SCAN_SECONDS = 0.5
@@ -205,6 +206,23 @@ class Reaper:
             log(f"still alive after the stop: {', '.join(sorted(left))}")
         return killed
 
+    def drain(self, deadline: float) -> bool:
+        """Linux, after the backend was waited for: stop only once the kernel says this watchdog has no child at all
+        (`waitid` ECHILD). A /proc scan can miss a process that forked and exited while it read; its child is then
+        adopted here, so a live child the kernel still counts leads to another subtree sweep. Ended children are reaped
+        (none is the backend: Popen has its status)."""
+        while True:
+            try:
+                ended = os.waitid(os.P_ALL, 0, os.WEXITED | os.WNOHANG)
+            except ChildProcessError:
+                return True
+            if ended is not None:
+                continue
+            if time.monotonic() >= deadline:
+                return False
+            self.sweep_subtree(min(0.5, max(0.0, deadline - time.monotonic())))
+            time.sleep(0.02)
+
     def sweep_subtree(self, seconds: float) -> list[str]:
         """Linux: kill this watchdog's whole live subtree (its children by ppid, recursively: the backend's family and
         the orphans adopted as subreaper), scanning again after each round until a scan finds none or `seconds` pass.
@@ -244,7 +262,7 @@ def ask_shutdown(port: int, token: str) -> bool:
 
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
-    subreaper = become_subreaper()
+    subreaper = become_subreaper() and child_guard.boot_id() is not None  # Linux: no boot id, no identity to kill by
     if child_record.LINUX and not subreaper:
         print(json.dumps({"event": "startup_failed", "code": "process_guard",
                           "message": "DEIXIS could not set up the guard that stops its programs when it quits."}), flush=True)
@@ -338,6 +356,9 @@ def main(argv: list[str] | None = None) -> int:
         code = proc.wait(max(0.5, deadline - time.monotonic()))
     except subprocess.TimeoutExpired:
         code = -9
+    if subreaper and proc.returncode is not None:  # the backend's status is Popen's now; every other child is ours
+        drained = reaper.drain(deadline)
+        log("no child left" if drained else "children still alive at the deadline")
     return code if code >= 0 else 128 - code
 
 

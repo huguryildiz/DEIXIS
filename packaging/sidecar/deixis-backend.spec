@@ -1,5 +1,5 @@
-# PyInstaller spec of the DEIXIS backend sidecar (P10 M1, W3): one folder (onedir), macOS arm64 or Windows x64
-# (deixis-backend.exe and _internal\).
+# PyInstaller spec of the DEIXIS backend sidecar (P10 M1, W3, L3): one folder (onedir), macOS arm64, Windows x64
+# (deixis-backend.exe and _internal\) or Linux x86_64 (deixis-backend and _internal/).
 # Built by packaging/sidecar/build.py, which first builds the web app and writes the build identity it passes in
 # DEIXIS_BUILD_IDENTITY; run that script, not this file directly.
 import os

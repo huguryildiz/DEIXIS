@@ -17,6 +17,7 @@ folders are registered with `os.add_dll_directory`, which children do not inheri
 
 from __future__ import annotations
 
+import os
 import sys
 
 CHILD_MODULES = frozenset({
@@ -60,10 +61,28 @@ def reset_dll_search() -> None:
     _DLL_DIRECTORIES.extend(os.add_dll_directory(folder) for folder in folders)
 
 
+def reset_library_path(environ=None) -> None:
+    """Linux, frozen (P10 L3): the bootloader put the bundle's `_internal` first on LD_LIBRARY_PATH and kept the value from
+    before in LD_LIBRARY_PATH_ORIG. Put that value back (or none) at once, before any thread or child, so whatever copies
+    this process's environment for an outside program (the Claude SDK, the session launcher's program) gets the person's
+    own value, not the bundle's libraries. This process keeps working: the loader read its search path at the start.
+    PYINSTALLER_RESET_ENVIRONMENT makes a frozen child of this binary run the bootloader's setup again (with `_PYI_*`
+    inherited it would skip it and get no `_internal`); the bootloader removes the name from that child."""
+    environ = os.environ if environ is None else environ
+    original = environ.pop("LD_LIBRARY_PATH_ORIG", None)
+    if original:
+        environ["LD_LIBRARY_PATH"] = original
+    else:
+        environ.pop("LD_LIBRARY_PATH", None)
+    environ["PYINSTALLER_RESET_ENVIRONMENT"] = "1"
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if sys.platform == "win32" and getattr(sys, "frozen", False) and not _DLL_DIRECTORIES:
         reset_dll_search()
+    if sys.platform.startswith("linux") and getattr(sys, "frozen", False):
+        reset_library_path()
     if argv[:1] == ["--check-runtime"]:  # the Windows release smoke's in-process checks (scripts/p10/sidecar_smoke.py)
         from deixis import resource_check
         return resource_check.runtime_main(argv[1:])

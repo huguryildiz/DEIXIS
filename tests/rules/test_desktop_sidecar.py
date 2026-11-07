@@ -380,8 +380,10 @@ def test_a_group_is_never_signalled_once_its_leader_id_belongs_to_another_proces
         assert child_record.stop_group(other.pid, stale, signal.SIGKILL) == set()
         assert child_record.stop_group(other.pid, None, signal.SIGKILL) == set()
         assert len(unrelated) == 2 and all(child_record.alive(i) for i in unrelated)
-        found = child_record.stop_group(other.pid, child_record.identity(other.pid), signal.SIGKILL)  # the real leader
-        assert found == unrelated and all(gone(i) for i in unrelated)
+        leader = child_record.identity(other.pid)
+        found = child_record.stop_group(other.pid, leader, signal.SIGKILL)  # the real leader
+        # Linux leaves the leader (in DEIXIS always a session launcher, which then empties its own session and ends).
+        assert found == unrelated and all(gone(i) for i in (unrelated - {leader} if child_record.LINUX else unrelated))
     finally:
         if other.poll() is None:
             # The group may already be gone or hold only the unreaped leader: macOS then answers EPERM.

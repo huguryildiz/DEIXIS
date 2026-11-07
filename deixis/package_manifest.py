@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 from importlib.metadata import version
+import sys
 from pathlib import Path
 
 DATAS = (
@@ -55,6 +56,7 @@ HIDDEN_IMPORTS = (
     # keyring finds its backends through entry points; credentials.py names fail and chainer itself
     "keyring.backends.macOS",
     "keyring.backends.Windows",  # the Credential Locker (P10 W3)
+    "keyring.backends.SecretService",  # Linux Secret Service over D-Bus (P10 L3); imports its library lazily
     "keyring.backends.fail",
     "keyring.backends.null",
     "keyring.backends.chainer",
@@ -68,7 +70,7 @@ HIDDEN_IMPORTS = (
     "deixis.models.openai_compat",
     "deixis.models.anthropic_api",
     "deixis.models.openai_api",
-)
+) + (("secretstorage", "jeepney") if sys.platform.startswith("linux") else ())  # Linux-only wheels in uv.lock
 
 
 def datas(repo_root: Path, build_identity: Path | None = None) -> list[tuple[str, str]]:

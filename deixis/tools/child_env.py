@@ -45,7 +45,8 @@ def child_env(extra: Mapping[str, str] | None = None, *, keep: Iterable[str] = (
     names = OS_VARIABLES | set(keep) | (NETWORK_VARIABLES if network else frozenset()) | (BUNDLED_VARIABLES if bundled else frozenset())
     env = {k: v for k, v in source.items() if k in names or k.startswith(OS_PREFIXES)}
     env["PATH"] = child_path(tool, source.get("PATH", ""), bundled=bundled)
-    if not is_frozen():
+    reset = "PYINSTALLER_RESET_ENVIRONMENT" in source  # Linux, frozen: the entry already put the person's values back
+    if not is_frozen() or reset:
         env.update({k: source[k] for k in LIBRARY_PATHS if k in source})  # the person's own setting, kept
     else:
         for name in LIBRARY_PATHS:
@@ -53,7 +54,9 @@ def child_env(extra: Mapping[str, str] | None = None, *, keep: Iterable[str] = (
                 env.update({k: source[k] for k in (name, f"{name}_ORIG") if k in source})
             elif f"{name}_ORIG" in source:
                 env[name] = source[f"{name}_ORIG"]
-        if bundled:
-            env.update({k: v for k, v in source.items() if k.startswith(("_PYI_", "_MEIPASS"))})
+    if is_frozen() and bundled:
+        env.update({k: v for k, v in source.items() if k.startswith(("_PYI_", "_MEIPASS"))})
+        if reset:  # the frozen child sets the bundle's library path up again (`frozen_entry.reset_library_path`)
+            env["PYINSTALLER_RESET_ENVIRONMENT"] = source["PYINSTALLER_RESET_ENVIRONMENT"]
     env.update(extra or {})
     return env

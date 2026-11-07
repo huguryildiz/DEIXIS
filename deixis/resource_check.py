@@ -12,6 +12,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+import os
 import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
@@ -138,12 +139,39 @@ def runtime_main(args: list[str]) -> int:
             raise RuntimeError(f"exit {done.returncode}: {(done.stdout + done.stderr).strip()[-300:]}")
         return {"said": done.stdout.strip()[-300:]}
 
+    def library_paths() -> dict:
+        """Linux (P10 L3): the LD_LIBRARY_PATH an outside program gets on each route DEIXIS starts one by. None may name
+        a folder of the package: `child_env` (tools, probes), a copy of this process's environment (what the Claude SDK
+        passes its CLI) and the session launcher (the model CLIs), which is itself a frozen child of this binary."""
+        from deixis.tools import child_record
+        from deixis.tools.child_env import child_env
+
+        package = Path(sys.executable).resolve().parent
+        program = [options["--library-probe"]]
+
+        def seen(argv: list[str], env: dict) -> str:
+            done = subprocess.run(argv, env=env, capture_output=True, text=True, timeout=60)
+            lines = done.stdout.strip().splitlines()
+            if done.returncode != 0 or not lines:
+                raise RuntimeError(f"{argv[0]}: exit {done.returncode}: {(done.stdout + done.stderr).strip()[-300:]}")
+            return lines[-1].partition("=")[2]
+
+        routes = {"child_env": seen(program, child_env()), "environ_copy": seen(program, dict(os.environ)),
+                  "launcher": seen(child_record.launcher_argv(program, "cli"), child_env())}
+        leaked = {route: value for route, value in routes.items()
+                  if any(Path(d).resolve().is_relative_to(package) for d in value.split(":") if d)}
+        if leaked:
+            raise RuntimeError(f"the package's library folder reached an outside program: {leaked}")
+        return {"routes": routes, "own": os.environ.get("LD_LIBRARY_PATH", "")}
+
     check("pdf_render", pdf)
     check("credential_locker", credentials)
     if "--https" in options:
         check("https", https)
     if "--probe" in options:
         check("dll_probe", probe)
+    if "--library-probe" in options:
+        check("library_paths", library_paths)
     ok = all(c["ok"] for c in checks.values())
     print(json.dumps({"event": "runtime", "ok": ok, "checks": checks}))
     return 0 if ok else 1

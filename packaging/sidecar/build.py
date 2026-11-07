@@ -60,8 +60,9 @@ def main() -> int:
     parser.add_argument("--skip-web", action="store_true", help="use the existing web/dist")
     args = parser.parse_args()
     windows = sysconfig.get_platform() == "win-amd64"  # this interpreter's own build (an ARM64 host emulates x64)
-    if not windows and (sys.platform != "darwin" or platform.machine() != "arm64"):
-        print(f"This build is for macOS arm64 or Windows x64; this Python is {sys.platform} {platform.machine()}.",
+    linux = sys.platform.startswith("linux")  # x86_64 is shipped (P10 L3); aarch64 builds for local checks only
+    if not windows and not linux and (sys.platform != "darwin" or platform.machine() != "arm64"):
+        print(f"This build is for macOS arm64, Windows x64 or Linux; this Python is {sys.platform} {platform.machine()}.",
               file=sys.stderr)
         return 2
     started = time.monotonic()
@@ -85,8 +86,9 @@ def main() -> int:
                                                              "APPDATA", "PATHEXT", "COMSPEC")}
         env["PATH"] = str(Path(os.environ.get("SYSTEMROOT", r"C:\Windows")) / "System32")
     else:
-        signed = sign_all(OUTPUT)
-        run(["codesign", "--verify", str(OUTPUT / "deixis-backend")])
+        signed = 0 if linux else sign_all(OUTPUT)
+        if not linux:
+            run(["codesign", "--verify", str(OUTPUT / "deixis-backend")])
         env = {k: v for k, v in os.environ.items() if k in ("HOME", "TMPDIR", "LANG", "LC_ALL", "USER")}
         env["PATH"] = "/usr/bin:/bin"
     run([str(OUTPUT / ("deixis-backend.exe" if windows else "deixis-backend")), "--check-resources"],

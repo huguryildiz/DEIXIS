@@ -90,24 +90,31 @@ def process_info(pid: int) -> ProcessInfo | None:
         try:
             # comm can contain spaces and parentheses; fields after the final ')' begin with field 3.
             fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
-            return None if fields[0] == "Z" else ProcessInfo(linux_start(fields[19]), int(fields[1]))
+            start = linux_start(fields[19])
+            return None if fields[0] == "Z" or start is None else ProcessInfo(start, int(fields[1]))
         except (OSError, ValueError, IndexError):
             return None
     return None
 
 
 @functools.lru_cache(maxsize=1)
-def boot_id() -> str:
-    """Linux: this boot's id, so a start time from an earlier boot never matches."""
+def _boot_id() -> str | None:
     try:
-        return Path("/proc/sys/kernel/random/boot_id").read_text().strip() or "unknown-boot"
+        return Path("/proc/sys/kernel/random/boot_id").read_text().strip() or None
     except OSError:
-        return "unknown-boot"
+        return None
 
 
-def linux_start(ticks: str) -> str:
-    """`starttime` from /proc/<pid>/stat (clock ticks since boot), tied to this boot."""
-    return f"{boot_id()}/{ticks}"
+def boot_id() -> str | None:
+    """Linux: this boot's id, so a start time from an earlier boot never matches; None when it cannot be read (then no
+    identity can be read either, and everything that needs one fails closed)."""
+    return _boot_id()
+
+
+def linux_start(ticks: str) -> str | None:
+    """`starttime` from /proc/<pid>/stat (clock ticks since boot), tied to this boot; None without a boot id."""
+    boot = boot_id()
+    return f"{boot}/{ticks}" if boot else None
 
 
 def signal_identity(pid: int, start: str, sig: int, reader=None) -> bool:

@@ -72,7 +72,8 @@ def main(argv: list[str] | None = None) -> int:
     if recorded and not child_record.members(ident):
         child_record.remove(record, ident)
     if code < 0:
-        signal.signal(-code, signal.SIG_DFL)
+        if -code not in (signal.SIGKILL, signal.SIGSTOP):  # those two have no handler to reset (EINVAL)
+            signal.signal(-code, signal.SIG_DFL)
         os.kill(os.getpid(), -code)
     return code
 

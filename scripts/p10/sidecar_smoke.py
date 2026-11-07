@@ -68,6 +68,7 @@ import httpx
 
 REPO = Path(__file__).resolve().parents[2]
 WINDOWS = sys.platform == "win32"
+LINUX = sys.platform.startswith("linux")
 BINARY = "deixis-backend.exe" if WINDOWS else "deixis-backend"
 HTTPS_URL = "https://api.openalex.org/works?per-page=1"
 PROBE_NAMES = ("sqlite3", "libffi-8", "libcrypto-3", "libssl-3")  # DLLs a Windows onedir build holds in _internal
@@ -391,6 +392,9 @@ def main() -> int:
         if WINDOWS:
             startup_failed_row(binary, work, env)
             runtime_row(work, binary, env)
+        if LINUX:
+            startup_failed_row(binary, work, env)
+            linux_runtime_row(work, binary, env)
 
         jats_dir = work / "jats"
         jats_dir.mkdir()
@@ -569,6 +573,42 @@ def runtime_row(work: Path, binary: Path, env: dict[str, str]) -> None:
     row("runtime", done.returncode == 0 and report.get("ok") is True and "dll_probe" in checks
         and probe.get("control", {}).get("exit") == 3, exit=done.returncode,
         probe=probe, checks=checks, **({} if checks else {"report": report}))
+
+
+def linux_runtime_row(work: Path, binary: Path, env: dict[str, str]) -> None:
+    """Linux (P10 L3): `--check-runtime` with a library probe, a shell script outside the package that reports the
+    LD_LIBRARY_PATH it was started with, on the three routes an outside program is started by (`child_env`, a copy of
+    the backend's environment as the Claude SDK makes, the session launcher): each must get the person's own value
+    back, without the package folder the bootloader put first. The keychain check counts only where a
+    session bus is there (CI runs the smoke inside dbus-run-session with gnome-keyring); otherwise it is reported as
+    not measured. Negative control: started with the package folder on LD_LIBRARY_PATH, the probe reports it."""
+    folder = work / "runtime"
+    folder.mkdir()
+    probe = work / "library-probe.sh"
+    probe.write_text('#!/bin/sh\nprintf "LD_LIBRARY_PATH=%s\\n" "${LD_LIBRARY_PATH-}"\n')
+    probe.chmod(0o755)
+    internal = binary.parent / "_internal"
+    control = subprocess.run([str(probe)], env=env | {"LD_LIBRARY_PATH": str(internal)}, capture_output=True, text=True)
+    keychain = bool(os.environ.get("DBUS_SESSION_BUS_ADDRESS"))
+    person = "/opt/deixis-smoke-person-libs"  # the person's own LD_LIBRARY_PATH: every route must get it back unchanged
+    run_env = {k: v for k, v in env.items() if k not in ("PYTHON_KEYRING_BACKEND", "HTTP_PROXY", "HTTPS_PROXY")}
+    run_env["LD_LIBRARY_PATH"] = person
+    if keychain:
+        run_env |= {k: os.environ[k] for k in ("DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR") if k in os.environ}
+    else:
+        run_env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.null.Keyring"
+    done = subprocess.run([str(binary), "--check-runtime", str(folder), "--https", HTTPS_URL, "--library-probe", str(probe)],
+                          cwd=work, env=run_env, capture_output=True, text=True, timeout=180)
+    try:
+        report = json.loads(done.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        report = {"ok": False, "stdout": done.stdout[-400:], "stderr": done.stderr[-400:]}
+    checks = report.get("checks", {})
+    needed = ["pdf_render", "https", "library_paths"] + (["credential_locker"] if keychain else [])
+    routes = checks.get("library_paths", {}).get("routes", {})
+    row("runtime", all(checks.get(name, {}).get("ok") for name in needed) and len(routes) == 3
+        and all(value == person for value in routes.values()) and str(internal) in control.stdout, exit=done.returncode, keychain="measured" if keychain else "not measured",
+        control=control.stdout.strip()[-200:], checks=checks, **({} if checks else {"report": report}))
 
 
 def sc_passages(data: Path, asset_id: str | None) -> int:

@@ -148,3 +148,65 @@ def test_the_pdf_guard_tries_again_when_it_could_not_signal_and_kills_once_it_ca
         if proc.poll() is None:
             proc.kill()
             proc.wait()
+
+
+def test_a_child_a_scan_missed_is_still_found_because_the_kernel_counts_it(tmp_path):
+    # A /proc scan can miss a process that forks and exits while it is read. After the backend is waited for, the
+    # watchdog ends only once waitid says it has no child at all; a live one leads to another sweep.
+    out = tmp_path / "out.json"
+    script = textwrap.dedent(f"""
+        import json, os, subprocess, sys
+        sys.path.insert(0, {BACKEND!r})
+        from deixis import desktop_reaper
+        from deixis.tools import child_record
+        assert desktop_reaper.become_subreaper()
+        backend = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        missed = subprocess.Popen(["/bin/sleep", "62"])  # a child every scan below misses at first
+        ident = child_record.identity(missed.pid)
+        reaper = desktop_reaper.Reaper(backend.pid, child_record.process_info(backend.pid).start)
+        reaper.subreaper = True
+        blind = [4]
+        def snapshot():
+            blind[0] -= 1
+            table = child_record.snapshot()
+            return {{p: v for p, v in table.items() if p != missed.pid}} if blind[0] > 0 else table
+        reaper.snapshot = snapshot
+        backend.kill(); backend.wait()
+        import time
+        reaper.stop(time.monotonic() + 10)
+        drained = reaper.drain(time.monotonic() + 10)
+        json.dump({{"drained": drained, "alive": child_record.alive(ident)}}, open({str(out)!r}, "w"))
+    """)
+    done = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=60)
+    assert done.returncode == 0, done.stderr[-2000:]
+    assert json.loads(out.read_text()) == {"drained": True, "alive": False}
+
+
+def test_a_cancel_kills_the_program_and_the_launcher_empties_its_session_before_it_ends(tmp_path):
+    program = ("import subprocess, time; subprocess.Popen(['/bin/sleep', '63']); "
+               "subprocess.Popen(['/bin/sleep', '64'], process_group=0); time.sleep(61)")
+    argv = child_record.launcher_argv([sys.executable, "-c", program], "cli")  # the record is off here
+    launcher = subprocess.Popen(argv, start_new_session=True, env=os.environ | {"PYTHONPATH": BACKEND})
+    try:
+        leader = child_record.identity(launcher.pid)
+        ends = time.monotonic() + 10
+        while len(child_record.members(leader)) < 3 and time.monotonic() < ends:
+            time.sleep(0.05)
+        session = child_record.members(leader)
+        assert len(session) == 3
+        found = child_record.stop_group(launcher.pid, leader, signal.SIGKILL)
+        assert session <= found and leader in found
+        assert launcher.wait(15) == -signal.SIGKILL  # it ends as its program did, once its session is empty
+        assert not any(child_record.alive(i) for i in session)
+    finally:
+        if launcher.poll() is None:
+            os.killpg(launcher.pid, signal.SIGKILL)
+            launcher.wait()
+
+
+def test_without_a_boot_id_the_watchdog_refuses_and_no_identity_is_read(monkeypatch, capsys):
+    monkeypatch.setattr(desktop_reaper, "become_subreaper", lambda: True)
+    monkeypatch.setattr(child_guard, "_boot_id", lambda: None)
+    assert child_guard.process_info(os.getpid()) is None and child_record.identity(os.getpid()) is None
+    assert desktop_reaper.main([]) == 1
+    assert json.loads(capsys.readouterr().out.strip())["code"] == "process_guard"

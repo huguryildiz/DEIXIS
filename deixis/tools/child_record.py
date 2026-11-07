@@ -296,9 +296,10 @@ def stop_group(pid: int, leader: str | None, sig: int) -> set[str]:
     start). macOS and Linux: only while `leader` is still that process, so the group id is its own; a SIGKILL first kills the
     verified members of its session in other groups. Once it is gone nothing is signalled: the launcher emptied its
     session before it ended, or left its line for the watchdog. Returns the identities found (to wait for). Where this
-    layer is off: killpg as before M2. Linux signals each verified member and the leader through a pidfd instead of
-    killpg (a group has no pidfd, and asyncio's child watcher may reap the launcher on its own, freeing its pid); macOS
-    keeps check-then-killpg."""
+    layer is off: killpg as before M2. Linux signals each verified member through a pidfd instead of killpg (a group
+    has no pidfd, and asyncio's child watcher may reap the launcher on its own, freeing its pid), and on SIGKILL leaves
+    the launcher alive: its program is gone, so it scans its session until nothing is left (a member forked after this
+    scan too) and only then ends; macOS keeps check-then-killpg."""
     if not ON:
         try:
             os.killpg(pid, sig)
@@ -308,11 +309,13 @@ def stop_group(pid: int, leader: str | None, sig: int) -> set[str]:
     if not leader or int(leader.partition(":")[0]) != pid or not alive(leader):
         return set()
     found = members(leader)
-    if LINUX:  # no killpg: asyncio may reap the launcher on its own; each verified member and the leader by pidfd
-        for ident in sorted(found) + [leader]:
+    if LINUX:  # no killpg: asyncio may reap the launcher on its own; each verified member by pidfd
+        for ident in sorted(found):
             kill_identity(ident) if sig == signal.SIGKILL else signal_identity(
                 int(ident.partition(":")[0]), ident.partition(":")[2], sig)
-        return found | {leader}
+        if sig != signal.SIGKILL:  # the launcher ignores TERM, INT and HUP while its program runs
+            signal_identity(pid, leader.partition(":")[2], sig)
+        return found | {leader}  # SIGKILL leaves the launcher: it empties its session (a late fork too), then ends
     if sig == signal.SIGKILL:
         for ident in sorted(found):
             kill_identity(ident)

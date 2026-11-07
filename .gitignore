@@ -26,6 +26,7 @@ web/playwright-report/
 # P10 sidecar build output (packaging/sidecar/build.py).
 /packaging/sidecar/build/
 /packaging/sidecar/dist/
+/packaging/linux-unpacked/
 
 # P10 desktop shell build output (packaging/build_mac.py).
 /desktop/src-tauri/target/

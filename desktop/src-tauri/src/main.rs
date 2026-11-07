@@ -201,6 +201,53 @@ fn navigation(local: LocalOrigin, url: &Url, shown: Option<&Url>, port: Option<u
 }
 
 /// `destination` is a file directly inside `folder` (compared without regard to case on Windows).
+/// Linux: the data folder from `XDG_DATA_HOME` (only when absolute) and `HOME`.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn linux_data_dir(xdg_data_home: Option<PathBuf>, home: Option<PathBuf>) -> PathBuf {
+    match xdg_data_home {
+        Some(folder) if folder.is_absolute() => folder.join("deixis"),
+        _ => home.unwrap_or_else(|| PathBuf::from("/")).join(".local").join("share").join("deixis"),
+    }
+}
+
+/// The environment for a program this shell starts (the watchdog, xdg-open). Inside an AppImage, `AppRun` and Tauri's
+/// GTK hook point variables into `$APPDIR` for the shell's own WebKitGTK (GTK_*, GDK_*, GIO_*, GI_TYPELIB_PATH,
+/// GSETTINGS_SCHEMA_DIR, XDG_DATA_DIRS, PATH, sometimes LD_LIBRARY_PATH): an outside program must not load those. One
+/// rule, whatever the names: in every variable, the `:`-separated entries inside `$APPDIR` are dropped (the variable
+/// too when nothing is left), and APPDIR, APPIMAGE, ARGV0 and OWD go. Outside an AppImage nothing changes.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn outside_env(vars: impl Iterator<Item = (String, String)>) -> Vec<(String, String)> {
+    let vars: Vec<(String, String)> = vars.collect();
+    let appdir = vars.iter().find(|(k, _)| k == "APPDIR").map(|(_, v)| v.trim_end_matches('/').to_string());
+    let Some(appdir) = appdir.filter(|a| a.starts_with('/') && a.len() > 1) else {
+        return vars;
+    };
+    let inside = |entry: &str| entry == appdir || entry.starts_with(&format!("{appdir}/"));
+    vars.into_iter()
+        .filter(|(k, _)| !matches!(k.as_str(), "APPDIR" | "APPIMAGE" | "ARGV0" | "OWD"))
+        .filter_map(|(k, v)| {
+            if !v.split(':').any(inside) {
+                return Some((k, v));
+            }
+            let kept: Vec<&str> = v.split(':').filter(|e| !e.is_empty() && !inside(e)).collect();
+            (!kept.is_empty()).then(|| (k, kept.join(":")))
+        })
+        .collect()
+}
+
+/// Linux: `name` in `folder`, or `name (1)`, `name (2)` ... before the extension when it is taken.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn free_destination(folder: &Path, name: &std::ffi::OsStr) -> PathBuf {
+    let first = folder.join(name);
+    if !first.exists() {
+        return first;
+    }
+    let path = Path::new(name);
+    let stem = path.file_stem().unwrap_or(name).to_string_lossy().to_string();
+    let ext = path.extension().map(|e| format!(".{}", e.to_string_lossy())).unwrap_or_default();
+    (1..10_000).map(|n| folder.join(format!("{stem} ({n}){ext}"))).find(|p| !p.exists()).unwrap_or(first)
+}
+
 fn directly_in(folder: &Path, destination: &Path, fold_case: bool) -> bool {
     let fold = |p: &Path| if fold_case { PathBuf::from(p.to_string_lossy().to_lowercase()) } else { p.to_path_buf() };
     destination.file_name().is_some() && destination.parent().is_some_and(|parent| fold(parent) == fold(folder))
@@ -530,6 +577,11 @@ fn on_download(app: &AppHandle, event: DownloadEvent<'_>) -> bool {
                 _ => own_origin(app, &url),
             };
             let folder = platform::downloads_folder();
+            // Linux: Wry's own choice is the current folder when XDG names no Downloads folder; the shell names the file.
+            #[cfg(target_os = "linux")]
+            if let (Some(f), Some(name)) = (folder.as_deref(), destination.file_name().map(|n| n.to_os_string())) {
+                *destination = free_destination(f, &name);
+            }
             let named = folder.as_deref().is_some_and(|f| directly_in(f, destination, cfg!(windows)));
             let made = folder.as_deref().is_some_and(|f| std::fs::create_dir_all(f).is_ok());
             if !from_page || !named || !made {
@@ -659,7 +711,12 @@ fn main() {
                 // Closing the window keeps DEIXIS running in the tray; Quit ends it.
                 if !window.app_handle().state::<Shell>().quitting.load(Ordering::SeqCst) {
                     api.prevent_close();
-                    let _ = window.hide();
+                    if cfg!(target_os = "linux") {
+                        // Linux quits: GNOME shows no tray without an extension, so a hidden window could not be found.
+                        quit(window.app_handle().clone());
+                    } else {
+                        let _ = window.hide();
+                    }
                 }
             }
         })
@@ -686,7 +743,8 @@ fn main() {
     });
 }
 
-/// macOS: the watchdog is the shell's child; it owns the backend's process group and every recorded descendant.
+/// macOS and Linux: the watchdog is the shell's child; it owns the backend's process group and every recorded
+/// descendant (on Linux also every orphan, as its child subreaper).
 #[cfg(not(windows))]
 mod platform {
     use std::path::{Path, PathBuf};
@@ -710,7 +768,10 @@ mod platform {
     impl Sidecar {
         pub fn spawn(path: &Path) -> Result<Started, String> {
             let home = std::env::var("HOME").unwrap_or_else(|_| "/".into());
-            let mut child = Command::new(path)
+            let mut command = Command::new(path);
+            #[cfg(target_os = "linux")]
+            command.env_clear().envs(super::outside_env(std::env::vars()));
+            let mut child = command
                 .args(["-m", "deixis.desktop_reaper"])
                 .env_remove("DEIXIS_CONTROL_TOKEN")
                 .current_dir(home)
@@ -760,21 +821,50 @@ mod platform {
         });
     }
 
+    #[cfg(target_os = "macos")]
     pub fn data_dir() -> PathBuf {
         PathBuf::from(std::env::var("HOME").unwrap_or_default()).join("Library").join("Application Support").join("DEIXIS")
     }
 
+    #[cfg(target_os = "macos")]
     pub fn downloads_folder() -> Option<PathBuf> {
         Some(PathBuf::from(std::env::var("HOME").unwrap_or_default()).join("Downloads"))
     }
 
+    #[cfg(target_os = "macos")]
     pub fn open_outside(url: &Url) {
         let _ = Command::new("/usr/bin/open").arg(url.as_str()).spawn();
+    }
+
+    /// `$XDG_DATA_HOME/deixis` when that is an absolute path, else `~/.local/share/deixis` (the backend's
+    /// `config.platform_data_dir` follows the same rule).
+    #[cfg(target_os = "linux")]
+    pub fn data_dir() -> PathBuf {
+        super::linux_data_dir(std::env::var_os("XDG_DATA_HOME").map(PathBuf::from), std::env::var_os("HOME").map(PathBuf::from))
+    }
+
+    /// The XDG Downloads folder, else `~/Downloads` (created at the first download).
+    #[cfg(target_os = "linux")]
+    pub fn downloads_folder() -> Option<PathBuf> {
+        dirs::download_dir().or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Downloads")))
+    }
+
+    /// xdg-open with the environment cleaned of the AppImage's own library and GTK settings (`outside_env`).
+    #[cfg(target_os = "linux")]
+    pub fn open_outside(url: &Url) {
+        let _ = Command::new("xdg-open").arg(url.as_str()).env_clear().envs(super::outside_env(std::env::vars())).spawn();
+    }
+
+    /// The `.deb`'s `/usr/lib/DEIXIS` or the AppImage's `$APPDIR/usr/lib/DEIXIS`, as Tauri resolves it.
+    #[cfg(target_os = "linux")]
+    pub fn resource_folder(app: &AppHandle) -> Result<PathBuf, String> {
+        app.path().resource_dir().map_err(|e| format!("no resource folder: {e}"))
     }
 
     /// Contents/Resources of this bundle. Tauri's resolver refuses an executable path with a symlink anywhere in it
     /// (tauri-utils `starting_binary`, for example /var -> /private/var); the fallback resolves the executable's real
     /// path first and accepts only the X.app/Contents/MacOS/<exe> layout.
+    #[cfg(target_os = "macos")]
     pub fn resource_folder(app: &AppHandle) -> Result<PathBuf, String> {
         match app.path().resource_dir() {
             Ok(dir) => Ok(dir),
@@ -785,6 +875,7 @@ mod platform {
         }
     }
 
+    #[cfg(target_os = "macos")]
     fn bundle_resources() -> Result<PathBuf, String> {
         let exe = std::env::current_exe().map_err(|e| format!("the executable's path cannot be read: {e}"))?;
         let real = exe.canonicalize().map_err(|e| format!("{} cannot be resolved: {e}", exe.display()))?;
@@ -987,6 +1078,53 @@ mod tests {
         assert!(!directly_in(folder, Path::new("/Users/a/report.csv"), false));
         assert!(!directly_in(folder, Path::new("/Users/a/downloads/report.csv"), false));
         assert!(directly_in(folder, Path::new("/Users/a/downloads/report.csv"), true));
+    }
+
+    #[test]
+    fn an_appimage_environment_is_cleaned_for_outside_programs() {
+        let vars = [
+            ("APPDIR", "/tmp/.mount_DEIXIS"),
+            ("APPIMAGE", "/home/p/DEIXIS.AppImage"),
+            ("PATH", "/tmp/.mount_DEIXIS/usr/bin:/usr/local/bin:/usr/bin"),
+            ("XDG_DATA_DIRS", "/tmp/.mount_DEIXIS/usr/share:/usr/share"),
+            ("GTK_EXE_PREFIX", "/tmp/.mount_DEIXIS/usr"),
+            ("GDK_PIXBUF_MODULE_FILE", "/tmp/.mount_DEIXIS/usr/lib/loaders.cache"),
+            ("LD_LIBRARY_PATH", "/tmp/.mount_DEIXIS/usr/lib"),
+            ("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus"),
+            ("HOME", "/home/p"),
+            ("NOTE", "/tmp/.mount_DEIXISX/other"),
+        ];
+        let cleaned: HashMap<String, String> =
+            outside_env(vars.iter().map(|(k, v)| (k.to_string(), v.to_string()))).into_iter().collect();
+        assert_eq!(cleaned.get("PATH").map(String::as_str), Some("/usr/local/bin:/usr/bin"));
+        assert_eq!(cleaned.get("XDG_DATA_DIRS").map(String::as_str), Some("/usr/share"));
+        for gone in ["APPDIR", "APPIMAGE", "GTK_EXE_PREFIX", "GDK_PIXBUF_MODULE_FILE", "LD_LIBRARY_PATH"] {
+            assert!(!cleaned.contains_key(gone), "{gone}");
+        }
+        assert_eq!(cleaned.get("DBUS_SESSION_BUS_ADDRESS").map(String::as_str), Some("unix:path=/run/user/1000/bus"));
+        assert_eq!(cleaned.get("NOTE").map(String::as_str), Some("/tmp/.mount_DEIXISX/other")); // a prefix, not inside
+        let plain = [("PATH".to_string(), "/usr/bin".to_string()), ("GTK_PATH".to_string(), "/opt/gtk".to_string())];
+        assert_eq!(outside_env(plain.clone().into_iter()), plain.to_vec()); // no AppImage: unchanged
+    }
+
+    #[test]
+    fn the_linux_data_folder_takes_only_an_absolute_xdg_data_home() {
+        let home = Some(PathBuf::from("/home/p"));
+        assert_eq!(linux_data_dir(Some(PathBuf::from("/data")), home.clone()), PathBuf::from("/data/deixis"));
+        assert_eq!(linux_data_dir(Some(PathBuf::from("rel")), home.clone()), PathBuf::from("/home/p/.local/share/deixis"));
+        assert_eq!(linux_data_dir(Some(PathBuf::from("")), home.clone()), PathBuf::from("/home/p/.local/share/deixis"));
+        assert_eq!(linux_data_dir(None, home), PathBuf::from("/home/p/.local/share/deixis"));
+    }
+
+    #[test]
+    fn a_download_never_replaces_a_file_already_there() {
+        let folder = std::env::temp_dir().join(format!("deixis-free-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let name = std::ffi::OsStr::new("report.csv");
+        assert_eq!(free_destination(&folder, name), folder.join("report.csv"));
+        std::fs::write(folder.join("report.csv"), "x").unwrap();
+        assert_eq!(free_destination(&folder, name), folder.join("report (1).csv"));
+        std::fs::remove_dir_all(&folder).unwrap();
     }
 
     #[test]

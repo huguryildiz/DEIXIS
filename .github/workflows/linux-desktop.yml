@@ -1,0 +1,85 @@
+# P10 Linux (L3, L4): the real backend sidecar and the Tauri shell on a Linux x64 runner. Started by hand only
+# (`gh workflow run linux-desktop.yml`). Built on ubuntu-22.04, the oldest supported base (glibc 2.35). Builds the
+# sidecar (PyInstaller onedir: deixis-backend + _internal/), runs the sidecar smoke against it inside a D-Bus session
+# with an unlocked gnome-keyring (so the Secret Service row is measured), lints and tests the shell, builds the .deb and
+# the AppImage around that sidecar (packaging/build_linux.py: the .deb's sidecar equals the build, the AppImage's
+# linuxdeploy-rewritten files are named, SHA-256 printed), runs the smoke a second time against the sidecar unpacked
+# from the AppImage, and keeps both packages as artifacts.
+name: linux-desktop
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: linux-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  shell:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: System packages (Tauri's WebKitGTK, the tray library, Tesseract, a keyring for the smoke)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf \
+            libxdo-dev libssl-dev file tesseract-ocr tesseract-ocr-eng tesseract-ocr-tur gnome-keyring dbus-x11 libfuse2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            web/package-lock.json
+            desktop/package-lock.json
+      - run: npm ci
+        working-directory: web
+      - run: uv sync --frozen --group packaging
+      - name: Sidecar
+        run: uv run --no-sync python packaging/sidecar/build.py
+      - name: Sidecar smoke (inside a D-Bus session with an unlocked keyring)
+        id: smoke
+        continue-on-error: true
+        run: |
+          dbus-run-session -- bash -c 'printf "" | gnome-keyring-daemon --unlock --components=secrets >/dev/null; \
+            uv run --no-sync python scripts/p10/sidecar_smoke.py' 2>&1 | tee sidecar-smoke.txt; exit ${PIPESTATUS[0]}
+      - run: cargo clippy --all-targets --locked -- -D warnings
+        working-directory: desktop/src-tauri
+      - run: cargo test --locked
+        working-directory: desktop/src-tauri
+      - name: Packages
+        run: uv run --no-sync python packaging/build_linux.py --skip-sidecar 2>&1 | tee packages.txt; exit ${PIPESTATUS[0]}
+      - name: Sidecar smoke against the AppImage's own sidecar
+        id: smoke_appimage
+        continue-on-error: true
+        run: |
+          dbus-run-session -- bash -c 'printf "" | gnome-keyring-daemon --unlock --components=secrets >/dev/null; \
+            uv run --no-sync python scripts/p10/sidecar_smoke.py --sidecar packaging/linux-unpacked/appimage-sidecar' \
+            2>&1 | tee sidecar-smoke-appimage.txt; exit ${PIPESTATUS[0]}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: deixis-linux-logs
+          path: |
+            sidecar-smoke.txt
+            sidecar-smoke-appimage.txt
+            packages.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deixis-linux-packages
+          path: |
+            desktop/src-tauri/target/release/bundle/deb/*.deb
+            desktop/src-tauri/target/release/bundle/appimage/*.AppImage
+          if-no-files-found: error
+      - name: Both smokes must pass
+        if: steps.smoke.outcome != 'success' || steps.smoke_appimage.outcome != 'success'
+        run: exit 1

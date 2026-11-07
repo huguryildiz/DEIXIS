@@ -26,7 +26,9 @@ def platform_data_dir() -> Path:
         return Path.home() / "Library" / "Application Support" / "DEIXIS"
     if sys.platform == "win32":
         return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "DEIXIS"
-    return Path(os.environ.get("XDG_DATA_HOME", Path.home() / ".local" / "share")) / "deixis"
+    xdg = os.environ.get("XDG_DATA_HOME", "")
+    # Only an absolute XDG_DATA_HOME counts (the XDG rule, as the desktop shell reads it); else ~/.local/share.
+    return (Path(xdg) if xdg and os.path.isabs(xdg) else Path.home() / ".local" / "share") / "deixis"
 
 
 CONTACT_EMAIL_SETTING = "contact_email"

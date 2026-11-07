@@ -245,3 +245,17 @@ def test_nothing_is_deleted_from_the_source_before_the_copy_and_its_record_are_o
 # ---- review round 2: the holder's job, Windows deferred deletion, the recovery path ------------------------------------
 
 
+
+
+from deixis.config import platform_data_dir as real_platform_data_dir  # noqa: E402  (before conftest's stand-in)
+
+
+def test_on_linux_only_an_absolute_xdg_data_home_moves_the_default_library(monkeypatch, tmp_path):
+    monkeypatch.setattr("sys.platform", "linux")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    default = tmp_path / ".local" / "share" / "deixis"
+    for value, expected in (("", default), ("relative/dir", default), (str(tmp_path / "x"), tmp_path / "x" / "deixis")):
+        monkeypatch.setenv("XDG_DATA_HOME", value)
+        assert real_platform_data_dir() == expected, value
+    monkeypatch.delenv("XDG_DATA_HOME")
+    assert real_platform_data_dir() == default

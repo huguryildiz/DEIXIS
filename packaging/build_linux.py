@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import platform
 import shutil
@@ -46,8 +47,31 @@ def sha256(path: Path) -> str:
 
 
 def files(folder: Path) -> dict[str, str]:
-    """Relative path -> sha256 of the content (a symlink to a file counts as that file's content)."""
-    return {p.relative_to(folder).as_posix(): sha256(p) for p in sorted(folder.rglob("*")) if p.is_file()}
+    """Relative path -> sha256 of the content; a symlink is `link:<target>`, not its target's content."""
+    return {p.relative_to(folder).as_posix(): f"link:{os.readlink(p)}" if p.is_symlink() else sha256(p)
+            for p in sorted(folder.rglob("*")) if p.is_file()}
+
+
+def compare(expected: dict[str, str], found: dict[str, str], root: Path) -> tuple[list[str], list[str]]:
+    """(differences, dereferenced links). The bundler copies a symlink as a regular file; that copy counts as equal
+    only when its content is its target's, and it is named in the build output."""
+    differ, dereferenced = [], []
+    for name in sorted(set(expected) | set(found)):
+        want, got = expected.get(name), found.get(name)
+        if want == got:
+            continue
+        if want and got and want.startswith("link:") and not got.startswith("link:"):
+            target = (Path(name).parent / want[5:]).as_posix()
+            if expected.get(target) == got:
+                dereferenced.append(name)
+                continue
+        differ.append(name)
+    return differ, dereferenced
+
+
+def is_elf(path: Path) -> bool:
+    with path.open("rb") as handle:
+        return handle.read(4) == b"\x7fELF"
 
 
 def newest(pattern: str) -> Path | None:
@@ -86,6 +110,7 @@ def main() -> int:
     shutil.rmtree(UNPACKED, ignore_errors=True)
     UNPACKED.mkdir(parents=True)
 
+    deb_dereferenced: list[str] = []
     deb_root = UNPACKED / "deb"
     subprocess.run(["dpkg-deb", "-x", str(deb), str(deb_root)], check=True)
     depends = subprocess.run(["dpkg-deb", "-f", str(deb), "Depends"], capture_output=True, text=True, check=True).stdout
@@ -96,9 +121,8 @@ def main() -> int:
     if inside is None:
         problems.append("the .deb holds no sidecar/deixis-backend/deixis-backend")
     else:
-        found = files(inside)
-        if found != expected:
-            differ = sorted(n for n in set(expected) | set(found) if expected.get(n) != found.get(n))
+        differ, deb_dereferenced = compare(expected, files(inside), inside)
+        if differ:
             problems.append(f"the .deb's sidecar differs from the build: {differ[:20]}")
         if not os.access(inside / "deixis-backend", os.X_OK):
             problems.append("the .deb's deixis-backend is not executable")
@@ -112,13 +136,19 @@ def main() -> int:
         inside = sidecar_in(squash)
         if inside is None:
             problems.append("the AppImage holds no sidecar/deixis-backend/deixis-backend")
-            changed: list[str] = []
+            changed, app_dereferenced = [], []
         else:
             found = files(inside)
             if set(found) != set(expected):
                 problems.append(f"the AppImage's sidecar has other files than the build: "
                                 f"missing {sorted(set(expected) - set(found))[:10]}, added {sorted(set(found) - set(expected))[:10]}")
-            changed = sorted(n for n in expected if n in found and expected[n] != found[n])
+            differ, app_dereferenced = compare(expected, found, inside)
+            # linuxdeploy may rewrite an ELF file's RPATH; any other changed file is a problem.
+            changed = [n for n in differ if n in found and (inside / n).is_file() and is_elf(inside / n)]
+            if other := [n for n in differ if n in found and n not in changed]:
+                problems.append(f"the AppImage's sidecar changed files that are not ELF: {other[:20]}")
+            (UNPACKED / "appimage-changes.json").write_text(json.dumps(
+                {n: {"build": expected[n], "appimage": found[n]} for n in changed}, indent=1))
             if not os.access(inside / "deixis-backend", os.X_OK):
                 problems.append("the AppImage's deixis-backend is not executable")
             shutil.copytree(inside, UNPACKED / "appimage-sidecar", symlinks=True)
@@ -128,7 +158,8 @@ def main() -> int:
     for package in (deb, appimage):
         print(f"{package.name}: {package.stat().st_size / 1e6:.1f} MB, sha256 {sha256(package)}")
     print(f"sidecar {built}: {folder_bytes(built) / 1e6:.1f} MB, {len(expected)} files; equal inside the .deb; inside the "
-          f"AppImage {len(changed)} rewritten by linuxdeploy ({', '.join(changed[:8])}{' ...' if len(changed) > 8 else ''}); "
+          f"AppImage {len(changed)} ELF files rewritten by linuxdeploy (all in {UNPACKED / 'appimage-changes.json'}); "
+          f"symlinks copied as files by the bundler: .deb {deb_dereferenced}, AppImage {app_dereferenced}; "
           f"deixis-backend sha256 {sha256(built / 'deixis-backend')}; build {time.monotonic() - started:.0f} s")
     print(f"appimage-sidecar {UNPACKED / 'appimage-sidecar'}")
     return 0

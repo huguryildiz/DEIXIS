@@ -296,7 +296,8 @@ fn linux_data_dir(xdg_data_home: Option<PathBuf>, home: Option<PathBuf>) -> Path
 /// GTK hook point variables into `$APPDIR` for the shell's own WebKitGTK (GTK_*, GDK_*, GIO_*, GI_TYPELIB_PATH,
 /// GSETTINGS_SCHEMA_DIR, XDG_DATA_DIRS, PATH, sometimes LD_LIBRARY_PATH): an outside program must not load those. One
 /// rule, whatever the names: in every variable, the `:`-separated entries inside `$APPDIR` are dropped (the variable
-/// too when nothing is left), and APPDIR, APPIMAGE, ARGV0 and OWD go. Outside an AppImage nothing changes.
+/// too when nothing is left), and APPDIR, APPIMAGE, ARGV0, OWD and GTK_THEME (the GTK hook forces Adwaita for the
+/// shell) go. Outside an AppImage nothing changes.
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn outside_env(vars: impl Iterator<Item = (String, String)>) -> Vec<(String, String)> {
     let vars: Vec<(String, String)> = vars.collect();
@@ -306,7 +307,7 @@ fn outside_env(vars: impl Iterator<Item = (String, String)>) -> Vec<(String, Str
     };
     let inside = |entry: &str| entry == appdir || entry.starts_with(&format!("{appdir}/"));
     vars.into_iter()
-        .filter(|(k, _)| !matches!(k.as_str(), "APPDIR" | "APPIMAGE" | "ARGV0" | "OWD"))
+        .filter(|(k, _)| !matches!(k.as_str(), "APPDIR" | "APPIMAGE" | "ARGV0" | "OWD" | "GTK_THEME"))
         .filter_map(|(k, v)| {
             if !v.split(':').any(inside) {
                 return Some((k, v));
@@ -1225,6 +1226,7 @@ mod tests {
             ("GTK_EXE_PREFIX", "/tmp/.mount_DEIXIS/usr"),
             ("GDK_PIXBUF_MODULE_FILE", "/tmp/.mount_DEIXIS/usr/lib/loaders.cache"),
             ("LD_LIBRARY_PATH", "/tmp/.mount_DEIXIS/usr/lib"),
+            ("GTK_THEME", "Adwaita:dark"),
             ("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/1000/bus"),
             ("HOME", "/home/p"),
             ("NOTE", "/tmp/.mount_DEIXISX/other"),
@@ -1233,7 +1235,7 @@ mod tests {
             outside_env(vars.iter().map(|(k, v)| (k.to_string(), v.to_string()))).into_iter().collect();
         assert_eq!(cleaned.get("PATH").map(String::as_str), Some("/usr/local/bin:/usr/bin"));
         assert_eq!(cleaned.get("XDG_DATA_DIRS").map(String::as_str), Some("/usr/share"));
-        for gone in ["APPDIR", "APPIMAGE", "GTK_EXE_PREFIX", "GDK_PIXBUF_MODULE_FILE", "LD_LIBRARY_PATH"] {
+        for gone in ["APPDIR", "APPIMAGE", "GTK_EXE_PREFIX", "GDK_PIXBUF_MODULE_FILE", "LD_LIBRARY_PATH", "GTK_THEME"] {
             assert!(!cleaned.contains_key(gone), "{gone}");
         }
         assert_eq!(cleaned.get("DBUS_SESSION_BUS_ADDRESS").map(String::as_str), Some("unix:path=/run/user/1000/bus"));

@@ -1243,6 +1243,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)] // "/data" is not an absolute path on Windows
     fn the_linux_data_folder_takes_only_an_absolute_xdg_data_home() {
         let home = Some(PathBuf::from("/home/p"));
         assert_eq!(linux_data_dir(Some(PathBuf::from("/data")), home.clone()), PathBuf::from("/data/deixis"));

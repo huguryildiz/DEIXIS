@@ -262,7 +262,12 @@ enum Nav {
 
 /// What the window may show: the shell's own page and the backend's origin. The local page's Restart and Quit links
 /// act only while that page is the one shown; every other URL is cancelled, and a web or mail link opens outside.
+/// Linux: a `blob:` URL the backend's page made is allowed too. WebKitGTK asks this policy before it knows the action
+/// is a download, and only an allowed action becomes one (an export: `on_download` then checks the destination).
 fn navigation(local: LocalOrigin, url: &Url, shown: Option<&Url>, port: Option<u16>) -> Nav {
+    if cfg!(target_os = "linux") && url.scheme() == "blob" && Url::parse(url.path()).is_ok_and(|inner| backend_origin(&inner, port)) {
+        return Nav::Allow;
+    }
     if local.owns(url) {
         let on_local_page = shown.is_some_and(|s| local.is_page(s));
         return match url.path() {
@@ -676,6 +681,7 @@ fn on_download(app: &AppHandle, event: DownloadEvent<'_>) -> bool {
                 notify(app, "Download not saved", format!("DEIXIS did not save this download ({}).", destination.display()), true);
                 return false;
             }
+            eprintln!("DEIXIS: download requested: {}", destination.display());
             shell.downloads.lock().unwrap().insert(url.to_string(), destination.clone());
             true
         }
@@ -1155,6 +1161,17 @@ mod tests {
         assert_eq!(navigation(WINDOWS_LOCAL, &url("tauri://localhost/action/quit"), Some(&mac_page), None), Nav::Deny);
         let win_page = url("http://tauri.localhost/index.html");
         assert_eq!(navigation(MACOS_LOCAL, &url("http://tauri.localhost/action/quit"), Some(&win_page), None), Nav::Outside);
+    }
+
+    #[test]
+    fn a_blob_from_the_backend_page_is_allowed_only_on_linux() {
+        let ours = url("blob:http://127.0.0.1:8770/4f1c6a2e-0000-4000-8000-000000000000");
+        let other_port = url("blob:http://127.0.0.1:9999/4f1c6a2e-0000-4000-8000-000000000000");
+        let other_host = url("blob:https://example.org/4f1c6a2e-0000-4000-8000-000000000000");
+        let expected = if cfg!(target_os = "linux") { Nav::Allow } else { Nav::Deny };
+        assert_eq!(navigation(MACOS_LOCAL, &ours, None, Some(8770)), expected);
+        assert_eq!(navigation(MACOS_LOCAL, &other_port, None, Some(8770)), Nav::Deny);
+        assert_eq!(navigation(MACOS_LOCAL, &other_host, None, Some(8770)), Nav::Deny);
     }
 
     #[test]

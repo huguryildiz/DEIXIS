@@ -70,6 +70,7 @@ jobs:
             sidecar-smoke.txt
             sidecar-smoke-appimage.txt
             packages.txt
+            packaging/linux-unpacked/appimage-changes.json
       - uses: actions/upload-artifact@v4
         with:
           name: deixis-linux-packages

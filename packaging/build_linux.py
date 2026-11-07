@@ -74,6 +74,13 @@ def is_elf(path: Path) -> bool:
         return handle.read(4) == b"\x7fELF"
 
 
+def elf_kind(path: Path) -> bytes:
+    """Class, byte order, OS ABI, type and machine of an ELF file: what a RPATH rewrite never changes."""
+    with path.open("rb") as handle:
+        head = handle.read(20)
+    return head[4:6] + head[7:8] + head[16:20]
+
+
 def newest(pattern: str) -> Path | None:
     found = sorted(BUNDLE.glob(pattern), key=lambda p: p.stat().st_mtime)
     return found[-1] if found else None
@@ -144,7 +151,8 @@ def main() -> int:
                                 f"missing {sorted(set(expected) - set(found))[:10]}, added {sorted(set(found) - set(expected))[:10]}")
             differ, app_dereferenced = compare(expected, found, inside)
             # linuxdeploy may rewrite an ELF file's RPATH; any other changed file is a problem.
-            changed = [n for n in differ if n in found and (inside / n).is_file() and is_elf(inside / n)]
+            changed = [n for n in differ if n in found and n in expected and (inside / n).is_file() and is_elf(inside / n)
+                       and is_elf(built / n) and elf_kind(built / n) == elf_kind(inside / n)]
             if other := [n for n in differ if n in found and n not in changed]:
                 problems.append(f"the AppImage's sidecar changed files that are not ELF: {other[:20]}")
             (UNPACKED / "appimage-changes.json").write_text(json.dumps(

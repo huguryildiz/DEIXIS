@@ -20,9 +20,8 @@ reason) or MANUAL; the exit code is 0 only when every row run is PASS or MANUAL:
   pdf_tab        an uploaded synthetic PDF's source sheet opens from the research page and its PDF tab draws a page
                  (the canvas gets data-rendered-page, so pdf.js's worker and the canvas ran in WebKitGTK)
   download       a finished research's report (Markdown) and CSV, through the window's Export menu, land in the Downloads
-                 folder the shell names (no XDG user-dirs file on the runner: ~/Downloads) with their content. MANUAL
-                 when the shell got no download event at all: WebKit's automation session does not start a blob
-                 download, so under WebDriver this path cannot be measured (a person checks it on a desktop)
+                 folder the shell names (no XDG user-dirs file on the runner: ~/Downloads) with their content; each
+                 twice, the second as "name (1).ext" with the first file unchanged, and nothing written elsewhere
   second_launch  the installed executable again: it exits, the DEIXIS process set is unchanged, still one window
   env            the backend's environment (/proc/<pid>/environ) holds no AppImage variable and no PATH, XDG_DATA_DIRS or
                  LD_LIBRARY_PATH entry inside $APPDIR; a link the page opens goes to a fake xdg-open, which records the
@@ -438,23 +437,30 @@ class Scenario:
         seen_pids = {p["pid"] for p in self.watch.seen.values()}
         driver = {p["pid"] for p in self.watch.harness.values()}
         explained, unexplained = [], []
-        for ident, proc in after.items():
-            if ident in self.before:
-                continue
+        excused: set[str] = set()  # new processes whose origin is known and not DEIXIS (their children are excused too)
+        for ident, proc in sorted(((i, p) for i, p in after.items() if i not in self.before), key=lambda x: x[1]["t"]):
             cmd = proc["cmd"]
-            parent_alive = any(p["pid"] == proc["ppid"] and p["t"] <= proc["t"] for p in after.values())
+            parent = next((i for i, p in after.items() if p["pid"] == proc["ppid"] and p["t"] <= proc["t"]), None)
+            known_parent = parent is not None and after[parent]["pid"] != 1 and parent not in self.watch.seen and (
+                parent in self.before or parent in excused)
             if ident in self.watch.seen and proc["pid"] not in driver:
                 unexplained.append(proc | {"why": "seen as DEIXIS of this scenario"})
             elif proc["pid"] == os.getpid() or proc["ppid"] == os.getpid() or proc["pid"] in driver:
+                excused.add(ident)
                 explained.append(f"{proc['pid']} this acceptance script's own child or WebDriver: {cmd[:80]}")
             elif str(self.data) in cmd or str(self.work / "bin") in cmd or self.exe in cmd:
                 unexplained.append(proc | {"why": "names this scenario's folders or the installed app"})
             elif proc["ppid"] in seen_pids - driver:
                 unexplained.append(proc | {"why": "its parent pid was a DEIXIS process of this scenario"})
-            elif not parent_alive and proc["name"] in GENERIC:
-                unexplained.append(proc | {"why": "an orphan running a program DEIXIS runs"})
-            else:
-                explained.append(f"{proc['pid']} {proc['name']} (parent {proc['ppid']}) not related: {cmd[:90]}")
+            elif proc["ppid"] == 2 or not cmd:
+                excused.add(ident)
+                explained.append(f"{proc['pid']} {proc['name']} kernel thread")
+            elif known_parent:
+                excused.add(ident)
+                explained.append(f"{proc['pid']} {proc['name']} child of {after[parent]['name']} ({after[parent]['pid']}),"
+                                 f" which ran before the launch: {cmd[:80]}")
+            else:  # an orphan (re-parented to init) or of unknown origin: never excused
+                unexplained.append(proc | {"why": "new, and not a child of a process that ran before the launch"})
         return {"ok": not left and not held and not unexplained, "all_gone_s": round(gone_s, 2),
                 "seen": len(self.watch.seen), "seen_names": sorted({p["name"] for p in self.watch.seen.values()}),
                 "left": [f"{p['pid']} {p['name']}" for p in left], "open_files": held[:10],
@@ -540,7 +546,7 @@ def start_load(sc: Scenario, bin_dir: Path) -> dict:
     child = wait_for(lambda: next((p["pid"] for p in proc_table().values() if "deixis.documents.pdf" in p["cmd"]
                                    and p["exe"].endswith("/deixis-backend")), None), 120, 0.05)
     facts["pdf_child_running"] = bool(child)
-    facts["hanging"] = facts["codex_hanging"] and facts["pdf_child_running"]
+    facts["hanging"] = facts["codex_hanging"] and facts["pdf_child_running"] and facts["setsid_orphan"]
     facts["load_processes"] = sorted({p["name"] for p in sc.watch.alive()})
     return facts
 
@@ -717,28 +723,38 @@ def format_rows(fmt: str, exe: str, marks: list[str], work: Path, env: dict[str,
             opened = wait_for(lambda: title[:40] in drv.text(), 30, 1)
             time.sleep(2)
             fresh = lambda suffix: sorted(p for p in downloads.glob(f"*{suffix}") if p.name not in before)  # noqa: E731
-            exported = wait_for(lambda: drv.click("Export", True), 20, 1)
-            markdown = wait_for(lambda: drv.click("Markdown"), 10, 0.5)
-            md = wait_for(lambda: fresh(".md"), 30) or []
-            again = wait_for(lambda: drv.click("Export", True), 10, 0.5)
-            csv_pressed = wait_for(lambda: drv.click("Comma-separated values"), 10, 0.5)
-            csv = wait_for(lambda: fresh(".csv"), 30) or []
+            elsewhere_before = {p for folder in (Path(env["HOME"]), work) for p in folder.glob("*") if p.is_file()}
+
+            def export(item: str, suffix: str, count: int) -> bool:  # Export → item, until `count` new files are there
+                return bool(wait_for(lambda: drv.click("Export", True), 20, 1)) and bool(wait_for(
+                    lambda: drv.click(item), 10, 0.5)) and bool(wait_for(lambda: len(fresh(suffix)) >= count, 30))
+
+            # Each export twice: the second must get a free name ("name (1).ext") and leave the first file as it was.
+            steps = {"md_1": export("Markdown", ".md", 1)}
+            first_md = {p: sha256(p) for p in fresh(".md")}
+            steps["md_2"] = export("Markdown", ".md", 2)
+            steps["csv_1"] = export("Comma-separated values", ".csv", 1)
+            first_csv = {p: sha256(p) for p in fresh(".csv")}
+            steps["csv_2"] = export("Comma-separated values", ".csv", 2)
+            md, csv = fresh(".md"), fresh(".csv")
+            kept_first = all(p.exists() and sha256(p) == digest for p, digest in (first_md | first_csv).items())
+            free_names = len(md) == 2 and len(csv) == 2 and all(" (1)." in p.name for p in
+                                                                 [x for x in md + csv if x not in first_md and x not in first_csv])
             md_text = md[0].read_text(encoding="utf-8") if md else ""
             csv_text = csv[0].read_text(encoding="utf-8-sig") if csv else ""
-            for path in md[:1] + csv[:1]:
-                shutil.move(str(path), evidence / f"{fmt}-download-{path.name}")
+            elsewhere = sorted(str(p) for folder in (Path(env["HOME"]), work) for p in folder.glob("*")
+                               if p.is_file() and p not in elsewhere_before and p.suffix in (".md", ".csv"))
             shell_log = work / f"driver-{fmt}-download.log"
-            shell_said = [ln for ln in shell_log.read_text(errors="replace").splitlines() if "DEIXIS: Download" in ln] \
-                if shell_log.exists() else []
-            # Under WebKitWebDriver the page's blob download never reaches the shell (no Requested event, nothing in
-            # its log): WebKit's automation session does not start it. Then the row cannot be measured here.
-            unmeasurable = not md and not csv and not shell_said and markdown and csv_pressed
-            row(f"{fmt}_download", "manual" if unmeasurable else
-                bool(md and title in md_text and csv and "synthetic" in csv_text.lower()),
-                reason="the automation session started no download (the shell got no download event); check by hand"
-                if unmeasurable else None, shell_said=shell_said[:4], run=(finished or {}).get("status"), opened=bool(opened), export=bool(exported), markdown=bool(markdown),
-                export_again=bool(again), csv_pressed=bool(csv_pressed), downloads_folder=str(downloads),
-                report_bytes=len(md_text), csv_lines=len(csv_text.splitlines()))
+            shell_said = [ln for ln in shell_log.read_text(errors="replace").splitlines() if "DEIXIS: Download" in ln
+                          or "DEIXIS: download" in ln] if shell_log.exists() else []
+            for path in md + csv:
+                shutil.move(str(path), evidence / f"{fmt}-download-{path.name}")
+            row(f"{fmt}_download", bool(md and title in md_text and csv and "synthetic" in csv_text.lower() and kept_first
+                                        and free_names and not elsewhere),
+                run=(finished or {}).get("status"), opened=bool(opened), steps=steps, files=[p.name for p in md + csv],
+                first_files_unchanged=kept_first, second_got_free_name=free_names, written_elsewhere=elsewhere,
+                downloads_folder=str(downloads), report_bytes=len(md_text), csv_lines=len(csv_text.splitlines()),
+                shell_said=shell_said[:8])
 
         sc.kill_all()
         (bin_dir / "no-hang").unlink(missing_ok=True)
@@ -765,6 +781,13 @@ def format_rows(fmt: str, exe: str, marks: list[str], work: Path, env: dict[str,
             drv = sc.driver
             nonce = (health(sc.port) or {}).get("nonce")
             facts = start_load(sc, bin_dir)
+            active: dict = {}
+            if facts.get("research"):
+                view = sc.session().json("GET", f"/api/researches/{facts['research']}")[1]
+                run = next((r for r in view.get("runs", []) if r.get("status") == "running"), None)
+                step = next((st for st in (run or {}).get("steps", []) or [] if st.get("status") == "running"), None)
+                if run and step:
+                    active = {"run": run["id"], "step": step.get("id") or step.get("operation_key")}
             backend = sc.backend_pids()
             shell = sc.shell_pid()
             old = {i: p for i, p in sc.watch.seen.items() if p["pid"] != shell and "WebKit" not in p["name"]
@@ -785,16 +808,17 @@ def format_rows(fmt: str, exe: str, marks: list[str], work: Path, env: dict[str,
                 with sqlite3.connect(f"file:{sc.data / 'library.sqlite'}?mode=ro", uri=True) as conn:
                     integrity = conn.execute("PRAGMA integrity_check").fetchone()[0]
                     keys = conn.execute("PRAGMA foreign_key_check").fetchall()
-                if facts.get("research"):
+                if active:
                     view = sc.session().json("GET", f"/api/researches/{facts['research']}")[1]
-                    runs = view.get("runs", [])
-                    run_state = {"runs": [r.get("status") for r in runs],
-                                 "steps": sorted({s.get("status") for r in runs for s in r.get("steps", []) or []})}
+                    run = next((r for r in view.get("runs", []) if r["id"] == active["run"]), {})
+                    step = next((st for st in run.get("steps", []) or []
+                                 if (st.get("id") or st.get("operation_key")) == active["step"]), {})
+                    run_state = {"run": run.get("status"), "step": step.get("status"), "active_before_kill": active}
             closed = close_window(sc)
             left = sc.check_left(time.monotonic())
             ok = bool(killed and old_gone and shell_alive and stopped_page and pressed and restarted_s
                       and new_nonce and new_nonce != nonce and integrity == "ok" and keys == []
-                      and "paused" in run_state.get("runs", []) and closed)
+                      and run_state.get("run") == "paused" and run_state.get("step") == "outcome_unknown" and closed)
             row(f"{fmt}_kill_backend", ok and left.pop("ok") and facts["hanging"], backend_killed=killed,
                 old_family_gone_15s=bool(old_gone), old_left=old_left, shell_alive_after_kill=shell_alive,
                 stopped_page=(stopped_page or "")[:160], restart_pressed=bool(pressed),
@@ -814,12 +838,11 @@ def format_rows(fmt: str, exe: str, marks: list[str], work: Path, env: dict[str,
 
 
 def uninstall(fmt: str, exe: str | None, scenarios: list[Scenario]) -> None:
-    def listing(folder: Path) -> dict[str, int]:
-        return {str(p.relative_to(folder)): p.stat().st_size for p in folder.rglob("*")
+    def listing(folder: Path) -> dict[str, str]:  # every kept data file by content (logs and lock files aside)
+        return {str(p.relative_to(folder)): sha256(p) for p in folder.rglob("*")
                 if p.is_file() and p.suffix not in (".log", ".lock") and "-wal" not in p.name and "-shm" not in p.name}
-    mine = [sc for sc in scenarios if sc.fmt == fmt and sc.data.exists()]
-    libraries = {sc.data: (listing(sc.data), sha256(sc.data / "library.sqlite") if (sc.data / "library.sqlite").exists() else None)
-                 for sc in mine}
+    mine = [sc for sc in scenarios if sc.fmt == fmt]
+    libraries = {sc.data: listing(sc.data) if (sc.data / "library.sqlite").is_file() else None for sc in mine}
     if fmt == "deb":
         done = subprocess.run(["sudo", "apt-get", "remove", "-y", "deixis"], capture_output=True, text=True, timeout=300)
         gone = not Path("/usr/bin/deixis-desktop").exists() and not DEB_LIB.exists()
@@ -827,7 +850,7 @@ def uninstall(fmt: str, exe: str | None, scenarios: list[Scenario]) -> None:
     else:
         Path(exe).unlink(missing_ok=True) if exe else None
         gone, code = not (exe and Path(exe).exists()), 0
-    kept = {d.name: listing(d) == files and (d / "library.sqlite").is_file() for d, (files, _digest) in libraries.items()}
+    kept = {d.name: files is not None and d.is_dir() and listing(d) == files for d, files in libraries.items()}
     row(f"{fmt}_uninstall", bool(code == 0 and gone and all(kept.values())), exit=code, removed=gone, libraries_kept=kept)
 
 

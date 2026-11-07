@@ -17,6 +17,10 @@
 //! navigation handler below cancels and acts on, only while the window shows the local page. Links to other sites open
 //! in the default browser. Downloads (the CSV and report exports, blob: links) go to the Downloads folder under a name
 //! not yet taken; a failed one is said in a message.
+//!
+//! The window follows the theme chosen in Settings (P10 M3): the backend's status route, polled every 5 s, names it;
+//! the shell sets the window's theme and background colour and keeps the choice in `window-theme` in its config folder,
+//! so the next launch builds the window and the launch page in that theme before the backend answers.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -36,7 +40,8 @@ use std::time::{Duration, Instant};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::webview::{DownloadEvent, NewWindowResponse};
-use tauri::{AppHandle, Manager, RunEvent, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry};
+use tauri::window::Color;
+use tauri::{AppHandle, Manager, RunEvent, Theme, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
 use platform::Sidecar;
@@ -70,6 +75,83 @@ struct Shell {
     restarting: AtomicBool,
     page: Mutex<String>,
     downloads: Mutex<HashMap<String, PathBuf>>,
+    theme: Mutex<ThemeChoice>,
+}
+
+/// The theme chosen in Settings; anything else than "light" or "dark" is System.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum ThemeChoice {
+    System,
+    Light,
+    Dark,
+}
+
+impl ThemeChoice {
+    fn parse(text: &str) -> Self {
+        match text.trim() {
+            "light" => ThemeChoice::Light,
+            "dark" => ThemeChoice::Dark,
+            _ => ThemeChoice::System,
+        }
+    }
+
+    fn word(self) -> &'static str {
+        match self {
+            ThemeChoice::System => "system",
+            ThemeChoice::Light => "light",
+            ThemeChoice::Dark => "dark",
+        }
+    }
+
+    /// The window's own theme: None follows the operating system.
+    fn window(self) -> Option<Theme> {
+        match self {
+            ThemeChoice::System => None,
+            ThemeChoice::Light => Some(Theme::Light),
+            ThemeChoice::Dark => Some(Theme::Dark),
+        }
+    }
+}
+
+/// The launch page's background in a theme (`ui/index.html` --bg), so no white frame shows before a page paints.
+fn background(theme: Theme) -> Color {
+    match theme {
+        Theme::Dark => Color(0x14, 0x17, 0x1d, 0xff),
+        _ => Color(0xf7, 0xf8, 0xfb, 0xff),
+    }
+}
+
+fn theme_file(app: &AppHandle) -> Option<PathBuf> {
+    app.path().app_config_dir().ok().map(|folder| folder.join("window-theme"))
+}
+
+fn saved_theme(app: &AppHandle) -> ThemeChoice {
+    theme_file(app).and_then(|path| std::fs::read_to_string(path).ok()).map_or(ThemeChoice::System, |t| ThemeChoice::parse(&t))
+}
+
+/// Give the window `choice` (its theme, the background of the theme it now shows) and keep it for the next launch.
+fn apply_theme(app: &AppHandle, choice: ThemeChoice) {
+    let shell = app.state::<Shell>();
+    let changed = {
+        let mut current = shell.theme.lock().unwrap();
+        let changed = *current != choice;
+        *current = choice;
+        changed
+    };
+    if let Some(window) = app.get_webview_window(MAIN) {
+        if changed {
+            let _ = window.set_theme(choice.window());
+        }
+        if let Ok(shown) = window.theme() {
+            let _ = window.set_background_color(Some(background(shown)));
+        }
+    }
+    if changed {
+        if let Some(path) = theme_file(app) {
+            let _ = path.parent().map(std::fs::create_dir_all);
+            let _ = std::fs::write(path, choice.word());
+        }
+    }
 }
 
 impl Shell {
@@ -317,7 +399,8 @@ fn encode(text: &str) -> String {
 fn show_local(app: &AppHandle, state: &str) {
     let log = log_path(app);
     if let Some(window) = app.get_webview_window(MAIN) {
-        if let Ok(url) = Url::parse(&local_origin().page(&format!("state={state}&log={}", encode(&log)))) {
+        let theme = app.state::<Shell>().theme.lock().unwrap().word();
+        if let Ok(url) = Url::parse(&local_origin().page(&format!("state={state}&theme={theme}&log={}", encode(&log)))) {
             let _ = window.navigate(url);
         }
         let _ = window.show();
@@ -444,6 +527,10 @@ fn start(app: AppHandle) {
     // Navigate while holding the backend slot: the exit watcher takes the same lock, so either it ran first (the slot
     // no longer holds this generation, it showed "stopped", nothing is navigated) or it runs after this navigation and
     // shows "stopped" then. A newer start (Restart) owns the slot too, so a stale start never covers its page.
+    let token = shell.backend.lock().unwrap().as_ref().map(|b| b.token.clone()).unwrap_or_default();
+    if let Some(choice) = status_theme(port, &token) {
+        apply_theme(&app, choice); // before the backend's page paints, so its System theme already shows the choice
+    }
     let slot = shell.backend.lock().unwrap();
     if slot.as_ref().is_some_and(|b| b.generation == generation && b.running) && shell.current(generation) {
         if let (Some(window), Ok(url)) = (app.get_webview_window(MAIN), Url::parse(&format!("http://127.0.0.1:{port}/"))) {
@@ -608,7 +695,20 @@ fn on_download(app: &AppHandle, event: DownloadEvent<'_>) -> bool {
     }
 }
 
-/// The tray count, read with the token from the backend's read-only status route.
+/// The theme the backend's status route names, None when it did not answer.
+fn status_theme(port: u16, token: &str) -> Option<ThemeChoice> {
+    match http(port, "GET", "/api/internal/status", Some(token), Duration::from_secs(2)) {
+        Some((200, body)) => theme_of(&body),
+        _ => None,
+    }
+}
+
+fn theme_of(body: &str) -> Option<ThemeChoice> {
+    let value = serde_json::from_str::<serde_json::Value>(body).ok()?;
+    Some(ThemeChoice::parse(value.get("theme")?.as_str()?))
+}
+
+/// The tray count and the theme, read with the token from the backend's read-only status route.
 fn refresh_status(app: AppHandle) {
     thread::spawn(move || loop {
         let shell = app.state::<Shell>();
@@ -616,7 +716,11 @@ fn refresh_status(app: AppHandle) {
             return;
         }
         let target = shell.backend.lock().unwrap().as_ref().and_then(|b| b.port.map(|p| (p, b.token.clone())));
-        let text = match target.and_then(|(p, t)| http(p, "GET", "/api/internal/status", Some(&t), Duration::from_secs(2))) {
+        let answer = target.and_then(|(p, t)| http(p, "GET", "/api/internal/status", Some(&t), Duration::from_secs(2)));
+        if let Some(choice) = answer.as_ref().filter(|(status, _)| *status == 200).and_then(|(_, body)| theme_of(body)) {
+            apply_theme(&app, choice);
+        }
+        let text = match answer {
             Some((200, body)) => match serde_json::from_str::<serde_json::Value>(&body)
                 .ok()
                 .and_then(|v| v.get("running_researches").and_then(|n| n.as_u64()))
@@ -661,14 +765,23 @@ fn main() {
             restarting: AtomicBool::new(false),
             page: Mutex::new(String::new()),
             downloads: Mutex::new(HashMap::new()),
+            theme: Mutex::new(ThemeChoice::System),
         })
         .setup(|app| {
             let handle = app.handle().clone();
             let nav = handle.clone();
             let popup = handle.clone();
             let saver = handle.clone();
-            WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App("index.html".into()))
+            // The theme kept from the last run; the first launch follows the system until the backend names one.
+            let choice = saved_theme(&handle);
+            *app.state::<Shell>().theme.lock().unwrap() = choice;
+            let mut builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App(format!("index.html?theme={}", choice.word()).into()))
                 .title("DEIXIS")
+                .theme(choice.window());
+            if let Some(theme) = choice.window() {
+                builder = builder.background_color(background(theme));
+            }
+            builder
                 .inner_size(1280.0, 840.0)
                 .min_inner_size(720.0, 520.0)
                 .on_navigation(move |url| on_navigation(&nav, url))
@@ -687,6 +800,11 @@ fn main() {
                 })
                 .on_download(move |_webview, event| on_download(&saver, event))
                 .build()?;
+            if let Some(window) = app.get_webview_window(MAIN) {
+                if let Ok(shown) = window.theme() {
+                    let _ = window.set_background_color(Some(background(shown)));
+                }
+            }
             let open = MenuItem::with_id(app, "open", "Open DEIXIS", true, None::<&str>)?;
             let status = MenuItem::with_id(app, "status", "Backend starting", false, None::<&str>)?;
             let quit_item = MenuItem::with_id(app, "quit", "Quit DEIXIS", true, None::<&str>)?;
@@ -707,6 +825,10 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if let WindowEvent::ThemeChanged(shown) = event {
+                // The system changed while the choice is System: the background follows what the window now shows.
+                let _ = window.set_background_color(Some(background(*shown)));
+            }
             if let WindowEvent::CloseRequested { api, .. } = event {
                 // Closing the window keeps DEIXIS running in the tray; Quit ends it.
                 if !window.app_handle().state::<Shell>().quitting.load(Ordering::SeqCst) {
@@ -1078,6 +1200,19 @@ mod tests {
         assert!(!directly_in(folder, Path::new("/Users/a/report.csv"), false));
         assert!(!directly_in(folder, Path::new("/Users/a/downloads/report.csv"), false));
         assert!(directly_in(folder, Path::new("/Users/a/downloads/report.csv"), true));
+    }
+
+    #[test]
+    fn the_theme_is_read_from_the_status_and_the_saved_file() {
+        assert_eq!(theme_of(r#"{"running_researches":0,"theme":"dark"}"#), Some(ThemeChoice::Dark));
+        assert_eq!(theme_of(r#"{"theme":"light"}"#), Some(ThemeChoice::Light));
+        assert_eq!(theme_of(r#"{"theme":"SYNTHETIC"}"#), Some(ThemeChoice::System));
+        assert_eq!(theme_of(r#"{"running_researches":0}"#), None);
+        assert_eq!(theme_of("not json"), None);
+        assert_eq!(ThemeChoice::parse("dark\n"), ThemeChoice::Dark);
+        assert_eq!(ThemeChoice::parse(""), ThemeChoice::System);
+        assert_eq!(ThemeChoice::System.window(), None);
+        assert_eq!(ThemeChoice::parse(ThemeChoice::Light.word()), ThemeChoice::Light);
     }
 
     #[test]

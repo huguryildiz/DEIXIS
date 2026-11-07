@@ -12,6 +12,9 @@ from deixis import package_manifest
 
 REPO = Path(SPECPATH).resolve().parents[1]
 identity = Path(os.environ["DEIXIS_BUILD_IDENTITY"])
+# The pinned OCR language files and their pins (P10 M3), fetched and checked by build.py; MuPDF's built-in Tesseract reads them.
+tessdata = Path(os.environ["DEIXIS_TESSDATA_DIR"])
+TESSDATA_FILES = ("eng.traineddata", "tur.traineddata", "LICENSE", "PINS.json")
 
 # Never shipped: the Claude CLI copy inside the SDK (192 MB; the person's own `claude` is used), and test and build tools.
 DROPPED = ("claude_agent_sdk/_bundled", "claude_agent_sdk\\_bundled")
@@ -22,7 +25,7 @@ a = Analysis(
     [str(REPO / "deixis" / "frozen_entry.py")],
     pathex=[str(REPO)],
     binaries=[],
-    datas=package_manifest.datas(REPO, identity) + copy_metadata("deixis"),
+    datas=package_manifest.datas(REPO, identity) + copy_metadata("deixis") + [(str(tessdata / n), "tessdata") for n in TESSDATA_FILES],
     hiddenimports=list(package_manifest.HIDDEN_IMPORTS),
     hookspath=[],
     runtime_hooks=[],

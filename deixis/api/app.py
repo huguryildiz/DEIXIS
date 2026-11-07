@@ -29,7 +29,6 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from deixis.keys import account_signin, credentials, key_verification, log_redaction
 from deixis.tools import local_tools
-from deixis.tools.tool_paths import find_tool, is_bundled
 from deixis.config import Settings, load_settings
 from deixis.documents import fetch as fetch_module
 from deixis.documents import acquisition
@@ -1055,6 +1054,11 @@ def create_app(
             await worker.run_forever()
 
         task = asyncio.create_task(worker.run_forever() if owner else take_over_when_released()) if start_worker else None
+        from deixis import update_check
+        from deixis.api.about_routes import app_version, clean_version
+        app.state.update_check = update_check.UpdateCheck(store, clean_version(app_version()))
+        update_stop = asyncio.Event()
+        update_task = asyncio.create_task(app.state.update_check.run_forever(update_stop))
         if owner:
             # Start-up person readings must enter the queue before the first automatic tick.
             start_watch_scheduler()
@@ -1066,6 +1070,10 @@ def create_app(
             # kept; the process exit closes its descriptor, which releases it (not inherited by child processes).
             import logging
             failures: list[tuple[str, Exception]] = []
+
+            async def stop_update_check() -> None:
+                update_stop.set()
+                await app.state.update_check.close(update_task)  # a request in flight is cancelled, not awaited
 
             async def stop_scheduler() -> None:
                 scheduler_stop.set()
@@ -1101,7 +1109,8 @@ def create_app(
             async def close_library() -> None:
                 conn.close()
 
-            steps = [("watch scheduler", stop_scheduler), ("worker", stop_worker), ("equations", equations.stop),
+            steps = [("version check", stop_update_check), ("watch scheduler", stop_scheduler), ("worker", stop_worker),
+                     ("equations", equations.stop),
                      ("built-in embedding", builtin.stop), ("http client", lambda: close_client(http)),
                      ("local http client", lambda: close_client(local_http)),
                      *((f"adapter {name}", adapter.close) for name, adapter in adapter_map.items()),
@@ -1357,7 +1366,11 @@ def create_app(
             return JSONResponse({"detail": "Not Found"}, status_code=404)
         if not hmac.compare_digest(request.headers.get(CONTROL_HEADER, "").encode(), control_token.encode()):
             return JSONResponse({"detail": "Missing or invalid control token"}, status_code=403)
-        return JSONResponse({"running_researches": store_of(request).active_research_count()})
+        # The theme too, so the shell's window and launch page follow the one chosen in Settings (P10 M3).
+        from deixis.api.preference_routes import THEMES, UI_THEME_SETTING
+        theme = store_of(request).setting(UI_THEME_SETTING)
+        return JSONResponse({"running_researches": store_of(request).active_research_count(),
+                             "theme": theme if theme in THEMES else "system"})
 
     @app.get("/api/session")
     async def session() -> JSONResponse:
@@ -2939,7 +2952,7 @@ def create_app(
     @app.post("/api/ocr/install", status_code=202)
     async def install_ocr() -> dict[str, Any]:
         """Install or update Tesseract and its language data with Homebrew; the panel polls `/api/ocr` for the step."""
-        if is_bundled(await asyncio.to_thread(find_tool, "tesseract")):
+        if (await asyncio.to_thread(ocr.tesseract_status)).get("bundled"):
             raise HTTPException(409, "Tesseract comes with DEIXIS and is updated with it")
         try:
             return {"job": tesseract_installer.start(await asyncio.to_thread(tool_updates.brew))}

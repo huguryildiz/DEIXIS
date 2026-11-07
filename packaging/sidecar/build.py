@@ -2,8 +2,9 @@
 
     uv run --group packaging python packaging/sidecar/build.py [--skip-web]
 
-Steps: `npm run build` in web (the bundle serves web/dist), the build identity (sha256 of every package file, read by
-PRISMA-S exports), PyInstaller with deixis-backend.spec into packaging/sidecar/dist/deixis-backend/, on macOS an ad-hoc
+Steps: `npm run build` in web (the bundle serves web/dist), the OCR language files pinned in
+packaging/tesseract-versions.json (downloaded once into build/tessdata/, the build stops on a size or sha256 mismatch;
+P10 M3), the build identity (sha256 of every package file, read by PRISMA-S exports), PyInstaller with deixis-backend.spec into packaging/sidecar/dist/deixis-backend/, on macOS an ad-hoc
 signature (`codesign --force --sign -`) on every Mach-O file in it, and last `deixis-backend --check-resources` run
 from the output. Prints the folder size and the build time. Windows builds are unsigned.
 """
@@ -11,6 +12,8 @@ from the output. Prints the folder size and the build time. Windows builds are u
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import platform
 import shutil
@@ -19,6 +22,7 @@ import sys
 import sysconfig
 import tempfile
 import time
+import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -26,6 +30,8 @@ REPO = HERE.parents[1]
 DIST = HERE / "dist"
 WORK = HERE / "build"
 OUTPUT = DIST / "deixis-backend"
+TESSDATA = WORK / "tessdata"
+TESSDATA_PINS = REPO / "packaging" / "tesseract-versions.json"
 MACHO_MAGIC = {bytes.fromhex(m) for m in ("feedface", "feedfacf", "cefaedfe", "cffaedfe", "cafebabe", "bebafeca")}
 
 
@@ -51,6 +57,34 @@ def sign_all(folder: Path) -> int:
     return len(files)
 
 
+def _matches(path: Path, pin: dict) -> bool:
+    return path.is_file() and path.stat().st_size == pin["bytes"] and hashlib.sha256(path.read_bytes()).hexdigest() == pin["sha256"]
+
+
+def fetch_tessdata(folder: Path = TESSDATA, pins_file: Path = TESSDATA_PINS, download=urllib.request.urlopen) -> Path:
+    """The pinned OCR language files in `folder`, each downloaded only when missing or different, plus PINS.json (the
+    pins, read by `--check-resources` in the package). Raises SystemExit(1) on a size or sha256 mismatch, the bad file
+    removed."""
+    pins = json.loads(pins_file.read_text(encoding="utf-8"))["files"]
+    folder.mkdir(parents=True, exist_ok=True)
+    for name, pin in pins.items():
+        path = folder / name
+        if _matches(path, pin):
+            continue
+        if not pin["url"].startswith("https://"):
+            raise SystemExit(f"{name}: the pinned URL is not https")
+        print(f"+ download {pin['url']}", flush=True)
+        with download(pin["url"], timeout=60) as response:
+            path.write_bytes(response.read(pin["bytes"] + 1))
+        if not _matches(path, pin):
+            path.unlink(missing_ok=True)
+            print(f"{name}: size or sha256 differs from {pins_file.name}; the build stops.", file=sys.stderr)
+            raise SystemExit(1)
+    (folder / "PINS.json").write_text(json.dumps({n: p["sha256"] for n, p in pins.items()}, indent=1, sort_keys=True) + "\n",
+                                      encoding="utf-8")
+    return folder
+
+
 def folder_bytes(folder: Path) -> int:
     return sum(p.stat().st_size for p in folder.rglob("*") if p.is_file() and not p.is_symlink())
 
@@ -71,6 +105,7 @@ def main() -> int:
     if not (REPO / "web" / "dist" / "index.html").is_file():
         print("web/dist/index.html is missing; run `npm run build` in web.", file=sys.stderr)
         return 2
+    tessdata = fetch_tessdata()
     sys.path.insert(0, str(REPO))
     from deixis import package_manifest
 
@@ -79,7 +114,7 @@ def main() -> int:
         shutil.rmtree(OUTPUT, ignore_errors=True)
         run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--log-level", "WARN",
              "--distpath", str(DIST), "--workpath", str(WORK), str(HERE / "deixis-backend.spec")],
-            env=os.environ | {"DEIXIS_BUILD_IDENTITY": str(identity)})
+            env=os.environ | {"DEIXIS_BUILD_IDENTITY": str(identity), "DEIXIS_TESSDATA_DIR": str(tessdata)})
     if windows:
         signed = 0
         env = {k: v for k, v in os.environ.items() if k in ("SYSTEMROOT", "WINDIR", "TEMP", "TMP", "USERPROFILE", "LOCALAPPDATA",

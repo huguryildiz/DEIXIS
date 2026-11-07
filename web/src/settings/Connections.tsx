@@ -803,8 +803,8 @@ function OcrToolDetails({ tool, onChanged }: { tool: OcrTool; onChanged: () => P
       ? <p className="tool-facts-foot is-ok" role="status"><CircleCheck aria-hidden />{t('Updated together with DEIXIS.')}</p>
       : canUpdate ? <div className="tool-facts-foot is-update"><span><Info aria-hidden />{t('Version {latest} is available.', { latest: update.latest ?? '' })}</span><Button size="sm" onClick={install} disabled={busy}>{t('Update')}</Button></div>
       : upToDate ? <p className="tool-facts-foot is-ok" role="status"><CircleCheck aria-hidden />{t('Up to date.')}</p> : null}>
-      <dt>{t('Version')}</dt><dd>{tool.version}</dd>
-      {tool.path && <><dt>{t('Path')}</dt><dd className="local-tool-path">{wrapPath(tool.path)}</dd></>}
+      <dt>{t('Version')}</dt><dd>{tool.engine === 'pymupdf' ? t('Built into PyMuPDF {version}', { version: tool.version.replace(/^pymupdf-/, '') }) : tool.version}</dd>
+      {tool.path && <><dt>{t(tool.engine === 'pymupdf' ? 'Language data' : 'Path')}</dt><dd className="local-tool-path">{wrapPath(tool.path)}</dd></>}
       {tool.languages.length > 0 && <><dt>{t('Languages')}</dt><dd>{ocrLanguagesText(tool.languages)}</dd></>}
       {tool.missing_languages.length > 0 && <><dt>{t('Missing')}</dt><dd>{ocrLanguagesText(tool.missing_languages)}</dd></>}
     </ToolFacts>}

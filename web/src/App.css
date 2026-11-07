@@ -111,7 +111,7 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
   .app.sidebar-collapsed .main-shell{margin-left:56px}
   .app.sidebar-collapsed .sidebar-head{flex-direction:column;gap:6px;padding:12px 0 8px}
   .app.sidebar-collapsed .brand{padding:0}
-  .app.sidebar-collapsed .sidebar-label,.app.sidebar-collapsed .recents-label,.app.sidebar-collapsed .recent-list,.app.sidebar-collapsed .access,.app.sidebar-collapsed .access-retry,.app.sidebar-collapsed .bgcard,.app.sidebar-collapsed .user-name,.app.sidebar-collapsed .user>button{display:none}
+  .app.sidebar-collapsed .sidebar-label,.app.sidebar-collapsed .recents-label,.app.sidebar-collapsed .recent-list,.app.sidebar-collapsed .access,.app.sidebar-collapsed .access-retry,.app.sidebar-collapsed .update-line,.app.sidebar-collapsed .bgcard,.app.sidebar-collapsed .user-name,.app.sidebar-collapsed .user>button{display:none}
   .app.sidebar-collapsed .sidebar nav button{justify-content:center;padding:8px 0}
   .app.sidebar-collapsed .nav-count{position:absolute;top:1px;right:4px;margin:0;padding:0 4px;font-size:9.5px;line-height:14px}
   .app.sidebar-collapsed .sidebar-foot{margin-top:auto;justify-items:center;border-top:0}
@@ -197,6 +197,8 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .access::after{content:"";position:absolute;top:50%;right:11px;width:5px;height:5px;border-top:1.4px solid var(--faint);border-right:1.4px solid var(--faint);transform:translateY(-50%) rotate(45deg);transition:transform .15s,border-color .15s}
 .access-retry{justify-self:start;margin:-2px 0 0 14px;padding:0;color:var(--muted);font-size:12px;line-height:1.5;text-decoration:underline;text-underline-offset:2px}
 .access-retry:hover{color:var(--ink)}
+.update-line{margin:0 0 0 2px;color:var(--muted);font-size:12px;line-height:1.5}
+.update-line a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
 .access:hover{border-color:var(--strong-line);background:var(--hover-surface);color:var(--ink)}
 .access:hover::after{border-color:var(--muted);transform:translate(2px,-50%) rotate(45deg)}
 .access-label{overflow:hidden;color:var(--muted);font-size:10.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;text-overflow:ellipsis}

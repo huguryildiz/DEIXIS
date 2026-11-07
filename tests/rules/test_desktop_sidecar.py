@@ -129,6 +129,8 @@ def test_the_shutdown_route_takes_the_control_token_and_no_csrf_cookie(tmp_path)
         assert client.get("/api/health").json()["nonce"] == "SYNTHETIC-nonce"
         assert client.post("/api/internal/shutdown").status_code == 403
         assert client.post("/api/internal/shutdown", headers={"X-Deixis-Control": "wrong"}).status_code == 403
+        status = client.get("/api/internal/status", headers={"X-Deixis-Control": "SYNTHETIC-control-token"}).json()
+        assert status["theme"] == "system"  # the shell's window follows Settings' theme (P10 M3); unset is System
         assert client.put("/api/settings/preferences", json={"theme": "dark"}).status_code == 403  # every other write needs CSRF
         assert calls == []
         response = client.post("/api/internal/shutdown", headers={"X-Deixis-Control": "SYNTHETIC-control-token"})
@@ -175,7 +177,7 @@ def test_a_desktop_start_reports_listening_after_startup_and_stops_when_stdin_cl
         status = f"http://127.0.0.1:{port}/api/internal/status"
         assert httpx.get(status, timeout=10).status_code == 403
         assert httpx.get(status, headers={"X-Deixis-Control": "SYNTHETIC-stdin-token"}, timeout=10).json() == {
-            "running_researches": 0}
+            "running_researches": 0, "theme": "system"}
         assert (data / "logs" / "backend.log").is_file()
         assert (data / "run" / "children.jsonl").parent.is_dir()  # the child record is on
         started = time.monotonic()
@@ -520,3 +522,37 @@ def test_the_desktop_lines_are_ascii_so_a_windows_code_page_never_garbles_a_path
     cli.emit({"event": "listening", "data_dir": "C:\\Users\\Uğur José\\AppData\\Local\\DEIXIS"})
     line = capsys.readouterr().out
     assert line.isascii() and json.loads(line)["data_dir"].endswith("Uğur José\\AppData\\Local\\DEIXIS")
+
+
+def test_the_sidecar_build_stops_on_language_data_that_is_not_the_pinned_file(tmp_path):
+    """P10 M3: the OCR language files are fetched by pin; a wrong file stops the build and is removed, and the packaged
+    check refuses a file that is not the one its PINS.json names."""
+    import hashlib
+    import importlib.util
+    from deixis import resource_check
+
+    spec = importlib.util.spec_from_file_location("sidecar_build", Path(__file__).resolve().parents[2] / "packaging" / "sidecar" / "build.py")
+    build = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build)
+    good = b"SYNTHETIC eng data"
+    pins = tmp_path / "pins.json"
+    pins.write_text(json.dumps({"files": {"eng.traineddata": {"url": "https://example.invalid/eng", "bytes": len(good),
+                                                              "sha256": hashlib.sha256(good).hexdigest()}}}))
+
+    class Answer:
+        def __init__(self, body): self.body = body
+        def __enter__(self): return self
+        def __exit__(self, *exc): return False
+        def read(self, limit): return self.body[:limit]
+
+    folder = tmp_path / "tessdata"
+    with pytest.raises(SystemExit) as stopped:
+        build.fetch_tessdata(folder, pins, download=lambda url, timeout: Answer(b"SYNTHETIC other data"))
+    assert stopped.value.code == 1 and not (folder / "eng.traineddata").exists()
+    build.fetch_tessdata(folder, pins, download=lambda url, timeout: Answer(good))
+    build.fetch_tessdata(folder, pins, download=lambda url, timeout: pytest.fail("a pinned file is never fetched twice"))
+    assert json.loads((folder / "PINS.json").read_text()) == {"eng.traineddata": hashlib.sha256(good).hexdigest()}
+    assert resource_check.tessdata_problems(folder) == [f"OCR language data: {folder / name} missing or not the pinned file"
+                                                        for name in ("tur.traineddata", "LICENSE")]
+    (folder / "eng.traineddata").write_bytes(b"SYNTHETIC changed")
+    assert len(resource_check.tessdata_problems(folder)) == 3

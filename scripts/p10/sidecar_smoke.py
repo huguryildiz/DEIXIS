@@ -8,8 +8,8 @@ keyring backend and outbound HTTP(S) sent to a closed local port. The control to
 shell sends it. A stand-in `codex` (fake_codex.py, run by this checkout's Python) is first on PATH: on macOS a shell
 script; on Windows an npm install as `tool_paths._windows_command` reads one (`codex.cmd` whose entry line points at
 `node_modules\@fake\codex\bin\codex.js`, a Node script that runs fake_codex.py with stdio passed through), so node
-and Python are real grandchildren. Tesseract is the one installed on this computer (Homebrew; on Windows the UB
-Mannheim installer's folder), found by the app's own tool lookup; on Windows the ocr row is skipped without it.
+and Python are real grandchildren. OCR uses the language data inside the package (P10 M3), never a Tesseract installed
+on this computer.
 Processes are listed with `ps` on macOS and `Get-CimInstance Win32_Process` on Windows. Rows, each printed as passed
 or failed:
 
@@ -20,7 +20,8 @@ or failed:
   pdf          a synthetic PDF upload gives passages (the frozen `-m deixis.documents.pdf` child and its guard)
   answer       question -> cited answer through the packaged binary, the uploaded PDF the only source, fake codex
   token_env    DEIXIS_CONTROL_TOKEN is not in the fake codex's environment
-  ocr          a scanned page read by the app's OCR run (the frozen `-m deixis.documents.ocr` child)
+  ocr          /api/ocr reports the package's own eng+tur data (bundled, engine pymupdf, inside the sidecar folder) and a
+               scanned page is read by the app's OCR run (the frozen `-m deixis.documents.ocr` child)
   jats         one JATS file drawn as a PDF by `deixis-backend -m deixis.documents.jats` (invoked here, not by the app)
   shutdown     shutdown with the token and no CSRF cookie; exit 0; no leftover process (pid + start time)
   upgrade      a filled library made by the old migration files (version 1) opens and upgrades: rows and counts
@@ -274,6 +275,13 @@ def stale_build(sidecar: Path, reported: str | None) -> list[str]:
         bundled = internal / dest / Path(source).name
         if not bundled.is_file() or sha256(bundled) != sha256(Path(source)):
             problems.append(f"data file differs from the build: {Path(source).relative_to(REPO)}")
+    pins = {name: pin["sha256"] for name, pin in json.loads((REPO / "packaging" / "tesseract-versions.json").read_text(encoding="utf-8"))["files"].items()}
+    try:
+        bundled_pins = json.loads((internal / "tessdata" / "PINS.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        bundled_pins = None
+    if bundled_pins != pins:
+        problems.append("the OCR language data differs from packaging/tesseract-versions.json")
     web = REPO / "web"
     newest = max(p.stat().st_mtime for p in (web / "src").rglob("*") if p.is_file())
     if (web / "dist" / "index.html").stat().st_mtime < newest:
@@ -385,10 +393,7 @@ def main() -> int:
         row("token_env", names is not None and "DEIXIS_CONTROL_TOKEN" not in names, codex_started=names is not None,
             variables=len(names or []))
 
-        if WINDOWS and not tesseract_installed():
-            print("SKIP ocr {\"reason\": \"Tesseract is not installed in the UB Mannheim installer's folders\"}", flush=True)
-        else:
-            ocr_row(client, data)
+        ocr_row(client, data, work)
         if WINDOWS:
             startup_failed_row(binary, work, env)
             runtime_row(work, binary, env)
@@ -467,8 +472,14 @@ def main() -> int:
     return 0 if results and all(r["ok"] for r in results.values()) else 1
 
 
-def ocr_row(client: httpx.Client, data: Path) -> None:
-    """A scanned page read by the app's OCR run (the frozen `-m deixis.documents.ocr` child)."""
+def ocr_row(client: httpx.Client, data: Path, work: Path) -> None:
+    """The package's own language data, then a scanned page read by the app's OCR run (the frozen `-m deixis.documents.ocr` child)."""
+    tool = client.get("/api/ocr").json()
+    inside = bool(tool.get("path")) and Path(tool["path"]).resolve().is_relative_to(work.resolve())
+    if not (tool.get("bundled") and tool.get("engine") == "pymupdf" and tool.get("languages") == ["eng", "tur"] and inside):
+        row("ocr", False, bundled=tool.get("bundled"), engine=tool.get("engine"), languages=tool.get("languages"),
+            path=tool.get("path"), reason=tool.get("reason"))
+        return
     made = client.post("/api/researches", json={"question": QUESTION + " (scanned)", "source_scope": "attached",
                                                 "effort": "quick", "model_connection": "codex",
                                                 "requested_model": "gpt-fake", "reasoning_effort": "medium"})
@@ -517,13 +528,6 @@ def startup_failed_row(binary: Path, work: Path, env: dict[str, str]) -> None:
         event = {}
     row("startup_failed", event.get("event") == "startup_failed" and done.returncode != 0, code=event.get("code"),
         exit=done.returncode, lines=len(lines), message=str(event.get("message"))[:200])
-
-
-def tesseract_installed() -> bool:
-    places = [Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Tesseract-OCR"]
-    if local := os.environ.get("LOCALAPPDATA"):
-        places.append(Path(local) / "Programs" / "Tesseract-OCR")
-    return any((place / "tesseract.exe").is_file() for place in places)
 
 
 def runtime_row(work: Path, binary: Path, env: dict[str, str]) -> None:

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, shellApi, type ContactEmailSetting, type Connections, type DefaultRole, type RoleModelSetting, type SemanticSearch } from '../lib/api'
+import { api, preferencesApi, shellApi, type ContactEmailSetting, type Connections, type DefaultRole, type RoleModelSetting, type SemanticSearch } from '../lib/api'
 import { t, uiLocale } from '../lib/i18n'
 import { connectionName } from '../lib/labels'
 
@@ -9,6 +9,9 @@ import { connectionName } from '../lib/labels'
 // for abstracts and metadata; OpenAlex, Unpaywall (only with an email), CORE (only with a key) and Europe PMC get DOIs
 // to find a PDF. SerpApi gets a title only from the "Find PDF" action (acquire_for_source with web_search on), never
 // from a research run. Nothing here was measured on the network.
+
+/** Sent by Settings → About when the version check is switched, so the text below follows the saved switch. */
+export const UPDATES_SWITCHED = 'deixis:updates-switched'
 
 const list = (names: string[]) => new Intl.ListFormat(uiLocale(), { style: 'long', type: 'conjunction' }).format(names)
 
@@ -20,10 +23,12 @@ type DataFlowInput = {
   email: ContactEmailSetting | null
   /** Optional services that are on now: Mathpix with its switch on and keys saved, a Zotero web key; null while unread. */
   optional: { mathpix: boolean; equationModel: { connection: string; model: string } | null; zoteroWeb: boolean } | null
+  /** The version check's switch (update_check.py); null while unread. */
+  updates: boolean | null
 }
 
 /** The rows as [heading, text]; a text is null while its setting is still unread; a row with nothing to say is left out. */
-function dataFlowRows({ defaults, connections, semantic, email, optional }: DataFlowInput): [string, string | null][] {
+function dataFlowRows({ defaults, connections, semantic, email, optional, updates }: DataFlowInput): [string, string | null][] {
   const picked = defaults ? [...new Set(Object.values(defaults).filter(d => d.model).map(d => d.model_connection))] : null
   const models = !picked ? null
     : t('A research sends its question, search words, abstracts, and passages and excerpts from PDFs to the model you choose for it. An account or API provider receives them. A local server receives them on this computer, unless that server forwards them elsewhere; Ollama does this for its cloud models.')
@@ -69,6 +74,9 @@ function dataFlowRows({ defaults, connections, semantic, email, optional }: Data
     [t('Storage'), t('Your library, notes and PDF files are kept on this computer.')],
     [t('Your keys'), t('Keys are stored on this computer. Each one is sent only to the service it belongs to, to show the request is yours.')],
     [t('Usage data'), usage],
+    [t('Version check'), updates === null ? null : updates
+      ? t('Once a day DEIXIS asks GitHub whether a newer version exists. GitHub sees your IP address; nothing else is sent.')
+      : t('The version check is off. Nothing is sent.')],
   ]
 }
 
@@ -79,6 +87,7 @@ export function DataFlowsSection({ defaults, active, refresh }: { defaults: Reco
   const [semantic, setSemantic] = useState<SemanticSearch | null>(null)
   const [email, setEmail] = useState<ContactEmailSetting | null>(null)
   const [optional, setOptional] = useState<DataFlowInput['optional']>(null)
+  const [updates, setUpdates] = useState<boolean | null>(null)
   const [failed, setFailed] = useState(false)
   useEffect(() => {
     if (!active) return
@@ -87,19 +96,22 @@ export function DataFlowsSection({ defaults, active, refresh }: { defaults: Reco
     api.connections().then(value => { if (live) setConnections(value) }, fail)
     api.semanticSearch().then(value => { if (live) setSemantic(value) }, fail)
     shellApi.contactEmail().then(value => { if (live) setEmail(value) }, fail)
+    const readUpdates = () => preferencesApi.get().then(value => { if (live) setUpdates(value.update_check === 'on') }, fail)
+    readUpdates()
+    window.addEventListener(UPDATES_SWITCHED, readUpdates)
     Promise.all([api.mathpix(), api.equationModel(), api.credentials()]).then(([mathpix, equation, credentials]) => {
       if (live) setOptional({ mathpix: mathpix.switch === 'on' && mathpix.pair.configured,
         equationModel: equation.ready && !equation.mathpix_first ? equation.model : null,
         zoteroWeb: credentials.keys.some(k => k.env === 'ZOTERO_API_KEY' && k.configured) })
     }, fail)
-    return () => { live = false }
+    return () => { live = false; window.removeEventListener(UPDATES_SWITCHED, readUpdates) }
   }, [active, refresh])
   return <>
     <h2 id="data-flows" data-panel="general">{t('Where your data goes')}</h2>
     <div className="rows set-flows" data-panel="general">
-      {dataFlowRows({ defaults, connections, semantic, email, optional }).map(([heading, text]) => <div key={heading}>
+      {dataFlowRows({ defaults, connections, semantic, email, optional, updates }).map(([heading, text]) => <div key={heading}>
         <b>{heading}</b>
-        <p>{text ?? (failed ? t('Could not be read.') : <span className="shimmer-text">{t('Checking…')}</span>)}</p>
+        <p>{text ?? (failed ? t('Could not be read.') : <span className="shimmer-text" role="status">{t('Checking…')}</span>)}</p>
       </div>)}
     </div>
   </>

@@ -409,7 +409,8 @@ export type OcrJob = { status: 'running' | 'succeeded' | 'failed'; phase: 'prepa
 // Why Tesseract cannot be used, as a code the page words (ocr.ts).
 export type OcrReason = 'tesseract_missing' | 'tesseract_not_responding' | 'tesseract_failed' | 'tesseract_languages_missing'
 // `bundled`: the Tesseract that comes inside the app (updated with DEIXIS, never through Homebrew); `install_url` is the page to get it from where Homebrew cannot.
-export type OcrTool = { available: boolean; version: string | null; languages: string[]; missing_languages: string[]; reason: OcrReason | null; can_install: boolean; job: OcrJob | null
+// `engine`: 'pymupdf' when DEIXIS hands its own language data to the Tesseract built into PyMuPDF (the packaged app, P10 M3).
+export type OcrTool = { available: boolean; version: string | null; engine: 'pymupdf' | 'tesseract'; languages: string[]; missing_languages: string[]; reason: OcrReason | null; can_install: boolean; job: OcrJob | null
   path: string | null; bundled: boolean; install_url: string; install_manager: 'brew' | null }
 // What became of a cited passage's file since it was stored (D46).
 export type EvidenceStatus = 'current' | 'pdf_removed' | 'pdf_replaced' | 'text_superseded'
@@ -1790,6 +1791,9 @@ export type About = {
   version: string; license: string; repo_url: string; source_url: string; source_is_tag: boolean
   notices_available: boolean; os: string; arch: string; report_url: string
 }
+// The version check (update_check.py, P10 M3): its switch, the last answered check, and a newer release while there is one;
+// `url` is the release page DEIXIS builds from the version.
+export type Updates = { enabled: boolean; current: string; checked_at: string | null; latest: { version: string; url: string } | null }
 export const shellApi = {
   profile: (leaving?: AbortSignal) => read<Profile>('/api/profile', leaving),
   saveProfileName: (full_name: string | null) => request<Profile>('/api/profile', json('PUT', { full_name })),
@@ -1799,6 +1803,7 @@ export const shellApi = {
   contactEmail: (leaving?: AbortSignal) => read<ContactEmailSetting>('/api/contact-email', leaving),
   saveContactEmail: (email: string | null) => request<ContactEmailSetting>('/api/contact-email', json('PUT', { email })),
   about: (leaving?: AbortSignal) => read<About>('/api/about', leaving),
+  updates: (leaving?: AbortSignal) => read<Updates>('/api/updates', leaving),
 }
 
 // Usage reads (api/usage_routes.py): model calls counted from stored sessions by Settings role, and OpenAlex's budget
@@ -2236,9 +2241,10 @@ export type Preferences = {
   default_effort: Effort; fulltext_fetch: 'auto' | 'off'; arxiv_source: 'auto' | 'off'; arxiv_route_possible: boolean
   model_concurrency: number; model_concurrency_max: number
   language: 'en' | 'tr' | null; theme: 'system' | 'light' | 'dark' | null
+  update_check: 'on' | 'off'
 }
 export type PreferenceChange = Partial<Pick<Preferences, 'default_effort' | 'fulltext_fetch' | 'arxiv_source' | 'model_concurrency'>
-  & { language: 'en' | 'tr'; theme: 'system' | 'light' | 'dark'; fill_only: boolean }>
+  & { language: 'en' | 'tr'; theme: 'system' | 'light' | 'dark'; update_check: 'on' | 'off'; fill_only: boolean }>
 export const preferencesApi = {
   get: (leaving?: AbortSignal) => read<Preferences>('/api/settings/preferences', leaving),
   set: (change: PreferenceChange) => request<Preferences>('/api/settings/preferences', json('PUT', change)),

@@ -65,6 +65,41 @@ def test_a_tesseract_that_cannot_run_gives_a_code_and_its_own_words_stay_in_the_
     assert set(ocr.REASONS) == {"tesseract_missing", "tesseract_not_responding", "tesseract_failed", "tesseract_languages_missing"}
 
 
+def test_deixis_own_language_data_is_used_without_starting_tesseract(tmp_path, monkeypatch):
+    """P10 M3: the packaged app hands MuPDF's built-in Tesseract its own eng and tur files; no program is asked."""
+    data = tmp_path / "tessdata"
+    data.mkdir()
+    (data / "eng.traineddata").write_bytes(b"SYNTHETIC")
+
+    async def never(tesseract):
+        raise AssertionError("no tesseract program may be started")
+
+    monkeypatch.setattr(ocr, "_ask_tesseract", never)
+    monkeypatch.setattr(ocr, "is_frozen", lambda: True)
+    monkeypatch.setattr(ocr, "resource_root", lambda: tmp_path)
+    monkeypatch.setenv("TESSDATA_PREFIX", "/SYNTHETIC/person/tessdata")
+    status = ocr.tesseract_status(("eng", "tur"))
+    assert (status["available"], status["bundled"], status["engine"], status["path"]) == (True, True, "pymupdf", str(data))
+    assert (status["languages"], status["missing_languages"], status["reason"]) == (["eng"], ["tur"], "tesseract_languages_missing")
+    assert status["version"].startswith("pymupdf-")
+    seen = {}
+
+    def run(argv, **kwargs):
+        seen.update(kwargs["env"])
+        raise ocr.subprocess.TimeoutExpired(argv, 1)
+
+    monkeypatch.setattr(ocr.subprocess, "run", run)
+    if sys.platform != "win32":
+        assert ocr.read_page(tmp_path / "scan.pdf", 1, ["eng"]).error == "OCR timed out"
+        assert seen["TESSDATA_PREFIX"] == str(data)  # never the person's own TESSDATA_PREFIX
+    monkeypatch.setattr(ocr, "resource_root", lambda: tmp_path / "damaged")  # never falls back to another Tesseract
+    assert ocr.tesseract_status(("eng",))["bundled"] and ocr.tesseract_status(("eng",))["missing_languages"] == ["eng"]
+    monkeypatch.setenv(ocr.TESSDATA_VARIABLE, str(tmp_path / "elsewhere"))
+    assert ocr.tesseract_status(("eng",)) | {"version": None} == {
+        "available": False, "version": None, "engine": "pymupdf", "languages": [], "missing_languages": ["eng"],
+        "path": str(tmp_path / "elsewhere"), "bundled": False, "reason": "tesseract_languages_missing"}
+
+
 def library_with_scan(tmp_path):
     conn = db.connect(tmp_path / "library.sqlite")
     db.migrate(conn)

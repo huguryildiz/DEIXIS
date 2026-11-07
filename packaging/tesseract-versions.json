@@ -1,0 +1,23 @@
+{
+  "comment": "OCR language data packed into the backend sidecar (P10 M3). The OCR engine is MuPDF's built-in Tesseract inside PyMuPDF; it needs only these files (TESSDATA_PREFIX). packaging/sidecar/build.py downloads each file and stops on a size or sha256 mismatch.",
+  "source": "https://github.com/tesseract-ocr/tessdata_fast",
+  "tag": "4.1.0",
+  "license": "Apache-2.0",
+  "files": {
+    "eng.traineddata": {
+      "url": "https://github.com/tesseract-ocr/tessdata_fast/raw/4.1.0/eng.traineddata",
+      "bytes": 4113088,
+      "sha256": "7d4322bd2a7749724879683fc3912cb542f19906c83bcc1a52132556427170b2"
+    },
+    "tur.traineddata": {
+      "url": "https://github.com/tesseract-ocr/tessdata_fast/raw/4.1.0/tur.traineddata",
+      "bytes": 4550554,
+      "sha256": "7393381111e1152420fc4092cb44eef4237580d21b92bf30d7d221aad192c6b7"
+    },
+    "LICENSE": {
+      "url": "https://github.com/tesseract-ocr/tessdata_fast/raw/4.1.0/LICENSE",
+      "bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    }
+  }
+}

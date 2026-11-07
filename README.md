@@ -14,9 +14,9 @@ For Apple Silicon Macs (M1 and newer) with macOS 13 or later; so far tried only 
    xattr -dr com.apple.quarantine /Applications/DEIXIS.app
    ```
 
-DEIXIS opens in its own window. Closing the window keeps it running in the menu bar, where Quit stops it and everything it started. Your library stays in `~/Library/Application Support/DEIXIS` when you update or delete the app. There is no automatic update: download the newer DMG and replace the app.
+DEIXIS opens in its own window. Closing the window keeps it running in the menu bar, where Quit stops it and everything it started. Your library stays in `~/Library/Application Support/DEIXIS` when you update or delete the app. There is no automatic update: once a day DEIXIS asks GitHub whether a newer version exists and says so in the sidebar (Settings → About turns this off); download the newer DMG and replace the app.
 
-Model connections are separate programs or keys: install Codex, Claude Code or Gemini CLI yourself, or paste an API key in Settings. Optical character recognition (OCR) for scanned PDFs still needs Tesseract (`brew install tesseract`) in this version.
+Model connections are separate programs or keys: install Codex, Claude Code or Gemini CLI yourself, or paste an API key in Settings. Optical character recognition (OCR) of scanned PDFs works out of the box in English and Turkish; nothing else to install.
 
 ## Install on Windows
 
@@ -25,9 +25,9 @@ A preview for Windows 10 and 11 on x64 PCs. So far it has been tried on a GitHub
 1. Download `DEIXIS_<version>_x64-setup.exe` from [Releases](https://github.com/huguryildiz/DEIXIS/releases) and check its SHA-256 against the release page: `Get-FileHash .\DEIXIS_*_x64-setup.exe`.
 2. Run it. The installer is not signed, so SmartScreen may stop it: choose More info, then Run anyway. It installs for your user only, without an administrator prompt, into `%LOCALAPPDATA%\Programs\DEIXIS`.
 
-DEIXIS opens in its own window. Closing the window keeps it running in the notification area, where Quit stops it and everything it started. Your library stays in `%LOCALAPPDATA%\DEIXIS` when you update or uninstall the app. There is no automatic update: run the newer installer.
+DEIXIS opens in its own window. Closing the window keeps it running in the notification area, where Quit stops it and everything it started. Your library stays in `%LOCALAPPDATA%\DEIXIS` when you update or uninstall the app. There is no automatic update: DEIXIS says when a newer version exists (as on macOS); run the newer installer.
 
-Not in the Windows preview: the built-in local models in Settings (keyword search, the Voyage reranker and API embedding connections work), and reading arXiv LaTeX sources (the PDF is read instead). OCR needs Tesseract from the [UB Mannheim installer](https://github.com/UB-Mannheim/tesseract/wiki); DEIXIS finds it in its default folder.
+Not in the Windows preview: the built-in local models in Settings (keyword search, the Voyage reranker and API embedding connections work), and reading arXiv LaTeX sources (the PDF is read instead).
 
 ## Run from source
 

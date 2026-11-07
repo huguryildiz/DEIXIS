@@ -39,6 +39,12 @@ MANUAL:
   kill_backend   `kill -9` of the backend under the gemini step: nothing left within 15 s; the window shows
                  the "backend stopped" page (screenshot); its Restart starts a new backend; then Quit
   tray           the menu-bar item exists; its menu cannot be opened through Accessibility: MANUAL
+  ocr            OCR with the app's own language data (P10 M3): /api/ocr says bundled, engine pymupdf, eng+tur, its folder
+                 inside the installed .app; a scanned SYNTHETIC page read by the app's OCR run gives its words; no
+                 `tesseract` process was seen (Homebrew's stays installed, the frozen app never asks it)
+  theme          the window follows Settings' theme (P10 M3): Dark saved through the API reaches the shell's
+                 `window-theme` file within one status poll; after Quit the next launch shows a dark first frame
+                 (screenshot of the launch page, mean brightness) and its page's prefers-color-scheme is dark
 
 Rows that drive the window (open, csrf_save, second_launch, close_keeps, the Restart half of kill_backend, download)
 are NOT_DONE while the screen is locked (the frontmost app is loginwindow): no window can come to the front then, and
@@ -60,6 +66,7 @@ import os
 import shutil
 import signal
 import socket
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -71,7 +78,7 @@ import httpx
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(REPO), str(REPO / "tests" / "support")]
-from helpers import make_pdf  # noqa: E402
+from helpers import make_pdf, make_scanned_pdf  # noqa: E402
 
 from deixis.tools import child_record  # noqa: E402
 
@@ -173,10 +180,10 @@ class Watcher:
 class Scenario:
     """One launch of the installed app with its own data folder."""
 
-    def __init__(self, work: Path, app: Path, env: dict[str, str], name: str):
+    def __init__(self, work: Path, app: Path, env: dict[str, str], name: str, data: Path | None = None):
         self.name, self.app = name, app
-        self.data = work / f"data-{name}"
-        self.data.mkdir()
+        self.data = data or work / f"data-{name}"  # `data`: another scenario's library, started again
+        self.data.mkdir(exist_ok=data is not None)
         self.port = free_port()
         (self.data / "desktop-port.json").write_text(json.dumps({"port": self.port}))
         self.env = env | {"DEIXIS_DATA_DIR": str(self.data), "DEIXIS_PORT": str(free_port())}
@@ -280,6 +287,16 @@ class UI:
     def window(self, pid: int) -> dict | None:
         found = [w for w in self("windows", str(pid)) or [] if w.get("layer") == 0 and w.get("name") == "DEIXIS"]
         return found[0] if found else None
+
+
+def brightness(png: Path) -> float:
+    """The mean of a screenshot's grey values, 0 (black) to 255 (white)."""
+    import pymupdf
+
+    base = pymupdf.Pixmap(str(png))
+    pix = pymupdf.Pixmap(pymupdf.csGRAY, pymupdf.Pixmap(base, 0) if base.alpha else base)
+    samples = pix.samples
+    return round(sum(samples) / len(samples), 1)
 
 
 def wait_for(check, seconds: float, step: float = 0.2):
@@ -600,6 +617,86 @@ def main() -> int:
                         "left_before_quit": [p["command"][:80] for p in left_now],
                         "restart_pressed": (pressed or {}).get("pressed"), "restarted": restarted}
             quit_with_load("kill_backend", lambda sc: start_model_steps(sc, bin_dir, gemini), kill_backend)
+        if wanted("ocr"):
+            sc = Scenario(work, app, env, "ocr")
+            scenarios.append(sc)
+            sc.launch()
+            if sc.wait_health() is None:
+                row("ocr", False, reason="no health within 60 s")
+            else:
+                client = sc.session()
+                tool = client.get("/api/ocr").json()
+                inside = bool(tool.get("path")) and Path(tool["path"]).resolve().is_relative_to(app.resolve())
+                facts = {k: tool.get(k) for k in ("bundled", "engine", "languages", "version", "path", "reason")}
+                made = client.post("/api/researches", json={"question": "SYNTHETIC scanned question?", "source_scope": "attached",
+                                                            "effort": "quick", "model_connection": "codex",
+                                                            "requested_model": "gpt-fake", "reasoning_effort": "medium"})
+                rid = made.json()["research"]["id"]
+                uploaded = client.post(f"/api/researches/{rid}/uploads", files={"file": ("synthetic-scan.pdf", make_scanned_pdf(
+                    [("scan", "SYNTHETIC scanned page about bounded release schedules")]), "application/pdf")}).json()
+                svid = uploaded.get("uploaded_source_version_id")
+                with sqlite3.connect(f"file:{sc.data / 'library.sqlite'}?mode=ro", uri=True) as conn:
+                    asset = conn.execute("SELECT id FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL",
+                                         (svid,)).fetchone()
+                started = client.post(f"/api/researches/{rid}/sources/{svid}/assets/{asset[0] if asset else ''}/ocr")
+                run = wait_run(client, rid, started.json()["id"])[1] if started.status_code == 202 else {}
+                with sqlite3.connect(f"file:{sc.data / 'library.sqlite'}?mode=ro", uri=True) as conn:
+                    text = " ".join(r[0] for r in conn.execute(
+                        "SELECT text FROM passages WHERE asset_id = ? AND text_source = 'ocr'", (asset[0] if asset else "",)))
+                asked = [p["command"][:100] for p in sc.watch.seen.values() if "tesseract" in Path(p["command"].split(" ")[0]).name]
+                row("ocr", bool(tool.get("bundled") and tool.get("engine") == "pymupdf" and tool.get("languages") == ["eng", "tur"]
+                                and inside and run.get("status") == "completed" and "release" in text.lower() and not asked),
+                    **facts, data_inside_app=inside, start=started.status_code, run=run.get("status"),
+                    failure=run.get("failure_reason"), text=text[:80], tesseract_processes=asked)
+            trigger = time.monotonic()
+            ui("terminate", str(sc.proc.pid))
+            sc.check_left(trigger)
+        if wanted("theme"):
+            saved = home / "Library" / "Application Support" / "org.deixis.desktop" / "window-theme"
+            sc = Scenario(work, app, env, "theme")
+            scenarios.append(sc)
+            sc.launch()
+            facts: dict = {}
+            if sc.wait_health() is None:
+                row("theme", False, reason="no health within 60 s")
+            else:
+                put = sc.session().put("/api/settings/preferences", json={"theme": "dark"})
+                kept = wait_for(lambda: saved.is_file() and saved.read_text().strip() == "dark", 12, 0.25)
+                facts |= {"put": put.status_code, "window_theme_file": saved.read_text().strip() if saved.is_file() else None}
+                trigger = time.monotonic()
+                ui("terminate", str(sc.proc.pid))
+                sc.check_left(trigger)
+                again = Scenario(work, app, env, "theme-again", data=sc.data)  # the same library, which holds Dark
+                scenarios.append(again)
+                again.launch()
+                if ui.locked():
+                    healthy = again.wait_health() is not None
+                    stored = again.session().get("/api/settings/preferences").json().get("theme") if healthy else None
+                    row("theme", None if kept and stored == "dark" else False, reason=locked, theme_after_restart=stored, **facts)
+                else:
+                    window = wait_for(lambda: (w := ui.window(again.proc.pid)) and w.get("onscreen") and w, 60, 0.05)
+                    shot = work / "theme-launch.png"
+                    if window:
+                        subprocess.run(["screencapture", "-x", "-o", "-l", str(window["id"]), str(shot)], capture_output=True)
+                    first = brightness(shot) if shot.exists() else None
+                    healthy = again.wait_health() is not None
+                    stored = again.session().get("/api/settings/preferences").json().get("theme") if healthy else None
+                    content = wait_for(lambda: "New research" in (ui("texts", str(again.proc.pid)) or []), 30, 1) if healthy else None
+                    time.sleep(2)  # the backend's page renders
+                    page = work / "theme-page.png"
+                    if window:
+                        ui("activate", str(again.proc.pid))
+                        time.sleep(1)
+                        subprocess.run(["screencapture", "-x", "-o", "-l", str(window["id"]), str(page)], capture_output=True)
+                    later = brightness(page) if page.exists() else None
+                    row("theme", bool(kept and stored == "dark" and content and first is not None and first < 80
+                                      and later is not None and later < 80),
+                        **facts, theme_after_restart=stored, research_ui=bool(content), first_frame_brightness=first,
+                        page_brightness=later, screenshots=[str(shot), str(page)])
+                trigger = time.monotonic()
+                ui("terminate", str(again.proc.pid))
+                again.check_left(trigger)
+                again.kill_all()  # nothing of it may hold the single-instance lock when the next scenario starts
         if wanted("download"):
             clear_markers(bin_dir)
             (bin_dir / "no-hang").write_text("")  # fake codex answers: the report needs a finished answer

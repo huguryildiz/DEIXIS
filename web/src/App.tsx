@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { Check, Circle, Clock, Ellipsis, Inbox, Keyboard, LibraryBig, Menu, Moon, PanelLeft, Pause, PencilLine, Plus, Search, SlidersHorizontal, Sun, Trash2, TriangleAlert } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { api, ApiError, shellApi, type InstitutionalAccess, type Profile, type ProxySettings, type ResearchSummary, type RunStatus, preferencesApi, type PreferenceChange } from './lib/api'
+import { api, ApiError, shellApi, type InstitutionalAccess, type Profile, type ProxySettings, type ResearchSummary, type RunStatus, type Updates, preferencesApi, type PreferenceChange } from './lib/api'
 import { runStatusLabels } from './lib/labels'
 import { Home } from './home/Home'
 import { EmptyResearch, ResearchPage } from './research/ResearchView'
@@ -181,6 +181,15 @@ export default function App() {
     const onChange = (event: MediaQueryListEvent) => setSystemDark(event.matches)
     media.addEventListener('change', onChange)
     return () => media.removeEventListener('change', onChange)
+  }, [])
+  // A newer DEIXIS release (update_check.py, P10 M3): read now and every five minutes; the server asks GitHub at most once a day.
+  const [newer, setNewer] = useState<Updates['latest']>(null)
+  useEffect(() => {
+    let live = true
+    const read = () => shellApi.updates().then(value => { if (live) setNewer(value.latest) }, () => { /* nothing is shown */ })
+    read()
+    const timer = window.setInterval(read, 5 * 60_000)
+    return () => { live = false; window.clearInterval(timer) }
   }, [])
   useEffect(() => { document.documentElement.classList.toggle('dark', dark) }, [dark])
   useEffect(() => { document.documentElement.lang = language }, [language])
@@ -597,6 +606,7 @@ export default function App() {
         </div>}
         <BackgroundJobs researches={researches} dark={dark} onOpenResearch={id => go({ view: 'research', id })} />
         {/* The foot keeps one DOM shape while its reads arrive (profile, proxy, Scopus): only text, inline style and data attributes change. */}
+        {newer && <p className="update-line">{t('Version {version} is available.', { version: newer.version })} <a href={newer.url} target="_blank" rel="noopener noreferrer">{t('Download')}</a></p>}
         <button type="button" className="access" onClick={() => go({ view: 'settings', tab: 'access' })} aria-label={accessName} title={t('Institutional access settings')}>
           <span className="access-label" style={proxy?.address ? undefined : { display: 'none' }}>{proxy?.address ? t('Institutional access · {label}', { label: proxyLabel }) : ''}</span>
           <span className="access-line"><i className="access-dot" data-tone={proxyState.tone} aria-hidden="true" /><span>{proxyState.tone === 'checking' ? <span className="shimmer-text">{proxyState.text}</span> : proxyState.text}</span></span>

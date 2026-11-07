@@ -10,10 +10,9 @@ MuPDF (inside PyMuPDF)
   commercial licence. DEIXIS uses the AGPL-3.0 option and is itself AGPL-3.0-or-later. https://mupdf.com/
 
 Tesseract OCR and its language data
-  Tesseract OCR engine: Apache-2.0, with a NOTICE file that goes with any distribution that includes one.
-  Tessdata language files (tessdata_fast and tessdata_best): Apache-2.0.
-  The libraries a bundled Tesseract build links (for example Leptonica) carry their own permissive licences, listed from
-  the build's actual contents. https://github.com/tesseract-ocr/tesseract
+  The OCR engine is the Tesseract copy built into MuPDF (above); the package holds no separate Tesseract program or
+  library. The package carries two language files from tessdata_fast 4.1.0, eng.traineddata and tur.traineddata:
+  Apache-2.0, whose text ships next to them as tessdata/LICENSE. https://github.com/tesseract-ocr/tessdata_fast
 
 Tauri and the system web view (desktop shell)
   Tauri: MIT or Apache-2.0, as are most of the Rust crates it builds on; the crate list is generated from the shell's

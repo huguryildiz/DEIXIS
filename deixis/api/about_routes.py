@@ -1,5 +1,5 @@
 """Settings → General → About (pre-P10 F2, F5): the app's version and licence, where this version's source is, the
-third-party notices text, and the "Report a problem" link.
+third-party notices text, the "Report a problem" link, and the version check's last answer (P10 M3).
 
 The report link carries three facts and nothing else: the DEIXIS version, the operating system name and the CPU
 architecture, each checked against a short list or a pattern. No path, user name, email, key or error text goes into it.
@@ -12,10 +12,10 @@ import re
 from importlib.metadata import PackageNotFoundError, version
 from urllib.parse import urlencode
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
-from deixis import paths
+from deixis import paths, update_check
 
 REPO_URL = "https://github.com/huguryildiz/DEIXIS"
 LICENSE_ID = "AGPL-3.0-or-later"
@@ -70,6 +70,11 @@ def register_about_routes(app) -> None:
         return {"version": number, "license": LICENSE_ID, "repo_url": REPO_URL, "source_url": source, "source_is_tag": is_tag,
                 "notices_available": notices_path() is not None, "os": os_name, "arch": arch,
                 "report_url": report_url(number, os_name, arch)}
+
+    @app.get("/api/updates")
+    async def updates(request: Request) -> dict:
+        """The version check's switch and last answer (`update_check.py`); reads the library only, sends nothing."""
+        return update_check.view(request.app.state.store, clean_version(app_version()))
 
     @app.get("/api/about/notices")
     async def notices() -> PlainTextResponse:

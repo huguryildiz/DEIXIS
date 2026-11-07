@@ -4,6 +4,11 @@ A page is read on request, one page per bounded child process, so a `pdf_ocr` ru
 and not read it again after a restart. Only pages that `pdf.extract_pdf` names as image pages are merged; text layer
 pages are never replaced. No file leaves the machine and the PDF is not rewritten.
 
+The engine is MuPDF's built-in Tesseract inside PyMuPDF; it needs only the language files (`*.traineddata`). The
+packaged app carries eng and tur (P10 M3) and hands them over in TESSDATA_PREFIX, so no `tesseract` program is started
+there. A run from the repository uses the person's Tesseract install: PyMuPDF asks that program where its data is, and
+the Settings card reports that program's version.
+
 OCR text is not checked text: Tesseract gives PyMuPDF no word confidence here, superscripts and equations come out
 wrong in places, and letters of a language without installed data are misread. "succeeded" only means text was found.
 """
@@ -22,6 +27,7 @@ from pathlib import Path
 
 import pymupdf
 
+from deixis.paths import is_frozen, resource_root
 from deixis.tools.child_env import child_env
 from deixis.documents import pdf
 from deixis.tools.tool_paths import find_tool, is_bundled
@@ -34,6 +40,7 @@ DPI = 300
 TIMEOUT_SECONDS = 60  # per page; provisional until measured on real scans
 MAX_MEMORY_BYTES = 1024 * 1024 * 1024
 OCR_VERSION = "v2"  # v2: words hyphenated at a line or block end are joined in any lowercase letters ("gö-/re")
+TESSDATA_VARIABLE = "DEIXIS_TESSDATA"  # an absolute folder of *.traineddata files, used before the package's own
 
 
 @dataclass
@@ -59,11 +66,36 @@ REASONS = {
 }
 
 
+def tessdata_folder() -> tuple[Path, bool] | None:
+    """The language-data folder handed to MuPDF's built-in Tesseract and whether it is the packaged app's own: the
+    DEIXIS_TESSDATA folder, else, in the packaged app, its `tessdata` even when damaged or missing (reported as such;
+    never a Tesseract installed elsewhere); None in a run from the repository (the person's Tesseract is asked)."""
+    if (named := os.environ.get(TESSDATA_VARIABLE)) and os.path.isabs(named):
+        return Path(named), False
+    if is_frozen():
+        return resource_root() / "tessdata", True
+    return None
+
+
+def _data_status(folder: Path, bundled: bool, langs) -> dict:
+    """The status of a language-data folder; nothing is started. The version is PyMuPDF's, whose engine reads the page."""
+    installed = {p.name.removesuffix(".traineddata") for p in folder.glob("*.traineddata") if p.is_file()}
+    languages = [lang for lang in langs if lang in installed]
+    absent = [lang for lang in langs if lang not in installed]
+    return {"available": bool(languages), "version": f"pymupdf-{pymupdf.VersionBind}", "engine": "pymupdf",
+            "languages": languages, "missing_languages": absent, "path": str(folder), "bundled": bundled,
+            "reason": "tesseract_languages_missing" if absent else None}
+
+
 def tesseract_status(langs=LANGUAGES) -> dict:
     """Whether Tesseract is installed, its version, and which of `langs` have data. `reason` is a code from `REASONS`, or
     None. `path` is the copy chosen; `bundled` says it is the one that comes with the packaged app (B1), which is updated
-    with DEIXIS and not by Homebrew. Call it off the event loop."""
-    missing = {"available": False, "version": None, "languages": [], "missing_languages": list(langs), "path": None, "bundled": False}
+    with DEIXIS and not by Homebrew. `engine` is "pymupdf" for a language-data folder (`tessdata_folder`) and
+    "tesseract" for the person's program. Call it off the event loop."""
+    if (data := tessdata_folder()) is not None:
+        return _data_status(*data, langs)
+    missing = {"available": False, "version": None, "languages": [], "missing_languages": list(langs), "path": None,
+               "bundled": False, "engine": "tesseract"}
     if (tesseract := find_tool("tesseract")) is None:
         return missing | {"reason": "tesseract_missing"}
     missing |= {"path": tesseract, "bundled": is_bundled(tesseract)}
@@ -83,9 +115,13 @@ def tesseract_status(langs=LANGUAGES) -> dict:
 def read_page(path: Path, page: int, langs, timeout: float = TIMEOUT_SECONDS, max_memory: int = MAX_MEMORY_BYTES) -> OcrPage:
     """OCR one physical page (1-based) in a child process limited in time and memory."""
     argv = [sys.executable, "-m", "deixis.documents.ocr", str(path), str(page), "+".join(langs), str(max_memory)]
-    # PyMuPDF finds the Tesseract data through TESSDATA_PREFIX or by running `tesseract`, so the child needs both.
-    env = child_env({"PYTHONPATH": str(Path(__file__).resolve().parents[2])}, keep=("TESSDATA_PREFIX",), bundled=True,
-                    tool=find_tool("tesseract"))
+    # PyMuPDF finds the Tesseract data through TESSDATA_PREFIX or by running `tesseract`. With DEIXIS's own data folder
+    # the child gets that folder and never the person's TESSDATA_PREFIX; otherwise it needs both of the person's.
+    extra = {"PYTHONPATH": str(Path(__file__).resolve().parents[2])}
+    if (data := tessdata_folder()) is not None:
+        env = child_env(extra | {"TESSDATA_PREFIX": str(data[0])}, bundled=True)
+    else:
+        env = child_env(extra, keep=("TESSDATA_PREFIX",), bundled=True, tool=find_tool("tesseract"))
     try:
         if sys.platform == "win32":  # in its own job with the memory limit (P10 W2)
             completed = pdf._run_watched(argv, env, timeout, max_memory)

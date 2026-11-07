@@ -4,16 +4,27 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DEIXIS</title>
+  <script>
+    // The theme chosen in Settings, passed by the shell (P10 M3), before the first paint; anything else follows the system.
+    (function () {
+      var theme = new URLSearchParams(location.search).get("theme");
+      if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
+    })();
+  </script>
   <style>
     :root {
       --bg: #f7f8fb; --surface: #ffffff; --text: #1d2433; --muted: #566074; --line: #dfe3ea;
       --accent: #3b5b9a; --accent-ink: #ffffff; --exclude-ink: #9b2c2c; --exclude-bg: #fbecec;
     }
     @media (prefers-color-scheme: dark) {
-      :root {
+      :root:not([data-theme=light]) {
         --bg: #14171d; --surface: #1b1f27; --text: #e6e9ef; --muted: #a3abba; --line: #2c323d;
         --accent: #8aa6e0; --accent-ink: #10141b; --exclude-ink: #f3b4b4; --exclude-bg: #3a2023;
       }
+    }
+    :root[data-theme=dark] {
+      --bg: #14171d; --surface: #1b1f27; --text: #e6e9ef; --muted: #a3abba; --line: #2c323d;
+      --accent: #8aa6e0; --accent-ink: #10141b; --exclude-ink: #f3b4b4; --exclude-bg: #3a2023;
     }
     html, body { height: 100%; margin: 0; }
     body {

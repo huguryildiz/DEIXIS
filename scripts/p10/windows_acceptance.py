@@ -30,6 +30,9 @@ PASS or MANUAL:
   kill_backend   TerminateProcess on deixis-backend.exe under the same load: the window shows the "backend stopped"
                  page (screenshot), nothing of the old backend is left, its Restart starts a new backend; then Quit and
                  nothing left
+  ocr            OCR with no Tesseract on the machine (P10 M3): /api/ocr reports the package's own eng+tur data (bundled,
+                 engine pymupdf, under the install folder); a scanned SYNTHETIC page (made with --fake-python's PyMuPDF)
+                 read by the app's OCR run gives its words as OCR passages
   download       a finished research's report (Markdown) and its CSV, through the window's Export menu, land in the
                  user's Downloads folder (SHGetKnownFolderPath) with their content; moved into the evidence folder
   uninstall      `uninstall.exe /S` removes the install folder and its HKCU entry; every scenario's library folder and
@@ -61,6 +64,7 @@ import json
 import os
 import shutil
 import socket
+import sqlite3
 import struct
 import subprocess
 import sys
@@ -951,6 +955,43 @@ def quit_app(sc: Scenario, use_tray: bool) -> dict:
 
 # ------------------------------------------------------------------------------------------------------ main ---
 
+def ocr_check(sc: "Scenario", python: str) -> dict:
+    """The installed app's own OCR data, then one scanned page read by its OCR run; the facts and `ok`."""
+    api = sc.session()
+    _, tool = api.json("GET", "/api/ocr")
+    path = Path(tool.get("path") or "")
+    own = (tool.get("bundled") is True and tool.get("engine") == "pymupdf" and tool.get("languages") == ["eng", "tur"]
+           and path.is_absolute() and path.resolve().is_relative_to(INSTALL.resolve()))
+    facts = {"bundled": tool.get("bundled"), "engine": tool.get("engine"), "languages": tool.get("languages"),
+             "data_path": tool.get("path"), "version": tool.get("version"), "reason": tool.get("reason")}
+    made = subprocess.run([python, "-c", "import sys; sys.path.insert(0, sys.argv[1]); from helpers import make_scanned_pdf; "
+                           "sys.stdout.buffer.write(make_scanned_pdf([('scan', 'SYNTHETIC scanned page about bounded release schedules')]))",
+                           str(REPO / "tests" / "support")], capture_output=True, timeout=120)
+    rid = new_research(api, "ocr")
+    if not own or made.returncode != 0 or not rid:
+        return {"ok": False, **facts, "scan_made": made.returncode == 0, "research": bool(rid)}
+    _, uploaded = api.upload(f"/api/researches/{rid}/uploads", "synthetic-scan.pdf", made.stdout)
+    svid = uploaded.get("uploaded_source_version_id")
+    library = f"file:{sc.data / 'library.sqlite'}?mode=ro"
+    with sqlite3.connect(library, uri=True) as conn:
+        asset = conn.execute("SELECT id FROM source_assets WHERE source_version_id = ? AND removed_at IS NULL", (svid,)).fetchone()
+    status, run = api.json("POST", f"/api/researches/{rid}/sources/{svid}/assets/{asset[0] if asset else ''}/ocr")
+    finished = None
+    ends = time.monotonic() + 240
+    while status == 202 and time.monotonic() < ends:
+        view = api.json("GET", f"/api/researches/{rid}")[1]
+        finished = next((r for r in view.get("runs", []) if r["id"] == run.get("id")), None)
+        if finished and finished["status"] in ("completed", "failed", "paused", "cancelled"):
+            break
+        time.sleep(1)
+    with sqlite3.connect(library, uri=True) as conn:
+        text = " ".join(r[0] for r in conn.execute("SELECT text FROM passages WHERE asset_id = ? AND text_source = 'ocr'",
+                                                   (asset[0] if asset else "",)))
+    return {"ok": bool(finished and finished["status"] == "completed" and "release" in text.lower()), **facts,
+            "start": status, "run": (finished or {}).get("status"), "failure": (finished or {}).get("failure_reason"),
+            "text": text[:80]}
+
+
 def install_row(installer: Path, evidence: Path) -> bool:
     if INSTALL.exists():
         row("install", False, reason=f"{INSTALL} exists before the install: uninstall it first")
@@ -1162,6 +1203,15 @@ def main() -> int:
                 restart_pressed=bool(pressed), restarted_s=round(restarted_s, 2) if restarted_s else None,
                 old_backend=backend, new_backend=new_backend, then_quit=how, **facts, after_quit=left)
             sc.kill_all()
+
+        if wanted("ocr") and (sc := launched("ocr")):
+            try:
+                facts = ocr_check(sc, args.fake_python)
+            finally:
+                how = quit_app(sc, False)
+                left = sc.check_left(time.monotonic())  # gone before the next scenario launches
+                sc.kill_all()
+            row("ocr", facts.pop("ok") and left["ok"], **facts, quit=how.get("quit_via"), left_ok=left["ok"])
 
         if wanted("download") and (sc := launched("download")):
             for marker in bin_dir.glob("*.json"):

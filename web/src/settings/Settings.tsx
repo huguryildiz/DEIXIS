@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { BookOpenText, Info, PenLine, RotateCw, ShieldCheck, Sigma } from 'lucide-react'
-import { api, preferencesApi, shellApi, spendApi, usageApi, type About, type ContactEmailSetting, type Effort, type EffortLimits, type PreferenceChange, type Preferences, type Profile, type Connections, type InstitutionalAccess, type DefaultRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Spending, type ConnectionUsage, type ModelUsage, type QuotaWindow, type UsageRole } from '../lib/api'
+import { api, preferencesApi, shellApi, spendApi, usageApi, type About, type ContactEmailSetting, type Effort, type EffortLimits, type PreferenceChange, type Preferences, type Profile, type Connections, type InstitutionalAccess, type DefaultRole, type OpenAlexBudgetToday, type ProxySettings, type RoleModelSetting, type Spending, type Updates, type ConnectionUsage, type ModelUsage, type QuotaWindow, type UsageRole } from '../lib/api'
 import { canRun, connectionModels, modelKey, type ConnectionModel } from '../home/Home'
 import { defaultEffort, exposesEffortControl } from '../lib/modelEffort'
 import { ConnectionsTab } from './Connections'
 import { ConnectionIcon } from '../components/connectionIcons'
-import { DataFlowsSection } from './DataFlows'
+import { DataFlowsSection, UPDATES_SWITCHED } from './DataFlows'
 import { useToast } from '../components/Toast'
 import { t, uiLocale, type UiLanguage } from '../lib/i18n'
 import { connectionName, money, reasoningLabel } from '../lib/labels'
@@ -296,13 +296,35 @@ export function SettingsPage({ dark, section, language, onLanguage, theme, onThe
 // problem link comes from the server, which builds it from the version, OS name and architecture only.
 function AboutSection() {
   const [about, setAbout] = useState<About | null>(null)
+  const [updates, setUpdates] = useState<Updates | null>(null)
+  const [updatesFailed, setUpdatesFailed] = useState(false)
   const [failed, setFailed] = useState('')
+  const [busy, setBusy] = useState(false)
+  const toast = useToast()
   useEffect(() => {
     let live = true
     const leaving = new AbortController()
     shellApi.about(leaving.signal).then(value => { if (live) setAbout(value) }, (e: Error) => { if (live) setFailed(e.message) })
-    return () => { live = false; leaving.abort() }
+    // The version check's stored state, read again every 5 s while About is shown: a check started by the switch (or
+    // the daily one) lands here when it is answered.
+    const read = () => shellApi.updates(leaving.signal).then(value => { if (live) { setUpdates(value); setUpdatesFailed(false) } },
+      () => { if (live) setUpdatesFailed(true) })
+    read()
+    const timer = window.setInterval(read, 5000)
+    return () => { live = false; leaving.abort(); window.clearInterval(timer) }
   }, [])
+  // The version check (P10 M3): turning it on checks at once when the last check is a day old. The saved switch is shown
+  // at once and told to "Where your data goes", whose text depends on it.
+  function switchUpdates(next: 'on' | 'off') {
+    setBusy(true)
+    preferencesApi.set({ update_check: next })
+      .then(saved => {
+        window.dispatchEvent(new CustomEvent(UPDATES_SWITCHED))
+        return shellApi.updates().then(value => setUpdates({ ...value, enabled: saved.update_check === 'on' }))
+      })
+      .catch((e: Error) => toast('error', e.message)).finally(() => setBusy(false))
+  }
+  const checked = updates?.checked_at ? new Date(updates.checked_at).toLocaleString(uiLocale(), { dateStyle: 'medium', timeStyle: 'short' }) : null
   const external = { target: '_blank', rel: 'noopener noreferrer' } as const
   return <>
     <h2 id="about" data-panel="general">{t('About')}</h2>
@@ -311,6 +333,17 @@ function AboutSection() {
       <div>
         <b>{t('Version')}</b>
         <p>{about ? `${about.version} · ${about.os} ${about.arch}` : <span className="shimmer-text">{t('Checking…')}</span>}</p>
+      </div>
+      <div>
+        <b>{t('Updates')}</b>
+        <p>{t('Once a day DEIXIS asks GitHub whether a newer version exists. GitHub sees your IP address; nothing else is sent, and nothing is downloaded or installed.')}{' '}
+          {!updates ? (updatesFailed ? t('Could not be read.') : <span className="shimmer-text" role="status">{t('Checking…')}</span>)
+            : !updates.enabled ? t('The check is off.')
+            : updates.latest ? <>{t('Version {version} is available.', { version: updates.latest.version })} <a href={updates.latest.url} {...external}>{t('Download')}</a></>
+            : checked ? t('Checked {when}: no newer version was found.', { when: checked })
+            : t('Not checked yet.')}</p>
+        <Segment label={t('Check for new versions')} value={updates ? (updates.enabled ? 'on' : 'off') : null} disabled={!updates || busy}
+          onPick={switchUpdates} options={[{ id: 'on', label: t('On') }, { id: 'off', label: t('Off') }]} />
       </div>
       <div>
         <b>{t('License')}</b>

@@ -2,7 +2,7 @@
 
 Resolved from inside the running process, so a packaged build checks the paths its own code reads (`sys._MEIPASS`),
 not a folder listing: the contracts, the method package (with its integrity check), the library schema, the built web
-app and every `package_manifest.DATAS` entry, and every module in `package_manifest.HIDDEN_IMPORTS` is imported. Writes
+app, every `package_manifest.DATAS` entry and, in a packaged build, the pinned OCR language files; every module in `package_manifest.HIDDEN_IMPORTS` is imported. Writes
 nothing; exit 0 when all are present, else 1 with one line per missing item. The JSON line also names the sha256 of
 the build identity file this process holds, so a smoke run can tie the running binary to the code it was built from.
 """
@@ -49,6 +49,7 @@ def problems() -> list[str]:
         identity = root / "deixis" / package_manifest.BUILD_IDENTITY
         if not identity.is_file():
             missing.append(f"build identity: {identity} missing")
+        missing += tessdata_problems(root / "tessdata")
     try:
         version("deixis")
     except PackageNotFoundError:
@@ -59,6 +60,20 @@ def problems() -> list[str]:
         except Exception as exc:  # noqa: BLE001 - every failure is reported, none stops the check
             missing.append(f"module {module}: {type(exc).__name__}: {exc}")
     return missing
+
+
+def tessdata_problems(folder: Path) -> list[str]:
+    """The OCR language files and their licence in a packaged build (P10 M3), each with the sha256 PINS.json names."""
+    try:
+        pins = json.loads((folder / "PINS.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return [f"OCR language data: {folder / 'PINS.json'} missing or unreadable"]
+    found = []
+    for name in ("eng.traineddata", "tur.traineddata", "LICENSE"):
+        path = folder / name
+        if name not in pins or not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != pins[name]:
+            found.append(f"OCR language data: {path} missing or not the pinned file")
+    return found
 
 
 def identity_sha256() -> str | None:

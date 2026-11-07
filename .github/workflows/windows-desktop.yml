@@ -1,7 +1,7 @@
 # P10 Windows (W4, W3): the Tauri shell and the real backend sidecar on a Windows x64 runner. Started by hand only
 # (`gh workflow run windows-desktop.yml`). Builds the sidecar (PyInstaller onedir: deixis-backend.exe + _internal\),
-# runs the sidecar smoke against it (scripts/p10/sidecar_smoke.py, with Tesseract from the UB Mannheim installer and the
-# DLL probe built with rustc), lints and tests the shell, then builds the NSIS installer around that sidecar
+# runs the sidecar smoke against it (scripts/p10/sidecar_smoke.py, OCR with the package's own language data and no
+# Tesseract installed, and the DLL probe built with rustc), lints and tests the shell, then builds the NSIS installer around that sidecar
 # (packaging/build_windows.py: the sidecar inside equals the build, SHA-256 printed) and keeps it as an artifact.
 name: windows-desktop
 
@@ -42,13 +42,6 @@ jobs:
       - run: npm ci
         working-directory: desktop
       - run: uv sync --frozen --group packaging
-      - name: Tesseract (UB Mannheim installer, English and Turkish data)
-        shell: pwsh
-        run: |
-          choco install tesseract -y --no-progress
-          $tessdata = "$env:ProgramFiles\Tesseract-OCR\tessdata"
-          Invoke-WebRequest https://github.com/tesseract-ocr/tessdata_fast/raw/main/tur.traineddata -OutFile "$tessdata\tur.traineddata"
-          & "$env:ProgramFiles\Tesseract-OCR\tesseract.exe" --list-langs
       - name: Sidecar
         run: uv run --no-sync python packaging/sidecar/build.py
       - name: Sidecar smoke

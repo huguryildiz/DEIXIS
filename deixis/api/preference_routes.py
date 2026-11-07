@@ -1,5 +1,5 @@
 """Settings → General → Research: the default depth of a new research and three background behaviors; and the
-interface language and theme.
+interface language and theme; and whether DEIXIS asks GitHub once a day for a newer version (`update_check.py`).
 
 Each value is stored in `app_settings` and comes before the value DEIXIS started with (its environment variable or
 default). The full-text fetch is read when a discovery run is queued, so a run already queued keeps its mode; the
@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from deixis.config import (ARXIV_SOURCE_SETTING, DEFAULT_EFFORT_SETTING, FULLTEXT_FETCH_SETTING, MODEL_CONCURRENCY_MAX,
                            MODEL_CONCURRENCY_SETTING)
+from deixis import update_check
 from deixis.documents import arxiv_source
 
 EFFORTS = ("quick", "standard", "detailed")
@@ -35,6 +36,7 @@ class Preferences(BaseModel):
     model_concurrency: int | None = Field(default=None, ge=1, le=MODEL_CONCURRENCY_MAX)
     language: Literal["en", "tr"] | None = None
     theme: Literal["system", "light", "dark"] | None = None
+    update_check: Literal["on", "off"] | None = None
     fill_only: bool = False
 
 
@@ -53,6 +55,7 @@ def register_preference_routes(app) -> None:
             "model_concurrency_max": MODEL_CONCURRENCY_MAX,
             "language": language if (language := store.setting(UI_LANGUAGE_SETTING)) in LANGUAGES else None,
             "theme": theme if (theme := store.setting(UI_THEME_SETTING)) in THEMES else None,
+            "update_check": "on" if update_check.enabled(store) else "off",
         }
 
     @app.get("/api/settings/preferences")
@@ -72,11 +75,13 @@ def register_preference_routes(app) -> None:
             return view(request)
         keys = {"default_effort": DEFAULT_EFFORT_SETTING, "fulltext_fetch": FULLTEXT_FETCH_SETTING,
                 "arxiv_source": ARXIV_SOURCE_SETTING, "model_concurrency": MODEL_CONCURRENCY_SETTING,
-                "language": UI_LANGUAGE_SETTING, "theme": UI_THEME_SETTING}
+                "language": UI_LANGUAGE_SETTING, "theme": UI_THEME_SETTING, "update_check": update_check.SETTING}
         for name, value in changes.items():
             store.set_setting(keys[name], value)
         if "arxiv_source" in changes and (equations := getattr(state, "equations", None)) is not None:
             equations.arxiv_mode = changes["arxiv_source"]
         if "model_concurrency" in changes and (limiter := getattr(state, "limiter", None)) is not None:
             await limiter.set_limit(changes["model_concurrency"])
+        if changes.get("update_check") == "on" and (checker := getattr(state, "update_check", None)) is not None:
+            checker.soon()  # turned on: checks at once when the last check is a day old
         return view(request)

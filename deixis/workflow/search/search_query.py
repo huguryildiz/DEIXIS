@@ -218,13 +218,31 @@ async def check(answer: dict[str, Any], count: Callable[[str], Awaitable[int | N
     }
 
 
+def code_query_left_out(code_vocabulary: dict[str, Any], max_total: int | None) -> str | None:
+    """Why the code's query is not searched beside the model's under the width limit of the `m1` search method (D163
+    M1), or None. Without a limit (a `legacy` run) nothing is left out here. The probed gate count decides, read before
+    any search: the compiler only trims OR terms and keeps every block, so a sent query matches no more works."""
+    if max_total is None:
+        return None
+    blocks = {term["block"] for term in code_vocabulary["terms"] if not term["dropped"]}
+    if not all(block in blocks for block in GATE_BLOCKS):
+        return "one_block"
+    count = code_vocabulary.get("gate_count")
+    if not isinstance(count, int):
+        return "count_unknown"
+    return "too_wide" if count > max_total else None
+
+
 def vocabulary(code_vocabulary: dict[str, Any], code_queries: list[dict[str, Any]], checked: dict[str, Any],
-               record: dict[str, Any]) -> dict[str, Any]:
+               record: dict[str, Any], code_max_total: int | None = None) -> dict[str, Any]:
     """The proposal's vocabulary: the model's terms, the question's side lists, and the code's query kept whole.
 
     A side-list phrase the model also chose is left out of the side list, so no phrase stands in two blocks of the
     card at once. `record` is what the step keeps of the call (`step_input_id`, the answer, the attempts).
+    `code_max_total` is the width limit an `m1` run froze (`code_query_left_out`); a run without one keeps the rule
+    before it.
     """
+    left_out = code_query_left_out(code_vocabulary, code_max_total)
     mine = {term["phrase"] for term in checked["terms"]}
     side = {field: [phrase for phrase in code_vocabulary.get(field) or [] if norm(phrase) not in mine]
             for field in SIDE_LISTS.values()}
@@ -242,7 +260,8 @@ def vocabulary(code_vocabulary: dict[str, Any], code_queries: list[dict[str, Any
                          "warnings": checked["warnings"], **record},
         # A code query that cannot be searched on its own (none compiled, or too broad) is not offered beside it.
         "code_query": {"vocabulary": code_vocabulary, "queries": code_queries,
-                       "searched": bool(code_queries) and not code_vocabulary["too_broad"]},
+                       "searched": bool(code_queries) and not code_vocabulary["too_broad"] and left_out is None,
+                       **({"left_out": left_out} if left_out else {})},
     }
 
 

@@ -13,6 +13,7 @@ import os
 import re
 import time
 from collections.abc import Mapping
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
@@ -23,6 +24,10 @@ from deixis.models.codex_rpc import CodexAppServer, RpcError
 from deixis.domain.limits import limit_kind, service_error_kind, safe_error
 from deixis.tools.tool_paths import child_path, command_for, find_tool
 from deixis.tools.tool_probe import probe
+
+# Which step and StepInput the model call in flight belongs to ({"step_id", "step_input_id"}), set around each
+# `run_step` call. Never sent and never in the prompt; only a replaying benchmark adapter reads it (D163 M1).
+model_call: ContextVar[dict[str, str] | None] = ContextVar("model_call", default=None)
 
 # The version in the app-server's `userAgent` ("deixis/0.160.0 (...)") and in `codex --version` ("codex-cli 0.160.0").
 USER_AGENT_VERSION = re.compile(r"[^/\s]+/(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)")

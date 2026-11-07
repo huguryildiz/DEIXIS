@@ -62,6 +62,9 @@ class Settings:
     # writes it once per scope revision and the code's own query is searched beside it. `code` is the query of
     # slice 13g alone, with no model call, for a measurement or a test that needs the code path only.
     search_query: str = "model"
+    # The search method a discovery run is queued with, frozen in its fast-path policy (D163): `legacy` for every run
+    # until M1's gates pass; `m1` (chain admission v2 and the code-query width limit) for the M1 measurement arm.
+    search_method: str = "legacy"
     # Whether PDFs that are arXiv versions get the numbered display equations of their authors' LaTeX source while the
     # equation reader (Marker) is not installed (D104, slice 22). `load_settings` defaults to `auto` (D36), which turns
     # the route on (POSIX only); this dataclass stays `off` so tests that build Settings by hand request no source. With
@@ -165,6 +168,9 @@ def load_settings() -> Settings:
     search_query = os.environ.get("DEIXIS_SEARCH_QUERY", "model")
     if search_query not in ("model", "code"):
         raise ValueError("DEIXIS_SEARCH_QUERY must be model or code")
+    search_method = os.environ.get("DEIXIS_SEARCH_METHOD", "legacy")
+    if search_method not in ("legacy", "m1"):
+        raise ValueError("DEIXIS_SEARCH_METHOD must be legacy or m1")
     arxiv_source = os.environ.get("DEIXIS_ARXIV_SOURCE", "auto")
     if arxiv_source not in ("auto", "off"):
         raise ValueError("DEIXIS_ARXIV_SOURCE must be auto or off")
@@ -177,5 +183,6 @@ def load_settings() -> Settings:
         study_table=study_table,
         fulltext_adjudication=fulltext_adjudication,
         search_query=search_query,
+        search_method=search_method,
         arxiv_source=arxiv_source,
     )

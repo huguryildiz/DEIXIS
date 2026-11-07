@@ -18,7 +18,9 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable
 
+from deixis.domain import canonical
 from deixis.domain.rules import MAX_TRANSIENT_NETWORK_RETRIES, PROVIDER_WAIT
+from deixis.domain.vocabulary import words
 from deixis.workflow.search.ranking import blocks_in
 
 DIRECTIONS = ("backward", "forward")
@@ -27,6 +29,14 @@ SOURCE = "openalex"
 # `search_runs` has no kind column, so this is how a row says it was a chain request and not a keyword query.
 QUERY_PREFIX = "chain:"
 STEP_KIND = "provider_chain:openalex"
+# The admission rules a run's budget can freeze (`fast_path.freeze_budget`). v1 matches the searched gate forms as
+# written; v2 (M1 of D163, the `m1` search method) matches normalised words against the searched forms and every
+# gate-block term the query step wrote. A run keeps the rule it was queued with.
+RULE_V1 = "fast_chain_v1"
+RULE_V2 = "fast_chain_v2"
+RULES = (RULE_V1, RULE_V2)
+# The characters v2 splits a word on before it compares: hyphen-minus, hyphen, non-breaking hyphen, en dash, slash.
+_SPLIT = re.compile(r"[-\u2010\u2011\u2013/]")
 
 
 def attempt_limit(fast: dict[str, Any], effort: str) -> int:
@@ -77,6 +87,56 @@ def passes(forms: dict[str, list[str]], title: str | None, abstract: str | None)
     """Whether a linked work names the setting or the task: one gate block's form at a word start in its title or its
     abstract. A work without an abstract is judged on its title alone (slice 15, Task 3.5)."""
     return bool(blocks_in(forms, f"{title or ''} {abstract or ''}"))
+
+
+def _plain_singular(word: str) -> str:
+    """The plain plural rule v2 compares words with (replay-r5/chain_admission.py, D163): ies to y, sses to ss, es after
+    s/x/z/ch/sh, s otherwise; words of three letters or fewer and words ending in ss, us or is are kept."""
+    if len(word) <= 3:
+        return word
+    if word.endswith("ies") and len(word) > 4:
+        return word[:-3] + "y"
+    if word.endswith("sses"):
+        return word[:-2]
+    if re.search(r"(s|x|z|ch|sh)es$", word):
+        return word[:-2]
+    if word.endswith("s") and not word.endswith(("ss", "us", "is")):
+        return word[:-1]
+    return word
+
+
+def norm_words(text: str | None) -> list[str]:
+    """The words of a text as v2 compares them: lower case, split at hyphens and slashes, plain plurals reduced."""
+    return [_plain_singular(word) for word in words(_SPLIT.sub(" ", text or ""))]
+
+
+def admission_forms(blocks: dict[str, list[str]], vocabulary: dict[str, Any]) -> dict[str, list[str]]:
+    """The v2 admission forms of each gate block, normalised and sorted: the forms the run searched the block with
+    (`blocks`, as `ranking.query_vocabulary` gives them) and every term of that block the query step wrote, a dropped
+    one and an unused backup included. A vocabulary no query step wrote (the code's alone) adds nothing."""
+    from deixis.workflow.search.vocabulary import GATE_BLOCKS
+
+    record = vocabulary.get("search_query") or {}
+    written = {block: list(blocks.get(block) or []) for block in GATE_BLOCKS}
+    if record:
+        for term in vocabulary["terms"]:
+            if term["block"] in written:
+                written[term["block"]].append(term["phrase"])
+        for block, extra in (record.get("backups_left") or {}).items():
+            if block in written:
+                written[block] += list(extra)
+    return {block: sorted({" " + " ".join(found) for phrase in group if (found := norm_words(phrase))})
+            for block, group in written.items()}
+
+
+def forms_digest(forms: dict[str, list[str]]) -> str:
+    return canonical.sha256_hex(forms)
+
+
+def passes_v2(forms: dict[str, list[str]], title: str | None, abstract: str | None) -> bool:
+    """Whether a linked work holds one v2 form at a word start of its normalised title or abstract."""
+    padded = " " + " ".join(norm_words(f"{title or ''} {abstract or ''}")) + " "
+    return any(form in padded for group in forms.values() for form in group)
 
 
 def chained_heads(linked_heads: Iterable[str], keyword_pool: set[str]) -> list[str]:

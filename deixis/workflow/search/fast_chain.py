@@ -61,12 +61,32 @@ def request_plan(seeds, policy, held, prior=()):
             "not_requested": len(refs) - sum(map(len, back)), "forward_not_requested": len(seeds) - len(forward)}
 
 
+def frozen_forms(flow, run):
+    """The v2 admission forms this run's protocol froze, checked against their digest. A body without them, or one
+    whose forms no longer match the digest, stops the run: the chain never admits with forms other than the frozen."""
+    store = flow.store
+    step = store.existing_step(run["id"], "protocol")
+    revision = ((step or {}).get("output") or {}).get("protocol_revision")
+    row = store.conn.execute(
+        "SELECT body_json FROM protocol_records WHERE research_id = ? AND scope_revision = ?"
+        + (" AND protocol_revision = ?" if revision is not None else "") + " ORDER BY protocol_revision DESC LIMIT 1",
+        (run["research_id"], run["scope_revision"], *((revision,) if revision is not None else ()))).fetchone()
+    frozen = (json.loads(row[0]).get("citation_chaining") or {}) if row else {}
+    forms = frozen.get("admission_forms")
+    if forms is None or chaining.forms_digest(forms) != frozen.get("admission_forms_sha256"):
+        flow._fail(run["id"], "chain_forms_unverified", {"rule": chaining.RULE_V2})
+    return forms
+
+
 class Round:
     def __init__(self, flow, run, scope, vocabulary):
         self.flow, self.store, self.run, self.scope = flow, flow.store, run, scope
         self.policy = run["budget"]["fast_path"]
         self.vocabulary = vocabulary
-        self.forms = flow._chain_forms(run, scope, vocabulary)
+        # A run keeps the admission rule its budget froze: v2 reads the forms its protocol froze (D163 M1), v1 the
+        # searched gate forms as before.
+        self.normalised = self.policy.get("chain_rule") == chaining.RULE_V2
+        self.forms = frozen_forms(flow, run) if self.normalised else flow._chain_forms(run, scope, vocabulary)
         self.semaphore = asyncio.Semaphore(self.policy["chain_in_flight"])
         self.admit = asyncio.Event()
         if self.store.existing_step(run["id"], "fast_chain:plan_fallback"):
@@ -299,7 +319,8 @@ class Round:
             spec["links"], cites=spec["cites"], page=1 if spec["cites"] else None,
             batch=spec["batch"], per_page=spec["limit"], fast_request=spec["index"],
             fast_arrival={"arrived_at": arrived, "cutoff": cutoff, "late": late,
-                          "raw_returned": raw_returned, "admitted_returned": len(dispatched.outcome.records) if not late else 0})
+                          "raw_returned": raw_returned, "admitted_returned": len(dispatched.outcome.records) if not late else 0},
+            normalised=self.normalised)
         consumer = self.flow._fast_consumers.get(self.run["id"])
         if consumer:
             consumer.notify()

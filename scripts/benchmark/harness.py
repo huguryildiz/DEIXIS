@@ -21,6 +21,8 @@ from pathlib import Path
 import httpx
 
 EMBEDDING = {'provider': 'voyage', 'model': 'voyage-4-lite'}
+# Pool factor 4, the 18 Oct configuration. A D163 M1 arm selects 8, the product default since D153, with
+# `--pool-factor 8`; rows of the two factors are different configurations and are never compared.
 RERANKER = {'enabled': True, 'provider': 'voyage', 'pool_factor': 4.0, 'timeout_seconds': 180}
 RERANK_MODEL = 'rerank-3-lite'
 DEPTH = 'standard'
@@ -141,9 +143,38 @@ def rerank_problems(conn, run_id, listing=None):
     return found
 
 
-def problems(conn, run_id, listing):
+# The search method a run froze (`fast_path.freeze_budget`, D163): the chain rule each selection must show.
+METHOD_CHAIN_RULES = {'legacy': 'fast_chain_v1', 'm1': 'fast_chain_v2'}
+
+
+def method_problems(conn, run_id, method):
+    """The run was queued under another search method than this arm's (the server's DEIXIS_SEARCH_METHOD)."""
+    if method is None:
+        return []
+    row = conn.execute('SELECT budget_json FROM runs WHERE id = ?', (run_id,)).fetchone()
+    fast = (json.loads(row[0]) if row else {}).get('fast_path') or {}
+    got = (fast.get('search_method', 'legacy'), fast.get('chain_rule'))
+    want = (method, METHOD_CHAIN_RULES[method])
+    return [] if got == want else [f'search method {got}, expected {want}']
+
+
+def add_m1_args(parser):
+    """The arguments a D163 M1 arm adds to a runner's `deixis` command; all optional, so earlier runs read the same."""
+    parser.add_argument('--out', default=None, help='folder for runs/ and stopped.jsonl (default: the set folder)')
+    parser.add_argument('--method', choices=sorted(METHOD_CHAIN_RULES), default=None,
+                        help='the search method every run of this arm must have frozen')
+    parser.add_argument('--connection', default='anthropic', help='model connection the research is created with')
+    parser.add_argument('--model', default=None, help='requested model (default: the runner\'s)')
+    parser.add_argument('--ledger', default=None, help='shared OpenAlex spend ledger file (spend_ledger.py)')
+    parser.add_argument('--cap-usd', type=float, default=30.0, help='OpenAlex USD all runners on the ledger may spend')
+    parser.add_argument('--prices', default=None,
+                        help='JSON of OpenAlex USD per request class (count, list, search, semantic) for the bound')
+    parser.add_argument('--pool-factor', type=float, default=None, help='rerank pool factor (M1 arms: 8)')
+
+
+def problems(conn, run_id, listing, method=None):
     """Why this question's ranking is not the configured one; empty when the embedding and the rerank both ran."""
-    found = embedding_problems(conn, run_id)
+    found = embedding_problems(conn, run_id) + method_problems(conn, run_id, method)
     if (listing.get('manifest') or {}).get('user_priority'):
         found.append('records included by hand: arm B would leave them out')
     return found + rerank_problems(conn, run_id, listing)
@@ -167,6 +198,46 @@ def rerank_info(conn, run_id, listing):
     return {'applied': bool(told.get('applied')), 'reason': told.get('reason'),
             'reranked': told.get('reranked'), 'read_top': output.get('read_top'),
             'provider': output.get('provider'), 'model': output.get('model'), 'pool_factor': output.get('pool_factor')}
+
+
+STOPPED = ('completed', 'failed', 'cancelled', 'paused')
+
+
+def run_stopped(server, run_id, timeout=120):
+    """Whether the run reached a state in which it sends nothing, within `timeout` seconds (read at least once)."""
+    import time
+    start = time.time()
+    while True:
+        try:
+            with closing(server.db()) as conn:
+                row = conn.execute('SELECT status FROM runs WHERE id=?', (run_id,)).fetchone()
+        except Exception:  # an unreadable library proves nothing
+            return False
+        if row and row[0] in STOPPED:
+            return True
+        if time.time() - start >= timeout:
+            return False
+        time.sleep(2)
+
+
+def reservation_closable(server, row):
+    """Whether a question's spend reservation may close: its run is seen stopped, or no run request was ever sent. A
+    run request whose outcome is unknown (`run_request` still set) keeps it open unless the library shows the run its
+    idempotency key created and that run stopped: a library without that run is no proof, the request may still land."""
+    run_id = row.get('run_id')
+    if run_id is None and row.get('run_request'):
+        try:
+            with closing(server.db()) as conn:
+                found = conn.execute('SELECT id FROM runs WHERE idempotency_key = ?',
+                                     (f"{row['research_id']}:{row['run_request']}",)).fetchone()
+        except Exception:  # an unreadable library proves nothing
+            return False
+        if found is None:
+            return False
+        run_id = found[0]
+    if run_id:
+        return run_stopped(server, run_id)
+    return True  # no run request was sent
 
 
 def wait_listing(server, run_id, timeout):

@@ -38,7 +38,7 @@ from deixis.domain.rules import RevisionConflict
 from deixis.domain.skill import RUNTIME_FILES, SkillPackage
 from deixis.domain.vocabulary import Extraction
 from deixis.models import prompt, unusable
-from deixis.models.adapter import ModelAdapter, ModelStepResult, is_rate_limited
+from deixis.models.adapter import ModelAdapter, ModelStepResult, is_rate_limited, model_call
 from deixis.providers import openalex, query_compiler, facade, contract
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, SearchOutcome, normalize_doi, send_blocked
 from deixis.providers.registry import CONNECTORS, Connector, endpoint_options, search_providers
@@ -828,7 +828,10 @@ class ResearchFlow:
             return self._proposed(run_id, search_query_rules.settled(stored["vocabulary"], stored["queries"]),
                                   stored["queries"])
         seed_sha, seed_rows = self._seed_passages(run_id, scope)
-        earlier = self.store.search_query_of(rid, revision, run_id) if step["output"] is None else None
+        # D163 M1: a stored output holds the code-query decision of its own search method, so only a run of the same
+        # frozen method is reused; a run of another method in between does not hide an older compatible query.
+        earlier = (self.store.search_query_of(rid, revision, run_id, method=fast_path.search_method(run["budget"]))
+                   if step["output"] is None else None)
         if earlier is not None and earlier["output"].get("seed_passages_sha256") != seed_sha:
             earlier = None  # a query written without this run's seed pages is not this run's query (D2)
         if earlier is not None:
@@ -913,7 +916,8 @@ class ResearchFlow:
                     ("code_vocabulary", "code_queries", "claim"), built_context))}
                 self.store.set_step_output(step["id"], output)
             code_vocabulary, code_queries, claim = saved["code_vocabulary"], saved["code_queries"], saved["claim"]
-        built = search_query_rules.vocabulary(code_vocabulary, code_queries, checked, record)
+        built = search_query_rules.vocabulary(code_vocabulary, code_queries, checked, record,
+                                              (run["budget"].get("fast_path") or {}).get("code_query_max_total"))
         if claim is not None:
             built["statement"] = claim
         queries = search_query_rules.compile_queries(built, _planned_providers(scope), run["budget"]["max_provider_requests"])
@@ -1982,10 +1986,12 @@ class ResearchFlow:
     def _record_chain(self, run: dict[str, Any], step: dict[str, Any], key: str, direction: str,
                       outcome: SearchOutcome | facade.Dispatched | facade.DispatchedLookup,
                       forms: dict[str, list[str]], links: list[Any], *, cites: str | None, page: int | None,
-                      batch: list[str] | None, per_page: int, fast_request: int, fast_arrival: dict[str, Any]) -> None:
+                      batch: list[str] | None, per_page: int, fast_request: int, fast_arrival: dict[str, Any],
+                      normalised: bool = False) -> None:
         """Write one answered fast-chain request (OpenAlex): the filter runs first, and only the records that pass are
         written, as a search writes them (normalised, merged by DOI, linked, a candidate with its hit). Every link is
-        kept, passing or not, in `chain_links`."""
+        kept, passing or not, in `chain_links`. `normalised` is a `fast_chain_v2` run's filter (`chaining.passes_v2`)
+        over the forms its protocol froze; a v1 run reads `chaining.passes`."""
         provider = "openalex"
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
         dispatched = outcome if isinstance(outcome, (facade.Dispatched, facade.DispatchedLookup)) else None
@@ -1998,7 +2004,8 @@ class ResearchFlow:
             payload_path = f"{step['id']}.json"
             (settings.payloads_dir / payload_path).write_text(json.dumps(outcome.raw_payload), encoding="utf-8")
             payload_digest = canonical.sha256_hex(outcome.raw_payload)
-        passed = [record for record in outcome.records if chaining.passes(forms, record.title, record.abstract)]
+        admits = chaining.passes_v2 if normalised else chaining.passes
+        passed = [record for record in outcome.records if admits(forms, record.title, record.abstract)]
         if fast_arrival["late"]:
             passed = []
         ok = outcome.status in ("completed", "zero_results")
@@ -5395,15 +5402,19 @@ class ResearchFlow:
                 raise _ReadCutoff  # not sent, so no session is opened and nothing is charged
             session = self.store.start_model_session(rid, run_id, step_id, step_input_id, connection, requested_model,
                                                      sent_effort)
-            if remaining is None:
-                result = await adapter.run_step(base, developer, message, schema, requested_model, reasoning_effort)
-            else:
-                try:
-                    result = await asyncio.wait_for(
-                        adapter.run_step(base, developer, message, schema, requested_model, reasoning_effort), remaining)
-                except TimeoutError:
-                    # D258: the read window's cutoff does not wait for this answer; it would arrive too late to count.
-                    result = ModelStepResult("cutoff", error="read_cutoff", delivery_class="after_send_unknown")
+            call = model_call.set({"step_id": step_id, "step_input_id": step_input_id})
+            try:
+                if remaining is None:
+                    result = await adapter.run_step(base, developer, message, schema, requested_model, reasoning_effort)
+                else:
+                    try:
+                        result = await asyncio.wait_for(adapter.run_step(
+                            base, developer, message, schema, requested_model, reasoning_effort), remaining)
+                    except TimeoutError:
+                        # D258: the read window's cutoff does not wait for this answer; it would arrive too late to count.
+                        result = ModelStepResult("cutoff", error="read_cutoff", delivery_class="after_send_unknown")
+            finally:
+                model_call.reset(call)
             if not self._model_result_checkpoint(session, result, run_id, rid, step_id, step_input_id, step_attempt):
                 raise RunStopped
             if (limiter is None or result.status == "completed" or attempts >= MAX_RATE_LIMIT_MODEL_RETRIES

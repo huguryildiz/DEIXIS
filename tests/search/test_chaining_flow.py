@@ -188,3 +188,86 @@ def test_chain_links_are_written_once_on_resume(lib, tmp_path, monkeypatch):
 def pool_works(lib):
     _, _, pool = ranking.pool_rows(lib.store, lib.rid, 1)
     return {row["work_id"] for row in pool}
+
+
+# ---- the chain admission rule a run froze (D163 M1) -------------------------------------------------------------
+
+GATE = {"task": ["state of health"], "setting": []}
+QUERY_STEP = {"terms": [{"phrase": "soh estimation", "block": "task", "dropped": "zero_results"}],
+              "search_query": {"backups_left": {"task": ["capacity fade"], "setting": []}}}
+LINKED = [replace(record("W700"), title="SYNTHETIC State-of-Health estimates"),
+          replace(record("W701"), title="SYNTHETIC capacity fades of cells"),
+          replace(record("W702"), title="SYNTHETIC unrelated pumps")]
+
+
+def method_run(lib, method):
+    """A second quick discovery run in its own research, queued under `method`."""
+    rid = lib.store.create_research("SYNTHETIC battery ageing", "academic", "quick", ["openalex"], "fake",
+                                    "fake-model", "en")
+    budget = small_batch.freeze_budget(TEST_EFFORT_BUDGETS["quick"].__dict__, "quick", "off")
+    budget["fast_path"] = fast_path.freeze_budget(budget, "quick", method=method)
+    run = lib.store.create_run(rid, "discovery", budget, None)
+    lib.store.update_run(run["id"], status="running")
+    return SimpleNamespace(store=lib.store, conn=lib.conn, clock=lib.clock, rid=rid, run=lib.store.run(run["id"]))
+
+
+def frozen(lib, forms, digest=None):
+    """The protocol a v2 run froze before its first request, with the admission forms and their digest."""
+    from deixis.workflow.search import chaining
+
+    body = {"citation_chaining": {"rule_version": "fast_chain_v2", "admission_forms": forms,
+                                  "admission_forms_sha256": digest or chaining.forms_digest(forms)}}
+    record_ = lib.store.freeze_protocol(lib.rid, 1, body)
+    step = lib.store.step(lib.run["id"], "protocol", "protocol:freeze")
+    lib.store.start_step(step["id"])
+    lib.store.finish_step(step["id"], "succeeded", output={"protocol_revision": record_["protocol_revision"]})
+
+
+def round_for(lib, tmp_path):
+    flow, scope, _ = chain_setup(lib, tmp_path)
+    flow._chain_forms = lambda *args: ranking.block_forms(GATE)
+    round_ = type(_)(flow, lib.run, scope, QUERY_STEP)
+    flow._fast_chains[lib.run["id"]] = round_
+    search(flow, lib, "search:fast:semantic", ["W1"])
+    return flow, scope, round_
+
+
+def passed(run_lib):
+    return {row["linked_openalex_id"]: row["passed_filter"] for row in links(run_lib)}
+
+
+def test_a_legacy_run_keeps_the_first_admission_rule_and_its_requests_on_resume(lib, tmp_path, monkeypatch):
+    # A `legacy` run (every run's default) keeps `fast_chain_v1`: the hyphenated variant and the query's backup are
+    # not the searched form, and a resumed round sends nothing again and admits the same.
+    assert lib.run["budget"]["fast_path"]["chain_rule"] == "fast_chain_v1"
+    flow, scope, round_ = round_for(lib, tmp_path)
+    calls = []
+    chain(round_, monkeypatch, forward=LINKED, calls=calls)
+    assert passed(lib) == {"W700": 0, "W701": 0, "W702": 0}
+    again = type(round_)(flow, lib.run, scope, QUERY_STEP)
+    flow._fast_chains[lib.run["id"]] = again
+    sent = list(calls)
+    chain(again, monkeypatch, forward=LINKED, calls=calls)
+    assert calls == sent and passed(lib) == {"W700": 0, "W701": 0, "W702": 0}
+
+
+def test_an_m1_run_admits_word_variants_and_query_synonyms_with_the_forms_it_froze(lib, tmp_path, monkeypatch):
+    from deixis.workflow.search import chaining
+
+    m1 = method_run(lib, "m1")
+    assert m1.run["budget"]["fast_path"]["chain_rule"] == "fast_chain_v2"
+    frozen(m1, chaining.admission_forms(GATE, QUERY_STEP))
+    _, _, round_ = round_for(m1, tmp_path)
+    chain(round_, monkeypatch, forward=LINKED)
+    assert passed(m1) == {"W700": 1, "W701": 1, "W702": 0}
+
+
+def test_frozen_forms_that_no_longer_match_their_digest_stop_an_m1_run(lib, tmp_path):
+    from deixis.workflow.run.flow import RunStopped
+
+    tampered = method_run(lib, "m1")
+    frozen(tampered, {"task": [" pumps"]}, digest="sha256:0")
+    with pytest.raises(RunStopped):
+        round_for(tampered, tmp_path)
+    stopped = lib.store.run(tampered.run["id"])
+    assert stopped["status"] == "failed" and stopped["pause_reason"] == "chain_forms_unverified"

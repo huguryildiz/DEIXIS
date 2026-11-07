@@ -1537,14 +1537,18 @@ class Store:
         return step
 
     def search_query_of(self, research_id: str, scope_revision: int, run_id: str,
-                        operation_key: str = "search_query") -> dict[str, Any] | None:
+                        operation_key: str = "search_query", method: str | None = None) -> dict[str, Any] | None:
         """The newest succeeded model-query step of another run of this scope revision (D92), or None; with
-        `operation_key`, the newest succeeded step of that key (the seed match, D2)."""
+        `operation_key`, the newest succeeded step of that key (the seed match, D2). With `method`, only runs whose
+        budget froze that search method count (D163 M1; a budget without one is `legacy`)."""
         row = self.conn.execute(
             "SELECT s.run_id, s.output_json FROM run_steps s JOIN runs r ON r.id = s.run_id"
             " WHERE r.research_id = ? AND r.scope_revision = ? AND r.id != ? AND s.operation_key = ?"
-            " AND s.status = 'succeeded' AND s.output_json IS NOT NULL ORDER BY r.created_at DESC, s.rowid DESC LIMIT 1",
-            (research_id, scope_revision, run_id, operation_key)).fetchone()
+            " AND s.status = 'succeeded' AND s.output_json IS NOT NULL"
+            + (" AND COALESCE(json_extract(r.budget_json, '$.fast_path.search_method'), 'legacy') = ?"
+               if method is not None else "")
+            + " ORDER BY r.created_at DESC, s.rowid DESC LIMIT 1",
+            (research_id, scope_revision, run_id, operation_key, *((method,) if method is not None else ()))).fetchone()
         return {"run_id": row["run_id"], "output": json.loads(row["output_json"])} if row else None
 
     def choose_code_query(self, run_id: str) -> dict[str, Any]:

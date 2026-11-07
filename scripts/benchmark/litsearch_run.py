@@ -288,6 +288,7 @@ def main():
     d.add_argument('--timeout', type=int, default=900)
     d.add_argument('--prepaid-floor', type=float, default=None,
                    help='spend prepaid OpenAlex credit, stopping once the balance falls below this many USD')
+    harness.add_m1_args(d)
     d.set_defaults(fn=run_deixis)
     pf = sub.add_parser('preflight')
     pf.add_argument('--base', required=True)

@@ -2125,7 +2125,8 @@ def create_app(
                 budget["fulltext_fetch"] = fulltext.overlap_budget(scope["effort"])
             budget = small_batch.freeze_budget(budget, scope["effort"], settings.fulltext_adjudication)
             budget["fast_path"] = fast_path.with_intent(fast_path.freeze_budget(
-                budget, scope["effort"], local_model=scope["model_connection"] in LOCAL_CONNECTIONS),
+                budget, scope["effort"], local_model=scope["model_connection"] in LOCAL_CONNECTIONS,
+                method=settings.search_method),
                                                         store.research(research_id)["intent"])
         if body.kind == "research_title":
             # One title call and its single schema repair; nothing is searched.

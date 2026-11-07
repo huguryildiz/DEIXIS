@@ -15,6 +15,7 @@ import argparse
 import json
 import sqlite3
 import time
+import uuid
 from contextlib import closing
 from pathlib import Path
 
@@ -22,9 +23,11 @@ import httpx
 
 try:
     from . import bioasq, harness
+    from .spend_ledger import Ledger, Refused, question_bound_usd
 except ImportError:
     import bioasq
     import harness
+    from spend_ledger import Ledger, Refused, question_bound_usd
 
 ROOT = Path(__file__).resolve().parents[2]
 HOME = ROOT / 'notes/bioasq'
@@ -220,23 +223,59 @@ class Deixis:
         return self.payloads[path].get(work.rsplit('/', 1)[-1])
 
 
-def ask_deixis(server, question):
-    """Start one discovery run as a user would; returns (research id, run id)."""
+def ask_deixis(server, question, connection='anthropic', model=MODEL, row=None, retries=3):
+    """Start one discovery run as a user would; returns (research id, run id).
+
+    The run request carries an idempotency key, written into `row` (`run_request`) before it is sent: until a reply
+    names the run, its outcome is unknown. A request that gets no reply is sent again with the same key, which
+    returns the run the first one created, if it did."""
     research = server.post('/api/researches', {
-        'question': question, 'effort': harness.DEPTH, 'model_connection': 'anthropic',
-        'requested_model': MODEL, 'reasoning_effort': EFFORT, 'review_mode': 'off'})['research']
-    run = server.post(f"/api/researches/{research['id']}/runs", {'kind': 'discovery'})
-    return research['id'], run['id']
+        'question': question, 'effort': harness.DEPTH, 'model_connection': connection,
+        'requested_model': model, 'reasoning_effort': EFFORT, 'review_mode': 'off'})['research']
+    row = {} if row is None else row
+    row['research_id'], row['run_request'] = research['id'], f'bench-{uuid.uuid4().hex}'
+    for attempt in range(retries + 1):
+        try:
+            reply = server.http.post(f"/api/researches/{research['id']}/runs", json={'kind': 'discovery'},
+                                     headers={'idempotency-key': row['run_request']})
+        except httpx.TransportError:
+            if attempt == retries:
+                raise
+            continue
+        reply.raise_for_status()
+        del row['run_request']  # answered: the reply names the run
+        return research['id'], reply.json()['id']
 
 
 def measured_run(args, home, questions, server, records):
     """Arms B and C for each question from one DEIXIS run with the plan's settings (harness module docstring).
 
     `records(order, research_id)` turns list positions into scored rows. A product failure (the run failed) is a row
-    scored as zero; a pause, a timeout, a wrong embedding or a rerank that did not apply stops the whole run."""
-    settings = harness.stamp(harness.configure(server), MODEL, EFFORT) | {'keep': args.keep}  # positions kept per row
+    scored as zero; a pause, a timeout, a wrong embedding or a rerank that did not apply stops the whole run.
+
+    A D163 M1 arm (`harness.add_m1_args`) writes to `--out`, checks that every run froze `--method`, creates its
+    researches on `--connection`, and reserves each question on the shared `--ledger` before starting it."""
+    home = Path(args.out) if getattr(args, 'out', None) else home
+    method, connection = getattr(args, 'method', None), getattr(args, 'connection', 'anthropic')
+    model = getattr(args, 'model', None) or MODEL
+    ledger = None
+    if getattr(args, 'ledger', None):
+        def balance():
+            with httpx.Client() as client:
+                left = harness.openalex_balance(client, secret('OPENALEX_API_KEY'))
+            if left['daily_usd'] is None or left['prepaid_usd'] is None:
+                return None
+            return left['daily_usd'] + left['prepaid_usd']
+        if not getattr(args, 'prices', None):
+            raise harness.Stop('--ledger needs --prices: the OpenAlex USD per request class, read from OpenAlex')
+        bound = question_bound_usd(harness.DEPTH, json.loads(Path(args.prices).read_text()))
+        ledger = Ledger(args.ledger, args.cap_usd, bound, balance)
+    if getattr(args, 'pool_factor', None):
+        harness.RERANKER['pool_factor'] = args.pool_factor  # the arm's own choice; written and checked below
+    settings = harness.stamp(harness.configure(server), model, EFFORT) | {'keep': args.keep}  # positions kept per row
+    settings |= {'method': method, 'connection': connection} if method else {}
     outs = {arm: home / f'runs/deixis_{arm}.jsonl' for arm in harness.ARMS}
-    outs['fused'].parent.mkdir(exist_ok=True)
+    outs['fused'].parent.mkdir(parents=True, exist_ok=True)
     skip = harness.done_in_all(list(outs.values()), read_jsonl)
     todo = [q for q in questions if q['id'] not in skip]
     print(f"{len(skip)} done, {len(todo)} to run; settings {json.dumps(settings)}")
@@ -244,6 +283,12 @@ def measured_run(args, home, questions, server, records):
         for q in todo:
             if why := harness.budget_stop(client, secret('OPENALEX_API_KEY'), args.prepaid_floor):
                 raise harness.Stop(f'{why}; {len(skip)} of {len(questions)} questions done')
+            token = None
+            if ledger is not None:
+                try:
+                    token = ledger.reserve(q['id'])
+                except Refused as exc:
+                    raise harness.Stop(f'spend ledger: {exc}; {len(skip)} of {len(questions)} questions done')
             row, start = {'id': q['id']}, time.time()
             try:
                 # A run that stopped this benchmark on the model's query is taken up again, not asked anew.
@@ -253,12 +298,23 @@ def measured_run(args, home, questions, server, records):
                 if paused:
                     row['research_id'], row['run_id'] = paused
                 else:
-                    row['research_id'], row['run_id'] = ask_deixis(server, q['body'])
+                    row['research_id'], row['run_id'] = ask_deixis(server, q['body'], connection, model, row)
                 listing, state, row['query_resumes'] = harness.wait_with_query_retry(
                     server, row['run_id'], args.timeout, allowed)
-                server.http.post(f"/api/runs/{row['run_id']}/cancel")  # the list is frozen; reading is not measured
+                # The list is frozen; reading is not measured. A refused cancel leaves the run's state to the check
+                # below, and the run stops the benchmark.
+                cancel = server.http.post(f"/api/runs/{row['run_id']}/cancel")
+                if cancel.status_code >= 400 and not harness.run_stopped(server, row['run_id'], timeout=0):
+                    raise harness.Stop(f'cancel answered {cancel.status_code}')
             except Exception as exc:
                 harness.stopped(home, row, f'{type(exc).__name__}: {exc}'[:300], len(skip), len(questions))
+            finally:
+                if token is not None:
+                    if harness.reservation_closable(server, row):
+                        row['ledger_spent_usd'] = ledger.settle(token)
+                    else:
+                        harness.stopped(home, row, 'run not seen stopped; its reservation stays open',
+                                        len(skip), len(questions))
             row['seconds'] = round(time.time() - start, 1)
             if listing is None and state['status'] != 'failed':
                 harness.stopped(home, row | {'state': state}, f"run {state['status']}: {state.get('reason')}",
@@ -271,7 +327,7 @@ def measured_run(args, home, questions, server, records):
                 rows = dict.fromkeys(harness.ARMS, row | {'error': f"run failed at {state['stage']}: {state['reason']}"})
             else:
                 with closing(server.db()) as conn:
-                    if found := harness.problems(conn, row['run_id'], listing):
+                    if found := harness.problems(conn, row['run_id'], listing, method):
                         harness.stopped(home, row, '; '.join(found), len(skip), len(questions))
                     rerank = harness.rerank_info(conn, row['run_id'], listing)
                 orders = harness.arms(listing)
@@ -378,6 +434,7 @@ def main():
     d.add_argument('--timeout', type=int, default=900)
     d.add_argument('--prepaid-floor', type=float, default=None,
                    help='spend prepaid OpenAlex credit, stopping once the balance falls below this many USD')
+    harness.add_m1_args(d)
     d.set_defaults(fn=run_deixis)
     pf = sub.add_parser('preflight')
     pf.add_argument('--base', required=True)

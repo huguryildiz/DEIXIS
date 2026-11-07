@@ -361,7 +361,8 @@ def run_deixis(args):
     server = EEDeixis(args.base, args.data_dir)
     args.keep = None
     try:
-        measured_run(args, HOME, questions_for(args), server, server.records)
+        questions = [q for q in questions_for(args) if getattr(args, 'split', None) in (None, q['split'])]
+        measured_run(args, HOME, questions, server, server.records)
     except harness.Stop as exc:
         raise SystemExit(f'stopped: {exc}')
 
@@ -451,6 +452,8 @@ def main():
     d.add_argument('--timeout', type=int, default=900)
     d.add_argument('--prepaid-floor', type=float, default=None,
                    help='spend prepaid OpenAlex credit, stopping once the balance falls below this many USD')
+    d.add_argument('--split', choices=('test', 'tune'), default=None, help='run only this split (M1: test)')
+    harness.add_m1_args(d)
     d.set_defaults(fn=run_deixis)
     pf = sub.add_parser('preflight')
     pf.add_argument('--base', required=True)

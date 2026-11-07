@@ -158,12 +158,12 @@ async def no_fetch(url):
     return FetchResult("http_error", final_url=url, http_status=404)
 
 
-def client_for(tmp_path, monkeypatch, handler, adapter, setting="model"):
+def client_for(tmp_path, monkeypatch, handler, adapter, setting="model", method="legacy"):
     for connector in CONNECTORS.values():
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
     app = create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query=setting,
-                              fulltext_fetch="off"),
+                              fulltext_fetch="off", search_method=method),
                      adapters={"fake": adapter}, http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
                      fetcher=no_fetch, extra_hosts=("testserver",), trusted_clients=("testclient",))
     client = TestClient(app)
@@ -236,6 +236,64 @@ def test_the_model_writes_the_query_and_the_code_query_is_searched_beside_it(tmp
     assert run["budget"]["max_model_calls"] - preset >= SEARCH_QUERY_CALLS
 
 
+class EveryCount(dict):
+    """A count table in which every query matches the same number of works."""
+
+    def __init__(self, value):
+        super().__init__()
+        self.value = value
+
+    def get(self, key, default=None):
+        return self.value
+
+    def __bool__(self):
+        return True
+
+
+def test_under_the_m1_method_a_code_query_wider_than_its_limit_or_on_one_block_is_not_searched(tmp_path, monkeypatch):
+    from deixis.workflow.search import chaining
+
+    # Every count is 300,000: the code's gate query cannot be narrowed below it, and no term reaches the one-million
+    # rule. A `legacy` run searches the code's query beside the model's as before; an `m1` run leaves it out (D163 M1).
+    runs = {}
+    for method in ("legacy", "m1"):
+        openalex = OpenAlex(counts=EveryCount(300_000))
+        client = client_for(tmp_path / method, monkeypatch, openalex, FakeAdapter(), method=method)
+        rid, run_id = start(client)
+        _, run = wait(client, rid, run_id)
+        assert run["status"] == "completed", run
+        runs[method] = (step_output(client, run_id, "search_query"), protocol_body(client, rid), run)
+    legacy, m1 = runs["legacy"], runs["m1"]
+    assert "code" in {q["origin"] for q in legacy[0]["queries"]}
+    assert "left_out" not in legacy[0]["vocabulary"]["code_query"]
+    assert legacy[2]["budget"]["fast_path"]["chain_rule"] == "fast_chain_v1"
+    assert "search_method" not in legacy[2]["budget"]["fast_path"]
+    assert "admission_forms" not in legacy[1]["citation_chaining"]
+
+    stored, body, run = m1
+    assert stored["vocabulary"]["code_query"]["vocabulary"]["gate_count"] == 300_000
+    assert stored["vocabulary"]["code_query"]["searched"] is False
+    assert stored["vocabulary"]["code_query"]["left_out"] == "too_wide"
+    assert {q["origin"] for q in stored["queries"]} == {"model"}
+    assert body["search_query"]["code_query_searched"] is False
+    # No code term reaches the ranking blocks or the chain forms; the selection is frozen in the body's budget.
+    assert body["concept_blocks"] == {"setting": ["synthetic setting"], "task": ["synthetic task"]}
+    assert body["budget"]["fast_path"]["search_method"] == "m1"
+    frozen = body["citation_chaining"]
+    assert frozen["rule_version"] == "fast_chain_v2"
+    assert frozen["admission_forms_sha256"] == chaining.forms_digest(frozen["admission_forms"])
+    assert " synthetic setting" in frozen["admission_forms"]["setting"]
+
+    # A code query whose setting block lost every term is a one-block query: left out whatever its count.
+    one_block = code_vocabulary()
+    one_block["terms"][0]["dropped"] = "zero_results"
+    count, _ = counter({})
+    checked = asyncio.run(search_query.check(answer(["rail freight"], ["timetable"]), count))
+    built = search_query.vocabulary(one_block, CODE_QUERIES, checked, {"status": "ready", "attempts": [],
+                                    "step_input_id": "sti_x", "resolved_model": "m", "answer": {}}, 250_000)
+    assert built["code_query"]["searched"] is False and built["code_query"]["left_out"] == "one_block"
+
+
 def test_a_failed_model_stops_the_run_and_the_code_query_is_searched_only_when_the_user_says_so(tmp_path, monkeypatch):
     openalex = OpenAlex()
     adapter = FakeAdapter(fail=lambda si: ModelStepResult("failed", error="SYNTHETIC down")
@@ -276,3 +334,26 @@ def test_the_users_own_key_terms_are_searched_and_no_model_writes_a_query(tmp_pa
 
 
 # ---- review of 2026-09-23 (gpt-6-sol high) -----------------------------------------------------------------------
+
+
+def test_a_run_reuses_only_a_query_written_under_its_own_search_method(tmp_path, monkeypatch):
+    # D163 M1: a stored query carries the code-query decision of the method it was written under. A legacy run's
+    # query is not reused by an m1 run of the same scope revision; the m1 run asks once and applies its own limit.
+    legacy_adapter, m1_adapter = FakeAdapter(), FakeAdapter()
+    client = client_for(tmp_path, monkeypatch, OpenAlex(counts=EveryCount(300_000)), legacy_adapter)
+    rid, first = start(client)
+    assert wait(client, rid, first)[1]["status"] == "completed"
+    client.__exit__(None, None, None)
+    client = client_for(tmp_path, monkeypatch, OpenAlex(counts=EveryCount(300_000)), m1_adapter, method="m1")
+    second = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+    _, run = wait(client, rid, second)
+    assert run["status"] == "completed", run
+    stored = step_output(client, second, "search_query")
+    assert "reused_from_run" not in stored and len(calls(m1_adapter)) == 1
+    assert stored["vocabulary"]["code_query"]["left_out"] == "too_wide"
+    client.__exit__(None, None, None)
+    # A legacy run after the m1 one takes the first legacy query, as before M1: no model call.
+    client = client_for(tmp_path, monkeypatch, OpenAlex(counts=EveryCount(300_000)), legacy_adapter)
+    third = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
+    assert wait(client, rid, third)[1]["status"] == "completed"
+    assert step_output(client, third, "search_query")["reused_from_run"] == first and len(calls(legacy_adapter)) == 1

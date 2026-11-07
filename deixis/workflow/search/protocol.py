@@ -123,6 +123,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     from deixis.workflow.search.approval import block_origins
     from deixis.workflow.search.vocabulary import GATE_BLOCKS, THRESHOLDS as VOCABULARY_THRESHOLDS
     from deixis.workflow.search.search_query import THRESHOLDS as SEARCH_QUERY_THRESHOLDS
+    from deixis.workflow.search import chaining as chaining_rules
     from deixis.workflow.search.chaining import policy as chain_policy
     from deixis.workflow.search import seed_match as seed_match_rules
     from deixis.workflow.search import user_plan as user_plan_rules
@@ -144,6 +145,13 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
 
     # How this run chains citations (the fast chain), read from the policy its budget froze when it was queued.
     chaining = chain_policy(budget, scope["effort"])
+    if chaining is not None and chaining["rule_version"] == chaining_rules.RULE_V2 and vocabulary:
+        # D163 M1: the forms a v2 chain admits with are frozen here, before any request, with their digest; the chain
+        # round reads them back from this body (`fast_chain.frozen_forms`).
+        from deixis.workflow.search.ranking import query_vocabulary
+
+        forms = chaining_rules.admission_forms(query_vocabulary(scope, vocabulary)[1], vocabulary)
+        chaining = chaining | {"admission_forms": forms, "admission_forms_sha256": chaining_rules.forms_digest(forms)}
 
     # A code vocabulary's queries came from the block compiler, so the body names that compiler, not the plan one.
     compiler_version = query_compiler.BLOCKS_VERSION

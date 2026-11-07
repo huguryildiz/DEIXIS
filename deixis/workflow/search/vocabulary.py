@@ -29,6 +29,10 @@ MAX_LABELLED_PHRASES = 40  # a longer phrase list is not sent: the rule's assign
 LABELS = ("setting", "task", "outcome", "claim", "exclusion", "not_a_term")
 VERY_LARGE_COUNT = 1_000_000  # SW2.2: a term this frequent is usable only inside an AND
 MANAGEABLE_TOTAL = 5_000  # SW3.5: above this the gate query is narrowed from a root word to its phrase
+# D163 M1: under the `m1` search method the code query is searched beside the model's only as a two-block gate query
+# whose probed count is known and at most this (`search_query.code_query_left_out`). Frozen in the run's fast-path
+# policy, not here in THRESHOLDS, so a `legacy` run's protocol is unchanged.
+CODE_QUERY_MAX_TOTAL = 250_000
 THRESHOLDS = {
     "english_function_word_share": ENGLISH_FUNCTION_WORD_SHARE,
     "long_question_words": LONG_QUESTION_WORDS,

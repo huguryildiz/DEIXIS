@@ -217,3 +217,20 @@ def test_a_round_candidate_reaches_a_new_answer_only_after_the_person_includes_i
     rows = [r for r in after["items"] if r.get("screened_after_cutoff") == run["id"]]
     assert [r["head"] for r in rows] == [head] and rows[0]["evidence_basis"] == "abstract_screening"
     assert rows[0]["route"] == "abstract" and len(rows[0]["abstract_ids"]) == 1
+
+
+def test_a_round_orders_its_list_with_the_first_chain_matcher_even_after_an_m1_discovery(lib, monkeypatch):
+    """D163 M1 changes only the discovery chain's admission: a person-started round still orders its list with
+    `chaining.passes` over the searched gate forms, so a hyphenated variant of a gate form does not count as naming it."""
+    seed_world(lib)
+    lib.api.add(900, title="SYNTHETIC State-of-Health of irrigation pumps")
+    budget = lib.store.run(lib.discovery_id)["budget"]
+    budget["fast_path"] |= {"search_method": "m1", "chain_rule": "fast_chain_v2"}
+    lib.store.conn.execute("UPDATE runs SET budget_json = ? WHERE id = ?", (json.dumps(budget), lib.discovery_id))
+    monkeypatch.setattr(lib.flow, "_chain_forms", lambda *args: {"task": [" state of health"], "setting": []})
+    run = snowball.request(lib.store, lib.rid, seeds=[lib.by_oid["W0"]])
+    assert execute(lib, run)["status"] == "completed"
+    listing = step(lib, run["id"], "snowball:list")[1]
+    head = lib.store.find_source_by_identifier("openalex", "W900")
+    (item,) = [i for i in listing["items"] if i["head"] == head]
+    assert item["names_gate_block"] is False

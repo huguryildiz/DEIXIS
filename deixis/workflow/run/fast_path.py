@@ -12,6 +12,11 @@ from deixis.storage.db import new_id, transaction
 POLICY = "fast_path_v1"
 RUNNER_VERSION = 2
 STAGES = ("plan", "search", "ranking", "read", "answer")
+# The search method a discovery run is queued with, frozen in its policy (D163). `legacy` is every run's default:
+# chain admission `fast_chain_v1` and the code query searched as before. `m1` selects chain admission
+# `fast_chain_v2` and the code-query width limit together; it is for the M1 measurement until all its gates pass.
+SEARCH_METHODS = ("legacy", "m1")
+CHAIN_RULES = ("fast_chain_v1", "fast_chain_v2")
 
 
 class Mode(NamedTuple):
@@ -62,11 +67,17 @@ def elapsed(start: str, end: str) -> int:
     return max(0, delta // timedelta(milliseconds=1))
 
 
-def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False) -> dict[str, Any]:
+def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False,
+                  method: str = "legacy") -> dict[str, Any]:
     """A run on a model this computer runs (`local_model`) keeps no deadline on the stages where the model works,
     read and answer: a local model screens and answers far slower than the stage bases assume, and a cut read
     leaves the answer unscreened evidence. Search and ranking do not wait on the model and keep theirs; each model
-    call still has its own limit (openai_compat.LOCAL_TURN_TIMEOUT)."""
+    call still has its own limit (openai_compat.LOCAL_TURN_TIMEOUT).
+
+    `method` is the search method (`SEARCH_METHODS`). A `legacy` policy is exactly the one frozen before D163's M1, so
+    its hash does not move; `m1` names itself and its two rules."""
+    if method not in SEARCH_METHODS:
+        raise ValueError(f"unknown search method {method!r}")
     mode = MODES[effort]
     bases = mode.stage_seconds
     policy = {
@@ -87,6 +98,10 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         # D155: K admission takes the abstract stage's unresolved works after the candidates (`read.selected`).
         "admission_order": "unresolved_last",
     }
+    if method == "m1":
+        from deixis.workflow.search.vocabulary import CODE_QUERY_MAX_TOTAL
+
+        policy |= {"search_method": "m1", "chain_rule": "fast_chain_v2", "code_query_max_total": CODE_QUERY_MAX_TOTAL}
     if local_model:
         # Still fast-path stages (`enforces` routes on them); only their deadline is gone.
         policy["no_deadline_stages"] = ["read", "answer"]
@@ -124,8 +139,13 @@ def enabled(budget: dict[str, Any]) -> bool:
     return (budget.get("fast_path") or {}).get("policy") == POLICY
 
 
+def search_method(budget: dict[str, Any]) -> str:
+    """The search method a run was queued with: `legacy` for every policy that does not name one."""
+    return (budget.get("fast_path") or {}).get("search_method", "legacy")
+
+
 def chain_on(budget: dict[str, Any]) -> bool:
-    return enabled(budget) and budget["fast_path"].get("chain_rule") == "fast_chain_v1"
+    return enabled(budget) and budget["fast_path"].get("chain_rule") in CHAIN_RULES
 
 
 def enforces(budget: dict[str, Any], stage: str) -> bool:

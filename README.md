@@ -31,6 +31,8 @@ A desktop app that answers questions from the scientific literature, with every 
 
 <br>
 
+<p align="center"><img src="docs/img/hero-flat.png" alt="DEIXIS answer screen with cited passages" width="900"></p>
+
 A local research workspace for scientific literature. You ask a question; DEIXIS searches OpenAlex and Semantic Scholar, reads abstracts and full texts, and writes an answer in which every citation points to a located passage you can open. It runs on your computer (Python backend, React UI on `127.0.0.1`); searches and model calls go to the providers you connect. Code checks that each citation points to a real passage; it does not check that the passage supports the claim, and no search result proves a question is new.
 
 ## Install the Mac app

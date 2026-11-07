@@ -12,6 +12,7 @@ import sys
 import textwrap
 from pathlib import Path
 
+import pytest
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -101,6 +102,8 @@ def run_case(tmp_path, *, inject, store=None, env_file=None, server=None):
     return json.loads(done.stdout.strip().splitlines()[-1])
 
 
+@pytest.mark.skipif(sys.platform.startswith("linux"), reason="on Linux truststore verifies inside OpenSSL against the "
+                    "system's CA files and never calls the stand-in verifier; the SSL_CERT_FILE case below uses that real path")
 def test_with_the_system_store_the_same_server_is_trusted(tmp_path):
     server = certificate(tmp_path, "server")
     result = run_case(tmp_path, inject=True, store=[server[0]], server=server)

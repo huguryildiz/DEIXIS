@@ -1,11 +1,11 @@
 """The record of processes DEIXIS starts in a session of their own (P10 M2): `run/children.jsonl` in the data folder.
 
-macOS only for now (`ON`): the session scan reads the process table through libproc. Elsewhere this layer is off and
-the earlier paths stay (POSIX process groups; job objects on Windows, `models/cli_process.py`).
+macOS and Linux (`ON`): the session scan reads the process table through libproc on macOS and `/proc` on Linux (P10
+L2). On Windows this layer is off and the job objects stand in for it (`tools/win_job.py`).
 
 A model CLI or tool probe (`models/cli_process.py`), a local model server (`documents/local_embedding.py`) and the
 login-shell PATH read (`tools/tool_paths.py`) leave the backend's process group on purpose, so a kill of that group
-does not reach them. On macOS each is started through `deixis.session_launcher`: a small process that leads the new
+does not reach them. On macOS and Linux each is started through `deixis.session_launcher`: a small process that leads the new
 session and, while the record is on, writes its own line here (pid, kernel start time, group, session, and the
 identity of the backend that owns it) and only then starts the program, which stays in its group and session. If the
 line cannot be written, or the owning backend is already gone, the program is never started. The launcher outlives the
@@ -16,7 +16,8 @@ never forks; it writes its own line before it reports ready and does not run wit
 Ownership is proven, never assumed. A group or session id is used to find or signal processes only while its leader
 is alive with the start time read when it was started or recorded (a live leader's pid cannot be reused, so the id is
 still that leader's). Once a leader is gone, only identities seen and recorded (pid + start time) are signalled. Every
-kill re-reads the identity first; macOS has no pidfd to close the last microseconds. A line is removed only once what
+kill re-reads the identity first; on Linux through a pidfd opened before the re-read, so a pid reused in between is
+never hit; macOS has no pidfd to close the last microseconds. A line is removed only once what
 it names is verified gone.
 
 The record is switched on by `configure` (the serving backend) and reaches the app's own Python children through the
@@ -35,7 +36,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
-from deixis.documents.child_guard import _BsdInfo, _libproc, process_info  # the guard's pid + start time identity
+from deixis.documents.child_guard import _BsdInfo, _libproc, linux_start, process_info, signal_identity  # pid + start identity
 
 try:
     import fcntl
@@ -50,7 +51,8 @@ LAUNCHER = "deixis.session_launcher"
 NONE = "-"  # the launcher's record and owner arguments while the record is off
 GONE_WAIT_SECONDS = 3.0
 CLEAN_SECONDS = 10.0
-ON = sys.platform == "darwin" and fcntl is not None
+LINUX = sys.platform.startswith("linux")
+ON = (sys.platform == "darwin" or LINUX) and fcntl is not None
 
 
 class RecordFailed(OSError):
@@ -187,7 +189,7 @@ def remove(path: Path, ident: str | None) -> None:
 
 
 def launcher_argv(argv: list[str], kind: str) -> list[str]:
-    """`argv` on macOS started through the session launcher, which records it while the record is on (module text)."""
+    """`argv` started through the session launcher (macOS, Linux), which records it while the record is on (module text)."""
     if not ON:
         return list(argv)
     path, owner = target() or (NONE, NONE)
@@ -201,7 +203,10 @@ def leader(pid: int) -> str | None:
 
 
 def snapshot() -> dict[int, tuple[int, int, str]]:
-    """Every process this user can see: pid -> (ppid, pgid, start). macOS (libproc); empty elsewhere."""
+    """Every process this user can see: pid -> (ppid, pgid, start), zombies left out. macOS (libproc), Linux (`/proc`,
+    start = boot id + `starttime`, as `child_guard.process_info`); empty elsewhere."""
+    if LINUX:
+        return {pid: (ppid, pgid, start) for pid, (state, ppid, pgid, start) in proc_stats().items() if state != "Z"}
     lib = _libproc()
     if sys.platform != "darwin" or lib is None:
         return {}
@@ -218,6 +223,23 @@ def snapshot() -> dict[int, tuple[int, int, str]]:
         if lib.proc_pidinfo(pid, 3, 0, ctypes.byref(info), ctypes.sizeof(info)) != ctypes.sizeof(info) or info.status == 5:
             continue
         table[pid] = (int(info.ppid), int(info.pgid), f"{info.start_sec}:{info.start_usec}")
+    return table
+
+
+def proc_stats() -> dict[int, tuple[str, int, int, str]]:
+    """Linux: pid -> (state, ppid, pgid, start) for every `/proc/<pid>/stat` readable now (a process may end mid-scan)."""
+    table: dict[int, tuple[str, int, int, str]] = {}
+    try:
+        names = [entry.name for entry in os.scandir("/proc") if entry.name.isdigit()]
+    except OSError:
+        return table
+    for name in names:
+        try:
+            # comm can hold spaces and parentheses; the fields after the last ')' start with field 3 (state).
+            fields = Path(f"/proc/{name}/stat").read_text().rsplit(")", 1)[1].split()
+            table[int(name)] = (fields[0], int(fields[1]), int(fields[2]), linux_start(fields[19]))
+        except (OSError, ValueError, IndexError):
+            continue
     return table
 
 
@@ -241,14 +263,11 @@ def members(leader: str, table: dict[int, tuple[int, int, str]] | None = None) -
 
 
 def kill_identity(ident: str) -> bool:
-    pid, _, _start = ident.partition(":")
-    if int(pid) == os.getpid() or not alive(ident):
+    """SIGKILL the process `pid:start` only while it is that process (`child_guard.signal_identity`: a pidfd on Linux)."""
+    pid, _, start = ident.partition(":")
+    if int(pid) == os.getpid():
         return False
-    try:
-        os.kill(int(pid), signal.SIGKILL)  # identity re-read just above
-        return True
-    except (ProcessLookupError, PermissionError):
-        return False
+    return signal_identity(int(pid), start, signal.SIGKILL)
 
 
 def wait_gone(idents: set[str], seconds: float = GONE_WAIT_SECONDS) -> set[str]:
@@ -268,16 +287,18 @@ def sweep_members(leader: str, seconds: float = CLEAN_SECONDS) -> list[str]:
     ends = time.monotonic() + seconds
     while (found := members(leader)) and time.monotonic() < ends:
         killed += [ident for ident in sorted(found) if kill_identity(ident)]
-        wait_gone(found)
+        wait_gone(found, min(GONE_WAIT_SECONDS, max(0.0, ends - time.monotonic())))
     return killed
 
 
 def stop_group(pid: int, leader: str | None, sig: int) -> set[str]:
     """Signal the process group of a session leader DEIXIS started (`pid`, whose identity `leader` was read at the
-    start). macOS: only while `leader` is still that process, so the group id is its own; a SIGKILL first kills the
+    start). macOS and Linux: only while `leader` is still that process, so the group id is its own; a SIGKILL first kills the
     verified members of its session in other groups. Once it is gone nothing is signalled: the launcher emptied its
     session before it ended, or left its line for the watchdog. Returns the identities found (to wait for). Where this
-    layer is off: killpg as before M2."""
+    layer is off: killpg as before M2. Linux signals each verified member and the leader through a pidfd instead of
+    killpg (a group has no pidfd, and asyncio's child watcher may reap the launcher on its own, freeing its pid); macOS
+    keeps check-then-killpg."""
     if not ON:
         try:
             os.killpg(pid, sig)
@@ -287,6 +308,11 @@ def stop_group(pid: int, leader: str | None, sig: int) -> set[str]:
     if not leader or int(leader.partition(":")[0]) != pid or not alive(leader):
         return set()
     found = members(leader)
+    if LINUX:  # no killpg: asyncio may reap the launcher on its own; each verified member and the leader by pidfd
+        for ident in sorted(found) + [leader]:
+            kill_identity(ident) if sig == signal.SIGKILL else signal_identity(
+                int(ident.partition(":")[0]), ident.partition(":")[2], sig)
+        return found | {leader}
     if sig == signal.SIGKILL:
         for ident in sorted(found):
             kill_identity(ident)
@@ -298,15 +324,15 @@ def stop_group(pid: int, leader: str | None, sig: int) -> set[str]:
     return found | {leader}
 
 
-def sweep(leader: str) -> tuple[list[str], set[str]]:
-    """Empty the group and session `leader` leads while it is alive (`sweep_members`), and only once a scan finds no
-    member, kill the leader. (signalled, still alive: members a scan still finds, or the leader)"""
-    killed = sweep_members(leader)
+def sweep(leader: str, seconds: float = CLEAN_SECONDS) -> tuple[list[str], set[str]]:
+    """Empty the group and session `leader` leads while it is alive (`sweep_members`, for up to `seconds`), and only
+    once a scan finds no member, kill the leader. (signalled, still alive: members a scan still finds, or the leader)"""
+    killed = sweep_members(leader, seconds)
     if left := members(leader):
         return killed, left | {leader}  # the leader stays, so its session can still be found and its line stays
     if kill_identity(leader):
         killed.append(leader)
-    return killed, wait_gone({leader})
+    return killed, wait_gone({leader}, min(GONE_WAIT_SECONDS, max(0.1, seconds)))
 
 
 def recover(path: Path | None) -> list[str]:

@@ -14,9 +14,11 @@ this fallback; it requires identity passed by the launcher to close that case.
 Only orphans are killed here. PDF and arXiv have parent-side memory watchers;
 OCR and JATS retain their in-child thread, which may stop late while their parent
 lives. Unreadable orphan RSS for WATCH_LOST_TURNS consecutive turns fails closed.
-Identity is pid plus kernel start time. Immediately before a single SIGKILL the
-guard re-reads that identity. macOS has no pidfd: a microsecond-scale window
-remains between the final check and kill; nothing else closes that window.
+Identity is pid plus kernel start time (on Linux prefixed with the boot id, since
+start ticks restart at boot). Immediately before a single SIGKILL the guard re-reads
+that identity; on Linux through a pidfd opened first (`signal_identity`), so a
+reused pid is never hit. macOS has no pidfd: a microsecond-scale window remains
+between the final check and kill; nothing else closes that window.
 
 The child's thread checks guard identity between C calls and exits on early loss.
 If the guard is killed during a long GIL-holding C call, the child is unguarded
@@ -28,6 +30,7 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 from dataclasses import dataclass
+import errno
 import functools
 import json
 import os
@@ -87,10 +90,58 @@ def process_info(pid: int) -> ProcessInfo | None:
         try:
             # comm can contain spaces and parentheses; fields after the final ')' begin with field 3.
             fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
-            return None if fields[0] == "Z" else ProcessInfo(fields[19], int(fields[1]))
+            return None if fields[0] == "Z" else ProcessInfo(linux_start(fields[19]), int(fields[1]))
         except (OSError, ValueError, IndexError):
             return None
     return None
+
+
+@functools.lru_cache(maxsize=1)
+def boot_id() -> str:
+    """Linux: this boot's id, so a start time from an earlier boot never matches."""
+    try:
+        return Path("/proc/sys/kernel/random/boot_id").read_text().strip() or "unknown-boot"
+    except OSError:
+        return "unknown-boot"
+
+
+def linux_start(ticks: str) -> str:
+    """`starttime` from /proc/<pid>/stat (clock ticks since boot), tied to this boot."""
+    return f"{boot_id()}/{ticks}"
+
+
+def signal_identity(pid: int, start: str, sig: int, reader=None) -> bool:
+    """Signal `pid` only while it is the process that started at `start`. Linux 5.3+: through a pidfd opened before the
+    identity is read again, so a pid reused in between is never hit; only ENOSYS (an older kernel) falls back to
+    check-then-kill, and any other pidfd error leaves the process unsignalled (the caller tries again). macOS: check,
+    then kill."""
+    reader = reader or process_info
+    pidfd = None
+    if sys.platform.startswith("linux") and hasattr(os, "pidfd_open"):
+        try:
+            pidfd = os.pidfd_open(pid)
+        except OSError as exc:
+            if exc.errno != errno.ENOSYS:
+                return False  # gone (ESRCH), or no descriptor to be sure with (EMFILE ...): not signalled
+    if pidfd is not None:
+        try:
+            info = reader(pid)  # read after the pidfd: it names this very process or a dead one
+            if info is None or info.start != start:
+                return False
+            signal.pidfd_send_signal(pidfd, sig)
+            return True
+        except (ProcessLookupError, PermissionError):
+            return False
+        finally:
+            os.close(pidfd)
+    info = reader(pid)
+    if info is None or info.start != start:
+        return False
+    try:
+        os.kill(pid, sig)
+        return True
+    except (ProcessLookupError, PermissionError):
+        return False
 
 
 def _resident_bytes(pid: int) -> int | None:
@@ -145,7 +196,9 @@ class Guard:
             self.last_under_at = now
         return ("kill" if (rss is not None and rss > self.limit) or self.unread >= WATCH_LOST_TURNS else "wait"), rss
 
-    def signal_once(self, reader=process_info, kill=os.kill) -> bool:
+    def signal_once(self, reader=process_info, kill=None) -> bool:
+        if kill is None:
+            return signal_identity(self.child_pid, self.child_start, signal.SIGKILL, reader)
         child = reader(self.child_pid)
         if child is None or child.start != self.child_start:
             return False
@@ -231,7 +284,12 @@ def watch(guard: Guard, record) -> None:
             return
         if action == "kill":
             record("kill", rss)  # evidence written before signalling; a failed log write fails closed via guard-loss check
-            guard.signal_once()
+            while not guard.signal_once():  # not signalled (Linux: no pidfd to be sure with): try again while it lives
+                child = process_info(guard.child_pid)
+                if child is None or child.start != guard.child_start or time.monotonic() >= guard.deadline:
+                    return
+                record("signal_failed", rss)
+                time.sleep(WATCH_INTERVAL_SECONDS)
             return
         time.sleep(WATCH_INTERVAL_SECONDS)
 

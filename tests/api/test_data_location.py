@@ -250,6 +250,7 @@ def test_nothing_is_deleted_from_the_source_before_the_copy_and_its_record_are_o
 from deixis.config import platform_data_dir as real_platform_data_dir  # noqa: E402  (before conftest's stand-in)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="Path.home() ignores HOME on Windows")
 def test_on_linux_only_an_absolute_xdg_data_home_moves_the_default_library(monkeypatch, tmp_path):
     monkeypatch.setattr("sys.platform", "linux")
     monkeypatch.setenv("HOME", str(tmp_path))

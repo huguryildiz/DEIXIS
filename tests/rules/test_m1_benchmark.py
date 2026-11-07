@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("fcntl", reason="spend_ledger locks with fcntl; the benchmark runs on macOS and Linux")
+
 from fakes import FakeAdapter, valid_response
 from test_search_query import OpenAlex, client_for, start, wait
 

@@ -1,6 +1,6 @@
 # P10 Windows (W4, W3): the Tauri shell and the real backend sidecar on a Windows x64 runner. Started by hand only
 # (`gh workflow run windows-desktop.yml`). Builds the sidecar (PyInstaller onedir: deixis-backend.exe + _internal\),
-# runs the sidecar smoke against it (scripts/p10/sidecar_smoke.py, OCR with the package's own language data and no
+# runs the sidecar smoke against it (scripts/desktop/sidecar_smoke.py, OCR with the package's own language data and no
 # Tesseract installed, and the DLL probe built with rustc), lints and tests the shell, then builds the NSIS installer around that sidecar
 # (packaging/build_windows.py: the sidecar inside equals the build, SHA-256 printed) and keeps it as an artifact.
 name: windows-desktop
@@ -47,7 +47,7 @@ jobs:
       - name: Sidecar smoke
         id: smoke
         continue-on-error: true
-        run: uv run --no-sync python scripts/p10/sidecar_smoke.py 2>&1 | tee sidecar-smoke.txt; exit ${PIPESTATUS[0]}
+        run: uv run --no-sync python scripts/desktop/sidecar_smoke.py 2>&1 | tee sidecar-smoke.txt; exit ${PIPESTATUS[0]}
       - run: cargo clippy --all-targets --locked -- -D warnings
         working-directory: desktop/src-tauri
       - run: cargo test --locked

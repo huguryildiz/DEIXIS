@@ -156,7 +156,7 @@ def runtime_main(args: list[str]) -> int:
 
     def library_paths() -> dict:
         """Linux (P10 L3): which copy of a library an outside program loads, on each route DEIXIS starts one by. The probe
-        (scripts/p10/dll_probe/linux_probe.c) loads by soname a library the package also holds and logs the file the
+        (scripts/desktop/dll_probe/linux_probe.c) loads by soname a library the package also holds and logs the file the
         loader picked and the LD_LIBRARY_PATH it got. Routes: `child_env` (tools, probes); a model CLI as `cli_process`
         starts one (Codex's allowlist, through the session launcher, itself a frozen child of this binary); the Claude
         Agent SDK's own transport (which copies this process's environment). None may load the package's copy."""

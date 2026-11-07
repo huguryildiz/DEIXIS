@@ -1,7 +1,7 @@
 # P10 Linux (L5): acceptance of the INSTALLED app on Linux x64 runners. Started by hand only
 # (`gh workflow run linux-acceptance.yml -f run_id=<linux-desktop run>`). Downloads the .deb and the AppImage that
 # linux-desktop.yml built in that run (the files under test are those exact files; their SHA-256 is in the result) and
-# runs scripts/p10/linux_acceptance.py on Ubuntu 22.04 and 24.04 inside Xvfb with Openbox and a D-Bus session: the .deb
+# runs scripts/desktop/linux_acceptance.py on Ubuntu 22.04 and 24.04 inside Xvfb with Openbox and a D-Bus session: the .deb
 # installed with apt (dependencies resolved), the AppImage run as a file; in-window rows through tauri-driver and
 # WebKitWebDriver; close, killed shell and killed backend under a hanging fake codex and a PDF child; downloads; removal.
 # The fake codex needs the repo's Python packages (uv sync). Evidence (results.json, screenshots, logs, downloaded files)
@@ -55,7 +55,7 @@ jobs:
         run: |
           deb=$(find packages -name '*.deb' | head -1); app=$(find packages -name '*.AppImage' | head -1)
           xvfb-run -a -s "-screen 0 1440x900x24" dbus-run-session -- bash -c "openbox & sleep 2; \
-            uv run --no-sync python scripts/p10/linux_acceptance.py --deb '$deb' --appimage '$app' --evidence evidence" \
+            uv run --no-sync python scripts/desktop/linux_acceptance.py --deb '$deb' --appimage '$app' --evidence evidence" \
             2>&1 | tee acceptance.txt; exit ${PIPESTATUS[0]}
       - uses: actions/upload-artifact@v4
         if: always()

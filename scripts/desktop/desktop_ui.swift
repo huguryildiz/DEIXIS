@@ -1,4 +1,4 @@
-// UI helper for scripts/p10/desktop_acceptance.py (P10 M2): looks at and presses parts of a running DEIXIS.app by pid,
+// UI helper for scripts/desktop/desktop_acceptance.py (P10 M2): looks at and presses parts of a running DEIXIS.app by pid,
 // through the window list and the Accessibility API (the terminal that runs the acceptance needs Accessibility access).
 // Not part of the app. Compiled by the acceptance script with `swiftc`.
 //

@@ -1,6 +1,6 @@
 """Acceptance of the installed DEIXIS on Linux x64 (P10 L5): the .deb and the AppImage as built by linux-desktop.yml.
 
-    python scripts/p10/linux_acceptance.py --deb DEIXIS_0.1.2_amd64.deb --appimage DEIXIS_0.1.2_amd64.AppImage
+    python scripts/desktop/linux_acceptance.py --deb DEIXIS_0.1.2_amd64.deb --appimage DEIXIS_0.1.2_amd64.AppImage
                                            [--evidence DIR] [--only ROW,...] [--formats deb,appimage]
 
 Runs inside an X display with a window manager and a D-Bus session (CI: xvfb-run + dbus-run-session + Openbox), as a
@@ -531,7 +531,7 @@ def fake_tools(bin_dir: Path, python: str) -> None:
         "#!/bin/sh\n"
         f"( setsid /bin/sleep 307 >/dev/null 2>&1 & )\n"
         f"[ -e {bin_dir / 'no-hang'} ] || export _FAKE_CODEX_HANG=1\n"
-        f"_FAKE_CODEX_DIR={bin_dir} exec {python} {REPO / 'scripts' / 'p10' / 'fake_codex.py'} \"$@\"\n")
+        f"_FAKE_CODEX_DIR={bin_dir} exec {python} {REPO / 'scripts' / 'desktop' / 'fake_codex.py'} \"$@\"\n")
     opener = bin_dir / "xdg-open"
     names = " ".join(("APPDIR", "APPIMAGE", "PATH", "XDG_DATA_DIRS", "LD_LIBRARY_PATH", "GTK_PATH", "GTK_EXE_PREFIX",
                       "GTK_DATA_PREFIX", "GDK_PIXBUF_MODULE_FILE", "GIO_MODULE_DIR", "GI_TYPELIB_PATH",

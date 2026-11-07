@@ -1,6 +1,6 @@
 // Browser-level check of the packaged backend (P10 M2, Sol backlog from M1), run by desktop_acceptance.py:
 //
-//   node scripts/p10/browser_check.mjs SIDECAR_BINARY DATA_BASE ENV_JSON     (cwd: web/, for its Playwright)
+//   node scripts/desktop/browser_check.mjs SIDECAR_BINARY DATA_BASE ENV_JSON     (cwd: web/, for its Playwright)
 //
 // For Chrome and (when installed for this Playwright) WebKit: start `SIDECAR serve --desktop` with a temp data folder (the control token as the first stdin
 // line), load the page and check that every JS and CSS file loads and React renders; switch the theme to dark and the

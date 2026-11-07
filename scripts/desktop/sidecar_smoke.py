@@ -1,6 +1,6 @@
 r"""Smoke run of the BUILT backend sidecar (P10 M1 acceptance, macOS arm64; P10 W3, Windows x64).
 
-    uv run python scripts/p10/sidecar_smoke.py [--sidecar packaging/sidecar/dist/deixis-backend] [--keep]
+    uv run python scripts/desktop/sidecar_smoke.py [--sidecar packaging/sidecar/dist/deixis-backend] [--keep]
 
 The onedir build is copied to a temp folder outside the checkout and run from there with a temp DEIXIS_DATA_DIR, no
 DEIXIS_REPO_ROOT, a minimal environment, a port other than 8765 (saved in the data folder before the start), the null
@@ -33,7 +33,7 @@ Windows only (P10 W3):
   startup_failed  a second backend on the same data folder prints a `startup_failed` line and exits non-zero
   runtime      `deixis-backend --check-runtime` after the frozen entry's DLL search reset: a PDF opened and rendered,
                a throwaway Credential Locker entry written, read and deleted, an https request through the system trust
-               store, and the DLL probe: `probe-<name>.exe` (scripts/p10/dll_probe, built here with rustc) outside the
+               store, and the DLL probe: `probe-<name>.exe` (scripts/desktop/dll_probe, built here with rustc) outside the
                package, started by the backend as an external tool, loads `<name>.dll` by name, where <name> is a DLL
                of `_internal`; the only copy with the marker export sits in a folder on PATH, so the probe passes only
                when no package folder is in its DLL search (inherited SetDllDirectory, PATH)
@@ -319,7 +319,7 @@ def main() -> int:
                       "PYTHON_KEYRING_BACKEND": "keyring.backends.null.Keyring", **proxies}
     else:
         codex = bin_dir / "codex"
-        codex.write_text(f"#!/bin/sh\n_FAKE_CODEX_DIR={bin_dir} exec {sys.executable} {REPO / 'scripts' / 'p10' / 'fake_codex.py'} \"$@\"\n")
+        codex.write_text(f"#!/bin/sh\n_FAKE_CODEX_DIR={bin_dir} exec {sys.executable} {REPO / 'scripts' / 'desktop' / 'fake_codex.py'} \"$@\"\n")
         codex.chmod(0o755)
         env = {"HOME": str(home), "PATH": f"{bin_dir}:/usr/bin:/bin:/usr/sbin:/sbin", "TMPDIR": str(work), "LANG": "en_US.UTF-8",
                "USER": os.environ.get("USER", "smoke"), "SHELL": "/bin/sh",
@@ -509,7 +509,7 @@ def fake_codex_npm(bin_dir: Path) -> None:
     entry.write_text(
         "const { spawnSync } = require('child_process');\n"
         f"const python = {json.dumps(sys.executable)};\n"
-        f"const script = {json.dumps(str(REPO / 'scripts' / 'p10' / 'fake_codex.py'))};\n"
+        f"const script = {json.dumps(str(REPO / 'scripts' / 'desktop' / 'fake_codex.py'))};\n"
         "const done = spawnSync(python, [script, ...process.argv.slice(2)],\n"
         f"  {{ stdio: 'inherit', env: {{ ...process.env, _FAKE_CODEX_DIR: {json.dumps(str(bin_dir))} }} }});\n"
         "process.exit(done.status === null ? 1 : done.status);\n")
@@ -542,7 +542,7 @@ def runtime_row(work: Path, binary: Path, env: dict[str, str]) -> None:
     args = [str(binary), "--check-runtime", str(folder), "--https", HTTPS_URL]
     probe = {"dll": name, "rustc": rustc}
     if name and rustc:
-        source = REPO / "scripts" / "p10" / "dll_probe"
+        source = REPO / "scripts" / "desktop" / "dll_probe"
         static = ["-C", "target-feature=+crt-static", "-O"]
         built = [subprocess.run([rustc, "--crate-type", "cdylib", *static, "-o", str(dll_dir / f"{name}.dll"),
                                  str(source / "probe_dll.rs")], capture_output=True, text=True),
@@ -624,7 +624,7 @@ LINUX_PROBE_LIBS = ("libssl.so.3", "libcrypto.so.3", "libffi.so.8", "libz.so.1",
 
 
 def linux_runtime_row(work: Path, binary: Path, env: dict[str, str]) -> None:
-    """Linux (P10 L3): `--check-runtime` with the library probe (scripts/p10/dll_probe/linux_probe.c, built here with
+    """Linux (P10 L3): `--check-runtime` with the library probe (scripts/desktop/dll_probe/linux_probe.c, built here with
     gcc), which loads by soname a library the package also holds in _internal/ and logs the file the loader picked and
     the LD_LIBRARY_PATH it got, on the three routes an outside program is started by (`child_env`, a model CLI through
     Codex's allowlist and the session launcher, the Claude Agent SDK's own transport). The person's own LD_LIBRARY_PATH
@@ -649,7 +649,7 @@ def linux_runtime_row(work: Path, binary: Path, env: dict[str, str]) -> None:
     probe = work / "probe-bin" / "linux-probe"
     probe.parent.mkdir()
     built = subprocess.run(["gcc", "-O2", f'-DPROBE_LIB="{lib}"', "-o", str(probe),
-                            str(REPO / "scripts" / "p10" / "dll_probe" / "linux_probe.c"), "-ldl"],
+                            str(REPO / "scripts" / "desktop" / "dll_probe" / "linux_probe.c"), "-ldl"],
                            capture_output=True, text=True) if lib and shutil.which("gcc") else None
     if built is None or built.returncode != 0:
         row("runtime", False, library=lib, gcc=shutil.which("gcc"), build=built.stderr[-400:] if built else None,

@@ -1,6 +1,6 @@
 r"""Acceptance of the installed DEIXIS on Windows (P10 W5), the NSIS installer as built by windows-desktop.yml.
 
-    python scripts\p10\windows_acceptance.py --installer DEIXIS_0.1.0_x64-setup.exe [--evidence DIR] [--only ROW,...]
+    python scripts\desktop\windows_acceptance.py --installer DEIXIS_0.1.0_x64-setup.exe [--evidence DIR] [--only ROW,...]
                                              [--fake-python PATH] [--keep-installed] [--webview2-policy]
 
 Standard library only (plus tests/support/helpers.make_pdf, which is too); run with any Windows Python as the user
@@ -869,7 +869,7 @@ def fake_codex(bin_dir: Path, python: str) -> None:
     (bin_dir / "codex.cmd").write_text(
         '@ECHO off\r\nSETLOCAL\r\nSET dp0=%~dp0\r\nSET "_prog=node"\r\n'
         'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@fake\\codex\\bin\\codex.js" %*\r\n')
-    script = REPO / "scripts" / "p10" / "fake_codex.py"
+    script = REPO / "scripts" / "desktop" / "fake_codex.py"
     # fake_codex.py records os.getpgrp() in its hang marker; Windows has no process groups of that kind.
     runner = ("import os, runpy, sys; os.getpgrp = getattr(os, 'getpgrp', lambda: 0); "
               f"sys.argv = [{str(script)!r}] + sys.argv[1:]; runpy.run_path({str(script)!r}, run_name='__main__')")

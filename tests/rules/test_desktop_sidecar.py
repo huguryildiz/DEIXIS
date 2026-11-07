@@ -3,7 +3,7 @@
 The frozen entry's `-m` routing, the `serve --desktop` start contract (JSON lines on stdout, saved port, the control
 token as the first stdin line, stdin EOF), the control-token shutdown route and the token kept out of the environment;
 the child record and the desktop watchdog (M2). Run from the repository, not a PyInstaller build
-(scripts/p10/sidecar_smoke.py and desktop_acceptance.py check the built app). SYNTHETIC data only.
+(scripts/desktop/sidecar_smoke.py and desktop_acceptance.py check the built app). SYNTHETIC data only.
 """
 
 from __future__ import annotations

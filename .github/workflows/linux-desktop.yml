@@ -49,7 +49,7 @@ jobs:
       - name: Sidecar smoke
         id: smoke
         continue-on-error: true
-        run: uv run --no-sync python scripts/p10/sidecar_smoke.py 2>&1 | tee sidecar-smoke.txt; exit ${PIPESTATUS[0]}
+        run: uv run --no-sync python scripts/desktop/sidecar_smoke.py 2>&1 | tee sidecar-smoke.txt; exit ${PIPESTATUS[0]}
       - run: cargo clippy --all-targets --locked -- -D warnings
         working-directory: desktop/src-tauri
       - run: cargo test --locked
@@ -60,7 +60,7 @@ jobs:
         id: smoke_appimage
         continue-on-error: true
         run: |
-          uv run --no-sync python scripts/p10/sidecar_smoke.py --sidecar packaging/linux-unpacked/appimage-sidecar \
+          uv run --no-sync python scripts/desktop/sidecar_smoke.py --sidecar packaging/linux-unpacked/appimage-sidecar \
             2>&1 | tee sidecar-smoke-appimage.txt; exit ${PIPESTATUS[0]}
       - uses: actions/upload-artifact@v4
         if: always()

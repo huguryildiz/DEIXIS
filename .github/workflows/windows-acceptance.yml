@@ -1,7 +1,7 @@
 # P10 Windows (W5): acceptance of the INSTALLED app on a Windows x64 runner. Started by hand only
 # (`gh workflow run windows-acceptance.yml -f run_id=<windows-desktop run>`). Downloads the NSIS installer artifact that
 # windows-desktop.yml built in that run (the installer under test is that exact file; its SHA-256 is in the result),
-# installs it silently as the runner's user and runs scripts/p10/windows_acceptance.py: install, open, in-window rows
+# installs it silently as the runner's user and runs scripts/desktop/windows_acceptance.py: install, open, in-window rows
 # over WebView2's DevTools port, second launch, close, Quit / killed shell / killed backend under a hanging fake codex
 # and a PDF child, downloads, uninstall. The fake codex needs the repo's Python packages (uv sync); Node runs its
 # npm-shaped launcher. Evidence (results.json, screenshots, logs, downloaded files) is kept as an artifact.
@@ -46,7 +46,7 @@ jobs:
         shell: pwsh
         run: |
           $setup = Get-ChildItem installer\*-setup.exe | Select-Object -First 1
-          uv run --no-sync python scripts/p10/windows_acceptance.py --installer $setup.FullName --evidence evidence --webview2-policy 2>&1 | Tee-Object acceptance.txt
+          uv run --no-sync python scripts/desktop/windows_acceptance.py --installer $setup.FullName --evidence evidence --webview2-policy 2>&1 | Tee-Object acceptance.txt
           exit $LASTEXITCODE
       - uses: actions/upload-artifact@v4
         if: always()

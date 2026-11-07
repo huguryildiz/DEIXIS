@@ -1,6 +1,6 @@
 """Acceptance of the packaged DEIXIS.app on this Mac (P10 M2), macOS arm64.
 
-    uv run python scripts/p10/desktop_acceptance.py [--dmg desktop/src-tauri/target/release/bundle/dmg/DEIXIS_<version>_aarch64.dmg]
+    uv run python scripts/desktop/desktop_acceptance.py [--dmg desktop/src-tauri/target/release/bundle/dmg/DEIXIS_<version>_aarch64.dmg]
                                                     [--only ROW,...] [--keep]
 
 The app is installed by copying DEIXIS.app out of the DMG into a temp folder outside the checkout and started there
@@ -8,7 +8,7 @@ by its executable, with a minimal environment: a temp HOME and DEIXIS_DATA_DIR p
 saved in it before the start, and DEIXIS_PORT set to another free port), the null keyring backend, no modal error
 dialog (DEIXIS_DESKTOP_NO_DIALOG=1: a failed start prints and exits), outbound HTTP(S)
 sent to a closed local port, and stand-in model CLIs first on PATH (fake_codex.py, fake_cli.py; run by this checkout's
-Python). Never port 8765 or the owner's library. UI steps go through scripts/p10/desktop_ui.swift (window list and
+Python). Never port 8765 or the owner's library. UI steps go through scripts/desktop/desktop_ui.swift (window list and
 Accessibility; the terminal needs Accessibility access). Rows, each printed as PASS, FAIL, NOT_DONE or MANUAL (this
 script cannot check it; a person does, as the row's note says). The exit code is 0 only when every row run is PASS or
 MANUAL:
@@ -21,7 +21,7 @@ MANUAL:
                  the new theme: the web app's own session-cookie + header save
   browser        the packaged backend in Chrome (and Playwright's WebKit when its build for this Playwright is
                  installed): JS and CSS load, React renders, language and theme saved through the UI survive a restart
-                 on another port (scripts/p10/browser_check.mjs)
+                 on another port (scripts/desktop/browser_check.mjs)
   second_launch  starting the executable again adds no process (the new one exits) and the window comes back
   close_keeps    the window's close button hides it; every process stays
   quit_plain     Quit (the app's quit, as Cmd+Q or the menu-bar Quit; sent with NSRunningApplication.terminate)

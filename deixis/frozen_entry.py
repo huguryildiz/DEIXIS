@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
         reset_dll_search()
     if sys.platform.startswith("linux") and getattr(sys, "frozen", False):
         reset_library_path()
-    if argv[:1] == ["--check-runtime"]:  # the Windows release smoke's in-process checks (scripts/p10/sidecar_smoke.py)
+    if argv[:1] == ["--check-runtime"]:  # the Windows release smoke's in-process checks (scripts/desktop/sidecar_smoke.py)
         from deixis import resource_check
         return resource_check.runtime_main(argv[1:])
     if len(argv) >= 2 and argv[0] == "-m":

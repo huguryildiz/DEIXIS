@@ -31,11 +31,11 @@
     body {
       background: var(--bg); color: var(--text);
       font: 14px/1.5 Inter, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-      display: grid; place-items: center; overflow: hidden;
+      display: grid; place-items: center; overflow: hidden; position: relative;
     }
     /* A faint wash behind the mark, so the window reads as lit rather than flat. */
     body::before {
-      content: ""; position: fixed; inset: 0; pointer-events: none;
+      content: ""; position: absolute; inset: 0; pointer-events: none;
       background: radial-gradient(360px 300px at 50% 42%,
         var(--wash),
         transparent 72%);
@@ -54,55 +54,123 @@
     a.button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
     a.button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     [hidden] { display: none !important; }
-
-    /* Opening: the source mark draws itself, the passage dot lands, the name settles under it. */
-    #starting { display: grid; justify-items: center; animation: fade-in 420ms ease-out both; }
-    .mark { width: 76px; height: 76px; display: block; overflow: visible; }
-    .mark .stroke {
-      stroke: var(--accent); stroke-width: 5; stroke-linecap: round; fill: none;
-      stroke-dasharray: 1; stroke-dashoffset: 1;
-      animation: draw 1020ms cubic-bezier(.22,.61,.36,1) 140ms both;
+    /* The main window loads this page hidden, behind the opening window, and must not flash its content (D179). */
+    :root[data-frame=blank] main, :root[data-frame=blank] body::before { display: none; }
+    /* The opening window is frameless and transparent, so nothing the page paints may fill its corners: the
+       document and the body stay clear and the panel inside them carries the background and the rounding. */
+    :root[data-frame=splash], :root[data-frame=splash] body { background: transparent; }
+    :root[data-frame=splash] body::before { display: none; }
+    :root[data-frame=splash] main { width: 100%; height: 100%; }
+    :root[data-frame=splash] #starting {
+      height: 100%; align-content: center; border-radius: 14px; background: var(--bg);
     }
-    .mark .dot {
-      fill: var(--accent); transform-box: fill-box; transform-origin: center;
-      animation: dot-in 420ms cubic-bezier(.34,1.46,.64,1) 940ms both;
+
+    /* Opening: the mark scales up into place, the name and the line settle under it. */
+    #starting { display: grid; justify-items: center; animation: fade-in 420ms ease-out both; }
+    .mark {
+      width: 88px; height: 88px; display: block;
+      animation: mark-in 620ms cubic-bezier(.22,.61,.36,1) 140ms both;
     }
     .wordmark {
       margin: 18px 0 0; font-size: 19px; font-weight: 600; letter-spacing: .22em; text-indent: .22em;
-      animation: rise 560ms cubic-bezier(.22,.61,.36,1) 1060ms both;
+      animation: rise 560ms cubic-bezier(.22,.61,.36,1) 560ms both;
     }
     .status {
       margin: 10px 0 0; font-size: 13px; color: var(--muted);
-      animation: rise 560ms cubic-bezier(.22,.61,.36,1) 1240ms both;
+      animation: rise 560ms cubic-bezier(.22,.61,.36,1) 700ms both;
     }
     .track {
       width: 168px; height: 2px; margin-top: 22px; border-radius: 999px; overflow: hidden;
       background: var(--track);
       -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
       mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
-      animation: fade-in 520ms ease-out 1400ms both;
+      animation: fade-in 520ms ease-out 860ms both;
     }
     .track i { display: block; width: 38%; height: 100%; border-radius: 999px; background: var(--accent);
-      animation: sweep 1500ms cubic-bezier(.65,0,.35,1) 1400ms infinite; }
+      animation: sweep 1500ms cubic-bezier(.65,0,.35,1) 860ms infinite; }
 
     @keyframes fade-in { from { opacity: 0 } to { opacity: 1 } }
-    @keyframes draw { to { stroke-dashoffset: 0 } }
-    @keyframes dot-in { from { opacity: 0; transform: scale(.2) } to { opacity: 1; transform: scale(1) } }
+    @keyframes mark-in { from { opacity: 0; transform: scale(.84) } to { opacity: 1; transform: none } }
     @keyframes rise { from { opacity: 0; transform: translateY(7px) } to { opacity: 1; transform: none } }
     @keyframes sweep { 0% { transform: translateX(-110%) } 100% { transform: translateX(372%) } }
 
     @media (prefers-reduced-motion: reduce) {
-      #starting, .mark .stroke, .mark .dot, .wordmark, .status, .track, .track i { animation: none }
-      .mark .stroke { stroke-dashoffset: 0 }
+      #starting, .mark, .wordmark, .status, .track, .track i { animation: none }
     }
   </style>
 </head>
 <body>
   <main>
     <section id="starting">
-      <svg class="mark" viewBox="3 0 64 64" aria-hidden="true">
-        <path class="stroke" pathLength="1" d="M17 52V12H29C42.255 12 53 20.954 53 32S42.255 52 32 52C28.5 52 27 50 27 46.5V42"/>
-        <circle class="dot" cx="27" cy="34" r="4.5"/>
+<svg class="mark" viewBox="148 148 728 728" fill="none" aria-hidden="true">
+        <defs>
+          <clipPath id="plate"><rect x="148" y="148" width="728" height="728" rx="180"/></clipPath>
+
+          <linearGradient id="glassFill" x1="148" y1="148" x2="876" y2="876" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#fff" stop-opacity=".22"/>
+            <stop offset=".55" stop-color="#fff" stop-opacity=".07"/>
+            <stop offset="1" stop-color="#fff" stop-opacity=".04"/>
+          </linearGradient>
+          <linearGradient id="glassEdge" x1="148" y1="148" x2="876" y2="876" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#fff" stop-opacity=".7"/>
+            <stop offset=".4" stop-color="#fff" stop-opacity=".1"/>
+            <stop offset=".75" stop-color="#fff" stop-opacity=".06"/>
+            <stop offset="1" stop-color="#c9d8f5" stop-opacity=".4"/>
+          </linearGradient>
+          <linearGradient id="sheen" x1="0" y1="148" x2="0" y2="520" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#fff" stop-opacity=".16"/>
+            <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+          </linearGradient>
+          <linearGradient id="ink" x1="0" y1="10" x2="0" y2="54" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#ffffff"/>
+            <stop offset=".45" stop-color="#e2eafa"/>
+            <stop offset="1" stop-color="#aec3ec"/>
+          </linearGradient>
+          <radialGradient id="pearl" cx="25.6" cy="32.6" r="5.6" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#ffffff"/>
+            <stop offset=".5" stop-color="#d6e2f8"/>
+            <stop offset="1" stop-color="#93acdf"/>
+          </radialGradient>
+
+          <filter id="frost" filterUnits="userSpaceOnUse" x="-300" y="-300" width="1624" height="1624">
+            <feGaussianBlur stdDeviation="95"/>
+            <feColorMatrix type="saturate" values="1.25"/>
+          </filter>
+          <filter id="grain" filterUnits="userSpaceOnUse" x="148" y="148" width="728" height="728">
+            <feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="7"/>
+            <feColorMatrix values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .05 0"/>
+          </filter>
+          <filter id="lift" x="-30%" y="-30%" width="160%" height="160%">
+            <feDropShadow dx="0" dy="1.1" stdDeviation="1.3" flood-color="#08112a" flood-opacity=".55"/>
+          </filter>
+          <filter id="glow" x="-200%" y="-200%" width="500%" height="500%">
+            <feGaussianBlur stdDeviation="3.2"/>
+          </filter>
+
+          <g id="orbs">
+            <circle cx="300" cy="300" r="230" fill="#9fb8e8"/>
+            <circle cx="790" cy="770" r="260" fill="#4f72b8"/>
+            <circle cx="815" cy="235" r="165" fill="#7fb0dc" fill-opacity=".85"/>
+            <circle cx="210" cy="830" r="120" fill="#1b2c52" fill-opacity=".8"/>
+          </g>
+        </defs>
+
+        <g clip-path="url(#plate)">
+          <rect x="148" y="148" width="728" height="728" fill="#1a2746"/>
+          <use href="#orbs" filter="url(#frost)" opacity=".62"/>
+          <rect x="148" y="148" width="728" height="728" fill="url(#glassFill)"/>
+          <rect x="148" y="148" width="728" height="728" filter="url(#grain)"/>
+          <path d="M148 148H876V460C700 410 420 390 148 460Z" fill="url(#sheen)"/>
+        </g>
+        <rect x="150" y="150" width="724" height="724" rx="178" stroke="url(#glassEdge)" stroke-width="4"/>
+
+        <g transform="translate(512 512) scale(11) translate(-35 -32)">
+          <circle cx="27" cy="34" r="7" fill="#c4d5f7" opacity=".55" filter="url(#glow)"/>
+          <g filter="url(#lift)">
+            <path d="M17 52V12H29C42.255 12 53 20.954 53 32S42.255 52 32 52C28.5 52 27 50 27 46.5V42" stroke="url(#ink)" stroke-width="5"/>
+            <circle cx="27" cy="34" r="4.5" fill="url(#pearl)"/>
+          </g>
+        </g>
       </svg>
       <p class="wordmark">DEIXIS</p>
       <p class="status" role="status" data-t="starting">Starting the research workspace…</p>
@@ -132,6 +200,8 @@
       for (const el of document.querySelectorAll("[data-t]")) el.textContent = tr[el.dataset.t] || el.textContent;
     }
     const params = new URLSearchParams(location.search);
+    const frame = params.get("frame");
+    if (frame === "splash" || frame === "blank") document.documentElement.dataset.frame = frame;
     const state = params.get("state") === "stopped" ? "stopped" : "starting";
     document.getElementById("starting").hidden = state !== "starting";
     document.getElementById("stopped").hidden = state !== "stopped";

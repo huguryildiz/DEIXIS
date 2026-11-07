@@ -41,6 +41,7 @@ use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::webview::{DownloadEvent, NewWindowResponse};
 use tauri::window::Color;
+use tauri::webview::PageLoadEvent;
 use tauri::{AppHandle, Manager, RunEvent, Theme, Url, WebviewUrl, WebviewWindowBuilder, WindowEvent, Wry};
 use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
@@ -52,6 +53,7 @@ const SHUTDOWN_WAIT: Duration = Duration::from_secs(8);
 const STATUS_EVERY: Duration = Duration::from_secs(5);
 const STDERR_LINES: usize = 40;
 const MAIN: &str = "main";
+const SPLASH: &str = "splash";
 
 struct Backend {
     generation: u64,
@@ -138,12 +140,14 @@ fn apply_theme(app: &AppHandle, choice: ThemeChoice) {
         *current = choice;
         changed
     };
-    if let Some(window) = app.get_webview_window(MAIN) {
-        if changed {
-            let _ = window.set_theme(choice.window());
-        }
-        if let Ok(shown) = window.theme() {
-            let _ = window.set_background_color(Some(background(shown)));
+    for label in [MAIN, SPLASH] {
+        if let Some(window) = app.get_webview_window(label) {
+            if changed {
+                let _ = window.set_theme(choice.window());
+            }
+            if let Ok(shown) = window.theme() {
+                let _ = window.set_background_color(Some(background(shown)));
+            }
         }
     }
     if changed {
@@ -402,7 +406,14 @@ fn encode(text: &str) -> String {
 }
 
 /// Show a local page of the shell (`ui/index.html`) in the window: starting, stopped.
+///
+/// While the opening window is up it already says "starting", so a start keeps the main window hidden behind it
+/// (D179); bringing a 1280-point empty frame forward for that is the thing the opening window is there to avoid.
+/// Everything else - "stopped", and a start after the opening window is gone (Restart) - belongs in the main window.
 fn show_local(app: &AppHandle, state: &str) {
+    if state == "starting" && app.get_webview_window(SPLASH).is_some() {
+        return;
+    }
     let log = log_path(app);
     if let Some(window) = app.get_webview_window(MAIN) {
         let theme = app.state::<Shell>().theme.lock().unwrap().word();
@@ -410,6 +421,14 @@ fn show_local(app: &AppHandle, state: &str) {
             let _ = window.navigate(url);
         }
         let _ = window.show();
+    }
+    close_splash(app);
+}
+
+/// Let the opening window go, once the main window has something to show in its place (D179).
+fn close_splash(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window(SPLASH) {
+        let _ = window.close();
     }
 }
 
@@ -419,6 +438,7 @@ fn show_main(app: &AppHandle) {
         let _ = window.show();
         let _ = window.set_focus();
     }
+    close_splash(app);
 }
 
 fn stopped_before(shell: &Shell) -> String {
@@ -782,8 +802,9 @@ fn main() {
             // The theme kept from the last run; the first launch follows the system until the backend names one.
             let choice = saved_theme(&handle);
             *app.state::<Shell>().theme.lock().unwrap() = choice;
-            let mut builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App(format!("index.html?theme={}", choice.word()).into()))
+            let mut builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::App(format!("index.html?theme={}&frame=blank", choice.word()).into()))
                 .title("DEIXIS")
+                .visible(false)  // shown by show_main once a page has painted in it (D179)
                 .theme(choice.window());
             if let Some(theme) = choice.window() {
                 builder = builder.background_color(background(theme));
@@ -804,9 +825,31 @@ fn main() {
                 .on_page_load(|window, payload| {
                     // The document now shown (committed), for the action check in on_navigation.
                     *window.app_handle().state::<Shell>().page.lock().unwrap() = payload.url().to_string();
+                    // The backend's page has finished loading, so the window has something to show: bring it up and
+                    // let the opening window go. The app appears with its content already there (D179).
+                    if matches!(payload.event(), PageLoadEvent::Finished) && payload.url().host_str() == Some("127.0.0.1") {
+                        show_main(window.app_handle());
+                    }
                 })
                 .on_download(move |_webview, event| on_download(&saver, event))
                 .build()?;
+            // A small frameless window carries the mark while the backend starts, so the first thing a launch shows is
+            // the app opening rather than an empty 1280-point frame (D179).
+            let splash = WebviewWindowBuilder::new(app, SPLASH,
+                                                       WebviewUrl::App(format!("index.html?theme={}&frame=splash", choice.word()).into()))
+                .title("DEIXIS")
+                .inner_size(460.0, 330.0)
+                .decorations(false)
+                .resizable(false)
+                .maximizable(false)
+                .minimizable(false)
+                .skip_taskbar(true)
+                .center()
+                .transparent(true)  // the page draws the rounded panel; the window itself has no frame
+                .shadow(true)
+                .background_color(Color(0, 0, 0, 0))  // nothing behind the page, so its corners stay clear
+                .theme(choice.window());
+            splash.build()?;
             if let Some(window) = app.get_webview_window(MAIN) {
                 if let Ok(shown) = window.theme() {
                     let _ = window.set_background_color(Some(background(shown)));

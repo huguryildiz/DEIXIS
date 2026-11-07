@@ -1,5 +1,5 @@
-"""A model as the reader of one numbered display equation from its page crop (D113): the equations model set in
-Settings, else the answer model (D136).
+"""A model as the reader of one numbered display equation from its page crop: the equations model set in
+Settings, else the answer model.
 
 Only the crop's PNG and the fixed instruction below are sent: never the PDF, its text or anything about the paper. The
 answer is used only when the call completed, carried no tool item, parses to exactly `{"latex": <text>}` and was given by

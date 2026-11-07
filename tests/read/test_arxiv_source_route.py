@@ -1,4 +1,4 @@
-"""The arXiv source route in the equation service, the answer run and the views (slice 22, D104, decisions 1, 6–8).
+"""The arXiv source route in the equation service, the answer run and the views (slice 22, decisions 1, 6–8).
 
 A fake fetch serves SYNTHETIC source archives; the clock is fake. The
 PDFs and records are SYNTHETIC. Passing shows the route's states, guards and wiring, not matching quality.

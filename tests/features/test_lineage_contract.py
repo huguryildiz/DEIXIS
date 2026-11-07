@@ -171,7 +171,7 @@ def test_fake_adapter_answers_lineage_step_through_model_step(tmp_path):
 
 
 def forbidden_salvage(*args,**kwargs):
-    pytest.fail('Lineage must never use D56 answer salvage')
+    pytest.fail('Lineage must never use answer salvage')
 
 
 def test_lineage_step_repairs_once_then_stops_without_salvage(tmp_path,monkeypatch):

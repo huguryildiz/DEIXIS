@@ -7,7 +7,7 @@ import { t } from '../lib/i18n'
 import './kit.css'
 import './plan.css'
 
-// The Search plan panel (UI parity S23b, P42; mockup `plan()`; D12). It shows the plan the server stores for the revision
+// The Search plan panel (UI parity S23b, P42; mockup `plan()`). It shows the plan the server stores for the revision
 // it names (api/search_plan_routes.py): the words of each block, the stored Query 1/Query 2 (read only: a person edits
 // words, never query text), the criterion and the providers. "Search again with this plan" saves the edited plan as the
 // next question revision and then asks for a discovery run; each outcome is reported from the server's answer, and a
@@ -197,7 +197,7 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
         }
       }
       try {
-        // Bound to the revision that holds this plan (D14): if another window saved a newer one meanwhile, the server
+        // Bound to the revision that holds this plan: if another window saved a newer one meanwhile, the server
         // refuses and creates no run, so a different plan is never searched under this message.
         const run = await api.startRun(researchId, 'discovery', crypto.randomUUID(), current.scope_revision)
         onAnnounced(run.id)
@@ -220,7 +220,7 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
   if (!loaded) return <div className="plan-panel mk pad"><p role="status"><span className="shimmer-text">{t('Loading the search plan…')}</span></p></div>
 
   const plan = loaded.plan
-  // A withdrawn revision's number is not used again (D67): the backend says which number saving makes.
+  // A withdrawn revision's number is not used again: the backend says which number saving makes.
   const nextRevision = view.research.next_scope_revision
   const from = loaded.based_on?.scope_revision
   const origin = !plan ? t('No search of this question has frozen a plan yet; it shows here once the first search has planned.')
@@ -239,8 +239,8 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
   const draftPlan = plan && draft ? planOf(plan, draft) : null
   const wordsChanged = Boolean(plan && draft && (draft.setting.join('\n') !== plan.setting.map(r => r.term).join('\n') || draft.task.join('\n') !== plan.task.map(r => r.term).join('\n')))
   const backups = plan ? [...plan.setting_backup, ...plan.task_backup].map(row => row.term) : []
-  // The stored plan's words its frozen search did not carry (D26); a chip is marked while its word is the stored one.
-  // A word no keyword query carried may still have been sent in the block terms' semantic request (D154).
+  // The stored plan's words its frozen search did not carry; a chip is marked while its word is the stored one.
+  // A word no keyword query carried may still have been sent in the block terms' semantic request.
   const semanticOnly = (loaded.unsearched ?? []).filter(w => w.semantic === true)
   const unsearched = (loaded.unsearched ?? []).filter(w => w.semantic !== true)
   const disabledReason = active ? t('Available when the run ends.') : !searchReady ? t('Choose a readable PDF to guide the search first.') : null

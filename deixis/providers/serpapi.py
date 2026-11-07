@@ -8,7 +8,7 @@ so an exhausted-search response is not retried; temporary or unknown 429s use bo
 the `api_key` query parameter and is never recorded.
 
 Paging: SerpApi pages Google Scholar results, but every page is a billed search and this is a supplementary source
-(D13), so one page is read and no next cursor is ever returned.
+, so one page is read and no next cursor is ever returned.
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
     if not api_key:
         return SearchOutcome("not_configured", "before_send", f"GET {SEARCH_URL} access=not_configured", "not_configured")
     # `cursor` is accepted and ignored: SerpApi pages, but every page is a paid search and this is a supplementary
-    # source (D13), so one page is read and `next_cursor` stays None.
+    # source, so one page is read and `next_cursor` stays None.
     del cursor
     count = min(limit, MAX_RESULTS)
     params = {"engine": "google_scholar", "q": query, "num": count, "hl": "en", "api_key": api_key or ""}

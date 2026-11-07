@@ -4,7 +4,7 @@ A full-text source usually reaches the answer input with two passages. The topic
 page that repeats the question's words most: the title page, the introduction or related work, which restate the
 abstract or describe other papers. The page that reports the paper's own delivery ratio or energy figures rarely ranks
 there, so the answer cannot state them although the reading had them. When the research's vocabulary names outcome
-terms, the source's most result-dense passage takes the first slot, formula passages keep the second (D56), and a
+terms, the source's most result-dense passage takes the first slot, formula passages keep the second, and a
 reference-list page goes to the end of the source's order. Nothing is removed, and with no outcome terms nothing moves.
 
 The score counts reported values (a number with `%`, `percent` or a unit) in sentences that name an outcome term and a
@@ -48,7 +48,7 @@ ABBREVIATIONS = frozenset({"approx", "ca", "e.g", "i.e", "cf", "vs", "resp", "al
                            "vol", "pp", "sec", "tab", "ref", "refs", "max", "min", "avg"})
 _INITIALS = re.compile(r"(?:[a-z]\.)*[a-z]")  # one letter, or dotted initials such as U.S
 CITATION = re.compile(r"\[\d+(?:\s*[,–-]\s*\d+)*\]|\bet al\.|\bvol\.|\bpp\.", re.IGNORECASE)
-MIN_SCORE = 2  # one value alone is too often a stray figure in an introduction; see D84
+MIN_SCORE = 2  # one value alone is too often a stray figure in an introduction
 REFERENCE_HITS = 6  # citation marks that make a passage with no outcome term a reference list
 THRESHOLDS = {"min_score": MIN_SCORE, "reference_hits": REFERENCE_HITS}
 
@@ -97,7 +97,7 @@ def order(ranked: list[dict[str, Any]], patterns: list[tuple[str, re.Pattern[str
     Slot 1 is the most result-dense passage when it reaches `MIN_SCORE`, else the best topic passage; slot 2 is the
     most formula-dense non-reference passage when formulas are asked (`formula_passages.bring_forward`); reference
     lists go last; everything else keeps its rank. An equal score keeps the higher-ranked passage. With no outcome patterns this is exactly the
-    order before D84.
+    order before that change.
     """
     if not patterns or len(ranked) < 2:
         return (formula_passages.bring_forward(ranked) if formulas else ranked), False

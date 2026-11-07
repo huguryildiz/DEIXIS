@@ -108,7 +108,7 @@ def test_uploading_a_pdf_replaces_a_torn_file_under_its_hash_name(tmp_path):
     settings = sw_settings(tmp_path)
     settings.papers_dir.mkdir(parents=True, exist_ok=True)
     torn = settings.papers_dir / f"{sha}.pdf"
-    torn.write_bytes(data[: len(data) // 2])  # what the pre-D162 download write could leave behind
+    torn.write_bytes(data[: len(data) // 2])  # what the earlier download write could leave behind
     with TestClient(app_for(tmp_path)) as client:
         session(client)
         rid = create(client, source_scope="attached")

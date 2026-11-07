@@ -1,4 +1,4 @@
-"""P5 slice 2 (D45): what earlier cell evidence and answer quotes show after a PDF is removed, replaced or re-extracted.
+"""P5 slice 2: what earlier cell evidence and answer quotes show after a PDF is removed, replaced or re-extracted.
 
 Records and model outputs are SYNTHETIC (scripted FakeAdapter). Passing shows the recorded evidence keeps resolving and is
 marked; it says nothing about whether the new text supports the old value.
@@ -50,7 +50,7 @@ def test_cell_evidence_is_marked_by_what_happened_to_its_file(tmp_path):
     assert view["current"]["evidence"][0]["physical_page"] in (1, 2)
 
 
-# ---- D52: an automatic re-read when PDF text arrives ------------------------------------------------------------
+# ---- an automatic re-read when PDF text arrives ------------------------------------------------------------
 def arrive(lib, svid, text="SYNTHETIC preprint full text: packets of 96 bytes were best.", sha="7"):
     time.sleep(0.005)  # timestamps have millisecond resolution; the text must come after the value it is compared with
     return add_pdf(lib.store, svid, [text], sha * 64)

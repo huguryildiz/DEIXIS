@@ -3,7 +3,7 @@ set of works, and start a research over a set; import a Zotero collection or a B
 (S19b). The application middleware enforces loopback, Origin and CSRF.
 
 Versions are never merged: a saved item is one source version, an exported entry is one stored record, and a new
-research gets the one version per work that adding a Library work to a research already picks (D41).
+research gets the one version per work that adding a Library work to a research already picks.
 """
 
 from __future__ import annotations

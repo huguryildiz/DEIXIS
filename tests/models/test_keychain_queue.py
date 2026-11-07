@@ -367,7 +367,7 @@ def test_a_key_set_outside_the_app_is_refused_without_naming_the_variable(no_key
 
 
 def test_macos_keeps_every_key_in_one_item_and_moves_old_items(monkeypatch, memory_keychain):
-    """D171: on macOS the keys are one Keychain item, so the system asks once, not once per key; items saved one per key
+    """On macOS the keys are one Keychain item, so the system asks once, not once per key; items saved one per key
     are moved into it at start-up and deleted only after the one item reads back."""
     monkeypatch.setattr(credentials, "_bundled", lambda: True)
     for env in (KEY, "VOYAGE_API_KEY", "S2_API_KEY"):

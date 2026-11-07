@@ -1,15 +1,15 @@
 """Reading the numbered display equations of stored PDFs, in the background and before an answer or a table cell.
 
-Marker, the optional local reader of D52, was removed (D113). A PDF whose current text is an earlier Marker reading keeps
+Marker, the optional local reader , was removed. A PDF whose current text is an earlier Marker reading keeps
 it and its state is `read`; nothing reads it again by itself.
 
-Every route writes a new extraction under D45's rule, so older passages stay resolvable, and places only numbered display
+Every route writes a new extraction under the extraction rule, so older passages stay resolvable, and places only numbered display
 equations found from the PDF's text layer (`documents/equation_regions.py`):
 
-- the arXiv source route (D104): with `DEIXIS_ARXIV_SOURCE=auto` and on POSIX, a PDF that is an arXiv version gets the
+- the arXiv source route: with `DEIXIS_ARXIV_SOURCE=auto` and on POSIX, a PDF that is an arXiv version gets the
   numbered display equations of the authors' LaTeX source of that version, matched to the page by their numbers;
-- Mathpix (D40): with its switch on and its key pair saved, each equation's page crop is read by Mathpix;
-- the equations model (D113, D136): with its switch on (the default), the equations model set in Settings (else the
+- Mathpix: with its switch on and its key pair saved, each equation's page crop is read by Mathpix;
+- the equations model: with its switch on (the default), the equations model set in Settings (else the
   default answer model) reads each crop, up to MODEL_PARALLEL at once (`documents/equation_model.py`). A connection
   without image input turns the route off and the state says why; no other model or connection is asked.
 
@@ -43,7 +43,7 @@ from deixis.workflow.run import spend
 from deixis.workflow.run.store import NotFound, RunInProgress, Store
 
 log = logging.getLogger("deixis.workflow.equations")  # the name before the folders; log names stay
-NO_MATH = "no pages with mathematics"  # an earlier Marker reading's "nothing to read" (D52)
+NO_MATH = "no pages with mathematics"  # an earlier Marker reading's "nothing to read"
 RETRY_SECONDS = 60
 MAX_ATTEMPTS = 3  # a failed read is tried again in the background until this many attempts
 RETRY_AFTER = timedelta(minutes=10)
@@ -87,7 +87,7 @@ def mathpix_target_version(current: str | None) -> str:
 
 
 def model_target_version(current: str | None) -> str:
-    """The version a model reading of a PDF gets: its text layer, its OCR reading if any, then the model (D113)."""
+    """The version a model reading of a PDF gets: its text layer, its OCR reading if any, then the model."""
     ocr = OCR_SUFFIX.search(recovery.profile_of(current or ""))
     return recovery.text_base(current) + (ocr.group(0) if ocr else "") + MODEL_SUFFIX
 
@@ -97,7 +97,7 @@ def crop_target_version(route: str, current: str | None) -> str:
 
 
 def model_switch(store: Store) -> bool:
-    return store.setting(MODEL_SWITCH) != "off"  # on unless turned off (D113)
+    return store.setting(MODEL_SWITCH) != "off"  # on unless turned off
 
 
 def model_budget(store: Store) -> int:
@@ -142,7 +142,7 @@ def model_refused(store: Store, revision: str | None) -> bool:
 
 
 def model_month_cost(store: Store) -> dict[str, Any]:
-    """This calendar month's model requests priced in the spend ledger (D115, the one place their dollars are kept):
+    """This calendar month's model requests priced in the spend ledger (the one place their dollars are kept):
     dollars for calls that completed with usage, and how many counted calls have no known cost (reserved or unknown,
     even with partial usage; an error without usage; a model the list does not price)."""
     month = now()[:7]
@@ -288,7 +288,7 @@ def equation_state(store: Store, asset_id: str) -> dict[str, Any]:
     asset = store.asset(asset_id)
     service = getattr(store, "equation_route", None)
     current = asset["extraction_version"] or ""
-    if "+marker-" in current:  # an earlier Marker reading, kept (D113)
+    if "+marker-" in current:  # an earlier Marker reading, kept
         return _marker_read(store, asset)
     if current.endswith(SOURCE_SUFFIX):
         row = store.conn.execute("SELECT math_json FROM asset_extractions WHERE asset_id = ? AND outcome = 'current'",
@@ -380,7 +380,8 @@ def _mathpix_state(store: Store, asset: dict[str, Any]) -> dict[str, Any]:
             return {"state": "no_candidates"} | route
         if row["rejection_reason"] == NONE_PLACED:
             return {"state": "none_placed", "refused": dict(Counter(r["reason"] for r in math.get("refused", [])))} | route
-        # A failed read carries its attempt count; a reading D45 did not take has none and is not tried again by itself.
+        # A failed read carries its attempt count; a reading the extractor did not take has none and is not tried
+        # again by itself.
         return {"state": "failed", "reason": math.get("reason") or row["rejection_reason"],
                 "attempts": math.get("attempts", MAX_ATTEMPTS), "at": row["created_at"]} | route
     if mathpix_keys_rejected(store):
@@ -435,7 +436,7 @@ def _source_state(store: Store, asset: dict[str, Any]) -> dict[str, Any]:
 
 
 def _marker_read(store: Store, asset: dict[str, Any]) -> dict[str, Any]:
-    """An earlier Marker reading (D52), kept after Marker was removed (D113): its equations to check against the page."""
+    """An earlier Marker reading, kept after Marker was removed: its equations to check against the page."""
     row = store.conn.execute("SELECT math_json FROM asset_extractions WHERE asset_id = ? AND outcome = 'current'", (asset["id"],)).fetchone()
     to_check = json.loads(row["math_json"] or "{}").get("equations_to_check", []) if row else []
     return {"state": "read", "to_check": sorted({e["page"] for e in to_check}), "equations_to_check": len(to_check), "route": "marker"}
@@ -446,7 +447,7 @@ QUEUED_STATES = ("pending", "reading", "source_waiting")
 
 def background_read_waiting(store: Store, asset_id: str) -> dict[str, Any] | None:
     """The equation state of a PDF the background reader is reading now or will still read by itself, else None
-    (D105: a frozen citation-check plan would go stale when that reading lands). Read as `run_forever` and
+    (a frozen citation-check plan would go stale when that reading lands). Read as `run_forever` and
     `next_asset` read it: a reader that can run (the arXiv source route, Mathpix or the answer model active), a PDF with
     a successful text extraction not read by Marker earlier, and a state that is pending,
     reading, waiting for its source, or failed with attempts left. A PDF a run is using now still counts: it is read
@@ -489,14 +490,14 @@ class EquationService:
     def __init__(self, store: Store, papers_dir: Path, arxiv_mode: str = "off", data_dir: Path | None = None,
                  fetch_file: Any = None, http_client: Any = None, adapters: dict[str, Any] | None = None):
         self.store, self.papers_dir = store, papers_dir
-        # The arXiv source route (D104): its flag, and the stored sources under the data directory.
+        # The arXiv source route: its flag, and the stored sources under the data directory.
         self.arxiv_mode = arxiv_mode
         self.sources = arxiv_source.SourceStore(store, data_dir or papers_dir.parent, fetch_file=fetch_file, client=http_client)
         store.equation_route = self  # equation_state reads the route's rules from the store it is given
-        # Mathpix (D40): the data directory its request lock lives in and the client its requests go through.
+        # Mathpix: the data directory its request lock lives in and the client its requests go through.
         self.data_dir = data_dir or papers_dir.parent
         self.mathpix_client = http_client
-        # The answer model (D113): the app's model connections, by name.
+        # The answer model: the app's model connections, by name.
         self.adapters: dict[str, Any] = adapters or {}
         self._task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
@@ -619,7 +620,7 @@ class EquationService:
                 return await self._read_crops(asset_id, run_id, retry, background, state)
             return state
 
-    # ---- the arXiv source route (D104) -------------------------------------------------------------------------------
+    # ---- the arXiv source route -------------------------------------------------------------------------------
     async def _eligibility(self, asset: dict[str, Any]) -> dict[str, Any]:
         """Decision 1, decided once per PDF and stored, so the view never opens a PDF to show the state. The PDF's first
         pages are read for the stamp in a worker thread; the row is written on the event loop."""
@@ -800,7 +801,7 @@ class EquationService:
         except text_retry.FileBusy:
             return equation_state(self.store, asset_id) | {"outcome": "file_busy"}
 
-    # ---- the crop routes: Mathpix (D40) and the answer model (D113) ------------------------------------------------
+    # ---- the crop routes: Mathpix and the answer model ------------------------------------------------
     def _send_refusal(self, route: str, asset_id: str, start_version: str | None, start_id: str | None, ctx: Any) -> str | None:
         """The pre-send check, inside the reservation's transaction: why no request may be sent now, or None. `ctx` is the
         Mathpix pair or the model revision the read started with."""
@@ -913,7 +914,7 @@ class EquationService:
                 (status, getattr(result, "resolved_model", None), latex, getattr(result, "http_status", None),
                  getattr(result, "delivery_class", None), getattr(result, "error_kind", None), reason,
                  json.dumps(result.token_usage) if getattr(result, "token_usage", None) else None, now(), row_id))
-            spend.record_equation_request(self.store.conn, row_id)  # the day's spend counts it too (D115)
+            spend.record_equation_request(self.store.conn, row_id)  # the day's spend counts it too
 
     async def _model_answer(self, asset_id: str, start_version: str | None, start_id: str | None, file_sha: str, ctx: Any,
                             crop: dict[str, Any]) -> dict[str, Any]:
@@ -1004,7 +1005,7 @@ class EquationService:
                                 "started_at": now(), "route": route}
                 answers: dict[tuple[int, str], dict[str, Any]] = {}
                 unsent: list[dict[str, Any]] = []  # crops a budget kept from being sent; stored answers still count
-                refused_answers: list[dict[str, Any]] = []  # model answers that were not accepted (D113)
+                refused_answers: list[dict[str, Any]] = []  # model answers that were not accepted
                 stop: dict[str, Any] | None = None
                 try:
                     found = await text_retry.drained_thread(equation_regions.detect, path, set(ocr_pages))
@@ -1153,7 +1154,7 @@ class EquationService:
                 "reading": self.reading if self.reading and self.reading.get("route") == mathpix.ENGINE else None}
 
     def model_status(self) -> dict[str, Any]:
-        """The Settings tile of the answer model's equation reading (D113): the switch, the model it uses or why it is
+        """The Settings tile of the answer model's equation reading: the switch, the model it uses or why it is
         off, this month's requests against the budget with their estimated cost, and the library's PDFs by state."""
         ready, reason = self.model_ready()
         choice = equation_model.choice(self.store)
@@ -1246,7 +1247,7 @@ class EquationService:
             if self._waiting:
                 await asyncio.sleep(1)  # a run or request goes first
                 continue
-            # The arXiv source route when its flag is on (D104), Mathpix or the answer model when they can send.
+            # The arXiv source route when its flag is on, Mathpix or the answer model when they can send.
             asset_id = self.next_asset() if self.route_active() or self.crop_active() else None
             if asset_id is None:
                 await asyncio.sleep(RETRY_SECONDS)

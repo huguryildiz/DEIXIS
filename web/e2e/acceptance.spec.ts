@@ -180,9 +180,9 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     const manuscript = row(page, 'SYNTHETIC molecule schedule letter', true)
     await expect(manuscript.getByText('Another version of the record above: submitted manuscript. It follows the record’s selection')).toBeVisible()
     await expect(row(page, 'SYNTHETIC molecule schedule letter').locator('.source-status')).toContainText('different version (submitted manuscript) · not used for this version')
-    // D132: with a search behind it, the unique-work count sits in "How this answer was built", not the facts strip.
+    // With a search behind it, the unique-work count sits in "How this answer was built", not the facts strip.
     await expect(page.locator('.answer-basis-lead')).toContainText('6 works found')  // five searched works and the uploaded seed
-    await expect(manuscript.getByRole('button', { name: 'Include' })).toHaveCount(0)  // D48: only the work's head has a selection
+    await expect(manuscript.getByRole('button', { name: 'Include' })).toHaveCount(0)  // Only the work's head has a selection
     await expect(row(page, 'SYNTHETIC molecule schedule letter').getByRole('button', { name: 'Include' })).toBeDisabled()
     await shot(page, 'C-other-version-follows-record')
   })
@@ -233,7 +233,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     const copiedReport = await page.evaluate(() => navigator.clipboard.readText())
     expect(copiedReport).toContain('# Synthetic evidence for release scheduling and optimization in constrained molecular communication networks')
     expect(copiedReport).toContain('## Cited passages')
-    expect(copiedReport).toMatch(/\(Synthetic, (\d{4}|n\.d\.)\)|\[[a-z]+(\d{4}|nd)[a-z]*[\],]/)  // citations name the author and year, or the source key (D59)
+    expect(copiedReport).toMatch(/\(Synthetic, (\d{4}|n\.d\.)\)|\[[a-z]+(\d{4}|nd)[a-z]*[\],]/) // citations name the author and year, or the source key
     const download = page.waitForEvent('download')
     await report.getByRole('button', { name: 'Download report' }).click()
     await page.getByRole('menuitem', { name: /^MD/ }).click()
@@ -246,7 +246,7 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
     for (const pill of [/PDF p\. \d/, 'published version']) await expect(reference.locator('.ref-pills')).toContainText(pill)
     await expect(reference.locator('.ref-key')).toHaveText(/^[a-z]+(\d{4}|nd)[a-z]*$/)
     await reference.scrollIntoViewIfNeeded()
-    await shot(page, 'D59-answer-references')
+    await shot(page, 'answer-references')
     await reference.getByRole('button').click()
     const sheet = sourcePanel(page)
     await expect(sheet.locator('.source-chips .ref-pill').first()).toHaveText(/^PDF text · \d+ pp\.$/)
@@ -302,7 +302,8 @@ test.describe.serial('Main flow: A, B, C, D, F, G', () => {
   })
 
   test('C: evidence from the manuscript stays labelled with the manuscript version', async () => {
-    // D48: the answer reads one version per work. The record has no PDF text, so the manuscript's open PDF is read and cited as the manuscript.
+    // The answer reads one version per work. The record has no PDF text, so the manuscript's open PDF is read and
+    // cited as the manuscript.
     const letter = reportPanel(page).locator('.reference-list li', { hasText: 'SYNTHETIC molecule schedule letter' })
     await expect(letter).toHaveCount(1)
     await expect(letter).toContainText('submitted manuscript')
@@ -587,7 +588,7 @@ test.describe.serial('Failures: E and B (code check)', () => {
 })
 
 for (const language of ['en', 'tr'] as const) {
-  test(`D256: model quota explains service, suggested retry and saved state (${language})`, async ({ browser }) => {
+  test(`model quota explains service, suggested retry and saved state (${language})`, async ({ browser }) => {
     const server = new FixtureServer(nextPort())
     await server.start()
     const page = await browser.newPage({ viewport: language === 'tr' ? { width: 390, height: 844 } : { width: 1280, height: 900 } })
@@ -602,7 +603,7 @@ for (const language of ['en', 'tr'] as const) {
       await expect(page.getByText(language === 'tr' ? /Servisin önerdiği yeniden deneme zamanı/ : /Retry suggested at/).first()).toBeVisible()
       await expect(page.getByText(language === 'tr' ? /Tamamlanan iş kaydedildi; çalışma duraklatıldı/ : /Completed work is saved; the run is paused/).first()).toBeVisible()
       await expect(page.locator('.chat-note')).not.toContainText('quota_exhausted')
-      await shot(page, `D256-quota-${language}`)
+      await shot(page, `quota-${language}`)
     } finally {
       await page.close()
       await server.stop()

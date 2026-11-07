@@ -1,4 +1,4 @@
-"""Checks for inline math read from a line image, used by `marker_runner.py` inside the Marker environment (D52).
+"""Checks for inline math read from a line image, used by `marker_runner.py` inside the Marker environment.
 
 It imports nothing, so it runs in Marker's environment and in DEIXIS's tests alike. Marker keeps the PDF text layer and
 reads only lines that carry math again from the page image (surya, math mode). A reading is split into prose and

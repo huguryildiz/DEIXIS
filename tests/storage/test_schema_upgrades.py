@@ -1,4 +1,4 @@
-"""storage/schema.sql and the upgrade steps in storage/upgrades.py (D119) against the migration files they replaced.
+"""storage/schema.sql and the upgrade steps in storage/upgrades.py against the migration files they replaced.
 
 A new library made from schema.sql must hold what a library made by the old chain 0001 to 0016 holds once today's
 upgrade steps after 16 have run, object for object in the same order; a library made at any older version by the old
@@ -19,7 +19,7 @@ from deixis.workflow.run.store import Store
 from old_library import FOREIGN_KEYS_OFF, OLD_MIGRATIONS, master, old_files, old_library, steps_through, version_of
 
 CURRENT = db.schema_version()
-LAST_FILE = 16  # the last version the old migration files reach (D119); fixed, whatever CURRENT becomes
+LAST_FILE = 16  # the last version the old migration files reach; fixed, whatever CURRENT becomes
 HISTORICAL = range(1, LAST_FILE + 1)
 PAPER = b"%PDF SYNTHETIC paper kept through the upgrade " * 40
 
@@ -185,7 +185,7 @@ def test_a_failing_upgrade_step_is_undone_and_the_library_stays_at_its_version(t
 
 
 def test_step_17_keeps_the_english_sentences_and_takes_a_models_one(tmp_path):
-    """D149: the rebuilt table keeps every sentence a person or a question wrote and now takes the origin `model`."""
+    """The rebuilt table keeps every sentence a person or a question wrote and now takes the origin `model`."""
     conn = old_library(tmp_path / "library.sqlite", LAST_FILE)
     fill(conn)
     insert = "INSERT INTO scope_english_questions (research_id, scope_revision, text, origin, created_at) VALUES (?, ?, ?, ?, 'n')"

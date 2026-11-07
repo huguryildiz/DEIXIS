@@ -132,7 +132,7 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
     } finally { setFinding(null) }
   }
 
-  // "Continue without PDF" (D46): the work leaves the list and is read from its abstract; undo puts it back. Each answers
+  // "Continue without PDF": the work leaves the list and is read from its abstract; undo puts it back. Each answers
   // with the list, which replaces any list request still on its way.
   const skipFor = async (row: WaitingRow, undo: boolean) => {
     setSkipping(row.work_id)
@@ -253,7 +253,7 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
           <span className="pdf-ready-side waiting-actions">
             {row.links.doi && <a className="pdf-ready-link waiting-link" href={row.links.doi} target="_blank" rel="noopener noreferrer">{t('DOI')}<ExternalLink size={12} aria-hidden /><span className="sr-only">{t('(opens in a new tab)')}</span></a>}
             {row.links.landing && <a className="pdf-ready-link waiting-link" href={row.links.landing} target="_blank" rel="noopener noreferrer">{t('Publisher page')}<ExternalLink size={12} aria-hidden /><span className="sr-only">{t('(opens in a new tab)')}</span></a>}
-            {/* No route found an open copy, so looking again is not offered; the person can go on without the PDF (D46). */}
+            {/* No route found an open copy, so looking again is not offered; the person can go on without the PDF. */}
             {row.reason_code === 'no_fulltext'
               ? <Button variant="outline" size="sm" className="ghost" disabled={busy || skipping !== null} aria-label={t('Continue without PDF for {title}', { title: row.title })} onClick={() => { void skipFor(row, false) }}>
                 <FileText size={14} aria-hidden />{t('Continue without PDF')}
@@ -306,7 +306,7 @@ export function WaitingForPdf({ researchId, view, busy, onChanged, included, ans
   </div>
 }
 
-// The works the person went on without a PDF for (D46), folded to one line under the list. Each can be undone or still
+// The works the person went on without a PDF for, folded to one line under the list. Each can be undone or still
 // given a file, which clears the choice.
 function SkippedWorks({ rows, disabled, canAttach, uploading, onUndo, onUpload }: {
   rows: SkippedRow[]; disabled: boolean; canAttach: boolean; uploading: boolean

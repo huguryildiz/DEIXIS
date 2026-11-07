@@ -5,7 +5,7 @@ and a local server at an address set in Settings).
 Same boundary as the DeepSeek adapter: no tools, JSON-object mode, one new request per step, no schema enforcement
 (the schema reaches the model in the stored developer text), and the answering model reported as `resolved_model`
 so the flow's mismatch check applies. OpenRouter is the exception to JSON-object mode: it routes only to providers
-that take a strict JSON schema, and the schema is sent (D34). No reasoning effort is sent: these providers' effort
+that take a strict JSON schema, and the schema is sent. No reasoning effort is sent: these providers' effort
 parameters are not known to match DeepSeek's, so none is offered or forwarded.
 """
 

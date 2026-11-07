@@ -1,4 +1,4 @@
-"""BibTeX and RIS bibliographies of a research's included or cited sources (D16).
+"""BibTeX and RIS bibliographies of a research's included or cited sources.
 
 Built from stored source records only. Entry types follow Zotero's import translators (BibTeX.js, RIS.js), so a file
 opens in Zotero with matching item types. Neither format has a version field, so the source version DEIXIS read goes
@@ -67,7 +67,7 @@ def cited_by(store: Store, research_id: str, answer_id: str) -> set[str]:
 
 def export_sources(store: Store, research_id: str, selection: Selection, answer_id: str | None = None) -> list[dict[str, Any]]:
     """Sources in the order the research lists them: the included ones, or the ones an answer cites (`answer_id`, else
-    the answer the page shows). Cited sources since removed from the research are not listed (D50)."""
+    the answer the page shows). Cited sources since removed from the research are not listed."""
     view = research_view(store, research_id)
     if selection == "included":
         chosen = [s for s in view["sources"] if s["selection"]["state"] == "included"]
@@ -98,7 +98,7 @@ def to_bibtex(sources: list[dict[str, Any]], keys: list[str] | None = None, *, l
 
 def bibtex_with_notes(sources: list[dict[str, Any]], keys: list[str] | None = None, *,
                       latex_report: bool = False, unmapped=None) -> tuple[str, list[str]]:
-    """Keep D16 bytes by default; the report path has its own field boundary."""
+    """Keep the stored bytes by default; the report path has its own field boundary."""
     from deixis.workflow.features.report.report_latex_text import escape_text
 
     original = sources
@@ -175,8 +175,8 @@ def _kind(publication_type: str | None) -> str:
 
 
 def _version_note(label: str | None, abstract_only: bool = False, full_text_read: bool = False) -> str:
-    """The BibTeX note: the version read and, for a report source read from its abstract only (D114) or read in full
-    without meeting the whole criterion (D144), that."""
+    """The BibTeX note: the version read and, for a report source read from its abstract only or read in full
+    without meeting the whole criterion, that."""
     note = f"Source version read in DEIXIS: {_VERSION_NAMES.get(label, label)}" if label else ""
     extra = ("read from the abstract only" if abstract_only else
              "read in full, did not meet the whole inclusion criterion" if full_text_read else "")

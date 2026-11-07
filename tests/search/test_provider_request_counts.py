@@ -1,4 +1,4 @@
-"""A run's OpenAlex and Semantic Scholar request counts (P2, D31): one stored row per provider attempt the run made,
+"""A run's OpenAlex and Semantic Scholar request counts (P2): one stored row per provider attempt the run made,
 written just before the attempt goes to the HTTP client and settled when it ends, counting only the attempts that went
 out, with the refusals among them and the attempts not known whether sent named apart.
 

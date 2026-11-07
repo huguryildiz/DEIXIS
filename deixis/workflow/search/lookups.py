@@ -7,7 +7,7 @@ model, none of them changes a selection, and none of them can stop the run:
    read from the stored step output on a resumed run, because "the records still without an abstract" is a different
    list by then and re-deriving the batches would ask about other records.
 2. `record_lookup:<source>:<n>` sends one request and writes what came back. What each source answered about each
-   record is kept library-wide in `record_lookups`, as links are (D46): a record is asked once per source, by
+   record is kept library-wide in `record_lookups`, as links are: a record is asked once per source, by
    whichever research asks first, and only a `failed` answer is asked again.
 3. `record_flags` puts the survey labels on the records and writes the abstract-stage decision each record asks for.
    A flag removes nothing and a decision here is always `unresolved`, which is what a `pending` selection already
@@ -48,7 +48,7 @@ THRESHOLDS = {"max_requests": MAX_LOOKUP_REQUESTS, "crossref_chunk": CROSSREF_CH
 ABSTRACT_ORIGINS = {"semantic_scholar": "lookup_semantic_scholar", "crossref": "lookup_crossref_jats",
                     "scopus": "lookup_scopus"}
 # The sources whose answers settle a record's missing abstract. Scopus is asked after them and only on an
-# institutional network (D91), so a record it could not be asked about is not left waiting for it.
+# institutional network, so a record it could not be asked about is not left waiting for it.
 SOURCES = ("semantic_scholar", "crossref")
 # The abstract-stage codes this step owns. Another step's code (slice 09's) is never replaced by one of these.
 OWNED_CODES = ("survey_title_word", "abstract_not_found", "no_abstract", "abstract_not_proposed")
@@ -86,7 +86,7 @@ def answered(store: Store, source_version_id: str, provider: str) -> bool:
 
 
 def asked_out(store: Store, source_version_id: str, provider: str) -> bool:
-    """Whether this source is done with this record for an effort that does not wait on a rate limit (D88).
+    """Whether this source is done with this record for an effort that does not wait on a rate limit.
 
     A `failed` row — a refused batch, a timeout — counts here, because a `quick` run does not ask that source again:
     what it left is `abstract_not_found`, not a `no_abstract` that promises a retry this run will never make. A later
@@ -194,7 +194,7 @@ def plan_crossref(store: Store, research_id: str, scope_revision: int, scope: di
 
 def plan_scopus(store: Store, research_id: str, scope_revision: int, words: tuple[str, ...], spent: int,
                 limit: int = MAX_LOOKUP_REQUESTS, *, only: set[str] | None = None) -> dict[str, Any]:
-    """Who Scopus is asked about: the records Semantic Scholar and Crossref left without an abstract (D91).
+    """Who Scopus is asked about: the records Semantic Scholar and Crossref left without an abstract.
 
     The caller has already checked that this run's network is entitled to the complete view; `spent` counts that
     check with the requests of the two sources before it, so all three stay within one limit. The limit counts
@@ -254,7 +254,7 @@ def _store_links(store: Store, source_version_id: str, provider: str, answer: lo
     """Store the DOIs this source names as another version of the record, under their own scheme.
 
     `linked_doi` is a scheme of its own, kept apart from the `published_doi` that arXiv's author-supplied field
-    writes at search time (D48).
+    writes at search time.
     """
     ts, written = now(), 0
     for value in answer.linked_dois:
@@ -292,26 +292,26 @@ async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Se
                              prefix: str = "", crossref_in_flight: int = 1, s2_waits: int | None = None,
                              s2_batch: int = lookup.S2_LOOKUP_BATCH, s2_cooldown_skip: bool = False,
                              record_sent: bool = False, stop: Callable[[], bool] | None = None) -> None:
-    """Plan and send this run's DOI lookups. A failed request is recorded and the run goes on (D18).
+    """Plan and send this run's DOI lookups. A failed request is recorded and the run goes on.
 
     No request is sent twice: a step that already succeeded is skipped whole, and inside a chunk a record the
     library already has an answer for is passed over, so a run resumed mid-chunk carries on where it stopped.
-    `prefix` keeps a second round of the same run (the lookup before the rerank, D152) under steps of its own.
+    `prefix` keeps a second round of the same run (the lookup before the rerank) under steps of its own.
     `crossref_in_flight` is how many of Crossref's single requests one chunk has out at once (4 before the rerank under
-    D153's rule; 1, one after another, everywhere else).
+    lookup rule version 2; 1, one after another, everywhere else).
 
-    D155, for the runs whose frozen rule says so: `s2_waits` replaces the effort's 429 waits for Semantic Scholar alone
+    For the runs whose frozen rule says so: `s2_waits` replaces the effort's 429 waits for Semantic Scholar alone
     (0 before the rerank, so a refused batch fails at once and Crossref gets the time left), `s2_batch` is its batch
     size, and `s2_cooldown_skip` sends no Semantic Scholar batch while a 429 anywhere in this process holds its pacer
     in a cooldown: the step stores that it skipped, and Crossref and Scopus are asked as when Semantic Scholar fails.
-    D156: with `record_sent`, each request stores on its step, as `sent` and `out`, the records it is about once its own
+    With `record_sent`, each request stores on its step, as `sent` and `out`, the records it is about once its own
     headers are written to an open connection, and takes them off `out` when its response headers or its stored answer
     come back, so a round cut short can tell a request still out from one never sent or already answered.
-    `stop` (D173's deeper screening: the read cutoff) is asked at each checkpoint; once it holds, no further request is
+    `stop` (the deeper screening: the read cutoff) is asked at each checkpoint; once it holds, no further request is
     sent and the round returns.
     """
     run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
-    # How many 429s one batch waits out is this research's effort (D88). `quick` waits for none: the refused batch
+    # How many 429s one batch waits out is this research's effort. `quick` waits for none: the refused batch
     # is recorded with its status, its records stay without an abstract, and the next batch is still sent.
     waits = PROVIDER_WAIT[scope["effort"]]
 
@@ -364,8 +364,8 @@ async def _semantic_scholar_step(store: Store, http: httpx.AsyncClient, settings
                                  prefix: str = "", cooldown_skip: bool = False, record_sent: bool = False) -> None:
     """One batch request. The whole batch shares one request, so one failure leaves every record in it `failed`.
 
-    `waits` is how many 429s this effort waits out (D88); it is written on the step, so a skipped wait is on the
-    record of the run and not silent. With `cooldown_skip` (D155) a batch due, or queued, while the Semantic Scholar pacer
+    `waits` is how many 429s this effort waits out; it is written on the step, so a skipped wait is on the
+    record of the run and not silent. With `cooldown_skip` a batch due, or queued, while the Semantic Scholar pacer
     is in a 429 cooldown is not sent: each record is stored `failed` as after a refused batch, and the step says it
     was skipped for the cooldown and for how many records.
     """
@@ -391,13 +391,13 @@ async def _semantic_scholar_step(store: Store, http: httpx.AsyncClient, settings
     settle_dispatch(store, run["id"], step, dispatched, reserved, "lookup_requests", "lookup_sends")
     answers, outcome = dispatched.answers, dispatched.outcome
     # A file of this request's own, never overwritten: a batch resumed after some of its answers were stored asks the
-    # rest in a new request, which must not replace the evidence those answers point at (D153 review).
+    # rest in a new request, which must not replace the evidence those answers point at.
     payload_ref = _write_new_payload(settings, step["id"], outcome.raw_payload) if outcome.raw_payload is not None else None
     added = [store_answer(store, row["source_version_id"], "semantic_scholar", answers[row["doi"]], step["id"],
                           payload_ref) for row in asking]
     _answered(store, step["id"], [row["source_version_id"] for row in asking], record_sent)
     # The step succeeded whatever the source answered: a failure is an answer stored on the record, not a broken run.
-    # D155: a batch not sent because a 429 holds the pacer in a cooldown leaves each record `failed`, as a refused
+    # A batch not sent because a 429 holds the pacer in a cooldown leaves each record `failed`, as a refused
     # batch does, so the record goes on exactly as after a real 429; the step says it was skipped and for how many.
     skipped = ({"skipped": common.S2_COOLDOWN, "not_asked": len(asking)}
                if outcome.error_kind == common.S2_COOLDOWN else {})
@@ -409,7 +409,7 @@ async def _semantic_scholar_step(store: Store, http: httpx.AsyncClient, settings
 async def _crossref_step(store: Store, http: httpx.AsyncClient, settings: Settings, run: dict[str, Any],
                          number: int, chunk: list[dict[str, Any]], prefix: str = "", in_flight: int = 1,
                          record_sent: bool = False) -> None:
-    """One chunk of single-record requests, `in_flight` of them out at once (D153; 1 sends them one after another).
+    """One chunk of single-record requests, `in_flight` of them out at once (1 sends them one after another).
     Each answer is written as soon as it comes back, before the request that waits for its place is sent."""
     step = store.step(run["id"], f"{prefix}record_lookup:crossref:{number}", "provider_lookup:crossref")
     if step["status"] == "succeeded":
@@ -432,7 +432,7 @@ async def _crossref_step(store: Store, http: httpx.AsyncClient, settings: Settin
         payload_ref = None
         if outcome.raw_payload is not None:
             # Each answer gets a file of its own, written before the passage that points at it and never overwritten,
-            # so a chunk resumed after a stop cannot replace the evidence of an answer already stored (D153 review).
+            # so a chunk resumed after a stop cannot replace the evidence of an answer already stored.
             payload_ref = _write_new_payload(settings, step["id"], {row["doi"]: outcome.raw_payload})
         added.append(store_answer(store, row["source_version_id"], "crossref", answer, step["id"], payload_ref))
         _answered(store, step["id"], [row["source_version_id"]], record_sent)
@@ -460,7 +460,7 @@ async def _crossref_step(store: Store, http: httpx.AsyncClient, settings: Settin
 async def _scopus_plan(store: Store, http: httpx.AsyncClient, run: dict[str, Any], scope: dict[str, Any],
                        words: tuple[str, ...], spent: int, limit: int, *, only: set[str] | None = None,
                        prefix: str = "") -> dict[str, Any]:
-    """The Scopus plan, after one access check of this run's network (D91); a resumed run reads the stored plan.
+    """The Scopus plan, after one access check of this run's network; a resumed run reads the stored plan.
 
     Scopus gives abstracts only in the complete view, which Elsevier entitles by the caller's IP range. Without it
     the step is `skipped` with its reason and no record is asked about; the check itself is one request, counted.
@@ -569,7 +569,7 @@ def transport_output(store, step, output):
 
 @contextmanager
 def _marking(store: Store, step_id: str, records: list[str], on: bool):
-    """D156: while `on`, every attempt of the request sent inside, once its own headers are written to an open
+    """While `on`, every attempt of the request sent inside, once its own headers are written to an open
     connection (`common.on_send`), adds these records to the step's stored `sent` (every record a request went out for) and `out`
     (sent, no answer yet); its response headers take them off `out` again, so a 429 waiting for its retry is not out.
     A wait at a pacer, a start gate or for a connection stores nothing, and so does a transport that reports no trace
@@ -595,7 +595,7 @@ def _marking(store: Store, step_id: str, records: list[str], on: bool):
 
 
 def _answered(store: Store, step_id: str, records: list[str], on: bool) -> None:
-    """D156: these records' answers are stored, so their latest request is no longer out. A record retried after a
+    """These records' answers are stored, so their latest request is no longer out. A record retried after a
     resume goes back into `out` when the retry is sent, whatever an earlier attempt answered."""
     output = store.step_output(step_id) if on else None
     if output and output.get("out"):
@@ -644,7 +644,7 @@ def external_links(store: Store, run: dict[str, Any]) -> dict[str, Any]:
 
     Two readings, in order: the pairs of a record whose abstract arrived from a second source, because an abstract
     can change what the text rule says about a pair, and then the pairs an external source named itself. A pair that
-    is already merged and is now contradicted is counted and left merged: only the user undoes a merge (D72).
+    is already merged and is now contradicted is counted and left merged: only the user undoes a merge.
     """
     from deixis.workflow.run import links  # links imports store, which imports this module's callers
 
@@ -658,7 +658,7 @@ def external_links(store: Store, run: dict[str, Any]) -> dict[str, Any]:
     origins = tuple(ABSTRACT_ORIGINS.values())
     filled = [row[0] for row in store.conn.execute(
         "SELECT DISTINCT p.source_version_id FROM passages p JOIN run_steps s ON (p.payload_ref = s.id || '.json'"
-        # Since the D153 review a Semantic Scholar or Crossref answer has a per-request file, `<step>.r<n>.json`.
+        # A Semantic Scholar or Crossref answer has a per-request file, `<step>.r<n>.json`.
         # Scopus's per-request files were never read here; that is kept as it was.
         "  OR (p.abstract_origin != 'lookup_scopus' AND substr(p.payload_ref, 1, length(s.id) + 2) = s.id || '.r'))"
         f" WHERE s.run_id = ? AND p.kind = 'abstract' AND p.abstract_origin IN ({', '.join('?' * len(origins))})"
@@ -685,7 +685,7 @@ def flag_and_decide(store: Store, run: dict[str, Any], scope: dict[str, Any], wo
     a `pending` selection already says, so `derive_selection` is not called.
 
     With `works`, only the records of those works are labelled, under their own step (`key`): citation chaining
-    labels the records it brought this way, with the same rules, after the keyword records were labelled (D95).
+    labels the records it brought this way, with the same rules, after the keyword records were labelled.
     """
     run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
     step = store.step(run_id, key, f"code:{key}")
@@ -744,7 +744,7 @@ def _wanted_decision(store: Store, decisions: DecisionStore, research_id: str, r
             return "abstract_not_found", "no_doi"
         asked = [source for source in SOURCES if in_scope(scope, source)]
         # An effort that does not wait on a rate limit does not ask again in this run either, so a refused batch is
-        # as final here as an answer without an abstract (D88).
+        # as final here as an answer without an abstract.
         settled = answered if PROVIDER_WAIT[scope["effort"]] else asked_out
         if all(settled(store, row["source_version_id"], source) for source in asked):
             # Either every source in scope answered without an abstract, or no source is in scope to ask.

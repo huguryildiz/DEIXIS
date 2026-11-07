@@ -22,14 +22,14 @@ from deixis.domain.vocabulary_words import GENERAL_WORDS
 from deixis.providers.query_compiler import quoted
 
 MAX_PROBES = 40  # count requests one vocabulary step may send
-PROBES_IN_FLIGHT = 4  # D154: independent count requests out at once; hand-picked, not measured
+PROBES_IN_FLIGHT = 4  # Independent count requests out at once; hand-picked, not measured
 LABEL_RUNS = 3  # SW17.3: the block labelling is asked this many times
 LABEL_MAJORITY = 2  # and a label is kept when it appears in at least this many runs
 MAX_LABELLED_PHRASES = 40  # a longer phrase list is not sent: the rule's assignment stands
 LABELS = ("setting", "task", "outcome", "claim", "exclusion", "not_a_term")
 VERY_LARGE_COUNT = 1_000_000  # SW2.2: a term this frequent is usable only inside an AND
 MANAGEABLE_TOTAL = 5_000  # SW3.5: above this the gate query is narrowed from a root word to its phrase
-# D163 M1: under the `m1` search method the code query is searched beside the model's only as a two-block gate query
+# Under the `m1` search method the code query is searched beside the model's only as a two-block gate query
 # whose probed count is known and at most this (`search_query.code_query_left_out`). Frozen in the run's fast-path
 # policy, not here in THRESHOLDS, so a `legacy` run's protocol is unchanged.
 CODE_QUERY_MAX_TOTAL = 250_000
@@ -50,7 +50,7 @@ TERM_FIELDS = ("phrase", "block", "origin", "root", "in_query", "phrase_count", 
 
 
 async def counts_in_flight(count: Callable[[str], Awaitable[int | None]], queries: list[str]) -> list[int | None]:
-    """The counts of `queries`, in their order, with at most PROBES_IN_FLIGHT requests out at once (D154).
+    """The counts of `queries`, in their order, with at most PROBES_IN_FLIGHT requests out at once.
 
     The same requests are sent as when they are asked one by one: the caller decides which queries are asked and
     records them in its own order, so only the waiting overlaps. A stop or a failure cancels the requests still out."""

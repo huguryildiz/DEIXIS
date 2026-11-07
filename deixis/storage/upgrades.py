@@ -1,8 +1,9 @@
-"""Upgrade steps that bring an existing library to the schema in schema.sql (D119).
+"""Upgrade steps that bring an existing library to the schema in schema.sql.
 
 Each step is the work one old migration file did (0002 to 0016; 0001 was the baseline schema): the version it raises a
-library to, the name the library records for it in `schema_migrations` (the old file name, kept so libraries made before
-D119 read the same), whether it runs with foreign keys off (a table rebuilt by SQLite's 12-step procedure), and its SQL.
+library to, the name the library records for it in `schema_migrations` (the old file name, kept so libraries made
+before the step-based upgrades read the same), whether it runs with foreign keys off (a table rebuilt by
+SQLite's 12-step procedure), and its SQL.
 `db.migrate` runs each step a library has not recorded, in version order, in its own transaction. A new library is made
 from schema.sql and records every version up to its header's, so it runs none of these. A schema change edits
 schema.sql, raises its version and adds the step with that number here; a recorded step is never edited.

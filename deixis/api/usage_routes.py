@@ -1,5 +1,5 @@
 """Usage reads (parity slice S16): OpenAlex budget today (F7) and model calls by role (F8), with a run's provider
-requests (P2, D31).
+requests (P2).
 
 The OpenAlex budget is read live from OpenAlex's free `/rate-limit` endpoint when an OpenAlex key is set (the endpoint
 needs one and costs no credits; `source` "live"). Without a key, or when that read fails, it falls back to what the app
@@ -74,7 +74,7 @@ def usage(counts: dict[str, int]) -> dict[str, Any]:
                                        "share": calls[role] / total if total else None} for role in ROLES]}
 
 
-# The hosts whose requests the run's Usage box counts, in its order (P2, D31).
+# The hosts whose requests the run's Usage box counts, in its order (P2).
 COUNTED_HOSTS = (("openalex", "api.openalex.org"), ("semantic_scholar", "api.semanticscholar.org"))
 
 

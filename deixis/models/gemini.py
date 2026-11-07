@@ -2,7 +2,7 @@
 
 DEIXIS calls the Gemini API directly with GEMINI_API_KEY: one stateless request per step, with no tools, no
 instruction files and no CLI agent prompt. The Gemini CLI with a Google account is a separate connection
-(`gemini_cli.py`, D23). The adapter never falls back to another connection or model.
+(`gemini_cli.py`). The adapter never falls back to another connection or model.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from deixis.tools.tool_probe import probe
 API_URL = "https://generativelanguage.googleapis.com/v1beta"
 KEY_ENV = "GEMINI_API_KEY"
 # Not text-generation models for this workflow, or aliases whose answering model differs from the requested id.
-# banana (image), transcribe (speech) and customtools (an agent-tools variant) were listed on 16 Oct 2026 (D59).
+# banana (image), transcribe (speech) and customtools (an agent-tools variant) were listed on 16 Oct 2026.
 EXCLUDED_MODEL_WORDS = ("image", "tts", "audio", "live", "embedding", "robotics", "computer-use", "omni", "latest", "aqa",
                         "gemma", "banana", "transcribe", "customtools")
 THINKING_LEVELS = ("low", "medium", "high")
@@ -60,7 +60,7 @@ class GeminiAdapter:
     connection = "gemini"
     enforces_schema = True
     sends_reasoning_effort = True  # generationConfig.thinkingConfig.thinkingLevel
-    accepts_images = True  # run_step(image_png=...) sends one PNG with the message (D113)
+    accepts_images = True  # run_step(image_png=...) sends one PNG with the message
     key_env = KEY_ENV
 
     def __init__(self, client: httpx.AsyncClient | None = None, turn_timeout: float = 300.0):

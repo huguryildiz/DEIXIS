@@ -113,7 +113,7 @@ def dispatcher_shapes():
             if connector.sw_query.get("endpoint") == eid:
                 query.update(connector.sw_query)
             yield pytest.param(pid, "kill", query, None, None, False, id=f"{pid}/{eid or 'default'}/kill")
-        for label, query in (("pre-D93", {"provider_id": pid}),
+        for label, query in (("older", {"provider_id": pid}),
                              ("routed", {"provider_id": pid, **connector.sw_query})):
             for cursor in ("first", "next"):
                 for retries in (0, 2):

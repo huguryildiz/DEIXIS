@@ -10,7 +10,7 @@ from typing import Any, Callable
 
 
 def default_data_dir() -> Path:
-    """DEIXIS_DATA_DIR, else the folder chosen in Settings (the pointer file, D32), else the platform default."""
+    """DEIXIS_DATA_DIR, else the folder chosen in Settings (the pointer file), else the platform default."""
     if env := os.environ.get("DEIXIS_DATA_DIR"):
         return Path(env).expanduser()
     from deixis.storage import data_location
@@ -37,7 +37,7 @@ CONTACT_EMAIL_SETTING = "contact_email"
 DEFAULT_EFFORT_SETTING = "default_effort"
 FULLTEXT_FETCH_SETTING = "fulltext_fetch"
 ARXIV_SOURCE_SETTING = "arxiv_source"
-# D173: whether a Standard or Detailed discovery also screens list places N+1..N+100 once. Unset is `off`; read when a
+# Whether a Standard or Detailed discovery also screens list places N+1..N+100 once. Unset is `off`; read when a
 # discovery run is queued and frozen in its policy, so a later change leaves queued and paused runs as they were.
 DEEP_SCREENING_SETTING = "deep_screening"
 MODEL_CONCURRENCY_SETTING = "model_concurrency"
@@ -50,30 +50,30 @@ class Settings:
     host: str = "127.0.0.1"
     port: int = 8765
     model_concurrency: int = 6
-    # Whether a completed discovery run is followed by a full-text retrieval run (D83, slice 10). `auto` is the
+    # Whether a completed discovery run is followed by a full-text retrieval run (slice 10). `auto` is the
     # product's behavior; `off` leaves the corpus where the discovery run left it, for a measurement or a test that
     # needs no second run.
     fulltext_fetch: str = "auto"
     # Whether a valid answer is followed by the study table (proposed columns added without review, then filled).
     # The dataclass default is `off` so a test that builds Settings by hand sees no extra runs; `load_settings` defaults to `auto`.
     study_table: str = "off"
-    # Whether a completed full-text retrieval run is followed by a full-text reading run (D85, slice 12).
+    # Whether a completed full-text retrieval run is followed by a full-text reading run (slice 12).
     # `auto` is the product's behavior; `off` leaves the fetched works at `not_read_yet`, for a measurement or a
     # test that needs no second model run.
     fulltext_adjudication: str = "auto"
-    # Who writes a discovery run's keyword query (D92, slice 13h). `model` is the product's behavior: a model
+    # Who writes a discovery run's keyword query (slice 13h). `model` is the product's behavior: a model
     # writes it once per scope revision and the code's own query is searched beside it. `code` is the query of
     # slice 13g alone, with no model call, for a measurement or a test that needs the code path only.
     search_query: str = "model"
-    # The search method a discovery run is queued with, frozen in its fast-path policy (D163): `legacy` for every run
+    # The search method a discovery run is queued with, frozen in its fast-path policy: `legacy` for every run
     # until M1's gates pass; `m1` (chain admission v2 and the code-query width limit) for the M1 measurement arm.
     search_method: str = "legacy"
     # Whether PDFs that are arXiv versions get the numbered display equations of their authors' LaTeX source while the
-    # equation reader (Marker) is not installed (D104, slice 22). `load_settings` defaults to `auto` (D36), which turns
+    # equation reader (Marker) is not installed (slice 22). `load_settings` defaults to `auto`, which turns
     # the route on (POSIX only); this dataclass stays `off` so tests that build Settings by hand request no source. With
     # `off` no source is requested and no PDF extraction changes; readings already stored stay.
     arxiv_source: str = "off"
-    # A benchmark-only list barrier (M3's validation gate, D173): a discovery queued while it is on pauses once, right
+    # A benchmark-only list barrier (M3's validation gate): a discovery queued while it is on pauses once, right
     # after its list is frozen and before any read work, so a runner can copy the library at that point. Off in the
     # product; outside the fast-path policy, so it moves no policy hash. Read from DEIXIS_BENCHMARK_LIST_BARRIER.
     benchmark_list_barrier: bool = False

@@ -31,16 +31,16 @@ fast_openalex_pacing: ContextVar[bool] = ContextVar("fast_openalex_pacing", defa
 # provider ran out, "stopped" once the run was stopped or its deadline passed, None to send.
 send_blocked: ContextVar[Callable[[], str | None] | None] = ContextVar("send_blocked", default=None)
 # Set for the length of one run's work (`Flow.execute`, a background full-text fetch) to store each provider request of
-# that run (P2, D31): one row per attempt of `send` (each 429 retry is one) and per OpenAlex PDF lookup. The row is
+# that run (P2): one row per attempt of `send` (each 429 retry is one) and per OpenAlex PDF lookup. The row is
 # written just before the request goes to the HTTP client, as "not known whether sent", and settled when the attempt
 # ends; one the process never settled stays not known. The log has `begin(host, url) -> id | None` and
 # `settle(id, facts)`.
 request_log: ContextVar[Any] = ContextVar("request_log", default=None)
-# D155: set by a lookup whose run froze the rule: its Semantic Scholar request is not sent while a 429's cooldown holds
+# Set by a lookup whose run froze the rule: its Semantic Scholar request is not sent while a 429's cooldown holds
 # the pacer, queued or not, and comes back `rate_limited` with `error_kind` S2_COOLDOWN instead of waiting.
 s2_skip_in_cooldown: ContextVar[bool] = ContextVar("s2_skip_in_cooldown", default=False)
 S2_COOLDOWN = "s2_cooldown"
-# D156: set by a lookup before the rerank whose run froze the rule, and called with "sent" once an attempt's own request
+# Set by a lookup before the rerank whose run froze the rule, and called with "sent" once an attempt's own request
 # headers are written to an open connection and with "answered" once its response headers came back (httpcore's trace
 # events for that request, not for a proxy's CONNECT), so the step stores which records have a request out. A wait at
 # a pacer, a start gate, for a connection or before a 429's retry has nothing out. A transport that emits no such trace
@@ -107,7 +107,7 @@ class ProviderRecord:
     raw: dict[str, Any] = field(repr=False)
     other_versions: list[OtherVersion] = field(default_factory=list)
     cited_by_count: int | None = None
-    # OpenAlex's retraction flag (D27). `None` means unknown: another provider, or OpenAlex sent no boolean.
+    # OpenAlex's retraction flag. `None` means unknown: another provider, or OpenAlex sent no boolean.
     is_retracted: bool | None = None
     # How many works the record's own bibliography lists. A paper's bibliography does not change, so the first count
     # read stands; a record whose source names none has no count, which is not the same as a count of zero (SW5.1).
@@ -125,7 +125,7 @@ class ProviderRecord:
     author_keywords: list[str] = field(default_factory=list)
     # The keywords a provider's own classifier attached to the work, which nobody wrote: a different thing from
     # `author_keywords` and never mixed into it. Empty unless the read asked for the field. The chain gate reads them
-    # (D183) so a linked work can name a gate block through a keyword its title and abstract never hold.
+    # so a linked work can name a gate block through a keyword its title and abstract never hold.
     index_keywords: list[str] = field(default_factory=list)
 
 
@@ -213,12 +213,12 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
     `unstated_wait` seconds times the retry number, bounded by `max_retry_wait`); each retry is a
     separate request. The dispatch collector records attempts and observed sends for every subrequest, independently
     of the adapter's outcome; `outcome.retries` retains its historical meaning. The caller's own effort may lower that
-    count, down to not waiting at all (D88); the default is what every caller sent before there was a parameter.
+    count, down to not waiting at all; the default is what every caller sent before there was a parameter.
     Another 4xx means the provider rejected the request; a 5xx leaves it unknown whether the request was processed.
 
     `rate_limit_statuses` is which statuses read as a rate limit. It is 429 everywhere but arXiv, which answers a
     too-frequent request with 406 (measured 2026-09-22): without this its searches die on the first refusal and no
-    effort's waiting rule (D88) ever applies to them.
+    effort's waiting rule ever applies to them.
 
     `start_pacer` (a `pacing.StartPacer`) spaces the start of every attempt, retries included, without waiting for
     another request's reply (OpenAlex semantic search). `send_blocked`, checked after that wait, sends nothing when the
@@ -228,7 +228,7 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
     s2 = urlsplit(url).hostname == "api.semanticscholar.org"
     gated = False  # the last attempt was stopped at its start gate and is not counted
     pool_wait = False  # the last attempt timed out waiting for a pooled connection: not sent
-    begun: Any = None  # the stored row of the attempt now with the HTTP client (D31)
+    begun: Any = None  # the stored row of the attempt now with the HTTP client
     parts = urlsplit(url)
     location = redact(f"{parts.scheme}://{parts.netloc.rsplit('@', 1)[-1]}{parts.path}", *secrets)
 
@@ -264,7 +264,7 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
                     return finish(None, SearchOutcome("rate_limited" if quota else "failed", "before_send", description,
                                                       access_mode, error_kind="quota_exhausted" if quota else None, retries=retries,
                                                       error=f"Not sent after its start wait: {why}"))
-            # A body makes this a POST; everything else — the Semantic Scholar gate (D67), the bounded 429 retries
+            # A body makes this a POST; everything else — the Semantic Scholar gate, the bounded 429 retries
             # and the failure classes — is the same path every provider request takes.
             async def attempt() -> Any:
                 nonlocal begun
@@ -294,7 +294,7 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
                     else:
                         reply = await client.get(url, params=params, headers=headers, timeout=timeout, **traced)
                     if s2 and reply.status_code in rate_limit_statuses:
-                        # D155: set while this attempt still holds the gate, so no caller queued behind it is let
+                        # Set while this attempt still holds the gate, so no caller queued behind it is let
                         # through first. Every Semantic Scholar caller holds off; one that will retry holds them off
                         # for its whole wait, so nobody sends while it sleeps.
                         wait = _retry_wait(reply.headers.get("retry-after"), retries, unstated_wait, max_retry_wait)
@@ -310,7 +310,7 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
                 try:
                     response = await SEMANTIC_SCHOLAR_PACER.run(attempt, skip_in_cooldown=s2_skip_in_cooldown.get())
                 except CoolingDown as cooling:
-                    # D155: not sent, and not counted as an attempt; the caller records why.
+                    # Not sent, and not counted as an attempt; the caller records why.
                     gated = True
                     return finish(None, SearchOutcome("rate_limited", "before_send", description, access_mode,
                                                       error_kind=S2_COOLDOWN, retries=retries,
@@ -368,7 +368,7 @@ async def send(client: httpx.AsyncClient, url: str, params: dict[str, Any], head
 
 
 def _cooldown(retry_after: str | None) -> float:
-    """The Semantic Scholar cooldown a 429 sets (D155): its Retry-After in seconds when it names one, bounded, else 15 s."""
+    """The Semantic Scholar cooldown a 429 sets: its Retry-After in seconds when it names one, bounded, else 15 s."""
     from deixis.providers.pacing import S2_COOLDOWN_SECONDS, S2_MAX_COOLDOWN_SECONDS
     try:
         seconds = float(retry_after) if retry_after is not None else S2_COOLDOWN_SECONDS

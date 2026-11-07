@@ -23,8 +23,8 @@ from deixis.workflow.run.flow import HANDLE_TASKS
 
 FIXTURES = REPO_ROOT / "tests/fixtures/research/step-inputs.json"
 CASES = REPO_ROOT / "tests/model_behavior/report_cases.json"
-SEEDED_RS_CASES = tuple(f"RS{i:02d}" for i in range(2, 13))  # RS01 (repair drops a negation) went with the repair step, D43
-WRITING_CASES = tuple(f"RW{i:02d}" for i in range(1, 5))  # D51 report writing rules
+SEEDED_RS_CASES = tuple(f"RS{i:02d}" for i in range(2, 13))  # RS01 (repair drops a negation) went with the repair step
+WRITING_CASES = tuple(f"RW{i:02d}" for i in range(1, 5))  # report writing rules
 CASE_IDS = tuple([f"RB{i:02d}" for i in range(1, 6)] +
                  list(SEEDED_RS_CASES) + ["RC01"] + list(WRITING_CASES))
 COL = "col_SYNTHR0001"
@@ -237,7 +237,7 @@ WRITING_TEXT = {
 
 
 def _writing_case(case_id: str, si: dict[str, Any]) -> None:
-    """D51: one IV section over two to three allowlisted sources; RW02 adds a fourth seen only in validation_context."""
+    """One IV section over two to three allowlisted sources; RW02 adds a fourth seen only in validation_context."""
     texts = WRITING_TEXT[case_id]
     cited = 3 if case_id == "RW02" else 2
     target = si["report_target"]
@@ -452,7 +452,7 @@ NEGATED = re.compile(r"\b(?:no|not|never|without|lacks?|none|only|rather than|in
 
 
 def _writing_checks(case_id: str, output: dict[str, Any], si: dict[str, Any]) -> tuple[dict[str, bool], dict[str, int]]:
-    """Screens for D51's four rules; keyword and overlap screens, so a human still reads the failures."""
+    """Screens for the four report-writing rules; keyword and overlap screens, so a human still reads the failures."""
     allowed = set(si["allowlist"]["source_ids"] + si["allowlist"]["passage_ids"] + si["allowlist"]["cell_ids"])
     checks = {"no_outside_id_in_citation_fields": _citation_ids(output) <= allowed}
     claims = output["claims"]

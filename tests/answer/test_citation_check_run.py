@@ -1,4 +1,4 @@
-"""Verify Citations V3 (D99): each planned pair through the model step and the code's verdict, with a FakeAdapter.
+"""Verify Citations V3: each planned pair through the model step and the code's verdict, with a FakeAdapter.
 Drafts, records, PDFs and model answers are SYNTHETIC and scripted; nothing here calls a real model or the network, so
 these tests show what the workflow does with an answer, not how well any model answers."""
 

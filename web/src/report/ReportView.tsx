@@ -48,7 +48,7 @@ const saveBlob = (blob: Blob, filename: string) => {
   } finally { window.setTimeout(() => URL.revokeObjectURL(url), 0) }
 }
 
-// The zip's .tex lists at most 20 export notes (D149); the header carries the total.
+// The zip's .tex lists at most 20 export notes; the header carries the total.
 const LATEX_NOTES_LISTED = 20
 const support = reportSupportLabels
 const reviewCodes: Record<string, string> = {

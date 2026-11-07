@@ -77,7 +77,7 @@ def failed_reason_text(reason: str, language: str) -> str:
     return reason.replace("_", " ")
 
 
-# Citation searching (PRISMA-S item 5), written only when a discovery run of this revision closed its fast chain (D95).
+# Citation searching (PRISMA-S item 5), written only when a discovery run of this revision closed its fast chain.
 # Choosing a seed is not tracing it: the request outcomes say what was traced. Each request is counted by its own step
 # (`chaining.request_outcomes`). `kept` counts returned records that passed the gate-term filter in a reply that arrived
 # before the cutoff; they are records, not new works, and a record a keyword query also found is among them.
@@ -104,7 +104,7 @@ def _chain_sentence(total: dict[str, int], language: str) -> str:
 
 
 def followup_sentence(followups: list[dict[str, Any]], language: str) -> str:
-    """One line for the follow-up searches the report snapshot stored (D92): how many, their dates and the new works
+    """One line for the follow-up searches the report snapshot stored: how many, their dates and the new works
     their frozen found steps counted. A run whose found step held no count adds nothing to the sum and is counted apart."""
     dates = ", ".join(sorted({(f.get("completed_at") or f["created_at"])[:10] for f in followups}))
     known = [f["new_works"] for f in followups if f.get("new_works") is not None]
@@ -135,7 +135,7 @@ def render_review_methodology(numbers: dict[str, Any], language: str, *, provide
 
 
 def abstract_rows_sentence(n: int, language: str) -> str:
-    """The table rows read from their abstracts only because no full text was obtained (D114); not included sources."""
+    """The table rows read from their abstracts only because no full text was obtained; not included sources."""
     if language.startswith("tr"):
         return (f" Özet taramasını geçen ancak tam metni bulunamayan {n} kaynak daha kanıt tablosunda yer aldı ve"
                 " yalnızca özetlerinden okundu; bunlar dahil kaynaklara sayılmadı.")
@@ -350,7 +350,7 @@ def write_review_methodology(store: Store, reports: ReportStore, report_id: str,
         numbers["rows"] = dict(snapshot["row_counts"])
     if snapshot.get("abstract_rows"):
         numbers["abstract_rows"] = len(snapshot["abstract_rows"])
-    # From the snapshot only (D92): an older snapshot has no follow-up searches and prints none.
+    # From the snapshot only: an older snapshot has no follow-up searches and prints none.
     if snapshot.get("followup_searches"):
         numbers["followup_searches"] = [dict(item) for item in snapshot["followup_searches"]]
     text = render_review_methodology(

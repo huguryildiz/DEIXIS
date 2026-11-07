@@ -12,7 +12,7 @@ if os.environ.pop("PYTHONDONTWRITEBYTECODE", None):
     sys.dont_write_bytecode = False
 
 # Processes a test starts (CLI runs, helper scripts) inherit this and see no keychain, so they never read the developer's
-# keys or move `.env` keys into the real keychain (D19). In this process `memory_keychain` sets its own backend.
+# keys or move `.env` keys into the real keychain. In this process `memory_keychain` sets its own backend.
 os.environ["PYTHON_KEYRING_BACKEND"] = "keyring.backends.null.Keyring"
 
 import socket
@@ -135,7 +135,7 @@ def no_repository_dotenv(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def no_real_platform_data_dir(monkeypatch, tmp_path_factory):
-    """The platform default folder holds the location pointer (D32); tests never read or write the real one. A test
+    """The platform default folder holds the location pointer; tests never read or write the real one. A test
     that needs a pointer patches `config.platform_data_dir` to its own temp folder."""
     from deixis.runtime import config
 
@@ -155,7 +155,7 @@ def no_held_folder_locks():
 @pytest.fixture(autouse=True)
 def no_registered_builtin_model(monkeypatch):
     """The built-in model's integrity is registered module-wide by an app; with nothing saved, a ready model is the
-    default (D7), so one test's app never leaks it into another test."""
+    default, so one test's app never leaks it into another test."""
     from deixis.documents import local_embedding
 
     monkeypatch.setattr(local_embedding, "_registered", None)
@@ -218,7 +218,7 @@ def memory_keychain(monkeypatch):
 
 
 def pytest_configure(config):
-    config.addinivalue_line("markers", "field_distribution: the test's own transport answers the routing request (D93)")
+    config.addinivalue_line("markers", "field_distribution: the test's own transport answers the routing request")
     config.addinivalue_line("markers", "process: starts and kills real processes (P9 H2); part of the normal run, `-m process` selects them alone")
     config.addinivalue_line("markers", "provider_pacing: the test keeps the real arXiv, Semantic Scholar and OpenAlex semantic request gaps")
 
@@ -233,7 +233,8 @@ def no_provider_pacing(request, monkeypatch):
 
     monkeypatch.setattr(arxiv, "MIN_INTERVAL_SECONDS", 0.0)
     monkeypatch.setattr(pacing.SEMANTIC_SCHOLAR_PACER, "interval_seconds", 0.0)
-    # D155's 429 cooldown is real time too; a test about it removes this instance attribute to get the class's.
+    # The Semantic Scholar 429 cooldown is real time too; a test about it removes this instance attribute to get
+    # the class's.
     monkeypatch.setattr(pacing.SEMANTIC_SCHOLAR_PACER, "_cooldown_until", 0.0)
     monkeypatch.setattr(pacing.SEMANTIC_SCHOLAR_PACER, "cool_down", lambda seconds: None)
     monkeypatch.setattr(openalex.SEMANTIC_PACER, "interval_seconds", 0.0)
@@ -242,7 +243,7 @@ def no_provider_pacing(request, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def no_field_distribution(request, monkeypatch):
-    """The source routing request of an sw run (D93) reads no distribution unless a test is about it.
+    """The source routing request of an sw run reads no distribution unless a test is about it.
 
     An unread distribution routes to every domain source in scope, which is the search every test written before
     slice 14 expects, and no mocked OpenAlex has to tell a grouped request from a search. A test marked

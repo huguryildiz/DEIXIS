@@ -1,4 +1,4 @@
-"""Mathpix's image-to-LaTeX API for numbered display equations (D40): the key pair, one request per crop, the key test.
+"""Mathpix's image-to-LaTeX API for numbered display equations: the key pair, one request per crop, the key test.
 
 The pair is one keychain item, `MATHPIX_CREDENTIALS`, holding `{"app_id", "app_key", "revision"}` written in one write, so
 no mixed pair can exist; a value that does not parse is treated as absent. Every request asks Mathpix not to keep the image
@@ -132,7 +132,7 @@ async def test_pair(client: httpx.AsyncClient, app_id: str, app_key: str) -> dic
 @asynccontextmanager
 async def request_lock(directory: Path, wait: float = LOCK_WAIT_SECONDS, folder: str = "mathpix") -> AsyncIterator[None]:
     """One request at a time per data directory, across processes (POSIX `flock`, Windows `msvcrt.locking`). Waiting
-    longer than `wait` seconds raises TimeoutError. The answer model's equation requests (D113) use `folder="equation-model"`."""
+    longer than `wait` seconds raises TimeoutError. The answer model's equation requests use `folder="equation-model"`."""
     path = directory / folder / ".request.lock"
     if os.name == "nt":  # pragma: no cover - exercised on Windows only
         import msvcrt

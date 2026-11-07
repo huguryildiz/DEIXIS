@@ -1,4 +1,4 @@
-"""The abstract stage inside a real `sw` discovery run, driven through the API (slice 09, D81).
+"""The abstract stage inside a real `sw` discovery run, driven through the API (slice 09).
 
 What is checked here is workflow behavior: that code classifies every record, that the model is asked twice about
 what code left open and never about the same record twice, that a quote is verified against the abstract the model
@@ -273,7 +273,7 @@ def stage_snapshot(store, rid, run_id):
     Identifiers and timestamps are left out: they differ between two runs of the same fixture anyway. What must
     not move is which record carries which decision and selection, under which question revision, and which of
     them is closed. The rows are sorted: the order two batches of the abstract stage close in is the order their
-    model calls came back in, which is not this stage's to decide (D81).
+    model calls came back in, which is not this stage's to decide.
     """
 
     def ordered(rows):

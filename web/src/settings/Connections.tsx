@@ -87,7 +87,7 @@ const MAIN_COMPANIES: Company[] = [
     account: { conn: 'gemini_cli', label: 'With your Google account', desc: 'A free Google account is enough; there is a daily usage limit.' },
     key: { conn: 'gemini', env: 'GEMINI_API_KEY', site: 'aistudio.google.com', desc: 'Get the key at {site}. The same key can also be used for semantic search.' } },
   { id: 'copilot', name: 'GitHub Copilot', maker: 'GitHub', icon: 'copilot',
-    // GitHub retired GitHub Models, its token way, on 30 Jul 2026 (D59); Copilot CLI is a separate service.
+    // GitHub retired GitHub Models, its token way, on 30 Jul 2026; Copilot CLI is a separate service.
     account: { conn: 'copilot_cli', label: 'With your GitHub account', desc: 'If you have a Copilot subscription. Free for students and teachers.' } },
   { id: 'grok', name: 'Grok', maker: 'xAI', icon: 'grok', soon: 'With your SuperGrok account', key: { conn: 'grok', env: 'XAI_API_KEY', site: 'console.x.ai', service: 'xAI' } },
   { id: 'mistral', name: 'Mistral', maker: 'Mistral AI', icon: 'mistral', soon: 'With your Mistral account', key: { conn: 'mistral', env: 'MISTRAL_API_KEY', site: 'console.mistral.ai' } },
@@ -234,7 +234,8 @@ function KeyField({ env, entry, keychain, label, service, removeEffect, onSaved,
   const id = `key-${env}`
   // A key saved here replaces one from the shell; removing it brings the shell key back.
   const fromShell = entry.source === 'environment'
-  // D29: with no system keychain a shell key keeps its note and cannot be replaced, though other keys can be kept for the session.
+  // With no system keychain a shell key keeps its note and cannot be replaced, though other keys can be kept for the
+  // session.
   if (fromShell && !keychain.available) return <p className="foot-note">{t('This key is set outside DEIXIS; change or remove it where it was set.')}</p>
   const inDotenv = entry.source === 'dotenv'
   const home = keyHome(keychain)
@@ -388,7 +389,7 @@ function LocalToolDetails({ tool, dark, onChanged, refresh = true, chip = true }
 
 const MATHPIX_PRIVACY_URL = 'https://mathpix.com/privacy-policy'
 
-// Mathpix (D40): an online reader for numbered display equations, off until the person saves a key pair and turns it on.
+// Mathpix: an online reader for numbered display equations, off until the person saves a key pair and turns it on.
 // The pair is tested against Mathpix's usage API before it is saved; the switch asks first, with an upper bound of requests.
 function MathpixDetails({ mathpix, keychain, dark, onChanged, onKeychainChanged }: { mathpix: Mathpix; keychain: Keychain; dark: boolean; onChanged: (next?: Mathpix) => void; onKeychainChanged: () => void }) {
   const [appId, setAppId] = useState('')
@@ -760,7 +761,7 @@ function PdfReaderDetails({ reader }: { reader: PdfReader }) {
   </div>
 }
 
-// The local OCR tool (D51). Install and Update run the one fixed Homebrew command on the server; the panel shows its step.
+// The local OCR tool. Install and Update run the one fixed Homebrew command on the server; the panel shows its step.
 function OcrToolDetails({ tool, onChanged }: { tool: OcrTool; onChanged: () => Promise<unknown> }) {
   const [busy, setBusy] = useState(false)
   const toast = useToast()
@@ -980,7 +981,7 @@ function BuiltinModelFiles({ builtin, model: m, dark, onChanged }: { builtin: Bu
   </section>
 }
 
-// The earlier PyTorch built-in model (D88): its measured size, removed only when the person asks.
+// The earlier PyTorch built-in model: its measured size, removed only when the person asks.
 function BuiltinLegacy({ builtin, dark, onChanged }: { builtin: BuiltinModels; dark: boolean; onChanged: () => Promise<void> }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -1243,7 +1244,8 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
   const [showing, setShowing] = useState<string | null>(null)  // the hidden model being offered again
   const [checked, setChecked] = useState<Record<string, number>>({})
   const [checkFailed, setCheckFailed] = useState<Record<string, string>>({})
-  // The sign-in DEIXIS started for a tool (D21); it is polled while the person finishes it in the terminal window that opened.
+  // The sign-in DEIXIS started for a tool; it is polled while the person finishes it in the terminal window that
+  // opened.
   const [signInRuns, setSignInRuns] = useState<Record<string, AccountSignIn>>({})
   const signInSeen = useRef(false)
   // One counter per tool, moved on by every start and cancel: an answer to an earlier request that arrives after a
@@ -1704,7 +1706,7 @@ export function ConnectionsTab({ dark, access, defaults, onConnections, openProv
       </details>}
     </section>
   }
-  // Models a failed research step took out of the lists (D59), each with why and a way to offer it again.
+  // Models a failed research step took out of the lists, each with why and a way to offer it again.
   const showAgain = (conn: string, id: string) => {
     setShowing(id)
     api.showHiddenModel(conn, id).then(result => {

@@ -1,4 +1,4 @@
-"""SYNTHETIC tests of candidates written from an answer's Next steps (D98); no retrieval or model call.
+"""SYNTHETIC tests of candidates written from an answer's Next steps; no retrieval or model call.
 
 They show the stored link, its idempotency and the counts the answer thread reads from stored rows. They say nothing
 about whether a kill search finds prior work.

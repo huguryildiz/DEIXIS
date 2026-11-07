@@ -19,7 +19,7 @@ def check_sentence(text: str) -> None:
 
 
 # ------------------------------------------------------------------------------------------- the support class (R4b)
-# How a statement check presents one completed work (D108). The stored result stays V3's (`derive_result`, unchanged);
+# How a statement check presents one completed work. The stored result stays V3's (`derive_result`, unchanged);
 # the class is read from it and the stored parts by this function alone, and the view, counters, exports and screen
 # take it from here. Rule 1 (revisions stored before R4b): the class is the result. Rule 2 (new revisions): a work
 # counts as support only when at least one of its parts is `stated`; a `found_partial` whose parts are all `partly` or

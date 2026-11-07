@@ -115,7 +115,7 @@ class ReviewReader:
         return self._conn.execute("SELECT MAX(updated_at) FROM selections WHERE research_id = ?", (research_id,)).fetchone()[0]
 
     def included_rows(self, research_id, table_id):
-        # This is report.snapshot.included_table_rows' active-row/report-source boundary (D114: a table made from the
+        # This is report.snapshot.included_table_rows' active-row/report-source boundary (a table made from the
         # research also holds the works read from their abstracts only).
         included = set(table_sources.table_sources(self._store, research_id, table_id))
         return [r[0] for r in self._conn.execute(

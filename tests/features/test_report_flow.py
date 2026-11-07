@@ -472,7 +472,7 @@ def test_assembly_still_catches_a_wrong_corpus_count_in_viii_numbers(tmp_path):
 
 
 def test_report_run_fails_when_the_evidence_table_has_no_included_row(tmp_path):
-    # Empty cells do not stop a report (D68); a table none of whose rows is an included source does.
+    # Empty cells do not stop a report; a table none of whose rows is an included source does.
     flow, store, reports, _, run, scope, report_id = report_flow(tmp_path, fill=False)
     store.conn.execute("UPDATE selections SET state = 'excluded' WHERE research_id = ?", (run["research_id"],))
 
@@ -582,7 +582,7 @@ def test_a_resumed_report_run_does_not_call_the_model_again_for_a_succeeded_sect
     assert after["IV"] > before["IV"]
 
 
-# Synthetic D238 allocation evidence and the answer whose frozen list is missing; no model or scientific validation.
+# Synthetic allocation evidence and the answer whose frozen list is missing; no model or scientific validation.
 
 def answer_run(store, rid):
     run = store.create_run(rid, "answer", asdict(TEST_EFFORT_BUDGETS["quick"]), None)
@@ -784,7 +784,7 @@ def cell(number, source, column, evidence):
 
 
 def test_section_iv_admits_every_cell_with_its_quotes_before_any_page(monkeypatch):
-    # D58 replaces the old rule that a cell came only with all of its pages: a cell carries its stored quotes, and pages
+    # The rule that a cell came only with all of its pages is gone: a cell carries its stored quotes, and pages
     # are added after every cell, while the room lasts.
     first = passage(1, "srv_source01", "SYNTHETIC " + "a" * 600)
     second = passage(2, "srv_source02", "SYNTHETIC " + "b" * 600)

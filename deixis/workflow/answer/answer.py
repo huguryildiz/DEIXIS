@@ -1,4 +1,4 @@
-"""D253: cutoff-owned evidence, breadth-first answers and separate assessments."""
+"""Cutoff-owned evidence, breadth-first answers and separate assessments."""
 
 from __future__ import annotations
 
@@ -18,14 +18,14 @@ from deixis.workflow.run.flow import MAX_PASSAGES_PER_SOURCE, fuse_rankings
 CUTOFF = "fast_path:v1:cutoff"
 INPUT = "fast_path:v1:answer_input"
 VERSION_FIELDS = ("work_id", "title", "abstract", "doi", "version_label", "year")
-# A screened work whose abstract stage left it to its full text, and no reading of that text by the cutoff (D60).
+# A screened work whose abstract stage left it to its full text, and no reading of that text by the cutoff.
 UNRESOLVED_WITHOUT_FULLTEXT = "unresolved_without_fulltext"
-# A work a code rule set aside from screening (the survey-title rule, `seed_pool`): decided, not unscreened (D69).
+# A work a code rule set aside from screening (the survey-title rule, `seed_pool`): decided, not unscreened.
 CODE_DECIDED = "code_decided"
 # One review call plus one bounded schema repair.
 ANSWER_REVIEW_MODEL_CALLS = 2
 # A work whose file a reading read and that did not meet the whole criterion is still the nearest evidence a question
-# like "has this been done?" has (D137): the answer reads it as a `closest` work, never as an included one. A person's
+# like "has this been done?" has: the answer reads it as a `closest` work, never as an included one. A person's
 # own decision, an unread or unconfirmed file and versions that disagree are not readings it may stand on.
 CLOSEST_CODES = frozenset({"criterion_absent", "part_without_evidence", "fulltext_runs_agree_unresolved",
                            "fulltext_runs_disagree", "include_quote_unverified", "comparator_exclusion_withheld",
@@ -34,9 +34,9 @@ CLOSEST_CODES = frozenset({"criterion_absent", "part_without_evidence", "fulltex
 # each one's pages. Included works keep MAX_PASSAGES_PER_SOURCE; an abstract-only work gives its abstract.
 CLOSEST_WORKS = {16: 3, 48: 5, 80: 8}
 CLOSEST_PAGES = 4
-# The selection marker of the one closest work taken although its reading found no criterion part (D152).
+# The selection marker of the one closest work taken although its reading found no criterion part.
 CLOSEST_FALLBACK = "closest_zero_part_fallback"
-# Since D155 (allocation version 6) that work gives at most its first passage and one page.
+# Since allocation version 6 that work gives at most its first passage and one page.
 CLOSEST_FALLBACK_PAGES = 2
 ROLES = ("included", "closest", "abstract")
 
@@ -63,7 +63,7 @@ def user_choices(store: Any, rid: str) -> tuple[dict[str, Any], dict[str, Any]]:
 
 
 def formula_request(store: Any, scope: dict[str, Any], patterns: list[tuple[str, Any]] | None) -> dict[str, Any]:
-    """Whether full-text sources bring their most formula-dense passage forward, and why (D56)."""
+    """Whether full-text sources bring their most formula-dense passage forward, and why."""
     if english_question.is_english(scope["question"], scope.get("language_hint")):
         question = scope["question"]
     else:
@@ -74,7 +74,7 @@ def formula_request(store: Any, scope: dict[str, Any], patterns: list[tuple[str,
 
 
 def result_request(store: Any, scope: dict[str, Any]) -> dict[str, Any]:
-    """The research's outcome terms that put a full-text source's most result-dense passage first (D84)."""
+    """The research's outcome terms that put a full-text source's most result-dense passage first."""
     vocabulary = (store.latest_step_output(scope["research_id"], "vocabulary", scope["revision"]) or {}).get("vocabulary") or {}
     terms = [phrase for phrase, _ in result_passages.compile_terms(vocabulary.get("outcome_terms") or [])]
     return {"on": bool(terms), "outcome_terms": terms, **result_passages.THRESHOLDS}
@@ -202,7 +202,7 @@ def version_text(flow: Any, decisions: Any, facts: dict[str, Any], readings: dic
 def abstract_sibling(store: Any, rid: str, decisions: Any, facts: dict[str, Any], pools: dict[str, list[dict[str, Any]]],
                      wid: str, head: str, svid: str) -> tuple[str, dict[str, Any]] | None:
     """Another version of the work whose own screened abstract can stand in for `svid`, the answer version, which
-    holds a PDF nobody has read and so no abstract decision of its own (D112). The abstract is still that version's
+    holds a PDF nobody has read and so no abstract decision of its own. The abstract is still that version's
     own: it is never mixed with the PDF's pages."""
     for other in [head, *store.work_versions(rid, head)]:
         if other == svid:
@@ -214,12 +214,12 @@ def abstract_sibling(store: Any, rid: str, decisions: Any, facts: dict[str, Any]
 
 
 def is_closest(full: dict[str, Any] | None, asset: str | None) -> bool:
-    """A model reading of the file in use that did not include the work (D137): a `closest` work for the answer."""
+    """A model reading of the file in use that did not include the work: a `closest` work for the answer."""
     return bool(asset and full and full["decided_by"] != "human" and full["reason_code"] in CLOSEST_CODES)
 
 
 def role_of(row: dict[str, Any]) -> str:
-    """A row's answer role; a row frozen before D137 has none, and its route says what it was."""
+    """A row's answer role; a row frozen earlier has none, and its route says what it was."""
     return row.get("answer_role") or ("included" if row["route"] == "fulltext" else "abstract")
 
 
@@ -246,7 +246,7 @@ def cutoff_snapshot(flow: Any, run: dict[str, Any], listing: dict[str, Any], clo
     selections, humans = user_choices(store, rid)
     pools = current_pools(store, rid)
     readings = reading_records(store, rid)
-    # D173: a run frozen with the deeper screening reads up to its window's last place, and a window work the deep
+    # A run frozen with the deeper screening reads up to its window's last place, and a window work the deep
     # task left unscreened is as unread as a top-N one, whatever older decision it holds.
     unread = set(closure["not_screened_at_cutoff"]) | set((closure.get("deep") or {}).get("not_screened_at_cutoff", ()))
     items = list(listing["items"])
@@ -262,7 +262,7 @@ def cutoff_snapshot(flow: Any, run: dict[str, Any], listing: dict[str, Any], clo
         svid = versions.get(head) or head
         text = version_text(flow, decisions, facts, readings, pools, wid, svid)
         # The PDF's version was never abstract-screened and its reading did not happen: the work would drop out as
-        # unscreened although another version of it was screened a candidate (D112).
+        # unscreened although another version of it was screened a candidate.
         sibling = (abstract_sibling(store, rid, decisions, facts, pools, wid, head, svid)
                    if not text["asset"] and text["abstract"] is None else None)
         pdf_version = svid if sibling else None
@@ -286,7 +286,7 @@ def cutoff_snapshot(flow: Any, run: dict[str, Any], listing: dict[str, Any], clo
         elif route == "abstract" and abstract is None:
             # A work the abstract stage screened and routed to its full text (`abstract_not_found`,
             # `runs_agree_unresolved`) whose text was not read by the cutoff is not an unscreened work: it waits for
-            # its full text, which the late read may still bring (D60).
+            # its full text, which the late read may still bring.
             routed = any(d["stage"] == "abstract" and d["source_version_id"] == svid and d["outcome"] == "unresolved"
                          and reason_code(d["reason_code"]).next_step == "fulltext_fetch" for d in fresh)
             unread_text = not full or full["reason_code"] in fulltext.OWNED_CODES
@@ -304,7 +304,7 @@ def cutoff_snapshot(flow: Any, run: dict[str, Any], listing: dict[str, Any], clo
         if row["reason"]:
             excluded[row["reason"]] += 1
         rows.append(row)
-    # The works this read asks the person about, at most two, frozen once per scope revision (D137).
+    # The works this read asks the person about, at most two, frozen once per scope revision.
     from deixis.workflow.screen import queue as human_queue
     asked = human_queue.frozen_asked(store, rid, run["scope_revision"])
     return {
@@ -360,7 +360,7 @@ def included_heads(store: Any, rid: str) -> dict[str, str]:
 def after_cutoff_rows(store: Any, flow: Any, rid: str,
                       works: dict[str, str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """Answer input rows for works the person included that the read cutoff holds no row for (a work a follow-up
-    search found, or one added by hand): one row per work, read from the head's answer version (D48), its full text
+    search found, or one added by hand): one row per work, read from the head's answer version, its full text
     when a current reading read the file in use, else its abstract, then the person's choice. A work with no text
     version gives no row and is listed as `no_text_version`. Without a flow no page is given (`version_text`)."""
     decisions = DecisionStore(store)
@@ -457,7 +457,7 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
         if works:
             added, no_text = after_cutoff_rows(store, flow, rid, works)
             rows += added
-    # Late full text that excluded a work (D255) outranks the abstract screening that admitted it at the cutoff.
+    # Late full text that excluded a work outranks the abstract screening that admitted it at the cutoff.
     late_excluded = None
     if not run["budget"].get("late_revision_id"):
         from deixis.workflow.answer import late_revision
@@ -466,7 +466,7 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
             if row["work_id"] in late_excluded and not row["reason"] and not row["user_priority"]:
                 row["reason"] = "fulltext_excluded_after_cutoff"
         # A late reading that did not include the work but read its file makes it a closest work, read from that file
-        # (D137), instead of the abstract the cutoff admitted it on.
+        #, instead of the abstract the cutoff admitted it on.
         if late_excluded is not None:
             late_closest = late_revision.closest_works(store, rid, run["scope_revision"])
             for row in rows:
@@ -509,7 +509,7 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
             if not row["reason"] and not (row["fulltext_ids"] if row["route"] == "fulltext" else row["abstract_ids"]):
                 row["reason"] = "no_text_at_cutoff"
     # A closest work whose reading found no criterion part stays out; the rest are taken by the parts their reading
-    # found, the frozen list's order breaking ties, and those past the budget's count stay out (D137, D145).
+    # found, the frozen list's order breaking ties, and those past the budget's count stay out.
     cap = CLOSEST_WORKS.get(run["budget"]["max_answer_passages"], CLOSEST_WORKS[48])
     closest = [row for row in rows if not row["reason"] and role_of(row) == "closest"]
     quoted_by_work = {}
@@ -517,10 +517,10 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
         row["criterion_parts"], quoted_by_work[row["work_id"]] = closest_parts(store, row)
         if closest_rank(row) == (0, 0):
             row["reason"] = "closest_no_part"
-    # D152: one of those places is kept for the first such work in the list order whose own abstract screening made
+    # One of those places is kept for the first such work in the list order whose own abstract screening made
     # it a candidate: as an abstract it was the nearest neighbour the answer read, and reading its file must not take
     # it away (Jia & Chen, 6 Nov). It stays a closest work with its reading's findings, its full-text decision is not
-    # touched, and the row says why it was taken. An answer bound before D152 (allocation version 4) leaves it out.
+    # touched, and the row says why it was taken. An answer bound earlier (allocation version 4) leaves it out.
     fallback = None
     allocation = run["budget"]["inspection"].get("answer_allocation_version", 0)
     if allocation >= 5:
@@ -552,7 +552,7 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
         if row["route"] == "fulltext" and role_of(row) == "closest":
             pages = closest_pages(store, row, pages, quoted_by_work[row["work_id"]], fts, patterns)
             if allocation >= 6 and row.get("closest_selection") == CLOSEST_FALLBACK:
-                pages = pages[:CLOSEST_FALLBACK_PAGES]  # D155: its reading found nothing to quote
+                pages = pages[:CLOSEST_FALLBACK_PAGES]  # Its reading found nothing to quote
         elif row["route"] == "fulltext":
             topic = [p for p in store.search_passages([row["source_version_id"]], fts, len(ids)) if p["id"] in ids]
             criterion = criterion_passages.criterion_order(pages, patterns or [])
@@ -565,7 +565,7 @@ def input_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[st
     limit = run["budget"]["max_answer_passages"]
     passages = allocate_by_role(rows, queues, limit, abstracts_first=allocation >= 6)
     given = {p["id"] for p in passages}
-    # A work the budget left without a page is not given to the model, and is listed with why (D137).
+    # A work the budget left without a page is not given to the model, and is listed with why.
     for row in rows:
         if not given & set(row["abstract_ids"] + row["fulltext_ids"]):
             row["reason"] = "passage_budget"
@@ -589,7 +589,7 @@ PART_STATUS = {"present": "found", "disputed": "disputed", "absent": "not_found"
 
 def closest_parts(store: Any, row: dict[str, Any]) -> tuple[list[dict[str, str]], list[str]]:
     """What the reading behind a closest work found of each criterion part, and the passages its verified quotes stand
-    on (D137). The two calls are merged as the queue merges them (`adjudication.merge_parts`): a part one call quoted
+    on. The two calls are merged as the queue merges them (`adjudication.merge_parts`): a part one call quoted
     and the other, shown the same text, did not find is `disputed`. A status is a pointer for the answer model, never
     evidence; no rationale the reading model wrote is passed on."""
     from deixis.workflow.read import adjudication
@@ -625,7 +625,7 @@ def closest_parts(store: Any, row: dict[str, Any]) -> tuple[list[dict[str, str]]
 
 
 def closest_rank(row: dict[str, Any]) -> tuple[int, int]:
-    """How a closest work is taken (D145): more criterion parts found with a verified quote first, then more found on
+    """How a closest work is taken: more criterion parts found with a verified quote first, then more found on
     an unverified one; `sorted` keeps the frozen list's order between equals. Disputed parts do not count."""
     statuses = [part["status"] for part in row.get("criterion_parts") or []]
     return -statuses.count("found"), -statuses.count("found_unverified")
@@ -633,7 +633,7 @@ def closest_rank(row: dict[str, Any]) -> tuple[int, int]:
 
 def closest_pages(store: Any, row: dict[str, Any], pages: list[dict[str, Any]], quoted: list[str], fts: str,
                   patterns: list[Any]) -> list[dict[str, Any]]:
-    """A closest work's pages for the answer (D137): its abstract, the pages its reading quoted, then the pages the
+    """A closest work's pages for the answer: its abstract, the pages its reading quoted, then the pages the
     research's topic and criterion rank first, at most CLOSEST_PAGES."""
     ids = row["fulltext_ids"]
     abstract = [store.passage(pid) for pid in row["abstract_ids"][:1]]
@@ -646,12 +646,12 @@ def closest_pages(store: Any, row: dict[str, Any], pages: list[dict[str, Any]], 
 
 def allocate_by_role(rows: list[dict[str, Any]], queues: list[list[dict[str, Any]]],
                      limit: int, *, abstracts_first: bool = False) -> list[dict[str, Any]]:
-    """Fill the passage budget by role (D137), breadth first and in row order within each pass: the first page of every
+    """Fill the passage budget by role, breadth first and in row order within each pass: the first page of every
     included and closest work, then the other pages of the closest works (up to CLOSEST_PAGES each), then one abstract
     per abstract-only work, then the deeper pages of the included works (up to MAX_PASSAGES_PER_SOURCE each). Without
     closest works this is the earlier breadth-first order; the budget is no longer widened to fit every work. A work
     the person included, or that a Screen more run the person started admitted, always gets its first page, even past
-    the budget. `abstracts_first` (allocation version 6, D155) gives the abstract-only works their abstract before the
+    the budget. `abstracts_first` (allocation version 6) gives the abstract-only works their abstract before the
     closest works their second to fourth pages."""
     forced = [bool(row["user_priority"] or row.get("screened_after_cutoff")) for row in rows]
     selected = [queue[0] for queue, first in zip(queues, forced) if first and queue]
@@ -729,9 +729,9 @@ def added_after_cutoff_view(store: Any, answer_run_id: str | None) -> list[dict[
 
 
 def roles_view(store: Any, answer_run_id: str | None) -> dict[str, Any] | None:
-    """What each work the answer was given stood as (D137), read from the frozen plan of its run and never recomputed:
+    """What each work the answer was given stood as, read from the frozen plan of its run and never recomputed:
     the role per work, the work counts per role, what the plan left out for the budget, and the criterion parts of each
-    closest work. A plan frozen before D137 has no roles, and `role_of` reads its routes."""
+    closest work. A plan frozen earlier has no roles, and `role_of` reads its routes."""
     from deixis.workflow.answer.late_revision import REVISION_INPUT
 
     if answer_run_id is None:
@@ -747,7 +747,7 @@ def roles_view(store: Any, answer_run_id: str | None) -> dict[str, Any] | None:
             "left_out": {k: left[k] for k in ("passage_budget", "closest_over_cap", "closest_no_part") if left.get(k)},
             "closest_parts": {row["work_id"]: row["criterion_parts"] for row in items
                               if role_of(row) == "closest" and row.get("criterion_parts")},
-            # D152: the closest work taken although its reading found no criterion part, apart from the others.
+            # The closest work taken although its reading found no criterion part, apart from the others.
             "closest_fallback": [row["work_id"] for row in items if row.get("closest_selection") == CLOSEST_FALLBACK]}
 
 
@@ -766,7 +766,7 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
     # the included set and selection revision were read, so the snapshot is the state they describe.
     rid = run["research_id"]
     flow._answer_start_snapshot(run, flow.store.included_works(rid), flow.store.selection_revision(rid))
-    # A person's selection change no longer stops a first answer (D126): it is written from the plan's selection and
+    # A person's selection change no longer stops a first answer: it is written from the plan's selection and
     # published as out of date, and `after_answer` starts the next one. A late revision keeps its own stop rule.
     flow._small_batch_guard = {"run_id": run["id"], "rid": run["research_id"], "fast_answer": True, "input": plan}
     if run["budget"].get("late_revision_id"):
@@ -804,7 +804,7 @@ def auto_answer(store: Any, run: dict[str, Any]) -> None:
 
 
 def rerun_for_selection(store: Any, run: dict[str, Any]) -> bool:
-    """D126: when the person changed the selection while an answer was written, queue one answer from the current
+    """When the person changed the selection while an answer was written, queue one answer from the current
     selection. The finished answer stays, marked out of date by its selection revision, and is not reviewed; each
     rerun needs a new change by the person, so the chain ends once the selection holds still."""
     from deixis.workflow.run.store import ACTIVE_RUN_STATUSES

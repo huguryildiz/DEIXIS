@@ -1693,7 +1693,7 @@ export const tr: Record<string, string> = {
   'A PDF’s equations could not be stored while another run uses the same source. Resume when that run ends.': 'Aynı kaynağı kullanan başka bir çalışma sürdüğü için bir PDF’in denklemleri kaydedilemedi. O çalışma bitince devam edin.',
   '{n} equation on this page does not match the PDF’s own text and may be misread; check it against the PDF page.': 'Bu sayfadaki {n} denklem PDF’in kendi metniyle uyuşmuyor ve yanlış okunmuş olabilir; PDF sayfasıyla karşılaştırın.',
   '{n} equations on this page do not match the PDF’s own text and may be misread; check them against the PDF page.': 'Bu sayfadaki {n} denklem PDF’in kendi metniyle uyuşmuyor ve yanlış okunmuş olabilir; PDF sayfasıyla karşılaştırın.',
-  // The arXiv source route (D104): equations matched to the page by their numbers from the authors' LaTeX.
+  // The arXiv source route: equations matched to the page by their numbers from the authors' LaTeX.
   'Equations from the arXiv source (v{version}) · {n} matched to {p} page by its number': 'Denklemler arXiv kaynağından (v{version}) · {n} tanesi {p} sayfaya numarasıyla eşlendi',
   'Equations from the arXiv source (v{version}) · {n} matched to {p} pages by its number': 'Denklemler arXiv kaynağından (v{version}) · {n} tanesi {p} sayfaya numarasıyla eşlendi',
   'Equations from the arXiv source (v{version}) · {n} matched to {p} page by their numbers': 'Denklemler arXiv kaynağından (v{version}) · {n} tanesi {p} sayfaya numaralarıyla eşlendi',
@@ -2931,7 +2931,7 @@ export const tr: Record<string, string> = {
   'PDF collection failed': 'PDF toplama başarısız oldu',
   'PDF collection cancelled': 'PDF toplama iptal edildi',
   'Try each included source’s open PDF links, then look once for another open copy.': 'Dahil edilen her kaynağın açık PDF bağlantılarını dene, sonra bir kez başka bir açık kopya ara.',
-  // The full-text retrieval run that follows an sw discovery run (slice 10, D83).
+  // The full-text retrieval run that follows an sw discovery run (slice 10).
   'Full-text retrieval': 'Tam metin getirme',
   'Retrieval plan (code)': 'Getirme planı (kod)',
   'Retrieval baseline (code)': 'Getirme tabanı (kod)',
@@ -2945,7 +2945,7 @@ export const tr: Record<string, string> = {
   'Full-text retrieval paused': 'Tam metin getirme duraklatıldı',
   'Full-text retrieval failed': 'Tam metin getirme başarısız oldu',
   'Full-text retrieval cancelled': 'Tam metin getirme iptal edildi',
-  // The full-text reading run that follows an sw retrieval run (slice 12, D85).
+  // The full-text reading run that follows an sw retrieval run (slice 12).
   'Full-text reading': 'Tam metin okuma',
   'Reading plan (code)': 'Okuma planı (kod)',
   'Full-text proposal': 'Tam metin önerisi',
@@ -2995,7 +2995,7 @@ export const tr: Record<string, string> = {
   'Open copy is another version': 'Açık kopya başka bir sürüm',
   'No open link listed': 'Açık bağlantı yok',
   'Not checked yet': 'Henüz bakılmadı',
-  // Trash, removal from a research and undo (D50)
+  // Trash, removal from a research and undo
   'It leaves this research’s source list, answer input and tables; its table cells are kept. The library record and its PDF are not deleted, and earlier quotes keep opening. You can restore it from the notification or the Trash.': 'Bu araştırmanın kaynak listesinden, cevap girdisinden ve tablolarından çıkar; tablo hücreleri saklanır. Kütüphane kaydı ve PDF’i silinmez, eski alıntılar açılmaya devam eder. Bildirimden ya da Çöp Kutusu’ndan geri yükleyebilirsiniz.',
   '{n} row': '{n} satır',
   '{n} rows': '{n} satır',
@@ -3102,7 +3102,7 @@ export const tr: Record<string, string> = {
   'Column restored with its cells.': 'Sütun hücreleriyle birlikte geri yüklendi.',
   '{n} table of this research is in the Trash.': 'Bu araştırmanın {n} tablosu Çöp Kutusu’nda.',
   '{n} tables of this research are in the Trash.': 'Bu araştırmanın {n} tablosu Çöp Kutusu’nda.',
-  // OCR of scanned PDF pages (D51)
+  // OCR of scanned PDF pages
   'OCR text · check against the page': 'OCR metni · sayfayla karşılaştırın',
   'OCR text on {k} of {n} pages · check against the page': '{n} sayfanın {k} tanesinde OCR metni · sayfayla karşılaştırın',
   'Read with OCR': 'OCR ile oku',
@@ -3166,13 +3166,13 @@ export const tr: Record<string, string> = {
   'Missing': 'Eksik',
   'Source key': 'Kaynak etiketi',
   'Open source details': 'Kaynak ayrıntılarını aç',
-  // The protocol approval card and the sw workflow's own stops (D80)
+  // The protocol approval card and the sw workflow's own stops
   'The question is not in English and could not be translated into English, so nothing was searched. Resume to try the translation again, revise the question in English, or give the English key terms above.': 'Soru İngilizce değil ve İngilizceye çevrilemedi, bu yüzden hiçbir şey aranmadı. Çeviriyi yeniden denemek için devam ettirin, soruyu İngilizce yazın ya da yukarıya İngilizce anahtar terimleri girin.',
   'The English key terms could not be read, so nothing was searched. Change them above and search again.': 'İngilizce anahtar terimler okunamadı, bu yüzden hiçbir şey aranmadı. Yukarıda değiştirip yeniden arayın.',
   'Translation step: {reason}': 'Çeviri adımı: {reason}',
   'No search term could be built from the question, so nothing was searched. Revise the question above, for example with other words for the topic or with key terms, and search again.': 'Sorudan arama terimi çıkarılamadı, bu yüzden hiçbir şey aranmadı. Yukarıda soruyu düzeltin (örneğin konuyu başka kelimelerle yazın ya da anahtar terimler verin) ve yeniden arayın.',
   'Every search term in the question is too common to search on its own, so nothing was searched. Revise the question above with a narrower topic or with key terms, and search again.': 'Sorudaki arama terimlerinin hepsi tek başına aranamayacak kadar yaygın, bu yüzden hiçbir şey aranmadı. Yukarıda soruyu daha dar bir konuyla ya da anahtar terimlerle düzeltin ve yeniden arayın.',
-  // Other names the user asked a model for on the approval card (D82).
+  // Other names the user asked a model for on the approval card.
   'Try again': 'Yeniden dene',
   'Usage': 'Kullanım',
   'The model call limit for this run was reached.': 'Bu koşunun model çağrısı sınırına ulaşıldı.',
@@ -3192,7 +3192,7 @@ export const tr: Record<string, string> = {
   'Blocks are separated by “;”, synonyms of one block by “,”; a group written “claim:” is the assertion under test and one written “not:” keeps records out.': 'Bloklar “;”, bir bloğun eş anlamlıları “,” ile ayrılır; “claim:” ile yazılan grup sınanan iddiadır, “not:” ile yazılan grup kayıtları dışarıda tutar.',
   'The model could not write the search query, and nothing has been searched. Resume to ask it once more, or search with the query DEIXIS built from the question’s words.': 'Model arama sorgusunu yazamadı ve henüz hiçbir şey aranmadı. Modele bir kez daha sormak için devam ettirin ya da DEIXIS’in sorunun kelimelerinden kurduğu sorguyla arayın.',
   'other': 'diğer',
-  // Source routing (D93)
+  // Source routing
   'Not searched': 'Aranmayan',
   '{works} works, {only} no other source’s search found': '{works} eser, {only} tanesini başka kaynağın araması bulmadı',
   'Works per source were not counted for this run': 'Bu koşuda kaynak başına eser sayılmadı',
@@ -3201,7 +3201,7 @@ export const tr: Record<string, string> = {
   'The model has had its second try.': 'Model ikinci denemesini de yaptı.',
   'Search with the query built from the question’s words': 'Sorunun kelimelerinden kurulan sorguyla ara',
   'The run searches with the query built from the question’s words.': 'Koşu, sorunun kelimelerinden kurulan sorguyla arıyor.',
-  // The human queue (slice 17, D97).
+  // The human queue (slice 17).
   'Your answer in the queue: {answer}': 'Kuyruktaki cevabınız: {answer}',
   'Awaiting your decision': 'Kararınızı bekleyenler',
   'Awaiting a decision': 'Karar bekliyor',
@@ -3497,7 +3497,7 @@ export const tr: Record<string, string> = {
   'semantic search is off': 'anlamsal arama kapalı',
   'no similarity was stored': 'benzerlik saklanmadı',
   'no reason recorded': 'neden kaydedilmedi',
-  // The flow, the audit sample and the PRISMA-S search report (slice 20, D102).
+  // The flow, the audit sample and the PRISMA-S search report (slice 20).
   '{included} included (two agreeing runs {agreed}, you confirmed {confirmed}) · {queued} in your queue, not looked at · {waiting} waiting for a PDF · {notRead} full text not read ({reading} in reading, {tried} not tried) · {notMet} criterion not met': '{included} dahil (iki uyuşan koşu {agreed}, sizin onayladığınız {confirmed}) · kuyruğunuzda bakılmamış {queued} · PDF bekleyen {waiting} · tam metni okunmamış {notRead} (okumada {reading}, denenmemiş {tried}) · ölçütü karşılamayan {notMet}',
   'Flow': 'Akış',
   'In queue': 'Kuyrukta',
@@ -3905,7 +3905,7 @@ export const tr: Record<string, string> = {
   'Open the Candidates panel to control this run': 'Bu koşuyu yönetmek için Adaylar panelini açın',
   'Open the Follow-up panel to control this run': 'Bu işlemi kontrol etmek için Takip panelini açın',
   'Open the Evidence table panel to control this run': 'Bu işlemi yönetmek için Kanıt tablosu panelini açın',
-  // D132: how the answer was built.
+  // How the answer was built.
   'Found': 'Bulundu',
   'Past this run’s reading limit, not judged': 'Bu çalışmanın okuma sınırının dışında, değerlendirilmedi',
   'No abstract to read': 'Okunacak özet yok',
@@ -4776,7 +4776,7 @@ export const tr: Record<string, string> = {
   'Follow-up answer copied to clipboard.': 'Takip cevabı panoya kopyalandı.',
   'Puts this question in the follow-up box': 'Bu soruyu takip sorusu kutusuna koyar',
   'The model output did not pass validation, so it is not shown as a cited answer.': 'Model çıktısı doğrulamadan geçmedi, bu yüzden atıflı bir cevap olarak gösterilmiyor.',
-  // UI parity S23b: the Search plan panel (P42, D12) and the thread's PDF line.
+  // UI parity S23b: the Search plan panel (P42) and the thread's PDF line.
   'Edit plan': 'Planı düzenle',
   'Choose PDFs': 'PDF seç',
   'Loading the search plan…': 'Arama planı yükleniyor…',
@@ -4858,7 +4858,7 @@ export const tr: Record<string, string> = {
   'The models were asked {n} times: {split}.': 'Modellere {n} kez soruldu: {split}.',
   '(not refreshed: the last read failed)': '(yenilenmedi: son okuma başarısız oldu)',
   'OpenAlex’s budget today could not be read.': 'OpenAlex’in bugünkü bütçesi okunamadı.',
-  // P2 (D31): the requests a run sent, from its stored requests.
+  // P2: the requests a run sent, from its stored requests.
   'Requests this run sent: {list}.': 'Bu işlemin gönderdiği istekler: {list}.',
   '{provider} {n}': '{provider} {n}',
   '{provider} {n} ({details})': '{provider} {n} ({details})',
@@ -5326,7 +5326,7 @@ export const tr: Record<string, string> = {
   'Did not answer · no connection': 'Cevap vermedi · bağlantı kurulamadı',
   'Did not answer · {error}': 'Cevap vermedi · {error}',
   'Sent without a contact email; none is set in Profile.': 'İletişim e-postası olmadan gönderildi; Profil’de ayarlı değil.',
-  // Settings → This computer → Data location (D32).
+  // Settings → This computer → Data location.
   'Data location': 'Veri konumu',
   'Where DEIXIS keeps your library, PDFs and history on this computer': 'DEIXIS’in kitaplığınızı, PDF’lerinizi ve geçmişinizi bu bilgisayarda tuttuğu yer',
   'Change location': 'Konumu değiştir',
@@ -5412,7 +5412,7 @@ export const tr: Record<string, string> = {
   '{n} section': '{n} bölüm',
   '{n} sections': '{n} bölüm',
   'Drawn from Europe PMC': 'Europe PMC’den çizildi',
-  // The citation map panel (citemap/CitationMap.tsx, D42).
+  // The citation map panel (citemap/CitationMap.tsx).
   'Source citation map': 'Atıf haritası',
   // Citation snowballing (research/SnowballPanel.tsx).
   '{n} not sent': '{n} gönderilmedi',
@@ -5620,7 +5620,7 @@ export const tr: Record<string, string> = {
   '{n} for a follow-up question': '{n} tanesi bir takip sorusu için',
   '{n} for follow-up questions': '{n} tanesi takip soruları için',
   'Follow-up searches': 'Takip aramaları',
-  // Kill search from the answer's Next steps (D98)
+  // Kill search from the answer's Next steps
   'A claim was already written from this topic; it is opened instead.': 'Bu konudan daha önce bir iddia yazılmış; o açıldı.',
   'Claim saved. Breaking it into parts has started; nothing is searched yet.': 'İddia kaydedildi. Parçalara ayırma başladı; henüz hiçbir şey aranmadı.',
   'Claim saved, but breaking it into parts did not start: {error}': 'İddia kaydedildi ama parçalara ayırma başlamadı: {error}',
@@ -5973,7 +5973,7 @@ export const tr: Record<string, string> = {
   'left out with a reason': 'sebeple dışarıda',
   'listed': 'listede',
   'support part of it': 'bir kısmını destekliyor',
-  // Reverse citation search R4b (D108): a result with only partly stated parts is not support.
+  // Reverse citation search R4b: a result with only partly stated parts is not support.
   'Support not shown clearly enough': 'Destek yeterince gösterilmedi',
   'support not shown clearly enough': 'destek yeterince gösterilmedi',
   'The model found only partial overlap in the passages it was given and marked no part of the statement as stated, so these works are not counted as support.': 'Model, kendisine verilen pasajlarda yalnızca kısmi bir örtüşme buldu ve iddianın hiçbir parçasını belirtilmiş saymadı; bu yüzden bu eserler destek sayılmaz.',
@@ -6003,7 +6003,7 @@ export const tr: Record<string, string> = {
   'The version check is off. Nothing is sent.': 'Sürüm denetimi kapalı. Hiçbir şey gönderilmez.',
   'Built into PyMuPDF {version}': 'PyMuPDF {version} içinde',
   'Language data': 'Dil verisi',
-  // D173: the deeper screening (one model read of list places past N).
+  // The deeper screening (one model read of list places past N).
   'out of scope by one model read': 'tek model okumasıyla kapsam dışı',
   '{n} of them read once, by a single model read': '{n} tanesi tek bir model okumasıyla bir kez okundu',
   'Of your {n} decision, you changed a decision of code or the model runs in {m} (code {code}, model runs {model}, one model read {once}).': '{n} kararınızın {m} tanesinde kodun ya da model koşularının kararını değiştirdiniz (kod {code}, model koşuları {model}, tek model okuması {once}).',

@@ -1,8 +1,8 @@
-"""D114, D144: which sources a table made from the research follows, and why each one is in its report.
+"""Which sources a table made from the research follows, and why each one is in its report.
 
 A table made from the research (`follows_included = 2`) holds the included sources and, beside them, the works nobody
-decided that passed the abstract stage and were not included: those read in full (D144) and those read from their
-abstracts only (D114). The owner's rules (17 Oct, 26 Oct): they go into the table and the report, each with a note on
+decided that passed the abstract stage and were not included: those read in full and those read from their
+abstracts only. The owner's rules (17 Oct, 26 Oct): they go into the table and the report, each with a note on
 how it was read.
 
 Membership is decided per work, over every active version of it, never from one version's outcome. Both kinds need:
@@ -12,7 +12,7 @@ Membership is decided per work, over every active version of it, never from one 
   exclusion the code derived from that reading (`criterion_absent`, say) is the reading itself, not a decision;
 - it passed the abstract stage: a current abstract-stage `candidate` on some version.
 
-Read in full (`full_text_read`): the answer's closest-work test holds on the work's answer version (D48, D137,
+Read in full (`full_text_read`): the answer's closest-work test holds on the work's answer version (
 `answer.is_closest`): a current model full-text decision that did not include it, with a reason in
 `answer.CLOSEST_CODES` (never `no_fulltext` or `text_unreadable`), standing on a reading of the file still in use. The
 row's version is the one whose file was read.
@@ -22,7 +22,7 @@ Read from the abstract only (`abstract_only`):
 - no version is still being judged: every current full-text decision on every version is `no_fulltext` or
   `text_unreadable` (or there is none yet);
 - no version has text in use beyond its abstract (PDF pages or sections), and the row's version holds an abstract: the head when it has one, else the work's
-  answer version (D48) when it holds one, else the first active version that does.
+  answer version when it holds one, else the first active version that does.
 
 Membership is read live; nothing here is stored. A table made earlier (`follows_included` 0 or 1) keeps the included
 sources only. Answer paths do not read this module.
@@ -113,7 +113,7 @@ def abstract_works(store: Any, rid: str, work_id: str | None = None) -> dict[str
 def full_text_works(store: Any, rid: str, work_id: str | None = None) -> dict[str, str]:
     """Work id -> the version whose file was read, for each work read in full and not included (one work when named).
 
-    The answer's own test (`answer.is_closest`, D137) on the work's answer version (D48), so the table and the answer
+    The answer's own test (`answer.is_closest`) on the work's answer version, so the table and the answer
     agree on what was read in full: a current model full-text decision on that version, with a reason code in
     `answer.CLOSEST_CODES`, standing on a reading of the file still in use (`answer.read_file`).
     """
@@ -208,7 +208,7 @@ def in_table_sources(store: Any, rid: str, table_id: str, svid: str) -> bool:
     return wid not in included_works
 
 
-# The records `abstract_works` and `full_text_works` read, summarised: the D63 sweep runs every worker turn, and
+# The records `abstract_works` and `full_text_works` read, summarised: the sweep runs every worker turn, and
 # reading every work's decisions each second for nothing would hold the library connection. When none of these moved
 # since the table's last look, no work can have become abstract-only or read in full. Only when to look again is
 # remembered, never who is a member: the fill's `_left_out` and the report boundary always read membership live.

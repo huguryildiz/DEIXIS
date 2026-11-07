@@ -1,9 +1,9 @@
-"""Passage embeddings for semantic passage retrieval (D27, D29).
+"""Passage embeddings for semantic passage retrieval.
 
 The question and the text of included sources' passages are embedded by the provider chosen in Settings: the Gemini
 API, a built-in model on this computer (one of `builtin_catalog`'s GGUF models, run by llama.cpp), the OpenAI API, the
 Voyage API, the Cohere API, or an embedding model on a local Ollama or LM Studio server. Without a saved choice, Gemini
-is used when its key is set (D27), else the first built-in model in catalog order that is downloaded and checked (D7);
+is used when its key is set, else the first built-in model in catalog order that is downloaded and checked;
 Voyage and Cohere are used only when chosen. A built-in choice is `(builtin, catalog id)`; one saved for an earlier
 built-in model is never mapped to a catalog model: its runs fail with `builtin_model_changed` until the person picks one. Vectors are stored per passage and model at unit length, so a passage is embedded once per model. Similarity
 only orders passages and records; it does not show that a passage supports a claim.
@@ -343,7 +343,7 @@ async def embed_cohere(client: httpx.AsyncClient, key: str, model: str, texts: l
 
 def client_for(provider: str, deps: Any) -> httpx.AsyncClient:
     """The client an embedding request goes through. Ollama and LM Studio run on this computer and their requests carry
-    passage text, so they use the loopback client (D34: no proxy from the environment, no redirects), never the shared
+    passage text, so they use the loopback client (no proxy from the environment, no redirects), never the shared
     one, which honours HTTP_PROXY/ALL_PROXY. `deps` is the flow's FlowDeps; one without a loopback client gets one."""
     if provider not in LOCAL_URLS:
         return deps.http
@@ -354,7 +354,7 @@ def client_for(provider: str, deps: Any) -> httpx.AsyncClient:
 
 def chosen(setting: dict[str, Any] | None) -> tuple[str, str | None]:
     """The provider and model semantic search uses: the saved choice, else Gemini when its key is set, else the first
-    built-in model in catalog order that is downloaded and checked (D7), else off. A saved built-in choice keeps its
+    built-in model in catalog order that is downloaded and checked, else off. A saved built-in choice keeps its
     model as saved, a catalog id or an earlier model's identity (never remapped; `NO_MODEL` when none was saved).
     Downloading is the person's act; nothing here downloads or chooses a model."""
     if setting:
@@ -395,7 +395,7 @@ class Embedder:
 
     @property
     def stored_model(self) -> str:
-        # Gemini rows written before D29 are stored under the bare model name. Voyage's and Cohere's carry their output
+        # Gemini rows written earlier are stored under the bare model name. Voyage's and Cohere's carry their output
         # dimension. A built-in catalog id is stored as its full identity (file, context, cut, pooling, instruction,
         # preprocessing and runtime numerics), with the thread suffix a discovery run adds.
         if self.provider == "gemini":
@@ -433,7 +433,8 @@ class Embedder:
                 raise EmbeddingError("builtin_unavailable: the built-in model is not set up in this process")
             model = builtin_model(self.model)
             if model is None:
-                # An earlier built-in model (bge-small, the D88 PyTorch Qwen3) or an identity no catalog entry has now:
+                # An earlier built-in model (bge-small, the earlier PyTorch Qwen3) or an identity no catalog entry has
+                # now:
                 # its vectors are not any current model's, so nothing is embedded under its name, and it is never
                 # routed to another model's server.
                 raise EmbeddingError("builtin_model_changed: this step or choice names a built-in model this DEIXIS "

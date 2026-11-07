@@ -188,7 +188,7 @@ def references_read(store, source_version_id):
                               (source_version_id,)).fetchone()[0]
 
 
-# ---- slice 13g Task 4: the Scopus client (D91) ------------------------------------------------------------------
+# ---- slice 13g Task 4: the Scopus client ------------------------------------------------------------------
 # Answers shaped after `providers/scopus.py`'s notes: an entry list under `search-results`, the abstract as
 # `dc:description` in the complete view, an empty set as one entry holding `error`, 401 without entitlement.
 

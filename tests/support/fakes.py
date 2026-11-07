@@ -51,7 +51,7 @@ def valid_response(si: dict[str, Any]) -> str:
             "setting_backup": [], "task_backup": [],
         })
     if task == "followup_search_query":
-        # SYNTHETIC terms for a follow-up's search for new works (D92); they say nothing about a model's choice.
+        # SYNTHETIC terms for a follow-up's search for new works; they say nothing about a model's choice.
         return json.dumps(envelope(si, "deixis.followup_search_query.v1") | {
             "setting": [{"term": "synthetic channel", "kind": "topic", "why": "SYNTHETIC setting"}],
             "task": [{"term": "release schedule", "kind": "method", "why": "SYNTHETIC task"}],
@@ -66,7 +66,7 @@ def valid_response(si: dict[str, Any]) -> str:
             "nearest_match_summary": "SYNTHETIC: no match in the supplied text.",
         })
     if task in ("citation_check", "statement_check"):
-        # SYNTHETIC: the whole sentence as one part, stated by the opening words of the first given passage (D98); a
+        # SYNTHETIC: the whole sentence as one part, stated by the opening words of the first given passage; a
         # statement check (reverse citation search, R1) reads its sentence from its own target.
         first = si["passages"][0]
         quote = first["text"] if len(first["text"]) <= 300 else first["text"][:300].rsplit(None, 1)[0]
@@ -239,9 +239,9 @@ def valid_response(si: dict[str, Any]) -> str:
             "citation_anchors": [{"claim_label": "c1", "passage_id": first["passage_id"],
                                   "quote": " ".join(first["text"].split())[:600]}],
             "unanswered_aspects": [], "more_queries": [],
-            # SYNTHETIC: a question carrying the marker asks for the report to change (D57).
+            # SYNTHETIC: a question carrying the marker asks for the report to change.
             "report_change_requested": "[report-change]" in si["question"]["text"],
-            # SYNTHETIC: a question carrying the marker asks for works the research does not hold (D92).
+            # SYNTHETIC: a question carrying the marker asks for works the research does not hold.
             "new_works_requested": "[new-works]" in si["question"]["text"],
             "work_classifications": [],
         })
@@ -278,7 +278,7 @@ class FakeAdapter:
         self.before = before
         self.fail = fail
         self.enforces_schema = enforces_schema
-        self.sends_reasoning_effort = sends_reasoning_effort  # False: like an OpenAI-compatible connection (D25)
+        self.sends_reasoning_effort = sends_reasoning_effort  # False: like an OpenAI-compatible connection
         self.calls: list[dict[str, Any]] = []
         self.sent_efforts: list[str | None] = []
         self.sent: list[tuple[str, str | None, str | None]] = []  # (task type, requested model, reasoning effort) per call

@@ -1,4 +1,4 @@
-"""Model-free: what `schema_subset` sends instead of a step schema, and how the nulls left out come back (D93).
+"""Model-free: what `schema_subset` sends instead of a step schema, and how the nulls left out come back.
 
 These pairs show the transforms; whether the API accepts a schema was probed live, not here.
 """

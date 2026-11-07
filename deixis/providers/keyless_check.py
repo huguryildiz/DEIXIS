@@ -1,10 +1,10 @@
-"""The Test on a keyless source's Settings sheet (P5, D33): one request, and whether the service answered.
+"""The Test on a keyless source's Settings sheet (P5): one request, and whether the service answered.
 
 The request is a one-record read from the endpoint the connector searches, sent without a key and with the contact
 email: in the User-Agent on every request, and also as the parameter the service asks for (OpenAlex and Crossref
 `mailto`, PubMed `email`). Only the reply's arrival is read: its HTTP status, or why none came (time-out, no
 connection). The body is not read, so the result says nothing about search results, quota or record quality. One
-request, no retry; Semantic Scholar's goes through the process-wide gate every Semantic Scholar request takes (D67).
+request, no retry; Semantic Scholar's goes through the process-wide gate every Semantic Scholar request takes.
 """
 
 from __future__ import annotations

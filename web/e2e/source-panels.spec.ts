@@ -43,7 +43,7 @@ class PanelServer {
     rmSync(this.dataDir, { recursive: true, force: true })
   }
   url() { return `http://127.0.0.1:${this.port}` }
-  // A SYNTHETIC one-page PDF from the fixture server ("SYNTHETIC replacement scan: …"), for Replace PDF (D45).
+  // A SYNTHETIC one-page PDF from the fixture server ("SYNTHETIC replacement scan: …"), for Replace PDF.
   replacementPdf(name: string) {
     const file = path.join(this.dataDir, '..', `${name}-${this.port}.pdf`)
     const env = { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', PYTHONPATH: REPO }

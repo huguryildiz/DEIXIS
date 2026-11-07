@@ -78,7 +78,7 @@ class Worker:
             from deixis.workflow.run import fast_path
 
             fast_path.recover(self.store)
-            # A provider request still out when the process stopped stays "not known whether sent" (D31); its row
+            # A provider request still out when the process stopped stays "not known whether sent"; its row
             # says why.
             conn.execute("UPDATE provider_requests SET delivery_class = 'backend_stopped', settled_at = ?"
                          " WHERE settled_at IS NULL", (now(),))
@@ -147,7 +147,7 @@ class Worker:
         from deixis.workflow.answer import late_revision
         from deixis.workflow.features.tables import table_refresh, table_rows
         self._sweep("late_revision", lambda: late_revision.advance(self.flow))
-        # after the late answer revision, so that one is queued first (D52)
+        # after the late answer revision, so that one is queued first
         self._sweep("table_refresh", lambda: table_refresh.advance(self.store))
         self._sweep("table_rows", lambda: table_rows.advance(self.store))
         run = self.store.next_queued_run()

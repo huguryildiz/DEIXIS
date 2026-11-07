@@ -1,4 +1,4 @@
-"""P5 slice 3 (D50): tables, templates and columns in the trash; a single table's permanent deletion; the grouped Trash list.
+"""P5 slice 3: tables, templates and columns in the trash; a single table's permanent deletion; the grouped Trash list.
 
 Records and model outputs are SYNTHETIC (scripted FakeAdapter). Passing shows what is kept, returned and deleted; it says
 nothing about cell quality.

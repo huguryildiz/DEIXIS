@@ -1,4 +1,4 @@
-"""Process groups for the command-line model connections (Copilot CLI D24, Gemini CLI D23).
+"""Process groups for the command-line model connections (Copilot CLI, Gemini CLI).
 
 A CLI run gets its own process group so that a timeout or a cancelled step also stops anything the CLI started:
 npm's launchers and Gemini CLI's self-relaunch leave a child that holds the output pipes, and asyncio's wait() does

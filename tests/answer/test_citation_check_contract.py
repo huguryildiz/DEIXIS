@@ -1,4 +1,4 @@
-"""Verify Citations V3 (D99): the citation_check schema, its StepInput target, the semantic checks and the method text.
+"""Verify Citations V3: the citation_check schema, its StepInput target, the semantic checks and the method text.
 Inputs and outputs are SYNTHETIC and hand-written; passing shows the checks hold in code, not that a model follows them."""
 
 import copy

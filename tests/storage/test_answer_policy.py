@@ -1,4 +1,4 @@
-"""Which inspection policy an answer gets, and when an academic answer is refused (D242); all evidence is synthetic."""
+"""Which inspection policy an answer gets, and when an academic answer is refused; all evidence is synthetic."""
 import pytest
 from fastapi.testclient import TestClient
 

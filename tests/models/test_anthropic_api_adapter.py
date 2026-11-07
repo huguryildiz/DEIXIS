@@ -1,4 +1,4 @@
-"""The Anthropic Messages API connection (D34).
+"""The Anthropic Messages API connection.
 
 Mocked httpx transports only: these show the request shape and the handling of answers, not that the live API accepts
 the requests or answers the way the mocks do.

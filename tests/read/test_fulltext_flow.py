@@ -32,7 +32,7 @@ HALF_ABSTRACT = "We vary the irrigation scheduling of an open field crop and rep
 
 def work(number, *, pdf_url=None, pdf_version=None, version="publishedVersion", doi=None, title=HALF,
          abstract=HALF_ABSTRACT):
-    """One SYNTHETIC OpenAlex record. `pdf_version` other than `version` makes the file another version's (D48)."""
+    """One SYNTHETIC OpenAlex record. `pdf_version` other than `version` makes the file another version's."""
     inverted: dict[str, list[int]] = {}
     for position, word in enumerate((abstract or "").split()):
         inverted.setdefault(word, []).append(position)
@@ -133,8 +133,8 @@ def wait_for_retrieval(client, rid, index=0):
 
 
 def wait_for_all(client, rid):
-    """Every run of the research settled, with the fast path's own: the answer its discovery queues (D254) and a
-    late revision that reads the files the answer did not (D255)."""
+    """Every run of the research settled, with the fast path's own: the answer its discovery queues and a
+    late revision that reads the files the answer did not."""
     deadline = time.time() + 30 * WAIT_FACTOR
     while time.time() < deadline:
         view = client.get(f"/api/researches/{rid}").json()
@@ -174,7 +174,7 @@ def unpaywall(doi, url, version):
 
 
 def test_a_closed_published_record_is_read_through_the_open_preprint_of_the_same_work(tmp_path, monkeypatch):
-    """D48: the published record's own link is closed, so the work is read through its submitted version."""
+    """The published record's own link is closed, so the work is read through its submitted version."""
     record = work(1, pdf_url="https://example.org/w1-preprint.pdf", pdf_version="submittedVersion")
     fetcher = Fetcher({"https://example.org/w1-preprint.pdf": ok()})
     app = app_for(tmp_path, monkeypatch, Transport([record]), fetcher)
@@ -191,7 +191,7 @@ def test_a_closed_published_record_is_read_through_the_open_preprint_of_the_same
         client.__exit__(None, None, None)
     assert output["route"] == "work_version" and output["read_version"] != head
     assert output["version_label"] == "submittedVersion" and output["code"] == "not_read_yet"
-    # The decision is written on the version that was read, not on the published record (D4, D48). The file names no
+    # The decision is written on the version that was read, not on the published record. The file names no
     # work and nothing read it (no read in this run, and the fast path's late revision did not take it up).
     assert decision["reason_code"] == "not_read_yet" and decision["source_version_id"] == output["read_version"]
 
@@ -214,7 +214,7 @@ def test_a_file_that_names_the_work_is_recorded_as_confirmed_and_one_that_does_n
     finally:
         client.__exit__(None, None, None)
     assert checks == {"W1": "doi", "W2": "unconfirmed"}
-    # The fast path's late revision (D255) reads both files after the answer: the confirmed one is read by the model,
+    # The fast path's late revision reads both files after the answer: the confirmed one is read by the model,
     # the unconfirmed one is kept and waits for the person, with no model call.
     assert codes == {"W1": "all_parts_verified", "W2": "pdf_identity_unconfirmed"}
 

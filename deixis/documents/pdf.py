@@ -6,28 +6,28 @@ original page stays the reference. Passages extracted earlier with pypdf keep th
 own `extraction_version`; they are not re-extracted.
 
 From `chunks-v2` the IEEE Xplore download notice stamped on every page ("Authorized licensed
-use limited to: ... Restrictions apply.") is removed from page text before chunking (D43).
+use limited to:... Restrictions apply.") is removed from page text before chunking.
 Passages stored by `chunks-v1` keep the notice; nothing is re-extracted.
 
-From `layout-v1` (D47) page text is built from MuPDF's text blocks instead of the flat page text. Lines that are not
+From `layout-v1` page text is built from MuPDF's text blocks instead of the flat page text. Lines that are not
 horizontal (the arXiv identifier along the margin), blocks holding only a page number and small-type blocks in the top
 margin (running heads) are dropped. Blocks set smaller than the document's body text (author notes, captions, tables,
 footnotes) follow the page's body text as their own paragraphs, so a footnote no longer splits a sentence of the column
 around it. Section headings become their own paragraph, and a word hyphenated at a line end is joined. From `layout-v2`
 a numbered reference entry ("[39] …") is one paragraph even when MuPDF splits its lines into several blocks or puts two
 entries in one block. The original page stays the reference; older passages keep their version until the asset is
-re-extracted (D45). From `layout-v3` the text drawn inside a vector plot (tick values, axis titles, legend entries,
+re-extracted. From `layout-v3` the text drawn inside a vector plot (tick values, axis titles, legend entries,
 the "(a)"/"(b)" panel marks) is dropped: a short small-type block that lies on or just around a cluster of drawings with sloped
 lines or curves. Rules and grids made only of straight horizontal and vertical lines (tables) do not count, and a caption
-("Fig. 4. …", "Table II …") or a section heading is never dropped. From `layout-v5` (D48) a line at least 30% U+FFFD (a symbol
+("Fig. 4. …", "Table II …") or a section heading is never dropped. From `layout-v5` a line at least 30% U+FFFD (a symbol
 font without a Unicode map) is replaced by `UNREADABLE`; neighbouring marks become one. From `layout-v6` a block in the
 top or bottom 8% of the page whose text, digits masked, recurs on at least 3 pages and 40% of them (a journal's running
 header or footer such as "J. Mar. Sci. Eng. 2023, 11, 1567 17 of 23") is dropped whatever its type size. From
-`layout-v7` (D142) a math font whose Unicode map dropped the plane of the mathematical letters gives back its letters:
+`layout-v7` a math font whose Unicode map dropped the plane of the mathematical letters gives back its letters:
 in a span set in a math font on a page with no Korean text, a Hangul syllable U+D400–D7FF that is a mathematical letter shifted by 0x10000 is read
 as that letter (퐴 → A, 휋 → π).
 
-A page left without text is named: an image page (a scan, which `ocr.py` can read on request, D51) or a blank page.
+A page left without text is named: an image page (a scan, which `ocr.py` can read on request) or a blank page.
 
 The child process is limited in time, pages, total extracted text and memory. On macOS and Linux the memory
 limit is a watchdog on the child's resident size: it stops the child shortly after the
@@ -36,7 +36,7 @@ limit is crossed rather than preventing the allocation. On Windows (P10 W2) the 
 terminates the job, grandchildren included. There a crash that is not a memory limit is named as the reader stopping,
 with its exit code, never as an unreadable PDF.
 
-The watchdog that stops the child runs in the parent (`_run_watched`), not in the child (D138). A thread inside the
+The watchdog that stops the child runs in the parent (`_run_watched`), not in the child. A thread inside the
 child cannot be relied on: MuPDF's C calls hold the interpreter lock for as long as they run, and on a PDF whose
 decoded content is large the child grew past 1 GiB inside one such call and was never stopped (measured on macOS arm64).
 The in-child thread (`_watch_memory`) stays as a second guard for the other extraction children that share it.
@@ -108,8 +108,8 @@ class PageText:
     physical_page: int
     printed_label: str | None
     text: str
-    text_source: str = "text_layer"  # text_layer, ocr, or marker (a page with mathematics read by Marker, D52)
-    # Display equations placed from the authors' arXiv source (D104), as (start, end, number) in the
+    text_source: str = "text_layer"  # text_layer, ocr, or marker (a page with mathematics read by Marker)
+    # Display equations placed from the authors' arXiv source, as (start, end, number) in the
     # `normalize_page_text` space of `text`; a chunk holding one is labelled `placement_label`: `latex_source`, or
     # `equation_ocr` for equations read from the page image by Mathpix.
     latex_blocks: list = field(default_factory=list)
@@ -125,13 +125,13 @@ class Extraction:
     image_pages: list[int] = field(default_factory=list)  # pages without text that hold an image
     blank_pages: list[int] = field(default_factory=list)  # pages without text or image
     ocr: dict | None = None
-    math: dict | None = None  # the equation reading merged into this extraction (D52)
+    math: dict | None = None  # the equation reading merged into this extraction
     extraction_version: str = EXTRACTION_VERSION
-    # Source equations asked to be placed (D104): {"placed": [{page, n, start, end}], "refused": [{page, n, reason}]}.
+    # Source equations asked to be placed: {"placed": [{page, n, start, end}], "refused": [{page, n, reason}]}.
     placement: dict | None = None
 
 
-# layout-v7 (D142): some math fonts (LibertineMath in arXiv 2106.00831) map U+1D400–1D7FF to 16 bits, so their letters
+# layout-v7: some math fonts (LibertineMath in arXiv 2106.00831) map U+1D400–1D7FF to 16 bits, so their letters
 # come out as Hangul syllables U+D400–D7FF. Only spans in a font named "…Math…" are read back, and none on a page that
 # has Korean syllables below U+D400; there each syllable that is a mathematical letter once shifted back becomes that letter.
 PLANE_DROPPED = re.compile("[\ud400-\ud7ff]")
@@ -161,7 +161,7 @@ def _blocks(page: pymupdf.Page, textpage: pymupdf.TextPage | None = None, spans:
     """Text blocks with their box, horizontal lines and the character-weighted type size.
 
     Each block also carries, per line, the line's text with symbol-font letters masked (`inline_math.line_text`) and its
-    box, for matching source equations to the page (D104); neither enters the page text. With `spans`, each line's spans
+    box, for matching source equations to the page; neither enters the page text. With `spans`, each line's spans
     (text, size, baseline, box) too, for the equation crops of the Mathpix route."""
     blocks = []
     for block in _restore_math_letters(page.get_text("dict", flags=TEXT_FLAGS, textpage=textpage)["blocks"]):
@@ -296,7 +296,7 @@ def _block_kind(block: dict, height: float, body_size: float) -> str:
 
 
 def _page_text(blocks: list[dict], height: float, body_size: float, lines: dict[int, list[str]] | None = None) -> str:
-    """The page text from its blocks. `lines` gives some blocks other lines (source equations placed, D104); a block's
+    """The page text from its blocks. `lines` gives some blocks other lines (source equations placed); a block's
     kind is always decided from its own lines, so a page without placements is built exactly as before."""
     body, notes = [], []
     for index, block in enumerate(blocks):
@@ -316,7 +316,7 @@ def _page_text(blocks: list[dict], height: float, body_size: float, lines: dict[
 
 
 def display_block(latex: str, number: str) -> str:
-    """A placed source equation in Marker's form (D104)."""
+    """A placed source equation in Marker's form."""
     return f"$$\n{latex}\n$$ ({number})"
 
 
@@ -442,7 +442,7 @@ WATCH_LOST_TURNS = 20  # in a row (one second): a live child whose size cannot b
 
 
 class MemoryWatchLost(Exception):
-    """The memory limit could not be watched on a platform where it is supposed to be (D138)."""
+    """The memory limit could not be watched on a platform where it is supposed to be."""
 
 
 def _watch_supported() -> bool:
@@ -459,7 +459,7 @@ def _run_watched(argv: list[str], env: dict, timeout: float, max_memory: int) ->
     """Run a child to its end, killing it when it passes `timeout` seconds (TimeoutExpired), when its resident size
     passes `max_memory` (returncode MEMORY_EXIT_CODE, stderr says so) or, where the size is supposed to be readable,
     when it has been unreadable for WATCH_LOST_TURNS turns in a row (MemoryWatchLost). The check runs here, outside the
-    child, every WATCH_INTERVAL_SECONDS, so it works while the child sits in a long C call (D138). On Windows the child runs in
+    child, every WATCH_INTERVAL_SECONDS, so it works while the child sits in a long C call. On Windows the child runs in
     its own job (`win_job.run`): a memory limit the job reported or reached gives MEMORY_EXIT_CODE as here."""
     if sys.platform == "win32":
         try:
@@ -513,7 +513,7 @@ def _run_watched(argv: list[str], env: dict, timeout: float, max_memory: int) ->
 
 def extract_pdf(path: Path, max_chars: int = MAX_TEXT_CHARS, max_memory: int = MAX_MEMORY_BYTES,
                 placements: list[dict] | None = None) -> Extraction:
-    """The PDF's text layer. `placements` (D104) are source equations to put in place of their region's lines:
+    """The PDF's text layer. `placements` are source equations to put in place of their region's lines:
     [{"page", "n", "latex", "number": [block, line], "lines": [[block, line], ...]}] keyed into `_blocks`."""
     argv = [sys.executable, "-m", "deixis.documents.pdf", str(path), str(max_chars), str(max_memory)]
     request = None
@@ -567,9 +567,9 @@ def extract_pdf(path: Path, max_chars: int = MAX_TEXT_CHARS, max_memory: int = M
 
 def _block_offsets(text: str, placed: list[dict]) -> list[dict]:
     """Each placed display block's (start, end) in `normalize_page_text(text)`, the space `chunk_page` cuts and
-    `payload_ref` counts in (D104). Each block (run through the same function) must occur exactly once in the page and
+    `payload_ref` counts in. Each block (run through the same function) must occur exactly once in the page and
     the blocks must not overlap; one that does not is `offsets_unresolved`. Blocks are returned in the page text's order,
-    which is not always the order of their number lines (small-type blocks follow the body, D47)."""
+    which is not always the order of their number lines (small-type blocks follow the body)."""
     normalized, found = normalize_page_text(text), []
     for item in placed:
         block = normalize_page_text(item["block"])
@@ -601,7 +601,7 @@ DISPLAY_BLOCK = re.compile(r"\$\$\n[^\n]*\n\$\$ \(\d{1,3}[a-z]?\)")
 def chunk_page(text: str, limit: int = CHUNK_CHARS, keep_display_math: bool = False) -> list[tuple[int, int, str]]:
     """Split page text into (start, end, text) chunks on paragraph or sentence boundaries.
 
-    With `keep_display_math` (extractions carrying source equations, D104) a chunk never ends inside a placed
+    With `keep_display_math` (extractions carrying source equations) a chunk never ends inside a placed
     `$$…$$ (n)` block, so each block lies whole in one chunk."""
     normalized = normalize_page_text(text)
     blocks = [(m.start(), m.end()) for m in DISPLAY_BLOCK.finditer(normalized)] if keep_display_math else []
@@ -613,7 +613,7 @@ def chunk_page(text: str, limit: int = CHUNK_CHARS, keep_display_math: bool = Fa
             cut = max(window.rfind("\n\n"), window.rfind(". "), window.rfind("\n"))
             if cut > limit // 3:
                 end = start + cut + 1
-            row = normalized.rfind("\n", start, end - 1) + 1  # a Markdown table row (D54) is cut before it, not inside it
+            row = normalized.rfind("\n", start, end - 1) + 1  # a Markdown table row is cut before it, not inside it
             if normalized.startswith("|", row) and normalized.find("\n", end - 1) != end - 1 and row - start > limit // 3:
                 end = row
             for block_start, block_end in blocks:

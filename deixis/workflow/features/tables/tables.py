@@ -1,7 +1,7 @@
-"""Evidence tables: columns, rows and cells with append-only revisions (P5, D37).
+"""Evidence tables: columns, rows and cells with append-only revisions (P5).
 
 A model or the system gives a value only to an empty cell; anything else a model returns waits as a proposal, and only
-a user's decision changes the value a cell shows. One exception (D52): when PDF text of a source arrives after a model or
+a user's decision changes the value a cell shows. One exception: when PDF text of a source arrives after a model or
 the system made a cell's value from the abstract or metadata, an automatic re-read replaces that value; a value a person
 wrote or chose keeps the rule above. Human writes carry the cell version their screen showed, so an older
 screen cannot overwrite a newer edit. Evidence links resolve to stored passages of the cell's own source version.
@@ -29,20 +29,20 @@ LINEAGE_ROLE_COLUMNS = {
     "uncertainty": ("Uncertainty left", "An uncertainty, limitation or open question the work itself names as remaining or as future work. Prefer the stated next step when the source separates a limitation from a next step."),
 }
 MAX_OPTIONS = 20
-MAX_FILL_SOURCES = 25  # sources one fill run reads; the rest stay empty for another fill (D37)
+MAX_FILL_SOURCES = 25  # sources one fill run reads; the rest stay empty for another fill
 MAX_COLUMNS_PER_CALL = 8  # columns one cell extraction call answers for its source
 CALLS_PER_REQUEST = 2  # a model call and its one schema repair
 # A fill call, then at most one retry of the columns whose answers failed their checks; each with its schema repair.
 FILL_CALLS_PER_BATCH = 2 * CALLS_PER_REQUEST
-SHADOWED_STATUSES = ("pdf_removed", "pdf_replaced", "text_superseded")  # cell flags, in display order (D45)
-# A row whose source was removed from the research is hidden and not filled; its cells stay and return with the source (D50).
+SHADOWED_STATUSES = ("pdf_removed", "pdf_replaced", "text_superseded")  # cell flags, in display order
+# A row whose source was removed from the research is hidden and not filled; its cells stay and return with the source.
 # PDF text stored for the cell's source after its current value was made (a PDF found or uploaded later); the value was
 # read without it. `{cell}` and `{revision}` name the evidence cell and its current revision.
 NEWER_TEXT_SQL = ("EXISTS (SELECT 1 FROM passages np JOIN source_assets na ON na.id = np.asset_id"
                   " WHERE np.source_version_id = {cell}.source_version_id AND na.removed_at IS NULL"
                   " AND np.created_at > {revision}.created_at)")
 # A current value no person wrote or chose, read from the abstract or metadata only: an automatic re-read may replace it
-# when PDF text arrives (D52). `{revision}` names the cell's current revision.
+# when PDF text arrives. `{revision}` names the cell's current revision.
 REFRESHABLE_SQL = "{revision}.author IN ('model', 'system') AND {revision}.reading_depth IN ('abstract', 'metadata')"
 # When the newest PDF text in use for the cell's source was stored.
 NEWEST_TEXT_SQL = ("(SELECT MAX(np.created_at) FROM passages np JOIN source_assets na ON na.id = np.asset_id"
@@ -59,12 +59,12 @@ WAITING_SQL = ("EXISTS (SELECT 1 FROM cell_revisions q WHERE q.id = (SELECT lp.i
                " AND lp.kind = 'model_proposal' ORDER BY lp.created_at DESC, lp.rowid DESC LIMIT 1)"
                " AND q.rowid > {revision}.rowid AND NOT EXISTS (SELECT 1 FROM cell_revisions d WHERE d.based_on_revision_id = q.id"
                " AND d.kind IN ('accept_proposal', 'dismiss_proposal')))")
-# A cell an automatic re-read is due for (D52): its value may be replaced, newer PDF text exists, no proposal waits, and
+# A cell an automatic re-read is due for: its value may be replaced, newer PDF text exists, no proposal waits, and
 # no automatic re-read planned it since that text. The sweep's candidate query and the refresh plan share it, so cells an
 # earlier run covered (failed, paused, or left unanswered) are skipped and a table with more due sources than one run
 # reads moves on to the next ones.
 # The CASE makes SQLite test the cheap conditions first: as a plain AND it ran the runs scan for every cell, 1.2 s on a
-# 3,000-cell library, once a second on the event loop, so the app answered nothing for seconds (D172).
+# 3,000-cell library, once a second on the event loop, so the app answered nothing for seconds.
 DUE_SQL = ("(CASE WHEN " + REFRESHABLE_SQL + " AND " + NEWER_TEXT_SQL + " AND NOT " + WAITING_SQL
            + " THEN NOT EXISTS (" + AUTO_RUNS_SQL + ") ELSE 0 END)")
 SOURCE_ACTIVE_SQL = ("EXISTS (SELECT 1 FROM corpus_memberships m JOIN evidence_tables et ON et.research_id = m.research_id"
@@ -258,11 +258,11 @@ class TableStore:
                 if template is None:
                     raise NotFound(template_id)
             added_by = "included_at_creation" if rows is None else "user"
-            # A table made from the research holds its included sources and the works read from their abstracts only (D114).
+            # A table made from the research holds its included sources and the works read from their abstracts only.
             svids = table_sources.table_sources(self.store, research_id) if rows is None else list(dict.fromkeys(rows))
             self._check_members(research_id, svids)
             tid, ts = new_id("tbl"), now()
-            # A table made from the research follows its sources (D63, D114: `table_rows.advance`); a hand-picked list does not.
+            # A table made from the research follows its sources (`table_rows.advance`); a hand-picked list does not.
             self.conn.execute(
                 "INSERT INTO evidence_tables (id, research_id, title, template_id, idempotency_key, follows_included, created_at,"
                 " updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -291,7 +291,7 @@ class TableStore:
             self._changed(research_id, table_id)
 
     def trash_table(self, research_id: str, table_id: str, expected_version: int) -> None:
-        """Move a table to the trash; rows, columns, cells, revisions and proposals stay stored as they are (D50)."""
+        """Move a table to the trash; rows, columns, cells, revisions and proposals stay stored as they are."""
         with transaction(self.conn):
             check_expected_version(expected_version, self._table(research_id, table_id)["version"])
             if self.conn.execute(
@@ -318,7 +318,7 @@ class TableStore:
             self.store._event(research_id, "table_restored", {"table_id": table_id})
 
     def purge_table(self, table_id: str) -> dict[str, int]:
-        """Delete a trashed table permanently: its rows, columns, cells, revisions and evidence links (D50).
+        """Delete a trashed table permanently: its rows, columns, cells, revisions and evidence links.
 
         Passages, files, StepInputs and runs stay; other evidence may rest on them. Returns what was deleted.
         """
@@ -639,7 +639,7 @@ class TableStore:
                           unverified_fill: bool = False) -> str:
         """A valid fill result for an empty cell becomes its value; every other model result waits as a proposal.
 
-        With `refresh` (an automatic re-read after PDF text arrived, D52) a valid result also replaces a current value a
+        With `refresh` (an automatic re-read after PDF text arrived) a valid result also replaces a current value a
         model or the system made from the abstract or metadata, when the result cites PDF text still in use, the column
         is at the revision the model answered, the cell is at the version the run planned and no proposal waits. These are
         checked here, in the write transaction: a person who edited the cell or column, or removed the PDF, meanwhile gets
@@ -647,7 +647,7 @@ class TableStore:
 
         With `unverified_fill` (a fill answer whose quotes still failed after its one retry) a 'not_verified' answer
         without links becomes the value of an empty cell, so the table and the report show a value without linked
-        evidence instead of an empty cell; it is never accepted as verified and a newer reading replaces it (D52).
+        evidence instead of an empty cell; it is never accepted as verified and a newer reading replaces it.
         """
         if unverified_fill and (state != "not_verified" or links or output_status != "unverified_draft"):
             raise ValueError("An unverified fill is a not_verified value without links")
@@ -680,7 +680,7 @@ class TableStore:
 
     def _refreshable(self, cell: dict[str, Any], cell_version_at_request: int | None, column_revision: int,
                      links: list[dict[str, Any]]) -> str | None:
-        """The current revision an automatic re-read may replace (D52), or None when the result must wait as a proposal."""
+        """The current revision an automatic re-read may replace, or None when the result must wait as a proposal."""
         if cell["current_revision_id"] is None or cell_version_at_request != cell["version"]:
             return None
         column = self.conn.execute("SELECT current_revision FROM table_columns WHERE id = ? AND removed_at IS NULL",
@@ -751,11 +751,11 @@ class TableStore:
         """The cells a fill would read: empty cells and, with include_stale, values made under an earlier column revision
         or citing passages no longer given to a model (a removed or replaced PDF, an earlier extraction).
 
-        With refresh (D52) only the cells an automatic re-read may replace: a value a model or the system made from the
+        With refresh only the cells an automatic re-read may replace: a value a model or the system made from the
         abstract or metadata, made before PDF text of its source was stored, with no proposal waiting and not planned by
         an earlier automatic re-read since that text (DUE_SQL).
 
-        With included_only (the app's own fills, D63) a row whose source is not included is skipped; with `only` just the
+        With included_only (the app's own fills) a row whose source is not included is skipped; with `only` just the
         named sources and, of each, the named columns are read.
 
         Rows are taken in table order up to MAX_FILL_SOURCES sources. A source without stored text needs no model call.
@@ -777,7 +777,7 @@ class TableStore:
                 " FROM evidence_cells c LEFT JOIN cell_revisions r"
                 " ON r.id = c.current_revision_id WHERE c.table_id = ? AND c.source_version_id = ?", (table_id, svid)
             )}
-            # Stale: made under an earlier column revision, citing a file or extraction no longer in use (D45), or made
+            # Stale: made under an earlier column revision, citing a file or extraction no longer in use, or made
             # before PDF text of its source was stored.
             if refresh:
                 targets = [c["id"] for c in columns if c["id"] in cells and cells[c["id"]]["due"]]
@@ -809,8 +809,8 @@ class TableStore:
                      only: dict[str, list[str]] | None = None) -> dict[str, Any]:
         """Queue a fill of the planned cells. The plan is stored with the run, so a resumed run reads the same sources.
 
-        With refresh the run is an automatic re-read after PDF text arrived (D52, `table_refresh`); its target says so.
-        With included_only (D63) the run reads included sources only, here and again while it runs (`flow._left_out`);
+        With refresh the run is an automatic re-read after PDF text arrived (`table_refresh`); its target says so.
+        With included_only the run reads included sources only, here and again while it runs (`flow._left_out`);
         `only` (the rows the app added, `table_rows`) marks the run `auto_rows`.
         """
         key = self._key(research_id, idempotency_key)
@@ -835,7 +835,7 @@ class TableStore:
 
     def request_recheck(self, research_id: str, table_id: str, column_id: str, svid: str, expected_version: int,
                         idempotency_key: str | None) -> dict[str, Any]:
-        """Queue a recheck of one cell; its result waits as a proposal whatever the cell holds (D37)."""
+        """Queue a recheck of one cell; its result waits as a proposal whatever the cell holds."""
         key = self._key(research_id, idempotency_key)
         with transaction(self.conn):
             if replayed := self._replayed_run(key, "cell_recheck"):
@@ -856,7 +856,7 @@ class TableStore:
     def request_column_recheck(self, research_id: str, table_id: str, column_id: str, expected_version: int,
                                idempotency_key: str | None) -> dict[str, Any]:
         """Queue a recheck of every cell of one column (UI parity S17, F20): one run, the column's rows in table order,
-        one step per cell. Each result waits as a proposal whatever the cell holds, as a cell recheck's does (D37).
+        one step per cell. Each result waits as a proposal whatever the cell holds, as a cell recheck's does.
 
         `expected_version` is the column's version. The cells are planned here and stored with the run, each with the
         version it had, so a resumed run reads the same cells. A row whose source has no stored text has nothing to
@@ -952,7 +952,7 @@ class TableStore:
         rows = [dict(r) for r in self.conn.execute(
             "SELECT et_outer.id, et_outer.title, et_outer.version, et_outer.created_at, et_outer.updated_at,"
             # The study table a valid answer opened (`report_pipeline.start`, keyed `{research}:study_table:answer:{answer}:table`)
-            # carries that answer's report version, so the rail numbers it as the report it belongs to (D57).
+            # carries that answer's report version, so the rail numbers it as the report it belongs to.
             " (SELECT a.report_version FROM answers a WHERE et_outer.idempotency_key ="
             "  et_outer.research_id || ':study_table:answer:' || a.id || ':table') AS answer_version,"
             f" (SELECT COUNT(*) FROM table_rows t WHERE t.table_id = et_outer.id AND t.removed_at IS NULL AND {SOURCE_ACTIVE_SQL}) AS rows,"
@@ -1009,7 +1009,7 @@ class TableStore:
                                          " JOIN cell_revisions r ON r.id = ? WHERE c.id = ?", (current["id"], cell["id"])).fetchone()[0]:
             flags.append("newer_text")
             if pending is None and current["author"] in ("model", "system") and current["reading_depth"] in ("abstract", "metadata"):
-                # The table reads it again by itself (D52), unless its latest automatic re-read since the newest PDF text
+                # The table reads it again by itself, unless its latest automatic re-read since the newest PDF text
                 # ended without replacing it (failed, paused, cancelled, or no answer for this cell): then a person rechecks.
                 last = self.conn.execute(
                     f"SELECT ({AUTO_RUNS_SQL.format(cell='c')} ORDER BY ar.rowid DESC LIMIT 1) FROM evidence_cells c WHERE c.id = ?",
@@ -1022,10 +1022,10 @@ class TableStore:
         shown = current_view or (self._revision_view(pending) if pending else None)
         if shown and shown["state"] == "value" and value_has_number_or_math(shown["value"]) and shown["evidence"] \
                 and all(e["text_source"] == "ocr" for e in shown["evidence"]):
-            flags.append("ocr_numbers_unchecked")  # the value is read only from OCR text of scanned pages (D51)
+            flags.append("ocr_numbers_unchecked")  # the value is read only from OCR text of scanned pages
         if shown and shown["state"] == "value" and (shown["author"] != "human" or shown["kind"] == "accept_proposal") and shown["evidence"] \
                 and unquoted_numbers(shown["value"], [e["anchor_text"] for e in shown["evidence"]]):
-            flags.append("number_not_in_quote")  # a number in the value is in none of its quotes (D54)
+            flags.append("number_not_in_quote")  # a number in the value is in none of its quotes
         if pending and pending["cell_version_at_request"] is not None and pending["cell_version_at_request"] < cell["version"]:
             flags.append("proposal_before_edit")
         if pending and pending["output_status"] != "structurally_valid":
@@ -1037,7 +1037,7 @@ class TableStore:
     def table_view(self, research_id: str, table_id: str) -> dict[str, Any]:
         table = self._table(research_id, table_id)
         columns = self._columns(table_id)
-        # Why each row is in the table's report, read live (D114, D144): 'included', 'full_text_read', 'abstract_only',
+        # Why each row is in the table's report, read live: 'included', 'full_text_read', 'abstract_only',
         # or None (not in it).
         report_membership = table_sources.membership(self.store, research_id, table_id)
         rows = []
@@ -1080,7 +1080,7 @@ class TableStore:
             "fill_estimate": {"sources": len(plan["sources"]), "sources_without_text": sum(not s["has_text"] for s in plan["sources"]),
                               **{k: plan[k] for k in ("sources_beyond_limit", "model_calls", "max_model_calls")}},
             # Values made under an earlier column revision or citing a replaced/removed PDF or an earlier extraction;
-            # a recheck fill also fills the empty cells, and its results for filled cells wait as proposals (D37, D45).
+            # a recheck fill also fills the empty cells, and its results for filled cells wait as proposals.
             "recheck_estimate": {"cells": stale_cells, "sources": len(stale["sources"]), "max_model_calls": stale["max_model_calls"]},
             "column_suggestions": self.column_suggestions(table_id),
         }
@@ -1113,9 +1113,9 @@ class TableStore:
 
 def report_ready(store: Store, research_id: str, table_id: str) -> dict[str, Any]:
     """Whether a report can be written from this table: it needs a column and a report source among its rows (an
-    included source or, in a table made from the research, a work read from its abstract only, D114).
+    included source or, in a table made from the research, a work read from its abstract only).
 
-    Empty, failed and unverified cells do not stop a report (D68): the report writes from what the table holds, uses
+    Empty, failed and unverified cells do not stop a report: the report writes from what the table holds, uses
     a source without values from its abstract or metadata, and its basis note says which sources those are. `missing`
     lists the cells of included rows that hold no finished answer, for the counts the table shows.
     """

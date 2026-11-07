@@ -218,7 +218,7 @@ def _claim_depths(store: Store, reports: ReportStore, report_id: str, *, current
 def claim_depth_marks(store: Store, reports: ReportStore, report_id: str) -> dict[str, str]:
     """Claim id -> 'abstract' or 'mixed' for each claim that rests, wholly or partly, on what was read from an abstract.
 
-    D114: read from each claim's own current links, as `_claim_depths` reads them (a cell link by its frozen cell
+    Read from each claim's own current links, as `_claim_depths` reads them (a cell link by its frozen cell
     revision's depth, a passage link by its passage kind), never from its row's deepest cell. A claim also rests on the
     claims its `body_refs` name and on the frozen basis of the gaps its `gap_refs` name (basis cells, basis passages and
     basis claims), so a VII claim supported only by an accepted gap, and an I/IX/abstract summary built on it, carry the
@@ -384,7 +384,7 @@ def _check_corpus_counts(store: Store, reports: ReportStore, report_id: str) -> 
 
 def _check_count_fields(store: Store, reports: ReportStore, report_id: str, *, current: bool = False) -> list[dict[str, Any]]:
     snapshot = reports.snapshot(report_id)
-    # The same count domain the section validator used: the frozen included rows only (D114).
+    # The same count domain the section validator used: the frozen included rows only.
     context = {"source_ids": countable_row_ids(snapshot),
                "column_ids": [c["column_id"] for c in snapshot["columns"]], "cells": usable_cells(snapshot)}
     issues = []
@@ -641,7 +641,7 @@ def _check_conflict_links(store: Store, reports: ReportStore, report_id: str) ->
 
 
 def _check_phrase_frames(store: Store, reports: ReportStore, report_id: str, *, current: bool = False) -> list[dict[str, Any]]:
-    """Own-work and plural-source wording in claims; the name is kept for stored rule names (frames went in D43)."""
+    """Own-work and plural-source wording in claims; the name is kept for stored rule names (frames went earlier)."""
     report = reports.report(report_id)
     sections = {section["section_id"]: section for section in reports.sections(report_id)}
     claims_by_section: dict[str, list[dict]] = defaultdict(list)

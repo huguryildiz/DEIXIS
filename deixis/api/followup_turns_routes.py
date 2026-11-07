@@ -2,7 +2,7 @@
 
 A question is answered by one `followup_answer` run from passages this research already holds; no search is started.
 Pause, resume and cancel are the run controls every run has (`/api/runs/{run_id}/{action}`), and the research's
-one-active-run rule answers 409. "Search for new works" (D92) is the turn's own `followup_search` run, started only by
+one-active-run rule answers 409. "Search for new works" is the turn's own `followup_search` run, started only by
 the person's click (`POST .../{turn_id}/search`); it opens no question revision.
 """
 

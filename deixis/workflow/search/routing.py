@@ -1,4 +1,4 @@
-"""Which sources an sw discovery run searches, decided by code before the approval card (D93, slice 14, SW3).
+"""Which sources an sw discovery run searches, decided by code before the approval card (slice 14, SW3).
 
 One OpenAlex request, grouped by the field of each work's primary topic, is sent for the gate query the proposal
 would search with. A domain source (IEEE Xplore, arXiv, PubMed, bioRxiv) is searched when the fields it covers hold at

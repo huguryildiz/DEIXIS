@@ -1,4 +1,4 @@
-"""D249: one extra targeted repair when an answer still fails only on D247's several-sources rule after the first repair.
+"""One extra targeted repair when an answer still fails only on that several-sources rule after the first repair.
 
 Scripted FakeAdapter and synthetic sources: these show workflow and persistence behaviour, not model quality.
 """
@@ -33,7 +33,7 @@ def draft_for(si, mode):
     one, two = list(by_source.values())[:2]
     text = {p["passage_id"]: p["text"] for p in si["passages"]}
     claims = [("c1", [one]), ("c2", [one, two] if mode in ("several", "locator") else [one]), ("c3", [two])]
-    if mode in ("split_kept_label", "split_kept_label_locator"):  # D259: the split parts keep the offending label c2
+    if mode in ("split_kept_label", "split_kept_label_locator"):  # The split parts keep the offending label c2
         claims = [("c1", [one]), ("c2", [one]), ("c2", [two]), ("c3", [two])]
     if mode == "split_shared_passage":  # both parts cite the same passage: which anchor is whose is unknown
         claims = [("c1", [one]), ("c2", [one]), ("c2", [one]), ("c3", [two])]
@@ -92,7 +92,7 @@ def test_an_anchor_naming_a_passage_outside_the_allowlist_is_never_repaired_as_a
     uncited = {"code": "anchor_passage_not_cited", "path": "/citation_anchors/1/passage_id", "message": "psg_UNKNOWN"}
     si = {"allowlist": {"passage_ids": ["psg_1"]}}
     unknown = {"citation_anchors": [{"claim_label": "c1", "passage_id": "psg_UNKNOWN", "quote": "q"}]}
-    assert contracts.resplit_labels([several, uncited], unknown, si) is None  # D244 refuses this draft as well
+    assert contracts.resplit_labels([several, uncited], unknown, si) is None  # salvage refuses this draft as well
     assert contracts.salvage_answer_draft({"task_type": "grounded_answer", "allowlist": si["allowlist"]}, unknown) == (unknown, [])
     assert contracts.resplit_labels([several], "not json", si) is None
     assert contracts.resplit_labels([several], {"claims": []}, si) is None

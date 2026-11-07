@@ -1,7 +1,7 @@
 """Update checks for the PDF tools on Settings → On this computer: Tesseract and PyMuPDF.
 
 A check runs when the tool's panel opens and sends one request: Homebrew's formula API for Tesseract, PyPI for
-PyMuPDF. Tesseract is the user's own install in a run from the repository (D51): `TesseractInstaller`
+PyMuPDF. Tesseract is the user's own install in a run from the repository: `TesseractInstaller`
 installs or updates it with the one fixed Homebrew command when the user presses Install or Update, and reports the step
 it is on. In the packaged app Tesseract comes inside it (B1): nothing is asked of Homebrew and its version moves with the
 app. PyMuPDF is

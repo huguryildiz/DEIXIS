@@ -278,7 +278,7 @@ class CandidateStore:
 
     def open_from_answer(self, research_id: str, answer_id: str, aspect_index: int | None, text: str,
                          idempotency_key=None) -> tuple[dict, str | None]:
-        """A candidate the person writes from an answer's Next steps (D98): their sentence is the claim; the answer and
+        """A candidate the person writes from an answer's Next steps: their sentence is the claim; the answer and
         the unanswered aspect it was written beside are stored as context and in `answer_candidate_links`.
 
         Returns the candidate and how an existing one was found: "replay" (the same request key, e.g. a retry after a

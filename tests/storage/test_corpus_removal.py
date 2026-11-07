@@ -1,4 +1,4 @@
-"""P5 slice 3 (D50): a source removed from a research leaves its lists and new work, while its evidence keeps opening.
+"""P5 slice 3: a source removed from a research leaves its lists and new work, while its evidence keeps opening.
 
 Records and model outputs are SYNTHETIC (scripted FakeAdapter). Passing shows which stored rows each view and model input
 reads after a removal; it says nothing about answer or cell quality.
@@ -49,7 +49,7 @@ def test_a_removed_source_is_not_given_to_the_answer_and_its_quote_and_cited_pdf
         assert client.get(f"/api/researches/{rid}").json()["sources"] == []
         assert client.post(f"/api/researches/{rid}/runs", json={"kind": "answer"}).status_code == 422
         passage = client.get(f"/api/researches/{rid}/passages/{quote['passage_id']}")
-        assert passage.status_code == 200 and passage.json()["removed_from_research"] is True  # the quote and passage say so (D50)
+        assert passage.status_code == 200 and passage.json()["removed_from_research"] is True  # the quote and passage say so
         assert client.get(f"/api/researches/{rid}").json()["answers"][0]["claims"][0]["evidence"][0]["removed_from_research"] is True
         assert client.get(f"/api/researches/{rid}/assets/{cited['access']['assets'][0]['id']}").status_code == 200
         assert client.get(f"/api/researches/{rid}/assets/{uncited['access']['assets'][0]['id']}").status_code == 404
@@ -135,7 +135,7 @@ def test_remove_and_restore_api_and_shared_files(tmp_path):
         assert client.post(f"/api/researches/{b}/sources/restore", json={"source_version_ids": [svid]}).status_code == 200
 
 
-# ---- deleting a removed source permanently (D65) ---------------------------------------------
+# ---- deleting a removed source permanently ---------------------------------------------
 def test_a_removed_source_an_answer_quotes_is_kept_and_the_trash_row_says_it_is_cited(tmp_path):
     app = app_for(tmp_path)
     with TestClient(app) as raw:
@@ -212,7 +212,7 @@ def test_backup_keeps_trashed_and_removed_items_and_the_restored_library_brings_
                                         " WHERE research_id = ? AND source_version_id = ?", (rid, gone)).fetchone()
         assert membership["removed_at"] and membership["removal_note"] == "SYNTHETIC off topic" and membership["found_again_at"]
         assert store.asset(wrong_asset)["removal_reason"] == "wrong_file"
-        # The worker's row sweep (D63) gives "Kept" its row for the later upload; settle it before the backup, as the
+        # The worker's row sweep gives "Kept" its row for the later upload; settle it before the backup, as the
         # restored library's first worker turn would.
         table_rows.advance(store, rid)
         rows, trash, view = trash_rows(store.conn), client.get("/api/trash").json(), client.get(base).json()

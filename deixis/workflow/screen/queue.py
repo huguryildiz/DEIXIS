@@ -1,4 +1,4 @@
-"""The human queue of an `sw` research: what a person is asked, and what their answer writes (SW11, slice 16, D96).
+"""The human queue of an `sw` research: what a person is asked, and what their answer writes (SW11, slice 16).
 
 The queue is not stored. Every row is derived, each time it is read, from the decisions `DecisionStore.work_outcome`
 already reads: a work whose outcome routes it to `human_queue`, or whose versions reached opposite full-text
@@ -37,7 +37,7 @@ from deixis.workflow.run.store import NotASource, Store
 QUEUE_CODES = tuple(code for code, entry in REASON_CODES.items() if entry.next_step == "human_queue")
 # `versions_disagree` is never stored: `work_outcome` derives it from two versions' fresh decisions (Sol's finding).
 VERSIONS_DISAGREE = "versions_disagree"
-# Partial and unresolved readings are labelled, not asked (D135); only these codes reach a person.
+# Partial and unresolved readings are labelled, not asked; only these codes reach a person.
 KIND_OF = {"include_quote_unverified": "confirm_quote", "fulltext_runs_disagree": "choose_run",
            VERSIONS_DISAGREE: "choose_version", "pdf_identity_unconfirmed": "confirm_pdf"}
 LOOK_AGAIN = "look_again"
@@ -100,7 +100,7 @@ class _Context:
         self.selections = {row["source_version_id"]: dict(row) for row in conn.execute(
             "SELECT source_version_id, state, origin, version, updated_at FROM selections WHERE research_id = ?",
             (research_id,))}
-        # The current link of every decision still open: its newest row (D71, added never edited).
+        # The current link of every decision still open: its newest row (added never edited).
         self.links: dict[str, dict[str, Any]] = {}
         for row in conn.execute(
                 "SELECT l.* FROM human_selection_links l JOIN stage_decisions d ON d.id = l.decision_id"
@@ -132,7 +132,7 @@ class _Context:
         self._outcomes: dict[str, dict[str, Any]] = {}
         self._scanned: tuple[Any, ...] | None = None
         self._waiting: tuple[dict[str, dict[str, Any]], set[str]] | None = None
-        self._waiting_skipped: set[str] = set()  # the works the person went on without a PDF for (D46)
+        self._waiting_skipped: set[str] = set()  # the works the person went on without a PDF for
 
     def outcome(self, work_id: str) -> dict[str, Any]:
         """`work_outcome` of one work, derived once per context: the queue and the probe set read the same result."""
@@ -208,7 +208,7 @@ def _shown_texts(store: Store, step_id: str) -> dict[str, dict[str, Any]]:
 
 def _split_merge(ctx: _Context, run_id: str | None,
                  proposals: dict[str, dict[int, dict[str, Any]]]) -> dict[str, dict[str, Any]] | None:
-    """The merged parts of a `split_v1` reading whose two calls were shown different passages (D76), else None.
+    """The merged parts of a `split_v1` reading whose two calls were shown different passages, else None.
 
     None keeps the both-runs rule: a reading run without the rule in its budget, and a reading whose calls were shown
     the same passages, were decided by it (`flow._close_adjudication`)."""
@@ -232,7 +232,7 @@ def _question(ctx: _Context, kind: str, proposals: dict[str, dict[int, dict[str,
     """The one part the row asks about: the first, in the criterion's order, the two runs did not settle.
 
     Under `split_v1`
-    (`merged`, D76) the part is the first one both calls saw and disagreed on, with `disputed` and that passage's
+    (`merged`) the part is the first one both calls saw and disagreed on, with `disputed` and that passage's
     page, else the first core part not merged present and verified; a part one call alone found counts as settled."""
     if kind in ("confirm_pdf", "choose_version", LOOK_AGAIN) and not proposals:
         return None
@@ -380,7 +380,7 @@ def _undo_of(ctx: _Context, work_id: str, svid: str, state: dict[str, Any]) -> d
     return {"undo_token": _state_of(ctx, svid)["token"], "undo_blocked": None}
 
 
-# A read asks the person about at most this many works (D137). The read cutoff freezes which, once per scope revision
+# A read asks the person about at most this many works. The read cutoff freezes which, once per scope revision
 # (`answer.CUTOFF` holds them as `asked`); an answer or an undo never brings the next row up. The other rows stay
 # listed, not asked, and the answer reads them under its own rules.
 ASKED = 2
@@ -389,7 +389,7 @@ CUTOFF_KEY = "fast_path:v1:cutoff"  # answer.CUTOFF; read here by its key, since
 
 def frozen_asked(store: Store, research_id: str, scope_revision: int | None = None) -> list[str] | None:
     """The works the first read cutoff of the scope revision asked about, or None: no cutoff yet, or one from before
-    D137, and then every row is asked."""
+    roles are read first, and then every row is asked."""
     if scope_revision is None:
         scope_revision = store.research(research_id)["current_scope_revision"]
     row = store.conn.execute(
@@ -449,7 +449,7 @@ def queue_counts(store: Store, research_id: str, ctx: _Context | None = None) ->
 def queue_answers(store: Store, research_id: str) -> dict[tuple[str, int], str]:
     """The answer behind every selection a queue decision wrote and nobody changed since, by (head, selection version).
 
-    Read from the stored links (D71), not from the selection's reason text, which the person can also type by hand.
+    Read from the stored links, not from the selection's reason text, which the person can also type by hand.
     Every link of an open decision counts: a head change copies the link to the new head and the old head's own link
     still names its unchanged selection."""
     return {(row["head"], row["selection_version"]): ANSWER_OF[row["reason_code"]] for row in store.conn.execute(
@@ -789,10 +789,10 @@ def decide_many(store: Store, research_id: str, rows: list[tuple[str, str]], ans
 
 def _write_answer(ctx: _Context, svid: str, state: dict[str, Any], code: str, note: str | None,
                   via: str | None = None) -> dict[str, Any]:
-    """A person's answer as D96 writes it: the decision, the selection and its link, or the release of a selection an
+    """A person's answer as the queue writes it: the decision, the selection and its link, or the release of a selection an
     earlier answer wrote, and the event. The queue and the audit branch (slice 20) both write through here; the
     caller holds the transaction and derives the selection afterwards. `via` names the audit branch in the event, which
-    is how a decision's origin is read back by its id; D96's own answers carry no `via`, as they always did."""
+    is how a decision's origin is read back by its id; the queue's own answers carry no `via`, as they always did."""
     store, research_id, decisions = ctx.store, ctx.rid, ctx.decisions
     previous = state["current"]
     prior_link = ctx.links.get(previous["id"]) if previous and previous["decided_by"] == "human" else None
@@ -867,7 +867,7 @@ def undo(store: Store, research_id: str, source_version_id: str, row_token: str)
 
 
 def _undo_answer(ctx: _Context, svid: str, current: dict[str, Any]) -> None:
-    """D96's undo of a person's decision: the machine decision comes back, the selection the answer wrote is released
+    """that undo of a person's decision: the machine decision comes back, the selection the answer wrote is released
     while nobody changed it since, and the event is written. The queue and the audit branch both undo through here."""
     store, research_id = ctx.store, ctx.rid
     link = ctx.links.get(current["id"])
@@ -883,7 +883,8 @@ def _undo_answer(ctx: _Context, svid: str, current: dict[str, Any]) -> None:
 # ---- the audit branch (slice 20, decision 6) ------------------------------------------------------------------------
 #
 # An F1 / F2 row of the audit sample is not an open queue row: `_state_of` makes no row of it and `decide` refuses it.
-# Its answer and undo go through here, with D96's answer body, transaction and undo rule, and write D96's tables. The
+# Its answer and undo go through here, with the queue's answer body, transaction and undo rule, and write its tables.
+# The
 # event carries `via: "audit"`, written in the same transaction as the decision, which is how both undo paths read a
 # decision's origin back by its id.
 
@@ -932,7 +933,7 @@ def audit_decide(store: Store, research_id: str, source_version_id: str, answer:
 
 
 def audit_undo(store: Store, research_id: str, source_version_id: str, audit_token: str) -> dict[str, Any]:
-    """Take back an answer given in the audit sample, only that: D96's undo rule brings the machine decision back."""
+    """Take back an answer given in the audit sample, only that: the queue's undo rule brings the machine decision back."""
     _require_source(store, research_id, source_version_id)
     svid = source_version_id
     with transaction(store.conn):
@@ -984,7 +985,7 @@ def _via(payload_json: str) -> Any:
 
 
 def _origin_of(vias: list[Any]) -> str:
-    """One decision's origin from its `stage_decision_recorded` events: every one without a `via` field is D96's,
+    """One decision's origin from its `stage_decision_recorded` events: every one without a `via` field is the queue's own,
     every one with `via: "audit"` the audit branch's; none, a mix, or any other `via` (null included) is unknown, and
     nothing falls back to either path."""
     if not vias:

@@ -5,7 +5,7 @@ answers they gave and the list edits they made, read through the head's current 
 runs included stays in its own column and is never a probe: it was not checked by a person, and it was read because
 the order put it near the top (AGENTS.md, SW11.13).
 
-The tables count, they do not judge. The arm rows extend D93's source counts with what each arm found that was later
+The tables count, they do not judge. The arm rows extend the search's source counts with what each arm found that was later
 included or confirmed; the signal table says where the person's confirmed works stood in each signal of a keyword
 ranking step, beside its denominator, and says "too few" below `PROBE_JUDGE_MIN`. No signal is switched off, no arm
 stopped and no threshold read from here: the stopping rule and the costly-signal switch-off are open requirements.
@@ -34,7 +34,7 @@ BROUGHT_BY = ("user_upload", "zotero_import", "library")
 # Full-text decisions that record no reading of the text: a retrieval outcome, a file held back before reading, and a
 # person's "the file is wrong".
 NOT_A_READING = (*RETRIEVAL_CODES, "pdf_identity_unconfirmed", "human_pdf_wrong")
-# The two orders the signal table reads beside the single signals. Both are stored as exact integer places (D79).
+# The two orders the signal table reads beside the single signals. Both are stored as exact integer places.
 ORDERS = ("fused", "inspection")
 ARM_KINDS = ("keyword", "expansion", "chain")
 
@@ -49,7 +49,7 @@ def probe_set(ctx: Any) -> dict[str, Any]:
     A work is a person's probe when its head's current selection is the user's. A queue decision linked to that very
     selection version decides what it is: stale, it is no probe and counts as `look_again`; fresh, `human_include` is
     a confirmed positive and `human_criterion_not_met` a negative of that kind. Without such a link the selection is
-    the person's own list edit (D96): `included` is a confirmed positive, `excluded` a negative whose kind was not
+    the person's own list edit: `included` is a confirmed positive, `excluded` a negative whose kind was not
     recorded. A list edit names no criterion, so it never goes stale; that is a written limit, not a check.
     """
     store, rid = ctx.store, ctx.rid
@@ -139,7 +139,7 @@ def not_found(store: Store, research_id: str, probe: dict[str, Any]) -> dict[str
     """The confirmed and brought works no search or chain request of this revision found, by name (SW13.7).
 
     Every discovery run of the revision counts, not the view's latest ten. A stored hit is a find in any run, even one
-    whose other searches kept no hit rows. A run whose searches returned records it kept no hit row for (before D93)
+    whose other searches kept no hit rows. A run whose searches returned records it kept no hit row for (before that change)
     cannot say what it did not find: with such a run, a probe no stored hit names is `unknown`, never "not found";
     with no hit row and no fully kept run at all, the list is `not_counted`.
     """
@@ -184,13 +184,14 @@ def not_found(store: Store, research_id: str, probe: dict[str, Any]) -> dict[str
     return {"status": "partial" if partial else "counted", "works": works}
 
 
-# ---- the arm rows (D93's source counts, extended) ------------------------------------------------------------------
+# ---- the arm rows (the search's source counts, extended)
+# ------------------------------------------------------------------
 
 
 def arm_counts(store: Store, run_id: str, searches: list[dict[str, Any]], works: dict[str, set[str]],
                card: dict[str, Any] | None, probe: dict[str, Any]) -> dict[str, Any]:
-    """What slice 19 adds beside one counted run's source counts, row for row in D93's order: rows returned,
-    included and confirmed works in D93's "only" universe, the query origin split, and the arm-kind line.
+    """What slice 19 adds beside one counted run's source counts, row for row in the source-row order: rows returned,
+    included and confirmed works in the "only" universe, the query origin split, and the arm-kind line.
     `views.source_counts` hands over what it read. `chain` is absent when the run chained nothing.
     """
     included, verified = set(probe["included"]), set(probe["verified"])
@@ -307,7 +308,7 @@ def signal_table(store: Store, run_id: str, probe: dict[str, Any]) -> dict[str, 
 
     Descriptive only: which signals ran and why not, the person's confirmed works in each signal's top 100 and 200
     with the denominator and `too_few` below `PROBE_JUDGE_MIN`, the model-agreement works in their own row, and the
-    records the embedding moved up with what was decided about them after the ranking. The chain's ranking (D95) is
+    records the embedding moved up with what was decided about them after the ranking. The chain's ranking is
     not read.
     """
     step = store.conn.execute(

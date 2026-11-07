@@ -127,7 +127,7 @@ class Research:
         return self.ds.work_outcome(self.rid, self.lib.work_of(svid))
 
     def reextract(self, svid, asset, suffix=None):
-        """The same file extracted again with different text, as a new extraction writes it (D45); with `suffix`, as an
+        """The same file extracted again with different text, as a new extraction writes it; with `suffix`, as an
         equation pass laid on the current extraction writes it."""
         version = db.new_id("ext") if suffix is None else self.store.conn.execute(
             "SELECT extraction_version FROM source_assets WHERE id = ?", (asset,)).fetchone()[0] + suffix

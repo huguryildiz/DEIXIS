@@ -12,7 +12,7 @@ import { OverridesLine } from './FlowReport'
 import { useToast } from '../components/Toast'
 import { t, uiLocale } from '../lib/i18n'
 
-// The human queue of an sw research (SW11.6, slice 17, D97): a list of the works that wait for a person, one row's
+// The human queue of an sw research (SW11.6, slice 17): a list of the works that wait for a person, one row's
 // question and what the two reading runs said, and five answers. Everything shown is what the backend read; the screen
 // marks only the page text a verified quote was found as, and it never says an answer is right.
 
@@ -165,7 +165,7 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
   useEffect(() => { void load() }, [load, view.last_event_id])
 
   const rows = queue?.rows ?? []
-  // A read asks about at most two works (D137); the others stay listed, folded away, and can still be answered.
+  // A read asks about at most two works; the others stay listed, folded away, and can still be answered.
   const open = rows.filter(r => r.kind !== 'look_again' && r.asked !== false)
   const notAsked = rows.filter(r => r.kind !== 'look_again' && r.asked === false)
   const lookAgain = rows.filter(r => r.kind === 'look_again')
@@ -283,7 +283,7 @@ export function HumanQueue({ researchId, view, dark, onChanged }: { researchId: 
   }
 
   // One answer to every ticked row. Each row is sent with the token the list shows and is checked against it, so a row
-  // that changed since is refused and stays in the queue; the others are written (D110).
+  // that changed since is refused and stays in the queue; the others are written.
   async function answerPicked(choice: BulkAnswer) {
     const targets = rows.filter(r => picked.has(r.source_version_id) && pickable(r))
     if (!targets.length) return

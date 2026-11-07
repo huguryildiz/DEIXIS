@@ -20,7 +20,7 @@ def queried_terms(vocabulary: dict[str, Any], block: str | None = None) -> list[
 
 def searched_terms(vocabulary: dict[str, Any], block: str | None = None) -> list[dict[str, Any]]:
     """The terms every first-round query searched with: the vocabulary's own and, where the code's query was searched
-    beside a model-written one, the code's too (D92). What orders and closes records reads these; the second round
+    beside a model-written one, the code's too. What orders and closes records reads these; the second round
     reads `queried_terms`, the model's alone."""
     from deixis.workflow.search.search_query import code_searched  # search_query compiles through query_compiler, not here
 

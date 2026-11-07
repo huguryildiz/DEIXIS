@@ -1,8 +1,8 @@
-"""API keys set from Settings (D29, D53).
+"""API keys set from Settings.
 
 A key saved in Settings wins over one set in the shell; removing it brings the shell key back. A shell key itself is
 never changed or removed by the app. A key read from `.env` is moved into the keychain at
-startup and its line deleted (D19); only when no keychain is available, or the move fails, is it replaced or removed in
+startup and its line deleted; only when no keychain is available, or the move fails, is it replaced or removed in
 that file. Otherwise a key saved in Settings is stored in the system keychain (macOS Keychain, Windows Credential Locker,
 Secret Service) under the service `DEIXIS`. Either way it is put into the process environment, where connectors already
 read their keys at call time. Key values are never logged or returned by the API.
@@ -53,7 +53,7 @@ from deixis.domain.limits import service_error_kind, http_limit, retry_at
 log = logging.getLogger(__name__)
 
 SERVICE = "DEIXIS"
-BUNDLE = "keys"  # the account of the one macOS Keychain item that holds every key (D171)
+BUNDLE = "keys"  # the account of the one macOS Keychain item that holds every key
 KEYCHAIN_TIMEOUT = 10.0  # seconds a keychain call may take before the app says the keychain is not responding (E5)
 STARTUP_TIMEOUT = 20.0  # seconds the whole start-up read of saved keys may take
 RETRY_AFTER = 5.0  # seconds before a keychain found unreachable is looked for again
@@ -101,12 +101,12 @@ MANAGED_KEYS = {k.env: k for k in (
     ManagedKey("SCOPUS_API_KEY", "source", "scopus", testable=True),
     ManagedKey("CORE_API_KEY", "source", "core", testable=True),
     ManagedKey("SERPAPI_API_KEY", "source", "serpapi", testable=True),
-    # The zotero.org pair is set on Settings' Zotero card; the library ID is not secret but is kept with its key (D19).
+    # The zotero.org pair is set on Settings' Zotero card; the library ID is not secret but is kept with its key.
     ManagedKey("ZOTERO_API_KEY", "source", "zotero"),
     ManagedKey("ZOTERO_LIBRARY_ID", "source", "zotero"),
-    # Kept in the keychain only; Settings shows no card for it (D19).
+    # Kept in the keychain only; Settings shows no card for it.
     ManagedKey("TYPESAFE_API_KEY", "source", "typesafe"),
-    # Mathpix's app ID and key as one JSON item with a revision (D40), on `/api/credentials/mathpix`.
+    # Mathpix's app ID and key as one JSON item with a revision, on `/api/credentials/mathpix`.
     ManagedKey("MATHPIX_CREDENTIALS", "equations", "mathpix", pair=True),
 )}
 _from_keychain: set[str] = set()
@@ -133,7 +133,7 @@ class KeychainNotResponding(Exception):
 
 
 class ShellKeyStays(Exception):
-    """The key is set in the shell and there is no system keychain to hold a replacement (D29)."""
+    """The key is set in the shell and there is no system keychain to hold a replacement."""
 
 
 class KeychainBusy(Exception):
@@ -591,7 +591,7 @@ def _bundle_change(env: str, value: str | None) -> None:
 
 
 def _move_items_into_bundle() -> None:
-    """Keys saved one item per key (before D171) are moved into the one item: each is copied, the item is read back, and
+    """Keys saved one item per key (before that change) are moved into the one item: each is copied, the item is read back, and
     only then are the old items deleted. A key the person does not allow stays in its old item and is tried again at the
     next start. Asking for a name that has no item asks nothing."""
     try:
@@ -751,7 +751,7 @@ def _rewrite_dotenv(env: str, value: str | None) -> None:
 
 
 def move_dotenv_keys_to_keychain() -> None:
-    """Move managed keys read from `.env` into the keychain and delete their lines (D19). A key is deleted from `.env`
+    """Move managed keys read from `.env` into the keychain and delete their lines. A key is deleted from `.env`
     only after the keychain returns the same value; on any failure it stays in `.env`, still in use."""
     if keychain_name() is None:  # none, or unreachable: the keys stay in `.env`, still in use
         return
@@ -864,7 +864,7 @@ def status(env: str) -> dict[str, Any]:
 
 
 def _refuse_shell_key(env: str) -> None:
-    """D29: a key from the shell is replaced from Settings only when a system keychain holds the replacement; with none, it
+    """A key from the shell is replaced from Settings only when a system keychain holds the replacement; with none, it
     stays as it is rather than moving to the session store."""
     found = _found()
     if status(env)["source"] == "environment" and found.name is None and not found.failed:

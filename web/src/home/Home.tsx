@@ -32,12 +32,12 @@ export const effortOptions: Record<Effort, { icon: LucideIcon }> = {
 
 // The depth text, from the fast path's modes (`fast_path.MODES`): the same numbers the run is given, so a changed mode
 // cannot leave this text behind. Without an answer from the server the depth carries no text at all. A model this
-// computer runs has no read or answer deadline (D39), so its time depends on the computer and no minutes are shown.
+// computer runs has no read or answer deadline, so its time depends on the computer and no minutes are shown.
 function effortDetail(effort: Effort, limits: EffortLimits | null | undefined, local = false): string | undefined {
   const e = limits?.efforts?.[effort]
   if (!e) return undefined
   const number = (n: number) => new Intl.NumberFormat(uiLocale()).format(n)
-  // D173: with the deeper screening on, the depth names the list places it reads once.
+  // With the deeper screening on, the depth names the list places it reads once.
   const once = e.screened_once
   if (local) return t('Local model: no time limit, it depends on this computer · up to {papers} papers', { papers: number(e.papers) })
     + (once ? ` ${t('· {first}–{last} screened once, which takes longer', { first: number(once.first), last: number(once.last) })}` : '')
@@ -67,7 +67,7 @@ export const canRun = (health?: ModelHealth) => !!health && (health.ready || hea
 export const notReadyReasons = (connections: Connections) =>
   Object.values(connections.models).filter(h => !canRun(h)).map(h => `${connectionName(h.connection)}: ${h.reason ?? ''}`).join('; ')
 
-// The most PDFs that guide one search (D3); the backend enforces it.
+// The most PDFs that guide one search; the backend enforces it.
 export const MAX_SEED_PDFS = 5
 
 // Step roles and what each does; the composer and Settings describe them the same way. Text is English; callers use t().
@@ -385,7 +385,7 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
   const efforts = chosen?.reasoning_efforts ?? []
   const needsFiles = scope === 'attached'
   const needsSource = scope !== 'academic'
-  // A mixed search guides itself with its checked PDFs (Q3, D3). The check marks hold whether or not the rows are
+  // A mixed search guides itself with its checked PDFs (Q3). The check marks hold whether or not the rows are
   // shown: rows appear with two or more PDFs, and also for a single PDF the person unchecked, so it stays re-checkable.
   // A mixed search whose PDFs are all unchecked (and no Zotero collection) cannot start: nothing would guide it, and
   // turning it into an attached-only research would change the scope the person chose.
@@ -393,12 +393,13 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
   const guidedFiles = files.filter(f => !unguided.has(f.name))
   const guideRows = mixed && (files.length > 1 || guidedFiles.length < files.length)
   const noGuide = mixed && files.length > 0 && !guidedFiles.length && !zotero
-  // More checked PDFs than one search takes: the backend keeps five by D3's rule and lists the rest as not selected.
+  // More checked PDFs than one search takes: the backend keeps five by the seed rule and lists the rest as not
+  // selected.
   const overLimit = guideRows && guidedFiles.length > MAX_SEED_PDFS
   const activeChip: ModeChip = scope === 'attached' && intent === 'report' ? 'ask' : intent
 
   // What guides the search: every eligible PDF, less the uploads the person unchecked. The backend picks five among
-  // the rest by D3's rule and records the others as not selected; the unchecked uploads stay attached sources.
+  // the rest by the seed rule and records the others as not selected; the unchecked uploads stay attached sources.
   function seedSelection(uploaded: Map<string, string>): SeedSelection {
     const excluded = files.filter(f => unguided.has(f.name)).map(f => uploaded.get(f.name)).filter((v): v is string => Boolean(v))
     return excluded.length ? { all_eligible: true, excluded_source_version_ids: excluded } : { all_eligible: true }
@@ -435,7 +436,7 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
     setAttached(old => {
       const next = [...new Map([...old.files, ...accepted].map(f => [f.name, f])).values()]
       // A new PDF starts checked. `unguided` holds only the person's own unchecks; the limit of five is the backend's
-      // choice among the checked ones (D3), never an uncheck made here.
+      // choice among the checked ones, never an uncheck made here.
       return { files: next, unguided: new Set([...old.unguided].filter(name => next.some(f => f.name === name))) }
     })
     if (accepted.length && scope === 'academic') setScope('attached_and_academic')  // attachments must be part of the scope
@@ -523,7 +524,7 @@ export function Home({ onCreated, researches }: { onCreated: (id: string) => voi
   const defaultName = defaults?.reviewer.model ? modelName(modelKey(defaults.reviewer.model_connection, defaults.reviewer.model)) : null
   // Bytes as the file manager shows them, so a large attachment is recognisable before it is uploaded.
   const fileSize = (bytes: number) => bytes >= 1_000_000 ? t('{n} MB', { n: (bytes / 1_000_000).toFixed(1) }) : t('{n} KB', { n: Math.max(1, Math.round(bytes / 1000)) })
-  // A mixed search is guided by up to five of the attached PDFs (D3); with several files the checked ones' chips say so.
+  // A mixed search is guided by up to five of the attached PDFs; with several files the checked ones' chips say so.
   const hasChips = files.length > 0 || Boolean(zotero)
   const chips = <div className="attachments" aria-label={hasChips ? t('PDFs to attach') : undefined}>
     {zotero && <div className="attachment-chip">

@@ -6,7 +6,7 @@ import { Notice } from '../components/Notice'
 import { useToast } from '../components/Toast'
 import { t, uiLocale } from '../lib/i18n'
 
-// Where the library lives (D32): the folder, its size by part, the free space on its disk, and a change that takes
+// Where the library lives: the folder, its size by part, the free space on its disk, and a change that takes
 // effect the next time DEIXIS starts. DEIXIS never moves the open library while it runs.
 const size = (bytes: number) => {
   const units = ['B', 'KB', 'MB', 'GB', 'TB']

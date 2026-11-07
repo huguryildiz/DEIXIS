@@ -1,4 +1,4 @@
-"""Citation chaining of an `sw` discovery run: what one link must show, and the frozen policy the run records (D95).
+"""Citation chaining of an `sw` discovery run: what one link must show, and the frozen policy the run records.
 
 Pure: no database, no clock, no network, no model. The fast chain (`fast_chain.Round`) sends the requests and the
 flow writes them (`flow._record_chain`); everything here is a function of the rows it is given, so a resumed run
@@ -10,7 +10,7 @@ Two rules hold this module together:
   at a word start in its title, its abstract or one of the keywords OpenAlex's own classifier gave it
   (`ranking.blocks_in`), the one matcher the ranking and the abstract stage use; which words those are is the
   research's own vocabulary. Each keyword is matched on its own, so no form is read across the join between two of
-  them or between a keyword and the abstract. The keywords only ever open the gate wider (D183): a work that passed
+  them or between a keyword and the abstract. The keywords only ever open the gate wider: a work that passed
   on its title or abstract passes whatever they say, and a work whose read asked for no keyword is judged as before.
 - **A seed is a work, not a record.** Two heads with the same work or the same normalised title are one seed, so a
   preprint and its published record the merge left apart do not spend two places.
@@ -33,7 +33,7 @@ SOURCE = "openalex"
 QUERY_PREFIX = "chain:"
 STEP_KIND = "provider_chain:openalex"
 # The admission rules a run's budget can freeze (`fast_path.freeze_budget`). v1 matches the searched gate forms as
-# written; v2 (M1 of D163, the `m1` search method) matches normalised words against the searched forms and every
+# written; v2 (the `m1` search method) matches normalised words against the searched forms and every
 # gate-block term the query step wrote. A run keeps the rule it was queued with.
 RULE_V1 = "fast_chain_v1"
 RULE_V2 = "fast_chain_v2"
@@ -90,14 +90,14 @@ def passes(forms: dict[str, list[str]], title: str | None, abstract: str | None,
            keywords: Iterable[str] | None = None) -> bool:
     """Whether a linked work names the setting or the task: one gate block's form at a word start in its title, its
     abstract or one of its provider keywords. A work without an abstract is judged on its title alone (slice 15,
-    Task 3.5); one whose read asked for no keyword is judged on title and abstract alone, as before D183."""
+    Task 3.5); one whose read asked for no keyword is judged on title and abstract alone, as before that change."""
     if blocks_in(forms, f"{title or ''} {abstract or ''}"):
         return True
     return any(blocks_in(forms, keyword) for keyword in keywords or ())
 
 
 def _plain_singular(word: str) -> str:
-    """The plain plural rule v2 compares words with (replay-r5/chain_admission.py, D163): ies to y, sses to ss, es after
+    """The plain plural rule v2 compares words with (replay-r5/chain_admission.py): ies to y, sses to ss, es after
     s/x/z/ch/sh, s otherwise; words of three letters or fewer and words ending in ss, us or is are kept."""
     if len(word) <= 3:
         return word

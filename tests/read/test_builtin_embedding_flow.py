@@ -1,4 +1,4 @@
-"""The built-in model and batch-by-batch embedding inside runs (slice 21, D103, tasks 4 to 7).
+"""The built-in model and batch-by-batch embedding inside runs (slice 21, tasks 4 to 7).
 
 Records are SYNTHETIC OpenAlex works served through httpx.MockTransport; the built-in model is an injected fake local
 embedder (`create_app(local_embedder=...)`) and Gemini is a mocked endpoint; the clock of the 429 wait is replaced.
@@ -39,7 +39,7 @@ BUILTIN = {"provider": "builtin", "model": EMB}
 BUILTIN_STORED = "builtin:" + builtin_catalog.identity(builtin_catalog.get(EMB))
 
 
-# A discovery run's queue consumer (D252) runs the built-in model with its frozen thread count, which is part of the
+# A discovery run's queue consumer runs the built-in model with its frozen thread count, which is part of the
 # stored identity: scores of capped and default threads are different cache rows.
 
 

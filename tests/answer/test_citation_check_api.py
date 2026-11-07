@@ -1,4 +1,4 @@
-"""Verify Citations V1 (D86): the draft routes, bibliography matching and OpenAlex resolution through a mocked httpx
+"""Verify Citations V1: the draft routes, bibliography matching and OpenAlex resolution through a mocked httpx
 transport, the internal research kept out of every list, and the delete cascade. Drafts and records are SYNTHETIC;
 nothing here calls a model or the network."""
 

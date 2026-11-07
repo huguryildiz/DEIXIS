@@ -12,7 +12,7 @@ import {
 import { t, uiLocale } from '../lib/i18n'
 import './CitationCheck.css'
 
-// Verify Citations (D86, D96, D99, V4): a Library tool with its own screen. A person gives a draft and its
+// Verify Citations (V4): a Library tool with its own screen. A person gives a draft and its
 // bibliography; code reads the markers and looks the entries up, fetches each cited work's text and freezes which
 // passages each citation is given; a model then reads each (citation, work) pair and code decides the result from the
 // backend's located quotes. Every count, title and result on this screen comes from the stored view.
@@ -168,7 +168,7 @@ function DraftView({ id, dark, onSettings }: { id: string; dark: boolean; onSett
     } finally { setBusy(null) }
   }
   const start = (model: CitationModel, rev: number) => void act('check', () => citationApi.check(id, rev, model))
-  // A plan whose text changed is frozen again only on the person's request; its earlier plan is kept (D96).
+  // A plan whose text changed is frozen again only on the person's request; its earlier plan is kept.
   const refreeze = () => void act('freeze', () => citationApi.freeze(id, true))
 
   if (loadError) return <Notice tone="error">{t('Could not read this check: {message}', { message: loadError })}</Notice>

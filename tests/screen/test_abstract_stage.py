@@ -143,7 +143,7 @@ def test_every_row_of_the_combination_table(first, second, code):
 
 
 def test_one_read_gives_the_outcome_two_agreeing_reads_give_under_its_own_code():
-    """D173: `single_read(p)` has `combine(p, p)`'s outcome and next step for every proposal, under a one-read code."""
+    """`single_read(p)` has `combine(p, p)`'s outcome and next step for every proposal, under a one-read code."""
     cases = [None] + [proposal(label, verified) for label in ("candidate", "out_of_scope", "unresolved")
                       for verified in (True, False)]
     for p in cases:

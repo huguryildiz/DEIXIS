@@ -133,14 +133,14 @@ The score in [benchmark.md](benchmark.md) is recall@k: the share of a question's
 
 A run keeps the rules frozen when it started. The ones still met on resume:
 
-- **Before D152:** the closest-work exception does not apply.
-- **D152 (before D153):** the default pool factor is 4 (and a saved one is used up to 4); every work without an abstract is scored on its title; only the first 20 such works are looked up, within 5 seconds.
-- **D153 and D154:** every work left without an abstract keeps its place, and Semantic Scholar is waited for as the depth allows. Plans made under D154 also send a second semantic request with the setting and task terms joined (new plans do not: in the 6 November pilot it added 113 works and no reference paper).
-- **Before D155:** an answer gives the closest works their further pages before the candidates' abstracts, and the exception's closest work up to 4. Under D155 a work also keeps its rerank place when a source that was to be asked about it had not answered, whether or not the request went out.
-- **D156:** Crossref has eight requests out at once instead of four.
-- **Before D170:** works in the reranker's window that only chaining found keep their place and are not looked up before the rerank. An offline replay of the 18 October BioASQ and LitSearch runs showed this hold cost about 3 points of recall at 50.
+- **Before the 6 November rules:** the closest-work exception does not apply.
+- **Rerank rule version 1, with the first lookup rule:** the default pool factor is 4 (and a saved one is used up to 4); every work without an abstract is scored on its title; only the first 20 such works are looked up, within 5 seconds.
+- **Rerank rule version 2, with lookup rule version 2:** every work left without an abstract keeps its place, and Semantic Scholar is waited for as the depth allows. Plans frozen under `block_terms_v1` also send a second semantic request with the setting and task terms joined (new plans do not: in the 6 November pilot it added 113 works and no reference paper).
+- **Answer allocation version 5 and earlier:** an answer gives the closest works their further pages before the candidates' abstracts, and the exception's closest work up to 4. Under lookup rule version 3 a work also keeps its rerank place when a source that was to be asked about it had not answered, whether or not the request went out.
+- **Lookup rule version 4:** Crossref has eight requests out at once instead of four (version 5 is back to four).
+- **Rerank rule version 3 and earlier:** works in the reranker's window that only chaining found keep their place and are not looked up before the rerank. An offline replay of the 18 October BioASQ and LitSearch runs showed this hold cost about 3 points of recall at 50.
 - **First seed-PDF rule (`seed_pdf_v1`):** one seed, whose text is added to the question's semantic request.
-- **`m1` search method** (not an older rule, but off by default; only the D163 measurement selects it): the code's query is also left out when one of its blocks has no term or its counted total is unknown or above 250,000 works, and chaining admission splits hyphens and slashes, reduces plain plurals and uses every setting and task term the query step wrote, unused backups too; these terms are frozen in the protocol.
+- **`m1` search method** (not an older rule, but off by default; only the owner's answer-quality measurement selects it): the code's query is also left out when one of its blocks has no term or its counted total is unknown or above 250,000 works, and chaining admission splits hyphens and slashes, reduces plain plurals and uses every setting and task term the query step wrote, unused backups too; these terms are frozen in the protocol.
 
 ## Where it lives in the code
 

@@ -1,7 +1,7 @@
 """Per-provider query syntax rules for compiled search queries.
 
 Each rule follows a live probe recorded in the provider adapter's docstring. The query compiler builds every query to
-pass them (D44); a query a provider would reject, silently misread or answer with zero records is never sent. The
+pass them; a query a provider would reject, silently misread or answer with zero records is never sent. The
 OpenAlex-style checks for boolean queries (OR ambiguity, part and operator limits) also apply to bioRxiv (searched through
 OpenAlex), IEEE Xplore, CORE and the inside of a Scopus field group.
 """
@@ -88,7 +88,7 @@ def _syntax_issues(declaration: QuerySyntax, query: str) -> list[str]:
 
 
 def _bulk_issues(query: str) -> list[str]:
-    """Semantic Scholar's bulk query syntax as the compiler writes it (D93): quoted phrases and plain words, `|` inside
+    """Semantic Scholar's bulk query syntax as the compiler writes it: quoted phrases and plain words, `|` inside
     a parenthesized group, `+` between groups. Its other operators (`-` negates, `*` is a prefix, `~` a distance) are
     never meant, so a term that would be read as one is refused rather than sent."""
     if not balanced(query):
@@ -208,7 +208,7 @@ def openalex_query_shape_issues(query: str) -> list[str]:
 def query_issues(provider_id: str, query: str, endpoint: str | None = None) -> list[str]:
     """Every rule one provider query must pass: its syntax, then the OpenAlex-style boolean checks where they apply.
 
-    `endpoint` is the one an sw query names (D93); a query that names none is checked as it always was.
+    `endpoint` is the one an sw query names; a query that names none is checked as it always was.
     """
     from deixis.providers.registry import resolve_query_syntax
 

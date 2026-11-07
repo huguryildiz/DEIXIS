@@ -12,7 +12,7 @@ function budgetSentence(budget: OpenAlexBudgetToday): string {
   return t('OpenAlex: no budget figure is stored since the daily reset (midnight UTC), so today’s budget is not known.')
 }
 
-// What the run sent to OpenAlex and Semantic Scholar, from its stored requests (D31): a refusal is a sent request the
+// What the run sent to OpenAlex and Semantic Scholar, from its stored requests: a refusal is a sent request the
 // provider did not execute; a request that never left is not counted; one stored as handed to the HTTP client but never
 // settled (stopped while out, still out, or out when the process stopped) is named apart, since whether it was sent is
 // not known. A run older than that record is said to be unknown, never 0. Null: nothing to say for this run.

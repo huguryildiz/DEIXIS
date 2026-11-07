@@ -1,4 +1,4 @@
-"""Reports over tables with failed or empty cells (D68), and the older failed-row snapshots they still read.
+"""Reports over tables with failed or empty cells, and the older failed-row snapshots they still read.
 
 Synthetic records and fake adapters only: these tests show what the report run, its snapshot, views and exports do with
 such cells; they say nothing about model quality.""" 

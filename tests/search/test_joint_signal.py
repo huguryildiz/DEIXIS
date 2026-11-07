@@ -1,4 +1,4 @@
-"""The joint signal: records that name two or more of a comparison question's task terms together rank higher (D226).
+"""The joint signal: records that name two or more of a comparison question's task terms together rank higher.
 
 Records and terms are SYNTHETIC and from two fields; the terms come from the test's blocks, never from a word list in
 the code. Passing shows the rule (which forms are looked for, when the signal runs, that a question asking for no

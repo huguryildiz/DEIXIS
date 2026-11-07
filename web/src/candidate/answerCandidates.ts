@@ -3,7 +3,7 @@ import { api, type AnswerCandidate, type AnswerCandidates } from '../lib/api'
 import { t } from '../lib/i18n'
 import { errorText, label, statusLabels } from './labels'
 
-// The candidates written from one answer (D98), read again whenever the research's event cursor moves. What is
+// The candidates written from one answer, read again whenever the research's event cursor moves. What is
 // returned always belongs to `answerId`: rows read for another answer are never shown under this one, a response that
 // arrives after the answer changed (or the thread unmounted) is dropped, and a failed first read shows no rows.
 export function useAnswerCandidates(researchId: string, answerId: string, cursor: number, enabled: boolean) {

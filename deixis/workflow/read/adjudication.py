@@ -1,4 +1,4 @@
-"""Full-text adjudication: two model runs propose, code verifies every quote and decides (SW1, D85).
+"""Full-text adjudication: two model runs propose, code verifies every quote and decides (SW1).
 
 Pure: no database, no clock, no network, no model. The plan is a function of the works, the inspection order and
 the limit. A quote is verified only when `locate_anchor` finds it `exact` or `normalized` on a page the model was
@@ -9,9 +9,9 @@ may exclude on that. A work is included without the user only when both runs lab
 core quote verifies and its read version's title names no study protocol; a work whose title names one is neither included
 nor excluded by code, it goes to the queue (`protocol_title`, slice 26). On a criterion with a comparator part code
 never excludes: two all-negative runs go to the queue (`comparator_exclusion_withheld`, slice 28).
-Aspects record per-source contribution with the same quote checks but do not gate inclusion (D235).
+Aspects record per-source contribution with the same quote checks but do not gate inclusion.
 
-Read rule `split_v1` (D76, frozen in the reading run's budget): the second call is shown the passages the first did not
+Read rule `split_v1` (frozen in the reading run's budget): the second call is shown the passages the first did not
 see (`split_lists`), a quote verifies only inside one passage that call was shown (`verify_passages`), and a part only
 one call saw stands on that call's verified quote; a part both calls saw must still be agreed on (`merge_parts`,
 `combine_split`). A run without the rule reads as above: the same list twice, the page check, `combine`.
@@ -64,7 +64,7 @@ def read_budget(effort: str) -> dict[str, Any]:
 
     Read by the API route and by the flow's auto-queue, so a run the user starts and a run a retrieval run leaves
     behind can never be given different room. Two calls per work, and no provider request: the text is already here.
-    The read rule (D76) is frozen here with the room, so a run keeps the rule it was queued with.
+    The read rule is frozen here with the room, so a run keeps the rule it was queued with.
     """
     limit = FULLTEXT_READ_LIMIT[effort]
     return {
@@ -213,7 +213,7 @@ def reading_list(passages: list[dict[str, Any]], criterion: dict[str, Any] | Non
 
 def split_lists(passages: list[dict[str, Any]], criterion: dict[str, Any] | None,
                 topic_ranked: list[str], per_call: int, criterion_share: int) -> dict[str, list[dict[str, Any]]]:
-    """The two calls' passages under `split_v1` (D76). Code alone decides both, so both calls can be out together.
+    """The two calls' passages under `split_v1`. Code alone decides both, so both calls can be out together.
 
     `first` is `reading_list`'s list, unchanged. `second` runs the same selection — criterion passages in rounds up to
     `criterion_share`, then the topic order, then page order — over the passages `first` left out, and fills any room
@@ -321,7 +321,7 @@ def verify(quote: str | None, pages: dict[int, str], named_page: int | None, min
 
 def verify_passages(quote: str | None, texts: dict[str, dict[str, Any]], named: str | None,
                     min_chars: int) -> dict[str, Any]:
-    """Whether `quote` is verbatim inside one passage the call was shown (`split_v1`, D76).
+    """Whether `quote` is verbatim inside one passage the call was shown (`split_v1`).
 
     `texts` maps each shown passage id to `{"text", "physical_page"}` as the call's stored input carried it. Each
     passage is searched on its own text, the named one first, then the others in the order shown; passages are never
@@ -414,7 +414,7 @@ UNCLEAR_ROW = {"label": "unclear", "quote": "", "quote_verified": False, "passag
 
 def merge_parts(rows_by_run: dict[int, dict[str, dict[str, Any]]], shown_by_run: dict[int, dict[str, dict[str, Any]]],
                 min_chars: int = QUOTE_MIN_CHARS) -> dict[str, dict[str, Any]]:
-    """One merged reading per part from the two calls of a `split_v1` reading (D76). Pure; the queue uses it too.
+    """One merged reading per part from the two calls of a `split_v1` reading. Pure; the queue uses it too.
 
     `rows_by_run` holds each call's proposals by part (`label`, `quote`, `quote_verified`, `passage_id`, `page`);
     `shown_by_run` each call's shown passages by id (`text`, `physical_page`), from its stored input.
@@ -453,7 +453,7 @@ def merge_parts(rows_by_run: dict[int, dict[str, dict[str, Any]]], shown_by_run:
 def combine_split(rows_by_run: dict[int, dict[str, dict[str, Any]] | None],
                   shown_by_run: dict[int, dict[str, dict[str, Any]]], parts: list[dict[str, Any]] | None = None,
                   min_chars: int = QUOTE_MIN_CHARS) -> str | None:
-    """One reason code from the two calls of a `split_v1` reading whose shown passages differ (D76), or None when a
+    """One reason code from the two calls of a `split_v1` reading whose shown passages differ, or None when a
     call did not answer.
 
     Any disputed core part is `fulltext_runs_disagree`. Otherwise the merged core labels are read as one run is
@@ -515,10 +515,10 @@ def mark_comparator(parts: list[dict[str, Any]], question_elements: list[dict[st
                     required_roles: list[str]) -> list[dict[str, Any]]:
     """The parts a reading is sent, with `"role": "comparator"` on the part a `comparator` question element names.
 
-    Only when `comparator` is one of the criterion's `required_roles` (slice 25a, D106). The element names its part
+    Only when `comparator` is one of the criterion's `required_roles` (slice 25a). The element names its part
     in the form the criterion check accepts, so names are compared as that check compares them (`criterion.norm`:
     case, spacing and edge punctuation do not count). Every other part, and every part of a criterion without that
-    role, comes back exactly as it was sent, in order (slice 28, D109).
+    role, comes back exactly as it was sent, in order (slice 28).
     """
     if "comparator" not in (required_roles or []):
         return list(parts)
@@ -538,7 +538,7 @@ def with_comparator(code: str | None, part: str | None) -> tuple[str | None, str
 
     Then the reading excludes nothing by itself: the comparator's label may have decided that no part was found, and
     the code is `comparator_exclusion_withheld` with the combined code and the part in the note, for a person to
-    answer (slice 28, D109). Every other code, and every code on a criterion without a comparator part, passes through
+    answer (slice 28). Every other code, and every code on a criterion without a comparator part, passes through
     with no note.
     """
     if code == "criterion_absent" and part is not None:
@@ -558,7 +558,7 @@ def proposals_of(parts: list[dict[str, Any]], records: list[dict[str, Any]], sho
     `include_quote_unverified` rather than included. A quote verified on another shown page than the named
     passage's is stored with the passage on that page, so the passage and page of a proposal always agree.
 
-    With `texts` (`split_v1`, D76: each shown passage's own text from the call's stored input) a quote verifies only
+    With `texts` (`split_v1`: each shown passage's own text from the call's stored input) a quote verifies only
     inside one shown passage (`verify_passages`), never on the whole text of a shown page, and is stored with the
     passage it was found in. `pages` is then not read.
     """

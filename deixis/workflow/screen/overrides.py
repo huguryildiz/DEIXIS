@@ -1,6 +1,6 @@
 """How often a person's decision changed what code or the model runs had decided (slice 20, decision 4, SW11.13).
 
-Nothing here is stored. The person's decisions are D101's probe set: a confirmed positive reads as `included`, a
+Nothing here is stored. The person's decisions are that probe set: a confirmed positive reads as `included`, a
 negative as `excluded`. Each is compared with the machine's view of the work **at the moment the person decided**:
 
 - a queue or audit answer is a row of `stage_decisions`, so the moment is exact: the rows written strictly before
@@ -10,7 +10,7 @@ negative as `excluded`. Each is compared with the machine's view of the work **a
   current selection (a selection a new head copied from another version is followed to that version's row; a later
   edit of another version is not this moment). Decisions and selection history are different tables and their row
   ids cannot be compared: a decision written in the same millisecond makes the class `time_unknown`. So does a question
-  revision opened or withdrawn in the same millisecond as the moment, whichever path (D67).
+  revision opened or withdrawn in the same millisecond as the moment, whichever path.
 
 The machine view is every version's stage decisions as they stood then, the person's rows left out, resolved by
 `work_outcome` without the person-file exception and judged stale under the key of that moment. A decision reached
@@ -45,7 +45,7 @@ def _key_at(ctx: Any, ts: str) -> tuple[int | None, str | None]:
     if row is None:
         return None, None
     revision = row[0]
-    # A withdrawn revision sent the research back to the one it was opened from (D67): when the last revision event at
+    # A withdrawn revision sent the research back to the one it was opened from: when the last revision event at
     # `ts`, in written order, is a withdrawal, it names the revision current then.
     last = conn.execute("SELECT type, json_extract(payload_json, '$.back_to') FROM events WHERE research_id = ?"
                         " AND type IN ('scope_revised', 'seed_selected', 'scope_revision_withdrawn') AND created_at <= ?"
@@ -64,7 +64,7 @@ def _key_at(ctx: Any, ts: str) -> tuple[int | None, str | None]:
 
 def _revision_moved_at(ctx: Any, ts: str) -> bool:
     """Whether a question revision was opened or withdrawn in the same millisecond as `ts`: events and decisions are
-    different tables, so which came first is not known and the key of that moment is not either (D67)."""
+    different tables, so which came first is not known and the key of that moment is not either."""
     return ctx.store.conn.execute(
         "SELECT 1 FROM events WHERE research_id = ? AND type IN ('scope_revised', 'seed_selected', 'scope_revision_withdrawn')"
         " AND created_at = ? LIMIT 1", (ctx.rid, ts)).fetchone() is not None
@@ -134,7 +134,7 @@ def _setting_row(rows: list[dict[str, Any]], head: str) -> dict[str, Any] | None
 
 
 def classify(ctx: Any, probe: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    """Each work the person decided (D101's probe set) with its path, class and the machine view it is compared with."""
+    """Each work the person decided (that probe set) with its path, class and the machine view it is compared with."""
     store, rid = ctx.store, ctx.rid
     linked: dict[tuple[str, int], dict[str, Any]] = {}
     for row in store.conn.execute(
@@ -189,7 +189,7 @@ def classify(ctx: Any, probe: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def _decider(machine: dict[str, Any]) -> str:
-    """Who decided the machine view: one model read (D173's single-read codes, stored as `code`) is counted apart from
+    """Who decided the machine view: one model read (that single-read codes, stored as `code`) is counted apart from
     a code rule."""
     from deixis.workflow.screen.abstract_stage import SINGLE_READ_CODES
     return "single_read" if machine.get("reason_code") in SINGLE_READ_CODES else machine["decided_by"]

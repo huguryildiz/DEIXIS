@@ -1,4 +1,4 @@
-"""P5 slice 2 (D45): one PDF in use per source version, extraction records, and shadowed passages.
+"""P5 slice 2: one PDF in use per source version, extraction records, and shadowed passages.
 
 Records are SYNTHETIC. Passing these tests shows that storage keeps old passages resolvable while model inputs read only the
 file and extraction in use; it says nothing about extraction quality.
@@ -91,7 +91,7 @@ def test_passages_of_an_extraction_not_in_use_are_not_given_but_still_resolve(st
     assert store.passage(other)["text"] == "SYNTHETIC relays drop packets."
 
 
-# ---- re-extraction (D45, D47) ------------------------------------------------------------------
+# ---- re-extraction ------------------------------------------------------------------
 def test_reextraction_becomes_current_and_shadows_the_old_passages(tmp_path):
     from deixis.workflow.run.store import RunInProgress
 

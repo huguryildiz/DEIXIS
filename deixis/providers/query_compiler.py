@@ -1,8 +1,8 @@
-"""Provider queries compiled from the vocabulary's concept blocks, the code query of the fast path (SW2.7, D90).
+"""Provider queries compiled from the vocabulary's concept blocks, the code query of the fast path (SW2.7).
 
 This module writes every query string: OR inside a block, AND between blocks. Every query passes
 `query_rules.query_issues` and the 300-character limit before it is returned; terms are trimmed from the end of the
-longest block until it does. The SearchPlan v2 compiler (D44, D64) was removed in the clean start (slice 3a).
+longest block until it does. The SearchPlan v2 compiler was removed in the clean start (slice 3a).
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ def _searchable(providers: list[str]) -> list[str]:
     """The given providers a query may go to, once each and in the order they arrived.
 
     A connector that is only asked about a record whose DOI is already known is dropped here rather than by each
-    caller, so no caller names a provider and a research whose scope still holds one compiles no query for it (D87, D91).
+    caller, so no caller names a provider and a research whose scope still holds one compiles no query for it.
     """
     return search_providers(list(dict.fromkeys(providers)))
 
@@ -58,7 +58,7 @@ def fit_block_counts(provider: str, groups: list[list[str]], endpoint: str | Non
     A term goes from the end of the block that still holds the most terms, the last such block on a tie, and every
     block keeps at least one term: a block that lost all of its terms would widen the query into another question
     (SW2.7). Taking from the last block first cut a long task block to one term while the setting block kept five
-    (D90).
+.
     """
     declaration = resolve_query_syntax(provider, endpoint)
     counts = [len(group) for group in groups]
@@ -79,7 +79,7 @@ def compile_block_queries(vocabulary: dict[str, Any], enabled_providers: list[st
     Only terms of the setting and task blocks are read. Claim words, exclusion words and outcome terms are not in
     `terms`, so no query can hold one. Each returned dictionary names the provider, the query text and its rationale,
     plus the terms a provider's limits left out. A connector whose queries go to
-    another endpoint (Semantic Scholar's bulk search, D93) gets a query in that endpoint's syntax, which names the
+    another endpoint (Semantic Scholar's bulk search) gets a query in that endpoint's syntax, which names the
     endpoint and its sort.
     """
     groups, names = [], []

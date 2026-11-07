@@ -129,7 +129,7 @@ def test_each_answer_is_written_with_d96s_rules_and_its_origin(store, answer, co
     assert lib.selection(svid) == selection
     assert queue.decision_origin(store, lib.rid, current["id"]) == "audit"
     assert result["row"]["answered"]["reason_code"] == code and result["undo_token"]
-    # A decided work is not sent to a model again (D96).
+    # A decided work is not sent to a model again.
     assert lib.work_of(svid) in lib.ds.human_decided_works(lib.rid)
     if answer == "include":
         found = probes.probe_set(queue._Context(store, lib.rid))

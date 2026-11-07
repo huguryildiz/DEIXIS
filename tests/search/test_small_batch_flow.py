@@ -1,4 +1,4 @@
-"""Synthetic end-to-end D237 runs with isolated tmp_path data and mocked providers/PDFs."""
+"""Synthetic end-to-end runs with isolated tmp_path data and mocked providers/PDFs."""
 
 import json
 from contextlib import contextmanager

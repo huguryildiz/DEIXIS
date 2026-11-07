@@ -1,4 +1,4 @@
-"""SYNTHETIC checks of D58: report sections receive every table cell with its quotes before any page text, and the
+"""SYNTHETIC checks: report sections receive every table cell with its quotes before any page text, and the
 report review reads cell quotes in batches. Passing shows workflow behavior, not report or review quality."""
 
 import json

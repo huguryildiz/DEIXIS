@@ -5,7 +5,7 @@ import { t } from '../lib/i18n'
 import { withQuotes } from './followupData'
 
 // The sticky follow-up composer at the foot of the thread (mockup `.foot-compose` / `.mini`, R30, UI parity S22b). It asks
-// one follow-up question, answered only from the passages this research already holds (D11); it starts no search. "+"
+// one follow-up question, answered only from the passages this research already holds; it starts no search. "+"
 // opens Get more full text, where PDFs are added to the research's works. A follow-up has no depth of its own: it reads at
 // most the passage limit of the research's depth, so the depth is shown as the research's, not as a choice (§2.3).
 // ⌘/Ctrl + Enter sends. Sending is locked while a request runs; the draft stays when the request fails and is cleared

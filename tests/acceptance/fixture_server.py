@@ -6,7 +6,7 @@ application behavior in a browser; it does not measure model quality or live pro
 Question markers select failure scripts: "[rate-limit]" (OpenAlex 429), "[model-down]" (the first abstract-screening call
 fails before sending), "[review-down]" and "[read-down]" (the first review-by-another-model or full-text reading call fails before sending), "[invent-locator]" (every answer draft asserts a page and an equation), "[slow-cells]" (each cell
 extraction call takes 1.5 s, so a table fill can be paused and cancelled while it runs), "[query-down]" (every call that
-writes the search query fails, so the run stops for the model query, D92), "[queue]" (the reading model answers each
+writes the search query fails, so the run stops for the model query), "[queue]" (the reading model answers each
 queue work by a script, so case J finds one row of each kind it needs), "[protocol-title]" (with
 `DEIXIS_FIXTURE_PROTOCOL=on`, case R, slice 26: both reading runs find every part of the work whose title names a study
 protocol, so it is a `confirm_results` row), "[comparator]" (with `DEIXIS_FIXTURE_COMPARATOR=on`, case S, slice 28: the
@@ -25,7 +25,7 @@ Parity-harness markers (compare the app with the UI mockup; `test_parity_markers
 page of 50, the keyword query's cursor pages for the rest, no chaining), the two abstract-screening runs agree on the
 first 34 titles they see and leave the rest of the 50 out of scope, the first three PDFs fetched carry case J's queue
 scripts (choose_run, confirm_quote, find_part) and the other 17 of the 20 read are agreeing includes, and the answer
-cites 12 sources (the three queue works, closest works under D137, by their abstracts) and leaves the rest out with SYNTHETIC ledger reasons, the last with none (`parity_ledger`). "[oa-quota]": the keyword query's first page answers with a next cursor and every later keyword
+cites 12 sources (the three queue works, closest works by their stored role, by their abstracts) and leaves the rest out with SYNTHETIC ledger reasons, the last with none (`parity_ledger`). "[oa-quota]": the keyword query's first page answers with a next cursor and every later keyword
 page is refused as a spent OpenAlex daily budget (429, `x-ratelimit-remaining-usd: 0`), so the run completes on the
 searches that answered. "[oa-quota-net]" and "[oa-net-quota]": OpenAlex's semantic request is refused as a spent
 budget (or its connection is refused) until `oa-flip` exists in the data directory, then the other way round, so a
@@ -46,7 +46,7 @@ StepInput): "[fu-not]" (the follow-up answer says the passages do not answer it:
 closest passage and one SYNTHETIC unanswered aspect), "[fu-invalid]" (every follow-up call answers text that is not JSON,
 its repair included, so the turn is an unverified draft), "[fu-hold]" (a follow-up call waits for `followup-release`
 in the fixture data directory, failing after 60 s, so the page can see and pause a live turn).
-"[fu-count]" (D66: the follow-up classifies the works sent, two in one group, one of them as an interpretation, the rest
+"[fu-count]" (the follow-up classifies the works sent, two in one group, one of them as an interpretation, the rest
 left open, and writes no claim).
 "[clarify]" (parity plan S0) is not provided: no backend path stores an answer with status `clarification`, so the
 state cannot be reached without a backend change.
@@ -65,7 +65,7 @@ Its file's reading takes a few seconds a call (case L, slice 18b), so the view c
 download, show the steps, check, choose and remove the model with no network, no uv and no fastembed. With
 `GEMINI_API_KEY` set the Gemini embedding endpoint answers too.
 
-`DEIXIS_FIXTURE_ARXIV_SOURCE=fake` (case O, slice 22, D104) starts the server with `Settings(arxiv_source="auto")` and
+`DEIXIS_FIXTURE_ARXIV_SOURCE=fake` (case O, slice 22) starts the server with `Settings(arxiv_source="auto")` and
 monkeypatches `deixis.documents.fetch.fetch_file`, before `create_app`, to an async fake that calls the rate gate's
 `before()`/`after()` and returns a SYNTHETIC arXiv source archive (`tests/support/arxiv_helpers.py`) instead of a network
 request; the arXiv source route comes before the answer model's reading, so it reads the one arXiv
@@ -91,8 +91,8 @@ the report UI acceptance case a cell citation whose later edit can be observed; 
 in a second lineage run, after a selection change makes the target eligible again (synthetic directed-cycle refusal).
 "[citemap]" serves the six development-line works with B and C also citing one outside work, W979. Its record is
 answered by an OpenAlex id lookup only once the file `citemap-describe` exists in the data directory, so discovery's
-citation chain never takes it in and the citation map's reading run is the request that describes it (D42).
-"[snowball]" (D91) serves the six development-line works with A also citing two works outside the research, W1001 and
+citation chain never takes it in and the citation map's reading run is the request that describes it.
+"[snowball]" serves the six development-line works with A also citing two works outside the research, W1001 and
 W1002, besides B. Once the file `snowball-open` exists in the data directory, an OpenAlex id lookup answers exactly the
 asked records and `filter=cites:W971` answers C plus two more outside works, W1003 and W1004; before it, discovery's own
 chaining gets the base works back, as in "[citemap]". The scripted abstract screening puts the two works whose title
@@ -100,7 +100,7 @@ says "off-scope" out of scope and leaves the other two candidates, so a round on
 citing work already here, four new works, two candidates and two out of scope.
 "[candidate]" drives claim breakdown and a bounded claim search; "[candidate-access]" also returns a work
 without usable text. These markers affect only candidate-task calls and the distinct candidate query term.
-"[candidate-thread]" (D98, with "[candidate]") also gives the answer two SYNTHETIC unanswered aspects, so its Next steps
+"[candidate-thread]" (with "[candidate]") also gives the answer two SYNTHETIC unanswered aspects, so its Next steps
 box offers a claim from an aspect.
 `DEIXIS_FIXTURE_CITATION=on` (Verify citations V4) serves the SYNTHETIC works of `CITATION_BIB` and scripts each
 citation check by its sentence (see `CITATION_MODE`).
@@ -255,7 +255,7 @@ for index, record in enumerate(LINEAGE_REJECT_WORKS):
     record['best_oa_location']['pdf_url'] = f'https://fixture.example/l7-reject-{letter}.pdf'
     record['referenced_works'] = [ref.replace('W971', 'W981').replace('W972', 'W982') for ref in record['referenced_works']]
 
-# "[citemap]" (D42): the base works again, B and C citing the outside work W979 as well, so the citation map lists it
+# "[citemap]": the base works again, B and C citing the outside work W979 as well, so the citation map lists it
 # (two citers). W979's own record answers an id lookup only after `citemap-describe` exists (see `openalex`).
 CITEMAP_MODE = False
 CITEMAP_WORKS = deepcopy(LINEAGE_WORKS)
@@ -266,7 +266,7 @@ CITEMAP_OUTSIDE = work('W979', 'SYNTHETIC outside pulse spacing model cited by t
 CITEMAP_OUTSIDE.update(publication_year=2008, authorships=[{'author': {'display_name': 'Olga Outis'}}], referenced_works=[])
 
 
-# "[snowball]" (D91): the base works again, A citing B (held) and the outside works W1001, W1002; W1003 and W1004 cite A,
+# "[snowball]": the base works again, A citing B (held) and the outside works W1001, W1002; W1003 and W1004 cite A,
 # as C does. Every title and abstract is SYNTHETIC. The outside works answer only after `snowball-open` exists.
 SNOWBALL_MODE = False
 SNOWBALL_WORKS = deepcopy(LINEAGE_WORKS)
@@ -315,7 +315,7 @@ def citemap_lookup(request: httpx.Request) -> httpx.Response | None:
     found = [w for w in [*CITEMAP_WORKS, CITEMAP_OUTSIDE] if w['id'].rsplit('/', 1)[-1] in asked]
     return httpx.Response(200, json={'meta': {'count': len(found)}, 'results': found})
 
-# Case O (slice 22, D104): one work whose PDF is an arXiv version. Its identity (DOI, landing and OA-PDF URLs) and its
+# Case O (slice 22): one work whose PDF is an arXiv version. Its identity (DOI, landing and OA-PDF URLs) and its
 # record's `submittedVersion` label make it eligible under decision 1's table; its file's own address and rotated
 # stamp both name v2 (`arxiv_helpers.STAMP`). The PDF's text-layer equations are letters only, as the real extractor
 # would garble a symbol font; the SYNTHETIC source archive's LaTeX is what the route places over them.
@@ -521,7 +521,7 @@ def citation_answer(si: dict[str, Any]) -> str:
 
 # Reverse citation search (R3): every `statement_check` step is answered by the work it reads, known by its passages'
 # text (no marker; the question is the sentence). W901 states the whole sentence, W902 its second part, W903 nothing,
-# W904 its first part only `partly` with no `stated` part (R4b, D108: "support not shown clearly enough"), and any other
+# W904 its first part only `partly` with no `stated` part (R4b: "support not shown clearly enough"), and any other
 # work gets an answer that is not a check, so its repair runs out (could not be checked). The sentence the
 # spec pastes is STATEMENT_SENTENCE; the parts are spans of it, as the V3 rules ask.
 STATEMENT_SENTENCE = "A bisection schedule for molecule release is proposed and relays share a molecule budget."
@@ -769,7 +769,7 @@ def openalex(request: httpx.Request) -> httpx.Response:
     if PARITY_MODE and (answer := parity_openalex(request)) is not None:
         return answer
     if params.get("group_by") == "primary_topic.field.id":
-        # The source routing request (D93): a SYNTHETIC distribution in which one domain source's fields hold most
+        # The source routing request: a SYNTHETIC distribution in which one domain source's fields hold most
         # of the records and another's none.
         return httpx.Response(200, json={"meta": {"count": 100}, "group_by": [
             {"key": "https://openalex.org/fields/17", "key_display_name": "Computer Science", "count": 80},
@@ -838,8 +838,8 @@ class ScriptedCodex:
     """Registered as the "codex" connection so the unchanged UI can drive it."""
 
     connection = "codex"
-    enforces_schema = True  # as the real Codex adapter does (D86); the flow reads it before every model step
-    sends_reasoning_effort = True  # as the real Codex adapter does: a session stores the effort it was sent with (D25)
+    enforces_schema = True  # as the real Codex adapter does; the flow reads it before every model step
+    sends_reasoning_effort = True  # as the real Codex adapter does: a session stores the effort it was sent with
 
     def __init__(self, data_dir: Path | None = None) -> None:
         self.data_dir = data_dir
@@ -855,7 +855,7 @@ class ScriptedCodex:
     async def health(self, refresh: bool = False) -> dict[str, Any]:
         return {"connection": "codex", "ready": True, "reason": None, "installed": True, "signed_in": True,
                 "models": [{"id": MODEL, "display_name": MODEL, "is_default": True},
-                           # The second model lists efforts with no default, so only a chosen effort is sent and shown (D25).
+                           # The second model lists efforts with no default, so only a chosen effort is sent and shown.
                            *([{"id": SECOND_MODEL, "display_name": SECOND_MODEL,
                                "reasoning_efforts": [{"id": "low", "description": ""}, {"id": "high", "description": ""}]}]
                              if SECOND_MODEL else [])]}
@@ -1091,7 +1091,7 @@ class ScriptedCodex:
                     output["citation_anchors"].append({"claim_key": claim_key, "passage_id": passage["passage_id"],
                                                         "cell_id": None, "quote": " ".join(passage["text"].split())[:600]})
         if si["task_type"] == "search_query":
-            # A query in the fixture's own words (D92): two topic terms and a method term, one backup per block.
+            # A query in the fixture's own words: two topic terms and a method term, one backup per block.
             output |= {"setting": [{"term": "relay networks", "kind": "topic", "why": "SYNTHETIC: where the work happens"}],
                        "task": [{"term": "molecule release", "kind": "topic", "why": "SYNTHETIC: the process studied"},
                                 {"term": "bisection search", "kind": "method", "why": "SYNTHETIC: the method named"}],
@@ -1123,7 +1123,7 @@ class ScriptedCodex:
                     # "[snowball]": both runs leave the two off-scope round works out of scope.
                     record.update(label="out_of_scope", rationale="SYNTHETIC: this work is outside the question's setting.")
         elif si["task_type"] == "followup_answer" and "[fu-count]" in question:
-            # SYNTHETIC (D66): the follow-up counts works, so it writes no claim and one record per source sent, by its
+            # SYNTHETIC: the follow-up counts works, so it writes no claim and one record per source sent, by its
             # first passage: the first in a group as its passage states, the second in the same group as an
             # interpretation with a note, the rest left open.
             output["claims"], output["citation_anchors"] = [], []
@@ -1155,7 +1155,7 @@ class ScriptedCodex:
                     continue
                 if "[parity]" in question and len(claims) >= PARITY_CITED:
                     break
-                # "[parity]": a closest work (D137, the three queue works) is cited by the abstract given with its pages,
+                # "[parity]": a closest work (the three queue works) is cited by the abstract given with its pages,
                 # so the answer cites abstracts of works that also have a PDF (S12's abstract cases); any other work by
                 # its first PDF page when it has one. SYNTHETIC: a scripted choice, not model behaviour.
                 by_abstract = "[parity]" in question and source.get("answer_role") == "closest"
@@ -1180,7 +1180,7 @@ class ScriptedCodex:
 
     @staticmethod
     def parity_ledger(si: dict[str, Any], output: dict[str, Any]) -> None:
-        """"[parity]": the evidence ledger (D80) of the works past PARITY_CITED. The first is left out under different
+        """"[parity]": the evidence ledger of the works past PARITY_CITED. The first is left out under different
         conditions with a quote of its first passage, the second as the same finding as the first cited work (quoted
         too), the last gets no entry (unaccounted), the others need no quote. SYNTHETIC reasons, not model behaviour."""
         cited = {pid for c in output["claims"] for pid in c["passage_ids"]}
@@ -1230,7 +1230,7 @@ class ScriptedCodex:
 
     async def replace_seed(self, research_id: str) -> None:
         """"[stale-seed]": once no run of the research is active, put SYNTHETIC replacement pages in place of its seed's
-        PDF through `Store.replace_asset`, the call the "Replace PDF" route makes (D45). The frozen seed excerpt then names
+        PDF through `Store.replace_asset`, the call the "Replace PDF" route makes. The frozen seed excerpt then names
         a file no longer in use, so `seed_status` reads `stale`."""
         from deixis.documents import pdf
         from deixis.workflow.run.store import ACTIVE_RUN_STATUSES
@@ -1335,7 +1335,7 @@ def fake_builtin(data_dir: Path):
 
 
 def fake_arxiv_source() -> None:
-    """Case O (slice 22, D104): monkeypatch `fetch.fetch_file` before `create_app` so the arXiv source route's
+    """Case O (slice 22): monkeypatch `fetch.fetch_file` before `create_app` so the arXiv source route's
     `SourceStore` (built inside the app's lifespan) picks up this fake instead of making a network request. It still
     calls the rate gate's `before()`/`after()`, so the route's locking and counting run as they would for real."""
     archive = source_archive()
@@ -1434,7 +1434,7 @@ def main() -> None:
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--write-hostile-pdf", type=Path, help="Write the untrusted-text PDF used by case G and exit")
-    parser.add_argument("--write-replacement-pdf", type=Path, help="Write a SYNTHETIC PDF used to replace a source's file (D45) and exit")
+    parser.add_argument("--write-replacement-pdf", type=Path, help="Write a SYNTHETIC PDF used to replace a source's file and exit")
     parser.add_argument("--write-waiting-pdf", type=Path, help="Write the SYNTHETIC publisher file case K drops and exit")
     parser.add_argument("--write-reextract-pdfs", type=Path, help="Write SYNTHETIC R4 restoration PDFs and exit")
     parser.add_argument("--write-seed-pdf", type=Path, help="Write the SYNTHETIC seed PDF of [stale-seed] / [no-include] and exit")
@@ -1459,9 +1459,9 @@ def main() -> None:
         return
     settings = Settings(data_dir=args.data_dir, port=args.port, model_concurrency=1,
                         # Cases A–G keep the code's query alone, as they always had it; case I asks for the
-                        # model-written query of D92.
+                        # the model-written query.
                         search_query=os.environ.get("DEIXIS_SEARCH_QUERY", "code"),
-                        # A retrieval run after discovery (D83) would open a second run under it; case J reads.
+                        # A retrieval run after discovery would open a second run under it; case J reads.
                         fulltext_fetch="auto" if QUEUE_MODE or FULLTEXT_MODE else "off",
                         fulltext_adjudication="auto" if QUEUE_MODE or FULLTEXT_MODE else "off",
                         arxiv_source="auto" if ARXIV_SOURCE_MODE else "off")
@@ -1474,14 +1474,14 @@ def main() -> None:
     if os.environ.get("DEIXIS_FIXTURE_REEXTRACT") == "on":
         seed_reextract(args.data_dir)
     if os.environ.get("DEIXIS_FIXTURE_LATE_REVISION") == "on":
-        # Reuse the deterministic D255 fixture; all calls finish before the server starts.
+        # Reuse the deterministic late-revision fixture; all calls finish before the server starts.
         sys.path[:0] = [str(p) for p in (REPO / 'tests').iterdir() if p.is_dir()]
         import test_fast_path_answer
         test_fast_path_answer.valid_response = late_pdf_answer  # read when prepared() builds its FakeAdapter
         from test_fast_path_late_revision import prepared, read_late, drain
         from deixis.workflow.answer import late_revision
         lib = prepared(args.data_dir)
-        # The revision's own review run (D255) records a review only when a reviewer is set; V1's ran without one.
+        # The revision's own review run records a review only when a reviewer is set; V1's ran without one.
         lib.store.set_setting("reviewer", {"model_connection": "fake", "model": "fake-model", "reasoning_effort": None})
         read_late(lib)
         late_revision.advance(lib.flow)

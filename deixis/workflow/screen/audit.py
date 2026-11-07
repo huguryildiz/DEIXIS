@@ -78,7 +78,7 @@ class AuditState:
             if outcome["stage"] == "fulltext" and outcome["decided_by"] == "model_agreement":
                 stratum = {"include": "F1", "criterion_not_met": "F2"}.get(outcome["outcome"])
             elif outcome["stage"] == "abstract" and outcome["outcome"] == "out_of_scope":
-                # One model read's verdict (D173) is neither two agreeing runs nor a code rule: it is in no stratum.
+                # One model read's verdict is neither two agreeing runs nor a code rule: it is in no stratum.
                 if outcome["reason_code"] in SINGLE_READ_CODES:
                     continue
                 stratum = "A1" if outcome["decided_by"] == "model_agreement" else "A2"
@@ -116,7 +116,7 @@ class AuditState:
 
 
 def token(ctx: Any, work_id: str, svid: str, stratum: str, machine_id: str) -> str:
-    """D96's row token plus the stratum and the machine decision; the machine decision's id leads, so the write can
+    """that row token plus the stratum and the machine decision; the machine decision's id leads, so the write can
     check it against the version's current decision before the digest (decision 6, check ii)."""
     current = ctx.decisions.current(ctx.rid, svid, "fulltext")
     head = ctx.facts["heads"].get(work_id)

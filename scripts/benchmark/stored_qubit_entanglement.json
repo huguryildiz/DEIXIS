@@ -1,0 +1,450 @@
+{
+  "name": "stored_qubit_entanglement",
+  "schema_version": "search-measurement-v1",
+  "freeze_date": "2026-11-08",
+  "label_authority": "Consensus run of 18 Oct 2026 as summarized in QUESTION.md. Every number is the tool's claim, not checked against the papers; no human verification.",
+  "identity_rule": "DOI or verified work identity; title-only matches require adjudication",
+  "validation_role": "heldout",
+  "question": "Which experiments have demonstrated remote entanglement between qubits stored in quantum memories, and what entanglement rate, fidelity, storage (memory) time and entanglement-swapping result did each report?",
+  "question_sha256": "06dbf4e6cac52ec6dd51fcb95b0362a623a6314af3d0a01b68999f556a3b451e",
+  "reference": "Consensus run, 18 Oct 2026. Only the summary table in notes/test-questions/stored-qubit-entanglement/QUESTION.md survives; the full answer was not kept. Titles for five targets were filled from the Elicit export of the heralded-memory question by DOI; the rest have no title in the reference.",
+  "expected_direction": "Three groups: direct memory-memory entanglement, swapping of stored links, and platforms reporting rate, fidelity and storage together. Main claim: only the NV three-node network (Pompili 2021) reports a swap from stored states together with rate and memory metrics - 1 pair per 40 s, swapped fidelity 0.551(13), T2* 11.6 ms. Liu W.-Z. 2026 reports 0.554 at 450 ms with 550 +/- 36 ms storage but no swap; Knaut up to 1 Hz, 0.77(5) nuclear-spin fidelity, up to 1 s; Stephenson 182/s at 94% with no storage figure; Saha 97.0(4)% with 2.10 ms coherence. Davis 2025 is a photonic swap with no memory.",
+  "direction_terms": [
+    [
+      "swap",
+      "swapped",
+      "swapping"
+    ],
+    [
+      "stored",
+      "memory",
+      "storage"
+    ]
+  ],
+  "answer_elements": [
+    {
+      "id": "S1",
+      "question": "Entanglement rate per experiment"
+    },
+    {
+      "id": "S2",
+      "question": "Fidelity per experiment, with the swapped fidelity kept apart from the link fidelity"
+    },
+    {
+      "id": "S3",
+      "question": "Storage or memory time per experiment"
+    },
+    {
+      "id": "S4",
+      "question": "Entanglement-swapping result per experiment, and whether only the NV three-node network reports a swap from stored states together with rate and memory metrics"
+    },
+    {
+      "id": "S5",
+      "question": "The four metrics kept separate, \"not reported\" where a number is missing, and a memoryless photonic swap not presented as stored-qubit entanglement"
+    }
+  ],
+  "pass_rule": {
+    "status": "draft from QUESTION.md, not confirmed by the owner",
+    "source": "notes/test-questions/stored-qubit-entanglement/QUESTION.md",
+    "rules": [
+      "Pompili 2021 reaches the answer with rate, swapped fidelity and memory time each cited from a located passage.",
+      "At least 4 of Liu W.-Z. 2026, Knaut 2023, Stephenson 2019, Saha 2024, Lago-Rivera 2021, Hermans 2021 are found; numbers come from passages, not abstracts alone where the abstract does not state them.",
+      "Answer keeps the four metrics separate and says \"not reported\" instead of filling gaps.",
+      "Davis 2025 is not presented as stored-qubit entanglement (no matter memory)."
+    ]
+  },
+  "source_evidence": {
+    "reference_path": "notes/test-questions/stored-qubit-entanglement/QUESTION.md",
+    "reference_sha256": "35fb11d59057560ae20e61f0085be7628ece3020087af9993771c7cc7d0410e0",
+    "title_source_path": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv",
+    "title_source_sha256": "5fcf65b46a6cdb399ae51e0e75aeaacb05ab518e4c5a0f61da71b36b12bb706d",
+    "missing_reference_file": "the Consensus answer itself was not saved; only the QUESTION.md table"
+  },
+  "papers": [
+    {
+      "key": "pompili2021",
+      "doi": "10.1126/science.abg1919",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": null,
+      "stratum": "swap_from_stored",
+      "label": "ilgili",
+      "label_reason": "Consensus main claim: NV three-node network, the only entry with a swap from stored states plus rate and memory metrics.",
+      "reading_depth": "title_only",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "S1",
+          "S2",
+          "S3",
+          "S4"
+        ],
+        "contribution": "1 pair per 40 s, swapped fidelity 0.551(13), T2* 11.6 ms, about 1800 attempts under activity.",
+        "limitation": "All three numbers must come from located passages."
+      },
+      "selection_evidence": {
+        "source": "Consensus run, 18 Oct 2026, summarized in QUESTION.md; the full answer was not kept as a separate file",
+        "source_path": "notes/test-questions/stored-qubit-entanglement/QUESTION.md",
+        "source_sha256": "35fb11d59057560ae20e61f0085be7628ece3020087af9993771c7cc7d0410e0",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "consensus_answer_table_in_question_md",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "hermans2021",
+      "doi": "10.1038/s41586-022-04697-y",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": null,
+      "stratum": "swap_from_stored",
+      "label": "ilgili",
+      "label_reason": "Consensus: teleportation between non-neighbouring nodes, swap yes, rate not given.",
+      "reading_depth": "title_only",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "S4"
+        ],
+        "contribution": "Second swap entry; fidelity bounded by link errors, 1000-attempt timeout.",
+        "limitation": "No rate reported; \"not reported\" must stay \"not reported\"."
+      },
+      "selection_evidence": {
+        "source": "Consensus run, 18 Oct 2026, summarized in QUESTION.md; the full answer was not kept as a separate file",
+        "source_path": "notes/test-questions/stored-qubit-entanglement/QUESTION.md",
+        "source_sha256": "35fb11d59057560ae20e61f0085be7628ece3020087af9993771c7cc7d0410e0",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "consensus_answer_table_in_question_md",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "liuwz2026",
+      "doi": "10.1038/s41586-026-10177-4",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": null,
+      "stratum": "memory_memory",
+      "label": "ilgili",
+      "label_reason": "Consensus: ion-ion over 10 km, 0.554 at 450 ms, 550 +/- 36 ms storage, no swap.",
+      "reading_depth": "title_only",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "S1",
+          "S2",
+          "S3"
+        ],
+        "contribution": "Longest reported storage with a fidelity at that delay.",
+        "limitation": "No swap; link efficiency is not an entanglement rate."
+      },
+      "selection_evidence": {
+        "source": "Consensus run, 18 Oct 2026, summarized in QUESTION.md; the full answer was not kept as a separate file",
+        "source_path": "notes/test-questions/stored-qubit-entanglement/QUESTION.md",
+        "source_sha256": "35fb11d59057560ae20e61f0085be7628ece3020087af9993771c7cc7d0410e0",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "consensus_answer_table_in_question_md",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "knaut2023",
+      "doi": "10.1038/s41586-024-07252-z",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Entanglement of nanophotonic quantum memory nodes in a telecom network",
+      "stratum": "memory_memory",
+      "label": "ilgili",
+      "label_reason": "Consensus: SiV nodes, up to 1 Hz, 0.77(5) nuclear-spin fidelity, up to 1 s storage, no swap.",
+      "reading_depth": "title_only",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "S1",
+          "S2",
+          "S3"
+        ],
+        "contribution": null,
+        "limitation": null
+      },
+      "selection_evidence": {
+        "source": "Consensus run, 18 Oct 2026, summarized in QUESTION.md; the full answer was not kept as a separate file",
+        "source_path": "notes/test-questions/stored-qubit-entanglement/QUESTION.md",
+        "source_sha256": "35fb11d59057560ae20e61f0085be7628ece3020087af9993771c7cc7d0410e0",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "consensus_answer_table_in_question_md",
+        "abstract_text": null,
+        "abstract_source": null,
+        "title_from": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv"
+      }
+    },
+    {
+      "key": "stephenson2019",
+      "doi": "10.1103/physrevlett.124.110501",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "High-Rate, High-Fidelity Entanglement of Qubits Across an Elementary Quantum Network.",
+      "stratum": "memory_memory",
+      "label": "ilgili",
+      "label_reason": "Consensus: trapped ions, 182/s at 94%, storage not given.",
+      "reading_depth": "title_only",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "S1",
+          "S2"
+        ],
+        "contribution": null,
+        "limitation": "Storage is not reported; the answer must say so."
+      },
+      "selection_evidence": {
+        "source": "Consensus run, 18 Oct 2026, summarized in QUESTION.md; the full answer was not kept as a separate file",
+        "source_path": "notes/test-questions/stored-qubit-entanglement/QUESTION.md",
+        "source_sha256": "35fb11d59057560ae20e61f0085be7628ece3020087af9993771c7cc7d0410e0",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "consensus_answer_table_in_question_md",
+        "abstract_text": null,
+        "abstract_source": null,
+        "title_from": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv"
+      }
+    },
+    {
+      "key": "saha2024",
+      "doi": "10.1038/s41467-025-57557-4",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "High-fidelity remote entanglement of trapped atoms mediated by time-bin photons",
+      "stratum": "memory_memory",
+      "label": "ilgili",
+      "label_reason": "Consensus: time-bin ions, projected ~10^3/s, 97.0(4)%, 2.10 ms coherence.",
+      "reading_depth": "title_only",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "S1",
+          "S2",
+          "S3"
+        ],
+        "contribution": null,
+        "limitation": "The rate is projected, not measured."
+      },
+      "selection_evidence": {
+        "source": "Consensus run, 18 Oct 2026, summarized in QUESTION.md; the full answer was not kept as a separate file",
+        "source_path": "notes/test-questions/stored-qubit-entanglement/QUESTION.md",
+        "source_sha256": "35fb11d59057560ae20e61f0085be7628ece3020087af9993771c7cc7d0410e0",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "consensus_answer_table_in_question_md",
+        "abstract_text": null,
+        "abstract_source": null,
+        "title_from": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv"
+      }
+    },
+    {
+      "key": "seubert2026",
+      "doi": "10.48550/arxiv.2606.32006",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": null,
+      "stratum": "swap_from_stored",
+      "label": "ilgili",
+      "label_reason": "Consensus: three atom nodes, photonic swap, 0.16% efficiency, 77(1)% three-qubit fidelity, > 200 us.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "key_contribution": {
+        "answer_elements": [
+          "S4"
+        ],
+        "contribution": null,
+        "limitation": null
+      },
+      "selection_evidence": {
+        "source": "Consensus run, 18 Oct 2026, summarized in QUESTION.md; the full answer was not kept as a separate file",
+        "source_path": "notes/test-questions/stored-qubit-entanglement/QUESTION.md",
+        "source_sha256": "35fb11d59057560ae20e61f0085be7628ece3020087af9993771c7cc7d0410e0",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "consensus_answer_table_in_question_md",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "lagorivera2021",
+      "doi": "10.1038/s41586-021-03481-8",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Telecom-heralded entanglement between multimode solid-state quantum memories",
+      "stratum": "memory_memory",
+      "label": "ilgili",
+      "label_reason": "Consensus: solid-state multimode memories, 1.43 kHz at 2 us, up to 25 us, no swap.",
+      "reading_depth": "title_only",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "S1",
+          "S3"
+        ],
+        "contribution": null,
+        "limitation": "Fidelity not given in the reference row."
+      },
+      "selection_evidence": {
+        "source": "Consensus run, 18 Oct 2026, summarized in QUESTION.md; the full answer was not kept as a separate file",
+        "source_path": "notes/test-questions/stored-qubit-entanglement/QUESTION.md",
+        "source_sha256": "35fb11d59057560ae20e61f0085be7628ece3020087af9993771c7cc7d0410e0",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "consensus_answer_table_in_question_md",
+        "abstract_text": null,
+        "abstract_source": null,
+        "title_from": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv"
+      }
+    },
+    {
+      "key": "hanni2025",
+      "doi": "10.1103/wvv1-6lg8",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Heralded Entanglement of On-Demand Spin-Wave Solid-State Quantum Memories for Multiplexed Quantum Network Links",
+      "stratum": "memory_memory",
+      "label": "ilgili",
+      "label_reason": "Consensus: spin-wave memories, 510 counts/s, on-demand storage, fidelity not given.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "key_contribution": {
+        "answer_elements": [
+          "S1",
+          "S3"
+        ],
+        "contribution": null,
+        "limitation": null
+      },
+      "selection_evidence": {
+        "source": "Consensus run, 18 Oct 2026, summarized in QUESTION.md; the full answer was not kept as a separate file",
+        "source_path": "notes/test-questions/stored-qubit-entanglement/QUESTION.md",
+        "source_sha256": "35fb11d59057560ae20e61f0085be7628ece3020087af9993771c7cc7d0410e0",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "consensus_answer_table_in_question_md",
+        "abstract_text": null,
+        "abstract_source": null,
+        "title_from": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv"
+      }
+    },
+    {
+      "key": "davis2025",
+      "doi": "10.48550/arxiv.2503.18906",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": null,
+      "stratum": "no_memory",
+      "label": "kapsam dışı",
+      "label_reason": "Consensus lists it as a photonic swap with no memory; it must not be presented as stored-qubit entanglement.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "key_contribution": {
+        "answer_elements": [
+          "S5"
+        ],
+        "contribution": "The negative control of this question.",
+        "limitation": "Out of scope by construction."
+      },
+      "selection_evidence": {
+        "source": "Consensus run, 18 Oct 2026, summarized in QUESTION.md; the full answer was not kept as a separate file",
+        "source_path": "notes/test-questions/stored-qubit-entanglement/QUESTION.md",
+        "source_sha256": "35fb11d59057560ae20e61f0085be7628ece3020087af9993771c7cc7d0410e0",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "consensus_answer_table_in_question_md",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "kalb2017",
+      "doi": "10.1126/science.aan0070",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": null,
+      "stratum": "supporting",
+      "label": "arka plan",
+      "label_reason": "Consensus supporting, lower rank.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Consensus run, 18 Oct 2026, summarized in QUESTION.md; the full answer was not kept as a separate file",
+        "source_path": "notes/test-questions/stored-qubit-entanglement/QUESTION.md",
+        "source_sha256": "35fb11d59057560ae20e61f0085be7628ece3020087af9993771c7cc7d0410e0",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "consensus_answer_table_in_question_md",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "liux2021",
+      "doi": "10.1038/s41586-021-03505-3",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": null,
+      "stratum": "supporting",
+      "label": "arka plan",
+      "label_reason": "Consensus supporting, lower rank.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Consensus run, 18 Oct 2026, summarized in QUESTION.md; the full answer was not kept as a separate file",
+        "source_path": "notes/test-questions/stored-qubit-entanglement/QUESTION.md",
+        "source_sha256": "35fb11d59057560ae20e61f0085be7628ece3020087af9993771c7cc7d0410e0",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "consensus_answer_table_in_question_md",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "wan2024",
+      "doi": "10.1103/physreva.110.052603",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": null,
+      "stratum": "supporting",
+      "label": "arka plan",
+      "label_reason": "Consensus supporting, lower rank.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Consensus run, 18 Oct 2026, summarized in QUESTION.md; the full answer was not kept as a separate file",
+        "source_path": "notes/test-questions/stored-qubit-entanglement/QUESTION.md",
+        "source_sha256": "35fb11d59057560ae20e61f0085be7628ece3020087af9993771c7cc7d0410e0",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "consensus_answer_table_in_question_md",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "kinos2023",
+      "doi": "10.1103/frtv-p5zy",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": null,
+      "stratum": "supporting",
+      "label": "arka plan",
+      "label_reason": "Consensus supporting, lower rank.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Consensus run, 18 Oct 2026, summarized in QUESTION.md; the full answer was not kept as a separate file",
+        "source_path": "notes/test-questions/stored-qubit-entanglement/QUESTION.md",
+        "source_sha256": "35fb11d59057560ae20e61f0085be7628ece3020087af9993771c7cc7d0410e0",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "consensus_answer_table_in_question_md",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    }
+  ]
+}

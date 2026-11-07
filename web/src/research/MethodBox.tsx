@@ -33,7 +33,7 @@ export function MethodBox({ researchId, answer, reviewPending, onShowFunnel, inR
   const found = selection.works_found
   // An answer over attached PDFs only: nothing was searched or screened, so one sentence says so instead of three "not recorded".
   const pdfOnly = queries === 0 && selection.abstract_read === 0 && selection.full_text_read === 0
-  // An older answer's start snapshot kept no reading counts (D92): they are not recounted from today's rows.
+  // An older answer's start snapshot kept no reading counts: they are not recounted from today's rows.
   const readingsUnknown = selection.abstract_read === null
   const followups = search.followup_searches
   return <section className="methods" aria-labelledby={`methods-${answerId}`}>

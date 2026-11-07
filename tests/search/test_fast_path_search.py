@@ -1,4 +1,4 @@
-"""D252 synthetic search/queue evidence; no live app, provider or model."""
+"""Synthetic search/queue evidence; no live app, provider or model."""
 
 import asyncio
 import hashlib
@@ -55,7 +55,7 @@ def record(identity):
                           identifiers={"openalex": identity}, raw={"id": identity})
 
 
-# The searched block terms, one of them dropped; the block terms' semantic request (D154) joins the other two.
+# The searched block terms, one of them dropped; the block terms' semantic request joins the other two.
 VOCABULARY = {"terms": [{"phrase": "synthetic setting words", "block": "setting", "dropped": None},
                         {"phrase": "synthetic zero words", "block": "task", "dropped": "zero_results"},
                         {"phrase": "synthetic task words", "block": "task", "dropped": None}]}
@@ -92,8 +92,9 @@ def scripted(flow, calls, *, advance=None, fail_at=None, short=False):
 
 @pytest.mark.parametrize("frozen", ["block_semantic", "since_d155"])
 def test_frozen_plan_cap_rotation_page_admission_and_resume(library, tmp_path, frozen):
-    # D154: a plan frozen with the block terms' semantic request sends it once, after the question's, and its hits
-    # enter the pool. D155 turned it off: a new plan freezes that it is off and sends what a plan before D154 sent.
+    # A plan frozen with the block terms' semantic request sends it once, after the question's, and its hits
+    # enter the pool. A new plan freezes that it is off and skips that request; a plan frozen under `block_terms_v1`
+    # still sends it.
     lib = library
     flow, scope, plan = setup(lib, tmp_path, VOCABULARY)
     if frozen == "block_semantic":
@@ -161,7 +162,7 @@ def test_semantic_adapter_abstract_headers_and_legacy_revision(monkeypatch):
     assert result.outcome.records[0].abstract == 'SYNTHETIC abstract'
     assert result.outcome.next_cursor is None and result.connector['adapter_revision'] == 3
     assert requests[0].url.params['per_page'] == '50'
-    assert len(requests[0].url.params['search.semantic']) == 1500  # OpenAlex's limit (D3)
+    assert len(requests[0].url.params['search.semantic']) == 1500  # OpenAlex's limit
     assert 'cursor' not in requests[0].url.params and 'search.title_abstract_keywords' not in requests[0].url.params
     assert result.outcome.rate_limit['x-ratelimit-credits-used'] == '10'
     assert 'SYNTHETIC KEY' not in json.dumps(result.outcome.raw_payload)
@@ -254,7 +255,7 @@ def test_deep_unplanned_s2_reservation_does_not_move_to_openalex(library):
     assert [q['index'] for q in planned['dropped']] == [2, 4]
 
 
-# Fast path end to end (D250–D254): one Quick question through search, chain, read and the automatic answer.
+# Fast path end to end: one Quick question through search, chain, read and the automatic answer.
 
 def url(n):
     return f"https://example.org/w{n}.pdf"
@@ -301,7 +302,7 @@ def test_quick_question_runs_every_fast_path_stage_and_answers_unattended(tmp_pa
     assert claims and {claim["evidence_basis"] for claim in claims} == {"full_text"}
 
 
-# D175: restore applicable D119 end-to-end assertions using synthetic sw discovery.
+# Restore the applicable end-to-end assertions using synthetic sw discovery.
 
 def app_for(tmp_path, handler, adapter):
     return create_app(sw_settings(tmp_path), adapters={"fake": adapter},
@@ -319,7 +320,7 @@ def start(client):
 
 
 def test_sw_failed_provider_is_retained_and_retry_reuses_queries_and_protocol(tmp_path, monkeypatch):
-    # The fast path searches OpenAlex alone (D252), so its keyword page is the one that fails here.
+    # The fast path searches OpenAlex alone, so its keyword page is the one that fails here.
     attempts = []
     limited = True
     def handler(request):

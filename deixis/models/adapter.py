@@ -26,7 +26,7 @@ from deixis.tools.tool_paths import child_path, command_for, find_tool
 from deixis.tools.tool_probe import probe
 
 # Which step and StepInput the model call in flight belongs to ({"step_id", "step_input_id"}), set around each
-# `run_step` call. Never sent and never in the prompt; only a replaying benchmark adapter reads it (D163 M1).
+# `run_step` call. Never sent and never in the prompt; only a replaying benchmark adapter reads it.
 model_call: ContextVar[dict[str, str] | None] = ContextVar("model_call", default=None)
 
 # The version in the app-server's `userAgent` ("deixis/0.160.0 (...)") and in `codex --version` ("codex-cli 0.160.0").
@@ -67,7 +67,7 @@ class ModelStepResult:
     error_kind: str | None = None
     http_status: int | None = None
     retry_after: str | None = None
-    # What the adapter sent in place of the step schema and changed in the answer text, when it does either (D93);
+    # What the adapter sent in place of the step schema and changed in the answer text, when it does either;
     # stored with the validation record.
     transport: dict[str, Any] | None = None
 
@@ -107,7 +107,7 @@ class ModelAdapter(Protocol):
     connection: str
     enforces_schema: bool
     # Whether run_step puts a given reasoning effort in its request; the flow stores the effort with a call's session
-    # only when this is true (D25). An adapter without the attribute counts as one that sends none.
+    # only when this is true. An adapter without the attribute counts as one that sends none.
     sends_reasoning_effort: bool
 
     async def health(self, refresh: bool = False) -> dict[str, Any]: ...
@@ -124,7 +124,7 @@ class CodexAdapter:
     connection = "codex"
     enforces_schema = True
     sends_reasoning_effort = True  # the turn's `effort` (codex_rpc.run_turn)
-    accepts_images = True  # run_step(image_png=...) puts one PNG before the turn's text (D113)
+    accepts_images = True  # run_step(image_png=...) puts one PNG before the turn's text
 
     def __init__(self, codex_home: Path, workspace: Path, turn_timeout: float = 300.0):
         self.codex_home = codex_home
@@ -315,7 +315,7 @@ class CodexAdapter:
                                    error=str(exc)[:300], delivery_class="after_send_unknown",
                                    error_kind=limit_kind(exc.error if isinstance(exc, RpcError) else str(exc)))
         except asyncio.CancelledError:
-            # The caller stopped waiting (D258): stop the turn too, so it does not run on unseen. Cancelled before the
+            # The caller stopped waiting: stop the turn too, so it does not run on unseen. Cancelled before the
             # turn's id came back, only the thread can be left; the turn may then run on unseen.
             task = asyncio.get_running_loop().create_task(self._abandon(server, thread_id, active[1] if active else None))
             self._abandoned.add(task)

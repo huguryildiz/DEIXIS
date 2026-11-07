@@ -1,0 +1,688 @@
+{
+  "name": "entanglement_buffer_control",
+  "schema_version": "search-measurement-v1",
+  "freeze_date": "2026-11-08",
+  "label_authority": "Elicit run of 20 Oct 2026 as saved. Every row is the tool's included set from abstract screening; no human verification and no full-text check.",
+  "identity_rule": "DOI or verified work identity; title-only matches require adjudication",
+  "validation_role": "heldout",
+  "question": "Control of entanglement buffers and generation switches with finite quantum memories, including generation, replacement, cutoff, pumping, purification and consumption under decoherence and heterogeneous user requests.",
+  "question_sha256": "3dc5f4280862692653bf64ffa31a8aef59df63895d4af5aac1bad603fc9d6014",
+  "reference": "Elicit run, 20 Oct 2026, saved in notes/test-questions/finite-memory-buffer-switch/. The answer names 27 papers in the export; the saved CSV holds 26 rows, and 26 is the measured denominator here.",
+  "expected_direction": "The reference gives no numeric comparison. Its verdict: buffering, generation control, cutoffs, pumping, purification and switch scheduling are all covered; explicit replacement rules are a coverage gap; heterogeneous links and heterogeneous user requirements are kept apart, not treated as interchangeable; the collection is abstract-screened, not a full-text review.",
+  "direction_terms": [
+    [
+      "heterogeneous link",
+      "heterogeneous links",
+      "link heterogeneity"
+    ],
+    [
+      "user request",
+      "user requirement",
+      "heterogeneous request",
+      "heterogeneous user"
+    ]
+  ],
+  "answer_elements": [
+    {
+      "id": "F1",
+      "question": "Buffering with consumption, decoherence and purification"
+    },
+    {
+      "id": "F2",
+      "question": "Switch decision policies: wait, distill, swap"
+    },
+    {
+      "id": "F3",
+      "question": "Request admission and purification under competing QoS requirements"
+    },
+    {
+      "id": "F4",
+      "question": "Cutoff and generation control under finite memories",
+      "required_subitems": [
+        "cutoff",
+        "generation",
+        "pumping"
+      ]
+    },
+    {
+      "id": "F5",
+      "question": "Coverage limits: replacement rules thin or missing, link heterogeneity kept apart from request heterogeneity, abstract-depth reading marked as such"
+    }
+  ],
+  "pass_rule": {
+    "status": "draft from QUESTION.md, not confirmed by the owner",
+    "source": "notes/test-questions/finite-memory-buffer-switch/QUESTION.md",
+    "rules": [
+      "At least 20 of the 27 CSV papers are found (26 rows are in the saved export); the three named starting points are all in the answer.",
+      "The answer keeps links-vs-requests heterogeneity separate and says replacement rules are thin or missing, without claiming novelty from absence.",
+      "Control actions are tied to a paper only where a located passage names them; \"not specified\" stays \"not specified\".",
+      "Papers read at abstract depth are marked as such."
+    ]
+  },
+  "source_evidence": {
+    "reference_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+    "reference_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+    "answer_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.md",
+    "answer_sha256": "11af5ef4ea367ed12f08c3a28d75a029da3c16f463d59afb57646be5abbccdb2",
+    "question_md_sha256": "59f6e9c64fe381b62641383d2b0be5c924208df968bc0f1082764d82fb2f2811",
+    "row_count": 26
+  },
+  "papers": [
+    {
+      "key": "davies2023",
+      "doi": "10.22331/q-2024-09-03-1458",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Entanglement buffering with two quantum memories",
+      "stratum": "buffering",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "F1"
+        ],
+        "contribution": "Consumption, decoherence and purification dynamics in a two-memory buffer.",
+        "limitation": "Named starting point; the control actions must come from a located passage."
+      },
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 0
+      }
+    },
+    {
+      "key": "inesta2025",
+      "doi": "10.48550/arXiv.2502.20240",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Entanglement buffering with multiple quantum memories",
+      "stratum": "buffering",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 1
+      }
+    },
+    {
+      "key": "elsayed2024",
+      "doi": "10.1109/QCNC62729.2024.00013",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "On the Trade-off between Fidelity and Latency for the Quantum Link Layer with few Memories and Entanglement Purification",
+      "stratum": "buffering",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 2
+      }
+    },
+    {
+      "key": "kumar2023",
+      "doi": "10.1109/QCE57702.2023.00135",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Optimal Entanglement Distillation Policies for Quantum Switches",
+      "stratum": "switch_policy",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "F2"
+        ],
+        "contribution": "Wait / distill / swap decisions at a switch as an MDP.",
+        "limitation": "Named starting point; the control actions must come from a located passage."
+      },
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 3
+      }
+    },
+    {
+      "key": "promponas2023",
+      "doi": "10.23919/IFIPNetworking57963.2023.10186423",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Full Exploitation of Limited Memory in Quantum Entanglement Switching",
+      "stratum": "switch_policy",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 4
+      }
+    },
+    {
+      "key": "jia2024",
+      "doi": "10.1109/JETCAS.2024.3425712",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "On Fidelity-Oriented Entanglement Distribution for Quantum Switches",
+      "stratum": "switch_policy",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "F3"
+        ],
+        "contribution": "Request admission and purification under competing QoS requirements.",
+        "limitation": "Named starting point; the control actions must come from a located passage."
+      },
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 5
+      }
+    },
+    {
+      "key": "bhavsar2026",
+      "doi": null,
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Optimizing Entanglement Distillation Policies via Markov Decision Process Formulation",
+      "stratum": "purification",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 6
+      }
+    },
+    {
+      "key": "mobayenjarihani2021",
+      "doi": "10.1109/QCE52317.2021.00068",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Optimistic Entanglement Purification With Few Quantum Memories",
+      "stratum": "purification",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 7
+      }
+    },
+    {
+      "key": "khatri2020",
+      "doi": "10.22331/q-2021-09-07-537",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Policies for elementary links in a quantum network",
+      "stratum": "generation_policy",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 8
+      }
+    },
+    {
+      "key": "tacettin2025",
+      "doi": null,
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Adaptive Policies for Resource Generation in a Quantum Network",
+      "stratum": "generation_policy",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 9
+      }
+    },
+    {
+      "key": "inesta2022",
+      "doi": "10.1038/s41534-023-00713-9",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Optimal entanglement distribution policies in homogeneous repeater chains with cutoffs",
+      "stratum": "cutoff",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 10
+      }
+    },
+    {
+      "key": "li2020",
+      "doi": "10.1109/TQE.2021.3099003",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Efficient Optimization of Cutoffs in Quantum Repeater Chains",
+      "stratum": "cutoff",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 11
+      }
+    },
+    {
+      "key": "grimbergen2026",
+      "doi": null,
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Probabilistic Cutoffs in Homogeneous Quantum Repeater Chains",
+      "stratum": "cutoff",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 12
+      }
+    },
+    {
+      "key": "vardoyan2019",
+      "doi": "10.1109/TQE.2021.3058058",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "On the Stochastic Analysis of a Quantum Entanglement Distribution Switch",
+      "stratum": "switch_analysis",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 13
+      }
+    },
+    {
+      "key": "vardoyan2019_2",
+      "doi": null,
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Performance Evaluation of a Quantum Entanglement Switch",
+      "stratum": "switch_analysis",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 14
+      }
+    },
+    {
+      "key": "mitrolaris2026",
+      "doi": "10.1109/INFOCOM59046.2026.11571768",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Age-Based Scheduling for a Memory-Constrained Quantum Switch",
+      "stratum": "switch_scheduling",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 15
+      }
+    },
+    {
+      "key": "vasantam2022",
+      "doi": "10.1117/12.2616950",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A throughput optimal scheduling policy for a quantum switch",
+      "stratum": "switch_scheduling",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 16
+      }
+    },
+    {
+      "key": "dai2021",
+      "doi": null,
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Entanglement Swapping in Quantum Switches: Protocol Design and Stability Analysis",
+      "stratum": "switch_analysis",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 17
+      }
+    },
+    {
+      "key": "valls2023",
+      "doi": "10.1109/LCOMM.2023.3290684",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "On the Capacity of the Quantum Switch With and Without Entanglement Decoherence",
+      "stratum": "switch_analysis",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 18
+      }
+    },
+    {
+      "key": "luo2026",
+      "doi": "10.23919/WiOpt71098.2026.11568180",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "On the Analysis of a Quantum MDP Algorithm for Optimizing the Entanglement Throughput of Quantum Switches",
+      "stratum": "switch_analysis",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 19
+      }
+    },
+    {
+      "key": "piparo2026",
+      "doi": null,
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Adaptive Resource and Memory Control for Stability in Quantum Entanglement Distribution",
+      "stratum": "switch_scheduling",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 20
+      }
+    },
+    {
+      "key": "vasan2025",
+      "doi": "10.48550/arXiv.2509.03667",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Entanglement Purification With Finite Latency Classical Communication in Quantum Networks",
+      "stratum": "purification",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 21
+      }
+    },
+    {
+      "key": "vasantam2021",
+      "doi": null,
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Stability Analysis of a Quantum Network with Max-Weight Scheduling",
+      "stratum": "switch_scheduling",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 22
+      }
+    },
+    {
+      "key": "khatri2022",
+      "doi": "10.1116/5.0084653",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "On the design and analysis of near-term quantum network protocols using Markov decision processes",
+      "stratum": "generation_policy",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 23
+      }
+    },
+    {
+      "key": "zang2023",
+      "doi": "10.1109/INFOCOMWKSHPS57453.2023.10226122",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Entanglement Distribution in Quantum Repeater with Purification and Optimized Buffer Time",
+      "stratum": "buffering",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 24
+      }
+    },
+    {
+      "key": "santra2018",
+      "doi": "10.1088/2058-9565/ab0bc2",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Quantum repeater architecture with hierarchically optimized memory buffer times",
+      "stratum": "buffering",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the control-action, memory and demand cells are the tool's claim from abstract screening.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 20 Oct 2026, papers export with per-paper cells (abstract screening)",
+        "source_path": "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+        "source_sha256": "7d9df3f69c8ae8b584ec89ed527af96f0cbb5321841cecdc40fefe872c7d3e58",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 25
+      }
+    }
+  ]
+}

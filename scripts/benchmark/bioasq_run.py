@@ -253,7 +253,7 @@ def measured_run(args, home, questions, server, records):
     `records(order, research_id)` turns list positions into scored rows. A product failure (the run failed) is a row
     scored as zero; a pause, a timeout, a wrong embedding or a rerank that did not apply stops the whole run.
 
-    A D163 M1 arm (`harness.add_m1_args`) writes to `--out`, checks that every run froze `--method`, creates its
+    An m1 arm (`harness.add_m1_args`) writes to `--out`, checks that every run froze `--method`, creates its
     researches on `--connection`, and reserves each question on the shared `--ledger` before starting it."""
     home = Path(args.out) if getattr(args, 'out', None) else home
     method, connection = getattr(args, 'method', None), getattr(args, 'connection', 'anthropic')

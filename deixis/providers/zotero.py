@@ -1,4 +1,4 @@
-"""Read-only import of one collection from the user's Zotero library (D16).
+"""Read-only import of one collection from the user's Zotero library.
 
 Not a search connector: the model never queries it. Two access paths serve the same Zotero Web API v3 JSON:
 
@@ -147,7 +147,7 @@ def _title_key(title: str | None) -> str:
 
 
 async def find_pdf(client: httpx.AsyncClient, lib: Library, doi: str | None, title: str) -> ZoteroItem | None:
-    """The library's item for a source, by the same DOI or the same title, with its first readable PDF (D49).
+    """The library's item for a source, by the same DOI or the same title, with its first readable PDF.
 
     Searched by title first, then by DOI across all fields; an item found but without a readable PDF is returned with
     `pdf_problem` set, and None means the library has no such item.

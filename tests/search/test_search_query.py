@@ -1,4 +1,4 @@
-"""The model-written sw query: the contract of one call, what code checks and counts, and the run around it (D92).
+"""The model-written sw query: the contract of one call, what code checks and counts, and the run around it.
 
 Every question, term and count here is SYNTHETIC and from more than one field, OpenAlex is mocked and the model is
 the fake adapter, so passing shows workflow behavior: which call is made, what is counted, what is searched and what
@@ -61,7 +61,7 @@ def test_the_task_is_registered_with_its_schema_its_method_file_and_one_repair()
 # ---- what code checks and counts ----------------------------------------------------------------------------
 
 def test_a_term_that_finds_nothing_with_the_other_block_brings_its_backup_and_counts_run_four_at_a_time():
-    # D154: "integer programming" finds records alone and none with the setting block, so the next task backup is
+    # "integer programming" finds records alone and none with the setting block, so the next task backup is
     # searched beside it; it stays, with its warning. The counts overlap, at most 4 out, and every row keeps its order.
     out, peak, asked = [0], [0], []
 
@@ -254,7 +254,7 @@ def test_under_the_m1_method_a_code_query_wider_than_its_limit_or_on_one_block_i
     from deixis.workflow.search import chaining
 
     # Every count is 300,000: the code's gate query cannot be narrowed below it, and no term reaches the one-million
-    # rule. A `legacy` run searches the code's query beside the model's as before; an `m1` run leaves it out (D163 M1).
+    # rule. A `legacy` run searches the code's query beside the model's as before; an `m1` run leaves it out.
     runs = {}
     for method in ("legacy", "m1"):
         openalex = OpenAlex(counts=EveryCount(300_000))
@@ -337,7 +337,7 @@ def test_the_users_own_key_terms_are_searched_and_no_model_writes_a_query(tmp_pa
 
 
 def test_a_run_reuses_only_a_query_written_under_its_own_search_method(tmp_path, monkeypatch):
-    # D163 M1: a stored query carries the code-query decision of the method it was written under. A legacy run's
+    # A stored query carries the code-query decision of the method it was written under. A legacy run's
     # query is not reused by an m1 run of the same scope revision; the m1 run asks once and applies its own limit.
     legacy_adapter, m1_adapter = FakeAdapter(), FakeAdapter()
     client = client_for(tmp_path, monkeypatch, OpenAlex(counts=EveryCount(300_000)), legacy_adapter)

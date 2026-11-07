@@ -79,7 +79,7 @@ function phaseOf(kind: string): PhaseKey | null {
   if (kind === 'model:screening') return 'screen'
   // An sw run screens abstracts in two steps: code classifies every record, then the model proposes.
   if (kind === 'code:abstract_stage' || kind === 'model:abstract_screening') return 'screen'
-  // The fast chain's requests are not searches of the question; they are the run's citation-chaining phase (D95).
+  // The fast chain's requests are not searches of the question; they are the run's citation-chaining phase.
   if (kind.startsWith('provider_chain:') || kind.startsWith('code:fast_chain') || kind === 'code:chain_filter' || kind === 'code:chain_record_flags') return 'chain'
   if (kind === 'fetch_pdf' || kind === 'pdf_other_copy') return 'pdf'
   // An answer run reads equations out of its PDFs before it answers; the PDF phase shows that work under its own title.
@@ -133,9 +133,9 @@ const embeddingOf = (stored: string) => {
   return EMBEDDING_CONNECTIONS.has(head) ? { connection: head, model: rest.join(':') } : { connection: 'gemini', model: stored }
 }
 // A 429 the embedding step waited out stays visible (slice 21).
-// What the record reranker did for a run (D104): the records the frozen order reranked, or why the fused order was kept.
+// What the record reranker did for a run: the records the frozen order reranked, or why the fused order was kept.
 // The frozen list decides: a rerank that succeeded is not used when the list moved while it ran.
-// D153, D155: the records without an abstract the rerank did not score and left in their fused place, by why.
+// The records without an abstract the rerank did not score and left in their fused place, by why.
 const heldText = (held: NonNullable<Step['output']>['held']) => [
   held?.no_abstract ? plural(held.no_abstract, '{n} record without an abstract kept its place.', '{n} records without an abstract kept their place.') : '',
   held?.no_abstract_text_route ? plural(held.no_abstract_text_route, '{n} record without an abstract kept its place: its text can still be fetched.', '{n} records without an abstract kept their place: their text can still be fetched.') : '',
@@ -178,16 +178,16 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   busy?: boolean
   // The way out of a `key_terms_needed` stop: the revision form in the question bubble, on its key-terms field.
   onGiveKeyTerms?: () => void
-  // "Edit" beside the English sentence a search used (D149): the revision form in the question bubble, on its question.
+  // "Edit" beside the English sentence a search used: the revision form in the question bubble, on its question.
   onReviseQuestion?: () => void
-  // The way on after the model could not write the query: search with the code's query alone (D92).
+  // The way on after the model could not write the query: search with the code's query alone.
   onChooseCodeQuery?: (run: Run) => Promise<void>
   // An sw research's works awaiting a person, named once under the latest reading run (slice 17).
   queueCount?: number; onOpenQueue?: () => void
 }) {
   const runs = [...view.runs].reverse()  // the view lists the newest run first
   // The turn that names the works awaiting a decision: the current question's latest search, whose screening step
-  // shows them (S9); without one, the reading run, or a small-batch discovery run (D237), which reads inside itself.
+  // shows them (S9); without one, the reading run, or a small-batch discovery run, which reads inside itself.
   const lastReading = runs.filter(r => r.kind === 'fulltext_adjudication'
     || (r.kind === 'discovery' && (r.budget as unknown as { inspection?: { policy?: string } } | null)?.inspection?.policy === 'small_batch_fused_v1')).at(-1)?.id
   const active = runs.some(r => ACTIVE.has(r.status))
@@ -320,16 +320,16 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const order: PhaseKey[] = run.kind === 'review' ? ['review'] : run.kind === 'report' ? ['plan', 'sections', 'assembly'] : run.kind === 'discovery' ? discoveryOrder(run) : run.kind === 'pdf_collection' || run.kind === 'fulltext_fetch' || run.kind === 'fulltext_adjudication' ? ['pdf'] : run.kind === 'pdf_ocr' ? ['ocr'] : [...(boundAnswer ? [] : ['pdf' as const, 'semantic' as const]), 'answer', 'review']
   const groups = order.map(key => steps.filter(s => phaseOf(s.kind) === key))
   const reached = run.kind === 'report' && !active ? 2 : Math.max(order.indexOf(stagePhases[run.stage]), ...groups.map((group, i) => (group.length ? i : -1)))
-  // A citation chain's requests are not searches of the question; the chaining phase reports them (D95).
-  // The funnel counts belong to the current question revision; only its latest discovery run may show them (D233).
+  // A citation chain's requests are not searches of the question; the chaining phase reports them.
+  // The funnel counts belong to the current question revision; only its latest discovery run may show them.
   const latestDiscovery = run.kind === 'discovery' && view.runs.find(r => r.kind === 'discovery' && r.scope_revision === view.research.current_scope_revision)?.id === run.id
   const searches = view.search_runs.filter(s => s.run_id === run.id && !s.query_text.startsWith('chain:'))
   const answer = view.answers.find(a => a.run_id === run.id)
   const started = present(steps.map(s => s.started_at))[0] ?? run.created_at
-  // A call cut at a read deadline (D258) is closed for good: resuming does not repeat it.
+  // A call cut at a read deadline is closed for good: resuming does not repeat it.
   const unknownSteps = steps.filter(s => s.status === 'outcome_unknown' && s.error_code !== 'model_read_cutoff')
   const failedOcrPages = steps.filter(s => s.kind === 'ocr_page' && troubled(s)).map(s => s.operation_key.split(':')[2])
-  // A failed search no longer stops the run (D18); name the provider that is missing so the results are not read as
+  // A failed search no longer stops the run; name the provider that is missing so the results are not read as
   // complete. Why it failed stays on its query row in the phase details, where the other provider results are.
   const failedProviders = [...new Map(steps.filter(s => s.kind.startsWith('provider_search') && troubled(s))
     .map(s => [s.kind.split(':')[1] ?? '', providerName(s.kind.split(':')[1] ?? '')])).entries()]
@@ -359,7 +359,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const included = view.sources.filter(s => s.selection.state === 'included')
   // The similarity step belongs to no phase of its own; the screening phase reports it.
   const similarity = steps.find(s => s.kind.startsWith('similarity:'))
-  // The record reranker (D104): on by default with Voyage; a run without a usable key keeps the fused order and says so.
+  // The record reranker: on by default with Voyage; a run without a usable key keeps the fused order and says so.
   const rerank = steps.find(s => s.operation_key === 'rerank:v1:list')
   const listedRerank = steps.find(s => s.operation_key === 'small_batch:v1:list')?.output?.reranker ?? null
   // What the fast chain did in this run, once its summary is written: the works it started from (the semantic search's
@@ -382,7 +382,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
     requests?.unproven ? plural(requests.unproven, '{n} request with an unknown outcome, not known to be sent', '{n} requests with an unknown outcome, not known to be sent') : '',
     chainNew === undefined ? '' : plural(chainNew, '{n} new work', '{n} new works'),
   ].filter(Boolean).join(' · ')
-  // A pdf_ocr run (D51): its PDF, the pages without text it found, and what became of the merged text.
+  // A pdf_ocr run: its PDF, the pages without text it found, and what became of the merged text.
   const ocrSource = run.kind === 'pdf_ocr' ? view.sources.find(s => s.source_version_id === run.target?.source_version_id) : undefined
   const ocrAsset = ocrSource?.access.assets.find(a => a.id === run.target?.asset_id)
   const ocrPages = steps.find(s => s.kind === 'ocr_pages')?.output?.image_pages
@@ -486,7 +486,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         // The line keeps the totals only; the per-provider figures are in the phase details, on the query rows.
         const found = searches.reduce((sum, s) => sum + (s.status === 'completed' ? s.result_count : 0), 0)
         // Unique works are counted per question revision, not per run, so they are named only on the latest discovery run
-        // of the current revision (D233). These are rows the providers returned, not sources found.
+        // of the current revision. These are rows the providers returned, not sources found.
         const funnel = latestDiscovery ? view.counts.funnel : null
         if (funnel) return [t('{retrieved} records retrieved by search', { retrieved: funnel.retrieved.toLocaleString(uiLocale()) }),
           ...(funnel.chained ? [t('{chained} works added by citation chaining', { chained: funnel.chained.toLocaleString(uiLocale()) })] : []),
@@ -504,7 +504,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
           return t('{read} of {total} abstracts read', { read, total })
         }
         const outcome = t('{included} included · {excluded} excluded · {pending} undecided', { included: view.counts.included, excluded: view.counts.excluded, pending: view.counts.pending })
-        // The funnel, from the provider rows down to the included works (D233). A candidate passed the abstract stage; it is not called relevant.
+        // The funnel, from the provider rows down to the included works. A candidate passed the abstract stage; it is
+        // not called relevant.
         const funnel = latestDiscovery ? view.counts.funnel : null
         return funnel ? [outcome, t('{read} abstracts read · {candidates} candidates', { read: funnel.abstracts_read.toLocaleString(uiLocale()), candidates: funnel.candidates.toLocaleString(uiLocale()) }),
           t('out of {unique} unique works', { unique: funnel.unique.toLocaleString(uiLocale()) })].join(' · ') : outcome
@@ -611,7 +612,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
           perProvider.set(s.provider, { taken: seen.taken + (s.status === 'completed' ? s.result_count : 0),
             total: s.provider_total === null ? seen.total : (seen.total ?? 0) + s.provider_total })
         })
-        // The works each source brought after the DOI and work merge, and how many no other source did (D93). A run
+        // The works each source brought after the DOI and work merge, and how many no other source did. A run
         // whose counts were not kept says so instead of showing zeros.
         const counts = run.source_counts
         // An sw research's rows also carry what each arm found that was later included or confirmed (slice 19).
@@ -740,12 +741,12 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const calls = run.usage.model_calls ?? 0
   const callLimit = run.budget.max_model_calls ?? 0
   const callLimitReached = callLimit > 0 && calls >= callLimit
-  // Which models ran this run, listed once here rather than on every step line (D15). Every model step's stored calls
+  // Which models ran this run, listed once here rather than on every step line. Every model step's stored calls
   // are named, in phase order, under the role its task runs on (a full-text reading or a report section too, whose phase
   // has no role entry), each model once, so a run that moved a role to another model names both. The answer and a
   // review by another model fall back to their own records. While the run can still send (active or paused), a phase not
   // finished also names the role's model set now, labelled as the one its next calls go to. A stored call names the
-  // reasoning effort it was sent with, and nothing when its session holds none (D25); `undefined` keeps modelText from
+  // reasoning effort it was sent with, and nothing when its session holds none; `undefined` keeps modelText from
   // filling in the model's listed default.
   const canSend = active || run.status === 'paused'
   const shownModels: Array<{ key: string; role: string; connection: string; model: string | null; effort: string | null | undefined; next: boolean }> = []
@@ -820,7 +821,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
   const lineText = (key: PhaseKey, state: PhaseState, group: Step[]): string => {
     const fallback = () => [title(key, state, group), detail(key, state, group)].filter(Boolean).join(' · ')
     if (run.kind !== 'discovery' && !(run.kind === 'answer' && (key === 'answer' || key === 'review'))) return fallback()
-    // A phase that needs attention in a run still at work (a provider failed, the run went on) did not stop it (D148).
+    // A phase that needs attention in a run still at work (a provider failed, the run went on) did not stop it.
     if (state === 'attention' && run.status !== 'completed' && !active) return stopText(key)
     const live = state === 'running'
     const ongoing = (text: string, progress = '') => [`${text}…`, progress].filter(Boolean).join(' · ')
@@ -921,11 +922,11 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       const approved = run.approval?.approved
       const terms = approved?.terms.filter(term => !term.dropped) ?? []
       const queries = [...new Map((approved?.queries ?? []).map(q => [q.query_text, q])).values()]
-      // A word the frozen plan records as carried by no sent query (D26) is named as not searched, with the stored reason.
-      // A word no keyword query carries may still be sent in the block terms' semantic request (D154).
+      // A word the frozen plan records as carried by no sent query is named as not searched, with the stored reason.
+      // A word no keyword query carries may still be sent in the block terms' semantic request.
       const semanticOnly = terms.filter(term => term.searched === false && term.semantic === true)
       const unsearched = terms.filter(term => term.searched === false && term.semantic !== true)
-      // A question not in English gets its search words from its English sentence (D149): the model's, with the model
+      // A question not in English gets its search words from its English sentence: the model's, with the model
       // its step stored, or the person's own. "Edit" opens the revision form; the frozen plan itself never changes.
       const english = group.find(s => s.kind === 'code:vocabulary')?.output?.english_question
       const translator = english?.model
@@ -971,7 +972,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       // The rule prose folds under one disclosure, so the panel reads as its counts first.
       if (limits) parts.push(<details key="how" className="step-how"><summary>{t('How the chain chooses and keeps works')}</summary>
         <p>{t('OpenAlex only. While the search runs, OpenAlex is asked for the works that the first {seeds} works of its semantic search cite, and for the works that cite them; when that search gives fewer works, the ranking fills the list. Works you verified are not used as seeds. A new work is kept when a setting or task term stands in its title or abstract and its reply arrives a few seconds before the ranking stage ends; the run says how many seeds it used once the search is done.', { seeds: limits.seeds })}</p>
-        {/* Seed PDFs come first (fast_chain.pdf_seeds, D2/D3): each one matched to an OpenAlex work is a seed before the search's. */}
+        {/* Seed PDFs come first (fast_chain.pdf_seeds): each one matched to an OpenAlex work is a seed before the search's. */}
         <p>{t('Seed PDFs matched to an OpenAlex work are used as the first seeds, before the works of the semantic search.')}</p>
         <p>{t('Up to {backward} reference requests and {forward} citing requests · up to {cap} citing works per request · at most {attempts} attempts with retries', { backward: limits.backward_requests, forward: limits.forward_requests, cap: limits.citing_cap, attempts: limits.attempt_limit })}</p>
       </details>)
@@ -1080,7 +1081,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
 
   // The notice under a stopped run's steps (R18, R21): why it stopped, with Resume run and Cancel run, or for a question
   // too broad to search, a field to rewrite it.
-  // An answer paused because the selection changed (before D126) resumes too: it publishes the answer from the earlier
+  // An answer paused because the selection changed (before that change) resumes too: it publishes the answer from the
+  // earlier
   // selection, marked out of date, and a new answer from the current selection follows.
   const resumable = run.status === 'paused' && !(run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0)
   const userPaused = run.status === 'paused' && run.pause_reason === 'user_requested'
@@ -1171,7 +1173,8 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
           const details = expandable ? stepDetail(key, state, group, seconds) : null
           const detailsOpen = Boolean(details) && (openPhases[key] ?? run.kind === 'review')
           const Icon = phaseIcons[key]
-          // A search that did not complete belongs to the search line itself, in the attention colour, not to a paragraph after the run (D18).
+          // A search that did not complete belongs to the search line itself, in the attention colour, not to a
+          // paragraph after the run.
           const missed = key === 'search' ? failedProviders : []
           // No work read in full text although some passed the abstract stage: the answer can lean on abstracts only.
           const noFullText = key === 'pdf' && run.kind === 'discovery' && !active && !!run.fulltext_gaps && run.fulltext_gaps.read_any === 0 && run.fulltext_gaps.passed > 0
@@ -1247,10 +1250,10 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         <div className="notice-actions">
           {resumable && onControlRun && <Button size="sm" disabled={busy} onClick={() => onControlRun(run, 'resume')}>{modelDown ? <RotateCw size={14} aria-hidden /> : <Play size={14} aria-hidden />}{t(modelDown ? 'Retry this step' : 'Resume run')}</Button>}
           {modelDown && resumable && onChooseModel && (run.kind !== 'review' || ownerReview) && <Button variant="outline" size="sm" className="notice-ghost" disabled={busy} aria-haspopup="dialog" onClick={e => onChooseModel(run, stoppedRole(run), e.currentTarget, run.kind === 'review' && ownerReview ? ownerReview : undefined)}><Cpu size={14} aria-hidden />{t(run.kind === 'review' ? 'Review again with another model' : 'Choose another model')}</Button>}
-          {/* The question could not be translated (D149): Resume asks the model again; the revision form takes English key terms (SW2.1). */}
+          {/* The question could not be translated: Resume asks the model again; the revision form takes English key terms (SW2.1). */}
           {quotaPause && addOpenAlexKey}
           {run.pause_reason === 'key_terms_needed' && onGiveKeyTerms && <Button variant="outline" size="sm" className="notice-ghost" onClick={onGiveKeyTerms}>{t('Give the English key terms')}</Button>}
-          {/* Resume asks the model once more while a try is left; this button never asks it again (D92). */}
+          {/* Resume asks the model once more while a try is left; this button never asks it again. */}
           {run.pause_reason === 'search_query_failed' && onChooseCodeQuery && <Button variant="outline" size="sm" className="notice-ghost" onClick={() => void onChooseCodeQuery(run)}>{t('Search with the query built from the question’s words')}</Button>}
           {onControlRun && <Button variant="outline" size="sm" className="notice-ghost" disabled={busy} onClick={() => onControlRun(run, 'cancel')}>{t('Cancel run')}</Button>}
         </div>

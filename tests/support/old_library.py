@@ -1,7 +1,7 @@
-"""Libraries as DEIXIS made them before D119, and stand-in schemas, for the schema and upgrade tests.
+"""Libraries as DEIXIS made them before that change, and stand-in schemas, for the schema and upgrade tests.
 
-Before D119 the schema was a chain of SQL files run in order; those files are kept in tests/fixtures/storage/migrations
-(0001 to 0016) and pre_squash_migrations (the 22 files before D75) only so a test can build a library at any older
+Before the step-based upgrades the schema was a chain of SQL files run in order; those files are kept in tests/fixtures/storage/migrations
+(0001 to 0016) and pre_squash_migrations (the 22 files before that change) only so a test can build a library at any older
 version the way that DEIXIS did, and then open it with today's `db.migrate`. Libraries built here are SYNTHETIC.
 """
 
@@ -23,7 +23,7 @@ def version_of(path: Path) -> int:
 
 
 def apply_files(conn: sqlite3.Connection, paths) -> list[int]:
-    """The migrate loop DEIXIS ran before D119: each file not yet recorded, in version order, in its own transaction,
+    """The migrate loop DEIXIS ran before that change: each file not yet recorded, in version order, in its own transaction,
     with foreign keys off for a file that starts with the marker, recorded in `schema_migrations` under its file name."""
     conn.execute(
         "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)"

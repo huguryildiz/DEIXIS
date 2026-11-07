@@ -112,7 +112,7 @@ def test_search_validation_before_send(pid, kwargs):
                                                                               "semantic_scholar/bulk/first_page"}], ids=lambda case: case["id"])
 def test_baseline_equivalence(case):
     def without_error_prose(value):
-        # D256 removes untrusted HTTP error bodies. Freeze every transport, quota,
+        # Untrusted HTTP error bodies are removed. Freeze every transport, quota,
         # paging and evidence field; error prose is tested for safety separately.
         if isinstance(value, dict):
             return {key: without_error_prose(item) for key, item in value.items()

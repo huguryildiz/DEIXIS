@@ -114,7 +114,7 @@ EXTRACTION_TASKS = ("cell_extraction", "table_columns")
 VOCABULARY_TASKS = ("vocabulary_labels",)
 # The abstract stage asks the same batch twice and tells each call which of the two runs it is (slice 09, K3).
 SCREENING_TARGET_TASKS = ("abstract_screening",)
-# The full-text reading step is given one work, the criterion parts, and which of the two runs this call is (D85).
+# The full-text reading step is given one work, the criterion parts, and which of the two runs this call is.
 ADJUDICATION_TARGET_TASKS = ("fulltext_adjudication",)
 GAP_KINDS = ("stated_limitation", "conflicting_evidence", "corpus_absence")
 REPORT_TASKS = ("report_plan", "report_section", "report_review")
@@ -124,17 +124,17 @@ CANDIDATE_TASKS = ("claim_decomposition", "kill_search_query", "claim_assessment
 # Reverse citation search (slice R1): a sentence the person pasted against the given passages of one work the search
 # found. It reads and returns what a citation check does; `citation_check_view` gives V3's rules its target.
 STATEMENT_CHECK_TASKS = ("statement_check",)
-# Verify Citations (D99): one citing sentence against the given passages of the one work it cites.
+# Verify Citations: one citing sentence against the given passages of the one work it cites.
 CITATION_CHECK_TASKS = ("citation_check",) + STATEMENT_CHECK_TASKS
 CANDIDATE_SUPPORT_RELATIONS = ("explicit_support", "reasoned_inference", "partial_match")
 # A surface screen only: absence of these words does not establish the plan's scope or quality. A bare "protocol" is
-# not one: a claim about routing or network protocols names them (D94).
+# not one: a claim about routing or network protocols names them.
 VALIDATION_PLAN_DESIGN_TERMS = re.compile(
     r"\b(?:(?:experimental|experiment|study|test(?:ing)?|measurement|laboratory|lab|clinical|trial)\s+protocols?"
     r"|sample\s+size|power\s+analysis|apparatus|equipment|instrumentation|reagents?"
     r"|randomi[sz]ed|preregistered|pre-registered)\b", re.IGNORECASE,
 )
-# The cell states EvidenceCellDraft allows. inaccessible is the system's, not_verified and not_reported a person's (D37).
+# The cell states EvidenceCellDraft allows. inaccessible is the system's, not_verified and not_reported a person's.
 MODEL_CELL_STATES = ("value", "unknown", "not_applicable", "not_found_in_inspected_scope")
 WRAPPER_KEYS: dict[str, str] = {}
 COMMON_REF_PREFIX = "common.schema.json#/$defs/"
@@ -162,7 +162,7 @@ OUTPUT_ALIASES: dict[str, dict[str, dict[str, str]]] = {
 
 
 def normalise_output(task_type: str, draft: str | dict[str, Any]) -> tuple[str | dict[str, Any], list[dict[str, str]]]:
-    """Rename the fields of OUTPUT_ALIASES and lower-case claim labels, and say what changed (D86).
+    """Rename the fields of OUTPUT_ALIASES and lower-case claim labels, and say what changed.
 
     Names only: a value, a missing field or an unknown identifier is left for validation. A target already present
     is not overwritten. Text that is not a JSON object is returned as it came.
@@ -569,7 +569,7 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
     if ("followup_search_context" in step_input) != (step_input["task_type"] == "followup_search_query"):
         issues.append(Issue("followup_search_context_mismatch", "/followup_search_context", step_input["task_type"]))
     if step_input["task_type"] == "followup_search_query" and (step_input["sources"] or step_input["passages"]):
-        # The query reads the follow-up and the research's context card only, never a record (D92).
+        # The query reads the follow-up and the research's context card only, never a record.
         issues.append(Issue("followup_search_query_no_records", "/sources", "the query reads only its context"))
     screening_target = step_input.get("screening_target")
     if (screening_target is not None) != (step_input["task_type"] in SCREENING_TARGET_TASKS):
@@ -633,7 +633,8 @@ def check_step_input(step_input: dict[str, Any]) -> list[Issue]:
                 issues.append(Issue("report_cell_column_not_allowed", f"/report_target/cells/{i}/column_id",
                                     cell["column_id"]))
             for j, evidence in enumerate(cell["evidence"]):
-                # A quote-only cell's page is not supplied: its id is listed, not citable, so only the quote is evidence (D58).
+                # A quote-only cell's page is not supplied: its id is listed, not citable, so only the quote is
+                # evidence.
                 if evidence["passage_id"] not in allow["passage_ids"] and evidence["passage_id"] not in allow.get("cell_evidence_passage_ids", []):
                     issues.append(Issue("report_cell_passage_not_allowed",
                                         f"/report_target/cells/{i}/evidence/{j}/passage_id",
@@ -966,7 +967,7 @@ def _check_candidate_target(step_input: dict[str, Any], records: dict[str, set[s
 
 
 def _check_citation_check_target(step_input: dict[str, Any], records: dict[str, set[str]]) -> list[Issue]:
-    """A citation check reads one work: its one source, passages of that source only, and nothing else (D99)."""
+    """A citation check reads one work: its one source, passages of that source only, and nothing else."""
     issues: list[Issue] = []
     task = step_input["task_type"]
     checking = task in CITATION_CHECK_TASKS
@@ -1163,7 +1164,7 @@ def _semantic_checks(step_input: dict[str, Any], output_type: str, result: dict[
 
 MATH = re.compile(r"\$\$.+?\$\$|\$[^$\n]+\$", re.DOTALL)
 # A command, an escaped brace or script mark, a braced sub/superscript, or the \( \[ delimiters the UI does not render
-# (D61). A regex escape such as \bword or a Windows path also matches; neither occurred in the measured outputs.
+#. A regex escape such as \bword or a Windows path also matches; neither occurred in the measured outputs.
 LATEX_OUTSIDE_MATH = re.compile(r"\\(?:[A-Za-z]{2,}|[_^{}(\[])|[_^]\{")
 
 # Shared by section validation and final assembly; physical band/energy gaps are exempt.
@@ -1383,7 +1384,7 @@ def _rests_only_on_ocr(passages: list[dict[str, Any] | None]) -> bool:
 
 def _check_math(step_input: dict[str, Any], draft: dict[str, Any], report: ValidationReport,
                 fields: list[tuple[str, str]] | None = None) -> None:
-    """Block malformed report math; ordinary answers and extraction-quality findings retain warnings (D51)."""
+    """Block malformed report math; ordinary answers and extraction-quality findings retain warnings."""
     if fields is None:
         fields = [(f"/claims/{i}/text", c["text"]) for i, c in enumerate(draft["claims"])]
         fields += [(f"/limitations/{i}/text", lim["text"]) for i, lim in enumerate(draft["limitations"])]
@@ -1408,7 +1409,8 @@ def _check_math(step_input: dict[str, Any], draft: dict[str, Any], report: Valid
         if has_number_or_math(claim["text"]) and _rests_only_on_ocr([passages.get(pid) for pid in claim["passage_ids"]]):
             report.warnings.append(Issue("ocr_numbers_unchecked", f"/claims/{i}/text",
                                          "the claim states a number or equation read only from OCR text; check it against the PDF page"))
-    # D40 (r3), D113: a quote that overlaps an equation read from the page image (Mathpix or the model) rests on that reading, not the PDF's text.
+    # A quote that overlaps an equation read from the page image (Mathpix or the model) rests on that reading, not the
+    # PDF's text.
     for j, anchor in enumerate(draft.get("citation_anchors") or []):
         passage = passages.get(anchor.get("passage_id"))
         if passage is None or passage.get("text_source") != "equation_ocr" or not isinstance(anchor.get("quote"), str):
@@ -1425,7 +1427,7 @@ def _check_math(step_input: dict[str, Any], draft: dict[str, Any], report: Valid
 def _check_phrasing(step_input: dict[str, Any], draft: dict[str, Any], report: ValidationReport) -> None:
     """Check own-work wording and plural-source wording in the answer language.
 
-    Prose is no longer checked against phrasebank frames (D43). Reports block both findings; answers warn.
+    Prose is no longer checked against phrasebank frames. Reports block both findings; answers warn.
     """
     is_report = step_input["task_type"] == "report_section"
     requested_language = wording.question_language(step_input) if is_report else draft["answer_language"]
@@ -1462,7 +1464,7 @@ def _check_phrasing(step_input: dict[str, Any], draft: dict[str, Any], report: V
 
 
 def _check_report_writing(step_input: dict[str, Any], draft: dict[str, Any], report: ValidationReport) -> None:
-    """D51's report writing rules, as warnings: a claim that keeps a long run of its anchor's words, and a claim naming
+    """The report writing rules, as warnings: a claim that keeps a long run of its anchor's words, and a claim naming
     an experiment or trial while every text it cites describes a simulation and names none."""
     language = wording.checked_language(wording.question_language(step_input)) or "en"
     passages = {p["passage_id"]: p.get("text") or "" for p in step_input["passages"]}
@@ -1678,7 +1680,7 @@ CITATION_CHECK_MAX_QUOTES = 8  # all parts together; the schema caps parts (4) a
 
 def _check_citation_check(step_input: dict[str, Any], allow: dict[str, set[str]],
                           draft: dict[str, Any], report: ValidationReport) -> None:
-    """Coverage, part spans and quote location for one citing sentence (D99); never whether a passage supports it.
+    """Coverage, part spans and quote location for one citing sentence; never whether a passage supports it.
 
     The rules are structural and fail closed: a missed positive is acceptable, a wrong one is not. Each part is a
     verbatim span of the sentence, found by position in sentence order, and the spans together leave out no word token
@@ -1785,7 +1787,7 @@ def citation_check_anchors(step_input: dict[str, Any], draft: dict[str, Any]) ->
 
 
 def _check_cells(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any], report: ValidationReport) -> None:
-    """Every target column is answered once, in its format, from quoted passages of the one source given (D27, D37)."""
+    """Every target column is answered once, in its format, from quoted passages of the one source given."""
     columns = {c["column_id"]: c for c in step_input["extraction_target"]["columns"]}
     passage_text = {p["passage_id"]: p["text"] for p in step_input["passages"]}
     seen: set[str] = set()
@@ -1813,7 +1815,7 @@ def _check_cells(step_input: dict[str, Any], allow: dict[str, set[str]], draft: 
                                 " or remove this evidence item if that passage does not support the answer")
                 report.issues.append(Issue("anchor_not_in_passage", f"{path}/evidence/{j}/quote", message))
             elif (item["passage_id"], anchor.text) in located:
-                # Several spans of one passage are separate evidence (D43); the same located words twice add nothing.
+                # Several spans of one passage are separate evidence; the same located words twice add nothing.
                 report.issues.append(Issue("duplicate_evidence_quote", f"{path}/evidence/{j}/quote",
                                            f"{column_id}:{item['passage_id']}: this quote repeats an earlier quote of the same passage"))
             else:
@@ -1839,7 +1841,7 @@ def _check_cells(step_input: dict[str, Any], allow: dict[str, set[str]], draft: 
 
 
 def _passages_quoting(step_input: dict[str, Any], cited: str, quote: str, limit: int = 3) -> list[str]:
-    """Other passages of the cited passage's source version in this StepInput that contain the quote (D43).
+    """Other passages of the cited passage's source version in this StepInput that contain the quote.
 
     Named in the repair issue only; the evidence item still cites the passage the model gave, so moving it stays a model repair.
     """
@@ -1875,7 +1877,7 @@ LOCATOR_IN_TEXT = re.compile(
     re.IGNORECASE,
 )
 
-# D131: an answer names a source by its handle in double braces; code writes its authors, year and title from the
+# An answer names a source by its handle in double braces; code writes its authors, year and title from the
 # source record when the answer is saved, so names and titles never come from model prose.
 SOURCE_MENTION = re.compile(r"\{\{\s*(srv_[A-Za-z0-9]+)\s*\}\}")
 AUTHOR_IN_TEXT = re.compile(r"\bet\s+al\b", re.IGNORECASE)
@@ -1913,7 +1915,7 @@ def _check_source_mentions(step_input: dict[str, Any], allow: dict[str, set[str]
                                        f"the text repeats the title {title!r}; name the source only by its handle "
                                        "in double braces, and the application writes its title"))
 
-ANCHOR_MIN_RATIO = 0.9  # provisional; see D24
+ANCHOR_MIN_RATIO = 0.9  # provisional
 
 
 @dataclass
@@ -1961,7 +1963,7 @@ def locate_anchor(quote: str, passage: str) -> AnchorMatch | None:
     return AnchorMatch("fuzzy", passage[spans[start][0]:spans[end - 1][1]], round(ratio, 3))
 
 
-# Verify Citations (D99, review round 1): structural rules a citation check's parts and quotes must meet. They fail
+# Verify Citations (review round 1): structural rules a citation check's parts and quotes must meet. They fail
 # closed: a missed positive is acceptable, a wrong one is not. `locate_anchor` ignores punctuation and case and
 # tolerates near matches, so "significantly improves" is found in "does not significantly improve", "p > 5" in
 # "p >= 5" and "5 mW" in "5 MW"; these rules read the passage's own tokens around what it found.
@@ -2033,7 +2035,7 @@ def _token_key(token: CheckToken) -> str:
     return unicodedata.normalize("NFKC", token.text).casefold() if token.kind == "word" else token.text
 
 
-# V5 pilot (D105): three phrases are no negation. DEIXIS's own placeholder for PDF symbols it could not read (the words
+# V5 pilot: three phrases are no negation. DEIXIS's own placeholder for PDF symbols it could not read (the words
 # are the app's, never the author's: `documents/pdf.UNREADABLE`); `not` right before `only` (`not only X` states X); and
 # `without` right after `with and` or `with or` (`with and without X` states both). A phrase counts as no negation only
 # when every one of its tokens is in the token list read, so a quote that starts at `only` of `not only`, or at
@@ -2076,7 +2078,7 @@ CLAIM_MATH = re.compile(r"\$[^$]+\$")
 
 
 def claim_tokens(text: str) -> list[CheckToken]:
-    """The tokens of a claim or a part: a `$…$` span (math the claim keeps verbatim, D105) is one opaque token that must
+    """The tokens of a claim or a part: a `$…$` span (math the claim keeps verbatim) is one opaque token that must
     be copied exactly, as written; the rest is read by `check_tokens`."""
     out, at = [], 0
     for match in CLAIM_MATH.finditer(text):
@@ -2172,7 +2174,7 @@ def quote_meaning(quote: str, passage: str, anchor: AnchorMatch, part_text: str 
     after (dots, commas and line breaks ignored) must hold no negation outside it, the quote and the span must agree on
     negations, and the quote must agree with its part on whether it is negated. A span the passage holds more than
     once is read at each place, and any one refusal refuses it. The second item names what was found and where (the
-    negation word, the character that touches the span), so the repair can act on it (V5 pilot, D105)."""
+    negation word, the character that touches the span), so the repair can act on it (V5 pilot)."""
     q_tokens = _dehyphenated(quote, check_tokens(quote))
     p_tokens = check_tokens(passage)
     if not q_tokens:
@@ -2296,7 +2298,7 @@ def _check_title(step_input: dict[str, Any], draft: dict[str, Any], report: Vali
 
 
 def _check_question_translation(draft: dict[str, Any], report: ValidationReport) -> None:
-    """The sentence must read as English by the same rule the search words are read with (D149): code picks the words
+    """The sentence must read as English by the same rule the search words are read with: code picks the words
     from it, and a sentence it reads as another language would leave nothing to pick."""
     if not english_question.is_english(draft["english_question"]):
         report.issues.append(Issue("translation_not_english", "/english_question", "the sentence does not read as English"))
@@ -2349,7 +2351,7 @@ def _check_criterion_proposal(step_input: dict[str, Any], draft: dict[str, Any],
         report.issues.append(Issue("duplicate_criterion_part", "/parts", f"{name!r} names more than one part"))
     for index, part in enumerate(draft["parts"]):
         phrases = part["phrases"]
-        # A phrase written twice in one part is one phrase (D112): the consensus counts phrases as sets, so a repeat
+        # A phrase written twice in one part is one phrase: the consensus counts phrases as sets, so a repeat
         # changes nothing, and voiding a whole proposal for it left run 2026-10-20 without a criterion.
         distinct = len({normalize_phrase(phrase) or phrase for phrase in phrases})
         if not least <= distinct <= most:
@@ -2388,16 +2390,16 @@ def _check_question_elements(step_input: dict[str, Any], draft: dict[str, Any], 
                                    f"population and comparator both point at {part!r}"))
 
 
-SEARCH_QUERY_MAX_TERMS = 8  # chosen terms of both blocks together (D154; 6 under D92), at most 4 a block by schema
-OTHER_QUERY_MAX_TERMS = 6  # the kill-search and follow-up queries keep D92's six (their own method texts)
+SEARCH_QUERY_MAX_TERMS = 8  # chosen terms of both blocks together (6 before), at most 4 a block by schema
+OTHER_QUERY_MAX_TERMS = 6  # the kill-search and follow-up queries keep their six (their own method texts)
 SEARCH_QUERY_MAX_WORDS = 4
 # Characters and operator words that belong to a query, not to a term; code writes every operator itself.
 QUERY_SYNTAX = re.compile(r'["()\[\]{}*?:]|\b(?:AND|OR|NOT)\b')
 
 
 def _check_search_query(draft: dict[str, Any], report: ValidationReport, max_terms: int = SEARCH_QUERY_MAX_TERMS) -> None:
-    """The bounds code enforces on a model-written query (D92): at most `max_terms` chosen terms (eight for the
-    discovery query and a person's plan since D154, six for the others), both blocks filled, no term twice, and no
+    """The bounds code enforces on a model-written query: at most `max_terms` chosen terms (eight for the
+    discovery query and a person's plan since the query grew to eight, six for the others), both blocks filled, no term twice, and no
     term that carries query syntax or runs past four words. Each is an error, and the step gets one repair. What a
     term finds is not checked here: that is a count, read by code after the answer is accepted."""
     chosen = [(block, index, term["term"]) for block in ("setting", "task")
@@ -2446,7 +2448,7 @@ USER_PLAN_REQUIRED_PROVIDER = "openalex"  # routing, semantic page, keyword page
 def check_user_search_plan(plan: Any) -> ValidationReport:
     """A search plan a person saved (UI parity S23a, F18), checked before it becomes a scope revision.
 
-    The schema, then the same term rules a model-written query is held to (`_check_search_query`, D92), the
+    The schema, then the same term rules a model-written query is held to (`_check_search_query`), the
     criterion's bounds, and OpenAlex among the providers. Every finding is an error and nothing is repaired: the
     plan is refused with the reasons and the person corrects it.
     """
@@ -2779,8 +2781,8 @@ def report_section_repair_issues(failed: Any, repaired: Any, restore: bool = Fal
                                  max_words: int | None = None) -> list[Issue]:
     """Check key coverage and kept insufficient-evidence contexts, including readable parts of invalid drafts. With
     `restore`, an issue's message also carries the dropped claim or entry, for a further repair whose failed output
-    lacks it (D65). `max_words` is the section's word budget, which a failed draft over it lets a repair shorten
-    reasons to meet (D87)."""
+    lacks it. `max_words` is the section's word budget, which a failed draft over it lets a repair shorten
+    reasons to meet."""
     def obj(value: Any) -> dict[str, Any]:
         if isinstance(value, str):
             try:
@@ -2810,7 +2812,7 @@ def report_section_repair_issues(failed: Any, repaired: Any, restore: bool = Fal
     # Old entries are matched one-to-one to repaired ones (each repaired entry keeps at most one). A repaired entry keeps
     # an old one with the same context and the same reason; or with a non-empty reason without a banned word when the
     # old reason holds a banned word, or when the failed draft was over its word budget and the new reason is shorter:
-    # the validator rejects the old text, so an exact-reason rule could never pass (D87).
+    # the validator rejects the old text, so an exact-reason rule could never pass.
     over_budget = max_words is not None and report_section_words(failed) > max_words
 
     def keeps(old: dict[str, Any], new: dict[str, Any]) -> bool:
@@ -3013,7 +3015,7 @@ def _check_followup(allow: dict[str, set[str]], step_input: dict[str, Any], draf
     _check_math(step_input, draft, report, fields=fields)
 
 
-MAX_WORK_GROUPS = 6  # distinct groups one follow-up answer may put works in (D66)
+MAX_WORK_GROUPS = 6  # distinct groups one follow-up answer may put works in
 
 
 def work_group_key(label: str) -> str:
@@ -3023,7 +3025,7 @@ def work_group_key(label: str) -> str:
 
 def _check_work_classifications(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any],
                                 report: ValidationReport) -> int:
-    """A follow-up's per-work classification (D66): each record names one work by a passage of it; a classified
+    """A follow-up's per-work classification: each record names one work by a passage of it; a classified
     record puts it in groups, each membership with a located anchor in a passage of the same work (any of its
     versions); the other statuses carry no membership and a note. One membership per group and record, a non-empty
     group label, at most MAX_WORK_GROUPS groups. Two records of one work (its versions, say) are not refused: the
@@ -3088,7 +3090,7 @@ def _check_work_classifications(step_input: dict[str, Any], allow: dict[str, set
 
 def _check_cited_claims(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any],
                         report: ValidationReport) -> None:
-    """Claim labels, allowlisted passages, D247's one-source rule and one located anchor per claim-passage pair."""
+    """Claim labels, allowlisted passages, the one-source rule and one located anchor per claim-passage pair."""
     labels: set[str] = set()
     cited_by_claim: dict[str, set[str]] = {}
     source_of = {p["passage_id"]: p["source_id"] for p in step_input["passages"]}
@@ -3109,7 +3111,7 @@ def _check_cited_claims(step_input: dict[str, Any], allow: dict[str, set[str]], 
         if len(set(claim["passage_ids"])) != len(claim["passage_ids"]):
             report.issues.append(Issue("duplicate_passage_id", f"/claims/{i}/passage_ids", claim["claim_label"]))
         cited_by_claim[claim["claim_label"]] = set(claim["passage_ids"])
-        # D247: a source_stated claim reports one source; merged claims were mostly only partly supported.
+        # A source_stated claim reports one source; merged claims were mostly only partly supported.
         sources = {source_of[pid] for pid in claim["passage_ids"] if pid in source_of}
         if claim["support_type"] == "source_stated" and len(sources) > 1:
             report.issues.append(Issue("source_stated_several_sources", f"/claims/{i}/passage_ids",
@@ -3117,7 +3119,7 @@ def _check_cited_claims(step_input: dict[str, Any], allow: dict[str, set[str]], 
                                        "claim per source, each citing only that source's passages"))
 
     # A published citation must resolve to source-owned text so the evidence panel can show the exact highlighted
-    # span (D27). D244 may prune anchor-only defects after validation; all other defects require bounded repair.
+    # span. Salvage may prune anchor-only defects after validation; all other defects require bounded repair.
     passages = {p["passage_id"]: p for p in step_input["passages"]}
     required_anchors = {
         (claim["claim_label"], pid)
@@ -3243,7 +3245,7 @@ REVIEW_OUTPUT_ID_FIELDS = (
 
 
 def review_citation_handles(step_input: dict[str, Any]) -> dict[str, str]:
-    """Only passages, sources and cells are D12 handles; target refs remain local labels."""
+    """Only passages, sources and cells are handles; target refs remain local labels."""
     handles: dict[str, str] = {}
     for rows, field, prefix in ((step_input["passages"], "passage_id", "psg_P"),
                                 (step_input["sources"], "source_id", "srv_S"),
@@ -3402,7 +3404,7 @@ def with_citation_handles(step_input: dict[str, Any]) -> dict[str, Any]:
         target["source_id"] = handles.get(target["source_id"], target["source_id"])
         for column in target["columns"]:
             column["column_id"] = handles[column["column_id"]]
-        for item in target.get("earlier_issues") or []:  # a retry names its columns as the model sees them (D68)
+        for item in target.get("earlier_issues") or []:  # a retry names its columns as the model sees them
             item["column_id"] = handles.get(item["column_id"], item["column_id"])
     if target := shown.get("adjudication_target"):
         target["source_id"] = handles.get(target["source_id"], target["source_id"])
@@ -3454,7 +3456,7 @@ def name_sources_in_prose(step_input: dict[str, Any], data: dict[str, Any]) -> d
     return data
 
 
-# The evidence ledger (D80): `excluded_sources` says why each given source the answer does not cite is left out. It is
+# The evidence ledger: `excluded_sources` says why each given source the answer does not cite is left out. It is
 # split off before the answer is validated and checked only on the published answer, so it never blocks an answer.
 LEDGER_ID_FIELDS = ("source_id", "passage_id", "same_as_source_id")
 LEDGER_QUOTE_REASONS = frozenset({"same_finding_as_cited", "different_conditions", "claim_limit"})
@@ -3599,11 +3601,11 @@ SEVERAL_SOURCES = "source_stated_several_sources"
 
 
 def resplit_labels(issues: list[dict[str, Any]], draft: Any, step_input: dict[str, Any]) -> list[str] | None:
-    """D249: labels of the claims to split when the answer is still invalid only on D247's several-sources rule.
+    """Labels of the claims to split when the answer is still invalid only on the several-sources rule.
 
-    Every remaining blocker must be that rule or an anchor defect D244 salvage handles; any other issue code, or no
+    Every remaining blocker must be that rule or an anchor defect salvage handles; any other issue code, or no
     several-sources claim at all, gives None and the draft is stored unverified as before. `draft` is the failed output
-    with its handles resolved; like D244, an anchor naming a passage outside the StepInput allowlist is never repaired.
+    with its handles resolved; as in salvage, an anchor naming a passage outside the StepInput allowlist is never repaired.
     """
     codes = {issue.get("code") for issue in issues}
     if SEVERAL_SOURCES not in codes or not codes <= ANCHOR_SALVAGE_CODES | {SEVERAL_SOURCES}:
@@ -3619,7 +3621,7 @@ INFERENCE_CAP_MIN_CLAIMS = 4
 
 
 def inference_cap_labels(answer: Any) -> list[str] | None:
-    """D260: labels of the analyst_inference claims of a valid answer when they are more than half of its claims.
+    """Labels of the analyst_inference claims of a valid answer when they are more than half of its claims.
 
     Answers with fewer than INFERENCE_CAP_MIN_CLAIMS claims are never capped.
     """
@@ -3631,7 +3633,7 @@ def inference_cap_labels(answer: Any) -> list[str] | None:
 
 
 def over_inference_share(answer: dict[str, Any]) -> bool:
-    """D260: more than half of the answer's claims are analyst_inference (any claim count)."""
+    """More than half of the answer's claims are analyst_inference (any claim count)."""
     claims = answer.get("claims") or []
     return 2 * sum(1 for c in claims if c.get("support_type") == "analyst_inference") > len(claims)
 
@@ -3640,7 +3642,7 @@ COVERAGE_KEPT_CLAIM_FIELDS = ("text", "support_type", "section")
 
 
 def coverage_changed_path(first: dict[str, Any], rewrite: dict[str, Any], cited: set[str]) -> str | None:
-    """D83: the first path of the accepted answer that its ledger coverage rewrite does not keep, or None.
+    """The first path of the accepted answer that its ledger coverage rewrite does not keep, or None.
 
     Both answers are resolved results (record IDs). Every first claim must be in the rewrite with the same label, text,
     support type, section, passages and anchor quotes (passages and anchors as sets), in the same relative order; every
@@ -3673,10 +3675,10 @@ def coverage_changed_path(first: dict[str, Any], rewrite: dict[str, Any], cited:
 
 
 def answer_with_handles(step_input: dict[str, Any], answer: dict[str, Any]) -> str:
-    """D260: an accepted answer as the model would write it, with passage IDs back in their citation handles."""
+    """An accepted answer as the model would write it, with passage IDs back in their citation handles."""
     handles = citation_handles(step_input)
     shown = copy.deepcopy(answer)
-    mentions = shown.pop("mention_texts", None) or {}  # D131: the text as the model wrote it, before names were filled
+    mentions = shown.pop("mention_texts", None) or {}  # The text as the model wrote it, before names were filled
     for claim in shown.get("claims", []):
         claim["passage_ids"] = [handles.get(pid, pid) for pid in claim.get("passage_ids", [])]
         text = mentions.get(claim.get("claim_label"), claim.get("text"))
@@ -3694,9 +3696,9 @@ def answer_with_handles(step_input: dict[str, Any], answer: dict[str, Any]) -> s
 
 
 def relabel_split_claims(draft: Any, labels: list[str]) -> tuple[Any, dict[str, list[str]]]:
-    """D259: give the parts of a split claim that kept the offending label new labels, before validation.
+    """Give the parts of a split claim that kept the offending label new labels, before validation.
 
-    Only a label the extra repair named (D249) is touched, and only when its claims cite pairwise disjoint passages,
+    Only a label the extra repair named is touched, and only when its claims cite pairwise disjoint passages,
     so every anchor of that label belongs to exactly the claim that cites its passage. The first claim keeps the label;
     each later one gets the next unused number. Claim text, passages, quotes and order are unchanged. Anything else
     (an anchor whose passage none or several of them cite, no free number) leaves the draft as it is for the validator.
@@ -3749,7 +3751,7 @@ def relabel_split_claims(draft: Any, labels: list[str]) -> tuple[Any, dict[str, 
 
 
 def salvage_answer_draft(step_input: dict[str, Any], draft: dict[str, Any]) -> tuple[dict[str, Any], list[Issue]]:
-    """D244: prune only anchor defects; require a revalidated answer with at least one claim."""
+    """Prune only anchor defects; require a revalidated answer with at least one claim."""
     if step_input["task_type"] != "grounded_answer":
         return draft, []
     report = validate_model_output(step_input, draft)
@@ -3941,7 +3943,7 @@ def cell_links(step_input: dict[str, Any], cell: dict[str, Any]) -> list[dict[st
         if passage is None:
             continue
         anchor = locate_anchor(item["quote"], passage["text"])
-        key = (passage["passage_id"], anchor.text if anchor else None)  # one link per located span of a passage (D43)
+        key = (passage["passage_id"], anchor.text if anchor else None)  # one link per located span of a passage
         links.setdefault(key, {"passage_id": passage["passage_id"], "source_version_id": passage["source_id"],
                                "anchor_text": anchor.text if anchor else None, "anchor_match": anchor.kind if anchor else None})
     return list(links.values())
@@ -3963,7 +3965,7 @@ def claim_assessment_evidence(step_input: dict[str, Any], item: dict[str, Any]) 
             "passage_id": None if abstract else passage["passage_id"], "quote": anchor.text}
 
 
-# Problems of one cell answer that leave the other answers of the same cell extraction output usable (D68).
+# Problems of one cell answer that leave the other answers of the same cell extraction output usable.
 # Anything else (a schema error, an envelope mismatch, an unknown or twice-answered column) fails the whole output.
 CELL_SALVAGE_HINTS = {
     "anchor_not_in_passage": "A quote was not found word for word in the passage it cites. Copy the words exactly from"

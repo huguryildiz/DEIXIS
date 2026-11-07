@@ -68,7 +68,7 @@ const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
 const RECHECK_KINDS = new Set(['cell_recheck', 'table_column_recheck'])
 const TRANSCRIPT_KINDS = new Set<RunKind>(['discovery', 'pdf_collection', 'fulltext_fetch', 'fulltext_adjudication', 'pdf_ocr', 'answer', 'report', 'review'])
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
-// Source details opened from a left-out work of the answer's evidence ledger (D80): the mark is the quote the model gave
+// Source details opened from a left-out work of the answer's evidence ledger: the mark is the quote the model gave
 // for leaving the work out, never cited text; a row without a quote opens the work's first given passage, unmarked.
 // Source details opened from a statement check's located quote: the words marked are the ones the backend located.
 const statementSheetLabels = () => ({ heading: t('Located quote'), mark: t('Words the backend located for the statement'),
@@ -139,7 +139,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [pdfFinding, setPdfFinding] = useState<string[]>([])
   const [attachTarget, setAttachTarget] = useState<string | null>(null)
   const [removeTarget, setRemoveTarget] = useState<{ source: Source; assetId: string } | null>(null)
-  // Replacing a PDF: the file is chosen first, then the confirmation names what still cites the old file (D45).
+  // Replacing a PDF: the file is chosen first, then the confirmation names what still cites the old file.
   const [replacePick, setReplacePick] = useState<{ source: Source; assetId: string } | null>(null)
   const [replaceTarget, setReplaceTarget] = useState<{ source: Source; assetId: string; file: File; impact: AssetImpact } | null>(null)
   const [openReportId, setOpenReportId] = useState<string | null>(null)
@@ -160,7 +160,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const [answerReviewRevision, setAnswerReviewRevision] = useState(0)
   const answerReview: AnswerReviewControl = { surface: answerReviews, revision: answerReviewRevision, target: (answerId, version) => setAnswerReviewTarget({ id: answerId, version }) }
   const [openEvidenceReportId, setOpenEvidenceReportId] = useState<string | null>(null)
-  // Sources chosen for a table or for removal (D50). Kept only while the Sources tab is open.
+  // Sources chosen for a table or for removal. Kept only while the Sources tab is open.
   const [picked, setPicked] = useState<string[]>([])
   // Boxes ticked on the PDF list but not saved yet; null shows the PDFs the research stored.
   const [seedPick, setSeedPick] = useState<string[] | null>(null)
@@ -296,7 +296,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     return () => { stopped = true; stop(); clearTimeout(timer) }
   }, [id, loaded, load, onChanged])
 
-  // The local Tesseract is asked once a PDF has pages without text, so its rows can offer OCR or say why it is off (D51).
+  // The local Tesseract is asked once a PDF has pages without text, so its rows can offer OCR or say why it is off.
   const needsOcr = Boolean(view?.sources.some(s => s.access.assets.some(a => a.ocr?.pages_without_text && a.extraction_status !== 'succeeded')))
   useEffect(() => {
     if (!needsOcr) return
@@ -425,12 +425,12 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     return act(() => api.startRun(id, 'discovery', crypto.randomUUID()))
   }
   // A new choice goes in candidate order; refreshing the current text re-sends the stored seeds in their stored order,
-  // removed ones included, so the backend keeps the order and records any it can no longer use (D3).
+  // removed ones included, so the backend keeps the order and records any it can no longer use.
   const saveSeeds = async (ids: string[], keepOrder = false) => {
     const orderedIds = keepOrder ? ids : seedCandidates.map(c => c.source_version_id).filter(sourceId => ids.includes(sourceId))
     if (await act(() => api.setSeeds(id, { source_version_ids: orderedIds }, view.research.version), t('PDFs selected for the next search.'))) setSeedPick(null)
   }
-  // The PDFs that guide the search and their choice (D3), shown in the Search plan panel (§2.2, S23b): what each stored PDF
+  // The PDFs that guide the search and their choice, shown in the Search plan panel (§2.2, S23b): what each stored PDF
   // was used for, the PDFs the backend offers with the saved ones ticked, accepting a changed PDF's current text, and the notes.
   const seedChoice = view.scope.source_scope === 'attached_and_academic' ? <>
     {view.scope.seed_status === 'ready' || (view.scope.seed_status === 'stale' && view.scope.seeds.length)
@@ -499,7 +499,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     if (!removeTarget) return
     const { source, assetId } = removeTarget
     setRemoveTarget(null)
-    // Undo puts the same file back while no other PDF is in use for the source (D50).
+    // Undo puts the same file back while no other PDF is in use for the source.
     void act(() => api.removeAsset(id, source.source_version_id, assetId), t('PDF removed from the source.'),
       { label: t('Undo'), run: () => { void act(() => api.restoreAsset(id, source.source_version_id, assetId), t('PDF restored to the source.')) } })
   }
@@ -547,7 +547,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     else toast('success', added)
   })
 
-  // A record's selection is its work's; another version follows it (D48).
+  // A record's selection is its work's; another version follows it.
   const workState = (source: Source) => (view.sources.find(s => s.work_id === source.work_id && s.version_role === 'record') ?? source).selection.state
   const inSourceOrder = (ids: string[]) => view.sources.filter(s => ids.includes(s.source_version_id))
   const askRemoval = async (ids: string[]) => {
@@ -623,7 +623,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   }
   // The model names the research (at most 15 words); the new title arrives with the typewriter transition.
   const suggestTitle = () => { endTitleEdit(); void startTitle() }
-  // The stored title is the question cut to 160 characters until a valid answer names the research (D36); until then show it whole.
+  // The stored title is the question cut to 160 characters until a valid answer names the research; until then show
+  // it whole.
   const heading = researchHeading(view)
   // Each count is the way into the evidence it describes; the selection filter lives here so a count can set it.
   const showSources = (filter: StateFilter) => { setSourceFocus(null); setSourceFilter(filter); openPanel('sources') }
@@ -640,7 +641,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // Table cards sit under the report card, or at the end of the conversation before the first answer.
   const tableCards = tables && tables.length > 0 && <div className="table-artifacts">{tables.map(table => <TableCard key={table.id} table={table} heading={heading} onOpen={() => openTable(table.id)} />)}</div>
   const openPassage = (passageId: string, highlightText: string | null) => setPassageTarget({ passageId, highlightText, fromCitation: true })
-  // An answer's citation expects a mark; a left-out work of its evidence ledger (D80) opens as the ledger's quote, and
+  // An answer's citation expects a mark; a left-out work of its evidence ledger opens as the ledger's quote, and
   // expects a mark only when the backend located one.
   const openAnswerPassage = (passageId: string, highlightText: string | null, context?: 'ledger') => setPassageTarget(context === 'ledger'
     ? { passageId, highlightText, fromCitation: highlightText !== null, ledger: true } : { passageId, highlightText, fromCitation: true })
@@ -676,7 +677,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         research.revision_withdrawal.allowed ? { label: t('Undo'), run: () => { void withdrawRevision(research.current_scope_revision, research.version) } } : undefined)
     }
   }
-  // Withdraw the current question revision (D67): allowed while nothing but its title run and a person's selection
+  // Withdraw the current question revision: allowed while nothing but its title run and a person's selection
   // decisions was made under it; the research goes back to the revision it was opened from and nothing is deleted.
   const withdrawRevision = async (revision: number, version: number) => {
     await act(() => api.withdrawScope(id, revision, version), t('Revision {n} withdrawn. The research is back on the question before it.', { n: revision }))
@@ -685,7 +686,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     const origin = document.activeElement
     void act(() => api.controlRun(target.id, action)).then(ok => { if (ok && action === 'resume') toRunStatus(target.id, origin) })
   }
-  // A follow-up question (R30, D11): one `followup_answer` run answers it from the passages this research holds; no search
+  // A follow-up question (R30): one `followup_answer` run answers it from the passages this research holds; no search
   // starts. One request at a time; the turn the server returns is shown at once and the list is read again on its events.
   // The question revision on screen goes with it, so a newer revision saved elsewhere answers 409 instead of asking under it.
   const anyActive = view.runs.some(r => ACTIVE.has(r.status))
@@ -702,7 +703,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       return false
     } finally { setAsking(false) }
   }
-  // A turn's search for new works (D92): one idempotency key per press; a refusal says why and the list is read again.
+  // A turn's search for new works: one idempotency key per press; a refusal says why and the list is read again.
   const searchFollowup = async (turnId: string) => {
     if (asking) return
     setAsking(true)
@@ -770,7 +771,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       await api.startRun(id, 'discovery', crypto.randomUUID())
     }, t('Question revised. The new revision searches.'))
   }
-  // Move to Trash (R9) leaves the page; Undo restores the research from the Trash (D50) and opens it again.
+  // Move to Trash (R9) leaves the page; Undo restores the research from the Trash and opens it again.
   const moveToTrash = async () => {
     setBusy(true)
     try {
@@ -858,7 +859,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
             {hasAcademic && view.search_runs.length > 0 && <DropdownMenuItem className="research-menu-placement" disabled={busy || active || !seedSearchReady} onClick={() => { void startDiscovery() }}><Search size={15} aria-hidden /><span>{t('Search again')}</span></DropdownMenuItem>}
             {/* The Search plan panel (S23b) from anywhere: its plan step exists only once the current revision searched. */}
             {hasAcademic && <DropdownMenuItem className="research-menu-placement" onClick={() => { rowChosen.current = true; openPanel('plan', { opener: moreButton.current }) }}><PencilLine size={15} aria-hidden /><span>{t('Search plan')}</span></DropdownMenuItem>}
-            {/* The citation map (D42): the works, their reference links and the often-cited works outside the research. */}
+            {/* The citation map: the works, their reference links and the often-cited works outside the research. */}
             <DropdownMenuItem className="research-menu-placement" onClick={() => { rowChosen.current = true; openPanel('citemap', { opener: moreButton.current }) }}><Waypoints size={15} aria-hidden /><span>{t('Source citation map')}</span></DropdownMenuItem>
             {hasAcademic && <DropdownMenuItem className="research-menu-placement" onClick={() => { rowChosen.current = true; setSnowballSeed(null); openPanel('snowball', { opener: moreButton.current }) }}><GitFork size={15} aria-hidden /><span>{t('Citation snowballing…')}</span></DropdownMenuItem>}
             {answer && <DropdownMenuItem className="research-menu-placement" disabled={busy || active || !(included || answersWithoutInclude)} onClick={() => { void startAnswer() }}><Sparkles size={15} aria-hidden /><span>{t('Generate a new answer')}</span></DropdownMenuItem>}
@@ -892,7 +893,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <span title={t('Where DEIXIS looks for sources')}><ScopeIcon size={13} aria-hidden />{t(scopeLabels[view.scope.source_scope])}</span>
       <span title={t('How much searching and reading a run may do')}><EffortIcon size={13} aria-hidden />{t('{effort} depth', { effort: t(effortLabels[view.scope.effort]) })}</span>
     </div>
-    {/* With a search behind it, the counts read as one list from found down to cited (D132); otherwise the strip above. */}
+    {/* With a search behind it, the counts read as one list from found down to cited; otherwise the strip above. */}
     <AnswerBasis view={view} answer={answer} onSources={showSources} onAnswer={showAnswer} />
 
       <div className="research-thread">
@@ -942,7 +943,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         {view.scope.seed_status === 'stale' && <Notice tone="attention">{t('A selected PDF changed or was removed. Select the current PDFs again before searching.')}</Notice>}
       </div>}
       {/* Before the first answer, the included sources without a PDF are named and the panel that gets them is one click
-         away (D49); collecting, uploads and OCR live in that panel (UI parity S14, P40). */}
+         away; collecting, uploads and OCR live in that panel (UI parity S14, P40). */}
       {!answer && missingPdfs > 0 && !active && view.runs.some(r => r.kind === 'discovery' || r.kind === 'pdf_collection') &&
         <PdfSuggestCard works={[...includedReading(view).missing].sort(byRank).slice(0, 3)} total={missingPdfs}
           onOpen={svid => setPdfTarget({ assetId: null, sourceVersionId: svid, view: 'text' })} onUpload={opener => openPanel('pdfs', { opener })} />}
@@ -1023,7 +1024,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
         </div></div>
       {zoteroOpen && <ZoteroPanel busy={busy} onImport={importZotero} onClose={() => setZoteroOpen(false)} />}
       <EnglishQuestion researchId={id} view={view} busy={busy} onSaved={next => { setView(next); toast('success', t('English sentence saved for this question revision.')) }} />
-      {/* The first search's requests and each follow-up search's (D92, run_kind 'followup_search') are listed apart. */}
+      {/* The first search's requests and each follow-up search's (run_kind 'followup_search') are listed apart. */}
       {view.search_runs.length > 0 && (() => {
         const followupRuns = view.search_runs.filter(s => s.run_kind === 'followup_search')
         const firstRuns = view.search_runs.filter(s => s.run_kind !== 'followup_search')
@@ -1076,8 +1077,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
     <StackPanel name="activity" title={t('Activity')} icon={Clock}>
       <ActivityPanel researchId={id} eventCursor={view.last_event_id} events={events} />
     </StackPanel>
-    {/* The Search plan panel (P42, S23b; D12): the stored plan of the revision it names, edited and searched again. */}
-    {/* The citation map (D42): opened from the ⋯ menu and the Sources panel; a source's "Open source" stacks Source details on it. */}
+    {/* The Search plan panel (P42, S23b): the stored plan of the revision it names, edited and searched again. */}
+    {/* The citation map: opened from the ⋯ menu and the Sources panel; a source's "Open source" stacks Source details on it. */}
     <StackPanel name="citemap" title={t('Source citation map')} icon={Waypoints} className="citemap-panel-box">
       <CitationMap researchId={id} eventCursor={view.last_event_id} run={view.runs.find(r => r.kind === 'citation_map')}
         onOpenSource={svid => setPdfTarget({ assetId: null, sourceVersionId: svid, view: 'text' })} onChanged={async () => { await load(); onChanged() }}

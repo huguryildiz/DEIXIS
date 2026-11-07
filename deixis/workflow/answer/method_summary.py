@@ -38,7 +38,7 @@ def method_summary(store: Store, research_id: str, answer_id: str) -> dict[str, 
         return {
             "answer_id": answer_id, "scope_revision": revision,
             "search": _search(store, research_id, revision, answer["created_at"])
-            # The follow-up searches completed before this answer started (D92), from its start snapshot only; None when
+            # The follow-up searches completed before this answer started, from its start snapshot only; None when
             # the snapshot did not record them (an older answer), never read from today's runs.
             | {"followup_searches": (snapshot or {}).get("followup_searches")},
             "selection": _selection(store, research_id, answer, revision, snapshot),
@@ -55,7 +55,7 @@ def _start_snapshot(store: Store, answer: Any) -> dict[str, Any] | None:
 
 
 def start_counts(store: Store, research_id: str, revision: int) -> dict[str, int]:
-    """The Method box's reading counts over the rows stored now. The answer start snapshot stores them (D92, R3.5), so a
+    """The Method box's reading counts over the rows stored now. The answer start snapshot stores them (R3.5), so a
     later run or a work merge never changes an earlier answer's box; nothing recomputes them for an answer later."""
     conn = store.conn
 
@@ -112,7 +112,7 @@ def _selection(store: Store, research_id: str, answer: Any, revision: int,
     flow = (snapshot or {}).get("flow")
     body = ((_protocol(store, research_id, revision, until) or {}).get("body")) or {}
     approval = body.get("approval") or {}
-    # The counts the answer's start snapshot stored (D92, R3.5). An answer whose snapshot predates them gets None (not
+    # The counts the answer's start snapshot stored (R3.5). An answer whose snapshot predates them gets None (not
     # recorded): counting today's rows would let a later work merge change an old answer's box.
     counts = (snapshot or {}).get("method_counts") or {}
     return {
@@ -170,7 +170,7 @@ def _limitations(store: Store, answer: Any) -> dict[str, Any]:
 
 
 def _evidence_base(store: Store, answer: Any) -> dict[str, Any]:
-    """Cited works by the work each cited version had in the answer's own StepInput (D92, R3.5), so a later merge does
+    """Cited works by the work each cited version had in the answer's own StepInput (R3.5), so a later merge does
     not change the count; a version the StepInput names without a work id falls back to its record today."""
     given = store.step_input_payload(answer["step_input_id"]) if answer["step_input_id"] else None
     frozen = {s["source_id"]: s for s in (given or {}).get("sources") or [] if s.get("work_id")}

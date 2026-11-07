@@ -241,7 +241,7 @@
 .chat-step-detail>*{padding:8px 12px}
 .chat-step-detail>*+*{border-top:1px solid var(--line)}
 .chat-step-detail code{display:inline-block;max-width:100%;margin:0 4px 2px 0;padding:2px 6px;border-radius:5px;background:var(--selected-surface);color:var(--ink-2);font-family:ui-monospace,'SFMono-Regular',Menlo,monospace;font-size:12px;overflow-wrap:anywhere}
-/* A plan word no sent query carried (D26); the "Words not searched" row under the words says so in text. */
+/* A plan word no sent query carried; the "Words not searched" row under the words says so in text. */
 .chat-step-detail code.word-unsearched{background:none;box-shadow:inset 0 0 0 1px var(--strong-line);color:var(--muted);text-decoration:line-through}
 /* The plan's words as pills, and each sent query as a labelled block with its operators set apart. */
 .chat-step-detail>.step-words{display:grid;gap:8px;padding:10px 12px 12px}
@@ -486,7 +486,7 @@ button.card-work-title:hover{color:var(--accent);text-decoration:underline;text-
 .evidence-tile.is-thin{border-color:var(--warn-line);background:color-mix(in srgb,var(--warn-surface),var(--paper) 55%)}
 /* The answer's reading depth over its cited works, above the prose. */
 .answer-basis{margin:6px 0 2px;color:var(--muted);font-size:12.5px;line-height:1.5}
-/* The evidence ledger (D80) under the basis line: how many given works are cited or left out, then the left-out list. */
+/* The evidence ledger under the basis line: how many given works are cited or left out, then the left-out list. */
 .answer-ledger{margin:2px 0;color:var(--muted);font-size:12.5px;line-height:1.5}
 .report-content .answer-basis:has(+.answer-ledger){margin-bottom:4px}
 .report-content p.answer-ledger{margin:0 0 6px;font-size:12px}
@@ -582,7 +582,7 @@ button.card-work-title:hover{color:var(--accent);text-decoration:underline;text-
 .follow>button>svg,.follow-group>summary>svg{flex:none}
 .follow .go{display:none;flex:none;place-items:center;width:24px;height:24px;margin-left:auto;border-radius:6px;background:var(--accent);color:var(--paper)}
 .follow>button:is(:hover,:focus-visible,.first) .go{display:grid}
-/* The answer's unanswered aspects as one disclosure row (D98): each aspect with its follow-up and claim actions. */
+/* The answer's unanswered aspects as one disclosure row: each aspect with its follow-up and claim actions. */
 .follow-group>summary{list-style:none}
 .follow-group>summary::-webkit-details-marker{display:none}
 .follow-group>summary>span{flex:1;min-width:0}
@@ -611,7 +611,7 @@ button.card-work-title:hover{color:var(--accent);text-decoration:underline;text-
 .research-empty p{margin:0;color:var(--muted);font-size:13.5px}
 .research-empty [data-slot=button]{height:30px;gap:6px;padding-inline:12px;border-radius:7px;background:var(--accent);color:var(--paper);font-size:13px;font-weight:500}
 
-/* Step panel tables, pills and the full-text gap bar (D82). */
+/* Step panel tables, pills and the full-text gap bar. */
 .chat-step-detail>.step-table-wrap{padding:0}
 .step-table{width:100%;border-collapse:collapse;table-layout:fixed}
 .step-table th{padding:7px 12px;color:var(--muted);font-size:12px;font-weight:400;text-align:left}

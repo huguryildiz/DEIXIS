@@ -89,7 +89,7 @@ def test_r11_what_the_scan_cannot_read_fails_closed():
 
 
 def test_a_katex_only_name_defined_once_at_the_preamble_top_is_a_user_macro():
-    # D138, arXiv 2110.04116: `\newcommand{\Set}` (a name KaTeX knows, LaTeX does not) was never trusted.
+    # arXiv 2110.04116: `\newcommand{\Set}` (a name KaTeX knows, LaTeX does not) was never trusted.
     eq = "\\begin{equation}\\sum_{i\\in\\Set{K}} x_i\\end{equation}"
     found, _ = src.source_groups({"main.tex": doc(eq, "\\newcommand{\\Set}[1]{\\mathcal{#1}}")})
     assert (found[0]["latex"], found[0]["refused"]) == ("\\sum_{i\\in\\mathcal{K}} x_i", None)
@@ -107,7 +107,7 @@ def test_a_katex_only_name_defined_once_at_the_preamble_top_is_a_user_macro():
 
 
 def test_a_display_shorthand_opens_a_display():
-    # D142, arXiv 2106.00831: 50 of its displays are `\beq … \eeq`, which the scan did not see as displays
+    # arXiv 2106.00831: 50 of its displays are `\beq … \eeq`, which the scan did not see as displays
     pre = "\\newcommand{\\beq}{\\begin{equation}}\\newcommand{\\eeq}{\\end{equation}}"
     found = groups_of(doc("\\beq x = 1 \\eeq and \\begin{equation} y = 2 \\end{equation}", pre))
     assert [(g["latex"], g["numbered"], g["refused"]) for g in found] == [("x = 1", True, None), ("y = 2", True, None)]
@@ -161,7 +161,7 @@ MIB = 1024 * 1024
 @pytest.mark.skipif(os.environ.get("DEIXIS_P9_PRODUCTION_THRESHOLD") != "1",
                     reason="F09 for the arXiv source child takes about 30 s; set DEIXIS_P9_PRODUCTION_THRESHOLD=1")
 def test_the_source_child_is_stopped_at_the_production_memory_limit(tmp_path):
-    # ~200 MiB of decoded page content in a PDF of about 200 KB makes the matching step grow past 1 GiB (D159).
+    # ~200 MiB of decoded page content in a PDF of about 200 KB makes the matching step grow past 1 GiB.
     sys.path.insert(0, str(REPO / "scripts" / "release_checks"))
     import memory_probe
 

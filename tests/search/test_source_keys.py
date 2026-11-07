@@ -1,4 +1,4 @@
-"""D59, D38: one author–year–title key per work, given once across the library.
+"""One author–year–title key per work, given once across the library.
 
 Records are SYNTHETIC. Passing shows how keys are formed, kept and exposed; it says nothing about provider metadata quality.
 """

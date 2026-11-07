@@ -15,7 +15,7 @@ SECTION_BUDGET_TOKENS = {
     "III": 6000, "IV": 10000, "V": 8000, "VI": 6000, "VII": 4000, "VIII": 3000,
     "I": 3000, "IX": 3000, "abstract": 1500, "index_terms": 500,
 }
-# D58: a cell section's budget is max(base, its cells + reserve), capped at the ceiling; the reserve is page room.
+# A cell section's budget is max(base, its cells + reserve), capped at the ceiling; the reserve is page room.
 CELL_RESERVE_TOKENS = {"IV": 10000, "V": 6000, "VI": 4000, "VII": 3000}
 CELL_CEILING_TOKENS = {"IV": 60000, "V": 40000, "VI": 20000, "VII": 15000}
 MAX_RANKED_PASSAGES = 40
@@ -44,7 +44,7 @@ def _query(plan: dict[str, Any]) -> str:
 
 
 def row_passages(store: Store, snapshot: dict[str, Any], source_id: str) -> list[dict[str, Any]]:
-    """The passages a report step may read for one row: the one way report code reads them (D114).
+    """The passages a report step may read for one row: the one way report code reads them.
 
     A row whose snapshot froze its passages (a row without PDF text when the snapshot was taken) gets exactly those, by
     id, whatever the source gained since; a PDF that arrives later needs a new snapshot. Any other row reads the
@@ -69,7 +69,7 @@ def allowed_passage(snapshot: dict[str, Any], passage: dict[str, Any]) -> bool:
 
 
 def usable_cells(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
-    """The snapshot cells a report section may cite or count (D68). A source without text ('inaccessible') and a value
+    """The snapshot cells a report section may cite or count. A source without text ('inaccessible') and a value
     without linked evidence ('not_verified') stay in Table I and the basis note, but are neither evidence nor a count."""
     return [cell for cell in snapshot.get("cells", [])
             if cell["state"] != "inaccessible" and not (cell["state"] == "not_verified" and not cell.get("evidence"))]
@@ -130,7 +130,7 @@ def select_evidence(store: Store, snapshot: dict[str, Any], section_id: str, pla
         return True
 
     def add_cells(candidates: list[dict[str, Any]], ranked_columns: list[str]) -> None:
-        """Admit cell records with their quotes first, then their pages (D58). A page left out is `cell_page`, not a
+        """Admit cell records with their quotes first, then their pages. A page left out is `cell_page`, not a
         budget cut: its cell is still supplied with the page's quoted words.
 
         A cell's page is not needed to cite the cell: its stored quotes carry the anchor. Over the ceiling whole columns
@@ -193,7 +193,7 @@ def select_evidence(store: Store, snapshot: dict[str, Any], section_id: str, pla
     cells = usable_cells(snapshot)
 
     def search(ids: list[str], limit: int) -> list[dict[str, Any]]:
-        # A frozen row is ranked only within its frozen passages, before the limit (D114).
+        # A frozen row is ranked only within its frozen passages, before the limit.
         return store.search_passages(ids, query, limit, frozen) if frozen else store.search_passages(ids, query, limit)
     if section_id == "III":
         for entry in plan.get("glossary", []):

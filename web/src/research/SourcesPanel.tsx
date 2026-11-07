@@ -23,7 +23,7 @@ import type { OcrContext } from './shared'
 type SourceSort = 'relevant' | 'found' | 'cited' | 'newest' | 'oldest' | 'title'
 const sourceSorts: Record<SourceSort, string> = { relevant: 'Most relevant', found: 'Order found', cited: 'Most cited', newest: 'Newest first', oldest: 'Oldest first', title: 'Title A–Z' }
 // Search position is not comparable across queries: the model's screening verdict decides, then similarity to the question
-// when semantic search scored the source (D30), then the best position in the searches that found it.
+// when semantic search scored the source, then the best position in the searches that found it.
 const verdictOrder: Record<string, number> = { include: 0, passed: 1, uncertain: 2, none: 3, exclude: 4 }
 const verdictRank = (s: Source) => verdictOrder[proposalOf(s)?.tone ?? 'none'] ?? 3
 // "Cited in answer" lists the works the answer shown in the thread cites, from that answer's stored claims. A cited work
@@ -215,7 +215,7 @@ export function SourcesPanel({ sources, cited, citedVersions, answerVersion, bus
   </div>
 }
 
-// The bar under the table while sources are chosen (mockup .selbar, D50): a table from them, rows for a table, the
+// The bar under the table while sources are chosen (mockup .selbar): a table from them, rows for a table, the
 // Library, removal from the research, or Clear.
 function SelectionBar({ ids, busy, researchId, active, onStartTable, onAddToTable, onRemove, onSaveToLibrary, onClear }: { ids: string[]; busy: boolean; onClear: () => void } & BarActions) {
   const [tables, setTables] = useState<TableSummary[] | null>(null)

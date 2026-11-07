@@ -78,7 +78,7 @@ function describeEvent(event: ActivityEvent): { icon: ReactNode; text: string; c
     case 'step_finished': {
       const pdfStep = p.kind === 'fetch_pdf' || p.kind === 'pdf_other_copy'
       const chips = p.error_code && pdfStep ? [{ label: fetchReasonText(String(p.error_code), typeof p.http_status === 'number' ? p.http_status : null), tone: 'neutral' as const }] : errorChip
-      // D155: a step that succeeded but skipped work, or held records, says so beside its status.
+      // A step that succeeded but skipped work, or held records, says so beside its status.
       const notes: EventChip[] = [
         ...(p.skipped === 's2_cooldown' ? [{ label: t('Semantic Scholar not asked during its rate-limit pause: {n} records', { n: Number(p.skipped_count ?? 0) }), tone: 'warn' as const }] : []),
         ...(p.held_no_abstract_text_route ? [{ label: t('{n} without an abstract kept their place: text can still be fetched', { n: Number(p.held_no_abstract_text_route) }), tone: 'neutral' as const }] : []),

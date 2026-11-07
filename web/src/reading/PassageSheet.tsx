@@ -65,7 +65,7 @@ export type SourceActions = {
   onRemove: (source: Source) => void
   onReextract: (source: Source, assetId: string) => void
   onRereadEquations: (source: Source, assetId: string) => void
-  // Identify an uploaded PDF as its scholarly record again (D37).
+  // Identify an uploaded PDF as its scholarly record again.
   onLookUpRecord: (source: Source) => void
   ocr: OcrContext
 }
@@ -109,9 +109,9 @@ function markGroups(root: HTMLElement | null) {
 }
 
 // pdfRemoved: the passage's PDF was removed from the source; its stored text still opens, the PDF view stays off.
-// A passage also reports this itself (evidence_status, D45), as it does a replaced file or an earlier text extraction.
+// A passage also reports this itself (evidence_status), as it does a replaced file or an earlier text extraction.
 // sources: the research's source rows; the one matching the opened source adds its screening state, similarity and citation.
-// onRestoreSource: offered when the passage's source was removed from this research (D50).
+// onRestoreSource: offered when the passage's source was removed from this research.
 // sourceVersionId: open a source rather than a passage (one of `sources`): its PDF text, else its abstract, else its details alone.
 // initialPage: the PDF page a file opened without a passage starts on. citationLabels: the strip's words when the
 // text is opened for something other than an answer's citation (the human queue, slice 17).
@@ -204,7 +204,8 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   const highlightKey = highlights.join('\u0000')
   const citation = useMemo(() => passage ? { page: passage.physical_page, texts: highlightKey ? highlightKey.split('\u0000') : [], expected: expectHighlight, labels: citationLabels } : null, [passage, highlightKey, expectHighlight, citationLabels])
   const status = passage?.evidence_status ?? 'current'
-  // Who read the numbered equations of this passage: Mathpix or the answer model (D113); passages stored before the field are Mathpix's.
+  // Who read the numbered equations of this passage: Mathpix or the answer model; passages stored before the field
+  // are Mathpix's.
   const readerName = equationReaderName(passage?.equation_reader ?? { engine: 'mathpix' }, model => modelText(model))
   const earlier = Boolean(passage?.occurrence && !passage.occurrence.is_current && status === 'text_superseded')
   const shownDocument = comparing ? currentDocument : passageDocument
@@ -236,7 +237,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
     : assetText && assetText.asset.id === pdfAssetId ? Boolean(assetText.asset.rendition)
     : Boolean(row?.access.assets.find(a => a.id === pdfAssetId)?.rendition)
   const rendition = tab === 'pdf' ? pdfRendition : tab === 'text' ? textRendition : false
-  // The arXiv source version a 'latex_source' passage's equations came from (D104); omitted gracefully if not found.
+  // The arXiv source version a 'latex_source' passage's equations came from; omitted gracefully if not found.
   const sourceAsset = passage?.asset_id ? row?.access.assets.find(a => a.id === passage.asset_id) : undefined
   const arxivVersion = sourceAsset?.equations?.route === 'arxiv_source' ? sourceAsset.equations.source?.version ?? null : null
   // A version without an abstract of its own (a submitted manuscript found with its PDF) shows another version's of the
@@ -302,7 +303,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   // The file and its text are told apart (P12): a passage read from the PDF, or its loaded text, says there is text;
   // otherwise the stored extraction state of the file does. A kept file can have no text (no text layer, a failed read).
   const fileAsset = pdfAssetId ? row?.access.assets.find(item => item.id === pdfAssetId) ?? null : null
-  // A file restore swaps the PDF under the same URL; a viewer opened before it must load the restored file (D223).
+  // A file restore swaps the PDF under the same URL; a viewer opened before it must load the restored file.
   const restored = fileAsset?.text_recovery?.latest_file_restore
   const pdfRevision = restored?.lifecycle === 'completed' && restored.outcome === 'file_restored' ? restored.operation_id : ''
   const loadedText = (passage && !abstract) ? true : assetText ? assetText.passages.length > 0 : extra ? extra.passages.length > 0 : null
@@ -427,7 +428,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
     {abstract && expectHighlight && !highlightAvailable && <div className="citation-highlight-note">{citationLabels?.unmarked ?? t('This saved citation has no exact text anchor, so it cannot be highlighted. Generate a new answer to repair its citation anchors.')}</div>}
     <p className="passage-text abstract"><HighlightedPassageText passage={abstractShown} highlightTexts={abstract ? highlights : []} markLabel={citationLabels?.mark} /></p>
     {abstract && highlightAvailable && <p className="foot-note">{citationLabels?.marked ?? t('Highlighted: the exact text cited in the answer.')}</p>}
-    {/* Opened for something other than a citation with nothing to mark (a left-out work with no quote, D80): say so. */}
+    {/* Opened for something other than a citation with nothing to mark (a left-out work with no quote): say so. */}
     {abstract && !expectHighlight && !highlightAvailable && citationLabels?.heading && <p className="foot-note">{citationLabels.marked}</p>}
   </> : needsAbstract ? <p><span className="shimmer-text">{t('Loading passage…')}</span></p>
     : <p className="source-notice"><Info size={15} aria-hidden />{t('No abstract is stored for this source.')}</p>
@@ -508,7 +509,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
           {tab === 'text' && passage?.text_source === 'marker' && (passage.equations_to_check
             ? <p className="source-notice"><TriangleAlert size={15} aria-hidden />{t(passage.equations_to_check === 1 ? 'Page read from the page image (Marker, read earlier). {n} equation on this page does not match the PDF’s own text and may be misread; check it against the PDF page.' : 'Page read from the page image (Marker, read earlier). {n} equations on this page do not match the PDF’s own text and may be misread; check them against the PDF page.', { n: passage.equations_to_check })}</p>
             : <p className="source-notice"><Info size={15} aria-hidden />{t('Page read from the page image (Marker, read earlier). Equations are LaTeX and tables are rebuilt as tables; check them against the PDF page.')}</p>)}
-          {/* The arXiv source route (D104): numbered display equations matched to the page by their numbers, from the
+          {/* The arXiv source route: numbered display equations matched to the page by their numbers, from the
               authors' own LaTeX of this arXiv version. The rest of the passage, including other mathematics, stays the
               PDF's own text layer; the route never checks that the source compiles to this page. */}
           {tab === 'text' && passage?.text_source === 'latex_source' && passage.source_equations?.length ? (
@@ -522,7 +523,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
                   : 'Equations {numbers} in this passage are the authors’ LaTeX from the arXiv source, matched to the page by their numbers. The rest of this passage, including other mathematics, is the PDF’s own text.',
                 { a: passage.source_equations[0], numbers: passage.source_equations.map(n => `(${n})`).join(', ') })}</p>
           ) : null}
-          {/* Mathpix (D40): numbered display equations read from an image of the page and kept only when they match the
+          {/* Mathpix: numbered display equations read from an image of the page and kept only when they match the
               PDF's own letters, scripts and signs. Each comes with the image that was sent, rendered again from the PDF. */}
           {tab === 'text' && passage?.text_source === 'equation_ocr' && passage.source_equations?.length ? (
             <div className="source-notice"><Info size={15} aria-hidden /><div>
@@ -536,7 +537,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
               </figure></li>)}</ul>
             </div></div>
           ) : null}
-          {/* OCR text (D51) is read from the page image and never checked against it; the PDF view opens on the same page. */}
+          {/* OCR text is read from the page image and never checked against it; the PDF view opens on the same page. */}
           {tab === 'text' && passage?.text_source === 'ocr' && <p className="source-notice"><TriangleAlert size={15} aria-hidden /><span>{t('This page was read from its scanned image with OCR (Tesseract) on this computer. Letters, numbers and equations may be misread; check them against the PDF page.')}
             {pdfAssetId && <> <button type="button" className="source-notice-action" onClick={() => choose('pdf')}><FileText size={13} aria-hidden />{t('Show this page in the PDF')}</button></>}</span></p>}
           {rendition && <p className="source-notice"><Info size={15} aria-hidden />{t('This PDF was drawn by DEIXIS from Europe PMC’s open-access text. Its pages are not the publisher’s pages.')}</p>}

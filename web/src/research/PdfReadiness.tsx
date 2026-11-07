@@ -10,7 +10,7 @@ import { t } from '../lib/i18n'
 import { useToast } from '../components/Toast'
 import { includedReading } from './includedReading'
 
-// Between screening and the answer (D49), inside the "Get more full text" panel (UI parity S14, P40): a run that
+// Between screening and the answer, inside the "Get more full text" panel (UI parity S14, P40): a run that
 // collects the open PDFs of the included works, its progress while it runs (or is paused), and the included works that
 // still have no PDF, each with its own upload, OCR and the person's Zotero library. The panel around it holds the depth
 // boxes, the waiting list, the drop zone and the answer button.
@@ -29,7 +29,7 @@ export function PdfReadiness({ researchId, view, busy, act, onUpload, ocrTool, o
   const { records, reading, full, missing, unread } = includedReading(view)
   const versionsOf = (record: Source) => view.sources.filter(s => s.work_id === record.work_id && s.source_version_id !== record.source_version_id)
   const pagesOf = (record: Source) => reading(record).access.assets[0]?.page_count ?? 0
-  // A PDF with pages without text can be read with OCR (D51); its row names what OCR would read and offers the action.
+  // A PDF with pages without text can be read with OCR; its row names what OCR would read and offers the action.
   const ocrOf = (record: Source) => {
     const asset = reading(record).access.assets[0]
     const offer = asset && ocrOffer(asset, ocrTool, view.runs)
@@ -210,7 +210,7 @@ function UnreadNote({ n, action }: { n: number; action?: ReactNode }) {
 
 // Whether a collection run has anything to try for this work: an open link of the record's own version, or of another version.
 function canTry(record: Source, versions: Source[]) {
-  // A link refused before is not requested again, and its one lookup for another copy is not repeated (D35).
+  // A link refused before is not requested again, and its one lookup for another copy is not repeated.
   const settled = (s: Source) => s.access.fetch?.status === 'failed' && (s.access.other_copy !== null || !s.doi)
   return [record, ...versions].some(s => s.origin === 'provider' && s.access.oa_pdf_url && s.access.oa_pdf_version === s.version_label && !s.access.assets.length && !settled(s))
 }

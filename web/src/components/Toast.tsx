@@ -4,7 +4,7 @@ import { CircleX, TriangleAlert, X } from 'lucide-react'
 import { t } from '../lib/i18n'
 
 export type ToastTone = 'success' | 'warning' | 'error'
-// An action such as "Undo" calls the same endpoint as the Trash page (D50); closing the toast changes nothing.
+// An action such as "Undo" calls the same endpoint as the Trash page; closing the toast changes nothing.
 export type ToastAction = { label: string; run: () => void }
 type Toast = { tone: ToastTone; text: string; action?: ToastAction; id: number }
 

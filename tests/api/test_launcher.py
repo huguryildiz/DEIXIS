@@ -375,7 +375,7 @@ def _build(web: Path):
 
 def test_the_committed_notices_file_covers_every_production_dependency():
     text = (REPO / "THIRD_PARTY_NOTICES").read_text(encoding="utf-8")
-    assert "MuPDF" in text and "Tesseract" in text and "Tauri" in text and "marker-pdf" not in text  # Marker removed (D113)
+    assert "MuPDF" in text and "Tesseract" in text and "Tauri" in text and "marker-pdf" not in text  # Marker removed
     for name, version in notices.python_requirements():
         assert f"python {name} {version}" in text
     lock = json.loads((REPO / "web/package-lock.json").read_text(encoding="utf-8"))

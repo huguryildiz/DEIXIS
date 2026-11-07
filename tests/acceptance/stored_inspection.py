@@ -1,4 +1,4 @@
-"""A synthetic pre-D242 library record shared by persistence and browser acceptance."""
+"""A synthetic legacy library record shared by persistence and browser acceptance."""
 import json
 from pathlib import Path
 

@@ -2,7 +2,7 @@
 
 A statement research (`researches.intent = 'statement'`) asks one sentence the person pasted; its question is that
 sentence. After its search and reading, each work the reading reached (and each work the person included) is checked
-against the sentence with Verify Citations V3's output schema, rules and verdict (D99), unchanged: `found_whole`,
+against the sentence with Verify Citations V3's output schema, rules and verdict, unchanged: `found_whole`,
 `found_partial` or `not_found_in_given`, or `could_not_check`. Nothing says a work disagrees with the sentence, and a
 sentence no work supports is not shown to be unsupported in the literature.
 
@@ -27,7 +27,7 @@ from the attached files, once none of them is still being extracted (`attachment
 A revision is `stale` (`refresh_currency`), never rewritten or deleted, once the question moved on, the person's
 choices changed after its freeze, or the text of a work it lists did. Its results stay, marked as not current.
 
-Presenting (slice R4b, D108). Each completed item also has a support class, read from its stored result and parts
+Presenting (slice R4b). Each completed item also has a support class, read from its stored result and parts
 under the rule its revision stored (`support_rule_version`; `domain.statement.support_class`, the one place it is
 decided): a new revision counts a work as support only when at least one part is `stated`, and a `found_partial` with
 none is `support_not_shown`; a revision stored before R4b reads with rule 1, its class being its result. The view, the

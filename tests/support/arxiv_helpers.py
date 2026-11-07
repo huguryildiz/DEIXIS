@@ -1,4 +1,4 @@
-"""SYNTHETIC builders for the arXiv source route's tests (slice 22, D104), and their network guard.
+"""SYNTHETIC builders for the arXiv source route's tests (slice 22), and their network guard.
 
 Everything here is made up: a PDF built with PyMuPDF whose display equations are lines of plain letters with a number at
 the right margin, and an arXiv-like source archive built in memory with `tarfile`/`gzip`. Passing tests built on them shows

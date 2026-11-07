@@ -1,4 +1,4 @@
-"""Withdrawing a question revision (D67): allowed while nothing but a title run and a person's selection decisions was
+"""Withdrawing a question revision: allowed while nothing but a title run and a person's selection decisions was
 made under it; nothing is deleted, a withdrawn number is never used again, and a later revision opens from the one the
 research went back to. SYNTHETIC rows."""
 

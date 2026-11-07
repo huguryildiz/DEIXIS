@@ -9,7 +9,7 @@ import { Notice } from '../components/Notice'
 
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e))
 
-// Chooses one collection of the user's Zotero library (D16) on a research page. Every button is type="button".
+// Chooses one collection of the user's Zotero library on a research page. Every button is type="button".
 export function ZoteroPanel({ busy, onImport, onClose }: {
   busy: boolean; onImport: (source: ZoteroSource, key: string, name: string) => void; onClose: () => void
 }) {

@@ -13,14 +13,14 @@ import { t, uiLocale } from '../lib/i18n'
 import '../citecheck/CitationCheck.css'
 import './statement.css'
 
-// Reverse citation search R3 (plan `notes/plans/reverse-citation-search-plan.md`, D100, D103): the statement check of a
+// Reverse citation search R3 (plan `notes/plans/reverse-citation-search-plan.md`): the statement check of a
 // statement research, in its thread instead of an answer. It shows the latest revision (`latest_check_id`), or an
 // earlier one the person picks, with its currency read now; each work's result, reading depth and the backend's located
 // quotes. Every count, title and result here comes from the stored view; nothing is computed from model prose.
 
 const num = (n: number) => n.toLocaleString(uiLocale())
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
-// The classes the backend presents completed works in (R4b, D108); `support_not_shown` exists from rule 2 on.
+// The classes the backend presents completed works in (R4b); `support_not_shown` exists from rule 2 on.
 const CLASSES: StatementSupportClass[] = ['found_whole', 'found_partial', 'support_not_shown', 'not_found_in_given']
 
 export type StatementQuote = { passageId: string; anchor: string }

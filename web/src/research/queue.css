@@ -27,7 +27,7 @@
 .mock-pad .empty h2{margin:0;color:var(--ink);font-size:16px;font-weight:600}
 .mock-pad .empty p{margin:0;color:var(--muted);font-size:13.5px}
 
-/* ---- the human queue (slice 17, D97) as stacked cards (mockup `.qcard`, P39) ---- */
+/* ---- the human queue (slice 17) as stacked cards (mockup `.qcard`, P39) ---- */
 .queue-panel p{margin:0}
 .queue-panel .queue-filters{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .queue-panel .queue-chips{display:flex;flex-wrap:wrap;gap:6px}
@@ -302,7 +302,7 @@
   .queue-panel .audit-row-top{flex-direction:column;gap:8px}
   .queue-panel .audit-answered{justify-content:flex-start}
 }
-/* One answer to several rows (D110): a tick on each card head, a "select shown" line and a floating bar. */
+/* One answer to several rows: a tick on each card head, a "select shown" line and a floating bar. */
 .queue-panel .queue-pick{flex:none;width:15px;height:15px;margin:0 2px 0 0;accent-color:var(--accent);cursor:pointer}
 .queue-panel .queue-pick:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .queue-panel .queue-pick-all{display:inline-flex;align-items:center;gap:8px;justify-self:start;color:var(--muted);font-size:12.5px;cursor:pointer}
@@ -333,7 +333,7 @@
 @media(prefers-reduced-motion:reduce){.queue-panel .queue-selbar{animation:none}}
 @container (max-width:400px){.queue-panel .queue-selbar-group{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:600px){.queue-panel .queue-selbar{bottom:10px}}
-/* Open rows past the two a read asks about (D137): listed, folded away. */
+/* Open rows past the two a read asks about: listed, folded away. */
 .queue-panel .queue-not-asked{border-top:1px solid var(--line)}
 .queue-panel .queue-not-asked>summary{padding:9px 0;color:var(--muted);font-size:12px;font-weight:500;cursor:pointer}
 .queue-panel .queue-not-asked>summary:hover{color:var(--ink)}

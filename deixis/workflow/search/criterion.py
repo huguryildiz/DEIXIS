@@ -3,15 +3,15 @@
 The model is asked the same question three times and nothing it says once is used: a phrase enters the criterion
 only when at least `PROPOSAL_MAJORITY` of the runs wrote it, and with fewer than that many valid runs there is no
 criterion at all. Free text cannot be voted on, so the criterion sentence and the parts come from one run.
-D241 first prefers unbundled core definitions, then uses D78's kept-phrase agreement and run-number tie break.
+The rule first prefers unbundled core definitions, then uses that kept-phrase agreement and run-number tie break.
 
-A population or comparator the question names is a part of its own (SW23, D106). A role at least
+A population or comparator the question names is a part of its own (SW23). A role at least
 `PROPOSAL_MAJORITY` runs listed in `question_elements` is required: only a run holding every required role can be the
 base run, so the criterion never rests on a run that left out what most runs found in the question. With no required
-role, legacy proposals without part roles keep D78's original base choice. A stored v1
+role, legacy proposals without part roles keep that original base choice. A stored v1
 proposal has no `question_elements` and reads as naming none.
 
-A v3 part records core or aspect. D241 matches names and literal cue overlap;
+A v3 part records core or aspect. Names and literal cue overlap are matched;
 roles use distinct-run majority votes, retaining the base role without a majority.
 If role resolution removes every core, the base proposal's roles are restored and recorded.
 Legacy parts without roles keep their stored shape.
@@ -151,7 +151,7 @@ def consensus(question: str, runs: dict[int, dict[str, Any]],
     proposal = runs[base]
 
     # Free-text parts and definitions remain owned by one proposal. Population
-    # and study-level comparator requirements retain D235's exception.
+    # and study-level comparator requirements retain that exception.
     protected = {norm(e["part"]) for e in elements[base]}
     parts = []
     for part in proposal["parts"]:

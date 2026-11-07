@@ -97,13 +97,13 @@ LEDGER_HINTS_HEADING = ("Not blocking: these notes on excluded_sources do not ma
 
 
 def _hints_block(hints: list[str] | None) -> str:
-    """Ledger notes (D80) under their own heading; they are never part of the issues listed as blocking."""
+    """Ledger notes under their own heading; they are never part of the issues listed as blocking."""
     return "\n\n" + LEDGER_HINTS_HEADING + "\n" + "\n".join(f"- {hint}" for hint in hints) if hints else ""
 
 
 def resplit_message(step_input: dict[str, Any], issues: list[dict[str, str]], failed_output: str, labels: list[str],
                     *, hints: list[str] | None = None) -> str:
-    """The one extra repair (D249): only D247's several-sources rule (and anchor defects) still blocks the answer."""
+    """The one extra repair: only that several-sources rule (and anchor defects) still blocks the answer."""
     return (
         step_message(step_input)
         + "\n\nThe previous output for this StepInput was repaired once and still fails validation only on these issues:\n"
@@ -120,7 +120,7 @@ def resplit_message(step_input: dict[str, Any], issues: list[dict[str, str]], fa
 
 
 def inference_cap_message(step_input: dict[str, Any], valid_output: str, labels: list[str], claim_count: int) -> str:
-    """D260: one rewrite of a valid answer whose claims are mostly analyst_inference."""
+    """One rewrite of a valid answer whose claims are mostly analyst_inference."""
     return (
         step_message(step_input)
         + "\n\nThe previous output for this StepInput is valid, but " + f"{len(labels)} of its {claim_count} claims "
@@ -136,7 +136,7 @@ def inference_cap_message(step_input: dict[str, Any], valid_output: str, labels:
 
 
 def ledger_coverage_message(step_input: dict[str, Any], valid_output: str, missing: list[str]) -> str:
-    """D83: one rewrite of a valid answer whose ledger leaves given sources unaccounted. `missing` lines name each
+    """One rewrite of a valid answer whose ledger leaves given sources unaccounted. `missing` lines name each
     such source by its citation handle and stored title; the answer is quoted in the handles the model was shown."""
     return (
         step_message(step_input)

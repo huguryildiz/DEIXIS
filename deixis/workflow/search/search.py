@@ -1,4 +1,4 @@
-"""D252 search slots and page admission; no provider or model fallbacks."""
+"""Search slots and page admission; no provider or model fallbacks."""
 
 from __future__ import annotations
 
@@ -20,10 +20,10 @@ from deixis.workflow.search.expansion import queried_form
 # At Detailed depth one Semantic Scholar bulk request reads up to this many records, taken off the keyword cap.
 S2_RESERVED_RECORDS = 500
 KEYWORD_PAGE_SIZE = 100  # records one OpenAlex keyword page asks for
-# D154: one more OpenAlex semantic request, its text the searched setting and task terms joined, sent after the
+# One more OpenAlex semantic request, its text the searched setting and task terms joined, sent after the
 # question's. A plan frozen without `block_semantic`, or with one whose `query_text` is empty, sends none.
-# D155 turned it off for new plans (113 works added, 3 in the top 50, no reference paper in the 6 Nov pilot): they
-# freeze BLOCK_SEMANTIC_OFF and send no such request; a plan frozen under D154 (rule `block_terms_v1`) still sends its
+# The 6 Nov rules turned it off for new plans (113 works added, 3 in the top 50, no reference paper in that pilot): they
+# freeze BLOCK_SEMANTIC_OFF and send no such request; a plan frozen under `block_terms_v1` still sends its
 # request on resume.
 BLOCK_SEMANTIC_KEY = "search:fast:semantic:blocks"
 BLOCK_SEMANTIC_OFF = {"rule": "block_terms_off_v2", "query_text": None, "skipped": "turned_off"}
@@ -31,7 +31,7 @@ BLOCK_SEMANTIC_OFF = {"rule": "block_terms_off_v2", "query_text": None, "skipped
 
 def seed_query(question, envelope):
     """The semantic query with the seed PDFs' text behind the question, which is never cut, and what of each seed went
-    in (D2, D3). One seed: D2's string. Several: the room the question leaves, less one separator per seed, shared
+    in. One seed: the `seed_pdf_v1` string. Several: the room the question leaves, less one separator per seed, shared
     equally; a seed whose share is empty adds nothing. Returns (query, seed_text, seed_parts)."""
     texts = [(c["source_version_id"], *seed_match.seed_text(c)) for c in envelope["seeds"]]
     limit = openalex.SEMANTIC_MAX_CHARS
@@ -51,7 +51,7 @@ def seed_query(question, envelope):
 
 
 def seed_requests(envelope, limit):
-    """One OpenAlex semantic request per seed with text (D6): the seed's own text (`seed_match.seed_text`) cut to what
+    """One OpenAlex semantic request per seed with text: the seed's own text (`seed_match.seed_text`) cut to what
     OpenAlex accepts, in seed order; a seed with no text sends nothing. `index` is the seed's place in the envelope."""
     specs = []
     for i, context in enumerate(envelope["seeds"]):
@@ -71,7 +71,7 @@ def sent_plan(body):
     """The requests a frozen protocol body plans to send, each with the step key its pages are stored under.
 
     A fast path body sends its `fast_path_search` plan: the semantic request, the block terms' semantic request when the
-    plan froze one (D154), one per seed at version 2, the OpenAlex keyword queries and, at Detailed depth, the Semantic
+    plan froze one, one per seed at version 2, the OpenAlex keyword queries and, at Detailed depth, the Semantic
     Scholar bulk query. The plan's dropped queries are left out:
     they stand in `compiled_queries` but were never meant to be sent. A body without the plan sends every compiled
     query under `search:<index>`. `arm` says which kind of request it is; `watchable` that a watch can follow it by
@@ -122,24 +122,24 @@ def plan_version(store, run):
 
 
 def graph_rule(store, run):
-    """The graph rule the ranking reads, chosen by the frozen plan, never by live code (D6): a version 2 plan ranks the
+    """The graph rule the ranking reads, chosen by the frozen plan, never by live code: a version 2 plan ranks the
     seed PDFs by their nearest one (`seed_max_v2`), every other run as before (`sum_v1`)."""
     return "seed_max_v2" if plan_version(store, run) == 2 else "sum_v1"
 
 
 def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
-    """The frozen search plan. With `vocabulary` (every discovery run since D154) it also freezes `block_semantic`:
-    under D154 the block terms' semantic request, since D155 the record that it is off (`BLOCK_SEMANTIC_OFF`). A plan
-    built without a vocabulary, as every plan before D154 was, has none."""
+    """The frozen search plan. With `vocabulary` (every discovery run since `block_terms_v1`) it also freezes `block_semantic`:
+    under `block_terms_v1` the block terms' semantic request, since the 6 Nov rules the record that it is off (`BLOCK_SEMANTIC_OFF`). A plan
+    built without a vocabulary, as every plan before `block_terms_v1` was, has none."""
     policy = run["budget"]["fast_path"]
     sentence = english_question.embedding_query(store, scope)
     if seed_context and seed_context.get("rule") == seed_match.RULE:
-        # D6: the question's request is the unseeded one; each seed asks OpenAlex on its own, after it.
+        # The question's request is the unseeded one; each seed asks OpenAlex on its own, after it.
         plan = build_plan(store, run, scope, queries, vocabulary=vocabulary)
         return plan | {"version": 2, "seed_semantic": seed_requests(seed_context, policy["semantic_top"] // 2)}
     seed, parts = None, []
     if sentence and seed_context:
-        # The seed PDFs' text rides behind the question (D2, D3); the ranking keeps the question alone.
+        # The seed PDFs' text rides behind the question; the ranking keeps the question alone.
         query, seed, parts = seed_query(sentence[0], seed_context)
         sentence = (query, sentence[1])
     deep = policy["mode"] == "deep"
@@ -172,7 +172,7 @@ def _carried(vocabulary, query):
     """The (block, form) pairs this compiled query really wrote, or None when that cannot be told.
 
     The block compiler is pure, so its prefix allocation is computed again from the vocabulary that wrote the query
-    (the code's beside a model-written one, D92). Only when the text it gives is the stored text are its counts taken;
+    (the code's beside a model-written one). Only when the text it gives is the stored text are its counts taken;
     any other text says nothing about what the stored query holds. A statement research's author query (R5) holds
     the field's root word alone, which the code query holding the field also carries, so it adds no pair."""
     if query.get("origin") == "author":
@@ -191,15 +191,16 @@ def _carried(vocabulary, query):
 
 
 def plan_words(vocabulary, plan):
-    """Every setting and task word of the frozen vocabulary and whether a query the plan sends carries it (D26).
+    """Every setting and task word of the frozen vocabulary and whether a query the plan sends carries it.
 
     The queries sent are the OpenAlex keyword queries and, at Detailed depth, the Semantic Scholar bulk query; the
-    semantic requests send the question's sentence and, in a plan frozen under D154 (not since D155), these words joined
+    semantic requests send the question's sentence and, in a plan frozen under `block_terms_v1` (no longer
+    sent), these words joined
     (`block_semantic`), so they are not counted here. `searched` is false with `left_out` naming why:
     the word's own drop reason (a count of zero, too broad), `query_limit` when a sent query that held the word had no
     room for it, or `not_sent` when only a query the plan does not send held it. It is null when a sent query could
     not be read back (`_carried`), so an unknown is never shown as searched or as left out. A plan with
-    `block_semantic` (D154) also records `semantic`: whether the word's phrase stands in the text of the block terms'
+    `block_semantic` also records `semantic`: whether the word's phrase stands in the text of the block terms'
     semantic request it sends, so a word left out of every keyword query is not shown as never sent."""
     sent = [spec["query"] for spec in plan["keywords"]] + ([plan["s2_bulk"]] if plan.get("s2_bulk") else [])
     semantic = (plan["block_semantic"].get("query_text") or "") if "block_semantic" in plan else None
@@ -372,7 +373,7 @@ async def execute(flow, run, scope, plan, retry_failed):
             step = store.step(run_id, key, f"provider_search:{connector.provider_id}")
             store.start_step(step["id"], started_at=started)
             # A version 2 plan keeps the versions the question's request accepted, the only ones its first chain
-            # seeds may come from (D6).
+            # seeds may come from.
             failure = flow._record_search(run, step, query, outcome, limit, page, reason,
                                          finished, dispatched, transport, admission,
                                          keep_found=key == "search:fast:semantic" and plan.get("version") == 2) or failure
@@ -401,7 +402,7 @@ async def execute(flow, run, scope, plan, retry_failed):
     if chain:
         chain.initial()
     flow._checkpoint(run_id, run["scope_revision"])
-    # D154: the block terms' semantic request, after the question's (whose page alone chooses the first chain seeds);
+    # The block terms' semantic request, after the question's (whose page alone chooses the first chain seeds);
     # a plan frozen without it, or one that skipped it, sends nothing and keeps its request indexes.
     blocks = plan.get("block_semantic") or {}
     if blocks.get("query_text"):
@@ -414,7 +415,7 @@ async def execute(flow, run, scope, plan, retry_failed):
             consumer.notify()
         request_index += 1
         flow._checkpoint(run_id, run["scope_revision"])
-    # D6: each seed's own semantic request, after the chain chose its first seeds from the question's page and before
+    # Each seed's own semantic request, after the chain chose its first seeds from the question's page and before
     # the keyword pages; an unseeded plan has none, so its indexes are unchanged. The requests start one pacer gap
     # apart and their replies overlap (`openalex.SEMANTIC_PACER`); each is written after the one before it, so
     # admission and candidate order follow seed order.

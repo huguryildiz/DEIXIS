@@ -1,4 +1,4 @@
-// Building the plain-text view of a PDF from its stored passages (D58): paragraphs, the title, section headings, tables,
+// Building the plain-text view of a PDF from its stored passages: paragraphs, the title, section headings, tables,
 // figures, biographies and the targets of in-text references. Pure functions, so the rules can be tested without a browser.
 import type { AssetFigure, AssetText } from '../lib/api'
 import { AUTHOR_NOTE, SECTION_HEADING, readablePassageText } from './pdfText'

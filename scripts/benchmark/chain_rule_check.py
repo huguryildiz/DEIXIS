@@ -1,4 +1,4 @@
-"""Offline, read-only check of the discovery chain's admission rules on a stored run (D163 M1).
+"""Offline, read-only check of the discovery chain's admission rules on a stored run (the m1 method).
 
     uv run python scripts/benchmark/chain_rule_check.py <library.sqlite> [<library.sqlite> ...]
 

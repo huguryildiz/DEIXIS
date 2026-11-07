@@ -1,6 +1,6 @@
 """Wording checks for answer and report prose: question language, sentence splitting, own-work and plural-source phrases.
 
-The Academic Phrasebank frames these once sat beside were removed in D43; prose is no longer matched against frames.
+The Academic Phrasebank frames these once sat beside were removed earlier; prose is no longer matched against frames.
 """
 
 from __future__ import annotations
@@ -60,8 +60,8 @@ def own_work_phrases(text: str, language: str) -> list[str]:
     return pattern.findall(text) if pattern else []
 
 
-# D51: a claim reworded from its source, and the kind of evidence it names. Both are warnings only.
-COPIED_RUN_WORDS = 12  # the two D51 live reports: median 3 words in common with an anchor, at most 12 once
+# A claim reworded from its source, and the kind of evidence it names. Both are warnings only.
+COPIED_RUN_WORDS = 12  # the two live reports: median 3 words in common with an anchor, at most 12 once
 _EXPERIMENT = {
     "en": re.compile(r"\b(?:experiment(?:s|al|ally)?|field (?:trials?|tests?|deployments?)|sea (?:trials?|tests?)|"
                      r"testbeds?|real-world deployments?|prototypes?)\b", re.IGNORECASE),

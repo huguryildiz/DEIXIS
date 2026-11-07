@@ -77,7 +77,7 @@ class FieldBaseline:
 
 
 def field_baseline(versions: Iterable[BaselineVersion]) -> FieldBaseline:
-    """D48 representative order; versions_considered records IDs in that order.
+    """The representative order; versions_considered records IDs in that order.
 
     Included citations count distinct other works over their read lists only. A
     missing identity or no read lists yields None, never an inferred zero.

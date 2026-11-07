@@ -100,7 +100,7 @@ PLAIN_ENV = {"PATH": os.environ.get("PATH", ""), **system_env()}
 
 
 def test_the_parent_stops_a_child_that_holds_the_interpreter_lock_past_the_limit():
-    # The in-child watchdog is a thread and cannot run while a C call holds the lock (D138). This child reserves 300 MiB with
+    # The in-child watchdog is a thread and cannot run while a C call holds the lock. This child reserves 300 MiB with
     # `calloc` (untouched pages are not resident), reports `ready` while at about 30 MiB, then touches all of it inside
     # `memset` called through PyDLL, which keeps the lock, and then sleeps 30 s in a PyDLL `sleep`. The size crosses the limit
     # only inside those calls, so `ready` always precedes the stop; only a watcher outside the child can stop it, and it must
@@ -145,7 +145,7 @@ def test_a_lost_memory_watch_is_reported_as_a_failed_extraction(tmp_path, monkey
 
 @pytest.mark.skipif(os.environ.get("DEIXIS_P9_PRODUCTION_THRESHOLD") != "1", reason="F09 at the production limit takes about 30 s; set DEIXIS_P9_PRODUCTION_THRESHOLD=1")
 def test_extraction_is_stopped_at_the_production_memory_limit(tmp_path):
-    # ~200 MiB of decoded page content in a file of about 200 KB makes the extraction child grow past 1 GiB (D138).
+    # ~200 MiB of decoded page content in a file of about 200 KB makes the extraction child grow past 1 GiB.
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "release_checks"))
     import memory_probe
 
@@ -234,7 +234,7 @@ def test_no_temporary_file_after_an_exception(tmp_path, monkeypatch):
     assert not (tmp_path / f"{SHA}.pdf").exists()
 
 
-# Figure regions found from captions on synthetic PDF pages (D58).
+# Figure regions found from captions on synthetic PDF pages.
 
 def algorithm_pdf() -> bytes:
     doc = pymupdf.open()

@@ -1,9 +1,9 @@
 """Source routing before the first search: one field distribution request, a table of OpenAlex fields, and the
-queries compiled for the sources it chooses (slice 14, D93).
+queries compiled for the sources it chooses (slice 14).
 
 Since the clean start (slice 3a) the fast path searches OpenAlex only and drops every other routed query
 (`openalex_only`), but routing still runs and is recorded in its step and in the protocol body (`source_routing`,
-`compiled_queries`). The tests of cards shown before routing existed (D93) and of their second round were removed with
+`compiled_queries`). The tests of cards shown before routing existed and of their second round were removed with
 that old-data compatibility, and the tests of a correction on the approval card with the card itself (slice 3b).
 
 Distributions, questions and records are SYNTHETIC and from more than one field; every transport is mocked. Passing
@@ -59,7 +59,7 @@ def test_a_source_outside_the_scope_or_without_its_key_is_never_chosen(monkeypat
 
 
 def test_quick_s_three_queries_search_no_domain_source_under_the_routed_order():
-    built = proposal()  # a model-written query with the code's beside it (D92)
+    built = proposal()  # a model-written query with the code's beside it
     _, queries = ResearchFlow._compiled(None, built, ["openalex", "semantic_scholar", "arxiv", "pubmed"],
                                         {"max_provider_requests": 3})
     assert [(q["provider_id"], q["origin"]) for q in queries] == [

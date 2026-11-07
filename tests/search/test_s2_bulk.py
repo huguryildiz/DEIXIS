@@ -88,7 +88,7 @@ class Scholar:
 
 def test_a_deep_run_reads_semantic_scholar_through_bulk_with_the_query_s_sort(library, tmp_path, monkeypatch):
     """The compiled bulk query, in the fast path's Deep `s2_bulk` slot, reaches the bulk endpoint with its sort and
-    no limit, and is read as one page (D93, D252)."""
+    no limit, and is read as one page."""
     monkeypatch.setattr("deixis.providers.common.SEMANTIC_SCHOLAR_PACER.interval_seconds", 0.0)
     (s2,) = query_compiler.compile_block_queries(_blocks(["arid soils"], ["nitrogen uptake"]), ["semantic_scholar"], 8)
     scholar = Scholar()
@@ -134,7 +134,7 @@ def test_semantic_scholar_endpoints_share_one_gate_across_clients(monkeypatch):
     assert starts[1][1] - starts[0][1] >= 0.055
 
 
-# ---- D155: the 429 cooldown -------------------------------------------------------------------------------------------
+# ---- the 429 cooldown -------------------------------------------------------------------------------------------
 
 def test_a_queued_lookup_skips_a_cooldown_set_ahead_of_it_and_a_search_waits_it_out(monkeypatch):
     """A Semantic Scholar 429 sets the cooldown while its attempt still holds the gate. A lookup queued behind it that

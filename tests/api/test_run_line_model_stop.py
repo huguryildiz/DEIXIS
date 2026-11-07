@@ -1,4 +1,4 @@
-"""P9 H7 item 04 (D165): the run view carries what the run line shows under a model stop. SYNTHETIC, no model, no network."""
+"""P9 H7 item 04: the run view carries what the run line shows under a model stop. SYNTHETIC, no model, no network."""
 
 from pathlib import Path
 

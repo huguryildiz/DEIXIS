@@ -41,7 +41,7 @@ function collectionTree(collections: ZoteroCollection[]): Row[] {
 
 const itemsText = (n: number) => t(n === 1 ? '{n} item' : '{n} items', { n })
 
-// The Zotero dialog (mockup "Import from Zotero"): one collection of the user's Zotero library, read-only (D16). Home
+// The Zotero dialog (mockup "Import from Zotero"): one collection of the user's Zotero library, read-only. Home
 // stores the choice and imports it when the research starts; the Library (S25) imports into All works. `items` is
 // Zotero's own count of the collection's items; when Zotero did not send it, no number is shown.
 export function ZoteroDialog({ open, onOpenChange, destination, busy = false, initial, returnFocus, onImport }: {

@@ -9,9 +9,9 @@ import { IN_TEXT, SUBSECTION, buildDocument, locateAnchors, marksExactly, tableK
 import { scrollBehavior } from '../lib/motion'
 import { pageLocator } from '../lib/labels'
 
-// The extracted text of a whole PDF as a readable document (D58): section contents, pictures of figures cut from the PDF
+// The extracted text of a whole PDF as a readable document: section contents, pictures of figures cut from the PDF
 // page, and in-text references to figures, tables, equations and numbered references that jump to them. Footnote markers are
-// not linked: the text layer drops superscripts, and on the stored library no marker could be found (D58).
+// not linked: the text layer drops superscripts, and on the stored library no marker could be found.
 // Everything is found from the stored text with patterns (pdfDocument.ts); what a pattern misses stays plain text.
 
 function jump(id: string) {
@@ -83,7 +83,7 @@ function InlineText({ text, doc, selfId, marks = [], markLabel = t(MARK_LABEL) }
 
 const cellsOf = (row: string) => row.slice(1, -1).split('|').map(cell => cell.trim())
 
-// A Markdown table read by Marker (D54); its first row is the header when a |---| row follows it.
+// A Markdown table read by Marker; its first row is the header when a |---| row follows it.
 function PdfTextTable({ rows }: { rows: string[] }) {
   const header = rows.length > 1 && cellsOf(rows[1]).every(cell => /^:?-+:?$/.test(cell))
   const body = (header ? rows.slice(2) : rows).map(cellsOf)
@@ -110,7 +110,7 @@ function AlgorithmBox({ id, caption, lines, picture, cited, markLabel }: { id: s
 // The strip's two sentences and the mark's name, for a text opened for something other than an answer's citation (the
 // human queue). Such a text is marked exactly or not at all: a span that would widen to a formula, or that falls in a
 // title, heading, table or figure, is left unmarked rather than marked beyond what the backend found (slice 17).
-// heading and go: the card's name and its button, when the text is opened for something other than a citation (D80).
+// heading and go: the card's name and its button, when the text is opened for something other than a citation.
 export type CitationLabels = { marked: string; unmarked: string; mark: string; heading?: string; go?: string }
 
 // "Cited passage i of N" in the cited-passage card: which marked place the reader is at, the exact text marked there

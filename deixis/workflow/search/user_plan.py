@@ -211,7 +211,7 @@ def from_protocol(body: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]
                                for part in body.get("criterion_parts") or []],
                      "exclusion_title_words": list(body.get("exclusion_title_words") or [])}
         # The population and comparator mapping travels with the criterion, so an unchanged criterion keeps
-        # the comparator guard (`adjudication.mark_comparator`, D109) when the person saves the plan.
+        # the comparator guard (`adjudication.mark_comparator`) when the person saves the plan.
         criterion["question_elements"], criterion["required_roles"] = _frozen_elements(body)
     return {"schema_version": SCHEMA_VERSION,
             **{block: [{"term": form} for form in blocks[block]] for block in GATE_BLOCKS},
@@ -244,7 +244,7 @@ def _unsearched(plan: dict[str, Any], body: dict[str, Any]) -> list[dict[str, An
     if words is None:
         return None
     left = {(w["block"], criterion_rules.norm(w["term"])): w for w in words if w["searched"] is False}
-    # `semantic` (D154): left out of every keyword query, but sent in the block terms' semantic request.
+    # `semantic`: left out of every keyword query, but sent in the block terms' semantic request.
     return [{"block": block, "term": row["term"], "left_out": word["left_out"],
              **({"semantic": word["semantic"]} if "semantic" in word else {})}
             for block in GATE_BLOCKS for row in plan[block]
@@ -271,7 +271,7 @@ def view(store: Any, research_id: str) -> dict[str, Any]:
                   else "model" if (body.get("search_query") or {}).get("status") == "ready" else "code")
         queries = _queries(body)
     issues = contracts.check_user_search_plan(plan).issues if plan is not None else []
-    # The plan's words the frozen search did not carry (D26), only for a plan a protocol froze: a preview has none.
+    # The plan's words the frozen search did not carry, only for a plan a protocol froze: a preview has none.
     unsearched = (_unsearched(plan, base["body"]) if plan is not None and base is not None and not preview else None)
     return {
         "research_id": research_id, "expected_version": research["version"], "scope_revision": scope["revision"],

@@ -291,7 +291,7 @@ export default function App() {
       setResearches(items => items.filter(item => item.id !== research.id))
       if (activeId === research.id) go({ view: 'home' })
       else refreshList()
-      // Undo calls the Trash page's restore (D50).
+      // Undo calls the Trash page's restore.
       toast('success', t('Moved to Trash.'), { label: t('Undo'), run: () => { api.restore(research.id).then(() => { refreshList(); toast('success', t('Research restored.')) }, (error: Error) => toast('error', t('Could not restore research: {message}', { message: error.message }))) } })
     } catch (error) { setActionMessage(t('Could not move to Trash: {message}', { message: (error as Error).message })) }
     finally { setActionBusy(null) }

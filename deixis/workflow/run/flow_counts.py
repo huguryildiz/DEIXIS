@@ -1,7 +1,7 @@
 """Where every work of an `sw` research stands in the flow, and PRISMA 2020-style boxes (slice 20, decisions 1–2).
 
 Nothing here is stored. Each read puts every work of the current revision in exactly one bucket: the person's own
-decision first, by D101's single precedence rule (`probes.probe_set`), then the work's outcome (`work_outcome`, the
+decision first, by that single precedence rule (`probes.probe_set`), then the work's outcome (`work_outcome`, the
 same context the queue and the probe set read) by stage, reason code and the reason table's next step. The buckets
 sum to the works; a sum that does not is a bug, not a number to show.
 
@@ -28,7 +28,7 @@ BUCKETS = ("confirmed", "person_not_met", "person_excluded", "look_again", "incl
            "abstract_not_read", "survey", "out_of_scope_model", "out_of_scope_one_read", "out_of_scope_code", "not_screened",
            "other")
 ABSTRACT_OPEN = ("no_abstract", "abstract_not_found", "runs_agree_unresolved", "single_read_unresolved")
-# One model read's out-of-scope verdict (D173): counted apart from two reads and from a code rule.
+# One model read's out-of-scope verdict: counted apart from two reads and from a code rule.
 ONE_READ_OUT_OF_SCOPE = "single_read_out_of_scope"
 ABSTRACT_NOT_READ = ("abstract_not_read", "abstract_not_proposed")
 FLOW_STATUS = "incomplete_no_human_screening"
@@ -55,7 +55,8 @@ def _bucket(ctx: Any, probe: dict[str, Any], work_id: str) -> tuple[str, str | N
     code, stage, by = outcome["reason_code"], outcome["stage"], outcome["decided_by"]
     if stage == "fulltext":
         if by == "human":
-            # A person's decision the probe set does not hold: gone stale (the queue asks again, as D96 counts it),
+            # A person's decision the probe set does not hold: gone stale (the queue asks again, as the queue counts
+            # it),
             # "not sure", "the PDF is wrong", or an include / not-met whose selection the person later set to pending.
             state = queue._classify(ctx, work_id)
             if state is not None and state["state"] == queue.LOOK_AGAIN:
@@ -71,7 +72,7 @@ def _bucket(ctx: Any, probe: dict[str, Any], work_id: str) -> tuple[str, str | N
             return "not_met", code
         step = "human_queue" if code == queue.VERSIONS_DISAGREE else REASON_CODES[code].next_step
         if step == "human_queue":
-            # Only a row D96 shows: a selection the person set from the list keeps the work out of the queue.
+            # Only a row the queue shows: a selection the person set from the list keeps the work out of the queue.
             state = queue._classify(ctx, work_id)
             return ("queued" if state is not None and state["state"] == "open" else "other"), code
         if step == "waiting_for_pdf":
@@ -95,11 +96,11 @@ def _bucket(ctx: Any, probe: dict[str, Any], work_id: str) -> tuple[str, str | N
 
 
 def _waiting_bucket(ctx: Any, work_id: str) -> str:
-    """A work whose code says "waiting for a PDF" is in that bucket only when D99's waiting list holds it (one rule,
+    """A work whose code says "waiting for a PDF" is in that bucket only when that waiting list holds it (one rule,
     `fulltext.waits_for_pdf`). When another version already has PDF text the work is off that list, and here it is
     "text in hand, not read yet" (`not_read_yet`): the text is there and nothing has read it for the criterion. Any
     other reason to be off the list (no stored retrieval plan) is `other`, with its reason code. A work the person went
-    on without a PDF for (D46) would be on the list; it is `abstract_by_choice`, read from its abstract."""
+    on without a PDF for would be on the list; it is `abstract_by_choice`, read from its abstract."""
     works, listed = waiting.for_context(ctx)
     if work_id in listed:
         return "waiting_for_pdf"
@@ -118,7 +119,7 @@ def flow_counts(ctx: Any, probe: dict[str, Any]) -> dict[str, Any]:
     if sum(buckets.values()) != len(ctx.facts["heads"]):
         raise AssertionError("every work of the revision is in exactly one flow bucket")
     other = Counter(code or "none" for bucket, code in placed.values() if bucket == "other")
-    # A stale person decision whose work is still included: the answer reads it (D96 left this to slice 20).
+    # A stale person decision whose work is still included: the answer reads it.
     in_answer = sum(1 for work_id, (bucket, _) in placed.items() if bucket == "look_again"
                     and (ctx.selections.get(ctx.facts["heads"][work_id]) or {}).get("state") == "included")
     _, scan, _ = queue._scan(ctx)
@@ -138,7 +139,7 @@ def flow_counts(ctx: Any, probe: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-# A follow-up search (D92) is a run of its own under the same question revision. "The search" is the research's
+# A follow-up search is a run of its own under the same question revision. "The search" is the research's
 # `discovery` runs; follow-up searches are counted apart and never added to the first search's numbers.
 FOLLOWUP_KIND = "followup_search"
 FOLLOWUP_FOUND = "followup_search:found"
@@ -194,7 +195,7 @@ def followup_brief(run: dict[str, Any]) -> dict[str, Any]:
     return {"run_id": run["run_id"], "turn_id": run["turn_id"], "created_at": run["created_at"],
             "completed_at": run["completed_at"],
             "requests": len(requests) if requests is not None else None,
-            # The summary says per request whether it may have reached the provider (D92); a refusal closed before
+            # The summary says per request whether it may have reached the provider; a refusal closed before
             # sending (a spent OpenAlex budget, a missing key) was not sent.
             "requests_sent": sum(1 for r in requests if r.get("sent", r.get("status") not in NOT_SENT)) if requests is not None else None,
             "records": found.get("records"), "new_works": found.get("new")}
@@ -231,7 +232,7 @@ def followup_only_works(conn: Any, research_id: str, revision: int, work_of: dic
 
 
 def funnel(ctx: Any, flow: dict[str, Any], boxes: dict[str, Any]) -> dict[str, Any]:
-    """The search step's funnel of the current revision (D233), one pool of works from the unique works down.
+    """The search step's funnel of the current revision, one pool of works from the unique works down.
 
     `retrieved` is the rows the keyword searches returned; `chained` is the works only citation chaining found, so
     the keyword searches brought `unique - chained` works and every later stage is a subset of `unique`. None of the
@@ -240,7 +241,7 @@ def funnel(ctx: Any, flow: dict[str, Any], boxes: dict[str, Any]) -> dict[str, A
     afterwards; `candidates_by_title` are the ones code passed on their title holding the search blocks, with no model
     reading their abstract. `included` is the works whose head record's selection is included, the same count the lists show.
 
-    Follow-up searches (D92) are not this search: `unique` and `candidates` leave out the works only a follow-up
+    Follow-up searches are not this search: `unique` and `candidates` leave out the works only a follow-up
     search brought (`followup_only` in the boxes), and `unique_in_research` is every work of the revision. `included`
     stays research-wide, as the lists count it."""
     box = {row["key"]: row["count"] for row in boxes["boxes"]}
@@ -251,7 +252,7 @@ def funnel(ctx: Any, flow: dict[str, Any], boxes: dict[str, Any]) -> dict[str, A
     from deixis.workflow.screen.abstract_stage import MODEL_CODES, SINGLE_READ_CODES
     by_title = sum(1 for work_id in pool if passed_abstract(ctx, work_id, reason="blocks_in_title")
                    and not any(passed_abstract(ctx, work_id, reason=code) for code in MODEL_CODES))
-    # D173: the works whose current abstract decision rests on one model read, and those of them it kept a candidate.
+    # The works whose current abstract decision rests on one model read, and those of them it kept a candidate.
     read_once = [work_id for work_id in pool if any(
         d["stage"] == "abstract" and d["reason_code"] in SINGLE_READ_CODES
         and not ctx.decisions.is_stale(d, ctx.facts["stale_key"]) for d in ctx.facts["decisions"].get(work_id, []))]
@@ -303,7 +304,7 @@ def machine_screening(ctx: Any, work_id: str) -> dict[str, Any]:
 
 
 def _parts_found(ctx: Any, row: dict[str, Any]) -> dict[str, int]:
-    """How many core parts of a partial reading (D135) a run labelled present with a verified quote, of how many."""
+    """How many core parts of a partial reading a run labelled present with a verified quote, of how many."""
     proposals = ctx.proposals(row["source_version_id"], ctx.run_of_step().get(row["step_id"] or ""))
     core = [part["name"] for part in ctx.parts if part.get("inclusion_role") != "aspect"]
     found = sum(any(r["label"] == "present" and r["quote_verified"] for r in proposals.get(name, {}).values())
@@ -316,7 +317,7 @@ def flow_boxes(ctx: Any, flow: dict[str, Any]) -> dict[str, Any]:
     store, rid, revision = ctx.store, ctx.rid, ctx.revision
     conn = store.conn
     buckets = flow["buckets"]
-    # The search is the research's discovery runs; a follow-up search (D92) is counted in its own block below.
+    # The search is the research's discovery runs; a follow-up search is counted in its own block below.
     searches = [dict(row) for row in conn.execute(
         "SELECT sr.id, sr.status, sr.result_count, sr.query_text FROM search_runs sr JOIN runs r ON r.id = sr.run_id"
         " WHERE sr.research_id = ? AND sr.scope_revision = ? AND r.kind = 'discovery'", (rid, revision))]
@@ -333,7 +334,8 @@ def flow_boxes(ctx: Any, flow: dict[str, Any]) -> dict[str, Any]:
         hit_searches.add(row[1])
         if row[0] in work_of:
             found.add(work_of[row[0]])
-    # A search that returned records and kept no hit row is from before D93: the works it found were not counted.
+    # A search that returned records and kept no hit row is from before that change: the works it found were not
+    # counted.
     counted = not any(s["result_count"] and s["status"] == "completed" and s["id"] not in hit_searches
                       for s in searches)
     abstract_read = {work_of[row[0]] for row in conn.execute(
@@ -353,7 +355,7 @@ def flow_boxes(ctx: Any, flow: dict[str, Any]) -> dict[str, Any]:
     rows = [
         ("rows_returned", sum(s["result_count"] or 0 for s in keyword)),
         ("chain_rows_returned", sum(s["result_count"] or 0 for s in chain)),  # no citation request is 0 rows
-        # D93's hit rows; a revision searched before them was not counted, which is not zero.
+        # that hit rows; a revision searched before them was not counted, which is not zero.
         ("works_found_by_search", len(found) if counted else None),
         ("works", flow["works"]),
         ("abstract_read_by_model", len(abstract_read)),
@@ -361,7 +363,7 @@ def flow_boxes(ctx: Any, flow: dict[str, Any]) -> dict[str, Any]:
         ("out_of_scope_one_read", buckets["out_of_scope_one_read"]),
         ("out_of_scope_code", buckets["out_of_scope_code"]),
         ("fulltext_sought", len(sought)),
-        # A work the person went on without (D46) is still one whose full text was not retrieved.
+        # A work the person went on without is still one whose full text was not retrieved.
         ("fulltext_not_retrieved", buckets["waiting_for_pdf"] + buckets["abstract_by_choice"]),
         ("fulltext_read", read),
         ("not_met", flow["five"]["not_met"]),
@@ -370,7 +372,7 @@ def flow_boxes(ctx: Any, flow: dict[str, Any]) -> dict[str, Any]:
     ]
     return {"flow_status": FLOW_STATUS, "revision": revision,
             "boxes": [{"key": key, "count": count, "flow_status": FLOW_STATUS} for key, count in rows],
-            # Each follow-up search of the revision from its own frozen steps (D92), apart from the boxes above.
+            # Each follow-up search of the revision from its own frozen steps, apart from the boxes above.
             "followup_searches": followup_block(conn, rid, revision),
             # Works only a follow-up search brought: the funnel leaves them out of the first search's numbers.
             "followup_only_works": sorted(followup_only_works(conn, rid, revision, work_of, found))}

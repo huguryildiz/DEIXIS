@@ -258,5 +258,5 @@ def test_the_protocol_freezes_before_the_first_request_that_fetches_search_resul
 # ---- the criterion belongs to the plan's revision: the full-text path reads exactly the one it froze -------------
 
 
-# ---- the comparator guard travels with the criterion (slice 28, D109) ---------------------------------------------
+# ---- the comparator guard travels with the criterion (slice 28) ---------------------------------------------
 

@@ -307,7 +307,7 @@ async def fetch_file(url: str, media_types: tuple[str, ...], gate: Any = None, c
                      deadline: float = TIMEOUT_SECONDS) -> FetchResult:
     """A file of one of `media_types`, through fetch_pdf's protections (`_fetch`).
 
-    `gate` (the arXiv source route, D104) is called before and after every HTTP request, redirect hops included:
+    `gate` (the arXiv source route) is called before and after every HTTP request, redirect hops included:
     `await gate.before()` may wait and stamps the request's start, `gate.after()` stamps its end. The whole fetch, from
     the first address check to the last byte and including the gate's waits between hops, runs inside one
     `asyncio.timeout(deadline)`; the gate's wait before the first hop is outside it. Past the deadline the stream is

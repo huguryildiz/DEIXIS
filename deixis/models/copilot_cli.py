@@ -1,4 +1,4 @@
-"""GitHub Copilot CLI model connection: research steps through the account signed in to Copilot CLI (D24).
+"""GitHub Copilot CLI model connection: research steps through the account signed in to Copilot CLI.
 
 Each step is one `copilot -p` run in prompt mode with JSONL output, in a DEIXIS-owned COPILOT_HOME and an empty
 workspace. Copilot's tools cannot be switched off with an empty `--available-tools` (measured: the model still read a
@@ -63,7 +63,7 @@ def native_binary(found: Path) -> str | None:
 def copilot_environment(home: Path, source: Mapping[str, str] | None = None) -> dict[str, str]:
     """The variables Copilot needs to run and reach the network. GITHUB_TOKEN, GH_TOKEN and COPILOT_GITHUB_TOKEN are
     left out on purpose: Copilot would use them before the signed-in account, and GITHUB_TOKEN was the GitHub Models key
-    of another connection (D22). No telemetry switch is set: the Copilot CLI documentation we could read names none
+    of another connection. No telemetry switch is set: the Copilot CLI documentation we could read names none
     (only an administrator's OpenTelemetry export setting), and an undocumented one is not invented (F3)."""
     source = os.environ if source is None else source
     env = {k: v for k, v in source.items() if k in CODEX_ENV_ALLOWLIST or k.startswith("LC_")}
@@ -205,7 +205,7 @@ class CopilotCliAdapter:
         if configured := self._configured_mcp_servers():
             return ModelStepResult("isolation_violation", error=f"MCP servers configured in the DEIXIS Copilot home: {', '.join(configured)}",
                                    delivery_class="before_send")
-        # Prompt mode has no separate system message; the schema is in the stored developer text (D86).
+        # Prompt mode has no separate system message; the schema is in the stored developer text.
         prompt = f"{base}\n\n{developer}\n\nReturn only a JSON object.\n\n{message}"
         args = [*cmd, "-p", "", "--output-format", "json", "--model", requested_model, *ISOLATION_ARGS]
         if reasoning_effort:

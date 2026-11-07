@@ -14,8 +14,8 @@ Bulk search (`/paper/search/bulk`, API description read 2026-09-23, `notes/archi
 the query is matched against title and abstract with `+` for AND, `|` for OR, `"` for a phrase and `( )` for
 precedence; up to 1,000 papers come in one call and a `token` in the answer asks for the next batch; `total` is an
 estimate. It does not order by relevance: `sort` is `paperId` (the default), `publicationDate` or `citationCount`, so
-which records a read limit keeps is decided by the sort (D93). An sw query names this endpoint and its sort
-(`endpoint`, `sort`); a legacy query, and an sw query stored before D93, names neither and goes to `/paper/search`.
+which records a read limit keeps is decided by the sort. An sw query names this endpoint and its sort
+(`endpoint`, `sort`); a legacy query, and an sw query stored earlier, names neither and goes to `/paper/search`.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
 BULK_URL = "https://api.semanticscholar.org/graph/v1/paper/search/bulk"
 BULK_ENDPOINT = "bulk"
 BULK_MAX_RESULTS = 1000  # papers one bulk call returns
-BULK_SORT = "citationCount:desc"  # chosen by slice 14's Task 1 (D93)
+BULK_SORT = "citationCount:desc"  # chosen by slice 14's Task 1
 # Records past a read limit that a bulk page returned are dropped. Neither the answer's token nor anything else can ask
 # for them, so the read ends there and this cursor is never sent (the read limit ends the query first).
 CUT = "cut"
@@ -73,7 +73,7 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
                  contact_email: str | None = None, cursor: str | None = None,
                  max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES, endpoint: str | None = None,
                  sort: str | None = None) -> SearchOutcome:
-    """One page of a relevance search, or of a bulk search when the query names that endpoint (D93)."""
+    """One page of a relevance search, or of a bulk search when the query names that endpoint."""
     if endpoint == BULK_ENDPOINT:
         return await search_bulk(client, query, limit, api_key, contact_email, cursor, max_rate_limit_retries,
                                  sort or BULK_SORT)
@@ -119,7 +119,7 @@ async def search_bulk(client: httpx.AsyncClient, query: str, limit: int, api_key
                       max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES, sort: str = BULK_SORT) -> SearchOutcome:
     """One batch of a bulk search: up to 1,000 papers, of which the first `limit` are kept.
 
-    The request goes through the same `send` as every other Semantic Scholar request, so the process-wide gate (D67)
+    The request goes through the same `send` as every other Semantic Scholar request, so the process-wide gate
     and the bounded 429 retries apply to it unchanged. The endpoint takes no page size; a batch larger than `limit` is
     cut there and its read ends (`CUT`).
     """

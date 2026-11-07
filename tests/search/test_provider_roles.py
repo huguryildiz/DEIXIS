@@ -1,4 +1,4 @@
-"""What each connector is for: a source a query is sent to, or a source asked about a record whose DOI is known (D87).
+"""What each connector is for: a source a query is sent to, or a source asked about a record whose DOI is known.
 
 Crossref is the second kind. It is no longer given a search query; it still answers what a record's metadata and links
 are, and both `record_lookup:crossref` and the DOI checks of `documents/acquisition.py` are untouched by that. The rule

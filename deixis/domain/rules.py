@@ -11,7 +11,7 @@ from typing import Any
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES
 
 MAX_SCHEMA_REPAIRS = 1
-# A report section gets a second repair (D65); frozen into a report run's budget, so older runs keep one.
+# A report section gets a second repair; frozen into a report run's budget, so older runs keep one.
 REPORT_SECTION_REPAIRS = 2
 MAX_RATE_LIMIT_MODEL_RETRIES = 2  # extra resends after a rate-limited response, before the call halts as today
 MAX_ACTIVE_MODEL_CALLS = 1
@@ -28,22 +28,22 @@ class EffortBudget:
     core_depth: int = 0
 
 
-# How many records one sw query reads across its pages, by effort (D88, slice 13c). The limits were picked by hand;
-# `detailed` read 2,000 until D90 lowered it to 1,000: on the vocabulary experiment's first question, halving the read
+# How many records one sw query reads across its pages, by effort (slice 13c). The limits were picked by hand;
+# `detailed` read 2,000 until it was lowered to 1,000: on the vocabulary experiment's first question, halving the read
 # cost one verified work per round (as OpenAlex ranks them, not as the model reads them). None of the three is
 # measured against what the model then includes.
 # The limit never drops a record that was read; what it leaves unread is counted (`unread_count`).
 SW_READ_LIMIT = {"quick": 400, "standard": 1_000, "detailed": 1_000}
 
-# How many times a paged sw read or an sw abstract lookup batch waits out a provider's 429, by effort (D88).
+# How many times a paged sw read or an sw abstract lookup batch waits out a provider's 429, by effort.
 # `quick` does not wait at all: the rate-limited page or batch ends that read there, its records stay `unread` /
 # `abstract_not_found` and are counted, and the run goes on. `detailed` waits as much as it always did. The waiting
-# is bounded by count, never by a clock: no effort stops a run at a time (D88). The Crossref lookup path does not
+# is bounded by count, never by a clock: no effort stops a run at a time. The Crossref lookup path does not
 # read this table.
 PROVIDER_WAIT = {"quick": 0, "standard": 1, "detailed": MAX_RATE_LIMIT_RETRIES}
 
 # Which domain source an sw discovery run searches, read from the OpenAlex field distribution of its gate query
-# (D93, slice 14). A source is searched when the fields it covers hold at least ROUTE_SHARE of the records together.
+# (slice 14). A source is searched when the fields it covers hold at least ROUTE_SHARE of the records together.
 # The table names OpenAlex fields (`primary_topic.field`), never words of a question. OpenAlex and Semantic Scholar
 # are searched whatever the distribution. Table and share were picked by hand, not measured: on the three questions
 # that were read, every chosen source held at least 86 % and every left-out one at most 9 %, so no share between
@@ -74,39 +74,39 @@ ABSTRACT_BATCH = 20
 ABSTRACT_RUNS = 2
 ABSTRACT_QUOTE_MIN_CHARS = 12
 
-# How many works one full-text retrieval run fetches, by effort (D83, slice 10). Hand-picked, the same numbers as
+# How many works one full-text retrieval run fetches, by effort (slice 10). Hand-picked, the same numbers as
 # the abstract stage's read limit; the one measurement behind them is SW10's single topic, where a work cost about
 # five seconds and five requests on one machine and one network. Neither the limit nor the time it implies was
 # measured in the product. A work outside the limit is not dropped: it is counted as not reached and the next
 # retrieval run starts from it.
-# 2026-09-23 (D94, slice 14a): quick 40 -> 80. A model-free replay of the plan on eleven stored libraries
+# 2026-09-23 (slice 14a): quick 40 -> 80. A model-free replay of the plan on eleven stored libraries
 # (notes/archive/sw/sw-slice14a-order-replay-2026-09-23) found the limit, not the order, keeps verified works out: quick had
 # 234-348 eligible works for 40 places, and doubling the limit put 28 instead of 16 verified quantum works in the
 # plan over three runs. One topic; the time it costs is measured by the slice's live acceptance, not here.
 FULLTEXT_WORK_LIMIT = {"quick": 80, "standard": 100, "detailed": 300}
 
-# How many works one full-text reading run sends to the model, by effort (D85, slice 12). Hand-picked and not
+# How many works one full-text reading run sends to the model, by effort (slice 12). Hand-picked and not
 # measured. Each work is read twice, so the model-call budget is twice this. A work outside the limit is not
 # dropped: it is counted as not reached and the next reading run starts from it.
-# 2026-09-23 (D94): quick 20 -> 40, kept at half the fetch limit because fewer than half the fetched works get a PDF.
+# 2026-09-23: quick 20 -> 40, kept at half the fetch limit because fewer than half the fetched works get a PDF.
 FULLTEXT_READ_LIMIT = {"quick": 40, "standard": 50, "detailed": 150}
 FULLTEXT_RUNS = 2
 FULLTEXT_PASSAGES_PER_CALL = 12
-# How the two calls of one work are given passages and how their answers are combined (D76). `split_v1`: the second
+# How the two calls of one work are given passages and how their answers are combined. `split_v1`: the second
 # call is shown the passages the first did not see, so a work of up to 24 parts is read whole with the same calls and
 # tokens; a part only one call saw stands on that call's code-verified quote. The old second call saw the same 12 and
 # agreed on 97.6% of parts in the owner's library, so it added almost nothing. Frozen into each reading run's budget;
 # a run whose budget has no `read_rule` reads as before (same list twice, page check, both runs must agree).
 FULLTEXT_READ_RULE = "split_v1"
 
-# Citation chaining of an `sw` discovery run (D95, slice 15; replay in notes/archive/sw/sw-slice15-chain-replay-2026-09-23).
+# Citation chaining of an `sw` discovery run (slice 15; replay in notes/archive/sw/sw-slice15-chain-replay-2026-09-23).
 # 2026-09-23: 15 code seeds; 25 seeds added no work to the plan in `quick` and `standard` (1 in one quantum `detailed`
 # run at 150 / 75); with 15 seeds quantum `detailed` gained 0 at 50 / 25 and at 150 / 75, and the package question
 # `detailed` 1 in one run at 150 / 75. The chain's own abstract read and its own room in the full-text plan sit on top
 # of the keyword limits above, which do not change. 15 seeds cost 17-24 requests in the replay; the request limit
 # leaves room for seeds whose citing works take two pages. Hand-picked from one topic's replay, not optimised.
 # The old chain is gone (clean start, slice 3a); the fast chain's own numbers are in `fast_path.MODES`.
-# Plan room 25 -> 12 in standard and detailed on 2026-09-23, after the first acceptance (D95): the chain's own time was
+# Plan room 25 -> 12 in standard and detailed on 2026-09-23, after the first acceptance: the chain's own time was
 # 3.50 / 3.81 / 3.30 min against 3.0 with 25; 12 is the smallest room that kept the three chained verified works
 # that were read (places 4, 8 and 12). `quick` 20 -> 12 after the second acceptance: the package question's chain time
 # was 2.04 / 2.19 min against 2.0 with 20. Both changes were made after the results were seen, agreed with gpt-6-sol
@@ -119,10 +119,10 @@ FULLTEXT_QUOTE_MIN_CHARS = 12
 # bounded per run; with several providers enabled, one query per relevant provider needs room. `core_depth` is
 # how many results OpenAlex's core-only query reads (0: no such query); standard's 250 candidates and 15 model calls were
 # chosen for it in notes/docs/archive/search-2026-09/search-recall-depth-2026-09-17.md, detailed keeps more room than standard.
-# 2026-09-21 (D78): an sw discovery run is given CRITERION_CALLS on top of its preset for the criterion proposal it
+# 2026-09-21: an sw discovery run is given CRITERION_CALLS on top of its preset for the criterion proposal it
 # makes before the first search (api/app.py), so its room for screening is what it was. The presets themselves are
 # unchanged for answer runs, which propose no criterion.
-# 2026-09-23 (D92): the model-written search query (slice 13h) gets SEARCH_QUERY_CALLS on top as well: its call and
+# 2026-09-23: the model-written search query (slice 13h) gets SEARCH_QUERY_CALLS on top as well: its call and
 # one repair, and once more after the user asks for a second try. Only a run whose settings let a model write the query
 # is given them.
 CRITERION_CALLS = 3
@@ -160,10 +160,11 @@ def result_applicability(step_scope_revision: int, current_scope_revision: int,
 
 
 # `fulltext_adjudication` uses the literature model, as abstract screening does. The slice names no other model
-# for the reading step. The question's English sentence (D149) is a planning step like the block labelling. A follow-up's search query (D92) is a search step like `search_query`.
+# for the reading step. The question's English sentence is a planning step like the block labelling. A follow-up's
+# search query is a search step like `search_query`.
 LITERATURE_TASKS = ("question_translation", "vocabulary_labels", "criterion_proposal", "search_query", "abstract_screening",
                     "fulltext_adjudication", "followup_search_query")
-# Candidate tasks use the research model, the default single schema repair and no timeout resend (D143).
+# Candidate tasks use the research model, the default single schema repair and no timeout resend.
 # A repair would let the step name a phrase the question does not hold and then take it back. The block labelling
 # gets one attempt: an output that invents, drops or repeats a phrase is rejected and the rule stands (SW17.1). An
 # abstract screening batch gets one too, because an invalid output costs nothing: its records stay
@@ -174,8 +175,8 @@ NO_REPAIR_TASKS = ("vocabulary_labels", "abstract_screening")
 def step_model(scope: dict[str, Any], task_type: str) -> tuple[str, str | None, str | None]:
     """(connection, model, reasoning effort) for a research's search and answer steps.
 
-    A research without a literature model (created before D14) runs its search steps on the research model. A literature
-    model without its own connection (created before D28) is on the research model's connection.
+    A research without a literature model (created earlier) runs its search steps on the research model. A literature
+    model without its own connection (created earlier) is on the research model's connection.
     """
     if task_type in LITERATURE_TASKS and scope.get("literature_model"):
         return (scope.get("literature_connection") or scope["model_connection"], scope["literature_model"],

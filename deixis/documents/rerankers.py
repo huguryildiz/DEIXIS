@@ -7,7 +7,7 @@ includes, excludes or decides anything; the person's own included records stay f
 is a priority signal, not evidence. Passage ranking for answers is not reranked.
 
 The setting is separate from the embedding provider, so any embedding (or none) can go with either reranker. With
-nothing saved, Voyage rerank-3-lite is on (D104); without a Voyage key nothing is sent, the run records
+nothing saved, Voyage rerank-3-lite is on; without a Voyage key nothing is sent, the run records
 `reranker_unavailable` and keeps the fused order. A saved setting, "off" included, always wins.
 A failed, timed-out or stopped rerank never falls back to another reranker; the fused order is used and the step says
 so. A built-in choice is `(builtin, catalog id)`; one saved before the catalog (no model, or an earlier model) is never
@@ -61,16 +61,17 @@ VOYAGE_TOTAL_TOKENS = 500_000  # estimated "query × documents + documents" per 
 # How many records are reranked, as a multiple of how many a run reads (the depth's N): 2 means the reranker sees twice
 # what is read, so a record just below the read cutoff can move above it and one above can move out. 1 only reorders
 # what would be read anyway. On 100 BioASQ questions reranking the first 200 of a Standard run (factor 4) raised
-# recall@50 about twice as much as the first 100 (factor 2), for Qwen3 and Voyage alike (D83). Since D153 the default
+# recall@50 about twice as much as the first 100 (factor 2), for Qwen3 and Voyage alike. Since rerank rule version 2
+# the default
 # is 8 (400 at Standard, the MAX_CANDIDATES cap), so a work the fused order put between 200 and 400 can still be lifted;
 # 8 was not measured. A run reads its factor through the rule its budget froze (`small_batch.rerank_choice`): a budget
-# frozen before D153 keeps 4 and never more.
+# frozen earlier keeps 4 and never more.
 DEFAULT_POOL_FACTOR = 8.0
 MIN_POOL_FACTOR, MAX_POOL_FACTOR = 1.0, 8.0
 MAX_CANDIDATES = 400  # never more records than this in one rerank, whatever the depth and factor
 DEFAULT_TIMEOUT_SECONDS = 180
 MIN_TIMEOUT_SECONDS, MAX_TIMEOUT_SECONDS = 10, 900
-MAX_DOCUMENT_CHARS = 20_000  # a title and abstract longer than this is cut here, and the cut is counted (D102)
+MAX_DOCUMENT_CHARS = 20_000  # a title and abstract longer than this is cut here, and the cut is counted
 
 
 class RerankError(Exception):
@@ -101,7 +102,7 @@ class Choice:
         return min(MAX_CANDIDATES, math.ceil(read_top * self.pool_factor))
 
 
-# With nothing saved, Voyage rerank-3-lite reorders the records (owner, 18 Oct; D104): on the owner's settings it raised
+# With nothing saved, Voyage rerank-3-lite reorders the records (owner, 18 Oct): on the owner's settings it raised
 # recall@50 on BioASQ 100 and LitSearch 200, the lower 95% bound above zero on both. Without a Voyage key it cannot run:
 # the run records `reranker_unavailable` and keeps the fused order, and Settings and the research say so.
 DEFAULT_SETTING = {"enabled": True, "provider": "voyage"}
@@ -113,7 +114,7 @@ def setting_in_force(saved: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def chosen(setting: dict[str, Any] | None) -> Choice | None:
-    """The reranker the setting in force turns on, or None when it is off. Nothing saved means the default (D104)."""
+    """The reranker the setting in force turns on, or None when it is off. Nothing saved means the default."""
     setting = setting_in_force(setting)
     if not setting.get("enabled") or setting.get("provider") not in PROVIDERS:
         return None
@@ -190,7 +191,7 @@ async def rerank(choice: Choice, client: httpx.AsyncClient, local: Any, query: s
 
     A record's "abstract" is sometimes a whole article (an OpenAlex abstract holding the body text). Refusing it would
     leave every other record of the run unreranked, so it is cut to its first MAX_DOCUMENT_CHARS characters, which
-    hold its title and opening, and counted (D102)."""
+    hold its title and opening, and counted."""
     if not documents:
         return {"scores": [], "truncated": 0, "cut_documents": 0, "provider_tokens": None}
     cut = sum(len(text) > MAX_DOCUMENT_CHARS for text in documents)

@@ -114,7 +114,7 @@ def test_question_to_cited_answer_and_restart(tmp_path):
 
         view, run = wait_run(client, rid, first["id"])
         assert run["status"] == "completed", run
-        # The fast path (D252) reads the same three works through the semantic search, the keyword query and the chain.
+        # The fast path reads the same three works through the semantic search, the keyword query and the chain.
         assert view["counts"]["unique"] == 3
         assert view["counts"]["found"] == sum(s["result_count"] for s in view["search_runs"]) > 3
         view = include_sources(client, rid, view)
@@ -144,7 +144,7 @@ def test_question_to_cited_answer_and_restart(tmp_path):
 
         passage = client.get(f"/api/researches/{rid}/passages/{evidence['passage_id']}").json()
         assert passage["source"]["id"] == evidence["source_version_id"]
-        assert evidence["text_source"] == passage["text_source"]  # a quote says whether its text was read with OCR (D51)
+        assert evidence["text_source"] == passage["text_source"]  # a quote says whether its text was read with OCR
         pdf_sources = [s for s in view["sources"] if s["access"]["assets"]]
         # The fast-path answer fetches nothing (slice 3b) and full-text fetching is off here: the upload is the only PDF.
         assert [s["title"] for s in pdf_sources] == ["my notes"]

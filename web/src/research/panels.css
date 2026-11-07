@@ -283,7 +283,7 @@
 .waiting-link:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
 .waiting-rows .source-status .source-fact{min-height:19px}
 @container (min-width:620px){.waiting-rows>.prow{grid-template-areas:'place head head' '. reason acts'}.waiting-rows .waiting-actions{justify-content:flex-end}}
-/* The works the person went on without a PDF for (D46): one folded line under the list; a neutral dot, the words say it. */
+/* The works the person went on without a PDF for: one folded line under the list; a neutral dot, the words say it. */
 .waiting-skipped>summary h4{display:inline-flex;align-items:center;gap:6px}
 .waiting-skipped[open]>summary .queue-decided-chevron{transform:rotate(90deg)}
 .waiting-reason.is-abstract::before{background:var(--muted)}

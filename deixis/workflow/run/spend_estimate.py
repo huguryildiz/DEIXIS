@@ -39,14 +39,14 @@ def _tasks(effort: str, reading_on: bool, deep_screening: bool = False) -> list[
     answer is repaired once."""
     _, n, k, *_ = fast_path.MODES[effort]
     batches = math.ceil(n / ABSTRACT_BATCH)
-    # D173: the deeper window's batches, one read each, at most; none when code settles every window work.
+    # The deeper window's batches, one read each, at most; none when code settles every window work.
     deep = (math.ceil(fast_path.DEEP_SCREENING_WORKS / ABSTRACT_BATCH)
             if deep_screening and effort in fast_path.DEEP_SCREENING_EFFORTS else 0)
     passages = TEST_EFFORT_BUDGETS[effort].max_answer_passages
     answer_chars = (passages // 2 * PASSAGE_CHARS[0], passages * PASSAGE_CHARS[1])
     tasks = [
         ("research_title", "answer", (1, 1), (1000, 6000), (30, 150), True),
-        # Only a question that is not in English and has no key terms is translated (D149).
+        # Only a question that is not in English and has no key terms is translated.
         ("question_translation", "literature", (0, 1), (300, 1500), (20, 200), True),
         ("vocabulary_labels", "literature", (0, 3), (500, 2000), (100, 600), False),
         ("search_query", "literature", (1, 2), (1000, 4000), (200, 1200), True),
@@ -121,7 +121,7 @@ def estimate(package: Any, effort: str, roles: dict[str, dict[str, Any] | None],
         "complete": bool(paid) and len(priced) == len(paid),
         "roles": role_rows, "tasks": rows,
         "embedding": {"provider": embedding_provider, "paid": embedding_provider in ("gemini", "openai", "voyage", "cohere"), "included": False},
-        # The record reranker in force (Voyage by default, D104): billed by its provider, not in this range.
+        # The record reranker in force (Voyage by default): billed by its provider, not in this range.
         "reranking": {"provider": rerank_provider, "paid": rerank_provider not in (None, "builtin"), "included": False},
         "prices": {"version": table["version"], "as_of": table["as_of"]},
         "assumptions": {"chars_per_token": CHARS, "passage_chars": list(PASSAGE_CHARS), "abstract_chars": list(ABSTRACT_RECORD_CHARS),

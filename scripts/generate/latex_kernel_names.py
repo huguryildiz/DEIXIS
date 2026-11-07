@@ -1,5 +1,5 @@
 """Writes deixis/documents/latex_kernel_names.json: the control words that are defined inside the document
-body of `\\documentclass{article}\\usepackage{amsmath,amssymb}` under pdfLaTeX (D104). An archive definition of any of
+body of `\\documentclass{article}\\usepackage{amsmath,amssymb}` under pdfLaTeX. An archive definition of any of
 them is never trusted, since the paper may use the name where that definition is not in force.
 
 Candidates are every control word in the kernel's source files (latex.ltx and the files it inputs), article.cls and the

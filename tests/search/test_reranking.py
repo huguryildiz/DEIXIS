@@ -184,15 +184,16 @@ def test_a_failed_rerank_is_recorded_with_the_fused_order_as_its_fallback_and_no
     assert sent == []  # Voyage has a key here and was not asked instead
 
 
-# D106's hold, which a budget frozen with D155's rule (version 3) keeps.
+# The old chain-only hold, which a budget frozen with version 3 keeps.
 RERANK_V3 = {"version": 3, "pool_factor": 8.0, "max_pool_factor": 8.0, "hold_without_abstract": "with_text_route"}
 
 
 @pytest.mark.parametrize("rule, held", [(small_batch.RERANK_RULE, False), (RERANK_V3, True)])
 def test_a_chain_only_record_is_reranked_since_d170_and_keeps_its_place_under_an_earlier_rule(monkeypatch, rule, held):
-    # D170: a record only citation chaining brought goes to the reranker like any other; a budget frozen with an
-    # earlier rule keeps D106's hold (not sent, its fused place kept, `chained_only`). The rerank step only, with an
-    # abstract present: the lookup before the rerank (which asks about chain-only records since D170) is not covered.
+    # A record only citation chaining brought goes to the reranker like any other; a budget frozen with an
+    # earlier rule keeps that hold (not sent, its fused place kept, `chained_only`). The rerank step only, with an
+    # abstract present: the lookup before the rerank (which asks about chain-only records since version 4) is not
+    # covered.
     flow, store, _ = rerank_flow(monkeypatch, {"enabled": True, "provider": "builtin", "model": RER, "pool_factor": 2},
                                  RerankingLocal())
     built = small_batch.manifest_for()
@@ -266,14 +267,14 @@ class LookupPool(Pool):
 
     def __init__(self, delay=0.0, filler=0, refuse_s2=False, pdf=False):
         targets = [work(n, STRONG, "x") | {"abstract_inverted_index": None} for n in EMPTY]
-        if pdf:  # 93, which no source holds, has an open PDF (D155)
+        if pdf:  # 93, which no source holds, has an open PDF
             targets[-1] |= {"best_oa_location": {"pdf_url": "https://example.org/93.pdf", "version": "publishedVersion"}}
         self.refuse_s2 = refuse_s2
         unread = [work(1000 + n, "SYNTHETIC unread record", "x") | {"abstract_inverted_index": None} for n in range(filler)]
         super().__init__(works=pool(8) + targets + unread)
         self.delay, self.lookups, self.crossref, self.out, self.peak = delay, [], [], 0, 0
         self.wait = 0.01 if filler else 0.05
-        self.slow = None  # D156 cases: only the first `slow` Crossref requests take `wait`, the read stage's are quick
+        self.slow = None  # version 4 cases: only the first `slow` Crossref requests take `wait`, the read stage's are quick
 
     def __call__(self, request):
         if request.url.host == "api.crossref.org":
@@ -311,7 +312,7 @@ class LookupPool(Pool):
         wait = self.wait if self.slow is None or len(self.crossref) <= self.slow else 0.01
 
         async def answer():
-            await headers_out(request)  # its headers go out (D156)
+            await headers_out(request)  # its headers go out
             self.out += 1
             self.peak = max(self.peak, self.out)
             try:
@@ -325,31 +326,32 @@ class LookupPool(Pool):
         return answer()
 
 
-# The rules a budget froze before D155 (D153's), kept here to show such a run keeps them.
+# The rules a budget froze before version 3 (version 2's), kept here to show such a run keeps them.
 PRERANK_V2 = {"version": 2, "max_records": 400, "seconds": 8, "crossref_in_flight": 4, "max_requests": 419}
 RERANK_V2 = {"version": 2, "pool_factor": 8.0, "max_pool_factor": 8.0, "hold_without_abstract": True}
-# D155's lookup rule, kept to show such a run still holds every record no source answered, sent or not.
+# The version 3 lookup rule, kept to show such a run still holds every record no source answered, sent or not.
 PRERANK_V3 = {"version": 3, "max_records": 400, "seconds": 8, "crossref_in_flight": 4, "s2_waits": 0, "s2_batch": 400,
               "s2_cooldown_skip": True, "max_requests": 418}
-D155 = ("d155", "text_route", "s2_refused", "window_above_200", "time_ceiling", "crossref_cut")
-D156 = ("never_sent", "never_sent_v3")
+V3_CASES = ("v3", "text_route", "s2_refused", "window_above_200", "time_ceiling", "crossref_cut")
+V4_CASES = ("never_sent", "never_sent_v3")
 
 
-@pytest.mark.parametrize("case", [*D155, *D156, "d153", "d152", "before_d152"])
+@pytest.mark.parametrize("case", [*V3_CASES, *V4_CASES, "v2", "first_rule", "before_first_rule"])
 def test_missing_abstracts_are_looked_up_before_the_rerank_and_unfilled_records_keep_their_place(tmp_path, monkeypatch, case):
-    # D152: a record without an abstract reaches the reranker with the abstract a lookup source holds. D153: every such
+    # A record without an abstract reaches the reranker with the abstract a lookup source holds. Version 2: every such
     # record of the window is asked about (Semantic Scholar's batch, then Crossref 4 in flight), the window is 8x, and
-    # one still without an abstract keeps its fused place instead of being scored on its title. D155: it keeps its
+    # one still without an abstract keeps its fused place instead of being scored on its title. Version 3: it keeps its
     # place only with a route to text or a lookup that did not settle, and a Semantic Scholar 429 fails at once, so
-    # Crossref still asks within the round. D156: Crossref 8 in flight, and a lookup counts as open only for a record a
-    # request was really sent for. A budget frozen with D155's, D153's or D152's rule, or before D152, keeps what it did.
+    # Crossref still asks within the round. Version 4: Crossref 8 in flight, and a lookup counts as open only for a
+    # record a
+    # request was really sent for. A budget frozen with version 3, 2 or the first rule, or before it, keeps what it did.
     freeze = small_batch.freeze_budget
 
     def frozen(*args):
         budget = freeze(*args)
         if case == "time_ceiling":
             budget["inspection"]["prerank_lookup"] |= {"seconds": 0.2 * WAIT_FACTOR}
-        if case in ("crossref_cut", *D156):
+        if case in ("crossref_cut", *V4_CASES):
             budget["inspection"]["prerank_lookup"] |= {"seconds": 0.5 * WAIT_FACTOR}
         if case == "never_sent_v3":
             budget["inspection"]["prerank_lookup"] = dict(PRERANK_V3) | {"seconds": 0.5 * WAIT_FACTOR}
@@ -358,27 +360,27 @@ def test_missing_abstracts_are_looked_up_before_the_rerank_and_unfilled_records_
             # took over 32 s (the whole test: 14 s alone in the Windows VM). The case is about every record being asked,
             # not about the ceiling, so Windows gets one it does not reach.
             budget["inspection"]["prerank_lookup"]["seconds"] = 180
-        if case == "d153":
+        if case == "v2":
             budget["inspection"] |= {"prerank_lookup": dict(PRERANK_V2), "rerank": dict(RERANK_V2)}
-        if case in ("d152", "before_d152"):
+        if case in ("first_rule", "before_first_rule"):
             budget["inspection"].pop("rerank")
             budget["inspection"]["prerank_lookup"] = {"max_records": 20, "seconds": 5}
-        if case == "before_d152":
+        if case == "before_first_rule":
             budget["inspection"].pop("prerank_lookup")
         return budget
     monkeypatch.setattr(small_batch, "freeze_budget", frozen)
     if case == "s2_refused":  # the real cooldown, which the suite otherwise turns off
         monkeypatch.delattr(pacing.SEMANTIC_SCHOLAR_PACER, "cool_down")
     handler = LookupPool(delay=3.0 * WAIT_FACTOR if case == "time_ceiling" else 0.0,
-                         filler=200 if case == "window_above_200" else 20 if case in D156 else 0,
+                         filler=200 if case == "window_above_200" else 20 if case in V4_CASES else 0,
                          refuse_s2=case == "s2_refused", pdf=case == "text_route")
-    if case in D156:
+    if case in V4_CASES:
         handler.slow = 4  # the requests the round has out at once
-    if case in ("crossref_cut", *D156):
+    if case in ("crossref_cut", *V4_CASES):
         handler.wait = 3.0 * WAIT_FACTOR  # Semantic Scholar answers at once; Crossref is still out when the round's time ends
     local = RerankingLocal()
     s = Session(tmp_path, monkeypatch, handler=handler, local=local, setting=BUILTIN)
-    # No factor saved: the run's frozen rule gives it (8 since D153, 4 before).
+    # No factor saved: the run's frozen rule gives it (8 since rerank rule version 2, 4 before).
     s.store.set_setting(rerankers.SETTING, {"enabled": True, "provider": "builtin", "model": RER, "timeout_seconds": 60})
     try:
         rid, run_id, view, run = s.discover(**({"effort": "standard"} if case == "window_above_200" else {}))
@@ -397,22 +399,22 @@ def test_missing_abstracts_are_looked_up_before_the_rerank_and_unfilled_records_
     documents = local.reranked[0]
     automatic, order = listing["automatic_order"], listing["order"]
     assert sorted(order) == sorted(dict.fromkeys(listing["manifest"]["user_priority"] + automatic))
-    assert rerank["pool_factor"] == (4.0 if case in ("d152", "before_d152") else 8.0)
+    assert rerank["pool_factor"] == (4.0 if case in ("first_rule", "before_first_rule") else 8.0)
     if case == "window_above_200":
         # Standard reads 50, so the window is 400 places: all 212 records, 204 of them without an abstract. Every one
-        # is asked about: Semantic Scholar in one batch (D155), Crossref about all 202 it left, beyond the read stage's
+        # is asked about: Semantic Scholar in one batch, Crossref about all 202 it left, beyond the read stage's
         # 200. Crossref answered every one it left, so none is held: they are scored on their titles.
         assert len(rerank["candidate_ids"]) + len(rerank["kept_in_place"]) == len(listing["manifest"]["pool"]) == 212
         assert step["output"]["status"] == "done" and len(step["output"]["asked"]) == 204
         assert step["output"]["rule"]["max_requests"] == 418 and step["output"]["lookup_open"] == []
         assert "unsettled" not in step["output"]
         assert [len(batch) for batch in handler.lookups] == [204]
-        # D159: Crossref's single requests 4 in flight again (8 under D156), frozen in the run's rule.
+        # Crossref's single requests 4 in flight again (8 under version 4), frozen in the run's rule.
         assert step["output"]["rule"]["crossref_in_flight"] == 4 and step["output"]["rule"]["version"] == 5
         assert len(handler.crossref) == len(set(handler.crossref)) == 202 and handler.peak == 4
         assert rerank["kept_reasons"] == {}
         return
-    if case in D156:
+    if case in V4_CASES:
         # Semantic Scholar answered all 24 at once (two with an abstract); Crossref had the other 22, and its 3 s
         # answers were still out when the 0.5 s round ended: the first requests went out, the rest never did (the read
         # stage asks after it, quickly, one at a time).
@@ -422,12 +424,12 @@ def test_missing_abstracts_are_looked_up_before_the_rerank_and_unfilled_records_
         bare = [rid for rid in step["output"]["asked"] if rid not in step["output"]["filled"]]
         assert step["output"]["status"] == "time_ceiling" and len(bare) == 22
         if case == "never_sent_v3":
-            # D155's rule (frozen version 3, 4 in flight) holds all 22, the 18 never sent among them.
+            # Version 3 (4 in flight) holds all 22, the 18 never sent among them.
             assert handler.peak == len(sent) == 4 and sorted(step["output"]["unsettled"]) == sorted(bare)
             assert "lookup_open" not in step["output"]
             assert rerank["kept_reasons"] == {rid: "no_abstract_lookup_open" for rid in bare}
             return
-        # D156: only the 4 sent and unanswered keep their place; the 18 never asked go to the reranker on their title.
+        # Only the 4 sent and unanswered keep their place; the 18 never asked go to the reranker on their title.
         assert handler.peak == len(sent) == 4 and sorted(step["output"]["lookup_open"]) == sent
         assert "unsettled" not in step["output"]
         assert rerank["kept_reasons"] == {rid: "no_abstract_lookup_open" for rid in sent}
@@ -435,7 +437,7 @@ def test_missing_abstracts_are_looked_up_before_the_rerank_and_unfilled_records_
         held = next(e for e in events if e["operation_key"] == small_batch.RERANK_KEY)
         assert held["held_no_abstract_lookup_open"] == 4
         return
-    if case == "before_d152":
+    if case == "before_first_rule":
         assert step is None and not prerank_steps and "kept_reasons" not in rerank
         assert all(rerankers.document(f"{STRONG} {n}", None) in documents for n in EMPTY)
         return
@@ -472,20 +474,22 @@ def test_missing_abstracts_are_looked_up_before_the_rerank_and_unfilled_records_
     assert step["output"]["status"] == "done"
     assert sorted(step["output"]["filled"]) == sorted(heads[n]["id"] for n in (90, 91, 92))
     assert [heads[n]["abstract"] for n in EMPTY] == [LOOKED_UP, LOOKED_UP + " 91", CROSSREF_ABSTRACT, None]
-    # Semantic Scholar filled two; Crossref was asked about the other two only, 4 in flight since D153's rule.
+    # Semantic Scholar filled two; Crossref was asked about the other two only, 4 in flight since version 2.
     assert sorted(handler.crossref) == ["10.1/oa.92", "10.1/oa.93"]
-    assert handler.peak == (1 if case == "d152" else 2)
+    assert handler.peak == (1 if case == "first_rule" else 2)
     for n, text in ((90, LOOKED_UP), (91, LOOKED_UP + " 91"), (92, CROSSREF_ABSTRACT)):
         assert rerankers.document(f"{STRONG} {n}", text) in documents
-    if case in ("d152", "d155"):
-        # D152's rule, and D155's for a record every source answered without an abstract and no file can reach, send
+    if case in ("first_rule", "v3"):
+        # The first rule, and version 3 for a record every source answered without an abstract and no file can reach,
+        # send
         # it on its title alone.
         assert rerankers.document(f"{STRONG} 93", None) in documents
         assert rerank.get("kept_reasons", {}) == {}
         return
-    # D153 holds 93 whatever; D155 holds it for its open PDF. It is not sent, keeps its place, and the step says why.
+    # Version 2 holds 93 whatever; version 3 holds it for its open PDF. It is not sent, keeps its place, and the step
+    # says why.
     assert not any(f"{STRONG} 93" in text for text in documents)
-    assert rerank["kept_reasons"] == {heads[93]["id"]: "no_abstract" if case == "d153" else "no_abstract_text_route"}
+    assert rerank["kept_reasons"] == {heads[93]["id"]: "no_abstract" if case == "v2" else "no_abstract_text_route"}
     assert listing["reranker"]["applied"] is True
     assert order.index(heads[93]["id"]) == automatic.index(heads[93]["id"])
 
@@ -494,7 +498,7 @@ def test_missing_abstracts_are_looked_up_before_the_rerank_and_unfilled_records_
 
 
 def test_with_nothing_saved_and_no_voyage_key_the_run_records_that_the_reranker_did_not_run(monkeypatch):
-    # D104: on by default with Voyage; without a key nothing is sent, the fused order stands and the step says why.
+    # On by default with Voyage; without a key nothing is sent, the fused order stands and the step says why.
     monkeypatch.delenv("VOYAGE_API_KEY", raising=False)
     sent = []
     http = voyage(lambda r: sent.append(r) or httpx.Response(200))

@@ -1,4 +1,4 @@
-"""SYNTHETIC builders for the Mathpix route's tests (D40), and a scripted Mathpix.
+"""SYNTHETIC builders for the Mathpix route's tests, and a scripted Mathpix.
 
 The PDFs are drawn with PyMuPDF: prose in Helvetica, equations in Times Italic with sub- and superscripts set smaller and
 off the baseline, a fraction bar drawn as a line, and the number `(n)` at the right margin. Mathpix is an

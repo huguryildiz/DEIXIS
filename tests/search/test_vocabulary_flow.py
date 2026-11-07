@@ -126,7 +126,7 @@ def test_the_frozen_protocol_holds_the_concept_blocks_and_is_the_same_on_a_secon
     assert body["vocabulary"] and all(term["origin"] == "question" for term in body["vocabulary"])
     assert body["code_version"].endswith("deixis.query_compiler.v4.blocks")
 
-    # The queries searched are the ones the source routing compiled (D93), and its record is an input of the body.
+    # The queries searched are the ones the source routing compiled, and its record is an input of the body.
     stored = store.latest_step_output(rid, "source_routing", 1)
     run_id = store.conn.execute("SELECT id FROM runs WHERE research_id = ?", (rid,)).fetchone()[0]
     again = protocol.build_protocol(store.scope(rid, 1), store.run(run_id)["budget"], None, stored["queries"],

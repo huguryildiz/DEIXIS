@@ -4,10 +4,10 @@ import { t } from '../lib/i18n'
 
 // The question bubble turned into the revise form (mockup `.q.edit`, R7): the question, the English key terms, what
 // saving does, Cancel and "Save revision N". Saving creates a new question revision; sources and earlier answers are
-// kept. N is the next free number: a withdrawn revision's number is not used again (D67).
+// kept. N is the next free number: a withdrawn revision's number is not used again.
 // `conflict` names a newer revision saved elsewhere while the form was open: the draft stays, and Save waits until the
 // person bases the draft on that revision.
-// `englishQuestion` (D149): the current revision's English sentence when the question is not English, '' when it has
+// `englishQuestion`: the current revision's English sentence when the question is not English, '' when it has
 // none yet, null when the question is English and the field is not shown. The sentence is sent only when changed: an
 // edited one is the person's for the new revision, a cleared one lets the model translate it.
 export function RevisionForm({ question, keyTerms, englishQuestion = null, nextRevision, focus, focusRequest, conflict, disabled, onSubmit, onCancel, onRebase }: {

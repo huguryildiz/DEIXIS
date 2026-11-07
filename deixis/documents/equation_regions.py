@@ -1,5 +1,5 @@
 """Numbered display equations on PDF pages with a text layer, the image sent for each, and the checks a reading of that
-image must pass before it replaces the page's lines (the Mathpix route, D40, and the answer model's, D113).
+image must pass before it replaces the page's lines (the Mathpix route, and the answer model's).
 
 Detector: a line ending in an equation number `(n)` at its column's right margin (`arxiv_source.number_line`, shared with
 the source route), unless the text before the number is a sentence citing it ("The problem in (41)"). Without a source
@@ -69,7 +69,7 @@ LEAD_IN = re.compile(r"[A-Za-z][A-Za-z\s,.;:'’-]*")
 SENTENCE_CUES = {"we", "is", "are", "was", "be", "if", "which", "that", "where", "then", "thus", "hence", "so", "gives",
                  "give", "yields", "find", "have", "has", "holds", "hold", "since", "let", "it", "this", "these", "when",
                  "can", "will", "follows", "obtain", "get", "see", "note"}
-# Words that make a line with no relation sign text ("We also have", "or equivalently,"), never a display's row (D139).
+# Words that make a line with no relation sign text ("We also have", "or equivalently,"), never a display's row.
 TEXT_CUES = SENTENCE_CUES | {"also", "there", "exists", "exist", "satisfies", "satisfy", "equivalently", "becomes", "denotes",
                              "denote"}
 RELATION = re.compile(r"[=<>≤≥≠≈≡∈∉⊂⊆⩽⩾∼≃≅∝]")
@@ -371,7 +371,7 @@ def _lead_in(line: dict, margin: list[float]) -> bool:
     a line at a paragraph margin that opens with a word and holds only words and punctuation, or that ends in a colon or
     in a lower-case word (not a function name or a vowelless name; inline math after it is passed over)."""
     text = line["text"]
-    if ABBREVIATION.fullmatch(text):  # "i.e.," on a line of its own, wherever it is set (D139)
+    if ABBREVIATION.fullmatch(text):  # "i.e.," on a line of its own, wherever it is set
         return True
     if not any(abs(line["box"][0] - x) <= MARGIN_SLACK for x in margin):
         return False
@@ -572,7 +572,7 @@ def _region(lines, i, only, col, columns, gutter, lh, numbers, taken, margin=(),
     content += [k for k, line in enumerate(lines) if k not in content and k != i and k not in taken and k not in numbers
                 and span[1] <= line["box"][1] <= span[3] + lh and in_column(k) and _hanging(lines, k, content + [i], body, lh, in_column)]
     # A line on one of the region's rows that holds no word (a limit `τ=0` or `t` left of a sum the growth stopped at) is a
-    # part of the display: it joins, and the rows it brings are checked again (D139). A line with a word stays out.
+    # part of the display: it joins, and the rows it brings are checked again. A line with a word stays out.
     for _ in range(MAX_REGION_LINES):
         rows = [lines[k]["box"] for k in content + [i]]
         joins = [k for k in range(len(lines)) if k not in content and k != i and in_column(k) and k not in taken
@@ -643,14 +643,14 @@ def _candidate(page, page_number, n, lines, i, only, region, gutter, lh, body, n
         return item | {"refused": "crop_has_other_text"}
     rules, other = _drawings(page, box)
     images = [tuple(info["bbox"]) for info in page.get_image_info() if _touches(tuple(info["bbox"]), box)]
-    # Some PDFs paint a fraction bar as a thin image rather than a drawn rule (D139): an image counts only as a bar, a wide
+    # Some PDFs paint a fraction bar as a thin image rather than a drawn rule: an image counts only as a bar, a wide
     # thin one with the equation's type above and below it; any other image refuses the crop.
     bars = [rect for rect in images if _rule(rect, box) and rect[2] - rect[0] >= max(2.0, 4 * (rect[3] - rect[1]))]
     if other or len(bars) < len(images) or _fraction_rules(bars, boxes, lh) < len(bars):
         return item | {"refused": "crop_has_other_content"}
     rules += bars
     # A bar in or just below the crop with the equation's type above it and none below is a fraction whose denominator
-    # the region left out (D139).
+    # the region left out.
     below = (box[0], box[1], box[2], box[3] + GAP_LINES * lh)
     near = _drawings(page, below)[0] + [tuple(info["bbox"]) for info in page.get_image_info()
                                         if _touches(tuple(info["bbox"]), below) and _rule(tuple(info["bbox"]), below)]
@@ -836,7 +836,7 @@ def latex_marks(latex: str) -> dict[str, Any]:
 
 def gate(candidate: dict[str, Any], response: dict[str, Any] | None, require_confidence: bool = True) -> dict[str, Any]:
     """{"latex", "reason", "checks"}: the LaTeX to place, or the first check it failed (`reason`). The answer model's
-    reading (D113) has no confidence, so its gate skips that one check (`require_confidence=False`)."""
+    reading has no confidence, so its gate skips that one check (`require_confidence=False`)."""
     checks: dict[str, bool] = {}
     latex = (response or {}).get("latex_styled")
     if not isinstance(latex, str) or not latex.strip() or "$" in latex or re.search(r"\\(tag|label)\b", latex) \

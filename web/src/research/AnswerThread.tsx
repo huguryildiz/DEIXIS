@@ -62,7 +62,7 @@ export type AnswerThreadContext = {
   onCite: (claim: Claim, opener: HTMLElement) => void
   // A Next steps row puts a question in the follow-up composer (R28 → R30); the person sends it.
   onAsk: (text: string) => void
-  // Kill search from Next steps (D98): open the Candidates panel at a candidate, a work's Source details, and reload
+  // Kill search from Next steps: open the Candidates panel at a candidate, a work's Source details, and reload
   // the research after a run control.
   onOpenCandidate: (selection: CandidateSelection) => void
   onOpenSource: (sourceVersionId: string) => void
@@ -163,7 +163,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
   const openReviews = () => { review.target(answer.id, version); review.surface.openPanel() }
   const requestReview = (opener: HTMLElement) => { review.target(answer.id, version); review.surface.openDialog(opener) }
   const ctx = showCard ? thread : undefined
-  // The candidates written from this answer (D98), read again on every research event.
+  // The candidates written from this answer, read again on every research event.
   const killSearch = useAnswerCandidates(researchId, answer.id, eventCursor, Boolean(ctx) && answer.status === 'structurally_valid')
   // The claim dialog belongs to the answer it was opened under; a new answer in its place closes it.
   const [claimTarget, setClaimTarget] = useState<(ClaimTarget & { answerId: string }) | null>(null)
@@ -218,7 +218,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
   }
   const { refs, citeLabel, sections, suggestion, limits } = reportParts(answer, sources, style)
   const basis = basisLine(answer)
-  // The evidence ledger (D80): shown also for an answer with no citation; an answer saved without one, or a ledger whose
+  // The evidence ledger: shown also for an answer with no citation; an answer saved without one, or a ledger whose
   // counts do not add up, shows nothing.
   const ledger = ledgerOk(answer.evidence_ledger) ? answer.evidence_ledger : null
   const leftOut = ledger ? ledgerRows(ledger) : []
@@ -280,7 +280,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
     {answer.applicability === 'stale_scope' && <Notice tone="attention">{t('This answer was produced for revision {n} of the question and is not applied to the current revision.', { n: answer.scope_revision })}</Notice>}
     {answer.source_text_changed && <Notice tone="attention">{t('A PDF this answer read was replaced, removed or had its text extracted again after the answer was generated. Its quotes still open the text that was read; generate a new answer to read the current text.')}</Notice>}
     {answer.capability_notice && <Notice tone="info">{answer.capability_notice}</Notice>}
-    {/* A section is one paragraph (D230) under its numbered heading (mockup `.report h2`); its label names a topic. */}
+    {/* A section is one paragraph under its numbered heading (mockup `.report h2`); its label names a topic. */}
     {figures.length > 0 && <section className="key-figures" aria-label={t('Key figures')}>
       {figures.map(({ value, claim }) => <button type="button" key={claim.id} className="key-figure" onClick={() => onOpen(claim.evidence[0].passage_id, claim.evidence[0].anchor_text)}>
         <strong>{value}</strong><span><ClaimText claim={claim} /></span>
@@ -418,7 +418,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
       <button type="button" className="first" aria-haspopup="dialog" onClick={e => requestReview(e.currentTarget)}><ListChecks size={16} aria-hidden /><span>{t('Review the claims with another model')}</span>{go}</button>
       {ctx.included > 0 && <button type="button" onClick={e => ctx.onPanel('table', e.currentTarget)}><Table2 size={16} aria-hidden />
         <span>{ctx.hasTable ? t('Open the evidence table') : t(ctx.included === 1 ? 'Build an evidence table of the {n} included source' : 'Build an evidence table of the {n} included sources', { n: count(ctx.included) })}</span>{go}</button>}
-      {/* The aspects the answer says its passages did not cover, grouped in one row (D98). Each can go to the follow-up
+      {/* The aspects the answer says its passages did not cover, grouped in one row. Each can go to the follow-up
           composer (nothing is sent until the person sends it) or open a claim the person writes; the aspect is never
           turned into a claim by itself. A stale answer's aspects are not offered. */}
       {answer.applicability === 'current' && answer.unanswered_aspects.length > 0 && <details className="follow-group">
@@ -500,7 +500,7 @@ const mathLabels: Record<string, string> = {
 }
 const checkCodes = new Set([...phrasingCodes, ...Object.keys(mathLabels)])
 
-// Prose and math findings are listed with the answer; they never reject it (D19).
+// Prose and math findings are listed with the answer; they never reject it.
 function ChecksNote({ warnings }: { warnings?: ValidationIssue[] }) {
   const found = (warnings ?? []).filter(w => checkCodes.has(w.code))
   if (!found.length) return null

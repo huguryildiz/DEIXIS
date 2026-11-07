@@ -1,0 +1,288 @@
+{
+  "name": "aoe_cmdp_lp",
+  "schema_version": "search-measurement-v1",
+  "freeze_date": "2026-11-08",
+  "label_authority": "Reference tools (Consensus, Elicit) as saved on 18 Oct 2026. Targets and DOIs come from their bibliographies; no human verification and no abstract check here.",
+  "identity_rule": "DOI or verified work identity; title-only matches require adjudication",
+  "validation_role": "heldout",
+  "question": "Has age-of-information or age-of-entanglement scheduling been formulated as a constrained MDP with two or more long-run average constraints (for example a per-user minimum delivery rate and an energy or transmission budget) and solved through a linear program over occupation measures?",
+  "question_sha256": "6fc0c5676ef694b4e2c57e0e91fe1fa27f99aecf8a0639b427cf952e28afd7ae",
+  "reference": "Consensus + Elicit runs, 18 Oct 2026, saved in notes/test-questions/aoe-cmdp-lp/. The question wording was reconstructed from both answers; the original prompt is not in the file.",
+  "expected_direction": "AoI: precedent exists. Age of entanglement: no verified match. Zakeri 2022/2023 states the LP over discounted state-action occupation measures with separate sampling and transmission budgets; Zhou 2023 (journal 2025) formulates a CMDP with average energy plus age-tolerance constraints and an equivalent LP in stationary state-action variables. Elicit caveat: delivery rate + energy is a supported extension of Zhou, not a worked example, and the finite LP caps age at D. The AoE papers use MDPs, dynamic programming or reinforcement learning, not a multi-constraint occupation-measure LP.",
+  "direction_terms": [
+    [
+      "age of information",
+      "aoi",
+      "query-age",
+      "query age"
+    ],
+    [
+      "age of entanglement",
+      "aoe",
+      "entanglement age"
+    ]
+  ],
+  "answer_elements": [
+    {
+      "id": "A1",
+      "question": "Direct AoI precedents with two or more long-run average constraints"
+    },
+    {
+      "id": "A2",
+      "question": "The occupation-measure LP formulation itself, stated from a located passage"
+    },
+    {
+      "id": "A3",
+      "question": "Age of entanglement: no verified match, stated as a search result and not as novelty"
+    },
+    {
+      "id": "A4",
+      "question": "Scope limits of the match: delivery rate plus energy is an extension of Zhou, not a worked example; throughput-constrained AoI without the LP is a different family"
+    }
+  ],
+  "pass_rule": {
+    "status": "draft from QUESTION.md, not confirmed by the owner",
+    "source": "notes/test-questions/aoe-cmdp-lp/QUESTION.md",
+    "rules": [
+      "Zhou 2023 (or its 2025 journal version) reaches the answer as a direct match, with the LP stated from a passage.",
+      "Zakeri 2022/2023 query-age paper is found; reaching the answer is a bonus.",
+      "Answer says AoE has no verified match and does not claim novelty from absence of results.",
+      "Elicit's caveat appears or is not contradicted: delivery-rate + energy is a supported extension of Zhou's formulation, not a worked example; the finite LP caps age at D."
+    ]
+  },
+  "source_evidence": {
+    "reference_path": "notes/test-questions/aoe-cmdp-lp/consensus-elicit-2026-10-18.txt",
+    "reference_sha256": "8883e2fc4ad8891f2e3a2e335f3d285ab91e66a0f2ef2d4cc02533cda08569d3",
+    "question_md_sha256": "cbdbb897310a18a23313869107356cfffccdd11b657b7b016126d593831491c3"
+  },
+  "papers": [
+    {
+      "key": "zhou2023",
+      "doi": "10.1109/infocomwkshps57453.2023.10225856",
+      "alternate_dois": [
+        "10.1109/tnet.2024.3476144"
+      ],
+      "alternate_identity_status": "unverified",
+      "title": "Age-Optimal Multi-Channel-Scheduling Under Energy and Tolerance Constraints",
+      "stratum": "aoi_cmdp_lp",
+      "label": "ilgili",
+      "label_reason": "Both tools name it a direct match: CMDP with multiple average constraints solved through an LP in stationary state-action probabilities (tool claim).",
+      "reading_depth": "title_only",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "A1",
+          "A2"
+        ],
+        "contribution": "The only direct match both tools agree on.",
+        "limitation": "LP must be stated from a located passage; the 2025 journal work is a separate record and its identity with this one is unverified."
+      },
+      "selection_evidence": {
+        "source": "Consensus and Elicit runs, 18 Oct 2026, both answers verbatim with their bibliographies",
+        "source_path": "notes/test-questions/aoe-cmdp-lp/consensus-elicit-2026-10-18.txt",
+        "source_sha256": "8883e2fc4ad8891f2e3a2e335f3d285ab91e66a0f2ef2d4cc02533cda08569d3",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_bibliography",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "zakeri2022",
+      "doi": "10.1109/lcomm.2023.3247244",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Query-Age-Optimal Scheduling Under Sampling and Transmission Constraints",
+      "stratum": "aoi_cmdp_lp",
+      "label": "ilgili",
+      "label_reason": "Consensus calls it the cleanest formal match: two separate long-run average budgets and the LP written in occupation variables (tool claim).",
+      "reading_depth": "title_only",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "A1",
+          "A2"
+        ],
+        "contribution": "Two non-transferable average budgets with an explicit occupation-measure LP.",
+        "limitation": "Found-only target in the draft rule; reaching the answer is a bonus."
+      },
+      "selection_evidence": {
+        "source": "Consensus and Elicit runs, 18 Oct 2026, both answers verbatim with their bibliographies",
+        "source_path": "notes/test-questions/aoe-cmdp-lp/consensus-elicit-2026-10-18.txt",
+        "source_sha256": "8883e2fc4ad8891f2e3a2e335f3d285ab91e66a0f2ef2d4cc02533cda08569d3",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_bibliography",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "zhou2025",
+      "doi": "10.1109/tnet.2024.3476144",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Age-Based Multi-Channel-Scheduling Under Constraints: Optimal and Online Designs",
+      "stratum": "aoi_cmdp_lp",
+      "label": "ilgili",
+      "label_reason": "Journal line of the Zhou multi-channel work, cited by Consensus alongside the 2023 paper.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "key_contribution": {
+        "answer_elements": [
+          "A1"
+        ],
+        "contribution": "Journal version of the strongest match.",
+        "limitation": "Counts as a separate record until its identity with zhou2023 is verified."
+      },
+      "selection_evidence": {
+        "source": "Consensus and Elicit runs, 18 Oct 2026, both answers verbatim with their bibliographies",
+        "source_path": "notes/test-questions/aoe-cmdp-lp/consensus-elicit-2026-10-18.txt",
+        "source_sha256": "8883e2fc4ad8891f2e3a2e335f3d285ab91e66a0f2ef2d4cc02533cda08569d3",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_bibliography",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "kadota2019",
+      "doi": "10.1109/tnet.2019.2918736",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Scheduling Algorithms for Optimizing Age of Information in Wireless Networks With Throughput Constraints",
+      "stratum": "aoi_without_lp",
+      "label": "arka plan",
+      "label_reason": "Throughput-constrained AoI without the occupation-measure LP; the reference uses it to mark the boundary of the match.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "key_contribution": {
+        "answer_elements": [
+          "A4"
+        ],
+        "contribution": "Shows the near-miss family: constraints without the LP.",
+        "limitation": "Not a target of the pass rule."
+      },
+      "selection_evidence": {
+        "source": "Consensus and Elicit runs, 18 Oct 2026, both answers verbatim with their bibliographies",
+        "source_path": "notes/test-questions/aoe-cmdp-lp/consensus-elicit-2026-10-18.txt",
+        "source_sha256": "8883e2fc4ad8891f2e3a2e335f3d285ab91e66a0f2ef2d4cc02533cda08569d3",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_bibliography",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "mitrolaris2026",
+      "doi": "10.1109/infocom59046.2026.11571768",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Age-Based Scheduling for a Memory-Constrained Quantum Switch",
+      "stratum": "aoe_nearest",
+      "label": "arka plan",
+      "label_reason": "Nearest AoE work named by Consensus, explicitly not a match (no multi-constraint occupation-measure LP). Title confirmed from the Elicit export of the buffer-control question.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "key_contribution": {
+        "answer_elements": [
+          "A3"
+        ],
+        "contribution": "The closest AoE work, used to support the \"no verified match\" verdict.",
+        "limitation": "Must not be presented as a match."
+      },
+      "selection_evidence": {
+        "source": "Consensus and Elicit runs, 18 Oct 2026, both answers verbatim with their bibliographies",
+        "source_path": "notes/test-questions/aoe-cmdp-lp/consensus-elicit-2026-10-18.txt",
+        "source_sha256": "8883e2fc4ad8891f2e3a2e335f3d285ab91e66a0f2ef2d4cc02533cda08569d3",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "question_md_doi_title_from_other_elicit_export",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "ceran2026",
+      "doi": null,
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Age of Entanglement in Satellite Repeater Chains with Intermittent Availability",
+      "stratum": "aoe_nearest",
+      "label": "arka plan",
+      "label_reason": "Elicit names it as a near AoE work using relative value iteration, not an LP.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "key_contribution": {
+        "answer_elements": [
+          "A3"
+        ],
+        "contribution": "Second nearest AoE work.",
+        "limitation": "No DOI in the reference; identity needs adjudication."
+      },
+      "selection_evidence": {
+        "source": "Consensus and Elicit runs, 18 Oct 2026, both answers verbatim with their bibliographies",
+        "source_path": "notes/test-questions/aoe-cmdp-lp/consensus-elicit-2026-10-18.txt",
+        "source_sha256": "8883e2fc4ad8891f2e3a2e335f3d285ab91e66a0f2ef2d4cc02533cda08569d3",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_text_no_doi",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "haldar2023",
+      "doi": "10.1103/physrevapplied.21.024041",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Fast and reliable entanglement distribution with quantum repeaters: Principles for improving protocols using reinforcement learning",
+      "stratum": "aoe_nearest",
+      "label": "arka plan",
+      "label_reason": "Consensus bibliography: reinforcement learning, not a CMDP LP.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "key_contribution": {
+        "answer_elements": [
+          "A3"
+        ],
+        "contribution": "Method contrast for the AoE verdict.",
+        "limitation": "Not a target of the pass rule."
+      },
+      "selection_evidence": {
+        "source": "Consensus and Elicit runs, 18 Oct 2026, both answers verbatim with their bibliographies",
+        "source_path": "notes/test-questions/aoe-cmdp-lp/consensus-elicit-2026-10-18.txt",
+        "source_sha256": "8883e2fc4ad8891f2e3a2e335f3d285ab91e66a0f2ef2d4cc02533cda08569d3",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_bibliography",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "inesta2022",
+      "doi": "10.1038/s41534-023-00713-9",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Optimal entanglement distribution policies in homogeneous repeater chains with cutoffs",
+      "stratum": "aoe_nearest",
+      "label": "arka plan",
+      "label_reason": "Consensus bibliography: MDP with cutoffs, not a multi-constraint LP.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "key_contribution": {
+        "answer_elements": [
+          "A3"
+        ],
+        "contribution": "Method contrast for the AoE verdict.",
+        "limitation": "Same work as the uw_hub_partner_age target inesta2023."
+      },
+      "selection_evidence": {
+        "source": "Consensus and Elicit runs, 18 Oct 2026, both answers verbatim with their bibliographies",
+        "source_path": "notes/test-questions/aoe-cmdp-lp/consensus-elicit-2026-10-18.txt",
+        "source_sha256": "8883e2fc4ad8891f2e3a2e335f3d285ab91e66a0f2ef2d4cc02533cda08569d3",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_bibliography",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    }
+  ]
+}

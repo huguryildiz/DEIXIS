@@ -7,7 +7,7 @@ reading order. It moves `waiting` → `planned` → `read` or `unread`, each ste
 the frozen plan, the reading decision, or the run that ended without one. A person's retry is the only way an
 `unread` request is asked again.
 
-Nothing here replaces or removes a file (D45, D50 stay as they are), nothing withdraws a person's decision, and
+Nothing here replaces or removes a file (extractions stay as they are), nothing withdraws a person's decision, and
 nothing is read without a trace: a request whose question revision or criterion changed is stale and is left as it
 was, never rewritten.
 """

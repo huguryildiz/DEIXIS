@@ -1,6 +1,6 @@
 """The PDF waiting list of a real `sw` research, a dropped file's match and its confirmation (slice 18a).
 
-Driven through the API with the retrieval run of slice 10 (inside discovery, D98): works no route found a PDF for are
+Driven through the API with the retrieval run of slice 10 (inside discovery): works no route found a PDF for are
 left `no_fulltext`, and that is what the list reads. Records, titles and files are SYNTHETIC and from two fields,
 every transport is mocked and the model is scripted. The store-level cases write the plan and the decisions the way
 the runs write them. Passing shows the list, the match and the refusals behave as the slice says; it says nothing

@@ -10,7 +10,7 @@ import { useReturnFocus } from './focus'
 import '../research/kit.css'
 import './candidate.css'
 
-// `focus` names what the opener asked to see (the answer thread's summary links, D98): the card editor, the matrix, the
+// `focus` names what the opener asked to see (the answer thread's summary links): the card editor, the matrix, the
 // review entry, the decision control, or one kept work's evidence (`evidence`, its source version); `search` is the
 // kill search the opener described, which the panel shows instead of the current version's latest.
 export type CandidateSelection = { id: string; card?: CandidateCard; focus?: 'edit' | 'matrix' | 'review' | 'decision' | 'evidence'; evidence?: string; search?: string }

@@ -125,7 +125,7 @@ INSTITUTIONAL_ACCESS_TTL_SECONDS = 600
 INSTITUTIONAL_ACCESS_RETRY_SECONDS = 30
 
 REPLACE_ASSET_PATH = re.compile(r"/api/researches/[^/]+/sources/[^/]+/assets/[^/]+")
-# A research's routes and its trash routes; an internal research (D86) is not found on any of them.
+# A research's routes and its trash routes; an internal research is not found on any of them.
 RESEARCH_ROUTE = re.compile(r"/api/(?:researches|trash)/([^/]+)")
 # The evidence reads an internal research keeps (Verify Citations V4): a GET of one of its passages or files, so the
 # check's screen opens a located quote in Source details. Each route still checks the passage or file belongs to it.
@@ -161,7 +161,7 @@ class CreateResearch(BaseModel):
     # Runs literature model steps. None: the research model runs them.
     literature_model: str | None = Field(default=None, min_length=1, max_length=120)
     literature_reasoning_effort: str | None = Field(default=None, min_length=1, max_length=40)
-    # The connection that lists literature_model (D28). None: model_connection.
+    # The connection that lists literature_model. None: model_connection.
     literature_connection: str | None = Field(default=None, min_length=1, max_length=40)
     # 'default' follows the app-wide reviewer setting; 'custom' reviews with review_model; 'off' reviews nothing.
     review_mode: Literal["default", "custom", "off"] = "default"
@@ -186,7 +186,7 @@ class RoleModelSetting(BaseModel):
 
     Answer and literature defaults prefill the composer, and each research stores its own choice when it is created. The
     reviewer applies to every research whose reviewer setting is 'default'. No model: no default (no review, for the reviewer).
-    The equations model reads numbered equations from page crops (D136); with no model the answer model reads them.
+    The equations model reads numbered equations from page crops; with no model the answer model reads them.
     """
     model_connection: str = "codex"
     model: str | None = Field(default=None, min_length=1, max_length=120)
@@ -236,7 +236,7 @@ async def checked_research_models(store: Any, adapters: dict[str, Any], body: Cr
             listed[connection] = unusable.usable(store, connection, (await adapter.health()).get("models"))
         check_offered(listed[connection], connection, model, effort)
 
-    # Each role's model must be listed by that role's own connection (D28).
+    # Each role's model must be listed by that role's own connection.
     await check_role(body.model_connection, body.requested_model, body.reasoning_effort)
     literature_connection = review_connection = None
     if body.literature_model is not None:
@@ -257,7 +257,7 @@ async def checked_research_models(store: Any, adapters: dict[str, Any], body: Cr
 def create_research_row(store: Store, body: CreateResearch, literature_connection: str | None,
                         review_connection: str | None) -> str:
     # Every connector with the access it needs is in scope; the model picks which of the searchable ones to
-    # query, and a verification connector stays in scope for the records whose DOI is already known (D87).
+    # query, and a verification connector stays in scope for the records whose DOI is already known.
     providers = configured_providers() if body.source_scope != "attached" else []
     return store.create_research(body.question, body.source_scope, body.effort, providers,
                                  body.model_connection, body.requested_model, body.language_hint, body.reasoning_effort,
@@ -269,7 +269,7 @@ def create_research_row(store: Store, body: CreateResearch, literature_connectio
                                  statement_field=statement.check_field(body.field))
 
 
-# Request fields that carry a key or secret; a validation error never echoes them (D40).
+# Request fields that carry a key or secret; a validation error never echoes them.
 SECRET_FIELDS = {"value", "app_id", "app_key", "api_key", "key", "token", "password", "secret"}
 
 
@@ -318,7 +318,7 @@ class SemanticChoice(BaseModel):
 
 
 class RerankChoice(BaseModel):
-    """The reranker for the order records are read in (Voyage when nothing is saved, D104). `model` names the built-in catalog
+    """The reranker for the order records are read in (Voyage when nothing is saved). `model` names the built-in catalog
     reranker (required for `builtin`). `pool_factor` (records reranked as a multiple of those a run reads) and
     `timeout_seconds` are starting values the person may change; neither is a measured optimum."""
     enabled: bool
@@ -346,7 +346,7 @@ class EnglishQuestion(BaseModel):
 class StartRun(BaseModel):
     kind: Literal["discovery", "answer", "pdf_collection", "research_title", "fulltext_fetch", "fulltext_adjudication",
                   "statement_check"]
-    # The question revision the person's screen showed (UI parity S23b, D14): the run is created only while it is still
+    # The question revision the person's screen showed (UI parity S23b): the run is created only while it is still
     # the current one, checked in the same transaction; another one answers 409 and creates nothing. Optional.
     expected_scope_revision: int | None = Field(default=None, strict=True, ge=1)
     # `statement_check` only: the model the check runs on, stored with its revision; none: the literature model in
@@ -452,7 +452,7 @@ class ScopeRevision(BaseModel):
     steering: str | None = Field(default=None, max_length=2000)
     expected_version: int
     key_terms: str | None = Field(default=None, max_length=500)  # left out, the revision keeps the previous terms
-    # The person's English sentence for the new revision (D149); left out, a person's sentence of an unchanged question
+    # The person's English sentence for the new revision; left out, a person's sentence of an unchanged question
     # carries over; '' writes none, so a model translates the new revision.
     english_question: str | None = Field(default=None, max_length=english_question.MAX_CHARS)
 
@@ -471,9 +471,9 @@ SourceVersionId = Annotated[str, Field(pattern=r"^srv_[0-9A-Za-z]{8,40}$")]
 
 
 class SeedSelection(BaseModel):
-    """One PDF, an ordered list of 1 to 50, or every eligible PDF; exactly one of the three (D3). With every eligible
+    """One PDF, an ordered list of 1 to 50, or every eligible PDF; exactly one of the three. With every eligible
     PDF, `excluded_source_version_ids` names the PDFs the person unchecked on Home (UI parity S5b): they stay attached
-    sources and are left out before D3's choice of five, which stays the backend's."""
+    sources and are left out before that choice of five, which stays the backend's."""
     source_version_id: SourceVersionId | None = None
     source_version_ids: list[SourceVersionId] | None = Field(default=None, min_length=1, max_length=50)
     all_eligible: Literal[True] | None = None
@@ -819,7 +819,7 @@ def disk_full_refused() -> Iterator[None]:
 
 
 def zotero_http(request: Request, source: str) -> httpx.AsyncClient:
-    """Zotero's local API is on this computer and gets the loopback client (D34); zotero.org gets the shared one."""
+    """Zotero's local API is on this computer and gets the loopback client; zotero.org gets the shared one."""
     return request.app.state.local_http if source == "local" else request.app.state.http
 
 
@@ -934,15 +934,15 @@ def create_app(
         store.study_table = settings.study_table
         source_keys.assign_missing(store)
         with db.transaction(conn):
-            spend.book_equation_requests(conn)  # equation-reader requests stored before they were booked (D115)
-            spend.reprice_unpriced(conn)  # calls booked unpriced get a cost once the price list names their model (D111)
+            spend.book_equation_requests(conn)  # equation-reader requests stored before they were booked
+            spend.reprice_unpriced(conn)  # calls booked unpriced get a cost once the price list names their model
         settings = settings.bound_to(store.setting)  # the contact email set in Settings is read before the env var (F15)
         app.state.settings = settings
         credentials.set_data_dir(settings.data_dir)
         await credentials.probe_async()  # find the keychain on its worker with the time limit, not on the event loop (E5)
         http = http_client or httpx.AsyncClient(headers={"User-Agent": fetch_module.user_agent(settings.contact_email)})
         # Requests to servers on this computer (Ollama and LM Studio embeddings, the local tool checks, Zotero's local
-        # API) go through a client that ignores HTTP_PROXY/ALL_PROXY and follows no redirect (D34).
+        # API) go through a client that ignores HTTP_PROXY/ALL_PROXY and follows no redirect.
         local_http = http_client or loopback_client()
         adapter_map = adapters if adapters is not None else {
             "codex": CodexAdapter(codex_home=settings.codex_home, workspace=settings.data_dir / "codex-workspace"),
@@ -952,7 +952,7 @@ def create_app(
             "gemini_cli": GeminiCliAdapter(home=settings.data_dir / "gemini-cli-home"),
             "deepseek": DeepSeekAdapter(client=http),
             # A keyless (local) connection gets no shared client: the shared one honours HTTP_PROXY, and the adapter's
-            # own client ignores proxies (D34). A test's injected client is used as given.
+            # own client ignores proxies. A test's injected client is used as given.
             **{name: OpenAICompatAdapter(spec, client=http if spec.key_env or http_client else None)
                for name, spec in COMPAT_CONNECTIONS.items()},
             "anthropic": AnthropicAdapter(client=http),
@@ -963,11 +963,11 @@ def create_app(
         package = skill.load_skill_package()
         equations = equation_service if equation_service is not None else EquationService(store, settings.papers_dir)
         if equation_service is None:
-            equations.configure_arxiv_source(settings.effective_arxiv_source(), settings.data_dir)  # D104, off unless the flag says auto
+            equations.configure_arxiv_source(settings.effective_arxiv_source(), settings.data_dir)  # off unless the flag says auto
         if equations.mathpix_client is None:
-            equations.configure_mathpix(settings.data_dir, http)  # D40: requests only with the switch on and a key pair
+            equations.configure_mathpix(settings.data_dir, http)  # Requests only with the switch on and a key pair
         if not equations.adapters:
-            equations.configure_model(adapter_map)  # D113: the default answer model reads equation crops
+            equations.configure_model(adapter_map)  # The default answer model reads equation crops
         # The built-in models (llama.cpp): a test injects its own models object and never starts a real server.
         builtin_paths = local_embedding.builtin_paths(settings.data_dir)
         embedder = local_embedder if local_embedder is not None else local_embedding.LocalModels(builtin_paths)
@@ -992,7 +992,7 @@ def create_app(
         owner = start_worker and worker.acquire()
         app.state.equations = equations
         if owner:
-            equations.start()  # reads stored PDFs' equations in the background when the reader is installed (D52)
+            equations.start()  # reads stored PDFs' equations in the background when the reader is installed
         app.state.store, app.state.worker, app.state.adapters = store, worker, adapter_map
         app.state.package, app.state.owner = package, owner
         app.state.http, app.state.fetch_pdf = http, pdf_fetcher
@@ -1204,7 +1204,7 @@ def create_app(
         code, status, detail = failure
         return JSONResponse({"detail": detail, "code": code}, status_code=status)
 
-    # A refused key never comes back in the 422 (D40): FastAPI's default puts the submitted value in `input` and the
+    # A refused key never comes back in the 422: FastAPI's default puts the submitted value in `input` and the
     # failed constraint in `ctx`. On the credential routes, and for any field that carries a key, both are dropped.
     @app.exception_handler(RequestValidationError)
     async def validation_failed(request: Request, exc: RequestValidationError):
@@ -1455,7 +1455,7 @@ def create_app(
 
     @app.put("/api/connections/local_server")
     async def put_local_server(body: LocalServerAddress, request: Request) -> dict[str, Any]:
-        """The local OpenAI-compatible server's address (D34): loopback only; empty clears it."""
+        """The local OpenAI-compatible server's address: loopback only; empty clears it."""
         try:
             address = loopback_url(body.base_url)
         except ValueError as exc:
@@ -1473,7 +1473,7 @@ def create_app(
 
     @app.post("/api/connections/{connection}/hidden-models/show")
     async def show_hidden_model(connection: str, body: HiddenModel, request: Request) -> dict[str, Any]:
-        """Offer a model again that a failed step hid (D59); the next step on it fails as before if it is still gone."""
+        """Offer a model again that a failed step hid; the next step on it fails as before if it is still gone."""
         adapter = request.app.state.adapters.get(connection)
         if adapter is None:
             raise HTTPException(404, f"Model connection '{connection}' is not available")
@@ -1520,7 +1520,7 @@ def create_app(
 
     @app.post("/api/researches/{research_id}/library-sources", status_code=201)
     async def add_library_source(research_id: str, body: LibraryAddition, request: Request) -> dict[str, Any]:
-        """Add one Library work to a research as a source the user included (D41)."""
+        """Add one Library work to a research as a source the user included."""
         store = store_of(request)
         store.research(research_id)
         work = library_work_view(store, body.work_id)
@@ -1529,7 +1529,7 @@ def create_app(
         if any(r["id"] == research_id for r in work["researches"]):
             raise HTTPException(409, "This work is already a source of that research")
         if removed := [v["source_version_id"] for v in work["versions"] if store.was_member(research_id, v["source_version_id"])]:
-            # Adding one work on purpose undoes its removal; the versions come back as they were (D50).
+            # Adding one work on purpose undoes its removal; the versions come back as they were.
             store.restore_sources(research_id, removed)
             intent.attached_ingested(store, research_id)
             svid = store.work_heads(research_id)[body.work_id]
@@ -1698,7 +1698,7 @@ def create_app(
             raise CredentialFailure(credentials.failure_code(exc)) from exc
         return await list_credentials()
 
-    # ---- Mathpix (D40): the key pair, the switch and the monthly budget --------------------------------------------
+    # ---- Mathpix: the key pair, the switch and the monthly budget --------------------------------------------
     @app.get("/api/mathpix")
     async def mathpix_status(request: Request) -> dict[str, Any]:
         return request.app.state.equations.mathpix_status()
@@ -1713,7 +1713,7 @@ def create_app(
             store.set_setting(equations_module.MATHPIX_BUDGET, body.monthly_budget)
         return request.app.state.equations.mathpix_status()
 
-    # ---- the answer model reads equation crops (D113): the switch and the monthly budget ----------------------------
+    # ---- the answer model reads equation crops: the switch and the monthly budget ----------------------------
     @app.get("/api/equation-model")
     async def equation_model_status(request: Request) -> dict[str, Any]:
         return request.app.state.equations.model_status()
@@ -1877,7 +1877,7 @@ def create_app(
     async def semantic_search_view(request: Request, refresh: bool = False) -> dict[str, Any]:
         saved = store_of(request).setting("semantic_search")
         provider, model = embeddings.chosen(saved)
-        # A built-in choice saved for a model this DEIXIS no longer runs (bge-small, the D88 PyTorch Qwen3, or no
+        # A built-in choice saved for a model this DEIXIS no longer runs (bge-small, the earlier PyTorch Qwen3, or no
         # model): kept as saved, never remapped; runs fail with builtin_model_changed until a catalog model is chosen.
         changed = provider == "builtin" and embeddings.builtin_model(model) is None
         return {"provider": provider, "model": model, "explicit": saved is not None,
@@ -1957,7 +1957,7 @@ def create_app(
         return reranking_view(request)
 
     # The built-in models (llama.cpp, a catalog of GGUF files): download, check, cancel, remove, one model at a time;
-    # the earlier PyTorch install (D88) is removed only on request. POSIX only in this slice.
+    # the earlier PyTorch install is removed only on request. POSIX only in this slice.
     def service_error(exc: ServiceError) -> HTTPException:
         return HTTPException(404 if exc.code == "unknown_model" else 409, {"reason": exc.code, "message": str(exc)})
 
@@ -2036,7 +2036,7 @@ def create_app(
         store = store_of(request)
         sentence = None if body.english_question is None else " ".join(body.english_question.split())
         if sentence and english_question.is_english(body.question, store.scope(research_id).get("language_hint")):
-            sentence = ""  # an English question is searched as written; the sentence would never be read (D103)
+            sentence = ""  # an English question is searched as written; the sentence would never be read
         if sentence and not english_question.is_english(sentence):
             raise HTTPException(422, "The sentence does not read as English")
         try:
@@ -2048,7 +2048,7 @@ def create_app(
 
     @app.post("/api/researches/{research_id}/scope/withdraw")
     async def withdraw_scope(research_id: str, body: ScopeWithdrawal, request: Request) -> dict[str, Any]:
-        """Withdraw the current question revision while nothing was made under it (D67); 409 with the reason otherwise."""
+        """Withdraw the current question revision while nothing was made under it; 409 with the reason otherwise."""
         store = store_of(request)
         store.withdraw_revision(research_id, body.expected_version, body.revision)
         return research_view(store, research_id)
@@ -2062,7 +2062,7 @@ def create_app(
         store = store_of(request)
         scope = store.scope(research_id)
         if english_question.is_english(scope["question"], scope.get("language_hint")):
-            # The built-in model reads an English question as written and would never read the sentence (D103).
+            # The built-in model reads an English question as written and would never read the sentence.
             raise HTTPException(422, "The question is already read as English; the built-in model uses it as written")
         if body.use_question:
             if body.text is not None:
@@ -2123,17 +2123,17 @@ def create_app(
                                     else "The selected PDF changed; select it again before searching")
         if body.kind in ("answer", "pdf_collection") and not store.included_works(research_id):
             # A research whose search finished may still ask: its answer records that no work was included when
-            # it started (SW22, D106). A PDF collection keeps the refusal.
+            # it started (SW22). A PDF collection keeps the refusal.
             if not (body.kind == "answer" and store.discovery_completed(research_id)):
                 raise HTTPException(422, "Include at least one source before generating an answer")
         budget = TEST_EFFORT_BUDGETS[scope["effort"]].__dict__
         if body.kind == "discovery":
-            # The criterion proposal before the first search (D78) and the abstract stage's two runs over the
-            # works the read limit reaches (D81) are given on top of the preset, so the preset itself — which an
+            # The criterion proposal before the first search and the abstract stage's two runs over the
+            # works the read limit reaches are given on top of the preset, so the preset itself — which an
             # answer run reads — is what it always was (slice 06 review).
             extra = CRITERION_CALLS + abstract_stage.model_calls(
                 ABSTRACT_READ_LIMIT[scope["effort"]], ABSTRACT_BATCH, ABSTRACT_RUNS)
-            # The model-written query and its repair and retry (D92); a run on the code's query alone makes no call.
+            # The model-written query and its repair and retry; a run on the code's query alone makes no call.
             extra += SEARCH_QUERY_CALLS if settings.search_query == "model" else 0
             # Citation chaining is the fast chain's, frozen with the rest of its policy below (`fast_path.freeze_budget`).
             budget = budget | {"max_model_calls": budget["max_model_calls"] + extra}
@@ -2141,7 +2141,7 @@ def create_app(
                 # The full text is fetched inside this run, beside its screening, with the room a retrieval run
                 # would have had (slice 17a); the mode is frozen here, so a run keeps the path it was queued with.
                 budget["fulltext_fetch"] = fulltext.overlap_budget(scope["effort"])
-            # D173: the deeper screening is read from the setting here and frozen in the policy; readers read the
+            # The deeper screening is read from the setting here and frozen in the policy; readers read the
             # policy, never the setting. Its one read per batch of the extra window is given on top, as above; a
             # local-model run gets the same frozen room.
             deep = (settings.effective_deep_screening() == "on"
@@ -2172,7 +2172,7 @@ def create_app(
 
     @app.post("/api/runs/{run_id}/search-query-choice")
     async def choose_code_query(run_id: str, request: Request) -> dict[str, Any]:
-        """Search with the code's query alone after the model could not write one (D92).
+        """Search with the code's query alone after the model could not write one.
 
         Declared before the generic run action so `search-query-choice` reaches it. The other way out of the same pause is
         `resume`, which asks the model once more while an attempt is left.
@@ -2245,7 +2245,7 @@ def create_app(
         store.research(research_id)
         return store.set_user_selection(research_id, source_version_id, body.state, body.expected_version, body.reason)
 
-    # ---- the human queue of an sw research (slice 16, D96) ----------------------------------------
+    # ---- the human queue of an sw research (slice 16) ----------------------------------------
     @app.get("/api/researches/{research_id}/queue")
     async def queue(research_id: str, request: Request) -> dict[str, Any]:
         store = store_of(request)
@@ -2293,7 +2293,7 @@ def create_app(
 
     @app.post("/api/researches/{research_id}/queue/decisions")
     async def queue_decisions(research_id: str, body: QueueBulkDecision, request: Request) -> dict[str, Any]:
-        """One answer to the rows the person ticked; each is checked against its own token (D110)."""
+        """One answer to the rows the person ticked; each is checked against its own token."""
         store = store_of(request)
         store.research(research_id)
         return human_queue.decide_many(store, research_id, [(r.source_version_id, r.row_token) for r in body.rows],
@@ -2367,7 +2367,7 @@ def create_app(
 
     @app.delete("/api/researches/{research_id}/sources")
     async def remove_sources(research_id: str, body: SourceRemoval, request: Request) -> dict[str, Any]:
-        """Remove sources from this research; the library record, its files and the evidence citing it stay (D50)."""
+        """Remove sources from this research; the library record, its files and the evidence citing it stay."""
         store = store_of(request)
         removed = store.remove_sources(research_id, body.source_version_ids, body.note)
         return {**research_view(store, research_id), "changed_source_version_ids": removed}
@@ -2381,7 +2381,7 @@ def create_app(
 
     @app.post("/api/researches/{research_id}/sources/purge")
     async def purge_sources(research_id: str, body: SourceRestore, request: Request) -> dict[str, Any]:
-        """Delete removed sources for good; refused while an answer, table or report still cites one (D65)."""
+        """Delete removed sources for good; refused while an answer, table or report still cites one."""
         store = store_of(request)
         try:
             purged, files, payloads = store.purge_sources(research_id, body.source_version_ids)
@@ -2408,7 +2408,7 @@ def create_app(
         if existing:
             svid = existing["source_version_id"]
             if store.was_member(research_id, svid) and not store.is_active_member(research_id, svid):
-                store.restore_sources(research_id, [svid])  # uploading the same file again undoes its removal (D50)
+                store.restore_sources(research_id, [svid])  # uploading the same file again undoes its removal
         else:
             read = await text_retry.read_verified(store, settings.papers_dir, settings.recovery_dir,
                 storage_path=path.name, sha256=sha, byte_size=size, lock=True)
@@ -2427,7 +2427,7 @@ def create_app(
 
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/record-lookup")
     async def look_up_upload_record(research_id: str, source_version_id: str, request: Request) -> dict[str, Any]:
-        """Identify an uploaded PDF as a scholarly record again (D37), for a file uploaded before the lookup existed or
+        """Identify an uploaded PDF as a scholarly record again, for a file uploaded before the lookup existed or
         one whose lookup found nothing; `found` says whether its citation fields were filled."""
         store = store_of(request)
         store.research(research_id)
@@ -2476,7 +2476,7 @@ def create_app(
 
     @app.post("/api/researches/{research_id}/uploads/match")
     async def match_uploads(research_id: str, request: Request, files: list[UploadFile] = File(...)) -> dict[str, Any]:
-        """Propose which included source each dropped PDF belongs to; nothing is attached until the user confirms (D49).
+        """Propose which included source each dropped PDF belongs to; nothing is attached until the user confirms.
 
         An `sw` research proposes a work among those waiting for a PDF, the latest plan's and those included since,
         with its versions for the person to pick from and what the confirmation checks (slice 18a)."""
@@ -2520,7 +2520,7 @@ def create_app(
         return view | {"files": person_reading.files_view(
             store, research_id, request.app.state.worker.flow.person_reading_on(research_id))}
 
-    # "Continue without PDF" (D46): the person could not find the work's PDF; it is read from its abstract only.
+    # "Continue without PDF": the person could not find the work's PDF; it is read from its abstract only.
     @app.post("/api/researches/{research_id}/waiting/skips", status_code=201)
     async def skip_waiting_pdf(research_id: str, body: WaitingSkip, request: Request) -> dict[str, Any]:
         """The work leaves the waiting list and its counts; nothing is queued, the answer already reads its abstract."""
@@ -2666,7 +2666,7 @@ def create_app(
                 svid, _ = store.upsert_provider_source("zotero", item.record, payload_path)
                 store.add_to_corpus(research_id, svid, "zotero_import", selection_state="included", selection_origin="user")
             if not store.is_active_member(research_id, svid):
-                # Importing a whole collection again does not undo a removal; the PDF is not attached either (D50).
+                # Importing a whole collection again does not undo a removal; the PDF is not attached either.
                 notes.append({"title": item.record.title,
                               "note": "Removed from this research earlier; not added back. Restore it to use it here."})
                 continue
@@ -2683,7 +2683,7 @@ def create_app(
 
     @app.post("/api/researches/{research_id}/zotero-pdfs")
     async def zotero_pdfs(research_id: str, body: ZoteroSourceChoice, request: Request) -> dict[str, Any]:
-        """Attach PDFs from the user's Zotero library to included works that have no PDF text yet (D49).
+        """Attach PDFs from the user's Zotero library to included works that have no PDF text yet.
 
         An item matches by DOI or by title. The file is the user's own copy, attached like an upload to the work's record.
         """
@@ -2729,7 +2729,7 @@ def create_app(
 
     @app.post("/api/researches/{research_id}/waiting/zotero")
     async def waiting_zotero(research_id: str, body: ZoteroSourceChoice, request: Request) -> dict[str, Any]:
-        """The Zotero PDF of each work waiting for the person's PDF, matched by DOI or title (D49); nothing is attached.
+        """The Zotero PDF of each work waiting for the person's PDF, matched by DOI or title; nothing is attached.
 
         The panel fetches each file and proposes it like a dropped one, so the person still picks the version and confirms.
         """
@@ -2789,7 +2789,7 @@ def create_app(
 
     @app.get("/api/researches/{research_id}/passages/{passage_id}/equations/{number}/crop")
     async def get_equation_crop(research_id: str, passage_id: str, number: str, request: Request) -> Response:
-        """The image Mathpix or the answer model read a passage's equation from (D40, D113), rendered again from the stored
+        """The image Mathpix or the answer model read a passage's equation from, rendered again from the stored
         PDF by its recipe; it is served only when it hashes to the image that was sent."""
         store = store_of(request)
         store.research(research_id)
@@ -2818,7 +2818,7 @@ def create_app(
         store.research(research_id)
         asset = store.asset(asset_id)
         # A replaced file, or the file of a source removed from this research, still opens read-only in the viewer where
-        # this research's evidence cites it (D46, D50).
+        # this research's evidence cites it.
         svid = asset["source_version_id"]
         cited = asset["removal_reason"] in (None, "replaced") and store.was_member(research_id, svid) and store.research_cites_asset(research_id, asset_id)
         in_use = asset["removed_at"] is None and store.is_active_member(research_id, svid)
@@ -2828,7 +2828,7 @@ def create_app(
         path = (root / asset["storage_path"]).resolve()
         if not path.is_relative_to(root) or not path.exists():
             raise HTTPException(404, "File missing")
-        # A file restore replaces the bytes atomically under the same name (D208); no-cache makes the browser check the
+        # A file restore replaces the bytes atomically under the same name; no-cache makes the browser check the
         # ETag on every open, so a copy it read before the restore is never shown from its cache.
         return FileResponse(path, media_type="application/pdf", headers={"Content-Disposition": "inline", "Cache-Control": "no-cache"})
 
@@ -2885,7 +2885,7 @@ def create_app(
                "work_is_retracted": store.work_retracted(source["work_id"])},
         }
 
-    figure_cache: dict[str, list[dict[str, Any]]] = {}  # by PDF sha256; figures are found again after a restart (D58)
+    figure_cache: dict[str, list[dict[str, Any]]] = {}  # by PDF sha256; figures are found again after a restart
     figure_reads: dict[str, asyncio.Task] = {}  # by PDF sha256: the reads in progress
 
     async def asset_figures(research_id: str, asset_id: str, request: Request) -> tuple[Path, list[dict[str, Any]]]:
@@ -2950,7 +2950,7 @@ def create_app(
 
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/restore")
     async def restore_asset(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:
-        """Put a PDF removed as the wrong file back in use; 409 when another PDF is in use for the source (D50)."""
+        """Put a PDF removed as the wrong file back in use; 409 when another PDF is in use for the source."""
         store = store_of(request)
         store.research(research_id)
         if not store.is_active_member(research_id, source_version_id):
@@ -2971,7 +2971,7 @@ def create_app(
 
     @app.get("/api/ocr")
     async def ocr_status() -> dict[str, Any]:
-        """The local Tesseract: installed or not, its version, the languages it can read, and its install job (D51)."""
+        """The local Tesseract: installed or not, its version, the languages it can read, and its install job."""
         status = await asyncio.to_thread(ocr.tesseract_status)
         # A Tesseract that comes with the app is never installed or updated through Homebrew (B1); a computer without
         # Homebrew is sent to the page its OS installs Tesseract from.
@@ -3004,7 +3004,7 @@ def create_app(
 
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/ocr", status_code=202)
     async def read_with_ocr(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:
-        """Start a `pdf_ocr` run that reads the PDF's scanned pages with the local Tesseract; no file leaves the machine (D51)."""
+        """Start a `pdf_ocr` run that reads the PDF's scanned pages with the local Tesseract; no file leaves the machine."""
         from deixis.workflow.read import recovery
 
         store = store_of(request)
@@ -3038,7 +3038,7 @@ def create_app(
     @app.put("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}")
     async def replace_asset(research_id: str, source_version_id: str, asset_id: str, request: Request,
                             file: UploadFile = File(...)) -> dict[str, Any]:
-        """Replace the PDF in use with another file; evidence citing the old file keeps its passages (D46)."""
+        """Replace the PDF in use with another file; evidence citing the old file keeps its passages."""
         store = store_of(request)
         asset = asset_in_use(store, research_id, source_version_id, asset_id)
         with disk_full_refused():
@@ -3062,7 +3062,7 @@ def create_app(
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/extractions")
     async def reextract_asset(research_id: str, source_version_id: str, asset_id: str, request: Request,
                               response: Response, body: TextRetryRequest | None = None) -> dict[str, Any]:
-        """Extract the PDF in use again with the current extractor; it becomes current only if it loses no visible text (D46)."""
+        """Extract the PDF in use again with the current extractor; it becomes current only if it loses no visible text."""
         store = store_of(request)
         asset = asset_in_use(store, research_id, source_version_id, asset_id)
         if body is not None:
@@ -3079,7 +3079,7 @@ def create_app(
             response.status_code = 202 if result["lifecycle"] == "running" else 200
             return {**research_view(store, research_id), "recovery": result}
         text_retry.precheck(settings.papers_dir, asset["storage_path"])
-        if (asset["extraction_version"] or "").split("+")[0] == pdf.EXTRACTION_VERSION:  # equations read on it too (D52)
+        if (asset["extraction_version"] or "").split("+")[0] == pdf.EXTRACTION_VERSION:  # equations read on it too
             reason = {"succeeded": "already_current", "pending": "pending"}.get(asset["extraction_status"], "retry_available")
             return {**research_view(store, research_id), "reextraction": {"asset_id": asset_id, "outcome": "unchanged", "reason": reason}}
         root = settings.papers_dir.resolve()
@@ -3117,7 +3117,7 @@ def create_app(
 
     @app.post("/api/researches/{research_id}/sources/{source_version_id}/assets/{asset_id}/equations", status_code=202)
     async def reread_equations(research_id: str, source_version_id: str, asset_id: str, request: Request) -> dict[str, Any]:
-        """Read a PDF's equations again in the background after a failed read (D40, D104, D113)."""
+        """Read a PDF's equations again in the background after a failed read."""
         store = store_of(request)
         asset_in_use(store, research_id, source_version_id, asset_id)
         service = request.app.state.equations
@@ -3125,7 +3125,7 @@ def create_app(
         if not ((state.get("route") in equations_module.CROP_ROUTES and service.crop_active())
                 or (state.get("route") == "arxiv_source" and service.route_active())):
             raise HTTPException(409, "No equation reader can read this PDF now")
-        # A crop-route PDF at its request budget is read again from its stored answers alone (D40); nothing new is sent.
+        # A crop-route PDF at its request budget is read again from its stored answers alone; nothing new is sent.
         cached = state["state"] == "budget_reached" and equations_module.crop_answered(store, asset_id, state.get("route"))
         if state["state"] != "failed" and not cached:
             raise HTTPException(409, "Only a failed equation reading is read again")
@@ -3306,7 +3306,7 @@ def create_app(
         return {"decision": decision, "revision": revision,
                 "applied_matches_suggestion": applied_matches_suggestion(finding["finding"], revision["text"])}
 
-    # ---- evidence tables (P5, D37) -------------------------------------------------------------
+    # ---- evidence tables (P5) -------------------------------------------------------------
     def tables_of(request: Request) -> TableStore:
         return TableStore(store_of(request))
 

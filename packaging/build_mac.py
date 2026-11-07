@@ -5,7 +5,7 @@
 Steps: the backend sidecar (packaging/sidecar/build.py: web build, PyInstaller onedir, ad-hoc signature on every Mach-O
 file, `--check-resources`), then the Tauri shell (`npm ci` and `tauri build --bundles app` in desktop/, which copies the
 sidecar into `Contents/Resources/sidecar/deixis-backend/` and signs the app ad hoc, `signingIdentity: "-"`). The backend
-executable and the app are then signed again with the self-signed `DEIXIS Self-Signed` certificate (D171,
+executable and the app are then signed again with the self-signed `DEIXIS Self-Signed` certificate (
 packaging/mac_signing_identity.py), the backend as `org.deixis.backend`, so Keychain access granted once lasts across
 updates; `--adhoc` keeps the old ad-hoc signature.
 
@@ -38,7 +38,7 @@ DESKTOP = REPO / "desktop"
 BUNDLE = DESKTOP / "src-tauri" / "target" / "release" / "bundle"
 APP = BUNDLE / "macos" / "DEIXIS.app"
 RUSTUP = "/opt/homebrew/opt/rustup/bin"
-IDENTITY = "DEIXIS Self-Signed"  # packaging/mac_signing_identity.py makes it (D171)
+IDENTITY = "DEIXIS Self-Signed"  # packaging/mac_signing_identity.py makes it
 BACKEND_ID = "org.deixis.backend"
 
 sys.path.insert(0, str(SIDECAR))
@@ -107,7 +107,7 @@ def main() -> int:
                   file=sys.stderr)
             return 2
     # The backend reads the Keychain: one certificate and a fixed identifier keep its designated requirement the same
-    # from build to build, so the person's "Always Allow" survives an update (D171).
+    # from build to build, so the person's "Always Allow" survives an update.
     run(["codesign", "--force", "--sign", identity, "--identifier", BACKEND_ID, str(built / "deixis-backend")])
     env = os.environ | {"PATH": f"{RUSTUP}:{os.environ.get('PATH', '')}"}
     run(["npm", "ci"], cwd=DESKTOP, env=env)

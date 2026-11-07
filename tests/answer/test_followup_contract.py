@@ -47,7 +47,7 @@ def test_handles_shown_to_the_model_resolve_back_and_links_carry_located_anchors
 
 
 def classification_draft(si, records, claims=False):
-    """SYNTHETIC: the valid follow-up output with its claims dropped and these work records (D66)."""
+    """SYNTHETIC: the valid follow-up output with its claims dropped and these work records."""
     draft = json.loads(json.dumps(CASES["followup_valid"]["output"]))
     if not claims:
         draft["claims"], draft["citation_anchors"] = [], []

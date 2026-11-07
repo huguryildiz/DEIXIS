@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 
-// LaTeX in answer text (D19): $$…$$ is a displayed expression, $…$ an inline one. KaTeX escapes what it renders and,
+// LaTeX in answer text: $$…$$ is a displayed expression, $…$ an inline one. KaTeX escapes what it renders and,
 // without `trust`, allows no links or HTML; an expression it cannot parse is drawn in red instead of throwing.
 const MATH = /\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g
 

@@ -91,7 +91,7 @@ def test_the_route_answers_with_the_built_in_connections(tmp_path, monkeypatch):
 
 
 def test_the_equations_model_reads_before_the_answer_model_and_must_take_images(tmp_path, monkeypatch):
-    """D136: an equations model in Settings is the one asked; with none set, the answer model is; a connection that
+    """An equations model in Settings is the one asked; with none set, the answer model is; a connection that
     sends no image is refused for it."""
     monkeypatch.setattr(equations.EquationService, "start", lambda self: None)
     settings = Settings(data_dir=tmp_path / "data", port=8765, arxiv_source="off")

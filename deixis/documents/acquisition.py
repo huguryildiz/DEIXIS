@@ -200,7 +200,7 @@ async def _openalex_request(client: httpx.AsyncClient, doi: str, source_version:
                               attempt_id=uuid.uuid4().hex)
             attempt_id = uuid.uuid4().hex
             made.append(attempt_id)
-            begun = begin_request(OPENALEX_URL)  # stored before the client has it (D31)
+            begun = begin_request(OPENALEX_URL)  # stored before the client has it
             try:
                 response = await client.get(f"{OPENALEX_URL}/https://doi.org/{quote(doi, safe='/')}", params=params,
                                             headers=headers, timeout=30)
@@ -322,12 +322,12 @@ async def core_lookup(client: httpx.AsyncClient, doi: str, api_key: str | None) 
 
 
 async def europepmc_lookup(client: httpx.AsyncClient, doi: str, source_version: str | None) -> Lookup:
-    """This DOI's work in Europe PMC's open-access subset, as a `fullTextXML` candidate (SW21, D106).
+    """This DOI's work in Europe PMC's open-access subset, as a `fullTextXML` candidate (SW21).
 
     Only a result whose DOI is the record's, with a PMCID, open access, in Europe PMC and not an author manuscript is
     a candidate: the subset holds the copy the publisher deposited (`publishedVersion`), `fullTextXML` gives nothing
     for an author manuscript, and an accepted manuscript's identity is another piece of work. The version check is
-    the other lookups' (D4, D22, D35).
+    the other lookups'.
     """
     try:
         async with fetch.host_gate(EUROPEPMC_SEARCH_URL):  # one request per host at a time (slice 13e)
@@ -522,12 +522,12 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
     A 10.1016 DOI is also looked up in Elsevier's article API (`elsevier_lookup`, with `elsevier_key`, the Scopus key);
     without the key that lookup is stored as `auth_required` and nothing is sent. Its PDF is tried with the others.
 
-    When none of their verified copies gave a file, Europe PMC is asked once (SW21, D106): its open-access full text
+    When none of their verified copies gave a file, Europe PMC is asked once (SW21): its open-access full text
     is drawn as a PDF labelled as a rendition and attached by the same version rule.
 
-    `other_versions` is the full-text retrieval run's one addition (D83): when the record's own version gave no
+    `other_versions` is the full-text retrieval run's one addition: when the record's own version gave no
     file, a verified copy of a *different declared* version opens its own row under the same work and is attached
-    there, never onto the published record (D4). Without it the function is what it has always been, and a copy of
+    there, never onto the published record. Without it the function is what it has always been, and a copy of
     uncertain version still waits for the user in both.
 
     `openalex_budget` is a run's memory of OpenAlex's daily budget (see `OpenAlexBudget`): once it is exhausted the
@@ -543,7 +543,7 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
 
     def record(provider: str, lookup: Lookup) -> None:
         # Each answer is stored the moment it is in hand, before the next request is awaited: an interruption between
-        # two lookups must not lose what OpenAlex's budget said (D248).
+        # two lookups must not lose what OpenAlex's budget said.
         lookup = attempted(lookup)
         lookups.append((provider, doi, lookup))
         with db.transaction(store.conn):  # the answer and its candidates are stored together or not at all
@@ -642,7 +642,7 @@ async def _attach_other_version(store: Store, research_id: str, source_version_i
 
     Only a candidate whose DOI was verified and whose version the provider named is taken: an `uncertain` copy is
     never attached by code and keeps waiting for the user, and a `mismatch` is not this work at all. The row it
-    lands on carries that version's label, so the passages say which version was read (D48). A row opened by an
+    lands on carries that version's label, so the passages say which version was read. A row opened by an
     earlier run is found again rather than opened twice, and its file is not fetched a second time.
     """
     wanted = [c for c in store.pdf_candidates(source_version_id)

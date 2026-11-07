@@ -1,4 +1,4 @@
-"""D56: a formula question brings each full-text source's most formula-dense page into the answer input."""
+"""A formula question brings each full-text source's most formula-dense page into the answer input."""
 
 import asyncio
 import pytest

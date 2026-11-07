@@ -14,7 +14,7 @@ removal take it exclusively and give up (409) when they cannot. The runtime has 
 model file is in place. Nothing here changes a saved choice: Settings stores `(provider, model)` and only the person's
 "Use" changes it.
 
-The earlier PyTorch built-in model (D88: `tools/embedding`, `embedding-models`, `embedding-hf-home`, `uv-python`,
+The earlier PyTorch built-in model (`tools/embedding`, `embedding-models`, `embedding-hf-home`, `uv-python`,
 `uv-cache`) is reported with its measured size and removed only on request.
 
 POSIX only in this slice.
@@ -418,7 +418,7 @@ class LocalModelService:
 
     # ---- remove ---------------------------------------------------------------------------------
     async def remove(self, model_id: str) -> None:
-        """Delete one model's file. Similarities, vectors and scores already stored stay (D29). The runtime goes too
+        """Delete one model's file. Similarities, vectors and scores already stored stay. The runtime goes too
         when no model file is left. A file that cannot be deleted is not hidden: the job file says `remove_failed`."""
         model = self._model(model_id)
         if not local_embedding.supported():
@@ -462,7 +462,7 @@ class LocalModelService:
             _release(runtime_fd)
 
     async def remove_legacy(self) -> dict[str, Any]:
-        """Delete what the earlier PyTorch built-in model (D88) left, on the person's request only. Its locks are
+        """Delete what the earlier PyTorch built-in model left, on the person's request only. Its locks are
         taken exclusively first, so an older DEIXIS still running it is not pulled from under its feet."""
         if not local_embedding.supported():
             raise ServiceError("unsupported_platform", UNSUPPORTED)

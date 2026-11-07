@@ -1,4 +1,4 @@
-"""D254 synthetic chain evidence: isolated SQLite, fake clock, scripted transport."""
+"""Synthetic chain evidence: isolated SQLite, fake clock, scripted transport."""
 
 import asyncio
 import json

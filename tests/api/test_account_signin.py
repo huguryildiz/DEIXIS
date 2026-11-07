@@ -1,4 +1,4 @@
-"""Sign in to Codex and Claude Code from Settings (D21): the terminal launcher, the routes and the state machine.
+"""Sign in to Codex and Claude Code from Settings: the terminal launcher, the routes and the state machine.
 
 A fake launcher stands in for the terminal and a fake health check for the tools; no real terminal opens and no CLI
 runs. Passing shows the command lines built per platform, the state machine (waiting, succeeded, failed, timed out,

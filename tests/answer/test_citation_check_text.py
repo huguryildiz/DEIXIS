@@ -1,4 +1,4 @@
-"""Verify Citations V2 (D96): each entry's text (the person's PDF first, then the open-access path), the frozen passage
+"""Verify Citations V2: each entry's text (the person's PDF first, then the open-access path), the frozen passage
 plan, the 200-pair cap, the preview with its cost range, the counters, OpenAlex's daily budget and the purge. Drafts,
 records and PDFs are SYNTHETIC; network goes only through a mocked httpx transport and a fake fetcher, and nothing here
 calls a model."""

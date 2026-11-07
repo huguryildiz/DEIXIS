@@ -36,7 +36,7 @@ PAGE = 20
 
 @pytest.fixture(autouse=True)
 def no_gate(monkeypatch):
-    """Open the Semantic Scholar gate so a test does not wait two seconds for a mocked answer (D67).
+    """Open the Semantic Scholar gate so a test does not wait two seconds for a mocked answer.
 
     Only the gate: `asyncio.sleep` itself is left alone, because the worker loop runs on it. Every SYNTHETIC 429
     below names `retry-after: 0`, so the bounded backoff costs nothing either.
@@ -235,7 +235,7 @@ def test_semantic_scholar_fills_one_abstract_and_crossref_the_one_it_did_not(tmp
 
 
 def test_a_batch_skipped_in_the_cooldown_leaves_its_records_as_a_refused_batch_does(tmp_path, monkeypatch):
-    """D155: during a Semantic Scholar 429 cooldown the read stage's lookup sends it nothing; its records are stored
+    """During a Semantic Scholar 429 cooldown the read stage's lookup sends it nothing; its records are stored
     `failed`, as after a refused batch, so in Quick they reach `abstract_not_found` (and full-text admission) instead
     of waiting for a lookup the succeeded step will never send again. The step says why and for how many."""
     sources = Sources(works=[work(1, doi="10.1/a"), work(2, doi="10.1/b")],
@@ -289,9 +289,9 @@ def test_a_resumed_run_asks_no_doi_twice(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("in_flight", [1, 4])
 def test_a_crossref_chunk_stopped_between_two_answers_keeps_the_first_answer_s_evidence(tmp_path, monkeypatch, in_flight):
-    """D153 review: the worker stops after Crossref answered one record of a chunk and before the other; the resumed
+    """The worker stops after Crossref answered one record of a chunk and before the other; the resumed
     chunk asks only the other, and the first stored abstract's payload file still holds its own answer (one after
-    another as at the read stage and before D153, and 4 in flight as before the rerank)."""
+    another as at the read stage and before that change, and 4 in flight as before the rerank)."""
     crossref = {"10.1/7": {"abstract": "<jats:p>SYNTHETIC seven.</jats:p>"},
                 "10.1/8": {"abstract": "<jats:p>SYNTHETIC eight.</jats:p>"}}
     sources = Sources(works=[work(0, abstract=ABSTRACT, doi="10.1/0"), work(7, doi="10.1/7"), work(8, doi="10.1/8")],
@@ -333,7 +333,7 @@ def test_a_crossref_chunk_stopped_between_two_answers_keeps_the_first_answer_s_e
 
 
 async def headers_out(request):
-    """What a real connection reports once the request's own headers are written to it (D156): httpcore's trace."""
+    """What a real connection reports once the request's own headers are written to it: httpcore's trace."""
     import httpcore
     if (trace := request.extensions.get("trace")) is not None:
         await trace("http11.send_request_headers.started", {"request": httpcore.Request(request.method, str(request.url))})
@@ -341,7 +341,7 @@ async def headers_out(request):
 
 
 async def headers_back(request):
-    """What it reports once the response headers came back (D156)."""
+    """What it reports once the response headers came back."""
     if (trace := request.extensions.get("trace")) is not None:
         await trace("http11.receive_response_headers.complete", {})
 
@@ -360,7 +360,7 @@ def written(request, reply=None):
 
 @pytest.mark.parametrize("case", ["connects", "never_connects", "proxy_tunnel_stalls", "retry_wait"])
 def test_a_lookup_request_counts_as_out_only_while_its_own_headers_are_written_and_unanswered(case):
-    """D156, through httpx and httpcore themselves: a request still waiting for its connection, or whose HTTPS proxy
+    """Through httpx and httpcore themselves: a request still waiting for its connection, or whose HTTPS proxy
     answered CONNECT but whose own request never went out, was never sent; one whose headers went out is, until its
     response headers come back, so a 429 waiting for its retry is not out."""
     import httpcore
@@ -408,7 +408,7 @@ def test_a_lookup_request_counts_as_out_only_while_its_own_headers_are_written_a
 
 
 def test_a_retry_after_resume_cut_short_keeps_its_record_open_whatever_the_earlier_attempt_answered(tmp_path, monkeypatch):
-    """D156 review: Crossref fails for 7 while 8 is still out, the round stops, and the resumed chunk asks 7 again; that
+    """Crossref fails for 7 while 8 is still out, the round stops, and the resumed chunk asks 7 again; that
     retry is still out when the round's time ends. 7 is open: its latest request went out and has no answer, even
     though an earlier attempt of the same step stored a failure for it. A record whose request never went out is not,
     nor one whose 429 came back and whose retry wait the round cut short."""
@@ -459,6 +459,6 @@ def test_a_retry_after_resume_cut_short_keeps_its_record_open_whatever_the_earli
 # ---- the flags and what they route ------------------------------------------------------------
 
 
-# ---- slice 13g Task 4: Scopus is the last abstract source, on an institutional network only (D91) ---------------
+# ---- slice 13g Task 4: Scopus is the last abstract source, on an institutional network only ---------------
 
 

@@ -49,7 +49,7 @@ APPROVAL_VOCABULARY_FIELDS = ("claim_words", "exclusion_words", "outcome_terms",
 def _approval_side(vocabulary: dict[str, Any], criterion: dict[str, Any] | None,
                    queries: list[dict[str, Any]], words: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """What the run searched under, as the approval card reads it (slice 08a). `words` is the frozen plan's record of
-    which words a sent query carries (D26): each term gets `searched` and `left_out` from it, both null where the plan
+    which words a sent query carries: each term gets `searched` and `left_out` from it, both null where the plan
     recorded nothing (frozen before the record, or not frozen yet)."""
     origins = approval_rules.block_origins(vocabulary)
     carried = {(w["block"], w["term"]): w for w in words or []}
@@ -66,7 +66,7 @@ def _approval_side(vocabulary: dict[str, Any], criterion: dict[str, Any] | None,
         "criterion": criterion,
     }
     # The compiled text of every query this run sends, by provider and, beside a model-written query, by which
-    # vocabulary wrote it (D92).
+    # vocabulary wrote it.
     side["queries"] = [{"provider_id": q["provider_id"], "query_text": q["query_text"],
                         **({"origin": q["origin"]} if q.get("origin") else {})} for q in queries]
     return side
@@ -99,7 +99,7 @@ def _card_chaining(store: Store, run: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def source_counts(store: Store, run_id: str, probe: dict[str, Any] | None = None) -> dict[str, Any] | None:
-    """What each source brought in this run: how many works, and how many no other source brought (D93).
+    """What each source brought in this run: how many works, and how many no other source brought.
 
     Works are counted after the DOI and work merge, through the candidate each record became, and a source's work is
     its own when no other source's search found that work anywhere in this run. The numbers come from
@@ -109,7 +109,7 @@ def source_counts(store: Store, run_id: str, probe: dict[str, Any] | None = None
 
     With an `sw` research's probe set (slice 19), a counted run also gets `arms`: for each of these rows the records
     it returned and the included and confirmed works it found, in the same "only" universe, the split of a source by
-    query origin, and the arm-kind line. Without one the result is exactly D93's.
+    query origin, and the arm-kind line. Without one the result is exactly that.
     """
     conn = store.conn
     searches = [dict(r) for r in conn.execute(
@@ -126,7 +126,7 @@ def source_counts(store: Store, run_id: str, probe: dict[str, Any] | None = None
         return {"counted": False, "sources": []}
     card = store.existing_step(run_id, "protocol_approval")
     everywhere: dict[str, set[str]] = {}
-    # Citation chaining is not one of a source's searches (D95): its works are counted apart, with the works no
+    # Citation chaining is not one of a source's searches: its works are counted apart, with the works no
     # keyword search of this run found.
     chained: set[str] = set()
     for search in searches:
@@ -141,7 +141,7 @@ def source_counts(store: Store, run_id: str, probe: dict[str, Any] | None = None
     if any(search["operation_key"].startswith(CHAIN_PREFIX) for search in searches):
         counts["chain"] = {"works": len(chained), "only": len(chained - set().union(*everywhere.values()))}
     if probe is not None:
-        # Beside D93's rows, not inside them: their fields and meaning stay exactly as D93 wrote them.
+        # Beside the search's own rows, not inside them: their fields and meaning stay exactly as the search wrote them.
         counts["arms"] = probe_rules.arm_counts(store, run_id, searches, works, card, probe)
     return counts
 
@@ -156,7 +156,7 @@ def _json(value: str | None) -> Any:
 
 
 def ocr_state(store: Store, asset_id: str) -> dict[str, Any]:
-    """Pages of the text in use without text (blank pages included), pages read with OCR, and the latest OCR reading (D51)."""
+    """Pages of the text in use without text (blank pages included), pages read with OCR, and the latest OCR reading."""
     conn = store.conn
     asset = store.asset(asset_id)
     pages = {r["physical_page"]: r["ocr"] for r in conn.execute(
@@ -195,13 +195,13 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
     except NotFound:
         frozen = None
     frozen_cells = {cell["cell_id"]: cell for cell in frozen["cells"]} if frozen else {}
-    # D114: the claims resting on what was read from an abstract, from their own links, and the rows this report read
+    # The claims resting on what was read from an abstract, from their own links, and the rows this report read
     # from their abstracts only (frozen without PDF text).
     depth_marks = report_assembly.claim_depth_marks(store, reports, report_id) if frozen else {}
     abstract_read = {row["source_version_id"] for row in (frozen or {}).get("rows", [])
                      if row.get("membership") == "abstract_only"
                      or (row.get("passage_ids") and row.get("reading_depth") in (None, "abstract"))}
-    # D144: the rows read in full that did not meet the whole criterion, noted beside their reference.
+    # The rows read in full that did not meet the whole criterion, noted beside their reference.
     full_read = {row["source_version_id"] for row in (frozen or {}).get("rows", [])
                  if row.get("membership") == "full_text_read"}
     effective_by_claim: dict[str, list[dict]] = {}
@@ -292,7 +292,7 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
         sections.append({key: section[key] for key in (
             "section_id", "status", "word_count", "draft", "validation",
         )} | {"claims": claims, "evidence_changes": changes["sections"][section["section_id"]]})
-    # D131 for the report: the model writes `{{srv_S…}}`, its section's short handle, where a claim names a source; the
+    # For the report the model writes `{{srv_S…}}`, its section's short handle, where a claim names a source; the
     # handle is read back to the source through the section's stored StepInput and the view names it from the record.
     real: dict[str, dict[str, str]] = {}
     handled = {section["section_id"] for section in sections for claim in section["claims"]
@@ -404,7 +404,7 @@ SEED_VIEW_KEYS = ("source_version_id", "asset_id", "asset_sha256", "extraction_v
 
 
 def _same_seeds(envelope: dict[str, Any] | None, scope: dict[str, Any]) -> bool:
-    """Whether a frozen seed envelope was made for the scope's current seeds (D3): a v2 one by its seed key; D2's
+    """Whether a frozen seed envelope was made for the scope's current seeds: a v2 one by its seed key; that
     single context by its file, its source and the fingerprint of its excerpt, since it has no seed key."""
     if not envelope or not envelope["seeds"]:
         return False
@@ -417,7 +417,7 @@ def _same_seeds(envelope: dict[str, Any] | None, scope: dict[str, Any]) -> bool:
 
 
 def _seed_uses(store: Store, research_id: str, scope: dict[str, Any]) -> list[dict[str, Any]]:
-    """What each seed PDF did in this revision's search (D2, D3): `selected` before any protocol, `not_used` when the
+    """What each seed PDF did in this revision's search: `selected` before any protocol, `not_used` when the
     protocol froze without these seeds, else its match from the protocol and what read it, from the stored steps of
     the discovery run that froze that protocol. A use is True or False once its step settled and None (not known
     yet) while the run may still reach it."""
@@ -456,10 +456,10 @@ def _seed_uses(store: Store, research_id: str, scope: dict[str, Any]) -> list[di
             {"skipped": out.get("reason"), "code_only": "code_only"}.get(out.get("status"), "written_without_seed")
     search_plan = frozen["body"].get("fast_path_search") or {}
     semantic_plan = search_plan.get("semantic") or {}
-    # D6: a version 2 plan sends each seed's own semantic request; the seed used it when that request succeeded.
+    # A version 2 plan sends each seed's own semantic request; the seed used it when that request succeeded.
     seed_requests = ({spec["source_version_id"]: f"search:fast:semantic:seed:{spec['index']}"
                       for spec in search_plan.get("seed_semantic") or []} if search_plan.get("version") == 2 else None)
-    # A plan frozen before seed_parts (D2) names its one seed's text by `seed_text`; the seed's text went in only when
+    # A plan frozen before seed_parts names its one seed's text by `seed_text`; the seed's text went in only when
     # the query sent (cut to OpenAlex's limit) is longer than the question part and its separator.
     sentence = english_question_rules.embedding_query(store, scope)
     limit = openalex.SEMANTIC_MAX_CHARS
@@ -515,7 +515,7 @@ def _seed_uses(store: Store, research_id: str, scope: dict[str, Any]) -> list[di
 
 
 def source_text_changed(store: Store, given: dict[str, Any] | None) -> bool:
-    """Whether a file or text extraction an answer was given is no longer in use (D45)."""
+    """Whether a file or text extraction an answer was given is no longer in use."""
     return bool(given) and any(
         status != "current" for status in store.evidence_statuses([p["passage_id"] for p in given["passages"]]).values())
 
@@ -564,24 +564,24 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     # The frame of a `compare` research follows its current question; its column suggestions get the frame of the
     # revision they run under (UI parity S5a).
     research["comparison_frame"] = intent_rules.frame_for(research, scope)
-    # Whether the current question revision can still be withdrawn, and why not (D67).
+    # Whether the current question revision can still be withdrawn, and why not.
     research["revision_withdrawal"] = store.withdrawal(research_id)
-    # The number the next question revision takes: a withdrawn revision's number is not used again (D67).
+    # The number the next question revision takes: a withdrawn revision's number is not used again.
     research["next_scope_revision"] = conn.execute("SELECT MAX(revision) FROM scope_revisions WHERE research_id = ?",
                                                    (research_id,)).fetchone()[0] + 1
     # One queue context: the facts and every work's outcome, read once for all four (slice 19).
     ctx = queue_context(store, research_id)
     probe = probe_rules.probe_set(ctx)
     scope_view = dict(scope)
-    # Each seed PDF in canonical order with what it did in this revision's search (D3); never its excerpt's text.
+    # Each seed PDF in canonical order with what it did in this revision's search; never its excerpt's text.
     scope_view["seeds"] = [{key: seed[key] for key in SEED_VIEW_KEYS} | {"passage_count": len(seed["passages"]), "use": use}
                            for seed, use in zip(scope["seeds"], _seed_uses(store, research_id, scope))]
     scope_view["seed_candidates"] = (store.seed_candidates(research_id)
                                      if scope["source_scope"] == "attached_and_academic" else [])
     scope_view["seed_status"] = store.seed_status(research_id, scope)
-    # An sw research may ask for an answer with no included work once this revision's search finished (SW22, D106).
+    # An sw research may ask for an answer with no included work once this revision's search finished (SW22).
     scope_view["discovery_completed"] = store.discovery_completed(research_id)
-    # The providers a query may go to; a verification connector in the scope is not one (D87), nor Scopus (D91).
+    # The providers a query may go to; a verification connector in the scope is not one, nor Scopus.
     scope_view["search_providers"] = search_providers(scope["providers"])
 
     service_waits = {row["run_id"]: json.loads(row["payload_json"]) for row in conn.execute(
@@ -600,10 +600,10 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             " ORDER BY created_at DESC, rowid DESC", (research_id,)):
         run = store.run(row["id"])
         run["steps"] = store.run_steps(run["id"])
-        # The models each step's calls went to, from its stored sessions (UI parity S27, D15): a step names the model it
+        # The models each step's calls went to, from its stored sessions (UI parity S27): a step names the model it
         # ran on, never the role's model in effect now. The model that answered when known, else the one asked for, with
         # the reasoning effort the call was sent with (null when none was sent or the session predates migration 0009,
-        # D25); each model and effort once, ordered by its latest call, so the last entry is where the step's latest call
+        # each model and effort once, ordered by its latest call, so the last entry is where the step's latest call
         # went (the model line compares the role's next calls with it).
         called: dict[str, list[dict[str, Any]]] = {}
         for session in conn.execute("SELECT step_id, connection, requested_model, resolved_model, reasoning_effort"
@@ -631,7 +631,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         # Screening runs in batches; each batch's note is its own line, timed by its step.
         # What this run asked the user to approve before it froze its protocol (slice 08a).
         run["approval"] = approval_view(store, run["id"])
-        # What each source brought in this run, and how much of it no other source did (D93).
+        # What each source brought in this run, and how much of it no other source did.
         run["source_counts"] = source_counts(store, run["id"], probe) if run["kind"] == "discovery" else None
         # What became of the fast chain's requests, by the one rule the report's method section uses too.
         run["chain_requests"] = request_outcomes(run["steps"]) if run["kind"] == "discovery" else None
@@ -652,7 +652,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         {**{k: r[k] for k in ("id", "run_id", "step_id", "scope_revision", "provider", "query_text", "access_mode", "status", "result_count", "provider_total", "page_limit", "retrieved_at",
                               "page_number", "read_limit", "read_total", "stop_reason", "unread_count", "run_kind")},
          "error": _json(r["error_json"])}
-        # `run_kind`: a follow-up search's requests (D92) are listed with their run's kind, never as the search's own.
+        # `run_kind`: a follow-up search's requests are listed with their run's kind, never as the search's own.
         for r in conn.execute("SELECT sr.*, r.kind AS run_kind FROM search_runs sr JOIN runs r ON r.id = sr.run_id"
                               " WHERE sr.research_id = ? ORDER BY sr.retrieved_at", (research_id,))
     ]
@@ -671,7 +671,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     from deixis.workflow.answer import late_revision
     answers = []
     cited_sources: set[str] = set()
-    # A quote of a source removed from this research still opens; the view names the removal (D50).
+    # A quote of a source removed from this research still opens; the view names the removal.
     removed = {r[0] for r in conn.execute(
         "SELECT source_version_id FROM corpus_memberships WHERE research_id = ? AND removed_at IS NOT NULL", (research_id,))}
     for a in conn.execute("SELECT * FROM answers WHERE research_id = ? ORDER BY created_at DESC, rowid DESC", (research_id,)):
@@ -694,7 +694,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
                  "version_label": e["version_label"], "anchor_text": e["anchor_text"], "anchor_match": e["anchor_match"],
                  "evidence_status": e["evidence_status"],
                  "text_source": e["text_source"], "removed_from_research": e["source_version_id"] in removed,
-                 # Who read an `equation_ocr` passage's equations: Mathpix or the answer model by name (D113).
+                 # Who read an `equation_ocr` passage's equations: Mathpix or the answer model by name.
                  "equation_reader": equation_reader(e["extraction_version"], store, e["asset_id"])
                  if e["text_source"] == "equation_ocr" else None,
                  # Europe PMC's text drawn as a PDF: its page is DEIXIS's, not the publisher's (SW21).
@@ -737,9 +737,9 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             # Works this answer read only because a person's Screen more run made them candidates after the read
             # cutoff: abstract-based evidence, screened after the cutoff (UI parity S20).
             "screened_after_cutoff": screen_more.answer_view(store, a["run_id"]),
-            # Works this answer read because the person included them after the read cutoff (D92).
+            # Works this answer read because the person included them after the read cutoff.
             "added_after_cutoff": answer_input.added_after_cutoff_view(store, a["run_id"]),
-            # What each work the answer was given stood as: included, closest or abstract-only (D137).
+            # What each work the answer was given stood as: included, closest or abstract-only.
             "answer_roles": answer_input.roles_view(store, a["run_id"]),
             "limitations": (draft or {}).get("limitations", []) if a["status"] == "structurally_valid" else [],
             "unanswered_aspects": (draft or {}).get("unanswered_aspects", []) if a["status"] == "structurally_valid" else [],
@@ -749,7 +749,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             "validation": validation,
             "model": {"connection": session["connection"], "requested_model": session["requested_model"],
                       "resolved_model": session["resolved_model"], "token_usage": _json(session["token_usage_json"])} if session else None,
-            # A file or text extraction this answer read is no longer in use; its quotes still open what was read (D45).
+            # A file or text extraction this answer read is no longer in use; its quotes still open what was read.
             "source_text_changed": source_text_changed(store, given),
             # Works whose full text a model or a person read and decided on after this answer's run started: what a new
             # answer would read that this one did not ("Update the answer with N new full texts").
@@ -757,7 +757,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             "inputs_given": {"sources": len(given["sources"]), "passages": len(given["passages"]),
                              "source_ids": [s["source_id"] for s in given["sources"]],
                              "depth": _given_depth(given)} if given else None,
-            # Why each given work the answer does not cite is left out (D80); null for an answer saved without a ledger.
+            # Why each given work the answer does not cite is left out; null for an answer saved without a ledger.
             "evidence_ledger": _ledger_view(store, given, validation.get("evidence_ledger")),
             # Where the flow stood when this answer's run started (slice 20); null for an answer whose run kept none,
             # never today's counts in its place. Beside `inputs_given`, not instead of it.
@@ -774,7 +774,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     for a in answers:
         if first and a["report_title"] is not None:
             a["report_title"] = first["report_title"]
-    # Similarity from the chosen semantic search model only; with semantic search off, no source has one (D30).
+    # Similarity from the chosen semantic search model only; with semantic search off, no source has one.
     provider, model = embeddings.chosen(store.setting("semantic_search"))
     similarity_model = embeddings.Embedder(provider, model).stored_model if provider != "off" and model else None
     answered_in_queue = queue_answers(store, research_id)
@@ -792,8 +792,8 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         " WHERE m.research_id = ? AND m.removed_at IS NULL ORDER BY m.created_at, c.rank", (similarity_model, research_id)
     ):
         svid = row["id"]
-        # The PDF in use, whether its text comes from the current extractor, and a later extraction that was not taken (D45).
-        # A math extraction (D52) or an arXiv source reading (D104) builds on the current extractor's text; its own
+        # The PDF in use, whether its text comes from the current extractor, and a later extraction that was not taken.
+        # A math extraction or an arXiv source reading builds on the current extractor's text; its own
         # "nothing to read" or failed attempts are reported as the PDF's equation state, not as a rejected re-extraction.
         assets = [dict(r) | {"text_recovery": recovery_view.text_recovery(store, store.asset(r["id"]), svid, None),
                              "current_extraction": (r["extraction_version"] or "").split("+")[0] == pdf.EXTRACTION_VERSION,
@@ -837,15 +837,15 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             "year": row["year"], "venue": row["venue"], "volume": row["volume"], "issue": row["issue"],
             "pages": row["pages"], "doi": row["doi"], "landing_url": row["landing_url"],
             "version_label": row["version_label"], "publication_type": row["publication_type"], "origin": row["origin"],
-            # The record an uploaded PDF was identified as (D37); None for a provider record or an unmatched upload.
+            # The record an uploaded PDF was identified as; None for a provider record or an unmatched upload.
             "record_match": json.loads(row["record_match_json"]) if row["record_match_json"] else None,
             "cited_by_count": row["cited_by_count"], "cited_by_count_at": row["cited_by_count_at"],
-            # The version's own flag, and the work's: a preprint of a retracted article is marked too (D27).
+            # The version's own flag, and the work's: a preprint of a retracted article is marked too.
             "is_retracted": _retracted(row["is_retracted"]), "work_is_retracted": work_flags.get(row["work_id"]),
             "added_by": row["added_by"], "added_at": row["added_at"], "rank": row["rank"], "similarity": row["similarity"],
-            # Whether an answer can read this version's PDF pages rather than its abstract (D49).
+            # Whether an answer can read this version's PDF pages rather than its abstract.
             "has_pdf_text": bool(assets) and store.has_pdf_text(svid),
-            # Some of that text was read with OCR from scanned pages and is labelled so (D51).
+            # Some of that text was read with OCR from scanned pages and is labelled so.
             "has_ocr_text": bool(assets) and any(p["text_source"] == "ocr" for p in store.passages_for(svid)),
             # "other_version": another version of a found record (e.g. its submitted manuscript), stored separately.
             "version_role": "other_version" if row["added_by"] == "search" and row["candidate_id"] is None else "record",
@@ -875,14 +875,14 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
             )],
         })
 
-    # A work has one record, its head: a published record, else the first (D46, D48). Another candidate of the same work
+    # A work has one record, its head: a published record, else the first. Another candidate of the same work
     # (a preprint screened before its published record joined the work) is shown as another version of the head.
     heads = store.work_heads(research_id)
     reads_version = store.answer_versions(research_id)
     for s in sources:
         if s["version_role"] == "record" and heads.get(s["work_id"]) != s["source_version_id"]:
             s["version_role"] = "other_version"
-        # The version whose text an answer reads when it is not the head itself (D48), and whether the answer reads
+        # The version whose text an answer reads when it is not the head itself, and whether the answer reads
         # no version of the work at all: its only PDF text is a person's file not read yet (slice 18b, decision 8).
         s["answer_reads_version_id"] = None
         s["answer_reads_nothing"] = False
@@ -914,7 +914,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     # Versions of one work are not independent: unique, included, given and cited count works.
     work_of = {s["source_version_id"]: s["work_id"] for s in sources}
 
-    # The follow-up searches that found each work (D92), from each run's frozen found step: a stored version id is
+    # The follow-up searches that found each work, from each run's frozen found step: a stored version id is
     # mapped to the work it belongs to now, so a later merge shows the merged work once per run.
     followup_runs = flow_rules.followup_runs(conn, research_id)
     found_by: dict[str, dict[str, dict[str, Any]]] = {}
@@ -942,7 +942,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
 
     latest_given = next((a["inputs_given"] for a in answers if a["inputs_given"]), None)
     counts = {
-        # The search's records: discovery runs only, every revision; a follow-up search's are `found_followup` (D92).
+        # The search's records: discovery runs only, every revision; a follow-up search's are `found_followup`.
         "found": sum(s["result_count"] for s in search_runs if s["run_kind"] == "discovery"),
         "found_followup": sum(s["result_count"] for s in search_runs if s["run_kind"] == flow_rules.FOLLOWUP_KIND),
         # New works as each completed follow-up search froze them in its found step; later merges do not change them.
@@ -950,13 +950,13 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
                                   for run in followup_runs if run["status"] == "completed"),
         "unread": sum(s["unread_count"] or 0 for s in last_stopped.values()),
         "unique": works(work_of),
-        # A work's selection is its head's; other versions follow it (D48).
+        # A work's selection is its head's; other versions follow it.
         "included": sum(s["selection"]["state"] == "included" for s in sources if s["version_role"] == "record"),
         "excluded": sum(s["selection"]["state"] == "excluded" for s in sources if s["version_role"] == "record"),
         "pending": sum(s["selection"]["state"] == "pending" for s in sources if s["version_role"] == "record"),
         "inspected": works(latest_given["source_ids"]) if latest_given else 0,
         "cited": works(cited_sources),
-        # Works the user removed from this research, and those a later search found again; neither is listed (D50).
+        # Works the user removed from this research, and those a later search found again; neither is listed.
         **dict(zip(("removed", "removed_found_again"), conn.execute(
             "SELECT COUNT(DISTINCT v.work_id), COUNT(DISTINCT CASE WHEN m.found_again_at IS NOT NULL THEN v.work_id END)"
             " FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
@@ -972,7 +972,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     flow = flow_rules.flow_counts(ctx, probe)
     counts["flow"] = flow
     counts["flow_boxes"] = flow_rules.flow_boxes(ctx, flow)
-    # Provider rows → unique works → abstracts read → candidates → included, for the search step's headline (D233).
+    # Provider rows → unique works → abstracts read → candidates → included, for the search step's headline.
     counts["funnel"] = flow_rules.funnel(ctx, flow, counts["flow_boxes"])
     counts["overrides"] = override_rules.overrides_view(ctx, probe)
     last_event = conn.execute("SELECT MAX(id) FROM events WHERE research_id = ?", (research_id,)).fetchone()[0] or 0
@@ -986,7 +986,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     run_total = conn.execute("SELECT COUNT(*) FROM runs WHERE research_id = ?", (research_id,)).fetchone()[0]
     # The study table an unfinished answer opens when it ends (report_pipeline.after_answer), so the rail can say it is
     # coming: only while the research has no table and includes a source; a late full-text revision opens none.
-    # A new table also holds the works read from their abstracts only (D114), so they count here too.
+    # A new table also holds the works read from their abstracts only, so they count here too.
     pending_answer = store.study_table == "auto" and conn.execute(
         "SELECT 1 FROM evidence_tables WHERE research_id = ? AND trashed_at IS NULL LIMIT 1", (research_id,)).fetchone() is None and conn.execute(
         "SELECT 1 FROM runs r LEFT JOIN runs a ON a.id = json_extract(r.target_json, '$.answer_run_id')"
@@ -1012,7 +1012,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
 
 
 def semantic_view(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, Any]:
-    """The provider semantic search uses, and whether its arm runs for this revision (D103, decision 10).
+    """The provider semantic search uses, and whether its arm runs for this revision (decision 10).
 
     `arm`: "off" (no provider), "builtin_model_changed" (a built-in choice saved for a model this DEIXIS no longer
     runs), "english_question_missing" (a built-in Qwen3 model, a question not in English and no sentence saved),
@@ -1038,7 +1038,7 @@ def semantic_view(store: Store, research_id: str, scope: dict[str, Any]) -> dict
     return {"provider": provider, "stored_model": stored_model, "arm": arm,
             "english_question": {"text": row["text"], "origin": row["origin"]} if row else None,
             "needs_english_question": needs,
-            # Whether the search words are read from the question itself; else from the English sentence (D149).
+            # Whether the search words are read from the question itself; else from the English sentence.
             "question_english": english_question_rules.is_english(scope["question"], scope.get("language_hint"))}
 
 
@@ -1085,7 +1085,7 @@ def _ledger_shape_ok(ledger: Any) -> bool:
 
 
 def _ledger_view(store: Store, given: dict[str, Any] | None, ledger: dict[str, Any] | None) -> dict[str, Any] | None:
-    """The answer's evidence ledger (D80) as the screen and the exports read it; None for an answer stored without one.
+    """The answer's evidence ledger as the screen and the exports read it; None for an answer stored without one.
 
     Titles and keys come from the stored source records, never from the model's note. Each left-out row names the
     passage to open: the passage where the backend located the entry's quote, else that source's first given passage.
@@ -1170,7 +1170,7 @@ def _access_level(has_pdf_text: int, has_abstract: int) -> str:
 
 
 def _retracted(value: int | None) -> bool | None:
-    """One version's stored OpenAlex flag (D27): None is unknown; False means only that OpenAlex does not flag it."""
+    """One version's stored OpenAlex flag: None is unknown; False means only that OpenAlex does not flag it."""
     return None if value is None else bool(value)
 
 
@@ -1252,7 +1252,7 @@ def library_view(store: Store) -> dict[str, Any]:
                 "library_item": saved.get(svid), "research_ids": [],
             }
         rid = row["research_id"]
-        # A source removed from a research stays in the library but not in that research's project group (D50).
+        # A source removed from a research stays in the library but not in that research's project group.
         if rid is not None and row["removed_at"] is None:
             # Which researches hold this version now, so a removal names only versions the research holds (S25).
             if rid not in work["versions"][svid]["research_ids"]:
@@ -1374,7 +1374,7 @@ def library_work_view(store: Store, work_id: str) -> dict[str, Any] | None:
             "abstract_passage_id": abstract["id"] if abstract else None,
             "library_item": saved.get(svid),
             "research_id": members[0]["id"] if members else None,
-            # No research holds this version now, but the one it was removed from still opens its stored text (D50).
+            # No research holds this version now, but the one it was removed from still opens its stored text.
             "removed_research_id": None if members else (removed["id"] if (removed := conn.execute(
                 "SELECT r.id FROM corpus_memberships m JOIN researches r ON r.id = m.research_id"
                 " WHERE m.source_version_id = ? AND m.removed_at IS NOT NULL AND r.trashed_at IS NULL AND r.kind = 'research'"
@@ -1465,12 +1465,12 @@ def passage_view(store: Store, research_id: str, passage_id: str) -> dict[str, A
         "extraction_version": passage["extraction_version"], "payload_ref": passage["payload_ref"], "text_source": passage["text_source"],
         "equations_to_check": equations_to_check(store, passage["asset_id"], passage["extraction_version"]).get(passage["physical_page"], 0)
         if passage["text_source"] == "marker" else 0,
-        # The equation numbers in this chunk placed from the arXiv source (D104) or read from the page image (D40, D113); the rest of the
+        # The equation numbers in this chunk placed from the arXiv source or read from the page image; the rest of the
         # chunk is the PDF's text.
         "source_equations": chunk_numbers(latex_numbers(store, passage["asset_id"], passage["extraction_version"]),
                                           passage["physical_page"], passage["payload_ref"])
         if passage["text_source"] in ("latex_source", "equation_ocr") else [],
-        # Who read this passage's equations from the page image: Mathpix, or the answer model by name (D113).
+        # Who read this passage's equations from the page image: Mathpix, or the answer model by name.
         "equation_reader": equation_reader(passage["extraction_version"], store, passage["asset_id"])
         if passage["text_source"] == "equation_ocr" else None,
         "reading_depth": "abstract" if passage["kind"] == "abstract" else "selected_sections",

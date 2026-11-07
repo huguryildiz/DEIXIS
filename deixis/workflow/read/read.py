@@ -1,4 +1,4 @@
-"""D251: one frozen top-N read window with stable top-K work admission."""
+"""One frozen top-N read window with stable top-K work admission."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def selected(works: list[dict[str, Any]], order: list[str], k: int,
     """Worst-case pending admission, counting cached text in the same K slots.
 
     A work whose settled attempt found no text gives its slot to the next eligible work in list order. With
-    `unresolved_last` (a policy frozen with `admission_order`, D155) the works the abstract stage left unresolved
+    `unresolved_last` (a policy frozen with `admission_order`) the works the abstract stage left unresolved
     (`abstract_not_found`, `runs_agree_unresolved`) come after every other eligible work, as `fulltext.GROUPS` orders
     them, so a work with no abstract does not take a fetch slot ahead of a candidate; the person's works stay first.
     A chained work counts by its abstract outcome too, not by its `chain` group.
@@ -65,7 +65,7 @@ def without_text(policy: dict[str, Any], claims: dict[str, Any]) -> set[str]:
 def identity_unconfirmed(store: Any, policy: dict[str, Any], run_id: str, key: str,
                          baseline: dict[str, Any]) -> set[str]:
     """Works whose PDF is not confirmed as the work's own (`pdf_identity_unconfirmed`, no model call); empty for
-    policies frozen before slot refill (D60).
+    policies frozen before slot refill.
 
     Read from each work's frozen reading plan in this run, and from the baseline for a work an earlier run already
     decided so (its reading plan here skips it), so the release is as permanent as `without_text`'s: the work gives
@@ -83,7 +83,7 @@ def identity_unconfirmed(store: Any, policy: dict[str, Any], run_id: str, key: s
 
 def budget_skipped(batches: list[list[str]], stops: list[dict[str, Any]], work_of: dict[str, str],
                    unread: set[str]) -> set[str]:
-    """The unscreened works the model-call budget left, not the deadline (D60): every work of the batches from the
+    """The unscreened works the model-call budget left, not the deadline: every work of the batches from the
     earliest stored stop on that the closure still counts unscreened. Read from the frozen batches, not a stop's own
     record list, so a person's decision taken back after a stop does not turn its work into a deadline cut."""
     if not stops:
@@ -93,7 +93,7 @@ def budget_skipped(batches: list[list[str]], stops: list[dict[str, Any]], work_o
 
 
 def screening_counts(works: list[dict[str, Any]], window: set[str]) -> dict[str, int]:
-    """What decided each screened work of the read window (D60), so the six counts add up to `screened_count`: a
+    """What decided each screened work of the read window, so the six counts add up to `screened_count`: a
     person (their selection, or their decision at either stage, `person_decided_count`), both model runs (`model_screened_count`),
     an invalid model answer (`model_output_invalid_count`), a missing abstract (`no_abstract_count`), a code rule
     (`code_decided_count`), or nothing yet (`undecided_count`: no abstract decision, or `abstract_not_read`)."""
@@ -117,7 +117,7 @@ def screening_counts(works: list[dict[str, Any]], window: set[str]) -> dict[str,
 
 
 def deep_plan(listing: dict[str, Any], deep: dict[str, Any], policy: dict[str, Any]) -> dict[str, Any]:
-    """D173: the frozen list's places `first`..`last`, the deeper screening's window, as one plan record."""
+    """The frozen list's places `first`..`last`, the deeper screening's window, as one plan record."""
     items = listing["items"][deep["first"] - 1:deep["last"]]
     body = {"number": "deep", "rule": deep["rule"], "first": deep["first"], "last": deep["last"],
             "manifest_hash": listing["manifest_hash"], "order_hash": listing["order_hash"], "items": items,
@@ -126,7 +126,7 @@ def deep_plan(listing: dict[str, Any], deep: dict[str, Any], policy: dict[str, A
     return body | {"hash": canonical.sha256_hex(body)}
 
 
-# The codes code or a lookup alone writes on a head, which settle a deep work without a model read (D173). An unread
+# The codes code or a lookup alone writes on a head, which settle a deep work without a model read. An unread
 # code or an earlier model reading does not: this run did not read that work.
 SETTLED_CODES = abstract_stage.LOOKUP_CODES + tuple(
     code for code in abstract_stage.OWNED_CODES
@@ -135,7 +135,7 @@ SETTLED_CODES = abstract_stage.LOOKUP_CODES + tuple(
 
 def deep_closure(flow: Any, run: dict[str, Any], listing: dict[str, Any], deep: dict[str, Any],
                  state: dict[str, Any], closed: set[int]) -> dict[str, Any]:
-    """What the deeper screening (D173) did by the cutoff, for the closure's `deep` record and the snapshot.
+    """What the deeper screening did by the cutoff, for the closure's `deep` record and the snapshot.
 
     Every work of the frozen list's places `first`..`last` is exactly one of: decided by a person; screened by a deep
     batch this run closed (its head holding that read's own outcome); settled by this run's deep code stage (its head
@@ -236,7 +236,7 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
 
     store, rid, run_id = flow.store, run["research_id"], run["id"]
     policy = run["budget"]["fast_path"]
-    last = policy.get("admission_order") == "unresolved_last"  # D155; a policy frozen without it keeps list order
+    last = policy.get("admission_order") == "unresolved_last"  # a policy frozen without it keeps list order
     fetch_allowed = run["budget"]["inspection"]["fetch_limit"] > 0
     read_allowed = run["budget"]["inspection"]["read_limit"] > 0
     key = f"small_batch:v1:{listing['manifest_hash']}:fast"
@@ -261,7 +261,7 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
     model: asyncio.Task | None = None
     deeper_task: asyncio.Task | None = None
     timer: asyncio.Task | None = None
-    # D173: the deeper screening's window, frozen in the policy; None for every run queued without it.
+    # The deeper screening's window, frozen in the policy; None for every run queued without it.
     deep = fast_path.deep_window(policy)
     deep_key = f"{key}:deep"
     deep_state: dict[str, Any] = {"prefix": f"{deep_key}:abstract_screening"}
@@ -302,7 +302,7 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
         return step is not None and step["status"] == "succeeded"
 
     async def deeper() -> None:
-        """D173: screen the window's works once each, beside the top N and after their screening. K, its order and
+        """Screen the window's works once each, beside the top N and after their screening. K, its order and
         the fetch queue never see these works; only the answer's window reaches them."""
         from deixis.workflow.search.fast_chain import read_versions as freeze_versions
         try:
@@ -365,7 +365,7 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                 if (decision and not decision.get("stale") and reason(decision["reason_code"]).outcome == "criterion_not_met"
                         and not (selection.get("origin") == "user" and selection.get("state") == "included")):
                     excluded.append(work["work_id"])
-            # An identity failure an earlier run decided keeps its work out of the slots (D60) when the reading would
+            # An identity failure an earlier run decided keeps its work out of the slots when the reading would
             # skip the work for it: no other fresh reading on any version, and no person's file waiting to be read.
             unconfirmed = sorted(work["work_id"] for work in works if adjudication.person_version(work) is None
                                  and {row["reason_code"] for version in work["versions"]
@@ -447,7 +447,7 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
         await asyncio.gather(model, *([deeper_task] if deeper_task is not None else []), *reads.values())
         flow._checkpoint(run_id, run["scope_revision"])
         works = corpus()
-        # A record a person decided is not sent to the model (`_abstract_stage`), so it is not counted unscreened (D60).
+        # A record a person decided is not sent to the model (`_abstract_stage`), so it is not counted unscreened.
         open_batches = [batch for n, batch in enumerate(abstract_plan["batches"]) if n not in held.closed.get(prefix, set())]
         decided = flow._human_decided_records(rid, [svid for batch in open_batches for svid in batch])
         unread = {wid for batch in open_batches for svid, wid in store.work_ids(batch).items() if svid not in decided}
@@ -506,11 +506,11 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                 "read_cutoff_at": cutoff_at or fast_path.timestamp(store.clock), "k_selected": len(final),
                 "selected_work_ids": final,
                 # Every window work the read closed on unscreened, whether the deadline or the model-call budget cut
-                # it; `not_screened_model_budget` is the budget's part (D60).
+                # it; `not_screened_model_budget` is the budget's part.
                 "not_screened_at_cutoff": sorted(unread), "not_screened_model_budget": sorted(budget_cut),
                 **({"attempted_without_text": sorted(empty), "identity_unconfirmed": sorted(unconfirmed)}
                    if policy.get("slot_refill") else {}),
-                # Window works not left unscreened, whatever decided them; the four counts below say what did (D60).
+                # Window works not left unscreened, whatever decided them; the four counts below say what did.
                 "screened_count": len(screened),
                 **screening_counts(works, screened),
                 "fulltext_adjudicated_before_cutoff": sum(item["fulltext_adjudicated"] for item in closed_items),
@@ -521,7 +521,7 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                     if len(final) < policy["K"] else None,
                 # Works already claimed keep their slot when a later decision admits another work ahead of them.
                 "k_over_reason": "claimed_works_kept" if len(final) > policy["K"] else None,
-                # D173: the deeper window's own record; the fields above keep meaning places 1..N.
+                # The deeper window's own record; the fields above keep meaning places 1..N.
                 **({"deep": deep_record} if deep_record is not None else {})}
             store._event(rid, "read_cutoff", output, run_id)
             if fast_path.enforces(run["budget"], "answer"):

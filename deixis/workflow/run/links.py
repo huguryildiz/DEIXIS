@@ -4,7 +4,7 @@ A link is added, never edited: a verdict that replaces an earlier one closes it 
 overwriting it, so the reason a work was joined stays readable. A merge the user undoes is closed with `undone` and is
 never made again by a later search, because the user's decision outranks the rule (CLAUDE.md, User Authority).
 
-Works are library-wide (D46), so links are too: `record_links` carries no research identifier, and a merge made in one
+Works are library-wide, so links are too: `record_links` carries no research identifier, and a merge made in one
 `sw` research is visible in every research holding the same records. Only a search on the `sw` workflow writes here.
 """
 
@@ -88,7 +88,7 @@ def _work_sources(store: Store, work_id: str) -> list[dict[str, Any]]:
 
 
 def _keep_and_drop(store: Store, work_a: str, work_b: str) -> tuple[str, str]:
-    """The work that survives a join: the one holding the published record, else the older one (D48, D59).
+    """The work that survives a join: the one holding the published record, else the older one.
 
     Keeping the published record's work keeps the short source key that the record was cited under; with two
     preprints neither is preferred, so the older work is kept and the identifier breaks a tie of one instant.
@@ -152,7 +152,7 @@ def _split_work(store: Store, undo: dict[str, Any]) -> None:
              and row[0] == keep]
     if not moved:  # every record this link moved has been deleted or moved on; there is no work to re-open
         return
-    # D59: a key that was given is not changed, and a key another work has taken is not demanded back.
+    # A key that was given is not changed, and a key another work has taken is not demanded back.
     free = dropped["source_key"] and not conn.execute(
         "SELECT 1 FROM works WHERE source_key = ? COLLATE NOCASE", (dropped["source_key"],)).fetchone()
     conn.execute("INSERT INTO works (id, created_at, source_key, source_key_basis) VALUES (?, ?, ?, ?)",
@@ -264,7 +264,7 @@ def _title_neighbours(found: list[str], grams: dict[str, frozenset[str]]) -> set
 
 
 def _published_doi_pairs(store: Store, found: list[str], records: dict[str, Any]) -> set[tuple[str, str]]:
-    """Pairs where one record names the other's registered DOI, (D48)."""
+    """Pairs where one record names the other's registered DOI,."""
     pairs = set()
     for svid in found:
         doi = records[svid]["doi"]

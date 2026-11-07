@@ -19,11 +19,11 @@ from deixis.exports.text import OCR_LABEL, VERDICTS, CitationStyle, Language, do
 
 
 def filename(title: str, version: int, revision: int = 0) -> str:
-    # An update the application wrote over a version (D57) is named V2.1, V2.2, so its file never takes V2's name.
+    # An update the application wrote over a version is named V2.1, V2.2, so its file never takes V2's name.
     return download_name(title, f"V{version}" + (f".{revision}" if revision else ""), extension="docx", fallback="Report")
 
 
-# reportMarkdown.ts `LEDGER_REASONS`: the evidence ledger's reasons (D80) in words.
+# reportMarkdown.ts `LEDGER_REASONS`: the evidence ledger's reasons in words.
 LEDGER_REASONS = {
     "no_answering_content": "Its given passages do not answer the question",
     "off_topic": "Not about the subject of the question",

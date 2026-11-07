@@ -7,7 +7,7 @@ filesystem settings disabled. No fallback model is configured.
 
 Claude Code delivers JSON-schema output through its internal StructuredOutput tool, which checks the answer against
 the schema and, when it does not match, lets the model try again in a further turn. A step gets MAX_TURNS turns for
-that (D157): a session that ends at the limit or at the CLI's retry limit without a valid answer hands its last
+that: a session that ends at the limit or at the CLI's retry limit without a valid answer hands its last
 StructuredOutput attempt to DEIXIS's own validation, which accepts it or starts the step's bounded repair.
 """
 
@@ -47,7 +47,7 @@ from deixis.tools.tool_probe import probe
 from deixis.tools import win_job
 
 
-# The first turn and up to two more for the CLI's StructuredOutput retries (D157).
+# The first turn and up to two more for the CLI's StructuredOutput retries.
 MAX_TURNS = 3
 # Result subtypes that mean the model answered but no StructuredOutput call passed the CLI's schema check.
 NO_VALID_STRUCTURED_OUTPUT = ("error_max_turns", "error_max_structured_output_retries")
@@ -158,7 +158,7 @@ class ClaudeCodeAdapter:
                 "CLAUDE_CODE_SAFE_MODE": "1",
                 "CLAUDE_AGENT_SDK_CLIENT_APP": "deixis/0.1.0",
                 # The CLI inherits the app's environment, where a key saved for the Anthropic API connection lives;
-                # emptied here so this connection runs on the signed-in account, never on that key (D34).
+                # emptied here so this connection runs on the signed-in account, never on that key.
                 "ANTHROPIC_API_KEY": "",
                 # An npm-installed CLI is a node script: node's folder must be on PATH when DEIXIS started with a short one.
                 "PATH": child_path(cli),
@@ -265,7 +265,7 @@ class ClaudeCodeAdapter:
             return [name for name in tool_types if name != "StructuredOutput"]
 
         def note_block(block: Any, from_user: bool = False) -> None:
-            # Fail closed (D157), in assistant and user messages alike: text, thinking, the model's StructuredOutput
+            # Fail closed, in assistant and user messages alike: text, thinking, the model's StructuredOutput
             # calls and the results of those calls pass; every other block the SDK parses (another tool call, a
             # StructuredOutput call in a user message, a server tool use such as web_search, a server tool result, a
             # result for an unknown call, a block type this adapter does not know) is recorded as a tool action.
@@ -331,7 +331,7 @@ class ClaudeCodeAdapter:
                                 if (item.subtype in NO_VALID_STRUCTURED_OUTPUT and item.structured_output is None
                                         and item.api_error_status is None and assistant_error is None
                                         and attempts and not external_tools()):
-                                    # D157: the model answered, but no attempt passed the CLI's schema check within the
+                                    # The model answered, but no attempt passed the CLI's schema check within the
                                     # turn limit. Its last attempt goes to DEIXIS's normalisation and validation, which
                                     # accept it or start the bounded repair; the CLI's verdict is kept with the record.
                                     return ModelStepResult(

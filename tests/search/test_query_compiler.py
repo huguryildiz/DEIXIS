@@ -1,6 +1,6 @@
-"""Provider queries compiled from an sw vocabulary's concept blocks (D90).
+"""Provider queries compiled from an sw vocabulary's concept blocks.
 
-The SearchPlan v2 compiler (`compile_queries`, D44) and its tests were removed in the clean start (slice 3a); what is
+The SearchPlan v2 compiler (`compile_queries`) and its tests were removed in the clean start (slice 3a); what is
 left here is the block fitting every discovery query goes through. Block terms are SYNTHETIC; passing shows which terms
 a query keeps and names as dropped, not recall.
 """
@@ -8,7 +8,7 @@ a query keeps and names as dropped, not recall.
 from deixis.providers import query_compiler
 
 
-# ---- slice 13g Task 1: the fitting takes terms from the block that has the most (D90) -----------------------
+# ---- slice 13g Task 1: the fitting takes terms from the block that has the most -----------------------
 # SYNTHETIC block terms from two fields; only their number and order matter to the fitting.
 
 
@@ -39,8 +39,8 @@ def test_a_plain_word_query_names_every_term_it_did_not_write_as_dropped():
     by_provider = {q["provider_id"]: q for q in query_compiler.compile_block_queries(
         blocks, ["openalex", "semantic_scholar"], 8)}
     assert by_provider["openalex"]["dropped_terms"] == []
-    # A bulk query writes every term (D93); the plain-word and SerpApi syntaxes are fitted directly, since no sw
-    # query goes to Crossref (D87) or SerpApi (D93) any more.
+    # A bulk query writes every term; the plain-word and SerpApi syntaxes are fitted directly, since no sw
+    # query goes to Crossref or SerpApi any more.
     assert by_provider["semantic_scholar"]["dropped_terms"] == []
     assert query_compiler._fit_blocks("crossref", groups)[1] == ["SYNTHETIC lagoon", "gardening"]
     assert query_compiler._fit_blocks("serpapi", groups)[1] == ["SYNTHETIC lagoon"]

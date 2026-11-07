@@ -53,7 +53,7 @@ def register_preference_routes(app) -> None:
             "arxiv_source": settings.effective_arxiv_source(),
             # The arXiv route runs only on POSIX.
             "arxiv_route_possible": arxiv_source.posix_available(),
-            # D173: read when a discovery is queued; the windows are the policy's own constant, by depth.
+            # Read when a discovery is queued; the windows are the policy's own constant, by depth.
             "deep_screening": settings.effective_deep_screening(),
             "deep_screening_windows": {effort: fast_path.screened_once(effort) for effort in fast_path.DEEP_SCREENING_EFFORTS},
             "model_concurrency": settings.effective_model_concurrency(),

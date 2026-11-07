@@ -21,14 +21,15 @@ const ABSTRACT_REASONS: Record<string, string> = {
   abstract_not_read: 'Below the read limit of the run; the model was not asked.',
   abstract_not_proposed: 'No valid model proposal was recorded for its abstract.',
   survey_title_word: 'The title names a survey or review, so it went to the seed pool instead of screening.',
-  // D173's deeper screening: one model read of the abstract, no second read behind it.
+  // The deeper screening: one model read of the abstract, no second read behind it.
   single_read_candidate: 'One read found that the abstract may meet the criterion.',
   single_read_quote_not_found: 'A quoted phrase was not found in the abstract, so it was kept for the full text.',
   single_read_out_of_scope: 'One read found the abstract outside the criterion.',
   single_read_unresolved: 'One read could not tell from the abstract.',
 }
 // The basis of an abstract-stage decision, from what its reason code read: the title alone, the record's metadata, the
-// title and abstract by a code rule, or two model reads of them (one, for D173's deeper screening). A code with no reading (no abstract, not read, no valid
+// title and abstract by a code rule, or two model reads of them (one, for the deeper screening). A code with no
+// reading (no abstract, not read, no valid
 // proposal) has no basis line.
 const ABSTRACT_BASIS: Record<string, string> = {
   blocks_in_title: 'basis: title · code rule',
@@ -67,7 +68,7 @@ export function proposalOf(source: Source): Proposal | null {
     const basis = readingBasis(sc.read_coverage)
     if (sc.outcome === 'include') return { tone: 'include', word: t('include'), reason: t('Both full-text reads found every part of the criterion.'), basis }
     if (sc.outcome === 'criterion_not_met') return { tone: 'exclude', word: t('exclude'), reason: t('The parts of the criterion were not found in the passages read.'), basis }
-    // A partial reading is labelled, not asked (D135): how many core parts a run found with a checked quote.
+    // A partial reading is labelled, not asked: how many core parts a run found with a checked quote.
     if (code === 'part_without_evidence' && sc.parts) return { tone: 'uncertain', word: t('partly matches'), reason: t('{k} of {n} parts of the criterion found with a checked quote.', { k: sc.parts.found, n: sc.parts.total }), basis }
     return { tone: 'uncertain', word: t('uncertain'), reason: hasQueueReason(code) ? queueReasonText(code) : t('Left open at the full-text stage.'), basis }
   }
@@ -78,7 +79,7 @@ export function proposalOf(source: Source): Proposal | null {
     if (sc.outcome === 'candidate') return { tone: 'passed', word: t('passed abstract'), reason: t(reason ?? 'Kept for the full text.'), basis }
     if (sc.outcome === 'out_of_scope') return { tone: 'exclude', word: t('exclude'), reason: t(reason ?? 'Out of scope at the abstract stage.'), basis }
     if (NOT_READ.has(code)) return { tone: 'none', word: t('not screened'), reason: t(reason), basis }
-    // A partial reading is labelled, not asked (D135): how many core parts a run found with a checked quote.
+    // A partial reading is labelled, not asked: how many core parts a run found with a checked quote.
     if (code === 'part_without_evidence' && sc.parts) return { tone: 'uncertain', word: t('partly matches'), reason: t('{k} of {n} parts of the criterion found with a checked quote.', { k: sc.parts.found, n: sc.parts.total }), basis }
     return { tone: 'uncertain', word: t('uncertain'), reason: t(reason ?? 'Left open at the abstract stage.'), basis }
   }

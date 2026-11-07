@@ -72,7 +72,7 @@ def _ids(oid: str) -> tuple[str, str]:
 
 def local_works(store: Any, research_id: str, oids: list[str]) -> dict[str, set[str]]:
     """The research's works (any membership, removed included) each OpenAlex id names, through the stored OpenAlex
-    mappings and the citation map's resolutions. D42 keeps resolutions out of deduplication, so a search write alone
+    mappings and the citation map's resolutions, which stay out of deduplication, so a search write alone
     would make a resolved upload's OpenAlex record a second work; this is checked before anything is written."""
     found: dict[str, set[str]] = {oid: set() for oid in oids}
     for start in range(0, len(oids), 400):
@@ -267,7 +267,7 @@ def chaining_work_id(value: str) -> str | None:
 
 
 def _apply_dois(store: Any, run: dict[str, Any], outcome: Any) -> dict[str, Any]:
-    """A DOI resolves only when exactly one returned work carries it (D42); the work joins the research as a source the
+    """A DOI resolves only when exactly one returned work carries it; the work joins the research as a source the
     person added and nobody screened, unless the research already holds it (then that work is the seed)."""
     rid = run["research_id"]
     by_doi: dict[str, dict[str, Any]] = {}
@@ -306,7 +306,7 @@ def _apply_dois(store: Any, run: dict[str, Any], outcome: Any) -> dict[str, Any]
 
 
 def _apply_seed_lists(store: Any, plan: dict[str, Any], outcome: Any) -> dict[str, Any]:
-    """Store each answered seed's list on its seed version, by D42's rule (one malformed entry leaves it unread)."""
+    """Store each answered seed's list on its seed version, by the citation map's rule (one malformed entry leaves it unread)."""
     by_oid = {seed["openalex_id"]: seed for seed in plan["seeds"]}
     lists: dict[str, list[str] | None] = {}
     for record in outcome.records:
@@ -528,7 +528,7 @@ def _vocabulary(store: Any, run: dict[str, Any]) -> dict[str, Any]:
 
 
 def _index_keywords(source: dict[str, Any]) -> list[str]:
-    """The keywords a provider's own classifier gave this record, as the read that brought it stored them (D184).
+    """The keywords a provider's own classifier gave this record, as the read that brought it stored them.
 
     A row from a library written before that read has none, and an unreadable or non-list value is read as none: the
     order then rests on the title and abstract alone, as it did before.
@@ -547,7 +547,7 @@ def _round_list(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[s
     """The works that first joined the research in this round, read from the admissions, each with the seeds and
     directions that link to it, in screening order (gate blocks named first, then more linking seeds, then arrival).
 
-    A work names a gate block through its title, its abstract or one of its stored provider keywords (D184); every
+    A work names a gate block through its title, its abstract or one of its stored provider keywords; every
     work is listed either way, so the keywords move a work up the order and never keep one out."""
     store, rid = flow.store, run["research_id"]
     forms = flow._chain_forms(run, scope, _vocabulary(store, run))

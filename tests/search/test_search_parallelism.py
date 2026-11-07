@@ -1,10 +1,10 @@
-"""What is left of the parallel search round of slice 13f (D89) on the fast path, and the request allowance each
+"""What is left of the parallel search round of slice 13f on the fast path, and the request allowance each
 query keeps as its own.
 
 Since the clean start (slice 3a) discovery reads OpenAlex only (keyword pages, one semantic request, and one Semantic
 Scholar bulk request on Deep), so the tests of hosts read side by side, of the host bound `SEARCH_PARALLEL_HOSTS` and of
 the evidence the sequential five-query round wrote (`tests/fixtures/search_parallelism/`) were removed with that round.
-What the fast path shares with it is tested here: a query's own request share (D89) ends its read, survives a retry,
+What the fast path shares with it is tested here: a query's own request share ends its read, survives a retry,
 and pauses a run whose every share was spent before it asked. `Hosts`, `Session` and `run_discovery` stay for the
 provider-fault tests of tests/search/test_faults_providers.py.
 
@@ -54,7 +54,7 @@ RATE_LIMITED = {("SYNTHETIC receiver sampling budget", 10)}  # (query, offset): 
 
 @pytest.fixture(autouse=True)
 def no_gate(monkeypatch):
-    """Open the Semantic Scholar gate so a test does not wait on it (D67)."""
+    """Open the Semantic Scholar gate so a test does not wait on it."""
     monkeypatch.setattr(common.SEMANTIC_SCHOLAR_PACER, "interval_seconds", 0.0)
 
 
@@ -232,7 +232,7 @@ def run_discovery(tmp_path, monkeypatch, hosts, effort="quick"):
         session.close()
 
 
-# ---- the request allowance is each query's own (D89) ----------------------------------------------------------
+# ---- the request allowance is each query's own ----------------------------------------------------------
 
 
 class RefusedOnce(PagedProviders):

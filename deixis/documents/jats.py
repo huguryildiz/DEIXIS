@@ -1,4 +1,4 @@
-"""Europe PMC's open-access JATS full text drawn as a plain PDF, in a bounded subprocess (SW21, D106).
+"""Europe PMC's open-access JATS full text drawn as a plain PDF, in a bounded subprocess (SW21).
 
 Europe PMC's own PDF route answers this machine with a Cloudflare check, and the PMC OA service with 404, so the
 open-access subset's `fullTextXML` is the one route that returns the text. It is drawn here as a plain PDF (article

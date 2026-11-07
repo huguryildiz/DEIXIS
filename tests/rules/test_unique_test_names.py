@@ -1,4 +1,4 @@
-"""P9 H7 item 05 (D165): no test module defines one test name twice in one scope."""
+"""P9 H7 item 05: no test module defines one test name twice in one scope."""
 
 import ast
 import collections

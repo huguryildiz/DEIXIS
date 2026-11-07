@@ -1,4 +1,4 @@
-"""Local OCR of scanned PDF pages with Tesseract through PyMuPDF (D51).
+"""Local OCR of scanned PDF pages with Tesseract through PyMuPDF.
 
 A page is read on request, one page per bounded child process, so a `pdf_ocr` run can store each page as its own step
 and not read it again after a restart. Only pages that `pdf.extract_pdf` names as image pages are merged; text layer
@@ -141,7 +141,7 @@ def read_page(path: Path, page: int, langs, timeout: float = TIMEOUT_SECONDS, ma
 
 
 def target_version(base_version: str, version: str | None, langs) -> str:
-    """The extraction version of an OCR reading; D52's equation reader finds the OCR part by its `-v<n>` ending."""
+    """The extraction version of an OCR reading; that equation reader finds the OCR part by its `-v<n>` ending."""
     return f"{base_version}+ocr-tesseract-{version}-{'+'.join(langs)}-{OCR_VERSION}"
 
 

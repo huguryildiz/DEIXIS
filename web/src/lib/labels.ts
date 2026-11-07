@@ -4,7 +4,7 @@ import { t, uiLocale } from './i18n'
 // Label records hold English text; callers show them through t().
 export const LATE_REVISION_LABEL = 'Updated with full text'
 
-// The version an answer is shown as (D57): the person opens V1, V2 …; an update the application writes over a version
+// The version an answer is shown as: the person opens V1, V2 …; an update the application writes over a version
 // (a late full text, at most once per answer) keeps its number and reads V2.1. A number, so versions still sort.
 export const shownVersion = (answer: Pick<Answer, 'report_version' | 'report_revision'>) => (answer.report_version ?? 0) + (answer.report_revision ?? 0) / 10
 
@@ -14,7 +14,7 @@ export const researchHeading = (view: { research: { title: string }; scope: { qu
 // The automatic table is stored as "Study table" (workflow/intent.py TABLE_TITLE) and shown under its research's heading; a title the person chose is shown as is.
 export const tableTitle = (title: string, research?: string) => title === 'Study table' ? research || t('Study table') : title
 
-// The "Retracted" mark's note (D27): the version's own OpenAlex flag, else another version of its work; null for none.
+// The "Retracted" mark's note: the version's own OpenAlex flag, else another version of its work; null for none.
 export function retractionNote(source: { is_retracted: boolean | null; work_is_retracted: boolean | null }): string | null {
   if (source.is_retracted) return t('OpenAlex lists this paper as retracted. Check the retraction notice before relying on it.')
   return source.work_is_retracted ? t('OpenAlex lists another version of this work as retracted. Check the retraction notice before relying on it.') : null
@@ -331,7 +331,7 @@ const pauseReasons: Record<string, string> = {
   ocr_pages_changed: 'The PDF’s pages without text changed while OCR was running. Nothing was stored; start OCR again.',
   asset_removed: 'The PDF was removed from the source before OCR finished. Nothing was stored.',
   extraction_failed: 'The PDF could not be opened to find its pages without text.',
-  // The sw workflow's own stops: the run has searched nothing yet (D80).
+  // The sw workflow's own stops: the run has searched nothing yet.
   key_terms_needed: 'The question is not in English and could not be translated into English, so nothing was searched. Resume to try the translation again, revise the question in English, or give the English key terms above.',
   vocabulary_empty: 'No search term could be built from the question, so nothing was searched. Revise the question above, for example with other words for the topic or with key terms, and search again.',
   vocabulary_too_broad: 'Every search term in the question is too common to search on its own, so nothing was searched. Revise the question above with a narrower topic or with key terms, and search again.',
@@ -373,7 +373,7 @@ export const pauseDetailText = (run: { pause_reason: string | null; error: unkno
   if (run.pause_reason === 'model_call_failed') {
     return [t('The connection did not complete this call. Check it in Settings before resuming.')]
   }
-  // Why the translation step did not give an English sentence (D149), from its stored reason.
+  // Why the translation step did not give an English sentence, from its stored reason.
   const translation = run.pause_reason === 'key_terms_needed' && error.translation && typeof error.translation === 'object' ? error.translation as Record<string, unknown> : null
   if (translation && typeof translation.reason === 'string') return [t('Translation step: {reason}', { reason: pauseReasonText(translation.reason, translation.detail) })]
   return []
@@ -413,10 +413,10 @@ export const reportAssemblyDraftText = (error: unknown) => {
   const reason = names + (rules.length > 3 ? t(' and {n} more', { n: rules.length - 3 }) : '')
   return reason ? t('DRAFT: the assembly check refused the report ({reason})', { reason }) : ''
 }
-// How many more times resuming may ask the model to write the query; the pause carries it (D92).
+// How many more times resuming may ask the model to write the query; the pause carries it.
 export const searchQueryTriesLeft = (run: { error: unknown }) => (run.error as { retries_left?: number } | null)?.retries_left ?? 1
 
-// ---- the frozen protocol of a discovery run (D80) ----
+// ---- the frozen protocol of a discovery run ----
 const approvedByNames: Record<string, string> = {
   unattended: 'Nobody reviewed the search vocabulary; the fast path went on without asking.',
   user: 'You edited and saved this search plan; it was searched as you saved it.',
@@ -443,7 +443,7 @@ export const localToolNames: Record<string, string> = { claude_code: 'Claude Cod
 const localToolIcons: Record<string, string> = { gemini_cli: 'gemini', qwen_code: 'qwen', mistral_vibe: 'mistral', kimi_cli: 'kimi', copilot_cli: 'terminal', opencode: 'terminal', aider: 'terminal', goose: 'terminal', amp: 'terminal', cline: 'terminal' }
 export const localToolIcon = (id: string) => localToolIcons[id] ?? id
 
-// What a scholarly source is used for: searched for records, or asked what a record whose DOI is known is (D87).
+// What a scholarly source is used for: searched for records, or asked what a record whose DOI is known is.
 export const providerRole = (role: string | undefined) => t(role === 'verification' ? 'Metadata verification' : 'Record search')
 
 export const stepLabel = (kind: string, key: string, candidate = false) => {
@@ -564,7 +564,7 @@ export const versionText = (label: string | null) => (label ? t(versionNames[lab
 // OpenAlex's count; other indexes (Google Scholar, Scopus) report different numbers.
 export const citedText = (count: number | null) => (count === null ? '' : t('cited by {count} (OpenAlex)', { count: count.toLocaleString(uiLocale()) }))
 
-// The arXiv source route's reason codes (D104), in plain words. Never "verified", "exact", "reliable" or "correct":
+// The arXiv source route's reason codes, in plain words. Never "verified", "exact", "reliable" or "correct":
 // the route matches a numbered equation to the page by its number and letters; it does not check that the source
 // compiles to this page.
 const arxivSourceReasons: Record<string, string> = {
@@ -608,7 +608,7 @@ function arxivSourcePart(equations: NonNullable<Source['access']['assets'][numbe
   return { tone: 'unstated', text: t('Equations not read yet') }
 }
 
-// Mathpix (D40): why a read placed nothing or failed, by the reason code the backend stored.
+// Mathpix: why a read placed nothing or failed, by the reason code the backend stored.
 const mathpixReasons: Record<string, string> = {
   keys_rejected: 'Mathpix did not accept the key pair', rate_limited: 'Mathpix asked to slow down', server_error: 'Mathpix answered with an error',
   network: 'Mathpix could not be reached or its answer was not received', extraction_changed: 'the PDF’s text changed during the reading',
@@ -630,7 +630,8 @@ const equationOffReasons: Record<string, string> = {
   model_no_images: 'the equations model cannot read images', no_reader: 'no equation reader is available',
 }
 
-// Mathpix (D40) and the answer model (D113) read the same way: page-image crops matched to the PDF's text. `name` is the reader's name.
+// Mathpix and the answer model read the same way: page-image crops matched to the PDF's text. `name` is the reader's
+// name.
 function imageReaderPart(equations: NonNullable<Source['access']['assets'][number]['equations']>, name: string, modelName?: (model: string) => string): { tone: 'text' | 'unstated'; text: string } {
   const placed = equations.route === 'model' ? equations.model : equations.mathpix
   if (equations.state === 'read' && placed) {
@@ -650,7 +651,7 @@ function imageReaderPart(equations: NonNullable<Source['access']['assets'][numbe
 }
 
 // The label of the "read equations again" action, or null when the server would refuse it: a failed reading, or a Mathpix
-// PDF at its request budget whose saved answers can still be placed without a new request (D40).
+// PDF at its request budget whose saved answers can still be placed without a new request.
 export function rereadEquationsLabel(equations: Source['access']['assets'][number]['equations']): string | null {
   if (equations?.state === 'failed') return t('Read equations again')
   if ((equations?.route === 'mathpix' || equations?.route === 'model') && equations.state === 'budget_reached' && equations.stored_answers) return t('Read again from saved results · no new requests')
@@ -677,7 +678,7 @@ export function accessParts(source: Source, modelName?: (model: string) => strin
   }
   else if (source.access.oa_pdf_url && source.access.oa_pdf_version !== source.version_label) parts.push({ tone: 'unstated', text: t('Open-access PDF is a different version ({version}) · not used for this version', { version: versionText(source.access.oa_pdf_version) }) })
   else if (source.access.oa_pdf_url) parts.push({ tone: 'unstated', text: t('Open-access PDF listed · not yet retrieved') })
-  // OCR pages are named apart from the text layer and are not checked against the page (D51).
+  // OCR pages are named apart from the text layer and are not checked against the page.
   if (asset?.ocr?.ocr_pages) parts.push({ tone: 'ocr', text: t('OCR text on {k} of {n} pages · check against the page', { k: asset.ocr.ocr_pages, n: asset.page_count ?? '?' }) })
   const equations = asset?.equations
   if (equations?.route === 'arxiv_source') parts.push(arxivSourcePart(equations))
@@ -694,7 +695,7 @@ export function accessParts(source: Source, modelName?: (model: string) => strin
   return parts
 }
 
-// ---- the human queue of an sw research (slice 17, D97) ----
+// ---- the human queue of an sw research (slice 17) ----
 // What each row asks the person to do, in the order the filter chips list them.
 export const queueKindLabels: Record<Exclude<QueueKind, 'look_again'>, string> = {
   confirm_quote: 'Confirm the quote', choose_run: 'Choose one of the runs', choose_version: 'Choose one of the versions',
@@ -780,10 +781,10 @@ export const queueAnsweredText: Record<QueueAnswer, string> = {
   pdf_wrong: 'you marked the PDF as wrong', pdf_confirmed: 'you confirmed the PDF; it waits for a reading run',
 }
 
-// Slice 19: the arm kinds of a discovery run, in run order, and the origin of a query (D92).
+// Slice 19: the arm kinds of a discovery run, in run order, and the origin of a query.
 export const armKindLabels: Record<string, string> = { keyword: 'Keywords', chain: 'Citation chaining' }
 export const queryOriginLabels: Record<string, string> = { model: 'the model’s query', code: 'the code’s query', user: 'your plan’s query' }
-// The ranking signals (D79) and the two stored orders the signal table reads beside them.
+// The ranking signals and the two stored orders the signal table reads beside them.
 export const signalLabels: Record<string, string> = {
   bm25: 'BM25', blocks: 'Concept blocks', tfidf: 'TF-IDF', graph: 'Citation graph', joint: 'Terms named together',
   embedding: 'Embedding', cites: 'Citation count',
@@ -831,10 +832,10 @@ export const auditStratumLabels: Record<string, string> = {
   A1: 'Out of scope at the abstract stage (model runs)', A2: 'Out of scope at the abstract stage (code rule)',
 }
 
-// What one seed PDF did in this revision's search (D3). Only what the stored steps report as true is named; a null
+// What one seed PDF did in this revision's search. Only what the stored steps report as true is named; a null
 // (not known yet) names nothing. The citation chain counts only when one of its requests for this PDF was sent. While a
 // run is active the wording is present tense, afterwards past.
-// Why a plan word went into no query the frozen plan sent (D26; fast_search.plan_words). Only the stored reason is named.
+// Why a plan word went into no query the frozen plan sent (fast_search.plan_words). Only the stored reason is named.
 export function wordLeftOutText(reason: string) {
   switch (reason) {
     case 'query_limit': return t('cut to keep the query within its length and syntax limits')
@@ -845,7 +846,7 @@ export function wordLeftOutText(reason: string) {
   }
 }
 
-// Why a chosen PDF could not guide the search (D3).
+// Why a chosen PDF could not guide the search.
 export function seedSkipText(reason: string) {
   switch (reason) {
     case 'not_a_source': return t('no longer in this research')
@@ -876,7 +877,7 @@ export function seedUseText(use: SeedUse) {
   return `${found}; ${t(active ? 'now used for {uses}' : 'used for {uses}', { uses: list })}.`
 }
 
-// Verify Citations (D86, D96, D99). A result exists only for a checked pair; a status says how far a pair's check went.
+// Verify Citations. A result exists only for a checked pair; a status says how far a pair's check went.
 // They are labelled apart so the screen never shows a status as a finding.
 export const citationResultLabels: Record<CitationResult, string> = {
   found_whole: 'Found whole', found_partial: 'Found partly', not_found_in_given: 'Not found in the given passages',
@@ -933,7 +934,7 @@ export const citationRefusals: Record<string, string> = {
 export const statementResultLabels: Record<CitationResult, string> = {
   found_whole: 'Supports the whole statement', found_partial: 'Supports part of the statement', not_found_in_given: 'Not found in the given passages',
 }
-// R4b (D108): the class the backend presents each completed work in (`statement.support_class`). A result whose parts
+// R4b: the class the backend presents each completed work in (`statement.support_class`). A result whose parts
 // are only partly stated is not support: it has its own class, and its stored result is shown as the model's.
 export const statementClassLabels: Record<StatementSupportClass, string> = {
   ...statementResultLabels, support_not_shown: 'Support not shown clearly enough',

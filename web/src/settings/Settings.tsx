@@ -21,7 +21,7 @@ const ROLES: { role: DefaultRole; label: string; desc: string; icon: typeof Info
   { role: 'literature', label: 'Literature', desc: 'Plans searches and screens abstracts', icon: BookOpenText },
   { role: 'answer', label: 'Answer', desc: 'Writes the source-linked answer', icon: PenLine },
   { role: 'reviewer', label: 'Reviewer', desc: 'Checks each claim against its passages', icon: ShieldCheck },
-  // D136: the model that reads numbered equations from PDF page crops; only connections that send images are offered.
+  // The model that reads numbered equations from PDF page crops; only connections that send images are offered.
   { role: 'equations', label: 'Equations', desc: 'Reads numbered equations from PDF pages', icon: Sigma },
 ]
 const clock = (iso: string) => new Date(iso).toLocaleTimeString(uiLocale(), { hour: '2-digit', minute: '2-digit' })
@@ -521,7 +521,7 @@ function UsageThisMonth() {
         : t(unpriced > 0 ? 'at least {x} this month' : '{x} this month', { x: money(c.spend.estimated_usd) })
       note = priced > 0 ? t(priced === 1 ? 'estimated from {n} call' : 'estimated from {n} calls', { n: number(priced) }) : ''
       if (unpriced > 0) note += `${note ? ' · ' : ''}${t('{n} with no listed price', { n: number(unpriced) })}`
-      // Calls first booked with no price and priced later from a newer list (D111) are named, with that list's date.
+      // Calls first booked with no price and priced later from a newer list are named, with that list's date.
       if (c.spend.repriced_calls > 0) note += `${note ? ' · ' : ''}${t('{n} priced later from the {date} price list', { n: number(c.spend.repriced_calls), date: c.spend.repriced_price_list ?? '' })}`
     } else if (c.quota) {
       text = c.quota.windows.map(w => t(windowWords[w.window], { p: Math.round(w.used_fraction * 100) })).join(' · ')

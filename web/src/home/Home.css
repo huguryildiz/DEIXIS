@@ -87,7 +87,7 @@
 .home-menu-warn{display:block;max-width:300px;color:var(--warn-ink)}
 .home-menu-badge{flex:none;margin-left:auto;padding:0 5px;border:1px solid var(--strong-line);border-radius:5px;color:var(--muted);font-size:10px;line-height:1.5;text-transform:uppercase}
 
-/* The PDF guide rows (H11, Q3): one check row per attached PDF in a mixed search, all guiding it (D3, at most five). */
+/* The PDF guide rows (H11, Q3): one check row per attached PDF in a mixed search, all guiding it (at most five). */
 .composer .guide{display:grid;gap:4px;padding:8px 12px 10px;border-top:1px solid var(--line);background:var(--sidebar-surface);font-size:12.5px}
 .composer .guide>span{color:var(--muted)}
 .composer .guide label{display:flex;align-items:center;gap:8px;min-width:0;color:var(--ink);cursor:pointer}

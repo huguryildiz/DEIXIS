@@ -54,7 +54,7 @@ def build(store: Any, research_id: str) -> dict[str, Any]:
                             " WHERE r.status = 'resolved'", (research_id,)):
         if row["svid"] in version_work:
             own[version_work[row["svid"]]].add(normalize_openalex_id(row["value"]))
-    # A work's list is the union of its read versions' lists (D79): a preprint and its article cite the same works.
+    # A work's list is the union of its read versions' lists: a preprint and its article cite the same works.
     for row in conn.execute(f"SELECT r.source_version_id AS svid, r.referenced_id AS value FROM record_references r {member}",
                             (research_id,)):
         if read.get(row["svid"]):
@@ -141,7 +141,7 @@ def add_outside_work(store: Any, research_id: str, openalex_id: str) -> dict[str
     """Add an outside work of the map to the research as a source the person added and nobody screened yet.
 
     No request is sent: the work must already be stored, as the map run's metadata step stores outside works. A work
-    the research once held and the person removed is restored instead (D50), so its earlier selection and reason come
+    the research once held and the person removed is restored instead, so its earlier selection and reason come
     back as they were; `add_to_corpus` would leave a removed membership removed and keep the old selection anyway.
     """
     oid = normalize_openalex_id(openalex_id)

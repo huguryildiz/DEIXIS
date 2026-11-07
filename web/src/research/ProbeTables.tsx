@@ -20,7 +20,7 @@ export function ArmReport({ counts, probes, modelTerms }: { counts: SourceCounts
   const several = counts.sources.length > 1
   const byArm = several || arms.read || confirmedAnywhere
   // The "only" universe is named on every line: a source row against the other sources' searches, the chain row
-  // against every search (D93).
+  // against every search.
   const found = (arm: ArmCount, chain: boolean) => [
     arms.read ? t(chain ? '{n} included by two agreeing runs, {only} not found by any search' : several ? '{n} included by two agreeing runs, {only} no other source’s search found' : '{n} included by two agreeing runs', { n: count(arm.included), only: count(arm.included_only) }) : '',
     confirmedAnywhere ? t(chain ? '{n} you confirmed, {only} not found by any search' : several ? '{n} you confirmed, {only} no other source’s search found' : '{n} you confirmed', { n: count(arm.verified), only: count(arm.verified_only) }) : '',

@@ -1,4 +1,4 @@
-"""The human queue through the API and inside real `sw` runs (slice 16, D96).
+"""The human queue through the API and inside real `sw` runs (slice 16).
 
 Workflow behavior only. Records are SYNTHETIC and from two fields (greenhouse irrigation, and the pallet loading and
 chaining pools the earlier flow tests use), every transport is mocked and the model is scripted. Passing shows that a
@@ -34,7 +34,7 @@ def reading_run(client, rid):
 
 
 def sent_source(store, call):
-    """The record a reading call was about. The model is shown a short handle (D12); the stored StepInput keeps the id."""
+    """The record a reading call was about. The model is shown a short handle; the stored StepInput keeps the id."""
     return store.step_input_payload(call["step_input_id"])["adjudication_target"]["source_id"]
 
 
@@ -86,7 +86,7 @@ def test_a_human_include_reaches_selections_as_the_users_and_a_later_reading_run
 # ---- the fifth answer --------------------------------------------------------------------------------------------
 
 
-# ---- what the screen reads (slice 17, D97) ------------------------------------------------------------------------
+# ---- what the screen reads (slice 17) ------------------------------------------------------------------------
 
 def quiet_app(tmp_path, monkeypatch):
     """The API over a library the test writes itself, with no worker: rows come from `test_queue.Lib`, not a run."""
@@ -138,5 +138,5 @@ def test_user_edit_during_small_batch_keeps_the_run_going_without_further_reads_
         client.__exit__(None, None, None)
 
 
-# ---- one answer to several rows (D110) ----------------------------------------------------------------------------
+# ---- one answer to several rows ----------------------------------------------------------------------------
 

@@ -9,10 +9,11 @@ import { writeClipboard } from '../lib/clipboard'
 import { followupClaim, followupGroupClaims, splitQuotes, workTitle } from './followupData'
 
 // Follow-up questions in the thread (mockup `turnHtml()`, R31, UI parity S22b). Each turn is one stored `followup_answer`
-// run (D11): the "Question" bubble, its two step lines, then the short answer with its citation chips. Everything shown is
+// run: the "Question" bubble, its two step lines, then the short answer with its citation chips. Everything shown is
 // the stored turn: the step lines read the turn's stored step rows (`progress`) and, once published, the passages the call
 // was given (`passages_given`, its allowlist); nothing is estimated. A follow-up starts no search and opens no question
-// revision (D67: the turn's "Search for new works on this" was removed). An unverified draft shows its issues and no claim; a turn the
+// revision (the turn's "Search for new works on this" was removed). An unverified draft shows its issues and no
+// claim; a turn the
 // passages do not answer says so.
 
 const ACTIVE = new Set(['queued', 'running', 'pause_requested'])
@@ -41,7 +42,7 @@ function steps(turn: FollowupTurn) {
     return lines
   }
   lines.push({ state: 'done', icon: BookOpen, text: t(given === 1 ? 'Looked in the {n} passage from this research' : 'Looked in the {n} passages from this research', { n: given }) })
-  // The second round (D50): the model asked the library for more and these passages came in.
+  // The second round: the model asked the library for more and these passages came in.
   const more = turn.progress.more_passages
   if (more) {
     // Read only once the second call came back; a selection alone is not a reading.
@@ -71,7 +72,7 @@ export type FollowupTurnActions = {
   onShowCandidates: (opener: HTMLElement) => void
 }
 
-// The turn's search for works outside the research (D92): its step lines read the run's stored steps and summary.
+// The turn's search for works outside the research: its step lines read the run's stored steps and summary.
 function searchSteps(run: FollowupSearchRun) {
   const live = ACTIVE.has(run.status)
   const p = run.progress, c = run.summary.counts
@@ -142,7 +143,7 @@ function FollowupSearchView({ turn, actions }: { turn: FollowupTurn; actions: Fo
   </div>
 }
 
-// What a grouping's count covers (D66), on screen and in the copied text alike.
+// What a grouping's count covers, on screen and in the copied text alike.
 const coverageText = (groups: FollowupWorkGroups) => [
   t('Counted by DEIXIS: {classified} of the {sent} works whose passages were sent are in a group; this research includes {included}.', { classified: groups.classified_works, sent: groups.sent_works, included: groups.included_works }),
   groups.groups.reduce((n, g) => n + g.count, 0) > groups.classified_works ? t('A work can be in more than one group, so the counts add up to more.') : '',
@@ -163,7 +164,7 @@ export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTur
   const live = turn.status === 'pending' && ACTIVE.has(turn.run.status)
   const answer = turn.answer
   const claims = answer ? answer.claims.map(c => followupClaim(turn, c, sources)) : []
-  // The works of each group (D66), each with its own chip into the Citation panel.
+  // The works of each group, each with its own chip into the Citation panel.
   const groupClaims = new Map(followupGroupClaims(turn).map(c => [c.label, followupClaim(turn, c, sources)]))
   const groups = answer?.work_groups ?? null
   // The chip names its first source by its key, else the numbers of the turn's cited passages in order.

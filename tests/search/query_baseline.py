@@ -3,7 +3,7 @@
 PYTHONPATH=. .venv/bin/python tests/search/query_baseline.py --write
 
 The entries of the SearchPlan v2 compiler (`compile_queries`, `_terms`, `_fit`, `_compact_openalex`) were taken out
-of the frozen file when that compiler was removed (clean start, slice 3a). When the pre-D93 `routed=False` compile was
+of the frozen file when that compiler was removed (clean start, slice 3a). When the older `routed=False` compile was
 removed, its `compile_block_queries` samples were dropped (no provider named) or re-recorded with today's single
 compile (one provider named); every other entry is the e19a7f7 freeze.
 

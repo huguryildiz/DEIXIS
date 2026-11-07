@@ -135,7 +135,7 @@ def guard_network() -> None:
 
 
 def hold_paper_write(data_dir: Path) -> None:
-    """Hold the Nth PDF write into papers/ at half its bytes. Since R2b (D192) every PDF is staged by
+    """Hold the Nth PDF write into papers/ at half its bytes. Since R2b every PDF is staged by
     pdf_files.stage_bytes into a papers/*.part file and then placed by os.replace in restore_file."""
     papers = os.path.realpath(data_dir / "papers")
     real_stage_bytes = pdf_files.stage_bytes

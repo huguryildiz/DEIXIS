@@ -83,7 +83,7 @@ class Round:
         self.flow, self.store, self.run, self.scope = flow, flow.store, run, scope
         self.policy = run["budget"]["fast_path"]
         self.vocabulary = vocabulary
-        # A run keeps the admission rule its budget froze: v2 reads the forms its protocol froze (D163 M1), v1 the
+        # A run keeps the admission rule its budget froze: v2 reads the forms its protocol froze, v1 the
         # searched gate forms as before.
         self.normalised = self.policy.get("chain_rule") == chaining.RULE_V2
         self.forms = frozen_forms(flow, run) if self.normalised else flow._chain_forms(run, scope, vocabulary)
@@ -132,7 +132,7 @@ class Round:
 
     def pdf_seeds(self):
         """The seed PDFs' matched works as the first chain seeds, in canonical order and once per OpenAlex work, read
-        only from the protocol (D2, D3); one seed PDF is D2's seed 0."""
+        only from the protocol; one seed PDF is that seed 0."""
         envelope = seed_match.frozen(self.store, self.run)
         seeds, seen = [], set()
         for context in envelope["seeds"] if envelope else []:
@@ -149,7 +149,7 @@ class Round:
         return seeds
 
     def choose(self, identities, origin, previous=(), accepted=None):
-        """With `accepted` (a version 2 plan's first choice, D6), a work counts only through a version the question's
+        """With `accepted` (a version 2 plan's first choice), a work counts only through a version the question's
         request itself accepted."""
         chosen = []
         # An OpenAlex identity is a key too, so the seed PDF's own record is never chosen again under another title.
@@ -188,7 +188,7 @@ class Round:
             previous = self.pdf_seeds()
             accepted = None
             if fast_search.plan_version(self.store, self.run) == 2:
-                # D6: only what the question's request accepted, never a record beyond its limit that the library
+                # Only what the question's request accepted, never a record beyond its limit that the library
                 # already held, nor one a seed's own request brought.
                 accepted = set(((step or {}).get("output") or {}).get("accepted_source_version_ids") or []
                                if step and step["status"] == "succeeded" else [])
@@ -383,7 +383,7 @@ def manifest(store, run):
 def read_versions(flow, run, listing, items=None, key="fast_chain:read_versions", with_order=False):
     """Freeze sanctioned lookup enrichment without rewriting the ranking input.
 
-    `items` defaults to the read window's first N items; D173's deeper screening freezes its own window's items under
+    `items` defaults to the read window's first N items; the deeper screening freezes its own window's items under
     a key of its own, after its own lookups, and with `with_order` also freezes the heads still unchanged then, so a
     resumed run screens and guards exactly those."""
     window = listing["items"][:run["budget"]["fast_path"]["N"]] if items is None else items

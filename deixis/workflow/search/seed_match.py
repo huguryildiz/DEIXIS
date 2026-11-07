@@ -1,5 +1,5 @@
-"""Which OpenAlex work each of the user's seed PDFs is, read from its own first two pages (seed_pdf_v1, D2;
-seed_pdf_v2 for an ordered set of up to five PDFs and a Zotero record's own DOI, D3).
+"""Which OpenAlex work each of the user's seed PDFs is, read from its own first two pages (seed_pdf_v1;
+seed_pdf_v2 for an ordered set of up to five PDFs and a Zotero record's own DOI).
 
 At most two lookups: the DOIs the first pages name, then one meaning search with the head of the first page. Either
 way a work is taken only when its title (four words or more) stands in the first two pages and exactly one work does
@@ -85,14 +85,14 @@ def payload_sha256(payload: dict[str, Any] | None) -> str | None:
 
 def passages_sha256(seeds: list[dict[str, Any]] | None) -> str | None:
     """The fingerprint of the frozen excerpts a seeded run gives the query writer, every seed's in canonical order
-    (one seed: D2's value); None without a seed."""
+    (one seed: that value); None without a seed."""
     if not seeds:
         return None
     return hashlib.sha256("\n".join(p["text_sha256"] for s in seeds for p in s["passages"]).encode()).hexdigest()
 
 
 def contexts(value: dict[str, Any] | None) -> dict[str, Any] | None:
-    """The one reader of a stored seed match (D3): a v2 envelope as it is, D2's single context as a one-seed envelope
+    """The one reader of a stored seed match: a v2 envelope as it is, that single context as a one-seed envelope
     that keeps the stored dict whole and has no seed key; None stays None."""
     if not value:
         return None
@@ -103,8 +103,8 @@ def contexts(value: dict[str, Any] | None) -> dict[str, Any] | None:
 
 
 def stored(envelope: dict[str, Any] | None) -> dict[str, Any] | None:
-    """What a protocol freezes of an envelope: D2's dict for a v1 match, so a run that began under D2 freezes what
-    D2 would have; the envelope itself for v2."""
+    """What a protocol freezes of an envelope: the `seed_pdf_v1` dict for a v1 match, so a run that began under it freezes what
+    `seed_pdf_v1` would have; the envelope itself for v2."""
     if not envelope:
         return None
     return envelope["seeds"][0] if envelope["rule"] == RULE_V1 else envelope
@@ -124,7 +124,7 @@ def frozen(store: Any, run: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def record_region(store: Any, snapshot: dict[str, Any]) -> str:
-    """Where a Zotero or library record's title must stand for its DOI to decide (D3): the first TITLE_REGION_CHARS
+    """Where a Zotero or library record's title must stand for its DOI to decide: the first TITLE_REGION_CHARS
     of the seed file's first physical page with text, page 1 or else page 2. Page 2 is never read when page 1 has
     text, so a citation on page 2 never confirms the record; an image cover page lets page 2 stand in."""
     rows = store.conn.execute(

@@ -12,7 +12,7 @@ export const stateLabels: Record<CellState, string> = {
   value: 'Value', not_verified: 'Value without linked evidence', unknown: 'Unclear in the source', not_reported: 'Not reported',
   not_applicable: 'Not applicable', inaccessible: 'No text', not_found_in_inspected_scope: 'Not found in the text read',
 }
-// Whether a row is in the table's report, and why (D114); the Python exports write the same words.
+// Whether a row is in the table's report, and why; the Python exports write the same words.
 const inReportLabels: Record<string, string> = { included: 'Yes', full_text_read: 'Yes, read in full, did not meet the whole criterion', abstract_only: 'Yes, abstract only', none: 'No' }
 export const accessLabels: Record<TableRow['access_level'], string> = { pdf_available: 'PDF text', abstract: 'Abstract only', metadata: 'Metadata only' }
 
@@ -65,7 +65,7 @@ export function downloadTableCsv(table: TableView, sources: Source[]) {
 
 // Why a report cannot be written from this table now, or '' when it can. The table panel's "Write a manuscript draft"
 // and the evidence report’s "Write a new version" read the same rule from the table's stored `report_ready`. Empty or
-// unverified cells never stop a report (D68): `unfinished` counts them for a plain notice, and the report's own
+// unverified cells never stop a report: `unfinished` counts them for a plain notice, and the report's own
 // basis note says what each source was read from.
 export function reportGate(view: ResearchView, summary: TableSummary | undefined, columns: number) {
   const ready = summary?.report_ready

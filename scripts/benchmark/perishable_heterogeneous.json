@@ -1,0 +1,387 @@
+{
+  "name": "perishable_heterogeneous",
+  "schema_version": "search-measurement-v1",
+  "freeze_date": "2026-11-08",
+  "label_authority": "Elicit run of 20 Oct 2026 as saved. The Close / Adjacent / Methodological strata are the tool's own match labels from abstracts; no human verification.",
+  "identity_rule": "DOI or verified work identity; title-only matches require adjudication",
+  "validation_role": "heldout",
+  "question": "Allocation of perishable resources among heterogeneous demand classes with different service success probabilities or rates, accounting for resource age, expiration, long-run service requirements and allocation costs.",
+  "question_sha256": "41f1c3cbdd9800ad118bedf3d57bd07c9e9b3dd48c1b9d8e91d3c4ca9307d243",
+  "reference": "Elicit answer, 20 Oct 2026, saved in notes/test-questions/perishable-resource-heterogeneous-classes/. A broader, more formal version of perishable_two_classes, asked the same day. Elicit reports 88 indexed papers and delivers 12.",
+  "expected_direction": "No exact match to the full formulation was confirmed, stated openly, in particular the combination of class-specific success probabilities conditional on allocation with minimum long-run service requirements. Closest: Abouee-Mehrizi 2019 and Chen 2018 for age-sensitive multiclass allocation, Civelek 2015 for protection levels with allocation costs in an infinite horizon, Bar-Lev 2005 for expiration with urgency classes and steady-state unsatisfied demand. Allocation Policies in Blood Transfusion links inventory-age distributions to adverse-outcome probabilities and is adjacent evidence only. Freshness eligibility, fill rates and processing speed are kept apart, not treated as interchangeable.",
+  "direction_terms": [
+    [
+      "fill rate",
+      "service level",
+      "long-run service",
+      "service constraint",
+      "service requirement"
+    ],
+    [
+      "success probability",
+      "conditional success",
+      "probability of success",
+      "success rate"
+    ]
+  ],
+  "answer_elements": [
+    {
+      "id": "R1",
+      "question": "Close age-sensitive multiclass allocation models, with the rationing rule from a located passage"
+    },
+    {
+      "id": "R2",
+      "question": "Allocation costs and protection levels over an infinite horizon"
+    },
+    {
+      "id": "R3",
+      "question": "Expiration with urgency classes and steady-state service measures"
+    },
+    {
+      "id": "R4",
+      "question": "Age-dependent outcome probability, used as adjacent evidence and not as a match"
+    },
+    {
+      "id": "R5",
+      "question": "Separation of freshness eligibility, fill rate or service level, processing rate and conditional success probability, with no exact match confirmed and no novelty claimed from absence",
+      "required_subitems": [
+        "freshness_eligibility",
+        "fill_rate",
+        "processing_rate",
+        "success_probability"
+      ]
+    }
+  ],
+  "pass_rule": {
+    "status": "draft from QUESTION.md, owner has not confirmed it",
+    "source": "notes/test-questions/perishable-resource-heterogeneous-classes/QUESTION.md",
+    "rules": [
+      "At least the three papers named in Elicit's answer (Abouee-Mehrizi 2019, Civelek 2015, Bar-Lev 2005) are found.",
+      "Answer keeps freshness eligibility, fill rate/service level, processing rate and conditional success probability separate, and says no exact match was confirmed.",
+      "Blood-transfusion paper is used for age-to-outcome probability only, not as a match.",
+      "Absence of an exact match is not turned into a novelty claim."
+    ]
+  },
+  "source_evidence": {
+    "reference_path": "notes/test-questions/perishable-resource-heterogeneous-classes/elicit-2026-10-20.md",
+    "reference_sha256": "c2781a64865021c073eafcde27a001fb37ed6c39b4419a4c7b6dfb57740edac7",
+    "papers_csv_path": "notes/test-questions/perishable-resource-heterogeneous-classes/elicit-2026-10-20-papers.csv",
+    "papers_csv_sha256": "352440d10e9b52e6fc65e4834ab36025ba7a833a7c179c6cfd7004a2b8d1509d",
+    "question_md_sha256": "1f4de584763d2e941febc4d95f0c05876b854e1466ff9c1a6ecb818ba6a7e43a"
+  },
+  "papers": [
+    {
+      "key": "abouee2019",
+      "doi": "10.1111/poms.13058",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Managing Perishable Inventory Systems with Multiple Priority Classes",
+      "stratum": "close",
+      "label": "ilgili",
+      "label_reason": "Elicit: close, age-sensitive multiclass allocation and rationing.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "R1",
+          "R5"
+        ],
+        "contribution": "Named starting point for age-sensitive multiclass allocation.",
+        "limitation": "Class-specific success probabilities and long-run minimum service constraints not established."
+      },
+      "selection_evidence": {
+        "source": "Elicit answer, 20 Oct 2026, twelve-row papers table with match and gap cells",
+        "source_path": "notes/test-questions/perishable-resource-heterogeneous-classes/elicit-2026-10-20.md",
+        "source_sha256": "c2781a64865021c073eafcde27a001fb37ed6c39b4419a4c7b6dfb57740edac7",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_table",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "chen2018",
+      "doi": "10.1111/poms.13481",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Managing Perishable Inventory Systems with Age-differentiated Demand",
+      "stratum": "close",
+      "label": "ilgili",
+      "label_reason": "Elicit: close, age-sensitive multiclass allocation.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {
+        "answer_elements": [
+          "R1"
+        ],
+        "contribution": "Second age-differentiated multiclass model.",
+        "limitation": "Not a long-run service-constrained formulation."
+      },
+      "selection_evidence": {
+        "source": "Elicit answer, 20 Oct 2026, twelve-row papers table with match and gap cells",
+        "source_path": "notes/test-questions/perishable-resource-heterogeneous-classes/elicit-2026-10-20.md",
+        "source_sha256": "c2781a64865021c073eafcde27a001fb37ed6c39b4419a4c7b6dfb57740edac7",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_table",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "civelek2015",
+      "doi": "10.1016/j.ejor.2015.01.023",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Blood platelet inventory management with protection levels",
+      "stratum": "close",
+      "label": "ilgili",
+      "label_reason": "Elicit: close, allocation costs and infinite horizon.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "R2"
+        ],
+        "contribution": "Infinite-horizon allocation with age substitution, shortage and outdating costs.",
+        "limitation": "No class-specific success probabilities or minimum long-run service."
+      },
+      "selection_evidence": {
+        "source": "Elicit answer, 20 Oct 2026, twelve-row papers table with match and gap cells",
+        "source_path": "notes/test-questions/perishable-resource-heterogeneous-classes/elicit-2026-10-20.md",
+        "source_sha256": "c2781a64865021c073eafcde27a001fb37ed6c39b4419a4c7b6dfb57740edac7",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_table",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "barlev2005",
+      "doi": "10.1017/S0269964805050175",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Control Policies for Inventory Systems with Perishable Items: Outsourcing and Urgency Classes",
+      "stratum": "close",
+      "label": "ilgili",
+      "label_reason": "Elicit: close, expiration, urgency classes, steady state.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "R3"
+        ],
+        "contribution": "Urgency-dependent acceptance with steady-state unsatisfied-demand rates.",
+        "limitation": "Minimum class service constraints and success conditional on allocation not established."
+      },
+      "selection_evidence": {
+        "source": "Elicit answer, 20 Oct 2026, twelve-row papers table with match and gap cells",
+        "source_path": "notes/test-questions/perishable-resource-heterogeneous-classes/elicit-2026-10-20.md",
+        "source_sha256": "c2781a64865021c073eafcde27a001fb37ed6c39b4419a4c7b6dfb57740edac7",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_table",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "abouee2014",
+      "doi": null,
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Allocation Policies in Blood Transfusion",
+      "stratum": "adjacent",
+      "label": "ilgili",
+      "label_reason": "Elicit: adjacent, age-dependent outcome probabilities. No DOI in the export.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "R4"
+        ],
+        "contribution": "Links inventory-age distributions to adverse-outcome probabilities.",
+        "limitation": "No heterogeneous classes with success probabilities, service minimums or allocation costs; identity needs adjudication without a DOI."
+      },
+      "selection_evidence": {
+        "source": "Elicit answer, 20 Oct 2026, twelve-row papers table with match and gap cells",
+        "source_path": "notes/test-questions/perishable-resource-heterogeneous-classes/elicit-2026-10-20.md",
+        "source_sha256": "c2781a64865021c073eafcde27a001fb37ed6c39b4419a4c7b6dfb57740edac7",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_table",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "luo2021",
+      "doi": "10.1080/01605682.2021.1877577",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Ordering policies for heterogeneous platelets demand with unreliable supply and substitution",
+      "stratum": "adjacent",
+      "label": "ilgili",
+      "label_reason": "Elicit: adjacent, heterogeneous age demand and substitution.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit answer, 20 Oct 2026, twelve-row papers table with match and gap cells",
+        "source_path": "notes/test-questions/perishable-resource-heterogeneous-classes/elicit-2026-10-20.md",
+        "source_sha256": "c2781a64865021c073eafcde27a001fb37ed6c39b4419a4c7b6dfb57740edac7",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_table",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "fan2026",
+      "doi": "10.1002/nav.70081",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Dynamic Lot Sizing With Multiple Age-Differentiated Demands of a Perishable Product",
+      "stratum": "adjacent",
+      "label": "ilgili",
+      "label_reason": "Elicit: adjacent, freshness-constrained allocation.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit answer, 20 Oct 2026, twelve-row papers table with match and gap cells",
+        "source_path": "notes/test-questions/perishable-resource-heterogeneous-classes/elicit-2026-10-20.md",
+        "source_sha256": "c2781a64865021c073eafcde27a001fb37ed6c39b4419a4c7b6dfb57740edac7",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_table",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "prastacos1981",
+      "doi": "10.1287/opre.29.1.95",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Allocation of a Perishable Product Inventory",
+      "stratum": "adjacent",
+      "label": "ilgili",
+      "label_reason": "Elicit: adjacent, long-run perishable allocation over locations.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit answer, 20 Oct 2026, twelve-row papers table with match and gap cells",
+        "source_path": "notes/test-questions/perishable-resource-heterogeneous-classes/elicit-2026-10-20.md",
+        "source_sha256": "c2781a64865021c073eafcde27a001fb37ed6c39b4419a4c7b6dfb57740edac7",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_table",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "berman2002",
+      "doi": "10.1002/nav.10021",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Optimal service rates of a service facility with perishable inventory items",
+      "stratum": "methodological",
+      "label": "arka plan",
+      "label_reason": "Elicit: methodological, service-rate control; processing speed is not a success probability.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {
+        "answer_elements": [
+          "R5"
+        ],
+        "contribution": null,
+        "limitation": null
+      },
+      "selection_evidence": {
+        "source": "Elicit answer, 20 Oct 2026, twelve-row papers table with match and gap cells",
+        "source_path": "notes/test-questions/perishable-resource-heterogeneous-classes/elicit-2026-10-20.md",
+        "source_sha256": "c2781a64865021c073eafcde27a001fb37ed6c39b4419a4c7b6dfb57740edac7",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_table",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "arslan2005",
+      "doi": "10.1287/mnsc.1070.0701",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A Single-Product Inventory Model for Multiple Demand Classes",
+      "stratum": "methodological",
+      "label": "arka plan",
+      "label_reason": "Elicit: methodological, multiclass service requirements without perishability.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {
+        "answer_elements": [
+          "R5"
+        ],
+        "contribution": null,
+        "limitation": null
+      },
+      "selection_evidence": {
+        "source": "Elicit answer, 20 Oct 2026, twelve-row papers table with match and gap cells",
+        "source_path": "notes/test-questions/perishable-resource-heterogeneous-classes/elicit-2026-10-20.md",
+        "source_sha256": "c2781a64865021c073eafcde27a001fb37ed6c39b4419a4c7b6dfb57740edac7",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_table",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "wang2013",
+      "doi": "10.1016/j.cor.2013.06.001",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A heuristic for rationing inventory in two demand classes with backlog costs and a service constraint",
+      "stratum": "methodological",
+      "label": "arka plan",
+      "label_reason": "Elicit: methodological, costs plus service constraints without perishability.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {
+        "answer_elements": [
+          "R5"
+        ],
+        "contribution": null,
+        "limitation": null
+      },
+      "selection_evidence": {
+        "source": "Elicit answer, 20 Oct 2026, twelve-row papers table with match and gap cells",
+        "source_path": "notes/test-questions/perishable-resource-heterogeneous-classes/elicit-2026-10-20.md",
+        "source_sha256": "c2781a64865021c073eafcde27a001fb37ed6c39b4419a4c7b6dfb57740edac7",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_table",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "poormoaied2018",
+      "doi": null,
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Age and lifetime based policies for perishable items",
+      "stratum": "methodological",
+      "label": "arka plan",
+      "label_reason": "Elicit: methodological PhD thesis, no DOI in the export.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit answer, 20 Oct 2026, twelve-row papers table with match and gap cells",
+        "source_path": "notes/test-questions/perishable-resource-heterogeneous-classes/elicit-2026-10-20.md",
+        "source_sha256": "c2781a64865021c073eafcde27a001fb37ed6c39b4419a4c7b6dfb57740edac7",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_table",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    }
+  ]
+}

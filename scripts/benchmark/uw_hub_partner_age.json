@@ -1,0 +1,274 @@
+{
+  "name": "uw_hub_partner_age",
+  "schema_version": "search-measurement-v1",
+  "freeze_date": "2026-11-08",
+  "label_authority": "Elicit run of 25 Oct 2026 as saved. The per-paper distinctions are the tool's claim; no human verification. DOIs for three targets come from other reference exports in notes/test-questions/.",
+  "identity_rule": "DOI or verified work identity; title-only matches require adjudication",
+  "validation_role": "heldout",
+  "question": "Has any published work scheduled entanglement distribution at a quantum switch or hub that serves two bipartite requests sharing one user (for example A-B and A-C), where the hub chooses the swap partner from the age of the stored link, minimizes the age of entanglement under a memory cutoff, and adds a long-run delivery-rate floor and an attempt budget? Has this been studied for underwater optical quantum links?",
+  "question_sha256": "8c255ea15cca3894672cc88d94b9b066bf0d1bbba070cf65768122f453daa3cd",
+  "reference": "Elicit research agent, Balanced, 25 Oct 2026, saved in notes/test-questions/uw-hub-partner-by-link-age/. The same question was asked in DEIXIS by the owner the same evening. DOIs were not shown in the answer; three were resolved from other saved exports, four have none.",
+  "expected_direction": "No exact match located and no underwater version; the possible contribution is the combination, not any single part. The distinction the answer must draw: stored-link age (the physical age of an elementary link) versus time since the request was last served (AoEE). Mitrolaris 2026 allows overlapping user subsets but discards unused links each slot and constrains per-slot memory capacity, not a long-run delivery floor plus attempt budget. Inesta 2023 keeps stored-link ages and cutoffs in an MDP but minimises end-to-end delivery time on a repeater chain. Underwater work covers the channel only.",
+  "direction_terms": [
+    [
+      "stored-link age",
+      "stored link age",
+      "link age",
+      "age of the stored"
+    ],
+    [
+      "time since",
+      "last served",
+      "aoee",
+      "age of entanglement establishment"
+    ]
+  ],
+  "answer_elements": [
+    {
+      "id": "W1",
+      "question": "Closest quantum-switch precedents, and which part of the question each one covers"
+    },
+    {
+      "id": "W2",
+      "question": "Stored-link age versus time since the request was last served, as an explicit distinction"
+    },
+    {
+      "id": "W3",
+      "question": "Stored-link ages with cutoffs inside an MDP, and why a repeater chain differs from a shared-user hub"
+    },
+    {
+      "id": "W4",
+      "question": "Underwater optical links: channel feasibility only, with no hub scheduler located"
+    },
+    {
+      "id": "W5",
+      "question": "No exact match stated as a search result rather than proof, with the contribution placed in the conjunction of the three parts",
+      "required_subitems": [
+        "aoe_scheduling_known",
+        "partner_choice_by_link_age",
+        "underwater_setting"
+      ]
+    }
+  ],
+  "pass_rule": {
+    "status": "draft from QUESTION.md, not confirmed by the owner",
+    "source": "notes/test-questions/uw-hub-partner-by-link-age/QUESTION.md",
+    "rules": [
+      "The answer separates three things: AoE scheduling at a switch (known), partner choice by stored-link age with a shared user (the study's angle), and the underwater setting.",
+      "It names the closest switch and AoE scheduling papers with located passages and says which part of the question each one covers.",
+      "It does not claim novelty from finding nothing; \"no match found\" is stated as a search result, not as proof.",
+      "DEIXIS passes if it finds at least Mitrolaris 2026 and Inesta 2023 from located passages and draws the same age distinction."
+    ]
+  },
+  "source_evidence": {
+    "reference_path": "notes/test-questions/uw-hub-partner-by-link-age/elicit-2026-10-25.md",
+    "reference_sha256": "6a47b0f18cd3c8f47f42013a3e34c5f18c842bbff5ae7e385df27ae8e9430ba7",
+    "question_md_sha256": "96e977d4135440194f48abc791331aca6e19f4b54b1f62933d8ca8c41168f20c",
+    "doi_fill_sources": [
+      "notes/test-questions/finite-memory-buffer-switch/elicit-2026-10-20.csv",
+      "notes/test-questions/aoe-cmdp-lp/consensus-elicit-2026-10-18.txt"
+    ]
+  },
+  "papers": [
+    {
+      "key": "mitrolaris2026",
+      "doi": "10.1109/infocom59046.2026.11571768",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Age-Based Scheduling for a Memory-Constrained Quantum Switch",
+      "stratum": "switch_precedent",
+      "label": "ilgili",
+      "label_reason": "Elicit's closest title, read in full text. DOI and title resolved from the buffer-control Elicit export.",
+      "reading_depth": "title_only",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "W1",
+          "W2"
+        ],
+        "contribution": "Age-based scheduling at a memory-constrained switch with overlapping user subsets.",
+        "limitation": "Its age is time since the request was last served; unused links are discarded each slot; the constraint is per-slot memory capacity, not a long-run delivery floor plus attempt budget."
+      },
+      "selection_evidence": {
+        "source": "Elicit research agent run, 25 Oct 2026, answer and its seven-source table",
+        "source_path": "notes/test-questions/uw-hub-partner-by-link-age/elicit-2026-10-25.md",
+        "source_sha256": "6a47b0f18cd3c8f47f42013a3e34c5f18c842bbff5ae7e385df27ae8e9430ba7",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "other_elicit_export_doi_and_title",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "banerjee2026",
+      "doi": null,
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Index-Based Scheduling for a Resource-Constrained Quantum Switch",
+      "stratum": "switch_precedent",
+      "label": "ilgili",
+      "label_reason": "Elicit read the abstract: Whittle index on the same AoEE definition.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "key_contribution": {
+        "answer_elements": [
+          "W1",
+          "W2"
+        ],
+        "contribution": "Request-age scheduling precedent with a restless-bandit formulation.",
+        "limitation": "No DOI in the reference; identity needs adjudication."
+      },
+      "selection_evidence": {
+        "source": "Elicit research agent run, 25 Oct 2026, answer and its seven-source table",
+        "source_path": "notes/test-questions/uw-hub-partner-by-link-age/elicit-2026-10-25.md",
+        "source_sha256": "6a47b0f18cd3c8f47f42013a3e34c5f18c842bbff5ae7e385df27ae8e9430ba7",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_text_no_doi",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "jia2024",
+      "doi": "10.1109/JETCAS.2024.3425712",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "On Fidelity-Oriented Entanglement Distribution for Quantum Switches",
+      "stratum": "switch_precedent",
+      "label": "ilgili",
+      "label_reason": "Elicit read the abstract: several requests competing for the same link. DOI and title from the buffer-control Elicit export.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "key_contribution": {
+        "answer_elements": [
+          "W1"
+        ],
+        "contribution": "Shared-resource precedent: competing requests, joint purification scheduling, QoS.",
+        "limitation": "Does not establish the link-age minimisation problem with both extra constraints."
+      },
+      "selection_evidence": {
+        "source": "Elicit research agent run, 25 Oct 2026, answer and its seven-source table",
+        "source_path": "notes/test-questions/uw-hub-partner-by-link-age/elicit-2026-10-25.md",
+        "source_sha256": "6a47b0f18cd3c8f47f42013a3e34c5f18c842bbff5ae7e385df27ae8e9430ba7",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "other_elicit_export_doi_and_title",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "inesta2023",
+      "doi": "10.1038/s41534-023-00713-9",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Optimal entanglement distribution policies in homogeneous repeater chains with cutoffs",
+      "stratum": "stored_age_cutoff",
+      "label": "ilgili",
+      "label_reason": "Elicit read it in full text: stored-link ages in the MDP state with hard cutoffs. DOI from the Consensus bibliography of the aoe-cmdp-lp question.",
+      "reading_depth": "title_only",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "W2",
+          "W3"
+        ],
+        "contribution": "Stored-link ages and hard memory cutoffs inside an optimised MDP.",
+        "limitation": "A repeater chain minimising end-to-end delivery time, not a shared-user hub minimising entanglement age; generation is not controlled by an attempt budget."
+      },
+      "selection_evidence": {
+        "source": "Elicit research agent run, 25 Oct 2026, answer and its seven-source table",
+        "source_path": "notes/test-questions/uw-hub-partner-by-link-age/elicit-2026-10-25.md",
+        "source_sha256": "6a47b0f18cd3c8f47f42013a3e34c5f18c842bbff5ae7e385df27ae8e9430ba7",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "other_reference_bibliography_doi",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "ceran2026",
+      "doi": null,
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Age of Entanglement in Satellite Repeater Chains with Intermittent Availability",
+      "stratum": "stored_age_cutoff",
+      "label": "ilgili",
+      "label_reason": "Elicit read the abstract: infinite-horizon AoE-minimising MDP. A co-author of the study under test, which the answer notes.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "key_contribution": {
+        "answer_elements": [
+          "W1",
+          "W3"
+        ],
+        "contribution": "Close objective and control precedent for AoE minimisation.",
+        "limitation": "Satellite repeater chains, not a shared-user switch or the underwater setting; abstract-based."
+      },
+      "selection_evidence": {
+        "source": "Elicit research agent run, 25 Oct 2026, answer and its seven-source table",
+        "source_path": "notes/test-questions/uw-hub-partner-by-link-age/elicit-2026-10-25.md",
+        "source_sha256": "6a47b0f18cd3c8f47f42013a3e34c5f18c842bbff5ae7e385df27ae8e9430ba7",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_text_no_doi",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "ji_seawater",
+      "doi": null,
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Towards Quantum Communication in Free-Space Seawater",
+      "stratum": "underwater_channel",
+      "label": "arka plan",
+      "label_reason": "Elicit read it in full text: polarization qubits and entanglement preserved through seawater.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "key_contribution": {
+        "answer_elements": [
+          "W4"
+        ],
+        "contribution": "Physical-channel feasibility for underwater entanglement.",
+        "limitation": "Not a memory-equipped hub scheduling competing requests."
+      },
+      "selection_evidence": {
+        "source": "Elicit research agent run, 25 Oct 2026, answer and its seven-source table",
+        "source_path": "notes/test-questions/uw-hub-partner-by-link-age/elicit-2026-10-25.md",
+        "source_sha256": "6a47b0f18cd3c8f47f42013a3e34c5f18c842bbff5ae7e385df27ae8e9430ba7",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_text_no_doi",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "yu2021",
+      "doi": null,
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Underwater decoy-state BB84 quantum key distribution",
+      "stratum": "underwater_channel",
+      "label": "arka plan",
+      "label_reason": "Named in the answer text as underwater QKD, not a scheduling formulation. Title is the answer's description, not a verified title.",
+      "reading_depth": "title_only",
+      "anchor": false,
+      "key_contribution": {
+        "answer_elements": [
+          "W4"
+        ],
+        "contribution": null,
+        "limitation": "Neither DOI nor exact title in the reference; identity needs adjudication before scoring."
+      },
+      "selection_evidence": {
+        "source": "Elicit research agent run, 25 Oct 2026, answer and its seven-source table",
+        "source_path": "notes/test-questions/uw-hub-partner-by-link-age/elicit-2026-10-25.md",
+        "source_sha256": "6a47b0f18cd3c8f47f42013a3e34c5f18c842bbff5ae7e385df27ae8e9430ba7",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_text_no_doi_no_title",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    }
+  ]
+}

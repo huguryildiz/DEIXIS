@@ -1,12 +1,12 @@
-"""Command-line tools and local model servers on this computer (D29).
+"""Command-line tools and local model servers on this computer.
 
 Detection reads the PATH, the places each OS's installer puts an app (`app_locations`), `--version` output and the model
 servers' loopback endpoints. A tool is reported with the copy chosen (`path`), whether that copy ran (`runnable`) and
 the other copies found (`other_copies`) (E15). An install runs the one package-manager command fixed for that tool id,
 never a command taken from a request, and only where that package manager belongs: without one the card links to the
 tool's download page (B1). Codex, Claude Code,
-GitHub Copilot CLI (D24) and Gemini CLI (D23) run research steps; the other CLIs are detected only (found is not supported), and a local server's embedding models can rank answer passages. Zotero
-is the one reference manager: its local API is where a collection import reads from (D16).
+GitHub Copilot CLI and Gemini CLI run research steps; the other CLIs are detected only (found is not supported), and a local server's embedding models can rank answer passages. Zotero
+is the one reference manager: its local API is where a collection import reads from.
 """
 
 from __future__ import annotations

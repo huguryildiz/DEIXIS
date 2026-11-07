@@ -1,4 +1,4 @@
-"""Models a connection lists but that failed a real research step, kept out of the model lists (D59).
+"""Models a connection lists but that failed a real research step, kept out of the model lists.
 
 A provider can list a model it no longer serves (Gemini answered 404 "no longer available to new users" for
 gemini-2.5-flash on 16 Oct 2026) or answer a listed model with another one (gemini-3.5-flash answered as

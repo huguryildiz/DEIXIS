@@ -13,8 +13,8 @@ error and no usage) is left out.
 
 The ledger (`spend_ledger`) is separate from the researches: deleting a research does not lower the day's total. A row is
 written in the same transaction as the model session's result (`Store.finish_model_session`). An equation-reader request
-(D113, `equation_model_requests`) is not a model session; it gets a row under its own id when its result is stored
-(`record_equation_request`, D115), so the day's total, the threshold and Settings → Usage count it too.
+(`equation_model_requests`) is not a model session; it gets a row under its own id when its result is stored
+(`record_equation_request`), so the day's total, the threshold and Settings → Usage count it too.
 """
 
 from __future__ import annotations
@@ -184,10 +184,10 @@ def _book(conn: sqlite3.Connection, row_id: str, day: str, connection: str, mode
 
 
 def record_equation_request(conn: sqlite3.Connection, request_id: str) -> None:
-    """Write (or rewrite) the ledger row of an equation-reader request (D113) from its stored row, booked under the
-    request's own id on the day it was reserved (D115). Call inside the transaction that stores the request's result.
+    """Write (or rewrite) the ledger row of an equation-reader request from its stored row, booked under the
+    request's own id on the day it was reserved. Call inside the transaction that stores the request's result.
 
-    The same rules as `record_session`, with D113's cost rule: only a completed answer with usage (accepted, or refused
+    The same rules as `record_session`, with that cost rule: only a completed answer with usage (accepted, or refused
     by the check) is priced; an unknown outcome is booked unpriced even with partial usage, and nothing is estimated from
     text, because the crop image the model was sent is most of the input. A reserved row, a connection that does not bill
     per call and a request that never reached the provider leave no row."""
@@ -209,7 +209,7 @@ def record_equation_request(conn: sqlite3.Connection, request_id: str) -> None:
 
 
 def book_equation_requests(conn: sqlite3.Connection) -> int:
-    """Book every settled equation-reader request that has no ledger row yet (those stored before D115), and return how
+    """Book every settled equation-reader request that has no ledger row yet (those stored earlier), and return how
     many rows were written. Run on every start; a request that leaves no row is looked at again and still leaves none.
     Call inside a transaction."""
     before = conn.execute("SELECT COUNT(*) FROM spend_ledger").fetchone()[0]
@@ -221,8 +221,8 @@ def book_equation_requests(conn: sqlite3.Connection) -> int:
 
 
 def reprice_unpriced(conn: sqlite3.Connection) -> int:
-    """Give a cost to the ledger rows booked as unpriced whose model the price list now names (D111), and return how many.
-    Each is rewritten from its stored session (or equation request, D115) exactly as it would now be written, then marked
+    """Give a cost to the ledger rows booked as unpriced whose model the price list now names, and return how many.
+    Each is rewritten from its stored session (or equation request) exactly as it would now be written, then marked
     with when and with which dated list; a row whose model is still not listed, or whose session is gone, stays
     unpriced. Call inside a transaction."""
     as_of, count = price_table()["as_of"], 0
@@ -241,7 +241,7 @@ def reprice_unpriced(conn: sqlite3.Connection) -> int:
 def day_total(conn: sqlite3.Connection, day: str) -> dict[str, Any]:
     """What the ledger holds for a day: the estimated dollars of the calls with a cost, how many calls that is, how many
     of those were estimated from text (no usage reported), how many calls have no price (`unpriced`, not in the
-    dollars), and how many were priced later from a newer list (`repriced`, D111) with the latest such list's date."""
+    dollars), and how many were priced later from a newer list (`repriced`) with the latest such list's date."""
     row = conn.execute(
         "SELECT COALESCE(SUM(cost_usd), 0) AS usd, COUNT(cost_usd) AS priced,"
         " COALESCE(SUM(basis = 'estimated_from_text'), 0) AS from_text, COALESCE(SUM(cost_usd IS NULL), 0) AS unpriced,"

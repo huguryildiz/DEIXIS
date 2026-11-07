@@ -1,4 +1,4 @@
-"""D131: source names in answer prose come from source records, never from the model.
+"""Source names in answer prose come from source records, never from the model.
 
 The model writes `{{source_id}}` where a claim names a source; when the answer is saved, code replaces each mention
 with the record's short citation and, at the source's first mention in the answer, its title. The text as the model

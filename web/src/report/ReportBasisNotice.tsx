@@ -2,11 +2,11 @@ import type { ReportBasis } from '../lib/api'
 import { t } from '../lib/i18n'
 import { Notice } from '../components/Notice'
 
-// The report's basis note (D68): what the table was read from, which cells could not be verified against a quote
+// The report's basis note: what the table was read from, which cells could not be verified against a quote
 // and whose they are, and the advice to upload PDFs. The exports print the same sentences.
 export function ReportBasisNotice({ basis }: { basis: ReportBasis }) {
   const short = basis.abstract_only + basis.metadata_only
-  const members = basis.abstract_members ?? []  // D114: in the report only because they were read from their abstracts
+  const members = basis.abstract_members ?? []  // In the report only because they were read from their abstracts
   return <Notice tone={short || basis.cells_unverified ? 'attention' : 'info'}>
     <p>
       {t(basis.sources === 1 ? 'Basis of this report: {full} of {n} source was read from full text and {short} from the abstract or metadata only.'

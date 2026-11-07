@@ -33,7 +33,7 @@ def test_runtime_text_loads_only_declared_files():
     assert '<method-file path="SKILL.md">' in text
     assert '<method-file path="references/source-grounded-answer.md">' in text
     assert "provenance.json" not in text
-    # D43: the phrasebank left the package; no step loads it.
+    # The phrasebank left the package; no step loads it.
     assert not (SKILL_DIR / "references/phrases.md").exists()
     assert all("references/phrases.md" not in files for files in skill.RUNTIME_FILES.values())
     review = package.runtime_text("answer_review")

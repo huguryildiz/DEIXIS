@@ -1,4 +1,4 @@
-"""D198 replay and workflow evidence; synthetic behavior, not semantic validation.
+"""Replay and workflow evidence for the `D198:` report-section steps; synthetic behavior, not semantic validation.
 
 Each test labels its role in its docstring. Red-on-old cases use existing runtime
 seams before asserting the corrected behavior; new helper checks follow that assertion.

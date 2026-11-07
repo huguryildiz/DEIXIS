@@ -1,4 +1,4 @@
-"""Gemini CLI model connection with the person's Google account (D23).
+"""Gemini CLI model connection with the person's Google account.
 
 Every step and every health probe runs `gemini` headless in a new DEIXIS-owned home under
 `<data>/gemini-cli-home`, deleted when the call ends. That home holds generated user and system settings that
@@ -292,7 +292,7 @@ class GeminiCliAdapter:
         if not self.credentials().is_file():
             return ModelStepResult("unavailable", error="Not signed in to Gemini CLI", delivery_class="before_send",
                                    error_kind="auth_failed")
-        # The schema reaches the model in the developer text (the appendix a non-enforcing adapter is given, D86).
+        # The schema reaches the model in the developer text (the appendix a non-enforcing adapter is given).
         system = f"{base}\n\n{developer}\n\nReturn only a JSON object."
         try:
             run = await self._run(cli_argv(cli, requested_model), system, message, self.turn_timeout)

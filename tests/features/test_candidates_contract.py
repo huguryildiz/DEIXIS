@@ -235,7 +235,7 @@ def test_fake_adapter_answers_claim_assessment_through_model_step(tmp_path):
 
 
 def forbidden_salvage(*args, **kwargs):
-    pytest.fail("Candidate tasks must never use D56 answer salvage")
+    pytest.fail("Candidate tasks must never use answer salvage")
 
 
 def test_candidate_step_repairs_once_then_stops_without_salvage(tmp_path, monkeypatch):

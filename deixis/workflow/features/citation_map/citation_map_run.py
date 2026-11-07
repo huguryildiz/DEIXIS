@@ -4,7 +4,7 @@ model call. A person starts it; nothing starts it by itself.
 Three phases, each planned by a code step that is frozen before its first request, so a resumed or restarted run
 reads the same plan and a request whose step succeeded is never sent again:
 
-1. Works with no OpenAlex id. An upload D37 already identified keeps that record (`record_match_json`, no request);
+1. Works with no OpenAlex id. An upload already identified keeps that record (`record_match_json`, no request);
    otherwise a version with a DOI is looked up by DOI, 50 DOIs a request on a 100-record page, so a DOI that names two
    OpenAlex works is seen and decides nothing (`ambiguous`). The answer carries the work's reference list
    (`CHAIN_SELECT`), so a resolved version's list is stored from the same request. A work without either stays
@@ -87,7 +87,7 @@ def _usable_doi(value: str | None) -> str | None:
 
 
 def resolution_targets(store: Any, research_id: str) -> dict[str, Any]:
-    """The versions to resolve, from the works none of whose versions has an OpenAlex id: by D37 record match, or by
+    """The versions to resolve, from the works none of whose versions has an OpenAlex id: record match, or by
     DOI. A version already tried by an earlier run (a resolution row of any status) is not tried again."""
     versions = _versions(store, research_id)
     ids = _openalex_ids(store, versions)

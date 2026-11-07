@@ -1,0 +1,193 @@
+{
+  "name": "perishable_two_classes",
+  "schema_version": "search-measurement-v1",
+  "freeze_date": "2026-11-08",
+  "label_authority": "Elicit run of 20 Oct 2026 as saved; the match and gap cells are the tool's claim, read in full text only for the closest paper. No human verification.",
+  "identity_rule": "DOI or verified work identity; title-only matches require adjudication",
+  "validation_role": "heldout",
+  "question": "Optimal allocation of an expiring item between two customer classes with different chances of using it before it expires: does the optimal policy depend on the item's remaining lifetime?",
+  "question_sha256": "8409a67e54de7bec243a57d31f861bcb4b50a62277af9b7ada991497903c957f",
+  "reference": "Elicit answer, 20 Oct 2026, saved in notes/test-questions/perishable-allocation-two-classes/.",
+  "expected_direction": "No exact match to the consumption-probability formulation, stated openly. Closest: Abouee-Mehrizi 2019, two classes separated by minimum acceptable remaining lifetime, issuing older eligible stock first and possibly reserving fresher stock for high-priority demand - lifetime-dependent through freshness requirements, not through stochastic consumption after allocation. Namekata 1981 uses customer-type arrival probabilities, which are not consumption probabilities. Elicit's own derivation: with immediate allocation and no future opportunity cost, pick the class maximising benefit times P(use before the remaining lifetime elapses); the preferred class changes with lifetime only if that ranking changes.",
+  "direction_terms": [
+    [
+      "freshness",
+      "remaining lifetime",
+      "acceptance",
+      "age threshold"
+    ],
+    [
+      "probability of use",
+      "consumption",
+      "use before",
+      "consume before",
+      "before it expires"
+    ]
+  ],
+  "answer_elements": [
+    {
+      "id": "P1",
+      "question": "The closest model: two classes by minimum acceptable remaining lifetime, with its issuing rule stated from a located passage"
+    },
+    {
+      "id": "P2",
+      "question": "Separation of freshness acceptance, customer-type arrival probability and consumption-before-expiry probability",
+      "required_subitems": [
+        "freshness_acceptance",
+        "arrival_probability",
+        "consumption_probability"
+      ]
+    },
+    {
+      "id": "P3",
+      "question": "No exact match, stated as a search result and not as a novelty claim"
+    },
+    {
+      "id": "P4",
+      "question": "Whether the optimal policy depends on remaining lifetime, with any simple-model statement marked as derived rather than cited"
+    }
+  ],
+  "pass_rule": {
+    "status": "draft from QUESTION.md, not confirmed by the owner",
+    "source": "notes/test-questions/perishable-allocation-two-classes/QUESTION.md",
+    "rules": [
+      "Answer separates freshness acceptance, arrival probability and consumption probability, and does not present a freshness-requirement model as a match.",
+      "Multiple Priority Classes paper is found and its issuing rule stated from a passage.",
+      "Says no exact match was found without claiming novelty from absence.",
+      "The simple-model statement, if given, is marked as derived, not cited."
+    ]
+  },
+  "source_evidence": {
+    "reference_path": "notes/test-questions/perishable-allocation-two-classes/elicit-2026-10-20.md",
+    "reference_sha256": "edd6d76f445006e5b97dd84c76fd30ea9da57595e660f5123e5b904226210690",
+    "papers_csv_path": "notes/test-questions/perishable-allocation-two-classes/elicit-2026-10-20-papers.csv",
+    "papers_csv_sha256": "d965f965fde3a24ec2d84a9f29e22c3d5fc47e4b083843ec38f0557e0df0c06b",
+    "question_md_sha256": "aa30590d295118f0167b10f0253626849278f3075e091887cb05daa7fc413f34"
+  },
+  "papers": [
+    {
+      "key": "abouee2019",
+      "doi": "10.1111/poms.13058",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Managing Perishable Inventory Systems with Multiple Priority Classes",
+      "stratum": "close_match",
+      "label": "ilgili",
+      "label_reason": "Elicit's closest paper, read in full text: two classes with different minimum acceptable remaining lifetimes.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "P1",
+          "P2",
+          "P4"
+        ],
+        "contribution": "Issues older eligible stock first within each class and may reserve fresher stock for future high-priority demand; lifetime-dependent allocation.",
+        "limitation": "Class difference is a freshness-acceptance threshold, not a probability of consumption before expiry; must not be presented as a match."
+      },
+      "selection_evidence": {
+        "source": "Elicit answer, 20 Oct 2026, five-row papers table with DOI and gap cells",
+        "source_path": "notes/test-questions/perishable-allocation-two-classes/elicit-2026-10-20.md",
+        "source_sha256": "edd6d76f445006e5b97dd84c76fd30ea9da57595e660f5123e5b904226210690",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_table",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "namekata1981",
+      "doi": "10.15807/JORSJ.24.202",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "A Sequential Allocation Problem with Perishable Goods",
+      "stratum": "arrival_probability",
+      "label": "ilgili",
+      "label_reason": "Included by Elicit at abstract depth; type probabilities govern arrivals.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {
+        "answer_elements": [
+          "P2"
+        ],
+        "contribution": "The arrival-probability confusion the answer must avoid.",
+        "limitation": "Not post-allocation consumption."
+      },
+      "selection_evidence": {
+        "source": "Elicit answer, 20 Oct 2026, five-row papers table with DOI and gap cells",
+        "source_path": "notes/test-questions/perishable-allocation-two-classes/elicit-2026-10-20.md",
+        "source_sha256": "edd6d76f445006e5b97dd84c76fd30ea9da57595e660f5123e5b904226210690",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_table",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "pierskalla1972",
+      "doi": "10.1287/MNSC.18.11.603",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Optimal Issuing Policies for Perishable Inventory",
+      "stratum": "issuing_policy",
+      "label": "ilgili",
+      "label_reason": "Included by Elicit at abstract depth; oldest-first issuing, full text unavailable.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit answer, 20 Oct 2026, five-row papers table with DOI and gap cells",
+        "source_path": "notes/test-questions/perishable-allocation-two-classes/elicit-2026-10-20.md",
+        "source_sha256": "edd6d76f445006e5b97dd84c76fd30ea9da57595e660f5123e5b904226210690",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_table",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "goyal2025",
+      "doi": "10.2139/ssrn.5381386",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Please Customers or Prevent Wastage? Replenishment and Issuance Policy for a Perishable Product with Age-Sensitive Demand",
+      "stratum": "issuing_policy",
+      "label": "ilgili",
+      "label_reason": "Included by Elicit at abstract depth; age-sensitive goodwill costs, FIFO not always optimal.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit answer, 20 Oct 2026, five-row papers table with DOI and gap cells",
+        "source_path": "notes/test-questions/perishable-allocation-two-classes/elicit-2026-10-20.md",
+        "source_sha256": "edd6d76f445006e5b97dd84c76fd30ea9da57595e660f5123e5b904226210690",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_table",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    },
+    {
+      "key": "prastacos1981",
+      "doi": "10.1287/opre.29.1.95",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Allocation of a Perishable Product Inventory",
+      "stratum": "adjacent",
+      "label": "ilgili",
+      "label_reason": "Included by Elicit at abstract depth; locations rather than two customer classes.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit answer, 20 Oct 2026, five-row papers table with DOI and gap cells",
+        "source_path": "notes/test-questions/perishable-allocation-two-classes/elicit-2026-10-20.md",
+        "source_sha256": "edd6d76f445006e5b97dd84c76fd30ea9da57595e660f5123e5b904226210690",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "reference_answer_table",
+        "abstract_text": null,
+        "abstract_source": null
+      }
+    }
+  ]
+}

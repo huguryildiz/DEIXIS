@@ -1,4 +1,4 @@
-"""P5 slice 4 (D51): scanned PDF pages are found, read with the local Tesseract one page at a time, and merged into an
+"""P5 slice 4: scanned PDF pages are found, read with the local Tesseract one page at a time, and merged into an
 extraction whose pages say where their text came from.
 
 Pages are SYNTHETIC images of typed text. Passing shows which pages are read and how results are recorded; it says nothing

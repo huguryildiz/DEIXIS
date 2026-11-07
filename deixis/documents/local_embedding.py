@@ -152,7 +152,7 @@ class BuiltinPaths:
         return self.model_file(model).is_file()
 
     def legacy(self) -> list[Path]:
-        """What the earlier PyTorch built-in model (D88) left under tools; shown and removed only on request."""
+        """What the earlier PyTorch built-in model left under tools; shown and removed only on request."""
         return [p for p in ([self.root / n for n in LEGACY_FOLDERS] + [self.root / n for n in LEGACY_FILES])
                 if p.exists() or p.is_symlink()]
 

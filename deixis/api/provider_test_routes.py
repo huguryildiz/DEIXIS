@@ -1,7 +1,7 @@
 """Test on a keyless source's Settings sheet (P5): one request without a key, reported as answered or not.
 
 Only a connector running without a key right now is tested here (its access mode is `keyless`): a source key is not
-tested in advance (D53), and a source that requires one has nothing to send without it. The request uses a new
+tested in advance, and a source that requires one has nothing to send without it. The request uses a new
 connection, so it does not ride a pooled one from before a network change. Nothing is stored.
 """
 

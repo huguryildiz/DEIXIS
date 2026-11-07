@@ -1,8 +1,8 @@
-"""A search for new works that a follow-up question starts on the person's click (D92).
+"""A search for new works that a follow-up question starts on the person's click.
 
 A follow-up turn reads only passages the research holds (`followup.py`). When the person asks for works the research
 does not hold, a `followup_search` run searches the scholarly providers again under the turn's question revision; no
-question revision is opened (D67). The run:
+question revision is opened. The run:
 
 1. freezes a context card: the research question, the turn's open aspects and claim texts, the queries the research's
    search sent and the included works by title (`followup_search:context`);

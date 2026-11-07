@@ -6,7 +6,7 @@ import { Notice } from './Notice'
 import { t } from '../lib/i18n'
 
 // On Home when semantic search is off only because nothing is saved in Settings, no Gemini key is set and no built-in
-// embedding model is downloaded (D7). It offers the embedding model recommended for this computer. Downloading is the
+// embedding model is downloaded. It offers the embedding model recommended for this computer. Downloading is the
 // person's act; once a model is ready the backend uses it while nothing is saved, so this note saves no choice and simply
 // goes away. Never shown after the person chose Off.
 export function SemanticSetupNote() {

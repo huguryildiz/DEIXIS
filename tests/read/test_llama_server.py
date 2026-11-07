@@ -13,7 +13,7 @@ from deixis.documents.local_embedding import LocalEmbeddingError, LocalModels
 from builtin_helpers import install_model, ready
 
 
-D88 = "qwen3-embedding-0.6b@97b0c61:512:mps:i1a2b3c4d"
+BUILTIN_MODEL = "qwen3-embedding-0.6b@97b0c61:512:mps:i1a2b3c4d"
 
 
 def test_every_catalog_entry_pins_a_revision_a_file_a_size_and_a_digest():
@@ -52,7 +52,7 @@ class Recorder:
         raise AssertionError("an earlier identity must never reach a server")
 
 
-@pytest.mark.parametrize("stored", [f"builtin:{D88}"])
+@pytest.mark.parametrize("stored", [f"builtin:{BUILTIN_MODEL}"])
 def test_an_unresolvable_built_in_identity_fails_closed_and_is_never_routed_to_another_model(stored):
     local = Recorder()
     old = embeddings.Embedder.from_identity("builtin", stored, local)
@@ -64,11 +64,11 @@ def test_an_unresolvable_built_in_identity_fails_closed_and_is_never_routed_to_a
 def test_a_saved_choice_is_kept_as_saved_and_never_remapped(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     assert embeddings.chosen({"provider": "builtin", "model": "bge-m3"}) == ("builtin", "bge-m3")
-    assert embeddings.chosen({"provider": "builtin", "model": D88}) == ("builtin", D88)
+    assert embeddings.chosen({"provider": "builtin", "model": BUILTIN_MODEL}) == ("builtin", BUILTIN_MODEL)
     assert embeddings.chosen({"provider": "builtin", "model": None}) == ("builtin", builtin_catalog.NO_MODEL)
     assert rerankers.chosen({"enabled": True, "provider": "builtin", "model": "qwen3-reranker-4b"}).model == "qwen3-reranker-4b"
     assert rerankers.chosen({"enabled": True, "provider": "builtin"}).model == builtin_catalog.NO_MODEL
-    # With nothing saved and no key: the first built-in model in catalog order that is ready (D7), else off.
+    # With nothing saved and no key: the first built-in model in catalog order that is ready, else off.
     monkeypatch.setattr(embeddings.local_embedding, "model_available", lambda model_id: model_id in ("bge-m3", "qwen3-embedding-4b"))
     assert embeddings.chosen(None) == ("builtin", "qwen3-embedding-4b")
     monkeypatch.setattr(embeddings.local_embedding, "model_available", lambda model_id: False)

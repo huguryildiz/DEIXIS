@@ -68,7 +68,7 @@ def test_user_decision_at_send_boundaries_keeps_the_run_going_without_the_decide
                   reading="off" if phase == "abstract_screening" else "auto")
     holder["app"] = app
     with session(app) as client:
-        # The decision does not pause the run (D127): it finishes, and the decided work gets no model call or proposal.
+        # The decision does not pause the run: it finishes, and the decided work gets no model call or proposal.
         rid, run_id, _, done = discover(client, effort="standard" if boundary == "next_batch" else "quick")
         assert (done["status"], done["pause_reason"]) == ("completed", None)
         store = app.state.store

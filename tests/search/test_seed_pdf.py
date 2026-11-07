@@ -1,4 +1,4 @@
-"""seed_pdf_v1 (D2) and seed_pdf_v2 (D3): the seed PDFs find their OpenAlex works and guide the query, the chain and the
+"""seed_pdf_v1 and seed_pdf_v2: the seed PDFs find their OpenAlex works and guide the query, the chain and the
 ranking. SYNTHETIC."""
 
 import json
@@ -16,7 +16,7 @@ from test_small_batch_flow import app_for, client_of
 
 @pytest.fixture(autouse=True)
 def no_upload_lookup(monkeypatch):
-    """These tests count the seed lookup's own OpenAlex requests; an upload's record lookup (D37) is tested in
+    """These tests count the seed lookup's own OpenAlex requests; an upload's record lookup is tested in
     test_upload_record.py, so here it finds nothing and sends nothing."""
     async def nothing(*_args, **_kwargs):
         return False
@@ -105,7 +105,7 @@ def test_matched_seed_guides_query_chain_ranking_and_protocol(tmp_path, monkeypa
         assert transport.doi_requests == [[SEED_DOI]] and not output(store, run_id, "seed_match:v2:semantic:0")
         body = protocol_body(store, run_id)
         assert body["seed_match"] == match
-        # D6: the question's request is the unseeded one; the seed asks on its own with its title and abstract.
+        # The question's request is the unseeded one; the seed asks on its own with its title and abstract.
         assert body["fast_path_search"]["version"] == 2
         assert body["fast_path_search"]["semantic"]["query_text"] == QUESTION
         assert "seed_text" not in body["fast_path_search"]["semantic"]
@@ -140,7 +140,7 @@ def test_ranking_never_scores_the_seed_against_its_own_openalex_copy():
     assert [s["id"] for s in ranked["graph_seeds"]] == ["up", "o"]
 
 
-# ---- seed_pdf_v2 (D3): an ordered set of up to five seed PDFs, uploaded or brought from Zotero. SYNTHETIC. ----------
+# ---- seed_pdf_v2: an ordered set of up to five seed PDFs, uploaded or brought from Zotero. SYNTHETIC. ----------
 
 TITLE_B = "SYNTHETIC sensor based irrigation control for greenhouse cucumbers"
 TERMS = ["irrigation", "scheduling", "affect", "marketable", "yield", "greenhouse", "tomato", "production"]

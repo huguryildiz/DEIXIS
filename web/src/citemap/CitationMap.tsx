@@ -9,7 +9,7 @@ import { usePanels } from '../research/usePanelStack'
 import '../research/kit.css'
 import './citation-map.css'
 
-// The citation map panel (D42, owner-approved mockup notes/design/citation-map-mockup): the research's works and the
+// The citation map panel (owner-approved mockup notes/design/citation-map-mockup): the research's works and the
 // outside works their stored OpenAlex reference lists name, drawn as a year timeline or a deterministic force layout,
 // a detail side for the chosen work, the research's core and the often-cited outside works. Links come from stored
 // reference lists only; no model is called. Reading missing lists is a run the person starts from the plan row.
@@ -181,7 +181,7 @@ export function CitationMap({ researchId, eventCursor, run, onOpenSource, onChan
   useEffect(() => { void reload() }, [reload, eventCursor, run?.id, runStatus])
   useEffect(() => () => clearTimeout(hoverTimer.current), [])
   // When the only thing missing is the outside works' titles, that is one OpenAlex request and no model call, so the
-  // panel asks for them itself, once per opening (D42). Missing reference lists can cost more requests and wait for the
+  // panel asks for them itself, once per opening. Missing reference lists can cost more requests and wait for the
   // person's "Read reference lists".
   const autoTitles = useRef(false)
   useEffect(() => {

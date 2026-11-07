@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-# What became of a passage's file since the passage was stored (D45), over `passages p LEFT JOIN source_assets a`.
+# What became of a passage's file since the passage was stored, over `passages p LEFT JOIN source_assets a`.
 EVIDENCE_STATUS_SQL = (
     "CASE WHEN a.id IS NULL THEN 'current'"
     " WHEN a.removed_at IS NOT NULL THEN CASE a.removal_reason WHEN 'replaced' THEN 'pdf_replaced' ELSE 'pdf_removed' END"

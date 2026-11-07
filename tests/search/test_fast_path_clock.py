@@ -1,4 +1,4 @@
-"""D250 active-time accounting with isolated libraries, a fake clock and scripted models."""
+"""Active-time accounting with isolated libraries, a fake clock and scripted models."""
 
 import asyncio
 from datetime import datetime, timedelta, timezone
@@ -165,7 +165,7 @@ def test_plan_debt_is_charged_after_search(library, frozen):
     finish(lib, "plan", 57)
     fast_path.enter_stage(lib.store, lib.run, "search")
     if frozen == "before_d152":
-        # A run frozen before D152 keeps the old arithmetic on resume: the plan's 27 s overrun shrinks search.
+        # A run frozen earlier keeps the old arithmetic on resume: the plan's 27 s overrun shrinks search.
         assert (stage(lib, "search")["balance_before_ms"], stage(lib, "search")["alloc_ms"]) == (-27000, 18000)
         return
     assert (stage(lib, "search")["balance_before_ms"], stage(lib, "search")["alloc_ms"]) == (-27000, 45000)

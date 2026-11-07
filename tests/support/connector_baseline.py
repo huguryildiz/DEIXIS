@@ -225,7 +225,7 @@ def coverage(cases, *, historical=False):
     # Coverage must identify missing fixtures even before the new provider has a display-name admission.
     pairs = {(pid, eid) for pid, connector in registry.CONNECTORS.items() for eid in (None, *connector.endpoints)}
     if historical:
-        # D252's new endpoint has a separate full conformance fixture. This
+        # The semantic endpoint has a separate full conformance fixture. This
         # historical snapshot still freezes every pre-existing request/result.
         pairs.discard(("openalex", "semantic"))
     recorded = {(c["provider_id"], c["endpoint_id"]) for c in cases}

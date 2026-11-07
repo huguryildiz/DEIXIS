@@ -1,4 +1,4 @@
-"""Gemini CLI connection (D23): a fake CLI runner stands in for `gemini`; no real CLI runs here.
+"""Gemini CLI connection: a fake CLI runner stands in for `gemini`; no real CLI runs here.
 
 The stream-json lines below follow Gemini CLI 0.60's headless output (init, message, tool_use, tool_result, error,
 result). They show how the adapter reads that output, not how the real CLI or a Google account behaves.

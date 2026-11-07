@@ -68,7 +68,7 @@ function FlowBlock({ researchId, counts }: { researchId: string; counts: Counts 
   </details>
 }
 
-// One follow-up search (D92) after the first search's boxes, from its own frozen steps; a value it has not written is not
+// One follow-up search after the first search's boxes, from its own frozen steps; a value it has not written is not
 // recorded, never 0.
 function FollowupSearchBlock({ search }: { search: FollowupSearchBox }) {
   const rows: [string, number | null][] = [['Records', search.records], ['New works', search.new], ['Already here', search.already_here],
@@ -114,7 +114,7 @@ export function OverridesLine({ overrides }: { overrides: Overrides | null | und
     {overrides.decisions === 0
       ? t('You have not decided yet; this line says nothing about how right code or the model is.')
       : (overrides.changed_by.single_read ?? 0) > 0
-        // D173: a changed single model read is its own part, so the parts still add up to {m}.
+        // A changed single model read is its own part, so the parts still add up to {m}.
         ? t(overrides.decisions === 1 ? 'Of your {n} decision, you changed a decision of code or the model runs in {m} (code {code}, model runs {model}, one model read {once}).' : 'Of your {n} decisions, you changed a decision of code or the model runs in {m} (code {code}, model runs {model}, one model read {once}).', {
           n: count(overrides.decisions), m: count(overrides.changed), code: count(overrides.changed_by.code), model: count(overrides.changed_by.model_agreement), once: count(overrides.changed_by.single_read ?? 0) })
         : t(overrides.decisions === 1 ? 'Of your {n} decision, you changed a decision of code or the model runs in {m} (code {code}, model runs {model}).' : 'Of your {n} decisions, you changed a decision of code or the model runs in {m} (code {code}, model runs {model}).', {
@@ -131,7 +131,8 @@ export function OverridesLine({ overrides }: { overrides: Overrides | null | und
 // the answer shown in the thread. A missing count is shown as not known, never as 0.
 
 type Opener = (name: string, opener: HTMLElement) => void
-// The parts of a discovery run's stored read closure this panel reads (`read.py` close step; `deep` only under D173).
+// The parts of a discovery run's stored read closure this panel reads (`read.py` close step; `deep` only with the
+// deeper screening on).
 type ReadClosure = { N: number; deep?: { first: number; last: number; screened_by_model_count: number } }
 type Stage = { label: string; n: number | null; about: string; extra?: ReactNode; lost?: ReactNode }
 
@@ -165,7 +166,7 @@ export function FunnelPanel({ researchId, view, answer, cited, queueCount, busy,
   const screenable = page?.screenable ?? 0
   const nextBatch = Math.min(SCREEN_MORE_SIZE, screenable)
   const waiting = counts.waiting_for_pdf ?? 0
-  // D173: what the latest discovery of this revision that reached its read cutoff read, from that run's stored read
+  // What the latest discovery of this revision that reached its read cutoff read, from that run's stored read
   // closure (`read.view`): its N, and its deeper window when it was queued with one and screened some of it. An earlier
   // run's window never speaks for a later run without one.
   const closureOf = (run: unknown) => (run as { fast_path?: { read?: { cutoff?: ReadClosure | null } | null } } | undefined)?.fast_path?.read?.cutoff

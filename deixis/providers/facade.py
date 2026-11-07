@@ -15,10 +15,10 @@ B3b exempts refusing, before rendering or checking, an undeclared endpoint or
 unregistered provider from a QUERY_RULES_REVISION bump only if every registered
 provider/default or declared endpoint renders, counts and validates identically,
 and module-level rule functions retain every historical output. Other rendered
-query or issue-list changes still require the bump (D193).
+query or issue-list changes still require the bump.
 
 Dispatched pages record contract and adapter revisions. Resume accepts legacy
-NULL provenance, but refuses malformed or incompatible recorded revisions (D194).
+NULL provenance, but refuses malformed or incompatible recorded revisions.
 Admission and sanitization are application post-processing, separate from search
 adapter equivalence. G1-F1 exempts binding unchanged existing helpers from an
 adapter revision bump only with capability request/result equivalence and unchanged

@@ -1,4 +1,4 @@
-"""Verify Citations, V1 (D86), V2 (D96) and V3 (D99): give a draft and its bibliography, read back the occurrences,
+"""Verify Citations, V1, V2 and V3: give a draft and its bibliography, read back the occurrences,
 entries and pairs, look the entries up, attach the person's PDF to an entry, acquire each entry's text, freeze the
 passage plan, preview it with its cost range, check the planned pairs with a model, export the result, delete the
 draft. Only `POST …/check` calls a model. The application middleware enforces loopback, Origin, CSRF and the body size

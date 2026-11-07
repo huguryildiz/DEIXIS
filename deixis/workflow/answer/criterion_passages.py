@@ -1,6 +1,6 @@
 """Order passages by the cue phrases this research's criterion was approved with (SW12.3, SW15.4).
 
-The phrases are proposed by a model and approved or replaced by the user (D78, D80); here they only *order*. Nothing
+The phrases are proposed by a model and approved or replaced by the user; here they only *order*. Nothing
 in this module selects, drops or decides: a passage no phrase matches is left out of the criterion list and stays
 exactly what it was for every other list. The score is never stored: it is a pure function of stored passage text and
 stored phrases, computed per retrieval, so a later slice can derive it again.
@@ -23,7 +23,7 @@ from deixis.workflow.search.criterion import norm
 
 MIN_PHRASE_CHARS = 3  # a shorter phrase matches too much to order anything; the measurement used the same floor
 CRITERION_ROOM_DIVISOR = 4  # the share of the answer input the criterion quota may fill
-CRITERION_PAGES_PER_SOURCE = 1  # criterion pages one source adds when the included sources outnumber the limit (D55)
+CRITERION_PAGES_PER_SOURCE = 1  # criterion pages one source adds when the included sources outnumber the limit
 THRESHOLDS = {"min_phrase_chars": MIN_PHRASE_CHARS, "criterion_room_divisor": CRITERION_ROOM_DIVISOR,
               "criterion_pages_per_source": CRITERION_PAGES_PER_SOURCE}
 

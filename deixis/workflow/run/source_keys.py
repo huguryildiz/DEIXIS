@@ -1,4 +1,4 @@
-"""Author–year–title keys for works, such as "zeng2022multiparty" (D59, D38)."""
+"""Author–year–title keys for works, such as "zeng2022multiparty"."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ def suffixes():
 
 def assign_missing(store) -> int:
     """Give every work without a key its key, oldest work first, so the first of colliding works keeps the bare key.
-    Runs at startup; after migration 0013 cleared the old short keys it gives every work its D38 key once."""
+    Runs at startup; after migration 0013 cleared the old short keys it gives every work its current key once."""
     rows = store.conn.execute("SELECT id FROM works WHERE source_key IS NULL ORDER BY created_at, rowid").fetchall()
     with transaction(store.conn):
         for (work_id,) in rows:

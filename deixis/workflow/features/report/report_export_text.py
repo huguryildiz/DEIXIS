@@ -156,7 +156,7 @@ def basis_source_fields(row: dict[str, Any], tr: bool, esc: Callable[[Any], str]
 
 
 def abstract_member_field(row: dict[str, Any], tr: bool, esc: Callable[[Any], str]) -> str:
-    """PIECEWISE: Escape one abstract-only source's label for the basis list (D114)."""
+    """PIECEWISE: Escape one abstract-only source's label for the basis list."""
     return esc(row.get("source_key") or row.get("title") or pick("Source record unavailable", tr, "Kaynak kaydı bulunamadı"))
 
 
@@ -276,8 +276,8 @@ def value_text(value: dict[str, Any] | None, options: list[dict[str, Any]] | Non
 
 
 def source_cell(row: dict[str, Any], tr: bool, esc: Callable[[Any], str]) -> str:
-    """PIECEWISE: Escape the source label before adding a reference prefix and the abstract-only (D114) or read-in-full
-    (D144) suffix."""
+    """PIECEWISE: Escape the source label before adding a reference prefix and the abstract-only or read-in-full
+ suffix."""
     source = esc(row.get("source_key") or row.get("title") or pick("Source record unavailable", tr, "Kaynak kaydı bulunamadı"))
     if row.get("ref_number") is not None:
         source = f'[{row["ref_number"]}] {source}'
@@ -289,7 +289,7 @@ def source_cell(row: dict[str, Any], tr: bool, esc: Callable[[Any], str]) -> str
 
 
 def claim_depth_mark(claim: dict[str, Any], tr: bool) -> str:
-    """PLAIN: The mark after a claim's citations when it rests on what was read from an abstract (D114), else ''."""
+    """PLAIN: The mark after a claim's citations when it rests on what was read from an abstract, else ''."""
     mark = claim.get("depth_mark")
     if mark == "abstract":
         return pick(" (from abstract)", tr, " (özetten)")
@@ -299,12 +299,12 @@ def claim_depth_mark(claim: dict[str, Any], tr: bool) -> str:
 
 
 def abstract_reference_note(tr: bool) -> str:
-    """PLAIN: The note a reference read from its abstract only ends with (D114)."""
+    """PLAIN: The note a reference read from its abstract only ends with."""
     return pick("Read from the abstract only.", tr, "Yalnızca özetten okundu.")
 
 
 def full_text_reference_note(tr: bool) -> str:
-    """PLAIN: The note a reference read in full that did not meet the whole criterion ends with (D144)."""
+    """PLAIN: The note a reference read in full that did not meet the whole criterion ends with."""
     return pick("Read in full; did not meet the whole inclusion criterion.", tr,
                 "Tam metni okundu; dahil etme ölçütünün tamamını karşılamadı.")
 

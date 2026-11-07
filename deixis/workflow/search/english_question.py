@@ -1,10 +1,10 @@
-"""The query text the built-in embedding model reads (slice 21, D103, SW8.6), and the revision's English sentence.
+"""The query text the built-in embedding model reads (slice 21, SW8.6), and the revision's English sentence.
 
 The built-in model reads English only. Its query is the question when `detect_language` reads the question as English,
 else the revision's English sentence, else nothing: the built-in arm is then off for the research and says why
 (`english_question_missing`). The sentence is written once per revision, by the person (origin `user`, or `question`
 for "The question is already in English") or, when the question is not English and has no key terms, by the model
-step that translates it (origin `model`, D149); code also picks the search words from it then, and OpenAlex's semantic
+step that translates it (origin `model`); code also picks the search words from it then, and OpenAlex's semantic
 request sends the same text (`search.build_plan`). Every origin is read the same way here, and the person's sentence
 outranks the model's because the model is asked only when none is stored. Gemini, OpenAI, Ollama and LM Studio take
 the question as written; the sentence never goes to them. The language rule is `detect_language` as it is, with its

@@ -73,7 +73,7 @@ def test_connect_error_is_before_send_and_read_timeout_is_unknown():
 
 
 def test_a_chain_read_asks_for_the_keywords_and_keeps_their_display_names():
-    """The chain gate reads OpenAlex's own keywords (D183), so a chain request asks for the field and the record
+    """The chain gate reads OpenAlex's own keywords, so a chain request asks for the field and the record
     carries the names; a keyword without a display name is skipped, and a search read asks for no keyword."""
     seen = {}
 

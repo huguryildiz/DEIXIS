@@ -1,4 +1,4 @@
-"""D255 synthetic workflow evidence; no live provider or model calls."""
+"""Synthetic workflow evidence; no live provider or model calls."""
 
 import asyncio
 import copy
@@ -99,7 +99,7 @@ def test_append_only_revision_own_review_and_ledger(tmp_path, monkeypatch):
     assert 1 <= len(upgraded["passage_ids"]) <= 2
     assert dict(lib.store.conn.execute("SELECT * FROM answers WHERE id = ?", (lib.base["id"],)).fetchone()) == lib.base
     view = views.research_view(lib.store, lib.rid)
-    # The update keeps the version it revises and counts up its revision (D57).
+    # The update keeps the version it revises and counts up its revision.
     assert view["answers"][0]["report_version"] == lib.base["report_version"]
     assert view["answers"][0]["report_revision"] == 1 and lib.base["report_revision"] == 0
     assert view["answers"][0]["late_revision"]["upgraded_sources"] == 1
@@ -116,7 +116,7 @@ def test_append_only_revision_own_review_and_ledger(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("code", ["abstract_not_found"])
 def test_unresolved_route_work_with_late_text_is_read_and_answered(tmp_path, code):
-    """D60: a work the abstract stage sent to its full text (no abstract, or both runs unsure) that held a K slot and
+    """A work the abstract stage sent to its full text (no abstract, or both runs unsure) that held a K slot and
     had no reading at the cutoff waits for its text; the late read reads it and the revision answers from it."""
     lib = prepared(tmp_path, last_code=code)
     late_work = lib.store.source(lib.sources[-1])["work_id"]
@@ -230,8 +230,8 @@ def test_recovery_respects_paused_then_resumes_without_duplicate_calls(tmp_path)
 
 @pytest.mark.parametrize("all_excluded", [True])
 def test_late_reads_without_inclusion_revise_as_closest_works(tmp_path, all_excluded):
-    """D137: a base answer that included no work is revised from late readings that read the file without including
-    the work; they join as closest works, read from their pages, and are not counted as late exclusions. D145: a late
+    """A base answer that included no work is revised from late readings that read the file without including
+    the work; they join as closest works, read from their pages, and are not counted as late exclusions. a late
     reading that found no criterion part does not join, and leaves the answer as a late exclusion."""
     lib = prepared(tmp_path, pdfs=2)
     from fakes import FakeAdapter, valid_response

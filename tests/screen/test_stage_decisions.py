@@ -58,7 +58,7 @@ def one_record(store, rid, run_id):
 
 
 def two_versions(store, rid, run_id):
-    """A published record and the arXiv preprint of the same work; the published record heads it (D46, D48)."""
+    """A published record and the arXiv preprint of the same work; the published record heads it."""
     search(store, rid, run_id, 0, "openalex", [record("W1")])
     search(store, rid, run_id, 1, "arxiv", [record("2601.00001v1", title="SYNTHETIC preprint of the same study",
                                                    doi="10.48550/arxiv.2601.00001", merge_by_doi=False,

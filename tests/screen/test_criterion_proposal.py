@@ -199,7 +199,7 @@ def test_neither_the_order_the_runs_arrive_in_nor_the_order_inside_them_decides_
     assert {p["name"] for p in one["parts"]} == {p["name"] for p in other["parts"]}
 
 
-# ---- Slice 25 (SW23, D106): the population and the comparator the question names -----------------------------
+# ---- Slice 25 (SW23): the population and the comparator the question names -----------------------------
 
 def test_the_schema_requires_the_question_elements_and_closes_them():
     schema = contracts.load_schema("CriterionProposal")
@@ -294,7 +294,7 @@ def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tm
     rid, run, openalex, adapter = run_with_proposals(tmp_path, monkeypatch)
     # The fast path opens its embedding step (`source_similarity`) as the run starts; it sends nothing to a provider.
     keys = [key for key in steps_of(run) if key != "source_similarity"]
-    # The source routing of slice 14 (D93) follows the vocabulary, before the criterion.
+    # The source routing of slice 14 follows the vocabulary, before the criterion.
     assert keys[:11] == ["vocabulary", "vocabulary_labels_1", "vocabulary_labels_2", "vocabulary_labels_3",
                          "source_routing", "criterion", "criterion_proposal_1", "criterion_proposal_2", "criterion_proposal_3",
                          "protocol_approval", "protocol"]

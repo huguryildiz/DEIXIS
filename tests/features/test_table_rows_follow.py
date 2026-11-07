@@ -1,4 +1,4 @@
-"""D63: a table made from the included sources follows them: rows for sources included later, filled by the ordinary
+"""A table made from the included sources follows them: rows for sources included later, filled by the ordinary
 fill path; rows of sources excluded later stay, marked, and are left out of the report.
 
 Records and model outputs are SYNTHETIC (scripted FakeAdapter). Passing shows workflow behavior, not reading quality.
@@ -54,7 +54,7 @@ def test_a_source_included_later_gets_a_row_that_fills_itself(tmp_path):
     assert execute(lib, fill(lib))["status"] == "completed"
     version = table_version(lib)
     new = include_later(lib)
-    assert new not in missing_sources(lib)  # included, but not yet a row: not in the table's report (D68)
+    assert new not in missing_sources(lib)  # included, but not yet a row: not in the table's report
 
     (run,) = table_rows.advance(lib.store)
     rows = {r["source_version_id"]: r for r in view(lib)["rows"]}
@@ -82,7 +82,7 @@ def test_a_row_a_person_removed_is_not_added_back_and_a_hand_picked_table_does_n
     assert lib.preprint in {r["source_version_id"] for r in view(lib)["removed_rows"]}
     assert [r["source_version_id"] for r in view(lib, hand)["rows"]] == [lib.published]
     assert table_rows.add_rows(lib.store) == {}
-    # A row a person removed is not the report's, so it no longer keeps the report waiting (D68).
+    # A row a person removed is not the report's, so it no longer keeps the report waiting.
     assert lib.preprint not in missing_sources(lib)
 
 

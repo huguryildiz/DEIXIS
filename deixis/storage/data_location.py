@@ -1,4 +1,4 @@
-"""Where the library lives (D32): a pointer file in the platform default folder names the folder chosen in Settings.
+"""Where the library lives: a pointer file in the platform default folder names the folder chosen in Settings.
 
 A change takes effect at the next start; the open SQLite library is never moved while DEIXIS runs. When the pointer
 carries `move_from`, `apply_pending_move` moves the old folder's entries into the new one before anything opens them,

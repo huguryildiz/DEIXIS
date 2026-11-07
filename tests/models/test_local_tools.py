@@ -141,7 +141,7 @@ def test_success_returns_normalized_vectors_in_input_order(provider):
 
 
 def test_a_local_embedding_request_never_goes_through_a_proxy_from_the_environment(monkeypatch):
-    """D34 follow-up: passage text sent to Ollama or LM Studio must not leave the computer through HTTP_PROXY/ALL_PROXY.
+    """Passage text sent to Ollama or LM Studio must not leave the computer through HTTP_PROXY/ALL_PROXY.
     Two real servers on loopback, the embedding server and a proxy; the environment points every proxy at the latter."""
     import threading
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer

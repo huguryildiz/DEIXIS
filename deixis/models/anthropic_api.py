@@ -1,11 +1,11 @@
-"""Anthropic Messages API model connection (ANTHROPIC_API_KEY, D34).
+"""Anthropic Messages API model connection (ANTHROPIC_API_KEY).
 
 The Claude Code CLI signed in with a Claude account is a separate connection (`claude.py`). This one calls the
 Messages API directly: one stateless request per step, no tools, the step schema sent as a structured-output format
 (`output_config.format`, in the subset the API accepts: `schema_subset.anthropic_schema`), and the answering model
 reported as `resolved_model` so the flow's mismatch check applies. No server-side fallback model is requested: a decline ends the
 step as failed instead of another model answering. Raw HTTP through the shared httpx client, as the Gemini and
-DeepSeek connections do, so tests inject a mocked transport. The answer is streamed (server-sent events, D85) and put
+DeepSeek connections do, so tests inject a mocked transport. The answer is streamed (server-sent events) and put
 back together here into the same result a single response gave.
 """
 
@@ -34,7 +34,7 @@ API_VERSION = "2023-06-01"
 KEY_ENV = "ANTHROPIC_API_KEY"
 EFFORTS = ("low", "medium", "high", "xhigh", "max")
 # Thinking counts against it too. The answer is streamed, so a long turn does not hit a single-response HTTP timeout;
-# `turn_timeout` still bounds the whole stream (D85).
+# `turn_timeout` still bounds the whole stream.
 MAX_TOKENS = 64000
 # Content blocks that are the model's own text; any other block is a tool or server-tool item.
 TEXT_BLOCKS = frozenset({"text", "thinking", "redacted_thinking"})
@@ -56,7 +56,7 @@ class AnthropicAdapter:
     connection = "anthropic"
     enforces_schema = True
     sends_reasoning_effort = True  # output_config.effort
-    accepts_images = True  # run_step(image_png=...) puts one PNG before the message (D113)
+    accepts_images = True  # run_step(image_png=...) puts one PNG before the message
     key_env = KEY_ENV
 
     def __init__(self, client: httpx.AsyncClient | None = None, turn_timeout: float = 300.0):
@@ -191,7 +191,7 @@ class AnthropicAdapter:
         stop = stream.stop_reason
         if stop != "end_turn" or not text:
             return ModelStepResult("failed", raw_text=text or None, error=f"finish reason {stop}", **common)
-        # A required nullable field was sent optional (`anthropic_schema`, D93): the nulls it left out are put back here,
+        # A required nullable field was sent optional (`anthropic_schema`): the nulls it left out are put back here,
         # so every reader of the answer sees the step schema's shape. Text with nothing left out is passed on as it came.
         filled, changes = fill_omitted_nulls(output_schema, text)
         if changes:
@@ -211,7 +211,7 @@ class AnthropicAdapter:
 
 
 class _Stream:
-    """What a streamed Messages answer said, event by event (D85)."""
+    """What a streamed Messages answer said, event by event."""
 
     def __init__(self) -> None:
         self.message: dict[str, Any] = {}

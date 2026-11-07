@@ -28,14 +28,14 @@ from deixis.workflow.run.source_keys import key_stem, suffixes
 from deixis.workflow.run.evidence_deps import EVIDENCE_STATUS_SQL
 
 ACTIVE_RUN_STATUSES = ("queued", "running", "pause_requested")
-# Research rows a feature owns for its run machinery (D86): never listed, searched or opened as a research.
+# Research rows a feature owns for its run machinery: never listed, searched or opened as a research.
 INTERNAL_RESEARCH_KINDS = ("citation_check",)
 DISCOVERY_RUN_KINDS = ("discovery", "fulltext_fetch", "fulltext_adjudication")
 ENDED_RUN_STATUSES = ("completed", "failed", "cancelled")
 TEXT_RETRY_REFUSALS = ("asset_removed", "no_holding_research", "membership_changed", "asset_replaced",
                       "baseline_changed", "run_active", "input_not_verified", "file_missing", "file_mismatch")
 TEXT_RETRY_INTERRUPTIONS = ("storage_full", "storage_unavailable", "cancelled", "unexpected_error", "process_ended")
-ARXIV_DOI_PREFIX = "10.48550/arxiv."  # arXiv's DataCite DOI names a preprint with all its versions (D46)
+ARXIV_DOI_PREFIX = "10.48550/arxiv."  # arXiv's DataCite DOI names a preprint with all its versions
 # Importers whose DOI no provider confirmed (a .bib / .ris entry, S19b): their record never joins another record's work
 # by that DOI, and no other record joins theirs, so a mistyped DOI cannot make an entry a version of another work.
 UNVERIFIED_DOI_PROVIDERS = ("reference_file",)
@@ -46,7 +46,7 @@ STEP_OUTPUT_KINDS = ("fetch_pdf", "pdf_other_copy", "ocr_pages", "ocr_merge", "p
 STEP_OUTPUT_KEYS = ("semantic_retrieval", "source_similarity")
 MAX_SEED_PASSAGES = 4
 MAX_SEED_CHARS = 5600
-MAX_SEEDS = 5  # a seed is an ordered set of at most five PDFs (D3)
+MAX_SEEDS = 5  # a seed is an ordered set of at most five PDFs
 MAX_RECORD_DOIS = 3
 SEED_REASONS = {"not_a_source": "The selected source is not part of this research",
                 "not_added_by_user": "Choose a PDF you added to this research",
@@ -54,7 +54,7 @@ SEED_REASONS = {"not_a_source": "The selected source is not part of this researc
                 "no_readable_text": "The selected PDF has no readable text; read its scanned pages with OCR first"}
 
 
-# D155: why a step that succeeded did less than it was planned to, carried on its `step_finished` event.
+# Why a step that succeeded did less than it was planned to, carried on its `step_finished` event.
 SURFACED_SKIPS = ("s2_cooldown",)
 HOLD_REASONS = ("no_abstract", "no_abstract_text_route", "no_abstract_lookup_open")
 
@@ -81,19 +81,19 @@ def _step_view_output(row: Any) -> dict[str, Any] | None:
     # The fast chain's seeds carry their reference lists; the timeline needs only how many there were.
     if row["operation_key"] in ("fast_chain:seeds", "fast_chain:seeds_fallback"):
         return {"seed_count": len(json.loads(row["output_json"]).get("seeds") or [])}
-    if row["operation_key"] == "rerank:v1:list":  # D104: whether the reranker ran, never its scores or candidates
+    if row["operation_key"] == "rerank:v1:list":  # Whether the reranker ran, never its scores or candidates
         out = json.loads(row["output_json"])
         return {"provider": out.get("provider"), "model": out.get("model"), "error_code": out.get("error_code"),
                 "reranked": len(out.get("candidate_ids") or []), "cut_documents": out.get("cut_documents"),
-                # D153, D155: how many records without an abstract kept their place, by why (never which ones).
+                # How many records without an abstract kept their place, by why (never which ones).
                 **({"held": {code: n for code in HOLD_REASONS
                              if (n := list(out["kept_reasons"].values()).count(code))}}
                    if isinstance(out.get("kept_reasons"), dict) else {})}
-    if row["operation_key"] == "small_batch:v1:list":  # whether the frozen order used the rerank (D104), not the order
+    if row["operation_key"] == "small_batch:v1:list":  # whether the frozen order used the rerank, not the order
         return {"reranker": json.loads(row["output_json"]).get("reranker")}
     if row["kind"] in STEP_OUTPUT_KINDS or row["operation_key"] in STEP_OUTPUT_KEYS:
         return json.loads(row["output_json"])
-    if row["kind"] == "code:vocabulary":  # the English sentence the words came from (D149), never the counts
+    if row["kind"] == "code:vocabulary":  # the English sentence the words came from, never the counts
         english = (json.loads(row["output_json"]).get("vocabulary") or {}).get("english_question")
         return {"english_question": english} if english else None
     if row["kind"] == "code:abstract_stage":
@@ -116,7 +116,7 @@ def _output_digest(raw_output: str) -> str:
         return f"text:{sha256_hex(raw_output)}"
 
 
-# The suffix an equation pass appends to the extraction it was laid on (D36, D40, D46, D113).
+# The suffix an equation pass appends to the extraction it was laid on.
 EQUATION_PASS = re.compile(r"\+(?:marker-|arxiv-latex-|mathpix-|model-eq-).*$")
 
 
@@ -131,7 +131,7 @@ def title_key(title: str | None) -> str:
 
 
 def seed_key(seeds: list[dict[str, Any]]) -> str:
-    """The identity of an ordered seed set (D3): per seed its source, file, extraction, excerpt, title and record
+    """The identity of an ordered seed set: per seed its source, file, extraction, excerpt, title and record
     DOIs. A second run reuses a match, and the page matches a protocol to the scope, by this key, not by file hash."""
     return sha256_hex([{"source_version_id": s["source_version_id"], "asset_id": s["asset_id"],
                         "asset_sha256": s["asset_sha256"], "extraction_version": s["extraction_version"],
@@ -140,7 +140,7 @@ def seed_key(seeds: list[dict[str, Any]]) -> str:
 
 
 def read_seed_snapshot(raw: dict[str, Any] | None) -> dict[str, Any]:
-    """A stored seed snapshot in the v2 form (D3). D2's single dict reads as a one-seed set without record DOIs; its
+    """A stored seed snapshot in the v2 form. The `seed_pdf_v1` single dict reads as a one-seed set without record DOIs; its
     excerpt is kept as frozen, never cut again. No snapshot is an empty set."""
     if not raw:
         return {"version": 2, "seeds": [], "not_selected": [], "skipped": [], "seed_key": None}
@@ -151,7 +151,7 @@ def read_seed_snapshot(raw: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def seed_source_ids(scope: dict[str, Any]) -> list[str]:
-    """The scope's seed sources in their canonical order (D3)."""
+    """The scope's seed sources in their canonical order."""
     return [s["source_version_id"] for s in scope.get("seeds") or []]
 
 
@@ -161,14 +161,14 @@ def is_preprint(source: dict[str, Any]) -> bool:
 
 
 def is_published(source: dict[str, Any]) -> bool:
-    """A record under its own registered DOI that is not a preprint's (D48)."""
+    """A record under its own registered DOI that is not a preprint's."""
     return bool(source.get("doi")) and not is_preprint(source)
 
 
 # The history reason a new head writes when it takes over another version's selection. It is reserved: a person's own
 # reason may not be this text (the API refuses it), so the probe set can tell the copy from a real edit (slice 19).
 COPIED_SELECTION_REASON = "taken from another version of the same work"
-# The events a question revision may have after it was opened and still be withdrawn (D67): a person's selection and
+# The events a question revision may have after it was opened and still be withdrawn: a person's selection and
 # decisions, a title they wrote, and the built-in model's English sentence. The title run's own events are allowed by run.
 WITHDRAWABLE_EVENTS = frozenset({"scope_revised", "seed_selected", "selection_changed", "stage_decision_recorded",
                                  "stage_decision_undone", "research_title_edited", "english_question_saved",
@@ -179,11 +179,11 @@ class NotFound(Exception):
 
 
 class PdfInUse(Exception):
-    """A source version has at most one PDF in use; another file replaces it (D46)."""
+    """A source version has at most one PDF in use; another file replaces it."""
 
 
 class RunInProgress(Exception):
-    """A research using the source has a queued, running or pause-requested run (D46)."""
+    """A research using the source has a queued, running or pause-requested run."""
 
 
 class RequestConflict(Exception):
@@ -199,11 +199,11 @@ class NotRetryable(Exception):
 
 
 class SameFile(Exception):
-    """A PDF can only be replaced by a different file (D46)."""
+    """A PDF can only be replaced by a different file."""
 
 
 class NotASource(Exception):
-    """A source version that was never a source of the research (D50); the API answers 422."""
+    """A source version that was never a source of the research; the API answers 422."""
 
 
 class SeedUnavailable(Exception):
@@ -219,11 +219,11 @@ class _SeedRefused(Exception):
 
 
 class LegacyInspectionPolicyRemoved(Exception):
-    """D242: an inspection run the current policy cannot execute; the API answers 409."""
+    """An inspection run the current policy cannot execute; the API answers 409."""
 
 
 def provisional_title(question: str) -> str:
-    """The research's name until a model title replaces it: the question's first 15 words, with `…` when cut (D39).
+    """The research's name until a model title replaces it: the question's first 15 words, with `…` when cut.
 
     The full question stays in the scope; only the shown name is short.
     """
@@ -344,7 +344,7 @@ class Store:
         return rid
 
     def create_internal_research(self, kind: str, title: str) -> str:
-        """A research row a feature owns (D86): no scope revision, no event, no run. Nothing starts discovery, a scope
+        """A research row a feature owns: no scope revision, no event, no run. Nothing starts discovery, a scope
         plan or a title call for it; the lists and research routes leave it out (`is_internal_research`)."""
         if kind not in INTERNAL_RESEARCH_KINDS:
             raise ValueError(f"not an internal research kind: {kind!r}")
@@ -376,7 +376,7 @@ class Store:
             self.conn.execute("UPDATE researches SET trashed_at = ? WHERE id = ?", (now(), research_id))
 
     def trash(self) -> dict[str, list[dict[str, Any]]]:
-        """What the Trash page lists, by kind, each with what it holds (D50).
+        """What the Trash page lists, by kind, each with what it holds.
 
         A trashed research's tables and removed sources are not listed on their own: they go and come back with it.
         """
@@ -673,7 +673,7 @@ class Store:
     def revise_scope(self, research_id: str, expected_version: int, question: str, steering: str | None,
                      key_terms: str | None = None, english_question: str | None = None) -> int:
         """The next scope revision. `key_terms` given replaces the previous terms; left out, they carry over.
-        `english_question` is the person's English sentence for the new revision (origin 'user', D149), written in the
+        `english_question` is the person's English sentence for the new revision (origin 'user'), written in the
         same transaction instead of any copied one; '' writes none, so a model translates the new revision."""
         with transaction(self.conn):
             research = self.research(research_id)
@@ -700,7 +700,7 @@ class Store:
             )
             # The person's English sentence goes with an unchanged question (slice 21): a revision that only changed
             # key terms or steering keeps it; a changed question needs a sentence of its own. A model's is never
-            # copied (D149): the new revision is translated again unless the person writes one here.
+            # copied: the new revision is translated again unless the person writes one here.
             if english_question:
                 self.conn.execute(
                     "INSERT INTO scope_english_questions (research_id, scope_revision, text, origin, created_at)"
@@ -743,7 +743,7 @@ class Store:
     def _open_revision(self, research: dict[str, Any], row: dict[str, Any]) -> int:
         """Insert `row`, a copy of the current revision with its changes, as the next question revision; returns its
         number. The number is the highest one plus one, so a withdrawn revision's number is never used again; the row
-        names the revision it was opened from and keeps the research title it replaced (D67). The caller moves the
+        names the revision it was opened from and keeps the research title it replaced. The caller moves the
         research to it and writes its event, in the same transaction."""
         revision = self.conn.execute("SELECT MAX(revision) FROM scope_revisions WHERE research_id = ?",
                                      (research["id"],)).fetchone()[0] + 1
@@ -763,7 +763,7 @@ class Store:
         return self._revision_table_names
 
     def withdrawal(self, research_id: str, revision: int | None = None, after: tuple[int, ...] = ()) -> dict[str, Any]:
-        """Whether the current question revision can be withdrawn (D67), and if not, why: the first reason found.
+        """Whether the current question revision can be withdrawn, and if not, why: the first reason found.
         `revision` asks it of an earlier one as if the revisions `after` it, opened one from another, were withdrawn
         first (`late_revision.held`).
 
@@ -808,7 +808,7 @@ class Store:
         # A person's edits that name no revision (a table, a column, a cell, a note, a file) show in the research's
         # events: after the revision was opened, only the title run's events and a person's selection, decision, title
         # and English-sentence events leave it unused.
-        # A later revision that was itself withdrawn (or is taken as withdrawn, `after`) was unused too (D67): its title
+        # A later revision that was itself withdrawn (or is taken as withdrawn, `after`) was unused too: its title
         # run and its withdrawal are not work.
         unused_runs = set(title_runs) | {r[0] for r in self.conn.execute(
             "SELECT r.id FROM runs r JOIN scope_revisions s ON s.research_id = r.research_id AND s.revision = r.scope_revision"
@@ -837,7 +837,7 @@ class Store:
                                  (research_id, named)).fetchone() is not None
 
     def withdraw_revision(self, research_id: str, expected_version: int, revision: int) -> int:
-        """Withdraw the current question revision and go back to the one it was opened from (D67); returns that number.
+        """Withdraw the current question revision and go back to the one it was opened from; returns that number.
 
         Nothing is deleted: the revision stays as history with `withdrawn_at`, and the research title it replaced comes
         back when it was kept and the person has not renamed the research since. Refused (RevisionConflict) when `revision` is not the current one or `withdrawal` says no."""
@@ -892,7 +892,7 @@ class Store:
         return {"scope_revision": revision, "text": text, "origin": origin}
 
     def save_model_english_question(self, research_id: str, scope_revision: int, text: str, run_id: str) -> dict[str, Any]:
-        """Write the English sentence a model translated the question into (origin 'model', D149) for this revision,
+        """Write the English sentence a model translated the question into (origin 'model') for this revision,
         unless the revision already has one; returns the revision's sentence either way. A sentence the person saved
         first stays theirs. Written by the run, not the person: no expected version is checked and the research's
         version is not raised, so a form the person has open is not made stale by it."""
@@ -907,7 +907,7 @@ class Store:
         return self.english_question(research_id, scope_revision)
 
     def english_question_model(self, research_id: str, scope_revision: int) -> dict[str, Any] | None:
-        """The model that wrote the revision's model sentence (D149): the last session of the revision's succeeded
+        """The model that wrote the revision's model sentence: the last session of the revision's succeeded
         translation step, as its session stored it; None when no such step is stored."""
         row = self.conn.execute(
             "SELECT m.connection, COALESCE(m.resolved_model, m.requested_model) AS model, m.reasoning_effort AS effort"
@@ -946,7 +946,7 @@ class Store:
     def _seed_material(self, research_id: str, source_version_id: str,
                        passages: bool = True) -> tuple[dict[str, Any], Any, list[dict[str, Any]]]:
         """A seed's source, its PDF in use and that PDF's readable pages; raises `_SeedRefused` with the reason it is
-        not one (D2's checks, in D2's order). The newest file wins, an equal time by file identifier (D3). Without
+        not one (the `seed_pdf_v1` checks, in that order). The newest file wins, an equal time by file identifier. Without
         `passages` only whether one readable page exists is read, so listing candidates loads no page text."""
         if not self.is_active_member(research_id, source_version_id):
             raise _SeedRefused("not_a_source")
@@ -977,7 +977,7 @@ class Store:
         return source, asset, readable
 
     def seed_candidates(self, research_id: str) -> list[dict[str, Any]]:
-        """The PDFs this research could take as seeds (D3): active sources the user uploaded or brought from Zotero or
+        """The PDFs this research could take as seeds: active sources the user uploaded or brought from Zotero or
         the library, whose newest file has readable pages, in the order they were added."""
         rows = self.conn.execute(
             "SELECT m.source_version_id, m.added_by FROM corpus_memberships m JOIN source_versions v"
@@ -995,7 +995,7 @@ class Store:
         return candidates
 
     def _record_dois(self, source: dict[str, Any]) -> list[str]:
-        """A Zotero or library record's own DOIs, at most three a filter can carry; an upload has none (D3). A Zotero
+        """A Zotero or library record's own DOIs, at most three a filter can carry; an upload has none. A Zotero
         record keeps its DOI on the record alone (it never merges by DOI), so the record's column counts with its
         `doi` mappings."""
         if source["origin"] == "user_upload":
@@ -1008,9 +1008,9 @@ class Store:
 
     @staticmethod
     def _seed_excerpt(source_version_id: str, passages: list[dict[str, Any]], terms: set[str], n: int) -> list[dict[str, Any]]:
-        """One seed's bounded reading (D2's rule): its first readable pages, then the pages that share most words with
-        the question. With n seeds each gets `4 // n` pages (at least one) and `5600 // n` characters (D3); one seed
-        gets exactly D2's four pages and 5,600 characters."""
+        """One seed's bounded reading (the `seed_pdf_v1` rule): its first readable pages, then the pages that share most words with
+        the question. With n seeds each gets `4 // n` pages (at least one) and `5600 // n` characters; one seed
+        gets exactly its four pages and 5,600 characters."""
         limit = MAX_SEED_PASSAGES if n == 1 else max(1, MAX_SEED_PASSAGES // n)
         chars = MAX_SEED_CHARS // n
         first = passages[:min(2, limit)]
@@ -1031,14 +1031,14 @@ class Store:
 
     def set_seeds(self, research_id: str, expected_version: int, source_version_ids: list[str] | None, *,
                   all_eligible: bool = False, excluded: Sequence[str] = ()) -> int:
-        """Freeze the seed set in a new scope revision: the PDFs named, in that order, or every candidate (D3).
+        """Freeze the seed set in a new scope revision: the PDFs named, in that order, or every candidate.
 
         With every candidate, `excluded` are PDFs the person chose not to let guide the search (Home's unchecked rows,
         UI parity S5b). They are dropped before anything else, so they are neither seeds, not selected nor skipped,
         and stay the research's sources; the choice of five among the rest is unchanged. The exclusion is recorded on
         the `seed_selected` event.
 
-        One named PDF that cannot be a seed raises as D2 did; of several, those that cannot are listed as skipped, and
+        One named PDF that cannot be a seed raises as `seed_pdf_v1` did; of several, those that cannot are listed as skipped, and
         none left raises with the first reason. Above five usable PDFs the five whose first two pages share most of
         the question's words are kept, in their own order, and the rest are listed as not selected. The same request
         again writes nothing and returns the current revision before the version is checked, so a reply lost on the
@@ -1103,7 +1103,7 @@ class Store:
                 "UPDATE researches SET current_scope_revision = ?, version = version + 1, updated_at = ? WHERE id = ?",
                 (revision, now(), research_id),
             )
-            # The question is unchanged: the person's English sentence goes with it (slice 21); a model's is not copied (D149).
+            # The question is unchanged: the person's English sentence goes with it (slice 21); a model's is not copied.
             self.conn.execute(
                 "INSERT INTO scope_english_questions (research_id, scope_revision, text, origin, created_at)"
                 " SELECT research_id, ?, text, origin, ? FROM scope_english_questions WHERE research_id = ? AND scope_revision = ?"
@@ -1161,7 +1161,7 @@ class Store:
 
     def frozen_criterion(self, research_id: str, question: str, steering: str | None,
                          scope_revision: int | None = None) -> dict[str, Any] | None:
-        """The criterion this research already froze for the same question and steering, or None (SW15, D78).
+        """The criterion this research already froze for the same question and steering, or None (SW15).
 
         Read across scope revisions on purpose: a revision that changed only the providers must not send the model
         back for a criterion, because the same question answered in other words would mark every decision made under
@@ -1203,11 +1203,11 @@ class Store:
                    target: dict[str, Any] | None = None, *, expected_scope_revision: int | None = None) -> dict[str, Any]:
         """Queue a run. Evidence table runs carry their target (table, columns, planned sources or cell).
 
-        With `expected_scope_revision` (D14) the run is created only while that question revision is still the current
+        With `expected_scope_revision` the run is created only while that question revision is still the current
         one; a newer revision raises RevisionConflict and nothing is written. A repeated idempotency key returns the run
         it created before, whatever the revision is now."""
         if kind in INTERNAL_RESEARCH_KINDS:
-            # A feature's own run (D96) is opened by that feature as running, never queued: the worker has no handler.
+            # A feature's own run is opened by that feature as running, never queued: the worker has no handler.
             raise RevisionConflict(f"A {kind} run is not queued through the generic run path")
         with transaction(self.conn):
             research = self.research(research_id)
@@ -1253,7 +1253,7 @@ class Store:
             if run["status"] != "paused":
                 raise RevisionConflict("Only a paused run can resume")
             if run["kind"] in INTERNAL_RESEARCH_KINDS:
-                # Queued, the worker would fail it (no handler, no scope revision); its feature starts a new one (D96).
+                # Queued, the worker would fail it (no handler, no scope revision); its feature starts a new one.
                 raise RevisionConflict(f"A paused {run['kind']} run is not resumed here; start it again from its feature")
             active = self.conn.execute(
                 f"SELECT id FROM runs WHERE research_id = ? AND id != ?"
@@ -1264,7 +1264,7 @@ class Store:
             return self.update_run(run_id, event="run_resumed", status="queued", pause_reason=None, error_json=None)
 
     def discovery_completed(self, research_id: str) -> bool:
-        """Whether the research's current scope revision has a completed discovery run (SW22, D106).
+        """Whether the research's current scope revision has a completed discovery run (SW22).
 
         An `sw` research may then ask for an answer with no included work: the answer records that none was included
         when it started, instead of the request being refused.
@@ -1357,7 +1357,7 @@ class Store:
             if active or background_active:
                 raise RunInProgress(run["research_id"])
             # A search closed because its query's share was spent before it asked is retried too: the retry adds
-            # to every query's share, which is what it lacked (D89; review of 13f, 2026-09-23).
+            # to every query's share, which is what it lacked (review of 13f, 2026-09-23).
             failed = self.conn.execute(
                 "SELECT COUNT(*) AS n FROM run_steps WHERE run_id = ? AND kind LIKE 'provider_search:%'"
                 " AND (status IN ('failed', 'outcome_unknown')"
@@ -1380,7 +1380,7 @@ class Store:
         """Count `amount` against the run, and against one sw query's own count too when `query` names it.
 
         The query's count (`usage["query_requests"][query]`, keyed by the query's first step key) is written in the
-        same transaction as the run's, so the two never disagree, and a resumed run finds it (D89).
+        same transaction as the run's, so the two never disagree, and a resumed run finds it.
         """
         with transaction(self.conn):
             run = self.run(run_id)
@@ -1458,7 +1458,7 @@ class Store:
         return step
 
     def start_step(self, step_id: str, started_at: str | None = None) -> None:
-        """`started_at` is when the work really started, for a step written after it ended (a search page, D89)."""
+        """`started_at` is when the work really started, for a step written after it ended (a search page)."""
         with transaction(self.conn):
             row = self.conn.execute(
                 "SELECT s.*, r.research_id FROM run_steps s JOIN runs r ON r.id = s.run_id WHERE s.id = ?", (step_id,)
@@ -1538,9 +1538,9 @@ class Store:
 
     def search_query_of(self, research_id: str, scope_revision: int, run_id: str,
                         operation_key: str = "search_query", method: str | None = None) -> dict[str, Any] | None:
-        """The newest succeeded model-query step of another run of this scope revision (D92), or None; with
-        `operation_key`, the newest succeeded step of that key (the seed match, D2). With `method`, only runs whose
-        budget froze that search method count (D163 M1; a budget without one is `legacy`)."""
+        """The newest succeeded model-query step of another run of this scope revision, or None; with
+        `operation_key`, the newest succeeded step of that key (the seed match). With `method`, only runs whose
+        budget froze that search method count (a budget without one is `legacy`)."""
         row = self.conn.execute(
             "SELECT s.run_id, s.output_json FROM run_steps s JOIN runs r ON r.id = s.run_id"
             " WHERE r.research_id = ? AND r.scope_revision = ? AND r.id != ? AND s.operation_key = ?"
@@ -1552,7 +1552,7 @@ class Store:
         return {"run_id": row["run_id"], "output": json.loads(row["output_json"])} if row else None
 
     def choose_code_query(self, run_id: str) -> dict[str, Any]:
-        """Search with the code's query alone after the model's failed, and queue the run, in one transaction (D92).
+        """Search with the code's query alone after the model's failed, and queue the run, in one transaction.
 
         Written on the model-query step, which the worker reads when it picks the run up; nothing is compiled here.
         """
@@ -1604,7 +1604,7 @@ class Store:
     def start_model_session(self, research_id: str, run_id: str, step_id: str, step_input_id: str,
                             connection: str, requested_model: str | None, reasoning_effort: str | None = None) -> str:
         """Open one model call's session. `reasoning_effort` is the effort the adapter sends with it, None when it sends
-        none; it is stored as given and never filled in from a setting (D25)."""
+        none; it is stored as given and never filled in from a setting."""
         msid = new_id("mss")
         with transaction(self.conn):
             self.conn.execute(
@@ -1693,7 +1693,7 @@ class Store:
         A DOI names one registered version, so the same DOI from several providers is one source version with a mapping
         per provider. A record whose DOI covers several file versions (`merge_by_doi` false, e.g. arXiv) never merges,
         and title matches never merge; `record_search` flags those as suspected duplicates. Records with one arXiv DOI
-        (an arXiv version, or another provider's record of the preprint) are separate versions of one work (D46).
+        (an arXiv version, or another provider's record of the preprint) are separate versions of one work.
         Other versions the provider lists for the record become separate source versions of the same work.
         """
         existing = self.provider_source_target(provider, record)
@@ -1712,7 +1712,7 @@ class Store:
                     self.conn.execute("UPDATE source_versions SET cited_by_count = ?, cited_by_count_at = ? WHERE id = ?",
                                       (record.cited_by_count, now(), svid))
                 if record.is_retracted is not None:
-                    # Same rule (D27): only an explicit OpenAlex answer replaces the flag; an unknown read never clears it.
+                    # Same rule: only an explicit OpenAlex answer replaces the flag; an unknown read never clears it.
                     self.conn.execute("UPDATE source_versions SET is_retracted = ?, is_retracted_at = ? WHERE id = ?",
                                       (int(record.is_retracted), now(), svid))
             else:
@@ -1739,7 +1739,7 @@ class Store:
         )
 
     def _store_index_keywords(self, svid: str, record: Any) -> None:
-        """Fill the keywords the provider's own classifier gave the record while the column is empty (D184).
+        """Fill the keywords the provider's own classifier gave the record while the column is empty.
 
         A different list from the author's own, kept apart from it by the same rule: one provider's list is never
         merged into another's, and the first list read stands.
@@ -1802,7 +1802,7 @@ class Store:
 
     def open_lookup_version(self, research_id: str, svid: str, version_label: str, landing_url: str | None) -> str:
         """Open the record's own row for a declared other version of the same work, so a copy of that version can be
-        attached to it instead of to the published record (D4, D48, D83).
+        attached to it instead of to the published record.
 
         Built with `_insert_other_version`'s pattern: the title and the authors are the work's, and neither the DOI
         nor the abstract is copied, because both describe the version the record itself is. The row is a member of
@@ -1874,7 +1874,7 @@ class Store:
         """Fill absent citation fields from an exact-identity provider lookup; never replace existing metadata.
 
         The only path that changes a record's identity fields after insert (an empty `landing_url` filled): the arXiv
-        source eligibility of the record's PDFs is decided again in the same transaction (D104)."""
+        source eligibility of the record's PDFs is decided again in the same transaction."""
         ts = now()
         with transaction(self.conn):
             had_landing = self.conn.execute("SELECT landing_url FROM source_versions WHERE id = ?", (svid,)).fetchone()
@@ -1892,7 +1892,7 @@ class Store:
                 " VALUES (?, ?, ?, ?, ?)",
                 (svid, provider, record.provider_record_id, provider, ts),
             )
-            # A key taken from the title gives way to the author an enrichment brings; an author key is never changed (D59).
+            # A key taken from the title gives way to the author an enrichment brings; an author key is never changed.
             self._assign_source_key(self.source(svid)["work_id"], replace_title_key=True)
             if had_landing is not None and had_landing["landing_url"] is None and record.landing_url:
                 self._recheck_arxiv_eligibility(svid)
@@ -1901,7 +1901,7 @@ class Store:
         """Decision 1's record rows again, from the stored file version (no PDF is opened), for each PDF of the record in
         use that has an eligibility row. A refusal on a PDF whose current text is a source reading withdraws that reading:
         the route's extraction row is superseded first, then the row current just before it is current again with the
-        asset's four mirrored fields (the one-current index holds throughout); its passages stay, shadowed (D46)."""
+        asset's four mirrored fields (the one-current index holds throughout); its passages stay, shadowed."""
         from deixis.documents import arxiv_source
 
         record = dict(self.conn.execute("SELECT doi, landing_url, oa_pdf_url, version_label FROM source_versions WHERE id = ?",
@@ -1968,7 +1968,7 @@ class Store:
         return svid
 
     def fill_upload_record(self, svid: str, record: Any, provider: str, basis: str) -> None:
-        """An uploaded PDF identified as a scholarly record (D37): the record's citation fields replace the file-name
+        """An uploaded PDF identified as a scholarly record: the record's citation fields replace the file-name
         title and fill the empty fields, and its abstract becomes the source's abstract. No identifier mapping is
         written, so a search that later finds the same record keeps its own source version; the match is kept as
         `record_match_json`, with the file-name title it replaced."""
@@ -1994,7 +1994,7 @@ class Store:
             self._assign_source_key(source["work_id"], replace_title_key=True)
 
     def _assign_source_key(self, work_id: str, replace_title_key: bool = False) -> None:
-        """Give a work its short author–year key (D59): from its published record's authors when it has one, else from
+        """Give a work its short author–year key: from its published record's authors when it has one, else from
         another version's authors, else from the title. A key is kept once given; only a title key may be replaced."""
         work = self.conn.execute("SELECT source_key, source_key_basis FROM works WHERE id = ?", (work_id,)).fetchone()
         if work is None or (work["source_key"] and not (replace_title_key and work["source_key_basis"] == "title")):
@@ -2079,7 +2079,7 @@ class Store:
                           diagnostic_only: bool = False, decision_code: str | None = None) -> str:
         passage_ids = []
         for page in extraction.pages:
-            # A chunk holding a placed display equation is labelled per chunk with the placement's label (D104: arXiv
+            # A chunk holding a placed display equation is labelled per chunk with the placement's label (arXiv
             # source; Mathpix: equation_ocr): the rest of the page, and the chunk's other text, is the PDF's own text layer.
             placed = getattr(page, "latex_blocks", None) or ()
             for start, end, text in chunker(page.text):
@@ -2106,7 +2106,7 @@ class Store:
     def reextract_asset(self, asset_id: str, extraction: Any, extraction_version: str, chunker: Any,
                         dry_run: bool = False, allow_run_id: str | None = None, guard: Any = None, *,
                         input_observation: dict | None = None) -> dict[str, Any]:
-        """Append a tool occurrence under D46, retaining the baseline's text pages.
+        """Append a tool occurrence, retaining the baseline's text pages.
 
         All decision inputs are read under the write lock. A dry run evaluates
         without writing. The optional source-route guard precedes those reads.
@@ -2530,7 +2530,7 @@ class Store:
     def replace_asset(self, asset_id: str, sha256: str, size: int, storage_path: str, origin: str, retrieved_from: str | None,
                       filename: str | None, extraction: Any, extraction_version: str, chunker: Any, *,
                       input_observation: dict | None = None) -> str:
-        """Put another file in use for the source version, in every research that uses it (D46).
+        """Put another file in use for the source version, in every research that uses it.
 
         The new file gets its own passages even when its text is the same; the old file is marked replaced, and the evidence
         that cites its passages keeps them. The selection does not change, so no selection revision is bumped.
@@ -2660,7 +2660,7 @@ class Store:
             self._event(research_id, "asset_removed", {"source_version_id": svid, "asset_id": asset_id})
 
     def restore_asset(self, research_id: str, svid: str, asset_id: str) -> None:
-        """Put a PDF removed as the wrong file back in use, with its passages; only while no other PDF is in use (D50).
+        """Put a PDF removed as the wrong file back in use, with its passages; only while no other PDF is in use.
 
         A replaced file is not restored this way: replacing it again is the explicit action for that.
         """
@@ -2701,7 +2701,7 @@ class Store:
         return found
 
     def work_retracted(self, work_id: str) -> bool | None:
-        """OpenAlex's flag for a whole work (D27), over every stored version whether or not any research shows it.
+        """OpenAlex's flag for a whole work, over every stored version whether or not any research shows it.
 
         True when OpenAlex flags any version, False when some version was read unflagged and none is flagged, None
         when no version has an OpenAlex answer. False means only that OpenAlex does not flag it.
@@ -2735,7 +2735,7 @@ class Store:
         with transaction(self.conn):
             # One attempt is recorded (and counted, for a quota refusal) once, whatever the clock says and whether or
             # not a run is counting: the same outcome stored again finds its row by the attempt's identity, and every
-            # other attempt is a row of its own (D248).
+            # other attempt is a row of its own.
             if attempt_id and (held := self.conn.execute(
                     "SELECT id FROM pdf_discovery_runs WHERE attempt_id = ?", (attempt_id,)).fetchone()):
                 return held["id"]
@@ -2850,8 +2850,8 @@ class Store:
 
         `first_rank` is how many records the query read on its earlier pages: a candidate's rank is its place in the
         query, not in the page it arrived on (slice 04c). An unpaged search leaves it at 0. With `keep_found` the
-        step output names the source versions this request wrote, before any is sent to its work's candidate (D6).
-        `keep_candidate` (a follow-up search, D92) leaves a candidate of the same question revision as it was: its rank
+        step output names the source versions this request wrote, before any is sent to its work's candidate.
+        `keep_candidate` (a follow-up search) leaves a candidate of the same question revision as it was: its rank
         and search are the first search's.
         """
         with transaction(self.conn):
@@ -2860,7 +2860,7 @@ class Store:
             for rank, record in enumerate(records, start=first_rank):
                 svid, _ = self.upsert_provider_source(provider, record, payload_path)
                 found.append(svid)
-                # A version of a work that already has a candidate here is found again as that candidate (D46).
+                # A version of a work that already has a candidate here is found again as that candidate.
                 record_svid = self._work_candidate(search_fields["research_id"], svid) or svid
                 self.add_to_corpus(search_fields["research_id"], record_svid, "search", srid, rank,
                                    scope_revision=search_fields["scope_revision"], keep_candidate=keep_candidate)
@@ -2868,7 +2868,7 @@ class Store:
                     self.add_to_corpus(search_fields["research_id"], svid, "search", srid, candidate=False)
                 for other in self.other_version_ids(provider, record):  # kept with the record, not screened as separate candidates
                     self.add_to_corpus(search_fields["research_id"], other, "search", srid, candidate=False)
-            links.link_records(self, search_fields["research_id"], found)  # D48's narrow rule widens to SW6
+            links.link_records(self, search_fields["research_id"], found)  # the narrow rule widens to SW6
             admission = (step_output or {}).get("fast_path_request")
             from deixis.workflow.run import fast_path
             run = self.run(search_fields["run_id"]) if admission else None
@@ -2898,7 +2898,7 @@ class Store:
     def _work_candidate(self, research_id: str, svid: str) -> str | None:
         """Another source version of svid's work that is a candidate of the research, unless svid is one itself.
 
-        A published record is its own candidate when the work's candidates are only preprints, so it can head the work (D48).
+        A published record is its own candidate when the work's candidates are only preprints, so it can head the work.
         """
         row = self.conn.execute(
             "SELECT c.source_version_id, c.source_version_id = ? AS own FROM candidates c"
@@ -2932,11 +2932,11 @@ class Store:
         return {"dropped_work": dropped, "moved": moved}
 
     def chain_only_works(self, research_id: str, scope_revision: int) -> set[str]:
-        """The works of this question revision that only citation chaining found (D95): each has a hit from a chain
+        """The works of this question revision that only citation chaining found: each has a hit from a chain
         request and no version with a hit from any other search. Empty for a research that never chained.
 
-        A research older than D93 has no keyword hits in `candidate_hits`, so the search a candidate row names counts
-        as a hit too: a keyword work the chain later reached is still a keyword work. A follow-up search's hits (D92) are
+        A research without the keyword-hit rows has no keyword hits in `candidate_hits`, so the search a candidate row names counts
+        as a hit too: a keyword work the chain later reached is still a keyword work. A follow-up search's hits are
         not the search's, so they never turn a chain-only work into a keyword work."""
         found: dict[str, bool] = {}
         own = " AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.id = sr.run_id AND r.kind = 'followup_search')"
@@ -2952,10 +2952,10 @@ class Store:
         return {work_id for work_id, only in found.items() if only}
 
     def work_heads(self, research_id: str, include_removed: bool = False) -> dict[str, str]:
-        """The record that heads each work in the research: a published record, else the first record (D46, D48).
+        """The record that heads each work in the research: a published record, else the first record.
 
         A record is a candidate or a source added other than by search; other versions found by search never head a work.
-        Sources removed from the research head nothing unless include_removed (D50).
+        Sources removed from the research head nothing unless include_removed.
         """
         heads: dict[str, dict[str, Any]] = {}
         for row in self.conn.execute(
@@ -3017,7 +3017,7 @@ class Store:
                     " VALUES (?, ?, ?, ?, ?)", (link["decision_id"], research_id, head, current["version"] + 1, now()))
 
     def included_works(self, research_id: str) -> list[str]:
-        """Heads of the works included in the research: a work counts once, by its head's selection (D48)."""
+        """Heads of the works included in the research: a work counts once, by its head's selection."""
         heads = set(self.work_heads(research_id).values())
         return [svid for svid in self.included_sources(research_id) if svid in heads]
 
@@ -3032,7 +3032,7 @@ class Store:
 
     def answer_version(self, research_id: str, head: str) -> str | None:
         """The version of a work whose text an answer reads: the head when it has PDF text, else the first other version
-        with PDF text, else the head's abstract (D48). One version per work, so versions never corroborate each other.
+        with PDF text, else the head's abstract. One version per work, so versions never corroborate each other.
 
         A person's file changes this (slice 18b, decision 8). Once it is read under the current question and
         criterion, and while it is still in use with the pages it was read as, its version is the one read. Until
@@ -3054,7 +3054,7 @@ class Store:
 
         The research view calls this: one query per work blocked the event loop for 30 s on a 7,000-work research
         (slice 13's smoke run), long enough for a model connection's health check to time out and pause the run.
-        Same rule and same order as `answer_version` and `work_versions` (D48).
+        Same rule and same order as `answer_version` and `work_versions`.
         """
         heads = self.work_heads(research_id)
         if not heads:
@@ -3124,7 +3124,7 @@ class Store:
         return digest
 
     def page_digest_holds(self, asset_id: str | None, digest: str | None) -> bool:
-        """Whether a file's pages are still those a reading saw (decision 6, D46): its current extraction, or the
+        """Whether a file's pages are still those a reading saw (decision 6): its current extraction, or the
         extraction an equation pass (Marker, arXiv LaTeX, Mathpix, the answer model) was laid on. An equation pass adds the equations and
         keeps the page text, so a file read just before it is still the file that was read; OCR or a new base
         extraction is a different file."""
@@ -3230,7 +3230,7 @@ class Store:
             membership = self.conn.execute(
                 "SELECT removed_at FROM corpus_memberships WHERE research_id = ? AND source_version_id = ?", (research_id, svid)
             ).fetchone()
-            # A search or a Zotero collection import adds many records at once; it never undoes the user's removal (D50).
+            # A search or a Zotero collection import adds many records at once; it never undoes the user's removal.
             bulk = added_by in ("search", "zotero_import")
             if membership is None:
                 # A new version of a work the user removed from this research joins it removed.
@@ -3243,7 +3243,7 @@ class Store:
                     " VALUES (?, ?, ?, ?, ?, ?)", (research_id, svid, added_by, ts, *((ts, ts) if work_removed else (None, None))),
                 )
             elif membership["removed_at"] is not None and bulk:
-                # Found again: it stays removed, and the Sources summary counts it (D50).
+                # Found again: it stays removed, and the Sources summary counts it.
                 self.conn.execute("UPDATE corpus_memberships SET found_again_at = ? WHERE research_id = ? AND source_version_id = ?",
                                   (ts, research_id, svid))
             same_revision = keep_candidate and self.conn.execute(
@@ -3252,7 +3252,7 @@ class Store:
             if added_by == "search" and candidate and not same_revision:
                 # A record found again under a newer question revision becomes a candidate of that revision; found again
                 # under the same revision (another query or provider), it keeps its best rank and the search that gave it.
-                # A follow-up search (`keep_candidate`, D92) never moves a candidate of its own revision.
+                # A follow-up search (`keep_candidate`) never moves a candidate of its own revision.
                 self.conn.execute(
                     "INSERT INTO candidates (id, research_id, search_run_id, source_version_id, rank, scope_revision, created_at)"
                     " VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (research_id, source_version_id) DO UPDATE SET"
@@ -3264,7 +3264,7 @@ class Store:
                 )
             if added_by == "search" and candidate:
                 if search_run_id is not None and scope_revision is not None:
-                    # Every search that found the candidate is kept, not only the one the row names (D93).
+                    # Every search that found the candidate is kept, not only the one the row names.
                     self.conn.execute(
                         "INSERT OR IGNORE INTO candidate_hits (research_id, scope_revision, source_version_id,"
                         " search_run_id) VALUES (?, ?, ?, ?)", (research_id, scope_revision, svid, search_run_id))
@@ -3280,7 +3280,7 @@ class Store:
                 self._bump_selection_revision(research_id, None, selection_state)
 
     def remove_sources(self, research_id: str, svids: list[str], note: str | None) -> list[str]:
-        """Take sources out of the research; returns the source versions removed (D50).
+        """Take sources out of the research; returns the source versions removed.
 
         The membership row stays, so the research's answers and cells still open what they cite, and nothing about the
         source, its files, passages or embeddings changes. Removing a work's head removes every version of the work here.
@@ -3340,10 +3340,10 @@ class Store:
 
     def cited_source_versions(self, svids: list[str]) -> set[str]:
         """Of these source versions, the ones an answer quote, a follow-up answer, an evidence table or a report still
-        cites (D65).
+        cites.
 
         The scope is the whole workspace, not one research: evidence stays openable wherever it was written, so a
-        cited source is never deleted on its own. Deleting its research is still the way out (D50).
+        cited source is never deleted on its own. Deleting its research is still the way out.
         """
         if not svids:
             return set()
@@ -3365,7 +3365,7 @@ class Store:
         return {row[0] for row in rows} | snapshot_referenced_source_versions(self.conn, svids)
 
     def purge_sources(self, research_id: str, svids: list[str]) -> tuple[list[str], list[str], list[str]]:
-        """Delete removed sources from this research for good; returns (purged, orphan files, orphan payloads) (D65).
+        """Delete removed sources from this research for good; returns (purged, orphan files, orphan payloads).
 
         Only a source already removed from the research can be purged, and only while nothing cites it. What goes is
         this research's record of it: the membership, its screening rows and its PDF lookups. The library record, its
@@ -3395,7 +3395,7 @@ class Store:
                 f"DELETE FROM pdf_candidates WHERE discovery_run_id IN (SELECT id FROM pdf_discovery_runs"
                 f" WHERE research_id = ? AND source_version_id IN ({marks}))", scoped)
             # A stage decision is kept unless a purge authorizes removing it; deleting this research's record of these
-            # sources is such a purge (D65), so the same authorization row the research purge uses opens the trigger.
+            # sources is such a purge, so the same authorization row the research purge uses opens the trigger.
             self.conn.execute("INSERT OR IGNORE INTO research_purge_authorizations VALUES (?)", (research_id,))
             # A queue decision's selection links go before the decisions they name, and with the head they name.
             self.conn.execute(
@@ -3408,7 +3408,7 @@ class Store:
                           "record_signal_ranks",
                           "record_flags", "corpus_memberships"):
                 self.conn.execute(f"DELETE FROM {table} WHERE research_id = ? AND source_version_id IN ({marks})", scoped)
-            # A chain link names a record twice: the seed it came from and the record the linked work became (D95).
+            # A chain link names a record twice: the seed it came from and the record the linked work became.
             self.conn.execute(f"DELETE FROM chain_links WHERE research_id = ? AND (source_version_id IN ({marks})"
                               f" OR seed_source_version_id IN ({marks}))", (research_id, *chosen, *chosen))
             # A snowball round's admission row names the record an identity became; the row stays as history, without it.
@@ -3487,7 +3487,7 @@ class Store:
         ).fetchone() is not None
 
     def was_member(self, research_id: str, svid: str) -> bool:
-        """A source of the research now or before a removal (D50): opening the research's evidence needs only this."""
+        """A source of the research now or before a removal: opening the research's evidence needs only this."""
         return self.conn.execute(
             "SELECT 1 FROM corpus_memberships WHERE research_id = ? AND source_version_id = ?", (research_id, svid)
         ).fetchone() is not None
@@ -3611,7 +3611,7 @@ class Store:
         """The text of each PDF page, fragments of one page joined with a space in rowid order.
 
         Read only. A quote split across two fragments of a page the model was shown is looked for in this string
-        (D85). Pages of a removed file or of another extraction are not here, the same filter `passages_for` uses.
+. Pages of a removed file or of another extraction are not here, the same filter `passages_for` uses.
         """
         pages: dict[int, list[str]] = {}
         for passage in self.passages_for(svid):
@@ -3621,7 +3621,7 @@ class Store:
         return {page: " ".join(parts) for page, parts in pages.items()}
 
     def passages_for(self, svid: str) -> list[dict[str, Any]]:
-        """Passages a model step may read: an abstract, or text of the PDF in use from its current extraction (D46).
+        """Passages a model step may read: an abstract, or text of the PDF in use from its current extraction.
 
         Passages of a removed file or of another extraction stay resolvable through `passage` for the evidence citing them.
         """
@@ -3635,7 +3635,7 @@ class Store:
                         frozen: dict[str, list[str]] | None = None) -> list[dict[str, Any]]:
         """Passages of these sources matching the query, best first.
 
-        A source named in `frozen` (a report row whose passages its snapshot froze, D114) is searched only within those
+        A source named in `frozen` (a report row whose passages its snapshot froze) is searched only within those
         passage ids, inside the same ranking and before the limit, so a passage it gained later is never a hit.
         """
         frozen = frozen or {}
@@ -3776,7 +3776,7 @@ class Store:
                 return existing["id"]  # saved before a restart; a resumed run must not duplicate it
             report_version = report_revision = None
             if status == "structurally_valid":
-                # A late full-text answer is the application's update of the version it revises (D57): it keeps that
+                # A late full-text answer is the application's update of the version it revises: it keeps that
                 # number and takes the next revision. Every other valid answer opens the next version.
                 base = self.conn.execute("SELECT report_version FROM answers WHERE id = ?",
                                          (late["base_answer_id"],)).fetchone() if late else None
@@ -3897,7 +3897,7 @@ class Store:
             f" JOIN step_inputs i ON i.id = m.step_input_id WHERE {where} GROUP BY i.task_type", args)}
 
     def begin_provider_request(self, run_id: str, host: str, url: str) -> int | None:
-        """Store one attempt of this run about to be handed to the HTTP client, as not known whether sent (D31); its
+        """Store one attempt of this run about to be handed to the HTTP client, as not known whether sent; its
         row id. A run deleted with its research meanwhile keeps nothing (None)."""
         with transaction(self.conn):
             cur = self.conn.execute(

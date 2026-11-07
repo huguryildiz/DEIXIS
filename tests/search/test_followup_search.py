@@ -1,4 +1,4 @@
-"""A follow-up's search for new works (D92). SYNTHETIC OpenAlex records and the fake model: these tests show the
+"""A follow-up's search for new works. SYNTHETIC OpenAlex records and the fake model: these tests show the
 workflow (the click queues one run, the request list is frozen before a send, requests are tagged by the run, the
 first search's candidates keep their rank, the found works are split new / already here / removed before, the new
 ones are screened and nothing is included, refusals, replay), not whether a model writes good terms or a provider

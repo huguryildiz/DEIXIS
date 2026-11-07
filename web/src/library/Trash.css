@@ -1,4 +1,4 @@
-/* Trash, removal from a research and undo (D50): the Trash page, the Undo action in a notification, choosing sources
+/* Trash, removal from a research and undo: the Trash page, the Undo action in a notification, choosing sources
    on the Sources tab, and the "removed from this research" labels. Loaded after workspace.css and reuses its tokens. */
 
 /* Trash page: a 808px column. A head (title and the "nothing expires" line), a toolbar, then one raised list. A row is

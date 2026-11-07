@@ -50,7 +50,7 @@ NAMES = {1: "Database name", 2: "Multi-database searching", 3: "Study registries
          4: "Online resources and browsing", 5: "Citation searching", 6: "Contacts", 7: "Other methods",
          8: "Full search strategies", 9: "Limits and restrictions", 10: "Search filters", 11: "Prior work",
          12: "Updates", 13: "Dates of searches", 14: "Peer review", 15: "Total records", 16: "Deduplication"}
-# A source searched through another's API (D13): bioRxiv's own query goes to OpenAlex with a server filter.
+# A source searched through another's API: bioRxiv's own query goes to OpenAlex with a server filter.
 THROUGH = {"biorxiv": "openalex"}
 REGISTRY_WORDS = ("clinicaltrials", "ictrp", "registry", "trials")
 
@@ -130,7 +130,7 @@ def _groups(store: Store, research_id: str, revision: int, until: str | None = N
         " sr.provider_total, sr.read_limit, sr.read_total, sr.unread_count, sr.stop_reason, sr.retrieved_at,"
         " sr.page_number, sr.rowid AS row_order, st.operation_key FROM search_runs sr"
         " JOIN run_steps st ON st.id = sr.step_id JOIN runs r ON r.id = sr.run_id"
-        # The search is the discovery runs; follow-up searches (D92) have their own subsection (`_followup_searches`).
+        # The search is the discovery runs; follow-up searches have their own subsection (`_followup_searches`).
         " WHERE sr.research_id = ? AND sr.scope_revision = ? AND r.kind = 'discovery'"
         + (" AND sr.retrieved_at <= ?" if until else ""),
         (research_id, revision, *((until,) if until else ())))]
@@ -418,7 +418,7 @@ def _export(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, 
     items.append(_item(11, "not_recorded", "Adapting a search from earlier work is not recorded in DEIXIS."))
 
     # 12 — updates.
-    # The question revisions before this one that were not withdrawn (D67).
+    # The question revisions before this one that were not withdrawn.
     earlier = conn.execute("SELECT COUNT(*) FROM scope_revisions WHERE research_id = ? AND revision < ?"
                            " AND withdrawn_at IS NULL", (research_id, revision)).fetchone()[0]
     runs_text = [{"run_id": run["id"], "created_at": run["created_at"]} for run in discovery]
@@ -482,14 +482,14 @@ def _export(store: Store, research_id: str, scope: dict[str, Any]) -> dict[str, 
         "planned_queries": planned,
         "search_table": [{key: value for key, value in g.items() if key != "request_description"}
                          | {"request_description": g["request_description"]} for g in groups],
-        # The same databases searched again for a follow-up question (D92): listed apart, not as an "other method".
+        # The same databases searched again for a follow-up question: listed apart, not as an "other method".
         "followup_searches": _followup_searches(store, research_id, revision),
         "flow": {"counts": flow, "boxes": flow_rules.flow_boxes(ctx, flow)},
     }
 
 
 def _followup_searches(store: Store, research_id: str, revision: int) -> list[dict[str, Any]]:
-    """Each follow-up search of the revision (D92) with every request its send steps hold, so a request that was sent
+    """Each follow-up search of the revision with every request its send steps hold, so a request that was sent
     and never admitted is still reported. A request's provider, query, status and records come from the run's summary
     when it wrote one, else from the send step itself; its date is when its step ended (else started)."""
     conn = store.conn
@@ -541,11 +541,12 @@ def _dedup(store: Store, research_id: str, revision: int, groups: list[dict[str,
     works = conn.execute(
         "SELECT COUNT(DISTINCT v.work_id) FROM corpus_memberships m JOIN source_versions v ON v.id = m.source_version_id"
         " WHERE m.research_id = ? AND m.removed_at IS NULL", (research_id,)).fetchone()[0]
-    # Hits of the discovery runs only: a follow-up search's hits (D92) are not this search's.
+    # Hits of the discovery runs only: a follow-up search's hits are not this search's.
     hits = conn.execute("SELECT COUNT(*) FROM candidate_hits h JOIN search_runs sr ON sr.id = h.search_run_id"
                         " JOIN runs r ON r.id = sr.run_id WHERE h.research_id = ? AND h.scope_revision = ?"
                         " AND r.kind = 'discovery'", (research_id, revision)).fetchone()[0]
-    # A page that returned records and kept no hit row is from before D93: the hits were not counted, which is not 0.
+    # A page that returned records and kept no hit row is from before that change: the hits were not counted, which is
+    # not 0.
     counted = conn.execute(
         "SELECT 1 FROM search_runs sr JOIN runs r ON r.id = sr.run_id WHERE sr.research_id = ? AND sr.scope_revision = ?"
         " AND r.kind = 'discovery' AND sr.status = 'completed'"
@@ -569,9 +570,9 @@ def _dedup(store: Store, research_id: str, revision: int, groups: list[dict[str,
                            "link_kind": row["link_kind"], "rule": row["rule"], "merged": bool(row["merged"])})
     rows_returned = sum(g["rows_returned"] for g in groups)
     text = ("DEIXIS deduplicated the records itself (" + code_version() + "): the same normalised DOI joins records "
-            "into one work (D46); a work is headed by its published record, else the first found (D48); without a "
+            "into one work; a work is headed by its published record, else the first found; without a "
             "DOI, title, authors and abstract together join only a preprint to its published version, and each link "
-            "is stored with its rule and source and can be undone (D72). All returned rows, the tracked candidate "
+            "is stored with its rule and source and can be undone. All returned rows, the tracked candidate "
             "versions / hits, the active members and the works are counted apart below; the number of distinct "
             "returned provider records is not recorded (raw responses are kept as files, not counted in a table).")
     return _item(16, "reported", text, {

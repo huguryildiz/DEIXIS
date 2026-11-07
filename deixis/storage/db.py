@@ -16,12 +16,13 @@ from typing import Any, Iterator
 
 from deixis.storage import upgrades
 
-# A new library is made from SCHEMA in one transaction; its header carries the schema version (D119). A library at an older
-# version runs the steps in upgrades.STEPS it has not recorded. Version 1 is recorded under the name of the D75 baseline.
+# A new library is made from SCHEMA in one transaction; its header carries the schema version. A library at an older
+# version runs the steps in upgrades.STEPS it has not recorded. Version 1 is recorded under the name of the first
+# baseline.
 SCHEMA = Path(__file__).parent / "schema.sql"
 SCHEMA_VERSION_LINE = "-- deixis:schema-version "
 BASELINE_NAME = "0001_schema.sql"
-# The files 0001_schema.sql replaced on 2026-10-16 (D75). A library that recorded all of them under these names has
+# The files 0001_schema.sql replaced on 2026-10-16. A library that recorded all of them under these names has
 # exactly the schema of 0001_schema.sql, and its rows are folded into that one row once; one that recorded the old
 # baseline without all of the rest misses schema changes this version can no longer apply.
 SQUASHED = dict(enumerate((

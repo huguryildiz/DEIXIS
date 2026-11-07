@@ -79,7 +79,7 @@ def test_top_k_counts_cached_text_and_keeps_frozen_order():
 
 
 def test_k_admission_takes_unresolved_works_after_candidates_since_d155():
-    """D155: a work the abstract stage left without an abstract (`abstract_not_found`) no longer takes a fetch slot
+    """A work the abstract stage left without an abstract (`abstract_not_found`) no longer takes a fetch slot
     ahead of a candidate, a pending work counting as one; the person's work stays first. A policy frozen without
     `admission_order` keeps the list order."""
     works = [candidate(0, "abstract_not_found"), candidate(1, "abstract_not_found"), candidate(2), candidate(3),
@@ -314,7 +314,7 @@ def stubbed_read(lib, monkeypatch, works, settle):
 
 
 def test_claimed_works_over_k_say_why(library, monkeypatch):
-    """D60: a person who includes a work during the read gives it a slot while the K works already claimed keep
+    """A person who includes a work during the read gives it a slot while the K works already claimed keep
     theirs; the closure says why it selected more than K."""
     lib = library
     works = [candidate(0, "both_blocks_missing")] + [candidate(n) for n in range(1, 25)]
@@ -332,7 +332,7 @@ def test_claimed_works_over_k_say_why(library, monkeypatch):
 
 
 def test_identity_failure_from_an_earlier_run_releases_the_slot(library, monkeypatch):
-    """D60: a work whose PDF an earlier run found unconfirmed is not read again (its decision is fresh), so it does
+    """A work whose PDF an earlier run found unconfirmed is not read again (its decision is fresh), so it does
     not hold one of this run's K slots either."""
     lib = library
     works = [candidate(n) for n in range(25)]
@@ -351,7 +351,7 @@ def test_identity_failure_from_an_earlier_run_releases_the_slot(library, monkeyp
 
 
 def test_a_cut_call_is_never_sent_again_on_resume(library):
-    """D258: a step closed at the read cutoff reads back as cut; the adapter is not reached again."""
+    """A step closed at the read cutoff reads back as cut; the adapter is not reached again."""
     from deixis.workflow.run.flow import _AdjudicationJob
     lib = library
     flow = ResearchFlow(SimpleNamespace(store=lib.store))
@@ -383,7 +383,7 @@ def test_real_fetch_and_adjudication_are_bounded_by_top_k(tmp_path, monkeypatch)
 
 
 def test_budget_skipped_records_are_stored_without_human_decided_ones(library, monkeypatch):
-    """D60: the records the model-call budget left unread are stored in their own step, so a restarted read closes
+    """The records the model-call budget left unread are stored in their own step, so a restarted read closes
     with the same split; a record a person decided is not among them."""
     from deixis.workflow.run.flow import _Held
     lib = library

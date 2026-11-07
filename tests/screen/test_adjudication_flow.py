@@ -1,4 +1,4 @@
-"""The full-text reading run inside a real `sw` research (slice 12, D85).
+"""The full-text reading run inside a real `sw` research (slice 12).
 
 Workflow behavior only. Records are SYNTHETIC and from two fields, every transport is mocked and the model is
 scripted. Passing shows the run follows the slice, not that a model read a paper.
@@ -243,7 +243,7 @@ def test_a_human_fulltext_decision_is_not_read(tmp_path, monkeypatch):
     from deixis.workflow.answer import answer as fast_answer
     from deixis.workflow.search import small_batch
 
-    # No automatic answer, so no late revision (D255) reads W1's file before the person decides.
+    # No automatic answer, so no late revision reads W1's file before the person decides.
     monkeypatch.setattr(fast_answer, "auto_answer", lambda store, run: None)
     works, fetcher = papers(1)
     adapter = FakeAdapter(valid_response)
@@ -256,7 +256,7 @@ def test_a_human_fulltext_decision_is_not_read(tmp_path, monkeypatch):
         head = records_of(store, rid)["W1"]
         assert fulltext_code(store, rid, head) == "not_read_yet"
         DecisionStore(store).record(rid, head, "human_include")
-        # The second discovery reads full text (the fast path reads inside discovery, D251); W1 alone has a file.
+        # The second discovery reads full text (the fast path reads inside discovery); W1 alone has a file.
         freeze = small_batch.freeze_budget
         monkeypatch.setattr(small_batch, "freeze_budget", lambda budget, effort, reading: freeze(budget, effort, "auto"))
         run_id = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()["id"]
@@ -287,7 +287,7 @@ def turn_timeout(task, times):
 PROTOCOL = "SYNTHETIC irrigation scheduling of an open field crop: a study protocol"
 
 
-# ---- a criterion with a comparator part (slice 28, D109) ----------------------------------------------------------
+# ---- a criterion with a comparator part (slice 28) ----------------------------------------------------------
 
 
 # ---- what each reading showed of the extracted text (audit item 3) --------------------------------
@@ -298,11 +298,11 @@ def long_pdf(doi, pages):
 
 
 def shown_pages(call):
-    """The pages a reading call was shown. Passage ids are per-call handles in the input the model sees (D12)."""
+    """The pages a reading call was shown. Passage ids are per-call handles in the input the model sees."""
     return {p["locator"]["physical_page"] for p in call["passages"]}
 
 
-# ---- the second call is shown the parts the first did not see (D76) ------------------------------
+# ---- the second call is shown the parts the first did not see ------------------------------
 
 def split_response(shared_parts=(), unseen_parts=()):
     """Run 1 finds nothing. Run 2 quotes, for each part index in `unseen_parts`, a page run 1 was not shown, and for

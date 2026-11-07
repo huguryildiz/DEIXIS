@@ -1,12 +1,12 @@
-"""Equations from the authors' arXiv LaTeX source (slice 22, D104).
+"""Equations from the authors' arXiv LaTeX source (slice 22).
 
 Only with `DEIXIS_ARXIV_SOURCE=auto`, only on POSIX and only while the equation reader (Marker) is neither installed nor
-installing (D3): a PDF that is an arXiv version, attached to a record naming the same preprint version, gets that version's
+installing: a PDF that is an arXiv version, attached to a record naming the same preprint version, gets that version's
 source from `https://arxiv.org/e-print/<id>v<N>`. The archive is read in memory in a bounded subprocess, its macros are
 expanded, and each numbered display equation is matched to its number on the PDF page by letters (decision 4). A match
 that passes the rule replaces the page's garbled text-layer lines with the authors' LaTeX as `$$…$$ (n)`; everything else
 on the page stays the PDF's own text. "Passes the rule" is an operational rule chosen on one library after its image
-sample was seen, not an accuracy guarantee (D104 Limits). Nothing compiles the source; nothing checks that it produced
+sample was seen, not an accuracy guarantee. Nothing compiles the source; nothing checks that it produced
 this PDF.
 
 Version (decision 1): the file's own version comes from `retrieved_from` and the page-1/2 margin stamp; the record must
@@ -757,7 +757,7 @@ def latex_names() -> set[str]:
 
 
 def _preamble_top(tex: str, position: int) -> bool:
-    """`position` is in the main file's preamble with no group, environment or conditional open (D138): a definition
+    """`position` is in the main file's preamble with no group, environment or conditional open: a definition
     there is in force for the whole document."""
     begin = tex.find("\\begin{document}")
     levels = top_level_positions(tex)
@@ -784,7 +784,7 @@ def unsafe_macros(files: dict[str, str], tex: str) -> tuple[set[str], set[str], 
     definition is not in force (a group, a macro-opened group), so its definition is never trusted. One exception: a
     name only KaTeX knows (`\\Set`), which LaTeX does not define, defined by `\\newcommand` alone and only at the top
     level of the main file's preamble (`_preamble_top`): `\\newcommand` stops on a name already defined, so a paper that
-    compiles has no other meaning for it in the document; such a name is a user macro (D138).
+    compiles has no other meaning for it in the document; such a name is a user macro.
 
     Definers are recognised broadly (a word ending in "def", a `\\let` form, one containing "command" / "Command" /
     "cmd", one starting with "Declare"), so a test such as `\\ifdef\\x` also marks `\\x`. A `\\csname` or etoolbox
@@ -858,7 +858,7 @@ DISPLAY_SHORTHAND = re.compile(r"\s*\\(begin|end)\{(equation|align|gather|multli
 
 def _display_shorthands(tex: str, defined: dict[str, tuple[int, str | None, str]], prefixes: set[str], unbounded: bool) -> str:
     """The document body with display shorthands written out, so `\\beq … \\eeq` is a display like `\\begin{equation} …`
-    (D142, arXiv 2106.00831 writes 50 of its 72 displays so). Only safe macros (`defined`, no unsafe prefix, a bounded
+    (arXiv 2106.00831 writes 50 of its 72 displays so). Only safe macros (`defined`, no unsafe prefix, a bounded
     source) are written out, and only where they run: in the body, outside braces (a macro's body) and conditionals, and
     not after a `\\` (a line break followed by letters)."""
     shorthands = {name: body.strip() for name, (count, _, body) in defined.items()
@@ -1121,7 +1121,7 @@ async def run_child(argv: list[str], stdin: bytes = b"", timeout: float = CHILD_
     """Run a child, feeding `stdin` and draining stdout and stderr at the same time in their own tasks, so a full pipe
     never stalls it. stdout over `max_stdout` kills the child at once; stderr is read to its end and only its last
     OUTPUT_TAIL_CHARS characters are kept; the whole run is killed after `timeout` seconds. With `max_memory` the child's
-    resident size is read from here, outside the child, every `pdf.WATCH_INTERVAL_SECONDS` (D138, D159): over the limit
+    resident size is read from here, outside the child, every `pdf.WATCH_INTERVAL_SECONDS`: over the limit
     it is killed (`memory_limit`), and where the size is supposed to be readable but has not been for
     `pdf.WATCH_LOST_TURNS` turns in a row it is killed too (`memory_watch_lost`)."""
     from deixis.documents import pdf

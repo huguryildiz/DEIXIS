@@ -1,4 +1,4 @@
-"""Which record a PDF belongs to, read from the file's own first pages (D49, SW10.2).
+"""Which record a PDF belongs to, read from the file's own first pages (SW10.2).
 
 One matcher for both callers: the user dropping a file on a research asks `propose` which work to propose, and a
 full-text retrieval run asks `check` whether the file it just downloaded really is the work it asked for. Neither writes anything; both read only the head of the extracted text, because a paper names itself on its
@@ -20,7 +20,7 @@ MIN_TITLE_WORDS = 4  # a shorter title says too little to name one paper
 
 
 def identifiers_in(text: str) -> set[str]:
-    """The DOIs the head of this text names, arXiv identifiers included as their DataCite DOI (D46)."""
+    """The DOIs the head of this text names, arXiv identifiers included as their DataCite DOI."""
     head = text[:MATCH_TEXT_CHARS]
     dois = {normalize_doi(d.rstrip(".,;:)]}")) for d in DOI_IN_TEXT.findall(head)}
     return dois | {f"10.48550/arxiv.{a}" for a in ARXIV_IN_TEXT.findall(head)}
@@ -29,7 +29,7 @@ def identifiers_in(text: str) -> set[str]:
 def propose(text: str, sources: list[dict[str, Any]]) -> tuple[str | None, str | None]:
     """The work a file dropped on an `sw` research is proposed for, as one of its versions, and why (slice 18a).
 
-    D49's matching rule with one change: a first page that names the DOI of more than one candidate work (a
+    that matching rule with one change: a first page that names the DOI of more than one candidate work (a
     reference list that starts early, a companion paper cited on the title page) does not let the DOI decide, and the
     title is asked instead. A title that points at one work proposes it; otherwise nothing is proposed and the person
     picks the work. The person picks the version in every case, so the version named here is only marked.

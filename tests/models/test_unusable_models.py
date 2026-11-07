@@ -1,4 +1,4 @@
-"""D59: a model that a real step finds not served (404) or answered by another model is kept out of the model lists.
+"""A model that a real step finds not served (404) or answered by another model is kept out of the model lists.
 SYNTHETIC records and the fake adapter: these tests show what is recorded and offered, not provider behavior.
 """
 

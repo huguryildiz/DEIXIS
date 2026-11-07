@@ -1,4 +1,4 @@
--- The whole library schema at version 18 (D119). A new library is made from this file in one transaction and
+-- The whole library schema at version 18. A new library is made from this file in one transaction and
 -- records versions 1 to 18; a library at an older version is brought here by the steps in storage/upgrades.py.
 -- A schema change edits this file, raises the version below and adds the upgrade step with that number.
 -- Objects are in the order the old migration chain (0001_schema.sql to 0016_abstract_rows.sql) and the upgrade steps

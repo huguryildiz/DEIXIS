@@ -110,7 +110,7 @@ export function CandidateDetail({ researchId, candidateId, initialCard, intent, 
     catch (e) { setError(errorText(e)) }
     finally { setBusy(false); runFocus.restoreFocus() }
   }
-  // What the opener asked to see (D98), done once per selection when its part of the card has loaded.
+  // What the opener asked to see, done once per selection when its part of the card has loaded.
   const handled = useRef<CandidateSelection | null>(null)
   useEffect(() => {
     if (!intent || handled.current === intent || !card) return

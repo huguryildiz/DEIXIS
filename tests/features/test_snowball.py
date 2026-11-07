@@ -220,7 +220,7 @@ def test_a_round_candidate_reaches_a_new_answer_only_after_the_person_includes_i
 
 
 def test_a_round_orders_its_list_with_the_first_chain_matcher_even_after_an_m1_discovery(lib, monkeypatch):
-    """D163 M1 changes only the discovery chain's admission: a person-started round still orders its list with
+    """The `m1` method changes only the discovery chain's admission: a person-started round still orders its list with
     `chaining.passes` over the searched gate forms, so a hyphenated variant of a gate form does not count as naming it."""
     seed_world(lib)
     lib.api.add(900, title="SYNTHETIC State-of-Health of irrigation pumps")
@@ -237,7 +237,7 @@ def test_a_round_orders_its_list_with_the_first_chain_matcher_even_after_an_m1_d
 
 
 def test_a_round_reads_the_stored_provider_keywords_when_it_orders_its_list(lib, monkeypatch):
-    """D184: a work names a gate block through its title, its abstract or a keyword OpenAlex's own classifier gave it.
+    """A work names a gate block through its title, its abstract or a keyword OpenAlex's own classifier gave it.
     The keywords only move a work up the screening order; every admitted work is still listed."""
     seed_world(lib)
     lib.api.add(904, title="SYNTHETIC unrelated pumps",

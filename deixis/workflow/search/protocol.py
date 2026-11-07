@@ -26,7 +26,7 @@ PROTOCOL_SCHEMA = "deixis.protocol.v1"
 # the same criterion read back from an earlier protocol must not make the decisions taken under it stale (SW11.10).
 CRITERION_ORIGIN_FIELDS = ("origin", "base_run", "runs_ok", "dropped_exclusion_title_words", "sought_term_in_criterion",
                            "question_elements", "required_roles")
-# A criterion built before SW23 (D106) has neither of these; it named no population or comparator.
+# A criterion built before SW23 has neither of these; it named no population or comparator.
 _ORIGIN_DEFAULTS = {"question_elements": [], "required_roles": []}
 
 
@@ -38,7 +38,7 @@ def _model(role: tuple[str, str | None, str | None] | None) -> dict[str, Any] | 
 
 
 def _search_query(scope: dict[str, Any], vocabulary: dict[str, Any], queries: list[dict[str, Any]]) -> dict[str, Any]:
-    """What the model-written query step left (D92): the prompt it was asked with, its answer, the counts that decided
+    """What the model-written query step left: the prompt it was asked with, its answer, the counts that decided
     the query, and whether the code's query was searched beside it. A run whose model failed and whose user chose the
     code's query alone says that instead."""
     from deixis.domain.contracts import SCHEMA_VERSIONS
@@ -108,9 +108,9 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     output — so a research whose embedding failed keeps the body it froze. `approval` is how the vocabulary and the
     criterion below were agreed (slice 08a): who approved them, whether they were corrected and what the user was
     asked about. A body without one was frozen before that step existed. `routing` is the
-    source routing the queries were compiled for (D93): the gate query probed, the field shares, the share and table
+    source routing the queries were compiled for: the gate query probed, the field shares, the share and table
     it was decided with, and every source chosen or left out with its reason. A body without one
-    was frozen before D93 and names the scope's searched providers.
+    was frozen earlier and names the scope's searched providers.
     """
     # Imported here: flow loads this module, and the thresholds are read from their one definition rather than repeated.
     from deixis.documents.pdf import CHUNK_CHARS
@@ -146,7 +146,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
     # How this run chains citations (the fast chain), read from the policy its budget froze when it was queued.
     chaining = chain_policy(budget, scope["effort"])
     if chaining is not None and chaining["rule_version"] == chaining_rules.RULE_V2 and vocabulary:
-        # D163 M1: the forms a v2 chain admits with are frozen here, before any request, with their digest; the chain
+        # The forms a v2 chain admits with are frozen here, before any request, with their digest; the chain
         # round reads them back from this body (`fast_chain.frozen_forms`).
         from deixis.workflow.search.ranking import query_vocabulary
 
@@ -164,8 +164,8 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         "language_hint": scope.get("language_hint"),
         "source_scope": scope["source_scope"],
         "seed_mode": scope.get("seed_mode", "question_only"),
-        # The seed PDFs' frozen contexts (seed_pdf_v1, D2; seed_pdf_v2, D3): what the chain, the semantic query and
-        # the ranking read. A run that began under D2 freezes D2's single context.
+        # The seed PDFs' frozen contexts (seed_pdf_v1; seed_pdf_v2): what the chain, the semantic query and
+        # the ranking read. A run that began under `seed_pdf_v1` freezes its single context.
         **({"seed_match": seed_match_rules.stored(seed_match)} if seed_match else {}),
         # What a record must contain to be included, and the words an author of such a paper writes (SW15). Null
         # here means the criterion was not built — no sw workflow, or fewer than two valid proposals.
@@ -184,7 +184,7 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
         # The search plan a person saved, when this revision has one (S23a, F18): the plan, its digest, the revision
         # holding it and the providers it leaves out. Beside `search_query`, which then says origin `user`.
         **({"user_plan": user_plan_block} if (user_plan_block := user_plan_rules.protocol_block(scope)) else {}),
-        # Who wrote the query and what came of it, when a model wrote it (D92). A body without it is 13g's.
+        # Who wrote the query and what came of it, when a model wrote it. A body without it is 13g's.
         **({"search_query": _search_query(scope, vocabulary, queries)}
            if vocabulary and vocabulary.get("search_query") else {}),
         # The blocks a code vocabulary gated the search with, each holding the form of its terms that was queried.
@@ -201,20 +201,20 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
                        if vocabulary else None),
         "compiled_queries": [{"provider_id": q["provider_id"], "query_text": q["query_text"],
                               **({"results": q["results"]} if q.get("results") is not None else {}),
-                              # Which vocabulary wrote the query: the model's or the code's beside it (D92).
+                              # Which vocabulary wrote the query: the model's or the code's beside it.
                               **({"origin": q["origin"]} if q.get("origin") else {}),
-                              # The endpoint and sort a Semantic Scholar sw query is read with (D93); a query that
+                              # The endpoint and sort a Semantic Scholar sw query is read with; a query that
                               # names none goes to the relevance search, as every query did before.
                               **({"endpoint": q["endpoint"], "sort": q["sort"]} if q.get("endpoint") else {})}
                              for q in queries],
         # Which sources were searched and why, read from the field distribution of the gate query before the
-        # approval (D93). The counts each source brought are in the run view, not here: the body is frozen first.
+        # approval. The counts each source brought are in the run view, not here: the body is frozen first.
         **({"source_routing": {**{key: routing[key] for key in ("status", "query", "total", "fields", "route_share",
                                                                 "table_version", "chosen", "left_out")},
                                "chosen_not_queried": [p for p in routing["providers"] if p not in searched]}}
            if routing is not None else {}),
         # The databases searched, which is what the record reports (PRISMA-S item 1); a connector kept in scope only
-        # to verify a known DOI is named apart so that it is not read as a searched source (D87).
+        # to verify a known DOI is named apart so that it is not read as a searched source.
         "providers": sorted(searched),
         "verification_providers": sorted(p for p in scope["providers"] if p not in in_scope),
         "arms": ["keyword_search"],
@@ -235,22 +235,22 @@ def build_protocol(scope: dict[str, Any], budget: dict[str, Any], plan: dict[str
             "max_passages_per_source": MAX_PASSAGES_PER_SOURCE,
             "pdf_pages_per_source": PDF_PAGES_PER_SOURCE,
             "record_identity": THRESHOLDS,
-                # How much of the answer input the criterion order may fill, and how it is split per source (D84).
+                # How much of the answer input the criterion order may fill, and how it is split per source.
                 "criterion_passages": CRITERION_PASSAGE_THRESHOLDS,
                 "survey": SURVEY_THRESHOLDS, "lookup": LOOKUP_THRESHOLDS, "criterion": CRITERION_THRESHOLDS,
                 "ranking": RANKING_THRESHOLDS,
-                # How deep the abstract stage reads and what it counts as a verbatim quote (D81). `read_limit` is
+                # How deep the abstract stage reads and what it counts as a verbatim quote. `read_limit` is
                 # this research's own effort: it says how many works the model was asked about, not how many exist.
                 "abstract_screening": {"read_limit": ABSTRACT_READ_LIMIT[scope["effort"]], "batch": ABSTRACT_BATCH,
                                        "runs": ABSTRACT_RUNS, "quote_min_chars": ABSTRACT_QUOTE_MIN_CHARS},
                 # How many records one query reads and how many 429s the read waits out, both this research's
-                # own effort (D88). No effort stops a run at a time: the minute targets are measured, not enforced.
+                # own effort. No effort stops a run at a time: the minute targets are measured, not enforced.
                 "search_read": {"read_limit_per_query": SW_READ_LIMIT[scope["effort"]],
                                 "rate_limit_retries": PROVIDER_WAIT[scope["effort"]]},
-                # How many works one full-text retrieval run fetches (D83). This research's own effort, so it says
+                # How many works one full-text retrieval run fetches. This research's own effort, so it says
                 # how many works were tried, not how many have a full text.
                 "fulltext_fetch": {"work_limit": FULLTEXT_WORK_LIMIT[scope["effort"]]},
-                # How many works one reading run sends to the model, and what one call is shown (D85).
+                # How many works one reading run sends to the model, and what one call is shown.
                 "fulltext_adjudication": {"read_limit": FULLTEXT_READ_LIMIT[scope["effort"]], "runs": FULLTEXT_RUNS,
                                           "passages_per_call": FULLTEXT_PASSAGES_PER_CALL,
                                           "criterion_passages": FULLTEXT_CRITERION_PASSAGES,

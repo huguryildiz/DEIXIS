@@ -1,4 +1,4 @@
-"""The human queue, read and answered at the store (slice 16, D96).
+"""The human queue, read and answered at the store (slice 16).
 
 Records, criteria and page texts are SYNTHETIC and from two fields (diffusion channel scheduling, greenhouse
 irrigation). A reading run is written the way `flow._close_adjudication` writes one — two model steps with their
@@ -132,7 +132,7 @@ class Lib:
         """A PDF in use for this record, one passage per page; returns the file's identifier."""
         asset, version = db.new_id("ast"), "pymupdf-synthetic"
         with db.transaction(self.store.conn):
-            # A record has one PDF in use; a new one replaces it (D45).
+            # A record has one PDF in use; a new one replaces it.
             self.store.conn.execute("UPDATE source_assets SET removed_at = ?, removal_reason = 'replaced'"
                                     " WHERE source_version_id = ? AND removed_at IS NULL", (db.now(), svid))
             self.store.conn.execute(
@@ -265,7 +265,7 @@ def test_each_human_queue_code_is_one_row_per_work_and_no_other_code_is(store, f
         else:
             lib.read(svid, code, labels=disagree(lib) if code == "fulltext_runs_disagree" else None)
         by_code[code] = svid
-    # Partial and unresolved readings are labelled, not asked (D135): none of them is a row.
+    # Partial and unresolved readings are labelled, not asked: none of them is a row.
     for code in ("part_without_evidence", "fulltext_runs_agree_unresolved", "protocol_title",
                  "comparator_exclusion_withheld", "abstract_promise_absent"):
         svid = lib.work()
@@ -297,7 +297,7 @@ def test_each_human_queue_code_is_one_row_per_work_and_no_other_code_is(store, f
 
 
 def test_a_read_asks_about_two_works_and_never_brings_up_the_next(store):
-    """D137: the read cutoff freezes the first two open rows as asked, once per scope revision; answering one does not
+    """The read cutoff freezes the first two open rows as asked, once per scope revision; answering one does not
     ask about the third, a second cutoff of the same scope reuses the frozen two, and the rest stay listed."""
     lib = Lib(store)
     rows = [queued(lib) for _ in range(4)]
@@ -398,6 +398,6 @@ def test_a_row_token_is_rejected_after_a_scope_revision_a_new_code_decision_a_se
 # ---- the fifth answer ----------------------------------------------------------------------------------------------
 
 
-# ---- what the screen reads (slice 17, D97) --------------------------------------------------------------------------
+# ---- what the screen reads (slice 17) --------------------------------------------------------------------------
 
 

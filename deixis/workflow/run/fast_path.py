@@ -12,12 +12,12 @@ from deixis.storage.db import new_id, transaction
 POLICY = "fast_path_v1"
 RUNNER_VERSION = 2
 STAGES = ("plan", "search", "ranking", "read", "answer")
-# The search method a discovery run is queued with, frozen in its policy (D163). `legacy` is every run's default:
+# The search method a discovery run is queued with, frozen in its policy. `legacy` is every run's default:
 # chain admission `fast_chain_v1` and the code query searched as before. `m1` selects chain admission
 # `fast_chain_v2` and the code-query width limit together; it is for the M1 measurement until all its gates pass.
 SEARCH_METHODS = ("legacy", "m1")
 CHAIN_RULES = ("fast_chain_v1", "fast_chain_v2")
-# D173's deeper screening: a Standard or Detailed discovery queued with the option on also screens the next
+# The deeper screening: a Standard or Detailed discovery queued with the option on also screens the next
 # `DEEP_SCREENING_WORKS` works of the frozen list, places N+1..N+100, one model read per batch. Frozen in the policy under
 # its rule's name; a policy without the key screens 1..N only, as before.
 DEEP_SCREENING_RULE = "m3_v1"
@@ -80,10 +80,10 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
     leaves the answer unscreened evidence. Search and ranking do not wait on the model and keep theirs; each model
     call still has its own limit (openai_compat.LOCAL_TURN_TIMEOUT).
 
-    `method` is the search method (`SEARCH_METHODS`). A `legacy` policy is exactly the one frozen before D163's M1, so
+    `method` is the search method (`SEARCH_METHODS`). A `legacy` policy is exactly the one frozen before `m1`, so
     its hash does not move; `m1` names itself and its two rules.
 
-    `deep_screening` (D173) adds the deeper screening's window under `deep_screening`; off adds nothing, so a policy
+    `deep_screening` adds the deeper screening's window under `deep_screening`; off adds nothing, so a policy
     frozen without it is byte for byte the one frozen before, hash included. Quick takes no window."""
     if method not in SEARCH_METHODS:
         raise ValueError(f"unknown search method {method!r}")
@@ -102,9 +102,9 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         "chain_in_flight": 5, "chain_rule": "fast_chain_v1",
         "embedding_threads": 4, "fetch_slots": 12, "slot_refill": True, "read_drain_ms": 5000, "arrival_margin_ms": 5000,
         "checkpoint_ms": 5000, "floor_ratio": 0.25,
-        # D152: search always gets at least its own base; an earlier overrun is charged to the later stages instead.
+        # Search always gets at least its own base; an earlier overrun is charged to the later stages instead.
         "protected_stages": ["search"],
-        # D155: K admission takes the abstract stage's unresolved works after the candidates (`read.selected`).
+        # K admission takes the abstract stage's unresolved works after the candidates (`read.selected`).
         "admission_order": "unresolved_last",
     }
     if method == "m1":
@@ -140,7 +140,7 @@ def with_intent(policy: dict[str, Any], intent: str) -> dict[str, Any]:
 
 
 def deep_window(policy: dict[str, Any]) -> dict[str, Any] | None:
-    """The frozen deeper-screening window of a run's policy (D173), or None when the run was queued without it."""
+    """The frozen deeper-screening window of a run's policy, or None when the run was queued without it."""
     deep = policy.get("deep_screening")
     return deep if isinstance(deep, dict) and deep.get("rule") == DEEP_SCREENING_RULE else None
 
@@ -164,7 +164,7 @@ def effort_limits(deep_screening: bool = False) -> dict[str, Any]:
     numbers, so a changed mode cannot leave the text behind. `minutes` is the stage bases summed and rounded, the
     stages' soft deadlines rather than a promise of how long a run takes; `papers` is N, the top of the ranking a run
     reads; `fulltext` is K, the most works a run reads in their full text (selected pages, UI parity S14's funnel).
-    With `deep_screening` on (D173), Standard and Detailed add `screened_once`, the list places read once."""
+    With `deep_screening` on, Standard and Detailed add `screened_once`, the list places read once."""
     return {"efforts": {effort: {"minutes": round(sum(mode.stage_seconds) / 60), "papers": mode.read_top,
                                  "fulltext": mode.fulltext_works,
                                  **({"screened_once": once} if deep_screening and (once := screened_once(effort)) else {})}
@@ -312,7 +312,7 @@ def enter_stage(store: Any, run: dict[str, Any], stage: str) -> str | None:
                 "SELECT COALESCE(SUM(base_ms - used_ms), 0) FROM fast_path_stages"
                 " WHERE ledger_run_id = ? AND seq > 0 AND seq < ? AND status IN ('done', 'skipped')", (ledger_id, seq)).fetchone()[0]
             base = policy["stage_base_ms"].get(stage, 0)
-            # A protected stage's floor is its whole base (D152); a policy frozen without the field keeps the 25% floor.
+            # A protected stage's floor is its whole base; a policy frozen without the field keeps the 25% floor.
             floor = base if stage in policy.get("protected_stages", ()) else int(base * policy["floor_ratio"])
             alloc = max(floor, base + balance) if seq else 0
             conn.execute(

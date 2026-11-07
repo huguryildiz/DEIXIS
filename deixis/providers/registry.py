@@ -5,7 +5,7 @@ configured is listed as `not_configured` and not enabled for new researches. Key
 at call time and never stored.
 
 A connector has one of two roles: a searched source, or a verification source that is only asked about a record whose
-DOI is already known (D87). `searchable` carries that, and it is the only thing any caller reads to decide whether a
+DOI is already known. `searchable` carries that, and it is the only thing any caller reads to decide whether a
 query may go there.
 """
 
@@ -27,7 +27,7 @@ from deixis.providers.query_rules import QuerySyntax
 
 @dataclass(frozen=True)
 class Endpoint:
-    """Another endpoint of a connector that a search query can name (D93), and how a read of it pages."""
+    """Another endpoint of a connector that a search query can name, and how a read of it pages."""
 
     paging: str
     max_results: int
@@ -82,11 +82,11 @@ class Connector:
     key_required: bool = False
     supplementary: bool = False  # adds coverage beside direct providers; never used in place of one
     # Whether a query may be sent here at all. A connector that is not searchable still answers about a record whose
-    # DOI is already known — its metadata, its links — and is never asked to find records (D87). The queries are
+    # DOI is already known — its metadata, its links — and is never asked to find records. The queries are
     # compiled from this flag alone, so neither the flow nor the compiler names a provider (slice 05).
     searchable: bool = True
     # Whether a new query is compiled for this connector. Scopus is only the last abstract source, and only on an
-    # institutional network (D91); CORE and SerpApi were taken out of the search (D93). A query a run already stored
+    # institutional network; CORE and SerpApi were taken out of the search. A query a run already stored
     # is still read: `searchable` alone decides that, so a resumed run searches the queries its protocol names.
     sw_searchable: bool = True
     # How a search query reads its pages (slice 04c): a provider-issued `cursor`, a record `offset`, or one page only.
@@ -98,11 +98,11 @@ class Connector:
     sw_options: dict[str, Any] = field(default_factory=dict)
     options: tuple[str, ...] = ()
     # The host name a search request goes to, taken from the URL the module sends it to. Two connectors that share one
-    # are read one request at a time between them (D89): bioRxiv is searched through OpenAlex.
+    # are read one request at a time between them: bioRxiv is searched through OpenAlex.
     host: str = ""
     # What a new query compiled for this connector names besides its text: Semantic Scholar's bulk endpoint and its
-    # sort (D93). The query carries it, so a resumed run reads the endpoint its stored query names, and a query stored
-    # before D93, which names none, is read as it was (`reading`).
+    # sort. The query carries it, so a resumed run reads the endpoint its stored query names, and a query stored
+    # before that change, which names none, is read as it was (`reading`).
     sw_query: dict[str, Any] = field(default_factory=dict)
     endpoints: dict[str, Endpoint] = field(default_factory=dict)
     requests_per_search: int = 1
@@ -152,7 +152,7 @@ CONNECTORS = {c.provider_id: c for c in (
                                          OptionDescriptor("publication_date", "bool", None)))},
               display_name="OpenAlex", query_syntax=QuerySyntax(boolean_checks=True)),
     # Semantic Scholar's relevance search serves `offset + limit` up to 1,000 and refuses a deeper page. A search query
-    # goes to the bulk endpoint instead: up to 1,000 papers a call, continued by a token (D93).
+    # goes to the bulk endpoint instead: up to 1,000 papers a call, continued by a token.
     Connector("semantic_scholar", semantic_scholar.search, semantic_scholar.MAX_RESULTS, "S2_API_KEY", max_reachable=1000,
               host=_host(semantic_scholar.SEARCH_URL), adapter_revision=2,
               capabilities={"doi_lookup": CapabilityBinding(_s2_lookup, 500)},
@@ -164,11 +164,11 @@ CONNECTORS = {c.provider_id: c for c in (
                      "min_interval": pacing.SEMANTIC_SCHOLAR_PACER.interval_seconds,
                      "shared_gate": "SEMANTIC_SCHOLAR_PACER"},
               display_name="Semantic Scholar", query_syntax=QuerySyntax("plain")),
-    Connector("crossref", crossref.search, crossref.MAX_RESULTS, searchable=False,  # verification only (D87)
+    Connector("crossref", crossref.search, crossref.MAX_RESULTS, searchable=False,  # verification only
               host=_host(crossref.WORKS_URL), adapter_revision=2,
               capabilities={"doi_lookup": CapabilityBinding(_crossref_lookup, 1, False)},
               display_name="Crossref", query_syntax=QuerySyntax("plain")),
-    # arXiv asks for three seconds between requests and refused consecutive ones on 2026-09-15 (D18).
+    # arXiv asks for three seconds between requests and refused consecutive ones on 2026-09-15.
     Connector("arxiv", arxiv.search, arxiv.MAX_RESULTS, page_gap=3.0, host=_host(arxiv.QUERY_URL), adapter_revision=2,
               retry={"rate_limit_statuses": arxiv.RATE_LIMIT_STATUSES,
                      "unstated_wait": arxiv.UNSTATED_RATE_LIMIT_WAIT,
@@ -187,9 +187,10 @@ CONNECTORS = {c.provider_id: c for c in (
     Connector("scopus", scopus.search, scopus.MAX_RESULTS, "SCOPUS_API_KEY", key_required=True,
               sw_searchable=False, host=_host(scopus.SEARCH_URL), adapter_revision=2, display_name="Scopus",
               capabilities={"doi_lookup": CapabilityBinding(_scopus_lookup, lookup.SCOPUS_LOOKUP_BATCH)},
-              query_syntax=QuerySyntax("field_group", wrapper="TITLE-ABS-KEY")),  # last abstract source only (D91)
-    # CORE and SerpApi get no new query: in the third D88 measurement neither brought a verified work no other source
-    # brought, and SerpApi is paid (D93).
+              query_syntax=QuerySyntax("field_group", wrapper="TITLE-ABS-KEY")),  # last abstract source only
+    # CORE and SerpApi get no new query: in the third reranker measurement neither brought a verified work no other
+    # source
+    # brought, and SerpApi is paid.
     Connector("core", core.search, core.MAX_RESULTS, "CORE_API_KEY", key_required=True, sw_searchable=False,
               host=_host(core.SEARCH_URL), adapter_revision=2, display_name="CORE",
               query_syntax=QuerySyntax(boolean_checks=True, extra_rules="field_phrase",
@@ -224,7 +225,7 @@ def _configured(searchable: bool | None = None) -> list[str]:
 
 
 def verification_providers() -> list[str]:
-    """Configured connectors that are never searched: they answer about a record whose DOI is already known (D87)."""
+    """Configured connectors that are never searched: they answer about a record whose DOI is already known."""
     return _configured(searchable=False)
 
 
@@ -234,7 +235,7 @@ def configured_providers() -> list[str]:
 
 
 def search_providers(providers: list[str]) -> list[str]:
-    """The given providers a new query may go to, in the order given (D87, D91, D93)."""
+    """The given providers a new query may go to, in the order given."""
     return [p for p in providers if CONNECTORS[p].searchable and CONNECTORS[p].sw_searchable]
 
 

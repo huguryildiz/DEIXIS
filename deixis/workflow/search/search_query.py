@@ -1,10 +1,10 @@
-"""The keyword query a model writes for an sw discovery run, and what code does with it (D92, slice 13h).
+"""The keyword query a model writes for an sw discovery run, and what code does with it (slice 13h).
 
 The model chooses at most eight terms for the setting and task blocks, at most four in a block, with a kind, a short
-reason and up to three backups per block (`references/search-query.md`, D154; six in all before). Code counts every
+reason and up to three backups per block (`references/search-query.md`; six in all before). Code counts every
 chosen term twice, alone and together with the terms the other block is searched with. A term no record holds on its
 own is replaced by the next backup of its block. A term that finds records alone but none together with the other
-block stays, shown as a warning, and since D154 the next unused backup of its block that does find records with the
+block stays, shown as a warning, and since that change the next unused backup of its block that does find records with the
 other block is searched beside it, while the query stays within eight terms. No count removes a term for being large:
 the one-million rule and the manageable-total narrowing of the code vocabulary do not apply to what the model wrote.
 The counts are asked four at a time (`vocabulary.counts_in_flight`); which queries are asked, and the order of every
@@ -31,9 +31,9 @@ from deixis.workflow.search.vocabulary import GATE_BLOCKS, counts_in_flight
 ASSIGNMENT = "search_query"  # the vocabulary's `block_assignment`, and the origin of the model's own terms
 ATTEMPTS = 2  # the first call, and one more when the user asks for it after a failure
 # Eight chosen terms and six backups, each counted alone and with the other block, the gate, and the recounts a
-# backup used beside a term (D154) asks for. Was 24 for six chosen terms.
+# backup used beside a term asks for. Was 24 for six chosen terms.
 MAX_COUNT_REQUESTS = 40
-ZERO_WITH_OTHER = "no_records_with_other_block"  # why a backup was tried beside a term (D154), and why it was not kept
+ZERO_WITH_OTHER = "no_records_with_other_block"  # why a backup was tried beside a term, and why it was not kept
 KINDS = ("topic", "method", "population", "other")
 THRESHOLDS = {"attempts": ATTEMPTS, "max_count_requests": MAX_COUNT_REQUESTS}
 # The providers whose keyword search takes an author filter (a statement research's named authors, R5). Semantic
@@ -81,7 +81,7 @@ class _Counter:
         self.probes: list[dict[str, Any]] = []
 
     async def many(self, queries: list[str]) -> list[int | None]:
-        """The counts of `queries` in their order, the new ones asked at once (D154). The ceiling, the cache and the
+        """The counts of `queries` in their order, the new ones asked at once. The ceiling, the cache and the
         probe record follow the list's order, as asking them one by one would."""
         plan: list[str | None] = []
         asking: list[str] = []
@@ -123,8 +123,8 @@ def _warnings(row: dict[str, Any]) -> list[str]:
 
 
 async def check(answer: dict[str, Any], count: Callable[[str], Awaitable[int | None]]) -> dict[str, Any]:
-    """Count the answer's chosen terms, put a backup in place of each one no record holds (D92), and search a backup
-    beside a term that finds nothing together with the other block (D154).
+    """Count the answer's chosen terms, put a backup in place of each one no record holds, and search a backup
+    beside a term that finds nothing together with the other block.
 
     Every term is counted alone first, so every swap is made before any term is counted with the other block; the
     count with the other block then reads the terms that block is really searched with. A backup is then tried beside
@@ -219,7 +219,7 @@ async def check(answer: dict[str, Any], count: Callable[[str], Awaitable[int | N
 
 
 def code_query_left_out(code_vocabulary: dict[str, Any], max_total: int | None) -> str | None:
-    """Why the code's query is not searched beside the model's under the width limit of the `m1` search method (D163
+    """Why the code's query is not searched beside the model's under the width limit of the `m1` search method (
     M1), or None. Without a limit (a `legacy` run) nothing is left out here. The probed gate count decides, read before
     any search: the compiler only trims OR terms and keeps every block, so a sent query matches no more works."""
     if max_total is None:
@@ -266,7 +266,7 @@ def vocabulary(code_vocabulary: dict[str, Any], code_queries: list[dict[str, Any
 
 
 def seed_terms(terms: list[dict[str, Any]], question_texts: list[str], passages: list[dict[str, Any]]) -> list[dict[str, str]]:
-    """The searched terms the seeds brought rather than the question (D6, a diagnosis that changes nothing): a term
+    """The searched terms the seeds brought rather than the question (a diagnosis that changes nothing): a term
     none of whose words stands in the question texts (the question and its saved English sentence) and some of whose
     words stand in the seed excerpts the query writer read, with its block, in the terms' order."""
     asked = {word.casefold() for text in question_texts for word in words(text)}

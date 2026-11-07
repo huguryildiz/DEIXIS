@@ -118,7 +118,7 @@ test.describe.serial('S24: the Settings page', () => {
   })
   test.afterAll(async () => { await page?.close(); await server.stop() })
 
-  test('six tabs (D30; D88 adds Search & ranking and Document reading); Language models holds one card per company, the other models folded, local models and document reading; the old Connections link opens Models at "Model connections"', async () => {
+  test('six tabs (Search & ranking and Document reading included); Language models holds one card per company, the other models folded, local models and document reading; the old Connections link opens Models at "Model connections"', async () => {
     await page.goto(server.url('#/settings'))
     const tabs = page.getByRole('tab')
     await expect(tabs).toHaveText(['Language models', 'Search & ranking', 'Document reading', 'Sources', 'Usage', 'General'])
@@ -174,7 +174,7 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(literature).toBeEnabled()
     const listed = await (await page.request.get(server.url('api/connections'))).json() as { models: Record<string, { accepts_images?: boolean; models?: { id: string; display_name: string }[] }> }
     const [connection, health] = Object.entries(listed.models).find(([, h]) => (h.models ?? []).length > 0)!
-    // The equations model (D136) is offered only from connections that send images; with none set, the answer model reads.
+    // The equations model is offered only from connections that send images; with none set, the answer model reads.
     const equations = page.getByRole('combobox', { name: 'Equations model' })
     const imageModels = Object.values(listed.models).filter(h => h.accepts_images).flatMap(h => h.models ?? [])
     await expect(equations.locator('option').first()).toHaveText(imageModels.length ? 'Same as the answer model' : 'No connected model reads images')
@@ -376,7 +376,7 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(page.locator('.settings-page h1')).toHaveText('Settings')
   })
 
-  test('deeper screening (D173) is not offered yet: Research has no row for it until its validation gate passes', async () => {
+  test('deeper screening is not offered yet: Research has no row for it until its validation gate passes', async () => {
     await page.goto(server.url('#/settings/general'))
     await expect(page.locator('.set-research').getByText('Full text during search', { exact: true }).first()).toBeVisible()
     await expect(page.getByText('Deeper screening')).toHaveCount(0)

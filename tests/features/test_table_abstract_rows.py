@@ -1,4 +1,4 @@
-"""D114: works read from their abstracts only join a table made from the research, and its report, with a note.
+"""Works read from their abstracts only join a table made from the research, and its report, with a note.
 
 A work joins when it passed the abstract stage and its full text could not be obtained, nobody decided it, and no
 version of it is still being judged or has text beyond its abstract. Records and model outputs are SYNTHETIC (scripted
@@ -107,7 +107,7 @@ def test_a_selection_the_user_set_stands(tmp_path, state):
     assert members(lib) == set()
 
 
-# ---- tables and the D63 sweep ---------------------------------------------------------------------------------------
+# ---- tables and the sweep ---------------------------------------------------------------------------------------
 
 def test_a_new_table_holds_the_included_and_the_abstract_only_sources_and_marks_them(tmp_path):
     lib = make_library(tmp_path)
@@ -122,7 +122,7 @@ def test_a_new_table_holds_the_included_and_the_abstract_only_sources_and_marks_
     assert rows[lib.included]["report_membership"] == "included"
     assert report_ready(lib.store, lib.rid, tid)["rows"] == 2
 
-    # A table made before D114 keeps the included sources only.
+    # A table made earlier keeps the included sources only.
     old = lib.tables.create_table(lib.rid, "Old", None, None, None)
     lib.conn.execute("UPDATE evidence_tables SET follows_included = 1 WHERE id = ?", (old,))
     assert included_table_rows(lib.store, lib.rid, old) == [lib.included]
@@ -192,10 +192,10 @@ def filled(tmp_path):
     return lib, abstract, tid
 
 
-# ---- works read in full and not included (D144) ---------------------------------------------------------------------
+# ---- works read in full and not included ---------------------------------------------------------------------
 
 def test_a_work_read_in_full_that_missed_the_criterion_is_a_row_and_a_full_text_report_source(tmp_path):
-    """The answer's closest work (D137) is the table's `full_text_read` row: its read version, filled from its PDF,
+    """The answer's closest work is the table's `full_text_read` row: its read version, filled from its PDF,
     in the report as a full-text source that is never counted as included. The person's exclusion still wins."""
     lib = closest_setup(tmp_path, pdf=True)
     svid, _ = inspected_pdf(lib, "criterion_absent")

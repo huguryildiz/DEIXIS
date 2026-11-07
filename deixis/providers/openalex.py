@@ -138,7 +138,7 @@ def _record(work: dict[str, Any]) -> ProviderRecord:
         # not read, since the gate matches words and not a ranking.
         index_keywords=[name for keyword in work.get(KEYWORDS_FIELD) or []
                         if isinstance(keyword, dict) and (name := keyword.get("display_name"))],
-        # Only a boolean OpenAlex answered counts; an absent or malformed field is unknown, never "not retracted" (D27).
+        # Only a boolean OpenAlex answered counts; an absent or malformed field is unknown, never "not retracted".
         is_retracted=work.get("is_retracted") if isinstance(work.get("is_retracted"), bool) else None,
         # Absent unless this read asked for the field; an absent count is unknown, never zero.
         reference_count=(work.get(REFERENCE_COUNT_FIELD)
@@ -266,10 +266,10 @@ def _works_page(response: httpx.Response | None, outcome: SearchOutcome, cursor:
 
 
 # The keywords OpenAlex's own classifier attached to a work: a list of `{id, display_name, score}` (checked live
-# 7 Nov 2026). Asked for on a chain read alone, where the admission gate reads them (D183); a keyword search needs no
+# 7 Nov 2026). Asked for on a chain read alone, where the admission gate reads them; a keyword search needs no
 # field of its own, since `search.title_abstract_keywords` already matches against them.
 KEYWORDS_FIELD = "keywords"
-# The two requests of citation chaining (D95, slice 15). Both read the fields an sw search reads, the reference list
+# The two requests of citation chaining (slice 15). Both read the fields an sw search reads, the reference list
 # included, so a chained record carries its own bibliography like any record an sw query found, plus the keywords the
 # gate reads.
 CHAIN_SELECT = SELECT + f",{REFERENCE_COUNT_FIELD},{REFERENCES_FIELD},{KEYWORDS_FIELD}"
@@ -329,7 +329,7 @@ async def works_by_dois(client: httpx.AsyncClient, dois: list[str], api_key: str
                         per_page: int | None = None) -> SearchOutcome:
     """The records of up to 100 works named by their DOIs (`filter=doi:a|b…`), with their reference lists.
 
-    `per_page` defaults to one record per DOI; a caller that must see every work sharing a DOI asks for more (D3)."""
+    `per_page` defaults to one record per DOI; a caller that must see every work sharing a DOI asks for more."""
     if not 0 < len(dois) <= MAX_IDS_PER_REQUEST or any(c in doi for doi in dois for c in "|,"):
         raise ValueError("works_by_dois takes 1 to 100 DOIs without '|' or ','")
     per_page = per_page or len(dois)
@@ -349,7 +349,7 @@ async def count_works(client: httpx.AsyncClient, query: str, *, api_key: str | N
 
     Same search parameter, credentials and error handling as `search_works`. A failure, a timeout or a rate limit
     gives `None` and stops nothing: one unanswered probe must not stop the others, as one failed search does not
-    stop a discovery run (D18). `None` means the count is unknown, never that it is zero.
+    stop a discovery run. `None` means the count is unknown, never that it is zero.
     """
     params: dict[str, Any] = {SEARCH_PARAM: query, "per_page": COUNT_PER_PAGE, "select": COUNT_SELECT}
     headers, access_mode = _credentials(params, api_key, mailto)
@@ -367,7 +367,7 @@ async def count_works(client: httpx.AsyncClient, query: str, *, api_key: str | N
 
 async def field_distribution(client: httpx.AsyncClient, query: str, *, api_key: str | None = None,
                              mailto: str | None = None) -> dict[str, Any] | None:
-    """How the works the query matches spread over OpenAlex fields: the total and one row per field (D93).
+    """How the works the query matches spread over OpenAlex fields: the total and one row per field.
 
     One request, grouped by the field of each work's primary topic, so it describes the whole result set and not a
     first page. A failure, a timeout, a rate limit or an answer without the grouping gives `None`, which means the

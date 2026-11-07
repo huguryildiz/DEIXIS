@@ -114,7 +114,7 @@ def test_each_provider_gets_one_query_in_its_own_syntax_and_all_pass_the_rules()
     _, built = built_for(PACKET, default=10)
     providers = [p for p in query_rules.NAMES if CONNECTORS[p].searchable]
     queries = query_compiler.compile_block_queries(built, providers, 100)
-    # Scopus (D91), CORE and SerpApi (D93) are searched by a legacy research only; an sw vocabulary compiles them no
+    # Scopus, CORE and SerpApi are searched by a legacy research only; an sw vocabulary compiles them no
     # query.
     assert [q["provider_id"] for q in queries] == [p for p in providers if p not in ("scopus", "core", "serpapi")]
     for query in queries:
@@ -124,7 +124,7 @@ def test_each_provider_gets_one_query_in_its_own_syntax_and_all_pass_the_rules()
     by_provider = {q["provider_id"]: q["query_text"] for q in queries}
     assert by_provider["pubmed"] == "(energy[Title/Abstract] OR wireless[Title/Abstract]) AND packet[Title/Abstract]"
     assert by_provider["arxiv"] == "(abs:energy OR abs:wireless) AND abs:packet"
-    # Semantic Scholar is read through its bulk endpoint, whose syntax holds the blocks whole (D93).
+    # Semantic Scholar is read through its bulk endpoint, whose syntax holds the blocks whole.
     assert by_provider["semantic_scholar"] == "(energy | wireless) + packet"
 
 
@@ -185,7 +185,7 @@ def test_two_runs_of_three_agreeing_put_the_models_block_in_the_query(tmp_path, 
                       "runs": ["claim", "setting", "setting"]}
 
 
-# ---- a question that is not English, translated by a model (D149) ------------------------------------------------
+# ---- a question that is not English, translated by a model ------------------------------------------------
 
 TRANSLATED = json.loads(valid_response({"task_type": "question_translation", "step_input_id": "sti_x", "scope_revision": 1,
                                         "skill_package_hash": "h"}))["english_question"]
@@ -230,7 +230,7 @@ def test_a_turkish_question_is_translated_once_and_the_run_searches_its_words(tm
     step = next(s for s in run["steps"] if s["operation_key"] == "vocabulary")
     assert step["output"] == {"english_question": {"text": TRANSLATED, "origin": "model", "model": translator}}
 
-    # A revision of the same question with the person's own sentence (D149): it is theirs for the new revision, the
+    # A revision of the same question with the person's own sentence: it is theirs for the new revision, the
     # model's is not carried over, and the new revision's search asks no model to translate.
     with TestClient(app) as client:
         client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]

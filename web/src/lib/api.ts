@@ -130,11 +130,12 @@ export type SeedSelection = { source_version_ids: string[] } | { all_eligible: t
 
 export type Scope = {
   research_id: string; revision: number; question: string; language_hint: string | null; source_scope: SourceScope
-  parent_revision: number | null  // the revision this one was opened from; null for the first (D67)
+  parent_revision: number | null // the revision this one was opened from; null for the first
   seed_mode: 'question_only' | 'uploaded_seed'; seed_status: 'question_only' | 'missing' | 'ready' | 'stale'
   // The current revision's search finished; an sw research may then answer with no included work (SW22).
   discovery_completed?: boolean
-  // The PDFs that guide the search, in the order the backend froze them (at most five), each with what the search did with it (D3).
+  // The PDFs that guide the search, in the order the backend froze them (at most five), each with what the search did
+  // with it.
   seeds: SeedPdf[]
   // The backend decides which sources can guide a search; the page lists these and sends back a chosen subset.
   seed_candidates: SeedCandidate[]
@@ -159,25 +160,26 @@ export type AnswerReview = {
   model: { connection: string; requested_model: string | null; resolved_model: string | null } | null
 }
 export type ModelRole = 'answer' | 'literature' | 'reviewer'
-// The Settings defaults: the three step roles and the equations model (D136), which no research stores.
+// The Settings defaults: the three step roles and the equations model, which no research stores.
 export type DefaultRole = ModelRole | 'equations'
 // App-wide default for one role. model null: no default (for the reviewer: answers are not reviewed).
 export type RoleModelSetting = { model_connection: string; model: string | null; reasoning_effort: string | null }
 export type Step = {
   id: string; operation_key: string; kind: string; status: string; attempt: number; delivery_class: string | null
   error_code: string | null; error: unknown; started_at: string | null; finished_at: string | null
-  // The models this step's calls went to, from its stored sessions (D15): the model that answered when known, else the one asked for,
-  // with the reasoning effort the call was sent with (null when none was sent or the session predates its storage, D25).
+  // The models this step's calls went to, from its stored sessions: the model that answered when known, else the one
+  // asked for,
+  // with the reasoning effort the call was sent with (null when none was sent or the session predates its storage).
   models?: { connection: string; model: string | null; effort?: string | null }[]
   // Only small counting/provenance outputs carry through this view; model prose remains in its own artifact view.
   output: { pdfs_read?: number; pdfs_skipped?: number; page_count?: number | null; passage_count?: number; model?: string; sources?: number; passages?: number; embedded?: number
-    // A pdf_ocr run (D51): the pages without text it found, and whether the merged OCR text was taken into use.
+    // A pdf_ocr run: the pages without text it found, and whether the merged OCR text was taken into use.
     image_pages?: number[]; blank_pages?: number[]; asset_id?: string; outcome?: 'current' | 'rejected' | 'unchanged' | 'file_busy'; rejection_reason?: string | null
     // The fast chain's seed steps: how many works it started from (their reference lists stay out of the view).
     seed_count?: number
-    // The vocabulary step of a question not in English: the English sentence its words came from (D149).
+    // The vocabulary step of a question not in English: the English sentence its words came from.
     english_question?: { text: string; origin: 'user' | 'question' | 'model'; model?: { connection: string; model: string | null; effort: string | null } | null }
-    // The full-text retrieval summary (D83), also written by a discovery run that fetched beside its screening (17a).
+    // The full-text retrieval summary, also written by a discovery run that fetched beside its screening (17a).
     fetched?: number
     // An embedding step (slice 21): the model it froze, what it read from the store, what it still misses, its 429 waits,
     // the person's uploaded files whose text it sent, and why the built-in model skipped it.
@@ -188,15 +190,15 @@ export type Step = {
     batch_sizes?: number[]; candidate_ids?: string[]
     // The full-text reading plan: the works it froze.
     works?: unknown[]
-    // The record reranker (`rerank:v1:list`, D104): how many records it was given, its error code when it did not run.
+    // The record reranker (`rerank:v1:list`): how many records it was given, its error code when it did not run.
     reranked?: number; error_code?: string | null; cut_documents?: number | null
-    // How many records without an abstract the rerank kept in place, by why (D153, D155).
+    // How many records without an abstract the rerank kept in place, by why.
     held?: Partial<Record<'no_abstract' | 'no_abstract_text_route' | 'no_abstract_lookup_open', number>>
-    // The frozen list (`small_batch:v1:list`): whether its order used the rerank, and why not (D104).
+    // The frozen list (`small_batch:v1:list`): whether its order used the rerank, and why not.
     reranker?: { applied: boolean; reason?: string | null; reranked?: number; provider?: string | null; model?: string | null } | null } | null
 }
 export type RunKind = 'discovery' | 'answer' | 'answer_review' | 'followup_answer' | 'report' | 'review' | 'watch_check' | 'pdf_collection' | 'pdf_ocr' | 'fulltext_fetch' | 'fulltext_adjudication' | 'table_columns' | 'table_fill' | 'cell_recheck' | 'research_title' | 'lineage_links' | 'claim_decomposition' | 'kill_search' | 'screen_more' | 'table_column_recheck' | 'citation_map' | 'snowball' | 'followup_search' | 'statement_check'
-// What a table run works on, as stored when it was requested (D38); null for discovery and answer runs.
+// What a table run works on, as stored when it was requested; null for discovery and answer runs.
 export type RunTarget = {
   plan?: { groups: ReviewGroup[] }
   target_kind?: ReviewTargetKind; target_id?: string
@@ -213,7 +215,7 @@ export type RunTarget = {
   // table_column_recheck (S17): the column's planned cells, each with the version it had, and the rows with no stored
   // text, which get no call.
   cells?: { source_version_id: string; cell_version: number }[]; rows_without_text?: string[]
-  // pdf_ocr (D51): the PDF read and the Tesseract languages used.
+  // pdf_ocr: the PDF read and the Tesseract languages used.
   asset_id?: string; languages?: string[]
 }
 export type Run = {
@@ -223,9 +225,9 @@ export type Run = {
   created_at: string; updated_at: string; version: number; steps?: Step[]; target: RunTarget | null
   // screening_notes: the note of each screening batch, in order, with its step.
   screening_notes: { step_id: string; text: string }[]
-  // The protocol this run froze before it searched; null when it froze none (D80).
+  // The protocol this run froze before it searched; null when it froze none.
   approval: RunApproval | null
-  // What each source brought in this discovery run and how much of it no other source did (D93).
+  // What each source brought in this discovery run and how much of it no other source did.
   // counted false: the run was searched before these were kept, which is not the same as zero.
   source_counts?: SourceCounts | null
   // What became of the fast chain's requests in this discovery run (`chaining.request_outcomes`): sent = answered + late
@@ -256,19 +258,19 @@ export type FulltextGaps = {
 export type SourceCounts = {
   counted: boolean
   sources: { provider_id: string; works: number; only: number }[]
-  // What citation chaining brought in this run, and how much of it no keyword search did (D95); absent when it
+  // What citation chaining brought in this run, and how much of it no keyword search did; absent when it
   // sent nothing.
   chain?: { works: number; only: number }
-  // Beside D93's rows, row for row (slice 19); absent when the counts were not kept.
+  // Beside the search's rows, row for row (slice 19); absent when the counts were not kept.
   arms?: SourceArms | null
 }
-// Counted in D93's "only" universe: a source row against the other sources' searches, the chain against every search.
+// Counted in the "only" universe: a source row against the other sources' searches, the chain against every search.
 // `included`: two agreeing model runs included the work (never called verified); `verified`: the person confirmed it.
 export type ArmCount = { rows: number; included: number; included_only: number; verified: number; verified_only: number }
 export type ArmKind = 'keyword' | 'chain'
 export type SourceArms = {
   sources: (ArmCount & { provider_id: string
-    // A source's works by the query that found them (D92), when it was queried by both origins.
+    // A source's works by the query that found them, when it was queried by both origins.
     by_origin?: { origin: string; works: number; included: number }[] })[]
   chain?: ArmCount
   // The arm kinds in run order; `new_*` is what no earlier kind of this run found. Counts only: no stopping rule.
@@ -302,7 +304,7 @@ export type Probes = {
       reasons: ('verified' | 'brought')[]; found: 'no' | 'unknown' }[] }
 }
 
-// ---- the frozen protocol of a discovery run (D80) -------------------------------------------------
+// ---- the frozen protocol of a discovery run -------------------------------------------------
 // The blocks a term can sit in. setting and task are the two blocks that make the provider query; outcome orders
 // the records; claim is the assertion under test and exclusion the words that keep a record out — neither is searched.
 export type ApprovalBlock = 'setting' | 'task' | 'outcome' | 'claim' | 'exclusion'
@@ -310,17 +312,17 @@ export type ApprovalTerm = {
   phrase: string; block: ApprovalBlock
   // Who supplied the phrase (the question, the user's key terms, the user's own correction) and who put it in its
   // block (the code rule, the model's labelling step, the user).
-  // 'search_query': the model that wrote this run's query chose it (D92); its block origin is the same.
+  // 'search_query': the model that wrote this run's query chose it; its block origin is the same.
   origin: 'question' | 'key_terms' | 'user' | 'model' | 'search_query'; block_origin: 'rule' | 'model' | 'user' | 'search_query'
   // The form the phrase enters the query in, and what each form was counted at. A null count was not read.
   root: string; in_query: 'root' | 'phrase'; phrase_count: number | null; root_count: number | null
   // and_only: the form is too frequent to stand alone. dropped: why the phrase left the query, e.g. 'zero_results'.
   and_only: boolean; dropped: string | null
-  // Whether a query the frozen plan sends carries this word (D26), and why not: the word's own drop reason,
+  // Whether a query the frozen plan sends carries this word, and why not: the word's own drop reason,
   // 'query_limit' (cut from every sent query that held it) or 'not_sent' (only an unsent query held it). Both null
   // where the frozen plan recorded nothing (frozen before the record, or not frozen yet).
   searched?: boolean | null; left_out?: WordLeftOut | null
-  // D154: the frozen plan's block-terms semantic request carries this word; absent on a plan frozen before it.
+  // The frozen plan's block-terms semantic request carries this word; absent on a plan frozen before it.
   semantic?: boolean
 }
 export type WordLeftOut = 'query_limit' | 'not_sent' | (string & {})
@@ -339,7 +341,7 @@ export type ApprovalSide = {
   claim_words: string[]; exclusion_words: string[]; outcome_terms: string[]
   gate_count: number | null; too_broad: boolean
   criterion: ApprovalCriterion | null
-  // The compiled text of every query the run sends, and which vocabulary wrote each one (D92).
+  // The compiled text of every query the run sends, and which vocabulary wrote each one.
   queries: { provider_id: string; query_text: string; origin?: 'model' | 'code' | 'user' }[]
 }
 export type RunApproval = {
@@ -362,7 +364,7 @@ export type SearchRun = {
   // The run step that sent the request; its operation key names the query kind (semantic, seed, keyword n).
   step_id: string
   result_count: number; provider_total: number | null; page_limit: number; retrieved_at: string; error: { error: string | null; http_status: number | null; service_kind?: string; error_kind?: string; reset_at?: string | null; retries?: number } | null
-  // The kind of run that sent it: a follow-up search's requests (D92) are not the research's search.
+  // The kind of run that sent it: a follow-up search's requests are not the research's search.
   run_kind?: RunKind
 }
 export type Asset = {
@@ -370,11 +372,11 @@ export type Asset = {
   id: string; extraction_status: string; extraction_error?: string | null; extraction_version?: string | null; page_count: number | null; origin: string; byte_size: number; original_filename: string | null
   // Europe PMC's open-access text drawn as a PDF by DEIXIS (SW21): its pages are not the publisher's.
   rendition?: boolean
-  // Sources only (D46): whether the text comes from the current extractor, and a later extraction that was not taken.
+  // Sources only: whether the text comes from the current extractor, and a later extraction that was not taken.
   current_extraction?: boolean; rejected_extraction?: { extraction_version: string; rejection_reason: string; created_at: string } | null
-  // Sources only: how the PDF's display equations were read. With the arXiv source route on (D104), `route: 'arxiv_source'`
-  // and its own states/fields; with the Mathpix switch on (D40), `route: 'mathpix'` and its states (no_candidates,
-  // none_placed, keys_rejected, budget_reached); otherwise the answer model reads page-image crops (D113), `route: 'model'`,
+  // Sources only: how the PDF's display equations were read. With the arXiv source route on, `route: 'arxiv_source'`
+  // and its own states/fields; with the Mathpix switch on, `route: 'mathpix'` and its states (no_candidates,
+  // none_placed, keys_rejected, budget_reached); otherwise the answer model reads page-image crops, `route: 'model'`,
   // whose states add `off` (with a reason) and `model_refused`. An earlier Marker reading keeps `route: 'marker'` and its
   // `equations_to_check`, which counts display equations that did not match the PDF's text layer, on pages `to_check`.
   equations?: {
@@ -391,14 +393,15 @@ export type Asset = {
       placed: number; pages: number[]; not_placed: Record<string, number>
     } | null
   }
-  // Sources only (D51): pages of the text in use without text (blank pages included), pages read with OCR, the latest OCR reading.
+  // Sources only: pages of the text in use without text (blank pages included), pages read with OCR, the latest OCR
+  // reading.
   ocr?: { pages_without_text: number; ocr_pages: number; last_read: OcrRead | null }
 }
 export type OcrRead = {
   outcome: 'current' | 'rejected' | 'superseded'; rejection_reason: string | null; created_at: string
   engine: string; version: string | null; languages: string[]; pages_read: number; pages_with_text: number; blank_pages: number; failed_pages: number[]
 }
-// The local Tesseract (D51): usable when it runs and has data for at least one language.
+// The local Tesseract: usable when it runs and has data for at least one language.
 // PyMuPDF, which reads every PDF's text layer; it comes with DEIXIS.
 export type PdfReader = { available: boolean; version: string; mupdf_version: string }
 // An update check of a PDF tool, run only when asked; `tested` is the version DEIXIS pins (PyMuPDF).
@@ -412,7 +415,7 @@ export type OcrReason = 'tesseract_missing' | 'tesseract_not_responding' | 'tess
 // `engine`: 'pymupdf' when DEIXIS hands its own language data to the Tesseract built into PyMuPDF (the packaged app, P10 M3).
 export type OcrTool = { available: boolean; version: string | null; engine: 'pymupdf' | 'tesseract'; languages: string[]; missing_languages: string[]; reason: OcrReason | null; can_install: boolean; job: OcrJob | null
   path: string | null; bundled: boolean; install_url: string; install_manager: 'brew' | null }
-// What became of a cited passage's file since it was stored (D46).
+// What became of a cited passage's file since it was stored.
 export type EvidenceStatus = 'current' | 'pdf_removed' | 'pdf_replaced' | 'text_superseded'
 export type ReplacedAsset = { id: string; original_filename: string | null; removed_at: string; replaced_by_asset_id: string }
 export type AssetImpact = { asset_id: string; researches: { id: string; title: string }[]; cells: number; quotes: number }
@@ -462,7 +465,7 @@ export type AssetText = {
   passages: { id: string; kind: 'pdf_page'; text: string; physical_page: number | null; printed_label: string | null; extraction_version: string | null; payload_ref: string | null; text_source?: 'text_layer' | 'ocr' | 'marker' | 'latex_source' | 'equation_ocr'; equation_reader?: EquationReaderInfo | null; equations_to_check?: number; source_equations?: string[] }[]
   source: Passage['source']
 }
-// A figure found from its caption on a PDF page (D58), or a ruled algorithm box (label "algorithm-5"); its picture is cut
+// A figure found from its caption on a PDF page, or a ruled algorithm box (label "algorithm-5"); its picture is cut
 // from the page by the server.
 export type AssetFigure = { page: number; label: string; kind?: 'figure' | 'algorithm'; width: number; height: number }
 export type PdfCandidate = {
@@ -498,7 +501,7 @@ export type WaitingRow = {
   // Why the work sits where it does: where the search found it, its place in the frozen ranking, the abstract verdict.
   relevance?: { origin: 'search' | 'chain' | 'user' | null; rank: number | null; ranked: number | null; abstract: 'candidate' | 'unresolved' | 'out_of_scope' | null }
 }
-// A work the person went on without a PDF for (D46): read from its abstract; `answer_reads_abstract` is false when the
+// A work the person went on without a PDF for: read from its abstract; `answer_reads_abstract` is false when the
 // answer cannot (its abstract did not pass the abstract stage, or none is stored).
 export type SkippedRow = WaitingRow & { skipped_at: string; answer_reads_abstract: boolean }
 export type WaitingView = { rows: WaitingRow[]; skipped: SkippedRow[]; count: number; scope_revision: number; has_plan: boolean; attach_candidates: number; via_proxy: boolean; order: 'fulltext_plan' | 'small_batch_plan'; files: PersonFiles }
@@ -515,26 +518,27 @@ export type PersonFiles = { rows: PersonFile[]; reading_on: boolean; paused_run:
 // passages of the pages that have text; `all_parts_shown` never means the whole PDF (`pdf_pages` is the file's page count).
 export type ReadCoverage = { parts_shown: number; parts_total: number; pages_shown: number; pages_with_text: number; pdf_pages: number | null; all_parts_shown: boolean }
 export type Source = {
-  // An author–year–title key such as "nakano2013molecular", one per work across the library (D59, D38); null only before it is given.
+  // An author–year–title key such as "nakano2013molecular", one per work across the library; null only before it is
+  // given.
   source_version_id: string; work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; venue: string | null
   volume: string | null; issue: string | null; pages: string | null
   doi: string | null; landing_url: string | null; version_label: string | null; publication_type: string | null
   cited_by_count: number | null; cited_by_count_at: string | null
-  // OpenAlex's retraction flag (D27): null when unknown (no OpenAlex read, or no answer), never "not retracted".
+  // OpenAlex's retraction flag: null when unknown (no OpenAlex read, or no answer), never "not retracted".
   is_retracted: boolean | null
   // True when any stored version of the work is flagged, e.g. the published article of this preprint.
   work_is_retracted: boolean | null
   origin: 'provider' | 'user_upload'; added_by: string; added_at: string; rank: number | null; similarity: number | null
-  // The scholarly record an uploaded PDF was identified as from its first page (D37); null when it was not.
+  // The scholarly record an uploaded PDF was identified as from its first page; null when it was not.
   record_match: { provider: string; work_id: string; basis: 'doi_title' | 'title'; filename_title: string; matched_at: string } | null
   found_in_revision: number | null; applicability: 'current' | 'stale_scope'; version_role: 'record' | 'other_version'
-  // The other version of the work whose text answers read, when the record has no PDF text (D48).
+  // The other version of the work whose text answers read, when the record has no PDF text.
   answer_reads_version_id: string | null
   // No version of the work is read by an answer: its only PDF text is a person's file not read yet (slice 18b).
   answer_reads_nothing: boolean
-  // Whether an answer reads this version's PDF pages rather than its abstract (D49).
+  // Whether an answer reads this version's PDF pages rather than its abstract.
   has_pdf_text: boolean
-  // Some of that text was read with OCR from scanned pages (D51).
+  // Some of that text was read with OCR from scanned pages.
   has_ocr_text: boolean
   access: { abstract_passage_id: string | null; abstract_origin: string | null; oa_pdf_url: string | null; oa_pdf_version: string | null; assets: Asset[]; replaced_assets: ReplacedAsset[]; fetch: { status: string; error_code: string | null; http_status: number | null; host?: string | null } | null; other_copy: { status: string; error_code: string | null } | null; pdf_candidates: PdfCandidate[]; pdf_discoveries: PdfDiscovery[] }
   selection: { state: 'included' | 'excluded' | 'pending'; origin: 'default' | 'model_proposal' | 'code_rule' | 'user'; version: number; proposal: string | null; proposal_reason: string | null; proposal_basis: string | null; user_reason: string | null; queue_answer: 'include' | 'criterion_not_met' | null }
@@ -543,9 +547,9 @@ export type Source = {
   // What code and the model runs decided about the work, current decisions only, a person's left out (UI parity S13);
   // null on other versions. `passed_abstract`: a current abstract-stage `candidate`, the funnel's rule.
   screening: { stage: 'abstract' | 'fulltext' | null; outcome: string | null; reason_code: string | null; decided_by: 'code' | 'model_agreement' | null; source_version_id: string | null; next_step: string | null; stale: boolean; passed_abstract: boolean; read_coverage: ReadCoverage | null
-    // A partial reading (D135): core parts a run found with a verified quote, of all core parts.
+    // A partial reading: core parts a run found with a verified quote, of all core parts.
     parts: { found: number; total: number } | null } | null
-  // The follow-up searches that found this work (D92), from each run's frozen found step, mapped to the work as it is
+  // The follow-up searches that found this work, from each run's frozen found step, mapped to the work as it is
   // now; one entry per run, every version of the work carries the same list.
   followup_searches?: SourceFollowupSearch[]
 }
@@ -559,11 +563,11 @@ export type Evidence = {
   // after case and punctuation folding, fuzzy at a ratio of 0.9 or more.
   anchor_match?: 'exact' | 'normalized' | 'fuzzy' | null
   evidence_status: EvidenceStatus
-  // null for abstracts; 'ocr' text was not checked against the page (D51); 'latex_source' holds the authors' LaTeX of
-  // numbered display equations matched to the page by their numbers, from the arXiv source of this version (D104).
+  // null for abstracts; 'ocr' text was not checked against the page; 'latex_source' holds the authors' LaTeX of
+  // numbered display equations matched to the page by their numbers, from the arXiv source of this version.
   text_source: 'text_layer' | 'ocr' | 'marker' | 'latex_source' | 'equation_ocr' | null
   equation_reader?: EquationReaderInfo | null  // who read the equations of an 'equation_ocr' passage
-  removed_from_research: boolean  // the source was removed from this research later; the quote still opens (D50)
+  removed_from_research: boolean // the source was removed from this research later; the quote still opens
   // Europe PMC's open-access text drawn as a PDF by DEIXIS (SW21): its pages are not the publisher's.
   rendition?: boolean
 }
@@ -589,9 +593,9 @@ export type Answer = {
   late_revision_status?: { status: 'waiting_fetch' | 'reading' | 'answering' | 'published' | 'skipped' | 'failed'; skip_reason: string | null; revision_answer_id: string | null; late_excluded: number }
   abstract_only_sources?: number
   screened_after_cutoff?: ScreenedAfterCutoff[]
-  // Works this answer read because the person included them after the read cutoff (D92).
+  // Works this answer read because the person included them after the read cutoff.
   added_after_cutoff?: { work_id: string; source_version_id: string; head_after_cutoff: string; route: string }[]
-  // What each work the answer was given stood as, from its frozen input plan (D137); null when no plan was kept.
+  // What each work the answer was given stood as, from its frozen input plan; null when no plan was kept.
   answer_roles?: AnswerRoles | null
   id: string; run_id: string; status: 'structurally_valid' | 'unverified_draft' | 'clarification' | 'no_evidence'
   scope_revision: number; applicability: 'current' | 'stale_scope' | 'stale_selection'; answer_language: string | null; created_at: string
@@ -603,9 +607,9 @@ export type Answer = {
   model: { connection: string; requested_model: string | null; resolved_model: string | null; token_usage: unknown } | null
   // What the answer was given, from its stored input; `depth` counts works given PDF pages, only an abstract, or no passage.
   inputs_given: { sources: number; passages: number; source_ids: string[]; depth?: { pdf: number; abstract: number; metadata: number } } | null
-  // Why each given work the answer does not cite is left out (D80); null for an answer saved without a ledger.
+  // Why each given work the answer does not cite is left out; null for an answer saved without a ledger.
   evidence_ledger?: EvidenceLedger | null
-  source_text_changed: boolean  // a file or extraction this answer read is no longer in use (D46)
+  source_text_changed: boolean // a file or extraction this answer read is no longer in use
   fulltext_read_since: number  // works whose full text was read and decided on after this answer's run started
   // Where the flow stood when this answer's run started (slice 20); null when that run kept none.
   start_snapshot: AnswerStartSnapshot | null
@@ -632,7 +636,7 @@ export type FlowCounts = {
 }
 export type FlowBoxes = { flow_status: 'incomplete_no_human_screening'; revision: number
   boxes: { key: string; count: number | null; flow_status: 'incomplete_no_human_screening' }[]
-  // Each follow-up search of the revision (D92), from its frozen found and summary steps; null: not written yet.
+  // Each follow-up search of the revision, from its frozen found and summary steps; null: not written yet.
   followup_searches?: FollowupSearchBox[]
   // Works only a follow-up search brought; the funnel leaves them out of the first search's numbers.
   followup_only_works?: string[] }
@@ -656,16 +660,16 @@ export type Overrides = {
 export type AnswerStartSnapshot = {
   scope_revision: number; selection_revision: number; flow: FlowCounts; included: number
   included_without_answer_text: number; included_state_changed: boolean
-  // D92: stored at the answer's start; absent on an older answer (not recorded).
+  // Stored at the answer's start; absent on an older answer (not recorded).
   method_counts?: { screened: number; abstract_read: number; full_text_attempted: number; full_text_read: number; person_decisions: number }
   followup_searches?: FollowupSearchBrief[]
 }
 export type Counts = {
   // `found`: records of the research's discovery runs only. `found_followup`: records of follow-up searches;
-  // `followup_new_works`: new works their frozen found steps counted (D92).
+  // `followup_new_works`: new works their frozen found steps counted.
   found_followup?: number; followup_new_works?: number
   found: number; unique: number; included: number; excluded: number; pending: number; inspected: number; cited: number
-  // Works the user removed from this research, and those of them a later search found again; neither is listed (D50).
+  // Works the user removed from this research, and those of them a later search found again; neither is listed.
   removed: number; removed_found_again: number
   // The human queue: open rows, and decisions made under an earlier criterion (slice 16).
   queue?: number; look_again?: number
@@ -676,10 +680,11 @@ export type Counts = {
   fulltext_read_works?: number
   // Slice 20: the flow buckets, the PRISMA 2020-style boxes and the override count.
   flow?: FlowCounts | null; flow_boxes?: FlowBoxes | null; overrides?: Overrides | null
-  // The search step's funnel for the current revision (D233). A candidate passed the abstract stage; nothing here is "relevant".
-  // `unique` and `candidates` leave out works only a follow-up search brought; `unique_in_research` is every work (D92).
+  // The search step's funnel for the current revision. A candidate passed the abstract stage; nothing here is
+  // "relevant".
+  // `unique` and `candidates` leave out works only a follow-up search brought; `unique_in_research` is every work.
   funnel?: { retrieved: number; chained: number; unique: number; abstracts_read: number; candidates: number; candidates_by_title?: number; included: number; unique_in_research?: number
-    // D173: works whose current abstract decision rests on one model read, and those of them kept a candidate.
+    // Works whose current abstract decision rests on one model read, and those of them kept a candidate.
     abstracts_read_once?: number; candidates_read_once?: number } | null
 }
 // The audit sample of an sw research (slice 20, decisions 5–7): F1 / F2 answered here, A1 / A2 for viewing only.
@@ -709,17 +714,18 @@ export type AuditRowView = { row: AuditRow | AuditAbstractRow | null; detail: Qu
 export type AuditResult = { row: AuditRow | null; selection: QueueAnswerResult['selection']; undo_token: string | null }
 // What each depth gives a run, from the fast path's modes: about how many minutes (the stage deadlines summed) and how
 // many papers at the top of the ranking it reads.
-// `screened_once`: the list places D173's deeper screening reads once, present only while the option is on.
+// `screened_once`: the list places the deeper screening reads once, present only while the option is on.
 export type EffortLimits = { efforts: Record<'quick' | 'standard' | 'detailed', { minutes: number; papers: number; fulltext?: number; screened_once?: { first: number; last: number } }> }
-// The human queue of an sw research (slice 16, D96). Rows are derived from stored decisions each time they are read.
+// The human queue of an sw research (slice 16). Rows are derived from stored decisions each time they are read.
 export type QueueKind = 'confirm_quote' | 'choose_run' | 'choose_version' | 'confirm_pdf' | 'look_again'
 export type QueueAnswer = 'include' | 'criterion_not_met' | 'not_sure' | 'pdf_wrong' | 'pdf_confirmed'
 export type QueueRow = {
   source_version_id: string; head: string; work_id: string; title: string; year: number | null; doi: string | null
   version_label: string | null; publication_type: string | null; reason_code: string; kind: QueueKind
-  // False for an open row past the two a read asks about (D137): listed, not asked.
+  // False for an open row past the two a read asks about: listed, not asked.
   asked?: boolean
-  // `disputed` (with the shared passage's page) only when both reads of a split reading saw the part's passage and disagreed (D76).
+  // `disputed` (with the shared passage's page) only when both reads of a split reading saw the part's passage and
+  // disagreed.
   question: { part: string; definition: string | null; disputed?: true; page?: number | null } | null; place: number | null; arm: 'keyword' | 'chain'
   stale: boolean; decision_id: string; row_token: string
 }
@@ -769,7 +775,7 @@ export type RevisionWithdrawal = { revision: number; parent_revision: number | n
 export type ResearchView = {
   research: { id: string; title: string; current_scope_revision: number; version: number; created_at: string; updated_at: string
     intent: ResearchIntent; comparison_frame: string | null  // the frame follows the current question (compare only)
-    // Whether the current question revision can still be withdrawn, and the number the next one takes (D67).
+    // Whether the current question revision can still be withdrawn, and the number the next one takes.
     revision_withdrawal: RevisionWithdrawal; next_scope_revision: number }
   // A table/compare discovery of the current question that wrote no table, and why; null otherwise (S5a).
   intent_outcome: IntentOutcome | null
@@ -791,7 +797,7 @@ export type ResearchView = {
 export type SemanticArm = {
   provider: SemanticSearchProvider; stored_model: string | null; arm: 'on' | 'off' | 'english_question_missing' | 'not_installed'
   english_question: { text: string; origin: 'user' | 'question' | 'model' } | null; needs_english_question: boolean
-  // False: the search words come from the English sentence, not the question (D149).
+  // False: the search words come from the English sentence, not the question.
   question_english?: boolean
 }
 export type ResearchSummary = {
@@ -802,15 +808,15 @@ export type ResearchSummary = {
   intent: ResearchIntent
 }
 export type TrashedResearch = { id: string; title: string; trashed_at: string }
-// The Trash page's groups (D50); a trashed research's tables and removed sources go and come back with it and are not listed.
+// The Trash page's groups; a trashed research's tables and removed sources go and come back with it and are not listed.
 export type TrashedTable = { id: string; title: string; research_id: string; research_title: string; version: number; trashed_at: string; rows: number; columns: number; cells: number; human_edits: number }
 export type RemovedSource = {
   source_version_id: string; work_id: string; title: string; version_label: string | null; year: number | null; research_id: string; research_title: string
   removed_at: string; removal_note: string | null; found_again_at: string | null; quotes: number; cells: number
-  // What the source sheet opens for this row. A former member's PDF opens only where this research cites it (D50), so the
+  // What the source sheet opens for this row. A former member's PDF opens only where this research cites it, so the
   // abstract is what the Trash can inspect; null when no abstract is stored.
   abstract_passage_id: string | null
-  cited: number  // 1 when an answer quote, a table or a report still cites the source anywhere; it cannot be deleted then (D65)
+  cited: number // 1 when an answer quote, a table or a report still cites the source anywhere; it cannot be deleted then
 }
 export type TrashedTemplate = { id: string; name: string; trashed_at: string; columns: number }
 export type Trash = { researches: TrashedResearch[]; tables: TrashedTable[]; sources: RemovedSource[]; templates: TrashedTemplate[] }
@@ -818,7 +824,7 @@ export type Passage = {
   occurrence: ExtractionOccurrence | null
   id: string; kind: Evidence['kind']; text: string; physical_page: number | null; printed_label: string | null
   abstract_origin: string | null; extraction_version: string | null; payload_ref: string | null; text_source?: 'text_layer' | 'ocr' | 'marker' | 'latex_source' | 'equation_ocr'; equation_reader?: EquationReaderInfo | null; equations_to_check?: number
-  // The equation numbers placed in this passage from the arXiv source (D104) or by Mathpix (D40); empty otherwise.
+  // The equation numbers placed in this passage from the arXiv source or by Mathpix; empty otherwise.
   source_equations?: string[]
   reading_depth: string; asset_id: string | null
   // Europe PMC's open-access text drawn as a PDF by DEIXIS (SW21): its pages are not the publisher's.
@@ -837,13 +843,13 @@ export type ModelHealth = {
   verification?: 'verified' | 'pending' | 'rejected'; broken?: boolean
   connection: string; ready: boolean; reason_code?: string | null; reset_at?: string | null; reason?: string | null; installed?: boolean; cli_version?: string; signed_in?: boolean; key_configured?: boolean
   account_type?: string | null; plan_type?: string | null; models?: ModelOption[]
-  accepts_images?: boolean  // the connection can send a page crop, so it can read equations (D113)
+  accepts_images?: boolean // the connection can send a page crop, so it can read equations
   isolation?: { instruction_sources: number; live_mcp_servers: string[] }
-  // 'fixed': the connection cannot list its models; DEIXIS keeps the list (Gemini CLI, D23).
+  // 'fixed': the connection cannot list its models; DEIXIS keeps the list (Gemini CLI).
   catalogue?: 'fixed'
-  // The local server's saved address (D34, `local_server` only); null while none is saved.
+  // The local server's saved address (`local_server` only); null while none is saved.
   base_url?: string | null
-  // Models a failed research step hid from the lists (D59): 404 from the provider, or answered by another model.
+  // Models a failed research step hid from the lists: 404 from the provider, or answered by another model.
   hidden_models?: { id: string; reason: 'not_served' | 'answered_as'; answered_as?: string; at: string | null }[]
 }
 export type Connections = { models: Record<string, ModelHealth>; codex_home?: string; codex_login_command?: string; sign_ins?: Record<string, AccountSignIn>; providers: { id: string; implemented: boolean; access_mode: string | null; key_broken?: boolean; supplementary?: boolean; role?: string; note: string }[] }
@@ -884,9 +890,10 @@ export type LocalTool = {
   // Ollama only: the models its card suggests, with their download size from ollama.com.
   suggested?: { id: string; name: string; maker: string; purpose: 'embedding' | 'research'; size_bytes: number | null; memory_gb?: number | null }[]
 }
-// Who read the equations of an 'equation_ocr' passage: Mathpix, or a model of the person's connections (D113).
+// Who read the equations of an 'equation_ocr' passage: Mathpix, or a model of the person's connections.
 export type EquationReaderInfo = { engine: 'mathpix' } | { engine: 'model'; connection: string; model: string }
-// The answer model reading display equations from page-image crops (D113): its switch, why it is off, this month's requests and the PDFs by state.
+// The answer model reading display equations from page-image crops: its switch, why it is off, this month's requests
+// and the PDFs by state.
 export type EquationModel = {
   switch: 'on' | 'off'; ready: boolean
   reason: null | 'switch_off' | 'no_answer_model' | 'connection_unavailable' | 'model_no_images'
@@ -897,7 +904,7 @@ export type EquationModel = {
   pdfs: Partial<Record<'read' | 'pending' | 'reading' | 'failed' | 'no_math' | 'no_candidates' | 'none_placed' | 'model_refused' | 'budget_reached' | 'off', number>>
   reading: { asset_id: string; title: string | null; pages: number; started_at: string; route: string } | null
 }
-// Mathpix (D40): the key pair (never shown), the switch, this month's requests against the budget and the PDFs it reads.
+// Mathpix: the key pair (never shown), the switch, this month's requests against the budget and the PDFs it reads.
 export type Mathpix = {
   pair: { configured: boolean; unreadable: boolean; keychain_unavailable?: boolean; keychain_pending?: boolean; app_id: string | null }; keys_rejected: boolean; switch: 'on' | 'off'
   monthly_budget: number; month_requests: number; per_pdf_limit: number
@@ -940,7 +947,7 @@ export type SemanticSearch = {
   // A built-in choice saved for a model this DEIXIS no longer runs: kept as saved, never switched; runs fail until one is chosen.
   builtin_model_changed?: { from: string | null; to: string | null } | null
 }
-// The reranker for the order records are read in (Voyage when nothing is saved, D104); it never decides inclusion.
+// The reranker for the order records are read in (Voyage when nothing is saved); it never decides inclusion.
 export type RerankProvider = 'builtin' | 'voyage' | 'cohere' | 'jina' | 'zeroentropy'
 export type RerankOption = { provider: RerankProvider; model: string; name?: string; available: boolean; reason: string | null; reason_code?: string | null; sends: string | null }
 export type Reranking = {
@@ -971,7 +978,8 @@ export type LibraryWorkVersion = {
   cited_by_count: number | null; is_retracted: boolean | null; added_at: string; access_level: AccessLevel
   abstract: string | null; abstract_origin: string | null; abstract_passage_id: string | null
   asset: { id: string; page_count: number | null; original_filename: string | null; extraction_status: string } | null
-  // A research that holds this version now, and — when none does — the one it was removed from, which still opens its text (D50).
+  // A research that holds this version now, and — when none does — the one it was removed from, which still opens its
+  // text.
   research_id: string | null; removed_research_id: string | null
 }
 export type LibraryWork = {
@@ -991,7 +999,7 @@ export type ZoteroCollection = { key: string; name: string; items: number | null
 export type ZoteroNote = { title: string; note: string; vars?: Record<string, string> }
 export type ZoteroImport = { items: number; pdfs_added: number; notes: ZoteroNote[] }
 
-// Evidence tables (P5, D37/D38). Types mirror deixis/workflow/features/tables/tables.py.
+// Evidence tables (P5). Types mirror deixis/workflow/features/tables/tables.py.
 export type AnswerFormat = 'choice' | 'number_unit' | 'yes_no' | 'text'
 export type CellState = 'value' | 'unknown' | 'not_reported' | 'not_verified' | 'not_applicable' | 'inaccessible' | 'not_found_in_inspected_scope'
 export type ColumnOption = { id: string; label: string }
@@ -1009,7 +1017,7 @@ export type TableRow = {
   source_version_id: string; work_id: string; source_key: string | null; title: string; authors: string[]; year: number | null; version_label: string | null
   selection_state: 'included' | 'excluded' | 'pending' | null; added_by: 'included_at_creation' | 'included_later' | 'user'; added_at: string; removed_at: string | null
   access_level: 'pdf_available' | 'abstract' | 'metadata'
-  // Why the row is in the table's report (D114, D144): an included source, a work read in full and not included, a
+  // Why the row is in the table's report: an included source, a work read in full and not included, a
   // work read from its abstract only, or not in it.
   report_membership?: 'included' | 'full_text_read' | 'abstract_only' | null
 }
@@ -1047,7 +1055,7 @@ export type TableSummary = { id: string; title: string; version: number; answer_
   report_ready: { ready: boolean; cells_left: number; cells_total: number; included_rows: number } }
 export type ReportBasis = { sources: number; full_text: number; abstract_only: number; metadata_only: number; cells_total: number; cells_unverified: number
   unverified_sources: { source_version_id: string; source_key: string | null; title: string; cells_unverified: number; cells_total: number }[]
-  // D114: the sources in the report only because they were read from their abstracts (no full text obtained).
+  // The sources in the report only because they were read from their abstracts (no full text obtained).
   abstract_members?: { source_version_id: string; source_key: string | null; title: string }[] }
 export type ReportSummary = { id: string; status: 'in_progress' | 'valid' | 'draft'; report_version: number | null; created_at: string }
 export type ReportLink = { link_id: string; passage_id: string | null; cell_id: string | null; source_version_id: string; ref_number: number; open_passage_id: string | null
@@ -1057,7 +1065,7 @@ export type ReportClaim = { id: string; claim_key: string; version: number; text
   support_type: 'source_stated' | 'analyst_inference'; paragraph: number; table_ref: string | null; equation_ref: string | null; evidence: ReportLink[]
   original_evidence_count: number; removed_links: (Pick<ReportLink, 'link_id' | 'passage_id' | 'cell_id' | 'source_version_id' | 'anchor_text' | 'anchor_match'> & { title?: string; source_key?: string | null })[]
   evidence_basis: 'direct' | 'none'; support_type_note: 'model_written_type' | null; edited_basis: string[]
-  // D114: the claim rests wholly or partly on what was read from an abstract, from its own links, body refs and gap refs.
+  // The claim rests wholly or partly on what was read from an abstract, from its own links, body refs and gap refs.
   depth_mark?: 'abstract' | 'mixed' | null }
 export type EditCheck = { id: string; created_at: string; checker_version: string; current: boolean; errors: number; warnings: number; skipped: number; edited_claims: number
   items: { rule: string; section_id: string | null; detail: string; severity: 'error' | 'warning' }[]
@@ -1073,7 +1081,7 @@ export type ReportDetail = ReportSummary & { language: string; updated_at: strin
   passage_freshness: PassageFreshness
   missing_rows: { counts: { included: number; completed: number; failed: number; cells_missing: number; cells_total: number }
     failed_rows: { source_version_id: string; source_key: string | null; title: string; reason: string; missing_columns: { column_id: string; name: string; reason: string }[] }[] } | null
-  // What the table was read from, frozen with the snapshot (D68); null for a report saved before it.
+  // What the table was read from, frozen with the snapshot; null for a report saved before it.
   basis: ReportBasis | null
   // `stale`: every cited cell or row that differs from the snapshot, including changes a section marked as seen.
   evidence_changes: { any: boolean; changed_cells: number; removed_sources: number; added_sources: number; revised_columns: number; not_checked: string[]
@@ -1111,7 +1119,7 @@ type CandidateBasisItem = { id: string; missing: true } | { id: string; text: st
 export type CandidateCard = Omit<CandidateListItem, 'claim_statement' | 'status' | 'owner' | 'active_run_id'> & {
   research_id: string; origin_text: string; origin_basis: Record<string, unknown>
   origin_basis_view: { basis_cell_ids?: CandidateBasisItem[]; basis_passage_ids?: (CandidateBasisItem & { source_version_id?: string })[]; basis_claim_keys?: CandidateBasisItem[] }
-  // An answer-thread candidate (D98) keeps the answer and the unanswered aspect it was written beside as context.
+  // An answer-thread candidate keeps the answer and the unanswered aspect it was written beside as context.
   origin_provenance: { origin?: 'code' | 'model'; section_id?: string; step_input_id?: string | null } & Partial<AnswerCandidateContext>
   origin_fingerprint: string | null; created_at: string; versions: CandidateVersion[]; current_version_id: string | null
   owner_decisions: CandidateOwnerDecision[]; searches: CandidateSearchRef[]
@@ -1119,7 +1127,7 @@ export type CandidateCard = Omit<CandidateListItem, 'claim_statement' | 'status'
   active_run: CandidateRunRef | null; runs: CandidateRunRef[]; decompose_budget: { max_model_calls: number; max_provider_requests: number }
 }
 export type AnswerCandidateContext = { answer_id: string; report_version: number | null; report_revision: number | null; aspect_index: number | null; aspect_text: string | null }
-// The answer thread's summary of one candidate written from an answer (D98). Every count comes from stored rows; the
+// The answer thread's summary of one candidate written from an answer. Every count comes from stored rows; the
 // merge counts are null until the merge is stored.
 export type AnswerCandidateSearch = {
   kill_search_id: string; run_id: string; version: number; is_current_version: boolean; outcome: CandidateSearchOutcome; created_at: string
@@ -1239,7 +1247,8 @@ export type ReviewDetail = ReviewCard & {
 }
 export type ReviewApplyResult = { decision: ReviewDecision; revision: { id: string }; applied_matches_suggestion: boolean }
 
-// The citation map (D42, workflow/features/citation_map/citation_map.py): a link means "the stored OpenAlex reference list of `from` holds `to`".
+// The citation map (workflow/features/citation_map/citation_map.py): a link means "the stored OpenAlex reference list
+// of `from` holds `to`".
 export type CitationMapNode = {
   work_id: string; source_version_id: string; openalex_ids: string[]; title: string; authors: string[]; authors_short: string
   year: number | null; venue: string | null; doi: string | null; cited_by_count: number | null
@@ -1453,7 +1462,7 @@ export const api = {
     form.append('file', file)
     return request<ResearchView & { file_restore: FileRestoreReceipt | null }>(`/api/researches/${id}/sources/${sourceId}/uploads`, { method: 'POST', body: form })
   },
-  // Attaches PDFs from the user's Zotero library to included works that have no PDF text yet (D49).
+  // Attaches PDFs from the user's Zotero library to included works that have no PDF text yet.
   zoteroPdfs: (id: string, source: ZoteroSource) =>
     request<ResearchView & { zotero_pdfs: { checked: number; added: number; notes: ZoteroNote[] } }>(`/api/researches/${id}/zotero-pdfs`, json('POST', { source })),
   // The Zotero PDF of each work waiting for the person's PDF; nothing is attached (the panel proposes each file).
@@ -1464,7 +1473,7 @@ export const api = {
     if (!response.ok) throw await responseError(response)
     return new File([await response.blob()], filename || `${key}.pdf`, { type: 'application/pdf' })
   },
-  // Proposes the included source each PDF belongs to (DOI, arXiv id, or title); nothing is attached (D49).
+  // Proposes the included source each PDF belongs to (DOI, arXiv id, or title); nothing is attached.
   matchUploads: (id: string, files: File[]) => {
     const form = new FormData()
     files.forEach(file => form.append('files', file))
@@ -1477,7 +1486,7 @@ export const api = {
     return request<{ matches: WaitingMatch[]; scope_revision: number }>(`/api/researches/${id}/uploads/match`, { method: 'POST', body: form })
   },
   waiting: (id: string) => request<WaitingView>(`/api/researches/${id}/waiting`),
-  // "Continue without PDF" (D46) and its undo; each answers with the list as `waiting` reads it.
+  // "Continue without PDF" and its undo; each answers with the list as `waiting` reads it.
   skipWaiting: (id: string, workId: string) => request<WaitingView>(`/api/researches/${id}/waiting/skips`, json('POST', { work_id: workId })),
   undoSkipWaiting: (id: string, workId: string) => request<WaitingView>(`/api/researches/${id}/waiting/skips/${encodeURIComponent(workId)}`, { method: 'DELETE' }),
   // Adds the file to the version the person picked; 409 with a reason when what the match showed has moved (slice 18a).
@@ -1495,12 +1504,12 @@ export const api = {
   retryPersonReading: (id: string, requestId: string) => request<{ run: Run | null }>(`/api/researches/${id}/waiting/requests/${requestId}/retry`, { method: 'POST' }),
   institutionProxy: () => request<{ address: string | null }>('/api/institution-proxy'),
   saveInstitutionProxy: (address: string) => request<{ address: string | null }>('/api/institution-proxy', json('PUT', { address })),
-  // Takes sources out of this research; the library record, its files and the evidence citing it stay (D50).
+  // Takes sources out of this research; the library record, its files and the evidence citing it stay.
   removeSources: (id: string, sourceIds: string[], note?: string) =>
     request<ResearchView & { changed_source_version_ids: string[] }>(`/api/researches/${id}/sources`, json('DELETE', { source_version_ids: sourceIds, note })),
   restoreSources: (id: string, sourceIds: string[]) =>
     request<ResearchView & { changed_source_version_ids: string[] }>(`/api/researches/${id}/sources/restore`, json('POST', { source_version_ids: sourceIds })),
-  // Deletes removed sources for good; 409 while an answer, table or report still cites one (D65).
+  // Deletes removed sources for good; 409 while an answer, table or report still cites one.
   purgeSources: (id: string, sourceIds: string[]) =>
     request<{ deleted: string[]; files_not_removed: string[] }>(`/api/researches/${id}/sources/purge`, json('POST', { source_version_ids: sourceIds })),
   // Puts a PDF removed as the wrong file back in use; 409 when another PDF is in use for the source.
@@ -1529,7 +1538,7 @@ export const api = {
     request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/pdf-discovery`, { method: 'POST' }),
   attachPdfCandidate: (id: string, sourceId: string, candidateId: string) =>
     request<ResearchView>(`/api/researches/${id}/sources/${sourceId}/pdf-candidates/${candidateId}/attach`, { method: 'POST' }),
-  // `expectedScopeRevision` (D14): the run is created only while that question revision is current; a newer one answers 409.
+  // `expectedScopeRevision`: the run is created only while that question revision is current; a newer one answers 409.
   startRun: (id: string, kind: 'discovery' | 'answer' | 'pdf_collection' | 'research_title', idempotencyKey: string, expectedScopeRevision?: number) =>
     request<Run>(`/api/researches/${id}/runs`, json('POST', expectedScopeRevision === undefined ? { kind } : { kind, expected_scope_revision: expectedScopeRevision }, { 'Idempotency-Key': idempotencyKey })),
   // A statement check (reverse citation search): a run of kind `statement_check` on the question revision the screen
@@ -1556,15 +1565,16 @@ export const api = {
     request<AuditResult>(`/api/researches/${id}/audit/${sourceId}/undo`, json('POST', { audit_token: auditToken })),
   effortLimits: (leaving?: AbortSignal) => read<EffortLimits>('/api/effort-limits', leaving),
   activityRuns: (id: string) => request<ActivityRuns>(`/api/researches/${encodeURIComponent(id)}/activity-runs`),
-  // englishQuestion (D149): undefined leaves the sentence rule as it is, '' writes none (a model translates), text is the person's.
+  // englishQuestion: undefined leaves the sentence rule as it is, '' writes none (a model translates), text is the
+  // person's.
   reviseScope: (id: string, question: string, expectedVersion: number, keyTerms?: string | null, englishQuestion?: string) =>
     request<ResearchView>(`/api/researches/${id}/scope`, json('POST', { question, expected_version: expectedVersion, key_terms: keyTerms ?? null,
       ...(englishQuestion === undefined ? {} : { english_question: englishQuestion }) })),
-  // Withdraw the current question revision while nothing was made under it; the research goes back to the one before (D67).
+  // Withdraw the current question revision while nothing was made under it; the research goes back to the one before.
   withdrawScope: (id: string, revision: number, expectedVersion: number) =>
     request<ResearchView>(`/api/researches/${id}/scope/withdraw`, json('POST', { revision, expected_version: expectedVersion })),
   skipEquations: (runId: string) => request<Run>(`/api/runs/${runId}/skip-equations`, { method: 'POST' }),
-  // After the model could not write the query: search with the code's query alone (D92).
+  // After the model could not write the query: search with the code's query alone.
   chooseCodeQuery: (runId: string) => request<Run>(`/api/runs/${runId}/search-query-choice`, { method: 'POST' }),
   passage: (id: string, passageId: string) => request<Passage>(`/api/researches/${id}/passages/${passageId}`),
   assetText: (id: string, assetId: string, extractionId?: string) => request<AssetText>(`/api/researches/${id}/assets/${assetId}/text${extractionId ? `?extraction_id=${encodeURIComponent(extractionId)}` : ''}`),
@@ -1572,7 +1582,7 @@ export const api = {
   events: (id: string, after = 0) => request<ActivityEvent[]>(`/api/researches/${id}/events?after=${after}`),
   connections: (refresh = false, leaving?: AbortSignal) => read<Connections>(`/api/connections${refresh ? '?refresh=true' : ''}`, leaving, null),
   modelConnection: (connection: string, refresh = false, leaving?: AbortSignal) => read<ModelHealth>(`/api/connections/${encodeURIComponent(connection)}${refresh ? '?refresh=true' : ''}`, leaving, null),
-  // The local server's address (D34): loopback only, '' clears it; answers with the connection's fresh health.
+  // The local server's address: loopback only, '' clears it; answers with the connection's fresh health.
   showHiddenModel: (connection: string, model: string) => request<ModelHealth>(`/api/connections/${encodeURIComponent(connection)}/hidden-models/show`, json('POST', { model })),
   saveLocalServer: (baseUrl: string) => request<ModelHealth>('/api/connections/local_server', json('PUT', { base_url: baseUrl })),
   institutionalAccess: () => request<InstitutionalAccess>('/api/institutional-access'),
@@ -1598,7 +1608,7 @@ export const api = {
   installOcr: () => request<{ job: OcrJob }>('/api/ocr/install', { method: 'POST' }),
   pdfReader: (leaving?: AbortSignal) => read<PdfReader>('/api/pdf-reader', leaving),
   toolUpdate: (tool: ToolUpdate['tool'], leaving?: AbortSignal) => read<ToolUpdate>(`/api/tool-updates/${tool}`, leaving, null),
-  // Starts a pdf_ocr run that reads the PDF's pages without text with the local Tesseract (D51).
+  // Starts a pdf_ocr run that reads the PDF's pages without text with the local Tesseract.
   readWithOcr: (id: string, sourceId: string, assetId: string) =>
     request<Run>(`/api/researches/${id}/sources/${sourceId}/assets/${assetId}/ocr`, { method: 'POST' }),
   localTools: (refresh = false, leaving?: AbortSignal) => read<LocalTools>(`/api/local-tools${refresh ? '?refresh=true' : ''}`, leaving, null),
@@ -1675,7 +1685,7 @@ export const api = {
     request<TableView>(`/api/researches/${id}/tables/${tableId}/columns`, json('POST', { ...spec, expected_version: expectedVersion }, { 'Idempotency-Key': idempotencyKey })),
   addDevelopmentColumns: (id: string, tableId: string, expectedVersion: number, idempotencyKey: string) =>
     request<TableView>(`/api/researches/${id}/tables/${tableId}/lineage/columns`, json('POST', { expected_version: expectedVersion }, { 'Idempotency-Key': idempotencyKey })),
-  // The citation map (D42): the research's works, the reference links between them and the outside works they cite.
+  // The citation map: the research's works, the reference links between them and the outside works they cite.
   citationMap: (id: string) => request<CitationMap>(`/api/researches/${id}/citation-map`),
   // What a reading run would ask OpenAlex now; no request is sent.
   prepareCitationMap: (id: string) => request<CitationMapPlan>(`/api/researches/${id}/citation-map/prepare`, { method: 'POST' }),
@@ -1730,9 +1740,9 @@ export type AnswerMethod = {
   answer_id: string; scope_revision: number
   search: { queries: { provider: string; query: string; records_read: number; provider_total: number | null; date: string; complete: boolean; origin: string | null }[]
     records_read: number; planned: number; planned_not_sent: number; chaining: { ran: boolean; requests: number; records_read: number }
-    // Follow-up searches completed before the answer started (D92), from its start snapshot; null: not recorded.
+    // Follow-up searches completed before the answer started, from its start snapshot; null: not recorded.
     followup_searches?: FollowupSearchBrief[] | null }
-  // The reading counts come from the answer's start snapshot (D92); null on an older answer that did not store them.
+  // The reading counts come from the answer's start snapshot; null on an older answer that did not store them.
   selection: { snapshot: boolean; works_found: number | null; screened: number | null; abstract_read: number | null; full_text_attempted: number | null; full_text_read: number | null; person_decisions: number | null; included: number | null; not_met: number | null
     waiting_for_pdf: number | null; not_read: number | null; criterion: string | null
     vocabulary_review: { reviewed_by_person: boolean | null; approved_by: string | null; edited: boolean | null } }
@@ -1754,7 +1764,7 @@ const textFragment = (text: string) => encodeURIComponent(text.replace(/\s+/g, '
 export const figureUrl = (researchId: string, assetId: string, label: string) =>
   `/api/researches/${researchId}/assets/${assetId}/figures/${encodeURIComponent(label)}.png`
 
-// The page image Mathpix read a passage's equation from (D40), rendered again from the stored PDF.
+// The page image Mathpix read a passage's equation from, rendered again from the stored PDF.
 export const equationCropUrl = (researchId: string, passageId: string, number: string) =>
   `/api/researches/${researchId}/passages/${passageId}/equations/${encodeURIComponent(number)}/crop`
 
@@ -1815,7 +1825,7 @@ export const shellApi = {
 // last daily reset (midnight UTC).
 export type UsageRole = 'answer' | 'literature' | 'reviewer'
 export type RoleUsage = { role: UsageRole; calls: number; share: number | null }
-// A run's requests (period=run only, D31), from its stored requests: what the run sent to OpenAlex and Semantic Scholar,
+// A run's requests (period=run only), from its stored requests: what the run sent to OpenAlex and Semantic Scholar,
 // how many of those the provider refused, and how many are not known whether sent (cancelled while out, still out, or
 // out when the process stopped). `recorded` false (no figures) for a run older than the record.
 export type ProviderRequests = { provider: 'openalex' | 'semantic_scholar'; sent: number; refused: number; unknown: number }
@@ -2081,7 +2091,8 @@ export type ScreenedAfterCutoff = {
 // this research already holds; no search is started. `status` stays 'pending' until the answer is published with its
 // links; the run's own status says whether it is still working, paused or stopped. Claims and citations come only with
 // a valid answer: an 'unverified_draft' carries its `issues` and no claim. `no_passages` means the research held no
-// passage to give and no model was asked. A new question is a scope revision the person opens from the question's own form (D67).
+// passage to give and no model was asked. A new question is a scope revision the person opens from the question's own
+// form.
 // A person's selection change, or a removed or replaced file, while the turn is unpublished fails its run with
 // `followup_selection_changed` / `followup_sources_changed`; the turn stays pending and is asked again.
 export type FollowupTurnStatus = 'pending' | 'answered' | 'partly_answered' | 'not_answered' | 'no_passages' | 'unverified_draft'
@@ -2090,13 +2101,13 @@ export type FollowupCitation = {
   version_label: string | null; reading_depth: 'abstract' | 'selected_sections'
   locator: { kind: string; physical_page: number | null; printed_label: string | null }
   anchor_text: string; anchor_match: 'exact' | 'normalized' | 'fuzzy'
-  support_type: 'source_stated' | 'analyst_inference'  // the claim's, or a grouped work's membership (D66)
+  support_type: 'source_stated' | 'analyst_inference' // the claim's, or a grouped work's membership
   // As on the answer's Evidence: the file or extraction the quote was read from may since be removed, replaced or
   // superseded; the source may since be removed from this research; Europe PMC text drawn as a PDF by DEIXIS.
   evidence_status: EvidenceStatus; text_source: Evidence['text_source']; removed_from_research: boolean; rendition: boolean
 }
 export type FollowupClaim = { label: string; text: string; support_type: 'source_stated' | 'analyst_inference'; citations: FollowupCitation[] }
-// A follow-up that grouped works (D66): the counts the application made from the model's per-work records, frozen when
+// A follow-up that grouped works: the counts the application made from the model's per-work records, frozen when
 // the turn was published. A work can be in two groups; the works sent but not classified, left open by their passages,
 // and named by the evidence table without being sent are listed apart.
 export type FollowupWork = { work_id: string; title: string | null; year: number | null }
@@ -2123,11 +2134,11 @@ export type FollowupTurn = {
     work_groups: FollowupWorkGroups | null
     warnings: ValidationIssue[]  // stored validation warnings (math, several sources), as the answer's `validation.warnings`
   } | null
-  // The turn asked for the report to change (D57): the answer run it queued for the next report version, or why none was.
+  // The turn asked for the report to change: the answer run it queued for the next report version, or why none was.
   report_change: { run_id: string | null; run_status: RunStatus | null; answer_status: Answer['status'] | null; report_version: number | null
     not_started: 'scope_revised' | 'nothing_included' | 'run_active' | null } | null
   issues: { code: string; path: string; message: string }[]
-  // The turn's search for works outside the research (D92): offered once the turn is published under the current
+  // The turn's search for works outside the research: offered once the turn is published under the current
   // question, `suggested` when the model said the question asks for new works. Each run's progress reads its stored steps;
   // its summary counts what was found (new / already here / removed before) and what the abstract screening did.
   // Nothing it finds is included: new works stay candidates for the person.
@@ -2158,7 +2169,7 @@ export const followupApi = {
   ask: (researchId: string, question: string, expectedScopeRevision: number, idempotencyKey: string) =>
     request<FollowupTurn>(`/api/researches/${encodeURIComponent(researchId)}/followup-turns`,
       json('POST', { question, expected_scope_revision: expectedScopeRevision }, { 'Idempotency-Key': idempotencyKey })),
-  // Starts the turn's search (D92); a refusal answers 422 with its `code`, a newer revision or an active run 409.
+  // Starts the turn's search; a refusal answers 422 with its `code`, a newer revision or an active run 409.
   search: (researchId: string, turnId: string, expectedScopeRevision: number, idempotencyKey: string) =>
     request<FollowupTurn & { search_run_id: string }>(`/api/researches/${encodeURIComponent(researchId)}/followup-turns/${encodeURIComponent(turnId)}/search`,
       json('POST', { expected_scope_revision: expectedScopeRevision }, { 'Idempotency-Key': idempotencyKey })),
@@ -2195,7 +2206,7 @@ export type SearchPlanView = {
   issues: { code: string; path: string; message: string }[]  // rules the shown plan breaks (a code term may be long)
   queries: { label: string; origin: 'user' | 'model' | 'code'; query_text: string; compiled_from: 'plan_words' | 'protocol' }[]
   queries_preview: boolean  // true while a saved plan has not run: compiled again when the run starts
-  // The plan's words the frozen search did not carry (D26), as the plan writes them; null where the protocol recorded
+  // The plan's words the frozen search did not carry, as the plan writes them; null where the protocol recorded
   // nothing (a preview, or a plan frozen before the record).
   unsearched: { block: 'setting' | 'task'; term: string; left_out: WordLeftOut; semantic?: boolean }[] | null
   providers: {
@@ -2217,7 +2228,7 @@ export type ScopeRevision = { revision: number; question: string; source_scope: 
 export const scopeRevision = (researchId: string, revision: number) =>
   request<ScopeRevision>(`/api/researches/${encodeURIComponent(researchId)}/scope-revisions/${revision}`)
 
-// Settings → This computer → Data location (D32; api/data_location_routes.py). A change takes effect at the next start.
+// Settings → This computer → Data location (api/data_location_routes.py). A change takes effect at the next start.
 export type DataLocationPart = { key: 'database' | 'pdfs' | 'payloads' | 'tools' | 'other'; label: string; bytes: number }
 export type DataLocation = {
   path: string; is_default: boolean; set_outside_app: boolean; pending_path: string | null; pending_has_library: boolean
@@ -2245,7 +2256,7 @@ export type Preferences = {
   model_concurrency: number; model_concurrency_max: number
   language: 'en' | 'tr' | null; theme: 'system' | 'light' | 'dark' | null
   update_check: 'on' | 'off'
-  // D173: read when a discovery is queued; the windows are the policy's own, by depth.
+  // Read when a discovery is queued; the windows are the policy's own, by depth.
   deep_screening: 'on' | 'off'; deep_screening_windows: Record<'standard' | 'detailed', { first: number; last: number }>
 }
 export type PreferenceChange = Partial<Pick<Preferences, 'default_effort' | 'fulltext_fetch' | 'arxiv_source' | 'model_concurrency' | 'deep_screening'>
@@ -2281,7 +2292,7 @@ export const spendApi = {
     request<SpendEstimate>('/api/spend/estimate', json('POST', body)),
 }
 
-// Verify Citations (api/citation_check_routes.py, D86, D96, D99). A draft's citation markers, its bibliography entries,
+// Verify Citations (api/citation_check_routes.py). A draft's citation markers, its bibliography entries,
 // and one pair per (citation occurrence, entry). A pair's `status` is how far its check went; `result` exists only for
 // `done`. Titles, authors and years come from `source`, the stored record, never from the draft.
 export type CitationPairStatus = 'planned' | 'done' | 'could_not_check' | 'out_of_cap' | 'no_text' | 'unresolved' | 'unrecognized' | 'ambiguous'
@@ -2306,7 +2317,7 @@ export type CitationPair = {
 }
 export type CitationMarker = {
   id: string; ordinal: number; sentence: string; sentence_span: [number, number]; span: [number, number]; raw: string
-  // What the check reads (D105): the sentence as plain text, or a table citation's row; `claim_context` is the caption.
+  // What the check reads: the sentence as plain text, or a table citation's row; `claim_context` is the caption.
   claim?: string | null; claim_context?: string | null; parse_reason?: 'table_layout_not_read' | null
   style: 'latex' | 'numeric' | 'author_year'; parse_status: 'recognized' | 'unrecognized' | 'ambiguous'
   targets: { kind: 'key' | 'number' | 'author_year'; value: string }[]; pairs: CitationPair[]
@@ -2332,7 +2343,7 @@ export type CitationCheckView = {
   id: string; research_id: string; format: 'text' | 'md' | 'tex' | 'docx'; original_filename: string | null; created_at: string
   bibliography: { origin: string; filename: string | null; errors: unknown[] }
   text_acquisition: CitationRunState | null; check_run: CitationRunState | null
-  // Entries whose PDF the background equation reader is still reading (D105): a freeze waits for them.
+  // Entries whose PDF the background equation reader is still reading: a freeze waits for them.
   reextraction_waiting?: { entry_id: string; entry_ordinal: number; asset_id: string; state: string; next_at: string | null }[]
   plan: { revision: number | null; frozen_at: string | null; cap: number; passages_per_pair: number }
   counters: CitationCounters; markers: CitationMarker[]; entries: CitationEntry[]
@@ -2376,7 +2387,7 @@ export type StatementCheckBrief = {
   id: string; research_id: string; revision: number; request_id: string; sentence: string; scope_revision: number; is_latest: boolean
   discovery_run_id: string | null; attachment_snapshot: { status: string } | null; effort: string; work_cap: number; model: StatementCheckModel
   currency: 'current' | 'stale'; stale_reason: string | null; status: 'open' | 'finished'
-  // R4b (D108): the rule this revision's results are presented by; 1 for a revision stored before it.
+  // R4b: the rule this revision's results are presented by; 1 for a revision stored before it.
   support_rule_version: 1 | 2
   run: { id: string; status: RunStatus; pause_reason: string | null } | null; created_at: string
 }

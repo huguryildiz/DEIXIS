@@ -9,14 +9,14 @@ transaction. "Search for new works on this" is not here: it is a new scope revis
 turn's question, through the existing scope-revision route.
 
 Which passages a research holds for a follow-up (its pool):
-- `answer_input`: the latest answer of the turn's question revision froze its evidence (D253): each work's abstract
+- `answer_input`: the latest answer of the turn's question revision froze its evidence: each work's abstract
   and, for a work read in full, the pages of the file it was read from. A work the person has excluded or marked not
-  sure since then gives nothing, nor does one its late full text excluded (D255) unless the person included it, and
+  sure since then gives nothing, nor does one its late full text excluded unless the person included it, and
   one whose file the person marked wrong gives its abstract only. A work whose full
-  text was read and included after that answer's run started adds its abstract and pages too (D49): a follow-up reads
+  text was read and included after that answer's run started adds its abstract and pages too: a follow-up reads
   the research as it has grown, not only as the answer saw it.
 - `included_works`: otherwise (an answer over attached files, or none yet), the text of each included work's
-  answer version (D48), as the attached-file answer reads it.
+  answer version, as the attached-file answer reads it.
 Only passages still current are used: an active source of the research and the extraction of the file in use.
 """
 
@@ -41,17 +41,17 @@ POOL_KEY = "followup:pool"
 SEMANTIC_KEY = "followup_semantic"
 SELECTION_KEY = "followup:passages"
 CONVERSATION_KEY = "followup:conversation"
-CALLS = 4  # two rounds (D50), each a call and its one schema repair; the turn's own budget, apart from the research's runs
+CALLS = 4  # two rounds, each a call and its one schema repair; the turn's own budget, apart from the research's runs
 MAX_QUESTION_CHARS = 2000
 PUBLISHED = ("answered", "partly_answered", "not_answered")
 MAX_TERMS = 40
 MAX_EARLIER_TURNS = 3  # the published turns before this one that the model reads as conversation context
 MAX_CONTEXT_CLAIMS = 12  # claim texts kept from the latest answer and from each earlier turn
-MAX_TABLE_VALUES = 120  # evidence-table values the model reads as context (D50, D53)
-MAX_TABLE_COLUMNS = 3  # the table columns, by name across tables, most related to the follow-up (D53)
+MAX_TABLE_VALUES = 120  # evidence-table values the model reads as context
+MAX_TABLE_COLUMNS = 3  # the table columns, by name across tables, most related to the follow-up
 MAX_VALUE_CHARS = 400  # one value's text as the model reads it
-MAX_PRIORITY_SHARE = 0.5  # of the passage limit: the answer's and the table's passages that go first (D50, D64)
-MAX_MORE_QUERIES = 3  # search phrases one follow-up may ask the library with (D50)
+MAX_PRIORITY_SHARE = 0.5  # of the passage limit: the answer's and the table's passages that go first
+MAX_MORE_QUERIES = 3  # search phrases one follow-up may ask the library with
 MORE_KEY = "followup_answer:more"
 MORE_SELECTION_KEY = "followup:more_passages"
 MORE_SEMANTIC_KEY = "followup_more_semantic"
@@ -176,7 +176,7 @@ def pool(store: Any, research_id: str, scope_revision: int, flow: Any = None) ->
             state = selections.get(head) or humans.get(item["work_id"])
             if state in ("excluded", "pending"):
                 continue
-            # Late full text that found the work out (D255) takes it out unless the person included it, the rule a new
+            # Late full text that found the work out takes it out unless the person included it, the rule a new
             # answer reads it by (`fast_answer.input_plan`). As there, a code-rule selection is not read on its own: the
             # code's decisions up to the cutoff are in the frozen input, and after it the late read is what drops a work.
             if item["work_id"] in late_excluded and state != "included":
@@ -186,7 +186,7 @@ def pool(store: Any, research_id: str, scope_revision: int, flow: Any = None) ->
                 ids += item["fulltext_ids"]
             have = set(current.get(svid, []))
             give(work_of.get(svid, item["work_id"]), svid, [pid for pid in ids if pid in have])
-        # The research kept growing after that answer (D49): a work whose full text was read since the answer's run
+        # The research kept growing after that answer: a work whose full text was read since the answer's run
         # started gives its abstract and the pages it was read from, the rule the answer view counts its "new full
         # texts" by (`fulltext_read_since`). The read must be on the file still in use (`fast_answer.read_file`), so
         # a replaced or re-extracted file gives nothing unread; a read that found the criterion not met counts only
@@ -235,7 +235,7 @@ def pool(store: Any, research_id: str, scope_revision: int, flow: Any = None) ->
 
 
 def _included(store: Any, research_id: str, current: dict[str, list[str]]) -> dict[str, list[str]]:
-    """Each included work's current passages from the version an answer reads (D48), in the research's order."""
+    """Each included work's current passages from the version an answer reads, in the research's order."""
     sources: dict[str, list[str]] = {}
     for head in store.included_works(research_id):
         svid = store.answer_version(research_id, head)
@@ -245,11 +245,11 @@ def _included(store: Any, research_id: str, current: dict[str, list[str]]) -> di
 
 
 def _with_reserve(store: Any, research_id: str, current: dict[str, list[str]], frozen: dict[str, Any]) -> dict[str, Any]:
-    """The pool with its reserve and its priority passages (D50). The reserve is the rest of the library this research
+    """The pool with its reserve and its priority passages. The reserve is the rest of the library this research
     holds: every included work's current passages the pool does not already give, which a second round reads when
     the model asks for more. Priority passages are the ones the research's latest answer and its evidence table's
     current values cite; they go first in the selection, so the follow-up starts from what the answer and the table
-    stand on. The table's own passages are chosen per follow-up with its values (`table_choice`, D53)."""
+    stand on. The table's own passages are chosen per follow-up with its values (`table_choice`)."""
     given = {pid for ids in frozen["sources"].values() for pid in ids}
     # A work `sources` already gives under any version has no reserve: one version per work (R2.9).
     included = _included(store, research_id, current)
@@ -329,7 +329,7 @@ def _code_step(flow: Any, run: dict[str, Any], key: str, kind: str, build: Any) 
 
 
 def table_choice(rows: list[dict[str, Any]], rank_of: dict[str, int]) -> dict[str, Any]:
-    """The evidence-table values a follow-up reads (D53). A value scores by the best rank its cited passages reached in
+    """The evidence-table values a follow-up reads. A value scores by the best rank its cited passages reached in
     the follow-up's own passage ranking; a column, taken by its name across the research's tables, by its values'
     mean score. The best-scoring columns give their values, best first. When no ranking reached a table passage, the
     first columns in table order are read, as before."""
@@ -356,7 +356,7 @@ def table_choice(rows: list[dict[str, Any]], rank_of: dict[str, int]) -> dict[st
 
 
 def work_passages(rows: list[dict[str, Any]], cell_ids: list[str], held: set[str], covered: set[str]) -> list[str]:
-    """One passage per work among the chosen table values (D64): the first held passage of the work's best-scoring
+    """One passage per work among the chosen table values: the first held passage of the work's best-scoring
     value that has one, works in the order their best value comes in `cell_ids`. A work is the work, not the version,
     and a work in `covered` (one the answer's passages already give) gives none."""
     cited: dict[str, list[str]] = {}
@@ -375,7 +375,7 @@ def work_passages(rows: list[dict[str, Any]], cell_ids: list[str], held: set[str
 
 def priority_passages(answer_ids: list[str], rows: list[dict[str, Any]], choice: dict[str, Any], held: set[str],
                       work_of_passage: dict[str, str], limit: int) -> list[str]:
-    """The passages that go first in a follow-up's selection (D50, D53, D64): the latest answer's (up to a quarter of
+    """The passages that go first in a follow-up's selection: the latest answer's (up to a quarter of
     the limit), then one per work among the chosen table values for the works those do not already give, then the
     chosen values' other passages; together at most MAX_PRIORITY_SHARE of the limit. The rest of the limit is left
     to the follow-up's own ranking."""
@@ -412,7 +412,7 @@ def table_values(rows: list[dict[str, Any]], cell_ids: list[str] | None = None) 
 
 def conversation(store: Any, research_id: str, question: str, turn: dict[str, Any],
                  values: list[dict[str, str]] | None = None) -> dict[str, Any]:
-    """What the conversation so far says, so the model reads the follow-up in its context (D49): the research question,
+    """What the conversation so far says, so the model reads the follow-up in its context: the research question,
     the claim texts of the research's latest valid answer, and the last published turns asked before this one. It is
     context, never evidence: the texts carry no passage, and a claim may cite only the passages of this StepInput."""
     answer = store.conn.execute(
@@ -429,11 +429,11 @@ def conversation(store: Any, research_id: str, question: str, turn: dict[str, An
     for row in reversed(rows):
         draft = json.loads(row["draft_json"] or "{}")
         claims = [c["text"] for c in draft.get("claims", []) if isinstance(c, dict) and isinstance(c.get("text"), str)]
-        # The counts the application made from a turn that grouped works (D66), as one line each.
+        # The counts the application made from a turn that grouped works, as one line each.
         if row["work_groups_json"]:
             claims = work_groups_lines(json.loads(row["work_groups_json"]), lambda w: _work_title(store, w)) + claims
         earlier.append({"question": row["question"], "answer": claims[:MAX_CONTEXT_CLAIMS]})
-    # The values the follow-up's selection chose and stored with it (D53); without them, the tables in their order.
+    # The values the follow-up's selection chose and stored with it; without them, the tables in their order.
     if values is None:
         values = table_values(_table_values(store, research_id))
     return {"research_question": question, "latest_answer": latest, "earlier_turns": earlier,
@@ -455,7 +455,7 @@ async def _selection(flow: Any, run: dict[str, Any], scope: dict[str, Any], ques
     """The passages sent: the pool ranked against the question read with the research question (lexical and semantic,
     fused by RRF), then the rest of the pool breadth-first by source, under a per-source cap, up to the research's
     answer passage limit. A follow-up such as "write a report from the full texts" names no topic of its own, so the
-    research question gives the ranking one (D49): it is part of the semantic query, and its words rank the pool
+    research question gives the ranking one: it is part of the semantic query, and its words rank the pool
     lexically only when the follow-up's own words match nothing and no semantic ranking came back. A specific
     follow-up in another language than the passages is then not outranked by the research question's words."""
     saved = flow.store.existing_step(run["id"], SELECTION_KEY)
@@ -487,8 +487,8 @@ async def _selection(flow: Any, run: dict[str, Any], scope: dict[str, Any], ques
     # The passages no ranking matched, breadth-first: each source's first passage (its abstract when it has one),
     # then each source's second, and so on. A question in another language than the passages matches no word, and
     # the model, not the word match, says whether the passages answer it.
-    # The passages the latest answer cites, then those of the table values this follow-up reads (D53), one per work
-    # first (D64), go first (`priority_passages`). A table value may cite a passage of the reserve; it is read in this
+    # The passages the latest answer cites, then those of the table values this follow-up reads, one per work
+    # first, go first (`priority_passages`). A table value may cite a passage of the reserve; it is read in this
     # round too.
     holder = {pid: svid for part in (sources, frozen_pool.get("reserve", {})) for svid, pid_list in part.items()
               for pid in pid_list}
@@ -546,7 +546,7 @@ async def _call(flow: Any, run: dict[str, Any], scope: dict[str, Any], key: str,
 
 async def _more_selection(flow: Any, run: dict[str, Any], scope: dict[str, Any], queries: list[str],
                           first: dict[str, Any], frozen_pool: dict[str, Any]) -> dict[str, Any]:
-    """The second round's passages (D50): the model's phrases rank the pool and its reserve (lexical and semantic,
+    """The second round's passages: the model's phrases rank the pool and its reserve (lexical and semantic,
     fused by RRF); up to half the limit of passages the first round did not send take the place of the first round's
     last ones. A phrase that matches nothing new leaves the first round's passages as they were."""
     saved = flow.store.existing_step(run["id"], MORE_SELECTION_KEY)
@@ -605,7 +605,7 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
     key, output = TASK, await _call(flow, run, scope, TASK, passages, context | {"more_queries_allowed": True}, frozen_pool)
     queries = [] if output.get("invalid") else [q for q in output["result"].get("more_queries", []) if q.strip()]
     if queries and output["result"]["outcome"] != "answered":
-        # The model asked the library for more (D50): its phrases rank everything this research holds, and a second
+        # The model asked the library for more: its phrases rank everything this research holds, and a second
         # call answers from the first round's passages with the new ones. No search runs and no provider is asked.
         flow._checkpoint(run_id, run["scope_revision"])
         more = await _more_selection(flow, run, scope, queries[:MAX_MORE_QUERIES], selected, frozen_pool)
@@ -665,7 +665,7 @@ def _table_works(store: Any, research_id: str) -> list[str]:
 
 
 def work_groups_lines(frozen: dict[str, Any], title: Any) -> list[str]:
-    """A grouping as lines of text that keep its bounds (D66): each group with its count and works (an interpretation
+    """A grouping as lines of text that keep its bounds: each group with its count and works (an interpretation
     marked, a note kept), the works left open with their notes, then what the count covers. The next turn reads these
     as context; `title` names a work id."""
     def named(w: dict[str, Any]) -> str:
@@ -687,7 +687,7 @@ def work_groups_lines(frozen: dict[str, Any], title: Any) -> list[str]:
 
 
 def _work_groups_view(store: Any, row: dict[str, Any], cited: dict[str, list[dict[str, Any]]]) -> dict[str, Any] | None:
-    """The frozen counts of a turn that grouped works (D66), each work with its title and the citations of its
+    """The frozen counts of a turn that grouped works, each work with its title and the citations of its
     memberships; the works without a citation are named by title only."""
     if not row.get("work_groups_json"):
         return None
@@ -716,12 +716,12 @@ def _work_groups_view(store: Any, row: dict[str, Any], cited: dict[str, list[dic
 
 
 def membership_label(record: int, membership: int) -> str:
-    """The link label of one work's membership in a group (D66): `w<record>.<membership>`, both from 1."""
+    """The link label of one work's membership in a group: `w<record>.<membership>`, both from 1."""
     return f"w{record}.{membership}"
 
 
 def classification_links(payload: dict[str, Any], result: dict[str, Any]) -> list[dict[str, Any]]:
-    """One evidence link per group membership of a classified work (D66), as a claim's link: source and locator from
+    """One evidence link per group membership of a classified work, as a claim's link: source and locator from
     the StepInput passage, the anchor located by the backend."""
     passages = {p["passage_id"]: p for p in payload["passages"]}
     links = []
@@ -736,7 +736,7 @@ def classification_links(payload: dict[str, Any], result: dict[str, Any]) -> lis
 
 
 def work_groups(store: Any, research_id: str, payload: dict[str, Any], result: dict[str, Any]) -> dict[str, Any] | None:
-    """What the application counts from a classification (D66), frozen with the turn: per group the distinct works
+    """What the application counts from a classification, frozen with the turn: per group the distinct works
     (two versions of one work count once) with their membership labels and whether any membership is an
     interpretation; the works left ambiguous or without evidence; the works whose passages were sent but that got no
     record; the works the evidence tables name whose passages were not sent; and how many works were sent and are
@@ -854,7 +854,7 @@ def report_run_key(turn_id: str) -> str:
 
 
 def after_turn(store: Any, run: dict[str, Any]) -> None:
-    """Queue a new report version when the turn's valid answer says the person asked for the report to change (D57).
+    """Queue a new report version when the turn's valid answer says the person asked for the report to change.
 
     The new answer is an answer the person started (no `trigger`), so it opens the next report version; the turn's own
     words go to it as `user_steering`. It is not started for an earlier question revision, without an included work
@@ -899,7 +899,7 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
     if row["status"] in PUBLISHED:
         draft = json.loads(row["draft_json"])
         cited: dict[str, list[dict[str, Any]]] = {}
-        # As the answer view marks its quotes (D45, D50, SW21): a quote of a source removed from this research, of a
+        # As the answer view marks its quotes (SW21): a quote of a source removed from this research, of a
         # removed or replaced PDF, or of a superseded text extraction still opens what was read, and says so.
         removed = {r[0] for r in store.conn.execute(
             "SELECT source_version_id FROM corpus_memberships WHERE research_id = ? AND removed_at IS NOT NULL",
@@ -936,7 +936,7 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
               and selection["output_json"] else None)
     more = steps.get(MORE_SELECTION_KEY)
     more = json.loads(more["output_json"]) if more is not None and more["status"] == "succeeded" and more["output_json"] else None
-    # The second round (D50): how many passages the model's own phrases brought in, and the state of its call.
+    # The second round: how many passages the model's own phrases brought in, and the state of its call.
     progress = {"passages_selected": len(chosen["passage_ids"]) if chosen else None,
                 "answer_step": steps[TASK]["status"] if TASK in steps else None,
                 "more_passages": more["new_passages"] if more else None,
@@ -946,7 +946,7 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
     if answer is not None:
         # The validation warnings stored with the answer (math, several sources), as the answer view's `validation`.
         answer["warnings"] = (validation or {}).get("warnings", [])
-    # A turn that asked for the report to change (D57): the answer run it queued, or why none was queued.
+    # A turn that asked for the report to change: the answer run it queued, or why none was queued.
     report_change = None
     if answer is not None and draft.get("report_change_requested") is True:
         queued = store.conn.execute("SELECT id, status FROM runs WHERE idempotency_key = ?", (report_run_key(row["id"]),)).fetchone()
@@ -971,7 +971,7 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
         "run": {"id": run["id"], "status": run["status"], "stage": run["stage"], "pause_reason": run["pause_reason"],
                 "error": run["error"]},
         "answer": answer, "report_change": report_change,
-        # The turn's search for new works (D92): offered on the person's click, never started by the model's flag.
+        # The turn's search for new works: offered on the person's click, never started by the model's flag.
         "search": followup_search.view(store, row, (json.loads(row["draft_json"] or "{}").get("new_works_requested")
                                                      if row["status"] in PUBLISHED and row["draft_json"] else None)),
         "issues": validation["issues"] if row["status"] == "unverified_draft" and validation else [],

@@ -2,7 +2,7 @@
 
 Each stage takes the same fixed SYNTHETIC rows and returns a value whose canonical digest must not depend on the
 process hash seed or on the order the rows arrived in. Where a row order is part of the input's meaning — the
-selection order an answer reads (D17) — the stage keeps that order and shuffles only what carries no order.
+selection order an answer reads — the stage keeps that order and shuffles only what carries no order.
 Later slices add their own stage to STAGES (implementation plan §2.9).
 """
 

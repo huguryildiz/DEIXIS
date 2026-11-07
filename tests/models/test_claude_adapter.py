@@ -134,7 +134,7 @@ def run_with(monkeypatch, tmp_path, messages):
 
 
 def test_structured_output_retry_within_the_turn_limit_completes(monkeypatch, tmp_path):
-    # The CLI rejected the first StructuredOutput call against the schema; the model's second call passed (D157).
+    # The CLI rejected the first StructuredOutput call against the schema; the model's second call passed.
     result = run_with(monkeypatch, tmp_path, [
         AssistantMessage([ToolUseBlock("so-1", "StructuredOutput", {"claim": []})], "claude-opus-5"),
         AssistantMessage([ToolUseBlock("so-2", "StructuredOutput", {"claims": []})], "claude-opus-5"),
@@ -198,7 +198,7 @@ def test_any_other_tool_action_is_still_an_isolation_violation(monkeypatch, tmp_
     assert result.tool_item_types == [getattr(other, "name", None) or "ToolResultBlock"]
 
 
-# Messages as the CLI writes them, parsed by the SDK's own parser (D157, Sol round 2).
+# Messages as the CLI writes them, parsed by the SDK's own parser (Sol round 2).
 CARRIER = {"type": "assistant", "message": {"model": "claude-opus-5", "content": [
     {"type": "tool_use", "id": "so-1", "name": "StructuredOutput", "input": {"claims": []}}]}}
 CARRIER_RESULT = {"type": "user", "message": {"role": "user", "content": [
@@ -274,7 +274,7 @@ def test_structured_output_then_a_broken_session_is_a_failure_not_an_isolation_v
 @pytest.mark.parametrize("attempt", ["valid", "invalid"])
 def test_a_recovered_attempt_reaches_validation_and_repair_stays_bounded(monkeypatch, tmp_path, attempt):
     # Through flow._model_step with the real adapter over a fake CLI: every session ends at the turn limit with only
-    # StructuredOutput calls, and its last attempt is judged by DEIXIS's own validation (D157).
+    # StructuredOutput calls, and its last attempt is judged by DEIXIS's own validation.
     prepare(monkeypatch)
     sent = []
 

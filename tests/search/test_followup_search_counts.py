@@ -1,4 +1,4 @@
-"""Follow-up searches (D92) are counted apart from the research's first search.
+"""Follow-up searches are counted apart from the research's first search.
 
 Records, runs, steps and the follow-up search's frozen found and summary outputs are SYNTHETIC and written straight
 into the store; no model or provider is called. Passing shows which stored rows each count reads; it says nothing

@@ -410,7 +410,7 @@ def rich_library(tmp_path: Path):
         lib.candidate_store.record_owner_decision(lib.rid, v["id"], "closed", "SYNTHETIC second reason")
         lib.candidate_store.trash_candidate(lib.rid, v["candidate_id"])
         query(lib, start(lib, v), [], status="failed", raw_payload_path="SYNTHETIC-failed.json")
-        # Candidates written from an answer's Next steps (D98): one beside an unanswered aspect, one from the generic row.
+        # Candidates written from an answer's Next steps: one beside an unanswered aspect, one from the generic row.
         answer_id = db.new_id("ans")
         lib.conn.execute(
             "INSERT INTO answers (id, research_id, run_id, scope_revision, status, draft_json, validation_json, report_version,"
@@ -468,12 +468,12 @@ EMPTY_BECAUSE = {
     "arxiv_sources": "arXiv source reading is off in the test settings",
     "asset_arxiv_versions": "written only by the arXiv source route, which is off in the test settings",
     "citation_map_resolutions": "written only by a citation map run, which a person starts and this flow does not",
-    **{table: "written only by a Verify Citations draft (D86), which this flow does not give" for table in (
+    **{table: "written only by a Verify Citations draft, which this flow does not give" for table in (
         "citation_drafts", "citation_markers", "citation_bib_entries", "citation_pairs", "citation_checks")},
-    **{table: "written only by a statement check (D100), which only a research with the statement intent runs"
+    **{table: "written only by a statement check, which only a research with the statement intent runs"
        for table in ("statement_checks", "statement_check_items")},
-    "equation_model_requests": "written only by the answer model's equation reading (D113), which needs a default answer model that accepts images; none is set",
-    "fast_path_background_fetches": "written by fast-path background PDF fetches (D251); full-text fetch is off in the test settings",
+    "equation_model_requests": "written only by the answer model's equation reading, which needs a default answer model that accepts images; none is set",
+    "fast_path_background_fetches": "written by fast-path background PDF fetches; full-text fetch is off in the test settings",
     "human_selection_links": "written only by human decisions in the screening queue, which this flow does not make",
     "mathpix_requests": "written only by the optional Mathpix equation reader, which is off by default",
     "openalex_budget_runs": "written only when OpenAlex's daily budget refuses a PDF lookup; the fake providers never do",
@@ -491,11 +491,11 @@ EMPTY_BECAUSE = {
     "record_lookups": "written by record lookups, not run here",
     "record_references": "reference lists arrive with citation chaining or lookups, both off",
     "report_stale_acknowledgements": "written only when a person acknowledges stale report changes after an upstream edit",
-    "report_phrase_repairs": "kept for reports written before D43; the phrase-repair step that wrote it is gone",
+    "report_phrase_repairs": "kept for reports written earlier; the phrase-repair step that wrote it is gone",
     "research_purge_authorizations": "a temporary row opened and removed inside the purge transaction",
     "recovery_purge_authorizations": "a temporary row opened and removed inside the recovery purge transaction",
     "scope_english_questions": "written only for a non-English question that gets an English rendering",
-    "snowball_admissions": "written only by a citation snowballing round (D91), which a person starts and this flow does not",
+    "snowball_admissions": "written only by a citation snowballing round, which a person starts and this flow does not",
     "source_similarities": "written by the semantic ranking step, which needs an embedding model",
     "spend_ledger": "written only for a model call on a paid API key (F4); the library builder uses the scripted model",
     "suspected_duplicates": "written only when two sources look like duplicates of one work",
@@ -514,7 +514,7 @@ EMPTY_BECAUSE = {
     "research_model_changes": "the builder changes no research model; backup/restore: tests/models/test_research_model_change.py",
     "watch_gaps": "the rich library builder starts no interval watch, so no scheduling gap is recorded",
     "watch_schedule_changes": "the rich library builder changes no follow-up watch schedule",
-    "provider_requests_unrecorded_runs": "lists the runs that existed when migration 0011 ran (D31); a library built after it has none",
+    "provider_requests_unrecorded_runs": "lists the runs that existed when migration 0011 ran; a library built after it has none",
 }
 
 

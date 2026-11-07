@@ -1,4 +1,4 @@
-"""Figure regions found on PDF pages, so the plain-text view can show a picture of each figure (D58).
+"""Figure regions found on PDF pages, so the plain-text view can show a picture of each figure.
 
 A figure is found from its caption: a text block that opens with "Fig. 3.", "Figure 3:", "FIGURE 3 |" or "Fig. 3 Title".
 Its region is the images and vector drawings next to the caption (above it, else below it) that overlap the caption's

@@ -1,4 +1,4 @@
-"""Mathpix through the app (D40): the key pair routes, the switch and budget, the answer run and the crop image.
+"""Mathpix through the app: the key pair routes, the switch and budget, the answer run and the crop image.
 
 The keychain is in memory (conftest), Mathpix and OpenAlex are mocked transports and the PDFs are SYNTHETIC. Passing shows
 the app's handling; that Mathpix answers a refused pair with 401 or 403 was not checked live.

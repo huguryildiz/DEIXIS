@@ -4,7 +4,7 @@ import type { ResearchView, Source } from '../lib/api'
 export function includedReading(view: ResearchView) {
   const byId = new Map(view.sources.map(s => [s.source_version_id, s]))
   const records = view.sources.filter(s => s.version_role === 'record' && s.selection.state === 'included')
-  // The version an answer reads: the record, or another version with PDF text (D48).
+  // The version an answer reads: the record, or another version with PDF text.
   const reading = (record: Source) => (record.answer_reads_version_id ? byId.get(record.answer_reads_version_id) ?? record : record)
   // A work whose only PDF text is a person's file the model has not read yet gives an answer nothing (slice 18b).
   const full = (record: Source) => !record.answer_reads_nothing && reading(record).has_pdf_text

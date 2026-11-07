@@ -40,7 +40,7 @@ def after_answer(store: Store, run: dict[str, Any]) -> None:
 def start(store: Store, research_id: str, idempotency_key: str | None) -> dict[str, Any]:
     """Create the table of the research's sources and queue the column proposal that opens the chain.
 
-    The table holds the included sources and the works read from their abstracts only (D114); either kind is enough to
+    The table holds the included sources and the works read from their abstracts only; either kind is enough to
     build it. `pipeline.included` keeps its name in stored runs and counts all of them.
     """
     tables = TableStore(store)
@@ -119,7 +119,7 @@ def _queue_fill(store: Store, tables: TableStore, run: dict[str, Any], table_id:
     version = tables._table(rid, table_id)["version"]
     try:
         with transaction(store.conn):
-            # The app's own fill reads only sources that are still included (D63).
+            # The app's own fill reads only sources that are still included.
             fill = tables.request_fill(rid, table_id, None, True, version, f"{PIPELINE}:{pipeline['id']}:fill:{round_}",
                                        included_only=True)
             _mark(store, fill, {**pipeline, "round": round_})

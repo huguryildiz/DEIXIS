@@ -80,7 +80,7 @@ def detect_language(question: str, language_hint: str | None) -> str:
 
 # What a provider reads as an operator, in any case: quotes, brackets, field colons, |, ~, ^, backslash, wildcards, a
 # +/- opening a word, and the words AND/OR/NOT/ANDNOT. A hyphen inside a word, digits, dots, slashes and apostrophes
-# are ordinary science text and pass. Looser than the model-term rule (D92) in domain/contracts.py, which stays as is.
+# are ordinary science text and pass. Looser than the model-term rule in domain/contracts.py, which stays as is.
 USER_TERM_SYNTAX = re.compile(r'["“”()\[\]{}*?:|~^\\]|(?<!\S)[+-]|\b(?:and|or|not|andnot)\b', re.IGNORECASE)
 
 
@@ -123,7 +123,7 @@ def extract(question: str, language_hint: str | None = None, key_terms: str | No
     """The question's search phrases, or None when code cannot read the question and the user gave no key terms.
 
     Code never translates: a question that is not English and carries no key terms returns None, and the run reads
-    the revision's English sentence instead, which a model writes when the person gave none (D149, SW2.1). A `statement` question is a claim sentence (reverse citation search, R5): its "X et al."
+    the revision's English sentence instead, which a model writes when the person gave none (SW2.1). A `statement` question is a claim sentence (reverse citation search, R5): its "X et al."
     mentions are cut out first (`statement.without_authors`), and a claim verb or a bare number ends a phrase and is
     dropped, so "schedule competing flows" is searched as "competing flows".
     """

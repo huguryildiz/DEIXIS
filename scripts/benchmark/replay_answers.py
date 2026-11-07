@@ -1,4 +1,4 @@
-"""A benchmark server whose model connection replays a baseline library's stored model answers (D163 M1 arm).
+"""A benchmark server whose model connection replays a baseline library's stored model answers (an m1 arm).
 
     DEIXIS_SEARCH_METHOD=m1 uv run python scripts/benchmark/replay_answers.py \\
         --port 8776 --data-dir notes/2026-11-07-m1/bioasq/m1/data --baseline notes/2026-11-07-m1/bioasq/base/data

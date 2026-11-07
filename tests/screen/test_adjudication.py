@@ -1,4 +1,4 @@
-"""Full-text reading: the plan, the passage list, quote verification and the rule table (slice 12, D85).
+"""Full-text reading: the plan, the passage list, quote verification and the rule table (slice 12).
 
 Pure tests plus the migration's neighbours that do not start a reading run: the budget, the two new reason codes,
 and a legacy research refusing the run. Records are SYNTHETIC and from two fields (greenhouse tomato, a small-town
@@ -274,7 +274,7 @@ def test_a_protocol_title_withholds_both_an_include_and_an_exclusion(code):
         assert adjudication.with_title(code, plain) == (code, None)
 
 
-# ---- slice 28: the comparator marker and the exclusion guard (D109) --------------------------------------------------
+# ---- slice 28: the comparator marker and the exclusion guard --------------------------------------------------
 
 ELEMENTS = [{"role": "comparator", "words": "usual watering", "part": "SYNTHETIC usual watering arm"},
             {"role": "population", "words": "tomato plots", "part": "SYNTHETIC evening watering"}]
@@ -303,7 +303,7 @@ def pages_of(n, per_page=1):
     return [{"id": f"psg_{i}", "kind": "pdf_page", "physical_page": 1 + i // per_page} for i in range(n)]
 
 
-# ---- split_v1: the second call reads what the first did not see (D76) ---------------------------
+# ---- split_v1: the second call reads what the first did not see ---------------------------
 
 def _ids(rows):
     return [p["id"] for p in rows]

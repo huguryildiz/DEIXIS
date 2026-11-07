@@ -121,7 +121,7 @@ class DeepSeekAdapter:
         if not key_verification.is_valid_key(key):  # a header cannot carry it; nothing is sent
             return invalid_key_result()
         # The schema reaches the model through the developer instructions the step stores (the appendix a
-        # non-enforcing adapter is given, D86); a second copy here would be text the stored StepInput never shows.
+        # non-enforcing adapter is given); a second copy here would be text the stored StepInput never shows.
         system = f"{base}\n\n{developer}\n\nReturn only a JSON object."
         body: dict[str, Any] = {
             "model": requested_model,

@@ -1,7 +1,7 @@
 import type { Asset, OcrTool, Run } from '../lib/api'
 import { t } from '../lib/i18n'
 
-// Reading a PDF's pages without text with the local Tesseract (D51): when the action is offered, why it is off, and
+// Reading a PDF's pages without text with the local Tesseract: when the action is offered, why it is off, and
 // the progress of its run. OCR text is never shown as checked text; the label says to compare it with the page.
 
 export const OCR_LABEL = 'OCR text · check against the page'

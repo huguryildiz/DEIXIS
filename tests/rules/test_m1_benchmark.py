@@ -1,4 +1,4 @@
-"""The D163 M1 measurement scripts (scripts/benchmark): model-reply replay, the shared OpenAlex spend cap, and the
+"""The m1 measurement scripts (scripts/benchmark): model-reply replay, the shared OpenAlex spend cap, and the
 gate scorer. SYNTHETIC libraries, the fake model and a mocked OpenAlex; nothing here sends a request or measures
 search quality."""
 

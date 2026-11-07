@@ -371,7 +371,7 @@ def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...], re
         print(f"Port {settings.port} is in use. DEIXIS may already be running at {url} — "
               "open it, stop the other process, or set DEIXIS_PORT.", file=sys.stderr)
         return 2
-    # A location chosen in Settings (D32) is moved into before anything opens the library, under both folders'
+    # A location chosen in Settings is moved into before anything opens the library, under both folders'
     # exclusive locks (E1). A DEIXIS on another port, or a child it started, holds its folder's shared lock: the move
     # is then postponed and this DEIXIS opens the old folder, saying why in Settings. Another DEIXIS may finish a move
     # between reading the location and taking the lock, so the location is read again under the lock and, when it
@@ -483,7 +483,7 @@ def serve(settings: Settings, open_browser: bool, dev_hosts: tuple[str, ...], re
 
 
 def reextract(settings: Settings, dry_run: bool, retry: str | None = None, expected_extraction: str | None = None) -> int:
-    """Extract every PDF in use again with the current extractor; one line per file, then a summary (D45, D47)."""
+    """Extract every PDF in use again with the current extractor; one line per file, then a summary."""
     from collections import Counter
 
     from deixis.documents import pdf

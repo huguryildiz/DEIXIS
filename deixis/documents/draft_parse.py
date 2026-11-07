@@ -1,4 +1,4 @@
-"""Verify Citations (V1, D86): read a draft and find its citation markers. Code only, no model, deterministic.
+"""Verify Citations (V1): read a draft and find its citation markers. Code only, no model, deterministic.
 
 The draft is untrusted data. Accepted: pasted text, `.txt`, `.md`, `.tex`, `.docx` (paragraph text only: footnotes,
 comments, field codes and deleted text are not read). The file is at most `MAX_DRAFT_BYTES`, the text at most
@@ -84,7 +84,7 @@ class Marker:
     targets: list[Target] = field(default_factory=list)
     sentence_start: int = 0
     sentence_end: int = 0
-    claim: str = ""  # what the check reads: the sentence (or table row) with markers cut, as plain text (D105)
+    claim: str = ""  # what the check reads: the sentence (or table row) with markers cut, as plain text
     reason: str | None = None  # why an unrecognized marker was not read (`table_layout_not_read`)
     claim_context: str | None = None  # a table row's caption, shown to the model, never part of the claim
 
@@ -217,7 +217,7 @@ _COMMENT = re.compile(r"(?<!\\)((?:\\\\)*)%[^\n]*")
 
 def strip_comments(text: str) -> str:
     r"""LaTeX comments removed: a `%` starts one when an even number of backslashes (0, 2, …) stands right before it, so
-    `\\%` is a line break and then a comment, while `\%` and `\\\%` are a literal percent sign (Sol round 3, D105)."""
+    `\\%` is a line break and then a comment, while `\%` and `\\\%` are a literal percent sign (Sol round 3)."""
     return _COMMENT.sub(r"\1", text)
 
 
@@ -557,7 +557,7 @@ def cut_markers(text: str, start: int, end: int, spans: list[tuple[int, int]]) -
 
 # ------------------------------------------------------------------------------------------------- the plain claim
 #
-# V5 pilot (D105): a LaTeX sentence is given to the model and to the coverage and span checks as plain text, so a part
+# V5 pilot: a LaTeX sentence is given to the model and to the coverage and span checks as plain text, so a part
 # copied from it never has to copy LaTeX. The rules, applied the same way everywhere:
 # - comments, `\label`, `\ref`-like commands, sectioning commands and spacing commands go with their arguments
 #   (a footnote's and a caption's text stay); `\begin{…}` and `\end{…}` go and their content stays;
@@ -783,7 +783,7 @@ def _math_script(inner: str) -> str | None:
 
 
 def simple_math(body: str) -> str | None:
-    """Inline math as plain text, only when it converts one way (Sol round 1, D105): ASCII letters and digits, spaces,
+    """Inline math as plain text, only when it converts one way (Sol round 1): ASCII letters and digits, spaces,
     `+ - = < > / * , . ( ) | ! '`, the commands of `_MATH` (Greek letters, relations) and math spacing, and a sub- or
     superscript of one token (`x^2`, `x_{i}`, `e^{\\tau}`). Anything else (`\\frac`, `\\sqrt`, `\\left`, a grouped script
     of more than one token, braces, any other command or character) gives None, and the math stays verbatim."""
@@ -867,7 +867,7 @@ def plain_latex(text: str) -> str:
 # The table's caption, when it has at most `MAX_CAPTION_CHARS` characters (else its first sentence, when that does), is
 # given to the model as context: it says what the columns and the marks mean, and no part copies it.
 #
-# Whitelist (D105, Sol round 2): a row is read only when its innermost tabular is simple, and a layout that is not is
+# Whitelist (Sol round 2): a row is read only when its innermost tabular is simple, and a layout that is not is
 # never guessed. Simple means: no `\multicolumn`, `\multirow`, `\cline`, `\cmidrule`, nested tabular or `\\[…]` row
 # split anywhere in that tabular's body, and it is inside no other tabular; the header is exactly its first row with text, and the next row starts with a
 # rule (`\hline` or `\midrule`; a `\toprule` before the header is fine), so there is no second header line; the citation

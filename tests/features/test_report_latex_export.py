@@ -124,7 +124,7 @@ def test_finished_route_zip_content_and_unchanged_markdown(tmp_path):
         assert md.content == text.encode("utf-8")
         assert md.headers["content-disposition"] == f'attachment; filename="{md_name}"'
         assert_error(client.get(path + "/export?format=pdf"), 422)
-        # A missing D59 key is injected in the synthetic database to exercise a real note.
+        # A missing reference key is injected in the synthetic database to exercise a real note.
         store.conn.execute("UPDATE works SET source_key = NULL WHERE id = (SELECT work_id FROM source_versions WHERE id = ?)",
                            (view["references"][0]["source_version_id"],))
         noted = client.get(path + "/export?format=latex")

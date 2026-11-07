@@ -1,4 +1,4 @@
-"""Library view and adding a Library work to another research (D40, D41). Records are SYNTHETIC."""
+"""Library view and adding a Library work to another research. Records are SYNTHETIC."""
 
 from fastapi.testclient import TestClient
 

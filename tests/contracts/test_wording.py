@@ -1,4 +1,4 @@
-"""Wording checks on answer prose: question language, own-work words and several-sources wording (D43).
+"""Wording checks on answer prose: question language, own-work words and several-sources wording.
 
 The checks are lexical: a pattern match is a finding, not proof that the sentence misattributes anything.
 """

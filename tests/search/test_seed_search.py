@@ -1,4 +1,4 @@
-"""D6: the seeds enrich the search, the question filters it. Each seed asks OpenAlex on its own, the question's request
+"""The seeds enrich the search, the question filters it. Each seed asks OpenAlex on its own, the question's request
 is the unseeded one, the first chain seeds come only from what the question's request accepted, and the seed PDFs
 neither push the code's graph seeds out nor add up their nearness. SYNTHETIC."""
 
@@ -15,8 +15,8 @@ from test_seed_pdf import no_upload_lookup  # noqa: F401  (fixtures used by name
 
 SEED_ONLY_TITLE = "SYNTHETIC a work only a seed's own request found"
 PLAN_KEYS = {"version", "semantic", "keywords", "keyword_cap", "page_size", "order", "s2_bulk", "s2_bulk_index",
-             "s2_reserved", "dropped", "expansion", "words",  # words: which plan words a sent query carries (D26)
-             "block_semantic"}  # the block terms' semantic request (D154), frozen as off since D155
+             "s2_reserved", "dropped", "expansion", "words",  # words: which plan words a sent query carries
+             "block_semantic"}  # the block terms' semantic request, frozen as off since that change
 
 
 class Scripted(SeedTransport):
@@ -53,7 +53,8 @@ def unseeded(client):
                                                 "requested_model": "fake-model", "effort": "quick"}).json()["research"]["id"]
 
 
-# ---- 1. An unseeded run is the run before D6 ------------------------------------------------------------------------
+# ---- 1. An unseeded run is the run before that change
+# ------------------------------------------------------------------------
 
 
 # ---- 2. One request per seed, after the question's ------------------------------------------------------------------
@@ -79,8 +80,8 @@ def test_a_seeded_run_asks_the_unseeded_question_then_each_seed_then_the_keyword
         assert [(s["source_version_id"], s["limit"]) for s in plan["seed_semantic"]] == [(a, 25), (b, 25)]
         semantic = [entry for entry in transport.log if entry[0] == "semantic"]
         question = semantic.index(("semantic", QUESTION, 50))
-        # B had no DOI: its lookup (D3) went before the plan; then the question, then A and B by their own text. The
-        # block terms' request (D154) is off since D155, and no plan word is recorded as part of a semantic request.
+        # B had no DOI: its lookup went before the plan; then the question, then A and B by their own text. The
+        # block terms' request is off since that change, and no plan word is recorded as part of a semantic request.
         assert plan["block_semantic"] == fast_search.BLOCK_SEMANTIC_OFF
         assert {w["semantic"] for w in plan["words"]} == {False}
         assert [entry[1] for entry in semantic[question + 1:]] == [s["query_text"] for s in plan["seed_semantic"]]
@@ -149,7 +150,7 @@ def test_a_frozen_list_replays_under_the_rule_it_froze():
     assert small_batch.replay(manifest)["fused"] == old["fused"]
 
 
-# ---- 5. A run frozen before D6 finishes under it ---------------------------------------------------------------------
+# ---- 5. A run frozen earlier finishes under it ---------------------------------------------------------------------
 
 
 # ---- 6. seed_terms: the terms the seeds brought, a diagnosis only ---------------------------------------------------

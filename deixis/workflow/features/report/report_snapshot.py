@@ -19,16 +19,16 @@ def included_table_rows(store: Store, research_id: str, table_id: str) -> list[s
     """Use the same active-row and report-source boundary for snapshots and later comparisons.
 
     The report sources are the included ones and, in a table made from the research, the works read in full that were
-    not included (D144) and those read from their abstracts only (D114, `table_sources`).
+    not included and those read from their abstracts only (`table_sources`).
     """
     included = set(table_sources.table_sources(store, research_id, table_id))
     return [source_id for source_id in TableStore(store).active_rows(table_id) if source_id in included]
 
 
 def countable_row_ids(snapshot: dict[str, Any]) -> list[str]:
-    """The rows a structured count may take members from: the frozen included rows (D114).
+    """The rows a structured count may take members from: the frozen included rows.
 
-    A row read from its abstract only because no full text was obtained, or read in full without being included (D144),
+    A row read from its abstract only because no full text was obtained, or read in full without being included,
     is never counted; an ordinary claim may still cite it. A snapshot saved before rows carried `membership` counts every evidence row, as it did.
     """
     rows = evidence_row_ids(snapshot)
@@ -39,7 +39,7 @@ def countable_row_ids(snapshot: dict[str, Any]) -> list[str]:
 
 
 def frozen_passage_ids(snapshot: dict[str, Any]) -> dict[str, list[str]]:
-    """Per row, the passages frozen for it (D114): only rows with no text beyond their abstract when the snapshot was
+    """Per row, the passages frozen for it: only rows with no text beyond their abstract when the snapshot was
     taken have them."""
     return {row["source_version_id"]: list(row["passage_ids"]) for row in snapshot.get("rows", []) if "passage_ids" in row}
 
@@ -90,7 +90,7 @@ def reading_counts(store: Store, research_id: str, included: list[str]) -> dict[
 
 def reading_basis(store: Store, rows: list[dict[str, Any]], cells: list[dict[str, Any]],
                   columns: list[dict[str, Any]]) -> dict[str, Any]:
-    """What the report's table rests on, for the basis note at the top of the report (D68).
+    """What the report's table rests on, for the basis note at the top of the report.
 
     A row read from PDF text has a cell made from selected PDF passages; any other row was read from its abstract or,
     without one, from its metadata. A cell could not be verified when it holds no finished answer (empty, or a failed
@@ -131,8 +131,8 @@ def build_snapshot(store: Store, research_id: str, table_id: str) -> dict[str, A
     Every included row of the table is evidence, whatever its cells hold: a row whose cells failed is read from its
     abstract or metadata and named in the basis note. Only snapshots saved before this rule carry `failed_rows`.
 
-    D114: each row records why it is in the report (`membership`: included, full_text_read for a work read in full that
-    was not included (D144), or abstract_only for a work read from its abstract only), and a row with no text beyond its abstract records its abstract passages (`passage_ids`), so a
+    Each row records why it is in the report (`membership`: included, full_text_read for a work read in full that
+    was not included, or abstract_only for a work read from its abstract only), and a row with no text beyond its abstract records its abstract passages (`passage_ids`), so a
     PDF that arrives later never reaches this report: report steps read those ids, not the source's live passages.
     """
     tables = TableStore(store)
@@ -143,7 +143,7 @@ def build_snapshot(store: Store, research_id: str, table_id: str) -> dict[str, A
     column_ids = {column["id"] for column in columns}
     members = table_sources.membership(store, research_id, table_id)
     # A row read from its abstract only reads its abstract passages and nothing else, even when a cell was filled from
-    # a PDF that has since been removed: that cell's links outside the abstract, and its PDF depth, stay out (D114).
+    # a PDF that has since been removed: that cell's links outside the abstract, and its PDF depth, stay out.
     abstract_bound = {source_id: {p["id"] for p in store.passages_for(source_id)}
                       for source_id in source_ids if members.get(source_id) == "abstract_only"}
     cells = []
@@ -190,7 +190,7 @@ def build_snapshot(store: Store, research_id: str, table_id: str) -> dict[str, A
         rows.append(row)
 
     revision = store.research(research_id)["current_scope_revision"]
-    # The search's records are the discovery runs'; a follow-up search (D92) is kept apart below.
+    # The search's records are the discovery runs'; a follow-up search is kept apart below.
     found = store.conn.execute(
         "SELECT COALESCE(SUM(s.result_count), 0) FROM search_runs s JOIN runs r ON r.id = s.run_id"
         " WHERE s.research_id = ? AND COALESCE(s.scope_revision, r.scope_revision) = ? AND r.kind = 'discovery'"
@@ -224,19 +224,19 @@ def build_snapshot(store: Store, research_id: str, table_id: str) -> dict[str, A
     if reading is not None:
         result["reading"] = reading
     # Rows of the table whose source is not included (excluded or undecided since): not evidence, but recorded, so the
-    # report's table boundary is not dropped silently (D63). Written only when there are some.
+    # report's table boundary is not dropped silently. Written only when there are some.
     states = dict(store.conn.execute("SELECT source_version_id, state FROM selections WHERE research_id = ?", (research_id,)).fetchall())
     left_out = [{"source_version_id": source_id, "selection_state": states.get(source_id)}
                 for source_id in tables.active_rows(table_id) if source_id not in source_ids]
     if left_out:
         result["left_out_rows"] = left_out
     result["basis"] = reading_basis(store, rows, cells, result["columns"])
-    # Written only when there are some, like the other optional parts (D114).
+    # Written only when there are some, like the other optional parts.
     abstract_members = [row["source_version_id"] for row in rows if row["membership"] == "abstract_only"]
     if abstract_members:
         result["abstract_rows"] = abstract_members
         result["basis"]["abstract_members"] = [_named(store, source_id) for source_id in abstract_members]
-    # The follow-up searches of this question completed before the snapshot (D92): date, requests and new works from
+    # The follow-up searches of this question completed before the snapshot: date, requests and new works from
     # each run's frozen found step. Written only when there are some; an older snapshot has none.
     followups = [followup_brief(run) for run in followup_runs(store.conn, research_id, revision, ("completed",))]
     if followups:

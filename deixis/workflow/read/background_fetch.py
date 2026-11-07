@@ -1,4 +1,4 @@
-"""D251: durable retrieval outside the single research-run worker lane."""
+"""Durable retrieval outside the single research-run worker lane."""
 
 from __future__ import annotations
 
@@ -153,7 +153,7 @@ class BackgroundFetchLane:
         self.wake()  # the slot this fetch held is free for the next queued one
 
     async def _fetch(self, run: dict[str, Any], wid: str) -> None:
-        # The fetch is the run's work, started after it ended: its provider requests are stored as the run's (D31).
+        # The fetch is the run's work, started after it ended: its provider requests are stored as the run's.
         request_log.set(self.store.request_log(run["id"]))
         async with self.flow.deps.fetch_slots.slot(background=True):
             await before_publish(self.flow, run)

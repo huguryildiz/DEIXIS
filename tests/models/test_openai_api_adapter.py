@@ -1,4 +1,4 @@
-"""The OpenAI Responses API connection for research steps (D34).
+"""The OpenAI Responses API connection for research steps.
 
 Mocked httpx transports only: these show the request shape and the handling of answers, not that the live API accepts
 the requests or answers the way the mocks do.

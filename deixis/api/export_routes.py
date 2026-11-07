@@ -45,7 +45,7 @@ def register_export_routes(app) -> None:
         title = _report_title(view, answer)
         version = answer["report_version"] if answer.get("report_version") is not None else 0
         revision = answer.get("report_revision") or 0
-        # The document names the version as the file does: V2, or V2.1 for the application's update of V2 (D57).
+        # The document names the version as the file does: V2, or V2.1 for the application's update of V2.
         blocks = answer_export.blocks(answer, view["sources"], title=title, version=f"{version}.{revision}" if revision else version,
                                       language=lang, style=style)
         return _download(ooxml.docx(blocks, title=title), ooxml.DOCX_MEDIA_TYPE, answer_export.filename(title, version, revision))

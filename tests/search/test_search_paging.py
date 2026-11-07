@@ -1,7 +1,7 @@
 """Reading one `sw` query page by page, up to the keyword cap, and counting what stayed unread (slice 04c).
 
 Since the clean start (slice 3a) discovery reads OpenAlex keyword pages only, round robin over its queries up to the
-frozen `keyword_cap` (fast path, D252); the old search round, which paged every provider to the effort's read limit,
+frozen `keyword_cap` (fast path); the old search round, which paged every provider to the effort's read limit,
 was removed with its tests. The page behaviour it shared with the fast path is checked here through
 `fast_search.execute` with a hand-built plan, the real `_send_search` and a mocked transport.
 
@@ -101,7 +101,7 @@ class PagedProviders:
 
     `fail_at` makes the page that starts at that record answer 429 until `recover` is set, for every OpenAlex query
     or, with `fail_query`, for that query only; everything else is a 404, so a provider that is not mocked fails on its
-    first page and the run carries on (D18). `queries` logs each OpenAlex page request with its query text.
+    first page and the run carries on. `queries` logs each OpenAlex page request with its query text.
     """
 
     def __init__(self, openalex_total=450, crossref_total=0, fail_at=None, openalex_next_total=None, fail_query=None):
@@ -155,7 +155,7 @@ def app_for(tmp_path, monkeypatch, handler, workflow="sw", adapter=None):
     # Small pages keep the fixtures small. Paging is the same at 20 records a page as at 200; what a provider's real
     # page size and reachable depth are is checked against its documentation in tests/search/test_providers.py.
     # Crossref stands in for an offset-paged provider here and is made searchable for that: the product no longer
-    # sends it a query (D87), and that is what tests/search/test_provider_roles.py is for.
+    # sends it a query, and that is what tests/search/test_provider_roles.py is for.
     for provider, size in (("openalex", 20), ("crossref", 10)):
         monkeypatch.setitem(CONNECTORS, provider,
                             replace(CONNECTORS[provider], max_results=size, searchable=True))
@@ -255,7 +255,7 @@ def test_a_failed_page_stops_its_query_only_and_is_retried_on_request(library, t
     providers = PagedProviders(openalex_total=45, fail_at=20, fail_query=ALPHA)
     research_flow, scope = keyword_reader(library, tmp_path, providers)
     plan = keyword_plan(library, scope, (ALPHA, BETA))
-    # The first page's records stand, the failed page is recorded, and the other query reads all of its own (D18).
+    # The first page's records stand, the failed page is recorded, and the other query reads all of its own.
     rows = read_pages(research_flow, library, scope, plan, query=ALPHA)
     assert [(r["page_number"], r["status"], r["stop_reason"]) for r in rows] == [
         (0, "completed", None), (1, "rate_limited", "page_failed")]
@@ -268,7 +268,7 @@ def test_a_failed_page_stops_its_query_only_and_is_retried_on_request(library, t
     rows = read_pages(research_flow, library, scope, plan, retry_failed=True, query=ALPHA)
     assert [p for p in providers.queries if p[0] == ALPHA] == [(ALPHA, 0), (ALPHA, 20), (ALPHA, 20)]
     assert [p for p in providers.queries if p[0] == BETA] == [(BETA, 0), (BETA, 20), (BETA, 40)]
-    # The failed page keeps its own row; the successful retry is a second row beside it, not an edit of it (D18).
+    # The failed page keeps its own row; the successful retry is a second row beside it, not an edit of it.
     assert [(r["page_number"], r["status"], r["stop_reason"]) for r in rows] == [
         (0, "completed", None), (1, "rate_limited", "page_failed"), (1, "completed", "retry_page_only")]
     assert rows[-1]["unread_count"] == 5
@@ -297,7 +297,7 @@ def _without_total(providers):
 
 
 def test_a_page_the_provider_answers_with_a_server_error_is_sent_once_more(library, tmp_path, monkeypatch):
-    # D148: a 5xx is sent again once, after a short wait; a second 5xx is the page's outcome and nothing more is sent.
+    # A 5xx is sent again once, after a short wait; a second 5xx is the page's outcome and nothing more is sent.
     from deixis.workflow.run import flow as flow_module
     monkeypatch.setattr(flow_module, "SERVER_ERROR_RETRY_SECONDS", 0)
     providers = PagedProviders(openalex_total=5)

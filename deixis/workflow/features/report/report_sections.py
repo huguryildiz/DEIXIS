@@ -109,7 +109,7 @@ def _validation_context(flow: ResearchFlow, report_id: str, snapshot: dict, sect
                             {name: basis[name] for name in ("basis_claim_keys", "basis_passage_ids", "basis_cell_ids")})
     cell_ids = {cid for gap in accepted for cid in gap["basis_cell_ids"]}
     basis_cells = [c for c in snapshot["cells"] if c["cell_id"] in cell_ids]
-    # D58: a basis cell carries its stored quotes; only pages a gap names directly are loaded, up to a cap. A page past
+    # A basis cell carries its stored quotes; only pages a gap names directly are loaded, up to a cap. A page past
     # the cap stays named by id in its gap's basis_passage_ids.
     passage_ids = {pid for gap in accepted for pid in gap["basis_passage_ids"]}
     basis_passages, shown_chars = [], 0
@@ -119,7 +119,7 @@ def _validation_context(flow: ResearchFlow, report_id: str, snapshot: dict, sect
             raise ValueError(f"accepted VI basis passage missing: {pid}")
         p = dict(row)
         if not selection.allowed_passage(snapshot, p):
-            continue  # a page a frozen abstract-only row gained after the snapshot (D114)
+            continue  # a page a frozen abstract-only row gained after the snapshot
         basis_passages.append({"passage_id": pid, "source_id": p["source_version_id"],
             "reading_depth": "abstract" if p["kind"] == "abstract" else "selected_sections",
             "locator": {"kind": p["kind"], "physical_page": p["physical_page"], "printed_label": p["printed_label"]},
@@ -129,7 +129,7 @@ def _validation_context(flow: ResearchFlow, report_id: str, snapshot: dict, sect
         if shown_chars > MAX_BASIS_PASSAGE_CHARS:
             basis_passages.pop()
             break
-    # Count members come from the frozen included rows only; a row read from its abstract only is never counted (D114).
+    # Count members come from the frozen included rows only; a row read from its abstract only is never counted.
     return {"source_ids": countable_row_ids(snapshot), "column_ids": [c["column_id"] for c in snapshot["columns"]],
             "cells": [{name: c[name] for name in ("cell_id", "source_version_id", "column_id", "state", "value", "reading_depth")}
                       for c in selection.usable_cells(snapshot)],
@@ -142,7 +142,8 @@ LEGACY_SECTION_VERSION = "deixis.report_section_draft.v2"
 def revalidate_section(payload: dict, draft: dict) -> contracts.ValidationReport:
     """Only VIII's code-rendered text is outside the model contract; retain the original input envelope."""
     model_draft = {key: value for key, value in draft.items() if key != "text"}
-    # A draft stored before D40 is v2. v3 only adds `equation_ocr` to `equation_origin`, so a v2 draft is checked under v3's
+    # A draft stored earlier is v2. v3 only adds `equation_ocr` to `equation_origin`, so a v2 draft is checked under
+    # v3's
     # rules with its version read as v3; the stored draft keeps its own version. New model output must say v3.
     if model_draft.get("schema_version") == LEGACY_SECTION_VERSION:
         model_draft["schema_version"] = contracts.SCHEMA_VERSIONS["ReportSectionDraft"]
@@ -297,7 +298,7 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
     table_id, report_id = run["target"]["table_id"], run["target"]["report_id"]
     reports = ReportStore(flow.store)
     flow._checkpoint(run_id, run["scope_revision"])
-    # A resumed report goes on from the snapshot it saved: rows the table gained since (D63) are not its evidence.
+    # A resumed report goes on from the snapshot it saved: rows the table gained since are not its evidence.
     # Empty or unverified cells do not stop it; the snapshot's basis note says what each source was read from.
     try:
         snapshot = reports.snapshot(report_id)
@@ -340,7 +341,7 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
     flow._checkpoint(run_id, run["scope_revision"])
     if output.get("invalid"):
         flow._fail(run_id, "invalid_model_output", {"step": "report_plan", "issues": output["issues"]})
-    # The word budget counts the snapshot's rows, never the live table: a resumed report freezes the same plan (D63).
+    # The word budget counts the snapshot's rows, never the live table: a resumed report freezes the same plan.
     frozen_plan = freeze_plan(output["result"], snapshot, snapshot.get("row_counts", {}).get("completed", len(snapshot["rows"])))
     reports.set_plan(report_id, frozen_plan)
 

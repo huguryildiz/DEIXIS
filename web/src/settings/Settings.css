@@ -14,7 +14,7 @@
 .app .settings-page h2+.foot-note{margin-top:-10px}
 .app .settings-page>.foot-note{margin:0;color:var(--muted);font-size:12px;line-height:1.5}
 .app .settings-page>.notice{margin:0}
-/* Tabs (D30, owner 15 Oct 2026; the mockup is one page): the page's data-tab shows the sections whose data-panel names
+/* Tabs (owner 15 Oct 2026; the mockup is one page): the page's data-tab shows the sections whose data-panel names
    that tab. Sections without a data-panel (the footer, the connections read error) show under every tab. */
 .app .settings-tabs{display:flex;gap:2px;margin-top:-8px;overflow-x:auto;border-bottom:1px solid var(--line);scrollbar-width:none}
 .app .settings-tabs button{flex:none;margin-bottom:-1px;padding:6px 10px;border:0;border-bottom:2px solid transparent;background:none;color:var(--muted);font:inherit;font-size:13px;font-weight:500;line-height:1.5;cursor:pointer}
@@ -348,7 +348,7 @@
 .app .settings-page .opts .connection-icon{margin-top:3px}
 .app .settings-page .opts label.is-disabled .connection-icon{opacity:.4}
 
-/* Data location (D32): one bordered card under This computer — the folder, its size by part as a stacked bar with a
+/* Data location: one bordered card under This computer — the folder, its size by part as a stacked bar with a
    legend, the free space on its disk, and the change for the next start. */
 .app .settings-page .data-location{display:grid;gap:10px;padding:14px 16px;border:1px solid var(--line);border-radius:10px}
 .app .settings-page .dl-head{display:flex;align-items:flex-start;gap:10px}

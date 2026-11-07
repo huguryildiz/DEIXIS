@@ -1,4 +1,4 @@
-"""Settings → This computer → Data location (D32): where the library lives, its size, and a change for the next start.
+"""Settings → This computer → Data location: where the library lives, its size, and a change for the next start.
 
 Nothing here moves a file. A change writes the pointer file; `deixis serve` moves the library at its next start.
 """

@@ -196,7 +196,7 @@ class CodexAppServer:
             raise RuntimeError(f"turn already active for thread {thread_id}")
         self._turn_notifications[thread_id] = queue
         user_input: list[dict[str, Any]] = [{"type": "text", "text": text}]
-        if image_png is not None:  # one PNG as a data URL before the text (D113)
+        if image_png is not None:  # one PNG as a data URL before the text
             user_input.insert(0, {"type": "image", "url": "data:image/png;base64," + base64.standard_b64encode(image_png).decode()})
         params: dict[str, Any] = {"threadId": thread_id, "input": user_input}
         if output_schema is not None:

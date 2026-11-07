@@ -225,7 +225,7 @@ def test_language_and_theme_are_kept_in_the_library_until_chosen_again(client):
 
 
 def test_deeper_screening_is_frozen_into_a_discovery_queued_while_it_is_on(client):
-    """D173: unset reads `off`; turned on, it reads back with each depth's window, a Standard discovery queued then
+    """Unset reads `off`; turned on, it reads back with each depth's window, a Standard discovery queued then
     freezes places 51–150, and turning it off afterwards leaves that run's budget as it was."""
     view = client.get("/api/settings/preferences").json()
     windows = {"standard": {"first": 51, "last": 150}, "detailed": {"first": 101, "last": 200}}

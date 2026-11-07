@@ -1,4 +1,4 @@
-"""D63: a table made from the included sources follows them.
+"""A table made from the included sources follows them.
 
 A sweep, run at the same points as `table_refresh.advance`. First, every included source of a following table's
 research that was never a row of it gets a row (`added_by = 'included_later'`): a plain insert, done whatever runs are
@@ -7,19 +7,19 @@ never added back, and a source excluded later keeps its row; the table marks it 
 
 Then the empty cells of those rows are filled by the ordinary fill path: one `table_fill` run per table, marked
 `auto_rows` and `included_only`, queued only while no run of the research is queued, running or pause_requested and no
-background PDF fetch of it is out. A paused run does not hold it (unlike D52's re-read): `create_run` already lets a
+background PDF fetch of it is out. A paused run does not hold it (unlike that re-read): `create_run` already lets a
 run start beside a paused one. A cell is due when its row is one the app added, its source is still included, its
 column existed when the row was added or was accepted by the study-table chain, and no fill of the table planned it
 since the row was added; so a fill that failed, paused or was cancelled is not queued again, and a person fills those
 cells from the table. An answer that fails only its own checks (a quote not found, say) is asked once more by the
-fill and otherwise stored as not verified when it has a value (D68); a call that fails as a whole fills none of its
+fill and otherwise stored as not verified when it has a value; a call that fails as a whole fills none of its
 cells. Neither stops the report.
 
 Every following table gets its own fill: a cell belongs to one table's column (its own instruction and format), and a
 report is written from one table, so the same new source is a separate set of questions in each table.
 
-D114: a table made from the research (`follows_included = 2`) also follows the works read from their abstracts only
-and (D144) those read in full that were not included (`table_sources`). Such a work gets a row when it has never had one in the table, matched by work, so a new head of a
+A table made from the research (`follows_included = 2`) also follows the works read from their abstracts only
+and those read in full that were not included (`table_sources`). Such a work gets a row when it has never had one in the table, matched by work, so a new head of a
 work adds no second row; its cells are due by the same rules as an included source's.
 """
 
@@ -45,13 +45,13 @@ _LIVE = "et.follows_included >= 1 AND et.trashed_at IS NULL AND rs.trashed_at IS
 NEW_ROWS_SQL = (f"SELECT et.research_id, et.id, s.source_version_id {_FOLLOWING} WHERE {_LIVE}"
                 " AND NOT EXISTS (SELECT 1 FROM table_rows t WHERE t.table_id = et.id AND t.source_version_id = s.source_version_id)"
                 " ORDER BY et.created_at, s.updated_at, s.source_version_id")
-# Tables made from the research (D114): they also follow the works read from their abstracts only.
+# Tables made from the research: they also follow the works read from their abstracts only.
 TABLE_SOURCE_TABLES_SQL = ("SELECT et.research_id, et.id FROM evidence_tables et JOIN researches rs ON rs.id = et.research_id"
                            f" WHERE et.follows_included = {FOLLOWS_TABLE_SOURCES} AND et.trashed_at IS NULL AND rs.trashed_at IS NULL"
                            " ORDER BY et.created_at, et.id")
 # Empty cells of rows the app added, in columns that existed when the row was added or that the study-table chain
 # accepted, which no fill of the table planned since the row was added. Whether the row's source is still one the table
-# follows (included, or for a D114 table read from its abstract only) is checked in Python by `_following`.
+# follows (included, or for a table read from its abstract only) is checked in Python by `_following`.
 DUE_CELLS_SQL = (
     "SELECT et.research_id, et.id, t.source_version_id, k.id FROM evidence_tables et JOIN researches rs ON rs.id = et.research_id"
     " JOIN table_rows t ON t.table_id = et.id AND t.added_by = 'included_later' AND t.removed_at IS NULL"

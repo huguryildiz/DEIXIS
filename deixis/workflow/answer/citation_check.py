@@ -1,4 +1,4 @@
-"""Verify Citations (V1, D86; V2, D96; V3, D99): a draft's markers, its bibliography entries and their (occurrence,
+"""Verify Citations (V1; V2; V3): a draft's markers, its bibliography entries and their (occurrence,
 entry) pairs, the lookup that names each entry's OpenAlex record, the text each entry is read from, the frozen passage
 plan of every pair, the preview with its cost range, the model step that checks each planned pair and the code's
 verdict on it, the view, the export and the delete.
@@ -15,7 +15,7 @@ particles); a cited letter suffix
 `ambiguous`.
 
 An entry resolves to an OpenAlex record by DOI (an arXiv id is read as its DataCite DOI) when exactly one returned work
-carries it and the answer is complete, the rule the citation map uses (D42 in the old log); by title only when exactly
+carries it and the answer is complete, the rule the citation map uses; by title only when exactly
 one of the first `TITLE_CANDIDATES` search results has a title at least `TITLE_MATCH_MIN` similar and no other year.
 An entry with a DOI or arXiv id that does not resolve is not tried by title. The record is stored as a provider
 source; titles, authors and years shown come from it, never from the draft or the entry.
@@ -375,7 +375,7 @@ def available_text(store: Store, svid: str) -> str:
 
 
 def text_version(source: dict[str, Any]) -> str | None:
-    """`upload` for a person's file, `preprint` for a preprint or an accepted or submitted manuscript (D46, D48),
+    """`upload` for a person's file, `preprint` for a preprint or an accepted or submitted manuscript,
     `publisher` for a record under its own registered DOI; None when the record says neither."""
     if source["origin"] == "user_upload":
         return "upload"
@@ -634,7 +634,7 @@ PLAN_STATUSES = ("planned", "out_of_cap", "no_text")  # the statuses a freeze de
 
 
 def cited_sentence(text: str, marker: dict[str, Any], spans: list[tuple[int, int]]) -> str:
-    """The claim the check reads for this marker: the stored plain claim (`draft_parse`, D105: markers cut, LaTeX as
+    """The claim the check reads for this marker: the stored plain claim (`draft_parse`: markers cut, LaTeX as
     plain text, a table citation's row), else, for a draft read before claims were stored, the marker's sentence with
     every citation marker in it cut out, so a key, a number or a cited name never ranks a passage."""
     if marker.get("claim"):
@@ -767,7 +767,7 @@ def freeze_plan(store: Store, draft_id: str, refreeze: bool = False) -> dict[str
 
 def _stale(store: Store, pair: dict[str, Any], entry: dict[str, Any] | None) -> bool:
     """Whether the check would no longer read what the frozen plan shows: the plan still stands until the person
-    freezes again, and the change is shown. Decided by what the check uses (D105, after the V5 pilot): the entry's text
+    freezes again, and the change is shown. Decided by what the check uses (after the V5 pilot): the entry's text
     is no longer settled, or now comes from another record or at another depth (a person's PDF added); a given passage
     is no longer one a model step may read of the record (a new file or extraction) or its text changed; the depth
     label or the count of passages not given would no longer be true; or the revision's identity result is not about
@@ -809,7 +809,7 @@ def text_changed_elsewhere(store: Store, pair: dict[str, Any]) -> bool:
 def reextraction_waiting(store: Store, draft_id: str) -> list[dict[str, Any]]:
     """The entries a pair names whose text comes from a PDF the background equation reader (Marker, the arXiv LaTeX
     source or Mathpix) is reading now or will still read by itself (`equations.background_read_waiting`): its reading
-    writes a new extraction, so a plan frozen now would go stale minutes later (V5 pilot, D105). In entry order, with
+    writes a new extraction, so a plan frozen now would go stale minutes later (V5 pilot). In entry order, with
     the reader's state."""
     from deixis.workflow.read import equations  # the equation service builds on the store; read only here
     marks = ",".join("?" * len(PLAN_STATUSES))
@@ -895,7 +895,7 @@ def cost_range(items: list[tuple[dict[str, Any], str]], choice: dict[str, Any] |
 
 
 def record_flags(store: Store, entry: dict[str, Any] | None) -> list[str]:
-    """The flags an entry row carries (D86's title and retraction flags, and the identity of its PDFs)."""
+    """The flags an entry row carries (that title and retraction flags, and the identity of its PDFs)."""
     if entry is None:
         return []
     flags = []
@@ -924,7 +924,7 @@ def _source_summary(store: Store, svid: str | None) -> dict[str, Any] | None:
 def preview(store: Store, draft_id: str, choice: dict[str, Any] | None) -> dict[str, Any]:
     """What the V3 step would be sent, read from the frozen plan and nothing else: the selected pairs in draft order
     with their passages, the pairs beyond the cap, every counter, and the cost range. It changes nothing but one
-    event that records which revision was shown, priced for which model (D99): a check runs only a revision shown
+    event that records which revision was shown, priced for which model: a check runs only a revision shown
     with its model."""
     draft = draft_row(store, draft_id)
     if not draft["plan_revision"]:
@@ -1111,7 +1111,7 @@ def counters(store: Store, draft_id: str) -> dict[str, Any]:
         "pairs_in_plan": to_send + checked_pairs + pair_status.get("out_of_cap", 0) if frozen else None,
         "pairs_out_of_cap": pair_status.get("out_of_cap", 0),
         "pairs_to_send": to_send if frozen else None,
-        # None until a check of this draft started (V3, D99), never zero for "not asked". `done` is a valid completed
+        # None until a check of this draft started (V3), never zero for "not asked". `done` is a valid completed
         # assessment; `found` the done pairs with a located passage; `could_not_check` is in neither.
         **(checks or dict.fromkeys(CHECK_COUNTERS)),
     }

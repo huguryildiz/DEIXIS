@@ -165,7 +165,7 @@ def test_local_connections_do_not_share_the_proxy_honouring_client(tmp_path, pat
         for name in ("ollama", "local_server"):
             own = adapters[name]._http()
             assert own is not shared and own.trust_env is False and own.follow_redirects is False and not own._mounts
-        # D34 follow-up: Ollama/LM Studio embeddings, the local tool checks and Zotero's local API share one loopback client.
+        # Ollama/LM Studio embeddings, the local tool checks and Zotero's local API share one loopback client.
         local = app.state.local_http
         assert local is not shared and local.trust_env is False and local.follow_redirects is False and not local._mounts
         assert app.state.local_tools._client is local and app.state.worker.flow.deps.local_http is local
@@ -178,7 +178,7 @@ def test_local_connections_do_not_share_the_proxy_honouring_client(tmp_path, pat
 
 
 def test_claude_code_runs_on_the_account_not_on_a_saved_api_key(tmp_path, monkeypatch):
-    """D34: the CLI inherits the app's environment; the key saved for the Anthropic API connection is emptied for it."""
+    """The CLI inherits the app's environment; the key saved for the Anthropic API connection is emptied for it."""
     from deixis.models.claude import ClaudeCodeAdapter
     monkeypatch.setenv("ANTHROPIC_API_KEY", "SYNTHETIC-api-key")
     options = ClaudeCodeAdapter(workspace=tmp_path / "claude")._options("claude")

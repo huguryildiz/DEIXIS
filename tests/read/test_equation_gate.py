@@ -21,7 +21,7 @@ def detect(tmp_path, doc, name="eq.pdf", **kw):
 
 
 def test_the_finder_crops_displays_beside_lead_in_words_painted_bars_and_page_numbers(tmp_path):
-    # D139: a fraction bar painted as a thin image, a lone "where" above a display and "i.e.," above one refused all
+    # A fraction bar painted as a thin image, a lone "where" above a display and "i.e.," above one refused all
     # three; each now gets a crop of exactly its own lines. An image that is not a bar still refuses.
     def page(picture=False):
         doc = pymupdf.open()
@@ -198,7 +198,7 @@ def rows(store):
 
 
 def test_the_crops_of_a_pdf_are_read_at_once_and_placed_in_order(tmp_path):
-    """D136: the model reads up to MODEL_PARALLEL crops of a PDF at the same time; the answers are placed by their crop."""
+    """The model reads up to MODEL_PARALLEL crops of a PDF at the same time; the answers are placed by their crop."""
     class SlowModel(FakeImageModel):
         live = peak = 0
 

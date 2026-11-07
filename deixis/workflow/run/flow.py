@@ -85,16 +85,16 @@ CAPABILITIES = {
     "unsupported_tasks": ["synthesis", "candidate_development", "claim_check", "experiment"],
 }
 MAX_DOWNLOADS_PER_RUN = 8
-# D148: a search request the provider answered with a 5xx is sent once more after this wait. A search is a read, so a
+# A search request the provider answered with a 5xx is sent once more after this wait. A search is a read, so a
 # second send changes nothing at the provider; it is counted like every other attempt.
 SERVER_ERROR_RETRY_SECONDS = 2.0
-# Steps whose repairs are counted from their stored sessions across a stop and a resume (D249), so an output already
+# Steps whose repairs are counted from their stored sessions across a stop and a resume, so an output already
 # judged invalid twice is recovered without a new call. The follow-up answer joined in S22a.
 STORED_REPAIR_TASKS = ("grounded_answer", "followup_answer", "followup_search_query")
-RESPLIT_KEY = "grounded_answer_resplit"  # D249: the one extra repair of an answer that fails only on D247's rule
-INFERENCE_CAP_KEY = "grounded_answer_inference_cap"  # D260: one rewrite of a valid answer that is mostly analyst inference
-LEDGER_COVERAGE_KEY = "grounded_answer_ledger_coverage"  # D83: one rewrite of a valid answer that leaves given works unaccounted
-# The reason an sw answer records when neither included works nor eligible abstracts are available (D234).
+RESPLIT_KEY = "grounded_answer_resplit"  # The one extra repair of an answer that fails only on the several-sources rule
+INFERENCE_CAP_KEY = "grounded_answer_inference_cap"  # One rewrite of a valid answer that is mostly analyst inference
+LEDGER_COVERAGE_KEY = "grounded_answer_ledger_coverage"  # One rewrite of a valid answer that leaves given works unaccounted
+# The reason an sw answer records when neither included works nor eligible abstracts are available.
 NO_INCLUDABLE_SOURCE = "no_includable_source"
 MAX_ABSTRACT_CHARS = 2500
 MAX_PASSAGES_PER_SOURCE = 6  # passages one included source may contribute to an answer step
@@ -114,12 +114,12 @@ MAX_CELL_PASSAGES = 48
 MAX_FILL_PASSAGES = 24
 MAX_RECHECK_PASSAGES = 16
 COLUMN_FIELDS = ("name", "instruction", "answer_format", "options", "allow_multiple", "unit_hint")
-RRF_K = 60  # reciprocal rank fusion constant (D27)
-# The candidate rank a chained record is written with (D95): after every keyword record, so a record a keyword query
+RRF_K = 60  # reciprocal rank fusion constant
+# The candidate rank a chained record is written with: after every keyword record, so a record a keyword query
 # already found keeps the rank and the search its candidate row names.
 CHAIN_RANK_BASE = 1_000_000_000
 # Steps whose records are shown as short handles instead of stored identifiers, because long random IDs were
-# mis-copied (D12). The abstract stage joined them in slice 09: its batches name 20 candidates each.
+# mis-copied. The abstract stage joined them in slice 09: its batches name 20 candidates each.
 HANDLE_TASKS = ("grounded_answer", "followup_answer", "answer_review", "cell_extraction", "abstract_screening",
                 "fulltext_adjudication", "lineage_links") + contracts.REPORT_TASKS + contracts.CANDIDATE_TASKS + contracts.REVIEW_TASKS + (
                 contracts.CITATION_CHECK_TASKS)
@@ -132,7 +132,7 @@ RATE_LIMIT_BACKOFF_SECONDS = 1.5  # matches the provider search retry backoff in
 # The batch stages in which one call that outlived the adapter's turn limit is sent once more instead of pausing the
 # stage (slice 13e): there one slow call stopped every other call of the stage. Elsewhere a call is the stage.
 TIMEOUT_RETRIED_TASKS = ("abstract_screening", "fulltext_adjudication")
-# A route that did not answer, so the work it was tried for is decided by no code and is tried again (SW10, D35).
+# A route that did not answer, so the work it was tried for is decided by no code and is tried again (SW10).
 UNANSWERED_FETCH_CODES = ("fetch_timeout", "fetch_failed")
 UNANSWERED_LOOKUP_STATUSES = ("timeout", "rate_limited", "failed")
 
@@ -151,7 +151,7 @@ def _reference_list(text: str) -> bool:
 
 
 def fuse_rankings(*rankings: list[dict[str, Any]], k: int = RRF_K) -> list[dict[str, Any]]:
-    """Reciprocal rank fusion: a passage ranked high lexically or semantically comes first (D27)."""
+    """Reciprocal rank fusion: a passage ranked high lexically or semantically comes first."""
     scores: dict[str, float] = {}
     rows: dict[str, dict[str, Any]] = {}
     for ranking in rankings:
@@ -172,9 +172,9 @@ def answer_source_order(included: list[str], facts: dict[str, tuple[bool, int]],
     """Order included sources for the answer step, whose input holds a limited number of passages.
 
     Sources the user chose come first, then sources more providers returned, then sources whose title and abstract match
-    the question and search-plan terms best (BM25), then selection order. Offline on D13's three all-provider runs this
-    put 6, 6 and 5 of the included known papers into the first 48, against 3, 3 and 4 in selection order (D17).
-    With a semantic ranking, the BM25 rank is fused with each source's best passage rank (D27).
+    the question and search-plan terms best (BM25), then selection order. Offline on the three all-provider runs this
+    put 6, 6 and 5 of the included known papers into the first 48, against 3, 3 and 4 in selection order.
+    With a semantic ranking, the BM25 rank is fused with each source's best passage rank.
     """
     docs = {svid: re.findall(r"\w+", texts.get(svid, "").lower()) for svid in included}
     count = len(docs) or 1
@@ -191,7 +191,7 @@ def answer_source_order(included: list[str], facts: dict[str, tuple[bool, int]],
     if semantic_rank is not None:
         lexical_rank = {s: i for i, s in enumerate(sorted(included, key=lambda s: (-relevance[s], position[s])))}
         relevance = {s: 1 / (61 + lexical_rank[s]) + (1 / (61 + semantic_rank[s]) if s in semantic_rank else 0.0) for s in included}
-    # Selection order stays a signal (D17); the identifier only breaks what is equal down to that order (SW14.6).
+    # Selection order stays a signal; the identifier only breaks what is equal down to that order (SW14.6).
     return sorted(included, key=lambda s: (not facts.get(s, (False, 0))[0], -facts.get(s, (False, 0))[1], -relevance[s], position[s], s))
 
 
@@ -232,7 +232,7 @@ def sent_to_provider(result: ModelStepResult) -> bool | None:
 
 
 class _ReadCutoff(Exception):
-    """A model call the read window's cutoff (D258) reached before it was sent."""
+    """A model call the read window's cutoff reached before it was sent."""
 
 
 class RunStopped(Exception):
@@ -268,7 +268,7 @@ class _AdjudicationJob:
     key: str
     head: str
     read_version: str
-    run_no: int               # 1 or 2: the two independent reads of that work (D85)
+    run_no: int  # 1 or 2: the two independent reads of that work
 
 
 @dataclass
@@ -288,7 +288,7 @@ class _Held:
 
 
 def budget_stops(store: Any, run_id: str, prefix: str) -> list[dict[str, Any]]:
-    """The stored stops of a fast read's abstract stage, one per batch the model-call budget first failed at (D60).
+    """The stored stops of a fast read's abstract stage, one per batch the model-call budget first failed at.
     A batch a person's decision kept out the first time can fail on a restart, so a stop is added, never replaced."""
     key = f"{prefix}:budget_short:"
     return [json.loads(row["output_json"]) for row in store.conn.execute(
@@ -304,13 +304,13 @@ class FlowDeps:
     package: SkillPackage
     http: httpx.AsyncClient
     fetch_pdf: Callable[[str], Awaitable[fetch_module.FetchResult]] = fetch_module.fetch_pdf
-    equations: Any = None  # workflow.equations.EquationService when the equation reader is set up (D52)
+    equations: Any = None  # workflow.equations.EquationService when the equation reader is set up
     limiter: ModelCallLimiter = field(default_factory=lambda: ModelCallLimiter(1))
     local_embedder: Any = None  # documents.local_embedding.LocalModels: the built-in models' llama.cpp servers
     fetch_xml: Callable[[str], Awaitable[fetch_module.FetchResult]] = acquisition.fetch_xml  # Europe PMC (SW21)
     clock: fast_path.Clock | None = None
     fetch_slots: Any = None
-    local_http: httpx.AsyncClient | None = None  # servers on this computer: no proxy, no redirects (D34)
+    local_http: httpx.AsyncClient | None = None  # servers on this computer: no proxy, no redirects
 
 
 class ResearchFlow:
@@ -323,12 +323,12 @@ class ResearchFlow:
         self._fast_consumers: dict[str, Any] = {}
         self._fast_chains: dict[str, Any] = {}
         self._held: dict[str, _Held] = {}
-        # D258: per run, the latest time a model answer is still waited for (a fast-path read window's cutoff).
+        # Per run, the latest time a model answer is still waited for (a fast-path read window's cutoff).
         self._send_by: dict[str, Callable[[], Any]] = {}
         self._quota_out: dict[str, set[str]] = {}
         self._openalex_budget: dict[str, acquisition.OpenAlexBudget] = {}
         self._abstract_close_hooks: dict[str, Callable[[], None]] = {}  # per run; see `_close_abstract_batch`
-        self._run_gates: dict[str, Callable[[], None]] = {}  # per run; read by `_checkpoint` (D92)
+        self._run_gates: dict[str, Callable[[], None]] = {}  # per run; read by `_checkpoint`
         from deixis.workflow.read.background_fetch import BackgroundFetchLane, FetchSlots
         if getattr(deps, "fetch_slots", None) is None:
             deps.fetch_slots = FetchSlots()
@@ -339,7 +339,7 @@ class ResearchFlow:
         self._quota_out.pop(run_id, None)
         from deixis.providers.common import fast_openalex_pacing, request_log
         pacing = fast_openalex_pacing.set(fast_path.chain_on(self.store.run(run_id)["budget"]))
-        # Every provider request of this run, and of the tasks it starts, is stored as it returns (D31).
+        # Every provider request of this run, and of the tasks it starts, is stored as it returns.
         logging_requests = request_log.set(self.store.request_log(run_id))
         try:
             await self._execute_run(run_id)
@@ -458,7 +458,7 @@ class ResearchFlow:
                 from deixis.workflow.answer import followup
                 await followup.answer(self, run, scope)
             elif run["kind"] == "followup_search":
-                from deixis.workflow.search import followup_search  # D92
+                from deixis.workflow.search import followup_search
                 await followup_search.execute(self, run, scope)
             elif run["kind"] == "citation_map":
                 from deixis.workflow.features.citation_map import citation_map_run
@@ -495,7 +495,7 @@ class ResearchFlow:
                         report_pipeline.after_answer(self.store, self.store.run(run["target"]["answer_run_id"]))
                 return
             if run["kind"] == "followup_answer":
-                # A turn that asked for the report to change opens its new version in the same write (D57).
+                # A turn that asked for the report to change opens its new version in the same write.
                 from deixis.workflow.answer import followup
                 with transaction(self.store.conn):
                     self.store.update_run(run_id, event="run_completed", status="completed", pause_reason=None)
@@ -533,7 +533,7 @@ class ResearchFlow:
             return
         run = self.store.run(run_id)
         if (extra := getattr(self, "_run_gates", {}).get(run_id)) is not None:
-            extra()  # a run's own stop rule (D92: the follow-up search's frozen criterion), read at every checkpoint
+            extra()  # a run's own stop rule (the follow-up search's frozen criterion), read at every checkpoint
         if (run.get("target") or {}).get("late_revision_id") or run["budget"].get("late_revision_id"):
             from deixis.workflow.answer import late_revision
             late_revision.checkpoint(self, run)
@@ -567,7 +567,7 @@ class ResearchFlow:
             return
         if before_pause is not None:
             before_pause()
-        if skip:  # D83: a step the run can finish without is skipped instead of pausing the run
+        if skip:  # A step the run can finish without is skipped instead of pausing the run
             raise OptionalStepFailed("spend_threshold", over)
         self._pause(run_id, "spend_threshold", over)
 
@@ -601,13 +601,13 @@ class ResearchFlow:
             self._pause(run_id, "seed_unavailable")
         vocabulary = criterion = approval = None
         # The seed PDF's OpenAlex work is looked up before anything else plans, so the query writer and the protocol
-        # read the same context (D2).
+        # read the same context.
         seed_context = await self._seed_match(run, scope)
         # The first search's words come from code, so no model runs before the search (SW2.3).
         vocabulary, queries = await self._vocabulary(run, scope)
         consumer = self._fast_consumers[run_id]
         if consumer.embedder is not None and consumer.query is None and self.store.english_question(rid, revision):
-            # The vocabulary step has just stored the model's English sentence (D149): the built-in model reads it too.
+            # The vocabulary step has just stored the model's English sentence: the built-in model reads it too.
             self._fast_consumers[run_id] = Consumer(self, run, scope)
         vocabulary, queries = await self._search_query(run, scope, vocabulary, queries)
         vocabulary, queries = await self._source_routing(run, scope, vocabulary, queries)
@@ -621,7 +621,7 @@ class ResearchFlow:
             # with its reason, never an edit of the first one (SW14.2).
             reason = "later_discovery_run" if self.store.current_protocol(rid, revision) else None
             fast_plan = fast_search.build_plan(self.store, run, scope, queries, seed_context, vocabulary)
-            # Which plan words a query the plan sends really carries (D26): a word can stand in the plan and still be
+            # Which plan words a query the plan sends really carries: a word can stand in the plan and still be
             # cut from every sent query, and the plan step and the Search plan panel say so from this record.
             fast_plan = fast_plan | {"words": fast_search.plan_words(vocabulary, fast_plan)}
             record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
@@ -636,13 +636,13 @@ class ResearchFlow:
         self._close_clock_stage(run, "plan")
         self._enter_clock_stage(run, "search")
 
-        # A failed search is recorded and shown, and the other searches go on (D18). The run pauses on a failure only when
+        # A failed search is recorded and shown, and the other searches go on. The run pauses on a failure only when
         # none of its searches succeeded; resuming it then retries the failed searches.
         def searched() -> bool:
             return any(s["kind"].startswith("provider_search") and s["status"] == "succeeded" for s in self.store.run_steps(run_id))
 
         # A deliberate retry action reuses the stored plan and retries only failed provider searches. A normal resume
-        # retries failures only when the whole search stage had no successful query (D18).
+        # retries failures only when the whole search stage had no successful query.
         retry_failed = bool(run["budget"].get("retry_failed_searches_only")) or not searched()
         self._checkpoint(run_id, revision)
         from deixis.workflow.search.fast_chain import Round
@@ -653,7 +653,7 @@ class ResearchFlow:
             self._pause(run_id, *failure)
         if not searched() and self._allowance_ended_searches(run_id):
             # No search succeeded and none failed: every query's share was spent before it asked (a run resumed after
-            # a crash). Going on would screen a round that searched nothing (D18); asked to search again, the retry
+            # a crash). Going on would screen a round that searched nothing; asked to search again, the retry
             # adds to every query's share (review of 13f, 2026-09-23).
             self._pause(run_id, "budget_exhausted", {"limit": "query_requests"})
         self._close_clock_stage(run, "search")
@@ -662,7 +662,7 @@ class ResearchFlow:
         self._fast_chains[run_id].admit.set()
 
         self._checkpoint(run_id, revision)
-        # A work is screened once, through its head; its other versions follow the head's selection (D46, D48).
+        # A work is screened once, through its head; its other versions follow the head's selection.
         heads = set(self.store.work_heads(rid).values())
         pool = [c for c in self.store.candidates(rid, revision)
                 if c["origin"] != "user" and c["source_version_id"] in heads]
@@ -689,17 +689,17 @@ class ResearchFlow:
         """The three code steps of slice 05 (SW5, SW9.3).
 
         No model is called and no selection is written here. A failed lookup is recorded on the record and the run
-        carries on (D18); a resumed run reads the stored plan and asks nothing twice. Which records stay away from
+        carries on; a resumed run reads the stored plan and asks nothing twice. Which records stay away from
         the model is no longer read here: since slice 09 the abstract stage's own read plan decides that, and
         `lookups.held_from_screening` is what `record_flags` counts with.
 
-        D173's deeper screening asks for its own window under `prefix` and labels its works under `flags_key`, and
+        The deeper screening asks for its own window under `prefix` and labels its works under `flags_key`, and
         `stop` (the read cutoff) ends its lookups at their next checkpoint. That round reads no external links: the
         run's `external_links` step is already stored, and a merge it found now could move a work the read already holds.
         """
         run_id, revision = run["id"], run["scope_revision"]
         words, _ = lookups.title_words(vocabulary)
-        # D155: a run whose lookup rule froze it skips Semantic Scholar while a 429 holds its pacer in a cooldown.
+        # A run whose lookup rule froze it skips Semantic Scholar while a 429 holds its pacer in a cooldown.
         skip = bool(((run["budget"].get("inspection") or {}).get("prerank_lookup") or {}).get("s2_cooldown_skip"))
         await lookups.ask_second_sources(self.store, self.deps.http, self.deps.settings, run, scope, words,
                                          lambda: self._checkpoint(run_id, revision), **({"only": only} if only is not None else {}),
@@ -735,7 +735,7 @@ class ResearchFlow:
 
         A step that already succeeded returns its stored output whole, so a resumed run sends no count request twice
         and searches exactly the queries the first run compiled. A question that is not English and has no key terms
-        is read through the revision's English sentence (`_english_question`, D149).
+        is read through the revision's English sentence (`_english_question`).
         """
         run_id, revision, budget = run["id"], run["scope_revision"], run["budget"]
         step = self.store.step(run_id, "vocabulary", "code:vocabulary")
@@ -751,7 +751,7 @@ class ResearchFlow:
         english = None
         if extraction is None:
             # Code does not translate: a model writes the question as one English sentence and code picks the words from
-            # it (D149). Without that sentence the run waits for the user's English terms (SW2.1).
+            # it. Without that sentence the run waits for the user's English terms (SW2.1).
             english = await self._english_question(run, scope)
             extraction = question_words.extract(english["text"], "en", None, statement=statement)
         extraction, labelling = await self._vocabulary_labels(run, scope, extraction)
@@ -774,7 +774,7 @@ class ResearchFlow:
         return self._code_proposed(run_id, built, queries)
 
     async def _english_question(self, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
-        """The revision's English sentence for a question that is not English and has no key terms (D149).
+        """The revision's English sentence for a question that is not English and has no key terms.
 
         A sentence already stored for the revision is used as it is: the person's own outranks any model, and a model's
         written by an earlier or interrupted run is read back, so no model is asked twice. Otherwise one model call, with
@@ -806,14 +806,14 @@ class ResearchFlow:
                        ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """The code vocabulary as the step left it. Where a model writes the query, a code query that cannot be
         searched does not stop the run here: it is left out beside the model's, or stops the run later if the user
-        chooses it alone (D92). The same holds beside a person's saved plan (S23a), whatever the setting."""
+        chooses it alone. The same holds beside a person's saved plan (S23a), whatever the setting."""
         if self.deps.settings.search_query == "model" or self._user_plan_run(run_id):
             return built, queries
         return self._proposed(run_id, built, queries)
 
     async def _search_query(self, run: dict[str, Any], scope: dict[str, Any], code_vocabulary: dict[str, Any],
                             code_queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        """The model-written query and the code's beside it, or the code's alone where no model writes one (D92).
+        """The model-written query and the code's beside it, or the code's alone where no model writes one.
 
         One call per scope revision, with the one repair `_model_step` allows; nothing is voted on. A call that fails,
         or an answer that leaves a block with no term after the counts, stops the run with `search_query_failed`: the
@@ -838,14 +838,16 @@ class ResearchFlow:
             return self._proposed(run_id, search_query_rules.settled(stored["vocabulary"], stored["queries"]),
                                   stored["queries"])
         seed_sha, seed_rows = self._seed_passages(run_id, scope)
-        # D163 M1: a stored output holds the code-query decision of its own search method, so only a run of the same
+        # Under the m1 search method a stored output holds the code-query decision of its own method, so only a run of
+        # the same
         # frozen method is reused; a run of another method in between does not hide an older compatible query.
         earlier = (self.store.search_query_of(rid, revision, run_id, method=fast_path.search_method(run["budget"]))
                    if step["output"] is None else None)
         if earlier is not None and earlier["output"].get("seed_passages_sha256") != seed_sha:
-            earlier = None  # a query written without this run's seed pages is not this run's query (D2)
+            earlier = None  # a query written without this run's seed pages is not this run's query
         if earlier is not None:
-            # D92 is one call per scope revision: the query the user already saw is searched again, and the approval
+            # The follow-up search is one call per scope revision: the query the user already saw is searched again,
+            # and the approval
             # the earlier run closed is reapplied to that same query, never to one the user has not seen.
             output = earlier["output"] | {"reused_from_run": earlier["output"].get("reused_from_run", earlier["run_id"])}
             self.store.start_step(step["id"])
@@ -932,7 +934,7 @@ class ResearchFlow:
             built["statement"] = claim
         queries = search_query_rules.compile_queries(built, _planned_providers(scope), run["budget"]["max_provider_requests"])
         built = search_query_rules.with_compiled(built, queries)
-        # D6, diagnosis only: the model's terms that share no word with the question and some word with the seeds.
+        # diagnosis only: the model's terms that share no word with the question and some word with the seeds.
         seeded = {"seed_terms": search_query_rules.seed_terms(built["terms"], [scope["question"]] + [
             row["text"] for row in [self.store.english_question(rid, revision)] if row], seed_rows)} if seed_rows else {}
         self.store.start_step(step["id"])
@@ -1042,7 +1044,7 @@ class ResearchFlow:
 
     def _seed_passages(self, run_id: str, scope: dict[str, Any]) -> tuple[str | None, list[dict[str, Any]] | None]:
         """Every seed PDF's frozen excerpt the query writer reads, in canonical order, and their fingerprint, when this
-        run looked its seeds up (D2, D3); a run whose seed step never opened writes its query as it always did."""
+        run looked its seeds up; a run whose seed step never opened writes its query as it always did."""
         step = self.store.existing_step(run_id, "seed_match")
         if step is None or step["status"] != "succeeded" or not scope["seeds"]:
             return None, None
@@ -1211,10 +1213,10 @@ class ResearchFlow:
         return vocabulary, queries, criterion, record
 
     async def _seed_match(self, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any] | None:
-        """The OpenAlex work each seed PDF is, or why there is none, as the envelope the protocol freezes (D2, D3).
+        """The OpenAlex work each seed PDF is, or why there is none, as the envelope the protocol freezes.
 
         Runs only for a ready seed set and before this run's protocol is frozen: a run whose protocol froze without
-        it finishes the way it began, and a run that opened D2's step finishes under D2's rule. One DOI request for
+        it finishes the way it began, and a run that opened the `seed_pdf_v1` step finishes under that rule. One DOI request for
         every seed, then one meaning search per seed that is still open, each kept in its own step, so a resumed run
         sends none again once it has an answer. A failed lookup does not stop the run; the context says so and the
         PDF's own pages still guide the query. A second discovery run of the scope revision takes the first one's
@@ -1262,12 +1264,12 @@ class ResearchFlow:
 
     async def _seed_lookups(self, run: dict[str, Any], seeds: list[dict[str, Any]], texts: list[tuple[str, str, str]],
                             contexts: list[dict[str, Any]], connector: Connector) -> None:
-        """seed_pdf_v2 (D3): one DOI request for every seed's page DOIs and record DOIs, each seed decided from the
+        """seed_pdf_v2: one DOI request for every seed's page DOIs and record DOIs, each seed decided from the
         works of its own DOIs only, then one meaning search per seed that neither matched nor was ambiguous.
 
         A record's own DOI decides only when the work's title is the record's title and stands in the record region
-        (`record_region`); otherwise D2's rule reads the seed's page DOIs. A seed whose DOIs could not be looked up is
-        `lookup_failed` and gets no meaning search, as in D2."""
+        (`record_region`); otherwise the `seed_pdf_v1` rule reads the seed's page DOIs. A seed whose DOIs could not be looked up is
+        `lookup_failed` and gets no meaning search, as under `seed_pdf_v1`."""
         api_key, mailto = connector.api_key(), self.deps.settings.contact_email
         page = [seed_match_rules.dois_in(head) for head, _, _ in texts]
         record = [list(seed.get("record_dois") or []) for seed in seeds]
@@ -1319,8 +1321,8 @@ class ResearchFlow:
                                else {"status": "no_match", "ambiguous": hits > 1})
 
     async def _seed_match_v1(self, run: dict[str, Any], scope: dict[str, Any], step: dict[str, Any]) -> dict[str, Any]:
-        """D2's seed step, kept so a run that opened it before seed_pdf_v2 finishes under its own rule and reads back
-        the lookups it already sent (D3). Returns D2's single context."""
+        """The `seed_pdf_v1` seed step, kept so a run that opened it before seed_pdf_v2 finishes under its own rule and reads back
+        the lookups it already sent. Returns its single context."""
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
         snapshot = scope["seeds"][0]
         self.store.start_step(step["id"])
@@ -1351,7 +1353,7 @@ class ResearchFlow:
         return context
 
     async def _seed_lookups_v1(self, run: dict[str, Any], head: str, title_region: str, connector: Connector) -> dict[str, Any]:
-        """The DOI lookup, then the meaning search only when no DOI record's title stands at the head of page 1 (D2)."""
+        """The DOI lookup, then the meaning search only when no DOI record's title stands at the head of page 1."""
         api_key, mailto = connector.api_key(), self.deps.settings.contact_email
         lookups = []
         dois = seed_match_rules.dois_in(head)
@@ -1382,7 +1384,7 @@ class ResearchFlow:
         """One seed lookup, stored with its works before the step ends; a finished one is read back, not sent again.
 
         With `complete`, a reply that holds fewer works than its `meta.count` (or names no count) is a failed lookup
-        (`incomplete`): a work cut off the page could have made a match ambiguous (D3)."""
+        (`incomplete`): a work cut off the page could have made a match ambiguous."""
         sub = self.store.existing_step(run["id"], key)
         if sub is not None and sub["status"] in ("succeeded", "failed") and sub["output"]:
             return sub["output"]
@@ -1404,7 +1406,7 @@ class ResearchFlow:
 
     async def _source_routing(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
                               queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        """Read where the proposal's records lie and compile its queries for the sources that routes to (D93).
+        """Read where the proposal's records lie and compile its queries for the sources that routes to.
 
         One OpenAlex request for the gate query (`routing.gate_query`), stored with its answer before the step ends, so
         a resumed run sends nothing again and searches the queries the step compiled. No domain source usable in the
@@ -1447,7 +1449,7 @@ class ResearchFlow:
     def _compiled(self, vocabulary: dict[str, Any], providers: list[str], budget: dict[str, Any]
                   ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """The first round's queries for these providers, through the compiler that wrote the vocabulary's: a
-        model-written vocabulary's with the code's query beside it (D92), recompiled for the same providers."""
+        model-written vocabulary's with the code's query beside it, recompiled for the same providers."""
         limit = budget["max_provider_requests"]
         if not search_query_rules.is_model_written(vocabulary):
             compiled = search_query_rules.with_authors(
@@ -1464,7 +1466,7 @@ class ResearchFlow:
         return step["output"] if step is not None and step["status"] == "succeeded" else None
 
     def _routing_step(self, run_id: str) -> dict[str, Any] | None:
-        """The routing this run's queries were compiled for (D93), or None before the routing step has run."""
+        """The routing this run's queries were compiled for, or None before the routing step has run."""
         return (self._routing_step_output(run_id) or {}).get("routing")
 
     def _searchable(self, run_id: str, built: dict[str, Any], queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -1478,7 +1480,7 @@ class ResearchFlow:
         return built, queries
 
     async def _research_title(self, run: dict[str, Any], scope: dict[str, Any], optional: bool = False) -> None:
-        """Name the research from its question and included sources' titles and abstracts (D39, D42)."""
+        """Name the research from its question and included sources' titles and abstracts."""
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
         included = self.store.included_works(rid)
         abstracts = [p for svid in included for p in self.store.passages_for(svid) if p["kind"] == "abstract"]
@@ -1497,7 +1499,7 @@ class ResearchFlow:
         await run_report(self, run, scope)
 
     def _embedding_model(self) -> str | None:
-        """The semantic search model this research would embed with, or None when it is off (D29, SW8.3).
+        """The semantic search model this research would embed with, or None when it is off (SW8.3).
 
         The protocol step and the expansion revision both read it here, so the two bodies name the same model and a
         changed setting never turns the frozen one into null (SW11.10).
@@ -1509,7 +1511,7 @@ class ResearchFlow:
 
     def _protocol_embedding_model(self, run_id: str) -> str | None:
         """The model the protocol names: the one this run's similarity step froze when it opened, before planning, so a
-        setting saved or a built-in model that became ready during planning (D7) never makes the protocol name a model
+        setting saved or a built-in model that became ready during planning never makes the protocol name a model
         the ranking does not read. The built-in model's thread count is a cache identity, not part of the name."""
         output = (self.store.existing_step(run_id, "source_similarity") or {}).get("output") or {}
         if not output.get("fast_path_queue"):
@@ -1537,7 +1539,7 @@ class ResearchFlow:
         output = ranking_rules.rank_records(self.store, run, scope, vocabulary, model, off_reason)
         similarity = (self.store.existing_step(run_id, "source_similarity") or {}).get("output") or {}
         if model and "from_store" in similarity:
-            # How many of the similarities the ranking read were stored before this run, and how many it embedded (D103).
+            # How many of the similarities the ranking read were stored before this run, and how many it embedded.
             output |= {"embedding_from_store": similarity["from_store"], "embedding_this_run": similarity.get("embedded", 0)}
         self.store.finish_step(step["id"], "succeeded", output=output)
         return decisions.ranking_order(step["id"])
@@ -1568,10 +1570,10 @@ class ResearchFlow:
                               batch_key: str | None = None, read_limit: int | None = None,
                               frozen_plan: dict[str, Any] | None = None,
                               cutoff: Callable[[], bool] | None = None, lexical_exclusion: bool = True) -> None:
-        """Classify every record by code, then ask the model twice about the works code left open (K3, D81).
+        """Classify every record by code, then ask the model twice about the works code left open (K3).
 
         Nothing is included here: the abstract stage has no `include` outcome (SW1.2). A work is included only by
-        the full-text reading run, and only when both of its runs agree and every quote is on the page (D85). What
+        the full-text reading run, and only when both of its runs agree and every quote is on the page. What
         the read limit does not reach is `abstract_not_read`, which is
         `unresolved`, so the next discovery run of the same question reads on from there rather than repeating.
         The plan is frozen in the code step's output: a resumed run reads it back instead of deriving it again,
@@ -1605,7 +1607,7 @@ class ResearchFlow:
                     and (s["status"] == "succeeded" or s["error_code"] in ("invalid_model_output", "model_read_cutoff"))}
 
         # A fast read whose budget already stopped short keeps that stop on a restart: the batches it left unread
-        # are not sent later, so the closure's split between budget and deadline does not move (D60).
+        # are not sent later, so the closure's split between budget and deadline does not move.
         budget_key = f"{prefix}:budget_short"
         stops = budget_stops(self.store, run_id, prefix) if run_id in self._held else []
         stop_at = min((stop["from_batch"] for stop in stops), default=None)
@@ -1642,12 +1644,12 @@ class ResearchFlow:
                     # The budget stopped short of this batch. Its records and those of every later batch still owing
                     # a call are unread, which is a state the workflow already has, so the run finishes rather than
                     # pausing on something a later run will pick up. A later batch both of whose answers are stored
-                    # is still read back below (D60).
+                    # is still read back below.
                     skipped = [svid for later_number, later in enumerate(batches[number:], number) if owed_of(later_number)
                                for svid in later if svid not in self._human_decided_records(run["research_id"], later)]
                     unread.extend(skipped)
                     if run_id in self._held:
-                        # The fast read's closure tells these from the deadline's cut, after a restart too (D60).
+                        # The fast read's closure tells these from the deadline's cut, after a restart too.
                         step = self.store.step(run_id, f"{budget_key}:{number}", "code:abstract_budget_short")
                         if step["status"] != "succeeded":
                             self.store.finish_step(step["id"], "succeeded",
@@ -1794,7 +1796,7 @@ class ResearchFlow:
         if step["status"] == "failed" and step["error_code"] == "invalid_model_output":
             return None
         if step["error_code"] == "model_read_cutoff":
-            return {"cutoff": True}  # D258: a resumed run does not send it again
+            return {"cutoff": True}  # A resumed run does not send it again
         output = await self._model_step(run, scope, key, "abstract_screening", candidate_rows=rows,
                                         screening_target={"runs": runs, "run": run_no}, limiter=limiter,
                                         budget_short="skip", recheck=recheck)
@@ -1806,7 +1808,7 @@ class ResearchFlow:
                              lexical_exclusion: bool = True, runs: int = ABSTRACT_RUNS) -> dict[str, Any]:
         """Write what code decides about every record, then freeze the read plan in this step's output. Without
         `lexical_exclusion` (a snowball round) code never closes a record for naming neither gate block; the plan
-        records that. `runs` is how many model reads each batch gets, frozen in the plan: two, or one for D173's
+        records that. `runs` is how many model reads each batch gets, frozen in the plan: two, or one for the
         deeper screening."""
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
         key = f"{batch_key}:abstract_stage" if batch_key else "abstract_stage"
@@ -1832,7 +1834,7 @@ class ResearchFlow:
 
         works, writes = [], []
         fulltext_human = decisions.human_decided_works(rid, "fulltext")
-        # The keyword stage leaves out what only an earlier run's chain found (D95).
+        # The keyword stage leaves out what only an earlier run's chain found.
         chain_only = self.store.chain_only_works(rid, revision)
         for candidate in self.store.candidates(rid, revision):
             svid = candidate["source_version_id"]
@@ -1983,13 +1985,13 @@ class ResearchFlow:
                 if found is not None:
                     decisions.add_proposal(rid, svid, "abstract", step_id, run_no, found["label"],
                                            quote=found["quote"], quote_verified=found["quote_verified"])
-            # One read (D173's deeper screening) has no pair to combine: `single_read` gives the outcome two agreeing
+            # One read (the deeper screening) has no pair to combine: `single_read` gives the outcome two agreeing
             # reads would, under a code that says one read stood behind it.
             writes.append((svid, abstract_stage.single_read(pair[0]) if runs == 1 else abstract_stage.combine(*pair)))
         # The decision is attributed to the last run's step: it is the one that made the pair readable.
         self._write_abstract_codes(run, steps[-1], writes)
 
-    # ---- citation chaining of an sw run (slice 15, D95) --------------------------------------------
+    # ---- citation chaining of an sw run (slice 15) --------------------------------------------
 
     def _chain_forms(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> dict[str, list[str]]:
         """The two gate blocks' forms the chain's filter reads: the blocks the keyword ranking ranked with."""
@@ -2005,7 +2007,7 @@ class ResearchFlow:
         written, as a search writes them (normalised, merged by DOI, linked, a candidate with its hit). Every link is
         kept, passing or not, in `chain_links`. `normalised` is a `fast_chain_v2` run's filter (`chaining.passes_v2`)
         over the forms its protocol froze; a v1 run reads `chaining.passes`. Both read the record's OpenAlex keywords
-        beside its title and abstract (D183); the records are capped before the filter, so a wider gate never fetches
+        beside its title and abstract; the records are capped before the filter, so a wider gate never fetches
         more than the direction's frozen allowance."""
         provider = "openalex"
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
@@ -2053,7 +2055,7 @@ class ResearchFlow:
         with transaction(self.store.conn):
             if ok:
                 # A chained record ranks after every keyword record: a record a keyword query already found keeps the
-                # rank and the search its candidate row names, and only gains a hit (D93's `candidate_hits`).
+                # rank and the search its candidate row names, and only gains a hit (`candidate_hits`).
                 self.store.record_search(search_fields, provider, passed, payload_path, step["id"], "succeeded",
                                          step_output=output, first_rank=CHAIN_RANK_BASE + fast_request * 1000)
             else:
@@ -2124,9 +2126,9 @@ class ResearchFlow:
 
     async def _source_similarity(self, run: dict[str, Any], scope: dict[str, Any], candidates: list[dict[str, Any]], *,
                                  key: str = "source_similarity", identity_step: str | None = None) -> None:
-        """Score sources by the similarity of their title and abstract to the question (D30, D79, D103).
+        """Score sources by the similarity of their title and abstract to the question.
 
-        Uses the semantic search provider (D29), frozen in the step when it opens (decision 4a): a resumed run reads it
+        Uses the semantic search provider, frozen in the step when it opens (decision 4a): a resumed run reads it
         from the step, not from Settings. The query is embedded first, then the missing sources batch by batch, each
         batch written in its own transaction and followed by a checkpoint, so a pause waits at most one batch and a
         resumed run embeds only what is still missing. With nothing missing no call is made: stored similarities are
@@ -2166,7 +2168,7 @@ class ResearchFlow:
         progress = {"from_store": prior.get("from_store", len(ids) - len(missing)), "embedded": prior.get("embedded", 0)}
 
         # Whether the built-in model was installed and its files checked when this step ran: the transcript says so
-        # from the step, never from what Settings say later (D103, decision 5).
+        # from the step, never from what Settings say later (decision 5).
         installed = ({"model_installed": embeddings.builtin_ready(embedder)} if embedder.provider == "builtin" else {})
 
         def counts() -> dict[str, Any]:
@@ -2236,7 +2238,7 @@ class ResearchFlow:
 
     def _embedding_query(self, scope: dict[str, Any], embedder: embeddings.Embedder,
                          query_text: str | None = None, query_origin: str = "column") -> tuple[str, str] | None:
-        """(text, origin) of the query. A built-in Qwen3 model reads English only (D103, its English instruction): the
+        """(text, origin) of the query. A built-in Qwen3 model reads English only (its English instruction): the
         question when it is English, else the revision's English sentence; a table column's text only when it is
         English. bge-m3 and the other providers take the text as written."""
         if query_text is not None:
@@ -2267,14 +2269,14 @@ class ResearchFlow:
                            page: Page | None = None, stop: Callable[[], bool] | None = None,
                            transport: dict[str, Any] | None = None) -> SearchOutcome | facade.Dispatched | None:
         """Send one search request, with its bounded retries, counting each against the run and, for an sw page,
-        against the query's own count too (D89). Exhausted providers are remembered for this execution in memory;
+        against the query's own count too. Exhausted providers are remembered for this execution in memory;
         later searches send nothing and consume no request allowance. Every resume or retry resets the guard.
 
         With `stop`, a stop asked during the wait before a network retry sends nothing more and returns None: the
         page is left unwritten and a resumed run asks for it again (second review of 13f, 2026-09-23). The 429 waits
         inside a connector's own `send` are not interrupted.
 
-        A 5xx reply is sent once more after `SERVER_ERROR_RETRY_SECONDS` while the query has allowance left (D148); a
+        A 5xx reply is sent once more after `SERVER_ERROR_RETRY_SECONDS` while the query has allowance left; a
         stop or the stage cutoff during that wait keeps the failed reply as the page's outcome."""
         query_key = page.query_key if page else None
         transport = transport if transport is not None else {}
@@ -2290,7 +2292,7 @@ class ResearchFlow:
                 return SearchOutcome("rate_limited", "before_send", "Suppressed: provider quota exhausted in this run",
                                      "api_key" if key else "keyless", error_kind="quota_exhausted")
             self.store.add_usage(run_id, "provider_requests", reserve, query=query_key)
-            # A request that waited at a start gate (D6 seed requests overlap) checks the quota guard and the stop again
+            # A request that waited at a start gate (seed requests overlap) checks the quota guard and the stop again
             # before it is sent.
             def why_not() -> str | None:
                 if connector.provider_id in self._quota_out.get(run_id, set()):
@@ -2346,7 +2348,7 @@ class ResearchFlow:
         """Write one answered request: its payload, its search run, its records and its step's ending together.
 
         For an sw page, `stop_reason` is the one the read decided when the page arrived (`_read_query`). With
-        `keep_found`, an answered request's output also names the source versions it accepted (D6).
+        `keep_found`, an answered request's output also names the source versions it accepted.
         A failure is returned as (pause reason, detail).
         """
         run_id, rid = run["id"], run["research_id"]
@@ -2387,7 +2389,7 @@ class ResearchFlow:
                              | {"service_kind": outcome.service_kind or service_error_kind(outcome.error_kind or outcome.http_status or outcome.status),
                                 "reset_at": retry_at(outcome.rate_limit.get("retry-after")), "retries": outcome.retries}
                              # How many 429s this effort was willing to wait out here: a skipped wait is on the row,
-                             # never silent (D88).
+                             # never silent.
                              | ({"rate_limit_retries": page.rate_limit_retries} if page else {})),
             raw_payload_path=payload_path, payload_sha256=payload_digest,
             connector_json=dumps(dispatched.connector) if dispatched is not None else None,
@@ -2430,12 +2432,12 @@ class ResearchFlow:
                                               "reset_at": retry_at(outcome.rate_limit.get("retry-after"))}
 
     def _allowance_ended_searches(self, run_id: str) -> bool:
-        """Whether a search step of this run was closed because its query's share was spent before it asked (D89)."""
+        """Whether a search step of this run was closed because its query's share was spent before it asked."""
         return any(s["kind"].startswith("provider_search") and s["status"] == "cancelled"
                    and s["error_code"] == "budget_exhausted" for s in self.store.run_steps(run_id))
 
     def _query_requests(self, run_id: str, query_key: str) -> int:
-        """Requests this sw query has sent in this run, retries included (D89)."""
+        """Requests this sw query has sent in this run, retries included."""
         return self.store.run(run_id)["usage"].get("query_requests", {}).get(query_key, 0)
 
     def _continuation_error(self, step, connector):
@@ -2479,7 +2481,7 @@ class ResearchFlow:
         # No await between the two reads above and this step's write: the snapshot is the state they describe.
         self._answer_start_snapshot(run, heads, selection_revision)
         if not heads:
-            # No evidence route is available (D234). Keep D106's recorded no-evidence result;
+            # No evidence route is available. Keep the recorded no-evidence result;
             # the snapshot describes inclusion, not a finding about the literature.
             self.store.save_answer(rid, run_id, None, None, run["scope_revision"], "no_evidence", None,
                                    {"ok": True, "issues": [], "reason": NO_INCLUDABLE_SOURCE,
@@ -2500,7 +2502,7 @@ class ResearchFlow:
         # A short attached PDF goes to the answer whole, so nothing is ranked and no passage is embedded.
         whole = self._whole_attached_passages(scope, included, limit)
         semantic = None if whole is not None else await self._semantic_ranking(run, scope, included)
-        # Part of the input comes from the cue phrases the criterion was approved with (D84).
+        # Part of the input comes from the cue phrases the criterion was approved with.
         patterns = self._criterion_phrases(run, scope)
         passages = whole if whole is not None else self._retrieve(rid, scope, included, limit, semantic, patterns)
         if not passages:
@@ -2529,7 +2531,7 @@ class ResearchFlow:
                 labels = contracts.resplit_labels(
                     output["issues"], contracts.resolve_citation_handles(failed_input, output["raw_output"]), failed_input)
             if labels and not output.get("repair_skipped"):
-                # D249: one extra repair, only when D247's several-sources rule (and D244-salvageable anchor defects) is all
+                # One extra repair, only when the several-sources rule (and salvageable anchor defects) is all
                 # that still blocks the answer; a call the budget no longer holds is skipped, never a pause.
                 seed = {"issues": output["issues"], "raw_output": output["raw_output"],
                         "step_input_id": output["step_input_id"], "labels": labels}
@@ -2554,7 +2556,7 @@ class ResearchFlow:
                     output, key = second, RESPLIT_KEY
                     extra_repair = {"labels": labels, "outcome": "rejected" if second.get("invalid") else "published"}
                     stored = (self.store.existing_step(run_id, RESPLIT_KEY) or {}).get("output") or {}
-                    if (stored.get("resplit") or {}).get("relabelled"):  # D259
+                    if (stored.get("resplit") or {}).get("relabelled"):
                         extra_repair["relabelled"] = stored["resplit"]["relabelled"]
                 else:
                     extra_repair = {"labels": labels, "outcome": "skipped_budget"}
@@ -2580,7 +2582,8 @@ class ResearchFlow:
             return
         payload = self.store.step_input_payload(output["step_input_id"])
         links = contracts.derive_evidence_links(payload, output["result"])
-        # D80: built once, on the output that is saved (after D244, D249, D260 and D83), with that attempt's own split
+        # Built once, on the output that is saved (after anchor salvage and the retrieval run), with that attempt's
+        # own split
         # diagnostics; a resumed run reads the same stored step output.
         ledger = contracts.answer_ledger(payload, output["result"], links, output.get("ledger_split", []))
         answer_id = self.store.save_answer(rid, run_id, step["id"], output["step_input_id"], run["scope_revision"], "structurally_valid",
@@ -2613,22 +2616,22 @@ class ResearchFlow:
         self.store.finish_step(step["id"], "succeeded", output={
             "scope_revision": run["scope_revision"], "selection_revision": selection_revision,
             "flow": flow, "included": len(heads),
-            # Included works whose only text is the person's file not read yet: they give the answer nothing (D100).
+            # Included works whose only text is the person's file not read yet: they give the answer nothing.
             "included_without_answer_text": sum(1 for head in heads if self.store.answer_version(rid, head) is None),
-            # The Method box's counts and the follow-up searches completed by now (D92, R3.5): read from here, so a
+            # The Method box's counts and the follow-up searches completed by now (R3.5): read from here, so a
             # later search or work merge leaves this answer's box as it was.
             "method_counts": method_summary.start_counts(self.store, rid, run["scope_revision"]),
             "followup_searches": [flow_counts.followup_brief(r) for r in flow_counts.followup_runs(
                 self.store.conn, rid, run["scope_revision"], ("completed",))]})
 
     def _criterion_phrases(self, run: dict[str, Any], scope: dict[str, Any]) -> list[tuple[str, re.Pattern[str]]]:
-        """The approved cue phrases this answer run orders criterion passages with, compiled (D84, SW12.3).
+        """The approved cue phrases this answer run orders criterion passages with, compiled (SW12.3).
 
         They are read from `protocol_records` alone, never from a step output: a proposal still waiting on the
         approval card is not a criterion, and a phrase list belongs to the research, not to the run that proposed it.
         `frozen_criterion` matches the question and steering this run answers, so a revised question leaves the old
         phrases behind, and passes over a body whose criterion is null, so an older filled body of the same question
-        is used instead (D78).
+        is used instead.
 
         The step is frozen like a plan: a resumed run recompiles what it stored and does not read the protocol again,
         and a second answer run opens its own step. No model is called and nothing can fail here, so the step is
@@ -2650,7 +2653,7 @@ class ResearchFlow:
         return compiled["patterns"]
 
     async def _pdf_ocr(self, run: dict[str, Any]) -> None:
-        """Read a PDF's scanned pages with the local Tesseract, one step per page, and write the OCR extraction (D51).
+        """Read a PDF's scanned pages with the local Tesseract, one step per page, and write the OCR extraction.
 
         A page read once is not read again when the run resumes. When a page fails the other pages are still read, then the
         run pauses and nothing is written; resuming reads the failed pages again. The question's scope does not matter here.
@@ -2718,7 +2721,7 @@ class ResearchFlow:
 
     async def _inspect(self, run: dict[str, Any], limit: int | None) -> None:
         """Retrieve the included works' open PDFs. An answer run stops after `limit` downloads; a PDF collection run,
-        which the user starts before an answer, tries every work (D49). A retrieved PDF is not fetched again."""
+        which the user starts before an answer, tries every work. A retrieved PDF is not fetched again."""
         run_id, rid = run["id"], run["research_id"]
         heads = self.store.included_works(rid)
         if not heads:
@@ -2729,7 +2732,7 @@ class ResearchFlow:
             self._checkpoint(run_id)
             downloads += await self._acquire_pdf(run, head, downloads, limit)
             # A head without PDF text (often a paywalled published record) is read through an open version of the
-            # same work, such as its arXiv preprint; the passages carry that version's label (D48).
+            # same work, such as its arXiv preprint; the passages carry that version's label.
             for other in [] if self.store.has_pdf_text(head) else self.store.work_versions(rid, head):
                 if not self.store.has_pdf_text(other):
                     self._checkpoint(run_id)
@@ -2739,7 +2742,7 @@ class ResearchFlow:
 
     async def _read_equations(self, run: dict[str, Any], svids: list[str]) -> None:
         """Read the numbered display equations of the PDFs an answer or a table cell reads, before it is written: from the
-        arXiv source (D104), with Mathpix (D40) or with the answer model (D113). No outcome pauses the run; without a
+        arXiv source, with Mathpix or with the answer model. No outcome pauses the run; without a
         route that can read, nothing waits."""
         service = self.deps.equations
         if service is None or not (service.route_active() or service.crop_active()):
@@ -2747,7 +2750,7 @@ class ResearchFlow:
         await self._read_source_equations(run, svids)
 
     async def _read_source_equations(self, run: dict[str, Any], svids: list[str]) -> None:
-        """The arXiv source route's and the crop routes' step per PDF (D104, D40, D113): tried at most once per run, never
+        """The arXiv source route's and the crop routes' step per PDF: tried at most once per run, never
         pausing it. A PDF the source route settles for good within the step goes on to its crop route in the same step."""
         service = self.deps.equations
         run_id = run["id"]
@@ -2781,7 +2784,7 @@ class ResearchFlow:
             route = state["route"]
             for attempt in range(2):
                 if attempt and self._left_out(run, svid):
-                    break  # excluded while the source route was read: the crop route is not asked (D63)
+                    break  # excluded while the source route was read: the crop route is not asked
                 try:
                     state = await service.read_asset(asset_id, run_id)
                 except RunInProgress:
@@ -2805,7 +2808,7 @@ class ResearchFlow:
                            other_versions: bool = False) -> int:
         """Retrieve the source's open PDF of the same version, if it has none yet; returns the downloads it counted.
 
-        `other_versions` is passed by the full-text retrieval run alone (D83) and reaches only the DOI lookup a
+        `other_versions` is passed by the full-text retrieval run alone and reaches only the DOI lookup a
         refused link opens here; an answer run and a PDF collection run never pass it.
         """
         source = self.store.source(svid)
@@ -2920,7 +2923,7 @@ class ResearchFlow:
 
     def _needs_other_copy(self, research_id: str, source: dict[str, Any], refusal: dict[str, Any]) -> bool:
         """A blocked (403) or missing (404) link leads to one lookup per source; "Find PDF" repeats it on request."""
-        # A lookup history that was interrupted, or has a route that did not answer, is resumed here too (D248).
+        # A lookup history that was interrupted, or has a route that did not answer, is resumed here too.
         return (refusal["http_status"] in (403, 404) and normalize_doi(source["doi"]) is not None
                 and (not self.store.pdf_discoveries(research_id, source["id"])
                      or self._unanswered_lookups(research_id, source["id"]) > 0))
@@ -2930,7 +2933,7 @@ class ResearchFlow:
         """Look the DOI up in Unpaywall, OpenAlex, Crossref and CORE and retrieve a copy of the same version.
 
         Web search stays the user's "Find PDF" action, and a copy of uncertain version waits for the user to confirm it.
-        `other_versions` is the full-text retrieval run's addition (D83): a verified copy of a different declared
+        `other_versions` is the full-text retrieval run's addition: a verified copy of a different declared
         version is attached to its own row under the work. An answer run and a PDF collection run never pass it.
         """
         from deixis.workflow.read import file_restore, text_retry
@@ -2950,7 +2953,7 @@ class ResearchFlow:
             )
         except RunStopped:
             # Stopped before publication: the step does not stay `running` under a stopped run; the lookup rows keep
-            # what answered, and a resumed run asks only what did not (D248).
+            # what answered, and a resumed run asks only what did not.
             self.store.finish_step(step["id"], "cancelled", error_code="run_stopped")
             raise
         except (file_restore.FileRestoreRefused, text_retry.FileBusy) as exc:
@@ -2998,7 +3001,7 @@ class ResearchFlow:
 
 
     def _chain_state(self, research_id: str, revision: int) -> tuple[set[str], list[str]]:
-        """The works citation chaining brought under this question revision and the keyword order (D95): the latest
+        """The works citation chaining brought under this question revision and the keyword order: the latest
         chain filter's list and the latest keyword ranking.
 
         When the chain ran, the keyword order is read by work: a chain record joined to a keyword work can head it
@@ -3016,7 +3019,7 @@ class ResearchFlow:
         return chained, self._current_heads(research_id, order)
 
     def _current_heads(self, research_id: str, order: list[str]) -> list[str]:
-        """These records as the heads of their works now, in the same order, each work once (D95)."""
+        """These records as the heads of their works now, in the same order, each work once."""
         heads = self.store.work_heads(research_id)
         work_of = self.store.work_ids(order)
         return list(dict.fromkeys(heads.get(work_of.get(svid), svid) for svid in order))
@@ -3025,7 +3028,7 @@ class ResearchFlow:
         """Every work of the research with what the retrieval plan reads about it, in a few whole-research queries.
 
         Asking per record cost a second on 2,000 candidates on the thread the API answers from (slices 05 and 07),
-        and this runs on the same thread. `chained` names the heads citation chaining brought (D95).
+        and this runs on the same thread. `chained` names the heads citation chaining brought.
         """
         decisions = DecisionStore(self.store)
         stale_key = decisions.staleness_key(research_id)
@@ -3072,7 +3075,7 @@ class ResearchFlow:
         """Try this work's routes in order and report what the attempt found; writes no decision itself.
 
         The routes are the ones an answer run already uses: the record's own open link, then the research's other
-        versions of the same work (D48), then one DOI lookup for another copy. Web search stays off — it is the
+        versions of the same work, then one DOI lookup for another copy. Web search stays off — it is the
         user's "Find PDF" action (SW10.4) — and no second downloader, arXiv title search or Europe PMC request is
         opened here.
         """
@@ -3094,7 +3097,7 @@ class ResearchFlow:
                 if self.store.has_pdf_text(other):
                     route = "work_version"
                     break
-        # Wider than D35, by name: `_needs_other_copy` opens the lookup only after a link that answered 403 or 404,
+        # Wider, by name: `_needs_other_copy` opens the lookup only after a link that answered 403 or 404,
         # so a work with no open link at all — most closed publisher records — would never be looked up, and
         # SW10.5's "the twin first, then the author's copy" would never be tried. An answer run and a PDF
         # collection run keep the narrow trigger.
@@ -3160,7 +3163,7 @@ class ResearchFlow:
         """How many routes tried for this work did not answer: a timeout, a lost connection, a 429 or a 5xx.
 
         A link that refused, a 404, a lookup with no result and a route that was never configured have all
-        answered, and a work for which every route answered has no open full text. The same distinction D35 draws
+        answered, and a work for which every route answered has no open full text. The same distinction drawn
         between a link that refused — which is not requested again — and one that timed out.
         """
         unanswered = 0
@@ -3268,7 +3271,7 @@ class ResearchFlow:
         The step's output, the `fulltext_work_settled` event and the work's code are written together, so none of them
         exists without the others. A person's full-text decision on the version stands: then no code is written, and
         the step and the event say so. A step a crash left `outcome_unknown` is sent again, at most
-        `FULLTEXT_WORK_ATTEMPTS` starts in all; then it is closed as not settled and a later run tries it (D18).
+        `FULLTEXT_WORK_ATTEMPTS` starts in all; then it is closed as not settled and a later run tries it.
         """
         run_id, rid = run["id"], run["research_id"]
         step = self.store.existing_step(run_id, f"fulltext_work:{work_id}")
@@ -3336,9 +3339,9 @@ class ResearchFlow:
                                     batch_key: str | None = None, order: list[str] | None = None,
                                     read_limit: int | None = None,
                                     cutoff: Callable[[], bool] | None = None) -> None:
-        """Two model runs per work, then a code decision from the pair (D85).
+        """Two model runs per work, then a code decision from the pair.
 
-        Under the run's read rule `split_v1` (D76, frozen in its budget and copied into the plan) the second run is shown
+        Under the run's read rule `split_v1` (frozen in its budget and copied into the plan) the second run is shown
         the passages the first did not see, and a part only one run saw stands on that run's verified quote. A plan
         without the rule reads as before: the same passages twice, and both runs must agree.
 
@@ -3506,7 +3509,7 @@ class ResearchFlow:
         sent = adjudication.mark_comparator(sent, frozen["question_elements"], frozen["required_roles"])
         criterion = {"criterion": frozen["criterion"], "parts": sent, "cue_phrases": frozen["cue_phrases"],
                      "protocol_revision": frozen["protocol_revision"]}
-        # Chained works have no ranking of their own: one the keyword order did not place is read last (D95,
+        # Chained works have no ranking of their own: one the keyword order did not place is read last (
         # `adjudication.read_plan`); the limit is the same.
         chained, legacy_order = self._chain_state(rid, run["scope_revision"])
         order = order if batch_key else legacy_order
@@ -3543,7 +3546,7 @@ class ResearchFlow:
                 "not_reached": len(readable) - len(readable[:limit]),
                 "identity_unconfirmed": len(unconfirmed), "reason": None,
                 "scope_revision": run["scope_revision"], "criterion_hash": criterion_hash}
-        # The read rule is the run's, frozen in its budget when it was queued (D76). A budget without one reads as
+        # The read rule is the run's, frozen in its budget when it was queued. A budget without one reads as
         # before, whatever a later run on this scope froze; a plan already stored is reused as stored (above).
         if run["budget"].get("read_rule"):
             plan["read_rule"] = run["budget"]["read_rule"]
@@ -3556,7 +3559,7 @@ class ResearchFlow:
 
     def _text_version(self, rid: str, head: str) -> str:
         """The version whose PDF text a work's reading and retrieval look at: the answer's version when it has PDF text,
-        else the first version with PDF text (a person's file the answer may not read yet), else the head (D48)."""
+        else the first version with PDF text (a person's file the answer may not read yet), else the head."""
         read = self.store.answer_version(rid, head)
         if read is not None and self.store.has_pdf_text(read):
             return read
@@ -3605,7 +3608,7 @@ class ResearchFlow:
         if step["status"] == "failed" and step["error_code"] == "invalid_model_output":
             return None
         if step["error_code"] == "model_read_cutoff":
-            return {"cutoff": True}  # D258: a resumed run does not send it again
+            return {"cutoff": True}  # A resumed run does not send it again
         passages = self._adjudication_passages(run["research_id"], scope, plan["criterion"], job.read_version,
                                                job.run_no, plan.get("read_rule"))
         target = {"source_id": job.read_version, "criterion": plan["criterion"]["criterion"],
@@ -3619,7 +3622,7 @@ class ResearchFlow:
                                svid: str, run_no: int = 1, rule: str | None = None) -> list[dict[str, Any]]:
         """The pages this call is shown, chosen when the call is sent and stored with its StepInput.
 
-        Under `split_v1` (D76) the second run gets `split_lists`' second list, and the topic order ranks every passage
+        Under `split_v1` the second run gets `split_lists`' second list, and the topic order ranks every passage
         of the version so the passages the first run left out are ranked too. Code alone picks both lists."""
         pages = [p for p in self.store.passages_for(svid) if p["kind"] == "pdf_page"]
         terms = self._topic_terms(research_id, scope)
@@ -3641,7 +3644,7 @@ class ResearchFlow:
         A work a person decided while its calls were out gets neither a proposal nor a decision: the steps stay
         stored, and the person's answer stands (slice 16).
 
-        Under `split_v1` (D76) a quote verifies only inside one passage its call was shown, read from that call's
+        Under `split_v1` a quote verifies only inside one passage its call was shown, read from that call's
         stored input, and two calls shown different passages are combined part by part (`combine_split`); two calls
         shown the same passages are combined as before. No decision is written unless both calls answered.
         """
@@ -3691,7 +3694,7 @@ class ResearchFlow:
             views.append(adjudication.run_view(proposals, parts))
         if split and len(texts_by_run) == len(outputs) and len({frozenset(t) for t in texts_by_run.values()}) > 1:
             # The two calls were shown different passages: part by part, and a part one call alone saw stands on that
-            # call's verified quote (D76).
+            # call's verified quote.
             code = adjudication.combine_split(rows_by_run, texts_by_run, parts, FULLTEXT_QUOTE_MIN_CHARS)
         else:
             code = adjudication.combine(views[0] if views else None, views[1] if len(views) > 1 else None)
@@ -3818,7 +3821,7 @@ class ResearchFlow:
     def _adjudication_whole_text(self, run_id: str, rule: str | None = None) -> int:
         """Works whose stored call was every pdf page, and that was fewer than a full call. Exactly 12 is not whole.
 
-        Under `split_v1` (D76) a work is whole when its calls together were shown every pdf passage of the version.
+        Under `split_v1` a work is whole when its calls together were shown every pdf passage of the version.
         Only calls that were sent and answered count: an input is stored before its send, and a send the cutoff or a
         pause refused leaves an input whose passages the model never saw."""
         if rule == adjudication.READ_RULE:
@@ -3942,7 +3945,7 @@ class ResearchFlow:
     async def _semantic_ranking(self, run: dict[str, Any], scope: dict[str, Any], included: list[str], query_text: str | None = None,
                                 key: str = "semantic_retrieval", query_origin: str = "column",
                                 only: set[str] | None = None) -> list[dict[str, Any]] | None:
-        """Rank the included sources' passages by embedding similarity to the question, or to query_text (D27, D29).
+        """Rank the included sources' passages by embedding similarity to the question, or to query_text.
 
         Uses the provider chosen in Settings; without a choice, Gemini when GEMINI_API_KEY is set. The query is always
         embedded (a stored passage vector is not a score); then the passages without a stored vector, batch by batch,
@@ -3958,7 +3961,7 @@ class ResearchFlow:
         identity = self._identity(embedder, identity_from)
         query = self._embedding_query(scope, embedder, query_text, query_origin)
         if query is None:
-            # Recorded so the transcript can say why the built-in model did not rank these passages (D103).
+            # Recorded so the transcript can say why the built-in model did not rank these passages.
             reason = f"{query_origin}_not_english" if query_text is not None else english_question.MISSING
             step = self.store.step(run_id, key, f"embedding:{embedder.stored_model}", output=identity)
             self.store.finish_step(step["id"], "succeeded", output=identity | {"skipped": True, "reason": reason})
@@ -4040,7 +4043,7 @@ class ResearchFlow:
             from_uploads = [p for p in batch if p.get("asset_id") in uploads]
 
             def attempted(from_uploads: list[dict[str, Any]] = from_uploads) -> None:
-                """Recorded as the request is issued (D103, decision 10)."""
+                """Recorded as the request is issued (decision 10)."""
                 if from_uploads:
                     progress["uploaded_file_ids"] = sorted(set(progress["uploaded_file_ids"]) | {p["asset_id"] for p in from_uploads})
                     progress["uploaded_passage_ids"] = sorted(set(progress["uploaded_passage_ids"]) | {p["id"] for p in from_uploads})
@@ -4121,7 +4124,7 @@ class ResearchFlow:
                   patterns: list[tuple[str, re.Pattern[str]]] = ()) -> list[dict[str, Any]]:
         """Passages for an answer from attached sources (the fast path writes its own input, `fast_answer`).
 
-        Part of the room is filled from the criterion order of the approved cue `patterns` (D84); with none, the
+        Part of the room is filled from the criterion order of the approved cue `patterns`; with none, the
         whole input comes from the topic order.
         """
         whole = self._whole_attached_passages(scope, included, limit)
@@ -4159,7 +4162,7 @@ class ResearchFlow:
             for svid in included
         } if patterns else {}
         if len(with_text) + PDF_PAGES_PER_SOURCE * len(with_pdf) > limit:
-            # One passage per source would leave too little room for PDF pages (D55). A source with PDF text gives its
+            # One passage per source would leave too little room for PDF pages. A source with PDF text gives its
             # abstract and its best pages, and the sources at the end of the order are not given.
             position = {p["id"]: i for i, p in enumerate(ranked)}
             for svid in order:
@@ -4195,7 +4198,7 @@ class ResearchFlow:
         # The criterion quota fills in rounds down the source order, so it is not spent on one source's pages
         # and every source holding a criterion page is represented before any source gives a second one.
         # A crowded pass that short sources left unfilled has already given a source up to three passages; the
-        # cap counts them (D84, limits).
+        # cap counts them (limits).
         taken = dict(Counter(p["source_version_id"] for p in selected.values()))
         room = limit // criterion_passages.CRITERION_ROOM_DIVISOR
         added = 0
@@ -4223,7 +4226,7 @@ class ResearchFlow:
 
     @staticmethod
     def _two_quota_pages(topic: list[dict[str, Any]], criterion: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """The pages one source gives when the included sources outnumber the passage limit (D55, D84).
+        """The pages one source gives when the included sources outnumber the passage limit.
 
         The best topic page first, then the first criterion pages this source has, then the topic order again for
         whatever room is left. The count a source contributes does not change; which pages they are does.
@@ -4238,7 +4241,7 @@ class ResearchFlow:
 
     # ---- evidence tables ----------------------------------------------------------------
     async def _table_fill(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
-        """Fill planned cells, sending several sources' calls at once (D37, P6 slice 0).
+        """Fill planned cells, sending several sources' calls at once (P6 slice 0).
 
         A source's columns are asked together, at most MAX_COLUMNS_PER_CALL per call, and each call reads that source's
         passages only. A source without stored text gets 'inaccessible' from the system without a model call, written
@@ -4284,7 +4287,7 @@ class ResearchFlow:
                                     applied: Callable[[list[tuple[Any, Any]]], None]) -> RunStopped | None:
         """Send `jobs` through the run's shared limiter, applying each round of results as they come back.
 
-        The one submission loop table fill and the abstract stage both use (D37, D81). At most the limiter's
+        The one submission loop table fill and the abstract stage both use. At most the limiter's
         current limit are in flight, the same operation key is never sent twice concurrently, and a checkpoint runs
         before each submission. Once something stops the run — a pause or cancel found at a checkpoint, or a call
         that recorded a pause of its own — no more are submitted, but the calls already in flight finish and record
@@ -4353,7 +4356,7 @@ class ResearchFlow:
             svid = planned["source_version_id"]
             columns = [c for c in self._live_columns(run, tables) if c["id"] in planned["column_ids"]]
             if not columns or svid not in tables.active_rows(target["table_id"]) or self._left_out(run, svid):
-                continue  # the column or row was removed, or the source excluded (D63), after the fill was requested
+                continue  # the column or row was removed, or the source excluded, after the fill was requested
             if not self.store.passages_for(svid):
                 step = self.store.step(run["id"], f"no_text:{svid}", "table_no_text")
                 if step["status"] != "succeeded":
@@ -4369,8 +4372,8 @@ class ResearchFlow:
                     yield _FillJob(f"cell_extraction:{svid}:{index // MAX_COLUMNS_PER_CALL}", svid, chunk, planned["cell_versions"])
 
     def _left_out(self, run: dict[str, Any], svid: str) -> bool:
-        """Whether an app-started fill (`included_only`, D63) must not start reading a source excluded since it was planned."""
-        # Read live at each call, never cached for the run: a person may exclude the source meanwhile (D114).
+        """Whether an app-started fill (`included_only`) must not start reading a source excluded since it was planned."""
+        # Read live at each call, never cached for the run: a person may exclude the source meanwhile.
         return bool((run.get("target") or {}).get("included_only")) and not table_sources.in_table_sources(
             self.store, run["research_id"], run["target"]["table_id"], svid)
 
@@ -4382,7 +4385,7 @@ class ResearchFlow:
         return self.store.research(run["research_id"])["current_scope_revision"] != scope_revision
 
     async def _cell_recheck(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
-        """Ask again for one cell. The model never sees the cell's current value, and the result waits as a proposal (D37)."""
+        """Ask again for one cell. The model never sees the cell's current value, and the result waits as a proposal."""
         run_id, target = run["id"], run["target"]
         tables = TableStore(self.store)
         svid = target["source_version_id"]
@@ -4402,7 +4405,7 @@ class ResearchFlow:
         """Ask again for every planned cell of one column, one step per cell in row order (UI parity S17, F20).
 
         Each cell is a cell recheck of its own: the model never sees the cell's value, the result waits as a proposal
-        (D37), and the step's operation key is the cell's source, so a resumed run returns a finished cell's stored
+, and the step's operation key is the cell's source, so a resumed run returns a finished cell's stored
         output and sends no call for it. A row that left the table or lost its text since the request is skipped, and
         a cell whose output holds nothing storable keeps its failed step; the other cells go on. The last step counts
         what happened to the planned cells.
@@ -4468,7 +4471,7 @@ class ResearchFlow:
                           earlier_issues: list[dict[str, str]] | None = None) -> dict[str, Any] | None:
         """One cell extraction step for one source; None when the source has no stored text to give."""
         if self._left_out(run, svid):
-            return None  # excluded since the fill was planned (D63): no step opens for it
+            return None  # excluded since the fill was planned: no step opens for it
         step = self.store.step(run["id"], key, "model:cell_extraction")
         if step["status"] == "succeeded":
             return step["output"]
@@ -4479,7 +4482,7 @@ class ResearchFlow:
         if not available:
             return None
         given = await self._cell_passages(run, scope, key, svid, columns, available, limit)
-        if self._left_out(run, svid):  # excluded while its passages were ranked (D63); a call already sent finishes
+        if self._left_out(run, svid):  # excluded while its passages were ranked; a call already sent finishes
             self.store.start_step(step["id"])
             self.store.finish_step(step["id"], "cancelled", error_code="source_excluded")
             return None
@@ -4536,7 +4539,7 @@ class ResearchFlow:
 
     def _save_salvaged(self, run: dict[str, Any], job: _FillJob, result: dict[str, Any]) -> None:
         """Store a salvaged cell extraction: the answers that passed, the retry's answers that pass, and every column
-        still failing as not verified (a value without linked evidence) or, without a value, as before (D68).
+        still failing as not verified (a value without linked evidence) or, without a value, as before.
 
         What was kept, asked again and dropped is recorded once in a `cell_salvage` step, the way an answer's salvage
         records its dropped citations. Cells are saved before that step closes and saving is idempotent per StepInput,
@@ -4598,9 +4601,9 @@ class ResearchFlow:
         target = payload["extraction_target"]
         session = self.store.model_session(step_input_id)
         columns = {c["column_id"]: c for c in target["columns"]}
-        # Reading depth follows the passages the step was given, never the model's words; no cell gets full_text (D37).
+        # Reading depth follows the passages the step was given, never the model's words; no cell gets full_text.
         depth = "abstract" if all(p["locator"]["kind"] == "abstract" for p in payload["passages"]) else "selected_sections"
-        # An automatic re-read after PDF text arrived may replace a value a model or the system made (D52).
+        # An automatic re-read after PDF text arrived may replace a value a model or the system made.
         refresh = not recheck and run["kind"] == "table_fill" and bool((run.get("target") or {}).get("auto_refresh"))
         tables = TableStore(self.store)
         for cell in cells:
@@ -4744,7 +4747,7 @@ class ResearchFlow:
                                       limit: int) -> tuple[SearchOutcome | facade.Dispatched, dict]:
         """One logical query, no paging or enrichment, under the run's frozen transport plan (`target.transport`):
         the whole possible HTTP attempt is reserved and charged before each send, never refunded, so a resumed run
-        cannot send past its budget; `gate` runs before every send. Kill search and the follow-up search (D92) use it,
+        cannot send past its budget; `gate` runs before every send. Kill search and the follow-up search use it,
         each with its own gate and record limit."""
         connector = CONNECTORS[query["provider_id"]]
         transport = next(t for t in run["target"]["transport"]["providers"] if t["provider"] == connector.provider_id)
@@ -5258,7 +5261,7 @@ class ResearchFlow:
                 "identifiers": {"doi": source["doi"]} if source["doi"] else {},
             })
         sources = []
-        # An answer's plan says what each work is to it (D137): included, closest or abstract-only, and for a closest
+        # An answer's plan says what each work is to it: included, closest or abstract-only, and for a closest
         # work what its reading found of each criterion part.
         guard = getattr(self, "_small_batch_guard", None)
         planned = ({item["source_version_id"]: item for item in (guard.get("input") or {}).get("items", [])}
@@ -5283,9 +5286,10 @@ class ResearchFlow:
             sources.append({"source_id": svid, "work_id": source["work_id"], "title": source["title"], "year": source["year"],
                             "version_label": source["version_label"], "access_level": access}
                            # Only a flagged work carries the field, so an unflagged source keeps its shape. Any
-                           # flagged version marks the work: a preprint of a retracted paper is not sound evidence (D27).
+                           # flagged version marks the work: a preprint of a retracted paper is not sound evidence.
                            | ({"is_retracted": True} if self.store.work_retracted(source["work_id"]) else {})
-                           # A plan frozen before D137 has no role; its route says what it was (`answer.role_of`).
+                           # A plan frozen before roles were stored has no role; its route says what it was
+                           # (`answer.role_of`).
                            | ({"answer_role": planned[svid].get("answer_role") or
                                ("included" if planned[svid]["route"] == "fulltext" else "abstract")} if svid in planned else {})
                            | ({"criterion_parts": planned[svid]["criterion_parts"]}
@@ -5300,7 +5304,7 @@ class ResearchFlow:
         language = scope["language_hint"] if scope["language_hint"] and re.fullmatch(r"[a-z]{2,3}(-[A-Za-z0-9]{2,8})*", scope["language_hint"]) else None
         question = scope["question"]
         if task_type in ("followup_answer", "followup_search_query"):
-            # The turn's question replaces the research question for this task only (S22a, D92); the research's
+            # The turn's question replaces the research question for this task only (S22a); the research's
             # language hint belongs to its own question, so the follow-up's language is read from its own text.
             question, language = run["target"]["question"], None
         review = {"claims_under_review": claims} if task_type == "answer_review" else {}
@@ -5335,7 +5339,7 @@ class ResearchFlow:
             allowlist |= {"column_ids": list(dict.fromkeys(columns)),
                           "cell_ids": [cell["cell_id"] for cell in cells],
                           "gap_ids": [gap["gap_id"] for gap in gaps]}
-            # D58: a cell whose page is not supplied keeps its quotes; its page id is listed but cannot be cited.
+            # A cell whose page is not supplied keeps its quotes; its page id is listed but cannot be cited.
             quote_only = [e["passage_id"] for cell in cells for e in cell["evidence"]
                           if e["passage_id"] not in allowlist["passage_ids"]]
             if quote_only:
@@ -5348,7 +5352,7 @@ class ResearchFlow:
             "skill_package_hash": self.deps.package.package_hash, "skill_files": list(RUNTIME_FILES[task_type]),
             "output_schema_versions": [contracts.SCHEMA_VERSIONS[o] for o in contracts.TASK_OUTPUTS[task_type]],
             "question": {"text": question, "language_hint": language},
-            # A new report version a follow-up asked for (D57) is written with the person's own request as steering.
+            # A new report version a follow-up asked for is written with the person's own request as steering.
             "user_steering": ([scope["steering"]] if scope.get("steering") else [])
                              + ([run["target"]["report_request"]["text"][:2000]] if task_type == "grounded_answer"
                                 and (run.get("target") or {}).get("report_request") else [])
@@ -5359,7 +5363,7 @@ class ResearchFlow:
                              + ([intent_rules.field_note(scope["statement_field"])] if task_type == "search_query"
                                 and scope.get("statement_field") and intent_rules.is_statement(self.store, run) else []),
             # The providers a query may go to. A verification connector stays in the research's scope for the records
-            # whose DOI is already known, and is never offered to the model as a place to search (D87).
+            # whose DOI is already known, and is never offered to the model as a place to search.
             "capabilities": CAPABILITIES,
             "enabled_providers": search_providers(scope["providers"]),
             "candidates": candidates, "sources": sources, "passages": passages,
@@ -5390,7 +5394,7 @@ class ResearchFlow:
         return True
 
     def _send_window(self, run_id: str) -> float | None:
-        """Seconds a model answer of this run is still waited for (D258), or None when no read window bounds it."""
+        """Seconds a model answer of this run is still waited for, or None when no read window bounds it."""
         send_by = getattr(self, "_send_by", {}).get(run_id)
         limit = send_by() if send_by is not None else None
         return None if limit is None else (limit - self.store.clock.now()).total_seconds()
@@ -5409,7 +5413,7 @@ class ResearchFlow:
         """
         attempts = 0
         # The effort this call carries, as the session records it: only an adapter that forwards one sends it (an
-        # OpenAI-compatible connection never does), and an empty choice sends none (D25).
+        # OpenAI-compatible connection never does), and an empty choice sends none.
         sent_effort = (reasoning_effort or None) if getattr(adapter, "sends_reasoning_effort", False) else None
         while True:
             step_attempt = self.store.conn.execute("SELECT attempt FROM run_steps WHERE id = ?", (step_id,)).fetchone()[0]
@@ -5427,7 +5431,7 @@ class ResearchFlow:
                         result = await asyncio.wait_for(adapter.run_step(
                             base, developer, message, schema, requested_model, reasoning_effort), remaining)
                     except TimeoutError:
-                        # D258: the read window's cutoff does not wait for this answer; it would arrive too late to count.
+                        # The read window's cutoff does not wait for this answer; it would arrive too late to count.
                         result = ModelStepResult("cutoff", error="read_cutoff", delivery_class="after_send_unknown")
             finally:
                 model_call.reset(call)
@@ -5447,7 +5451,7 @@ class ResearchFlow:
             self._checkpoint(run_id)
             window = self._send_window(run_id)
             if window is not None and window <= RATE_LIMIT_BACKOFF_SECONDS * attempts:
-                raise _ReadCutoff  # D258: the resend would come after the read cutoff
+                raise _ReadCutoff  # The resend would come after the read cutoff
             self.store.service_waiting(run_id, connection, attempts, RATE_LIMIT_BACKOFF_SECONDS * attempts)
             await asyncio.sleep(RATE_LIMIT_BACKOFF_SECONDS * attempts)
             self._checkpoint(run_id)
@@ -5461,12 +5465,12 @@ class ResearchFlow:
 
     async def _cover_ledger(self, run: dict[str, Any], scope: dict[str, Any], output: dict[str, Any],
                             key: str) -> tuple[dict[str, Any], str, dict[str, Any] | None]:
-        """D83: a valid answer whose ledger leaves given sources unaccounted gets one coverage rewrite call.
+        """A valid answer whose ledger leaves given sources unaccounted gets one coverage rewrite call.
 
-        Built like D260: the same frozen StepInput, the run's model, optional, a short budget or a spend threshold
+        Built like the inference check: the same frozen StepInput, the run's model, optional, a short budget or a spend threshold
         skips it, and a resumed run gets the stored step back, so nothing is sent twice. The rewrite is published only
         when it is valid, leaves fewer sources unaccounted, still cites every source the first answer cited, keeps
-        everything the first answer said (`contracts.coverage_changed_path`) and is not over the D260 inference
+        everything the first answer said (`contracts.coverage_changed_path`) and is not over the inference
         share; otherwise the first answer stands. It never pauses a run or makes an answer unpublished.
         """
         frozen = self.store.step_input_payload(output["step_input_id"])
@@ -5512,7 +5516,7 @@ class ResearchFlow:
             sent = self.store.conn.execute(
                 "SELECT m.validation_json FROM step_inputs si JOIN model_sessions m ON m.step_input_id = si.id"
                 " WHERE si.step_id = ? ORDER BY m.rowid", (stored["id"],)).fetchall()
-            # A reply that was validated and found invalid is recovered by `_model_step` without a call (D249); any
+            # A reply that was validated and found invalid is recovered by `_model_step` without a call; any
             # other session (failed, truncated, cut off by a stop, outcome unknown) closes the step as call_failed,
             # read from the step itself in case the stop came before the closure was written.
             if sent and not any(row["validation_json"] for row in sent):
@@ -5573,7 +5577,7 @@ class ResearchFlow:
 
     @staticmethod
     def _merge_coverage(payload: dict[str, Any], first: dict[str, Any], rewrite: dict[str, Any]) -> dict[str, Any]:
-        """D83: the first answer's claims unchanged plus the rewrite's claims with new labels, checked like an answer.
+        """The first answer's claims unchanged plus the rewrite's claims with new labels, checked like an answer.
 
         Each new claim goes after the last claim of its section, or at the end when its section is new, so a section's
         claims stay consecutive; limitations and excluded_sources are the rewrite's. Returns {"result": answer} or
@@ -5602,7 +5606,7 @@ class ResearchFlow:
 
     async def _cap_inference(self, run: dict[str, Any], scope: dict[str, Any], output: dict[str, Any],
                              key: str) -> tuple[dict[str, Any], str, dict[str, Any] | None]:
-        """D260: a valid answer whose claims are mostly analyst_inference gets one rewrite call.
+        """A valid answer whose claims are mostly analyst_inference gets one rewrite call.
 
         The rewrite is published only when it is valid and no longer over the cap; otherwise the valid answer stands.
         It never makes an answer unpublished. A resumed run gets the stored step back, so nothing is sent twice.
@@ -5617,7 +5621,7 @@ class ResearchFlow:
             self._checkpoint(run_id, run["scope_revision"])
             return output, key, record | {"outcome": "skipped_budget"}  # checked before the connection is touched
         frozen = self.store.step_input_payload(output["step_input_id"])
-        # The accepted answer (after any D244 salvage or D259 relabelling) is quoted, in the handles the model was shown.
+        # The accepted answer (after any anchor salvage or relabelling) is quoted, in the handles the model was shown.
         seed = {"kind": "inference_cap", "labels": labels, "claim_count": len(output["result"]["claims"]),
                 "raw_output": contracts.answer_with_handles(frozen, output["result"]), "step_input_id": output["step_input_id"],
                 "issues": [{"code": "too_many_inference_claims", "path": "/claims",
@@ -5656,7 +5660,7 @@ class ResearchFlow:
         return second, INFERENCE_CAP_KEY, record | {"outcome": "published"}
 
     def _answer_repair_state(self, step_id: str, resplit: dict[str, Any] | None, max_repairs: int) -> tuple[int | None, dict[str, Any] | None, int, bool]:
-        """D249: what an answer step's stored sessions say. (last attempt number, last failed session, repairs used, cap reached)
+        """What an answer step's stored sessions say. (last attempt number, last failed session, repairs used, cap reached)
 
         The cap is one repair for the answer step and, for the extra-repair step, that one call after the repair it follows.
         """
@@ -5694,9 +5698,9 @@ class ResearchFlow:
                           ) -> dict[str, Any]:
         """Run one model step on the model chosen for its role. An optional step raises OptionalStepFailed instead of
         pausing or failing the run; a user pause or cancel still stops the run. `budget_short="skip"` is the sw
-        stages' rule (D86): a call the budget no longer holds is closed and returned as invalid instead of pausing
+        stages' rule: a call the budget no longer holds is closed and returned as invalid instead of pausing
         the run, because those stages count what the budget did not reach and a later run reads it. `spend_short="skip"`
-        (D83) closes the step at the spend threshold and raises OptionalStepFailed("spend_threshold") instead of
+ closes the step at the spend threshold and raises OptionalStepFailed("spend_threshold") instead of
         pausing the run."""
         if report_target is not None:
             report_target = {"limitations_core": None, "review_sections": None, "validation_context": None, **report_target}
@@ -5713,12 +5717,12 @@ class ResearchFlow:
             (self._fail if fail else self._pause)(run_id, reason, detail)
 
         if task_type in STORED_REPAIR_TASKS and attempt_record is None:
-            # D249: an answer already judged invalid by its stored sessions is recovered without the connection; the
+            # An answer already judged invalid by its stored sessions is recovered without the connection; the
             # run and revision guards still apply. A follow-up answer is recovered the same way (S22a).
             _, last, _, capped = self._answer_repair_state(step["id"], resplit, schema_repairs(task_type))
             if capped:
                 self._checkpoint(run_id, run["scope_revision"])
-                relabelled = json.loads(last["validation_json"]).get("relabelled")  # D259: kept across the recovery
+                relabelled = json.loads(last["validation_json"]).get("relabelled")  # Kept across the recovery
                 output = {"step_input_id": last["id"]} | (
                     {resplit.get("kind", "resplit"): {"labels": resplit["labels"], "outcome": "rejected"}
                      | ({"relabelled": relabelled} if relabelled else {})}
@@ -5733,7 +5737,7 @@ class ResearchFlow:
             halt("model_connection_unavailable", {"connection": connection})
 
         def cut_before_send() -> dict[str, Any]:
-            # D258: closed for good at the read cutoff; the abstract and full-text stages read it as not read in time.
+            # Closed for good at the read cutoff; the abstract and full-text stages read it as not read in time.
             self.store.finish_step(step["id"], "cancelled", error_code="model_read_cutoff", error="read_cutoff")
             return {"cutoff": True}
 
@@ -5763,13 +5767,13 @@ class ResearchFlow:
         self.store.start_step(step["id"])
         repair_issues: list[dict[str, Any]] | None = None
         output_text, invalid_raw, invalid_input = None, None, None
-        failed_sections: list[Any] = []  # a report section's failed drafts this run of the step, oldest first (D65)
+        failed_sections: list[Any] = []  # a report section's failed drafts this run of the step, oldest first
         max_repairs = run_schema_repairs(run, task_type)
         # `attempt` numbers every call this step sends; `repairs` counts only the schema repairs among them, so the
         # one resend after a turn timeout (slice 13e) takes nothing from the repairs the step is allowed.
         attempt, repairs, timeout_resent = -1, 0, False
         if resplit is not None:
-            # D249: this step is the one extra repair of a failed answer, so its first call is a repair and it has
+            # This step is the one extra repair of a failed answer, so its first call is a repair and it has
             # none left; the failed output and its issues come from the step before.
             repair_issues, invalid_raw, invalid_input, repairs = (
                 resplit["issues"], resplit["raw_output"], resplit["step_input_id"], max_repairs)
@@ -5781,7 +5785,7 @@ class ResearchFlow:
             if resplit is None:
                 return {}
             if resplit.get("kind") in ("inference_cap", "ledger_coverage") and outcome == "published":
-                outcome = "valid"  # D260, D83: whether the rewrite replaces the answer is decided by its caller
+                outcome = "valid"  # Whether the rewrite replaces the answer is decided by its caller
             return {resplit.get("kind", "resplit"): {"labels": resplit["labels"], "outcome": outcome}
                     | ({"relabelled": split_relabel} if split_relabel else {})}
         extra = step_output_extra or {}
@@ -5811,7 +5815,7 @@ class ResearchFlow:
 
         used_up = False
         if task_type in STORED_REPAIR_TASKS and attempt_record is None:
-            # D249: a resumed answer step keeps the repairs its stored sessions already used, so the cap (one repair,
+            # A resumed answer step keeps the repairs its stored sessions already used, so the cap (one repair,
             # and the one extra repair of the step after it) holds across a stop and a resume, and a failed answer is
             # recovered from its stored sessions instead of being asked for again.
             last_attempt, last, used, used_up = self._answer_repair_state(step["id"], resplit, max_repairs)
@@ -5853,7 +5857,7 @@ class ResearchFlow:
             if (self.store.run(run_id)["usage"].get("model_calls", 0)
                     + len(reserved - {operation_key}) >= run["budget"]["max_model_calls"]):
                 if repair_issues is not None and budget_short == "skip":
-                    # A repair the budget no longer holds is skipped (D86): the invalid answer stands for this run,
+                    # A repair the budget no longer holds is skipped: the invalid answer stands for this run,
                     # as an unrepaired one does, and the run goes on to what it can still afford.
                     output = sent_output().get("output", {"step_input_id": invalid_input}) | resplit_meta("skipped_budget")
                     self.store.finish_step(step["id"], "failed", output=output,
@@ -5915,8 +5919,8 @@ class ResearchFlow:
                 shown_issues = contracts.issues_with_handles(payload, repair_issues) if shown is not payload else repair_issues
                 hints = None
                 if task_type == "grounded_answer" and invalid_raw and (resplit or {}).get("kind") not in ("inference_cap", "ledger_coverage"):
-                    # D80: ledger notes, rebuilt from the stored failed output on every repair (a resumed step too);
-                    # they never join the issues, which decide D249 and what is stored as failed.
+                    # Ledger notes, rebuilt from the stored failed output on every repair (a resumed step too);
+                    # they never join the issues, which decide the verdict and what is stored as failed.
                     hinted_input = self.store.step_input_payload(invalid_input)
                     found = contracts.ledger_hints(hinted_input, contracts.resolve_citation_handles(hinted_input, invalid_raw))
                     hints = [h["message"] for h in contracts.issues_with_handles(payload, [{"message": h} for h in found])]
@@ -6049,7 +6053,7 @@ class ResearchFlow:
                         report.result = output_text
             elif task_type in ("grounded_answer", "followup_answer", "cell_extraction", "abstract_screening", "fulltext_adjudication") + contracts.REPORT_TASKS + contracts.LINEAGE_TASKS + contracts.CANDIDATE_TASKS + contracts.REVIEW_TASKS + contracts.CITATION_CHECK_TASKS:
                 output_text = contracts.resolve_citation_handles(payload, output_text)
-            # Field names from the alias table are put right before validation and the renames recorded (D86).
+            # Field names from the alias table are put right before validation and the renames recorded.
             if not anchor_patch:
                 output_text, normalised_changes = contracts.normalise_output(task_type, output_text)
                 output_text, stamps = contracts.stamp_package_hash(task_type, payload, output_text)
@@ -6057,12 +6061,13 @@ class ResearchFlow:
                 output_text, stamps = contracts.stamp_step_input_id(task_type, payload, output_text)
                 normalised_changes.extend(stamps)
                 if resplit is not None:
-                    # D259: parts of a split claim that kept the offending label get new labels; nothing else changes.
+                    # Parts of a split claim that kept the offending label get new labels; nothing else changes.
                     output_text, relabelled = contracts.relabel_split_claims(output_text, resplit["labels"])
                     split_relabel.clear()
                     split_relabel.update(relabelled)
                 if task_type == "grounded_answer" and isinstance(output_text, dict):
-                    # D80: the ledger never reaches validation or D244/D249/D260; the answer is judged on its claims
+                    # The ledger never reaches validation, salvage or the inference check; the answer is judged on its
+                    # claims
                     # alone and the kept entries go back on a valid result below.
                     ledger, ledger_split = contracts.split_ledger(output_text)
                 report = contracts.validate_model_output(payload, output_text)
@@ -6072,7 +6077,7 @@ class ResearchFlow:
                 if link_prunes:
                     report = contracts.validate_model_output(payload, output_text)
                 if task_type == "report_section" and repair_issues is not None:
-                    # A second repair (D65) keeps what every earlier failed draft held, not only the latest one.
+                    # A second repair keeps what every earlier failed draft held, not only the latest one.
                     # With a repair still to come, an issue names what was dropped in full: the next repair sees only
                     # this draft, which lacks it.
                     seen_issues: set[tuple[str, str, str]] = set()
@@ -6085,7 +6090,7 @@ class ResearchFlow:
                                 report.issues.append(issue)
             salvage: list[contracts.Issue] = []
             if not report.ok and task_type == "grounded_answer" and isinstance(output_text, dict):
-                # D244: preserve links and claims while a repair can still fix their quotes.
+                # Preserve links and claims while a repair can still fix their quotes.
                 salvaged, salvage = contracts.salvage_answer_draft(payload, output_text)
                 if repairs < max_repairs and any(w.dropped != "anchor" for w in salvage):
                     salvage = []
@@ -6099,7 +6104,7 @@ class ResearchFlow:
                                          "normalised": normalised_changes}
             if patch_record is not None:
                 recorded["validation_json"]["anchor_patch"] = patch_record
-            if result.transport:  # D93: which schema the adapter sent and what it filled back into the answer
+            if result.transport:  # Which schema the adapter sent and what it filled back into the answer
                 recorded["validation_json"]["transport"] = result.transport
             if split_relabel:
                 recorded["validation_json"]["relabelled"] = dict(split_relabel)
@@ -6124,7 +6129,7 @@ class ResearchFlow:
                 complete("succeeded", output=output)
                 return output
             repair_issues = [vars(i) for i in report.issues]
-            # What a further repair (D65) is built from: the section as it now stands and its own issues.
+            # What a further repair is built from: the section as it now stands and its own issues.
             next_issues, next_raw, next_input = repair_issues, result.raw_text, payload["step_input_id"]
             if anchor_patch:
                 if patch_record is None:  # the patch was refused, so the section is unchanged and keeps its faults

@@ -1,4 +1,4 @@
-"""D80: the evidence ledger through the answer flow, with its repairs (D244, D249, D260) and resumes.
+"""The evidence ledger through the answer flow, with its repairs and resumes.
 
 Scripted FakeAdapter and synthetic sources: these show that the ledger never changes whether or how an answer is
 published, and which attempt's ledger is stored; they say nothing about whether a model's reasons are right.
@@ -111,7 +111,7 @@ def answer_of(store, rid, flow, run_id):
 
 
 def sessions(store):
-    """The answer's sessions, without the D83 coverage rewrite."""
+    """The answer's sessions, without the coverage rewrite."""
     return [json.loads(r[0]) for r in store.conn.execute(
         "SELECT m.validation_json FROM model_sessions m JOIN step_inputs i ON i.id = m.step_input_id"
         " JOIN run_steps s ON s.id = i.step_id WHERE i.task_type = 'grounded_answer' AND m.validation_json IS NOT NULL"
@@ -130,7 +130,7 @@ COVERAGE_LINE = "are neither cited by a claim nor listed in excluded_sources"
 
 
 def answer_calls(adapter):
-    """Calls other than the D83 coverage rewrite, which every valid answer that leaves a work unaccounted also gets."""
+    """Calls other than the coverage rewrite, which every valid answer that leaves a work unaccounted also gets."""
     return sum(COVERAGE_LINE not in message for message in adapter.messages)
 
 
@@ -152,7 +152,7 @@ def test_an_incomplete_ledger_publishes_the_answer_and_names_the_source_with_no_
         answer = answer_of(store, rid, flow, run_id)
         ids = given(store, answer)
         assert answer["status"] == "structurally_valid" and answer_calls(adapter) == 1
-        # D83: the coverage rewrite repeats the same ledger, so the first answer stands.
+        # The coverage rewrite repeats the same ledger, so the first answer stands.
         assert json.loads(answer["validation_json"])["ledger_coverage"]["outcome"] == "kept_first"
         record = ledger(answer)
         assert record["cited"] == [ids[0]] and [e["source_id"] for e in record["excluded"]] == [ids[1]]
@@ -475,7 +475,7 @@ def test_the_coverage_call_is_sent_at_most_once_whatever_the_stop(tmp_path, stop
 
 
 def test_source_names_in_claims_come_from_records_and_typed_names_are_refused(tmp_path):
-    """D131: a `{{source}}` mention is filled from the source record when the answer is saved; a typed name is refused."""
+    """A `{{source}}` mention is filled from the source record when the answer is saved; a typed name is refused."""
     def named(si):
         out = draft(si, [("c1", "source_stated", [0]), ("c2", "source_stated", [0])])
         sid = si["sources"][0]["source_id"]

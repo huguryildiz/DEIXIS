@@ -1,4 +1,4 @@
-"""Europe PMC's open-access full text as the last full-text source (SW21, D106).
+"""Europe PMC's open-access full text as the last full-text source (SW21).
 
 The lookup is asked through a mocked `httpx` transport and the XML comes from a fake `xml_fetcher`; no test touches the
 network. The JATS documents are SYNTHETIC and say nothing about any real article. Passing shows the lookup rules, the

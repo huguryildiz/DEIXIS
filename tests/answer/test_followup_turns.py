@@ -283,7 +283,7 @@ def work_rows(spec):
 
 
 def test_the_selection_puts_one_passage_per_work_first_and_ranks_the_rest(tmp_path, monkeypatch):
-    """D64 through `_selection`: the answer's passage first; its work adds no table passage; a reserve work, then one
+    """Follow-up selection through `_selection`: the answer's passage first; its work adds no table passage; a reserve work, then one
     version of a work held in two versions, then the next work, up to half the limit; the question's own ranking fills
     the other half. SYNTHETIC records; the table rows are given directly."""
     from types import SimpleNamespace
@@ -343,7 +343,7 @@ def first_answer(client, rid):
 
 
 def classify_all(si):
-    """SYNTHETIC: a follow-up output that classifies every source sent by its first passage (D66). A source whose
+    """SYNTHETIC: a follow-up output that classifies every source sent by its first passage. A source whose
     first passage names "depth" is depth-based, "vector" vector-based, both both (as an interpretation); another is
     ambiguous."""
     draft = json.loads(valid_response(si))
@@ -365,7 +365,7 @@ def classify_all(si):
 
 
 def test_a_counting_follow_up_is_counted_by_the_application_with_a_citation_per_work(tmp_path):
-    """D66 end to end: the model classifies works; the application counts the distinct works per group, a hybrid in
+    """Follow-up counting end to end: the model classifies works; the application counts the distinct works per group, a hybrid in
     both, shows each work with its citation and the ambiguous one by its note, and a later turn reads the counts as
     context. SYNTHETIC records and the fake adapter."""
     files = (("a.pdf", ["SYNTHETIC. The protocol forwards by depth toward the surface sinks."]),
@@ -401,7 +401,7 @@ def test_a_counting_follow_up_is_counted_by_the_application_with_a_citation_per_
 
 
 def test_work_groups_count_a_work_once_across_its_versions_and_name_table_works_not_sent(tmp_path, monkeypatch):
-    """D66: two versions of one work in a group are one work; a work the table names but whose passages were not
+    """Two versions of one work in a group are one work; a work the table names but whose passages were not
     sent, and a sent work with no record, are listed apart. SYNTHETIC records."""
     from test_evidence_tables import make_lib
     lib = make_lib(tmp_path)  # one work in two versions: published and preprint

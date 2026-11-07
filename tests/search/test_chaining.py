@@ -1,4 +1,4 @@
-"""Citation chaining's pure rules: the filter, what is new, and how a seed's title is compared (slice 15, D95).
+"""Citation chaining's pure rules: the filter, what is new, and how a seed's title is compared (slice 15).
 
 Rows, titles and abstracts are SYNTHETIC and from two fields (greenhouse irrigation and pallet packing), because the
 filter reads the research's own gate blocks and must not know a topic. Passing shows the rules do what the slice says;

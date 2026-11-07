@@ -213,7 +213,7 @@ def test_worker_recover_marks_the_half_sent_run_paused_and_resume_finishes_it(li
     assert publication(lib, run) is None
     lib.adapter.before = None
     assert resume(lib, run)["status"] == "completed"
-    # RF6 (D211): the late result of the attempt recovery closed as outcome_unknown is recorded, not used,
+    # RF6: the late result of the attempt recovery closed as outcome_unknown is recorded, not used,
     # so the resumed step sends again (before RF6 that late result was stored and reused).
     assert len(lib.adapter.calls) == 2 and len(revisions(lib)) == 1
 

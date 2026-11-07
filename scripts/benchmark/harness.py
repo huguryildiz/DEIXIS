@@ -4,7 +4,7 @@ The runner sets the measured configuration in its temporary data folder and read
 defaults (Gemini, reranker off) are never measured by accident. Every row carries those settings. After each question
 the run must show the expected embedding and an applied rerank; otherwise the whole run stops and the question is not
 written. One exception, decided 18 Oct after the EE survey set's second question: when the product's own ranking-stage
-time ran out before the rerank (`no_time_left`, recorded by the product, D104), the row is written and arm C is what
+time ran out before the rerank (`no_time_left`, recorded by the product), the row is written and arm C is what
 the product delivered, the fused order; the row says the rerank was not applied, and the report gives C−B over every
 question first and over the reranked ones second. Keys, provider errors and a different reranker still stop. Arm B (reranker off) and arm C (reranker on) come from one run: the frozen list keeps the fused order
 (`automatic_order`) next to the reranked one (`order`), so both arms share the same queries and OpenAlex is read once.
@@ -21,7 +21,7 @@ from pathlib import Path
 import httpx
 
 EMBEDDING = {'provider': 'voyage', 'model': 'voyage-4-lite'}
-# Pool factor 4, the 18 Oct configuration. A D163 M1 arm selects 8, the product default since D153, with
+# Pool factor 4, the 18 Oct configuration. An m1 arm selects 8, the product default since rerank rule version 2, with
 # `--pool-factor 8`; rows of the two factors are different configurations and are never compared.
 RERANKER = {'enabled': True, 'provider': 'voyage', 'pool_factor': 4.0, 'timeout_seconds': 180}
 RERANK_MODEL = 'rerank-3-lite'
@@ -135,7 +135,7 @@ def rerank_problems(conn, run_id, listing=None):
         return found
     size = min(MAX_CANDIDATES, math.ceil((output.get('read_top') or 0) * RERANKER['pool_factor']),
                len(listing.get('automatic_order') or ()))
-    window = len(output.get('candidate_ids') or ()) + len(output.get('kept_in_place') or ())  # D106: chain-only kept
+    window = len(output.get('candidate_ids') or ()) + len(output.get('kept_in_place') or ())  # chain-only kept
     if window != size:
         found.append(f"rerank window {window} records, expected {size}")
     if not told.get('applied'):
@@ -143,7 +143,7 @@ def rerank_problems(conn, run_id, listing=None):
     return found
 
 
-# The search method a run froze (`fast_path.freeze_budget`, D163): the chain rule each selection must show.
+# The search method a run froze (`fast_path.freeze_budget`): the chain rule each selection must show.
 METHOD_CHAIN_RULES = {'legacy': 'fast_chain_v1', 'm1': 'fast_chain_v2'}
 
 
@@ -159,7 +159,7 @@ def method_problems(conn, run_id, method):
 
 
 def add_m1_args(parser):
-    """The arguments a D163 M1 arm adds to a runner's `deixis` command; all optional, so earlier runs read the same."""
+    """The arguments an m1 arm adds to a runner's `deixis` command; all optional, so earlier runs read the same."""
     parser.add_argument('--out', default=None, help='folder for runs/ and stopped.jsonl (default: the set folder)')
     parser.add_argument('--method', choices=sorted(METHOD_CHAIN_RULES), default=None,
                         help='the search method every run of this arm must have frozen')

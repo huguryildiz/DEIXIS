@@ -75,7 +75,7 @@ class Pool:
         if request.url.host == "generativelanguage.googleapis.com":
             return self._embed(request)
         if request.url.host != "api.openalex.org":
-            return httpx.Response(404)  # the other providers are not mocked and fail, which D18 carries on from
+            return httpx.Response(404)  # the other providers are not mocked and fail, which the run carries on from
         params = request.url.params
         query = params.get("search.title_abstract_keywords") or ""
         if params.get("per_page") == "1" and params.get("select") == "id":

@@ -1,4 +1,4 @@
-"""The answer thread's view of the candidates written from one answer (D98): counts read from stored rows only.
+"""The answer thread's view of the candidates written from one answer: counts read from stored rows only.
 
 Nothing here derives a status of its own; the computed status is `CandidateStore.search_status`, and the person's
 decision stays beside it with the card version it was made for.

@@ -11,7 +11,7 @@ import { t, uiLocale } from '../lib/i18n'
 // A claim review's tone (mockup `.badge-s`): supported green, partly supported amber, not supported red, cannot assess plain.
 export const verdictTones: Record<Verdict, string> = { supported: 'ok', partially_supported: 'part', not_supported: 'bad', cannot_assess: 'plain' }
 
-// The evidence ledger (D80) in words, as the report, the thread and the Markdown file write it (exports/answer.py too).
+// The evidence ledger in words, as the report, the thread and the Markdown file write it (exports/answer.py too).
 // Cited counts come from the answer's evidence links; a reason is the model's, checked only for its shape and quote.
 const LEDGER_REASONS: Record<LedgerReason, string> = {
   no_answering_content: 'Its given passages do not answer the question',
@@ -78,7 +78,7 @@ function pdfSuggestion(answer: Answer, sources: Source[]): { notes: Limitation[]
 export function reportParts(answer: Answer, sources: Source[], style?: CitationStyle) {
   const refs = new Map<string, { n: number; e: Answer['claims'][number]['evidence'][number] }>()
   answer.claims.forEach(c => c.evidence.forEach(e => { if (!refs.has(e.passage_id)) refs.set(e.passage_id, { n: refs.size + 1, e }) }))
-  // A citation is written in the chosen style ("Zeng et al., 2022"), else names its source's key (D59), else null (the
+  // A citation is written in the chosen style ("Zeng et al., 2022"), else names its source's key, else null (the
   // caller uses the reference number); a claim citing two passages of one source adds each passage's place.
   const citeLabel = (claim: Answer['claims'][number], e: Evidence): string | null => {
     if (style === 'ieee') return null

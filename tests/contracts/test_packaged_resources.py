@@ -171,4 +171,4 @@ def test_a_run_from_the_repository_still_reads_dotenv_and_moves_its_keys(dotenv,
     config.load_settings()
     assert credentials.dotenv_path == dotenv and os.environ["OPENALEX_API_KEY"] == "openalex-dotenv-key"
     assert memory_keychain.get_password("DEIXIS", "OPENALEX_API_KEY") == "openalex-dotenv-key"
-    assert dotenv.read_text(encoding="utf-8") == "# SYNTHETIC\n"  # moved into the keychain (D19), as before
+    assert dotenv.read_text(encoding="utf-8") == "# SYNTHETIC\n"  # moved into the keychain, as before

@@ -1,6 +1,6 @@
-"""Which scholarly record an uploaded PDF is, so its source shows the paper's title, authors, year and abstract (D37).
+"""Which scholarly record an uploaded PDF is, so its source shows the paper's title, authors, year and abstract.
 
-The seed rule of D2/D3 read from the file's own first page: the DOIs the first two pages name are looked up first, and
+The seed rule reads from the file's own first page: the DOIs the first two pages name are looked up first, and
 a work counts only when its title (four words or more) stands in the head of page 1. When no DOI decides, one OpenAlex
 meaning search with that head is asked. One change from the seed rule: a work whose title is part of another found
 work's title ("Entanglement Routing Design over Quantum Networks" inside "Multi-Entanglement Routing Design over

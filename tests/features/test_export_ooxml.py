@@ -285,7 +285,7 @@ def test_answer_docx_is_the_browser_markdown_plus_quotes_and_access_limits(lang,
     assert quotes == [["“quote “one” & <two>”", "“a different quote of p1”"], ["“abstract quote”"], ["“ocr quote”"]]
 
 
-# The view's evidence ledger (D80): s1 and s2 cited, s3 and s4 left out with a reason, s5 with none. SYNTHETIC.
+# The view's evidence ledger: s1 and s2 cited, s3 and s4 left out with a reason, s5 with none. SYNTHETIC.
 
 
 def test_answer_docx_route_names_refusals_and_content(tmp_path):
@@ -394,7 +394,7 @@ def test_table_xlsx_is_the_browser_csv_plus_source_state_and_warnings(lang, styl
     data = table_export.xlsx(SYNTHETIC_TABLE, SYNTHETIC_SOURCES, language=lang, style=style)
     rows = xlsx_rows(data)
     names = ("Size", "Kind", "Note")
-    width = 8 + 5 * len(names)  # eight source fields since D114 added "In report"
+    width = 8 + 5 * len(names)  # eight source fields since that change added "In report"
     head = expected[0]
     suffix = ("source", "state", "warnings") if lang == "en" else ("kaynak", "durum", "uyarılar")
     assert rows[0] == head[:8] + [x for k, name in enumerate(names) for x in (head[8 + 2 * k], head[9 + 2 * k],

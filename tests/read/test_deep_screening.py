@@ -1,4 +1,4 @@
-"""D173's deeper screening (rule `m3_v1`): a Standard discovery queued with the option on also screens list places
+"""The deeper screening (rule `m3_v1`): a Standard discovery queued with the option on also screens list places
 N+1..N+100 once each, after the top N; K, its order and the fetch queue are unchanged and only the answer's window
 widens. Plus the benchmark-only list barrier. SYNTHETIC records, FakeAdapter, mocked HTTP; no live provider or model.
 Passing shows workflow behaviour, not screening quality."""
@@ -347,7 +347,7 @@ def normalized(keys):
 
 def test_a_paused_run_frozen_before_the_option_resumes_as_before_with_the_setting_on(tmp_path, monkeypatch,
                                                                                     small_standard):
-    """(3b) A Standard run queued with the option off (a policy byte for byte the one frozen before D173) pauses in
+    """(3b) A Standard run queued with the option off (a policy byte for byte the one frozen earlier) pauses in
     its read; the setting is turned on; the resumed run makes the same steps, the same calls and the same answer
     window as a run that was never paused, and its budget does not move."""
     def summary(store, run_id, adapter):

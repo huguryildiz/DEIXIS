@@ -341,7 +341,7 @@ FILE_CASES = {
 }
 
 
-# D114: claims resting on abstract text carry a mark, and a source read from its abstract only is noted.
+# Claims resting on abstract text carry a mark, and a source read from its abstract only is noted.
 FILE_EXPECTED = {
     'non-ascii-tr': (
         (

@@ -7,7 +7,7 @@ import { useToast } from '../components/Toast'
 
 // PDF work that keeps going while the user is on another page (PDF collection, OCR): a card at the foot of the sidebar
 // and a 420px sheet with one line per job. The research list names each research's latest run; the views give the progress.
-// The equation reader is not listed: nothing waits on it, and each PDF's equation state is in its source details (D141).
+// The equation reader is not listed: nothing waits on it, and each PDF's equation state is in its source details.
 
 const LIVE = new Set<RunStatus>(['queued', 'running', 'pause_requested', 'paused'])
 const JOB_KINDS = new Set(['pdf_collection', 'pdf_ocr', 'fulltext_fetch', 'fulltext_adjudication'])

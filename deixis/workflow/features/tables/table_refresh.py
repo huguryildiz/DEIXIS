@@ -1,4 +1,4 @@
-"""D52: evidence table cells a model or the system read from the abstract or metadata are read again once PDF text
+"""Evidence table cells a model or the system read from the abstract or metadata are read again once PDF text
 of their source arrives.
 
 A sweep, like `late_revision.advance`: it does nothing while a run of the research is queued, running or paused, or

@@ -1,4 +1,4 @@
-"""D255: one append-only answer revision from cutoff-selected late full text."""
+"""One append-only answer revision from cutoff-selected late full text."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ NEW_WORK_PAGES = 1
 
 
 def available(store: Any) -> bool:
-    # Policies frozen before D255 have no late lane.
+    # Policies frozen earlier have no late lane.
     return bool(store.conn.execute(
         "SELECT 1 FROM runs WHERE kind = 'discovery'"
         " AND json_extract(budget_json, '$.fast_path.policy') = ?"
@@ -68,7 +68,7 @@ def guard_reason(store: Any, row: dict[str, Any]) -> str | None:
 
 
 def held(store: Any, row: dict[str, Any]) -> bool:
-    """Whether withdrawing the newer question revisions one after another (D67) may still bring the research back to
+    """Whether withdrawing the newer question revisions one after another may still bring the research back to
     this row's revision: each one from the current one down was opened from the next and is unused. Then the row waits
     with no event: withdrawn, the research is back on the row's revision and the row goes on; once work is done under
     any of them it is skipped for `scope_revised`. While a run of the research is active or paused that is not known
@@ -135,7 +135,7 @@ def schedule(flow: Any, run: dict[str, Any]) -> None:
     selected = set(closure["selected_work_ids"])
     base_items = {i["work_id"]: i for i in plan["output"]["items"]}
     # A work admitted to a full-text slot from the abstract stage's unresolved route has no abstract to answer from,
-    # so it was never in the base answer; its text arriving after the cutoff is read like a candidate's (D60).
+    # so it was never in the base answer; its text arriving after the cutoff is read like a candidate's.
     waiting = ("no_text_at_cutoff", fast_answer.UNRESOLVED_WITHOUT_FULLTEXT)
     candidates = [copy.deepcopy(base_items.get(i["work_id"], i)) for i in cutoff["output"]["items"]
                   if i["work_id"] in selected and not i["fulltext_decision_id"]
@@ -187,14 +187,14 @@ def outcomes(flow: Any, row: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def is_late_closest(item: dict[str, Any]) -> bool:
-    """A late reading of the file that did not include the work: it makes a closest work, not an exclusion (D137).
-    A row saved before D137 carries no reading code and stays what it was."""
+    """A late reading of the file that did not include the work: it makes a closest work, not an exclusion.
+    A row saved earlier carries no reading code and stays what it was."""
     return fast_answer.is_closest({"decided_by": item.get("late_decided_by"), "reason_code": item.get("late_reason")},
                                   item.get("late_asset_id"))
 
 
 def late_closest_rank(store: Any, item: dict[str, Any]) -> tuple[int, int] | None:
-    """How a late closest reading ranks (D145), or None when it is no closest work: not a closest reading, or one that
+    """How a late closest reading ranks, or None when it is no closest work: not a closest reading, or one that
     found no criterion part, which leaves the answer as a late exclusion."""
     if not is_late_closest(item):
         return None
@@ -207,7 +207,7 @@ def late_closest_rank(store: Any, item: dict[str, Any]) -> tuple[int, int] | Non
 def is_late_excluded(store: Any, item: dict[str, Any]) -> bool:
     """A late reading that found the work not to meet the criterion or out of scope, and is no closest work; or a
     closest reading, of any outcome, that found no criterion part while it is still the work's current decision, so a
-    person's later choice on the file (a wrong PDF above all) brings the work back (D145)."""
+    person's later choice on the file (a wrong PDF above all) brings the work back."""
     if item["user_priority"] or late_closest_rank(store, item) is not None:
         return False
     if is_late_closest(item):
@@ -232,7 +232,7 @@ def excluded_works(store: Any, rid: str, scope_revision: int) -> set[str]:
 
 
 def closest_works(store: Any, rid: str, scope_revision: int) -> dict[str, dict[str, Any]]:
-    """Works a late reading read without including them, by work: a later answer reads them as closest works (D137)."""
+    """Works a late reading read without including them, by work: a later answer reads them as closest works."""
     if not available(store):
         return {}
     return {i["work_id"]: i for i in late_items(store, rid, scope_revision)
@@ -280,7 +280,7 @@ def advance(flow: Any, rid: str | None = None) -> None:
                         continue
                     budget = adjudication.read_budget(scope["effort"]) | {"max_fulltext_reads": len(works), "max_model_calls": 2 * len(works)}
                     # A late read reads by its discovery's rule; a discovery queued before the rule existed keeps the old
-                    # one (D76).
+                    # one.
                     budget.pop("read_rule", None)
                     if rule := (store.run(row["ledger_run_id"])["budget"] or {}).get("read_rule"):
                         budget["read_rule"] = rule
@@ -333,7 +333,7 @@ def kept_passages(base: dict[str, Any], excluded: set[str]) -> list[str]:
 
 def inclusion_pages(upgrades: dict[str, dict[str, Any]], base_work_ids: set[str]) -> int:
     """The passages late inclusions add to the base answer: the pages past the abstract a base work replaces, and the
-    pages of a work new to it. Closest works take only the room left after them (D145)."""
+    pages of a work new to it. Closest works take only the room left after them."""
     return sum(BASE_WORK_PAGES - 1 if wid in base_work_ids else NEW_WORK_PAGES
                for wid, i in upgrades.items() if i["late_outcome"] == "include")
 
@@ -341,8 +341,8 @@ def inclusion_pages(upgrades: dict[str, dict[str, Any]], base_work_ids: set[str]
 def upgrades_of(store: Any, works: list[dict[str, Any]], base: dict[str, Any] | None,
                 passages: int) -> dict[str, dict[str, Any]]:
     """The late readings a revision reads in full: every inclusion, and the works read without inclusion as closest
-    works while the base answer has closest places left by its budget (`passages`, D137), taken as the answer takes
-    them: none whose reading found no criterion part, more parts found first (D145). A closest work new to the answer
+    works while the base answer has closest places left by its budget (`passages`), taken as the answer takes
+    them: none whose reading found no criterion part, more parts found first. A closest work new to the answer
     also needs a passage the base answer left free; one the base read from its abstract takes that abstract's place."""
     upgrades = {i["work_id"]: i for i in works if i["late_outcome"] == "include" and i["late_asset_id"]}
     if base is not None:
@@ -380,16 +380,17 @@ def revision_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict
     check_candidates(flow, row, works, pause_run=run["id"])
     upgrades = upgrades_of(store, works, base, run["budget"]["max_answer_passages"])
     # A closest work the revision has no place for leaves it too, whatever its reading's outcome, as an answer leaves
-    # out the closest works past its count (D145).
+    # out the closest works past its count.
     excluded = {i["work_id"] for i in works if i["work_id"] not in upgrades and (is_late_excluded(store, i) or (
         not i["user_priority"] and late_closest_rank(store, i) is not None))}
     if not upgrades:
         flow._fail(run["id"], "no_fulltext_inclusion")
     patterns = flow._criterion_phrases(run, scope)
-    # A revision follows its base answer's rule; a base input from before D56 has none, so it is decided here.
+    # A revision follows its base answer's rule; a base input from before that change has none, so it is decided here.
     formula_rule = base.get("formula_passages") or fast_answer.formula_request(store, scope, patterns)
     formulas = formula_rule["on"]
-    # The same for outcome terms: a base input from before D84 has no record, so the research's terms are read here.
+    # The same for outcome terms: a base input from before that change has no record, so the research's terms are read
+    # here.
     result_rule = {k: v for k, v in (base.get("result_passages") or fast_answer.result_request(store, scope)).items() if k != "moved"}
     outcome_patterns = result_passages.compile_terms(result_rule["outcome_terms"])
     moved = 0
@@ -397,7 +398,7 @@ def revision_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict
     pools = fast_answer.current_pools(store, run["research_id"])
     items = []
     base_work_ids = {i["work_id"] for i in base["items"]}
-    # A closest work a revision reads in full uses only the room the base answer's budget left (D137): the abstract
+    # A closest work a revision reads in full uses only the room the base answer's budget left: the abstract
     # it replaces, and what the frozen 16/48/80 budget has free. A closest work new to the answer needs that room.
     room = max(0, run["budget"]["max_answer_passages"] - len(kept_passages(base, excluded))
                - inclusion_pages(upgrades, {i["work_id"] for i in base["items"]}))
@@ -429,7 +430,7 @@ def revision_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict
             moved += first
             count = BASE_WORK_PAGES if wid in base_work_ids else NEW_WORK_PAGES
             if closest:
-                # Its quoted pages first (D137), and no more pages than the budget has room for.
+                # Its quoted pages first, and no more pages than the budget has room for.
                 cited = [pid for pid in quoted if pid in ids]
                 ordered = [store.passage(pid) for pid in cited] + [p for p in ordered if p["id"] not in cited]
                 if wid in base_work_ids:
@@ -464,7 +465,7 @@ def revision_plan(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict
     for wid in upgrades:
         if wid not in base_work_ids:
             blocks.append((wid, chosen_by_work[wid]))
-    # The closest works it reads in full keep their places, filled in the order they were taken (D145).
+    # The closest works it reads in full keep their places, filled in the order they were taken.
     rank = {wid: n for n, (wid, i) in enumerate(upgrades.items()) if i["late_outcome"] != "include"}
     for seq, key in ((blocks, lambda b: b[0]), (items, lambda i: i["work_id"])):
         slots = [n for n, x in enumerate(seq) if key(x) in rank]
@@ -505,7 +506,7 @@ def answer_view(store: Any, aid: str) -> dict[str, Any]:
     if not row:
         return {}
     if row["base_answer_id"] == aid:
-        # Once a revision is planned, its list says which works left; before, the late readings alone do (D145).
+        # Once a revision is planned, its list says which works left; before, the late readings alone do.
         planned = row["answer_run_id"] and store.existing_step(row["answer_run_id"], REVISION_INPUT)
         excluded = (len(planned["output"]["late_excluded"]) if planned and planned["status"] == "succeeded"
                     else sum(is_late_excluded(store, i) for i in json.loads(row["works_json"])))

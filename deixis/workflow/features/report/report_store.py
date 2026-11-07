@@ -52,7 +52,7 @@ class ReportStore:
             # (Plan + model-written sections + optional research title + one optional phrase repair per section + review)
             # times (initial call + bounded schema repairs per model step).
             # The owner set a floor of 50 on 2026-09-18 so an unforeseen extra call cannot truncate a report.
-            # A section's second repair adds one call per section (D65).
+            # A section's second repair adds one call per section.
             max_model_calls = max(REPORT_CALL_FLOOR, (1 + section_count + 1 + section_count + 1) * (1 + MAX_SCHEMA_REPAIRS)
                                   + section_count * (REPORT_SECTION_REPAIRS - MAX_SCHEMA_REPAIRS))
             budget = TEST_EFFORT_BUDGETS[scope["effort"]].__dict__ | {
@@ -424,7 +424,7 @@ class ReportStore:
         stamps = {row["source_version_id"]: row for row in self.conn.execute(
             "SELECT t.source_version_id, t.removed_at AS row_removed_at, m.removed_at AS membership_removed_at,"
             " s.state AS selection_state, s.updated_at AS selection_updated_at,"
-            # A row read from its abstract only can leave the report without a selection change (D114): a stage decision
+            # A row read from its abstract only can leave the report without a selection change: a stage decision
             # or a file on its work is then when it left.
             " (SELECT MAX(d.created_at) FROM stage_decisions d JOIN source_versions dv ON dv.id = d.source_version_id"
             "  JOIN source_versions tv ON tv.id = t.source_version_id WHERE d.research_id = ? AND dv.work_id = tv.work_id)"
@@ -437,7 +437,7 @@ class ReportStore:
             " WHERE t.table_id = ?", (report["research_id"], report["research_id"], report["research_id"], table_id),
         )}
         removed_changes = {}
-        # A work read in full and not included (D144) leaves the same way.
+        # A work read in full and not included leaves the same way.
         abstract_only = {row["source_version_id"] for row in snapshot["rows"]
                          if row.get("membership") in ("abstract_only", "full_text_read")}
         for source_id in removed:

@@ -28,9 +28,9 @@ EXCLUSIONS = {
     ("deixis/domain/contracts.py", "_adapter_schema"): "Internal registry-builder step.",
     ("deixis/domain/contracts.py", "_common_schema"): "Internal registry-builder step.",
     ("deixis/models/gemini.py", "response_schema"): "Gemini-only transform of a registry schema.",
-    ("deixis/models/schema_subset.py", "portable_schema"): "Anthropic/OpenRouter subset of a registry schema (D34).",
-    ("deixis/models/anthropic_api.py", "anthropic_schema"): "Anthropic subset of a registry schema (D34, D93).",
-    ("deixis/models/openai_compat.py", "portable_schema"): "OpenRouter subset of a registry schema (D34).",
+    ("deixis/models/schema_subset.py", "portable_schema"): "Anthropic/OpenRouter subset of a registry schema.",
+    ("deixis/models/anthropic_api.py", "anthropic_schema"): "Anthropic subset of a registry schema.",
+    ("deixis/models/openai_compat.py", "portable_schema"): "OpenRouter subset of a registry schema.",
 }
 OLD_REASON = {"anyOf": [
     {"$ref": "#/$defs/short_text", "minLength": 1, "pattern": r"\S"},

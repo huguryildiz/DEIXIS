@@ -1,4 +1,4 @@
-"""BibTeX and RIS export of included and cited sources (D16)."""
+"""BibTeX and RIS export of included and cited sources."""
 
 from urllib.parse import quote
 import pytest

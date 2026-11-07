@@ -12,7 +12,7 @@ import { errorText, label, reasonText, relationLabels, relationTones, runReasonL
 import '../research/kit.css'
 import './candidate.css'
 
-// Kill search from the answer's Next steps (D98). The answer thread only writes the person's sentence and shows a
+// Kill search from the answer's Next steps. The answer thread only writes the person's sentence and shows a
 // summary of what the Candidates panel stored; the card, the plan, the search and the matrix stay in that panel.
 // Every number here is a stored count from the API, never a constant of the plan.
 

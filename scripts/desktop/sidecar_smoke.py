@@ -88,7 +88,7 @@ OWNER_PORT = 8765
 QUESTION = "How is molecule release scheduling optimized in SYNTHETIC diffusion channels?"
 results: dict[str, dict] = {}
 # What every start writes into an existing library by design, left out of the upgrade comparison: the worker's lease row
-# and each work's citation key, given at startup (`source_keys.assign_missing`, D59).
+# and each work's citation key, given at startup (`source_keys.assign_missing`).
 START_WRITES = {"worker_owner": None, "works": ("source_key", "source_key_basis")}
 
 

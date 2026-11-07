@@ -1,4 +1,4 @@
-"""Sign in to Codex and Claude Code from Settings (D21).
+"""Sign in to Codex and Claude Code from Settings.
 
 DEIXIS opens a visible terminal window on the person's computer and runs the tool's own login command in it, so the
 person sees the CLI's prompts and answers them there. Nothing is copied or read: the tool writes its own credentials

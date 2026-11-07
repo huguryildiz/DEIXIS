@@ -1,7 +1,7 @@
-"""Character helpers shared by the equation routes, and the label of PDFs Marker read before it was removed (D113).
+"""Character helpers shared by the equation routes, and the label of PDFs Marker read before it was removed.
 
-Marker, the optional local equation reader of D52, is gone: display equations are now read by the answer model from page
-crops (`workflow/read/equations.py`). A PDF whose current text is an earlier Marker reading keeps it (D45); `MATH_VERSION` is
+Marker, the optional local equation reader , is gone: display equations are now read by the answer model from page
+crops (`workflow/read/equations.py`). A PDF whose current text is an earlier Marker reading keeps it; `MATH_VERSION` is
 the suffix that names such a reading, and `text_source = 'marker'` stays on its passages.
 """
 
@@ -11,7 +11,7 @@ import re
 import unicodedata
 from collections import Counter
 
-# The suffix of an extraction Marker 1.10.2 read (D52, D54). Nothing writes it any more; it only names earlier readings.
+# The suffix of an extraction Marker 1.10.2 read. Nothing writes it any more; it only names earlier readings.
 MATH_VERSION = "marker-1.10.2-math-v2"
 # A table caption opening a line: "TABLE 1 | …" (Frontiers), "TABLE I" (IEEE), "Table 2. …" (Elsevier, Springer). A sentence
 # that starts with "Table 1 shows" does not match.

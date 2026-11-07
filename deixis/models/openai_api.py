@@ -1,4 +1,4 @@
-"""OpenAI API model connection for research steps (OPENAI_API_KEY, D34).
+"""OpenAI API model connection for research steps (OPENAI_API_KEY).
 
 Codex signed in with a ChatGPT account is a separate connection (`adapter.py`); the same key also serves embeddings
 (`documents/embeddings.py`), unchanged. This one calls the Responses API directly: one stateless request per step
@@ -68,7 +68,7 @@ class OpenAIAdapter:
     connection = "openai"
     enforces_schema = True
     sends_reasoning_effort = True  # reasoning.effort, from the fixed table (module docstring)
-    accepts_images = True  # run_step(image_png=...) sends one PNG with the message (D113)
+    accepts_images = True  # run_step(image_png=...) sends one PNG with the message
     key_env = KEY_ENV
 
     def __init__(self, client: httpx.AsyncClient | None = None, turn_timeout: float = 300.0):

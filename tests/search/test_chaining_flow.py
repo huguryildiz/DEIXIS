@@ -1,7 +1,7 @@
 """Synthetic citation-chain rules the fast chain (`fast_chain_v1`) shares with the record path: which linked works are
 chained, which keep their keyword place, what a reference batch did not answer, and when a work stops being chain-only.
 
-The old chain (D95: seeds, paged citing requests, the Semantic Scholar arm, the chain abstract read and its summary)
+The old chain (seeds, paged citing requests, the Semantic Scholar arm, the chain abstract read and its summary)
 is gone with the clean start (slice 3a); its tests went with it. These tests drive `fast_chain.Round` over an
 isolated SQLite library with scripted OpenAlex answers, so they show workflow behaviour, not live provider access.
 `work` and `OpenAlex` stay because other test modules build their mocked OpenAlex from them.
@@ -190,7 +190,7 @@ def pool_works(lib):
     return {row["work_id"] for row in pool}
 
 
-# ---- the chain admission rule a run froze (D163 M1) -------------------------------------------------------------
+# ---- the chain admission rule a run froze -------------------------------------------------------------
 
 GATE = {"task": ["state of health"], "setting": []}
 QUERY_STEP = {"terms": [{"phrase": "soh estimation", "block": "task", "dropped": "zero_results"}],
@@ -274,7 +274,7 @@ def test_frozen_forms_that_no_longer_match_their_digest_stop_an_m1_run(lib, tmp_
 
 
 # A chained record whose text never holds a gate term, one with the term among the keywords OpenAlex's classifier
-# gave it and one with an unrelated keyword (D183).
+# gave it and one with an unrelated keyword.
 KEYWORDED = [replace(record("W710"), index_keywords=["battery state of health", "cell ageing"]),
              replace(record("W711"), index_keywords=["thermal runaway"])]
 

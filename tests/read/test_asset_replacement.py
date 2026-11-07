@@ -1,4 +1,4 @@
-"""P5 slice 2 (D45): replacing the PDF in use, its API, and model inputs after a replacement.
+"""P5 slice 2: replacing the PDF in use, its API, and model inputs after a replacement.
 
 Records and model outputs are SYNTHETIC (scripted FakeAdapter). Passing these tests shows which passages later steps read
 and that earlier evidence keeps its passages; it says nothing about extraction or model quality.

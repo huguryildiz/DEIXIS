@@ -12,7 +12,7 @@ T = TypeVar("T")
 
 
 class CoolingDown(Exception):
-    """A request that asked not to wait out a cooldown was not sent (D155); `seconds` is what was left of it."""
+    """A request that asked not to wait out a cooldown was not sent; `seconds` is what was left of it."""
 
     def __init__(self, seconds: float):
         super().__init__(f"cooling down for {seconds:.1f} s")
@@ -26,7 +26,7 @@ class SerialRequestPacer:
     through the HTTP call is conservative: another endpoint cannot start while the
     previous attempt is still in flight. Cancellation releases the gate.
 
-    D155: a cooldown (`cool_down`) holds every attempt back until it ends. Its deadline has a lock of its own, so
+    A cooldown (`cool_down`) holds every attempt back until it ends. Its deadline has a lock of its own, so
     concurrent updates keep the later one. A caller that passes `skip_in_cooldown` is never held by it: whether it
     is still queued for the gate or already holding it, it gets `CoolingDown` at once and sends nothing.
     """
@@ -74,9 +74,9 @@ class SerialRequestPacer:
 
 # Measured live on 2026-09-18 with a key, six searches per interval: 1.05 s got 1/6 through, 2 s got 4/6. The stated
 # limit is one request per second, but requests landing on the boundary are throttled, so leave a full second of slack.
-# D155: 3 s, after 3 of 6 requests at 2 s spacing met a CloudFront 429 on 6 Nov 2026 (one probe, not a measured rate).
+# 3 s, after 3 of 6 requests at 2 s spacing met a CloudFront 429 on 6 Nov 2026 (one probe, not a measured rate).
 SEMANTIC_SCHOLAR_PACER = SerialRequestPacer(3.0)
-# D155: how long every Semantic Scholar caller holds off after a 429 that names no wait (a Retry-After is used instead,
+# How long every Semantic Scholar caller holds off after a 429 that names no wait (a Retry-After is used instead,
 # up to S2_MAX_COOLDOWN_SECONDS, so one long header cannot hold a search for an hour). Hand-picked, not measured.
 S2_COOLDOWN_SECONDS = 15.0
 S2_MAX_COOLDOWN_SECONDS = 60.0

@@ -1,4 +1,4 @@
-"""Data location (D32): the pointer file, the move at the next start, and the Settings routes.
+"""Data location: the pointer file, the move at the next start, and the Settings routes.
 
 Every folder is a temp path: `config.platform_data_dir` is patched to a pretend default, so nothing here reads or writes
 the real `~/Library/Application Support/DEIXIS`. Files are SYNTHETIC. Passing shows the pointer order, the move rules

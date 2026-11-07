@@ -35,7 +35,7 @@ OWNED_CODES = ("blocks_in_title", "both_blocks_missing", "notice_record", "artif
                "runs_disagree_kept_as_candidate", "quote_not_found_kept_as_candidate",
                "single_read_candidate", "single_read_quote_not_found", "single_read_unresolved",
                "single_read_out_of_scope")
-# The codes one model read writes (D173's deeper screening, `single_read`); counts and labels tell them from two reads.
+# The codes one model read writes (the deeper screening, `single_read`); counts and labels tell them from two reads.
 SINGLE_READ_CODES = ("single_read_candidate", "single_read_quote_not_found", "single_read_unresolved",
                      "single_read_out_of_scope")
 # A work carrying one of these was read by the model under the current question, so it is not read a second time.
@@ -205,7 +205,7 @@ def combine(first: dict[str, Any] | None, second: dict[str, Any] | None) -> str:
 
 
 def single_read(proposal: dict[str, Any] | None) -> str:
-    """One reason code from one run's proposal (D173's deeper screening, one read per batch).
+    """One reason code from one run's proposal (the deeper screening, one read per batch).
 
     The outcome is the one `combine(proposal, proposal)` gives, under a code that says one read stood behind it: a
     label whose quote is not in the abstract is kept as a candidate, as two reads would keep it, and no proposal is

@@ -157,7 +157,7 @@ def author_agreement(a: list[str], b: list[str]) -> str:
 
     Unknown is not the same as different: an empty or placeholder list says nothing, so the pair stays suspected
     instead of being thrown away. Reversed name order is tried on either side, so the answer does not depend on which
-    record was passed first. D48's stricter "the first author must be the same" is not applied here; this is the rule
+    record was passed first. that stricter "the first author must be the same" is not applied here; this is the rule
     the measurement supports.
     """
     first, second = set(surnames(a)), set(surnames(b))

@@ -39,7 +39,7 @@ def _not_reviewed(reason: str, detail: Any, sections: list[str],
 
 
 def _batch_key(index: int) -> str:
-    # Batch 0 keeps the single-step key, so a review stored before batching replays unchanged (D58).
+    # Batch 0 keeps the single-step key, so a review stored before batching replays unchanged.
     return "report_review" if index == 0 else f"report_review:{index}"
 
 
@@ -48,7 +48,7 @@ Claim = tuple[dict[str, Any], dict[str, dict[str, Any]], dict[str, dict[str, Any
 
 
 def _read(flow: ResearchFlow, reports: ReportStore, report_id: str) -> tuple[dict[str, list[Claim]], list[str], list[dict[str, str]]]:
-    """Each section's claims with their exact support; a cell citation is supported by its stored quotes (D58)."""
+    """Each section's claims with their exact support; a cell citation is supported by its stored quotes."""
     store = flow.store
     all_sections = [section for section in reports.sections(report_id) if section["section_id"] != "II"]
     frozen_cells = {cell["cell_id"]: cell for cell in reports.snapshot(report_id)["cells"]}
@@ -189,7 +189,7 @@ async def run_report_review(flow: ResearchFlow, run: dict[str, Any], scope: dict
     section_ids = [section["section_id"] for section in reports.sections(report_id) if section["section_id"] != "II"]
     first = flow.store.step(run["id"], _batch_key(0), "model:report_review")
     if first["status"] == "succeeded" and "batch_count" not in first["output"]:
-        # A review stored before D58 is one step; its output carries its own input-pass coverage.
+        # A review stored earlier is one step; its output carries its own input-pass coverage.
         plan = {"sections_not_reviewed": first["output"]["sections_not_reviewed"], "batches": [[]]}
     else:
         def build() -> dict[str, Any]:
@@ -199,7 +199,7 @@ async def run_report_review(flow: ResearchFlow, run: dict[str, Any], scope: dict
                                   "claim_keys": [claim["claim_key"] for claim in entry["claims"]]}
                                  for entry in batch["sections"]] for batch in _pack(readable, omitted)]}
 
-        # The packing is stored before the first call, so a resumed review sends the batches it planned (D58).
+        # The packing is stored before the first call, so a resumed review sends the batches it planned.
         plan = save_code(flow, run, PLAN_KEY, PLAN_KIND, build)
     omitted, count = plan["sections_not_reviewed"], len(plan["batches"])
     if not count:
@@ -281,6 +281,7 @@ async def run_report_review(flow: ResearchFlow, run: dict[str, Any], scope: dict
               "step_input_ids": [input_id for input_id in input_ids if input_id is not None],
               "sections_reviewed": reviewed, "sections_not_reviewed": coverage,
               "findings": findings, "notes": "\n\n".join(notes),
-              # Kept empty for the UI and exports, which also show reviews from before D43 that reverted repairs.
+              # Kept empty for the UI and exports, which also show reviews from before that change that reverted
+              # repairs.
               "reverted": [], "not_reverted": []}
     reports.save_review(report_id, record)

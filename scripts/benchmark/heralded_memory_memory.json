@@ -1,0 +1,470 @@
+{
+  "name": "heralded_memory_memory",
+  "schema_version": "search-measurement-v1",
+  "freeze_date": "2026-11-08",
+  "label_authority": "Elicit run of 18 Oct 2026 as saved. Five benchmarks are the answer's own; the rest are its included set. DOIs come from the tool export, which also resolves the two DOIs QUESTION.md had noted as written from memory. No human verification.",
+  "identity_rule": "DOI or verified work identity; title-only matches require adjudication",
+  "validation_role": "heldout",
+  "question": "Which experiments have demonstrated heralded entanglement between two remote quantum memories, and what herald rate, Bell-state fidelity and storage time of the entangled state did each report?",
+  "question_sha256": "ec0aa676c68511406b47f3645e242e1793d681e88680fe9b44ef01cad56937f7",
+  "reference": "Elicit answer, 18 Oct 2026, saved in notes/test-questions/heralded-memory-memory/ with its papers export. The question wording was reconstructed from the answer. Overlaps stored_qubit_entanglement but asks for the measured lifetime of the remote entangled pair, not local memory coherence.",
+  "expected_direction": "Five benchmarks with rate, fidelity and entangled-state storage kept apart: Stephenson 182/s at 94.0 ± 0.5% with no storage figure; Humphreys 6/s at 81 ± 2% or 39/s at 60 ± 2% with 200 ± 10 ms remote coherence; van Leent one herald per 85 s over 33 km at >= 62.2 ± 1.5%, read at 171-178 microseconds; Knaut 69 ± 7% over 35 km with 500 ms, 1 s with error detection; Hanni 510 heralds/s, 0.32 readouts/s, 81 ± 1% effective fidelity, up to 25 microseconds. Caveats: local memory coherence is not the lifetime of the remote pair, and a vacuum-excluded effective fidelity is not an unconditional Bell fidelity.",
+  "direction_terms": [
+    [
+      "local memory coherence",
+      "memory coherence",
+      "coherence time"
+    ],
+    [
+      "entangled pair",
+      "entangled-state",
+      "remote entangled",
+      "bell fidelity"
+    ]
+  ],
+  "answer_elements": [
+    {
+      "id": "H1",
+      "question": "Herald rate per experiment"
+    },
+    {
+      "id": "H2",
+      "question": "Bell-state fidelity per experiment"
+    },
+    {
+      "id": "H3",
+      "question": "Storage time of the entangled state, with \"not reported\" where the paper gives none"
+    },
+    {
+      "id": "H4",
+      "question": "Comparability caveats: local memory coherence is not the entangled-pair lifetime, vacuum-excluded effective fidelity is not an unconditional Bell fidelity, and Knaut's 1 pair/s rate is not paired with the 35 km / 1 s operating point"
+    }
+  ],
+  "pass_rule": {
+    "status": "draft from QUESTION.md, not confirmed by the owner",
+    "source": "notes/test-questions/heralded-memory-memory/QUESTION.md",
+    "rules": [
+      "At least 4 of the 5 benchmark papers are found, and Humphreys 2017 reaches the answer with its 200 ms entangled-state coherence taken from a located passage.",
+      "The answer keeps the caveats: local memory coherence is not the lifetime of the entangled pair; vacuum-excluded effective fidelity is not an unconditional Bell fidelity; Knaut's 1 /s rate is not paired with the 35 km / 1 s operating point.",
+      "The answer says \"not reported\" when a number is missing; it never fills the gap from another experiment."
+    ]
+  },
+  "source_evidence": {
+    "reference_path": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv",
+    "reference_sha256": "5fcf65b46a6cdb399ae51e0e75aeaacb05ab518e4c5a0f61da71b36b12bb706d",
+    "answer_path": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18.md",
+    "answer_sha256": "1d4ab7f209eb940fb503c04228675563969b10496402d8ddc8d3e11e75ec84d3",
+    "question_md_sha256": "1f60af2bcf616c688f244ff85a93b8c68d056d059948f2e8602bce5d3a22cd56",
+    "row_count": 16
+  },
+  "papers": [
+    {
+      "key": "chou2005",
+      "doi": "10.1038/nature04353",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Measurement-induced entanglement for excitation stored in remote atomic ensembles",
+      "stratum": "atomic_ensemble",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the rate, fidelity and storage cells are the tool's claim with its own supporting quotes, unverified here.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 18 Oct 2026, papers export with per-metric cells and supporting quotes",
+        "source_path": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv",
+        "source_sha256": "5fcf65b46a6cdb399ae51e0e75aeaacb05ab518e4c5a0f61da71b36b12bb706d",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 0
+      }
+    },
+    {
+      "key": "laurat2007",
+      "doi": "10.1103/PhysRevLett.99.180504",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Heralded entanglement between atomic ensembles: preparation, decoherence, and scaling.",
+      "stratum": "atomic_ensemble",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the rate, fidelity and storage cells are the tool's claim with its own supporting quotes, unverified here.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 18 Oct 2026, papers export with per-metric cells and supporting quotes",
+        "source_path": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv",
+        "source_sha256": "5fcf65b46a6cdb399ae51e0e75aeaacb05ab518e4c5a0f61da71b36b12bb706d",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 1
+      }
+    },
+    {
+      "key": "moehring2007",
+      "doi": "10.1038/nature06118",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Entanglement of single-atom quantum bits at a distance",
+      "stratum": "trapped_ion",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the rate, fidelity and storage cells are the tool's claim with its own supporting quotes, unverified here.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 18 Oct 2026, papers export with per-metric cells and supporting quotes",
+        "source_path": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv",
+        "source_sha256": "5fcf65b46a6cdb399ae51e0e75aeaacb05ab518e4c5a0f61da71b36b12bb706d",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 2
+      }
+    },
+    {
+      "key": "usmani2011",
+      "doi": "10.1038/NPHOTON.2012.34",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Heralded quantum entanglement between two crystals",
+      "stratum": "rare_earth",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the rate, fidelity and storage cells are the tool's claim with its own supporting quotes, unverified here.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 18 Oct 2026, papers export with per-metric cells and supporting quotes",
+        "source_path": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv",
+        "source_sha256": "5fcf65b46a6cdb399ae51e0e75aeaacb05ab518e4c5a0f61da71b36b12bb706d",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 3
+      }
+    },
+    {
+      "key": "hofmann2012",
+      "doi": "10.1126/science.1221856",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Heralded Entanglement Between Widely Separated Atoms",
+      "stratum": "neutral_atom",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the rate, fidelity and storage cells are the tool's claim with its own supporting quotes, unverified here.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 18 Oct 2026, papers export with per-metric cells and supporting quotes",
+        "source_path": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv",
+        "source_sha256": "5fcf65b46a6cdb399ae51e0e75aeaacb05ab518e4c5a0f61da71b36b12bb706d",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 4
+      }
+    },
+    {
+      "key": "bernien2012",
+      "doi": "10.1038/nature12016",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Heralded entanglement between solid-state qubits separated by three metres",
+      "stratum": "nv",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the rate, fidelity and storage cells are the tool's claim with its own supporting quotes, unverified here.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 18 Oct 2026, papers export with per-metric cells and supporting quotes",
+        "source_path": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv",
+        "source_sha256": "5fcf65b46a6cdb399ae51e0e75aeaacb05ab518e4c5a0f61da71b36b12bb706d",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 5
+      }
+    },
+    {
+      "key": "humphreys2017",
+      "doi": "10.1038/s41586-018-0200-5",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Deterministic delivery of remote entanglement on a quantum network",
+      "stratum": "nv",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the rate, fidelity and storage cells are the tool's claim with its own supporting quotes, unverified here.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "H1",
+          "H2",
+          "H3"
+        ],
+        "contribution": "6 pairs/s at 81 ± 2% fidelity or 39 pairs/s at 60 ± 2%; 200 ± 10 ms remote entangled-state coherence under dynamical decoupling.",
+        "limitation": "Numbers must come from a located passage; the answer separates herald rate, Bell fidelity and entangled-state storage."
+      },
+      "selection_evidence": {
+        "source": "Elicit run, 18 Oct 2026, papers export with per-metric cells and supporting quotes",
+        "source_path": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv",
+        "source_sha256": "5fcf65b46a6cdb399ae51e0e75aeaacb05ab518e4c5a0f61da71b36b12bb706d",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 6
+      }
+    },
+    {
+      "key": "stephenson2019",
+      "doi": "10.1103/PhysRevLett.124.110501",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "High-Rate, High-Fidelity Entanglement of Qubits Across an Elementary Quantum Network.",
+      "stratum": "trapped_ion",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the rate, fidelity and storage cells are the tool's claim with its own supporting quotes, unverified here.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "H1",
+          "H2",
+          "H3"
+        ],
+        "contribution": "182 heralded pairs/s at 94.0 ± 0.5% fidelity; no remote entangled-state storage lifetime reported.",
+        "limitation": "Numbers must come from a located passage; the answer separates herald rate, Bell fidelity and entangled-state storage."
+      },
+      "selection_evidence": {
+        "source": "Elicit run, 18 Oct 2026, papers export with per-metric cells and supporting quotes",
+        "source_path": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv",
+        "source_sha256": "5fcf65b46a6cdb399ae51e0e75aeaacb05ab518e4c5a0f61da71b36b12bb706d",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 7
+      }
+    },
+    {
+      "key": "yu2020",
+      "doi": "10.1038/s41586-020-1976-7",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Entanglement of two quantum memories via fibres over dozens of kilometres",
+      "stratum": "atomic_ensemble",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the rate, fidelity and storage cells are the tool's claim with its own supporting quotes, unverified here.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 18 Oct 2026, papers export with per-metric cells and supporting quotes",
+        "source_path": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv",
+        "source_sha256": "5fcf65b46a6cdb399ae51e0e75aeaacb05ab518e4c5a0f61da71b36b12bb706d",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 8
+      }
+    },
+    {
+      "key": "lagorivera2021",
+      "doi": "10.1038/s41586-021-03481-8",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Telecom-heralded entanglement between multimode solid-state quantum memories",
+      "stratum": "rare_earth",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the rate, fidelity and storage cells are the tool's claim with its own supporting quotes, unverified here.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 18 Oct 2026, papers export with per-metric cells and supporting quotes",
+        "source_path": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv",
+        "source_sha256": "5fcf65b46a6cdb399ae51e0e75aeaacb05ab518e4c5a0f61da71b36b12bb706d",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 9
+      }
+    },
+    {
+      "key": "leent2021",
+      "doi": "10.1038/s41586-022-04764-4",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Entangling single atoms over 33 km telecom fibre",
+      "stratum": "neutral_atom",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the rate, fidelity and storage cells are the tool's claim with its own supporting quotes, unverified here.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "H1",
+          "H2",
+          "H3"
+        ],
+        "contribution": "About one herald every 85 s over 33 km of fibre; fidelity lower bound 62.2 ± 1.5%; atoms analysed 171-178 microseconds after excitation.",
+        "limitation": "Numbers must come from a located passage; the answer separates herald rate, Bell fidelity and entangled-state storage."
+      },
+      "selection_evidence": {
+        "source": "Elicit run, 18 Oct 2026, papers export with per-metric cells and supporting quotes",
+        "source_path": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv",
+        "source_sha256": "5fcf65b46a6cdb399ae51e0e75aeaacb05ab518e4c5a0f61da71b36b12bb706d",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 10
+      }
+    },
+    {
+      "key": "knaut2023",
+      "doi": "10.1038/s41586-024-07252-z",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Entanglement of nanophotonic quantum memory nodes in a telecom network",
+      "stratum": "siv",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the rate, fidelity and storage cells are the tool's claim with its own supporting quotes, unverified here.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "H1",
+          "H2",
+          "H3"
+        ],
+        "contribution": "69 ± 7% fidelity over a deployed 35 km loop; nuclear-pair entanglement kept 500 ms, 1 s with error detection; the up-to-1 pair/s rate belongs to the direct-link electron-spin experiment.",
+        "limitation": "Numbers must come from a located passage; the answer separates herald rate, Bell fidelity and entangled-state storage."
+      },
+      "selection_evidence": {
+        "source": "Elicit run, 18 Oct 2026, papers export with per-metric cells and supporting quotes",
+        "source_path": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv",
+        "source_sha256": "5fcf65b46a6cdb399ae51e0e75aeaacb05ab518e4c5a0f61da71b36b12bb706d",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 11
+      }
+    },
+    {
+      "key": "stolk2024",
+      "doi": "10.1126/sciadv.adp6442",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Metropolitan-scale heralded entanglement of solid-state qubits",
+      "stratum": "nv",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the rate, fidelity and storage cells are the tool's claim with its own supporting quotes, unverified here.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 18 Oct 2026, papers export with per-metric cells and supporting quotes",
+        "source_path": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv",
+        "source_sha256": "5fcf65b46a6cdb399ae51e0e75aeaacb05ab518e4c5a0f61da71b36b12bb706d",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 12
+      }
+    },
+    {
+      "key": "saha2024",
+      "doi": "10.1038/s41467-025-57557-4",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "High-fidelity remote entanglement of trapped atoms mediated by time-bin photons",
+      "stratum": "trapped_ion",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the rate, fidelity and storage cells are the tool's claim with its own supporting quotes, unverified here.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 18 Oct 2026, papers export with per-metric cells and supporting quotes",
+        "source_path": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv",
+        "source_sha256": "5fcf65b46a6cdb399ae51e0e75aeaacb05ab518e4c5a0f61da71b36b12bb706d",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 13
+      }
+    },
+    {
+      "key": "hanni2025",
+      "doi": "10.1103/wvv1-6lg8",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Heralded Entanglement of On-Demand Spin-Wave Solid-State Quantum Memories for Multiplexed Quantum Network Links",
+      "stratum": "rare_earth",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the rate, fidelity and storage cells are the tool's claim with its own supporting quotes, unverified here.",
+      "reading_depth": "abstract",
+      "anchor": true,
+      "key_contribution": {
+        "answer_elements": [
+          "H1",
+          "H2",
+          "H3"
+        ],
+        "contribution": "510 heralds/s but 0.32 detected readouts/s; 81 ± 1% effective fidelity excluding vacuum; entanglement shown for storage up to 25 microseconds.",
+        "limitation": "Numbers must come from a located passage; the answer separates herald rate, Bell fidelity and entangled-state storage."
+      },
+      "selection_evidence": {
+        "source": "Elicit run, 18 Oct 2026, papers export with per-metric cells and supporting quotes",
+        "source_path": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv",
+        "source_sha256": "5fcf65b46a6cdb399ae51e0e75aeaacb05ab518e4c5a0f61da71b36b12bb706d",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 14
+      }
+    },
+    {
+      "key": "luo2026",
+      "doi": "10.1103/ccd6-rf1s",
+      "alternate_dois": [],
+      "alternate_identity_status": "none",
+      "title": "Entangling Quantum Memories through a 420 km Long Fiber.",
+      "stratum": "atomic_ensemble",
+      "label": "ilgili",
+      "label_reason": "In the included set of the Elicit run; the rate, fidelity and storage cells are the tool's claim with its own supporting quotes, unverified here.",
+      "reading_depth": "abstract",
+      "anchor": false,
+      "key_contribution": {},
+      "selection_evidence": {
+        "source": "Elicit run, 18 Oct 2026, papers export with per-metric cells and supporting quotes",
+        "source_path": "notes/test-questions/heralded-memory-memory/elicit-2026-10-18-papers.csv",
+        "source_sha256": "5fcf65b46a6cdb399ae51e0e75aeaacb05ab518e4c5a0f61da71b36b12bb706d",
+        "membership_rule": "reference_tool_included_set",
+        "doi_from": "csv_doi_cell",
+        "abstract_text": null,
+        "abstract_source": null,
+        "row_index_zero_based": 15
+      }
+    }
+  ]
+}

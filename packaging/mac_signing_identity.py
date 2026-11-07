@@ -1,4 +1,4 @@
-"""Make the self-signed code-signing identity the macOS build signs with (D171), once per build machine.
+"""Make the self-signed code-signing identity the macOS build signs with, once per build machine.
 
     uv run python packaging/mac_signing_identity.py
 

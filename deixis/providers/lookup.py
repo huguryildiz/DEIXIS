@@ -27,9 +27,9 @@ Endpoints verified against the provider documentation on 2026-09-21:
   has a meaning in Scopus query syntax (parentheses, quotes, braces, wildcards, whitespace; see `scopus_doi_is_safe`)
   is not put in an OR query; it is asked alone with `scopus_abstract`.
 
-Every Semantic Scholar request goes through the shared `send`, so the process-wide one-request gate of D67 and the
+Every Semantic Scholar request goes through the shared `send`, so the process-wide one-request gate and the
 bounded 429 retries apply here exactly as they do to a search. A failed lookup is an answer like any other: it is
-recorded and the run goes on (D18).
+recorded and the run goes on.
 """
 
 from __future__ import annotations
@@ -83,7 +83,7 @@ async def semantic_scholar_batch(client: httpx.AsyncClient, dois: list[str], api
 
     One request carries the whole batch, so one failure leaves every record in it `failed` and the next source is
     asked about all of them. Its retries are inside `outcome.retries` and are requests the caller counts; how many
-    it may make is the caller's effort (D88), down to none.
+    it may make is the caller's effort, down to none.
     """
     ids = [s2_identifier(doi) for doi in dois]
     headers = {"x-api-key": api_key} if api_key else {}
@@ -195,7 +195,7 @@ async def crossref_work(client: httpx.AsyncClient, doi: str,
 
 async def scopus_abstract(client: httpx.AsyncClient, doi: str, api_key: str,
                           max_rate_limit_retries: int = MAX_RATE_LIMIT_RETRIES) -> tuple[LookupAnswer, SearchOutcome]:
-    """Ask Scopus for one DOI's abstract in the complete view (D91). An empty result set is `not_found`."""
+    """Ask Scopus for one DOI's abstract in the complete view. An empty result set is `not_found`."""
     params = {"query": f"DOI({doi})", "count": 1, "view": "COMPLETE"}
     description = f"GET {scopus.SEARCH_URL} query=DOI(<doi>) doi={doi!r} view=COMPLETE access=api_key"
     response, outcome = await send(client, scopus.SEARCH_URL, params,

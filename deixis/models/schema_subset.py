@@ -5,13 +5,13 @@ on platform.claude.com, 2026-10-15). They are removed or lowered here; DEIXIS va
 schema to the output, so a value that breaks a removed bound goes through the bounded repair path as before.
 
 A type list with an enum (`{"type": ["string", "null"], "enum": ["TABLE_I", null]}`) is rejected by Anthropic ("Enum
-value 'TABLE_I' does not match declared type"); it is split into one enum branch per type under `anyOf` (D93).
+value 'TABLE_I' does not match declared type"); it is split into one enum branch per type under `anyOf`.
 
 Anthropic also refuses a schema whose compiled grammar is too large, and every required field that may be null (an
 `anyOf` with a null branch or a type list with "null") adds to that size far more than an optional field does
-(probed live 2026-10-17, D93), and so does every `pattern`. `anthropic_schema` therefore sends such a field as optional
+(probed live 2026-10-17), and so does every `pattern`. `anthropic_schema` therefore sends such a field as optional
 and non-null, with a sentence in its description that says to leave it out for null (a written "" or "null" failed 7
-of 8 live decomposition calls, D94), and each pattern and array bound as a sentence in the field's description; the model leaves a null field out, and
+of 8 live decomposition calls), and each pattern and array bound as a sentence in the field's description; the model leaves a null field out, and
 `fill_omitted_nulls` puts the null back before validation, so the validated output has the step schema's shape. What
 the API no longer enforces while the model writes (a pattern, a written null) DEIXIS validation still checks.
 """
@@ -163,13 +163,13 @@ def _omit_nullable(root: dict[str, Any], node: Any) -> Any:
         nullable = [name for name in required if _nullable(props.get(name))]
         for name in nullable:
             sent = _omit_nullable(root, _without_null(root, props[name]))
-            # The method text says "use null"; with null no longer in the schema the model needs to be told how (D94).
+            # The method text says "use null"; with null no longer in the schema the model needs to be told how.
             props[name] = sent if "$ref" in sent else _describe(sent, OMITTED_NULL_NOTE)
         out["required"] = [name for name in required if name not in nullable]
     return out
 
 
-# The version of what `anthropic_schema` sends; stored with each answer next to the sent schema's digest (D93).
+# The version of what `anthropic_schema` sends; stored with each answer next to the sent schema's digest.
 ANTHROPIC_TRANSFORM_VERSION = "anthropic_schema.v3"
 
 

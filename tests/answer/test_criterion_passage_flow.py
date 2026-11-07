@@ -8,7 +8,7 @@ clearer than a whole run would make it.
 Questions, records, phrases and PDF text are SYNTHETIC and from two fields. What passes here is workflow behavior:
 that the approved phrases reach the passage order and that a `legacy` research keeps the selection it had. It says
 nothing about whether those phrases find a passage worth reading — the one measurement behind that covers one topic
-and is in D84's limits.
+and carries that measurement's limits.
 """
 
 import json

@@ -11,7 +11,7 @@ export function stoppedRole(run: Run): ModelRole {
 // Pause reasons of a model that did not answer or answered as another model (flow._model_step).
 export const MODEL_DOWN = new Set(['model_call_failed', 'model_connection_not_ready', 'model_connection_unavailable', 'model_mismatch'])
 // A stop for a model that did not answer: at the top, or inside the question's translation, which stops the run as
-// `key_terms_needed` with the step's own reason (D149).
+// `key_terms_needed` with the step's own reason.
 export function modelDownPause(run: Run): boolean {
   if (MODEL_DOWN.has(run.pause_reason ?? '')) return true
   const translation = run.pause_reason === 'key_terms_needed' && run.error && typeof run.error === 'object'

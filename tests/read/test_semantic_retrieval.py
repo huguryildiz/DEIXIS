@@ -1,4 +1,4 @@
-"""Semantic passage retrieval (D27, D29): rank fusion, embedding requests, stored vectors and the chosen provider.
+"""Semantic passage retrieval: rank fusion, embedding requests, stored vectors and the chosen provider.
 
 The embedding endpoints are mocked with keyword-derived vectors, so these tests show the plumbing, not retrieval quality.
 """

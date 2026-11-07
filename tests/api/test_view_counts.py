@@ -56,7 +56,7 @@ def code(lib, svid, reason):
 
 
 def plan(lib, svids):
-    """A stored retrieval plan naming these works, as the retrieval run writes it (D99 reads it)."""
+    """A stored retrieval plan naming these works, as the retrieval run writes it."""
     step = lib.store.step(lib.new_run("fulltext_fetch"), "fulltext_plan", "code:fulltext_plan")
     lib.store.finish_step(step["id"], "succeeded", output={"works": list(svids)})
 
@@ -67,7 +67,7 @@ def tick():
 
 
 def person(lib, svid, reason, note=None):
-    """A person's answer written through D96's own answer body, whatever the version's current decision is."""
+    """A person's answer written through the queue's own answer body, whatever the version's current decision is."""
     ctx = queue.context(lib.store, lib.rid)
     head = lib.head(svid)
     with db.transaction(lib.store.conn):
@@ -94,7 +94,7 @@ def test_every_bucket_holds_a_work_and_the_buckets_sum_to_the_works(store, field
         "abstract_not_read": work(code(lib, lib.work(), "abstract_not_read")),
         "survey": work(code(lib, lib.work(), "survey_title_word")),
         "out_of_scope_model": work(code(lib, lib.work(), "runs_agree_out_of_scope")),
-        # D173: one model read's verdict is counted apart from two reads and from a code rule.
+        # One model read's verdict is counted apart from two reads and from a code rule.
         "out_of_scope_one_read": work(code(lib, lib.work(), "single_read_out_of_scope")),
         "out_of_scope_code": work(code(lib, lib.work(), "both_blocks_missing")),
         "not_screened": work(lib.work()),
@@ -119,7 +119,7 @@ def test_every_bucket_holds_a_work_and_the_buckets_sum_to_the_works(store, field
     assert sum(flow["buckets"].values()) == flow["works"] == len(store.work_heads(lib.rid))
     assert flow["buckets"]["look_again"] == 0
     assert flow["other_reasons"] == {"human_include": 1}
-    # D101's columns, D96's queue and D99's waiting list, read from the same context, say the same.
+    # that columns, that queue and that waiting list, read from the same context, say the same.
     ctx, probe = context(lib)
     assert flow["buckets"]["included"] == len(probe["included"])
     assert flow["buckets"]["confirmed"] == len(probe["verified"])

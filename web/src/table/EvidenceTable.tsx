@@ -25,7 +25,7 @@ import { focusWhenLost } from '../lib/focus'
 import { UploadedTextNote } from '../components/SemanticNotes'
 import { accessLabels, downloadTableCsv, hasValue, reportGate, revisionText, stateLabels } from './tableCsv'
 
-// The Evidence table panel (mockup `evtable()`, P21-P29; D37/D38): a table whose rows are source versions and whose
+// The Evidence table panel (mockup `evtable()`, P21-P29): a table whose rows are source versions and whose
 // cells are append-only revisions. The screen renders the recorded cell state; only the user's edit or decision changes
 // a cell's value. The toolbar, the column menu, the cell panel (stacked on the table, Back returns) and the column
 // dialog follow the mockup; the live tools it has no place for sit in its ⋯ menu (§2.2): add rows, development columns,
@@ -60,7 +60,7 @@ const kindLabels: Record<CellRevision['kind'], string> = {
 }
 const decisionLabels: Record<NonNullable<CellRevision['decision']>, string> = { accepted: 'used', dismissed: 'not used', pending: 'waiting for your decision', superseded: 'replaced by a newer proposal' }
 const selectionLabels: Record<string, string> = { included: 'Included in Sources', pending: 'Undecided in Sources', excluded: 'Excluded in Sources' }
-// A row stays in the table when its source is excluded or undecided later; the report reads included sources only (D63).
+// A row stays in the table when its source is excluded or undecided later; the report reads included sources only.
 const rowSelectionLabels: Record<string, string> = { included: 'Included in Sources', pending: 'Undecided in Sources · not in the report', excluded: 'Excluded in Sources · not in the report' }
 const selectionOrder: Record<string, number> = { included: 0, pending: 1, excluded: 2 }
 
@@ -72,7 +72,7 @@ function formatText(column: Pick<ColumnSpec, 'answer_format' | 'unit_hint' | 'al
 }
 
 const dateText = (value: string) => new Date(value).toLocaleString(uiLocale(), { dateStyle: 'medium', timeStyle: 'short' })
-// The row's short name: the work's source key (D59), as the mockup's "Çobanlar et al. 2020"; the title when it has none.
+// The row's short name: the work's source key, as the mockup's "Çobanlar et al. 2020"; the title when it has none.
 const shortName = (row: Pick<TableRow, 'source_key' | 'title'>) => row.source_key || row.title
 
 function revisionMeta(rev: CellRevision, modelText: ModelText) {
@@ -183,7 +183,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
     return () => { live = false }
   }, [fetchTable, view.last_event_id])
 
-  // Without a table, say whether this research has tables in the Trash (D50).
+  // Without a table, say whether this research has tables in the Trash.
   const noTables = tables?.length === 0
   useEffect(() => {
     if (!noTables) return
@@ -442,7 +442,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
         <Zap size={15} aria-hidden />{t(estimate.sources === 1 ? 'Fill empty cells · {n} source · up to {calls} calls · {model}' : 'Fill empty cells · {n} sources · up to {calls} calls · {model}', { n: estimate.sources, calls: estimate.max_model_calls, model })}
       </button>}
       {/* Values made under an earlier column or citing a replaced PDF or an earlier extraction are read again; the
-          results wait as proposals beside the current value (D37). */}
+          results wait as proposals beside the current value. */}
       {columns.length > 0 && recheck.cells > 0 && <button type="button" className="ghost" disabled={busy || Boolean(activeRun)}
         title={t('Reads the current PDF text and column definition again. New values wait as proposals; the cell keeps its value until you use one.')}
         onClick={() => fillEmptyCells(true)}>
@@ -648,7 +648,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
   </div>
 }
 
-// What became of a cited passage's file (D45); the label names it in words, not only by color.
+// What became of a cited passage's file; the label names it in words, not only by color.
 const evidenceStatusLabels = { pdf_removed: 'PDF removed', pdf_replaced: 'Previous PDF', text_superseded: 'Earlier text' } as const
 
 // One cell (mockup `cellHtml`): the value with its provenance under it, a state in muted italics with what it means, or
@@ -853,7 +853,8 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
     } finally { setBusy(false) }
   }
 
-  // An upper bound: a short source is read whole, a longer one gives at most 16 passages (D38). One passage per extracted page.
+  // An upper bound: a short source is read whole, a longer one gives at most 16 passages. One passage per extracted
+  // page.
   const available = source ? (source.access.abstract_passage_id ? 1 : 0) + source.access.assets.reduce((n, a) => n + (a.page_count ?? 0), 0) : 0
   const recheckPassages = available <= MAX_WHOLE_PASSAGES ? available : MAX_RECHECK_PASSAGES
   const current = cell?.current ?? null
@@ -1001,7 +1002,8 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
   </StackPanel>
 }
 
-// One entry per passage: a revision can quote several spans of the same passage (D43), and the passage opens with all of them marked.
+// One entry per passage: a revision can quote several spans of the same passage, and the passage opens with all of
+// them marked.
 // Quotes read as quotations (mockup `.quote`); the locator and a quiet link to the source sit under them (`.loc`).
 function EvidenceList({ items, onShow }: { items: CellEvidence[]; onShow: (items: CellEvidence[]) => void }) {
   const groups: CellEvidence[][] = []

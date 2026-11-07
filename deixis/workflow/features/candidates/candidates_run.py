@@ -96,7 +96,7 @@ def version_target(version: dict) -> dict:
 
 
 def candidate_target(candidate: dict, version: dict | None = None, assessed_source_id: str | None = None) -> dict:
-    # A sentence written from an answer is the person's own text with no basis (D98): the model sees it as owner text;
+    # A sentence written from an answer is the person's own text with no basis: the model sees it as owner text;
     # the answer aspect beside it is the person's context, never part of the claim.
     origin = "owner_text" if candidate["origin"] == "answer_thread" else candidate["origin"]
     return {"candidate_id": candidate["id"], "origin": origin, "gap_kind": candidate["gap_kind"],

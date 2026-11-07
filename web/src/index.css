@@ -37,7 +37,7 @@
 
 :root {
     /* Fonts: Inter for the interface and all reading text, Source Serif 4 only for the DEIXIS wordmark, the report title, report emphasis and
-       document-page imitations (D5). Product CSS reads these two names, never a literal family. */
+       document-page imitations. Product CSS reads these two names, never a literal family. */
     --font-sans: 'Inter Variable', sans-serif;
     --font-serif: 'Source Serif 4 Variable', serif;
 
@@ -86,7 +86,7 @@
     --selected-ink: #1f2328;
     --hover-surface: #f1f3f5;
     --bubble: #f2f4f6;
-    /* The located citation anchor (mark.citation-highlight): the mockup's yellow (D8). */
+    /* The located citation anchor (mark.citation-highlight): the mockup's yellow. */
     --mark: #fdf1b8;
     /* The answer diff's added and removed text (mockup `ins`/`del`, P4). */
     --ins: #dff3e6;

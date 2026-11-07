@@ -6,7 +6,7 @@ the four code signals are computed from what the search already stored, and the 
 similarities `_source_similarity` wrote.
 
 The signals are the ones measured in `notes/archive/early/quantum-rank-fusion-2026-09-18/fuse.py` on one topic with 20 positives,
-with four named deviations (D79): the product's own word splitter, a block score kept as a pair instead of a
+with four named deviations: the product's own word splitter, a block score kept as a pair instead of a
 weighted sum, matching at a word start, and a record without an abstract scored by BM25 on its title while only
 TF-IDF counts it as missing. That measurement showed fusion is not worse than BM25 alone and protects against one
 collapsed signal — not that it is better.
@@ -32,7 +32,7 @@ GRAPH_SEEDS = 15  # SW7 context: seeds code picks when the research has too few 
 THRESHOLDS = {"bm25_k1": BM25_K1, "bm25_b": BM25_B, "graph_seeds": GRAPH_SEEDS}
 CODE_SIGNALS = ("bm25", "blocks", "tfidf", "graph", "joint")
 SIGNALS = (*CODE_SIGNALS, "embedding")
-# A question asks for a comparison when it holds one of these words (D226). English only: a question in another
+# A question asks for a comparison when it holds one of these words. English only: a question in another
 # language is read through its saved English sentence, else the signal does not run.
 COMPARISON_WORDS = frozenset({"compare", "compared", "compares", "comparing", "comparison", "comparisons", "versus",
                               "vs", "differ", "differs", "difference", "differences", "between", "than"})
@@ -139,7 +139,7 @@ def tfidf_scores(pool: list[dict[str, Any]], seeds: list[dict[str, Any]]) -> dic
 
 
 def same_work(seed: dict[str, Any], row: dict[str, Any]) -> bool:
-    """A record never counts a version of its own work as a seed; the seed PDF is also its OpenAlex copy (D2)."""
+    """A record never counts a version of its own work as a seed; the seed PDF is also its OpenAlex copy."""
     return seed["work_id"] == row["work_id"] or bool(seed.get("seed_pdf") and seed["own_ids"] & row["own_ids"])
 
 
@@ -166,9 +166,9 @@ def graph_scores(pool: list[dict[str, Any]], seeds: list[dict[str, Any]]) -> dic
 
 def graph_scores_v2(pool: list[dict[str, Any]], seeds: list[dict[str, Any]], pdfs: list[dict[str, Any]],
                     cited_twice: bool = False) -> dict[str, float]:
-    """`seed_max_v2` (D6): `graph_scores` over the user's and the code's seeds, plus the seed PDFs' contribution taken
+    """`seed_max_v2`: `graph_scores` over the user's and the code's seeds, plus the seed PDFs' contribution taken
     from the one PDF nearest the record (`max`), so nearness to several seed PDFs is not added up. `cited_twice` counts
-    a seed's citation of the record once more, per seed, as the frozen list's second pass does (D246)."""
+    a seed's citation of the record once more, per seed, as the frozen list's second pass does."""
     def one(row: dict[str, Any], seed: dict[str, Any]) -> float:
         if same_work(seed, row):
             return 0.0
@@ -180,13 +180,13 @@ def graph_scores_v2(pool: list[dict[str, Any]], seeds: list[dict[str, Any]], pdf
 
 
 def comparison_question(*texts: str | None) -> bool:
-    """Whether any of these question texts holds a comparison word (D226)."""
+    """Whether any of these question texts holds a comparison word."""
     return any(COMPARISON_WORDS & set(words(text)) for text in texts if text)
 
 
 def joint_terms(store: Any, scope: dict[str, Any], vocabulary: dict[str, Any]) -> list[str] | None:
     """The approved vocabulary's own task terms the joint signal compares, or None when the question of this revision
-    (or its saved English sentence) asks for no comparison (D226). The code's query and the second round's phrases
+    (or its saved English sentence) asks for no comparison. The code's query and the second round's phrases
     are left out: they were not the terms the person approved."""
     from deixis.workflow.search.expansion import TASK_BLOCK, queried_form, queried_terms
 
@@ -203,7 +203,7 @@ def _hyphen_free(text: str) -> str:
 def joint_forms(task_terms: list[str]) -> list[str]:
     """Each task term as the form the joint signal looks for: hyphens read as spaces, and the last word dropped when
     another task term ends with the same word, so that "vector-based routing" beside "depth-based routing" is looked
-    for as "vector based" and also finds "vector based forwarding" (D226). Distinct forms only, in term order."""
+    for as "vector based" and also finds "vector based forwarding". Distinct forms only, in term order."""
     split = [_hyphen_free(term).split() for term in task_terms]
     forms: list[str] = []
     for i, term in enumerate(split):
@@ -224,7 +224,7 @@ _ABBREVIATION = re.compile(r"((?:[\w-]+\s+){0,5}[\w-]+)\s*\(([A-Z]{2,6})\)")
 def _abbreviations(abstract: str, forms: list[str]) -> dict[str, str]:
     """The abbreviation the abstract defines for each form, only where its letters are the initials of the words
     right before the parenthesis and those words hold the form: "Depth Based Routing (DBR)", not
-    "depth-based routing (VBF)" (D226). A form given two abbreviations gets none."""
+    "depth-based routing (VBF)". A form given two abbreviations gets none."""
     found: dict[str, set[str]] = {}
     for match in _ABBREVIATION.finditer(abstract):
         short = match.group(2)
@@ -239,7 +239,7 @@ def _abbreviations(abstract: str, forms: list[str]) -> dict[str, str]:
 
 
 def joint_scores(pool: list[dict[str, Any]], forms: list[str]) -> dict[str, tuple[int, float]]:
-    """Records naming two or more task terms together: how many their title names, then the terms' summed rarity (D226).
+    """Records naming two or more task terms together: how many their title names, then the terms' summed rarity.
 
     A form counts once per record, at a word start with hyphens read as spaces. The title names a form when it holds
     the form or the abbreviation the abstract defines for it ("DBR and VBF" in a title whose abstract spells both out).
@@ -310,7 +310,7 @@ def fuse(ranks: dict[str, dict[str, tuple[float, bool]]], signals: tuple[str, ..
 
     `missing_signal.py` measured dropping it and the median got worse (158 → 171), so the term stays in the sum.
     """
-    # Imported here rather than at the top: flow loads this module, and k is read from its one definition (D27).
+    # Imported here rather than at the top: flow loads this module, and k is read from its one definition.
     from deixis.workflow.run.flow import RRF_K
 
     constant = RRF_K if k is None else k
@@ -357,7 +357,7 @@ def _work_row(head: str, versions: list[dict[str, Any]]) -> dict[str, Any]:
     """One pool row for a work: the head's title, its own abstract or another version's, and the union of the rest.
 
     A preprint's reference list and a published record's abstract belong to the same work, so the signals read both
-    (D79). The union only ranks; no version logic, no selection and no identity rule is touched by it.
+. The union only ranks; no version logic, no selection and no identity rule is touched by it.
     """
     by_id = {version["id"]: version for version in versions}
     own = by_id[head]
@@ -382,7 +382,7 @@ def _seed_row(svid: str, versions: dict[str, dict[str, Any]]) -> dict[str, Any] 
 
 def seed_rows(store: Any, run: dict[str, Any], scope: dict[str, Any], versions: dict[str, dict[str, Any]],
               in_pool: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
-    """The verified seeds' rows, each seed PDF's read through the context its run's protocol froze (D2, D3)."""
+    """The verified seeds' rows, each seed PDF's read through the context its run's protocol froze."""
     from deixis.workflow.search import seed_match
     envelope = seed_match.frozen(store, run)
     by_source = {context["source_version_id"]: context for context in envelope["seeds"]} if envelope else {}
@@ -415,7 +415,7 @@ def pdf_row(row: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
 def verified_seeds(store: Any, research_id: str, scope: dict[str, Any]) -> list[str]:
     """The records this research has verified: the scope's own seeds, and what the user included (SW7.5).
 
-    A record the model included is not verified. The seeds come first in their canonical order (D3), then the other
+    A record the model included is not verified. The seeds come first in their canonical order, then the other
     included records by identifier, so nothing here depends on which row the database returned first.
     """
     from deixis.workflow.run.store import seed_source_ids
@@ -434,7 +434,7 @@ def query_vocabulary(scope: dict[str, Any], vocabulary: dict[str, Any]) -> tuple
     from deixis.workflow.search.vocabulary import GATE_BLOCKS
 
     query_words = set(words(scope["question"]))
-    # The code's query searched beside a model-written one counts as queried here: its records are in the pool (D92).
+    # The code's query searched beside a model-written one counts as queried here: its records are in the pool.
     searched = vocabulary["terms"] + code_terms(vocabulary)
     for row in term_rows(searched):
         query_words |= set(words(row["phrase"])) | set(words(row["form"]))
@@ -450,7 +450,7 @@ def pool_rows(store: Any, research_id: str, revision: int) -> tuple[dict[str, di
                                                                     list[dict[str, Any]]]:
     """Every version of the research, its versions by work, and the pool the ranking reads: one row per work head the
     search offered, the records slice 05 holds back from screening included. A work only an earlier run's citation
-    chaining found is not a keyword record and stays out (D95)."""
+    chaining found is not a keyword record and stays out."""
     heads = set(store.work_heads(research_id).values())
     versions = _versions(store, research_id)
     chained = store.chain_only_works(research_id, revision)
@@ -471,11 +471,11 @@ def rank_pool(pool: list[dict[str, Any]], verified: list[dict[str, Any]], query_
               compared_terms: list[str] | None = None, graph_rule: str = "sum_v1") -> dict[str, Any]:
     """The pure part of `rank_records`: every signal's ranks and the three orders, for these pool rows and seeds.
 
-    No store is read and nothing is written, so the keyword ranking and the chain's ranking (D95), which runs this
+    No store is read and nothing is written, so the keyword ranking and the chain's ranking, which runs this
     over the pool and the chained works together, are one computation. The joint signal runs only when
-    `compared_terms` (from `joint_terms`) holds two or more forms (D226); otherwise the orders are what they were.
-    `graph_rule` comes from the run's frozen plan (D6): under `seed_max_v2` the seed PDFs take no code seed's place
-    and count by the nearest one (`graph_scores_v2`); `sum_v1` is the rule before D6.
+    `compared_terms` (from `joint_terms`) holds two or more forms; otherwise the orders are what they were.
+    `graph_rule` comes from the run's frozen plan: under `seed_max_v2` the seed PDFs take no code seed's place
+    and count by the nearest one (`graph_scores_v2`); `sum_v1` is the rule before that change.
     """
     in_pool = {row["id"]: row for row in pool}
     scores = {"bm25": bm25_scores(pool, query_words), "blocks": block_scores(pool, blocks)}
@@ -507,7 +507,7 @@ def rank_pool(pool: list[dict[str, Any]], verified: list[dict[str, Any]], query_
         scores["joint"] = joint_scores(pool, forms)
     scored = {row["id"]: similarities[row["id"]] for row in pool if row["id"] in similarities}
     if not embedding_model:
-        # Off, or the built-in model with no English sentence for this question (`english_question_missing`, D103).
+        # Off, or the built-in model with no English sentence for this question (`english_question_missing`).
         reasons["embedding"] = off_reason or "embedding_off"
     elif not scored:
         reasons["embedding"] = "no_stored_similarity"

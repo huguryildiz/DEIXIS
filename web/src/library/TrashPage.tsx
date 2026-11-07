@@ -9,7 +9,7 @@ import { t, uiLocale } from '../lib/i18n'
 
 // The Trash page is one list (mockup T1): research, evidence tables, removed sources and table templates, newest first.
 // Nothing here expires (T3). Research, tables and templates are deleted one at a time; a removed source can be deleted
-// once nothing cites it (D65). Deleting asks inside the row, where the mockup asks.
+// once nothing cites it. Deleting asks inside the row, where the mockup asks.
 
 // The row that is asking: what it says and what a yes does.
 // `keys`: the rows a bulk confirmation is about; it lapses when one of them has left the Trash.
@@ -17,7 +17,7 @@ type Pending = { key: string; question: string; detail: string; confirm: () => v
 type SourceTarget = { researchId: string; versions: RemovedSource[] }
 type Sort = 'removed' | 'title' | 'year'
 const sortLabels: Record<Sort, string> = { removed: 'Recently removed', title: 'Title', year: 'Year' }
-// The row opened in the source sheet, on the abstract this research can still read (D50).
+// The row opened in the source sheet, on the abstract this research can still read.
 type OpenSource = { key: string; researchId: string; researchTitle: string; passageId: string }
 type Entry = {
   key: string; at: string; kind: string; icon: LucideIcon; title: string; titleNode?: ReactNode; note: string
@@ -71,7 +71,8 @@ export function TrashPage({ dark, onChanged }: { dark: boolean; onChanged: () =>
     finally { setBusy(null); await refresh() }
   }
 
-  // A source an answer quote, a table or a report still cites is not offered for deletion: that evidence must keep opening (D65).
+  // A source an answer quote, a table or a report still cites is not offered for deletion: that evidence must keep
+  // opening.
   const deletable = (versions: RemovedSource[]) => versions.every(v => !v.cited)
 
   const worksOf = (target: SourceTarget) => new Set(target.versions.map(v => v.work_id)).size

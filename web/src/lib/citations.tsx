@@ -137,7 +137,7 @@ export function formatReferenceText(style: CitationStyle, s: Source): string {
 }
 
 // One source as a BibTeX entry for "Copy as BibTeX" (Source details, P14). Only stored fields are written; a field the
-// record does not hold is left out. The key is the source's key (D59), else a plain author-year key.
+// record does not hold is left out. The key is the source's key, else a plain author-year key.
 export function formatBibtex(s: Source): string {
   const brace = (value: string) => value.replace(/[{}\\]/g, '')
   const key = (s.source_key ?? `${parse(s.authors[0] ?? 'source').family}${s.year ?? ''}`).replace(/[^A-Za-z0-9_:-]/g, '') || 'source'

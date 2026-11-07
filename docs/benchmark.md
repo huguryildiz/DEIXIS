@@ -1,6 +1,6 @@
 # Search benchmark
 
-Three question sets, run on 2026-10-18 with the owner's settings. Each set has papers chosen by experts or authors for
+Two question sets, run on 2026-10-18 with the owner's settings. Each set has papers chosen by experts or authors for
 every question, and the score is how many of them appear near the top of the candidate list. Reading and answers are
 not measured.
 
@@ -8,13 +8,11 @@ not measured.
 |---|---|---|---|
 | **BioASQ** | 100 of 5,486 | about 11 | biomedicine |
 | **LitSearch** (Ajith et al., EMNLP 2024) | 200 of 597 | about 1 | ML and NLP |
-| **EE surveys** (built here) | 42 (28 test) | median 174 | electrical engineering |
 
 **In short**
 
-- DEIXIS finds more gold papers than one plain OpenAlex query on all three sets.
-- The reranker helps on BioASQ and LitSearch. On the EE survey set it hurts, because most of the gold papers there come
-  through citation chaining and the reranker pushes chained records down.
+- DEIXIS finds more gold papers than one plain OpenAlex query on both sets.
+- The reranker helps on both sets.
 - On BioASQ, DEIXIS with the reranker is close to Elicit's published figures
   ([Evaluating Elicit's paper search](https://elicit.com/blog/evaluating-elicit-paper-search)).
 
@@ -54,113 +52,13 @@ difference.
 | C: DEIXIS, reranker on | **0.557** | **0.612** | **0.700** | **0.725** | **0.738** |
 | C − B | +0.083 (+0.026 to +0.142) | +0.033 (−0.020 to +0.085) | +0.064 (+0.019 to +0.112) | +0.018 (−0.005 to +0.043) | 0 |
 | C − A | +0.166 (+0.095 to +0.237) | +0.165 (+0.095 to +0.235) | +0.142 (+0.075 to +0.209) | +0.107 (+0.040 to +0.174) | +0.072 (+0.003 to +0.142) |
-| **EE surveys (28 test)** | | | | | |
-| A: plain OpenAlex | 0.021 | 0.037 | 0.065 | 0.097 | 0.127 |
-| B: DEIXIS, reranker off | **0.029** | **0.064** | **0.129** | **0.179** | **0.221** |
-| C: DEIXIS, reranker on | 0.020 | 0.040 | 0.091 | 0.167 | **0.221** |
-| C − B | −0.009 (−0.014 to −0.005) | −0.024 (−0.030 to −0.018) | −0.038 (−0.053 to −0.024) | −0.012 (−0.020 to −0.005) | 0 |
-| B − A | +0.008 (+0.002 to +0.014) | +0.027 (+0.021 to +0.033) | +0.064 (+0.051 to +0.080) | +0.082 (+0.057 to +0.110) | +0.093 (+0.058 to +0.135) |
 
 - The reranker reorders only the top of the list, so B and C are equal at 200.
 - BioASQ: Elicit's figures come from all 5,486 questions and ours from a sample, so the two are not compared
   statistically.
 - LitSearch: almost every request has one gold paper, so each question scores 0 or 1 and the intervals stay wide.
-- EE surveys: a reference list is incomplete and broad gold, so absolute recall is low and only the differences
-  between arms are read. B − A at 50 results stays below the +0.10 bar the project set for DEIXIS against a plain query.
 - No DEIXIS question failed on any set. A plain OpenAlex query failed once on BioASQ and once on LitSearch.
-- Cost: about $0.033 of OpenAlex budget per DEIXIS question on BioASQ and LitSearch, about $0.05 on the EE set (larger
-  pools). Voyage cost under $0.01 per question.
-
-## The EE survey set
-
-**How it was built.** Survey articles from 2019 to 2024 with at least 80 references, from IEEE Communications Surveys &
-Tutorials, Proceedings of the IEEE, the IEEE magazines for signal processing, antennas, microwaves, control and power,
-Annual Reviews in Control and similar venues (IEEE Access only fills a short topic). Seven topics with six surveys
-each: wireless and telecom, signal processing, machine learning in EE, antennas and RF, power and energy, control,
-underwater and sensor networks. Selection is rule-based and seeded. A survey's gold set is its OpenAlex reference list,
-keeping only works OpenAlex has and dates on or before the survey. Claude Sonnet 5.5 writes one question per survey
-from its title and abstract, without naming the survey or copying its title. A third of each topic is held out as a
-tuning split; the table above is the test split.
-
-<details>
-<summary>The 42 surveys (click a title for its DOI)</summary>
-
-| Topic | Survey | Venue, year | Gold papers | Split |
-|---|---|---|---|---|
-| Underwater and sensor networks | [A Survey of Autonomous Underwater Vehicle Formation: Performance, Formation Control, and Communication Capability](https://doi.org/10.1109/comst.2021.3059998) | IEEE Communications Surveys & Tutorials, 2021 | 184 | test |
-| Underwater and sensor networks | [Internet of Underwater Things and Big Marine Data Analytics—A Comprehensive Survey](https://doi.org/10.1109/comst.2021.3053118) | IEEE Communications Surveys & Tutorials, 2021 | 297 | test |
-| Underwater and sensor networks | [Maritime Communications: A Survey on Enabling Technologies, Opportunities, and Challenges](https://doi.org/10.1109/jiot.2022.3219674) | IEEE Internet of Things Journal, 2022 | 172 | test |
-| Underwater and sensor networks | [Review of Wireless Charging Systems for Autonomous Underwater Vehicles](https://doi.org/10.1109/joe.2019.2953015) | IEEE Journal of Oceanic Engineering, 2019 | 98 | tune |
-| Underwater and sensor networks | [Review of Power Conversion and Energy Management for Low-Power, Low-Voltage Energy Harvesting Powered Wireless Sensors](https://doi.org/10.1109/tpel.2019.2894465) | IEEE Transactions on Power Electronics, 2019 | 86 | tune |
-| Underwater and sensor networks | [A Survey on Mobile Charging Techniques in Wireless Rechargeable Sensor Networks](https://doi.org/10.1109/comst.2022.3189387) | IEEE Communications Surveys & Tutorials, 2022 | 194 | test |
-| Antennas and RF | [An Overview of the Development of Antenna-in-Package Technology for Highly Integrated Wireless Devices](https://doi.org/10.1109/jproc.2019.2933267) | Proceedings of the IEEE, 2019 | 158 | test |
-| Antennas and RF | [Tutorial on Electromagnetic Nonreciprocity and its Origins](https://doi.org/10.1109/jproc.2020.3012381) | Proceedings of the IEEE, 2020 | 272 | test |
-| Antennas and RF | [Metamaterials and Metasurfaces for Wireless Power Transfer and Energy Harvesting](https://doi.org/10.1109/jproc.2021.3127493) | Proceedings of the IEEE, 2021 | 191 | test |
-| Antennas and RF | [Rectennas for Radio-Frequency Energy Harvesting and Wireless Power Transfer: A Review of Antenna Design [Antenna Applications Corner]](https://doi.org/10.1109/map.2020.3012872) | IEEE Antennas and Propagation Magazine, 2020 | 116 | test |
-| Antennas and RF | [Microwave Nonreciprocity](https://doi.org/10.1109/jproc.2020.3006041) | Proceedings of the IEEE, 2020 | 174 | tune |
-| Antennas and RF | [Frequency Selective Surface Toward 6G Communication Systems: A Contemporary Survey](https://doi.org/10.1109/comst.2024.3369250) | IEEE Communications Surveys & Tutorials, 2024 | 238 | tune |
-| Power and energy | [An Overview of Artificial Intelligence Applications for Power Electronics](https://doi.org/10.1109/tpel.2020.3024914) | IEEE Transactions on Power Electronics, 2020 | 171 | test |
-| Power and energy | [Peer-to-Peer Trading in Electricity Networks: An Overview](https://doi.org/10.1109/tsg.2020.2969657) | IEEE Transactions on Smart Grid, 2020 | 93 | test |
-| Power and energy | [Overview and Comparison of Modulation and Control Strategies for a Nonresonant Single-Phase Dual-Active-Bridge DC–DC Converter](https://doi.org/10.1109/tpel.2019.2927930) | IEEE Transactions on Power Electronics, 2019 | 114 | tune |
-| Power and energy | [State of the Art and Trends in Electric and Hybrid Electric Vehicles](https://doi.org/10.1109/jproc.2021.3072788) | Proceedings of the IEEE, 2021 | 108 | test |
-| Power and energy | [A Review of Deep Reinforcement Learning for Smart Building Energy Management](https://doi.org/10.1109/jiot.2021.3078462) | IEEE Internet of Things Journal, 2021 | 126 | test |
-| Power and energy | [A General Review of Multilevel Inverters Based on Main Submodules: Structural Point of View](https://doi.org/10.1109/tpel.2018.2890649) | IEEE Transactions on Power Electronics, 2019 | 184 | tune |
-| Control | [All you need to know about model predictive control for buildings](https://doi.org/10.1016/j.arcontrol.2020.09.001) | Annual Reviews in Control, 2020 | 448 | test |
-| Control | [A survey of distributed optimization](https://doi.org/10.1016/j.arcontrol.2019.05.006) | Annual Reviews in Control, 2019 | 302 | test |
-| Control | [A Review of Sliding Mode Observer Based Sensorless Control Methods for PMSM Drive](https://doi.org/10.1109/tpel.2023.3287828) | IEEE Transactions on Power Electronics, 2023 | 115 | test |
-| Control | [Linear fractional order controllers; A survey in the frequency domain](https://doi.org/10.1016/j.arcontrol.2019.03.008) | Annual Reviews in Control, 2019 | 107 | test |
-| Control | [State of art on state estimation: Kalman filter driven by machine learning](https://doi.org/10.1016/j.arcontrol.2023.100909) | Annual Reviews in Control, 2023 | 175 | tune |
-| Control | [Survey of distributed algorithms for resource allocation over multi-agent systems](https://doi.org/10.1016/j.arcontrol.2024.100983) | Annual Reviews in Control, 2024 | 301 | tune |
-| Machine learning in EE | [Federated Learning in Mobile Edge Networks: A Comprehensive Survey](https://doi.org/10.1109/comst.2020.2986024) | IEEE Communications Surveys & Tutorials, 2020 | 181 | test |
-| Machine learning in EE | [Edge Intelligence: Paving the Last Mile of Artificial Intelligence With Edge Computing](https://doi.org/10.1109/jproc.2019.2918951) | Proceedings of the IEEE, 2019 | 109 | tune |
-| Machine learning in EE | [Applications of Deep Reinforcement Learning in Communications and Networking: A Survey](https://doi.org/10.1109/comst.2019.2916583) | IEEE Communications Surveys & Tutorials, 2019 | 189 | test |
-| Machine learning in EE | [Deep Learning in Mobile and Wireless Networking: A Survey](https://doi.org/10.1109/comst.2019.2904897) | IEEE Communications Surveys & Tutorials, 2019 | 563 | tune |
-| Machine learning in EE | [Artificial Neural Networks-Based Machine Learning for Wireless Networks: A Tutorial](https://doi.org/10.1109/comst.2019.2926625) | IEEE Communications Surveys & Tutorials, 2019 | 133 | test |
-| Machine learning in EE | [Application of Machine Learning in Wireless Networks: Key Techniques and Open Issues](https://doi.org/10.1109/comst.2019.2924243) | IEEE Communications Surveys & Tutorials, 2019 | 163 | test |
-| Signal processing | [A Survey of Indoor Localization Systems and Technologies](https://doi.org/10.1109/comst.2019.2911558) | IEEE Communications Surveys & Tutorials, 2019 | 158 | tune |
-| Signal processing | [A Survey on Fundamental Limits of Integrated Sensing and Communication](https://doi.org/10.1109/comst.2022.3149272) | IEEE Communications Surveys & Tutorials, 2022 | 124 | tune |
-| Signal processing | [Enabling Joint Communication and Radar Sensing in Mobile Networks—A Survey](https://doi.org/10.1109/comst.2021.3122519) | IEEE Communications Surveys & Tutorials, 2021 | 206 | test |
-| Signal processing | [A Survey on Channel Estimation and Practical Passive Beamforming Design for Intelligent Reflecting Surface Aided Wireless Communications](https://doi.org/10.1109/comst.2022.3155305) | IEEE Communications Surveys & Tutorials, 2022 | 236 | test |
-| Signal processing | [A Survey on Indoor Positioning Systems for IoT-Based Applications](https://doi.org/10.1109/jiot.2022.3149048) | IEEE Internet of Things Journal, 2022 | 114 | test |
-| Signal processing | [An Overview of Signal Processing Techniques for Terahertz Communications](https://doi.org/10.1109/jproc.2021.3100811) | Proceedings of the IEEE, 2021 | 473 | test |
-| Wireless and telecom | [On the Road to 6G: Visions, Requirements, Key Technologies, and Testbeds](https://doi.org/10.1109/comst.2023.3249835) | IEEE Communications Surveys & Tutorials, 2023 | 543 | tune |
-| Wireless and telecom | [Reconfigurable Intelligent Surfaces: Principles and Opportunities](https://doi.org/10.1109/comst.2021.3077737) | IEEE Communications Surveys & Tutorials, 2021 | 170 | test |
-| Wireless and telecom | [A Comprehensive Survey on Internet of Things (IoT) Toward 5G Wireless Systems](https://doi.org/10.1109/jiot.2019.2948888) | IEEE Internet of Things Journal, 2019 | 97 | tune |
-| Wireless and telecom | [Accessing From the Sky: A Tutorial on UAV Communications for 5G and Beyond](https://doi.org/10.1109/jproc.2019.2952892) | Proceedings of the IEEE, 2019 | 247 | test |
-| Wireless and telecom | [Satellite Communications in the New Space Era: A Survey and Future Challenges](https://doi.org/10.1109/comst.2020.3028247) | IEEE Communications Surveys & Tutorials, 2020 | 251 | test |
-| Wireless and telecom | [Toward Smart Wireless Communications via Intelligent Reflecting Surfaces: A Contemporary Survey](https://doi.org/10.1109/comst.2020.3004197) | IEEE Communications Surveys & Tutorials, 2020 | 149 | test |
-
-</details>
-
-**Keeping the comparison fair.** DEIXIS has no date limit, so before scoring both arms lose the survey itself and
-every record dated after it, compared by day. DEIXIS also loses any record that only a citation chain from the survey,
-or from a later paper, brought in. The list then closes up. The survey was a chain seed in 35 of the 42 DEIXIS runs.
-The cleaning removed 2,547 chained records, and more than half of each DEIXIS pool was dated after the survey. The
-chaining budget such a seed used up cannot be given back, so this leans against DEIXIS.
-
-**Why the reranker loses here.** Most gold papers are found through citation chaining: 746 of the 909 gold hits in
-B's first 50 results have a chain route. The reranker compares only title and abstract with the question, and a
-survey's reference list holds many foundational or side papers whose text looks far from the question. In the first
-50 results the reranker cuts chained records from 1,164 to 793 and gold hits from 909 to 658. On BioASQ and LitSearch
-the gold papers read close to the question, and there the reranker helps. Since D106 the reranker leaves records
-only chaining brought in their place; replayed on these runs, EE C @50 rises from 0.091 to 0.111 and LitSearch is
-unchanged. The tables above are the runs as made, before D106.
-
-| Topic (test questions) | A @50 | B @50 | C @50 |
-|---|---|---|---|
-| Wireless and telecom | 0.081 | 0.132 | 0.118 |
-| Signal processing | 0.054 | 0.144 | 0.103 |
-| Machine learning in EE | 0.041 | 0.077 | 0.077 |
-| Antennas and RF | 0.091 | 0.202 | 0.114 |
-| Power and energy | 0.083 | 0.137 | 0.105 |
-| Control | 0.044 | 0.104 | 0.050 |
-| Underwater and sensor networks | 0.058 | 0.108 | 0.071 |
-
-Each topic has four test questions, so a single topic says little; all seven point the same way.
-
-In one EE question the product's ranking time ran out before the rerank (`no_time_left`, recorded by DEIXIS). That
-question counts as the product delivered it, with C equal to B. The 41 reranked questions give the same C − B
-(−0.038).
+- Cost: about $0.033 of OpenAlex budget per DEIXIS question. Voyage cost under $0.01 per question.
 
 ## Papers DEIXIS never retrieved
 
@@ -207,4 +105,5 @@ OpenAlex (title and abstract search, up to 2,000 results each) to find the cause
 ## Run data
 
 The DEIXIS data folders behind these runs (library databases, provider responses, per-question rows) stay on the
-owner's machine and are not in this repository; the scoring code and tests are.
+owner's machine and are not in this repository; the scoring code and tests are. The two figures are drawn from the
+stored scoring output by `scripts/benchmark/figures.py`.

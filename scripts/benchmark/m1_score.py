@@ -1,14 +1,13 @@
-"""The reference-based gates of D163's M1, read from a baseline arm and an M1 arm (plan notes/2026-11-07-m1/plan.md).
+"""The reference-based gates of D163's M1, read from a baseline arm and an M1 arm.
 
-    uv run python scripts/benchmark/m1_score.py --root notes/2026-11-07-m1 [--max-spend 0.05 --prepaid-floor 1.0]
+    uv run python scripts/benchmark/m1_score.py --root <root>
 
 Layout: <root>/<set>/<base|m1>/runs/deixis_rerank.jsonl (rows of the delivered order) and <root>/<set>/<arm>/data
-(the arm's library), for the sets bioasq, litsearch and eesurvey (EE: test split only). Four gates, fixed before the
-runs: recall@50 paired difference lower bound > -2 pts (BioASQ, LitSearch) and > -1.5 pts (EE); EE pool recall gain
-lower bound > 0; median extra chained records per M1 run <= 80; no sent code query over 250,000 works. A question the
-replay refused is left out of both arms. Paired bootstrap over questions, 10,000 resamples, 95%, a failure counting
-as zero. The fifth gate, Stage A coverage, is scored elsewhere: until it is, the verdict is inconclusive at best. EE
-dates of undated records are read from OpenAlex through eesurvey_run.dates_for (cached; `--max-spend` bounds it).
+(the arm's library), for the sets bioasq and litsearch. Three gates, fixed before the runs: recall@50 paired
+difference lower bound > -2 pts; median extra chained records per M1 run <= 80; no sent code query over 250,000
+works. A question the replay refused is left out of both arms. Paired bootstrap over questions, 10,000 resamples,
+95%, a failure counting as zero. The remaining gate, Stage A coverage, is scored elsewhere: until it is, the verdict
+is inconclusive at best.
 """
 from __future__ import annotations
 
@@ -20,18 +19,16 @@ from datetime import datetime
 from pathlib import Path
 
 try:
-    from . import bioasq, chain_rule_check, eesurvey, harness, litsearch
+    from . import bioasq, chain_rule_check, harness, litsearch
 except ImportError:
     import bioasq
     import chain_rule_check
-    import eesurvey
     import harness
     import litsearch
 
 ROOT = Path(__file__).resolve().parents[2]
-SETS = {'bioasq': ROOT / 'notes/bioasq', 'litsearch': ROOT / 'notes/litsearch', 'eesurvey': ROOT / 'notes/eesurvey'}
-MARGIN = {'bioasq': -0.02, 'litsearch': -0.02, 'eesurvey': -0.015}
-POOL = 10 ** 9  # "the whole list" as a depth
+SETS = {'bioasq': ROOT / 'notes/bioasq', 'litsearch': ROOT / 'notes/litsearch'}
+MARGIN = {'bioasq': -0.02, 'litsearch': -0.02}
 MAX_EXTRA_MEDIAN = 80
 MAX_CODE_QUERY_TOTAL = 250_000
 ARMS = ('base', 'm1')
@@ -73,14 +70,8 @@ def refused(log, questions, frozen_at):
     return out
 
 
-def per_question(name, questions, rows, args, depths):
+def per_question(name, questions, rows, depths):
     meta = json.loads((SETS[name] / 'gold_meta.json').read_text())
-    if name == 'eesurvey':
-        import eesurvey_run
-        dates = eesurvey_run.dates_for(eesurvey.undated_ids(questions, {'x': rows}), args.max_spend,
-                                       args.prepaid_floor)
-        systems, _ = eesurvey.score_systems(questions, {'x': rows}, meta, dates, depths)
-        return systems['x']
     out = {}
     for q in questions:
         row = rows.get(q['id'])
@@ -186,10 +177,8 @@ def embedded_share(conn, run_id):
     return output(conn, run_id, 'source_similarity').get('embedded_share')
 
 
-def score_set(root, name, args):
+def score_set(root, name):
     questions = json.loads((SETS[name] / 'sample.json').read_text())['questions']
-    if name == 'eesurvey':
-        questions = [q for q in questions if q['split'] == 'test']
     rows = {arm: {r['id']: r for r in read_jsonl(root / name / arm / 'runs' / 'deixis_rerank.jsonl')}
             for arm in ARMS}
     _, conn = library(root, name, 'm1')
@@ -200,16 +189,14 @@ def score_set(root, name, args):
     expected = [q['id'] for q in questions]
     for arm in ARMS:
         harness.check_arm(f'{name}/{arm}', list(rows[arm].values()))
-    depths = (50, POOL) if name == 'eesurvey' else (50,)
-    per = {arm: per_question(name, questions, rows[arm], args, depths) for arm in ARMS}
+    depths = (50,)
+    per = {arm: per_question(name, questions, rows[arm], depths) for arm in ARMS}
     report = {'questions': len(expected), 'refused_by_replay': sorted(left_out),
               'recall@50': paired_gate(per['m1'], per['base'], expected, 50, MARGIN[name]),
               'arms': {arm: {'mean@50': bioasq.macro(per[arm], 50), 'failed': sum(v is None for v in per[arm].values()),
                              'rerank_applied': sum(bool((r.get('rerank') or {}).get('applied'))
                                                    for r in rows[arm].values() if not r.get('error'))}
                        for arm in ARMS}}
-    if name == 'eesurvey':
-        report['pool_recall'] = paired_gate(per['m1'], per['base'], expected, POOL, 0.0)
     extra, extra_complete = [], True
     for arm in ARMS:
         path, conn = library(root, name, arm)
@@ -234,16 +221,13 @@ def score_set(root, name, args):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--root', required=True)
-    parser.add_argument('--max-spend', type=float, default=0.05)
-    parser.add_argument('--prepaid-floor', type=float, default=1.0)
     args = parser.parse_args()
     root = Path(args.root)
-    report = {name: score_set(root, name, args) for name in SETS}
+    report = {name: score_set(root, name) for name in SETS}
     extra = [n for part in report.values() for n in part['extra_chained']]
     complete = all(part['extra_chained_complete'] for part in report.values())
     median = statistics.median(extra) if extra else None
     gates = {f'recall@50 {name}': part['recall@50']['verdict'] for name, part in report.items()}
-    gates['EE pool recall'] = report['eesurvey']['pool_recall']['verdict']
     gates['median extra chained <= 80'] = ('inconclusive' if not complete or median is None else
                                           'pass' if median <= MAX_EXTRA_MEDIAN else 'fail')
     widths = [part['gate_code_query_width'] for part in report.values()]

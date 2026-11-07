@@ -364,3 +364,21 @@ def test_a_key_set_outside_the_app_is_refused_without_naming_the_variable(no_key
     assert removed.status_code == 409 and removed.json()["code"] == "shell_key" and KEY not in removed.text
     refused = client.put(f"/api/credentials/{KEY}", json={"value": V1})
     assert refused.status_code == 409 and refused.json()["code"] == "shell_key_stays" and KEY not in refused.text
+
+
+def test_macos_keeps_every_key_in_one_item_and_moves_old_items(monkeypatch, memory_keychain):
+    """D171: on macOS the keys are one Keychain item, so the system asks once, not once per key; items saved one per key
+    are moved into it at start-up and deleted only after the one item reads back."""
+    monkeypatch.setattr(credentials, "_bundled", lambda: True)
+    for env in (KEY, "VOYAGE_API_KEY", "S2_API_KEY"):
+        monkeypatch.delenv(env, raising=False)
+    memory_keychain.items[("DEIXIS", KEY)] = V1
+    memory_keychain.items[("DEIXIS", "VOYAGE_API_KEY")] = "voyage-key-good-0001"
+    credentials.load_into_environment()
+    assert os.environ[KEY] == V1 and os.environ["VOYAGE_API_KEY"] == "voyage-key-good-0001"
+    assert set(memory_keychain.items) == {("DEIXIS", "keys")}
+    credentials.save("S2_API_KEY", "s2-key-good-000000001")
+    credentials.delete(KEY)
+    assert json.loads(memory_keychain.items[("DEIXIS", "keys")]) == {
+        "S2_API_KEY": "s2-key-good-000000001", "VOYAGE_API_KEY": "voyage-key-good-0001"}
+    assert KEY not in os.environ

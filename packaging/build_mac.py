@@ -4,11 +4,14 @@
 
 Steps: the backend sidecar (packaging/sidecar/build.py: web build, PyInstaller onedir, ad-hoc signature on every Mach-O
 file, `--check-resources`), then the Tauri shell (`npm ci` and `tauri build --bundles app` in desktop/, which copies the
-sidecar into `Contents/Resources/sidecar/deixis-backend/` and signs the app ad hoc, `signingIdentity: "-"`).
+sidecar into `Contents/Resources/sidecar/deixis-backend/` and signs the app ad hoc, `signingIdentity: "-"`). The backend
+executable and the app are then signed again with the self-signed `DEIXIS Self-Signed` certificate (D171,
+packaging/mac_signing_identity.py), the backend as `org.deixis.backend`, so Keychain access granted once lasts across
+updates; `--adhoc` keeps the old ad-hoc signature.
 
 Tauri copies resources with their symlinks resolved; the onedir build has six (the Python framework's layout and two
 MuPDF library names), and a resolved framework binary no longer verifies. So the copy's symlinks are put back as the
-build has them, the app is sealed again (`codesign --force --sign -` on the bundle) and the DMG is made here with
+build has them, the app is sealed again (`codesign --force` on the bundle) and the DMG is made here with
 `hdiutil` from that app (the app and an Applications link). Checks: `codesign --verify --deep --strict` on the app,
 a valid signature on every Mach-O file inside it, and the copied sidecar equal to the build (files and symlinks).
 Prints the .app and .dmg sizes and paths. Rust comes from Homebrew's rustup (`/opt/homebrew/opt/rustup/bin`). uv is not
@@ -35,6 +38,8 @@ DESKTOP = REPO / "desktop"
 BUNDLE = DESKTOP / "src-tauri" / "target" / "release" / "bundle"
 APP = BUNDLE / "macos" / "DEIXIS.app"
 RUSTUP = "/opt/homebrew/opt/rustup/bin"
+IDENTITY = "DEIXIS Self-Signed"  # packaging/mac_signing_identity.py makes it (D171)
+BACKEND_ID = "org.deixis.backend"
 
 sys.path.insert(0, str(SIDECAR))
 from build import folder_bytes, is_macho, run  # noqa: E402
@@ -77,9 +82,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--skip-sidecar", action="store_true", help="use the existing packaging/sidecar/dist build")
     parser.add_argument("--skip-web", action="store_true", help="passed to the sidecar build")
+    parser.add_argument("--adhoc", action="store_true", help="sign ad hoc: each build asks again for Keychain access")
     args = parser.parse_args()
     if sys.platform != "darwin" or platform.machine() != "arm64":
         print(f"This build is for macOS arm64; this Python is {sys.platform} {platform.machine()}.", file=sys.stderr)
+        return 2
+    identity = "-" if args.adhoc else IDENTITY
+    if not args.adhoc and subprocess.run(["security", "find-certificate", "-c", IDENTITY], capture_output=True).returncode:
+        print(f"No '{IDENTITY}' certificate; run packaging/mac_signing_identity.py (or pass --adhoc).", file=sys.stderr)
         return 2
     started = time.monotonic()
     if not args.skip_sidecar:
@@ -88,12 +98,15 @@ def main() -> int:
     if not (built / "deixis-backend").is_file():
         print(f"No sidecar build in {built}; run without --skip-sidecar.", file=sys.stderr)
         return 2
+    # The backend reads the Keychain: one certificate and a fixed identifier keep its designated requirement the same
+    # from build to build, so the person's "Always Allow" survives an update (D171).
+    run(["codesign", "--force", "--sign", identity, "--identifier", BACKEND_ID, str(built / "deixis-backend")])
     env = os.environ | {"PATH": f"{RUSTUP}:{os.environ.get('PATH', '')}"}
     run(["npm", "ci"], cwd=DESKTOP, env=env)
     run(["npx", "tauri", "build", "--bundles", "app"], cwd=DESKTOP, env=env)
     inside = APP / "Contents" / "Resources" / "sidecar" / "deixis-backend"
     restored = restore_links(built, inside)
-    run(["codesign", "--force", "--sign", "-", str(APP)])
+    run(["codesign", "--force", "--sign", identity, str(APP)])
     run(["codesign", "--verify", "--deep", "--strict", str(APP)])
     unsigned = [p for p in (APP / "Contents").rglob("*") if p.is_file() and not p.is_symlink() and is_macho(p)
                 and subprocess.run(["codesign", "--verify", str(p)], capture_output=True).returncode != 0]

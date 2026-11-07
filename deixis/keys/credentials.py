@@ -53,6 +53,7 @@ from deixis.domain.limits import service_error_kind, http_limit, retry_at
 log = logging.getLogger(__name__)
 
 SERVICE = "DEIXIS"
+BUNDLE = "keys"  # the account of the one macOS Keychain item that holds every key (D171)
 KEYCHAIN_TIMEOUT = 10.0  # seconds a keychain call may take before the app says the keychain is not responding (E5)
 STARTUP_TIMEOUT = 20.0  # seconds the whole start-up read of saved keys may take
 RETRY_AFTER = 5.0  # seconds before a keychain found unreachable is looked for again
@@ -541,22 +542,116 @@ def _load_file_store() -> None:
         pass  # left as it is; `file_store_damaged` tells Settings and every change to it is refused
 
 
-def _keychain_get(env: str) -> str | None:
-    return keyring.get_password(SERVICE, env)
+def _bundled() -> bool:
+    """On macOS every key is one Keychain item (`BUNDLE`, a JSON object by variable name). macOS asks the person to allow
+    each item on its own, and an unsigned or ad-hoc-signed build is a new app to it after every update, so one item means
+    one question instead of one per key. Other keychains ask nothing per item and keep one item per key (the Windows
+    Credential Locker also caps an item at 2560 bytes). Runs on the worker."""
+    return type(keyring.get_keyring()).__module__.rsplit(".", 1)[-1] == "macOS"
 
 
-def _keychain_set(env: str, value: str) -> None:
-    keyring.set_password(SERVICE, env, value)
-
-
-def _keychain_delete(env: str) -> None:
+def _item_delete(account: str) -> None:
     try:
-        keyring.delete_password(SERVICE, env)
+        keyring.delete_password(SERVICE, account)
     except PasswordDeleteError:
         # Backends raise this for an absent item and also for a refused, locked or cancelled delete (macOS turns every
         # keychain error into it): the item is taken as gone only when a read finds none, otherwise the delete failed.
-        if keyring.get_password(SERVICE, env) is not None:
+        if keyring.get_password(SERVICE, account) is not None:
             raise
+
+
+def _bundle_read() -> dict[str, str]:
+    """The keys in the one item. An item that is not a JSON object raises ValueError, so its keys show as broken."""
+    raw = keyring.get_password(SERVICE, BUNDLE)
+    if raw is None:
+        return {}
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("the keys item is not a JSON object")
+    return {k: v for k, v in data.items() if k in MANAGED_KEYS and isinstance(v, str)}
+
+
+def _bundle_change(env: str, value: str | None) -> None:
+    """Read, change one key, write back. An item that cannot be read as keys is replaced: what it held is lost already."""
+    try:
+        data = _bundle_read()
+    except ValueError:
+        log.warning("The keychain item holding DEIXIS keys could not be read and is replaced")
+        data = {}
+    if value is None:
+        if env not in data:
+            return
+        data.pop(env)
+    else:
+        data[env] = value
+    if data:
+        keyring.set_password(SERVICE, BUNDLE, json.dumps(data, sort_keys=True))
+    else:
+        _item_delete(BUNDLE)
+
+
+def _move_items_into_bundle() -> None:
+    """Keys saved one item per key (before D171) are moved into the one item: each is copied, the item is read back, and
+    only then are the old items deleted. A key the person does not allow stays in its old item and is tried again at the
+    next start. Asking for a name that has no item asks nothing."""
+    try:
+        data = _bundle_read()
+    except ValueError:
+        return  # a damaged item is not written over here; its keys show as broken and a save replaces it
+    moved: list[str] = []
+    for env in MANAGED_KEYS:
+        try:
+            value = keyring.get_password(SERVICE, env)
+        except Exception:  # noqa: BLE001 - refused or unreadable: left where it is
+            continue
+        if value is None:
+            continue
+        data.setdefault(env, value)  # a key already in the one item is the newer one
+        moved.append(env)
+    if not moved:
+        return
+    keyring.set_password(SERVICE, BUNDLE, json.dumps(data, sort_keys=True))
+    if _bundle_read() != data:
+        return
+    for env in moved:
+        with contextlib.suppress(Exception):  # an old item left behind is moved again, harmlessly, at the next start
+            _item_delete(env)
+
+
+def _keychain_get(env: str) -> str | None:
+    return _bundle_read().get(env) if _bundled() else keyring.get_password(SERVICE, env)
+
+
+def _keychain_get_many(envs: list[str]) -> dict[str, str | None | BaseException]:
+    """The start-up read: on macOS the old per-key items are moved first and the one item is read once."""
+    if _bundled():
+        _move_items_into_bundle()
+        try:
+            data = _bundle_read()
+        except Exception as exc:  # noqa: BLE001 - every key read from it is unread
+            return {env: exc for env in envs}
+        return {env: data.get(env) for env in envs}
+    found: dict[str, str | None | BaseException] = {}
+    for env in envs:
+        try:
+            found[env] = keyring.get_password(SERVICE, env)
+        except Exception as exc:  # noqa: BLE001
+            found[env] = exc
+    return found
+
+
+def _keychain_set(env: str, value: str) -> None:
+    if _bundled():
+        _bundle_change(env, value)
+    else:
+        keyring.set_password(SERVICE, env, value)
+
+
+def _keychain_delete(env: str) -> None:
+    if _bundled():
+        _bundle_change(env, None)
+    else:
+        _item_delete(env)
 
 
 def _session_set(env: str, value: str) -> None:
@@ -665,8 +760,8 @@ def move_dotenv_keys_to_keychain() -> None:
         if not value:
             continue
         try:
-            _call_sync(keyring.set_password, SERVICE, env, value)
-            if _call_sync(keyring.get_password, SERVICE, env) != value:
+            _call_sync(_keychain_set, env, value)
+            if _call_sync(_keychain_get, env) != value:
                 continue
             _rewrite_dotenv(env, None)
         except (KeyringError, OSError, ValueError, KeychainNotResponding):
@@ -688,14 +783,22 @@ def _stored_value_ok(key: ManagedKey, value: str) -> bool:
                                            for k in ("app_id", "app_key", "revision")))
 
 
-def _apply_read(env: str, read: concurrent.futures.Future[Any]) -> None:
-    try:
-        value = read.result(timeout=0)
-    except Exception as exc:  # noqa: BLE001 - a locked or unreachable keychain, in whatever way the backend reports it
-        _note_unread(env, exc)
+def _apply_reads(envs: list[str], read: concurrent.futures.Future[Any]) -> None:
+    """Apply the start-up read. A read that did not finish in time leaves every key unread and shown as unavailable."""
+    if not read.done():
+        read.cancel()
+        _unavailable.update(envs)
         return
-    if value:
-        _adopt(env, value)
+    try:
+        values = read.result(timeout=0)
+    except Exception as exc:  # noqa: BLE001 - a locked or unreachable keychain, in whatever way the backend reports it
+        values = {env: exc for env in envs}
+    for env in envs:
+        value = values.get(env)
+        if isinstance(value, BaseException):
+            _note_unread(env, value)
+        elif value:
+            _adopt(env, value)
 
 
 def _unloaded_keys() -> list[str]:
@@ -706,18 +809,14 @@ def _unloaded_keys() -> list[str]:
 
 async def _load_keys_async() -> None:
     """The start-up read of the keychain's keys, for the API: queued on the worker and awaited against one deadline."""
-    reads = {env: _worker.submit(_keychain_get, env) for env in _unloaded_keys()}
-    wrapped = [asyncio.wrap_future(read) for read in reads.values()]
-    for w in wrapped:
-        w.add_done_callback(lambda f: f.cancelled() or f.exception())
-    if wrapped:
-        await asyncio.wait(wrapped, timeout=STARTUP_TIMEOUT)
-    for env, read in reads.items():
-        if read.done():
-            _apply_read(env, read)
-        else:
-            read.cancel()
-            _unavailable.add(env)
+    envs = _unloaded_keys()
+    if not envs:
+        return
+    read = _worker.submit(_keychain_get_many, envs)
+    wrapped = asyncio.wrap_future(read)
+    wrapped.add_done_callback(lambda f: f.cancelled() or f.exception())
+    await asyncio.wait({wrapped}, timeout=STARTUP_TIMEOUT)
+    _apply_reads(envs, read)
 
 
 def load_into_environment() -> None:
@@ -739,16 +838,12 @@ def load_into_environment() -> None:
             if value := _session.get(env):
                 _adopt(env, value)
         return
-    reads = {env: _worker.submit(_keychain_get, env) for env in todo}  # all queued at once, read against one deadline
-    deadline = time.monotonic() + STARTUP_TIMEOUT
-    for env, read in reads.items():
-        try:
-            read.exception(timeout=max(0.0, deadline - time.monotonic()))
-        except concurrent.futures.TimeoutError:
-            read.cancel()
-            _unavailable.add(env)
-            continue
-        _apply_read(env, read)
+    if not todo:
+        return
+    read = _worker.submit(_keychain_get_many, todo)  # one queued read, against one deadline
+    with contextlib.suppress(concurrent.futures.TimeoutError):
+        read.exception(timeout=STARTUP_TIMEOUT)
+    _apply_reads(todo, read)
 
 
 def status(env: str) -> dict[str, Any]:

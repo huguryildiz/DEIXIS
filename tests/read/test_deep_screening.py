@@ -4,12 +4,15 @@ widens. Plus the benchmark-only list barrier. SYNTHETIC records, FakeAdapter, mo
 Passing shows workflow behaviour, not screening quality."""
 
 import json
+import re
+from collections import Counter
 from contextlib import contextmanager
 
 import pytest
 
 from deixis.workflow.answer import answer as fast_answer
 from deixis.workflow.run import fast_path
+from deixis.workflow.run.flow import ResearchFlow
 from deixis.workflow.screen.decisions import DecisionStore
 from deixis.workflow.search import small_batch
 from fakes import FakeAdapter, valid_response
@@ -240,6 +243,107 @@ def test_a_run_frozen_without_the_window_reads_as_before(tmp_path, monkeypatch, 
             assert not [c for c in adapter.calls if c["task_type"] == "abstract_screening" and one_read(c)]
     if effort == "quick":
         assert seen[True] == seen[False]
+
+
+@pytest.mark.parametrize("case", ["cutoff_before_plan", "changed_head"])
+def test_a_window_work_this_run_cannot_show_screened_stays_out_whatever_it_held(tmp_path, monkeypatch, small_standard,
+                                                                              case):
+    """(2b) A work of the deeper window holds a fresh candidate decision from before this read. When the cutoff passes
+    before the deep plan opens, or when its head changed after the list froze, this run cannot show it screened: it is
+    `deep.not_screened_at_cutoff` and the snapshot keeps it out of the answer."""
+    holder = {}
+    original = ResearchFlow._second_sources
+
+    async def wrapped(self, run, scope, vocabulary, **kwargs):
+        await original(self, run, scope, vocabulary, **kwargs)
+        if kwargs.get("prefix") or holder.get("item"):
+            return
+        # The top N's lookups just ran, right before the read: the older decision and the change land here.
+        store = self.store
+        item = holder["item"] = store.existing_step(run["id"], small_batch.LIST_KEY)["output"]["items"][N + 2]
+        if case == "changed_head":
+            store.conn.execute("UPDATE source_versions SET title = title || ' SYNTHETIC CHANGED' WHERE id = ?",
+                               (item["head"],))
+        DecisionStore(store).record(run["research_id"], item["head"], "blocks_in_title")
+        if case == "cutoff_before_plan":
+            store.clock.advance(5000)
+
+    monkeypatch.setattr(ResearchFlow, "_second_sources", wrapped)
+    app = app_with(tmp_path, monkeypatch, deep=True)
+    with deep_client(app) as client:
+        app.state.store.clock = FakeClock()
+        rid, run_id, _, run = discover(client, effort="standard")
+        assert run["status"] == "completed", run
+        store = app.state.store
+        record = closure_of(store, run_id)["deep"]
+        item = holder["item"]
+        assert item["work_id"] in record["not_screened_at_cutoff"]
+        assert record["screened_count"] + len(record["not_screened_at_cutoff"]) == record["planned"]
+        rows = {row["work_id"]: row for row in store.existing_step(run_id, fast_answer.CUTOFF)["output"]["items"]}
+        assert rows[item["work_id"]]["reason"] == "not_screened_at_cutoff"
+        if case == "cutoff_before_plan":
+            assert not record["plan_opened"] and not steps_of(store, run_id, "%:fast:deep:%")
+            assert len(record["not_screened_at_cutoff"]) == record["planned"]
+        else:
+            assert record["code_stage_ran"] and record["dropped_heads"] == [item["head"]]
+            assert not record["not_screened_model_budget"]
+
+
+def normalized(keys):
+    """Operation keys with the library's own identifiers taken out, so two libraries' runs compare."""
+    return Counter(re.sub(r"[0-9a-f]{64}", "H", re.sub(r"\b[a-z]+_[A-Za-z0-9]{12,}\b", "ID", key)) for key in keys)
+
+
+def test_a_paused_run_frozen_before_the_option_resumes_as_before_with_the_setting_on(tmp_path, monkeypatch,
+                                                                                    small_standard):
+    """(3b) A Standard run queued with the option off (a policy byte for byte the one frozen before D173) pauses in
+    its read; the setting is turned on; the resumed run makes the same steps, the same calls and the same answer
+    window as a run that was never paused, and its budget does not move."""
+    def summary(store, run_id, adapter):
+        cutoff = store.existing_step(run_id, fast_answer.CUTOFF)["output"]
+        return {"keys": normalized(row[0] for row in store.conn.execute(
+                    "SELECT operation_key FROM run_steps WHERE run_id = ?", (run_id,))),
+                "calls": Counter(c["task_type"] for c in adapter.calls if c["task_type"] == "abstract_screening"),
+                "one_read": [c for c in adapter.calls if one_read(c)],
+                "window": cutoff["excluded_reasons"].get("outside_read_window"),
+                "present": sorted(row["position"] for row in cutoff["items"]
+                                  if row["position"] is not None and row["reason"] != "outside_read_window")}
+
+    adapter = FakeAdapter(responder)
+    app = app_with(tmp_path / "straight", monkeypatch, deep=False, adapter=adapter)
+    with deep_client(app) as client:
+        _, run_id, _, run = discover(client, effort="standard")
+        assert run["status"] == "completed", run
+        straight = summary(app.state.store, run_id, adapter)
+
+    holder = {}
+
+    def before(si):
+        if si["task_type"] == "abstract_screening" and not holder.get("paused"):
+            holder["paused"] = True
+            holder["app"].state.store.update_run(si["run_id"], status="pause_requested")
+
+    adapter = FakeAdapter(responder, before=before)
+    app = holder["app"] = app_with(tmp_path / "resumed", monkeypatch, deep=False, adapter=adapter)
+    with deep_client(app) as client:
+        rid, run_id, _, run = discover(client, effort="standard")
+        assert run["status"] == "paused", run
+        frozen = app.state.store.run(run_id)["budget"]
+        assert "deep_screening" not in frozen["fast_path"]
+        assert frozen["fast_path"]["policy_hash"] == fast_path.freeze_budget({}, "standard")["policy_hash"]
+        assert client.put("/api/settings/preferences", json={"deep_screening": "on"}).json()["deep_screening"] == "on"
+        assert client.post(f"/api/runs/{run_id}/resume").status_code == 200
+        _, run = wait(client, rid, run_id)
+        assert run["status"] == "completed", run
+        store = app.state.store
+        assert store.run(run_id)["budget"] == frozen
+        resumed = summary(store, run_id, adapter)
+        assert "deep" not in closure_of(store, run_id)
+    assert not resumed["one_read"] and not straight["one_read"]
+    assert resumed["keys"] == straight["keys"]
+    assert resumed["calls"] == straight["calls"]
+    assert (resumed["window"], resumed["present"]) == (straight["window"], straight["present"])
+    assert max(resumed["present"]) <= N
 
 
 @pytest.mark.parametrize("interruption", ["pause", "recover"])

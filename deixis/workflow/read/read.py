@@ -126,50 +126,54 @@ def deep_plan(listing: dict[str, Any], deep: dict[str, Any], policy: dict[str, A
     return body | {"hash": canonical.sha256_hex(body)}
 
 
-def deep_closure(flow: Any, run: dict[str, Any], deep: dict[str, Any], state: dict[str, Any],
-                 closed: set[int]) -> dict[str, Any]:
+def deep_closure(flow: Any, run: dict[str, Any], listing: dict[str, Any], deep: dict[str, Any],
+                 state: dict[str, Any], closed: set[int]) -> dict[str, Any]:
     """What the deeper screening (D173) did by the cutoff, for the closure's `deep` record and the snapshot.
 
-    Each work of the window's plan whose head `unchanged_heads` kept is exactly one of: decided by a person, settled by
-    the deep code stage (not in any of its batches), screened by a closed deep batch, or unscreened at the cutoff. A
-    head that changed since the list froze is listed in `dropped_heads` and is none of these. When the task stopped
-    before its code stage, every planned work a person did not decide is unscreened."""
+    Every work of the frozen list's places `first`..`last` is exactly one of: decided by a person; screened by a deep
+    batch this run closed; settled by this run's deep code stage (its head unchanged, in no batch, and holding a
+    current abstract decision); or unscreened at the cutoff. Whatever this run cannot show is unscreened, so it stays out
+    of the answer whatever older decision it holds: every work when the deep plan or code stage never ran before the
+    cutoff, a work whose head changed since the list froze (also listed in `dropped_heads`), and a work of a batch the
+    cutoff or the model-call budget left open. Work ids are the listing's, as the snapshot's rows carry them."""
     from deixis.workflow.run.flow import budget_stops
+    from deixis.workflow.screen.decisions import DecisionStore
 
     store, rid, run_id = flow.store, run["research_id"], run["id"]
-    plan = state.get("plan")
-    if plan is None:
-        items: list[dict[str, Any]] = []
-    else:
-        items = plan["items"]
-    order = state.get("order")
-    kept = [item for item in items if order is None or item["head"] in order]
-    dropped = [item["head"] for item in items if order is not None and item["head"] not in order]
-    planned = [item["work_id"] for item in kept]
-    work_of_head = {item["head"]: item["work_id"] for item in kept}
-    heads = [item["head"] for item in kept]
-    person = {work_of_head[svid] for svid in flow._human_decided_records(rid, heads)}
-    abstract_plan = state.get("abstract_plan")
-    prefix = state["prefix"]
+    window = listing["items"][deep["first"] - 1:deep["last"]]
+    works = [item["work_id"] for item in window]
+    item_of = {svid: item["work_id"] for item in window for svid in item["versions"]}
+    decided_now = flow._human_decided_records(rid, list(item_of))
+    person = {item_of[svid] for svid in decided_now}
+    order, abstract_plan, prefix = state.get("order"), state.get("abstract_plan"), state["prefix"]
+    dropped = [item["head"] for item in window if order is not None and item["head"] not in order]
     batches = abstract_plan["batches"] if abstract_plan is not None else []
-    work_of = {svid: wid for batch in batches for svid, wid in store.work_ids(batch).items()}
-    in_batch = set(work_of.values())
-    open_batches = [batch for n, batch in enumerate(batches) if n not in closed]
-    decided = flow._human_decided_records(rid, [svid for batch in open_batches for svid in batch])
-    if abstract_plan is None:
-        unread = set(planned) - person
-    else:
-        unread = {work_of[svid] for batch in open_batches for svid in batch if svid not in decided} - person
-    settled = set(planned) - in_batch - person - unread
-    screened = set(planned) - person - settled - unread
+    current = store.work_ids([svid for batch in batches for svid in batch])
+    work_of = {svid: item_of.get(svid, current.get(svid)) for batch in batches for svid in batch}
+    screened: set[str] = set()
+    settled: set[str] = set()
+    if abstract_plan is not None and order is not None:
+        screened = {work_of[svid] for n, batch in enumerate(batches) if n in closed for svid in batch} - person
+        in_batch = set(work_of.values())
+        decisions = DecisionStore(store)
+        key = decisions.staleness_key(rid)
+        for item in window:
+            wid = item["work_id"]
+            if wid in person or wid in in_batch or item["head"] not in order:
+                continue
+            if any((held := decisions.current(rid, svid, "abstract")) is not None and not decisions.is_stale(held, key)
+                   for svid in item["versions"]):
+                settled.add(wid)
+    unread = set(works) - person - screened - settled
     budget_cut = budget_skipped(batches, budget_stops(store, run_id, prefix), work_of, unread) if batches else set()
     calls = store.conn.execute(
         "SELECT COUNT(*) FROM run_steps WHERE run_id = ? AND kind = 'model:abstract_screening' AND operation_key LIKE ?"
         " AND (status = 'succeeded' OR error_code = 'invalid_model_output')", (run_id, f"{prefix}:%")).fetchone()[0]
-    return {"rule": deep["rule"], "first": deep["first"], "last": deep["last"], "planned": len(planned),
-            "dropped_heads": dropped, "screened_count": len(planned) - len(unread),
+    return {"rule": deep["rule"], "first": deep["first"], "last": deep["last"], "planned": len(works),
+            "plan_opened": state.get("plan") is not None, "code_stage_ran": abstract_plan is not None,
+            "dropped_heads": dropped, "screened_count": len(works) - len(unread),
             "screened_by_model_count": len(screened), "code_settled_count": len(settled),
-            "person_decided_count": len(person & set(planned)),
+            "person_decided_count": len(person & set(works)),
             "not_screened_at_cutoff": sorted(unread), "not_screened_model_budget": sorted(budget_cut),
             "model_calls": calls}
 
@@ -450,7 +454,7 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
         # A task in extraction may have published text but not settled its claim yet.
         late.update({wid: "in_flight" for wid, task in fetches.items() if not task.done()})
         deadline = fast_path.stage_deadline(store, run, "read")
-        deep_record = (deep_closure(flow, run, deep, deep_state, held.closed.get(deep_state["prefix"], set()))
+        deep_record = (deep_closure(flow, run, listing, deep, deep_state, held.closed.get(deep_state["prefix"], set()))
                        if deep is not None else None)
         cutoff_snapshot = None
         cutoff_at = None

@@ -6019,4 +6019,5 @@ export const tr: Record<string, string> = {
   'basis: title and abstract · one read': 'dayanak: başlık ve özet · tek okuma',
   '· {first}–{last} screened once': '· {first}–{last} arası bir kez taranır',
   '· {first}–{last} screened once, which takes longer': '· {first}–{last} arası bir kez taranır, bu da süreyi uzatır',
+  'Works a model read at the abstract stage. The latest search read the top {n} of the ranked list, and list places {first}–{last} once.': 'Bir modelin özet aşamasında okuduğu eserler. Son arama sıralı listenin ilk {n} eserini, liste sırası {first}–{last} arasını da bir kez okudu.',
 }

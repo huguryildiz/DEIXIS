@@ -128,6 +128,8 @@ export function OverridesLine({ overrides }: { overrides: Overrides | null | und
 // the answer shown in the thread. A missing count is shown as not known, never as 0.
 
 type Opener = (name: string, opener: HTMLElement) => void
+// The parts of a discovery run's stored read closure this panel reads (`read.py` close step; `deep` only under D173).
+type ReadClosure = { N: number; deep?: { first: number; last: number; screened_by_model_count: number } }
 type Stage = { label: string; n: number | null; about: string; extra?: ReactNode; lost?: ReactNode }
 
 export function FunnelPanel({ researchId, view, answer, cited, queueCount, busy, active, onPanel, onShowSources, onChanged }: {
@@ -160,11 +162,12 @@ export function FunnelPanel({ researchId, view, answer, cited, queueCount, busy,
   const screenable = page?.screenable ?? 0
   const nextBatch = Math.min(SCREEN_MORE_SIZE, screenable)
   const waiting = counts.waiting_for_pdf ?? 0
-  // D173: the list places the latest discovery of this revision froze for its deeper screening, from its stored budget.
-  const deepWindow = view.runs.filter(r => r.kind === 'discovery' && r.scope_revision === view.research.current_scope_revision)
-    .map(r => (r.budget as unknown as { fast_path?: { deep_screening?: { first: number; last: number } } }).fast_path?.deep_screening)
-    .filter(Boolean).at(-1)
-  const readOnce = funnel?.abstracts_read_once ?? 0
+  // D173: what the latest discovery of this revision read, from that run's stored read closure (`read.view`): its N, and
+  // its deeper window when it was queued with one. An earlier run's window never speaks for a later run without one.
+  const latestDiscovery = view.runs.filter(r => r.kind === 'discovery' && r.scope_revision === view.research.current_scope_revision)
+    .sort((a, b) => a.created_at.localeCompare(b.created_at)).at(-1)
+  const closure = (latestDiscovery as unknown as { fast_path?: { read?: { cutoff?: ReadClosure | null } | null } } | undefined)?.fast_path?.read?.cutoff
+  const deepRecord = closure?.deep
 
   const lostItem = (n: number, text: string) => n > 0 ? <span key={text}><b className="tnum">{number(n)}</b> {t(text)}</span> : null
   const link = (label: string, onClick: (opener: HTMLElement) => void) => <button type="button" className="link" onClick={e => onClick(e.currentTarget)}>{t(label)}</button>
@@ -179,8 +182,10 @@ export function FunnelPanel({ researchId, view, answer, cited, queueCount, busy,
         ? t('{keyword} from the searches ({rows} records returned), {chained} only from citation chaining; duplicates merged by DOI.', { keyword: number(funnel.unique - funnel.chained), rows: number(funnel.retrieved), chained: number(funnel.chained) })
         : t('{rows} records returned by the searches, merged by DOI into these works.', { rows: number(funnel.retrieved) }) },
     { label: 'Abstract read', n: funnel.abstracts_read,
-      about: mode ? t('Works a model read at the abstract stage. {depth} depth reads the top {n} of the ranked list.', { depth: t(effortLabels[effort]), n: number(mode.papers) }) : t('Works a model read at the abstract stage.'),
-      extra: readOnce > 0 && deepWindow ? <p>{t('{n} of them read once, at list places {first}–{last}', { n: number(readOnce), first: number(deepWindow.first), last: number(deepWindow.last) })}</p> : undefined,
+      about: closure && deepRecord
+        ? t('Works a model read at the abstract stage. The latest search read the top {n} of the ranked list, and list places {first}–{last} once.', { n: number(closure.N), first: number(deepRecord.first), last: number(deepRecord.last) })
+        : mode ? t('Works a model read at the abstract stage. {depth} depth reads the top {n} of the ranked list.', { depth: t(effortLabels[effort]), n: number(mode.papers) }) : t('Works a model read at the abstract stage.'),
+      extra: deepRecord && deepRecord.screened_by_model_count > 0 ? <p>{t('{n} of them read once, at list places {first}–{last}', { n: number(deepRecord.screened_by_model_count), first: number(deepRecord.first), last: number(deepRecord.last) })}</p> : undefined,
       lost: notScreened !== null && notScreened > 0 ? <>
         <span><b className="tnum">{number(notScreened)}</b> {t('never screened')}</span>
         {page && page.total > 0 && link('Show them', opener => onShowSources('notread', opener))}

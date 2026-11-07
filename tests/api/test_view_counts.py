@@ -94,6 +94,8 @@ def test_every_bucket_holds_a_work_and_the_buckets_sum_to_the_works(store, field
         "abstract_not_read": work(code(lib, lib.work(), "abstract_not_read")),
         "survey": work(code(lib, lib.work(), "survey_title_word")),
         "out_of_scope_model": work(code(lib, lib.work(), "runs_agree_out_of_scope")),
+        # D173: one model read's verdict is counted apart from two reads and from a code rule.
+        "out_of_scope_one_read": work(code(lib, lib.work(), "single_read_out_of_scope")),
         "out_of_scope_code": work(code(lib, lib.work(), "both_blocks_missing")),
         "not_screened": work(lib.work()),
     }
@@ -162,7 +164,7 @@ def test_a_list_include_of_a_work_code_left_out_at_the_abstract_stage_overrules_
     assert (entry["machine"]["decided_by"], entry["machine"]["stage"]) == ("code", "abstract")
     ctx, probe = context(lib)
     shown = overrides.overrides_view(ctx, probe)
-    assert shown["changed_by"] == {"code": 1, "model_agreement": 0}
+    assert shown["changed_by"] == {"code": 1, "model_agreement": 0, "single_read": 0}
     assert shown["overruled"] == [{"path": "list", "decided_by": "code", "stage": "abstract",
                                    "direction": "excluded -> included", "count": 1}]
 

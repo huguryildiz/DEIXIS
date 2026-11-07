@@ -33,12 +33,15 @@ REASONING_TOKENS = {"none": 0, "minimal": 500, "low": 1500, "medium": 4000, "hig
 REASONING_DEFAULT = 2000
 
 
-def _tasks(effort: str, reading_on: bool) -> list[dict[str, Any]]:
+def _tasks(effort: str, reading_on: bool, deep_screening: bool = False) -> list[dict[str, Any]]:
     """Each step type the fast path may call: its role, how many calls (fewest, most), the characters its input adds to
     the fixed instructions (smallest, largest), the output tokens of one call (smallest, largest), and whether an invalid
     answer is repaired once."""
     _, n, k, *_ = fast_path.MODES[effort]
     batches = math.ceil(n / ABSTRACT_BATCH)
+    # D173: the deeper window's batches, one read each, at most; none when code settles every window work.
+    deep = (math.ceil(fast_path.DEEP_SCREENING_WORKS / ABSTRACT_BATCH)
+            if deep_screening and effort in fast_path.DEEP_SCREENING_EFFORTS else 0)
     passages = TEST_EFFORT_BUDGETS[effort].max_answer_passages
     answer_chars = (passages // 2 * PASSAGE_CHARS[0], passages * PASSAGE_CHARS[1])
     tasks = [
@@ -48,7 +51,7 @@ def _tasks(effort: str, reading_on: bool) -> list[dict[str, Any]]:
         ("vocabulary_labels", "literature", (0, 3), (500, 2000), (100, 600), False),
         ("search_query", "literature", (1, 2), (1000, 4000), (200, 1200), True),
         ("criterion_proposal", "literature", (0, 3), (500, 2500), (150, 800), True),
-        ("abstract_screening", "literature", (ABSTRACT_RUNS, ABSTRACT_RUNS * batches),
+        ("abstract_screening", "literature", (ABSTRACT_RUNS, ABSTRACT_RUNS * batches + deep),
          (ABSTRACT_BATCH * ABSTRACT_RECORD_CHARS[0], ABSTRACT_BATCH * ABSTRACT_RECORD_CHARS[1]), (ABSTRACT_BATCH * 25, ABSTRACT_BATCH * 100), False),
     ]
     if reading_on:
@@ -67,11 +70,12 @@ def _fixed_tokens(package: Any, task: str) -> int:
 
 
 def estimate(package: Any, effort: str, roles: dict[str, dict[str, Any] | None], *, reading_on: bool,
-             embedding_provider: str, rerank_provider: str | None = None) -> dict[str, Any]:
+             embedding_provider: str, rerank_provider: str | None = None,
+             deep_screening: bool = False) -> dict[str, Any]:
     """`roles` maps each of literature, answer and reviewer to `{connection, model, reasoning_effort}` or None (no
     reviewer). The answer holds the range in US dollars over the priced roles, what each role and step type contributes,
     and the assumptions behind it, as numbers for the screen to word."""
-    tasks = _tasks(effort, reading_on)
+    tasks = _tasks(effort, reading_on, deep_screening)
     rows, role_totals = [], {role: {"low": 0.0, "high": 0.0, "calls_low": 0, "calls_high": 0} for role in ROLES}
     for task in tasks:
         choice = roles.get(task["role"])

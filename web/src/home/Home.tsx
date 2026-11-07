@@ -37,8 +37,12 @@ function effortDetail(effort: Effort, limits: EffortLimits | null | undefined, l
   const e = limits?.efforts?.[effort]
   if (!e) return undefined
   const number = (n: number) => new Intl.NumberFormat(uiLocale()).format(n)
+  // D173: with the deeper screening on, the depth names the list places it reads once.
+  const once = e.screened_once
   if (local) return t('Local model: no time limit, it depends on this computer · up to {papers} papers', { papers: number(e.papers) })
+    + (once ? ` ${t('· {first}–{last} screened once, which takes longer', { first: number(once.first), last: number(once.last) })}` : '')
   return t('About {minutes} min · up to {papers} papers', { minutes: number(e.minutes), papers: number(e.papers) })
+    + (once ? ` ${t('· {first}–{last} screened once', { first: number(once.first), last: number(once.last) })}` : '')
 }
 // Connections whose model runs on this computer (backend `openai_compat.LOCAL_CONNECTIONS`).
 const LOCAL_CONNECTIONS = new Set(['ollama', 'local_server'])

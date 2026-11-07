@@ -63,6 +63,14 @@ REASON_CODES: dict[str, ReasonCode] = _table(
     # Both second sources answered without an abstract, or the record has no DOI to ask by; only a full text can
     # decide it. A record without an abstract is never out of scope, by any route (SW5.5).
     ReasonCode("abstract_not_found", "abstract", "unresolved", "code", "fulltext_fetch"),
+    # One model read of the abstract, the deeper screening of list places past N (D173, rule `m3_v1`): the same
+    # outcomes two agreeing reads give, written under codes of their own because no second read stood behind them. Code
+    # writes them from that one read, so they are `code`'s, like the kept-as-candidate codes above. A later discovery
+    # reads the work again with two runs (`small_batch.abstract_reusable` needs a second read).
+    ReasonCode("single_read_candidate", "abstract", "candidate", "code", "fulltext_fetch"),
+    ReasonCode("single_read_quote_not_found", "abstract", "candidate", "code", "fulltext_fetch"),
+    ReasonCode("single_read_unresolved", "abstract", "unresolved", "code", "fulltext_fetch"),
+    ReasonCode("single_read_out_of_scope", "abstract", "out_of_scope", "code", "none"),
     # ---- full-text stage ---------------------------------------------------------------
     ReasonCode("all_parts_verified", "fulltext", "include", "model_agreement", "answer"),
     ReasonCode("criterion_absent", "fulltext", "criterion_not_met", "model_agreement", "none"),

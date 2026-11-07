@@ -376,6 +376,13 @@ test.describe.serial('S24: the Settings page', () => {
     await expect(page.locator('.settings-page h1')).toHaveText('Settings')
   })
 
+  test('deeper screening (D173) is not offered yet: Research has no row for it until its validation gate passes', async () => {
+    await page.goto(server.url('#/settings/general'))
+    await expect(page.locator('.set-research').getByText('Full text during search', { exact: true }).first()).toBeVisible()
+    await expect(page.getByText('Deeper screening')).toHaveCount(0)
+    await expect(page.getByRole('group', { name: 'Deeper screening' })).toHaveCount(0)
+  })
+
   test('About (F2, F5): version, licence, source, third-party licences, and a problem link that holds only version, OS and architecture', async () => {
     await page.goto(server.url('#/settings/general'))
     const about = page.locator('.set-about')

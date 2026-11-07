@@ -623,7 +623,7 @@ export type EvidenceLedger = {
 // Slice 20, decision 1: every work of the revision in one bucket, from the person's decisions first.
 export type FlowBucket = 'confirmed' | 'person_not_met' | 'person_excluded' | 'look_again' | 'included' | 'not_met' | 'queued'
   | 'person_unsure' | 'waiting_for_pdf' | 'abstract_by_choice' | 'not_read_yet' | 'candidate_not_fetched' | 'abstract_open' | 'abstract_not_read'
-  | 'survey' | 'out_of_scope_model' | 'out_of_scope_code' | 'not_screened' | 'other'
+  | 'survey' | 'out_of_scope_model' | 'out_of_scope_one_read' | 'out_of_scope_code' | 'not_screened' | 'other'
 export type FlowCounts = {
   works: number; buckets: Record<FlowBucket, number>; other_reasons: Record<string, number>
   five: { included: number; included_by_agreement: number; confirmed: number; not_met: number; waiting_for_pdf: number
@@ -648,7 +648,7 @@ export type FollowupSearchBrief = {
 }
 export type OverrideClass = 'overruled' | 'agreed' | 'settled_open' | 'time_unknown'
 export type Overrides = {
-  decisions: number; changed: number; changed_by: { code: number; model_agreement: number }
+  decisions: number; changed: number; changed_by: { code: number; model_agreement: number; single_read?: number }
   classes: Record<OverrideClass, number>; by_path: Record<'queue' | 'audit' | 'list', Record<OverrideClass, number>>
   overruled: { path: string; decided_by: string; stage: string; direction: string; count: number }[]
   apart: { not_sure: number; pdf_wrong: number; look_again: number }
@@ -678,7 +678,9 @@ export type Counts = {
   flow?: FlowCounts | null; flow_boxes?: FlowBoxes | null; overrides?: Overrides | null
   // The search step's funnel for the current revision (D233). A candidate passed the abstract stage; nothing here is "relevant".
   // `unique` and `candidates` leave out works only a follow-up search brought; `unique_in_research` is every work (D92).
-  funnel?: { retrieved: number; chained: number; unique: number; abstracts_read: number; candidates: number; candidates_by_title?: number; included: number; unique_in_research?: number } | null
+  funnel?: { retrieved: number; chained: number; unique: number; abstracts_read: number; candidates: number; candidates_by_title?: number; included: number; unique_in_research?: number
+    // D173: works whose current abstract decision rests on one model read, and those of them kept a candidate.
+    abstracts_read_once?: number; candidates_read_once?: number } | null
 }
 // The audit sample of an sw research (slice 20, decisions 5–7): F1 / F2 answered here, A1 / A2 for viewing only.
 export type AuditAnswer = 'include' | 'criterion_not_met' | 'not_sure' | 'pdf_wrong'
@@ -707,7 +709,8 @@ export type AuditRowView = { row: AuditRow | AuditAbstractRow | null; detail: Qu
 export type AuditResult = { row: AuditRow | null; selection: QueueAnswerResult['selection']; undo_token: string | null }
 // What each depth gives a run, from the fast path's modes: about how many minutes (the stage deadlines summed) and how
 // many papers at the top of the ranking it reads.
-export type EffortLimits = { efforts: Record<'quick' | 'standard' | 'detailed', { minutes: number; papers: number; fulltext?: number }> }
+// `screened_once`: the list places D173's deeper screening reads once, present only while the option is on.
+export type EffortLimits = { efforts: Record<'quick' | 'standard' | 'detailed', { minutes: number; papers: number; fulltext?: number; screened_once?: { first: number; last: number } }> }
 // The human queue of an sw research (slice 16, D96). Rows are derived from stored decisions each time they are read.
 export type QueueKind = 'confirm_quote' | 'choose_run' | 'choose_version' | 'confirm_pdf' | 'look_again'
 export type QueueAnswer = 'include' | 'criterion_not_met' | 'not_sure' | 'pdf_wrong' | 'pdf_confirmed'
@@ -2242,8 +2245,10 @@ export type Preferences = {
   model_concurrency: number; model_concurrency_max: number
   language: 'en' | 'tr' | null; theme: 'system' | 'light' | 'dark' | null
   update_check: 'on' | 'off'
+  // D173: read when a discovery is queued; the windows are the policy's own, by depth.
+  deep_screening: 'on' | 'off'; deep_screening_windows: Record<'standard' | 'detailed', { first: number; last: number }>
 }
-export type PreferenceChange = Partial<Pick<Preferences, 'default_effort' | 'fulltext_fetch' | 'arxiv_source' | 'model_concurrency'>
+export type PreferenceChange = Partial<Pick<Preferences, 'default_effort' | 'fulltext_fetch' | 'arxiv_source' | 'model_concurrency' | 'deep_screening'>
   & { language: 'en' | 'tr'; theme: 'system' | 'light' | 'dark'; update_check: 'on' | 'off'; fill_only: boolean }>
 export const preferencesApi = {
   get: (leaving?: AbortSignal) => read<Preferences>('/api/settings/preferences', leaving),

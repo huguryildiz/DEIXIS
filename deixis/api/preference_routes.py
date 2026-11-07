@@ -16,8 +16,9 @@ from typing import Any, Literal
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from deixis.runtime.config import (ARXIV_SOURCE_SETTING, DEFAULT_EFFORT_SETTING, FULLTEXT_FETCH_SETTING, MODEL_CONCURRENCY_MAX,
-                           MODEL_CONCURRENCY_SETTING)
+from deixis.runtime.config import (ARXIV_SOURCE_SETTING, DEEP_SCREENING_SETTING, DEFAULT_EFFORT_SETTING,
+                                   FULLTEXT_FETCH_SETTING, MODEL_CONCURRENCY_MAX, MODEL_CONCURRENCY_SETTING)
+from deixis.workflow.run import fast_path
 from deixis.runtime import update_check
 from deixis.documents import arxiv_source
 
@@ -33,6 +34,7 @@ class Preferences(BaseModel):
     default_effort: Literal["quick", "standard", "detailed"] | None = None
     fulltext_fetch: Literal["auto", "off"] | None = None
     arxiv_source: Literal["auto", "off"] | None = None
+    deep_screening: Literal["on", "off"] | None = None
     model_concurrency: int | None = Field(default=None, ge=1, le=MODEL_CONCURRENCY_MAX)
     language: Literal["en", "tr"] | None = None
     theme: Literal["system", "light", "dark"] | None = None
@@ -51,6 +53,9 @@ def register_preference_routes(app) -> None:
             "arxiv_source": settings.effective_arxiv_source(),
             # The arXiv route runs only on POSIX.
             "arxiv_route_possible": arxiv_source.posix_available(),
+            # D173: read when a discovery is queued; the windows are the policy's own constant, by depth.
+            "deep_screening": settings.effective_deep_screening(),
+            "deep_screening_windows": {effort: fast_path.screened_once(effort) for effort in fast_path.DEEP_SCREENING_EFFORTS},
             "model_concurrency": settings.effective_model_concurrency(),
             "model_concurrency_max": MODEL_CONCURRENCY_MAX,
             "language": language if (language := store.setting(UI_LANGUAGE_SETTING)) in LANGUAGES else None,
@@ -74,6 +79,7 @@ def register_preference_routes(app) -> None:
                 store.set_setting_if_unset({"language": UI_LANGUAGE_SETTING, "theme": UI_THEME_SETTING}[name], value)
             return view(request)
         keys = {"default_effort": DEFAULT_EFFORT_SETTING, "fulltext_fetch": FULLTEXT_FETCH_SETTING,
+                "deep_screening": DEEP_SCREENING_SETTING,
                 "arxiv_source": ARXIV_SOURCE_SETTING, "model_concurrency": MODEL_CONCURRENCY_SETTING,
                 "language": UI_LANGUAGE_SETTING, "theme": UI_THEME_SETTING, "update_check": update_check.SETTING}
         for name, value in changes.items():

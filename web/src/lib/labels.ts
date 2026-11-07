@@ -810,7 +810,7 @@ export const flowBucketLabels: Record<string, string> = {
   not_read_yet: 'Text in hand, not read yet', candidate_not_fetched: 'Passed the abstract stage, full text not tried',
   abstract_open: 'Abstract could not decide', abstract_not_read: 'Abstract not read',
   survey: 'Survey, kept for citation chaining', out_of_scope_model: 'Out of scope (model runs)',
-  out_of_scope_code: 'Out of scope (code rule)', not_screened: 'Not screened', other: 'Other',
+  out_of_scope_one_read: 'Out of scope (one model read)', out_of_scope_code: 'Out of scope (code rule)', not_screened: 'Not screened', other: 'Other',
 }
 // PRISMA 2020-style boxes (decision 2): counts only, never added up, all marked incomplete.
 export const flowBoxLabels: Record<string, string> = {
@@ -818,6 +818,7 @@ export const flowBoxLabels: Record<string, string> = {
   works_found_by_search: 'Works a search or citation request found', works: 'Works in this question revision',
   abstract_read_by_model: 'Works whose abstract the model read',
   out_of_scope_model: 'Out of scope at the abstract stage (model runs)',
+  out_of_scope_one_read: 'Out of scope at the abstract stage (one model read)',
   out_of_scope_code: 'Out of scope at the abstract stage (code rule)', fulltext_sought: 'Full text sought',
   fulltext_not_retrieved: 'Full text not retrieved',
   // Not the rail's "Full text read" (two stored passes): a current full-text decision, the reading's or the person's (S11 follow-up).

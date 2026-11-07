@@ -188,6 +188,13 @@ def classify(ctx: Any, probe: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return found
 
 
+def _decider(machine: dict[str, Any]) -> str:
+    """Who decided the machine view: one model read (D173's single-read codes, stored as `code`) is counted apart from
+    a code rule."""
+    from deixis.workflow.screen.abstract_stage import SINGLE_READ_CODES
+    return "single_read" if machine.get("reason_code") in SINGLE_READ_CODES else machine["decided_by"]
+
+
 def overrides_view(ctx: Any, probe: dict[str, Any], classified: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
     """The count the screen shows: of N decisions, M changed a machine decision (by code, by the model runs)."""
     classified = classify(ctx, probe) if classified is None else classified
@@ -195,9 +202,9 @@ def overrides_view(ctx: Any, probe: dict[str, Any], classified: dict[str, dict[s
     by_path = {path: {name: 0 for name in CLASSES} for path in PATHS}
     for entry in classified.values():
         by_path[entry["path"]][entry["class"]] += 1
-    rows = Counter((entry["path"], entry["machine"]["decided_by"], entry["machine"]["stage"], entry["direction"])
+    rows = Counter((entry["path"], _decider(entry["machine"]), entry["machine"]["stage"], entry["direction"])
                    for entry in classified.values() if entry["class"] == "overruled")
-    changed_by = Counter(entry["machine"]["decided_by"] for entry in classified.values() if entry["class"] == "overruled")
+    changed_by = Counter(_decider(entry["machine"]) for entry in classified.values() if entry["class"] == "overruled")
     # Counted apart, each work once: a person's decision gone stale is `look_again` (as the queue asks it again),
     # whatever it said; a fresh "not sure" or "wrong file" is its own count.
     apart: Counter[str] = Counter()
@@ -215,7 +222,8 @@ def overrides_view(ctx: Any, probe: dict[str, Any], classified: dict[str, dict[s
     return {
         "decisions": len(classified),
         "changed": classes.get("overruled", 0),
-        "changed_by": {"code": changed_by.get("code", 0), "model_agreement": changed_by.get("model_agreement", 0)},
+        "changed_by": {"code": changed_by.get("code", 0), "model_agreement": changed_by.get("model_agreement", 0),
+                       "single_read": changed_by.get("single_read", 0)},
         "classes": {name: classes.get(name, 0) for name in CLASSES},
         "by_path": by_path,
         "overruled": [{"path": path, "decided_by": by, "stage": stage, "direction": direction, "count": count}

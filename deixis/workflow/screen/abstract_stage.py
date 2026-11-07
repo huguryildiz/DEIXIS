@@ -32,10 +32,15 @@ LOOKUP_CODES = ("survey_title_word", "no_abstract", "abstract_not_found")
 # The codes this stage owns. A fresh decision carrying any other code is left alone, as slice 05 leaves this one's.
 OWNED_CODES = ("blocks_in_title", "both_blocks_missing", "notice_record", "artifact_of_paper", "abstract_not_read",
                "abstract_not_proposed", "runs_agree_candidate", "runs_agree_out_of_scope", "runs_agree_unresolved",
-               "runs_disagree_kept_as_candidate", "quote_not_found_kept_as_candidate")
+               "runs_disagree_kept_as_candidate", "quote_not_found_kept_as_candidate",
+               "single_read_candidate", "single_read_quote_not_found", "single_read_unresolved",
+               "single_read_out_of_scope")
+# The codes one model read writes (D173's deeper screening, `single_read`); counts and labels tell them from two reads.
+SINGLE_READ_CODES = ("single_read_candidate", "single_read_quote_not_found", "single_read_unresolved",
+                     "single_read_out_of_scope")
 # A work carrying one of these was read by the model under the current question, so it is not read a second time.
 MODEL_CODES = ("runs_agree_candidate", "runs_agree_out_of_scope", "runs_agree_unresolved",
-               "runs_disagree_kept_as_candidate", "quote_not_found_kept_as_candidate")
+               "runs_disagree_kept_as_candidate", "quote_not_found_kept_as_candidate") + SINGLE_READ_CODES
 # A work carrying one of these was not read yet, whatever else it says: the model is asked about it.
 UNREAD_CODES = ("abstract_not_proposed", "abstract_not_read")
 
@@ -197,6 +202,21 @@ def combine(first: dict[str, Any] | None, second: dict[str, Any] | None) -> str:
     if not (first["quote_verified"] and second["quote_verified"]):
         return "quote_not_found_kept_as_candidate"
     return "runs_agree_candidate" if labels[0] == "candidate" else "runs_agree_out_of_scope"
+
+
+def single_read(proposal: dict[str, Any] | None) -> str:
+    """One reason code from one run's proposal (D173's deeper screening, one read per batch).
+
+    The outcome is the one `combine(proposal, proposal)` gives, under a code that says one read stood behind it: a
+    label whose quote is not in the abstract is kept as a candidate, as two reads would keep it, and no proposal is
+    `abstract_not_proposed`."""
+    if proposal is None:
+        return "abstract_not_proposed"
+    if proposal["label"] == "unresolved":
+        return "single_read_unresolved"
+    if not proposal["quote_verified"]:
+        return "single_read_quote_not_found"
+    return "single_read_candidate" if proposal["label"] == "candidate" else "single_read_out_of_scope"
 
 
 def proposals_of(candidates: list[dict[str, Any]], records: list[dict[str, Any]],

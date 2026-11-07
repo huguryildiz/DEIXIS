@@ -8,6 +8,7 @@ import logging
 from datetime import timedelta
 from typing import Any
 
+from deixis.domain import canonical
 from deixis.domain.reason_codes import reason
 from deixis.storage.db import transaction
 from deixis.workflow.screen import abstract_stage
@@ -115,6 +116,64 @@ def screening_counts(works: list[dict[str, Any]], window: set[str]) -> dict[str,
     return counts
 
 
+def deep_plan(listing: dict[str, Any], deep: dict[str, Any], policy: dict[str, Any]) -> dict[str, Any]:
+    """D173: the frozen list's places `first`..`last`, the deeper screening's window, as one plan record."""
+    items = listing["items"][deep["first"] - 1:deep["last"]]
+    body = {"number": "deep", "rule": deep["rule"], "first": deep["first"], "last": deep["last"],
+            "manifest_hash": listing["manifest_hash"], "order_hash": listing["order_hash"], "items": items,
+            "work_ids": [item["work_id"] for item in items], "order": [item["head"] for item in items],
+            "policy_hash": policy["policy_hash"]}
+    return body | {"hash": canonical.sha256_hex(body)}
+
+
+def deep_closure(flow: Any, run: dict[str, Any], deep: dict[str, Any], state: dict[str, Any],
+                 closed: set[int]) -> dict[str, Any]:
+    """What the deeper screening (D173) did by the cutoff, for the closure's `deep` record and the snapshot.
+
+    Each work of the window's plan whose head `unchanged_heads` kept is exactly one of: decided by a person, settled by
+    the deep code stage (not in any of its batches), screened by a closed deep batch, or unscreened at the cutoff. A
+    head that changed since the list froze is listed in `dropped_heads` and is none of these. When the task stopped
+    before its code stage, every planned work a person did not decide is unscreened."""
+    from deixis.workflow.run.flow import budget_stops
+
+    store, rid, run_id = flow.store, run["research_id"], run["id"]
+    plan = state.get("plan")
+    if plan is None:
+        items: list[dict[str, Any]] = []
+    else:
+        items = plan["items"]
+    order = state.get("order")
+    kept = [item for item in items if order is None or item["head"] in order]
+    dropped = [item["head"] for item in items if order is not None and item["head"] not in order]
+    planned = [item["work_id"] for item in kept]
+    work_of_head = {item["head"]: item["work_id"] for item in kept}
+    heads = [item["head"] for item in kept]
+    person = {work_of_head[svid] for svid in flow._human_decided_records(rid, heads)}
+    abstract_plan = state.get("abstract_plan")
+    prefix = state["prefix"]
+    batches = abstract_plan["batches"] if abstract_plan is not None else []
+    work_of = {svid: wid for batch in batches for svid, wid in store.work_ids(batch).items()}
+    in_batch = set(work_of.values())
+    open_batches = [batch for n, batch in enumerate(batches) if n not in closed]
+    decided = flow._human_decided_records(rid, [svid for batch in open_batches for svid in batch])
+    if abstract_plan is None:
+        unread = set(planned) - person
+    else:
+        unread = {work_of[svid] for batch in open_batches for svid in batch if svid not in decided} - person
+    settled = set(planned) - in_batch - person - unread
+    screened = set(planned) - person - settled - unread
+    budget_cut = budget_skipped(batches, budget_stops(store, run_id, prefix), work_of, unread) if batches else set()
+    calls = store.conn.execute(
+        "SELECT COUNT(*) FROM run_steps WHERE run_id = ? AND kind = 'model:abstract_screening' AND operation_key LIKE ?"
+        " AND (status = 'succeeded' OR error_code = 'invalid_model_output')", (run_id, f"{prefix}:%")).fetchone()[0]
+    return {"rule": deep["rule"], "first": deep["first"], "last": deep["last"], "planned": len(planned),
+            "dropped_heads": dropped, "screened_count": len(planned) - len(unread),
+            "screened_by_model_count": len(screened), "code_settled_count": len(settled),
+            "person_decided_count": len(person & set(planned)),
+            "not_screened_at_cutoff": sorted(unread), "not_screened_model_budget": sorted(budget_cut),
+            "model_calls": calls}
+
+
 def _stop_asked(store: Any, run: dict[str, Any]) -> bool:
     """Whether a stop was asked of the run itself (a pause, a cancel, a newer question revision), not just the halt
     one arm's error puts on the others."""
@@ -183,7 +242,13 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
     fetches: dict[str, asyncio.Task] = {}
     reads: dict[str, asyncio.Task] = {}
     model: asyncio.Task | None = None
+    deeper_task: asyncio.Task | None = None
     timer: asyncio.Task | None = None
+    # D173: the deeper screening's window, frozen in the policy; None for every run queued without it.
+    deep = fast_path.deep_window(policy)
+    deep_key = f"{key}:deep"
+    deep_state: dict[str, Any] = {"prefix": f"{deep_key}:abstract_screening"}
+    screened = asyncio.Event()  # the top-N screening ended, however: the deep calls go out only after it
     handed_off: set[str] = set()
     cutoff = lambda: fast_path.past_deadline(store, run, "read")
 
@@ -204,10 +269,59 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
         held.wake.set()
 
     async def abstracts() -> None:
-        await flow._abstract_stage(run, scope, vocabulary, order=order, batch_key=key,
-                                   read_limit=policy["N"], cutoff=cutoff)
-        held.model_done = True
-        held.wake.set()
+        try:
+            await flow._abstract_stage(run, scope, vocabulary, order=order, batch_key=key,
+                                       read_limit=policy["N"], cutoff=cutoff)
+            held.model_done = True
+            held.wake.set()
+        finally:
+            screened.set()
+
+    def may_start(step_key: str) -> bool:
+        """No code step starts after the cutoff; one already stored is read back (a resumed run reads its plan)."""
+        if not cutoff():
+            return True
+        step = store.existing_step(run_id, step_key)
+        return step is not None and step["status"] == "succeeded"
+
+    async def deeper() -> None:
+        """D173: screen the window's works once each, beside the top N and after their screening. K, its order and
+        the fetch queue never see these works; only the answer's window reaches them."""
+        from deixis.workflow.search.fast_chain import read_versions as freeze_versions
+        try:
+            if not may_start(f"{deep_key}:plan"):
+                return
+            dplan = deep_state["plan"] = small_batch.save_code(flow, run, f"{deep_key}:plan", "code:small_batch_plan",
+                                                               lambda: deep_plan(listing, deep, policy))
+            versions_key = f"{deep_key}:read_versions"
+            if not cutoff() and store.existing_step(run_id, versions_key) is None:
+                # The window's records without an abstract are looked up as the top N's were before the read.
+                await flow._second_sources(run, scope, vocabulary,
+                                           only={svid for item in dplan["items"] for svid in item["versions"]},
+                                           prefix=f"{deep_key}:", flags_key=f"{deep_key}:record_flags",
+                                           works=set(dplan["work_ids"]), stop=cutoff)
+            if not may_start(versions_key):
+                return
+            snapshot = freeze_versions(flow, run, listing, dplan["items"], versions_key)
+            dorder = deep_state["order"] = small_batch.unchanged_heads(store, rid, listing, dplan["items"],
+                                                                       versions=snapshot["versions"])
+            # A deep record that changes from here on stops the run as a top-N one does.
+            flow._small_batch_guard["versions"].update({svid: snapshot["versions"][svid] for item in dplan["items"]
+                                                        if item["head"] in dorder for svid in item["versions"]})
+            stage_key = f"{deep_key}:abstract_stage"
+            if not may_start(stage_key):
+                return
+            deep_state["abstract_plan"] = flow._abstract_code_stage(
+                run, scope, vocabulary, dorder, batch_key=deep_key, read_limit=deep["last"] - deep["first"] + 1,
+                runs=deep["runs"])
+            flow._wake_fetch(run_id)
+            await screened.wait()
+            flow._checkpoint(run_id, run["scope_revision"])
+            # The plan is the stored one (`_abstract_code_stage` reads it back), with its one run per batch.
+            await flow._abstract_stage(run, scope, vocabulary, order=dorder, batch_key=deep_key,
+                                       read_limit=deep["last"] - deep["first"] + 1, cutoff=cutoff)
+        finally:
+            held.wake.set()
 
     async def alarm() -> None:
         deadline = fast_path.stage_deadline(store, run, "read")
@@ -249,11 +363,15 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
         if policy.get("read_drain_ms") is not None:
             flow._send_by[run_id] = send_by
         model = asyncio.create_task(abstracts())
+        if deep is not None:
+            deeper_task = asyncio.create_task(deeper())
         timer = asyncio.create_task(alarm())
         while True:
             flow._checkpoint(run_id, run["scope_revision"])
             if model.done():
                 model.result()
+            if deeper_task is not None and deeper_task.done():
+                deeper_task.result()
             for task in list(fetches.values()) + list(reads.values()):
                 if task.done():
                     task.result()
@@ -289,7 +407,8 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                 if read_allowed and has_text and wid not in reads and not cutoff():
                     reads[wid] = asyncio.create_task(flow._fulltext_adjudication(
                         run, scope, batch_key=f"{key}:read:{wid}", order=[work["head"]], read_limit=1, cutoff=cutoff))
-            active = {task for task in [model, *fetches.values(), *reads.values()] if not task.done()}
+            active = {task for task in [model, deeper_task, *fetches.values(), *reads.values()]
+                      if task is not None and not task.done()}
             if not active:
                 break
             waiter = asyncio.create_task(held.wake.wait())
@@ -301,7 +420,8 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                 held.wake.clear()
 
         # Only model calls drain here. Fetch tasks stay owned until closure and queue publish atomically.
-        await asyncio.gather(model, *reads.values())
+        # The deep task drains here too: the snapshot and the closure are built only once it finished or stopped.
+        await asyncio.gather(model, *([deeper_task] if deeper_task is not None else []), *reads.values())
         flow._checkpoint(run_id, run["scope_revision"])
         works = corpus()
         # A record a person decided is not sent to the model (`_abstract_stage`), so it is not counted unscreened (D60).
@@ -330,6 +450,8 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
         # A task in extraction may have published text but not settled its claim yet.
         late.update({wid: "in_flight" for wid, task in fetches.items() if not task.done()})
         deadline = fast_path.stage_deadline(store, run, "read")
+        deep_record = (deep_closure(flow, run, deep, deep_state, held.closed.get(deep_state["prefix"], set()))
+                       if deep is not None else None)
         cutoff_snapshot = None
         cutoff_at = None
         if fast_path.enforces(run["budget"], "answer"):
@@ -337,7 +459,8 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
             cutoff_at = fast_path.timestamp(store.clock)
             # Synchronous preparation cannot interleave with model/fetch/API writes. Only publication holds a transaction.
             cutoff_snapshot = fast_answer.cutoff_snapshot(flow, run, listing, {
-                "read_cutoff_at": cutoff_at, "not_screened_at_cutoff": sorted(unread)})
+                "read_cutoff_at": cutoff_at, "not_screened_at_cutoff": sorted(unread),
+                **({"deep": deep_record} if deep_record is not None else {})})
 
         def close() -> dict[str, Any]:
             states = small_batch.progress_view(listing, small_batch.steps(store, run_id), works)["items"]
@@ -374,7 +497,9 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                                    "fulltext_unavailable" if short_of_text else "screened_out")
                     if len(final) < policy["K"] else None,
                 # Works already claimed keep their slot when a later decision admits another work ahead of them.
-                "k_over_reason": "claimed_works_kept" if len(final) > policy["K"] else None}
+                "k_over_reason": "claimed_works_kept" if len(final) > policy["K"] else None,
+                # D173: the deeper window's own record; the fields above keep meaning places 1..N.
+                **({"deep": deep_record} if deep_record is not None else {})}
             store._event(rid, "read_cutoff", output, run_id)
             if fast_path.enforces(run["budget"], "answer"):
                 from deixis.workflow.answer import answer as fast_answer
@@ -391,8 +516,8 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                 handed_off.add(wid)
         flow.background_fetch.wake()
     except BaseException as error:
-        await _unwind(flow, run, held, error, [task for task in [model, *reads.values(), *fetches.values()]
-                                                if task is not None])
+        await _unwind(flow, run, held, error, [task for task in [model, deeper_task, *reads.values(),
+                                                                 *fetches.values()] if task is not None])
     finally:
         if timer is not None:
             timer.cancel()

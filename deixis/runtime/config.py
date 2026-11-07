@@ -37,6 +37,9 @@ CONTACT_EMAIL_SETTING = "contact_email"
 DEFAULT_EFFORT_SETTING = "default_effort"
 FULLTEXT_FETCH_SETTING = "fulltext_fetch"
 ARXIV_SOURCE_SETTING = "arxiv_source"
+# D173: whether a Standard or Detailed discovery also screens list places N+1..N+100 once. Unset is `off`; read when a
+# discovery run is queued and frozen in its policy, so a later change leaves queued and paused runs as they were.
+DEEP_SCREENING_SETTING = "deep_screening"
 MODEL_CONCURRENCY_SETTING = "model_concurrency"
 MODEL_CONCURRENCY_MAX = 16
 
@@ -70,6 +73,10 @@ class Settings:
     # the route on (POSIX only); this dataclass stays `off` so tests that build Settings by hand request no source. With
     # `off` no source is requested and no PDF extraction changes; readings already stored stay.
     arxiv_source: str = "off"
+    # A benchmark-only list barrier (M3's validation gate, D173): a discovery queued while it is on pauses once, right
+    # after its list is frozen and before any read work, so a runner can copy the library at that point. Off in the
+    # product; outside the fast-path policy, so it moves no policy hash. Read from DEIXIS_BENCHMARK_LIST_BARRIER.
+    benchmark_list_barrier: bool = False
     # Reads one `app_settings` value by key; `create_app` binds it to the store so the contact email the person set
     # in Settings is found before the environment variable. Unset (tests that build Settings by hand): env only.
     setting_reader: Callable[[str], Any] | None = field(default=None, compare=False, repr=False)
@@ -86,6 +93,9 @@ class Settings:
 
     def effective_arxiv_source(self) -> str:
         return self._stored(ARXIV_SOURCE_SETTING, ("auto", "off")) or self.arxiv_source
+
+    def effective_deep_screening(self) -> str:
+        return self._stored(DEEP_SCREENING_SETTING, ("on", "off")) or "off"
 
     def effective_model_concurrency(self) -> int:
         value = self.setting_reader(MODEL_CONCURRENCY_SETTING) if self.setting_reader else None
@@ -171,6 +181,9 @@ def load_settings() -> Settings:
     search_method = os.environ.get("DEIXIS_SEARCH_METHOD", "legacy")
     if search_method not in ("legacy", "m1"):
         raise ValueError("DEIXIS_SEARCH_METHOD must be legacy or m1")
+    benchmark_list_barrier = os.environ.get("DEIXIS_BENCHMARK_LIST_BARRIER", "off")
+    if benchmark_list_barrier not in ("on", "off"):
+        raise ValueError("DEIXIS_BENCHMARK_LIST_BARRIER must be on or off")
     arxiv_source = os.environ.get("DEIXIS_ARXIV_SOURCE", "auto")
     if arxiv_source not in ("auto", "off"):
         raise ValueError("DEIXIS_ARXIV_SOURCE must be auto or off")
@@ -185,4 +198,5 @@ def load_settings() -> Settings:
         search_query=search_query,
         search_method=search_method,
         arxiv_source=arxiv_source,
+        benchmark_list_barrier=benchmark_list_barrier == "on",
     )

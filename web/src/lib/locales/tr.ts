@@ -6007,4 +6007,16 @@ export const tr: Record<string, string> = {
   'The version check is off. Nothing is sent.': 'Sürüm denetimi kapalı. Hiçbir şey gönderilmez.',
   'Built into PyMuPDF {version}': 'PyMuPDF {version} içinde',
   'Language data': 'Dil verisi',
+  // D173: the deeper screening (one model read of list places past N).
+  'out of scope by one model read': 'tek model okumasıyla kapsam dışı',
+  '{n} of them read once, at list places {first}–{last}': '{n} tanesi bir kez okundu, liste sırası {first}–{last}',
+  'Of these, {n} changed a single model read.': 'Bunların {n} tanesinde tek bir model okumasını değiştirdiniz.',
+  'Out of scope (one model read)': 'Kapsam dışı (tek model okuması)',
+  'Out of scope at the abstract stage (one model read)': 'Özet aşamasında kapsam dışı (tek model okuması)',
+  'One read found that the abstract may meet the criterion.': 'Tek okuma özetin ölçütü karşılayabileceğini buldu.',
+  'One read found the abstract outside the criterion.': 'Tek okuma özeti ölçütün dışında buldu.',
+  'One read could not tell from the abstract.': 'Tek okuma özetten karar veremedi.',
+  'basis: title and abstract · one read': 'dayanak: başlık ve özet · tek okuma',
+  '· {first}–{last} screened once': '· {first}–{last} arası bir kez taranır',
+  '· {first}–{last} screened once, which takes longer': '· {first}–{last} arası bir kez taranır, bu da süreyi uzatır',
 }

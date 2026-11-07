@@ -2123,11 +2123,21 @@ def create_app(
                 # The full text is fetched inside this run, beside its screening, with the room a retrieval run
                 # would have had (slice 17a); the mode is frozen here, so a run keeps the path it was queued with.
                 budget["fulltext_fetch"] = fulltext.overlap_budget(scope["effort"])
+            # D173: the deeper screening is read from the setting here and frozen in the policy; readers read the
+            # policy, never the setting. Its one read per batch of the extra window is given on top, as above; a
+            # local-model run gets the same frozen room.
+            deep = (settings.effective_deep_screening() == "on"
+                    and scope["effort"] in fast_path.DEEP_SCREENING_EFFORTS)
+            if deep:
+                budget["max_model_calls"] += abstract_stage.model_calls(fast_path.DEEP_SCREENING_WORKS, ABSTRACT_BATCH, 1)
             budget = small_batch.freeze_budget(budget, scope["effort"], settings.fulltext_adjudication)
             budget["fast_path"] = fast_path.with_intent(fast_path.freeze_budget(
                 budget, scope["effort"], local_model=scope["model_connection"] in LOCAL_CONNECTIONS,
-                method=settings.search_method),
+                method=settings.search_method, deep_screening=deep),
                                                         store.research(research_id)["intent"])
+            if settings.benchmark_list_barrier:
+                # Benchmark only (M3's gate): outside the fast-path policy, so its hash and ledger do not move.
+                budget["benchmark_list_barrier"] = True
         if body.kind == "research_title":
             # One title call and its single schema repair; nothing is searched.
             budget = {"max_model_calls": 2, "max_provider_requests": 0}
@@ -2334,8 +2344,8 @@ def create_app(
             raise HTTPException(404, "Answer not found") from None
 
     @app.get("/api/effort-limits")
-    async def effort_limits_view() -> dict[str, Any]:
-        return fast_path.effort_limits()
+    async def effort_limits_view(request: Request) -> dict[str, Any]:
+        return fast_path.effort_limits(request.app.state.settings.effective_deep_screening() == "on")
 
     @app.delete("/api/researches/{research_id}/sources")
     async def remove_sources(research_id: str, body: SourceRemoval, request: Request) -> dict[str, Any]:

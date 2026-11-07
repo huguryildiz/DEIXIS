@@ -246,9 +246,11 @@ def cutoff_snapshot(flow: Any, run: dict[str, Any], listing: dict[str, Any], clo
     selections, humans = user_choices(store, rid)
     pools = current_pools(store, rid)
     readings = reading_records(store, rid)
-    unread = set(closure["not_screened_at_cutoff"])
+    # D173: a run frozen with the deeper screening reads up to its window's last place, and a window work the deep
+    # task left unscreened is as unread as a top-N one, whatever older decision it holds.
+    unread = set(closure["not_screened_at_cutoff"]) | set((closure.get("deep") or {}).get("not_screened_at_cutoff", ()))
     items = list(listing["items"])
-    present = {item["work_id"] for item in items[:run["budget"]["fast_path"]["N"]]}
+    present = {item["work_id"] for item in items[:fast_path.read_window(run["budget"]["fast_path"])]}
     listed = {item["work_id"] for item in items}
     items += [{"work_id": wid, "head": head, "position": None, "user_priority": False}
               for wid, head in facts["heads"].items() if wid not in listed]

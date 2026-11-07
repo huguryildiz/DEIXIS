@@ -17,6 +17,12 @@ STAGES = ("plan", "search", "ranking", "read", "answer")
 # `fast_chain_v2` and the code-query width limit together; it is for the M1 measurement until all its gates pass.
 SEARCH_METHODS = ("legacy", "m1")
 CHAIN_RULES = ("fast_chain_v1", "fast_chain_v2")
+# D173's deeper screening: a Standard or Detailed discovery queued with the option on also screens the next
+# `DEEP_SCREENING_WORKS` works of the frozen list, places N+1..N+100, one model read per batch. Frozen in the policy under
+# its rule's name; a policy without the key screens 1..N only, as before.
+DEEP_SCREENING_RULE = "m3_v1"
+DEEP_SCREENING_WORKS = 100
+DEEP_SCREENING_EFFORTS = ("standard", "detailed")
 
 
 class Mode(NamedTuple):
@@ -68,14 +74,17 @@ def elapsed(start: str, end: str) -> int:
 
 
 def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False,
-                  method: str = "legacy") -> dict[str, Any]:
+                  method: str = "legacy", deep_screening: bool = False) -> dict[str, Any]:
     """A run on a model this computer runs (`local_model`) keeps no deadline on the stages where the model works,
     read and answer: a local model screens and answers far slower than the stage bases assume, and a cut read
     leaves the answer unscreened evidence. Search and ranking do not wait on the model and keep theirs; each model
     call still has its own limit (openai_compat.LOCAL_TURN_TIMEOUT).
 
     `method` is the search method (`SEARCH_METHODS`). A `legacy` policy is exactly the one frozen before D163's M1, so
-    its hash does not move; `m1` names itself and its two rules."""
+    its hash does not move; `m1` names itself and its two rules.
+
+    `deep_screening` (D173) adds the deeper screening's window under `deep_screening`; off adds nothing, so a policy
+    frozen without it is byte for byte the one frozen before, hash included. Quick takes no window."""
     if method not in SEARCH_METHODS:
         raise ValueError(f"unknown search method {method!r}")
     mode = MODES[effort]
@@ -102,6 +111,12 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         from deixis.workflow.search.vocabulary import CODE_QUERY_MAX_TOTAL
 
         policy |= {"search_method": "m1", "chain_rule": "fast_chain_v2", "code_query_max_total": CODE_QUERY_MAX_TOTAL}
+    if deep_screening:
+        if effort not in DEEP_SCREENING_EFFORTS:
+            raise ValueError(f"deeper screening is not offered at {effort!r}")
+        from deixis.domain.rules import ABSTRACT_BATCH
+        policy["deep_screening"] = {"rule": DEEP_SCREENING_RULE, "first": mode.read_top + 1,
+                                    "last": mode.read_top + DEEP_SCREENING_WORKS, "runs": 1, "batch": ABSTRACT_BATCH}
     if local_model:
         # Still fast-path stages (`enforces` routes on them); only their deadline is gone.
         policy["no_deadline_stages"] = ["read", "answer"]
@@ -124,14 +139,35 @@ def with_intent(policy: dict[str, Any], intent: str) -> dict[str, Any]:
     return routed | {"policy_hash": canonical.sha256_hex(routed)}
 
 
-def effort_limits() -> dict[str, Any]:
+def deep_window(policy: dict[str, Any]) -> dict[str, Any] | None:
+    """The frozen deeper-screening window of a run's policy (D173), or None when the run was queued without it."""
+    deep = policy.get("deep_screening")
+    return deep if isinstance(deep, dict) and deep.get("rule") == DEEP_SCREENING_RULE else None
+
+
+def read_window(policy: dict[str, Any]) -> int:
+    """The last list place the run screens: the deeper window's last place when it has one, else N."""
+    deep = deep_window(policy)
+    return deep["last"] if deep else policy["N"]
+
+
+def screened_once(effort: str) -> dict[str, int] | None:
+    """The list places the deeper screening reads once at this depth, or None where it is not offered."""
+    if effort not in DEEP_SCREENING_EFFORTS:
+        return None
+    n = MODES[effort].read_top
+    return {"first": n + 1, "last": n + DEEP_SCREENING_WORKS}
+
+
+def effort_limits(deep_screening: bool = False) -> dict[str, Any]:
     """What each research depth gives a run, read from MODES at the moment of asking: Home's depth text says these
     numbers, so a changed mode cannot leave the text behind. `minutes` is the stage bases summed and rounded, the
     stages' soft deadlines rather than a promise of how long a run takes; `papers` is N, the top of the ranking a run
     reads; `fulltext` is K, the most works a run reads in their full text (selected pages, UI parity S14's funnel).
-    """
+    With `deep_screening` on (D173), Standard and Detailed add `screened_once`, the list places read once."""
     return {"efforts": {effort: {"minutes": round(sum(mode.stage_seconds) / 60), "papers": mode.read_top,
-                                 "fulltext": mode.fulltext_works}
+                                 "fulltext": mode.fulltext_works,
+                                 **({"screened_once": once} if deep_screening and (once := screened_once(effort)) else {})}
                         for effort, mode in MODES.items()}}
 
 

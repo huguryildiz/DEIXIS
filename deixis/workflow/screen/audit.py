@@ -22,6 +22,7 @@ import hashlib
 from typing import Any
 
 from deixis.workflow.screen import overrides as override_rules
+from deixis.workflow.screen.abstract_stage import SINGLE_READ_CODES
 from deixis.workflow.search import probes as probe_rules
 from deixis.workflow.screen import queue
 from deixis.workflow.run.store import Store
@@ -77,6 +78,9 @@ class AuditState:
             if outcome["stage"] == "fulltext" and outcome["decided_by"] == "model_agreement":
                 stratum = {"include": "F1", "criterion_not_met": "F2"}.get(outcome["outcome"])
             elif outcome["stage"] == "abstract" and outcome["outcome"] == "out_of_scope":
+                # One model read's verdict (D173) is neither two agreeing runs nor a code rule: it is in no stratum.
+                if outcome["reason_code"] in SINGLE_READ_CODES:
+                    continue
                 stratum = "A1" if outcome["decided_by"] == "model_agreement" else "A2"
             if stratum is None:
                 continue

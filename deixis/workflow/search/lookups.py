@@ -291,7 +291,7 @@ async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Se
                              checkpoint: Callable[[], None], limit: int = MAX_LOOKUP_REQUESTS, *, only: set[str] | None = None,
                              prefix: str = "", crossref_in_flight: int = 1, s2_waits: int | None = None,
                              s2_batch: int = lookup.S2_LOOKUP_BATCH, s2_cooldown_skip: bool = False,
-                             record_sent: bool = False) -> None:
+                             record_sent: bool = False, stop: Callable[[], bool] | None = None) -> None:
     """Plan and send this run's DOI lookups. A failed request is recorded and the run goes on (D18).
 
     No request is sent twice: a step that already succeeded is skipped whole, and inside a chunk a record the
@@ -307,6 +307,8 @@ async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Se
     D156: with `record_sent`, each request stores on its step, as `sent` and `out`, the records it is about once its own
     headers are written to an open connection, and takes them off `out` when its response headers or its stored answer
     come back, so a round cut short can tell a request still out from one never sent or already answered.
+    `stop` (D173's deeper screening: the read cutoff) is asked at each checkpoint; once it holds, no further request is
+    sent and the round returns.
     """
     run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
     # How many 429s one batch waits out is this research's effort (D88). `quick` waits for none: the refused batch
@@ -314,20 +316,29 @@ async def ask_second_sources(store: Store, http: httpx.AsyncClient, settings: Se
     waits = PROVIDER_WAIT[scope["effort"]]
     plan = _code_step(store, run_id, f"{prefix}lookup_plan:semantic_scholar", "code:lookup_plan",
                       lambda: plan_semantic_scholar(store, rid, revision, scope, words, limit, only=only, size=s2_batch))
-    for number, batch in enumerate(plan["batches"]):
+
+    def halted() -> bool:
         checkpoint()
+        return stop is not None and stop()
+
+    for number, batch in enumerate(plan["batches"]):
+        if halted():
+            return
         await _semantic_scholar_step(store, http, settings, run, number, batch,
                                      waits if s2_waits is None else s2_waits, prefix, s2_cooldown_skip, record_sent)
     plan_cr = _code_step(store, run_id, f"{prefix}lookup_plan:crossref", "code:lookup_plan",
                          lambda: plan_crossref(store, rid, revision, scope, words, len(plan["batches"]), limit, only=only))
     for number, chunk in enumerate(plan_cr["chunks"]):
-        checkpoint()
+        if halted():
+            return
         await _crossref_step(store, http, settings, run, number, chunk, prefix, crossref_in_flight, record_sent)
-    checkpoint()
+    if halted():
+        return
     spent = len(plan["batches"]) + sum(len(chunk) for chunk in plan_cr["chunks"])
     plan_sc = await _scopus_plan(store, http, run, scope, words, spent, limit, only=only, prefix=prefix)
     for number, chunk in enumerate(plan_sc["chunks"]):
-        checkpoint()
+        if halted():
+            return
         await _scopus_step(store, http, settings, run, number, chunk, waits, prefix, record_sent)
     checkpoint()
 

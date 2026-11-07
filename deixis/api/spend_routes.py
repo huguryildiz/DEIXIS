@@ -59,4 +59,5 @@ def register_spend_routes(app) -> None:
         roles = {role: (getattr(body, role).model_dump() if getattr(body, role) else None) for role in spend_estimate.ROLES}
         rerank = rerankers.chosen(state.store.setting(rerankers.SETTING))
         return spend_estimate.estimate(state.package, body.effort, roles, reading_on=state.settings.fulltext_adjudication == "auto",
-                                       embedding_provider=provider, rerank_provider=rerank.provider if rerank else None)
+                                       embedding_provider=provider, rerank_provider=rerank.provider if rerank else None,
+                                       deep_screening=state.settings.effective_deep_screening() == "on")

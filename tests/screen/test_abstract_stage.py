@@ -142,6 +142,17 @@ def test_every_row_of_the_combination_table(first, second, code):
     assert reason(code).stage == "abstract"
 
 
+def test_one_read_gives_the_outcome_two_agreeing_reads_give_under_its_own_code():
+    """D173: `single_read(p)` has `combine(p, p)`'s outcome and next step for every proposal, under a one-read code."""
+    cases = [None] + [proposal(label, verified) for label in ("candidate", "out_of_scope", "unresolved")
+                      for verified in (True, False)]
+    for p in cases:
+        one, two = abstract_stage.single_read(p), abstract_stage.combine(p, p)
+        assert (reason(one).outcome, reason(one).next_step) == (reason(two).outcome, reason(two).next_step)
+        assert one == "abstract_not_proposed" if p is None else one in abstract_stage.SINGLE_READ_CODES
+        assert reason(one).decided_by == "code"
+
+
 # ---- Task 2 and 3: one run's usable proposals -------------------------------------------------
 
 def candidates(*ids):

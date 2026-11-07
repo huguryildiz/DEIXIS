@@ -25,8 +25,11 @@ from deixis.workflow.search.probes import NOT_A_READING
 # In the order the flow block lists them: the person's decisions, then the machine's, then what is still open.
 BUCKETS = ("confirmed", "person_not_met", "person_excluded", "look_again", "included", "not_met", "queued",
            "person_unsure", "waiting_for_pdf", "abstract_by_choice", "not_read_yet", "candidate_not_fetched", "abstract_open",
-           "abstract_not_read", "survey", "out_of_scope_model", "out_of_scope_code", "not_screened", "other")
-ABSTRACT_OPEN = ("no_abstract", "abstract_not_found", "runs_agree_unresolved")
+           "abstract_not_read", "survey", "out_of_scope_model", "out_of_scope_one_read", "out_of_scope_code", "not_screened",
+           "other")
+ABSTRACT_OPEN = ("no_abstract", "abstract_not_found", "runs_agree_unresolved", "single_read_unresolved")
+# One model read's out-of-scope verdict (D173): counted apart from two reads and from a code rule.
+ONE_READ_OUT_OF_SCOPE = "single_read_out_of_scope"
 ABSTRACT_NOT_READ = ("abstract_not_read", "abstract_not_proposed")
 FLOW_STATUS = "incomplete_no_human_screening"
 
@@ -79,6 +82,8 @@ def _bucket(ctx: Any, probe: dict[str, Any], work_id: str) -> tuple[str, str | N
     if outcome["outcome"] == "candidate":
         return "candidate_not_fetched", code
     if outcome["outcome"] == "out_of_scope":
+        if code == ONE_READ_OUT_OF_SCOPE:
+            return "out_of_scope_one_read", code
         return ("out_of_scope_model" if by == "model_agreement" else "out_of_scope_code"), code
     if code in ABSTRACT_NOT_READ:
         return "abstract_not_read", code
@@ -243,14 +248,20 @@ def funnel(ctx: Any, flow: dict[str, Any], boxes: dict[str, Any]) -> dict[str, A
     followup_only = set(boxes.get("followup_only_works") or ())
     pool = [work_id for work_id in heads if work_id not in followup_only]
     candidates = sum(1 for work_id in pool if passed_abstract(ctx, work_id))
-    from deixis.workflow.screen.abstract_stage import MODEL_CODES
+    from deixis.workflow.screen.abstract_stage import MODEL_CODES, SINGLE_READ_CODES
     by_title = sum(1 for work_id in pool if passed_abstract(ctx, work_id, reason="blocks_in_title")
                    and not any(passed_abstract(ctx, work_id, reason=code) for code in MODEL_CODES))
+    # D173: the works whose current abstract decision rests on one model read, and those of them it kept a candidate.
+    read_once = [work_id for work_id in pool if any(
+        d["stage"] == "abstract" and d["reason_code"] in SINGLE_READ_CODES
+        and not ctx.decisions.is_stale(d, ctx.facts["stale_key"]) for d in ctx.facts["decisions"].get(work_id, []))]
+    candidates_once = sum(1 for work_id in read_once if any(
+        passed_abstract(ctx, work_id, reason=code) for code in SINGLE_READ_CODES))
     included = sum(1 for work_id, head in heads.items() if (ctx.selections.get(head) or {}).get("state") == "included")
     return {"retrieved": box["rows_returned"], "chained": len(ctx.chained & set(heads)),
             "unique": box["works"] - len(followup_only & set(heads)),
             "abstracts_read": box["abstract_read_by_model"], "candidates": candidates, "candidates_by_title": by_title,
-            "included": included,
+            "included": included, "abstracts_read_once": len(read_once), "candidates_read_once": candidates_once,
             "unique_in_research": box["works"]}
 
 
@@ -347,6 +358,7 @@ def flow_boxes(ctx: Any, flow: dict[str, Any]) -> dict[str, Any]:
         ("works", flow["works"]),
         ("abstract_read_by_model", len(abstract_read)),
         ("out_of_scope_model", buckets["out_of_scope_model"]),
+        ("out_of_scope_one_read", buckets["out_of_scope_one_read"]),
         ("out_of_scope_code", buckets["out_of_scope_code"]),
         ("fulltext_sought", len(sought)),
         # A work the person went on without (D46) is still one whose full text was not retrieved.

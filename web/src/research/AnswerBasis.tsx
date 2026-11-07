@@ -16,7 +16,7 @@ export function AnswerBasis({ view, answer, onSources, onAnswer }: {
   const num = (n: number) => n.toLocaleString(uiLocale())
 
   const notScreened = b.not_screened + b.abstract_not_read
-  const outOfScope = b.out_of_scope_model + b.out_of_scope_code
+  const outOfScope = b.out_of_scope_model + (b.out_of_scope_one_read ?? 0) + b.out_of_scope_code
   const byTitle = funnel.candidates_by_title ?? 0
   const readFull = view.counts.fulltext_read_works ?? 0
   const met = b.confirmed + b.included

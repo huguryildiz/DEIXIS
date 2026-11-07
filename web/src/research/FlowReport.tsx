@@ -115,6 +115,7 @@ export function OverridesLine({ overrides }: { overrides: Overrides | null | und
       ? t('You have not decided yet; this line says nothing about how right code or the model is.')
       : t(overrides.decisions === 1 ? 'Of your {n} decision, you changed a decision of code or the model runs in {m} (code {code}, model runs {model}).' : 'Of your {n} decisions, you changed a decision of code or the model runs in {m} (code {code}, model runs {model}).', {
         n: count(overrides.decisions), m: count(overrides.changed), code: count(overrides.changed_by.code), model: count(overrides.changed_by.model_agreement) })}
+    {(overrides.changed_by.single_read ?? 0) > 0 && ` ${t('Of these, {n} changed a single model read.', { n: count(overrides.changed_by.single_read ?? 0) })}`}
     {apart.length > 0 && ` ${t('Counted apart: {list}.', { list: apart.join(' · ') })}`}
   </p>
 }
@@ -159,10 +160,15 @@ export function FunnelPanel({ researchId, view, answer, cited, queueCount, busy,
   const screenable = page?.screenable ?? 0
   const nextBatch = Math.min(SCREEN_MORE_SIZE, screenable)
   const waiting = counts.waiting_for_pdf ?? 0
+  // D173: the list places the latest discovery of this revision froze for its deeper screening, from its stored budget.
+  const deepWindow = view.runs.filter(r => r.kind === 'discovery' && r.scope_revision === view.research.current_scope_revision)
+    .map(r => (r.budget as unknown as { fast_path?: { deep_screening?: { first: number; last: number } } }).fast_path?.deep_screening)
+    .filter(Boolean).at(-1)
+  const readOnce = funnel?.abstracts_read_once ?? 0
 
   const lostItem = (n: number, text: string) => n > 0 ? <span key={text}><b className="tnum">{number(n)}</b> {t(text)}</span> : null
   const link = (label: string, onClick: (opener: HTMLElement) => void) => <button type="button" className="link" onClick={e => onClick(e.currentTarget)}>{t(label)}</button>
-  const outOfScope = flow ? [lostItem(flow.buckets.out_of_scope_model, 'out of scope by two model reads'), lostItem(flow.buckets.out_of_scope_code, 'out of scope by a code rule'),
+  const outOfScope = flow ? [lostItem(flow.buckets.out_of_scope_model, 'out of scope by two model reads'), lostItem(flow.buckets.out_of_scope_one_read ?? 0, 'out of scope by one model read'), lostItem(flow.buckets.out_of_scope_code, 'out of scope by a code rule'),
     lostItem(flow.buckets.survey, 'surveys by their title'), lostItem(flow.buckets.abstract_open, 'left open at the abstract stage')].filter(Boolean) : []
   const fulltextLost = [lostItem(waiting, 'waiting for a PDF'), flow ? lostItem(flow.five.not_read_in_reading, 'with text in hand, not read yet') : null,
     flow ? lostItem(flow.five.not_read_not_tried, 'passed the abstract stage, full text not tried') : null, lostItem(queueCount, 'waiting for your decision')].filter(Boolean)
@@ -174,6 +180,7 @@ export function FunnelPanel({ researchId, view, answer, cited, queueCount, busy,
         : t('{rows} records returned by the searches, merged by DOI into these works.', { rows: number(funnel.retrieved) }) },
     { label: 'Abstract read', n: funnel.abstracts_read,
       about: mode ? t('Works a model read at the abstract stage. {depth} depth reads the top {n} of the ranked list.', { depth: t(effortLabels[effort]), n: number(mode.papers) }) : t('Works a model read at the abstract stage.'),
+      extra: readOnce > 0 && deepWindow ? <p>{t('{n} of them read once, at list places {first}–{last}', { n: number(readOnce), first: number(deepWindow.first), last: number(deepWindow.last) })}</p> : undefined,
       lost: notScreened !== null && notScreened > 0 ? <>
         <span><b className="tnum">{number(notScreened)}</b> {t('never screened')}</span>
         {page && page.total > 0 && link('Show them', opener => onShowSources('notread', opener))}

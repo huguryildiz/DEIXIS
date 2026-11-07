@@ -380,15 +380,20 @@ def manifest(store, run):
                 " WHERE run_id = ? AND status = 'unembedded_at_cutoff' ORDER BY class, request_index, position", (run["id"],))]}
 
 
-def read_versions(flow, run, listing):
-    """Freeze sanctioned lookup enrichment without rewriting the ranking input."""
+def read_versions(flow, run, listing, items=None, key="fast_chain:read_versions"):
+    """Freeze sanctioned lookup enrichment without rewriting the ranking input.
+
+    `items` defaults to the read window's first N items; D173's deeper screening freezes its own window's items under
+    a key of its own, after its own lookups."""
+    window = listing["items"][:run["budget"]["fast_path"]["N"]] if items is None else items
+
     def build():
         from deixis.workflow.search.lookups import ABSTRACT_ORIGINS
         current = ranking._versions(flow.store, run["research_id"])
         frozen = listing["manifest"]["versions"]
         versions = dict(frozen)
         enriched = []
-        for item in listing["items"][:run["budget"]["fast_path"]["N"]]:
+        for item in window:
             for svid in item["versions"]:
                 before, after = frozen[svid], current.get(svid)
                 if (not after or before.get("abstract") or not after.get("abstract")
@@ -400,9 +405,8 @@ def read_versions(flow, run, listing):
                     versions[svid] = after
                     enriched.append(svid)
         view = listing | {"manifest": listing["manifest"] | {"versions": versions}}
-        unchanged = small_batch.unchanged_heads(flow.store, run["research_id"], view,
-                                              listing["items"][:run["budget"]["fast_path"]["N"]])
+        unchanged = small_batch.unchanged_heads(flow.store, run["research_id"], view, window)
         return small_batch.json_value({"versions": versions, "lookup_enriched": enriched,
-                "changed_items": len(listing["items"][:run["budget"]["fast_path"]["N"]]) - len(unchanged),
+                "changed_items": len(window) - len(unchanged),
                 "ranking_manifest_hash": listing["manifest_hash"]})
-    return small_batch.save_code(flow, run, "fast_chain:read_versions", "code:fast_chain_read_versions", build)
+    return small_batch.save_code(flow, run, key, "code:fast_chain_read_versions", build)

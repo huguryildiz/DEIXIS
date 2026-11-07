@@ -224,6 +224,26 @@ def test_language_and_theme_are_kept_in_the_library_until_chosen_again(client):
     assert (view["language"], view["theme"]) == ("tr", "dark")
 
 
+def test_deeper_screening_is_frozen_into_a_discovery_queued_while_it_is_on(client):
+    """D173: unset reads `off`; turned on, it reads back with each depth's window, a Standard discovery queued then
+    freezes places 51–150, and turning it off afterwards leaves that run's budget as it was."""
+    view = client.get("/api/settings/preferences").json()
+    windows = {"standard": {"first": 51, "last": 150}, "detailed": {"first": 101, "last": 200}}
+    assert (view["deep_screening"], view["deep_screening_windows"]) == ("off", windows)
+    assert "screened_once" not in client.get("/api/effort-limits").json()["efforts"]["standard"]
+    assert client.put("/api/settings/preferences", json={"deep_screening": "on"}).json()["deep_screening"] == "on"
+    assert client.get("/api/settings/preferences").json()["deep_screening"] == "on"
+    limits = client.get("/api/effort-limits").json()["efforts"]
+    assert limits["standard"]["screened_once"] == windows["standard"] and "screened_once" not in limits["quick"]
+    rid = create(client, effort="standard")
+    run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
+    frozen = client.app_state.store.run(run["id"])["budget"]
+    assert frozen["fast_path"]["deep_screening"] == {"rule": "m3_v1", "first": 51, "last": 150, "runs": 1, "batch": 20}
+    assert client.put("/api/settings/preferences", json={"deep_screening": "off"}).json()["deep_screening"] == "off"
+    assert client.app_state.store.run(run["id"])["budget"] == frozen
+    assert client.put("/api/settings/preferences", json={"deep_screening": "maybe"}).status_code == 422
+
+
 @pytest.mark.parametrize("bad", [{"model_concurrency": 0}])
 def test_an_invalid_preference_is_refused_and_nothing_is_stored(client, bad):
     assert client.put("/api/settings/preferences", json=bad).status_code == 422

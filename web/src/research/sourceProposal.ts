@@ -21,9 +21,14 @@ const ABSTRACT_REASONS: Record<string, string> = {
   abstract_not_read: 'Below the read limit of the run; the model was not asked.',
   abstract_not_proposed: 'No valid model proposal was recorded for its abstract.',
   survey_title_word: 'The title names a survey or review, so it went to the seed pool instead of screening.',
+  // D173's deeper screening: one model read of the abstract, no second read behind it.
+  single_read_candidate: 'One read found that the abstract may meet the criterion.',
+  single_read_quote_not_found: 'A quoted phrase was not found in the abstract, so it was kept for the full text.',
+  single_read_out_of_scope: 'One read found the abstract outside the criterion.',
+  single_read_unresolved: 'One read could not tell from the abstract.',
 }
 // The basis of an abstract-stage decision, from what its reason code read: the title alone, the record's metadata, the
-// title and abstract by a code rule, or two model reads of them. A code with no reading (no abstract, not read, no valid
+// title and abstract by a code rule, or two model reads of them (one, for D173's deeper screening). A code with no reading (no abstract, not read, no valid
 // proposal) has no basis line.
 const ABSTRACT_BASIS: Record<string, string> = {
   blocks_in_title: 'basis: title · code rule',
@@ -36,6 +41,10 @@ const ABSTRACT_BASIS: Record<string, string> = {
   runs_agree_unresolved: 'basis: title and abstract · two reads',
   runs_disagree_kept_as_candidate: 'basis: title and abstract · two reads',
   quote_not_found_kept_as_candidate: 'basis: title and abstract · two reads',
+  single_read_candidate: 'basis: title and abstract · one read',
+  single_read_quote_not_found: 'basis: title and abstract · one read',
+  single_read_out_of_scope: 'basis: title and abstract · one read',
+  single_read_unresolved: 'basis: title and abstract · one read',
 }
 // "All text parts" is every extracted text part, never the whole PDF: a page without text has no part (audit item 3).
 function readingBasis(c: ReadCoverage | null): string {

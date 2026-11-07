@@ -24,6 +24,8 @@ BATCH_SIZE = 40
 MINIMUM = 50
 LIST_KEY = "small_batch:v1:list"
 RERANK_KEY = "rerank:v1:list"  # outside `small_batch:v1:%`, which `steps` reads as batch steps
+# The benchmark-only list barrier (D173, M3 gate); outside `small_batch:v1:%` too.
+LIST_BARRIER_KEY = "benchmark:list_barrier"
 GRAPH_SEEDS = 30  # D246: rows with a reference list taken from the top of the fused order
 PRERANK_LOOKUP_KEY = "prerank_lookups"
 PRERANK_PREFIX = "prerank:"  # the lookup steps of the round before the rerank, apart from the read stage's (D152)
@@ -813,6 +815,14 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
     listing = freeze_list(flow, run, scope, vocabulary)
     from deixis.workflow.read import read as fast_read
     flow._close_clock_stage(run, "ranking")
+    if run["budget"].get("benchmark_list_barrier"):
+        # Benchmark only (M3's gate, D173): the run pauses once, after its list and before any read work, so a
+        # runner can copy the library here. On resume the step exists and the run reads as any other.
+        barrier = flow.store.step(run["id"], LIST_BARRIER_KEY, "code:benchmark_list_barrier")
+        if barrier["status"] != "succeeded":
+            flow.store.start_step(barrier["id"])
+            flow.store.finish_step(barrier["id"], "succeeded", output={"manifest_hash": listing["manifest_hash"]})
+            flow._pause(run["id"], "benchmark_list_barrier")
     flow._enter_clock_stage(run, "read")
     only = {svid for item in listing["items"][:run["budget"]["fast_path"]["N"]] for svid in item["versions"]}
     await flow._second_sources(run, scope, vocabulary, only=only)

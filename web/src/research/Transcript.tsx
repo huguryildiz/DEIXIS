@@ -848,7 +848,7 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         // A candidate passed the abstract stage; nothing is called relevant, and an abstract alone includes nothing. The
         // out-of-scope count is the flow's own bucket: read minus passed is not it, as the funnel's candidates also count
         // works code let through without a read.
-        const outOfScope = flowBuckets ? flowBuckets.out_of_scope_model + flowBuckets.out_of_scope_code : null
+        const outOfScope = flowBuckets ? flowBuckets.out_of_scope_model + (flowBuckets.out_of_scope_one_read ?? 0) + flowBuckets.out_of_scope_code : null
         const passed = funnel.candidates.toLocaleString(uiLocale())
         const byTitle = funnel.candidates_by_title ?? 0
         return [screenedText, outOfScope === null ? t('{n} passed the abstract stage', { n: passed })

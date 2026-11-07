@@ -683,13 +683,19 @@ class ResearchFlow:
 
 
     async def _second_sources(self, run: dict[str, Any], scope: dict[str, Any],
-                              vocabulary: dict[str, Any] | None, *, only: set[str] | None = None) -> None:
+                              vocabulary: dict[str, Any] | None, *, only: set[str] | None = None,
+                              prefix: str = "", flags_key: str = "record_flags", works: set[str] | None = None,
+                              stop: Callable[[], bool] | None = None) -> None:
         """The three code steps of slice 05 (SW5, SW9.3).
 
         No model is called and no selection is written here. A failed lookup is recorded on the record and the run
         carries on (D18); a resumed run reads the stored plan and asks nothing twice. Which records stay away from
         the model is no longer read here: since slice 09 the abstract stage's own read plan decides that, and
         `lookups.held_from_screening` is what `record_flags` counts with.
+
+        D173's deeper screening asks for its own window under `prefix` and labels its works under `flags_key`, and
+        `stop` (the read cutoff) ends its lookups at their next checkpoint. That round reads no external links: the
+        run's `external_links` step is already stored, and a merge it found now could move a work the read already holds.
         """
         run_id, revision = run["id"], run["scope_revision"]
         words, _ = lookups.title_words(vocabulary)
@@ -697,9 +703,13 @@ class ResearchFlow:
         skip = bool(((run["budget"].get("inspection") or {}).get("prerank_lookup") or {}).get("s2_cooldown_skip"))
         await lookups.ask_second_sources(self.store, self.deps.http, self.deps.settings, run, scope, words,
                                          lambda: self._checkpoint(run_id, revision), **({"only": only} if only is not None else {}),
-                                         s2_cooldown_skip=skip)
-        lookups.external_links(self.store, run)
-        lookups.flag_and_decide(self.store, run, scope, words)
+                                         s2_cooldown_skip=skip, prefix=prefix, stop=stop)
+        if stop is not None and stop():
+            return
+        if not prefix:
+            lookups.external_links(self.store, run)
+        lookups.flag_and_decide(self.store, run, scope, words, **({"works": works} if works is not None else {}),
+                                key=flags_key)
 
     def _count_probe(self, scope: dict[str, Any], run_id: str) -> Callable[[str], Awaitable[int | None]]:
         """The count request the vocabulary step probes with, or one that answers "unknown" without asking.
@@ -1668,7 +1678,7 @@ class ResearchFlow:
                 submitted -= job.key not in answered
                 return None
             output = await self._abstract_call(run, scope, job.number, job.run_no, rows, self.deps.limiter, prefix,
-                                               recheck=undecided)
+                                               recheck=undecided, runs=runs)
             if output is not None and output.get("cutoff"):
                 cutoff_batches.add(job.number)
                 return None
@@ -1772,7 +1782,7 @@ class ResearchFlow:
                              rows: list[dict[str, Any]], limiter: ModelCallLimiter | None = None,
                              prefix: str = "abstract_screening",
                              recheck: Callable[[list[dict[str, Any]]], list[dict[str, Any]] | None] | None = None,
-                             ) -> dict[str, Any] | None:
+                             runs: int = ABSTRACT_RUNS) -> dict[str, Any] | None:
         """One run of one batch; None when the model's output did not validate.
 
         An invalid output does not stop the run and is not repaired: its records stay `abstract_not_proposed` and
@@ -1786,17 +1796,18 @@ class ResearchFlow:
         if step["error_code"] == "model_read_cutoff":
             return {"cutoff": True}  # D258: a resumed run does not send it again
         output = await self._model_step(run, scope, key, "abstract_screening", candidate_rows=rows,
-                                        screening_target={"runs": ABSTRACT_RUNS, "run": run_no}, limiter=limiter,
+                                        screening_target={"runs": runs, "run": run_no}, limiter=limiter,
                                         budget_short="skip", recheck=recheck)
         return None if output.get("invalid") else output
 
     def _abstract_code_stage(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
                              order: list[str], *,
                              batch_key: str | None = None, read_limit: int | None = None,
-                             lexical_exclusion: bool = True) -> dict[str, Any]:
+                             lexical_exclusion: bool = True, runs: int = ABSTRACT_RUNS) -> dict[str, Any]:
         """Write what code decides about every record, then freeze the read plan in this step's output. Without
         `lexical_exclusion` (a snowball round) code never closes a record for naming neither gate block; the plan
-        records that."""
+        records that. `runs` is how many model reads each batch gets, frozen in the plan: two, or one for D173's
+        deeper screening."""
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
         key = f"{batch_key}:abstract_stage" if batch_key else "abstract_stage"
         step = self.store.step(run_id, key, f"code:{key}")
@@ -1862,7 +1873,7 @@ class ResearchFlow:
         plan = abstract_stage.read_plan(order, works, limit, ABSTRACT_BATCH)
         writes += [(svid, "abstract_not_read") for svid in plan["not_read"]]
         written = self._write_abstract_codes(run, step["id"], writes)
-        output = {"decisions": written, "limit": limit, "batch": ABSTRACT_BATCH, "runs": ABSTRACT_RUNS,
+        output = {"decisions": written, "limit": limit, "batch": ABSTRACT_BATCH, "runs": runs,
                   "batches": plan["batches"], "not_read": len(plan["not_read"]),
                   "works_needing_model": sum(len(batch) for batch in plan["batches"]) + len(plan["not_read"])}
         if not lexical_exclusion:
@@ -1972,7 +1983,9 @@ class ResearchFlow:
                 if found is not None:
                     decisions.add_proposal(rid, svid, "abstract", step_id, run_no, found["label"],
                                            quote=found["quote"], quote_verified=found["quote_verified"])
-            writes.append((svid, abstract_stage.combine(*pair)))
+            # One read (D173's deeper screening) has no pair to combine: `single_read` gives the outcome two agreeing
+            # reads would, under a code that says one read stood behind it.
+            writes.append((svid, abstract_stage.single_read(pair[0]) if runs == 1 else abstract_stage.combine(*pair)))
         # The decision is attributed to the last run's step: it is the one that made the pair readable.
         self._write_abstract_codes(run, steps[-1], writes)
 

@@ -78,10 +78,14 @@ class Session:
     resolved_model: str | None = None
     token_usage: dict | None = None
     seconds: float = 0.0
+    # The baseline product accepted this session's model: its step did not fail with model_mismatch. A connection
+    # that answers an alias (`sonnet`) with the model it resolves to (`claude-sonnet-5-5`) verified the match then;
+    # model_sessions keeps no column for it, so it is read from the step.
+    model_verified: bool = False
 
     def result(self):
         return ModelStepResult('completed', raw_text=self.raw_output, resolved_model=self.resolved_model,
-                               token_usage=self.token_usage)
+                               token_usage=self.token_usage, requested_model_verified=self.model_verified)
 
 
 @dataclass
@@ -138,7 +142,8 @@ class Baseline:
         marks = ','.join('?' * len(REPLAYED))
         inputs = conn.execute(
             "SELECT si.id, si.task_type, si.base_instructions, si.developer_instructions, si.user_message,"
-            " si.output_schema_json, s.question FROM step_inputs si"
+            " si.output_schema_json, s.question, st.error_code FROM step_inputs si"
+            " JOIN run_steps st ON st.id = si.step_id"
             " JOIN runs r ON r.id = si.run_id AND r.kind = 'discovery'"
             " JOIN scope_revisions s ON s.research_id = si.research_id AND s.revision = si.scope_revision"
             f" WHERE si.task_type IN ({marks}) ORDER BY si.rowid", REPLAYED)
@@ -160,7 +165,8 @@ class Baseline:
             else:
                 call.session = Session(first['raw_output'], first['resolved_model'],
                                        json.loads(first['token_usage_json']) if first['token_usage_json'] else None,
-                                       seconds(first['started_at'], first['finished_at']))
+                                       seconds(first['started_at'], first['finished_at']),
+                                       model_verified=row['error_code'] != 'model_mismatch')
             calls.append(call)
         conn.close()
         return cls(calls)

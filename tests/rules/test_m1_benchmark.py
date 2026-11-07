@@ -3,6 +3,7 @@ gate scorer. SYNTHETIC libraries, the fake model and a mocked OpenAlex; nothing 
 search quality."""
 
 import asyncio
+import dataclasses
 import json
 import sys
 from pathlib import Path
@@ -24,6 +25,15 @@ async def no_sleep(seconds):
     return None
 
 
+class AliasAdapter(FakeAdapter):
+    """A connection that answers an alias with the model it resolves to and verifies the match (Claude Code)."""
+
+    async def run_step(self, *args, **kwargs):
+        result = await super().run_step(*args, **kwargs)
+        return dataclasses.replace(result, resolved_model=f"{result.resolved_model}-resolved",
+                                   requested_model_verified=True)
+
+
 def sessions(client, task="search_query"):
     return [(row[0], row[1]) for row in client.app.state.store.conn.execute(
         "SELECT m.status, m.raw_output FROM model_sessions m JOIN step_inputs si ON si.id = m.step_input_id"
@@ -39,7 +49,7 @@ def test_a_replayed_arm_gets_the_baselines_invalid_answer_and_then_its_repair(tm
             return "{}"  # invalid: the product sends one repair with the issues in the message
         return valid_response(si)
 
-    base = client_for(tmp_path / "base", monkeypatch, OpenAlex(), FakeAdapter(responder))
+    base = client_for(tmp_path / "base", monkeypatch, OpenAlex(), AliasAdapter(responder))
     rid, run_id = start(base)
     assert wait(base, rid, run_id)[1]["status"] == "completed"
     baseline = sessions(base)

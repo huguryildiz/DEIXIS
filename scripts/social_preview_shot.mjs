@@ -1,11 +1,11 @@
-// Renders scripts/social-preview.html to .github/social-preview.png at exactly 1280x640.
+// Renders scripts/social-preview.html to assets/social-preview.jpg at exactly 1280x640.
 import { chromium } from '../web/node_modules/playwright/index.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const page_url = 'file://' + resolve(here, 'social-preview.html');
-const out = process.argv[2] ?? resolve(here, '..', '.github', 'social-preview.jpg');
+const out = process.argv[2] ?? resolve(here, '..', 'assets', 'social-preview.jpg');
 
 const browser = await chromium.launch();
 const page = await browser.newPage({

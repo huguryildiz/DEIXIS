@@ -18,7 +18,7 @@ not measured.
 - On BioASQ, DEIXIS with the reranker is close to Elicit's published figures
   ([Evaluating Elicit's paper search](https://elicit.com/blog/evaluating-elicit-paper-search)).
 
-![Recall at 10 to 200 results for each set and arm](img/benchmark-recall.png)
+![Recall at 10 to 200 results for each set and arm](../assets/benchmark-recall.png)
 
 ## Arms and settings
 
@@ -35,7 +35,7 @@ Recall@k is the share of a question's gold papers in the first k results, averag
 paired 95% bootstrap intervals over questions (10,000 resamples). A failed question counts as zero in a paired
 difference.
 
-![Paired differences at 50 results with 95% intervals](img/benchmark-gains.png)
+![Paired differences at 50 results with 95% intervals](../assets/benchmark-gains.png)
 
 ## Results
 

@@ -23,7 +23,7 @@ A desktop app that answers questions from the scientific literature, with every 
 
 <br>
 
-<p align="center"><img src="docs/img/hero-flat.png" alt="DEIXIS answer screen with cited passages" width="900"></p>
+<p align="center"><img src="assets/hero-flat.png" alt="DEIXIS answer screen with cited passages" width="900"></p>
 
 DEIXIS is a desktop app for questions about the scientific literature. You type a research question; it searches the scholarly databases, screens what it finds, reads the full texts it can get and writes an answer. Every citation in the answer opens the exact passage it came from, in the version of the paper that was read.
 

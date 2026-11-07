@@ -15,24 +15,32 @@
     :root {
       --bg: #f7f8fb; --surface: #ffffff; --text: #1d2433; --muted: #566074; --line: #dfe3ea;
       --accent: #3b5b9a; --accent-ink: #ffffff; --exclude-ink: #9b2c2c; --exclude-bg: #fbecec;
+      --wash: 6%;
     }
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme=light]) {
         --bg: #14171d; --surface: #1b1f27; --text: #e6e9ef; --muted: #a3abba; --line: #2c323d;
-        --accent: #8aa6e0; --accent-ink: #10141b; --exclude-ink: #f3b4b4; --exclude-bg: #3a2023;
+        --accent: #8aa6e0; --accent-ink: #10141b; --exclude-ink: #f3b4b4; --exclude-bg: #3a2023; --wash: 11%;
       }
     }
     :root[data-theme=dark] {
       --bg: #14171d; --surface: #1b1f27; --text: #e6e9ef; --muted: #a3abba; --line: #2c323d;
-      --accent: #8aa6e0; --accent-ink: #10141b; --exclude-ink: #f3b4b4; --exclude-bg: #3a2023;
+      --accent: #8aa6e0; --accent-ink: #10141b; --exclude-ink: #f3b4b4; --exclude-bg: #3a2023; --wash: 11%;
     }
     html, body { height: 100%; margin: 0; }
     body {
       background: var(--bg); color: var(--text);
       font: 14px/1.5 Inter, -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-      display: grid; place-items: center;
+      display: grid; place-items: center; overflow: hidden;
     }
-    main { width: min(440px, calc(100% - 32px)); }
+    /* A faint wash behind the mark, so the window reads as lit rather than flat. */
+    body::before {
+      content: ""; position: fixed; inset: 0; pointer-events: none;
+      background: radial-gradient(360px 300px at 50% 42%,
+        color-mix(in srgb, var(--accent) var(--wash), transparent),
+        transparent 72%);
+    }
+    main { width: min(440px, calc(100% - 32px)); position: relative; }
     .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 24px; }
     h1 { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
     p { margin: 0 0 12px; color: var(--muted); }
@@ -45,18 +53,60 @@
     }
     a.button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
     a.button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-    .pulse { display: inline-block; width: 8px; height: 8px; border-radius: 999px; background: var(--accent); margin-right: 8px;
-      animation: pulse 1.2s ease-in-out infinite; vertical-align: middle; }
-    @keyframes pulse { 50% { opacity: .35; } }
-    @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
     [hidden] { display: none !important; }
+
+    /* Opening: the source mark draws itself, the passage dot lands, the name settles under it. */
+    #starting { display: grid; justify-items: center; animation: fade-in 420ms ease-out both; }
+    .mark { width: 76px; height: 76px; display: block; overflow: visible; }
+    .mark .stroke {
+      stroke: var(--accent); stroke-width: 5; stroke-linecap: round; fill: none;
+      stroke-dasharray: 1; stroke-dashoffset: 1;
+      animation: draw 1020ms cubic-bezier(.22,.61,.36,1) 140ms both;
+    }
+    .mark .dot {
+      fill: var(--accent); transform-box: fill-box; transform-origin: center;
+      animation: dot-in 420ms cubic-bezier(.34,1.46,.64,1) 940ms both;
+    }
+    .wordmark {
+      margin: 18px 0 0; font-size: 19px; font-weight: 600; letter-spacing: .22em; text-indent: .22em;
+      animation: rise 560ms cubic-bezier(.22,.61,.36,1) 1060ms both;
+    }
+    .status {
+      margin: 10px 0 0; font-size: 13px; color: var(--muted);
+      animation: rise 560ms cubic-bezier(.22,.61,.36,1) 1240ms both;
+    }
+    .track {
+      width: 168px; height: 2px; margin-top: 22px; border-radius: 999px; overflow: hidden;
+      background: color-mix(in srgb, var(--accent) 22%, transparent);
+      -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+      mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
+      animation: fade-in 520ms ease-out 1400ms both;
+    }
+    .track i { display: block; width: 38%; height: 100%; border-radius: 999px; background: var(--accent);
+      animation: sweep 1500ms cubic-bezier(.65,0,.35,1) 1400ms infinite; }
+
+    @keyframes fade-in { from { opacity: 0 } to { opacity: 1 } }
+    @keyframes draw { to { stroke-dashoffset: 0 } }
+    @keyframes dot-in { from { opacity: 0; transform: scale(.2) } to { opacity: 1; transform: scale(1) } }
+    @keyframes rise { from { opacity: 0; transform: translateY(7px) } to { opacity: 1; transform: none } }
+    @keyframes sweep { 0% { transform: translateX(-110%) } 100% { transform: translateX(372%) } }
+
+    @media (prefers-reduced-motion: reduce) {
+      #starting, .mark .stroke, .mark .dot, .wordmark, .status, .track, .track i { animation: none }
+      .mark .stroke { stroke-dashoffset: 0 }
+    }
   </style>
 </head>
 <body>
   <main>
-    <section id="starting" class="panel">
-      <h1>DEIXIS</h1>
-      <p role="status"><span class="pulse" aria-hidden="true"></span><span data-t="starting">Starting the research workspace…</span></p>
+    <section id="starting">
+      <svg class="mark" viewBox="3 0 64 64" aria-hidden="true">
+        <path class="stroke" pathLength="1" d="M17 52V12H29C42.255 12 53 20.954 53 32S42.255 52 32 52C28.5 52 27 50 27 46.5V42"/>
+        <circle class="dot" cx="27" cy="34" r="4.5"/>
+      </svg>
+      <p class="wordmark">DEIXIS</p>
+      <p class="status" role="status" data-t="starting">Starting the research workspace…</p>
+      <div class="track" aria-hidden="true"><i></i></div>
     </section>
     <section id="stopped" class="panel" hidden>
       <h1 data-t="stoppedTitle">The backend stopped</h1>

@@ -33,3 +33,4 @@ web/playwright-report/
 /desktop/src-tauri/gen/
 /STATUS.md
 /docs/decisions.csv
+/CLAUDE.md

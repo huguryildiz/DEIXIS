@@ -86,6 +86,6 @@ uv run pytest                        # model-free tests
 
 Connect a model and sources in Settings; keys go to the system keychain ([`providers.env.example`](providers.env.example) lists the names). Data lives in `~/Library/Application Support/DEIXIS` (or `DEIXIS_DATA_DIR`), never in the repository.
 
-The working agreement, layout and commands are in [CLAUDE.md](CLAUDE.md), how search, ranking and reading work in [docs/search.md](docs/search.md) and search benchmark results in [docs/benchmark.md](docs/benchmark.md).
+How search, ranking and reading work is in [docs/search.md](docs/search.md); search benchmark results are in [docs/benchmark.md](docs/benchmark.md).
 
 License: [AGPL-3.0-or-later](LICENSE).

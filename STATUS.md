@@ -1,10 +1,10 @@
 # DEIXIS durumu
 
-**Son güncelleme:** 6 Kasım 2026 (akşam). Kararlar [docs/decisions.csv](docs/decisions.csv), ölçümler [docs/benchmark.md](docs/benchmark.md). Ölçüm ayrıntılarıyla uzun hali Git geçmişinde (commit c3ec6ded).
+**Son güncelleme:** 7 Kasım 2026 (gece). Kararlar [docs/decisions.csv](docs/decisions.csv), ölçümler [docs/benchmark.md](docs/benchmark.md). Ölçüm ayrıntılarıyla uzun hali Git geçmişinde (commit c3ec6ded).
 
 ## Neredeyiz?
 
-Uygulama çalışıyor. Son haftalarda eklenenlerin çoğu gerçek kullanımda denenmedi. 6 Kasım'da macOS paketi (P10) başladı, önce yalnız Apple Silicon Mac; görsel kontrol buna paralel, parça parça sürüyor. Her maddenin ayrıntısı [docs/decisions.csv](docs/decisions.csv)'de, D numarasıyla.
+Uygulama çalışıyor. Son haftalarda eklenenlerin çoğu gerçek kullanımda denenmedi. 6–7 Kasım'da masaüstü paketi (P10) çıktı: Apple Silicon Mac ve Windows için ön sürüm; görsel kontrol buna paralel, parça parça sürüyor. Her maddenin ayrıntısı [docs/decisions.csv](docs/decisions.csv)'de, D numarasıyla.
 
 **Son yapılanlar (25–26 Ekim)**
 
@@ -32,7 +32,7 @@ Uygulama çalışıyor. Son haftalarda eklenenlerin çoğu gerçek kullanımda d
 
 ## Sırayla yapılacaklar
 
-1. **P10, Mac paketi** (plan `notes/plans/p10-mac-first.md`): M1 ve M2 bitti; pencere testleri geçti (menü çubuğu menüsü elle bakılacak), [`v0.1.0`](https://github.com/huguryildiz/DEIXIS/releases/tag/v0.1.0) ön sürüm olarak GitHub'da (DMG sha256 `1e2ff2c5…`); sıradaki Windows denemesi (Parallels + GitHub Actions), sonra M3 (Tesseract paket içinde, tema ve sürüm kontrolü), M4 (ilk aday sürüm). Intel Mac, Windows, Linux sonra. OpenAI, Gemini, DeepSeek fiyatları yayından önce doğrulanacak.
+1. **P10, masaüstü paketi** (planlar `notes/plans/p10-mac-first.md`, `notes/plans/p10-windows.md`): Mac M1–M2 ve Windows W1–W5 bitti, her dilim GPT Sol High incelemesinden geçti. [`v0.1.1`](https://github.com/huguryildiz/DEIXIS/releases/tag/v0.1.1) ön sürüm olarak GitHub'da: Windows kurulum dosyası (sha256 `e14f5d47…`) ve Mac DMG (sha256 `964d5683…`). Windows kurulu uygulama VM'de 11/11, Windows test paketi GitHub'ın x64 makinesinde yeşil; Mac 15/15. Windows'ta yerleşik yerel modeller ve arXiv kaynak okuma kapalı; Windows 10 ve gerçek bir x64 PC denenmedi (D158). Sırada M3 (Tesseract paket içinde, tema ve sürüm kontrolü), M4 (ilk aday sürüm, sürümden sürüme yükseltme testi). Intel Mac ve Linux sonra. OpenAI, Gemini, DeepSeek fiyatları yayından önce doğrulanacak.
 2. **Görsel kontrol** (sahip, paralel): liste `notes/visual-check-2026-10-24.md`, 28 madde.
 3. **D106'yı gerçek koşuyla doğrula** (BioASQ, LitSearch, EE survey): ~12 USD OpenAlex + 1–3 USD Voyage, ön ödemeli bakiye ister. Bu bitmeden reranker ayarı değişmesin.
 4. **Kill search ve kartopu kesimi:** doğru makale havuzda ama okunan ilk 8 / ilk 80'in dışında. İlk denenecek: aynı makalenin sürümlerini birleştirmek, sonra kesimden önce rerank. Ayrıntı `notes/2026-10-results.md`, "Live pilots" bölümü.

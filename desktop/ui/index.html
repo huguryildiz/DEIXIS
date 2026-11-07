@@ -15,17 +15,17 @@
     :root {
       --bg: #f7f8fb; --surface: #ffffff; --text: #1d2433; --muted: #566074; --line: #dfe3ea;
       --accent: #3b5b9a; --accent-ink: #ffffff; --exclude-ink: #9b2c2c; --exclude-bg: #fbecec;
-      --wash: 6%;
+      --wash: rgba(59, 91, 154, .06); --track: rgba(59, 91, 154, .22);
     }
     @media (prefers-color-scheme: dark) {
       :root:not([data-theme=light]) {
         --bg: #14171d; --surface: #1b1f27; --text: #e6e9ef; --muted: #a3abba; --line: #2c323d;
-        --accent: #8aa6e0; --accent-ink: #10141b; --exclude-ink: #f3b4b4; --exclude-bg: #3a2023; --wash: 11%;
+        --accent: #8aa6e0; --accent-ink: #10141b; --exclude-ink: #f3b4b4; --exclude-bg: #3a2023; --wash: rgba(138, 166, 224, .11); --track: rgba(138, 166, 224, .22);
       }
     }
     :root[data-theme=dark] {
       --bg: #14171d; --surface: #1b1f27; --text: #e6e9ef; --muted: #a3abba; --line: #2c323d;
-      --accent: #8aa6e0; --accent-ink: #10141b; --exclude-ink: #f3b4b4; --exclude-bg: #3a2023; --wash: 11%;
+      --accent: #8aa6e0; --accent-ink: #10141b; --exclude-ink: #f3b4b4; --exclude-bg: #3a2023; --wash: rgba(138, 166, 224, .11); --track: rgba(138, 166, 224, .22);
     }
     html, body { height: 100%; margin: 0; }
     body {
@@ -37,7 +37,7 @@
     body::before {
       content: ""; position: fixed; inset: 0; pointer-events: none;
       background: radial-gradient(360px 300px at 50% 42%,
-        color-mix(in srgb, var(--accent) var(--wash), transparent),
+        var(--wash),
         transparent 72%);
     }
     main { width: min(440px, calc(100% - 32px)); position: relative; }
@@ -77,7 +77,7 @@
     }
     .track {
       width: 168px; height: 2px; margin-top: 22px; border-radius: 999px; overflow: hidden;
-      background: color-mix(in srgb, var(--accent) 22%, transparent);
+      background: var(--track);
       -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
       mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent);
       animation: fade-in 520ms ease-out 1400ms both;

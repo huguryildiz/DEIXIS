@@ -139,6 +139,13 @@ def proc_table() -> dict[str, dict]:
     return table
 
 
+def owner_uid(pid: int) -> int | None:
+    try:
+        return os.stat(f"/proc/{pid}").st_uid
+    except OSError:
+        return None
+
+
 def alive(ident: str, table: dict | None = None) -> bool:
     return ident in (proc_table() if table is None else table)
 
@@ -455,6 +462,9 @@ class Scenario:
             elif proc["ppid"] == 2 or not cmd:
                 excused.add(ident)
                 explained.append(f"{proc['pid']} {proc['name']} kernel thread")
+            elif (owner := owner_uid(proc["pid"])) is not None and owner != os.getuid():  # DEIXIS runs as this user
+                excused.add(ident)
+                explained.append(f"{proc['pid']} {proc['name']} runs as user {owner}, not this one: {cmd[:80]}")
             elif known_parent:
                 excused.add(ident)
                 explained.append(f"{proc['pid']} {proc['name']} child of {after[parent]['name']} ({after[parent]['pid']}),"

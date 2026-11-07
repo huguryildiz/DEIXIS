@@ -131,15 +131,12 @@ export async function expectMenuCount(page: Page, name: PanelName, count: number
   await expect(row).toHaveCount(0)
 }
 
-// The theme button, for a spec that is checking something else at a narrow width. At 820px and below an open panel is a dialog over the
-// whole screen, and the menu button that opens the drawer holding the theme button is under it, so the click goes to the button directly
-// there; with nothing over it, the theme helper presses it the way a person does.
+// The theme, for a spec that is checking something else. The palette the helper uses opens over an open panel too, so
+// there is no narrow-width special case.
 export async function chooseTheme(page: Page, theme: 'light' | 'dark') {
   const dark = await page.locator('html').evaluate(el => el.classList.contains('dark'))
   if (dark === (theme === 'dark')) return
-  const name = dark ? 'Switch to light mode' : 'Switch to dark mode'
-  if (await page.locator('[data-split-panel][role="dialog"]').count()) await page.locator(`button[aria-label="${name}"]`).evaluate(el => (el as HTMLElement).click())
-  else await switchTheme(page, name)
+  await switchTheme(page, dark ? 'Switch to light mode' : 'Switch to dark mode')
 }
 
 // A card of the human queue (UI parity S14, P39): a list item named by its work's title.

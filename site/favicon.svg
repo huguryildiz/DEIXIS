@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="148 148 728 728" fill="none">
+  <title>DEIXIS — glass mark</title>
+  <defs>
+    <clipPath id="plate"><rect x="148" y="148" width="728" height="728" rx="180"/></clipPath>
+
+    <linearGradient id="glassFill" x1="148" y1="148" x2="876" y2="876" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff" stop-opacity=".22"/>
+      <stop offset=".55" stop-color="#fff" stop-opacity=".07"/>
+      <stop offset="1" stop-color="#fff" stop-opacity=".04"/>
+    </linearGradient>
+    <linearGradient id="glassEdge" x1="148" y1="148" x2="876" y2="876" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff" stop-opacity=".7"/>
+      <stop offset=".4" stop-color="#fff" stop-opacity=".1"/>
+      <stop offset=".75" stop-color="#fff" stop-opacity=".06"/>
+      <stop offset="1" stop-color="#c9d8f5" stop-opacity=".4"/>
+    </linearGradient>
+    <linearGradient id="sheen" x1="0" y1="148" x2="0" y2="520" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="ink" x1="0" y1="10" x2="0" y2="54" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".45" stop-color="#e2eafa"/>
+      <stop offset="1" stop-color="#aec3ec"/>
+    </linearGradient>
+    <radialGradient id="pearl" cx="25.6" cy="32.6" r="5.6" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset=".5" stop-color="#d6e2f8"/>
+      <stop offset="1" stop-color="#93acdf"/>
+    </radialGradient>
+
+    <filter id="frost" filterUnits="userSpaceOnUse" x="-300" y="-300" width="1624" height="1624">
+      <feGaussianBlur stdDeviation="95"/>
+      <feColorMatrix type="saturate" values="1.25"/>
+    </filter>
+    <filter id="grain" filterUnits="userSpaceOnUse" x="148" y="148" width="728" height="728">
+      <feTurbulence type="fractalNoise" baseFrequency=".85" numOctaves="2" seed="7"/>
+      <feColorMatrix values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 .05 0"/>
+    </filter>
+    <filter id="lift" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="1.1" stdDeviation="1.3" flood-color="#08112a" flood-opacity=".55"/>
+    </filter>
+    <filter id="glow" x="-200%" y="-200%" width="500%" height="500%">
+      <feGaussianBlur stdDeviation="3.2"/>
+    </filter>
+
+    <g id="orbs">
+      <circle cx="300" cy="300" r="230" fill="#9fb8e8"/>
+      <circle cx="790" cy="770" r="260" fill="#4f72b8"/>
+      <circle cx="815" cy="235" r="165" fill="#7fb0dc" fill-opacity=".85"/>
+      <circle cx="210" cy="830" r="120" fill="#1b2c52" fill-opacity=".8"/>
+    </g>
+  </defs>
+
+  <g clip-path="url(#plate)">
+    <rect x="148" y="148" width="728" height="728" fill="#1a2746"/>
+    <use href="#orbs" filter="url(#frost)" opacity=".62"/>
+    <rect x="148" y="148" width="728" height="728" fill="url(#glassFill)"/>
+    <rect x="148" y="148" width="728" height="728" filter="url(#grain)"/>
+    <path d="M148 148H876V460C700 410 420 390 148 460Z" fill="url(#sheen)"/>
+  </g>
+  <rect x="150" y="150" width="724" height="724" rx="178" stroke="url(#glassEdge)" stroke-width="4"/>
+
+  <g transform="translate(512 512) scale(11) translate(-35 -32)">
+    <circle cx="27" cy="34" r="7" fill="#c4d5f7" opacity=".55" filter="url(#glow)"/>
+    <g filter="url(#lift)">
+      <path d="M17 52V12H29C42.255 12 53 20.954 53 32S42.255 52 32 52C28.5 52 27 50 27 46.5V42" stroke="url(#ink)" stroke-width="5"/>
+      <circle cx="27" cy="34" r="4.5" fill="url(#pearl)"/>
+    </g>
+  </g>
+</svg>

@@ -1,7 +1,7 @@
 .app { min-height:100svh; background:var(--paper); color:var(--ink); font-family:var(--font-sans); display:flex; }
 .app.dark,.detail-sheet.dark{ background:var(--paper); color:var(--ink); }
 button{cursor:pointer}button:disabled{cursor:default}.app button:focus-visible,.app input:focus-visible{outline:2px solid var(--accent);outline-offset:4px}
-.sidebar{font-size:14px;line-height:1.5;width:256px;position:fixed;inset:0 auto 0 0;background:var(--sidebar-surface);border-right:1px solid var(--line);padding:0;display:flex;flex-direction:column;z-index:30}.brand{display:flex;align-items:center;gap:7px;min-width:0;padding:4px 6px;border-radius:7px;color:var(--accent-deep);font-size:16px;font-weight:600;letter-spacing:.2px;line-height:1.3;width:fit-content}.dark .brand,.dark .mobilebar-brand{color:var(--accent)}.brand-mark{display:grid;place-items:center;flex-shrink:0;width:18px;height:18px}.brand-logo{display:block;width:18px;height:18px;flex:none}
+.sidebar{font-size:14px;line-height:1.5;width:256px;position:fixed;inset:0 auto 0 0;background:var(--sidebar-surface);border-right:1px solid var(--line);padding:0;display:flex;flex-direction:column;z-index:30}.brand{display:flex;align-items:center;gap:7px;min-width:0;padding:4px 6px;border-radius:7px;color:var(--accent-deep);font-family:var(--font-serif);font-size:16.5px;font-weight:600;letter-spacing:.6px;line-height:1.3;width:fit-content}.dark .brand,.dark .mobilebar-brand{color:var(--accent)}.brand-mark{display:grid;place-items:center;flex-shrink:0;width:18px;height:18px}.brand-logo{display:block;width:18px;height:18px;flex:none}
 .sidebar nav{display:grid;gap:1px;padding:4px 6px}.sidebar nav button{display:flex;align-items:center;gap:10px;width:100%;padding:7px 10px;border-radius:7px;font-size:13.5px;line-height:1.5;color:var(--ink-2);text-align:left}.sidebar nav button svg{flex:none}.sidebar nav button:hover,.recent-list button:hover{background:color-mix(in srgb,var(--ink),transparent 94%)}.sidebar nav button.selected{background:var(--selected-surface);color:var(--selected-ink)}.recent-list{flex:1;min-height:0;overflow:auto;padding:0 6px 8px}.recent-list p{font-size:12.5px;line-height:1.5;color:var(--muted);margin:4px 10px}.main-shell{margin-left:256px;flex:1;min-width:0;display:flex;flex-direction:column;min-height:100svh}header{height:77px;padding:0 39px;display:flex;align-items:center;justify-content:space-between;gap:12px}main{flex:1;min-width:0}h1{font-family:var(--font-sans);font-size:62px;line-height:1.06;font-weight:420;letter-spacing:-2.2px;margin:0}h1 em{font-weight:400;color:var(--accent)}
 .section-label{font-size:11.5px;color:var(--muted);font-weight:550;margin-bottom:16px}
 footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-between;font-size:10px;color:var(--muted);gap:12px}footer a{color:var(--ink);text-decoration:underline;text-decoration-color:color-mix(in srgb,var(--ink),transparent 75%);text-underline-offset:3px;transition:text-decoration-color .15s ease}footer a:hover{text-decoration-color:currentColor}footer a.footer-github{display:inline-flex;vertical-align:-3px;margin-left:10px;color:var(--muted);text-decoration:none;transition:color .15s ease}footer a.footer-github:hover{color:var(--ink)}.research-view,.collection{max-width:860px;margin:58px auto;padding:0 36px}.research-view h1{font-size:28px;line-height:1.2;letter-spacing:-.4px;overflow-wrap:anywhere}.collection h1{font-size:42px;line-height:1.15;letter-spacing:-1px;overflow-wrap:anywhere}.session-meta,.collection>p{color:var(--muted);font-size:13px;margin:17px 0 32px}h2{font-family:var(--font-sans);font-size:28px;font-weight:450;letter-spacing:-.4px;margin:16px 0}h3{font-size:14px;font-weight:600;margin:27px 0 10px}.research-view p{color:var(--muted);margin-bottom:20px}.research-view ol{padding-left:22px;list-style:decimal;color:var(--muted)}table{border-collapse:collapse;width:100%;font-size:12px;text-align:left}th,td{padding:12px;border-bottom:1px solid var(--line);white-space:nowrap}.empty-inline{padding:35px 0;color:var(--muted);font-size:13px}.empty-inline p{margin-bottom:20px}
@@ -111,7 +111,7 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
   .app.sidebar-collapsed .main-shell{margin-left:56px}
   .app.sidebar-collapsed .sidebar-head{flex-direction:column;gap:6px;padding:12px 0 8px}
   .app.sidebar-collapsed .brand{padding:0}
-  .app.sidebar-collapsed .sidebar-label,.app.sidebar-collapsed .recents-label,.app.sidebar-collapsed .recent-list,.app.sidebar-collapsed .access,.app.sidebar-collapsed .access-retry,.app.sidebar-collapsed .update-line,.app.sidebar-collapsed .bgcard,.app.sidebar-collapsed .user-name,.app.sidebar-collapsed .user>button{display:none}
+  .app.sidebar-collapsed .sidebar-label,.app.sidebar-collapsed .recents-label,.app.sidebar-collapsed .recent-list,.app.sidebar-collapsed .access,.app.sidebar-collapsed .access-retry,.app.sidebar-collapsed .update-line,.app.sidebar-collapsed .bgcard,.app.sidebar-collapsed .user-name{display:none}
   .app.sidebar-collapsed .sidebar nav button{justify-content:center;padding:8px 0}
   .app.sidebar-collapsed .nav-count{position:absolute;top:1px;right:4px;margin:0;padding:0 4px;font-size:9.5px;line-height:14px}
   .app.sidebar-collapsed .sidebar-foot{margin-top:auto;justify-items:center;border-top:0}
@@ -215,11 +215,7 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .user{display:flex;align-items:center;gap:8px;min-width:0;font-size:13px}
 .avatar{display:grid;place-items:center;flex:none;width:24px;height:24px;border-radius:50%;background:var(--accent-deep);color:#fff;font-size:10px;font-weight:600}
 .dark .avatar{background:var(--accent);color:var(--paper)}
-.user-name{flex:1;min-width:0;display:flex;flex-direction:column}
-.user-name>span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;line-height:1.3}
-.app .user>button{margin-left:auto;padding:4px;border-radius:6px;color:var(--muted);font-size:14px;line-height:1.5}
-.app .user>button svg{display:inline;vertical-align:baseline}
-.app .user>button:hover{background:var(--hover-surface)}
+.user-name{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;line-height:1.3}
 
 /* Phones (≤820px, mockup): the sidebar is an off-canvas drawer with a shadow and no scrim; its collapse button closes it.
    A 46px bar holds the menu button and the name. */
@@ -230,7 +226,7 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
   .mobilebar{display:flex;align-items:center;gap:10px;height:46px;padding:0 12px;border-bottom:1px solid var(--line)}
   .app .mobile-menu{display:grid;place-items:center;width:30px;height:30px;border-radius:7px;color:var(--muted)}
   .app .mobile-menu:hover{background:var(--hover-surface);color:var(--ink)}
-  .mobilebar-brand{color:var(--accent-deep);font-weight:600}
+  .mobilebar-brand{color:var(--accent-deep);font-family:var(--font-serif);font-size:16.5px;font-weight:600;letter-spacing:.6px}
   .sidebar{z-index:50;transition:transform .2s}
 }
 
@@ -372,12 +368,8 @@ footer{padding:22px 39px;display:flex;flex-wrap:wrap;justify-content:space-betwe
 .keys-dialog .keys-foot{justify-content:flex-start;padding:8px 16px;font-size:12.5px;color:var(--muted)}
 .keys-foot label{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
 .keys-foot input{width:14px;height:14px;margin:0;accent-color:var(--accent)}
-.app .user>button+button{margin-left:0}
-.app .user>.keys-toggle,.app .user>.lang-toggle,.app .user>.theme-toggle{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0}
-.app .user>.keys-toggle svg,.app .user>.theme-toggle svg{display:block}
-.app .user>.lang-toggle{font-size:11.5px;font-weight:600;letter-spacing:.3px;line-height:1}
 /* The name opens the profile settings; it keeps the plain text look of the row. */
-.app .user>.user-name{margin-left:0;padding:0;border-radius:4px;color:inherit;font-size:inherit;line-height:inherit;text-align:left;background:none}
+.app .user>.user-name{padding:0;border-radius:4px;color:inherit;font-size:inherit;line-height:inherit;text-align:left;background:none}
 .app .user>.user-name:hover{background:none;text-decoration:underline;text-underline-offset:3px}
 .keys-dialog .dialog-icon{color:var(--ink)}
 /* "Choose another model" (R20, S27): the role, model and effort fields in the confirm dialog's body. */

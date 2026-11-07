@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import { Check, Circle, Clock, Ellipsis, Inbox, Keyboard, LibraryBig, Menu, Moon, PanelLeft, Pause, PencilLine, Plus, Search, SlidersHorizontal, Sun, Trash2, TriangleAlert } from 'lucide-react'
+import { Check, Circle, Clock, Ellipsis, Inbox, LibraryBig, Menu, PanelLeft, Pause, PencilLine, Plus, Search, SlidersHorizontal, Trash2, TriangleAlert } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { api, ApiError, shellApi, type InstitutionalAccess, type Profile, type ProxySettings, type ResearchSummary, type RunStatus, type Updates, preferencesApi, type PreferenceChange } from './lib/api'
 import { runStatusLabels } from './lib/labels'
@@ -123,9 +123,6 @@ function readCurrent(): string | null {
 
 // The app icon, the same file the window and the installer use.
 const brandLogo = <img className="brand-logo" src="/deixis-icon-glass.svg" alt="" aria-hidden="true" />
-
-// The sidebar shows the name on two lines: given names, then the surname, so a long name is not cut off.
-const nameLines = (full: string) => { const name = full.trim(); const cut = name.lastIndexOf(' '); return cut > 0 ? [name.slice(0, cut), name.slice(cut + 1)] : [name] }
 
 export default function App() {
   const [route, setRoute] = useState<Route>(parseHash)
@@ -535,7 +532,6 @@ export default function App() {
     else if (command === 'keys') openKeys(findOpener.current)
     else requestResearchPanel({ name: command, opener: findOpener.current })
   }
-  const themeName = t(dark ? 'Switch to light mode' : 'Switch to dark mode')
   const [runSlot, setRunSlot] = useState<HTMLDivElement | null>(null)
 
   // The proxy line states only that the host answered; the Scopus line is the separate full-view check (plan §2.3).
@@ -615,10 +611,7 @@ export default function App() {
         <button type="button" className="access-retry" onClick={retryAccess} style={accessFailed ? undefined : { display: 'none' }}>{t('Check again')}</button>
         <div className="user">
           <span className="avatar" aria-hidden="true" style={profile ? undefined : { visibility: 'hidden' }}>{profile?.initials ?? ''}</span>
-          <button type="button" className="user-name" onClick={() => go({ view: 'settings', tab: 'profile' })} aria-label={profile ? t('Profile · {name}', { name: profile.full_name }) : t('Profile')} title={t('Profile settings')}>{nameLines(profile?.full_name ?? '').map((line, i) => <span key={i}>{line}</span>)}</button>
-          <button type="button" className="keys-toggle" onClick={() => openKeys()} aria-label={t('Shortcuts')} aria-keyshortcuts={singleKeys ? '?' : undefined} title={`${t('Shortcuts')} (?)`}><Keyboard size={16} aria-hidden="true" /></button>
-          <button type="button" className="lang-toggle" onClick={() => chooseLanguage(language === 'tr' ? 'en' : 'tr')} aria-label={t('Language')} title={language === 'tr' ? 'Switch to English' : 'Türkçe’ye geç'}>{language === 'tr' ? 'TR' : 'EN'}</button>
-          <button type="button" className="theme-toggle" onClick={toggleTheme} aria-label={themeName} title={t(dark ? 'Light mode' : 'Dark mode')}>{dark ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}</button>
+          <button type="button" className="user-name" onClick={() => go({ view: 'settings', tab: 'profile' })} aria-label={profile ? t('Profile · {name}', { name: profile.full_name }) : t('Profile')} title={t('Profile settings')}>{profile?.full_name ?? ''}</button>
         </div>
       </div>
       {!collapsed && <div className="sidebar-resizer" role="separator" aria-orientation="vertical" tabIndex={0} aria-label={t('Resize sidebar')} title={t('Drag to resize · double-click to reset')} aria-valuemin={SIDEBAR_MIN} aria-valuemax={SIDEBAR_MAX} aria-valuenow={sidebarWidth ?? asideWidth} onPointerDown={startResize} onKeyDown={resizeByKey} onDoubleClick={() => setSidebarWidth(null)} />}

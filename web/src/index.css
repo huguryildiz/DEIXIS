@@ -36,7 +36,7 @@
 }
 
 :root {
-    /* Fonts: Inter for the interface and all reading text, Source Serif 4 only for the report title, report emphasis and
+    /* Fonts: Inter for the interface and all reading text, Source Serif 4 only for the DEIXIS wordmark, the report title, report emphasis and
        document-page imitations (D5). Product CSS reads these two names, never a literal family. */
     --font-sans: 'Inter Variable', sans-serif;
     --font-serif: 'Source Serif 4 Variable', serif;

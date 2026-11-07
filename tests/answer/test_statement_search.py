@@ -64,6 +64,6 @@ def test_the_filter_reaches_openalex_with_the_query_text():
                                                 works_filter="raw_author_name.search:Chandra")
     asyncio.run(send())
     assert seen[0]["filter"] == "raw_author_name.search:Chandra"
-    assert seen[0]["search.title_and_abstract"] == "quantum"
+    assert seen[0]["search.title_abstract_keywords"] == "quantum"
 
 

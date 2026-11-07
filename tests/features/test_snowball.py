@@ -234,3 +234,27 @@ def test_a_round_orders_its_list_with_the_first_chain_matcher_even_after_an_m1_d
     head = lib.store.find_source_by_identifier("openalex", "W900")
     (item,) = [i for i in listing["items"] if i["head"] == head]
     assert item["names_gate_block"] is False
+
+
+def test_a_round_reads_the_stored_provider_keywords_when_it_orders_its_list(lib, monkeypatch):
+    """D184: a work names a gate block through its title, its abstract or a keyword OpenAlex's own classifier gave it.
+    The keywords only move a work up the screening order; every admitted work is still listed."""
+    seed_world(lib)
+    lib.api.add(904, title="SYNTHETIC unrelated pumps",
+                keywords=[{"id": "https://openalex.org/keywords/state-of-health", "display_name": "state of health",
+                           "score": 0.97}])
+    lib.api.add(905, title="SYNTHETIC unrelated pumps",
+                keywords=[{"id": "https://openalex.org/keywords/thermal-runaway",
+                           "display_name": "thermal runaway", "score": 0.5}])
+    lib.api.citing["W0"] = [["W902", "W903", "W904", "W905"]]
+    monkeypatch.setattr(lib.flow, "_chain_forms", lambda *args: {"task": [" state of health"], "setting": []})
+    run = snowball.request(lib.store, lib.rid, seeds=[lib.by_oid["W0"]])
+    assert execute(lib, run)["status"] == "completed"
+    listing = step(lib, run["id"], "snowball:list")[1]
+    named = {}
+    for oid in ("W904", "W905"):
+        head = lib.store.find_source_by_identifier("openalex", oid)
+        (item,) = [i for i in listing["items"] if i["head"] == head]
+        named[oid] = (item["names_gate_block"], item["position"])
+    assert named["W904"][0] is True and named["W905"][0] is False
+    assert named["W904"][1] < named["W905"][1]

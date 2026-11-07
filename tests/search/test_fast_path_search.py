@@ -162,7 +162,7 @@ def test_semantic_adapter_abstract_headers_and_legacy_revision(monkeypatch):
     assert result.outcome.next_cursor is None and result.connector['adapter_revision'] == 3
     assert requests[0].url.params['per_page'] == '50'
     assert len(requests[0].url.params['search.semantic']) == 1500  # OpenAlex's limit (D3)
-    assert 'cursor' not in requests[0].url.params and 'search.title_and_abstract' not in requests[0].url.params
+    assert 'cursor' not in requests[0].url.params and 'search.title_abstract_keywords' not in requests[0].url.params
     assert result.outcome.rate_limit['x-ratelimit-credits-used'] == '10'
     assert 'SYNTHETIC KEY' not in json.dumps(result.outcome.raw_payload)
 
@@ -324,9 +324,9 @@ def test_sw_failed_provider_is_retained_and_retry_reuses_queries_and_protocol(tm
     limited = True
     def handler(request):
         params = request.url.params
-        if params.get("per_page") == "1" or "search.title_and_abstract" not in params:
+        if params.get("per_page") == "1" or "search.title_abstract_keywords" not in params:
             return routed(request)  # count probes, the semantic search and the chain
-        attempts.append(params["search.title_and_abstract"])
+        attempts.append(params["search.title_abstract_keywords"])
         if limited:
             return httpx.Response(429, headers={"retry-after": "60"})
         return routed(request)

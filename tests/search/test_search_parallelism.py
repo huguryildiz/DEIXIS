@@ -122,19 +122,19 @@ class Hosts:
     @staticmethod
     def page(host, params):
         if host == "api.openalex.org":
-            return params.get("search.title_and_abstract"), 0 if params.get("cursor") in (None, "*") else int(params["cursor"])
+            return params.get("search.title_abstract_keywords"), 0 if params.get("cursor") in (None, "*") else int(params["cursor"])
         if host == "api.semanticscholar.org":
             return params["query"], int(params.get("offset") or 0)
         return params["q"], 0
 
     def answer(self, host, params, entry):
-        if host == "api.openalex.org" and (params.get("search.title_and_abstract") not in TOTALS or "per_page" not in params):
+        if host == "api.openalex.org" and (params.get("search.title_abstract_keywords") not in TOTALS or "per_page" not in params):
             # The fast path's semantic request and the routing step's field distribution: not served here.
-            entry |= {"provider": "openalex", "query": params.get("search.title_and_abstract"), "start": 0}
+            entry |= {"provider": "openalex", "query": params.get("search.title_abstract_keywords"), "start": 0}
             return httpx.Response(404)
         if host == "api.openalex.org":
             provider = "biorxiv" if biorxiv_module.SOURCE_ID in (params.get("filter") or "") else "openalex"
-            query = params.get("search.title_and_abstract")
+            query = params.get("search.title_abstract_keywords")
             cursor, size = params.get("cursor"), int(params["per_page"])
             start = 0 if cursor in (None, "*") else int(cursor)
         elif host == "api.semanticscholar.org":
@@ -244,7 +244,7 @@ class RefusedOnce(PagedProviders):
 
     def __call__(self, request):
         params = request.url.params
-        page = (params.get("search.title_and_abstract"), params.get("cursor"))
+        page = (params.get("search.title_abstract_keywords"), params.get("cursor"))
         if page[0] == self.query and page not in self.refused:
             self.refused.append(page)
             return httpx.Response(429, text="SYNTHETIC rate limit", headers={"retry-after": "0"})

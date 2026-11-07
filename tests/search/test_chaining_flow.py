@@ -83,7 +83,7 @@ class OpenAlex:
                 self.on_chain(self)
             results = [self.by_id[i] for i in ids if i in self.by_id]
             return httpx.Response(200, json={"meta": {"count": len(results)}, "results": results})
-        query = params.get("search.title_and_abstract") or ""
+        query = params.get("search.title_abstract_keywords") or ""
         if params.get("per_page") == "1" and params.get("select") == "id":
             return httpx.Response(200, json={"meta": {"count": 1 if " AND " in query else 40}, "results": []})
         return httpx.Response(200, json={"meta": {"count": len(self.works), "next_cursor": None},
@@ -271,3 +271,27 @@ def test_frozen_forms_that_no_longer_match_their_digest_stop_an_m1_run(lib, tmp_
         round_for(tampered, tmp_path)
     stopped = lib.store.run(tampered.run["id"])
     assert stopped["status"] == "failed" and stopped["pause_reason"] == "chain_forms_unverified"
+
+
+# A chained record whose text never holds a gate term, one with the term among the keywords OpenAlex's classifier
+# gave it and one with an unrelated keyword (D183).
+KEYWORDED = [replace(record("W710"), index_keywords=["battery state of health", "cell ageing"]),
+             replace(record("W711"), index_keywords=["thermal runaway"])]
+
+
+def test_the_gate_reads_openalex_keywords_and_still_drops_a_record_without_one(lib, tmp_path, monkeypatch):
+    # v1, the default rule: neither record names the gate block in its title or abstract, so only the keyword admits.
+    assert lib.run["budget"]["fast_path"]["chain_rule"] == "fast_chain_v1"
+    _, _, round_ = round_for(lib, tmp_path)
+    chain(round_, monkeypatch, forward=KEYWORDED)
+    assert passed(lib) == {"W710": 1, "W711": 0}
+
+
+def test_an_m1_run_reads_openalex_keywords_with_the_forms_it_froze(lib, tmp_path, monkeypatch):
+    from deixis.workflow.search import chaining
+
+    m1 = method_run(lib, "m1")
+    frozen(m1, chaining.admission_forms(GATE, QUERY_STEP))
+    _, _, round_ = round_for(m1, tmp_path)
+    chain(round_, monkeypatch, forward=KEYWORDED)
+    assert passed(m1) == {"W710": 1, "W711": 0}

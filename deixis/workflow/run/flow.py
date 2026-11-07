@@ -2004,7 +2004,9 @@ class ResearchFlow:
         """Write one answered fast-chain request (OpenAlex): the filter runs first, and only the records that pass are
         written, as a search writes them (normalised, merged by DOI, linked, a candidate with its hit). Every link is
         kept, passing or not, in `chain_links`. `normalised` is a `fast_chain_v2` run's filter (`chaining.passes_v2`)
-        over the forms its protocol froze; a v1 run reads `chaining.passes`."""
+        over the forms its protocol froze; a v1 run reads `chaining.passes`. Both read the record's OpenAlex keywords
+        beside its title and abstract (D183); the records are capped before the filter, so a wider gate never fetches
+        more than the direction's frozen allowance."""
         provider = "openalex"
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
         dispatched = outcome if isinstance(outcome, (facade.Dispatched, facade.DispatchedLookup)) else None
@@ -2018,7 +2020,8 @@ class ResearchFlow:
             (settings.payloads_dir / payload_path).write_text(json.dumps(outcome.raw_payload), encoding="utf-8")
             payload_digest = canonical.sha256_hex(outcome.raw_payload)
         admits = chaining.passes_v2 if normalised else chaining.passes
-        passed = [record for record in outcome.records if admits(forms, record.title, record.abstract)]
+        passed = [record for record in outcome.records
+                  if admits(forms, record.title, record.abstract, record.index_keywords)]
         if fast_arrival["late"]:
             passed = []
         ok = outcome.status in ("completed", "zero_results")

@@ -46,7 +46,7 @@ class Providers:
     def __call__(self, request):
         host, params = request.url.host, request.url.params
         if host == "api.openalex.org":
-            query = params.get("search.title_and_abstract")
+            query = params.get("search.title_abstract_keywords")
             if params.get("per_page") == "1" and params.get("select") == "id":
                 self.log.append((host, "count"))
                 self.counts.append(query)

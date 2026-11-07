@@ -60,7 +60,7 @@ class Transport:
         if host != "api.openalex.org" or not path.endswith("/works"):
             return httpx.Response(404)  # a DOI lookup answers "no result", which is an answer
         params = request.url.params
-        query = params.get("search.title_and_abstract") or ""
+        query = params.get("search.title_abstract_keywords") or ""
         if params.get("per_page") == "1" and params.get("select") == "id":
             self.probes.append(query)
             return httpx.Response(200, json={"meta": {"count": 1 if " AND " in query else 40}, "results": []})

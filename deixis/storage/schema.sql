@@ -1,9 +1,9 @@
--- The whole library schema at version 17 (D119). A new library is made from this file in one transaction and
--- records versions 1 to 17; a library at an older version is brought here by the steps in storage/upgrades.py.
+-- The whole library schema at version 18 (D119). A new library is made from this file in one transaction and
+-- records versions 1 to 18; a library at an older version is brought here by the steps in storage/upgrades.py.
 -- A schema change edits this file, raises the version below and adds the upgrade step with that number.
 -- Objects are in the order the old migration chain (0001_schema.sql to 0016_abstract_rows.sql) and the upgrade steps
 -- after it created them: the triggers on one table fire in that order.
--- deixis:schema-version 17
+-- deixis:schema-version 18
 
 CREATE TABLE scope_revisions (
   research_id TEXT NOT NULL REFERENCES researches(id),
@@ -110,7 +110,7 @@ CREATE TABLE source_versions (
   origin TEXT NOT NULL CHECK (origin IN ('provider', 'user_upload')),
   provider_payload_path TEXT,
   created_at TEXT NOT NULL
-, oa_pdf_version TEXT, cited_by_count INTEGER, cited_by_count_at TEXT, volume TEXT, issue TEXT, pages TEXT, author_keywords_json TEXT, reference_count INTEGER, references_read INTEGER NOT NULL DEFAULT 0, is_retracted INTEGER, is_retracted_at TEXT, record_match_json TEXT);
+, oa_pdf_version TEXT, cited_by_count INTEGER, cited_by_count_at TEXT, volume TEXT, issue TEXT, pages TEXT, author_keywords_json TEXT, reference_count INTEGER, references_read INTEGER NOT NULL DEFAULT 0, is_retracted INTEGER, is_retracted_at TEXT, record_match_json TEXT, index_keywords_json TEXT);
 
 CREATE TABLE identifier_mappings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

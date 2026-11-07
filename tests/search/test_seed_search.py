@@ -38,9 +38,9 @@ class Scripted(SeedTransport):
             if self.fail_seed and text.startswith(self.fail_seed):
                 return httpx.Response(400, json={"error": "SYNTHETIC refused"})
             return httpx.Response(200, json={"meta": {"count": len(self.seeded)}, "results": self.seeded})
-        if (request.url.host == "api.openalex.org" and "search.title_and_abstract" in params
+        if (request.url.host == "api.openalex.org" and "search.title_abstract_keywords" in params
                 and params.get("select") != "id"):
-            self.log.append(("keyword", params["search.title_and_abstract"], int(params["per_page"])))
+            self.log.append(("keyword", params["search.title_abstract_keywords"], int(params["per_page"])))
         return super().__call__(request)
 
 

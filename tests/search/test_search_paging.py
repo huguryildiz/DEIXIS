@@ -124,8 +124,8 @@ class PagedProviders:
             cursor, size = params.get("cursor"), int(params["per_page"])
             start = 0 if cursor in (None, "*") else int(cursor)
             self.openalex.append((start, size))
-            self.queries.append((params.get("search.title_and_abstract"), start))
-            if start == self.fail_at and not self.recover and self.fail_query in (None, params.get("search.title_and_abstract")):
+            self.queries.append((params.get("search.title_abstract_keywords"), start))
+            if start == self.fail_at and not self.recover and self.fail_query in (None, params.get("search.title_abstract_keywords")):
                 return httpx.Response(429, text="SYNTHETIC rate limit", headers={"retry-after": "600"})
             end = min(start + size, self.openalex_total)
             total = self.openalex_total if self.openalex_next_total is None else self.openalex_next_total
@@ -304,7 +304,7 @@ def test_a_page_the_provider_answers_with_a_server_error_is_sent_once_more(libra
     failures = {ALPHA: 1, BETA: 2}
 
     def handler(request):
-        text = request.url.params.get("search.title_and_abstract")
+        text = request.url.params.get("search.title_abstract_keywords")
         if "per_page" in request.url.params and failures.get(text, 0) > 0:
             failures[text] -= 1
             providers.queries.append((text, "503"))

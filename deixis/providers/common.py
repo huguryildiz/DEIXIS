@@ -123,6 +123,10 @@ class ProviderRecord:
     # Only what the authors themselves wrote: an indexer's controlled terms are the indexer's vocabulary, not the
     # field's own words, and slice 04b widens a search from the field's words (SW2.4).
     author_keywords: list[str] = field(default_factory=list)
+    # The keywords a provider's own classifier attached to the work, which nobody wrote: a different thing from
+    # `author_keywords` and never mixed into it. Empty unless the read asked for the field. The chain gate reads them
+    # (D183) so a linked work can name a gate block through a keyword its title and abstract never hold.
+    index_keywords: list[str] = field(default_factory=list)
 
 
 @dataclass

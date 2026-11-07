@@ -720,4 +720,10 @@ INSERT INTO scope_english_questions_new (research_id, scope_revision, text, orig
 DROP TABLE scope_english_questions;
 ALTER TABLE scope_english_questions_new RENAME TO scope_english_questions;
 """),
+    18: Step("0018_index_keywords.sql", False, """\
+-- D184: the keywords a provider's own classifier gave a work, kept beside the author's own list and never merged into
+-- it. The citation map's round list reads them so a work that names a gate block only through such a keyword is
+-- screened first. NULL: no read has brought any; an empty list means the provider answered with none.
+ALTER TABLE source_versions ADD COLUMN index_keywords_json TEXT;
+"""),
 }

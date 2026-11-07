@@ -6,6 +6,15 @@ and abstracts; abstracts arrive as `abstract_inverted_index`; rate-limit and cos
 headers are returned. Keyless and keyed modes have different daily budgets; the
 actual mode and returned limit headers are recorded per call.
 
+Keyword search: `search.title_abstract_keywords=` reads the keywords OpenAlex's own classifier attaches to a work
+beside its title and abstract, so a work whose text never holds the searched word is still found through a keyword
+that means it. Measured 7 Nov 2026 against the EE survey benchmark's 42 questions and 8,530 gold records, one query
+per question, the same string and date filter in both arms: recall rose at every depth read, by +0.0025 at 50 records
+and +0.0071 at 600 (a 95% interval that holds no zero at any depth), and the pool each query returned grew by about a
+fifteenth (`notes/2026-11-07-keyword-field/`). The gain is small in absolute terms and the measurement left out
+chaining, embedding and reranking, so it says nothing about the answer. It costs no extra request and removes no
+record. A query sentence is not a search string here: OpenAlex reads every word of it at once and returns nothing.
+
 Paging (docs.openalex.org, "Paging", read 2026-09-21): `cursor=*` starts a cursor read, every answer carries
 `meta.next_cursor` for the next page and a null one ends it; cursor paging has no depth limit, while basic paging
 stops at 10,000. `per_page` goes up to 100: 200 still answers but the help pages call it deprecated (read 2026-10-12).
@@ -52,7 +61,7 @@ def semantic_text(text: str, limit: int = SEMANTIC_MAX_CHARS) -> str:
         if units > limit:
             return text[:i]
     return text
-SEARCH_PARAM = "search.title_and_abstract"
+SEARCH_PARAM = "search.title_abstract_keywords"
 SELECT = ",".join(
     [
         "id", "doi", "ids", "display_name", "publication_year", "type", "authorships",
@@ -125,6 +134,10 @@ def _record(work: dict[str, Any]) -> ProviderRecord:
         raw=work,
         other_versions=other_versions,
         cited_by_count=work.get("cited_by_count") if isinstance(work.get("cited_by_count"), int) else None,
+        # Empty unless the read asked for the field; a keyword without a display name is skipped, and the score is
+        # not read, since the gate matches words and not a ranking.
+        index_keywords=[name for keyword in work.get(KEYWORDS_FIELD) or []
+                        if isinstance(keyword, dict) and (name := keyword.get("display_name"))],
         # Only a boolean OpenAlex answered counts; an absent or malformed field is unknown, never "not retracted" (D27).
         is_retracted=work.get("is_retracted") if isinstance(work.get("is_retracted"), bool) else None,
         # Absent unless this read asked for the field; an absent count is unknown, never zero.
@@ -252,9 +265,14 @@ def _works_page(response: httpx.Response | None, outcome: SearchOutcome, cursor:
     return outcome
 
 
+# The keywords OpenAlex's own classifier attached to a work: a list of `{id, display_name, score}` (checked live
+# 7 Nov 2026). Asked for on a chain read alone, where the admission gate reads them (D183); a keyword search needs no
+# field of its own, since `search.title_abstract_keywords` already matches against them.
+KEYWORDS_FIELD = "keywords"
 # The two requests of citation chaining (D95, slice 15). Both read the fields an sw search reads, the reference list
-# included, so a chained record carries its own bibliography like any record an sw query found.
-CHAIN_SELECT = SELECT + f",{REFERENCE_COUNT_FIELD},{REFERENCES_FIELD}"
+# included, so a chained record carries its own bibliography like any record an sw query found, plus the keywords the
+# gate reads.
+CHAIN_SELECT = SELECT + f",{REFERENCE_COUNT_FIELD},{REFERENCES_FIELD},{KEYWORDS_FIELD}"
 MAX_IDS_PER_REQUEST = 100
 
 

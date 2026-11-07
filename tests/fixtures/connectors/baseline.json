@@ -521,7 +521,7 @@
                 "1"
               ],
               [
-                "search.title_and_abstract",
+                "search.title_abstract_keywords",
                 "synthetic query"
               ],
               [
@@ -576,6 +576,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_openalex_inverted_index",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -602,7 +603,7 @@
                   "year": 2021
                 }
               ],
-              "request_description": "GET https://api.openalex.org/works search.title_and_abstract='synthetic query' per_page=1 cursor=* access=api_key",
+              "request_description": "GET https://api.openalex.org/works search.title_abstract_keywords='synthetic query' per_page=1 cursor=* access=api_key",
               "retries": 0,
               "status": "completed"
             }
@@ -649,7 +650,7 @@
                 "1"
               ],
               [
-                "search.title_and_abstract",
+                "search.title_abstract_keywords",
                 "synthetic query"
               ],
               [
@@ -700,7 +701,7 @@
               "provider_total": null,
               "rate_limit": {},
               "records": [],
-              "request_description": "GET https://api.openalex.org/works search.title_and_abstract='synthetic query' per_page=1 access=api_key",
+              "request_description": "GET https://api.openalex.org/works search.title_abstract_keywords='synthetic query' per_page=1 access=api_key",
               "retries": 0,
               "status": "parse_error"
             }
@@ -756,7 +757,7 @@
                 "1"
               ],
               [
-                "search.title_and_abstract",
+                "search.title_abstract_keywords",
                 "synthetic query"
               ],
               [
@@ -811,6 +812,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_openalex_inverted_index",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -837,7 +839,7 @@
                   "year": 2021
                 }
               ],
-              "request_description": "GET https://api.openalex.org/works search.title_and_abstract='synthetic query' per_page=1 cursor=synthetic-token access=api_key",
+              "request_description": "GET https://api.openalex.org/works search.title_abstract_keywords='synthetic query' per_page=1 cursor=synthetic-token access=api_key",
               "retries": 0,
               "status": "completed"
             }
@@ -884,7 +886,7 @@
                 "1"
               ],
               [
-                "search.title_and_abstract",
+                "search.title_abstract_keywords",
                 "synthetic query"
               ],
               [
@@ -935,7 +937,7 @@
               "provider_total": null,
               "rate_limit": {},
               "records": [],
-              "request_description": "GET https://api.openalex.org/works search.title_and_abstract='synthetic query' per_page=1 access=api_key",
+              "request_description": "GET https://api.openalex.org/works search.title_abstract_keywords='synthetic query' per_page=1 access=api_key",
               "retries": 0,
               "status": "parse_error"
             }
@@ -984,7 +986,7 @@
                 "1"
               ],
               [
-                "search.title_and_abstract",
+                "search.title_abstract_keywords",
                 "synthetic query"
               ],
               [
@@ -1035,7 +1037,7 @@
               "provider_total": null,
               "rate_limit": {},
               "records": [],
-              "request_description": "GET https://api.openalex.org/works search.title_and_abstract='synthetic query' per_page=1 access=api_key",
+              "request_description": "GET https://api.openalex.org/works search.title_abstract_keywords='synthetic query' per_page=1 access=api_key",
               "retries": 0,
               "status": "rate_limited"
             }
@@ -1090,7 +1092,7 @@
                 "1"
               ],
               [
-                "search.title_and_abstract",
+                "search.title_abstract_keywords",
                 "synthetic query"
               ],
               [
@@ -1139,7 +1141,7 @@
                 "1"
               ],
               [
-                "search.title_and_abstract",
+                "search.title_abstract_keywords",
                 "synthetic query"
               ],
               [
@@ -1196,6 +1198,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_openalex_inverted_index",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -1222,7 +1225,7 @@
                   "year": 2021
                 }
               ],
-              "request_description": "GET https://api.openalex.org/works search.title_and_abstract='synthetic query' per_page=1 access=api_key",
+              "request_description": "GET https://api.openalex.org/works search.title_abstract_keywords='synthetic query' per_page=1 access=api_key",
               "retries": 1,
               "status": "completed"
             }
@@ -1269,7 +1272,7 @@
                 "1"
               ],
               [
-                "search.title_and_abstract",
+                "search.title_abstract_keywords",
                 "synthetic query"
               ],
               [
@@ -1324,6 +1327,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_openalex_inverted_index",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -1350,7 +1354,7 @@
                   "year": 2021
                 }
               ],
-              "request_description": "GET https://api.openalex.org/works search.title_and_abstract='synthetic query' per_page=1 access=api_key",
+              "request_description": "GET https://api.openalex.org/works search.title_abstract_keywords='synthetic query' per_page=1 access=api_key",
               "retries": 0,
               "status": "completed"
             }
@@ -1397,7 +1401,7 @@
                 "1"
               ],
               [
-                "search.title_and_abstract",
+                "search.title_abstract_keywords",
                 "synthetic query"
               ],
               [
@@ -1448,6 +1452,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_openalex_inverted_index",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -1474,7 +1479,7 @@
                   "year": 2021
                 }
               ],
-              "request_description": "GET https://api.openalex.org/works search.title_and_abstract='synthetic query' per_page=1 access=keyless",
+              "request_description": "GET https://api.openalex.org/works search.title_abstract_keywords='synthetic query' per_page=1 access=keyless",
               "retries": 0,
               "status": "completed"
             }
@@ -1532,7 +1537,7 @@
                 "1"
               ],
               [
-                "search.title_and_abstract",
+                "search.title_abstract_keywords",
                 "synthetic query"
               ],
               [
@@ -1591,6 +1596,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_openalex_inverted_index",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -1617,7 +1623,7 @@
                   "year": 2021
                 }
               ],
-              "request_description": "GET https://api.openalex.org/works search.title_and_abstract='synthetic query' per_page=1 cursor=* access=api_key sort=publication_date:desc select+publication_date",
+              "request_description": "GET https://api.openalex.org/works search.title_abstract_keywords='synthetic query' per_page=1 cursor=* access=api_key sort=publication_date:desc select+publication_date",
               "retries": 0,
               "status": "completed"
             }
@@ -1722,6 +1728,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_semantic_scholar",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Author"
                   ],
@@ -1949,6 +1956,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_semantic_scholar",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Author"
                   ],
@@ -2320,6 +2328,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_semantic_scholar",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Author"
                   ],
@@ -2446,6 +2455,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_semantic_scholar",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Author"
                   ],
@@ -2568,6 +2578,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_semantic_scholar",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Author"
                   ],
@@ -2763,6 +2774,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_semantic_scholar",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Author"
                   ],
@@ -2892,6 +2904,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_semantic_scholar",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Author"
                   ],
@@ -3124,6 +3137,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_semantic_scholar",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Author"
                   ],
@@ -3502,6 +3516,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_semantic_scholar",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Author"
                   ],
@@ -3627,6 +3642,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_semantic_scholar",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Author"
                   ],
@@ -3764,6 +3780,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_crossref_jats",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -3997,6 +4014,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_crossref_jats",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -4382,6 +4400,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_crossref_jats",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -4510,6 +4529,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_crossref_jats",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -4638,6 +4658,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_crossref_jats",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -4833,6 +4854,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_arxiv_summary",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Author"
                   ],
@@ -5065,6 +5087,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_arxiv_summary",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Author"
                   ],
@@ -5355,6 +5378,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_arxiv_summary",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Author"
                   ],
@@ -5486,6 +5510,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_arxiv_summary",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Author"
                   ],
@@ -5617,6 +5642,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_arxiv_summary",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Author"
                   ],
@@ -5768,7 +5794,7 @@
                 "1"
               ],
               [
-                "search.title_and_abstract",
+                "search.title_abstract_keywords",
                 "synthetic query"
               ],
               [
@@ -5823,6 +5849,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_openalex_inverted_index",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -5849,7 +5876,7 @@
                   "year": 2021
                 }
               ],
-              "request_description": "GET https://api.openalex.org/works search.title_and_abstract='synthetic query' filter=locations.source.id:S4306402567 per_page=1 cursor=* access=api_key",
+              "request_description": "GET https://api.openalex.org/works search.title_abstract_keywords='synthetic query' filter=locations.source.id:S4306402567 per_page=1 cursor=* access=api_key",
               "retries": 0,
               "status": "completed"
             }
@@ -5900,7 +5927,7 @@
                 "1"
               ],
               [
-                "search.title_and_abstract",
+                "search.title_abstract_keywords",
                 "synthetic query"
               ],
               [
@@ -5951,7 +5978,7 @@
               "provider_total": null,
               "rate_limit": {},
               "records": [],
-              "request_description": "GET https://api.openalex.org/works search.title_and_abstract='synthetic query' filter=locations.source.id:S4306402567 per_page=1 access=api_key",
+              "request_description": "GET https://api.openalex.org/works search.title_abstract_keywords='synthetic query' filter=locations.source.id:S4306402567 per_page=1 access=api_key",
               "retries": 0,
               "status": "parse_error"
             }
@@ -6009,7 +6036,7 @@
                 "1"
               ],
               [
-                "search.title_and_abstract",
+                "search.title_abstract_keywords",
                 "synthetic query"
               ],
               [
@@ -6064,6 +6091,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_openalex_inverted_index",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -6090,7 +6118,7 @@
                   "year": 2021
                 }
               ],
-              "request_description": "GET https://api.openalex.org/works search.title_and_abstract='synthetic query' filter=locations.source.id:S4306402567 per_page=1 cursor=synthetic-token access=api_key",
+              "request_description": "GET https://api.openalex.org/works search.title_abstract_keywords='synthetic query' filter=locations.source.id:S4306402567 per_page=1 cursor=synthetic-token access=api_key",
               "retries": 0,
               "status": "completed"
             }
@@ -6141,7 +6169,7 @@
                 "1"
               ],
               [
-                "search.title_and_abstract",
+                "search.title_abstract_keywords",
                 "synthetic query"
               ],
               [
@@ -6192,7 +6220,7 @@
               "provider_total": null,
               "rate_limit": {},
               "records": [],
-              "request_description": "GET https://api.openalex.org/works search.title_and_abstract='synthetic query' filter=locations.source.id:S4306402567 per_page=1 access=api_key",
+              "request_description": "GET https://api.openalex.org/works search.title_abstract_keywords='synthetic query' filter=locations.source.id:S4306402567 per_page=1 access=api_key",
               "retries": 0,
               "status": "parse_error"
             }
@@ -6245,7 +6273,7 @@
                 "1"
               ],
               [
-                "search.title_and_abstract",
+                "search.title_abstract_keywords",
                 "synthetic query"
               ],
               [
@@ -6296,7 +6324,7 @@
               "provider_total": null,
               "rate_limit": {},
               "records": [],
-              "request_description": "GET https://api.openalex.org/works search.title_and_abstract='synthetic query' filter=locations.source.id:S4306402567 per_page=1 access=api_key",
+              "request_description": "GET https://api.openalex.org/works search.title_abstract_keywords='synthetic query' filter=locations.source.id:S4306402567 per_page=1 access=api_key",
               "retries": 0,
               "status": "rate_limited"
             }
@@ -6355,7 +6383,7 @@
                 "1"
               ],
               [
-                "search.title_and_abstract",
+                "search.title_abstract_keywords",
                 "synthetic query"
               ],
               [
@@ -6408,7 +6436,7 @@
                 "1"
               ],
               [
-                "search.title_and_abstract",
+                "search.title_abstract_keywords",
                 "synthetic query"
               ],
               [
@@ -6465,6 +6493,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_openalex_inverted_index",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -6491,7 +6520,7 @@
                   "year": 2021
                 }
               ],
-              "request_description": "GET https://api.openalex.org/works search.title_and_abstract='synthetic query' filter=locations.source.id:S4306402567 per_page=1 access=api_key",
+              "request_description": "GET https://api.openalex.org/works search.title_abstract_keywords='synthetic query' filter=locations.source.id:S4306402567 per_page=1 access=api_key",
               "retries": 1,
               "status": "completed"
             }
@@ -6542,7 +6571,7 @@
                 "1"
               ],
               [
-                "search.title_and_abstract",
+                "search.title_abstract_keywords",
                 "synthetic query"
               ],
               [
@@ -6597,6 +6626,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_openalex_inverted_index",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -6623,7 +6653,7 @@
                   "year": 2021
                 }
               ],
-              "request_description": "GET https://api.openalex.org/works search.title_and_abstract='synthetic query' filter=locations.source.id:S4306402567 per_page=1 access=api_key",
+              "request_description": "GET https://api.openalex.org/works search.title_abstract_keywords='synthetic query' filter=locations.source.id:S4306402567 per_page=1 access=api_key",
               "retries": 0,
               "status": "completed"
             }
@@ -6674,7 +6704,7 @@
                 "1"
               ],
               [
-                "search.title_and_abstract",
+                "search.title_abstract_keywords",
                 "synthetic query"
               ],
               [
@@ -6725,6 +6755,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_openalex_inverted_index",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -6751,7 +6782,7 @@
                   "year": 2021
                 }
               ],
-              "request_description": "GET https://api.openalex.org/works search.title_and_abstract='synthetic query' filter=locations.source.id:S4306402567 per_page=1 access=keyless",
+              "request_description": "GET https://api.openalex.org/works search.title_abstract_keywords='synthetic query' filter=locations.source.id:S4306402567 per_page=1 access=keyless",
               "retries": 0,
               "status": "completed"
             }
@@ -7100,6 +7131,7 @@
                   "abstract": "RESULTS: SYNTHETIC evidence",
                   "abstract_origin": "provider_pubmed",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Group"
                   ],
@@ -7418,6 +7450,7 @@
                   "abstract": "RESULTS: SYNTHETIC evidence",
                   "abstract_origin": "provider_pubmed",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Group"
                   ],
@@ -7912,6 +7945,7 @@
                   "abstract": "RESULTS: SYNTHETIC evidence",
                   "abstract_origin": "provider_pubmed",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Group"
                   ],
@@ -8113,6 +8147,7 @@
                   "abstract": "RESULTS: SYNTHETIC evidence",
                   "abstract_origin": "provider_pubmed",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Group"
                   ],
@@ -8306,6 +8341,7 @@
                   "abstract": "RESULTS: SYNTHETIC evidence",
                   "abstract_origin": "provider_pubmed",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Group"
                   ],
@@ -8505,6 +8541,7 @@
                   "author_keywords": [
                     "synthetic"
                   ],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -8778,6 +8815,7 @@
                   "author_keywords": [
                     "synthetic"
                   ],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -9166,6 +9204,7 @@
                   "author_keywords": [
                     "synthetic"
                   ],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -9297,6 +9336,7 @@
                   "author_keywords": [
                     "synthetic"
                   ],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -9497,6 +9537,7 @@
                   "abstract": null,
                   "abstract_origin": null,
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -9773,6 +9814,7 @@
                   "abstract": null,
                   "abstract_origin": null,
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -10160,6 +10202,7 @@
                   "abstract": null,
                   "abstract_origin": null,
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -10290,6 +10333,7 @@
                   "abstract": null,
                   "abstract_origin": null,
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -10483,6 +10527,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_core",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -10742,6 +10787,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_core",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -11096,6 +11142,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_core",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -11217,6 +11264,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_core",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -11413,6 +11461,7 @@
                   "abstract": null,
                   "abstract_origin": null,
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -11683,6 +11732,7 @@
                   "abstract": null,
                   "abstract_origin": null,
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -12068,6 +12118,7 @@
                   "abstract": null,
                   "abstract_origin": null,
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -12196,6 +12247,7 @@
                   "abstract": null,
                   "abstract_origin": null,
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -12387,6 +12439,7 @@
                   "author_keywords": [
                     "synthetic"
                   ],
+                  "index_keywords": [],
                   "authors": [],
                   "cited_by_count": null,
                   "is_retracted": null,
@@ -12669,7 +12722,7 @@
                 "1"
               ],
               [
-                "search.title_and_abstract",
+                "search.title_abstract_keywords",
                 "synthetic query"
               ],
               [
@@ -12722,7 +12775,7 @@
                 "x-ratelimit-remaining-usd": "0"
               },
               "records": [],
-              "request_description": "GET https://api.openalex.org/works search.title_and_abstract='synthetic query' per_page=1 access=api_key",
+              "request_description": "GET https://api.openalex.org/works search.title_abstract_keywords='synthetic query' per_page=1 access=api_key",
               "retries": 0,
               "status": "rate_limited"
             }
@@ -13137,6 +13190,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_arxiv_summary",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Author"
                   ],
@@ -13187,6 +13241,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_arxiv_summary",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Author"
                   ],
@@ -13438,6 +13493,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_semantic_scholar",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Author"
                   ],
@@ -13487,6 +13543,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_semantic_scholar",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Author"
                   ],
@@ -13536,6 +13593,7 @@
                   "abstract": "SYNTHETIC evidence",
                   "abstract_origin": "provider_semantic_scholar",
                   "author_keywords": [],
+                  "index_keywords": [],
                   "authors": [
                     "Synthetic Author"
                   ],

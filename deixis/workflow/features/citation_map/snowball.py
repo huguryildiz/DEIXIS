@@ -22,6 +22,7 @@ Rules this module keeps:
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from deixis.documents import acquisition
@@ -526,9 +527,28 @@ def _vocabulary(store: Any, run: dict[str, Any]) -> dict[str, Any]:
     return search_query_rules.settled(approved["vocabulary"], approved["queries"])
 
 
+def _index_keywords(source: dict[str, Any]) -> list[str]:
+    """The keywords a provider's own classifier gave this record, as the read that brought it stored them (D184).
+
+    A row from a library written before that read has none, and an unreadable or non-list value is read as none: the
+    order then rests on the title and abstract alone, as it did before.
+    """
+    stored = source.get("index_keywords_json")
+    if not stored:
+        return []
+    try:
+        keywords = json.loads(stored)
+    except ValueError:
+        return []
+    return [keyword for keyword in keywords if isinstance(keyword, str)] if isinstance(keywords, list) else []
+
+
 def _round_list(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
     """The works that first joined the research in this round, read from the admissions, each with the seeds and
-    directions that link to it, in screening order (gate blocks named first, then more linking seeds, then arrival)."""
+    directions that link to it, in screening order (gate blocks named first, then more linking seeds, then arrival).
+
+    A work names a gate block through its title, its abstract or one of its stored provider keywords (D184); every
+    work is listed either way, so the keywords move a work up the order and never keep one out."""
     store, rid = flow.store, run["research_id"]
     forms = flow._chain_forms(run, scope, _vocabulary(store, run))
     heads = store.work_heads(rid)
@@ -555,7 +575,9 @@ def _round_list(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> dict[s
                                       " LIMIT 1", (item["head"],)).fetchone()
         items.append({"work_id": item["work_id"], "head": item["head"], "seeds": sorted(item.get("seeds", ())),
                       "directions": sorted(item.get("directions", ())),
-                      "names_gate_block": chaining.passes(forms, source["title"], abstract[0] if abstract else None),
+                      "names_gate_block": chaining.passes(forms, source["title"],
+                                                          abstract[0] if abstract else None,
+                                                          _index_keywords(source)),
                       "arrival": item["arrival"]})
     items.sort(key=lambda i: (not i["names_gate_block"], -len(i["seeds"]), i["arrival"]))
     for position, item in enumerate(items):

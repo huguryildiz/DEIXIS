@@ -610,7 +610,7 @@ def parity_openalex(request: httpx.Request) -> httpx.Response | None:
         return httpx.Response(200, json={"meta": {"count": 0, "next_cursor": None}, "results": []})  # chaining: none
     if "search.semantic" in params:
         return httpx.Response(200, json={"meta": {"count": PARITY_SEMANTIC}, "results": PARITY_WORKS[:PARITY_SEMANTIC]})
-    if "search.title_and_abstract" in params and "cursor" in params:
+    if "search.title_abstract_keywords" in params and "cursor" in params:
         cursor = params["cursor"]
         start = PARITY_SEMANTIC if cursor == "*" else int(cursor.removeprefix("parity-"))
         end = min(PARITY_TOTAL, start + int(params.get("per_page", "100")))
@@ -739,7 +739,7 @@ def oa_quota(request: httpx.Request) -> httpx.Response | None:
     refused as OpenAlex refuses a spent daily budget (HTTP 429 with no budget left), which the app reads as
     `quota_exhausted`, not as a short rate limit it would wait out."""
     params = request.url.params
-    if "search.title_and_abstract" not in params or "cursor" not in params:
+    if "search.title_abstract_keywords" not in params or "cursor" not in params:
         return None
     if params["cursor"] == "*":
         return httpx.Response(200, json={"meta": {"count": 2 * len(WORKS), "next_cursor": "oa-quota-2"}, "results": WORKS})
@@ -756,7 +756,7 @@ def openalex(request: httpx.Request) -> httpx.Response:
     if CITATION_MODE:
         return citation_lookup(request)
     params = request.url.params
-    candidate_query = params.get('search.title_and_abstract', '').lower()
+    candidate_query = params.get('search.title_abstract_keywords', '').lower()
     if 'kfourclaim' in candidate_query or 'kfouraccess' in candidate_query:
         works = CANDIDATE_WORKS + ([CANDIDATE_ACCESS_WORK] if 'kfouraccess' in candidate_query else [])
         return httpx.Response(200, json={'meta': {'count': len(works)}, 'results': works})
@@ -780,7 +780,7 @@ def openalex(request: httpx.Request) -> httpx.Response:
         # make every phrase worth the same handful of works (slice 04a).
         count = {"empty": 0, "broad": VERY_LARGE_COUNT + 1}.get(PROBE_MODE or "", PROBE_COUNT)
         return httpx.Response(200, json={"meta": {"count": count}, "results": []})
-    if RATE_LIMIT_MODE and request.url.host == "api.openalex.org" and "search.title_and_abstract" in params:
+    if RATE_LIMIT_MODE and request.url.host == "api.openalex.org" and "search.title_abstract_keywords" in params:
         return httpx.Response(429, headers={"retry-after": "0"})
     if OA_QUOTA_MODE and request.url.host == "api.openalex.org" and (answer := oa_quota(request)) is not None:
         return answer

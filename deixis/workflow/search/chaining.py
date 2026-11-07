@@ -7,8 +7,11 @@ re-derives nothing it did not already store.
 Two rules hold this module together:
 
 - **Nothing topical is written here.** A linked work passes when a form of one of the two approved gate blocks stands
-  at a word start in its title or abstract (`ranking.blocks_in`), the one matcher the ranking and the abstract stage
-  use; which words those are is the research's own vocabulary.
+  at a word start in its title, its abstract or one of the keywords OpenAlex's own classifier gave it
+  (`ranking.blocks_in`), the one matcher the ranking and the abstract stage use; which words those are is the
+  research's own vocabulary. Each keyword is matched on its own, so no form is read across the join between two of
+  them or between a keyword and the abstract. The keywords only ever open the gate wider (D183): a work that passed
+  on its title or abstract passes whatever they say, and a work whose read asked for no keyword is judged as before.
 - **A seed is a work, not a record.** Two heads with the same work or the same normalised title are one seed, so a
   preprint and its published record the merge left apart do not spend two places.
 """
@@ -83,10 +86,14 @@ def backward_links(seeds: list[dict[str, Any]], batch: Iterable[str]) -> list[tu
                   for ref in set(seed.get("references") or ()) & wanted)
 
 
-def passes(forms: dict[str, list[str]], title: str | None, abstract: str | None) -> bool:
-    """Whether a linked work names the setting or the task: one gate block's form at a word start in its title or its
-    abstract. A work without an abstract is judged on its title alone (slice 15, Task 3.5)."""
-    return bool(blocks_in(forms, f"{title or ''} {abstract or ''}"))
+def passes(forms: dict[str, list[str]], title: str | None, abstract: str | None,
+           keywords: Iterable[str] | None = None) -> bool:
+    """Whether a linked work names the setting or the task: one gate block's form at a word start in its title, its
+    abstract or one of its provider keywords. A work without an abstract is judged on its title alone (slice 15,
+    Task 3.5); one whose read asked for no keyword is judged on title and abstract alone, as before D183."""
+    if blocks_in(forms, f"{title or ''} {abstract or ''}"):
+        return True
+    return any(blocks_in(forms, keyword) for keyword in keywords or ())
 
 
 def _plain_singular(word: str) -> str:
@@ -133,10 +140,17 @@ def forms_digest(forms: dict[str, list[str]]) -> str:
     return canonical.sha256_hex(forms)
 
 
-def passes_v2(forms: dict[str, list[str]], title: str | None, abstract: str | None) -> bool:
-    """Whether a linked work holds one v2 form at a word start of its normalised title or abstract."""
-    padded = " " + " ".join(norm_words(f"{title or ''} {abstract or ''}")) + " "
-    return any(form in padded for group in forms.values() for form in group)
+def passes_v2(forms: dict[str, list[str]], title: str | None, abstract: str | None,
+              keywords: Iterable[str] | None = None) -> bool:
+    """Whether a linked work holds one v2 form at a word start of its normalised title, abstract or provider keyword.
+
+    Each keyword is normalised and padded on its own, so a form is never read across the join between two of them."""
+    wanted = [form for group in forms.values() for form in group]
+    for text in (f"{title or ''} {abstract or ''}", *(keywords or ())):
+        padded = " " + " ".join(norm_words(text)) + " "
+        if any(form in padded for form in wanted):
+            return True
+    return False
 
 
 def chained_heads(linked_heads: Iterable[str], keyword_pool: set[str]) -> list[str]:

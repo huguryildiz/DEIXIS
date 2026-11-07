@@ -1718,6 +1718,7 @@ class Store:
             else:
                 svid, wid = self._insert_provider_record(provider, record, payload_path)
             self._store_author_keywords(svid, record)
+            self._store_index_keywords(svid, record)
             self.set_reference_count(svid, record.reference_count)
             self._store_references(svid, record)
             for other in record.other_versions:
@@ -1735,6 +1736,20 @@ class Store:
         self.conn.execute(
             "UPDATE source_versions SET author_keywords_json = ? WHERE id = ? AND author_keywords_json IS NULL",
             (dumps(record.author_keywords), svid),
+        )
+
+    def _store_index_keywords(self, svid: str, record: Any) -> None:
+        """Fill the keywords the provider's own classifier gave the record while the column is empty (D184).
+
+        A different list from the author's own, kept apart from it by the same rule: one provider's list is never
+        merged into another's, and the first list read stands.
+        """
+        keywords = getattr(record, "index_keywords", None)
+        if not keywords:
+            return
+        self.conn.execute(
+            "UPDATE source_versions SET index_keywords_json = ? WHERE id = ? AND index_keywords_json IS NULL",
+            (dumps(keywords), svid),
         )
 
     def set_reference_count(self, svid: str, count: int | None) -> None:

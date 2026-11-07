@@ -55,7 +55,7 @@ class OpenAlex:
             asked = params["filter"].removeprefix("doi:").split("|")
             found = [w for w in self.works if w["doi"] and w["doi"].removeprefix("https://doi.org/") in asked]
         else:
-            found = self.searches.get(params["search.title_and_abstract"], [])
+            found = self.searches.get(params["search.title_abstract_keywords"], [])
         return httpx.Response(200, json={"meta": {"count": len(found) + self.short_count}, "results": found})
 
 

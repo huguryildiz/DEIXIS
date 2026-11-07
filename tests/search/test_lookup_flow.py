@@ -97,7 +97,7 @@ class Sources:
         params = request.url.params
         if host == "api.openalex.org":
             if params.get("per_page") == "1" and params.get("select") == "id":
-                self.probes.append(params.get("search.title_and_abstract"))
+                self.probes.append(params.get("search.title_abstract_keywords"))
                 return httpx.Response(200, json={"meta": {"count": 8}, "results": []})
             self.pages.append(params.get("select"))
             return httpx.Response(200, json={"meta": {"count": len(self.works), "next_cursor": None},

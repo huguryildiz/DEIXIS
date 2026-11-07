@@ -139,6 +139,33 @@ def proc_table() -> dict[str, dict]:
     return table
 
 
+def download_roots(home: Path, work: Path) -> list[tuple[Path, bool]]:
+    """Where a misdirected download could land: the home folder's own files, the usual user folders, the shell's
+    current folder (this checkout: Wry's default without a Downloads folder) and the scenario folder."""
+    user = [home / d for d in ("Documents", "Desktop", "Pictures", "Music", "Videos", "Templates", "Public")]
+    return [(home, False), *((d, True) for d in user if d.is_dir()), (Path.cwd(), True), (work, True)]
+
+
+def files_state(roots: list[tuple[Path, bool]], skip: set[Path]) -> dict[Path, tuple[int, int]]:
+    """Every file (size, mtime) under each root (its subfolders only when the flag says so) outside `skip` and
+    outside hidden and __pycache__ folders (caches the webview, Python and the tools write): an added or changed file
+    there is a write outside the Downloads folder."""
+    found: dict[Path, tuple[int, int]] = {}
+    for root, deep in roots:
+        for folder, dirs, names in os.walk(root):
+            here = Path(folder)
+            dirs[:] = [d for d in dirs if deep and not d.startswith(".") and d != "__pycache__" and here / d not in skip]
+            for name in names:
+                if here / name in skip:
+                    continue
+                try:
+                    st = (here / name).stat()
+                except OSError:
+                    continue
+                found[here / name] = (st.st_size, st.st_mtime_ns)
+    return found
+
+
 def owner_uid(pid: int) -> int | None:
     try:
         return os.stat(f"/proc/{pid}").st_uid
@@ -459,7 +486,7 @@ class Scenario:
                 unexplained.append(proc | {"why": "names this scenario's folders or the installed app"})
             elif proc["ppid"] in seen_pids - driver:
                 unexplained.append(proc | {"why": "its parent pid was a DEIXIS process of this scenario"})
-            elif proc["ppid"] == 2 or not cmd:
+            elif proc["ppid"] == 2:  # kthreadd's children
                 excused.add(ident)
                 explained.append(f"{proc['pid']} {proc['name']} kernel thread")
             elif (owner := owner_uid(proc["pid"])) is not None and owner != os.getuid():  # DEIXIS runs as this user
@@ -733,7 +760,10 @@ def format_rows(fmt: str, exe: str, marks: list[str], work: Path, env: dict[str,
             opened = wait_for(lambda: title[:40] in drv.text(), 30, 1)
             time.sleep(2)
             fresh = lambda suffix: sorted(p for p in downloads.glob(f"*{suffix}") if p.name not in before)  # noqa: E731
-            elsewhere_before = {p for folder in (Path(env["HOME"]), work) for p in folder.glob("*") if p.is_file()}
+            skip = {downloads, evidence, bin_dir, Path.cwd() / "acceptance.txt", *(x.data for x in scenarios),
+                    *work.glob("driver-*.log"), *work.glob("shell-*.err")}  # this script's own logs
+            roots = download_roots(Path(env["HOME"]), work)
+            elsewhere_before = files_state(roots, skip)
 
             def export(item: str, suffix: str, count: int) -> bool:  # Export → item, until `count` new files are there
                 return bool(wait_for(lambda: drv.click("Export", True), 20, 1)) and bool(wait_for(
@@ -747,20 +777,21 @@ def format_rows(fmt: str, exe: str, marks: list[str], work: Path, env: dict[str,
             first_csv = {p: sha256(p) for p in fresh(".csv")}
             steps["csv_2"] = export("Comma-separated values", ".csv", 2)
             md, csv = fresh(".md"), fresh(".csv")
-            kept_first = all(p.exists() and sha256(p) == digest for p, digest in (first_md | first_csv).items())
-            free_names = len(md) == 2 and len(csv) == 2 and all(" (1)." in p.name for p in
-                                                                 [x for x in md + csv if x not in first_md and x not in first_csv])
+            kept_first = len(first_md) == 1 and len(first_csv) == 1 and all(
+                p.exists() and sha256(p) == digest for p, digest in (first_md | first_csv).items())
+            free_names = len(md) == 2 and len(csv) == 2 and {p.name for p in md + csv} == {
+                name for first in (first_md | first_csv) for name in (first.name, f"{first.stem} (1){first.suffix}")}
             md_text = md[0].read_text(encoding="utf-8") if md else ""
             csv_text = csv[0].read_text(encoding="utf-8-sig") if csv else ""
-            elsewhere = sorted(str(p) for folder in (Path(env["HOME"]), work) for p in folder.glob("*")
-                               if p.is_file() and p not in elsewhere_before and p.suffix in (".md", ".csv"))
+            after_state = files_state(roots, skip)
+            elsewhere = sorted(str(p) for p, st in after_state.items() if elsewhere_before.get(p) != st)[:20]
             shell_log = work / f"driver-{fmt}-download.log"
             shell_said = [ln for ln in shell_log.read_text(errors="replace").splitlines() if "DEIXIS: Download" in ln
                           or "DEIXIS: download" in ln] if shell_log.exists() else []
             for path in md + csv:
                 shutil.move(str(path), evidence / f"{fmt}-download-{path.name}")
-            row(f"{fmt}_download", bool(md and title in md_text and csv and "synthetic" in csv_text.lower() and kept_first
-                                        and free_names and not elsewhere),
+            row(f"{fmt}_download", bool(all(steps.values()) and md and title in md_text and csv
+                                        and "synthetic" in csv_text.lower() and kept_first and free_names and not elsewhere),
                 run=(finished or {}).get("status"), opened=bool(opened), steps=steps, files=[p.name for p in md + csv],
                 first_files_unchanged=kept_first, second_got_free_name=free_names, written_elsewhere=elsewhere,
                 downloads_folder=str(downloads), report_bytes=len(md_text), csv_lines=len(csv_text.splitlines()),

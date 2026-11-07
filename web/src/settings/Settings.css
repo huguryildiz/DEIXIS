@@ -53,11 +53,11 @@
 .app .settings-page .set-role-text{display:grid;gap:1px;min-width:0}
 .app .settings-page .set-roles .set-role-text b{min-width:0}
 .app .settings-page .set-roles .set-role-text p{min-width:0}
-.app .settings-page .set-role-model{position:relative;display:block;min-width:0}
-.app .settings-page .set-role-model .connection-icon{position:absolute;top:50%;left:9px;display:inline-flex;width:14px;height:14px;transform:translateY(-50%);pointer-events:none}
+.app .settings-page .set-role-model{display:flex;align-items:center;gap:6px;min-width:0}
+.app .settings-page .set-role-model .connection-icon{display:inline-flex;flex:none;width:14px;height:14px}
 .app .settings-page .set-role-model .connection-icon svg,.app .settings-page .set-role-model .connection-icon img{width:14px;height:14px}
 .app .settings-page .set-roles .select{width:100%;min-width:0}
-.app .settings-page .set-role-model.has-icon .select{padding-left:29px}
+.app .settings-page .set-role-model .select{flex:1 1 auto}
 /* On a phone the selects go under the step, side by side, so the page never scrolls sideways. */
 @media(max-width:620px){
   .app .settings-page .set-roles>div{grid-template-columns:30px minmax(0,1fr) minmax(0,.7fr)}

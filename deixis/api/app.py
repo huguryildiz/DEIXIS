@@ -12,7 +12,7 @@ import secrets
 import sqlite3
 import tempfile
 import time
-from contextlib import asynccontextmanager, contextmanager, nullcontext
+from contextlib import asynccontextmanager, contextmanager, nullcontext, suppress
 from pathlib import Path
 from typing import Annotated, Any, Awaitable, Callable, Iterator, Literal
 
@@ -1062,6 +1062,19 @@ def create_app(
         if owner:
             # Start-up person readings must enter the queue before the first automatic tick.
             start_watch_scheduler()
+
+        async def warm_connection_health() -> None:
+            # Each connection's check waits on its own CLI or HTTP probe, and together they take a few seconds. Running
+            # them once at start-up fills every adapter's health cache, so Settings opened right after launch shows the
+            # models at once instead of waiting for the probes. A failed probe is the check's own answer and is kept.
+            import logging
+
+            try:
+                await asyncio.gather(*(a.health() for a in adapter_map.values()), return_exceptions=True)
+            except Exception:  # noqa: BLE001 - a warm-up failure must never stop the server from starting
+                logging.getLogger(__name__).exception("Connection warm-up failed at startup; continuing")
+
+        warm_task = asyncio.create_task(warm_connection_health())
         try:
             yield
         finally:
@@ -1070,6 +1083,11 @@ def create_app(
             # kept; the process exit closes its descriptor, which releases it (not inherited by child processes).
             import logging
             failures: list[tuple[str, Exception]] = []
+
+            async def stop_warm_up() -> None:
+                warm_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await warm_task
 
             async def stop_update_check() -> None:
                 update_stop.set()
@@ -1109,8 +1127,8 @@ def create_app(
             async def close_library() -> None:
                 conn.close()
 
-            steps = [("version check", stop_update_check), ("watch scheduler", stop_scheduler), ("worker", stop_worker),
-                     ("equations", equations.stop),
+            steps = [("connection warm-up", stop_warm_up), ("version check", stop_update_check),
+                     ("watch scheduler", stop_scheduler), ("worker", stop_worker), ("equations", equations.stop),
                      ("built-in embedding", builtin.stop), ("http client", lambda: close_client(http)),
                      ("local http client", lambda: close_client(local_http)),
                      *((f"adapter {name}", adapter.close) for name, adapter in adapter_map.items()),
@@ -2975,7 +2993,7 @@ def create_app(
     @app.get("/api/pdf-reader")
     async def pdf_reader_status() -> dict[str, Any]:
         """PyMuPDF, which reads every PDF's text layer: it comes with DEIXIS, so only its version is reported."""
-        return tool_updates.pymupdf_status()
+        return await asyncio.to_thread(tool_updates.pymupdf_status)
 
     @app.get("/api/tool-updates/{tool}")
     async def tool_update(tool: str, request: Request) -> dict[str, Any]:

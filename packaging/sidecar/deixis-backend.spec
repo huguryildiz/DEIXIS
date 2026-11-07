@@ -25,7 +25,7 @@ a = Analysis(
     [str(REPO / "deixis" / "runtime" / "frozen_entry.py")],
     pathex=[str(REPO)],
     binaries=[],
-    datas=package_manifest.datas(REPO, identity) + copy_metadata("deixis") + [(str(tessdata / n), "tessdata") for n in TESSDATA_FILES],
+    datas=package_manifest.datas(REPO, identity) + copy_metadata("deixis") + copy_metadata("pymupdf") + [(str(tessdata / n), "tessdata") for n in TESSDATA_FILES],
     hiddenimports=list(package_manifest.HIDDEN_IMPORTS),
     hookspath=[],
     runtime_hooks=[],

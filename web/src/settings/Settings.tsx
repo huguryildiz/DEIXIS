@@ -205,7 +205,9 @@ export function SettingsPage({ dark, section, language, onLanguage, theme, onThe
         return <div key={role} className="set-role">
           <span className="set-role-ico" aria-hidden><Icon size={15} /></span>
           <span className="set-role-text"><b>{t(label)}</b><p>{t(desc)}</p></span>
-          <span className={`set-role-model${picked ? ' has-icon' : ''}`}>
+          {/* The connection icon sits beside the select: a native select ignores padding, so an icon inside its box
+              would land on the model name. */}
+          <span className="set-role-model">
           {picked && <ConnectionIcon id={picked.connection} />}
           <select className="select" aria-label={t('{role} model', { role: t(label) })} disabled={locked} value={!list.length ? NO_DEFAULT : value}
             onChange={e => {

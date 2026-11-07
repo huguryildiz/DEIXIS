@@ -16,7 +16,7 @@ import re
 import subprocess
 import sys
 from typing import Any
-from importlib.metadata import version as package_version
+from importlib.metadata import PackageNotFoundError, version as package_version
 
 import httpx
 
@@ -53,10 +53,24 @@ def newer(latest: str | None, current: str | None) -> bool | None:
     return _parts(latest) > _parts(current)
 
 
+def pymupdf_version() -> str:
+    """PyMuPDF's release, from its package metadata when there is one and from the module itself otherwise.
+
+    The packaged app carries no dist-info for its libraries, so the metadata lookup fails there; the module's own
+    `__version__` is the same string and keeps the panel from losing the reader entirely.
+    """
+    import pymupdf
+
+    try:
+        return package_version("pymupdf")
+    except PackageNotFoundError:
+        return str(getattr(pymupdf, "__version__", "") or pymupdf.mupdf_version)
+
+
 def pymupdf_status() -> dict:
     import pymupdf
 
-    return {"available": True, "version": package_version("pymupdf"), "mupdf_version": pymupdf.mupdf_version}
+    return {"available": True, "version": pymupdf_version(), "mupdf_version": pymupdf.mupdf_version}
 
 
 async def _latest(http: httpx.AsyncClient, tool: str) -> str:
@@ -77,7 +91,7 @@ async def check(tool: str, http: httpx.AsyncClient) -> dict:
         if status.get("bundled"):  # it comes with this DEIXIS and moves with it: no request to Homebrew
             return {"tool": tool, "installed": installed, "tested": tested, "latest": None, "update_available": None, "error": None}
     else:
-        installed = tested = package_version("pymupdf")
+        installed = tested = pymupdf_version()
     try:
         latest, error = await _latest(http, tool), None
     except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:

@@ -86,6 +86,8 @@ The app is open source under AGPL-3.0. You pay only for the model you connect.
 
 ## Install
 
+<a id="install-the-mac-app"></a>
+
 ### Mac
 
 For Apple Silicon Macs (M1 and newer) with macOS 13 or later; so far tried only on macOS 27. Intel Macs are not packaged.
@@ -100,6 +102,8 @@ For Apple Silicon Macs (M1 and newer) with macOS 13 or later; so far tried only 
 
 DEIXIS opens in its own window. Closing the window keeps it running in the menu bar, where Quit stops it and everything it started. Your library stays in `~/Library/Application Support/DEIXIS` when you update or delete the app. There is no automatic update: once a day DEIXIS asks GitHub whether a newer version exists and says so in the sidebar (Settings → About turns this off); download the newer DMG and replace the app.
 
+<a id="install-on-windows"></a>
+
 ### Windows
 
 A preview for Windows 10 and 11 on x64 PCs. So far it has been tried on a GitHub Windows Server runner and on Windows 11 for ARM running the x64 build under emulation; not yet on Windows 10 or on an ordinary x64 PC.
@@ -110,6 +114,8 @@ A preview for Windows 10 and 11 on x64 PCs. So far it has been tried on a GitHub
 DEIXIS opens in its own window. Closing the window keeps it running in the notification area, where Quit stops it and everything it started. Your library stays in `%LOCALAPPDATA%\DEIXIS` when you update or uninstall the app. There is no automatic update: DEIXIS says when a newer version exists (as on macOS); run the newer installer.
 
 Not in the Windows preview: the built-in local models in Settings (keyword search, the Voyage reranker and API embedding connections work), and reading arXiv LaTeX sources (the PDF is read instead).
+
+<a id="install-on-linux"></a>
 
 ### Linux
 

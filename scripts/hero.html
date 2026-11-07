@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>DEIXIS hero</title>
+<!-- The README and social images: the answer screen on a dark plate, flat or tilted.
+     Rendered by scripts/hero_shot.mjs; the app picture is site/shots/answer-dark.jpg, so it follows the app. -->
+<style>
+  html, body { margin: 0; height: 100%; background: #080c15; }
+  .plate {
+    position: relative; width: 100%; height: 100%; overflow: hidden;
+    background:
+      radial-gradient(120% 90% at 78% 72%, rgba(59, 91, 154, .38) 0%, rgba(8, 12, 21, 0) 62%),
+      radial-gradient(90% 70% at 12% 8%, rgba(147, 172, 223, .10) 0%, rgba(8, 12, 21, 0) 55%),
+      linear-gradient(160deg, #0b1020 0%, #080c15 48%, #060910 100%);
+    display: grid; place-items: center;
+  }
+  .shot { width: 74%; border-radius: 14px; overflow: hidden; box-shadow: 0 60px 160px -40px rgba(0, 0, 0, .85), 0 0 0 1px rgba(255, 255, 255, .07); }
+  .shot img { display: block; width: 100%; height: auto; }
+  /* The tilted cut: the same plate, the screen turned away from the reader. */
+  body.tilt .shot { width: 66%; transform: perspective(2800px) rotateX(40deg) rotateZ(-26deg) scale(.80); }
+  body.tilt .plate { place-items: center; }
+</style>
+<div class="plate"><div class="shot"><img src="../site/shots/answer-dark.jpg" alt=""></div></div>

@@ -4,7 +4,7 @@ A local research workspace for scientific literature. You ask a question; DEIXIS
 
 ## Install the Mac app
 
-For Apple Silicon Macs (M1 and newer) with macOS 13 or later; so far tried only on macOS 27. Intel Macs and Linux are not packaged yet.
+For Apple Silicon Macs (M1 and newer) with macOS 13 or later; so far tried only on macOS 27. Intel Macs are not packaged.
 
 1. Download `DEIXIS_<version>_aarch64.dmg` from [Releases](https://github.com/huguryildiz/DEIXIS/releases). Its SHA-256 is listed on the release page: `shasum -a 256 DEIXIS_*.dmg`.
 2. Open the DMG and drag DEIXIS into Applications.
@@ -28,6 +28,17 @@ A preview for Windows 10 and 11 on x64 PCs. So far it has been tried on a GitHub
 DEIXIS opens in its own window. Closing the window keeps it running in the notification area, where Quit stops it and everything it started. Your library stays in `%LOCALAPPDATA%\DEIXIS` when you update or uninstall the app. There is no automatic update: DEIXIS says when a newer version exists (as on macOS); run the newer installer.
 
 Not in the Windows preview: the built-in local models in Settings (keyword search, the Voyage reranker and API embedding connections work), and reading arXiv LaTeX sources (the PDF is read instead).
+
+## Install on Linux
+
+A preview for 64-bit x86 PCs with Ubuntu 22.04 or newer (or a distribution of the same age). It has been tried on GitHub's Ubuntu 22.04 and 24.04 runners under a virtual display, not yet on a desktop. The Linux packages are built by CI but not yet attached to a release.
+
+- `.deb` (Ubuntu, Debian and their relatives): `sudo apt install ./DEIXIS_<version>_amd64.deb`. apt pulls in WebKitGTK and the tray library. `sudo apt remove deixis` removes the app.
+- AppImage (any distribution): `chmod +x DEIXIS_<version>_amd64.AppImage`, then run it. It needs FUSE 2 (`sudo apt install libfuse2`, on Ubuntu 24.04 `libfuse2t64`); without it, start it with `--appimage-extract-and-run`.
+
+DEIXIS opens in its own window; closing the window quits it and everything it started. Your library is in `~/.local/share/deixis` (or `$XDG_DATA_HOME/deixis`) and stays when you remove the app. Keys you save go to a desktop keyring that offers the Secret Service (GNOME Keyring; KWallet on recent KDE); without one, Settings says so and keeps them for the session, or in a file only you can read if you choose that. Downloads go to your Downloads folder. OCR works without installing Tesseract. There is no automatic update: DEIXIS says when a newer version exists (as on macOS).
+
+Not yet checked on Linux: the built-in local models in Settings, and a real desktop session (tray, keyring prompts, file manager).
 
 ## Run from source
 

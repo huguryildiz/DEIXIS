@@ -9,6 +9,8 @@ import asyncio
 import json
 import time
 
+from types import SimpleNamespace
+
 import httpx
 import pytest
 from fastapi.testclient import TestClient
@@ -19,6 +21,7 @@ from deixis.documents.fetch import FetchResult
 from deixis.models.adapter import ModelStepResult
 from deixis.providers.registry import CONNECTORS
 from deixis.storage import db
+from deixis.workflow.run.flow import ResearchFlow
 from deixis.workflow.search import english_question
 from deixis.workflow.search import search as fast_search
 from deixis.workflow.search.vocabulary import VERY_LARGE_COUNT
@@ -265,12 +268,43 @@ def test_a_failed_translation_still_stops_the_run(tmp_path, monkeypatch):
 def test_a_question_request_that_cannot_be_built_raises_instead_of_leaving_the_planning_arm_waiting(monkeypatch):
     # The planning steps wait for the question's request to be on its way before they ask a model. If building that
     # request raises, the waiting arm must get the error, so the event is set on the way out whatever happens.
-    monkeypatch.setattr(fast_search, "first_request_plan", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no plan")))
+    def broken(*args, **kwargs):
+        raise RuntimeError("the request could not be built")
+
+    # The first thing the call does is read this run's frozen plan, so that read stands for every step that can fail
+    # before the request goes out.
+    monkeypatch.setattr(fast_search, "frozen_body", broken)
 
     async def call():
         sent = asyncio.Event()
         with pytest.raises(RuntimeError):
-            await fast_search.first_semantic(None, {"id": 1}, {}, None, sent)
+            await fast_search.first_semantic(SimpleNamespace(store=None), {"id": 1}, {}, None, sent)
         return sent.is_set()
 
     assert asyncio.run(call())
+
+
+def test_a_planning_failure_keeps_its_own_error_when_the_early_request_also_fails(tmp_path, monkeypatch):
+    # The planning arm and the question's request run side by side. When both raise, the run must report the planning
+    # step's own error: the early request's failure is the search stage's business, and raising it where the planning
+    # error is on its way out would name the wrong cause.
+    openalex = CountingOpenAlex()
+
+    async def broken_request(flow, run, scope, seed_context=None, sent=None):
+        if sent is not None:
+            sent.set()
+        raise RuntimeError("SYNTHETIC early request failure")
+
+    async def broken_planning(self, run, scope):
+        raise ValueError("SYNTHETIC planning failure")
+
+    monkeypatch.setattr(fast_search, "first_semantic", broken_request)
+    monkeypatch.setattr(ResearchFlow, "_vocabulary", broken_planning)
+    with TestClient(app_for(tmp_path, monkeypatch, openalex, FakeAdapter())) as client:
+        client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
+        rid, run_id = start(client, QUESTION)
+        view, run = wait(client, rid, run_id)
+    assert run["status"] == "failed", run
+    recorded = json.dumps(run)
+    assert "SYNTHETIC planning failure" in recorded
+    assert "SYNTHETIC early request failure" not in recorded

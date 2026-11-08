@@ -28,6 +28,9 @@ from deixis.workflow.run.source_keys import key_stem, suffixes
 from deixis.workflow.run.evidence_deps import EVIDENCE_STATUS_SQL
 
 ACTIVE_RUN_STATUSES = ("queued", "running", "pause_requested")
+# `step`'s default: let the research's current protocol decide which protocol the new step belongs to. A caller that
+# knows better passes the hash itself, or None for a step opened before its run froze any protocol.
+CURRENT_PROTOCOL = object()
 # Research rows a feature owns for its run machinery: never listed, searched or opened as a research.
 INTERNAL_RESEARCH_KINDS = ("citation_check",)
 DISCOVERY_RUN_KINDS = ("discovery", "fulltext_fetch", "fulltext_adjudication")
@@ -1406,9 +1409,18 @@ class Store:
         return usage
 
     # ---- steps --------------------------------------------------------------------------
-    def step(self, run_id: str, operation_key: str, kind: str, output: Any = None) -> dict[str, Any]:
+    def step(self, run_id: str, operation_key: str, kind: str, output: Any = None, *,
+             protocol_hash: Any = CURRENT_PROTOCOL) -> dict[str, Any]:
         """The step with this key, opened `pending` when there is none. `output` is written only on that opening: a
-        claim that must carry its own time, since `run_steps` has no opening time (slice 17a)."""
+        claim that must carry its own time, since `run_steps` has no opening time (slice 17a).
+
+        `protocol_hash` names the protocol this step belongs to, for a caller that knows it: the hash itself, or None
+        for a step its run opens before freezing any protocol of its own. Left out, the research's current protocol
+        decides, which is what every step of a single discovery run belongs to. A caller passes it where that is not
+        true: a step opened before this run's freeze would otherwise take an earlier run's hash and claim to belong to
+        a plan it never searched under. The value is written by the insert itself, inside this one transaction, so a
+        stop between two writes cannot leave the wrong hash behind.
+        """
         with transaction(self.conn):
             row = self.conn.execute(
                 "SELECT * FROM run_steps WHERE run_id = ? AND operation_key = ?", (run_id, operation_key)
@@ -1420,9 +1432,11 @@ class Store:
                 columns = {"id": sid, "run_id": run_id, "operation_key": operation_key, "kind": kind, "status": "pending"}
                 if output is not None:
                     columns["output_json"] = dumps(output)
-                run = self.conn.execute("SELECT research_id, scope_revision FROM runs WHERE id = ?", (run_id,)).fetchone()
-                frozen = self.current_protocol(run["research_id"], run["scope_revision"]) if run else None
-                columns["protocol_hash"] = frozen["hash"] if frozen else None
+                if protocol_hash is CURRENT_PROTOCOL:
+                    run = self.conn.execute("SELECT research_id, scope_revision FROM runs WHERE id = ?", (run_id,)).fetchone()
+                    frozen = self.current_protocol(run["research_id"], run["scope_revision"]) if run else None
+                    protocol_hash = frozen["hash"] if frozen else None
+                columns["protocol_hash"] = protocol_hash
                 self.conn.execute(
                     f"INSERT INTO run_steps ({', '.join(columns)}) VALUES ({', '.join('?' for _ in columns)})",
                     tuple(columns.values()),

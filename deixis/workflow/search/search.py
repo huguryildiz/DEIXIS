@@ -115,6 +115,21 @@ def frozen_body(store, run):
     return json.loads(row[0]) if row else None
 
 
+def frozen_protocol_hash(store, run):
+    """The hash of the protocol record this run froze, read from the record its protocol step names.
+
+    The step's own output holds the hash too, but a step written before that output carried it names only the
+    revision; the record is the one place the hash always is. None when this run froze no protocol.
+    """
+    step = store.existing_step(run["id"], "protocol")
+    if step is None or step["status"] != "succeeded" or not step["output"]:
+        return None
+    row = store.conn.execute(
+        "SELECT body_sha256 FROM protocol_records WHERE research_id = ? AND protocol_revision = ?",
+        (run["research_id"], step["output"]["protocol_revision"])).fetchone()
+    return row[0] if row else None
+
+
 def plan_version(store, run):
     """The `fast_path_search` version this run's protocol froze: 1 when it froze none or no protocol is frozen yet."""
     body = frozen_body(store, run)
@@ -462,9 +477,22 @@ async def first_semantic(flow, run, scope, seed_context=None, sent=None):
     try:
         # Everything that can fail before the request is sent sits inside this block, so `sent` is set on the way
         # out whatever happens and the planning arm waiting on it raises instead of waiting forever.
-        plan = first_request_plan(run, scope, seed_context)
-        if plan["semantic"]["query_text"] is not None:
-            flow.store.step(run["id"], "search:fast:semantic", "provider_search:openalex")
+        # A run whose own protocol is already frozen sends what that protocol holds, never a freshly built request:
+        # on a resume the frozen plan is the record of what this run searches, and a plan frozen before the request
+        # carried the person's own sentence holds a different one (its own English sentence, or no text at all, which
+        # cancels the request). Building a new one here would send what the protocol does not name.
+        frozen = frozen_body(flow.store, run)
+        plan = (frozen.get("fast_path_search") or first_request_plan(run, scope, seed_context)) if frozen \
+            else first_request_plan(run, scope, seed_context)
+        # The step belongs to the protocol whose plan is being sent: this run's own, or none when it has frozen none.
+        # The research's current protocol would be the wrong answer in both directions — a later run of the same scope
+        # revision may have frozen a newer one since, and a run that has frozen nothing would take that one's hash.
+        hash_of = frozen_protocol_hash(flow.store, run) if frozen else None
+        # Opened here whether or not there is text to send, so the row carries the protocol this call decided on: a
+        # plan with no text is cancelled a moment later, and `cancel_step` would otherwise open the row itself and
+        # take the research's current protocol. Opened before this run's freeze it carries no hash, whatever an
+        # earlier run of the same scope revision froze (Ç1); on a resume after this run's own freeze, that hash.
+        flow.store.step(run["id"], "search:fast:semantic", "provider_search:openalex", protocol_hash=hash_of)
         send_page = page_sender(flow, run, scope, plan, False, shared)
     finally:
         if sent is not None:

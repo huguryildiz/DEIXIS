@@ -437,3 +437,104 @@ def test_the_questions_request_is_sent_once_and_the_search_stage_never_repeats_i
     rows = lib.conn.execute("SELECT COUNT(*) FROM search_runs sr JOIN run_steps s ON s.id = sr.step_id"
                             " WHERE s.operation_key = 'search:fast:semantic'").fetchone()[0]
     assert rows == 1
+
+
+def freeze(lib, plan):
+    """Freeze `plan` as this run's own protocol, the way the discovery run does once its planning steps are done."""
+    record = lib.store.freeze_protocol(lib.rid, lib.run["scope_revision"], {"fast_path_search": plan})
+    step = lib.store.step(lib.run["id"], "protocol", "protocol:freeze")
+    lib.store.start_step(step["id"])
+    lib.store.finish_step(step["id"], "succeeded",
+                          output={"protocol_revision": record["protocol_revision"], "protocol_hash": record["hash"]})
+    return record
+
+
+def test_a_run_whose_protocol_is_frozen_sends_what_the_protocol_holds(library, tmp_path):
+    """On a resume the frozen plan is the record of what this run searches, so the early request reads it instead of
+    building a new one. A plan frozen before the request carried the person's own sentence holds a different text —
+    its own English sentence — and sending a freshly built request would leave the run searching what its protocol
+    does not name."""
+    lib = library
+    flow, scope, plan = setup(lib, tmp_path)
+    frozen_text = "SYNTHETIC frozen sentence"
+    freeze(lib, plan | {"semantic": plan["semantic"] | {"query_text": frozen_text, "query_origin": "english_question"}})
+    calls = []
+    scripted(flow, calls)
+    asyncio.run(fast_search.first_semantic(flow, lib.run, scope))
+    assert [query for endpoint, query, _, _ in calls if endpoint == "semantic"] == [frozen_text]
+    assert frozen_text != scope["question"]
+
+
+def test_a_frozen_plan_with_no_text_cancels_the_early_request_instead_of_sending_the_question(library, tmp_path):
+    """The same rule at its edge: a plan frozen while no English sentence existed carries no text, and that plan's
+    own answer is to cancel. The early call must not turn that into a request for the question as written."""
+    lib = library
+    flow, scope, plan = setup(lib, tmp_path)
+    freeze(lib, plan | {"semantic": plan["semantic"] | {"query_text": None, "query_origin": english_question.MISSING}})
+    calls = []
+    scripted(flow, calls)
+    asyncio.run(fast_search.first_semantic(flow, lib.run, scope))
+    assert [endpoint for endpoint, *_ in calls if endpoint == "semantic"] == []
+    step = lib.store.existing_step(lib.run["id"], "search:fast:semantic")
+    assert step["status"] == "cancelled"
+
+
+def test_the_early_step_of_a_later_discovery_run_carries_no_protocol_hash(library, tmp_path):
+    """A later discovery run of the same scope revision opens its request before freezing its own protocol, so the
+    step belongs to no protocol and carries NULL. `store.step` reads the research's current protocol, which is the
+    earlier run's, and a step holding that hash would claim to belong to a plan it never searched under (Ç1)."""
+    lib = library
+    flow, scope, plan = setup(lib, tmp_path)
+    earlier = lib.store.freeze_protocol(lib.rid, lib.run["scope_revision"], {"fast_path_search": plan})
+    assert lib.store.current_protocol(lib.rid, lib.run["scope_revision"])["hash"] == earlier["hash"]
+    calls = []
+    scripted(flow, calls)
+    asyncio.run(fast_search.first_semantic(flow, lib.run, scope))  # this run has frozen none of its own yet
+    step = lib.store.existing_step(lib.run["id"], "search:fast:semantic")
+    assert step["protocol_hash"] is None and step["status"] == "succeeded"
+    assert [query for endpoint, query, _, _ in calls if endpoint == "semantic"] == [scope["question"]]
+
+
+def test_a_resumed_run_records_its_own_protocol_not_a_newer_one(library, tmp_path):
+    """The step belongs to the protocol whose plan it sends. A later run of the same scope revision may have frozen a
+    newer protocol since; the research's current protocol would then put this run's request under a plan it never
+    searched under."""
+    lib = library
+    flow, scope, plan = setup(lib, tmp_path)
+    mine = freeze(lib, plan)
+    newer = lib.store.freeze_protocol(lib.rid, lib.run["scope_revision"], {"fast_path_search": plan, "later": True},
+                                      reason="later_discovery_run")
+    assert lib.store.current_protocol(lib.rid, lib.run["scope_revision"])["hash"] == newer["hash"] != mine["hash"]
+    scripted(flow, [])
+    asyncio.run(fast_search.first_semantic(flow, lib.run, scope))
+    step = lib.store.existing_step(lib.run["id"], "search:fast:semantic")
+    assert step["protocol_hash"] == mine["hash"]
+
+
+def test_a_cancelled_early_request_also_carries_this_runs_protocol(library, tmp_path):
+    """The cancelled step is a record too: a frozen plan with no text cancels, and that row must name the protocol
+    whose plan said so, not whichever protocol the research froze last."""
+    lib = library
+    flow, scope, plan = setup(lib, tmp_path)
+    mine = freeze(lib, plan | {"semantic": plan["semantic"] | {"query_text": None,
+                                                               "query_origin": english_question.MISSING}})
+    newer = lib.store.freeze_protocol(lib.rid, lib.run["scope_revision"], {"fast_path_search": plan, "later": True},
+                                      reason="later_discovery_run")
+    scripted(flow, [])
+    asyncio.run(fast_search.first_semantic(flow, lib.run, scope))
+    step = lib.store.existing_step(lib.run["id"], "search:fast:semantic")
+    assert step["status"] == "cancelled"
+    assert step["protocol_hash"] == mine["hash"] != newer["hash"]
+
+
+def test_the_protocol_hash_is_read_from_the_record_not_the_step_output(library, tmp_path):
+    """A protocol step written before its output carried the hash names only the revision. The record is the one
+    place the hash always is, so the request still records it instead of NULL."""
+    lib = library
+    flow, scope, plan = setup(lib, tmp_path)
+    mine = freeze(lib, plan)
+    step = lib.store.existing_step(lib.run["id"], "protocol")
+    lib.store.set_step_output(step["id"], {"protocol_revision": mine["protocol_revision"]})  # no hash, as of old
+    scripted(flow, [])
+    asyncio.run(fast_search.first_semantic(flow, lib.run, scope))
+    assert lib.store.existing_step(lib.run["id"], "search:fast:semantic")["protocol_hash"] == mine["hash"]

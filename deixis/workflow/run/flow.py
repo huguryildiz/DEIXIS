@@ -610,6 +610,7 @@ class ResearchFlow:
         # comparison signal) wait for the translation `_vocabulary` asks for (P2).
         sent = asyncio.Event()
         first_request = asyncio.create_task(fast_search.first_semantic(self, run, scope, seed_context, sent))
+        planning_failed = False
         try:
             await sent.wait()  # the request is on its way before any step asks a model
             # The Boolean queries' words come from code, so no model chooses what is searched (SW2.3).
@@ -644,14 +645,22 @@ class ResearchFlow:
                 ), reason=reason)
                 self.store.finish_step(protocol_step["id"], "succeeded",
                                        output={"protocol_revision": record["protocol_revision"], "protocol_hash": record["hash"]})
+        except BaseException:
+            planning_failed = True
+            raise
         finally:
             # A planning step that stopped the run leaves the request in flight: it is waited for here, so its page
             # is recorded under its own step and a resume does not send it again. Its own failure is not reported
-            # here; the search stage retries it, and the planning arm's stop stands.
+            # here; the search stage retries it, and the planning arm's stop stands. A planning step that failed
+            # keeps its own error: an error raised in here would replace the one on its way out, and the run would
+            # report the wrong cause.
             try:
                 await first_request
             except RunStopped:
                 pass
+            except Exception:
+                if not planning_failed:
+                    raise
 
         self._close_clock_stage(run, "plan")
         self._enter_clock_stage(run, "search")

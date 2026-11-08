@@ -323,12 +323,14 @@ def close_queries(flow, run, specs, reason):
                 cancel_step(flow.store, run["id"], key, "provider_search:openalex", reason, ("pending", "running"))
 
 
-def page_sender(flow, run, scope, plan, retry_failed, shared):
+def page_sender(flow, run, scope, plan, retry_failed, shared, retry_cancels=("budget_exhausted",)):
     """The one function that sends a page of a search and records it, and the stop it reads.
 
     `shared` carries what the callers share: `failure` is the failure to report, `s2_task` the Semantic Scholar slot
     whose write comes before the first keyword page. `first_semantic` and `execute` each build their own sender, so
-    the question's request can go out before anything plans and the search stage can send the rest later (P2)."""
+    the question's request can go out before anything plans and the search stage can send the rest later (P2).
+    `retry_cancels` are the stop reasons a cancelled page may be sent again for, and it is read only where
+    `retry_failed` is set."""
     store, run_id = flow.store, run["id"]
     effort = scope["effort"]
 
@@ -349,7 +351,7 @@ def page_sender(flow, run, scope, plan, retry_failed, shared):
                     PROVIDER_WAIT[effort], key.split(":page:")[0], allowance)
         step = store.existing_step(run_id, key)
         old = (step or {}).get("output") or {}
-        retry_cancelled = bool(step and step["status"] == "cancelled" and step["error_code"] == "budget_exhausted" and retry_failed)
+        retry_cancelled = bool(step and step["status"] == "cancelled" and step["error_code"] in retry_cancels and retry_failed)
         retry_page_only = bool(step and retry_failed and (step["status"] in ("failed", "outcome_unknown") or retry_cancelled))
         admission = old.get("fast_path_request") or {"class": klass, "request_index": index, "limit": limit}
         limit = admission["limit"]
@@ -493,7 +495,12 @@ async def first_semantic(flow, run, scope, seed_context=None, sent=None):
         # take the research's current protocol. Opened before this run's freeze it carries no hash, whatever an
         # earlier run of the same scope revision froze (Ç1); on a resume after this run's own freeze, that hash.
         flow.store.step(run["id"], "search:fast:semantic", "provider_search:openalex", protocol_hash=hash_of)
-        send_page = page_sender(flow, run, scope, plan, False, shared)
+        # Under the m2 method the plan step reads this page's records, so this arm retries a request an earlier
+        # attempt of the same run left failed or cancelled by a deadline: the plan cannot be written without that
+        # page, and a resume that could not send it again would stop at the same place for ever. The other methods
+        # leave every retry to the search stage, which retries no deadline.
+        send_page = page_sender(flow, run, scope, plan, fast_path.search_method(run["budget"]) == "m2", shared,
+                                retry_cancels=("budget_exhausted", "deadline"))
     finally:
         if sent is not None:
             sent.set()

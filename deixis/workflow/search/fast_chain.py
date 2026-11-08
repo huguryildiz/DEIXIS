@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+from collections import defaultdict
 from dataclasses import replace
 from datetime import timedelta
 
@@ -15,7 +16,7 @@ from deixis.providers import facade
 from deixis.providers.common import FIRST_PAGE
 from deixis.providers.registry import CONNECTORS
 from deixis.storage.db import transaction
-from deixis.workflow.search import chaining, search as fast_search, ranking, seed_match, small_batch
+from deixis.workflow.search import chaining, search as fast_search, ranking, search_plan, seed_match, small_batch
 from deixis.workflow.run import fast_path
 
 RETRY_BACKOFF_SECONDS = 1.5  # wait before resending a request that never left, times the attempt number
@@ -24,6 +25,27 @@ RETRY_BACKOFF_SECONDS = 1.5  # wait before resending a request that never left, 
 def work_id(value):
     value = str(value).rsplit("/", 1)[-1]
     return value if re.fullmatch(r"W\d+", value) else None
+
+
+def forward_pages(seeds, allowance, paged=True):
+    """One entry per forward request: which seed it reads, and which page of that seed's citing works.
+
+    Under the m2 method the plan names one to three works, so an allowance left over once every named work has been
+    read once is spent on the next page of the same work rather than on a work the plan did not name. The pages are
+    handed out round by round, so no seed is read twice before every seed has been read once.
+
+    Without `paged` — every other method — each seed is read once and a leftover allowance stays unspent, exactly as
+    it did before: those runs are the measurement's baseline and their requests are not to move.
+    """
+    if not paged:
+        return [{"seed": seed, "seed_index": index, "page": 1} for index, seed in enumerate(seeds[:allowance])]
+    pages = []
+    for page in range(1, allowance + 1):
+        for index, seed in enumerate(seeds):
+            if len(pages) >= allowance:
+                return pages
+            pages.append({"seed": seed, "seed_index": index, "page": page})
+    return pages
 
 
 def request_plan(seeds, policy, held, prior=()):
@@ -43,7 +65,9 @@ def request_plan(seeds, policy, held, prior=()):
     size = policy["backward_page_size"]
     batches = [refs[i:i + size] for i in range(0, len(refs), size)]
     back = batches[:max(0, policy["backward_requests"] - back_used)]
-    forward = seeds[:max(0, policy["forward_requests"] - fwd_used)]
+    # Only the method whose plan names the chain's works spends a leftover allowance on a further page (P3).
+    forward = forward_pages(seeds, max(0, policy["forward_requests"] - fwd_used),
+                            policy.get("search_method") == "m2")
     specs = []
     base = max((s["index"] for s in prior), default=-1) + 1
     for j in range(max(len(back), len(forward))):
@@ -51,14 +75,23 @@ def request_plan(seeds, policy, held, prior=()):
             specs.append({"direction": "backward", "batch": back[j], "cites": None,
                           "links": chaining.backward_links(seeds, back[j]), "limit": len(back[j])})
         if j < len(forward):
-            seed = forward[j]
+            seed = forward[j]["seed"]
             specs.append({"direction": "forward", "batch": None, "cites": seed["openalex_id"],
-                          "links": [seed["source_version_id"]], "limit": policy["forward_page_size"]})
+                          "links": [seed["source_version_id"]], "limit": policy["forward_page_size"],
+                          "page": forward[j]["page"], "seed_index": forward[j]["seed_index"]})
     for i, spec in enumerate(specs, base):
         spec["index"] = i
         spec["key"] = f"chain:fast:{i}"
+    # A page past the first continues the page before it, and is sent with the cursor that page's reply left: the
+    # spec names that request, as the snowball's pages do, so a resumed run reads the cursor back from its step.
+    last = {}
+    for spec in specs:
+        if spec["direction"] == "forward":
+            spec["after"] = last.get(spec["seed_index"])
+            last[spec["seed_index"]] = spec["key"]
     return {"requests": specs, "excluded": len(excluded), "excluded_hash": canonical.sha256_hex(excluded),
-            "not_requested": len(refs) - sum(map(len, back)), "forward_not_requested": len(seeds) - len(forward)}
+            "not_requested": len(refs) - sum(map(len, back)),
+            "forward_not_requested": len(seeds) - len({page["seed_index"] for page in forward})}
 
 
 def frozen_forms(flow, run):
@@ -93,6 +126,8 @@ class Round:
             self.admit.set()
         self.tasks = []
         self.writers = []
+        # Set once a request's reply has been written, however it ended: the next page of the same seed waits here.
+        self.written = defaultdict(asyncio.Event)
         self.replies = {}
         self.closed = bool(self.store.existing_step(run["id"], small_batch.LIST_KEY)
                            or self.store.existing_step(run["id"], "fast_chain:summary"))
@@ -176,6 +211,28 @@ class Round:
                 break
         return chosen
 
+    def named_identities(self, named, identities):
+        """The works the plan named, in its order, as chain identities.
+
+        A named work this page returned is taken from that page, with its references and the page's digest. One the
+        page does not hold is read from the record this research already keeps for it: its own stored provider
+        payload, or, where that payload no longer holds it, the identity alone — then the chain can follow it
+        forward and has no references to follow back, which is what is known about it.
+        """
+        page = {row[0]: row for row in identities}
+        found = []
+        for oid in named:
+            if oid in page:
+                found.append(page[oid])
+                continue
+            svid = self.store.find_source_by_identifier("openalex", oid)
+            if not svid:
+                continue
+            payload, digest = self.payload(self.store.source(svid).get("provider_payload_path"))
+            raw = next((row for row in payload.get("results", []) if work_id(row.get("id")) == oid), None)
+            found.append((oid, raw or {}, digest if raw else None))
+        return found
+
     def initial(self):
         if self.closed:
             self.close_open("list_frozen")
@@ -192,9 +249,24 @@ class Round:
                 # already held, nor one a seed's own request brought.
                 accepted = set(((step or {}).get("output") or {}).get("accepted_source_version_ids") or []
                                if step and step["status"] == "succeeded" else [])
+            rows = search_plan.plan_named(self.store, self.run)
+            named = None if rows is None else [row["openalex_id"] for row in rows if row["openalex_id"]]
+            if named is not None:
+                # The plan step named the works the chain starts from (P3): only those, in its order. The page's own
+                # order adds nothing beside them, and a plan that named none leaves the chain to the Boolean results.
+                # A work the plan named but this page does not hold — a plan a later run of the same scope revision
+                # reused — is read from its own stored record instead, so the chain still starts where the plan says.
+                identities = self.named_identities(named, identities)
+                # What this page accepted no longer decides: the plan named these works, and a reused plan's works
+                # were accepted by the page it was written from.
+                accepted = None
             seeds = previous + self.choose(identities, "semantic", previous, accepted)
             return {"seeds": seeds, "missing": self.policy["chain_seeds"] - len(seeds),
-                    "semantic_status": step["status"] if step else "missing", "payload_sha256": digest}
+                    "semantic_status": step["status"] if step else "missing", "payload_sha256": digest,
+                    **({"plan_seeds": named} if named is not None else {}),
+                    # A named work with no OpenAlex id cannot be asked for; it is named here rather than passed over.
+                    **({"plan_seeds_unresolved": search_plan.unresolved_seeds(rows)}
+                       if rows and search_plan.unresolved_seeds(rows) else {})}
         seeds = self.save("fast_chain:seeds", snapshot)["seeds"]
         plan = self.save("fast_chain:plan", lambda: request_plan(seeds, self.policy, self.held()))
         self.launch(plan["requests"])
@@ -211,6 +283,12 @@ class Round:
         def snapshot():
             if len(initial) >= self.policy["chain_seeds"]:
                 return {"seeds": [], "not_needed": True}
+            if search_plan.plan_seeds(self.store, self.run):
+                # The plan named the works the chain starts from (P3), so the ranked pool fills no place beside
+                # them: naming one work means one work, not one work and nine the plan did not name. A plan whose
+                # named works the chain cannot ask for — none resolved to an OpenAlex id — is the design's
+                # "no suitable work" case, and this round then supplies a seed from the keyword results as before.
+                return {"seeds": [], "not_needed": True, "named_by_plan": True}
             versions, by_work, pool = ranking.pool_rows(self.store, self.run["research_id"], self.run["scope_revision"])
             model, reason = self.flow._ranking_embedding(self.run, self.scope)
             scores = fast_path.ranking_similarities(self.store, self.run, model) if model else {}
@@ -253,12 +331,18 @@ class Round:
             for spec, task in zip(specs, tasks):
                 await task
                 self.write_reply(spec)
+                self.written[spec["key"]].set()
         self.writers.append(asyncio.create_task(write()))
 
     async def fetch(self, spec):
         step = self.store.step(self.run["id"], spec["key"], chaining.STEP_KIND)
         if step["status"] != "pending":
             return
+        if spec.get("after"):
+            # This page is asked for with the cursor the page before it left, which is written when that reply is
+            # written, so it waits for that write. Waited for outside the semaphore: a request that has not been
+            # sent holds no in-flight place.
+            await self.written[spec["after"]].wait()
         async with self.semaphore:
             if self.flow._stop_requested(self.run["id"], self.run["scope_revision"]):
                 return
@@ -266,6 +350,15 @@ class Round:
                 reason = "cutoff" if self.past_cutoff() else "openalex_budget"
                 self.store.finish_step(step["id"], "cancelled", output={"unsent": reason, "returned": 0})
                 return
+            cursor = FIRST_PAGE
+            if spec.get("after"):
+                before = self.store.existing_step(self.run["id"], spec["after"])
+                cursor = (before["output"] or {}).get("next_cursor") if before and before["status"] == "succeeded" else None
+                if not cursor:
+                    # The page before it left no cursor: it was not sent, it failed, or the provider had no more to
+                    # give. There is no next page to ask for, and nothing is asked in its place.
+                    self.store.finish_step(step["id"], "cancelled", output={"unsent": "no_cursor", "returned": 0})
+                    return
             self.store.start_step(step["id"])
             attempts = 0
             while True:
@@ -278,7 +371,7 @@ class Round:
                 self.store.add_usage(self.run["id"], "chain_requests", 1 + retries)
                 key = CONNECTORS["openalex"].api_key()
                 if spec["direction"] == "forward":
-                    dispatched = await facade.dispatch_citing("openalex", self.flow.deps.http, spec["cites"], FIRST_PAGE,
+                    dispatched = await facade.dispatch_citing("openalex", self.flow.deps.http, spec["cites"], cursor,
                         spec["limit"], key, self.flow.deps.settings.contact_email, retries)
                 else:
                     dispatched = await facade.dispatch_lookup("openalex", "id_lookup", self.flow.deps.http,
@@ -317,7 +410,7 @@ class Round:
             return
         step = self.store.existing_step(self.run["id"], spec["key"])
         self.flow._record_chain(self.run, step, spec["key"], spec["direction"], dispatched, self.forms,
-            spec["links"], cites=spec["cites"], page=1 if spec["cites"] else None,
+            spec["links"], cites=spec["cites"], page=spec.get("page", 1) if spec["cites"] else None,
             batch=spec["batch"], per_page=spec["limit"], fast_request=spec["index"],
             fast_arrival={"arrived_at": arrived, "cutoff": cutoff, "late": late,
                           "raw_returned": raw_returned, "admitted_returned": len(dispatched.outcome.records) if not late else 0},

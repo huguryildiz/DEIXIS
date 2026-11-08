@@ -68,6 +68,7 @@ from deixis.workflow.screen import queue as human_queue
 from deixis.workflow.search import ranking as ranking_rules
 from deixis.workflow.features.report import report_pipeline
 from deixis.workflow.search import routing as routing_rules
+from deixis.workflow.search import search_plan as search_plan_rules
 from deixis.workflow.search import search_query as search_query_rules
 from deixis.workflow.search import user_plan as user_plan_rules
 from deixis.workflow.search import vocabulary as vocabulary_rules
@@ -619,6 +620,11 @@ class ResearchFlow:
             if consumer.embedder is not None and consumer.query is None and self.store.english_question(rid, revision):
                 # The vocabulary step has just stored the model's English sentence: the built-in model reads it too.
                 self._fast_consumers[run_id] = Consumer(self, run, scope)
+            if fast_path.search_method(run["budget"]) == "m2":
+                # The plan the model writes reads the records the question's own request returned (P3), so this arm
+                # waits for that page here. The request's own failure is not raised: `first_semantic` records it and
+                # the search stage retries it, and the plan step then reads whatever records the page wrote.
+                await first_request
             vocabulary, queries = await self._search_query(run, scope, vocabulary, queries)
             vocabulary, queries = await self._source_routing(run, scope, vocabulary, queries)
             criterion = await self._criterion(run, scope, vocabulary)
@@ -911,11 +917,37 @@ class ResearchFlow:
         if attempt > search_query_rules.ATTEMPTS:
             self._pause(run_id, "search_query_failed", {"attempts": output["attempts"], "retries_left": 0})
         self._checkpoint(run_id, revision)
+        # Under the m2 method the model writes its plan from the records the question's own request returned (P3): one
+        # call that reads their titles, abstracts and keywords, gives every term the place it was read from, and names
+        # the works the chain starts from.
+        plan_method = fast_path.search_method(run["budget"]) == "m2"
+        records = search_plan_rules.page_records(self.store, run) if plan_method else []
+        if plan_method and not records:
+            # No record to read. The question's own words are not written as the query in the plan's place, because
+            # this method's terms are what the records teach; a run that quietly fell back would search as the older
+            # methods do and say it had written a plan. The step stays pending, so nothing is asked twice, and which
+            # of the two stops this is decides what the person is offered: a request that never landed is sent again
+            # by a resume (under this method the planning arm retries a failed or deadline-cancelled page), while a
+            # provider that answered with no work at all would answer the same request the same way, so that stop
+            # offers no resume. Both leave the other way out: the code's query alone (`choose_code_query`).
+            page = self.store.existing_step(run_id, search_plan_rules.SEMANTIC_KEY)
+            answered = bool(page and page["status"] == "succeeded")
+            reason = "first_page_no_records" if answered else "first_page_empty"
+            # Written on the step, which is never started — a step still `pending` is not half-finished work — but
+            # written it must be: the route that searches the code's query alone reads this step's output, and a
+            # person facing this stop would otherwise have no way on at all.
+            output["status"] = reason
+            self.store.set_step_output(step["id"], output)
+            self._pause(run_id, "search_query_failed", {
+                "reason": reason, "attempts": output["attempts"],
+                "retries_left": 0 if answered else search_query_rules.ATTEMPTS - len(output["attempts"])})
+        task = "search_plan" if records else "search_query"
+        sources = list(dict.fromkeys([*(seed_source_ids(scope) if seed_rows else []), *records]))
+        rows = [*(seed_rows or []), *search_plan_rules.record_passages(self.store, records, MAX_ABSTRACT_CHARS)]
         failure: dict[str, Any] | None = None
         try:
-            answer = await self._model_step(run, scope, f"search_query:{attempt}", "search_query", optional=True,
-                                            source_ids=seed_source_ids(scope) if seed_rows else None,
-                                            passage_rows=seed_rows)
+            answer = await self._model_step(run, scope, f"search_query:{attempt}", task, optional=True,
+                                            source_ids=sources or None, passage_rows=rows or None)
         except OptionalStepFailed as exc:
             failure = {"reason": exc.reason, "detail": exc.detail}
         else:
@@ -966,10 +998,17 @@ class ResearchFlow:
         # diagnosis only: the model's terms that share no word with the question and some word with the seeds.
         seeded = {"seed_terms": search_query_rules.seed_terms(built["terms"], [scope["question"]] + [
             row["text"] for row in [self.store.english_question(rid, revision)] if row], seed_rows)} if seed_rows else {}
+        # What the plan named, as the chain reads it, beside the records the call was given: the chain starts from
+        # these works instead of the provider's own order, and a resumed or second run reads them back from here.
+        planned = {"plan_rule": fast_path.PLAN_RULE, "plan_records": records,
+                   # Over every record the call was given, seed PDFs included: the contract lets the plan name any of
+                   # them, so none is dropped here without saying so.
+                   "plan_seeds": search_plan_rules.named_seeds(self.store, answer["result"], sources)} \
+            if task == "search_plan" else {}
         self.store.start_step(step["id"])
         self.store.finish_step(step["id"], "succeeded", output=output | {
             "status": "ready", "vocabulary": built, "queries": queries,
-            "query_compiler": query_compiler.BLOCKS_VERSION, "seed_passages_sha256": seed_sha} | seeded)
+            "query_compiler": query_compiler.BLOCKS_VERSION, "seed_passages_sha256": seed_sha} | seeded | planned)
         return self._proposed(run_id, built, queries)
 
     async def _statement_context(self, run: dict[str, Any], scope: dict[str, Any], code_vocabulary: dict[str, Any],
@@ -1126,6 +1165,9 @@ class ResearchFlow:
         phrases = vocabulary_rules.labelling_phrases(extraction)
         skipped = ("user_plan" if user_plan_rules.of(scope) is not None else  # the person's plan has its blocks (S23a)
                    "user_key_terms" if extraction.block_assignment == "user" else
+                   # Under the m2 method one call writes the terms with their blocks from the first page's records
+                   # (P3), so these three calls are not sent at all and the model-call count does not rise.
+                   "search_plan" if fast_path.search_method(run["budget"]) == "m2" else
                    "no_phrases" if not phrases else
                    "too_many_phrases" if len(phrases) > vocabulary_rules.MAX_LABELLED_PHRASES else None)
         if skipped:
@@ -5336,8 +5378,12 @@ class ResearchFlow:
                             if c.get("source_version_id") == svid
                             and c.get("reading_depth") in ("abstract", "selected_sections", "full_text")})
             access ="pdf_available" if "pdf_page" in kinds else "abstract" if "abstract" in kinds else "metadata"
+            # The plan step reads the provider's own index keywords beside the title and the abstract (P3); a term
+            # read from them names `keywords` as its field. No other task is sent them.
+            keywords = search_plan_rules.keywords_of(self.store, svid) if task_type == "search_plan" else []
             sources.append({"source_id": svid, "work_id": source["work_id"], "title": source["title"], "year": source["year"],
                             "version_label": source["version_label"], "access_level": access}
+                           | ({"index_keywords": keywords} if keywords else {})
                            # Only a flagged work carries the field, so an unflagged source keeps its shape. Any
                            # flagged version marks the work: a preprint of a retracted paper is not sound evidence.
                            | ({"is_retracted": True} if self.store.work_retracted(source["work_id"]) else {})

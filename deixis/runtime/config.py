@@ -66,7 +66,8 @@ class Settings:
     # slice 13g alone, with no model call, for a measurement or a test that needs the code path only.
     search_query: str = "model"
     # The search method a discovery run is queued with, frozen in its fast-path policy: `legacy` for every run
-    # until M1's gates pass; `m1` (chain admission v2 and the code-query width limit) for the M1 measurement arm.
+    # until M1's gates pass; `m1` (chain admission v2 and the code-query width limit) for the M1 measurement arm;
+    # `m2` for the arm whose plan the model writes from the first semantic page.
     search_method: str = "legacy"
     # Whether PDFs that are arXiv versions get the numbered display equations of their authors' LaTeX source while the
     # equation reader (Marker) is not installed (slice 22). `load_settings` defaults to `auto`, which turns
@@ -179,8 +180,8 @@ def load_settings() -> Settings:
     if search_query not in ("model", "code"):
         raise ValueError("DEIXIS_SEARCH_QUERY must be model or code")
     search_method = os.environ.get("DEIXIS_SEARCH_METHOD", "legacy")
-    if search_method not in ("legacy", "m1"):
-        raise ValueError("DEIXIS_SEARCH_METHOD must be legacy or m1")
+    if search_method not in ("legacy", "m1", "m2"):
+        raise ValueError("DEIXIS_SEARCH_METHOD must be legacy, m1 or m2")
     benchmark_list_barrier = os.environ.get("DEIXIS_BENCHMARK_LIST_BARRIER", "off")
     if benchmark_list_barrier not in ("on", "off"):
         raise ValueError("DEIXIS_BENCHMARK_LIST_BARRIER must be on or off")

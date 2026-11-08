@@ -1234,7 +1234,10 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         {pauseDetailText(run).map(line => <p key={line}>{line}</p>)}
         {run.kind === 'pdf_ocr' && failedOcrPages.length > 0 && <p>{t('Pages not read: {pages}', { pages: failedOcrPages.join(', ') })}</p>}
         {resumable && unknownSteps.length > 0 && <p>{t('Unfinished: {steps}. Resuming repeats it; a repeated model call counts against your account usage.', { steps: unknownSteps.map(s => s.kind === 'model:report_review' ? t('Report review') : stepLabel(s.kind, s.operation_key)).join(', ') })}</p>}
-        {run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0 && <p>{t('The model has had its second try.')}</p>}
+        {run.pause_reason === 'search_query_failed' && searchQueryTriesLeft(run) === 0
+          && !String((run.error as { reason?: string } | null)?.reason ?? '').startsWith('first_page')
+          /* The model was asked twice. A stop before it was asked at all says its own reason above instead. */
+          && <p>{t('The model has had its second try.')}</p>}
         {quotaPause && <p className="quota-lines">{budgetLines}</p>}
         {changesSinceStop.map(change => {
           const words = { role: t(modelRoles[change.role].label).toLocaleLowerCase(uiLocale()), from: change.from.model ?? t('none'), to: change.to.model ?? '',

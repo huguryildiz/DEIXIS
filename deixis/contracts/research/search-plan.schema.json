@@ -1,0 +1,344 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://deixis.local/contracts/research/search-plan.schema.json",
+  "title": "SearchPlan",
+  "description": "The search plan of an m2 discovery run, written in one call from the first semantic page. The model reads the records that page returned and answers with the terms for the setting block and the task block, at most 8 in total and at most 4 per block, up to 3 backup terms per block, and the works the citation chain starts from. Every term it proposes, backups included, names the record it was read from, the field it stands in and where in that field, and says in its own words how it bears on the question; code checks the phrase against the stored text of that field and refuses an answer whose evidence does not match. Code counts every term, puts a backup in place of a term no record holds and compiles the query; the model writes no operator and no query text.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "step_input_id",
+    "scope_revision",
+    "skill_package_hash",
+    "field",
+    "setting",
+    "task",
+    "setting_backup",
+    "task_backup",
+    "seed_work_ids"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "deixis.search_plan.v1"
+    },
+    "step_input_id": {
+      "$ref": "common.schema.json#/$defs/step_input_id"
+    },
+    "scope_revision": {
+      "$ref": "common.schema.json#/$defs/scope_revision"
+    },
+    "skill_package_hash": {
+      "$ref": "common.schema.json#/$defs/skill_package_hash"
+    },
+    "field": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80,
+      "description": "The research field the question belongs to, 1 to 4 words as its authors name it, no quotation marks, parentheses or Boolean operators. In a statement research code puts it in its own query and an author query."
+    },
+    "setting": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "term",
+          "kind",
+          "why",
+          "evidence"
+        ],
+        "properties": {
+          "term": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "1 to 4 words, no quotation marks, parentheses or Boolean operators."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "topic",
+              "method",
+              "population",
+              "other"
+            ]
+          },
+          "why": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "At most 8 words. Shown to the user; never read by a rule."
+          },
+          "evidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "record_id",
+              "field",
+              "span",
+              "relation"
+            ],
+            "description": "Where this term was read. Code checks it against the stored text of that field and refuses the answer when the phrase is not there.",
+            "properties": {
+              "record_id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The `source_id` of a record this step was given."
+              },
+              "field": {
+                "type": "string",
+                "enum": [
+                  "title",
+                  "abstract",
+                  "keywords"
+                ],
+                "description": "Which of the record's fields holds the phrase."
+              },
+              "span": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "description": "Start and end character offsets of the phrase in that field, the end exclusive. For `keywords` the field is its keywords joined by \"; \" in their stored order."
+              },
+              "relation": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160,
+                "description": "How the term bears on the question, in the model's own words. Shown to the user; never read by a rule."
+              }
+            }
+          }
+        }
+      },
+      "description": "Where the work happens: the field, system, population or material."
+    },
+    "task": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "term",
+          "kind",
+          "why",
+          "evidence"
+        ],
+        "properties": {
+          "term": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "1 to 4 words, no quotation marks, parentheses or Boolean operators."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "topic",
+              "method",
+              "population",
+              "other"
+            ]
+          },
+          "why": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "At most 8 words. Shown to the user; never read by a rule."
+          },
+          "evidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "record_id",
+              "field",
+              "span",
+              "relation"
+            ],
+            "description": "Where this term was read. Code checks it against the stored text of that field and refuses the answer when the phrase is not there.",
+            "properties": {
+              "record_id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The `source_id` of a record this step was given."
+              },
+              "field": {
+                "type": "string",
+                "enum": [
+                  "title",
+                  "abstract",
+                  "keywords"
+                ],
+                "description": "Which of the record's fields holds the phrase."
+              },
+              "span": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "description": "Start and end character offsets of the phrase in that field, the end exclusive. For `keywords` the field is its keywords joined by \"; \" in their stored order."
+              },
+              "relation": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160,
+                "description": "How the term bears on the question, in the model's own words. Shown to the user; never read by a rule."
+              }
+            }
+          }
+        }
+      },
+      "description": "What is looked for in that field; at least one term names the topic or the work done."
+    },
+    "setting_backup": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 3,
+      "description": "Used in order when a chosen term of the same block finds no record, alone or with the other block. A backup can enter the sent query, so it carries the same evidence as a chosen term and code checks it the same way.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "term",
+          "evidence"
+        ],
+        "properties": {
+          "term": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "evidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "record_id",
+              "field",
+              "span",
+              "relation"
+            ],
+            "description": "Where this term was read. Code checks it against the stored text of that field and refuses the answer when the phrase is not there.",
+            "properties": {
+              "record_id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The `source_id` of a record this step was given."
+              },
+              "field": {
+                "type": "string",
+                "enum": [
+                  "title",
+                  "abstract",
+                  "keywords"
+                ],
+                "description": "Which of the record's fields holds the phrase."
+              },
+              "span": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "description": "Start and end character offsets of the phrase in that field, the end exclusive. For `keywords` the field is its keywords joined by \"; \" in their stored order."
+              },
+              "relation": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160,
+                "description": "How the term bears on the question, in the model's own words. Shown to the user; never read by a rule."
+              }
+            }
+          }
+        }
+      }
+    },
+    "task_backup": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 3,
+      "description": "Used in order when a chosen term of the same block finds no record, alone or with the other block. A backup can enter the sent query, so it carries the same evidence as a chosen term and code checks it the same way.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "term",
+          "evidence"
+        ],
+        "properties": {
+          "term": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "evidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "record_id",
+              "field",
+              "span",
+              "relation"
+            ],
+            "description": "Where this term was read. Code checks it against the stored text of that field and refuses the answer when the phrase is not there.",
+            "properties": {
+              "record_id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The `source_id` of a record this step was given."
+              },
+              "field": {
+                "type": "string",
+                "enum": [
+                  "title",
+                  "abstract",
+                  "keywords"
+                ],
+                "description": "Which of the record's fields holds the phrase."
+              },
+              "span": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "description": "Start and end character offsets of the phrase in that field, the end exclusive. For `keywords` the field is its keywords joined by \"; \" in their stored order."
+              },
+              "relation": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160,
+                "description": "How the term bears on the question, in the model's own words. Shown to the user; never read by a rule."
+              }
+            }
+          }
+        }
+      }
+    },
+    "seed_work_ids": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 60
+      },
+      "description": "The works the citation chain starts from, directly about the question, named by the work id of a record this step was given. Their references and the works citing them are read first; code checks each id against the records it sent. Distinct; code refuses a repeated id."
+    }
+  }
+}

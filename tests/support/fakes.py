@@ -157,6 +157,60 @@ def valid_response(si: dict[str, Any]) -> str:
             "task": [{"term": "synthetic task", "kind": "topic", "why": "SYNTHETIC task term"}],
             "setting_backup": [{"term": "synthetic setting backup"}],
             "task_backup": [{"term": "synthetic task backup"}]})
+    if task == "search_plan":
+        # The terms are read out of the records this step was given, with their own spans, so the evidence code checks
+        # against the stored text is real and a flow test exercises that check rather than stepping around it.
+        source = (si["sources"] or [{}])[0]
+        abstracts = {p["source_id"]: p["text"] for p in si["passages"]
+                     if (p.get("locator") or {}).get("kind") == "abstract"}
+        fields = {"title": source.get("title") or "", "abstract": abstracts.get(source.get("source_id"), ""),
+                  "keywords": "; ".join(source.get("index_keywords") or [])}
+
+        def pick(field, taken):
+            """A word of the field, with the span it stands at: the evidence a real plan would carry."""
+            text = fields.get(field) or ""
+            for match in re.finditer(r"[A-Za-z][A-Za-z-]{4,}", text):
+                if match.group(0).lower() not in taken:
+                    return {"record_id": source["source_id"], "field": field,
+                            "span": [match.start(), match.end()], "relation": "SYNTHETIC relation to the question"}, match.group(0)
+            return None, None
+
+        taken, terms = set(), {}
+        for block, field in (("setting", "title"), ("task", "abstract")):
+            evidence, word = pick(field, taken)
+            if evidence is None:  # a record without that field: the keywords stand in, as a real plan would do
+                evidence, word = pick("keywords", taken)
+            if evidence is None:
+                break
+            taken.add(word.lower())
+            terms[block] = [{"term": word, "kind": "topic", "why": f"SYNTHETIC {block} term", "evidence": evidence}]
+        if len(terms) == 2:
+            # A backup carries the same evidence as a chosen term, because it can reach the sent query; a record
+            # with no further readable word gives none rather than an unchecked phrase.
+            backups = {}
+            for block in ("setting_backup", "task_backup"):
+                evidence, word = next(((e, w) for e, w in [pick(field, taken) for field in ("keywords", "abstract", "title")]
+                                       if e is not None), (None, None))
+                if evidence is None:
+                    continue
+                taken.add(word.lower())
+                backups[block] = [{"term": word, "evidence": evidence}]
+            return json.dumps(envelope(si, "deixis.search_plan.v1") | {
+                "field": "synthetic field", "setting": terms["setting"], "task": terms["task"],
+                "setting_backup": backups.get("setting_backup", []),
+                "task_backup": backups.get("task_backup", []),
+                "seed_work_ids": [source["work_id"]]})
+        # No record with readable text: the answer the contract refuses, which is what a test of that path wants.
+        unreadable = {"record_id": source.get("source_id") or "srv_SYNTHETICnone", "field": "title",
+                      "span": [0, 9], "relation": "SYNTHETIC relation"}
+        return json.dumps(envelope(si, "deixis.search_plan.v1") | {
+            "field": "synthetic field",
+            "setting": [{"term": "synthetic setting", "kind": "topic", "why": "SYNTHETIC setting term",
+                         "evidence": unreadable}],
+            "task": [{"term": "synthetic task", "kind": "topic", "why": "SYNTHETIC task term",
+                      "evidence": unreadable}],
+            "setting_backup": [], "task_backup": [],
+            "seed_work_ids": [source.get("work_id") or "wrk_SYNTHETICnone"]})
     if task == "report_plan":
         passage_ids = si["allowlist"]["passage_ids"]
         column_ids = si["allowlist"]["column_ids"]

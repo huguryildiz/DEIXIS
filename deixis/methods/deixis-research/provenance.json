@@ -150,6 +150,14 @@
    "change": "Echo the two short binding fields and refer to SKILL.md for conditional package-hash copying. No real-model measurement."
   },
   {
+   "deixis_file": "references/search-plan.md",
+   "derived_from": [
+    "references/search-query.md"
+   ],
+   "date": "2026-11-08",
+   "change": "Written for the search method whose plan the model writes after the first semantic search (P3). Keeps the query rules of references/search-query.md (two blocks, at most eight terms and four per block, kinds, whys, three backups per block, what to leave out) and adds three things: the records that search returned are read for the field's own words, every chosen term carries the record, field and character span it was read from, and one to three works are named for the citation chain to start from. Code checks each span against the text the step sent and refuses an answer whose evidence does not match. Not measured against a real model."
+  },
+  {
    "deixis_file": "references/vocabulary-labels.md",
    "derived_from": [],
    "date": "2026-10-03",

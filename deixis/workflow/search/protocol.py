@@ -53,11 +53,14 @@ def _search_query(scope: dict[str, Any], vocabulary: dict[str, Any], queries: li
                 "code_query_left_out": vocabulary["code_query"].get("left_out"), **_query_outcome(vocabulary, queries)}
     # An answer written before R5 and reused for the same scope revision is a v1 answer: its own version is kept.
     version = (record.get("answer") or {}).get("schema_version") or SCHEMA_VERSIONS["SearchQuery"]
+    # Which step wrote it: the plan an m2 run asks for from the first page's records (P3), or the query every other
+    # run asks for from the question. The answer's own schema says which, so a stored answer keeps its own prompt.
+    task = "search_plan" if version == SCHEMA_VERSIONS["SearchPlan"] else "search_query"
     body = {
         "status": record["status"],
         # The prompt version: its method files, whose text `skill_package_hash` above covers, and the answer's schema.
-        "prompt": {"files": list(RUNTIME_FILES["search_query"]), "schema_version": version},
-        "model": _model(step_model(scope, "search_query")),
+        "prompt": {"files": list(RUNTIME_FILES[task]), "schema_version": version},
+        "model": _model(step_model(scope, task)),
         "attempts": record["attempts"],
     }
     if record["status"] != "ready":

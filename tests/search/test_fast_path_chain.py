@@ -13,7 +13,7 @@ from deixis.providers import facade
 from deixis.providers.common import SearchOutcome
 from deixis.storage.db import transaction
 from deixis.storage import db
-from deixis.workflow.search import fast_chain, lookups, small_batch
+from deixis.workflow.search import fast_chain, lookups, search_plan, small_batch
 from deixis.workflow.run import fast_path
 from deixis.workflow.run.flow import ResearchFlow
 from deixis.workflow.run.store import Store
@@ -290,3 +290,125 @@ def test_a_restart_counts_spent_attempts_and_sends_nothing_twice(effort_library,
     sent_first = [s for key, s in steps.items() if key not in pending]
     assert len(sent_first) == 2 + in_flight and all(s['status'] in ('failed', 'outcome_unknown') for s in sent_first)
     assert sum(s['status'] == 'outcome_unknown' for s in sent_first) >= in_flight
+
+
+def plan_step(lib, named):
+    """The plan step's output as an m2 run leaves it: the works the model named for the chain to start from (P3)."""
+    step = lib.store.step(lib.run["id"], "search_query", "code:search_query")
+    lib.store.start_step(step["id"])
+    lib.store.finish_step(step["id"], "succeeded", output={
+        "status": "ready", "plan_rule": fast_path.PLAN_RULE,
+        "plan_seeds": [{"work_id": f"wrk_{oid}", "source_version_id": None, "openalex_id": oid} for oid in named]})
+
+
+def paged(cursor):
+    outcome = SearchOutcome("completed", None, "SYNTHETIC chain", "keyless", records=[],
+                            raw_payload={"results": []}, next_cursor=cursor)
+    return facade.Dispatched(outcome, 0, {})
+
+
+def test_the_chain_starts_from_the_work_the_plan_named_and_spends_its_allowance_on_that_works_next_page(
+        library, tmp_path, monkeypatch):
+    lib = library
+    # The method this run was queued with, which its policy freezes; the whole m2 path is covered through the API in
+    # tests/search/test_search_plan.py, and this round reads the policy alone.
+    lib.run["budget"]["fast_path"]["search_method"] = "m2"
+    flow, _, round_ = setup(lib, tmp_path)
+    search(flow, lib, "search:fast:semantic", ["W1", "W2", "W3"])
+    plan_step(lib, ["W3"])  # the page returned three records; the plan named the third
+    sent = []
+
+    async def forward(provider, http, oid, cursor, limit, *args):
+        sent.append((oid, cursor))
+        return paged(f"cursor-{len(sent)}")
+    monkeypatch.setattr(facade, "dispatch_citing", forward)
+
+    async def run():
+        round_.initial()
+        round_.admit.set()
+        await asyncio.gather(*round_.writers)
+        # The fallback round of the same chain, which fills a seed place from the ranked pool when a plan named none.
+        round_.fallback()
+        await asyncio.gather(*round_.writers)
+        await round_.stop()
+    asyncio.run(run())
+    stored = lib.store.existing_step(lib.run["id"], "fast_chain:seeds")["output"]
+    # Only the named work seeds the chain; the page's own order adds neither W1 nor W2 beside it.
+    assert [seed["openalex_id"] for seed in stored["seeds"]] == ["W3"] and stored["plan_seeds"] == ["W3"]
+    # Both forward requests went to that one work: the second is its next page, asked for with the first's cursor.
+    assert sent == [("W3", "*"), ("W3", "cursor-1")]
+    pages = [(s["operation_key"], (lib.store.step_output(s["id"]) or {}).get("next_cursor"))
+             for s in lib.store.run_steps(lib.run["id"]) if s["operation_key"].startswith("chain:fast:")]
+    assert pages == [("chain:fast:0", "cursor-1"), ("chain:fast:1", "cursor-2")]
+    # The fallback round filled no place beside the named work, though the policy would hold ten seeds.
+    assert lib.store.existing_step(lib.run["id"], "fast_chain:seeds_fallback")["output"] == {
+        "seeds": [], "not_needed": True, "named_by_plan": True}
+    assert sent == [("W3", "*"), ("W3", "cursor-1")] and round_.policy["chain_seeds"] > 1
+
+
+def test_a_plan_that_named_no_work_leaves_the_chain_to_the_keyword_results(library, tmp_path, monkeypatch):
+    lib = library
+    lib.run["budget"]["fast_path"]["search_method"] = "m2"
+    flow, _, round_ = setup(lib, tmp_path)
+    search(flow, lib, "search:fast:semantic", ["W1", "W2"])
+    plan_step(lib, [])
+    sent = []
+
+    async def forward(provider, http, oid, *args):
+        sent.append(oid)
+        return paged(None)
+    monkeypatch.setattr(facade, "dispatch_citing", forward)
+
+    async def run():
+        round_.initial()
+        round_.admit.set()
+        await asyncio.gather(*round_.writers)
+        first = lib.store.existing_step(lib.run["id"], "fast_chain:seeds")["output"] | {"sent": list(sent)}
+        # The design's "no suitable work" case: this round is not skipped, so the keyword results can still supply
+        # a seed. Nothing stands in for a work the plan did name.
+        round_.fallback()
+        await asyncio.gather(*round_.writers)
+        await round_.stop()
+        return first
+    first = asyncio.run(run())
+    # The page's own order chose nothing in the named works' place, so that round asked for nothing.
+    assert first["seeds"] == [] and first["sent"] == []
+    assert search_plan.plan_seeds(lib.store, lib.run) == []
+    picked = lib.store.existing_step(lib.run["id"], "fast_chain:seeds_fallback")["output"]
+    # Which of the ranked records leads is the ranking's business, not this test's: what matters is that this round
+    # ran and chose from them, and that the chain then followed what it chose.
+    assert "named_by_plan" not in picked
+    assert {seed["openalex_id"] for seed in picked["seeds"]} == {"W1", "W2"} and set(sent) == {"W1", "W2"}
+
+
+def test_a_named_work_the_page_does_not_hold_is_read_from_its_own_record(library, tmp_path, monkeypatch):
+    """A plan a later run of the same scope revision reuses names works of the page it was written from."""
+    lib = library
+    flow, _, round_ = setup(lib, tmp_path)
+    # This run's own page holds W1 and W2; W3 came from another query of the same research, with its references.
+    search(flow, lib, "search:fast:keyword:0", ["W3"], refs={"W3": ["https://openalex.org/W7"]})
+    search(flow, lib, "search:fast:semantic", ["W1", "W2"])
+    plan_step(lib, ["W3"])
+    sent = []
+
+    async def forward(provider, http, oid, cursor, limit, *args):
+        sent.append((oid, cursor))
+        return paged(None)
+
+    async def back(provider, http, operation_ids, ids, *args):
+        sent.append(("backward", tuple(ids)))
+        return paged(None)
+    monkeypatch.setattr(facade, "dispatch_citing", forward)
+    monkeypatch.setattr(facade, "dispatch_lookup", back)
+
+    async def run():
+        round_.initial()
+        round_.admit.set()
+        await asyncio.gather(*round_.writers)
+        await round_.stop()
+    asyncio.run(run())
+    seeds = lib.store.existing_step(lib.run["id"], "fast_chain:seeds")["output"]["seeds"]
+    assert [seed["openalex_id"] for seed in seeds] == ["W3"]
+    # Its references come from its own stored record, so the backward direction has something to follow.
+    assert seeds[0]["references"] == ["W7"] and ("backward", ("W7",)) in sent
+    assert ("W3", "*") in sent

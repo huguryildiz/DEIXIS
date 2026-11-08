@@ -40,6 +40,7 @@ SCHEMA_FILES = {
     "VocabularyLabels": "vocabulary-labels.schema.json",
     "CriterionProposal": "criterion-proposal.schema.json",
     "SearchQuery": "search-query.schema.json",
+    "SearchPlan": "search-plan.schema.json",
     "AbstractScreening": "abstract-screening.schema.json",
     "FulltextAdjudication": "fulltext-adjudication.schema.json",
     "StepInput": "step-input.schema.json",
@@ -68,6 +69,7 @@ SCHEMA_VERSIONS = {
     "VocabularyLabels": "deixis.vocabulary_labels.v1",
     "CriterionProposal": "deixis.criterion_proposal.v3",
     "SearchQuery": "deixis.search_query.v2",
+    "SearchPlan": "deixis.search_plan.v1",
     "AbstractScreening": "deixis.abstract_screening.v1",
     "FulltextAdjudication": "deixis.fulltext_adjudication.v1",
     "ReportPlanDraft": "deixis.report_plan_draft.v2",
@@ -96,6 +98,7 @@ TASK_OUTPUTS = {
     "vocabulary_labels": ("VocabularyLabels",),
     "criterion_proposal": ("CriterionProposal",),
     "search_query": ("SearchQuery",),
+    "search_plan": ("SearchPlan",),
     "abstract_screening": ("AbstractScreening",),
     "fulltext_adjudication": ("FulltextAdjudication",),
     "report_plan": ("ReportPlanDraft",),
@@ -1145,6 +1148,9 @@ def _semantic_checks(step_input: dict[str, Any], output_type: str, result: dict[
         _check_criterion_proposal(step_input, result, report)
     elif output_type == "SearchQuery":
         _check_search_query(result, report)
+    elif output_type == "SearchPlan":
+        _check_search_query(result, report)
+        _check_search_plan(step_input, allow, result, report)
     elif output_type in ("KillSearchQuery", "FollowupSearchQuery"):
         _check_search_query(result, report, OTHER_QUERY_MAX_TERMS)
     elif output_type == "AbstractScreening":
@@ -2440,6 +2446,75 @@ def _check_search_query(draft: dict[str, Any], report: ValidationReport, max_ter
             report.issues.append(Issue("duplicate_query_term", path, f"{term!r} is also {seen[normalized]}"))
         else:
             seen[normalized] = path
+
+
+KEYWORDS_SEPARATOR = "; "  # how a record's index keywords are joined, for the model and for this check alike
+
+
+def _plan_record_fields(step_input: dict[str, Any]) -> dict[str, dict[str, str]]:
+    """The text of each record this step was given, by the field a term may name: what the model actually read.
+
+    The title and the keywords come from the record, the abstract from the abstract page sent with it. A record
+    whose abstract was not sent holds no `abstract` field, so a term that claims one is refused rather than taken
+    on the model's word.
+    """
+    fields: dict[str, dict[str, str]] = {}
+    for source in step_input.get("sources") or []:
+        text = {}
+        if isinstance(source.get("title"), str) and source["title"]:
+            text["title"] = source["title"]
+        keywords = source.get("index_keywords")
+        if isinstance(keywords, list) and keywords:
+            text["keywords"] = KEYWORDS_SEPARATOR.join(k for k in keywords if isinstance(k, str))
+        fields[source["source_id"]] = text
+    for passage in step_input.get("passages") or []:
+        if (passage.get("locator") or {}).get("kind") == "abstract" and isinstance(passage.get("text"), str):
+            fields.setdefault(passage["source_id"], {})["abstract"] = passage["text"]
+    return fields
+
+
+def _check_search_plan(step_input: dict[str, Any], allow: dict[str, set[str]], draft: dict[str, Any],
+                       report: ValidationReport) -> None:
+    """What the records the step was given say, against what the plan claims they say.
+
+    Every chosen term names the record, the field and the span it was read from, and code reads that span back from
+    the stored text: a phrase the field does not hold at that place is an error, whatever the model wrote about it.
+    The chain's starting works are checked the same way, against the records sent and not against the library. Both
+    get the step's one repair.
+    """
+    fields = _plan_record_fields(step_input)
+    # A backup carries the same evidence as a chosen term, because code searches it in a chosen term's place: a
+    # backup whose phrase no record holds would otherwise reach the sent query unchecked.
+    for block in ("setting", "task", "setting_backup", "task_backup"):
+        for index, term in enumerate(draft[block]):
+            evidence = term["evidence"]
+            path = f"/{block}/{index}/evidence"
+            record = evidence["record_id"]
+            if record not in allow["source_ids"]:
+                report.issues.append(Issue("plan_record_unknown", f"{path}/record_id", record))
+                continue
+            text = fields.get(record, {}).get(evidence["field"])
+            if text is None:
+                report.issues.append(Issue("plan_field_not_sent", f"{path}/field",
+                                           f"{evidence['field']} of {record} was not sent"))
+                continue
+            start, end = evidence["span"]
+            if start >= end or end > len(text):
+                report.issues.append(Issue("plan_span_outside_field", f"{path}/span",
+                                           f"[{start}, {end}) in a field of {len(text)} characters"))
+                continue
+            found, wanted = text[start:end], term["term"]
+            if normalize_phrase(found) != normalize_phrase(wanted):
+                report.issues.append(Issue("plan_term_not_at_span", f"{path}/span",
+                                           f"{wanted!r} is not what that span holds"))
+    works = {source.get("work_id") for source in step_input.get("sources") or []}
+    seen: set[str] = set()
+    for index, work in enumerate(draft["seed_work_ids"]):
+        if work not in works:
+            report.issues.append(Issue("plan_seed_work_unknown", f"/seed_work_ids/{index}", work))
+        elif work in seen:
+            report.issues.append(Issue("duplicate_seed_work", f"/seed_work_ids/{index}", work))
+        seen.add(work)
 
 
 USER_PLAN_REQUIRED_PROVIDER = "openalex"  # routing, semantic page, keyword pages and the citation chain (F18)

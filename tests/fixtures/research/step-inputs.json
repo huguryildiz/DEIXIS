@@ -1835,6 +1835,92 @@
   },
   "created_at": "2026-09-23T12:00:00Z"
  },
+ "H_search_plan": {
+  "step_input_id": "sti_SYNTHE0012",
+  "research_id": "res_SYNTHE0001",
+  "run_id": "run_SYNTHE0001",
+  "step_id": "stp_SYNTHE0001",
+  "task_type": "search_plan",
+  "scope_revision": 1,
+  "skill_package_hash": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+  "skill_files": [
+   "SKILL.md",
+   "references/search-plan.md"
+  ],
+  "output_schema_versions": [
+   "deixis.search_plan.v1"
+  ],
+  "question": {
+   "text": "SYNTHETIC: which supplementary controllers have been tested for damping subsynchronous oscillation in wind-integrated transmission grids, and what damping ratio did each one report?",
+   "language_hint": "en"
+  },
+  "user_steering": [],
+  "capabilities": {
+   "supported_tasks": [
+    "grounded_answer"
+   ],
+   "unsupported_tasks": [
+    "synthesis",
+    "candidate_development",
+    "claim_check",
+    "experiment"
+   ]
+  },
+  "enabled_providers": [
+   "openalex"
+  ],
+  "candidates": [],
+  "sources": [
+   {
+    "source_id": "srv_SYNTHE0001plan",
+    "work_id": "wrk_SYNTHE0001",
+    "title": "SYNTHETIC: damping ratio of a supplementary controller in a wind-integrated transmission grid",
+    "year": 2024,
+    "version_label": "publisher",
+    "access_level": "abstract",
+    "index_keywords": [
+     "subsynchronous oscillation",
+     "damping controller",
+     "wind integration"
+    ]
+   }
+  ],
+  "passages": [
+   {
+    "passage_id": "psg_SYNTHE0001",
+    "source_id": "srv_SYNTHE0001plan",
+    "reading_depth": "abstract",
+    "locator": {
+     "kind": "abstract",
+     "physical_page": null,
+     "printed_label": null
+    },
+    "abstract_origin": "provider_openalex_inverted_index",
+    "text_source": null,
+    "text": "SYNTHETIC ABSTRACT: a supplementary damping controller is tuned for subsynchronous oscillation in a wind-integrated transmission grid, and the reported damping ratio is 0.08."
+   }
+  ],
+  "allowlist": {
+   "candidate_ids": [],
+   "source_ids": [
+    "srv_SYNTHE0001plan"
+   ],
+   "passage_ids": [
+    "psg_SYNTHE0001"
+   ]
+  },
+  "human_corrections": [],
+  "budget": {
+   "max_model_calls": 10,
+   "max_schema_repairs": 1,
+   "max_provider_requests": 3
+  },
+  "model": {
+   "connection": "fake",
+   "requested_model": null
+  },
+  "created_at": "2026-09-23T12:00:00Z"
+ },
  "I_lineage_links": {
   "step_input_id": "sti_SYNTHL0003",
   "research_id": "res_SYNTHA0001",

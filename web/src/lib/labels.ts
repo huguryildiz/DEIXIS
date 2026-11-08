@@ -345,6 +345,13 @@ export const pauseReasonText = (reason: string | null, detail?: unknown) => {
     const service = typeof error.provider === 'string' ? providerName(error.provider) : error.connection ? connectionName(String(error.connection)) : t('The selected service')
     return serviceErrorText({ kind: error.service_kind || error.error_kind, service }).what
   }
+  // The first search found no work at all, so no plan could be written from results and the same request would
+  // answer the same way: the way on is a different question, or the query DEIXIS builds from this one.
+  if (reason === 'search_query_failed' && error.reason === 'first_page_no_records')
+    return t('The first search found no work for this question, so the model was not asked to write the search plan from results, and nothing has been searched. Revise the question above, or search with the query DEIXIS built from the question’s words.')
+  // The first search brought back nothing because its request did not land; the model was not asked at all.
+  if (reason === 'search_query_failed' && error.reason === 'first_page_empty')
+    return t('The first search brought back no record, so the model was not asked to write the search plan from one, and nothing has been searched. Resume to search again, or search with the query DEIXIS built from the question’s words.')
   // The same stop when the person's own key terms could not be read; no translation was asked for then.
   if (reason === 'key_terms_needed' && typeof error.error === 'string') return t('The English key terms could not be read, so nothing was searched. Change them above and search again.')
   return reason ? t(pauseReasons[reason] ?? 'An operation stopped this run. Completed work is saved.') : ''

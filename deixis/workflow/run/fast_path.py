@@ -15,7 +15,13 @@ STAGES = ("plan", "search", "ranking", "read", "answer")
 # The search method a discovery run is queued with, frozen in its policy. `legacy` is every run's default:
 # chain admission `fast_chain_v1` and the code query searched as before. `m1` selects chain admission
 # `fast_chain_v2` and the code-query width limit together; it is for the M1 measurement until all its gates pass.
-SEARCH_METHODS = ("legacy", "m1")
+# `m2` adds the search plan the model writes from the first semantic page (`search_plan_v1`): its terms carry the
+# record, field and span they were read from, and it names the works the citation chain starts from. A query written
+# under one method is never reused by a run of another (`store.search_query_of`).
+SEARCH_METHODS = ("legacy", "m1", "m2")
+# The plan rule `m2` freezes: one model call reads the first semantic page and writes the terms, their blocks and the
+# chain's starting works. It replaces the three labelling calls and the query call of the older methods.
+PLAN_RULE = "search_plan_v1"
 CHAIN_RULES = ("fast_chain_v1", "fast_chain_v2")
 # The deeper screening: a Standard or Detailed discovery queued with the option on also screens the next
 # `DEEP_SCREENING_WORKS` works of the frozen list, places N+1..N+100, one model read per batch. Frozen in the policy under
@@ -107,10 +113,13 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         # K admission takes the abstract stage's unresolved works after the candidates (`read.selected`).
         "admission_order": "unresolved_last",
     }
-    if method == "m1":
+    if method in ("m1", "m2"):
         from deixis.workflow.search.vocabulary import CODE_QUERY_MAX_TOTAL
 
-        policy |= {"search_method": "m1", "chain_rule": "fast_chain_v2", "code_query_max_total": CODE_QUERY_MAX_TOTAL}
+        policy |= {"search_method": method, "chain_rule": "fast_chain_v2", "code_query_max_total": CODE_QUERY_MAX_TOTAL}
+    if method == "m2":
+        # The model writes the plan from the first semantic page; the chain starts from the works it names.
+        policy |= {"plan_rule": PLAN_RULE}
     if deep_screening:
         if effort not in DEEP_SCREENING_EFFORTS:
             raise ValueError(f"deeper screening is not offered at {effort!r}")

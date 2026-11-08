@@ -1015,6 +1015,7 @@
         "vocabulary_labels",
         "criterion_proposal",
         "search_query",
+        "search_plan",
         "abstract_screening",
         "fulltext_adjudication",
         "report_plan",
@@ -1208,6 +1209,15 @@
               "pdf_available",
               "inaccessible"
             ]
+          },
+          "index_keywords": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "search_plan steps only: the keywords the provider's record carries, in its own order. A term read from them names `keywords` as its field, whose text is these keywords joined by \"; \"."
           },
           "is_retracted": {
             "const": true,

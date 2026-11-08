@@ -162,7 +162,8 @@ def result_applicability(step_scope_revision: int, current_scope_revision: int,
 # `fulltext_adjudication` uses the literature model, as abstract screening does. The slice names no other model
 # for the reading step. The question's English sentence is a planning step like the block labelling. A follow-up's
 # search query is a search step like `search_query`.
-LITERATURE_TASKS = ("question_translation", "vocabulary_labels", "criterion_proposal", "search_query", "abstract_screening",
+LITERATURE_TASKS = ("question_translation", "vocabulary_labels", "criterion_proposal", "search_query",
+                    "search_plan", "abstract_screening",
                     "fulltext_adjudication", "followup_search_query")
 # Candidate tasks use the research model, the default single schema repair and no timeout resend.
 # A repair would let the step name a phrase the question does not hold and then take it back. The block labelling

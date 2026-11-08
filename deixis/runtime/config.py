@@ -40,6 +40,11 @@ ARXIV_SOURCE_SETTING = "arxiv_source"
 # Whether a Standard or Detailed discovery also screens list places N+1..N+100 once. Unset is `off`; read when a
 # discovery run is queued and frozen in its policy, so a later change leaves queued and paused runs as they were.
 DEEP_SCREENING_SETTING = "deep_screening"
+# Whether a discovery run embeds its candidates for the ranking's own embedding signal. Unset is `off`: the
+# reranker reads each record's title and abstract as text, so the pilot does not pay for a second pass over the same
+# records. Read when a discovery run is queued and frozen in its policy, so a later change leaves queued and paused
+# runs as they were, and the run records why the signal was left out.
+CANDIDATE_EMBEDDING_SETTING = "candidate_embedding"
 MODEL_CONCURRENCY_SETTING = "model_concurrency"
 MODEL_CONCURRENCY_MAX = 16
 
@@ -96,6 +101,9 @@ class Settings:
 
     def effective_deep_screening(self) -> str:
         return self._stored(DEEP_SCREENING_SETTING, ("on", "off")) or "off"
+
+    def effective_candidate_embedding(self) -> str:
+        return self._stored(CANDIDATE_EMBEDDING_SETTING, ("on", "off")) or "off"
 
     def effective_model_concurrency(self) -> int:
         value = self.setting_reader(MODEL_CONCURRENCY_SETTING) if self.setting_reader else None

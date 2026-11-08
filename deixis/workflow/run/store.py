@@ -92,6 +92,8 @@ def _step_view_output(row: Any) -> dict[str, Any] | None:
         out = json.loads(row["output_json"])
         return {"provider": out.get("provider"), "model": out.get("model"), "error_code": out.get("error_code"),
                 "reranked": len(out.get("candidate_ids") or []), "cut_documents": out.get("cut_documents"),
+                # Where it stood: a reranker that read its group after the list was frozen ordered nothing.
+                **({"point": out["point"]} if out.get("point") else {}),
                 # How many records without an abstract kept their place, by why (never which ones).
                 **({"held": {code: n for code in HOLD_REASONS
                              if (n := list(out["kept_reasons"].values()).count(code))}}

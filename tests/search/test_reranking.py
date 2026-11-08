@@ -324,6 +324,15 @@ def test_a_record_the_person_included_takes_no_window_place_however_the_lists_vo
     assert "c" not in output["candidate_ids"] and sorted(output["candidate_ids"]) == ["a", "d"]
 
 
+def test_a_rerank_read_after_the_list_was_frozen_never_moves_a_record(fixed_replay):
+    # Quick's reranker scores a small group once the list is frozen. However the list is rebuilt, the scores stay a
+    # record of the measurement and the order stays the fused one.
+    stored = applied(["a", "b"], {"a": 0.1, "b": 0.9}) | {"point": "after_list"}
+    listing = small_batch.build_list(manifest(["a", "b", "c"], reranker=stored))
+    assert listing["order"] == ["a", "b", "c"]
+    assert (listing["reranker"]["applied"], listing["reranker"]["reason"]) == (False, "read_after_list")
+
+
 def test_a_stored_rerank_whose_window_the_lists_chose_still_applies_on_replay(fixed_replay):
     """`reranked` recomputes the window from the manifest. Under this rule it is not the first records of the fused
     order, so the check compares the set; a window that no longer matches keeps the fused order, as before."""
@@ -361,11 +370,12 @@ class RerankingLocal(FakeLocal):
 
 @pytest.mark.parametrize("fail", [False, True])
 def test_a_discovery_run_reranks_its_list_or_keeps_the_fused_order_and_says_so(tmp_path, monkeypatch, fail):
+    # Standard: the list waits for the reranker there. Quick freezes its list first (its own test below).
     local = RerankingLocal(fail=fail)
     s = Session(tmp_path, monkeypatch, local=local, setting=BUILTIN)
     s.store.set_setting(rerankers.SETTING, {"enabled": True, "provider": "builtin", "model": RER, "pool_factor": 2, "timeout_seconds": 60})
     try:
-        rid, run_id, view, run = s.discover()
+        rid, run_id, view, run = s.discover(effort="standard")
         listing = s.store.existing_step(run_id, small_batch.LIST_KEY)["output"]
         step = s.store.existing_step(run_id, small_batch.RERANK_KEY)
         lookup = (s.store.existing_step(run_id, small_batch.PRERANK_LOOKUP_KEY) or {}).get("output") or {}
@@ -393,6 +403,53 @@ def test_a_discovery_run_reranks_its_list_or_keeps_the_fused_order_and_says_so(t
         # The fake scores the reverse of the order it was given: the candidates come back reversed, the rest in place.
         assert listing["order"][len(priority):len(priority) + len(candidates)] == candidates[::-1]
         assert listing["order"][len(priority) + len(candidates):] == automatic[len(candidates):]
+
+
+def test_quick_freezes_its_list_before_the_reranker_reads_its_small_group(tmp_path, monkeypatch):
+    """At Quick depth the list does not wait for the reranker: it is frozen from the fused order, and the reranker
+    then reads a small group (2 x N) whose scores are kept for the measurement without moving a record. The lookup
+    before the rerank does not run at all there."""
+    local = RerankingLocal()
+    s = Session(tmp_path, monkeypatch, local=local, setting=BUILTIN)
+    s.store.set_setting(rerankers.SETTING, {"enabled": True, "provider": "builtin", "model": RER, "timeout_seconds": 60})
+    try:
+        rid, run_id, view, run = s.discover(effort="quick")
+        listing = s.store.existing_step(run_id, small_batch.LIST_KEY)["output"]
+        step = s.store.existing_step(run_id, small_batch.RERANK_KEY)
+        lookup = s.store.existing_step(run_id, small_batch.PRERANK_LOOKUP_KEY)
+        rule = s.store.run(run_id)["budget"]["inspection"]["rerank"]
+    finally:
+        s.close()
+    assert lookup is None, "the lookup before the rerank belongs to the depths whose list waits for it"
+    assert local.reranked, "the reranker still read its group"
+    assert step["status"] == "succeeded" and step["output"]["point"] == "after_list"
+    # The frozen list is the fused order, and it holds no reranker at all: it was frozen before the step existed.
+    assert listing["order"] == listing["automatic_order"] and "reranker" not in listing
+    # This depth's own window: 2 x N, under the eight the deeper depths read.
+    assert (rule["pool_factor"], rule["max_pool_factor"]) == (2.0, 2.0)
+    assert len(step["output"]["candidate_ids"]) <= 2 * step["output"]["read_top"]
+
+
+def test_a_run_queued_with_candidate_embedding_off_embeds_nothing_and_says_why(tmp_path, monkeypatch):
+    """The pilot default: the reranker reads each record's title and abstract as text, so a run embeds no candidate.
+    The signal is left out of the ranking and the run records the reason; the person can turn it on."""
+    local = RerankingLocal()
+    s = Session(tmp_path, monkeypatch, local=local, setting=BUILTIN)
+    s.store.set_setting("candidate_embedding", "off")  # what an app with nothing saved does on its own
+    s.store.set_setting(rerankers.SETTING, {"enabled": True, "provider": "builtin", "model": RER, "timeout_seconds": 60})
+    try:
+        rid, run_id, view, run = s.discover(effort="standard")
+        similarity = s.store.existing_step(run_id, "source_similarity")["output"]
+        listing = s.store.existing_step(run_id, small_batch.LIST_KEY)["output"]
+        frozen = s.store.run(run_id)["budget"]["fast_path"]
+    finally:
+        s.close()
+    assert frozen["candidate_embedding"] is False  # frozen when the run was queued, not read again later
+    assert similarity["embedding_off_reason"] == "candidate_embedding_off" and similarity["provider"] == "off"
+    assert local.documents() == 0, "no candidate was embedded"
+    # The ranking left the signal out, and the list says so rather than ranking every record last in it.
+    assert listing["manifest"]["embedding_model"] is None
+    assert listing["signal_reasons"].get("embedding")
 
 
 LOOKED_UP = "We SYNTHETIC measure the packet size that lowers the energy of a sensor node."
@@ -526,7 +583,8 @@ def test_missing_abstracts_are_looked_up_before_the_rerank_and_unfilled_records_
     # No factor saved: the run's frozen rule gives it (8 since rerank rule version 2, 4 before).
     s.store.set_setting(rerankers.SETTING, {"enabled": True, "provider": "builtin", "model": RER, "timeout_seconds": 60})
     try:
-        rid, run_id, view, run = s.discover(**({"effort": "standard"} if case == "window_above_200" else {}))
+        # Standard throughout: the lookup before the rerank only runs where the list waits for the reranker.
+        rid, run_id, view, run = s.discover(effort="standard")
         listing = s.store.existing_step(run_id, small_batch.LIST_KEY)["output"]
         step = s.store.existing_step(run_id, small_batch.PRERANK_LOOKUP_KEY)
         rerank = s.store.existing_step(run_id, small_batch.RERANK_KEY)["output"]

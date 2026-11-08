@@ -44,17 +44,25 @@ class Mode(NamedTuple):
     forward_requests: int
     boolean_plans: int  # the most distinct Boolean query plans a run of this depth sends: one main, the rest focused
     chain_rescue: int  # the most linked records the gate's words do not reach that are still written as candidates
+    rerank_pool: float  # the most records the reranker reads, as a multiple of N; a saved factor is kept under it
+    rerank_point: str  # "before_list": the list waits for the reranker; "after_list": it is frozen first (Quick)
 
 
 MODES = {
     # Quick opens no citation request of its own: the reference ids the first semantic page brings are stored and
     # the links inside that page are written, which costs nothing, but no seed work is read.
     "quick": Mode((30, 30, 30, 60, 30), read_top=25, fulltext_works=10, keyword_record_cap=450, chain_seeds=0,
-                  backward_requests=0, forward_requests=0, boolean_plans=1, chain_rescue=0),
+                  backward_requests=0, forward_requests=0, boolean_plans=1, chain_rescue=0,
+                  # Quick shows its list without waiting for the reranker, so the reranker does not order that list:
+                  # it reads a small group after the list is frozen, and the run keeps its scores to be measured.
+                  rerank_pool=2.0, rerank_point="after_list"),
     "standard": Mode((30, 45, 60, 120, 45), read_top=50, fulltext_works=20, keyword_record_cap=1000, chain_seeds=1,
-                     backward_requests=4, forward_requests=8, boolean_plans=2, chain_rescue=5),
+                     backward_requests=4, forward_requests=8, boolean_plans=2, chain_rescue=5,
+                     rerank_pool=8.0, rerank_point="before_list"),
     "detailed": Mode((45, 90, 120, 270, 75), read_top=100, fulltext_works=40, keyword_record_cap=2000, chain_seeds=3,
-                     backward_requests=8, forward_requests=16, boolean_plans=3, chain_rescue=10),
+                     backward_requests=8, forward_requests=16, boolean_plans=3, chain_rescue=10,
+                     # 8 x 100 is past the reranker's own 400-record limit, so Deep reads the widest window there is.
+                     rerank_pool=8.0, rerank_point="before_list"),
 }
 
 
@@ -87,7 +95,7 @@ def elapsed(start: str, end: str) -> int:
 
 def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False,
                   method: str = "legacy", deep_screening: bool = False,
-                  lexical_exclusion: bool = True) -> dict[str, Any]:
+                  lexical_exclusion: bool = True, candidate_embedding: bool = True) -> dict[str, Any]:
     """A run on a model this computer runs (`local_model`) keeps no deadline on the stages where the model works,
     read and answer: a local model screens and answers far slower than the stage bases assume, and a cut read
     leaves the answer unscreened evidence. Search and ranking do not wait on the model and keep theirs; each model
@@ -98,6 +106,9 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
 
     `deep_screening` adds the deeper screening's window under `deep_screening`; off adds nothing, so a policy
     frozen without it is byte for byte the one frozen before, hash included. Quick takes no window.
+
+    `candidate_embedding` off records that this run embeds no candidate, so the ranking's embedding signal is left
+    out and says why; the reranker reads titles and abstracts as text and needs no embedding. On adds nothing.
 
     `lexical_exclusion` off records that the abstract stage may not close a record for naming neither gate block
     (`flow._abstract_code_stage`); on adds nothing and leaves the policy as it was. The arm is frozen here, so a
@@ -142,6 +153,8 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
                                     "last": mode.read_top + DEEP_SCREENING_WORKS, "runs": 1, "batch": ABSTRACT_BATCH}
     if not lexical_exclusion:
         policy["lexical_exclusion"] = False
+    if not candidate_embedding:
+        policy["candidate_embedding"] = False
     if local_model:
         # Still fast-path stages (`enforces` routes on them); only their deadline is gone.
         policy["no_deadline_stages"] = ["read", "answer"]
@@ -203,6 +216,11 @@ def enabled(budget: dict[str, Any]) -> bool:
 def search_method(budget: dict[str, Any]) -> str:
     """The search method a run was queued with: `legacy` for every policy that does not name one."""
     return (budget.get("fast_path") or {}).get("search_method", "legacy")
+
+
+def candidate_embedding_on(budget: dict[str, Any]) -> bool:
+    """Whether this run embeds its candidates. A budget frozen before the switch embedded them, so it still does."""
+    return (budget.get("fast_path") or {}).get("candidate_embedding", True)
 
 
 def chain_on(budget: dict[str, Any]) -> bool:

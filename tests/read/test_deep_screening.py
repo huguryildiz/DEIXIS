@@ -381,7 +381,7 @@ def test_a_paused_run_frozen_before_the_option_resumes_as_before_with_the_settin
         assert run["status"] == "paused", run
         frozen = app.state.store.run(run_id)["budget"]
         assert "deep_screening" not in frozen["fast_path"]
-        assert frozen["fast_path"]["policy_hash"] == fast_path.freeze_budget({}, "standard")["policy_hash"]
+        assert frozen["fast_path"]["policy_hash"] == fast_path.freeze_budget({}, "standard", candidate_embedding=False)["policy_hash"]
         assert client.put("/api/settings/preferences", json={"deep_screening": "on"}).json()["deep_screening"] == "on"
         assert client.post(f"/api/runs/{run_id}/resume").status_code == 200
         _, run = wait(client, rid, run_id)
@@ -462,7 +462,7 @@ def test_the_benchmark_list_barrier_pauses_once_after_the_list_and_before_any_re
         rid, run_id, _, run = discover(client, effort="standard")
         store = app.state.store
         policy_hash = run["budget"]["fast_path"]["policy_hash"]
-        assert policy_hash == fast_path.freeze_budget({}, "standard")["policy_hash"]
+        assert policy_hash == fast_path.freeze_budget({}, "standard", candidate_embedding=False)["policy_hash"]
         if not barrier:
             assert run["status"] == "completed", run
             assert store.existing_step(run_id, small_batch.LIST_BARRIER_KEY) is None

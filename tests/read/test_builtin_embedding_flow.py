@@ -119,6 +119,9 @@ class Session:
         self.store = self.app.state.store
         if setting is not None:
             self.store.set_setting("semantic_search", setting)
+            # A run embeds its candidates only where the person turned that on (off for the pilot), and these
+            # sessions are the ones that measure the embedding itself.
+            self.store.set_setting("candidate_embedding", "on")
 
     def close(self):
         self.client.__exit__(None, None, None)

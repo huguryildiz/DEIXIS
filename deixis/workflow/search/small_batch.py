@@ -136,6 +136,7 @@ def allocate(queues: list[list[dict[str, Any]]], limit: int, per_source: int,
 
 def freeze_budget(budget: dict[str, Any], effort: str, reading: str) -> dict[str, Any]:
     body = dict(budget)
+    mode = fast_path.MODES[effort]
     fetch = body.get("fulltext_fetch") or {}
     reads = adjudication.read_budget(effort) if reading == "auto" and fetch else {}
     # The former follow-up reading allowance moves into this run, without increasing the chain's total.
@@ -152,7 +153,13 @@ def freeze_budget(budget: dict[str, Any], effort: str, reading: str) -> dict[str
         "read_limit": body["max_fulltext_reads"], "max_model_calls": body["max_model_calls"],
         "fetch_attempts": fulltext.FULLTEXT_WORK_ATTEMPTS,
         "prerank_lookup": dict(PRERANK_LOOKUP),
-        "rerank": dict(RERANK_RULE),
+        # This depth's own reranker window and run point (`fast_path.MODES`): Quick reads a small group after its
+        # list is frozen, Standard and Detailed read the widest window before it. A factor the person saved is kept
+        # under the depth's own, so a run never reads a wider window than its depth allows.
+        "rerank": dict(RERANK_RULE) | {
+            "pool_factor": min(RERANK_RULE["pool_factor"], mode.rerank_pool),
+            "max_pool_factor": min(RERANK_RULE["max_pool_factor"], mode.rerank_pool),
+            "point": mode.rerank_point},
     }
     return body
 
@@ -160,6 +167,13 @@ def freeze_budget(budget: dict[str, Any], effort: str, reading: str) -> dict[str
 def rerank_rule(run: dict[str, Any]) -> dict[str, Any]:
     """The rerank rule this run froze, or version 1 for a budget frozen without it."""
     return (run["budget"].get("inspection") or {}).get("rerank") or RERANK_RULE_V1
+
+
+def rerank_point(run: dict[str, Any]) -> str:
+    """Where this run's reranker stands: `before_list`, the list waiting for it, or `after_list`, the list frozen
+    from the fused order first and the reranker reading a small group afterwards for the measurement (Quick). A
+    budget frozen before the depths had a point of their own waits, as it did."""
+    return rerank_rule(run).get("point", "before_list")
 
 
 def held_chained(run: dict[str, Any], manifest: dict[str, Any]) -> set[str]:
@@ -296,6 +310,10 @@ def reranked(manifest: dict[str, Any], fused: list[str]) -> tuple[list[str], dic
     if not stored:
         return fused, None
     told = {key: stored.get(key) for key in ("provider", "model", "status", "error_code")}
+    if stored.get("point") == "after_list":
+        # The list was frozen before this reranker read anything (Quick): its scores are the measurement's record
+        # and never move a record, whatever the list is rebuilt from.
+        return fused, told | {"applied": False, "reason": "read_after_list", "fallback": "fused_order"}
     if stored.get("status") != "applied":
         return fused, told | {"applied": False, "reason": stored.get("error_code") or stored.get("status"),
                               "fallback": "fused_order"}
@@ -692,6 +710,7 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
     manifest = json_value(manifest_for(flow, run, scope, vocabulary))
     priority = set(manifest["user_priority"])
     read_top = run["budget"]["fast_path"]["N"]
+    told = {"point": rerank_point(run)}
     automatic = [rid for rid in replay(manifest)["fused"] if rid not in priority]
     size = choice.pool_size(read_top)
     # Which records enter the window: the fused prefix, or — since rerank rule version 5, and only while the pool is
@@ -720,10 +739,9 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
             reasons |= {rid: "no_abstract" for rid in bare}
     candidates = [rid for rid in window if rid not in reasons]
     kept = [rid for rid in window if rid in reasons]
-    told = {}
     if manifest.get("preselect"):
         contributions = chosen.get("contributions") or {}
-        told = {"preselect": manifest["preselect"] | {
+        told |= {"preselect": manifest["preselect"] | {
             "pool": len(automatic), "window": size, "ran": len(automatic) > size,
             "lists": [{key: entry[key] for key in ("provider", "query_text", "sort", "votes", "read_total",
                                                    "size", "focused")}
@@ -949,15 +967,23 @@ def lookup_open(store: Any, run: dict[str, Any], records: list[str]) -> list[str
 
 
 async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> None:
+    point = rerank_point(run)
     if flow.store.existing_step(run["id"], LIST_KEY) is None:
         chained = flow._chain_filter(run)
         from deixis.workflow.search import lookups
         words, _ = lookups.title_words(vocabulary)
         lookups.flag_and_decide(flow.store, run, scope, words,
                                works=set(flow.store.work_ids(chained).values()), key="chain_record_flags")
-        await prerank_lookups(flow, run, scope, vocabulary)
-        await rerank_list(flow, run, scope, vocabulary)
+        if point == "before_list":
+            await prerank_lookups(flow, run, scope, vocabulary)
+            await rerank_list(flow, run, scope, vocabulary)
     listing = freeze_list(flow, run, scope, vocabulary)
+    if point == "after_list":
+        # Quick: the list is frozen and does not change, so the reranker reads its small group now, for the
+        # measurement alone. The missing abstracts are not asked for first: that lookup spends the stage's own time
+        # to improve an order this depth does not use. The ranking stage's deadline still holds, so a stage with no
+        # time left leaves the step saying so.
+        await rerank_list(flow, run, scope, vocabulary)
     from deixis.workflow.read import read as fast_read
     flow._close_clock_stage(run, "ranking")
     if run["budget"].get("benchmark_list_barrier"):

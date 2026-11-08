@@ -184,6 +184,7 @@ export type Step = {
     // An embedding step (slice 21): the model it froze, what it read from the store, what it still misses, its 429 waits,
     // the person's uploaded files whose text it sent, and why the built-in model skipped it.
     provider?: string; stored_model?: string; from_store?: number; missing?: number; query_origin?: string
+    embedding_off_reason?: string | null
     rate_limited_waits?: number; waited_seconds?: number; uploaded_files_attempted?: number; uploaded_passages_attempted?: number; uploaded_files_confirmed?: number; uploaded_passages_confirmed?: number; uploaded_files_unknown?: number; uploaded_passages_unknown?: number; stored_other_dimension?: number; model_installed?: boolean
     skipped?: boolean; reason?: string
     // Abstract screening: the batch sizes the code queued, and the works one model read covered (never the model's prose).
@@ -191,7 +192,7 @@ export type Step = {
     // The full-text reading plan: the works it froze.
     works?: unknown[]
     // The record reranker (`rerank:v1:list`): how many records it was given, its error code when it did not run.
-    reranked?: number; error_code?: string | null; cut_documents?: number | null
+    reranked?: number; error_code?: string | null; cut_documents?: number | null; point?: string | null
     // How many records without an abstract the rerank kept in place, by why.
     held?: Partial<Record<'no_abstract' | 'no_abstract_text_route' | 'no_abstract_lookup_open', number>>
     // The frozen list (`small_batch:v1:list`): whether its order used the rerank, and why not.

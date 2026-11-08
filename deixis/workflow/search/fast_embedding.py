@@ -28,6 +28,11 @@ class Consumer:
         self.error = None
         self.query_vector = None
         self.step, self.embedder, origin = flow._embedding_choice(run["id"], "source_similarity")
+        # A run queued with candidate embedding off embeds nothing, whatever Settings name for semantic search: the
+        # reranker reads each record's title and abstract as text. The signal is then left out and says why.
+        self.off_by_policy = not fast_path.candidate_embedding_on(run["budget"])
+        if self.off_by_policy:
+            self.embedder = None
         self.closed = bool(((self.step or {}).get("output") or {}).get("cutoff_at"))
         self.query = flow._embedding_query(scope, self.embedder) if self.embedder else None
         self.identity = flow._identity(self.embedder, origin) if self.embedder else {"provider": "off", "stored_model": None}
@@ -42,7 +47,8 @@ class Consumer:
             # reads it from the step, never from what Settings say later (decision 5).
             self.identity["model_installed"] = embeddings.builtin_ready(self.embedder)
         self.identity |= {"fast_path_queue": 1, "embedding_off_reason":
-                          "embedding_off" if self.embedder is None else english_question.MISSING if self.query is None else None}
+                          ("candidate_embedding_off" if self.off_by_policy else "embedding_off")
+                          if self.embedder is None else english_question.MISSING if self.query is None else None}
         if self.step is None:
             key = f"similarity:{self.embedder.stored_model}" if self.embedder else "similarity:off"
             self.step = self.store.step(run["id"], "source_similarity", key, output=self.identity)

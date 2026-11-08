@@ -142,6 +142,9 @@ const heldText = (held: NonNullable<Step['output']>['held']) => [
   held?.no_abstract_lookup_open ? plural(held.no_abstract_lookup_open, '{n} record without an abstract kept its place: its abstract lookup did not finish.', '{n} records without an abstract kept their place: their abstract lookup did not finish.') : '',
 ].filter(Boolean).join(' ')
 const rerankLineText = (step: Step, listed: NonNullable<Step['output']>['reranker'] | null) => {
+  // Quick does not wait for the reranker: its list is frozen from the search ranking and the scores are kept as a
+  // record of what the reranker would have said.
+  if (step.status === 'succeeded' && step.output?.point === 'after_list') return plural(step.output?.reranked ?? 0, 'The list was ready before the reranker read {n} record, so this depth kept the search ranking’s own order.', 'The list was ready before the reranker read {n} records, so this depth kept the search ranking’s own order.')
   if (step.status === 'succeeded' && listed?.applied) return [plural(listed.reranked ?? step.output?.reranked ?? 0, '{n} record reordered by the reranker', '{n} records reordered by the reranker'), heldText(step.output?.held)].filter(Boolean).join('. ')
   const kept = t('The records kept their fused order.')
   if (step.status === 'succeeded') return listed ? `${t('The reranker’s scores were not used: the list changed while it ran.')} ${kept}` : ''
@@ -642,12 +645,19 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         // What the similarity step gave the ranking (slice 21): scores it made, scores from an earlier run it read,
         // part of the pool when a batch failed, or nothing when the model was not available.
         const simOut = similarity?.output ?? null
+        // A run that embedded no candidate: it was queued with candidate embedding off, or no embedding model
+        // is set. Nothing was compared with the question, so the line says that and names no model.
+        const simOff = Boolean(simOut && (simOut.provider === 'off' || simOut.embedding_off_reason))
         const fromStore = simOut?.from_store ?? 0
         const scoredCount = fromStore + (simOut?.embedded ?? 0)
         const simTotal = simOut?.sources ?? 0
         const builtinSim = similarityModel?.connection === 'builtin'
-        const similarityScored = similarity?.status === 'succeeded' || similarity?.status === 'partial' || fromStore > 0
-        const similarityText = !similarity ? '' : [
+        const similarityScored = !simOff && (similarity?.status === 'succeeded' || similarity?.status === 'partial' || fromStore > 0)
+        const similarityText = !similarity ? '' : simOff
+          ? (simOut?.embedding_off_reason === 'candidate_embedding_off'
+            ? t('The records were not compared with the question: comparing candidates by meaning is off.')
+            : t('The records were not compared with the question: no embedding model is set.'))
+          : [
           similarity.status === 'succeeded'
             ? simOut?.embedded === 0 && fromStore > 0
               ? builtinSim && simOut?.model_installed === false  // what the step recorded when it ran, not today's setting
@@ -662,9 +672,9 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         const timed = (step?: Step) => { const s = stepSeconds(step); return s === null ? null : <time>{durationText(s)}</time> }
         // One line per finding, each with the time its step took.
         return <>
-          {similarity && similarityModel && <p className="chat-report-line">
+          {similarity && (simOff || similarityModel) && <p className="chat-report-line">
             <span>{similarityText}
-              {similarityScored && <span className="chat-run-model chat-report-model"><ConnectionIcon id={similarityModel.connection} /><span className="sr-only">{connectionName(similarityModel.connection)} · </span>{builtinSim ? t('This computer · built-in') : <span title={similarityModel.model}>{similarityModel.model.replace(/^[^:]+:/, '').replace(/@\d+$/, '')}</span>}</span>}</span>
+              {similarityScored && similarityModel && <span className="chat-run-model chat-report-model"><ConnectionIcon id={similarityModel.connection} /><span className="sr-only">{connectionName(similarityModel.connection)} · </span>{builtinSim ? t('This computer · built-in') : <span title={similarityModel.model}>{similarityModel.model.replace(/^[^:]+:/, '').replace(/@\d+$/, '')}</span>}</span>}</span>
             {timed(similarity)}
           </p>}
           {rerank && (rerank.status === 'succeeded' || rerank.status === 'failed') && rerankLineText(rerank, listedRerank) && <p className="chat-report-line" data-testid="rerank-line">

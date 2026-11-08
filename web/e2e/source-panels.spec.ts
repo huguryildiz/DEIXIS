@@ -644,11 +644,16 @@ test.describe('S12: report, Citation and Source details panels', () => {
     const view = await viewOf(api, rid)
     const latest = [...valid(view)].sort((a, b) => (b.report_version ?? 0) - (a.report_version ?? 0))[0]
     const abstracts = latest.claims.flatMap(c => c.evidence).filter(e => e.kind === 'abstract')
-    // Another abstract-cited work than the earlier cases' (its file is replaced twice here).
-    const cited = abstracts[abstracts.length - 1]
+    // Another abstract-cited work than the earlier cases' (its file is replaced twice here), and one whose PDF the
+    // fixture fetched. Which work the answer cites last is the run's own business, so it is chosen by what this case
+    // needs rather than by its place in the list.
+    const assets = (e: Evidence) =>
+      view.sources.find(s => s.source_version_id === e.source_version_id)?.access.assets.length
+    const usable = abstracts.filter(e => e.source_version_id !== abstracts[0].source_version_id && assets(e))
+    const cited = usable[usable.length - 1]
+    expect(cited, 'the fixture cites a second abstract-read work whose PDF it fetched').toBeTruthy()
     const source = view.sources.find(s => s.source_version_id === cited.source_version_id)!
     const first = source.access.assets[0]
-    expect(first, 'the fixture fetched this work\'s PDF').toBeTruthy()
     // PATCHED VIEW: the work's first file is marked as Europe PMC's text drawn by DEIXIS, so its replacement (the
     // publisher-like fixture PDF) must change the text view's provenance too. The second file's text read is held 6 s
     // and its text swapped for "SYNTHETIC STALE TEXT", so a late answer for it would show.

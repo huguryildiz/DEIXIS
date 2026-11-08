@@ -16,7 +16,7 @@ import pytest
 
 from deixis.documents import embeddings, local_embedding, rerankers
 from deixis.providers import pacing
-from deixis.workflow.search import small_batch
+from deixis.workflow.search import english_question, small_batch
 from deixis.workflow.run.flow import RunStopped
 from test_builtin_embedding_flow import BUILTIN, FakeLocal, Session
 from test_lookup_flow import headers_back, headers_out, written
@@ -126,13 +126,17 @@ def test_a_failed_or_stale_rerank_keeps_the_fused_order_and_says_why(fixed_repla
 class Steps:
     """The few store calls `rerank_list` makes, in memory."""
 
-    def __init__(self, setting):
+    def __init__(self, setting, sentence=None):
         self.settings = {rerankers.SETTING: setting}
+        self.sentence = sentence
         self.steps = {}
         self.clock = SimpleNamespace(now=lambda: None)
 
     def setting(self, key):
         return self.settings.get(key)
+
+    def english_question(self, research_id, scope_revision):
+        return self.sentence
 
     def existing_step(self, run_id, key):
         return self.steps.get(key)
@@ -147,8 +151,8 @@ class Steps:
         self.steps[step_id].update(status=status, output=output, error_code=error_code)
 
 
-def rerank_flow(monkeypatch, setting, local, http=None, stop=lambda: False):
-    store = Steps(setting)
+def rerank_flow(monkeypatch, setting, local, http=None, stop=lambda: False, sentence=None):
+    store = Steps(setting, sentence)
     stopped = []
 
     def checkpoint(run_id, revision):
@@ -182,6 +186,39 @@ def test_a_failed_rerank_is_recorded_with_the_fused_order_as_its_fallback_and_no
     assert step["status"] == "failed" and step["error_code"] == "reranker_failed"
     assert (step["output"]["status"], step["output"]["fallback"]) == ("failed", "fused_order")
     assert sent == []  # Voyage has a key here and was not asked instead
+
+
+# A question in another language, with no English sentence stored for its revision.
+OTHER_LANGUAGE_SCOPE = {"question": "Sualtı duyarga ağlarında yönlendirme protokolleri nasıl karşılaştırılıyor?",
+                        "language_hint": "tr", "research_id": "res-1", "revision": 1}
+
+
+def test_without_an_english_sentence_the_rerank_asks_no_reranker_and_the_list_keeps_the_fused_order(monkeypatch):
+    # The reranker reads the revision's English sentence, never the question as written. Without one the step is
+    # failed with that reason, no reranker is asked, and the delivered list stays in its fused order.
+    asked = []
+
+    class Local:
+        async def rerank(self, model_id, query, documents, seconds):
+            asked.append(query)
+            return [0.0 for _ in documents]
+    sent = []
+    http = voyage(lambda r: sent.append(r) or httpx.Response(200))
+    monkeypatch.setenv("VOYAGE_API_KEY", KEY)  # a key is in reach and is still not used
+    flow, store, _ = rerank_flow(monkeypatch, {"enabled": True, "provider": "builtin", "model": RER}, Local(), http)
+    asyncio.run(small_batch.rerank_list(flow, RUN, OTHER_LANGUAGE_SCOPE, {}))
+    step = store.steps[small_batch.RERANK_KEY]
+    assert step["status"] == "failed" and step["error_code"] == english_question.MISSING
+    assert (step["output"]["status"], step["output"]["fallback"]) == ("failed", "fused_order")
+    assert asked == [] and sent == []  # neither the built-in runner nor Voyage was asked
+    # The list the person is given, built from that step as `freeze_list` builds it.
+    stored = {key: step["output"].get(key)
+              for key in ("status", "provider", "model", "candidate_ids", "scores", "error_code")}
+    monkeypatch.setattr(small_batch, "replay", lambda m: {"fused": list(m["fused"]), "ranks": {}, "reasons": {}})
+    listing = small_batch.build_list(manifest(["a", "b", "c"], reranker=stored))
+    assert listing["order"] == ["a", "b", "c"]
+    assert (listing["reranker"]["applied"], listing["reranker"]["reason"], listing["reranker"]["fallback"]) == (
+        False, english_question.MISSING, "fused_order")
 
 
 # The old chain-only hold, which a budget frozen with version 3 keeps.

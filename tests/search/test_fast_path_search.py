@@ -14,7 +14,7 @@ from deixis.runtime.config import Settings
 from deixis.documents import embeddings, local_embedding
 from deixis.providers import facade, openalex
 from deixis.providers.common import ProviderRecord, SearchOutcome
-from deixis.workflow.search import fast_embedding, search as fast_search, ranking
+from deixis.workflow.search import english_question, fast_embedding, search as fast_search, ranking
 from deixis.workflow.run import fast_path
 from deixis.workflow.run.flow import ResearchFlow
 from test_fast_path_clock import library
@@ -253,6 +253,26 @@ def test_deep_unplanned_s2_reservation_does_not_move_to_openalex(library):
     planned = fast_search.build_plan(library.store, library.run, library.store.scope(library.rid), QUERIES + [s2, s2 | {'query_text': 'SYNTHETIC second bulk'}])
     assert planned['s2_bulk'] == s2 and planned['s2_bulk_index'] == 3
     assert [q['index'] for q in planned['dropped']] == [2, 4]
+
+
+def test_a_question_in_another_language_goes_to_openalex_as_written(library, tmp_path):
+    # The first semantic request carries the person's own sentence. A question in another language with no stored
+    # English sentence is planned and sent as written, and nothing is cancelled for the missing sentence.
+    lib = library
+    question = "Sualtı duyarga ağlarında yönlendirme protokolleri nasıl karşılaştırılıyor?"
+    scope = lib.store.scope(lib.rid) | {"question": question, "language_hint": "tr"}
+    assert english_question.embedding_query(lib.store, scope) is None  # the revision has no English sentence
+    settings = Settings(data_dir=tmp_path / "data")
+    flow = ResearchFlow(SimpleNamespace(store=lib.store, clock=lib.clock, settings=settings, local_embedder=None))
+    plan = fast_search.build_plan(lib.store, lib.run, scope, QUERIES)
+    assert (plan["semantic"]["query_text"], plan["semantic"]["query_origin"]) == (question, "question")
+    fast_path.enter_stage(lib.store, lib.run, "search")
+    calls = []
+    scripted(flow, calls)
+    asyncio.run(fast_search.execute(flow, lib.run, scope, plan, False))
+    assert calls[0] == ("semantic", question, 0, plan["semantic"]["limit"])
+    step = lib.store.existing_step(lib.run["id"], "search:fast:semantic")
+    assert step["status"] == "succeeded" and step["error_code"] is None
 
 
 # Fast path end to end: one Quick question through search, chain, read and the automatic answer.

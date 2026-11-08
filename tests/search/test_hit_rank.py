@@ -191,6 +191,17 @@ def test_the_sorting_setting_recorded_is_the_query_s_own_or_the_one_the_connecto
     assert registry.effective_sort({"provider_id": "SYNTHETIC"}) is None
 
 
+def test_which_sorting_settings_count_as_a_relevance_order():
+    """The pre-selection of the reranker's window only lets a relevance-ordered list vote. A request that names no
+    setting is one, and so are the settings PubMed and Scopus always send; a date or citation-count order is not,
+    and neither is a name nothing here knows."""
+    assert registry.relevance_ordered(None)
+    assert registry.relevance_ordered(pubmed.FIXED_SORT) and registry.relevance_ordered(scopus.FIXED_SORT)
+    assert not registry.relevance_ordered("publication_date:desc")
+    assert not registry.relevance_ordered("citationCount:desc")
+    assert not registry.relevance_ordered("SYNTHETIC order")
+
+
 def test_no_gate_threshold_or_screening_path_reads_the_relevance_score():
     """The score is stored for inspection only. Only the request, the record, the write and the schema may name it.
 

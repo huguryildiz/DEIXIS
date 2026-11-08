@@ -278,5 +278,16 @@ def effective_sort(query: dict[str, Any]) -> str | None:
     return connector.fixed_sort if connector is not None else None
 
 
+# The sorting settings that are a provider's own relevance order. PubMed and Scopus name one on every request, so a
+# list of theirs carries a setting although it is relevance-ordered; a request that names none is relevance-ordered
+# too (above). Any other name (a date or citation-count order) is not, and neither is a name nothing here knows.
+RELEVANCE_SORTS = (pubmed.FIXED_SORT, scopus.FIXED_SORT)
+
+
+def relevance_ordered(sort: str | None) -> bool:
+    """Whether a search run's stored sorting setting means the provider answered in relevance order."""
+    return sort is None or sort in RELEVANCE_SORTS
+
+
 def provider_role(connector: Connector) -> str:
     return "search" if connector.searchable else "verification"

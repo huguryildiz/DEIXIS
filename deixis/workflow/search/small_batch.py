@@ -16,7 +16,7 @@ from deixis.providers.lookup import S2_LOOKUP_BATCH, SCOPUS_LOOKUP_BATCH
 from deixis.storage.db import transaction
 from deixis.workflow.read import adjudication, fulltext
 from deixis.workflow.run import fast_path
-from deixis.workflow.search import english_question, ranking
+from deixis.workflow.search import english_question, preselect, ranking
 from deixis.workflow.screen.decisions import DecisionStore
 
 POLICY = "small_batch_fused_v1"
@@ -60,8 +60,15 @@ PRERANK_LOOKUP = {"version": 5, "max_records": PRERANK_RECORDS, "seconds": 8, "c
 # False), and the lookup before the rerank asks about it too; the no-abstract hold applies to it as to every record.
 # Replaying the 18 Oct BioASQ and LitSearch runs offline, that hold cost recall@50 (-3.5 and -3.3 points); its own
 # check had used mislabelled routes. A rule without `hold_chained` (version 3 and earlier) keeps the hold.
-RERANK_RULE = {"version": 4, "pool_factor": 8.0, "max_pool_factor": 8.0, "hold_without_abstract": "with_text_route",
-               "hold_chained": False}
+# Version 5: when the pool is larger than the window, which records enter it is decided by the query lists
+# themselves (`preselect`) instead of by the first records of the fused order — one vote per relevance-ordered query
+# list, `1 / (k + rank)` summed. A pool that fits the window is untouched. Citation links cast no vote, so the window
+# keeps a floor for the records only citation chaining found and for the records only a focused query found. The
+# floor sizes are frozen per run; nothing has measured them yet, so they are the pilot's own starting numbers.
+# A rule frozen without `preselect` (version 4 and earlier) takes the fused prefix, as it did.
+RERANK_RULE = {"version": 5, "pool_factor": 8.0, "max_pool_factor": 8.0, "hold_without_abstract": "with_text_route",
+               "hold_chained": False, "preselect": preselect.RULE, "rrf_k": preselect.K,
+               "floors": {"chain_only": 5, "narrow_only": 5}}
 RERANK_RULE_V1 = {"version": 1, "pool_factor": 4.0, "max_pool_factor": 4.0, "hold_without_abstract": False}
 # 5: one closest place for a work whose reading found no criterion part. 6: every abstract-only work's abstract
 # before the closest works' second to fourth pages, and that zero-part work at most 2 passages.
@@ -294,7 +301,18 @@ def reranked(manifest: dict[str, Any], fused: list[str]) -> tuple[list[str], dic
                               "fallback": "fused_order"}
     candidates, kept = stored["candidate_ids"], stored.get("kept_in_place") or []
     priority = set(manifest["user_priority"])
-    window = [rid for rid in fused if rid not in priority][:len(candidates) + len(kept)]
+    automatic = [rid for rid in fused if rid not in priority]
+    size = len(candidates) + len(kept)
+    if manifest.get("preselect"):
+        # The window is the one the query lists choose, not the first records of the fused order, so it is
+        # recomputed from the manifest and compared as a set. Its records then take the window's own places, in
+        # front of the records the reranker never read, as they did when the window was the fused order's own head.
+        window = window_for(manifest, automatic, size)["window"]
+        if set(window) != set(candidates) | set(kept) or len(window) != size:
+            return fused, told | {"applied": False, "reason": "candidates_changed", "fallback": "fused_order"}
+        return rerankers.reorder(promoted(fused, window), candidates, stored["scores"]), told | {
+            "applied": True, "reranked": len(candidates), **({"kept_in_place": len(kept)} if kept else {})}
+    window = automatic[:size]
     if [rid for rid in window if rid not in set(kept)] != candidates or not set(kept) <= set(window):
         return fused, told | {"applied": False, "reason": "candidates_changed", "fallback": "fused_order"}
     return rerankers.reorder(fused, candidates, stored["scores"]), told | {
@@ -447,9 +465,102 @@ def manifest_for(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabula
                 "keyword_heads": DecisionStore(store).ranking_order(keyword_step["id"]),
                 "chain_heads": chained,
                 "keyword_step": keyword_step["id"]}
+    rule = rerank_rule(run)
+    if rule.get("preselect"):
+        # What the query lists themselves say, frozen here: the places every list gave the pool's records, and the
+        # rule the window is chosen with. A run whose rule names no preselect freezes neither, so its list is the
+        # one it always was, hash included.
+        manifest["query_lists"] = query_lists(store, run, in_pool, versions, heads)
+        manifest["preselect"] = {"rule": rule["preselect"], "k": rule["rrf_k"], "floors": dict(rule["floors"])}
     from deixis.workflow.search.fast_chain import manifest as chain_manifest
     manifest["fast_path"] = chain_manifest(store, run)
     return manifest
+
+
+def query_lists(store: Any, run: dict[str, Any], in_pool: dict[str, Any], versions: dict[str, Any],
+                heads: dict[str, str]) -> list[dict[str, Any]]:
+    """The query lists of this question revision, as `preselect.lists` groups them, each with its sorting setting,
+    whether that setting is a relevance order (only then does the list vote) and how deep it was read.
+
+    Every search that found a candidate wrote its own hit with the place it gave the record (`candidate_hits`), so
+    membership and order both come from there. Only a provider search counts: a citation request is no query list
+    (its step kind is `provider_chain:…`), and a record's place is read against its work's head, because the pool is
+    by work. Every discovery run of the revision is read, so the same query sent again by a later run is the same
+    list and votes once.
+
+    A focused query is marked, so the window can tell a record only that query found. The roles are read from the
+    search plan each of those runs froze, not only this run's: a query of an earlier run keeps the role it was
+    written with, and a run whose protocol holds no plan marks none.
+    """
+    from deixis.providers import registry
+    from deixis.workflow.search import search as fast_search
+
+    rows = [dict(row) for row in store.conn.execute(
+        "SELECT h.source_version_id, h.rank, sr.run_id, sr.provider, sr.query_text, sr.sort, sr.read_total"
+        " FROM candidate_hits h JOIN search_runs sr ON sr.id = h.search_run_id"
+        " JOIN run_steps s ON s.id = sr.step_id"
+        " WHERE h.research_id = ? AND h.scope_revision = ? AND s.kind LIKE 'provider_search:%'"
+        " AND sr.run_id IN (SELECT id FROM runs WHERE research_id = ? AND scope_revision = ? AND kind = 'discovery')",
+        (run["research_id"], run["scope_revision"], run["research_id"], run["scope_revision"]))]
+    focused: set[tuple[str, str]] = set()
+    for run_id in sorted({row["run_id"] for row in rows}):
+        try:
+            plan = fast_search.stored_plan(store, {"id": run_id, "research_id": run["research_id"]})
+        except (LookupError, KeyError, TypeError):
+            continue
+        for entry in plan.get("keywords") or []:
+            query = entry.get("query") or {}
+            if query.get("role") == "focused":
+                focused.add((query["provider_id"], query["query_text"]))
+    hits = []
+    for row in rows:
+        work = (versions.get(row["source_version_id"]) or {}).get("work_id")
+        head = heads.get(work)
+        if head in in_pool:
+            hits.append({"head": head, "provider": row["provider"], "query_text": row["query_text"],
+                         "sort": row["sort"], "relevance": registry.relevance_ordered(row["sort"]),
+                         "read_total": row["read_total"], "rank": row["rank"]})
+    return [entry | {"focused": (entry["provider"], entry["query_text"]) in focused}
+            for entry in preselect.lists(hits)]
+
+
+def window_for(manifest: dict[str, Any], automatic: list[str], size: int) -> dict[str, Any]:
+    """The records the reranker is given: all of `automatic` while it fits the window, else what the manifest's own
+    query lists choose (rerank rule version 5), else — for a manifest frozen without them — the fused order's own
+    leading records. `automatic` already leaves out what the person included themselves.
+    """
+    rule = manifest.get("preselect")
+    if len(automatic) <= size:
+        return {"window": list(automatic), "floors": {}}
+    if not rule:
+        return {"window": automatic[:size], "floors": {}}
+    entries = manifest.get("query_lists") or []
+    contributions = preselect.scores(entries, rule["k"])
+    works = {row["id"]: row["work_id"] for row in manifest["pool"]}
+    place = {head: i for i, head in enumerate(automatic)}
+    # Inside a floor the records are taken in the run's own fused order, so the floor goes to the best placed of
+    # them. A chain record a list voted for needs no floor place: its vote is its way in.
+    chain_only = sorted((head for head in manifest.get("chain_heads") or []
+                         if head in place and head not in contributions), key=lambda head: place[head])
+    narrow_only = sorted((head for head in preselect.narrow_heads(entries) if head in place),
+                         key=lambda head: place[head])
+    # Only the records `automatic` holds: a record the person included themselves is already first in the list and
+    # takes no window place, however the lists voted for it.
+    voted = [head for head in preselect.order(contributions, works) if head in place]
+    chosen = preselect.window(size, automatic, voted,
+                              chain_only=chain_only, narrow_only=narrow_only, quota=rule["floors"])
+    return chosen | {"contributions": contributions}
+
+
+def promoted(fused: list[str], window: list[str]) -> list[str]:
+    """`fused` with the window's records in front, each keeping its place among them, and everything else after.
+
+    The reranker's answer is the reading order of what it read, as it was when the window was the fused order's own
+    leading records; a record it never saw comes after them. The records the person included themselves are deduped
+    back to the front by `build_list`.
+    """
+    inside = set(window)
+    return [rid for rid in fused if rid in inside] + [rid for rid in fused if rid not in inside]
 
 
 def freeze_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]) -> dict[str, Any]:
@@ -581,7 +692,12 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
     manifest = json_value(manifest_for(flow, run, scope, vocabulary))
     priority = set(manifest["user_priority"])
     read_top = run["budget"]["fast_path"]["N"]
-    window = [rid for rid in replay(manifest)["fused"] if rid not in priority][:choice.pool_size(read_top)]
+    automatic = [rid for rid in replay(manifest)["fused"] if rid not in priority]
+    size = choice.pool_size(read_top)
+    # Which records enter the window: the fused prefix, or — since rerank rule version 5, and only while the pool is
+    # larger than the window — what the query lists themselves choose.
+    chosen = window_for(manifest, automatic, size)
+    window = chosen["window"]
     rows = {row["id"]: row for row in manifest["pool"]}
     chained = held_chained(run, manifest)
     hold = rerank_rule(run)["hold_without_abstract"]
@@ -604,6 +720,17 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
             reasons |= {rid: "no_abstract" for rid in bare}
     candidates = [rid for rid in window if rid not in reasons]
     kept = [rid for rid in window if rid in reasons]
+    told = {}
+    if manifest.get("preselect"):
+        contributions = chosen.get("contributions") or {}
+        told = {"preselect": manifest["preselect"] | {
+            "pool": len(automatic), "window": size, "ran": len(automatic) > size,
+            "lists": [{key: entry[key] for key in ("provider", "query_text", "sort", "votes", "read_total",
+                                                   "size", "focused")}
+                      for entry in manifest.get("query_lists") or []],
+            "floors_taken": chosen.get("floors") or {},
+            # Only the window's own contributions: what a record outside it was given is in the lists above.
+            "contributions": {rid: contributions.get(rid, []) for rid in window}}}
     texts = [rerankers.document(rows[rid]["title"], rows[rid]["abstract"]) for rid in candidates]
     # The reranker reads the revision's English sentence, not the question as written: its documents are English
     # titles and abstracts, and reranking one language against another is unmeasured. Without a sentence the list
@@ -612,7 +739,7 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
     step = store.step(run["id"], RERANK_KEY, "code:rerank")
     store.start_step(step["id"])
     if sentence is None:
-        store.finish_step(step["id"], "failed", output=choice.identity() | {
+        store.finish_step(step["id"], "failed", output=choice.identity() | told | {
             "candidate_ids": candidates, "kept_in_place": kept, "read_top": read_top,
             **({"kept_reasons": {rid: reasons[rid] for rid in kept}} if hold else {}),
             "status": "failed", "error_code": english_question.MISSING, "fallback": "fused_order"},
@@ -620,7 +747,7 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
             error={"error": "the revision has no English sentence for the reranker"})
         return
     query = sentence[0]
-    output = choice.identity() | {
+    output = choice.identity() | told | {
         "candidate_ids": candidates, "kept_in_place": kept, "read_top": read_top, "query_sha256": canonical.sha256_hex(query),
         **({"kept_reasons": {rid: reasons[rid] for rid in kept}} if hold else {}),
         "cut_documents": sum(len(text) > rerankers.MAX_DOCUMENT_CHARS for text in texts),  # kept on failure too
@@ -717,8 +844,9 @@ async def prerank_lookups(flow: Any, run: dict[str, Any], scope: dict[str, Any],
     if asked is None:
         manifest = json_value(manifest_for(flow, run, scope, vocabulary))
         priority, chained = set(manifest["user_priority"]), held_chained(run, manifest)
-        window = [rid for rid in replay(manifest)["fused"] if rid not in priority][
-            :choice.pool_size(run["budget"]["fast_path"]["N"])]
+        automatic = [rid for rid in replay(manifest)["fused"] if rid not in priority]
+        # The records this asks about are the ones the reranker will be given, the pre-selection included.
+        window = window_for(manifest, automatic, choice.pool_size(run["budget"]["fast_path"]["N"]))["window"]
         rows = {row["id"]: row for row in manifest["pool"]}
         asked = [rid for rid in window if rid not in chained and not rows[rid]["abstract"]
                  and manifest["versions"][rid].get("doi")][:rule["max_records"]]

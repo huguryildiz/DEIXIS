@@ -237,6 +237,9 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
     store, rid, run_id = flow.store, run["research_id"], run["id"]
     policy = run["budget"]["fast_path"]
     last = policy.get("admission_order") == "unresolved_last"  # a policy frozen without it keeps list order
+    # The arm this run was queued with (K3): off, code never closes a record for naming neither gate block and
+    # every record reaches a model read. A policy frozen without the key screens as it always did.
+    lexical = policy.get("lexical_exclusion", True)
     fetch_allowed = run["budget"]["inspection"]["fetch_limit"] > 0
     read_allowed = run["budget"]["inspection"]["read_limit"] > 0
     key = f"small_batch:v1:{listing['manifest_hash']}:fast"
@@ -288,7 +291,7 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
     async def abstracts() -> None:
         try:
             await flow._abstract_stage(run, scope, vocabulary, order=order, batch_key=key,
-                                       read_limit=policy["N"], cutoff=cutoff)
+                                       read_limit=policy["N"], cutoff=cutoff, lexical_exclusion=lexical)
             held.model_done = True
         finally:
             held.wake.set()
@@ -333,7 +336,7 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                 return
             deep_state["abstract_plan"] = flow._abstract_code_stage(
                 run, scope, vocabulary, dorder, batch_key=deep_key, read_limit=deep["last"] - deep["first"] + 1,
-                runs=deep["runs"])
+                runs=deep["runs"], lexical_exclusion=lexical)
             flow._wake_fetch(run_id)
             await screened.wait()
             if not held.model_done:
@@ -342,7 +345,8 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
             flow._checkpoint(run_id, run["scope_revision"])
             # The plan is the stored one (`_abstract_code_stage` reads it back), with its one run per batch.
             await flow._abstract_stage(run, scope, vocabulary, order=dorder, batch_key=deep_key,
-                                       read_limit=deep["last"] - deep["first"] + 1, cutoff=cutoff)
+                                       read_limit=deep["last"] - deep["first"] + 1, cutoff=cutoff,
+                                       lexical_exclusion=lexical)
         finally:
             held.wake.set()
 
@@ -355,7 +359,8 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
 
     try:
         abstract_plan = flow._abstract_code_stage(run, scope, vocabulary, order,
-                                                  batch_key=key, read_limit=policy["N"])
+                                                  batch_key=key, read_limit=policy["N"],
+                                                  lexical_exclusion=lexical)
         def baseline_snapshot() -> dict[str, Any]:
             works = corpus()
             excluded = []

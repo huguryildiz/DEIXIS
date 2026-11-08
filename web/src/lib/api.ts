@@ -358,6 +358,8 @@ export type CitationChaining = {
   enabled: true; rule_version: string; source: string; sources: string[]; directions: string[]; seeds: number
   backward_requests: number; backward_page_size: number; forward_requests: number; forward_page_size: number
   citing_cap: number; request_limit: number; attempt_limit: number; in_flight: number
+  // How many linked works no gate term reaches the run may keep all the same; 0 for a run whose budget froze no quota.
+  rescue_quota: number
 }
 export type SearchRun = {
   id: string; run_id: string; scope_revision: number; provider: string; query_text: string; access_mode: string; status: string

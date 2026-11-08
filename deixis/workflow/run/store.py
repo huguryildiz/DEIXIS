@@ -81,6 +81,10 @@ def _step_view_output(row: Any) -> dict[str, Any] | None:
         return None
     if row["operation_key"] == "fast_chain:summary" or row["operation_key"].startswith("chain:fast:"):
         return json.loads(row["output_json"])
+    # The links one page of results showed on its own: counts only, so the timeline can say what cost no request.
+    if row["operation_key"] == "fast_chain:pool_links":
+        out = json.loads(row["output_json"])
+        return {key: out.get(key) for key in ("page", "in_pool", "links", "cited_works", "citing_records")}
     # The fast chain's seeds carry their reference lists; the timeline needs only how many there were.
     if row["operation_key"] in ("fast_chain:seeds", "fast_chain:seeds_fallback"):
         return {"seed_count": len(json.loads(row["output_json"]).get("seeds") or [])}

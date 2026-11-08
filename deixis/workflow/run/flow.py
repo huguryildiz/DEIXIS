@@ -2059,8 +2059,9 @@ class ResearchFlow:
                       batch: list[str] | None, per_page: int, fast_request: int, fast_arrival: dict[str, Any],
                       normalised: bool = False) -> None:
         """Write one answered fast-chain request (OpenAlex): the filter runs first, and only the records that pass are
-        written, as a search writes them (normalised, merged by DOI, linked, a candidate with its hit). Every link is
-        kept, passing or not, in `chain_links`. `normalised` is a `fast_chain_v2` run's filter (`chaining.passes_v2`)
+        written, as a search writes them (normalised, merged by DOI, linked, a candidate with its hit), plus the
+        records the run's rescue quota takes (`fast_chain_v3`). Every link is kept, passing or not, in `chain_links`.
+        `normalised` is a `fast_chain_v2` or `v3` run's filter (`chaining.passes_v2`)
         over the forms its protocol froze; a v1 run reads `chaining.passes`. Both read the record's OpenAlex keywords
         beside its title and abstract; the records are capped before the filter, so a wider gate never fetches
         more than the direction's frozen allowance."""
@@ -2077,19 +2078,36 @@ class ResearchFlow:
             (settings.payloads_dir / payload_path).write_text(json.dumps(outcome.raw_payload), encoding="utf-8")
             payload_digest = canonical.sha256_hex(outcome.raw_payload)
         admits = chaining.passes_v2 if normalised else chaining.passes
-        passed = [record for record in outcome.records
-                  if admits(forms, record.title, record.abstract, record.index_keywords)]
+        kept = {record.provider_record_id for record in outcome.records
+                if admits(forms, record.title, record.abstract, record.index_keywords)}
+        # The rescue quota (`fast_chain_v3`): the first few records no gate form reaches are written as candidates all
+        # the same, so the reranker judges them against the question itself. The quota is the run's, not the request's,
+        # and it is counted by work: what earlier requests spent is read from the links they wrote, so a resumed run
+        # spends no more than its budget froze, and a work already rescued takes no second place (it is written again
+        # here, which only adds its hit). The gate's own verdict on a rescued record stays in `passed_filter`.
+        quota = run["budget"]["fast_path"].get("chain_rescue") or 0
+        spent = self._chain_rescued(run_id)
+        fresh: set[str] = set()
+        for record in outcome.records:  # the page's own order, so the quota goes to the records the provider ranked first
+            if len(spent) + len(fresh) >= quota:
+                break
+            if record.provider_record_id not in kept and record.provider_record_id not in spent:
+                fresh.add(record.provider_record_id)
+        rescued = fresh | {record.provider_record_id for record in outcome.records
+                           if record.provider_record_id in spent}
         if fast_arrival["late"]:
-            passed = []
+            kept, rescued, fresh = set(), set(), set()
+        passed = [record for record in outcome.records if record.provider_record_id in kept]
+        admitted = [record for record in outcome.records if record.provider_record_id in kept | rescued]
         ok = outcome.status in ("completed", "zero_results")
         search_fields = dict(
             research_id=rid, run_id=run_id, step_id=step["id"], scope_revision=revision, provider=provider,
             query_text=f"chain:fast:{direction}:{fast_request}",
             request_description=f"citation chaining, {direction}: {outcome.request_description}",
             access_mode=outcome.access_mode, status=outcome.status, delivery_class=outcome.delivery_class,
-            result_count=len(passed), provider_total=outcome.provider_total, page_limit=per_page,
+            result_count=len(admitted), provider_total=outcome.provider_total, page_limit=per_page,
             error_json=dumps({"error": outcome.error, "http_status": outcome.http_status, "rate_limit": outcome.rate_limit,
-                              "returned": returned_count, "passed_filter": len(passed)}
+                              "returned": returned_count, "passed_filter": len(passed), "rescued": len(fresh)}
                              | ({"error_kind": outcome.error_kind} if outcome.error_kind is not None else {})),
             raw_payload_path=payload_path, payload_sha256=payload_digest,
             # A chain read filters by identifier and names no sorting setting, so the row keeps none; the records
@@ -2099,7 +2117,7 @@ class ResearchFlow:
             **({"page_number": page} if page is not None else {}),
         )
         output = {"status": outcome.status, "direction": direction, "returned": returned_count,
-                  "passed_filter": len(passed),
+                  "passed_filter": len(passed), "rescued": len(fresh),
                   "next_cursor": outcome.next_cursor if cites is not None else None,
                   "provider_total": outcome.provider_total}
         output = lookups.transport_output(self.store, step, output) | fast_arrival
@@ -2123,9 +2141,9 @@ class ResearchFlow:
                 places: dict[str, int] = {}
                 for position, record in zip(given, outcome.records):
                     places.setdefault(record.provider_record_id, position)
-                self.store.record_search(search_fields, provider, passed, payload_path, step["id"], "succeeded",
+                self.store.record_search(search_fields, provider, admitted, payload_path, step["id"], "succeeded",
                                          step_output=output, first_rank=CHAIN_RANK_BASE + fast_request * 1000,
-                                         hit_ranks=[places[record.provider_record_id] for record in passed])
+                                         hit_ranks=[places[record.provider_record_id] for record in admitted])
             else:
                 final = "outcome_unknown" if outcome.delivery_class == "after_send_unknown" else "failed"
                 self.store.record_search(search_fields, provider, [], payload_path, step["id"], final,
@@ -2138,14 +2156,17 @@ class ResearchFlow:
             if fast_arrival["late"]:
                 return
             became = {record.provider_record_id: self.store.find_source_by_identifier(provider, record.provider_record_id)
-                      for record in passed}
+                      for record in admitted}
             returned = {record.provider_record_id for record in outcome.records}
             pairs = ([(seed, linked) for seed, linked in links if linked in returned] if direction == "backward"
                      else [(seed, linked) for seed in links for linked in sorted(returned)])
+            # `passed_filter` is the gate's own verdict, so a rescued record keeps its 0 and is told apart by the
+            # record it now has: the link of a record the gate turned away and nothing rescued has no record at all.
             self.store.conn.executemany(
                 "INSERT OR IGNORE INTO chain_links (research_id, scope_revision, run_id, seed_source_version_id,"
-                " linked_openalex_id, direction, passed_filter, source_version_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                [(rid, revision, run_id, seed, linked, direction, int(linked in became), became.get(linked))
+                " linked_openalex_id, direction, origin, passed_filter, source_version_id)"
+                " VALUES (?, ?, ?, ?, ?, ?, 'request', ?, ?)",
+                [(rid, revision, run_id, seed, linked, direction, int(linked in kept), became.get(linked))
                  for seed, linked in pairs])
             search = self.store.conn.execute("SELECT id FROM search_runs WHERE step_id = ?", (step["id"],)).fetchone()
             queued = set()
@@ -2160,6 +2181,14 @@ class ResearchFlow:
                         " source_version_id, search_run_id, enqueued_at, status) VALUES (?, 2, ?, ?, ?, ?, ?, 'pending')",
                         (run_id, fast_request, position, svid, search[0], fast_path.timestamp(self.store.clock)))
 
+    def _chain_rescued(self, run_id: str) -> set[str]:
+        """The works this run's rescue quota already took: the linked works a citation request wrote a record for
+        although no gate form reached them. One work takes one place, however many links name it, and a link read
+        inside a page (`origin = 'pool'`) faces no gate, so it takes none."""
+        return {row[0] for row in self.store.conn.execute(
+            "SELECT DISTINCT linked_openalex_id FROM chain_links WHERE run_id = ? AND origin = 'request'"
+            " AND passed_filter = 0 AND source_version_id IS NOT NULL", (run_id,))}
+
     def _chain_filter(self, run: dict[str, Any]) -> list[str]:
         """Freeze the chained works: the heads of the records that passed, after the record path merged them, that
         the keyword pool does not hold (slice 15, Task 3.5)."""
@@ -2169,9 +2198,12 @@ class ResearchFlow:
             return step["output"]["chained"]
         self.store.start_step(step["id"])
         linked = [dict(row) for row in self.store.conn.execute(
-            "SELECT seed_source_version_id, linked_openalex_id, direction, passed_filter, source_version_id"
+            "SELECT seed_source_version_id, linked_openalex_id, direction, origin, passed_filter, source_version_id"
             " FROM chain_links WHERE run_id = ?",
             (run_id,))]
+        # The gate decided about the records a citation request brought; a link read inside one page was never put to
+        # it, and counting such a link among the works the gate admitted would say more than was checked.
+        asked = [row for row in linked if row["origin"] == "request"]
         written = sorted({row["source_version_id"] for row in linked if row["source_version_id"]})
         heads = self.store.work_heads(rid)
         work_of = self.store.work_ids(written)
@@ -2185,8 +2217,13 @@ class ResearchFlow:
                   "links": {direction: sum(row["direction"] == direction for row in linked)
                             for direction in chaining.DIRECTIONS},
                   "linked_works": len({row["linked_openalex_id"] for row in linked}),
-                  "passed_filter": len({row["linked_openalex_id"] for row in linked if row["passed_filter"]}),
-                  "failed_filter": len({row["linked_openalex_id"] for row in linked if not row["passed_filter"]}),
+                  "passed_filter": len({row["linked_openalex_id"] for row in asked if row["passed_filter"]}),
+                  "failed_filter": len({row["linked_openalex_id"] for row in asked if not row["passed_filter"]}),
+                  # The works no gate form reached that the rescue quota wrote a record for all the same.
+                  "rescued": len({row["linked_openalex_id"] for row in asked
+                                  if not row["passed_filter"] and row["source_version_id"]}),
+                  # Links the first page of results showed on its own, which cost no request and faced no gate.
+                  "pool_links": len(linked) - len(asked),
                   "records": len(written), "in_keyword_pool": len(linked_heads & keyword_pool),
                   "new_works": len(chained)}
         self.store.finish_step(step["id"], "succeeded", output=output)

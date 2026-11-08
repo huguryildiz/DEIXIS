@@ -22,7 +22,9 @@ SEARCH_METHODS = ("legacy", "m1", "m2")
 # The plan rule `m2` freezes: one model call reads the first semantic page and writes the terms, their blocks and the
 # chain's starting works. It replaces the three labelling calls and the query call of the older methods.
 PLAN_RULE = "search_plan_v1"
-CHAIN_RULES = ("fast_chain_v1", "fast_chain_v2")
+# The chain admission rules a run's budget can freeze. v3 (the `m2` method) matches words as v2 does and adds the
+# rescue quota: a few linked records the gate blocks' words do not reach are still written as ranked candidates.
+CHAIN_RULES = ("fast_chain_v1", "fast_chain_v2", "fast_chain_v3")
 # The deeper screening: a Standard or Detailed discovery queued with the option on also screens the next
 # `DEEP_SCREENING_WORKS` works of the frozen list, places N+1..N+100, one model read per batch. Frozen in the policy under
 # its rule's name; a policy without the key screens 1..N only, as before.
@@ -37,19 +39,22 @@ class Mode(NamedTuple):
     read_top: int  # N: the top of the ranking a run reads
     fulltext_works: int  # K: the most works a run reads in full text
     keyword_record_cap: int
-    chain_seeds: int
+    chain_seeds: int  # the works citation chaining starts from: none in Quick, one in Standard, three in Deep
     backward_requests: int
     forward_requests: int
     boolean_plans: int  # the most distinct Boolean query plans a run of this depth sends: one main, the rest focused
+    chain_rescue: int  # the most linked records the gate's words do not reach that are still written as candidates
 
 
 MODES = {
-    "quick": Mode((30, 30, 30, 60, 30), read_top=25, fulltext_works=10, keyword_record_cap=450, chain_seeds=10,
-                  backward_requests=2, forward_requests=2, boolean_plans=1),
-    "standard": Mode((30, 45, 60, 120, 45), read_top=50, fulltext_works=20, keyword_record_cap=1000, chain_seeds=20,
-                     backward_requests=4, forward_requests=8, boolean_plans=2),
-    "detailed": Mode((45, 90, 120, 270, 75), read_top=100, fulltext_works=40, keyword_record_cap=2000, chain_seeds=30,
-                     backward_requests=8, forward_requests=16, boolean_plans=3),
+    # Quick opens no citation request of its own: the reference ids the first semantic page brings are stored and
+    # the links inside that page are written, which costs nothing, but no seed work is read.
+    "quick": Mode((30, 30, 30, 60, 30), read_top=25, fulltext_works=10, keyword_record_cap=450, chain_seeds=0,
+                  backward_requests=0, forward_requests=0, boolean_plans=1, chain_rescue=0),
+    "standard": Mode((30, 45, 60, 120, 45), read_top=50, fulltext_works=20, keyword_record_cap=1000, chain_seeds=1,
+                     backward_requests=4, forward_requests=8, boolean_plans=2, chain_rescue=5),
+    "detailed": Mode((45, 90, 120, 270, 75), read_top=100, fulltext_works=40, keyword_record_cap=2000, chain_seeds=3,
+                     backward_requests=8, forward_requests=16, boolean_plans=3, chain_rescue=10),
 }
 
 
@@ -81,7 +86,8 @@ def elapsed(start: str, end: str) -> int:
 
 
 def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False,
-                  method: str = "legacy", deep_screening: bool = False) -> dict[str, Any]:
+                  method: str = "legacy", deep_screening: bool = False,
+                  lexical_exclusion: bool = True) -> dict[str, Any]:
     """A run on a model this computer runs (`local_model`) keeps no deadline on the stages where the model works,
     read and answer: a local model screens and answers far slower than the stage bases assume, and a cut read
     leaves the answer unscreened evidence. Search and ranking do not wait on the model and keep theirs; each model
@@ -91,7 +97,11 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
     its hash does not move; `m1` names itself and its two rules.
 
     `deep_screening` adds the deeper screening's window under `deep_screening`; off adds nothing, so a policy
-    frozen without it is byte for byte the one frozen before, hash included. Quick takes no window."""
+    frozen without it is byte for byte the one frozen before, hash included. Quick takes no window.
+
+    `lexical_exclusion` off records that the abstract stage may not close a record for naming neither gate block
+    (`flow._abstract_code_stage`); on adds nothing and leaves the policy as it was. The arm is frozen here, so a
+    resumed run screens the way it was queued and the two arms of the measurement stay apart."""
     if method not in SEARCH_METHODS:
         raise ValueError(f"unknown search method {method!r}")
     mode = MODES[effort]
@@ -117,6 +127,9 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
     if method in ("m1", "m2"):
         policy |= {"search_method": method, "chain_rule": "fast_chain_v2"}
     if method == "m2":
+        # The chain keeps v2's word matching and adds the rescue quota: `chain_rescue` linked records the gate's
+        # words do not reach are written as ranked candidates, and the gate's own verdict on them is still recorded.
+        policy |= {"chain_rule": "fast_chain_v3", "chain_rescue": mode.chain_rescue}
         # The model writes the plan from the first semantic page; the chain starts from the works it names.
         # `boolean_plans` counts the distinct Boolean query plans the run may send, the main one included; one plan
         # still goes to every enabled provider in that provider's syntax, and those requests are counted elsewhere.
@@ -127,6 +140,8 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         from deixis.domain.rules import ABSTRACT_BATCH
         policy["deep_screening"] = {"rule": DEEP_SCREENING_RULE, "first": mode.read_top + 1,
                                     "last": mode.read_top + DEEP_SCREENING_WORKS, "runs": 1, "batch": ABSTRACT_BATCH}
+    if not lexical_exclusion:
+        policy["lexical_exclusion"] = False
     if local_model:
         # Still fast-path stages (`enforces` routes on them); only their deadline is gone.
         policy["no_deadline_stages"] = ["read", "answer"]

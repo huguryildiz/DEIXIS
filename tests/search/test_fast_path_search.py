@@ -313,7 +313,10 @@ def test_quick_question_runs_every_fast_path_stage_and_answers_unattended(tmp_pa
     assert set(budget["fast_path"]["enforced_stages"]) == {"search", "ranking", "read", "answer"}
     assert stages == dict.fromkeys(("plan", "search", "ranking", "read", "answer"), "done")
     assert outcome == "structurally_valid"
-    assert kinds["provider_search:openalex"] >= 1 and kinds["provider_chain:openalex"] >= 1
+    assert kinds["provider_search:openalex"] >= 1
+    # Quick opens no citation request of its own; its chain steps are the ones that cost nothing (the links inside
+    # the first semantic page, the seed snapshot and the plan).
+    assert "provider_chain:openalex" not in kinds
     assert kinds["code:fast_chain"] >= 1
     assert len(fetcher.calls) == kinds["fetch_pdf"] == 10  # Quick reads the first K = 10 eligible works
     assert kinds["model:fulltext_adjudication"] == 20  # two reads per work

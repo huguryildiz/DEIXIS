@@ -89,7 +89,11 @@ def _chain_sentence(total: dict[str, int], language: str) -> str:
                 f"oldu, {total['unknown']} tanesinin sonucu bilinmiyor; {total['not_sent']} tanesi gönderilmedi.")
         if total["unproven"]:
             text += f" {total['unproven']} isteğin hem sonucu hem de gönderilip gönderilmediği bilinmiyor."
-        return text + f" Dönen kayıtlardan {total['kept']} tanesini kapı terimi süzgeci tuttu."
+        text += f" Dönen kayıtlardan {total['kept']} tanesini kapı terimi süzgeci tuttu."
+        if total.get("rescued"):
+            text += (f" Hiçbir kapı terimi ulaşmadığı halde koşunun ayırdığı yerden {total['rescued']} kayıt daha "
+                     "aday olarak tutuldu.")
+        return text
 
     def was(n: int, one: str, many: str) -> str:
         return f"{n} {one if n == 1 else many}"
@@ -100,7 +104,11 @@ def _chain_sentence(total: dict[str, int], language: str) -> str:
     if total["unproven"]:
         text += (f" For {was(total['unproven'], 'request', 'requests')}, neither the outcome nor whether it was sent "
                  "is recorded.")
-    return text + f" {was(total['kept'], 'returned record was', 'returned records were')} kept by the gate-term filter."
+    text += f" {was(total['kept'], 'returned record was', 'returned records were')} kept by the gate-term filter."
+    if total.get("rescued"):
+        text += (f" {was(total['rescued'], 'further record was', 'further records were')} kept as a candidate from the"
+                 " place the run set aside for records no gate term reaches.")
+    return text
 
 
 def followup_sentence(followups: list[dict[str, Any]], language: str) -> str:
@@ -256,7 +264,8 @@ def _chain_provenance(steps: list[dict[str, Any]], language: str) -> str:
     total = {"seeds": sum((step["output"] or {}).get("seed_count", 0) for step in steps if step["run_id"] in summaries
                           and step["operation_key"] in ("fast_chain:seeds", "fast_chain:seeds_fallback")),
              **request_outcomes(step for step in steps if step["run_id"] in summaries),
-             "kept": sum(out.get("passed_filter", 0) for out in summaries.values())}
+             "kept": sum(out.get("passed_filter", 0) for out in summaries.values()),
+             "rescued": sum(out.get("rescued", 0) for out in summaries.values())}
     return _chain_sentence(total, language)
 
 

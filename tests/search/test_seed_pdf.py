@@ -92,7 +92,9 @@ def test_matched_seed_guides_query_chain_ranking_and_protocol(tmp_path, monkeypa
     transport = SeedTransport(records(), by_doi=[seed_work()])
     app, _ = app_for(tmp_path, monkeypatch, transport=transport)
     with client_of(app) as client:
-        rid, svid = seeded(client, SEED_PDF)
+        # Standard: a depth that chains, so the matched seed is the chain's first starting work. Quick opens no
+        # citation request of its own and takes no starting work at all.
+        rid, svid = seeded(client, SEED_PDF, effort="standard")
         assert client.get(f"/api/researches/{rid}").json()["scope"]["seeds"][0]["use"] == {"state": "selected"}
         run_id, view = discovery(client, rid)
         store = app.state.store

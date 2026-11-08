@@ -148,7 +148,7 @@ def chain(round_, monkeypatch, forward=(), backward=(), calls=None):
 
 def links(lib):
     return [dict(row) for row in lib.conn.execute(
-        "SELECT seed_source_version_id, linked_openalex_id, direction, passed_filter, source_version_id"
+        "SELECT seed_source_version_id, linked_openalex_id, direction, origin, passed_filter, source_version_id"
         " FROM chain_links WHERE run_id = ? ORDER BY linked_openalex_id, direction", (lib.run["id"],))]
 
 
@@ -223,12 +223,12 @@ def frozen(lib, forms, digest=None):
     lib.store.finish_step(step["id"], "succeeded", output={"protocol_revision": record_["protocol_revision"]})
 
 
-def round_for(lib, tmp_path):
-    flow, scope, _ = chain_setup(lib, tmp_path)
+def round_for(lib, tmp_path, refs=None, page=("W1",), **numbers):
+    flow, scope, _ = chain_setup(lib, tmp_path, **numbers)
     flow._chain_forms = lambda *args: ranking.block_forms(GATE)
     round_ = type(_)(flow, lib.run, scope, QUERY_STEP)
     flow._fast_chains[lib.run["id"]] = round_
-    search(flow, lib, "search:fast:semantic", ["W1"])
+    search(flow, lib, "search:fast:semantic", list(page), refs=refs)
     return flow, scope, round_
 
 
@@ -295,3 +295,172 @@ def test_an_m1_run_reads_openalex_keywords_with_the_forms_it_froze(lib, tmp_path
     _, _, round_ = round_for(m1, tmp_path)
     chain(round_, monkeypatch, forward=KEYWORDED)
     assert passed(m1) == {"W710": 1, "W711": 0}
+
+
+# ---- the mode's scope, the links inside the first page and the rescue quota ----------------------
+
+def test_quick_opens_no_citation_request_and_the_deeper_modes_take_one_and_three_seed_works():
+    """The design's per-mode scope: Quick none, Standard one starting work, Deep at most three."""
+    from deixis.workflow.search import chaining
+
+    for effort, seeds in (("quick", 0), ("standard", 1), ("detailed", 3)):
+        policy = fast_path.freeze_budget({}, effort)
+        requests = (policy["backward_requests"], policy["forward_requests"])
+        assert (policy["chain_seeds"], requests == (0, 0)) == (seeds, effort == "quick")
+        read = chaining.policy({"fast_path": policy}, effort)
+        assert read["request_limit"] == sum(requests) and read["directions"] == ["backward", "forward"]
+    # Quick spends no HTTP attempt on the chain at all, retries included.
+    assert chaining.attempt_limit(fast_path.freeze_budget({}, "quick"), "quick") == 0
+
+
+def test_the_links_inside_the_first_page_are_written_without_a_request_even_in_quick(lib, tmp_path, monkeypatch):
+    """W2's bibliography names W1 and both are on the page, so W2 cites W1 for nothing: no request is sent, and
+    Quick's own numbers (no seed, no request) do not keep the link from being written."""
+    flow, scope, round_ = chain_setup(lib, tmp_path, chain_seeds=0, backward_requests=0, forward_requests=0)
+    search(flow, lib, "search:fast:semantic", ["W1", "W2"],
+           refs={"W2": ["https://openalex.org/W1", "https://openalex.org/W999"]})
+    calls = []
+    round_.pool_links()
+    chain(round_, monkeypatch, calls=calls)
+    w1, w2 = (lib.store.find_source_by_identifier("openalex", oid) for oid in ("W1", "W2"))
+    assert calls == []
+    # The link is the page's own, so it is written as such: no citation request asked for it and no word filter
+    # judged it, because both of its records are in the pool already.
+    assert links(lib) == [{"seed_source_version_id": w2, "linked_openalex_id": "W1", "direction": "backward",
+                           "origin": "pool", "passed_filter": 1, "source_version_id": w1}]
+    output = lib.store.existing_step(lib.run["id"], "fast_chain:pool_links")["output"]
+    # W999 is named by the bibliography but not on the page, so it is no link: nothing was asked for it.
+    assert (output["page"], output["in_pool"], output["links"], output["cited_works"]) == (2, 2, 1, 1)
+    # A restarted worker's round finds the step succeeded and writes no second row.
+    again = type(round_)(flow, lib.run, scope, round_.vocabulary)
+    again.pool_links()
+    assert len(links(lib)) == 1
+    # The chain filter keeps these links apart from what a request's word filter decided: Quick asked nothing, so
+    # it reports no work as having passed that filter.
+    ranked(lib, [w1, w2])
+    flow._chain_filter(lib.run)
+    counts = lib.store.existing_step(lib.run["id"], "chain_filter")["output"]
+    assert (counts["pool_links"], counts["passed_filter"], counts["failed_filter"]) == (1, 0, 0)
+
+
+def test_a_reference_list_read_earlier_writes_no_link_this_page_does_not_show(lib, tmp_path, monkeypatch):
+    """The link a page shows is read from that page's own reply. A bibliography the library learned some other way
+    is not a link this run saw, so it is not written as one."""
+    flow, _, round_ = chain_setup(lib, tmp_path, chain_seeds=0, backward_requests=0, forward_requests=0)
+    search(flow, lib, "search:fast:semantic", ["W1", "W2"])
+    w1, w2 = (lib.store.find_source_by_identifier("openalex", oid) for oid in ("W1", "W2"))
+    with db.transaction(lib.conn):
+        lib.conn.execute("INSERT OR IGNORE INTO record_references (source_version_id, referenced_id)"
+                         " VALUES (?, 'W1')", (w2,))
+    round_.pool_links()
+    assert links(lib) == []
+    assert lib.store.existing_step(lib.run["id"], "fast_chain:pool_links")["output"]["links"] == 0
+
+
+def test_one_work_two_seeds_cite_keeps_one_candidate_and_both_links(lib, tmp_path, monkeypatch):
+    flow, _, round_ = chain_setup(lib, tmp_path)
+    search(flow, lib, "search:fast:semantic", ["W1", "W2"],
+           refs={"W1": ["https://openalex.org/W900"], "W2": ["https://openalex.org/W900"]})
+    chain(round_, monkeypatch, backward=[record("W900")])
+    rows = [row for row in links(lib) if row["linked_openalex_id"] == "W900"]
+    svid = lib.store.find_source_by_identifier("openalex", "W900")
+    assert len(rows) == 2 and {row["direction"] for row in rows} == {"backward"}
+    assert {row["seed_source_version_id"] for row in rows} == {
+        lib.store.find_source_by_identifier("openalex", oid) for oid in ("W1", "W2")}
+    assert {row["source_version_id"] for row in rows} == {svid}
+    assert lib.conn.execute("SELECT count(*) FROM candidates WHERE source_version_id = ?", (svid,)).fetchone()[0] == 1
+
+
+def test_the_rescue_quota_writes_what_the_gate_turned_away_and_never_more_than_its_place(lib, tmp_path, monkeypatch):
+    """An `m2` run freezes `fast_chain_v3`: the gate's verdict is recorded as before, and the first record no gate
+    form reaches is written as a ranked candidate all the same. The quota is the run's, so the next request that
+    asks finds it spent."""
+    from deixis.workflow.search import chaining
+
+    m2 = method_run(lib, "m2")
+    assert m2.run["budget"]["fast_path"]["chain_rule"] == "fast_chain_v3"
+    frozen(m2, chaining.admission_forms(GATE, QUERY_STEP))
+    # The seed names one work, so this round sends a reference batch beside its citing request: two requests ask,
+    # and between them the quota has one place.
+    _, _, round_ = round_for(m2, tmp_path, refs={"W1": ["https://openalex.org/W703"]}, chain_rescue=1)
+    off_topic = replace(record("W703"), title="SYNTHETIC unrelated valves")
+    chain(round_, monkeypatch, forward=LINKED, backward=[off_topic])
+    # W702 names neither block: the gate still turns it away, and it has a record because the quota took it.
+    assert passed(m2) == {"W700": 1, "W701": 1, "W702": 0, "W703": 0}
+    rescued = [row for row in links(m2) if not row["passed_filter"] and row["source_version_id"]]
+    # One place, so one of the two records the gate turned away has a record and the other has none; which one
+    # depends on which request answered first, and the quota is spent either way.
+    assert len(rescued) == 1 and rescued[0]["linked_openalex_id"] in ("W702", "W703")
+    assert m2.store.find_source_by_identifier("openalex", rescued[0]["linked_openalex_id"]) \
+        == rescued[0]["source_version_id"]
+    # The rescued record is a ranked candidate: that is what taking a place means.
+    assert m2.conn.execute("SELECT count(*) FROM candidates WHERE source_version_id = ?",
+                           (rescued[0]["source_version_id"],)).fetchone()[0] == 1
+    # The run's own requests say the same: two records passed the gate and the quota was spent once in all.
+    steps = [step for n in range(0, 4) if (step := m2.store.existing_step(m2.run["id"], f"chain:fast:{n}"))
+             and step["status"] == "succeeded"]
+    assert len(steps) == 2 and sum(step["output"]["rescued"] for step in steps) == 1
+    assert sum(step["output"]["passed_filter"] for step in steps) == 2
+
+
+def test_a_run_whose_budget_froze_no_quota_writes_no_record_the_gate_turned_away(lib, tmp_path, monkeypatch):
+    # The default (`legacy`, `fast_chain_v1`) freezes no quota, so the chain writes what it always wrote.
+    assert "chain_rescue" not in lib.run["budget"]["fast_path"]
+    _, _, round_ = round_for(lib, tmp_path)
+    chain(round_, monkeypatch, forward=LINKED)
+    assert passed(lib) == {"W700": 0, "W701": 0, "W702": 0}
+    assert [row for row in links(lib) if row["source_version_id"]] == []
+
+
+def test_both_directions_ask_while_the_boolean_search_is_still_running(lib, tmp_path, monkeypatch):
+    """Standard's two directions run beside the Boolean queries, not after them: the round sends its requests as
+    soon as the first page is read and holds only the writing until the search stage closes (`admit`)."""
+    flow, _, round_ = chain_setup(lib, tmp_path)
+    search(flow, lib, "search:fast:semantic", ["W1"], refs={"W1": ["https://openalex.org/W900"]})
+    calls = []
+
+    async def handler(direction, ids):
+        calls.append(direction)
+        return dispatch([record("W900")] if direction == "backward" else [record("W700")])
+    scripted(monkeypatch, handler)
+
+    async def run():
+        round_.initial()
+        await asyncio.gather(*round_.tasks)
+        # The search stage has not closed, so nothing is written yet; both directions have already asked.
+        assert set(calls) == {"backward", "forward"} and links(lib) == []
+        round_.admit.set()
+        await asyncio.gather(*round_.writers)
+        await round_.stop()
+    asyncio.run(run())
+    assert {row["linked_openalex_id"] for row in links(lib)} == {"W700", "W900"}
+
+
+def test_a_work_the_quota_already_rescued_takes_no_second_place(lib, tmp_path, monkeypatch):
+    """The quota is counted by work: the second request's place goes to a work no place was spent on yet, not again
+    to the one the first request rescued."""
+    from deixis.workflow.search import chaining
+
+    m2 = method_run(lib, "m2")
+    frozen(m2, chaining.admission_forms(GATE, QUERY_STEP))
+    _, _, round_ = round_for(m2, tmp_path, page=("W1", "W2"), chain_rescue=2)
+    valves = replace(record("W704"), title="SYNTHETIC unrelated valves")
+
+    async def handler(direction, seed):
+        # One forward request per seed work, answered in the plan's order: the first brings W702 alone, the second
+        # brings it again beside a work no place was spent on.
+        return dispatch([record("W702")] if seed == "W1" else [record("W702"), valves])
+    scripted(monkeypatch, handler)
+
+    async def run():
+        round_.initial()
+        round_.admit.set()
+        await asyncio.gather(*round_.writers)
+        await round_.stop()
+    asyncio.run(run())
+    rescued = {row["linked_openalex_id"] for row in links(m2) if not row["passed_filter"] and row["source_version_id"]}
+    assert rescued == {"W702", "W704"}
+    steps = [step for n in range(0, 4) if (step := m2.store.existing_step(m2.run["id"], f"chain:fast:{n}"))
+             and step["status"] == "succeeded"]
+    # Two places, two works: the repeat is written again (it gains its link) but spends no place.
+    assert sum(step["output"]["rescued"] for step in steps) == 2

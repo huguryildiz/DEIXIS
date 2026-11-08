@@ -95,8 +95,8 @@ def request_plan(seeds, policy, held, prior=()):
 
 
 def frozen_forms(flow, run):
-    """The v2 admission forms this run's protocol froze, checked against their digest. A body without them, or one
-    whose forms no longer match the digest, stops the run: the chain never admits with forms other than the frozen."""
+    """The v2 or v3 admission forms this run's protocol froze, checked against their digest. A body without them, or
+    one whose forms no longer match the digest, stops the run: the chain never admits with forms other than frozen."""
     store = flow.store
     step = store.existing_step(run["id"], "protocol")
     revision = ((step or {}).get("output") or {}).get("protocol_revision")
@@ -107,7 +107,7 @@ def frozen_forms(flow, run):
     frozen = (json.loads(row[0]).get("citation_chaining") or {}) if row else {}
     forms = frozen.get("admission_forms")
     if forms is None or chaining.forms_digest(forms) != frozen.get("admission_forms_sha256"):
-        flow._fail(run["id"], "chain_forms_unverified", {"rule": chaining.RULE_V2})
+        flow._fail(run["id"], "chain_forms_unverified", {"rule": run["budget"]["fast_path"]["chain_rule"]})
     return forms
 
 
@@ -116,9 +116,9 @@ class Round:
         self.flow, self.store, self.run, self.scope = flow, flow.store, run, scope
         self.policy = run["budget"]["fast_path"]
         self.vocabulary = vocabulary
-        # A run keeps the admission rule its budget froze: v2 reads the forms its protocol froze, v1 the
+        # A run keeps the admission rule its budget froze: v2 and v3 read the forms its protocol froze, v1 the
         # searched gate forms as before.
-        self.normalised = self.policy.get("chain_rule") == chaining.RULE_V2
+        self.normalised = self.policy.get("chain_rule") in chaining.NORMALISED_RULES
         self.forms = frozen_forms(flow, run) if self.normalised else flow._chain_forms(run, scope, vocabulary)
         self.semaphore = asyncio.Semaphore(self.policy["chain_in_flight"])
         self.admit = asyncio.Event()
@@ -171,6 +171,9 @@ class Round:
         envelope = seed_match.frozen(self.store, self.run)
         seeds, seen = [], set()
         for context in envelope["seeds"] if envelope else []:
+            # Read before the seed is added, so a depth whose allowance is zero keeps none (Quick opens no request).
+            if len(seeds) >= self.policy["chain_seeds"]:
+                break
             if context["status"] != "matched" or context["openalex_id"] in seen:
                 continue
             seen.add(context["openalex_id"])
@@ -179,8 +182,6 @@ class Round:
                           "openalex_id": context["openalex_id"], "references": context["referenced_works"],
                           "references_read": context["references_read"], "origin": "seed_pdf",
                           "payload_sha256": context["lookups"][-1]["payload_sha256"]})
-            if len(seeds) >= self.policy["chain_seeds"]:
-                break
         return seeds
 
     def choose(self, identities, origin, previous=(), accepted=None):
@@ -193,6 +194,9 @@ class Round:
             source = self.store.source(svid)
             seen |= {source["work_id"], "title:" + chaining.norm_title(source["title"])}
         for oid, raw, digest in identities:
+            # Read before the work is chosen, as `pdf_seeds` does: a zero allowance chooses none.
+            if len(previous) + len(chosen) >= self.policy["chain_seeds"]:
+                break
             svid = self.store.find_source_by_identifier("openalex", oid)
             if not svid or (accepted is not None and svid not in accepted):
                 continue
@@ -207,8 +211,6 @@ class Round:
                            "work_id": source["work_id"], "title_key": title, "openalex_id": oid,
                            "references": refs, "references_read": "referenced_works" in raw,
                            "origin": origin, "payload_sha256": digest})
-            if len(previous) + len(chosen) >= self.policy["chain_seeds"]:
-                break
         return chosen
 
     def named_identities(self, named, identities):
@@ -270,6 +272,53 @@ class Round:
         seeds = self.save("fast_chain:seeds", snapshot)["seeds"]
         plan = self.save("fast_chain:plan", lambda: request_plan(seeds, self.policy, self.held()))
         self.launch(plan["requests"])
+
+    def pool_links(self):
+        """Write the citation links that stand inside the first semantic page, without a request of its own.
+
+        Every record of that page arrives with its own bibliography (`referenced_works`), stored as it is read
+        (`store._store_references`). Where the page holds both A and B and B's bibliography names A, B cites A, and
+        that is seen for nothing: the link is written as B's backward link to A. No work is admitted by it, because
+        both records are in the pool already, so the gate has nothing to decide and the link is written as passing.
+        Every depth writes these links, Quick included, which opens no citation request of its own.
+
+        The links are written before the step closes, so a crash in between leaves rows a resumed run writes again;
+        the primary key makes the second write a no-op.
+        """
+        if self.closed:
+            return
+        run_id, rid, revision = self.run["id"], self.run["research_id"], self.run["scope_revision"]
+
+        def snapshot():
+            step = self.store.existing_step(run_id, "search:fast:semantic")
+            row = self.store.conn.execute("SELECT raw_payload_path FROM search_runs WHERE step_id = ?",
+                                          (step["id"],)).fetchone() if step else None
+            payload, digest = self.payload(row[0] if row else None)
+            # Each record's bibliography is read from this reply, not from what earlier reads of the same work left
+            # in the library: the link this step records is one this page itself shows.
+            page = [(oid, raw) for raw in payload.get("results", [])[:self.policy["semantic_top"]]
+                    if (oid := work_id(raw.get("id")))]
+            # Only the records the page's works really have here: a work the page named and the record path did not
+            # write has no record to link, and the link would name a source version that does not exist.
+            inside = {oid: svid for oid, _ in page if (svid := self.store.find_source_by_identifier("openalex", oid))}
+            links = []
+            for oid, raw in page:
+                if oid not in inside:
+                    continue
+                cited = {ref for value in raw.get("referenced_works") or [] if (ref := work_id(value))}
+                links += [(inside[oid], ref) for ref in sorted(cited & set(inside)) if ref != oid]
+            with transaction(self.store.conn):
+                self.store.conn.executemany(
+                    "INSERT OR IGNORE INTO chain_links (research_id, scope_revision, run_id, seed_source_version_id,"
+                    " linked_openalex_id, direction, origin, passed_filter, source_version_id)"
+                    " VALUES (?, ?, ?, ?, ?, 'backward', 'pool', 1, ?)",
+                    [(rid, revision, run_id, seed, ref, inside[ref]) for seed, ref in links])
+            return {"page": len(page), "in_pool": len(inside), "links": len(links),
+                    "cited_works": len({ref for _, ref in links}),
+                    "citing_records": len({seed for seed, _ in links}),
+                    "semantic_status": step["status"] if step else "missing", "payload_sha256": digest}
+
+        self.save("fast_chain:pool_links", snapshot)
 
     def held(self):
         return {r[0] for r in self.store.conn.execute(
@@ -459,6 +508,9 @@ class Round:
                     "admitted_returned": sum(o.get("admitted_returned", 0) for o in outputs),
                     "failed": sum(o["step_status"] == "failed" for o in outputs),
                     "passed_filter": sum(o.get("passed_filter", 0) for o in outputs if not o.get("late")),
+                    # The records no gate form reached that the run's quota wrote all the same, counted apart from
+                    # the ones a form admitted: a run whose budget froze no quota reports zero.
+                    "rescued": sum(o.get("rescued", 0) for o in outputs if not o.get("late")),
                     "late_records": sum(o.get("returned", 0) for o in outputs if o.get("late")),
                     "unknown": sum(o["step_status"] == "outcome_unknown" for o in outputs),
                     "unsent": {r: sum(o.get("unsent") == r for o in outputs) for r in sorted(reasons)}}

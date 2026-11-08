@@ -37,7 +37,11 @@ STEP_KIND = "provider_chain:openalex"
 # gate-block term the query step wrote. A run keeps the rule it was queued with.
 RULE_V1 = "fast_chain_v1"
 RULE_V2 = "fast_chain_v2"
-RULES = (RULE_V1, RULE_V2)
+# v3 (the `m2` search method) matches words as v2 does and adds the rescue quota: the first few linked records no
+# gate form reaches are written as ranked candidates all the same, and the gate's verdict on them is still recorded.
+RULE_V3 = "fast_chain_v3"
+RULES = (RULE_V1, RULE_V2, RULE_V3)
+NORMALISED_RULES = (RULE_V2, RULE_V3)
 # The characters v2 splits a word on before it compares: hyphen-minus, hyphen, non-breaking hyphen, en dash, slash.
 _SPLIT = re.compile(r"[-\u2010\u2011\u2013/]")
 
@@ -59,12 +63,17 @@ def policy(budget: dict[str, Any], effort: str) -> dict[str, Any] | None:
 
     The policy is read from the budget, never from the settings of the moment, so both the protocol and the approval
     card say what the run really does: the fast chain (`fast_chain_v1`), OpenAlex only. `request_limit` counts logical
-    requests; `attempt_limit` is the total HTTP attempts the chain may spend, retries included.
+    requests; `attempt_limit` is the total HTTP attempts the chain may spend, retries included. A depth that opens no
+    citation request of its own (Quick) carries every number as zero, and its links come from the pool alone.
+
+    `rescue_quota` is how many linked records no gate form reaches the run may still write as candidates (v3); a run
+    whose budget froze no quota writes none, as before.
     """
     fast = budget.get("fast_path") or {}
     if not fast.get("chain_rule"):
         return None
     return {"enabled": True, "rule_version": fast["chain_rule"], "source": SOURCE, "sources": [SOURCE],
+            "rescue_quota": fast.get("chain_rescue", 0),
             "directions": list(DIRECTIONS), "seeds": fast["chain_seeds"],
             "backward_requests": fast["backward_requests"], "backward_page_size": fast["backward_page_size"],
             "forward_requests": fast["forward_requests"], "forward_page_size": fast["forward_page_size"],

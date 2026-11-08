@@ -27,7 +27,15 @@ def seed(n, refs=()):
     return {"source_version_id": f"seed{n}", "openalex_id": f"W{n}", "references": list(refs)}
 
 
-def setup(lib, tmp_path):
+# The chain numbers the mechanics tests here drive the engine with. Quick freezes none of its own (it opens no
+# citation request of its own), so a test that is not about the mode's scope says here what it wants the chain to
+# spend; the run keeps every other number its quick policy froze.
+CHAIN_NUMBERS = {"chain_seeds": 10, "backward_requests": 2, "forward_requests": 2}
+
+
+def setup(lib, tmp_path, **numbers):
+    lib.run["budget"]["fast_path"].update(CHAIN_NUMBERS | numbers)
+    lib.store.update_run(lib.run["id"], budget_json=json.dumps(lib.run["budget"]))
     settings = Settings(data_dir=tmp_path / "data")
     flow = ResearchFlow(SimpleNamespace(store=lib.store, clock=lib.clock, settings=settings,
                                        http=None, local_embedder=None))

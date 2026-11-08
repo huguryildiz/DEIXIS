@@ -74,6 +74,9 @@ class Settings:
     # after its list is frozen and before any read work, so a runner can copy the library at that point. Off in the
     # product; outside the fast-path policy, so it moves no policy hash. Read from DEIXIS_BENCHMARK_LIST_BARRIER.
     benchmark_list_barrier: bool = False
+    # The abstract stage's second word filter (K3): `on` keeps it, `off` lets every record reach a model read.
+    # Read once when a discovery run is queued and frozen in its policy, so the two arms stay comparable.
+    lexical_gate: str = "on"
     # Reads one `app_settings` value by key; `create_app` binds it to the store so the contact email the person set
     # in Settings is found before the environment variable. Unset (tests that build Settings by hand): env only.
     setting_reader: Callable[[str], Any] | None = field(default=None, compare=False, repr=False)
@@ -178,6 +181,9 @@ def load_settings() -> Settings:
     benchmark_list_barrier = os.environ.get("DEIXIS_BENCHMARK_LIST_BARRIER", "off")
     if benchmark_list_barrier not in ("on", "off"):
         raise ValueError("DEIXIS_BENCHMARK_LIST_BARRIER must be on or off")
+    lexical_gate = os.environ.get("DEIXIS_LEXICAL_GATE", "on")
+    if lexical_gate not in ("on", "off"):
+        raise ValueError("DEIXIS_LEXICAL_GATE must be on or off")
     arxiv_source = os.environ.get("DEIXIS_ARXIV_SOURCE", "auto")
     if arxiv_source not in ("auto", "off"):
         raise ValueError("DEIXIS_ARXIV_SOURCE must be auto or off")
@@ -192,4 +198,5 @@ def load_settings() -> Settings:
         search_method=search_method,
         arxiv_source=arxiv_source,
         benchmark_list_barrier=benchmark_list_barrier == "on",
+        lexical_gate=lexical_gate,
     )

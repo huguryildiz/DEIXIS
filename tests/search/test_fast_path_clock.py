@@ -121,7 +121,8 @@ def app_for(tmp_path, clock=None, adapter=None):
 
 
 @pytest.mark.parametrize("effort,bases,n,k,cap,seeds,back,forward", [
-    ("quick", (30, 30, 30, 60, 30), 25, 10, 450, 10, 2, 2),
+    # Quick opens no citation request of its own, so its seed and request numbers are zero.
+    ("quick", (30, 30, 30, 60, 30), 25, 10, 450, 0, 0, 0),
 ])
 def test_02_policy_freezes_with_run_and_canonical_hash(tmp_path, effort, bases, n, k, cap, seeds, back, forward):
     clock = FakeClock()

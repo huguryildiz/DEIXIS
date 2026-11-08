@@ -738,4 +738,11 @@ ALTER TABLE candidate_hits ADD COLUMN rank INTEGER;
 ALTER TABLE candidate_hits ADD COLUMN raw_score REAL;
 ALTER TABLE search_runs ADD COLUMN sort TEXT;
 """),
+    20: Step("0020_chain_link_origin.sql", False, """\
+-- How a citation link was seen. A link read inside one page of results — one record's own bibliography naming
+-- another record of the same page — costs no request and faces no word filter, because both of its records are in
+-- the pool already. Counting such a link among the works the filter admitted would overstate what was checked, so
+-- the origin is recorded. Rows written before this step came from a request and read `request`.
+ALTER TABLE chain_links ADD COLUMN origin TEXT NOT NULL DEFAULT 'request' CHECK (origin IN ('request', 'pool'));
+"""),
 }

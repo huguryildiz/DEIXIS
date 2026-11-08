@@ -906,8 +906,11 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       </div>
     })
   }
-  // A chain request's search row counts the records that passed the term filter in time (flow.py), not what OpenAlex returned.
+  // A chain request's search row counts the records it wrote in time (flow.py), not what OpenAlex returned: the ones a
+  // gate term reached, plus the few the run's quota keeps although no term reaches them.
   const chainRecords = (direction: string) => view.search_runs.filter(s => s.run_id === run.id && s.query_text.startsWith('chain:') && s.query_text.includes(`:${direction}:`)).reduce((sum, s) => sum + s.result_count, 0)
+  // The links the first page of results shows on its own: one record's bibliography naming another record of the page.
+  const poolLinks = steps.find(s => s.operation_key === 'fast_chain:pool_links')?.output as { links?: number } | undefined
   const modelRow = (label: string, agent: { connection: string; model: string | null; effort: string | null } | undefined) => agent?.model ? row(t(label), <ModelName connection={agent.connection} text={modelText(agent.model, agent.effort)} />) : null
 
   // What the finished phase found (R15): the plan, the queries and their counts, the chain, the screening, the reading,
@@ -959,8 +962,15 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
         : row(t('Records merged by DOI'), `${funnel.retrieved.toLocaleString(uiLocale())} → ${funnel.unique.toLocaleString(uiLocale())}`, 'merged'))
     }
     if (key === 'chain') {
-      parts.push(row(t('Reference lists of {n} seed works', { n: chainSeeds }), plural(chainRecords('backward'), '{n} record kept after the term filter', '{n} records kept after the term filter'), 'backward'))
-      parts.push(row(t('Works citing the seeds'), plural(chainRecords('forward'), '{n} record kept after the term filter', '{n} records kept after the term filter'), 'forward'))
+      const asks = (run.approval?.chaining?.request_limit ?? 1) > 0
+      if (poolLinks) parts.push(row(t('Citations inside the first page of results'),
+        plural(poolLinks.links ?? 0, '{n} link seen without a request', '{n} links seen without a request'), 'pool'))
+      if (asks) {
+        parts.push(row(t('Reference lists of {n} seed works', { n: chainSeeds }), plural(chainRecords('backward'), '{n} record kept', '{n} records kept'), 'backward'))
+        parts.push(row(t('Works citing the seeds'), plural(chainRecords('forward'), '{n} record kept', '{n} records kept'), 'forward'))
+      } else {
+        parts.push(<div key="no-request">{t('This depth opens no citation request of its own.')}</div>)
+      }
       if (run.source_counts?.counted && run.source_counts.chain) parts.push(row(t('Works the chain brought'), t('{works} works, {only} not found by any search', { works: run.source_counts.chain.works, only: run.source_counts.chain.only }), 'brought'))
       if (chainDone) parts.push(<div key="requests">{chainLine}</div>)
       const limits = run.approval?.chaining
@@ -968,10 +978,15 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
       // record said it before S9.
       // The rule prose folds under one disclosure, so the panel reads as its counts first.
       if (limits) parts.push(<details key="how" className="step-how"><summary>{t('How the chain chooses and keeps works')}</summary>
-        <p>{t('OpenAlex only. While the search runs, OpenAlex is asked for the works that the first {seeds} works of its semantic search cite, and for the works that cite them; when that search gives fewer works, the ranking fills the list. Works you verified are not used as seeds. A new work is kept when a setting or task term stands in its title or abstract and its reply arrives a few seconds before the ranking stage ends; the run says how many seeds it used once the search is done.', { seeds: limits.seeds })}</p>
+        {/* Every depth reads the links inside the first page, which cost nothing; only the requests depend on the depth. */}
+        <p>{t('Each record of the first page of results arrives with its own reference list, so a citation between two of those records is seen without asking OpenAlex for anything.')}</p>
+        {asks
+          ? <p>{t('OpenAlex only. While the search runs, OpenAlex is asked for the works that the first {seeds} works of its semantic search cite, and for the works that cite them; when that search gives fewer works, the ranking fills the list. Works you verified are not used as seeds. A new work is kept when a setting or task term stands in its title or abstract and its reply arrives a few seconds before the ranking stage ends; the run says how many seeds it used once the search is done.', { seeds: limits.seeds })}</p>
+          : <p>{t('This depth asks OpenAlex for no reference list and no citing works: only the links above are recorded. A deeper search follows citations from the works it chose.')}</p>}
         {/* Seed PDFs come first (fast_chain.pdf_seeds): each one matched to an OpenAlex work is a seed before the search's. */}
-        <p>{t('Seed PDFs matched to an OpenAlex work are used as the first seeds, before the works of the semantic search.')}</p>
-        <p>{t('Up to {backward} reference requests and {forward} citing requests · up to {cap} citing works per request · at most {attempts} attempts with retries', { backward: limits.backward_requests, forward: limits.forward_requests, cap: limits.citing_cap, attempts: limits.attempt_limit })}</p>
+        {asks && <p>{t('Seed PDFs matched to an OpenAlex work are used as the first seeds, before the works of the semantic search.')}</p>}
+        {limits.rescue_quota > 0 && <p>{t('Up to {rescue} linked works that no term reaches are kept all the same, so the reranker judges them against your question; the term check still records what it decided about them.', { rescue: limits.rescue_quota })}</p>}
+        {asks && <p>{t('Up to {backward} reference requests and {forward} citing requests · up to {cap} citing works per request · at most {attempts} attempts with retries', { backward: limits.backward_requests, forward: limits.forward_requests, cap: limits.citing_cap, attempts: limits.attempt_limit })}</p>}
       </details>)
     }
     const sourceTitle = (svid: string, title: string) => onOpenSource

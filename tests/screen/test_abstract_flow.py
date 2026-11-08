@@ -65,14 +65,14 @@ async def no_fetch(url):
     return FetchResult("http_error", final_url=url, http_status=404)
 
 
-def app_for(tmp_path, monkeypatch, handler, workflow="sw", adapter=None, concurrency=6):
+def app_for(tmp_path, monkeypatch, handler, workflow="sw", adapter=None, concurrency=6, **settings):
     for connector in CONNECTORS.values():
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
     return create_app(Settings(data_dir=tmp_path / "data", port=8765,
-                               model_concurrency=concurrency, fulltext_fetch="off"),
+                               model_concurrency=concurrency, fulltext_fetch="off", **settings),
                       adapters={"fake": adapter or FakeAdapter(valid_response)},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
                       extra_hosts=("testserver",), trusted_clients=("testclient",))
@@ -386,3 +386,40 @@ def test_the_stage_writes_the_same_rows_when_its_reads_are_batched(tmp_path, mon
         client.__exit__(None, None, None)
     assert run["status"] == "completed"
     assert snapshot == STAGE_ROWS_BEFORE_13D
+
+
+# ---- the second word filter, on and off (K3) ----------------------------------------------------
+
+def test_with_the_word_filter_off_a_record_naming_neither_block_still_reaches_the_model(tmp_path, monkeypatch):
+    """The arm the run was queued with is frozen in its policy: with the filter off, code closes no record for
+    naming neither gate block, so the bakery record is read by the model instead of being excluded unseen.
+
+    The comparison the design asks for needs both arms over the same pool, so the first run keeps the filter and
+    the second turns it off; the records, the question and the scripted model are the same in both.
+    """
+    pool = [work(1, ON_TOPIC, ON_ABSTRACT), work(3, OFF_TOPIC, OFF_ABSTRACT)]
+    on = app_for(tmp_path / "on", monkeypatch, Pool(list(pool)))
+    client = client_of(on)
+    try:
+        rid, run_id, _, run = discover(client)
+        kept = (codes_of(on.state.store, rid), shown_titles(on.state.store, run_id),
+                step_output(on.state.store, run_id, "abstract_stage"))
+    finally:
+        client.__exit__(None, None, None)
+    assert run["status"] == "completed"
+    assert kept[0]["W3"] == "both_blocks_missing" and not [t for t in kept[1] if OFF_TOPIC in t]
+    assert "lexical_exclusion" not in kept[2]
+
+    off = app_for(tmp_path / "off", monkeypatch, Pool(list(pool)), lexical_gate="off")
+    client = client_of(off)
+    try:
+        rid, run_id, _, run = discover(client)
+        store = off.state.store
+        codes, shown = codes_of(store, rid), shown_titles(store, run_id)
+        plan = step_output(store, run_id, "abstract_stage")
+        policy = store.run(run_id)["budget"]["fast_path"]
+    finally:
+        client.__exit__(None, None, None)
+    assert run["status"] == "completed"
+    assert policy["lexical_exclusion"] is False and not plan["lexical_exclusion"]
+    assert codes["W3"] != "both_blocks_missing" and [t for t in shown if OFF_TOPIC in t]

@@ -1,9 +1,9 @@
--- The whole library schema at version 19. A new library is made from this file in one transaction and
--- records versions 1 to 19; a library at an older version is brought here by the steps in storage/upgrades.py.
+-- The whole library schema at version 20. A new library is made from this file in one transaction and
+-- records versions 1 to 20; a library at an older version is brought here by the steps in storage/upgrades.py.
 -- A schema change edits this file, raises the version below and adds the upgrade step with that number.
 -- Objects are in the order the old migration chain (0001_schema.sql to 0016_abstract_rows.sql) and the upgrade steps
 -- after it created them: the triggers on one table fire in that order.
--- deixis:schema-version 19
+-- deixis:schema-version 20
 
 CREATE TABLE scope_revisions (
   research_id TEXT NOT NULL REFERENCES researches(id),
@@ -622,6 +622,9 @@ CREATE TABLE candidate_hits (
   PRIMARY KEY (source_version_id, search_run_id)
 );
 
+-- `origin` is how a link was seen: `request` by a citation request of the chain or a snowball round, `pool` by reading
+-- one record's own bibliography beside another record of the same page, which costs no request and faces no word
+-- filter, because both of its records are in the pool already (so a `pool` link's `passed_filter` decides nothing).
 CREATE TABLE chain_links (
   research_id TEXT NOT NULL REFERENCES researches(id),
   scope_revision INTEGER NOT NULL,
@@ -630,7 +633,7 @@ CREATE TABLE chain_links (
   linked_openalex_id TEXT NOT NULL,     -- OpenAlex work id, short form (W…)
   direction TEXT NOT NULL CHECK (direction IN ('backward', 'forward')),
   passed_filter INTEGER NOT NULL CHECK (passed_filter IN (0, 1)),
-  source_version_id TEXT REFERENCES source_versions(id),
+  source_version_id TEXT REFERENCES source_versions(id), origin TEXT NOT NULL DEFAULT 'request' CHECK (origin IN ('request', 'pool')),
   PRIMARY KEY (run_id, seed_source_version_id, linked_openalex_id, direction)
 );
 

@@ -463,6 +463,9 @@ async def question_semantic(flow, run, plan, send_page):
             consumer.notify()
     chain = flow._fast_chains.get(run_id)
     if chain:
+        # The links inside this page first: they cost no request, so every depth writes them, and a depth that
+        # opens no citation request of its own (Quick) still records what the page itself shows.
+        chain.pool_links()
         chain.initial()
     flow._checkpoint(run_id, run["scope_revision"])
 

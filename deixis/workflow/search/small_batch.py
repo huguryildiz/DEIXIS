@@ -16,7 +16,7 @@ from deixis.providers.lookup import S2_LOOKUP_BATCH, SCOPUS_LOOKUP_BATCH
 from deixis.storage.db import transaction
 from deixis.workflow.read import adjudication, fulltext
 from deixis.workflow.run import fast_path
-from deixis.workflow.search import ranking
+from deixis.workflow.search import english_question, ranking
 from deixis.workflow.screen.decisions import DecisionStore
 
 POLICY = "small_batch_fused_v1"
@@ -605,14 +605,26 @@ async def rerank_list(flow: Any, run: dict[str, Any], scope: dict[str, Any], voc
     candidates = [rid for rid in window if rid not in reasons]
     kept = [rid for rid in window if rid in reasons]
     texts = [rerankers.document(rows[rid]["title"], rows[rid]["abstract"]) for rid in candidates]
-    query = scope["question"]
+    # The reranker reads the revision's English sentence, not the question as written: its documents are English
+    # titles and abstracts, and reranking one language against another is unmeasured. Without a sentence the list
+    # keeps its fused order and this step says why, rather than sending the other language.
+    sentence = english_question.embedding_query(store, scope)
     step = store.step(run["id"], RERANK_KEY, "code:rerank")
     store.start_step(step["id"])
+    if sentence is None:
+        store.finish_step(step["id"], "failed", output=choice.identity() | {
+            "candidate_ids": candidates, "kept_in_place": kept, "read_top": read_top,
+            **({"kept_reasons": {rid: reasons[rid] for rid in kept}} if hold else {}),
+            "status": "failed", "error_code": english_question.MISSING, "fallback": "fused_order"},
+            error_code=english_question.MISSING,
+            error={"error": "the revision has no English sentence for the reranker"})
+        return
+    query = sentence[0]
     output = choice.identity() | {
         "candidate_ids": candidates, "kept_in_place": kept, "read_top": read_top, "query_sha256": canonical.sha256_hex(query),
         **({"kept_reasons": {rid: reasons[rid] for rid in kept}} if hold else {}),
         "cut_documents": sum(len(text) > rerankers.MAX_DOCUMENT_CHARS for text in texts),  # kept on failure too
-        "sent": {"query": "question", "documents": "title_and_abstract", "count": len(candidates),
+        "sent": {"query": sentence[1], "documents": "title_and_abstract", "count": len(candidates),
                  "to": "this_computer" if choice.provider == "builtin" else choice.provider}}
     seconds = float(choice.timeout_seconds)
     deadline = fast_path.stage_deadline(store, run, "ranking")

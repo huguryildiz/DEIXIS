@@ -94,7 +94,8 @@ def test_a_chain_read_asks_for_the_keywords_and_keeps_their_display_names():
     # The author's own keywords stay a different thing and are never filled from the classifier's.
     assert outcome.records[0].author_keywords == []
 
-    # A keyword search needs no field of its own: `search.title_abstract_keywords` already matches the keywords.
+    # A search asks for the keywords too: `search.title_abstract_keywords` matches them, but the planner names its
+    # terms from the values, so they have to come back. A record without keywords still reads as none.
     searched = {}
 
     def search_handler(request):
@@ -102,5 +103,5 @@ def test_a_chain_read_asks_for_the_keywords_and_keeps_their_display_names():
         return httpx.Response(200, json={"meta": {"count": 1}, "results": [WORK]})
 
     search_only = run(search_handler)
-    assert "keywords" not in searched["select"]
+    assert "keywords" in searched["select"]
     assert search_only.records[0].index_keywords == []

@@ -132,16 +132,18 @@ def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
     under `block_terms_v1` the block terms' semantic request, since the 6 Nov rules the record that it is off (`BLOCK_SEMANTIC_OFF`). A plan
     built without a vocabulary, as every plan before `block_terms_v1` was, has none."""
     policy = run["budget"]["fast_path"]
-    sentence = english_question.embedding_query(store, scope)
+    # The first semantic request carries the person's own sentence, in whatever language they wrote it. The revision's
+    # English sentence is read by the ranking signals that need English (`ranking.comparison`, the built-in embedding);
+    # it no longer decides whether this request is sent, so a question in another language waits for no translation.
+    question = scope["question"]
     if seed_context and seed_context.get("rule") == seed_match.RULE:
         # The question's request is the unseeded one; each seed asks OpenAlex on its own, after it.
         plan = build_plan(store, run, scope, queries, vocabulary=vocabulary)
         return plan | {"version": 2, "seed_semantic": seed_requests(seed_context, policy["semantic_top"] // 2)}
     seed, parts = None, []
-    if sentence and seed_context:
+    if seed_context:
         # The seed PDFs' text rides behind the question; the ranking keeps the question alone.
-        query, seed, parts = seed_query(sentence[0], seed_context)
-        sentence = (query, sentence[1])
+        question, seed, parts = seed_query(question, seed_context)
     deep = policy["mode"] == "deep"
     # The providers a person left out of a saved search plan get no request (S23a); OpenAlex cannot be left out.
     excluded = user_plan.excluded(scope)
@@ -151,8 +153,8 @@ def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
                      and "semantic_scholar" not in excluded), None)
     s2 = queries[s2_index] if s2_index is not None else None
     semantic = {"provider_id": "openalex", "endpoint": "semantic",
-                "query_text": openalex.semantic_text(sentence[0]) if sentence else None, "limit": policy["semantic_top"],
-                "query_origin": sentence[1] if sentence else english_question.MISSING,
+                "query_text": openalex.semantic_text(question), "limit": policy["semantic_top"],
+                "query_origin": "question",
                 **({"seed_text": seed} if seed else {}), **({"seed_parts": parts} if seed_context else {})}
     return {"version": 1, "semantic": semantic,
             **({"block_semantic": dict(BLOCK_SEMANTIC_OFF)} if vocabulary is not None else {}),
@@ -388,6 +390,9 @@ async def execute(flow, run, scope, plan, retry_failed):
 
     sem = plan["semantic"]
     if sem["query_text"] is None:
+        # A plan frozen before the request carried the person's own sentence has no text when the question is not
+        # English and no sentence was stored. A resumed run reads that plan back, so this branch stays for it; a plan
+        # built now always has the question.
         cancel_step(store, run_id, "search:fast:semantic", "provider_search:openalex", english_question.MISSING)
     else:
         result, _ = await send_page(sem, "search:fast:semantic", limit=sem["limit"], klass=0, index=0,

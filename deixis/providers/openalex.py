@@ -67,6 +67,9 @@ SELECT = ",".join(
         "id", "doi", "ids", "display_name", "publication_year", "type", "authorships",
         "primary_location", "best_oa_location", "locations", "open_access", "abstract_inverted_index", "cited_by_count",
         "is_retracted",
+        # The index keywords every search reads: the planner names its terms from them, and the chain admission gate
+        # and the abstract stage match against them. A select field adds no cost; OpenAlex prices a request by class.
+        "keywords",
     ]
 )
 ABSTRACT_ORIGIN = "provider_openalex_inverted_index"
@@ -272,7 +275,7 @@ KEYWORDS_FIELD = "keywords"
 # The two requests of citation chaining (slice 15). Both read the fields an sw search reads, the reference list
 # included, so a chained record carries its own bibliography like any record an sw query found, plus the keywords the
 # gate reads.
-CHAIN_SELECT = SELECT + f",{REFERENCE_COUNT_FIELD},{REFERENCES_FIELD},{KEYWORDS_FIELD}"
+CHAIN_SELECT = SELECT + f",{REFERENCE_COUNT_FIELD},{REFERENCES_FIELD}"  # SELECT already asks for KEYWORDS_FIELD
 MAX_IDS_PER_REQUEST = 100
 
 

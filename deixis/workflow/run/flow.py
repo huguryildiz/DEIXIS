@@ -69,6 +69,7 @@ from deixis.workflow.search import ranking as ranking_rules
 from deixis.workflow.features.report import report_pipeline
 from deixis.workflow.search import routing as routing_rules
 from deixis.workflow.search import search_plan as search_plan_rules
+from deixis.workflow.search import plan_identity
 from deixis.workflow.search import search_query as search_query_rules
 from deixis.workflow.search import user_plan as user_plan_rules
 from deixis.workflow.search import vocabulary as vocabulary_rules
@@ -951,12 +952,19 @@ class ResearchFlow:
             self.store.set_step_output(step["id"], output)
             self._pause(run_id, "search_query_failed", {
                 "reason": failure["reason"], "retries_left": search_query_rules.ATTEMPTS - attempt})
+        payload = self.store.step_input_payload(answer["step_input_id"])
         record = {"status": "ready", "attempts": output["attempts"] + [{"attempt": attempt, "reason": None}],
                   "step_input_id": answer["step_input_id"], "resolved_model": answer["resolved_model"],
                   # The package the model was sent, from its stored StepInput: the body is frozen later, perhaps
                   # under a newer package, and must not credit the answer to that one.
-                  "skill_package_hash": self.store.step_input_payload(answer["step_input_id"])["skill_package_hash"],
+                  "skill_package_hash": payload["skill_package_hash"],
                   "answer": answer["result"]}
+        if task == "search_plan":
+            # What this plan was written from, as one fingerprint (P4): the payload the call read, in the order it
+            # read it, and the versions that wrote it. Two plans with the same fingerprint may be compared term by
+            # term; the measurement of how steady the terms are reads it back from the stored run. The question's
+            # own query step (`search_query`) writes none: it reads no records, so there is nothing to compare.
+            record["fingerprint"] = plan_identity.fingerprint(payload, record, fast_path.PLAN_RULE)
         claim = None
         if intent_rules.is_statement(self.store, run):
             # Written on the step as soon as it is built, as the counts above are: a worker that dies before the step

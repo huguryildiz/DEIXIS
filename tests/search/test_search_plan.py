@@ -171,6 +171,13 @@ def test_an_m2_run_writes_one_plan_call_from_the_pages_records_instead_of_four(t
                                 "schema_version": "deixis.search_plan.v2",
                                 "skill_package_hash": sent[0]["skill_package_hash"]}
     assert frozen["answer"]["seed_work_ids"] == [sent[0]["sources"][0]["work_id"]]
+    # The plan's own fingerprint (P4): what it read and what wrote it, frozen with the protocol and recomputable
+    # from the StepInput the call really carried.
+    from deixis.workflow.search import plan_identity
+    print_record = {"resolved_model": frozen["resolved_model"], "skill_package_hash": sent[0]["skill_package_hash"],
+                    "answer": frozen["answer"]}
+    assert frozen["fingerprint"] == plan_identity.fingerprint(sent[0], print_record, fast_path.PLAN_RULE)
+    assert frozen["fingerprint"]["records"] == len(sent[0]["sources"])
 
 
 def test_a_person_who_saved_their_own_plan_is_asked_nothing_under_the_m2_method(tmp_path, monkeypatch):

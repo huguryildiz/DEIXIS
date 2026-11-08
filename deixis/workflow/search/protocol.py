@@ -64,6 +64,10 @@ def _search_query(scope: dict[str, Any], vocabulary: dict[str, Any], queries: li
     if record["status"] != "ready":
         return body | {"choice": record.get("choice")}
     body["prompt"]["skill_package_hash"] = record["skill_package_hash"]  # the StepInput's, not the freeze's
+    if record.get("fingerprint"):
+        # What the plan was written from (P4): frozen with the protocol, so a later comparison of two plans reads
+        # the same fingerprint the run computed. A plan stored before the fingerprint existed carries none.
+        body["fingerprint"] = record["fingerprint"]
     return body | {"step_input_id": record["step_input_id"], "resolved_model": record["resolved_model"],
                    **_query_outcome(vocabulary, queries)}
 

@@ -995,6 +995,12 @@ class ResearchFlow:
             built["statement"] = claim
         queries = search_query_rules.compile_queries(built, _planned_providers(scope), run["budget"]["max_provider_requests"])
         built = search_query_rules.with_compiled(built, queries)
+        # The focused queries of the same plan (P5): the main query asks for both concepts at once, each of these
+        # asks for a concept the plan named beside either of them. The depth's Boolean plan budget says how many
+        # there may be; the search stage sends one only when the main query's own records do not carry its concept.
+        allowance = search_plan_rules.focused_allowance(run["budget"], queries)
+        queries = search_plan_rules.with_focused(built, queries, _planned_providers(scope), run["budget"])
+        focused = [query for query in queries if query.get("role") == "focused"]
         # diagnosis only: the model's terms that share no word with the question and some word with the seeds.
         seeded = {"seed_terms": search_query_rules.seed_terms(built["terms"], [scope["question"]] + [
             row["text"] for row in [self.store.english_question(rid, revision)] if row], seed_rows)} if seed_rows else {}
@@ -1003,7 +1009,9 @@ class ResearchFlow:
         planned = {"plan_rule": fast_path.PLAN_RULE, "plan_records": records,
                    # Over every record the call was given, seed PDFs included: the contract lets the plan name any of
                    # them, so none is dropped here without saying so.
-                   "plan_seeds": search_plan_rules.named_seeds(self.store, answer["result"], sources)} \
+                   "plan_seeds": search_plan_rules.named_seeds(self.store, answer["result"], sources),
+                   # What the plan asked for beside the main query and what was really sent for it.
+                   "focused": search_plan_rules.focused_record(answer["result"], focused, allowance)} \
             if task == "search_plan" else {}
         self.store.start_step(step["id"])
         self.store.finish_step(step["id"], "succeeded", output=output | {
@@ -1529,7 +1537,8 @@ class ResearchFlow:
         code = vocabulary["code_query"]
         built = vocabulary | {"code_query": code | {
             "queries": query_compiler.compile_block_queries(code["vocabulary"], providers, limit)}}
-        compiled = search_query_rules.compile_queries(built, providers, limit)
+        compiled = search_plan_rules.with_focused(
+            built, search_query_rules.compile_queries(built, providers, limit), providers, budget)
         return search_query_rules.with_compiled(built, compiled), compiled
 
     def _routing_step_output(self, run_id: str) -> dict[str, Any] | None:

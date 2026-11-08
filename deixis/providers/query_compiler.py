@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from deixis.providers import query_rules
 from deixis.providers.registry import CONNECTORS, resolve_query_syntax, search_providers
 
 BLOCKS_VERSION = "deixis.query_compiler.v4.blocks"  # the fast path's code vocabulary, compiled block by block
@@ -60,6 +61,11 @@ def fit_block_counts(provider: str, groups: list[list[str]], endpoint: str | Non
     (SW2.7). Taking from the last block first cut a long task block to one term while the setting block kept five
 .
     """
+    if len(groups) > query_rules.RENDERED_BLOCKS:
+        # A third mandatory concept is refused here rather than dropped in silence: `render` writes two blocks, so a
+        # query compiled from three would search for less than the plan asked and still report the third as written.
+        # The third concept is searched with its own focused query instead.
+        return None
     declaration = resolve_query_syntax(provider, endpoint)
     counts = [len(group) for group in groups]
     while True:

@@ -40,15 +40,16 @@ class Mode(NamedTuple):
     chain_seeds: int
     backward_requests: int
     forward_requests: int
+    boolean_plans: int  # the most distinct Boolean query plans a run of this depth sends: one main, the rest focused
 
 
 MODES = {
     "quick": Mode((30, 30, 30, 60, 30), read_top=25, fulltext_works=10, keyword_record_cap=450, chain_seeds=10,
-                  backward_requests=2, forward_requests=2),
+                  backward_requests=2, forward_requests=2, boolean_plans=1),
     "standard": Mode((30, 45, 60, 120, 45), read_top=50, fulltext_works=20, keyword_record_cap=1000, chain_seeds=20,
-                     backward_requests=4, forward_requests=8),
+                     backward_requests=4, forward_requests=8, boolean_plans=2),
     "detailed": Mode((45, 90, 120, 270, 75), read_top=100, fulltext_works=40, keyword_record_cap=2000, chain_seeds=30,
-                     backward_requests=8, forward_requests=16),
+                     backward_requests=8, forward_requests=16, boolean_plans=3),
 }
 
 
@@ -119,7 +120,9 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         policy |= {"search_method": method, "chain_rule": "fast_chain_v2", "code_query_max_total": CODE_QUERY_MAX_TOTAL}
     if method == "m2":
         # The model writes the plan from the first semantic page; the chain starts from the works it names.
-        policy |= {"plan_rule": PLAN_RULE}
+        # `boolean_plans` counts the distinct Boolean query plans the run may send, the main one included; one plan
+        # still goes to every enabled provider in that provider's syntax, and those requests are counted elsewhere.
+        policy |= {"plan_rule": PLAN_RULE, "boolean_plans": mode.boolean_plans}
     if deep_screening:
         if effort not in DEEP_SCREENING_EFFORTS:
             raise ValueError(f"deeper screening is not offered at {effort!r}")

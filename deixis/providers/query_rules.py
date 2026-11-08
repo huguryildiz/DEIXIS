@@ -16,6 +16,9 @@ NAMES = {"openalex": "OpenAlex", "semantic_scholar": "Semantic Scholar", "crossr
          "pubmed": "PubMed",
          "biorxiv": "bioRxiv", "ieee_xplore": "IEEE Xplore", "scopus": "Scopus", "core": "CORE", "serpapi": "SerpApi"}
 MAX_PLAIN_WORDS = 8
+# How many concept blocks `QuerySyntax.render` writes: the core and the family. A plan that needs a third
+# mandatory concept is searched with its own focused query, not with a third block.
+RENDERED_BLOCKS = 2
 BOOLEAN_OPERATORS = ("AND", "OR", "NOT", "ANDNOT")
 MAX_ARXIV_OPERATORS = 5
 SCOPUS_GROUP = re.compile(r"^\s*(TITLE-ABS-KEY|TITLE|ABS|KEY)\((.*)\)\s*$", re.DOTALL)
@@ -277,12 +280,14 @@ class QuerySyntax:
         return f"{self.wrapper}({text})" if self.wrapper else text
 
     def written_counts(self, kept: list[list[str]]) -> list[int]:
+        # `render` joins the first two blocks only, so the counts cover those two: a caller reads back what was
+        # written, never a block the query does not hold. A third block is refused by `fit_block_counts` before
+        # this point, so it is never reported as written.
+        kept = kept[:RENDERED_BLOCKS]
         if self.kind == "plain":
             return [min(len(group), 1) for group in kept]
         if self.kind == "scholar":
             return [min(len(group), 1) if position == 0 else len(group) for position, group in enumerate(kept)]
-        # Preserve the historical counts for a third block even though render
-        # receives only two blocks. B3b characterizes, rather than corrects, it.
         return [len(group) for group in kept]
 
     def query_issues(self, query: str) -> list[str]:

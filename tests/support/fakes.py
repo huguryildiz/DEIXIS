@@ -195,21 +195,31 @@ def valid_response(si: dict[str, Any]) -> str:
                     continue
                 taken.add(word.lower())
                 backups[block] = [{"term": word, "evidence": evidence}]
-            return json.dumps(envelope(si, "deixis.search_plan.v1") | {
+            # One focused plan when the record still holds a readable word the two blocks do not carry: a real plan
+            # names the concept its main query leaves out, with the same checked evidence.
+            focused = []
+            evidence, word = next(((e, w) for e, w in [pick(field, taken) for field in ("keywords", "abstract", "title")]
+                                   if e is not None), (None, None))
+            if evidence is not None:
+                taken.add(word.lower())
+                focused = [{"term": word, "kind": "topic", "why": "SYNTHETIC focused term",
+                            "gap": "SYNTHETIC sub-problem the main query leaves out", "evidence": evidence}]
+            return json.dumps(envelope(si, "deixis.search_plan.v2") | {
                 "field": "synthetic field", "setting": terms["setting"], "task": terms["task"],
                 "setting_backup": backups.get("setting_backup", []),
                 "task_backup": backups.get("task_backup", []),
+                "focused": focused,
                 "seed_work_ids": [source["work_id"]]})
         # No record with readable text: the answer the contract refuses, which is what a test of that path wants.
         unreadable = {"record_id": source.get("source_id") or "srv_SYNTHETICnone", "field": "title",
                       "span": [0, 9], "relation": "SYNTHETIC relation"}
-        return json.dumps(envelope(si, "deixis.search_plan.v1") | {
+        return json.dumps(envelope(si, "deixis.search_plan.v2") | {
             "field": "synthetic field",
             "setting": [{"term": "synthetic setting", "kind": "topic", "why": "SYNTHETIC setting term",
                          "evidence": unreadable}],
             "task": [{"term": "synthetic task", "kind": "topic", "why": "SYNTHETIC task term",
                       "evidence": unreadable}],
-            "setting_backup": [], "task_backup": [],
+            "setting_backup": [], "task_backup": [], "focused": [],
             "seed_work_ids": [source.get("work_id") or "wrk_SYNTHETICnone"]})
     if task == "report_plan":
         passage_ids = si["allowlist"]["passage_ids"]

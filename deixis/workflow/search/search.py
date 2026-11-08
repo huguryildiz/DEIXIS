@@ -12,7 +12,7 @@ from deixis.providers.common import FIRST_PAGE, SearchOutcome
 from deixis.providers.registry import CONNECTORS, reading
 from deixis.storage.db import now, transaction
 from deixis.providers import openalex, query_compiler
-from deixis.workflow.search import english_question, search_page, seed_match, user_plan
+from deixis.workflow.search import english_question, search_page, search_plan, seed_match, user_plan
 from deixis.workflow.run import fast_path
 from deixis.workflow.search.search_page import Page
 from deixis.workflow.search.expansion import queried_form
@@ -579,6 +579,9 @@ async def execute(flow, run, scope, plan, retry_failed):
     request_index += int(bool(plan["s2_reserved"]))
     specs = plan["keywords"]
     states = {s["index"]: {"number": 0, "cursor": FIRST_PAGE, "before": 0, "total": None, "ended": False} for s in specs}
+    # The main Boolean query's own pages: the plan the model wrote, or the person's saved one. The code query beside
+    # it is a different plan of the same question, so a record only it found leaves the main query's gap open.
+    main_indexes = search_plan.main_plan_indexes(specs)
     slots = 0
     try:
         # S2 writes its own earlier slot first. Different host scheduling remains
@@ -588,6 +591,11 @@ async def execute(flow, run, scope, plan, retry_failed):
                 state = states[spec["index"]]
                 if state["ended"]:
                     continue
+                focused = spec["query"].get("role") == "focused"
+                if focused and state["number"] == 0 and any(not states[i]["ended"] for i in main_indexes):
+                    # The condition is read against what the main query really brought, so it waits until that query
+                    # has read its last page: a later page can carry the concept the first one did not.
+                    continue
                 key = f"search:{spec['index']}" + (f":page:{state['number']}" if state["number"] else "")
                 old = store.existing_step(run_id, key)
                 written = old is not None and (old["status"] in ("succeeded", "failed", "outcome_unknown")
@@ -596,6 +604,16 @@ async def execute(flow, run, scope, plan, retry_failed):
                 if reason and not written:
                     close_queries(flow, run, specs, reason)
                     return shared["failure"]
+                if focused and state["number"] == 0 and not written:
+                    # The recorded condition, read once and only for a query no page of which has been sent: a
+                    # concept the main query's own records already carry is no gap, so the depth's plan is not spent
+                    # on it. More terms in the plan never send a query by themselves, and a replayed run reads its
+                    # own first page back instead of deciding again.
+                    if search_plan.main_query_covers(store, run, spec["query"]["focused"]["term"], main_indexes):
+                        cancel_step(store, run_id, key, f"provider_search:{spec['query']['provider_id']}",
+                                    search_plan.GAP_ALREADY_MET)
+                        state["ended"] = True
+                        continue
                 flow._checkpoint(run_id, run["scope_revision"])
                 limit = min(plan["page_size"], plan["keyword_cap"] - slots)
                 old_admission = ((old or {}).get("output") or {}).get("fast_path_request")

@@ -15,12 +15,13 @@
     "task",
     "setting_backup",
     "task_backup",
-    "seed_work_ids"
+    "seed_work_ids",
+    "focused"
   ],
   "properties": {
     "schema_version": {
       "type": "string",
-      "const": "deixis.search_plan.v1"
+      "const": "deixis.search_plan.v2"
     },
     "step_input_id": {
       "$ref": "common.schema.json#/$defs/step_input_id"
@@ -339,6 +340,95 @@
         "maxLength": 60
       },
       "description": "The works the citation chain starts from, directly about the question, named by the work id of a record this step was given. Their references and the works citing them are read first; code checks each id against the records it sent. Distinct; code refuses a repeated id."
+    },
+    "focused": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 2,
+      "description": "A sub-problem the main query cannot reach, searched with its own query of two blocks: this concept and the main query's terms together. Written only for a concept the records show and the main query's two blocks leave out; more terms than fit is not a reason. Code sends such a query only when the main query's own records do not carry this concept, counts it against the depth's query budget and records why it was sent or left out. An empty array says the main query covers the question.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "term",
+          "kind",
+          "why",
+          "gap",
+          "evidence"
+        ],
+        "properties": {
+          "term": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "The concept this query adds, 1 to 4 words, no quotation marks, parentheses or Boolean operators. It is a concept the main query's blocks do not hold."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "topic",
+              "method",
+              "population",
+              "other"
+            ]
+          },
+          "why": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "At most 8 words. Shown to the user; never read by a rule."
+          },
+          "gap": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "What the main query cannot answer without this concept, named as a concrete sub-problem of the question. Shown to the user; never read by a rule."
+          },
+          "evidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "record_id",
+              "field",
+              "span",
+              "relation"
+            ],
+            "description": "Where this term was read. Code checks it against the stored text of that field and refuses the answer when the phrase is not there.",
+            "properties": {
+              "record_id": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The `source_id` of a record this step was given."
+              },
+              "field": {
+                "type": "string",
+                "enum": [
+                  "title",
+                  "abstract",
+                  "keywords"
+                ],
+                "description": "Which of the record's fields holds the phrase."
+              },
+              "span": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "items": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "description": "Start and end character offsets of the phrase in that field, the end exclusive. For `keywords` the field is its keywords joined by \"; \" in their stored order."
+              },
+              "relation": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160,
+                "description": "How the term bears on the question, in the model's own words. Shown to the user; never read by a rule."
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

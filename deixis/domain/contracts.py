@@ -69,7 +69,7 @@ SCHEMA_VERSIONS = {
     "VocabularyLabels": "deixis.vocabulary_labels.v1",
     "CriterionProposal": "deixis.criterion_proposal.v3",
     "SearchQuery": "deixis.search_query.v2",
-    "SearchPlan": "deixis.search_plan.v1",
+    "SearchPlan": "deixis.search_plan.v2",
     "AbstractScreening": "deixis.abstract_screening.v1",
     "FulltextAdjudication": "deixis.fulltext_adjudication.v1",
     "ReportPlanDraft": "deixis.report_plan_draft.v2",
@@ -2485,8 +2485,10 @@ def _check_search_plan(step_input: dict[str, Any], allow: dict[str, set[str]], d
     fields = _plan_record_fields(step_input)
     # A backup carries the same evidence as a chosen term, because code searches it in a chosen term's place: a
     # backup whose phrase no record holds would otherwise reach the sent query unchecked.
-    for block in ("setting", "task", "setting_backup", "task_backup"):
-        for index, term in enumerate(draft[block]):
+    # A focused plan's own concept is checked the same way: its query is sent, so an unchecked phrase would reach
+    # a provider. Its `gap` is the model's words about what the main query leaves out and no rule reads it.
+    for block in ("setting", "task", "setting_backup", "task_backup", "focused"):
+        for index, term in enumerate(draft.get(block) or []):
             evidence = term["evidence"]
             path = f"/{block}/{index}/evidence"
             record = evidence["record_id"]
@@ -2507,6 +2509,18 @@ def _check_search_plan(step_input: dict[str, Any], allow: dict[str, set[str]], d
             if normalize_phrase(found) != normalize_phrase(wanted):
                 report.issues.append(Issue("plan_term_not_at_span", f"{path}/span",
                                            f"{wanted!r} is not what that span holds"))
+    # A focused concept the main query's own blocks already hold adds no query: it would search what the main query
+    # already searches and spend one of the depth's plans for nothing.
+    chosen = {normalize_phrase(term["term"]) for block in ("setting", "task") for term in draft[block]}
+    named: set[str] = set()
+    for index, term in enumerate(draft.get("focused") or []):
+        phrase = normalize_phrase(term["term"])
+        if phrase in chosen:
+            report.issues.append(Issue("focused_term_in_main_query", f"/focused/{index}/term", term["term"]))
+        elif phrase in named:
+            # Two entries naming one concept compile one query twice and spend two of the depth's plans on it.
+            report.issues.append(Issue("duplicate_focused_term", f"/focused/{index}/term", term["term"]))
+        named.add(phrase)
     works = {source.get("work_id") for source in step_input.get("sources") or []}
     seen: set[str] = set()
     for index, work in enumerate(draft["seed_work_ids"]):

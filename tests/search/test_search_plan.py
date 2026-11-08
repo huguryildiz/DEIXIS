@@ -42,7 +42,7 @@ def issues(draft):
 
 def test_the_task_is_registered_with_its_schema_its_method_file_and_one_repair():
     assert contracts.TASK_OUTPUTS["search_plan"] == ("SearchPlan",)
-    assert contracts.SCHEMA_VERSIONS["SearchPlan"] == "deixis.search_plan.v1"
+    assert contracts.SCHEMA_VERSIONS["SearchPlan"] == "deixis.search_plan.v2"
     assert RUNTIME_FILES["search_plan"] == ("SKILL.md", "references/search-plan.md")
     assert "search_plan" in LITERATURE_TASKS  # the literature model writes the plan, as it wrote the query
     assert schema_repairs("search_plan") == 1
@@ -168,7 +168,7 @@ def test_an_m2_run_writes_one_plan_call_from_the_pages_records_instead_of_four(t
     # The protocol names the prompt the call really carried, read from the answer's own schema version.
     frozen = protocol_body(client, rid)["search_query"]
     assert frozen["prompt"] == {"files": ["SKILL.md", "references/search-plan.md"],
-                                "schema_version": "deixis.search_plan.v1",
+                                "schema_version": "deixis.search_plan.v2",
                                 "skill_package_hash": sent[0]["skill_package_hash"]}
     assert frozen["answer"]["seed_work_ids"] == [sent[0]["sources"][0]["work_id"]]
 

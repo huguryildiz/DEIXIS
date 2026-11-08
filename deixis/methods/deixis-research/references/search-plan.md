@@ -77,6 +77,30 @@ this StepInput and from nothing else. Two terms that merely appear in the same
 paper are not synonyms of each other; the records must show the same thing
 being named twice.
 
+Then `focused`: a concept the records show, that the question needs and that
+the two blocks above cannot hold. The main query asks for a setting term AND a
+task term together, so a paper that writes about only one of them beside this
+third concept is never found. The application searches such a concept with its
+own query of two blocks — the concept AND the main query's terms joined by OR
+— and counts it against the depth's query budget.
+
+Write a `focused` entry only when all three hold:
+
+- the records show the concept, and your `evidence` points at it exactly as a
+  chosen term's does;
+- the concept is not already a term of `setting` or `task`, and not a synonym
+  of one;
+- you can name, in `gap`, a concrete sub-problem of the question that the main
+  query cannot answer without it, in at most 200 characters.
+
+Having more candidate terms than fit in the main query is NOT a reason. Nor is
+wanting the search to be wider. At most 2 entries, most important first. Write
+`[]` when the main query covers the question — that is the usual answer.
+
+The application does not send a focused query whose concept the main query's
+own results already carry; it records the concept and why it sent nothing. So
+name the concept you would still miss after reading those results.
+
 Then name the works the citation chain starts from, in `seed_work_ids`: 1 to 3
 `work_id` values of records in `sources`, the works most directly about the
 question, most relevant first. Choose works that stand for different
@@ -101,4 +125,4 @@ Boolean operators, and no term appears twice.
 
 Echo `step_input_id` and `scope_revision` exactly as given, following the
 envelope rule in [SKILL.md](../SKILL.md), and set `schema_version` to
-`deixis.search_plan.v1`.
+`deixis.search_plan.v2`.

@@ -51,7 +51,8 @@ class Providers:
                 self.log.append((host, "count"))
                 self.counts.append(query)
                 return httpx.Response(200, json={"meta": {"count": self.table.get(query, 50)}, "results": []})
-            kind = "group_by" if params.get("group_by") else "fetch"
+            kind = ("group_by" if params.get("group_by") else
+                    "semantic" if params.get("search.semantic") else "fetch")
             self.log.append((host, kind))
             self.events.append(kind)
             if query:
@@ -251,8 +252,10 @@ def test_the_protocol_freezes_before_the_first_request_that_fetches_search_resul
     assert run["status"] == "completed", run
     assert events.count("freeze") == 1 and "fetch" in events
     assert events.index("freeze") < events.index("fetch")
-    # Only planning requests (term counts, the field distribution) went before it.
-    assert set(events[:events.index("freeze")]) <= {"group_by"}
+    # Before it went the planning requests (term counts, the field distribution) and the question's own semantic
+    # request, which the design sends first of all and which no planning step writes (P2, Ç1).
+    assert set(events[:events.index("freeze")]) <= {"group_by", "semantic"}
+    assert events.index("semantic") < events.index("freeze")
 
 
 # ---- the criterion belongs to the plan's revision: the full-text path reads exactly the one it froze -------------

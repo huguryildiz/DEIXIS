@@ -294,12 +294,14 @@ def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tm
     rid, run, openalex, adapter = run_with_proposals(tmp_path, monkeypatch)
     # The fast path opens its embedding step (`source_similarity`) as the run starts; it sends nothing to a provider.
     keys = [key for key in steps_of(run) if key != "source_similarity"]
+    # The question's own semantic request opens before anything plans: it needs no model and no criterion (P2).
     # The source routing of slice 14 follows the vocabulary, before the criterion.
-    assert keys[:11] == ["vocabulary", "vocabulary_labels_1", "vocabulary_labels_2", "vocabulary_labels_3",
+    assert keys[:12] == ["search:fast:semantic",
+                         "vocabulary", "vocabulary_labels_1", "vocabulary_labels_2", "vocabulary_labels_3",
                          "source_routing", "criterion", "criterion_proposal_1", "criterion_proposal_2", "criterion_proposal_3",
                          "protocol_approval", "protocol"]
-    # Every provider search was opened after the protocol step, which already held the criterion.
-    searches = [i for i, key in enumerate(keys) if key.startswith("search:")]
+    # Every planned provider search was opened after the protocol step, which already held the criterion.
+    searches = [i for i, key in enumerate(keys) if key.startswith("search:") and key != "search:fast:semantic"]
     assert searches and min(searches) > keys.index("protocol")
     body = body_of(tmp_path, rid, 1)
     assert body["inclusion_criterion"] == RUNS[1]["criterion"]  # run 1 is the base run of these three proposals

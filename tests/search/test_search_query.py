@@ -139,7 +139,7 @@ class OpenAlex:
     """Mocked OpenAlex: counts from a table (default 50), every search one record."""
 
     def __init__(self, counts=None):
-        self.table, self.counts, self.searches = counts or {}, [], []
+        self.table, self.counts, self.searches, self.semantic = counts or {}, [], [], []
 
     def __call__(self, request):
         if request.url.host != "api.openalex.org":
@@ -149,7 +149,10 @@ class OpenAlex:
         if params.get("per_page") == "1" and params.get("select") == "id":
             self.counts.append(query)
             return httpx.Response(200, json={"meta": {"count": self.table.get(query, 50)}, "results": []})
-        self.searches.append(query)
+        if params.get("search.semantic"):
+            self.semantic.append(params["search.semantic"])
+        else:
+            self.searches.append(query)
         return httpx.Response(200, json={"meta": {"count": 1}, "results": [WORK]})
 
 
@@ -303,7 +306,11 @@ def test_a_failed_model_stops_the_run_and_the_code_query_is_searched_only_when_t
     _, run = wait(client, rid, run_id)
     assert (run["status"], run["pause_reason"]) == ("paused", "search_query_failed")
     assert run["error"]["retries_left"] == 1
-    assert not openalex.searches and not any(s["kind"].startswith("provider_search") for s in run["steps"])
+    # No query the model would have written was searched. The question's own semantic request went out before the
+    # model was asked at all (P2), so its step is the one provider search this paused run holds.
+    assert not openalex.searches and openalex.semantic == [QUESTION]
+    assert [s["operation_key"] for s in run["steps"] if s["kind"].startswith("provider_search")] \
+        == ["search:fast:semantic"]
     # Resuming asks the model once more; a second failure leaves no try.
     assert client.post(f"/api/runs/{run_id}/resume").status_code == 200
     _, run = wait(client, rid, run_id, ("paused", "completed", "failed"))
@@ -316,6 +323,10 @@ def test_a_failed_model_stops_the_run_and_the_code_query_is_searched_only_when_t
     _, run = wait(client, rid, run_id, ("completed", "failed"))
     assert run["status"] == "completed", run
     assert len(calls(adapter)) == 2 and openalex.searches
+    # The code's query is searched now, and the question's request, already succeeded, is not sent a second time
+    # (Argon's blocker: it keeps the `search:fast:semantic` key, which the search stage finds succeeded).
+    assert openalex.semantic == [QUESTION]
+    assert step_output(client, run_id, "search:fast:semantic")["result_count"] == 1
     body = protocol_body(client, rid)
     assert body["search_query"]["status"] == "failed" and body["search_query"]["choice"] == "code_only"
     assert [a["reason"] for a in body["search_query"]["attempts"]] == ["model_call_failed", "model_call_failed"]

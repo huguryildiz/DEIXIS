@@ -603,35 +603,55 @@ class ResearchFlow:
         # The seed PDF's OpenAlex work is looked up before anything else plans, so the query writer and the protocol
         # read the same context.
         seed_context = await self._seed_match(run, scope)
-        # The first search's words come from code, so no model runs before the search (SW2.3).
-        vocabulary, queries = await self._vocabulary(run, scope)
-        consumer = self._fast_consumers[run_id]
-        if consumer.embedder is not None and consumer.query is None and self.store.english_question(rid, revision):
-            # The vocabulary step has just stored the model's English sentence: the built-in model reads it too.
-            self._fast_consumers[run_id] = Consumer(self, run, scope)
-        vocabulary, queries = await self._search_query(run, scope, vocabulary, queries)
-        vocabulary, queries = await self._source_routing(run, scope, vocabulary, queries)
-        criterion = await self._criterion(run, scope, vocabulary)
-        vocabulary, queries, criterion, approval = await self._approval(run, scope, vocabulary, queries, criterion)
-        # The protocol is frozen before the first provider request and every step opened after it carries its hash (SW14.1).
-        protocol_step = self.store.step(run_id, "protocol", "protocol:freeze")
-        if protocol_step["status"] != "succeeded":
-            self.store.start_step(protocol_step["id"])
-            # A later discovery run of the same scope revision may plan other queries; that is a new protocol revision
-            # with its reason, never an edit of the first one (SW14.2).
-            reason = "later_discovery_run" if self.store.current_protocol(rid, revision) else None
-            fast_plan = fast_search.build_plan(self.store, run, scope, queries, seed_context, vocabulary)
-            # Which plan words a query the plan sends really carries: a word can stand in the plan and still be
-            # cut from every sent query, and the plan step and the Search plan panel say so from this record.
-            fast_plan = fast_plan | {"words": fast_search.plan_words(vocabulary, fast_plan)}
-            record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
-                scope, run["budget"], None, queries,
-                self.deps.package.package_hash, self.deps.settings, vocabulary=vocabulary, criterion=criterion,
-                approval=approval, embedding_model=self._protocol_embedding_model(run_id), routing=self._routing_step(run_id),
-                fast_path_search=fast_plan, seed_match=seed_context,
-            ), reason=reason)
-            self.store.finish_step(protocol_step["id"], "succeeded",
-                                   output={"protocol_revision": record["protocol_revision"], "protocol_hash": record["hash"]})
+        # The design's first step needs no translation, rewriting or model call, so the question's own semantic
+        # request goes out here, in whatever language the person wrote it, and every planning step below runs while
+        # it is in flight. It keeps the `search:fast:semantic` key, so the search stage finds the step succeeded and
+        # sends nothing twice; only the later steps that need English (the reranker, BM25's question terms, the
+        # comparison signal) wait for the translation `_vocabulary` asks for (P2).
+        sent = asyncio.Event()
+        first_request = asyncio.create_task(fast_search.first_semantic(self, run, scope, seed_context, sent))
+        try:
+            await sent.wait()  # the request is on its way before any step asks a model
+            # The Boolean queries' words come from code, so no model chooses what is searched (SW2.3).
+            vocabulary, queries = await self._vocabulary(run, scope)
+            consumer = self._fast_consumers[run_id]
+            if consumer.embedder is not None and consumer.query is None and self.store.english_question(rid, revision):
+                # The vocabulary step has just stored the model's English sentence: the built-in model reads it too.
+                self._fast_consumers[run_id] = Consumer(self, run, scope)
+            vocabulary, queries = await self._search_query(run, scope, vocabulary, queries)
+            vocabulary, queries = await self._source_routing(run, scope, vocabulary, queries)
+            criterion = await self._criterion(run, scope, vocabulary)
+            vocabulary, queries, criterion, approval = await self._approval(run, scope, vocabulary, queries, criterion)
+            # The protocol is frozen before the first provider request that plans anything, and every step opened
+            # after it carries its hash (SW14.1). The question's request and the translation it does not wait for are
+            # the exception the seed match already set: they open before the freeze, carry no hash, and their plan is
+            # part of this one frozen body (Ç1).
+            protocol_step = self.store.step(run_id, "protocol", "protocol:freeze")
+            if protocol_step["status"] != "succeeded":
+                self.store.start_step(protocol_step["id"])
+                # A later discovery run of the same scope revision may plan other queries; that is a new protocol revision
+                # with its reason, never an edit of the first one (SW14.2).
+                reason = "later_discovery_run" if self.store.current_protocol(rid, revision) else None
+                fast_plan = fast_search.build_plan(self.store, run, scope, queries, seed_context, vocabulary)
+                # Which plan words a query the plan sends really carries: a word can stand in the plan and still be
+                # cut from every sent query, and the plan step and the Search plan panel say so from this record.
+                fast_plan = fast_plan | {"words": fast_search.plan_words(vocabulary, fast_plan)}
+                record = self.store.freeze_protocol(rid, revision, protocol.build_protocol(
+                    scope, run["budget"], None, queries,
+                    self.deps.package.package_hash, self.deps.settings, vocabulary=vocabulary, criterion=criterion,
+                    approval=approval, embedding_model=self._protocol_embedding_model(run_id), routing=self._routing_step(run_id),
+                    fast_path_search=fast_plan, seed_match=seed_context,
+                ), reason=reason)
+                self.store.finish_step(protocol_step["id"], "succeeded",
+                                       output={"protocol_revision": record["protocol_revision"], "protocol_hash": record["hash"]})
+        finally:
+            # A planning step that stopped the run leaves the request in flight: it is waited for here, so its page
+            # is recorded under its own step and a resume does not send it again. Its own failure is not reported
+            # here; the search stage retries it, and the planning arm's stop stands.
+            try:
+                await first_request
+            except RunStopped:
+                pass
 
         self._close_clock_stage(run, "plan")
         self._enter_clock_stage(run, "search")

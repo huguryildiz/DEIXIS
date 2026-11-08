@@ -127,23 +127,52 @@ def graph_rule(store, run):
     return "seed_max_v2" if plan_version(store, run) == 2 else "sum_v1"
 
 
+def seeded_question(seed_context):
+    """Whether the seed PDFs ask OpenAlex on their own (`seed_pdf_v2`), which leaves the question's request unseeded."""
+    return bool(seed_context) and seed_context.get("rule") == seed_match.RULE
+
+
+def semantic_spec(scope, policy, seed_context=None):
+    """The question's own semantic request, written by code alone: no translation, no rewriting, no model call.
+
+    It carries the person's own sentence, in whatever language they wrote it. The revision's English sentence is read
+    by the ranking signals that need English (`ranking.comparison`, the built-in embedding); it no longer decides
+    whether this request is sent, so a question in another language waits for no translation. At version 2 each seed
+    PDF asks on its own, so the question's request is unseeded; at version 1 a seed's text rides behind the question
+    and the ranking keeps the question alone. `build_plan` freezes exactly this spec, and `first_semantic` sends it
+    before anything plans, so the two cannot drift apart (P2)."""
+    question = scope["question"]
+    seed, parts = None, []
+    if seed_context and not seeded_question(seed_context):
+        question, seed, parts = seed_query(question, seed_context)
+    return {"provider_id": "openalex", "endpoint": "semantic",
+            "query_text": openalex.semantic_text(question), "limit": policy["semantic_top"],
+            "query_origin": "question",
+            **({"seed_text": seed} if seed else {}),
+            **({"seed_parts": parts} if seed_context and not seeded_question(seed_context) else {})}
+
+
+def first_request_plan(run, scope, seed_context=None):
+    """What the question's semantic request needs before anything plans: the request itself, the plan version its
+    record keeping reads (`keep_found` at version 2) and the providers a person's saved plan left out.
+
+    It is not a frozen plan and nothing stores it: the protocol still freezes the whole plan `build_plan` builds,
+    with this same request in it (Ç1)."""
+    policy = run["budget"]["fast_path"]
+    return {"version": 2 if seeded_question(seed_context) else 1,
+            "semantic": semantic_spec(scope, policy, seed_context),
+            **({"excluded_providers": user_plan.excluded(scope)} if user_plan.of(scope) is not None else {})}
+
+
 def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
     """The frozen search plan. With `vocabulary` (every discovery run since `block_terms_v1`) it also freezes `block_semantic`:
     under `block_terms_v1` the block terms' semantic request, since the 6 Nov rules the record that it is off (`BLOCK_SEMANTIC_OFF`). A plan
     built without a vocabulary, as every plan before `block_terms_v1` was, has none."""
     policy = run["budget"]["fast_path"]
-    # The first semantic request carries the person's own sentence, in whatever language they wrote it. The revision's
-    # English sentence is read by the ranking signals that need English (`ranking.comparison`, the built-in embedding);
-    # it no longer decides whether this request is sent, so a question in another language waits for no translation.
-    question = scope["question"]
-    if seed_context and seed_context.get("rule") == seed_match.RULE:
+    if seeded_question(seed_context):
         # The question's request is the unseeded one; each seed asks OpenAlex on its own, after it.
         plan = build_plan(store, run, scope, queries, vocabulary=vocabulary)
         return plan | {"version": 2, "seed_semantic": seed_requests(seed_context, policy["semantic_top"] // 2)}
-    seed, parts = None, []
-    if seed_context:
-        # The seed PDFs' text rides behind the question; the ranking keeps the question alone.
-        question, seed, parts = seed_query(question, seed_context)
     deep = policy["mode"] == "deep"
     # The providers a person left out of a saved search plan get no request (S23a); OpenAlex cannot be left out.
     excluded = user_plan.excluded(scope)
@@ -152,11 +181,7 @@ def build_plan(store, run, scope, queries, seed_context=None, vocabulary=None):
                      if deep and q["provider_id"] == "semantic_scholar" and q.get("endpoint") == "bulk"
                      and "semantic_scholar" not in excluded), None)
     s2 = queries[s2_index] if s2_index is not None else None
-    semantic = {"provider_id": "openalex", "endpoint": "semantic",
-                "query_text": openalex.semantic_text(question), "limit": policy["semantic_top"],
-                "query_origin": "question",
-                **({"seed_text": seed} if seed else {}), **({"seed_parts": parts} if seed_context else {})}
-    return {"version": 1, "semantic": semantic,
+    return {"version": 1, "semantic": semantic_spec(scope, policy, seed_context),
             **({"block_semantic": dict(BLOCK_SEMANTIC_OFF)} if vocabulary is not None else {}),
             "keywords": keyword, "keyword_cap": policy["keyword_record_cap"] - (S2_RESERVED_RECORDS if deep else 0),
             "page_size": KEYWORD_PAGE_SIZE, "order": "page_then_query", "s2_bulk": s2 if deep else None,
@@ -283,14 +308,14 @@ def close_queries(flow, run, specs, reason):
                 cancel_step(flow.store, run["id"], key, "provider_search:openalex", reason, ("pending", "running"))
 
 
-async def execute(flow, run, scope, plan, retry_failed):
+def page_sender(flow, run, scope, plan, retry_failed, shared):
+    """The one function that sends a page of a search and records it, and the stop it reads.
+
+    `shared` carries what the callers share: `failure` is the failure to report, `s2_task` the Semantic Scholar slot
+    whose write comes before the first keyword page. `first_semantic` and `execute` each build their own sender, so
+    the question's request can go out before anything plans and the search stage can send the rest later (P2)."""
     store, run_id = flow.store, run["id"]
     effort = scope["effort"]
-    failure = None
-    # A written slot retains its size and index even when it failed. Replay walks
-    # the identical round-robin schedule rather than deriving order from timestamps.
-    request_index = 0
-    s2_task = None
 
     def stopped():
         return flow._stop_requested(run_id, run["scope_revision"]) or fast_path.past_deadline(store, run, "search")
@@ -299,7 +324,6 @@ async def execute(flow, run, scope, plan, retry_failed):
 
     async def send_page(query, key, *, limit, klass, index, number=0, cursor=FIRST_PAGE, before=0, total=None,
                         terminal=None, after=None):
-        nonlocal failure
         if query["provider_id"] in excluded:
             # The frozen plan leaves this provider out (S23a): no request, whatever planned it.
             step = cancel_step(store, run_id, key, f"provider_search:{query['provider_id']}", user_plan.EXCLUDED)
@@ -344,8 +368,8 @@ async def execute(flow, run, scope, plan, retry_failed):
         if outcome is None:
             return None, 0
         finished = now()
-        if query["provider_id"] == "openalex" and klass == 1 and s2_task:
-            await s2_task
+        if query["provider_id"] == "openalex" and klass == 1 and shared["s2_task"]:
+            await shared["s2_task"]
         if after is not None:
             # An earlier request in admission order writes first, whichever reply came back first.
             await after
@@ -376,9 +400,9 @@ async def execute(flow, run, scope, plan, retry_failed):
             store.start_step(step["id"], started_at=started)
             # A version 2 plan keeps the versions the question's request accepted, the only ones its first chain
             # seeds may come from.
-            failure = flow._record_search(run, step, query, outcome, limit, page, reason,
-                                         finished, dispatched, transport, admission,
-                                         keep_found=key == "search:fast:semantic" and plan.get("version") == 2) or failure
+            shared["failure"] = flow._record_search(
+                run, step, query, outcome, limit, page, reason, finished, dispatched, transport, admission,
+                keep_found=key == "search:fast:semantic" and plan.get("version") == 2) or shared["failure"]
             # Failed steps also retain terminal/cursor accounting for slot replay.
             if not ok:
                 store.set_step_output(step["id"], (store.step_output(step["id"]) or {}) | {
@@ -388,6 +412,18 @@ async def execute(flow, run, scope, plan, retry_failed):
             consumer.notify()
         return store.step_output(step["id"]), limit
 
+    return send_page
+
+
+async def question_semantic(flow, run, plan, send_page):
+    """Send the question's own semantic request, then let the chain read its page.
+
+    A run calls this twice: once before anything plans (`first_semantic`) and once from the search stage, which finds
+    the step `succeeded` and sends nothing more. The step key is `search:fast:semantic` in both, so the request goes
+    out once; semantic search is single-page, so there is no second page to continue (P2, Argon's blocker). The chain
+    is seeded here only when it exists, which is after the protocol froze: the early call finds none, and the search
+    stage's call seeds it from the stored page."""
+    store, run_id = flow.store, run["id"]
     sem = plan["semantic"]
     if sem["query_text"] is None:
         # A plan frozen before the request carried the person's own sentence has no text when the question is not
@@ -402,11 +438,48 @@ async def execute(flow, run, scope, plan, retry_failed):
         consumer = flow._fast_consumers.get(run_id)
         if consumer:
             consumer.notify()
-    request_index += 1
     chain = flow._fast_chains.get(run_id)
     if chain:
         chain.initial()
     flow._checkpoint(run_id, run["scope_revision"])
+
+
+async def first_semantic(flow, run, scope, seed_context=None, sent=None):
+    """The question's semantic request, sent before any step that plans (P2).
+
+    The design's first step needs no translation, rewriting or model call, so this request goes out in whatever
+    language the person wrote, right after the seed match, and every planning step runs while it is in flight. The
+    step is opened before the request is sent, so it carries `protocol_hash = NULL` as the seed match's requests do
+    (Ç1), and it keeps the `search:fast:semantic` key, so the search stage finds it succeeded and sends nothing
+    twice. `sent` is set once the request is on its way, so the caller goes on without waiting for the reply.
+
+    A request that failed here is not reported: the search stage retries it, as it retries a resumed run's failures
+    (`retry_failed`), which is why this call never asks for a retry of its own."""
+    shared = {"failure": None, "s2_task": None}
+    try:
+        # Everything that can fail before the request is sent sits inside this block, so `sent` is set on the way
+        # out whatever happens and the planning arm waiting on it raises instead of waiting forever.
+        plan = first_request_plan(run, scope, seed_context)
+        if plan["semantic"]["query_text"] is not None:
+            flow.store.step(run["id"], "search:fast:semantic", "provider_search:openalex")
+        send_page = page_sender(flow, run, scope, plan, False, shared)
+    finally:
+        if sent is not None:
+            sent.set()
+    await question_semantic(flow, run, plan, send_page)
+    return shared["failure"]
+
+
+async def execute(flow, run, scope, plan, retry_failed):
+    store, run_id = flow.store, run["id"]
+    shared = {"failure": None, "s2_task": None}
+    send_page = page_sender(flow, run, scope, plan, retry_failed, shared)
+    # A written slot retains its size and index even when it failed. Replay walks
+    # the identical round-robin schedule rather than deriving order from timestamps.
+    request_index = 0
+    excluded = plan.get("excluded_providers") or []
+    await question_semantic(flow, run, plan, send_page)
+    request_index += 1
     # The block terms' semantic request, after the question's (whose page alone chooses the first chain seeds);
     # a plan frozen without it, or one that skipped it, sends nothing and keeps its request indexes.
     blocks = plan.get("block_semantic") or {}
@@ -464,7 +537,7 @@ async def execute(flow, run, scope, plan, retry_failed):
 
     # Finish the independent S2 slot before admitting keyword pages (request 1).
     # Its transport overlaps the first keyword page; writes keep admission order.
-    s2_task = asyncio.create_task(s2_page()) if plan["s2_reserved"] else None
+    shared["s2_task"] = asyncio.create_task(s2_page()) if plan["s2_reserved"] else None
     request_index += int(bool(plan["s2_reserved"]))
     specs = plan["keywords"]
     states = {s["index"]: {"number": 0, "cursor": FIRST_PAGE, "before": 0, "total": None, "ended": False} for s in specs}
@@ -484,7 +557,7 @@ async def execute(flow, run, scope, plan, retry_failed):
                 reason = "deadline" if fast_path.past_deadline(store, run, "search") else "record_cap" if slots >= plan["keyword_cap"] else None
                 if reason and not written:
                     close_queries(flow, run, specs, reason)
-                    return failure
+                    return shared["failure"]
                 flow._checkpoint(run_id, run["scope_revision"])
                 limit = min(plan["page_size"], plan["keyword_cap"] - slots)
                 old_admission = ((old or {}).get("output") or {}).get("fast_path_request")
@@ -497,7 +570,7 @@ async def execute(flow, run, scope, plan, retry_failed):
                 if result is None:
                     flow._checkpoint(run_id, run["scope_revision"])
                     close_queries(flow, run, specs, "deadline")
-                    return failure
+                    return shared["failure"]
                 slots += reserved
                 consumer = flow._fast_consumers.get(run_id)
                 if consumer:
@@ -514,6 +587,6 @@ async def execute(flow, run, scope, plan, retry_failed):
         elif fast_path.past_deadline(store, run, "search"):
             close_queries(flow, run, specs, "deadline")
     finally:
-        if s2_task and not s2_task.done():
-            await s2_task
-    return failure
+        if shared["s2_task"] and not shared["s2_task"].done():
+            await shared["s2_task"]
+    return shared["failure"]

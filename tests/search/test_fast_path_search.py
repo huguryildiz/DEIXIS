@@ -412,3 +412,28 @@ def test_sw_pause_resume_keeps_frozen_protocol_and_does_not_repeat_search(tmp_pa
         assert store.step(run_id, "vocabulary", "code:vocabulary")["output"] == vocabulary
         assert store.current_protocol(rid, 1) == frozen
         assert store.conn.execute("SELECT COUNT(*) FROM protocol_records WHERE research_id = ?", (rid,)).fetchone()[0] == 1
+
+
+def test_the_questions_request_is_sent_once_and_the_search_stage_never_repeats_it(library, tmp_path):
+    """The request sent before anything plans keeps the `search:fast:semantic` key, so the search stage finds the step
+    succeeded and sends nothing more, and a resume finds the same (P2, Argon's blocker). Semantic search is single
+    page (`terminal="single_page"`), so there is no page to continue from either. The frozen plan's own request is
+    the one that went out: both come from `semantic_spec`."""
+    lib = library
+    flow, scope, plan = setup(lib, tmp_path)
+    calls = []
+    scripted(flow, calls)
+
+    async def go():
+        assert await fast_search.first_semantic(flow, lib.run, scope) is None
+        await fast_search.execute(flow, lib.run, scope, plan, False)
+        await fast_search.execute(flow, lib.run, scope, plan, True)  # the resume, which retries failed pages
+    asyncio.run(go())
+    semantic = [(query, number) for endpoint, query, number, _ in calls if endpoint == "semantic"]
+    assert semantic == [(plan["semantic"]["query_text"], 0)] == [(scope["question"], 0)]
+    step = lib.store.existing_step(lib.run["id"], "search:fast:semantic")
+    assert (step["status"], step["attempt"]) == ("succeeded", 1)
+    assert step["output"]["stop_reason"] == "single_page"
+    rows = lib.conn.execute("SELECT COUNT(*) FROM search_runs sr JOIN run_steps s ON s.id = sr.step_id"
+                            " WHERE s.operation_key = 'search:fast:semantic'").fetchone()[0]
+    assert rows == 1

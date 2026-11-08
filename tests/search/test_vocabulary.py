@@ -178,8 +178,8 @@ def test_two_runs_of_three_agreeing_put_the_models_block_in_the_query(tmp_path, 
     assert vocabulary["claim_words"] == [] and vocabulary["labelling"]["runs_ok"] == LABEL_RUNS
     setting = [t["phrase"] for t in vocabulary["terms"] if t["block"] == "setting"]
     assert "distributed ledgers" in setting
-    # The query enters by the term's root word, so the phrase shows up there as "distributed" (SW3.5).
-    assert any("distributed" in query for query in openalex.searches if query is not None), openalex.searches
+    # The count enters by the term's root word, so the phrase shows up in the probes as "distributed" (SW3.5).
+    assert any("distributed" in probe["query"] for probe in vocabulary["probes"]), vocabulary["probes"]
     record = next(p for p in vocabulary["labelling"]["phrases"] if p["phrase"] == "distributed ledgers")
     assert record == {"phrase": "distributed ledgers", "rule_block": "claim", "block": "setting", "origin": "model",
                       "runs": ["claim", "setting", "setting"]}
@@ -226,7 +226,9 @@ def test_a_turkish_question_is_translated_once_and_the_run_searches_its_words(tm
     assert vocabulary["english_question"] == {"text": TRANSLATED, "origin": "model"}
     assert (translator["connection"], translator["model"]) == ("fake", "fake-model")
     assert "packet size" in [t["phrase"] for t in vocabulary["terms"]]
-    assert any(query and "packet" in query for query in openalex.searches), openalex.searches
+    # The translated sentence's words are counted on OpenAlex and become the ranking and screening blocks; no
+    # query is compiled from them any more, so the probe is where they show.
+    assert any("packet" in probe["query"] for probe in vocabulary["probes"]), vocabulary["probes"]
     step = next(s for s in run["steps"] if s["operation_key"] == "vocabulary")
     assert step["output"] == {"english_question": {"text": TRANSLATED, "origin": "model", "model": translator}}
 

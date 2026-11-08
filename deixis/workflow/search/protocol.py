@@ -38,9 +38,8 @@ def _model(role: tuple[str, str | None, str | None] | None) -> dict[str, Any] | 
 
 
 def _search_query(scope: dict[str, Any], vocabulary: dict[str, Any], queries: list[dict[str, Any]]) -> dict[str, Any]:
-    """What the model-written query step left: the prompt it was asked with, its answer, the counts that decided
-    the query, and whether the code's query was searched beside it. A run whose model failed and whose user chose the
-    code's query alone says that instead."""
+    """What the model-written query step left: the prompt it was asked with, its answer and the counts that
+    decided the query."""
     from deixis.domain.contracts import SCHEMA_VERSIONS
     from deixis.domain.skill import RUNTIME_FILES
 
@@ -49,8 +48,7 @@ def _search_query(scope: dict[str, Any], vocabulary: dict[str, Any], queries: li
         # A person's saved plan (S23a): no prompt, no model and no StepInput, because none was asked. The plan itself
         # is in the body's `user_plan`; this block keeps the counts that decided the query, as for a model's.
         return {"status": record["status"], "origin": "user", "prompt": None, "model": None, "attempts": [],
-                "plan_sha256": record["plan_sha256"],
-                "code_query_left_out": vocabulary["code_query"].get("left_out"), **_query_outcome(vocabulary, queries)}
+                "plan_sha256": record["plan_sha256"], **_query_outcome(vocabulary, queries)}
     # An answer written before R5 and reused for the same scope revision is a v1 answer: its own version is kept.
     version = (record.get("answer") or {}).get("schema_version") or SCHEMA_VERSIONS["SearchQuery"]
     # Which step wrote it: the plan an m2 run asks for from the first page's records (P3), or the query every other
@@ -64,27 +62,18 @@ def _search_query(scope: dict[str, Any], vocabulary: dict[str, Any], queries: li
         "attempts": record["attempts"],
     }
     if record["status"] != "ready":
-        return body | {"choice": record.get("choice"), "code_query_searched": True}
+        return body | {"choice": record.get("choice")}
     body["prompt"]["skill_package_hash"] = record["skill_package_hash"]  # the StepInput's, not the freeze's
     return body | {"step_input_id": record["step_input_id"], "resolved_model": record["resolved_model"],
                    **_query_outcome(vocabulary, queries)}
 
 
 def _query_outcome(vocabulary: dict[str, Any], queries: list[dict[str, Any]]) -> dict[str, Any]:
-    """The answer, the counts that decided the query and what came of the code's query beside it."""
-    from deixis.workflow.search.expansion import queried_form, queried_terms
-
-    record, code = vocabulary["search_query"], vocabulary["code_query"]
+    """The answer and the counts that decided the query."""
+    record = vocabulary["search_query"]
     return {
         "answer": record["answer"], "checks": record["checks"], "warnings": record["warnings"],
         "terms": record["meta"],
-        # Whether a code-origin query is really among the compiled ones: the switch can be on while the request
-        # limit or an identical model query left none of the code's queries to send.
-        "code_query_searched": any(q.get("origin") == "code" for q in queries),
-        "code_query_switched_on": code["searched"],
-        # The code's own blocks as they were compiled (slice 13g), whether or not the user left them switched on.
-        "code_concept_blocks": {block: [queried_form(t) for t in queried_terms(code["vocabulary"], block)]
-                                for block in ("setting", "task")},
         # A statement research's field and author queries (R5): where the field came from and which providers took
         # the author filter. Absent for every other research.
         **({"statement": vocabulary["statement"]} if vocabulary.get("statement") else {}),

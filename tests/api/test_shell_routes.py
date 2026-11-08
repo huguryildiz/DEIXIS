@@ -82,7 +82,7 @@ def served(tmp_path, monkeypatch):
     monkeypatch.setattr(shell_routes, "proxy_client", lambda: client_for("proxy"))
     monkeypatch.delenv("DEIXIS_CONTACT_EMAIL", raising=False)
     monkeypatch.delenv("SCOPUS_API_KEY", raising=False)
-    settings = Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1, search_query="code", fulltext_fetch="off")
+    settings = Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1, fulltext_fetch="off")
     app = create_app(settings, adapters={"fake": FakeAdapter()}, http_client=client_for("shared"), start_worker=False,
                      extra_hosts=("testserver",), trusted_clients=("testclient",))
     client = open_client(app)

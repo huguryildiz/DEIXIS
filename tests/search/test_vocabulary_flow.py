@@ -38,7 +38,8 @@ WORK = {"id": "https://openalex.org/W1", "doi": "https://doi.org/10.1/a",
 
 
 def DeadAdapter():
-    """A connection whose every model call fails. A search that still runs, ran without a model (SW2.3)."""
+    """A connection whose every model call fails: nothing is searched, because the query is the model's or the
+    person's and code compiles none of its own."""
     return FakeAdapter(fail=lambda si: ModelStepResult("failed", error="SYNTHETIC model connection is down"))
 
 
@@ -78,7 +79,7 @@ def app_for(tmp_path, monkeypatch, handler, adapter, workflow="sw"):
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765,
                                fulltext_fetch="off"),
                       adapters={"fake": adapter},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
@@ -120,11 +121,13 @@ def store_at(tmp_path):
 
 
 def test_the_frozen_protocol_holds_the_concept_blocks_and_is_the_same_on_a_second_build(tmp_path, monkeypatch):
-    with TestClient(app_for(tmp_path, monkeypatch, CountingOpenAlex(), DeadAdapter())) as client:
+    # The model writes the query, so the protocol is frozen: nothing is searched without one.
+    with TestClient(app_for(tmp_path, monkeypatch, CountingOpenAlex(), FakeAdapter())) as client:
         client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
         rid, run_id = start(client, QUESTION)
         wait(client, rid, run_id)
     from deixis.domain.canonical import sha256_hex
+    from deixis.workflow.run.flow import _criterion_result
     from deixis.workflow.search import protocol
 
     store = store_at(tmp_path)
@@ -138,14 +141,17 @@ def test_the_frozen_protocol_holds_the_concept_blocks_and_is_the_same_on_a_secon
     # SW19: the labelling's hand-picked thresholds are written with the others.
     assert {k: body["thresholds"]["vocabulary"][k] for k in ("label_runs", "label_majority", "max_labelled_phrases")} \
         == {"label_runs": 3, "label_majority": 2, "max_labelled_phrases": 40}
-    assert body["vocabulary"] and all(term["origin"] == "question" for term in body["vocabulary"])
+    # The terms are the ones the model's search plan chose, each entered as its own phrase.
+    assert body["vocabulary"] and all(term["origin"] == "search_query" for term in body["vocabulary"])
     assert body["code_version"].endswith("deixis.query_compiler.v4.blocks")
 
     # The queries searched are the ones the source routing compiled, and its record is an input of the body.
     stored = store.latest_step_output(rid, "source_routing", 1)
     run_id = store.conn.execute("SELECT id FROM runs WHERE research_id = ?", (rid,)).fetchone()[0]
     again = protocol.build_protocol(store.scope(rid, 1), store.run(run_id)["budget"], None, stored["queries"],
-        body["skill_package_hash"], Settings(data_dir=None, search_query="code"), vocabulary=stored["vocabulary"],
+        body["skill_package_hash"], Settings(data_dir=None), vocabulary=stored["vocabulary"],
+        # The criterion the model proposed, read back from its own step as the body was built from it.
+        criterion=_criterion_result(store.latest_step_output(rid, "criterion", 1)),
         approval=store.approval_step(run_id)["output"]["approval"], routing=stored["routing"],
         # The fast path's own inputs, frozen beside the others: the semantic search model and the search plan.
         embedding_model=next(s["model"] for s in body["signals"] if s["signal"] == "embedding"),
@@ -157,17 +163,23 @@ def test_the_frozen_protocol_holds_the_concept_blocks_and_is_the_same_on_a_secon
 # the vocabulary would have written is searched, resuming is refused, and the way on is a new scope revision whose
 # question can be searched. The question's own semantic request went out before the vocabulary step (P2), so the run
 # ends with that one search behind it.
-UNSEARCHABLE = {"vocabulary_empty": (0, QUESTION, "How does packet size change energy use in wireless sensor networks?"),
-                "vocabulary_too_broad": (VERY_LARGE_COUNT + 1, "Which networks are reported?", QUESTION)}
+#
+# The words checked here are the person's own typed key terms, because those are the words a query is compiled from.
+# A question whose words a model writes the query from is not stopped by their counts: the model's terms are counted
+# on their own, and the question's words only gate and order the records the query finds.
+# Each case: the count OpenAlex reports, the question, and the key terms the person typed. The too-broad case is one
+# block of terms too frequent to stand alone, which no AND with another block can narrow.
+UNSEARCHABLE = {"vocabulary_empty": (0, QUESTION, "wireless sensor networks; packet size"),
+                "vocabulary_too_broad": (VERY_LARGE_COUNT + 1, "Which networks are reported?", "networks")}
 
 
 @pytest.mark.parametrize("reason", sorted(UNSEARCHABLE))
 def test_a_vocabulary_that_cannot_be_searched_ends_the_run_before_any_search(tmp_path, monkeypatch, reason):
-    count, question, _ = UNSEARCHABLE[reason]
+    count, question, typed = UNSEARCHABLE[reason]
     openalex = CountingOpenAlex(count=count)
     with TestClient(app_for(tmp_path, monkeypatch, openalex, DeadAdapter())) as client:
         client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
-        rid, run_id = start(client, question)
+        rid, run_id = start(client, question, key_terms=typed)
         view, run = wait(client, rid, run_id)
     assert (run["status"], run["pause_reason"]) == ("failed", reason), run
     assert openalex.counts and not openalex.searches

@@ -489,9 +489,9 @@ test.describe('S12: report, Citation and Source details panels', () => {
   test('Find PDF from the Citation panel starts a lookup each time it is chosen', async () => {
     const view = await viewOf(api, rid)
     const latest = [...valid(view)].sort((a, b) => (b.report_version ?? 0) - (a.report_version ?? 0))[0]
-    // PATCHED VIEW: the first thread claim whose first citation is an abstract (found in the stored answer, not by the
-    // chip's position) has that work shown without its PDF (the fixture fetched one), so its Citation entry offers Find
-    // PDF; each lookup request is counted and answered without a change. After the first lookup the page's reload is
+    // PATCHED VIEW: the first thread claim whose first citation is an abstract of a work with a DOI (found in the
+    // stored answer, not by the chip's position, and a work without one is never offered a lookup) has that work
+    // shown without its PDF, so its Citation entry offers Find PDF; each lookup is counted and answered unchanged. After the first lookup the page's reload is
     // held until Find PDF has been chosen again, so the second choice always comes while the first lookup still runs.
     const sections: Claim[][] = []
     for (const claim of latest.claims) {
@@ -500,8 +500,9 @@ test.describe('S12: report, Citation and Source details panels', () => {
     }
     // The thread shows the first two sections, one chip per claim that cites anything, in the answer's order.
     const chipped = sections.slice(0, 2).flat().filter(c => c.evidence.length)
-    const chip = chipped.findIndex(c => c.evidence[0].kind === 'abstract')
-    expect(chip, 'a thread claim whose first citation is an abstract').toBeGreaterThanOrEqual(0)
+    const chip = chipped.findIndex(c => c.evidence[0].kind === 'abstract'
+      && view.sources.find(s => s.source_version_id === c.evidence[0].source_version_id)?.doi)
+    expect(chip, 'a thread claim whose first citation is an abstract of a work with a DOI').toBeGreaterThanOrEqual(0)
     const claim = chipped[chip]
     const svid = claim.evidence[0].source_version_id
     expect(claim.evidence[0].kind).toBe('abstract')
@@ -600,10 +601,13 @@ test.describe('S12: report, Citation and Source details panels', () => {
   test('a Europe PMC file opened from an abstract is labelled as drawn by DEIXIS in the text and PDF views', async () => {
     const view = await viewOf(api, rid)
     const latest = [...valid(view)].sort((a, b) => (b.report_version ?? 0) - (a.report_version ?? 0))[0]
-    const cited = latest.claims.flatMap(c => c.evidence).find(e => e.kind === 'abstract')!
-    const source = view.sources.find(s => s.source_version_id === cited.source_version_id)!
+    // The case needs an abstract citation whose work the fixture did fetch a file for; a work with no open copy
+    // has none, and which works have one follows the search, not their place in the answer.
+    const source = latest.claims.flatMap(c => c.evidence).filter(e => e.kind === 'abstract')
+      .map(e => view.sources.find(s => s.source_version_id === e.source_version_id)!)
+      .find(s => s.access.assets.length)!
+    expect(source, 'an abstract citation whose work the fixture fetched a PDF for').toBeTruthy()
     const file = source.access.assets[0]
-    expect(file, 'the fixture fetched this work\'s PDF').toBeTruthy()
     // PATCHED VIEW: the work's stored file is marked as Europe PMC's text drawn by DEIXIS (rendition), in the research
     // view and in the file's text, as the backend marks such a file (SW21). The fixture's PDFs are publisher-like.
     await page.route(`**/api/researches/${rid}`, async route => {

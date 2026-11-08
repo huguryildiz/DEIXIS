@@ -335,7 +335,7 @@ const pauseReasons: Record<string, string> = {
   key_terms_needed: 'The question is not in English and could not be translated into English, so nothing was searched. Resume to try the translation again, revise the question in English, or give the English key terms above.',
   vocabulary_empty: 'No search term could be built from the question, so nothing was searched. Revise the question above, for example with other words for the topic or with key terms, and search again.',
   vocabulary_too_broad: 'Every search term in the question is too common to search on its own, so nothing was searched. Revise the question above with a narrower topic or with key terms, and search again.',
-  search_query_failed: 'The model could not write the search query, and nothing has been searched. Resume to ask it once more, or search with the query DEIXIS built from the question’s words.',
+  search_query_failed: 'The model could not write the search query, and nothing has been searched. Resume to ask it once more, or revise the question above and search again.',
   user_plan_unsearchable: 'No record on OpenAlex holds any word of one block of your search plan, backups included, so nothing was searched. Edit the plan and search again.',
 }
 export { reviewFindingLabels, reviewFocusLabels, reviewDecisionLabels, reviewContextLabels, notReviewedText } from '../review/labels'
@@ -346,12 +346,12 @@ export const pauseReasonText = (reason: string | null, detail?: unknown) => {
     return serviceErrorText({ kind: error.service_kind || error.error_kind, service }).what
   }
   // The first search found no work at all, so no plan could be written from results and the same request would
-  // answer the same way: the way on is a different question, or the query DEIXIS builds from this one.
+  // answer the same way: the way on is a different question.
   if (reason === 'search_query_failed' && error.reason === 'first_page_no_records')
-    return t('The first search found no work for this question, so the model was not asked to write the search plan from results, and nothing has been searched. Revise the question above, or search with the query DEIXIS built from the question’s words.')
+    return t('The first search found no work for this question, so the model was not asked to write the search plan from results, and nothing has been searched. Revise the question above and search again.')
   // The first search brought back nothing because its request did not land; the model was not asked at all.
   if (reason === 'search_query_failed' && error.reason === 'first_page_empty')
-    return t('The first search brought back no record, so the model was not asked to write the search plan from one, and nothing has been searched. Resume to search again, or search with the query DEIXIS built from the question’s words.')
+    return t('The first search brought back no record, so the model was not asked to write the search plan from one, and nothing has been searched. Resume to search again, or revise the question above.')
   // The same stop when the person's own key terms could not be read; no translation was asked for then.
   if (reason === 'key_terms_needed' && typeof error.error === 'string') return t('The English key terms could not be read, so nothing was searched. Change them above and search again.')
   return reason ? t(pauseReasons[reason] ?? 'An operation stopped this run. Completed work is saved.') : ''

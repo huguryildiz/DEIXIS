@@ -114,8 +114,7 @@ def save(lib, run, outcome):
 
 def app_for(tmp_path, clock=None, adapter=None):
     return create_app(
-        Settings(data_dir=tmp_path, port=8877, fulltext_fetch="off", fulltext_adjudication="off",
-                 search_query="code"),
+        Settings(data_dir=tmp_path, port=8877, fulltext_fetch="off", fulltext_adjudication="off"),
         adapters={"fake": adapter or FakeAdapter(valid_response)},
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(Transport([work(1, title=ON_TOPIC)]))),
         extra_hosts=("testserver",), trusted_clients=("testclient",), clock=clock)

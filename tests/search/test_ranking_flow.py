@@ -15,13 +15,12 @@ from fastapi.testclient import TestClient
 from deixis.api.app import create_app
 from deixis.runtime.config import Settings
 from deixis.documents.fetch import FetchResult
-from deixis.models.adapter import ModelStepResult
 from deixis.providers.registry import CONNECTORS
 from deixis.storage import db
 from deixis.workflow.search import ranking
 from deixis.workflow.screen.decisions import DecisionStore
 from deixis.workflow.run.store import Store
-from fakes import FakeAdapter, valid_response
+from fakes import FakeAdapter, PlanOnlyAdapter, valid_response
 from windows_env import WAIT_FACTOR
 
 QUESTION = "What is the effect of packet size on energy consumption in wireless sensor networks?"
@@ -103,9 +102,6 @@ async def no_fetch(url):
     return FetchResult("http_error", final_url=url, http_status=404)
 
 
-def DeadAdapter():
-    return FakeAdapter(fail=lambda si: ModelStepResult("failed", error="SYNTHETIC model connection is down"))
-
 
 def app_for(tmp_path, monkeypatch, handler, workflow="sw", adapter=None, embedding=False):
     for connector in CONNECTORS.values():
@@ -116,7 +112,7 @@ def app_for(tmp_path, monkeypatch, handler, workflow="sw", adapter=None, embeddi
     else:
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765,
                                fulltext_fetch="off"),
                       adapters={"fake": adapter or FakeAdapter(valid_response)},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
@@ -171,7 +167,7 @@ def table_rows(store, rid):
 
 def test_the_ranking_step_writes_no_row_in_any_decision_table(tmp_path, monkeypatch):
     """The step orders and stores ranks; every decision this run holds was written by another step."""
-    app = app_for(tmp_path, monkeypatch, Pool(), adapter=DeadAdapter())
+    app = app_for(tmp_path, monkeypatch, Pool(), adapter=PlanOnlyAdapter())
     client = client_of(app)
     try:
         rid, run_id, view, run = discover(client)
@@ -197,7 +193,7 @@ def test_the_ranking_step_writes_no_row_in_any_decision_table(tmp_path, monkeypa
 # ---- a resumed run, a second run, and what the step does not repeat ---------------------------
 
 def test_a_resumed_run_ranks_once_and_screens_the_same_records_in_the_same_order(tmp_path, monkeypatch):
-    app = app_for(tmp_path, monkeypatch, Pool(), adapter=DeadAdapter())
+    app = app_for(tmp_path, monkeypatch, Pool(), adapter=PlanOnlyAdapter())
     client = client_of(app)
     try:
         rid, run_id, view, run = discover(client)

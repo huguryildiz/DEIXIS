@@ -446,14 +446,14 @@ def _seed_uses(store: Store, research_id: str, scope: dict[str, Any]) -> list[di
 
     query = step("search_query")
     if query is None:
-        writing, detail = (False, "code_query") if run_id else (None, None)
+        writing, detail = (False, None) if run_id else (None, None)
     elif query["status"] != "succeeded":
         writing, detail = None, None
     else:
         out = query["output"] or {}
         writing = out.get("status") == "ready" and bool(out.get("seed_passages_sha256"))
         detail = ("reused" if out.get("reused_from_run") else None) if writing else \
-            {"skipped": out.get("reason"), "code_only": "code_only"}.get(out.get("status"), "written_without_seed")
+            (out.get("reason") if out.get("status") == "skipped" else "written_without_seed")
     search_plan = frozen["body"].get("fast_path_search") or {}
     semantic_plan = search_plan.get("semantic") or {}
     # A version 2 plan sends each seed's own semantic request; the seed used it when that request succeeded.

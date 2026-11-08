@@ -202,8 +202,7 @@ def main() -> None:
         hold_extract()
     if GATE_DIR is not None:
         install_gate()
-    settings = Settings(data_dir=args.data_dir, port=args.port, model_concurrency=1,
-                        search_query="code", fulltext_fetch="off", fulltext_adjudication="off", arxiv_source="off")
+    settings = Settings(data_dir=args.data_dir, port=args.port, model_concurrency=1, fulltext_fetch="off", fulltext_adjudication="off", arxiv_source="off")
     deixis_main.create_app = functools.partial(
         create_app, adapters={"codex": RecordingCodex()},
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(openalex)), fetcher=fetch, xml_fetcher=xml_fetcher)

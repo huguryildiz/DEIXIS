@@ -12,7 +12,7 @@ from deixis.providers.common import FIRST_PAGE, SearchOutcome
 from deixis.providers.registry import CONNECTORS, reading
 from deixis.storage.db import now, transaction
 from deixis.providers import openalex, query_compiler
-from deixis.workflow.search import english_question, search_page, search_plan, seed_match, user_plan
+from deixis.workflow.search import english_question, search_page, search_plan, search_query, seed_match, user_plan
 from deixis.workflow.run import fast_path
 from deixis.workflow.search.search_page import Page
 from deixis.workflow.search.expansion import queried_form
@@ -216,10 +216,12 @@ def _carried(vocabulary, query):
     The block compiler is pure, so its prefix allocation is computed again from the vocabulary that wrote the query
     (the code's beside a model-written one). Only when the text it gives is the stored text are its counts taken;
     any other text says nothing about what the stored query holds. A statement research's author query (R5) holds
-    the field's root word alone, which the code query holding the field also carries, so it adds no pair."""
+    the field's root word alone, which the query holding the field also carries, so it adds no pair."""
     if query.get("origin") == "author":
         return set()
-    source = vocabulary["code_query"]["vocabulary"] if query.get("origin") == "code" else vocabulary
+    # `code` is the origin of the question's own query, which a research searched before that query was removed;
+    # its words are read back from where that research kept them.
+    source = (search_query.question_vocabulary(vocabulary) if query.get("origin") == "code" else None) or vocabulary
     groups, names = [], []
     for block in query_compiler.BLOCK_ORDER:
         forms = list(dict.fromkeys(queried_form(t) for t in source["terms"] if t["block"] == block and not t["dropped"]))
@@ -249,7 +251,8 @@ def plan_words(vocabulary, plan):
     carried = [_carried(vocabulary, query) for query in sent]
     known = all(c is not None for c in carried)
     held = {(t["block"], queried_form(t)) for q in sent if q.get("origin") != "author" for t in
-            (vocabulary["code_query"]["vocabulary"] if q.get("origin") == "code" else vocabulary)["terms"]
+            ((search_query.question_vocabulary(vocabulary) if q.get("origin") == "code" else None)
+             or vocabulary)["terms"]
             if not t["dropped"]}
     words, seen = [], set()
     for term in vocabulary["terms"]:
@@ -579,8 +582,8 @@ async def execute(flow, run, scope, plan, retry_failed):
     request_index += int(bool(plan["s2_reserved"]))
     specs = plan["keywords"]
     states = {s["index"]: {"number": 0, "cursor": FIRST_PAGE, "before": 0, "total": None, "ended": False} for s in specs}
-    # The main Boolean query's own pages: the plan the model wrote, or the person's saved one. The code query beside
-    # it is a different plan of the same question, so a record only it found leaves the main query's gap open.
+    # The main Boolean query's own pages: the plan the model wrote, or the person's saved one. A record only
+    # another query of the round found leaves the main query's gap open.
     main_indexes = search_plan.main_plan_indexes(specs)
     slots = 0
     try:

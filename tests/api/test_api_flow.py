@@ -56,7 +56,6 @@ async def fake_fetch(url):
 
 def sw_settings(tmp_path):
     return Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1,
-                    search_query="code",
                     fulltext_fetch="off")
 
 
@@ -356,6 +355,7 @@ def test_literature_model_runs_search_steps_and_the_research_model_writes_the_an
         include_sources(client, rid, discovered)
         view = run_to_end(client, rid, "answer")
         assert set(adapter.sent) == {("vocabulary_labels", "lit-model", "low"),
+                                     ("search_query", "lit-model", "low"),
                                      ("criterion_proposal", "lit-model", "low"),
                                      ("abstract_screening", "lit-model", "low"),
                                      ("grounded_answer", "answer-model", "high")}

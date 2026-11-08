@@ -180,7 +180,10 @@ def test_the_flow_refuses_a_connection_whose_key_a_step_refused(tmp_path, wire, 
         rid = create(client, requested_model="m-1")
         run = client.post(f"/api/researches/{rid}/runs", json={"kind": "discovery"}).json()
         run = wait_run(client, rid, run["id"])[1]
-    assert (run["status"], run["pause_reason"]) == ("paused", "model_connection_not_ready") and len(chats) == 1
+    # Nothing is searched without a query, so the refusal stops the run at the query step and names the connection
+    # there; no second request went to the service.
+    assert (run["status"], run["pause_reason"]) == ("paused", "search_query_failed") and len(chats) == 1
+    assert run["error"]["reason"] == "model_connection_not_ready"
 
 
 def test_a_cached_answer_is_not_served_to_a_different_key(monkeypatch):

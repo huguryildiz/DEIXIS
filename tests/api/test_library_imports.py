@@ -63,7 +63,7 @@ class Providers:
 
 
 def app_for(tmp_path, providers):
-    settings = Settings(data_dir=tmp_path / "data", port=8765, search_query="code", fulltext_fetch="off")
+    settings = Settings(data_dir=tmp_path / "data", port=8765, fulltext_fetch="off")
     return create_app(settings, adapters={"fake": FakeAdapter()}, http_client=httpx.AsyncClient(
         transport=httpx.MockTransport(providers.handler)), fetcher=no_fetch, extra_hosts=("testserver",),
         trusted_clients=("testclient",))

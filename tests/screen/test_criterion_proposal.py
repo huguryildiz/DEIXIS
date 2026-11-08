@@ -20,7 +20,8 @@ from deixis.workflow.search.criterion import PARTS_PER_PROPOSAL, PHRASES_PER_PAR
 import httpx
 from fastapi.testclient import TestClient
 
-from deixis.domain.rules import ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS, TEST_EFFORT_BUDGETS
+from deixis.domain.rules import (ABSTRACT_BATCH, ABSTRACT_READ_LIMIT, ABSTRACT_RUNS, CRITERION_CALLS,
+                                 SEARCH_QUERY_CALLS, TEST_EFFORT_BUDGETS)
 from deixis.models.adapter import ModelStepResult
 from deixis.workflow.screen.abstract_stage import model_calls
 from fakes import FakeAdapter, envelope, valid_response
@@ -295,10 +296,11 @@ def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tm
     # The fast path opens its embedding step (`source_similarity`) as the run starts; it sends nothing to a provider.
     keys = [key for key in steps_of(run) if key != "source_similarity"]
     # The question's own semantic request opens before anything plans: it needs no model and no criterion (P2).
-    # The source routing of slice 14 follows the vocabulary, before the criterion.
-    assert keys[:12] == ["search:fast:semantic",
+    # The query a model writes follows the vocabulary, then the source routing of slice 14, then the criterion.
+    assert keys[:14] == ["search:fast:semantic",
                          "vocabulary", "vocabulary_labels_1", "vocabulary_labels_2", "vocabulary_labels_3",
-                         "source_routing", "criterion", "criterion_proposal_1", "criterion_proposal_2", "criterion_proposal_3",
+                         "search_query", "search_query:1", "source_routing",
+                         "criterion", "criterion_proposal_1", "criterion_proposal_2", "criterion_proposal_3",
                          "protocol_approval", "protocol"]
     # Every planned provider search was opened after the protocol step, which already held the criterion.
     searches = [i for i, key in enumerate(keys) if key.startswith("search:") and key != "search:fast:semantic"]
@@ -317,11 +319,11 @@ def test_three_proposals_reach_the_protocol_before_the_first_provider_request(tm
     assert body["thresholds"]["criterion"] == {
         "proposal_runs": 3, "proposal_majority": 2, "role_consensus_version": 2,
         "match_min_shared_cues": 2, "match_overlap_divisor": 2}
-    # An sw discovery run is given the criterion's three calls and the abstract stage's own (slice 09) on top of its
-    # preset; the preset an answer run reads is untouched.
+    # An sw discovery run is given the query-writing calls, the criterion's three and the abstract stage's own
+    # (slice 09) on top of its preset; the preset an answer run reads is untouched.
     presets = {preset.max_model_calls for preset in TEST_EFFORT_BUDGETS.values()}
     abstract_calls = model_calls(ABSTRACT_READ_LIMIT["quick"], ABSTRACT_BATCH, ABSTRACT_RUNS)
-    assert body["budget"]["max_model_calls"] - CRITERION_CALLS - abstract_calls in presets
+    assert body["budget"]["max_model_calls"] - SEARCH_QUERY_CALLS - CRITERION_CALLS - abstract_calls in presets
 
 
 def test_a_resumed_run_proposes_nothing_again(tmp_path, monkeypatch):

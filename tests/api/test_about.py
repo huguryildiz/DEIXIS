@@ -22,7 +22,7 @@ from fakes import FakeAdapter
 
 @pytest.fixture
 def served(tmp_path):
-    settings = Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1, search_query="code", fulltext_fetch="off")
+    settings = Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1, fulltext_fetch="off")
     app = create_app(settings, adapters={"fake": FakeAdapter()}, http_client=httpx.AsyncClient(
         transport=httpx.MockTransport(lambda request: httpx.Response(200, json={}))), start_worker=False,
         extra_hosts=("testserver",), trusted_clients=("testclient",))

@@ -18,12 +18,11 @@ from fastapi.testclient import TestClient
 from deixis.api.app import create_app
 from deixis.runtime.config import Settings
 from deixis.documents.fetch import FetchResult
-from deixis.models.adapter import ModelStepResult
 from deixis.workflow.search import lookups
 from deixis.providers import common
 from deixis.providers.registry import CONNECTORS
 from deixis.workflow.screen.decisions import DecisionStore
-from fakes import FakeAdapter, envelope, valid_response
+from fakes import FakeAdapter, PlanOnlyAdapter, envelope, valid_response
 from windows_env import WAIT_FACTOR
 
 QUESTION = "What is the effect of packet size on energy consumption in wireless sensor networks?"
@@ -43,9 +42,6 @@ def no_gate(monkeypatch):
     """
     monkeypatch.setattr(common.SEMANTIC_SCHOLAR_PACER, "interval_seconds", 0.0)
 
-
-def DeadAdapter():
-    return FakeAdapter(fail=lambda si: ModelStepResult("failed", error="SYNTHETIC model connection is down"))
 
 
 def excluding(step_input):
@@ -142,9 +138,9 @@ def app_for(tmp_path, monkeypatch, handler, workflow="sw", adapter=None):
             monkeypatch.delenv(connector.key_env, raising=False)
     monkeypatch.setitem(CONNECTORS, "openalex", replace(CONNECTORS["openalex"], max_results=PAGE))
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765,
                                fulltext_fetch="off"),
-                      adapters={"fake": adapter or DeadAdapter()},
+                      adapters={"fake": adapter or PlanOnlyAdapter()},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
                       extra_hosts=("testserver",), trusted_clients=("testclient",))
 

@@ -900,7 +900,6 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       {/* Table runs show on the Evidence tab and in Activity; the conversation tells search and answer runs. */}
       <Transcript view={{ ...view, runs: view.runs.filter(r => TRANSCRIPT_KINDS.has(r.kind)) }} modelText={modelText}
         onRetryFailedSearches={async target => { await act(() => api.controlRun(target.id, 'retry_failed'), t('Failed searches queued again.')) }}
-        onChooseCodeQuery={async target => { await act(() => api.chooseCodeQuery(target.id), t('The run searches with the query built from the question’s words.')) }}
         onGiveKeyTerms={() => reviseQuestion('terms')}
         onReviseQuestion={() => reviseQuestion('question')}
         queueCount={queueCount} onOpenQueue={showQueue} onOpenPdfs={() => openPanel('pdfs')} onOpenFunnel={() => openPanel('funnel')}

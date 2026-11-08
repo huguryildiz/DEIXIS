@@ -130,15 +130,6 @@ def test_a_missing_question_makes_a_paired_gate_inconclusive_and_a_failed_one_sc
     assert gate["n"] == 2 and gate["verdict"] == "fail" and gate["mean"] == pytest.approx(-0.25)
 
 
-def test_the_width_gate_fails_over_the_limit_and_is_inconclusive_on_an_unchecked_query():
-    sent = {"probed_gate_count": 100, "compiled": ["q"], "sent": {"q": [120]}}
-    assert m1_score.width_verdict([sent]) == "pass"
-    assert m1_score.width_verdict([sent | {"sent": {"q": [300_000]}}]) == "fail"
-    assert m1_score.width_verdict([sent | {"sent": {}}]) == "inconclusive"  # compiled, no request on record
-    assert m1_score.width_verdict([sent | {"sent": {"q": [None]}}]) == "pass"  # bounded by the probe
-    assert m1_score.width_verdict([sent | {"probed_gate_count": None, "sent": {"q": [None]}}]) == "inconclusive"
-
-
 def test_the_extra_chain_gate_evidence_is_incomplete_without_a_run_verified_forms_matching_admissions_or_payloads():
     ok = {"forms_unverified": False, "mismatches": 0, "missing_payloads": 0, "extra_chained_works": 3}
     assert m1_score.extra_chained({"r1": ok}, ["r1"]) == ([3], True)

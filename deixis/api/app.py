@@ -2133,8 +2133,8 @@ def create_app(
             # answer run reads — is what it always was (slice 06 review).
             extra = CRITERION_CALLS + abstract_stage.model_calls(
                 ABSTRACT_READ_LIMIT[scope["effort"]], ABSTRACT_BATCH, ABSTRACT_RUNS)
-            # The model-written query and its repair and retry; a run on the code's query alone makes no call.
-            extra += SEARCH_QUERY_CALLS if settings.search_query == "model" else 0
+            # The model-written query and its repair and retry.
+            extra += SEARCH_QUERY_CALLS
             # Citation chaining is the fast chain's, frozen with the rest of its policy below (`fast_path.freeze_budget`).
             budget = budget | {"max_model_calls": budget["max_model_calls"] + extra}
             if settings.effective_fulltext_fetch() == "auto":
@@ -2170,22 +2170,6 @@ def create_app(
         request.app.state.worker.wake()
         return run
 
-    @app.post("/api/runs/{run_id}/search-query-choice")
-    async def choose_code_query(run_id: str, request: Request) -> dict[str, Any]:
-        """Search with the code's query alone after the model could not write one.
-
-        Declared before the generic run action so `search-query-choice` reaches it. The other way out of the same pause is
-        `resume`, which asks the model once more while an attempt is left.
-        """
-        store = store_of(request)
-        run = store.run(run_id)
-        store.research(run["research_id"])
-        if run["status"] != "paused" or run["pause_reason"] != "search_query_failed":
-            raise HTTPException(409, f"Cannot choose the code's query on a run in status {run['status']}")
-        run = store.choose_code_query(run_id)
-        request.app.state.worker.wake()
-        return run
-
     @app.post("/api/runs/{run_id}/skip-equations")
     async def skip_equation_reading(run_id: str, request: Request) -> dict[str, Any]:
         """"Answer now with PDF text": the answer run reads no further PDF's equations; its text layer is used."""
@@ -2214,8 +2198,8 @@ def create_app(
             worker.flow.queue_person_reading(run["research_id"])
         elif (action == "resume" and status == "paused" and run["pause_reason"] == "search_query_failed"
               and not (run.get("error") or {}).get("retries_left", 1)):
-            # The model was asked as many times as a run allows; the way on is the code's query or a new revision.
-            raise HTTPException(409, "The model has had its second try; search with the code's query or revise the scope")
+            # The model was asked as many times as a run allows; the way on is a new scope revision.
+            raise HTTPException(409, "The model has had its second try; revise the scope to search again")
         elif action == "resume" and status == "paused":
             run = store.resume_run(run_id)
             worker.wake()

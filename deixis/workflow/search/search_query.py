@@ -10,10 +10,11 @@ the one-million rule and the manageable-total narrowing of the code vocabulary d
 The counts are asked four at a time (`vocabulary.counts_in_flight`); which queries are asked, and the order of every
 stored row, are those of asking them one by one.
 
-The model's terms become the proposal's vocabulary and the code's own query (slice 13g) is searched beside it, as
-the second measurement's "model + code" arm did (`notes/archive/sw/sw-model-query-experiment-2026-09-24/`). The code vocabulary
-is kept whole under `code_query`, so the ranking, the abstract stage's code rules and the protocol can read the terms
-of both queries.
+The model's terms become the proposal's vocabulary, and the question's own words are kept whole beside them under
+`question_vocabulary`. No query is compiled from those words: the only keyword queries sent are the model's and the
+focused queries of its plan. They stay because the ranking, the abstract stage's code rules and the protocol read
+them to say what the question itself asks for, so a record that names the question's own concepts in other words
+than the plan's is not closed by code.
 """
 
 from __future__ import annotations
@@ -218,31 +219,18 @@ async def check(answer: dict[str, Any], count: Callable[[str], Awaitable[int | N
     }
 
 
-def code_query_left_out(code_vocabulary: dict[str, Any], max_total: int | None) -> str | None:
-    """Why the code's query is not searched beside the model's under the width limit of the `m1` search method (
-    M1), or None. Without a limit (a `legacy` run) nothing is left out here. The probed gate count decides, read before
-    any search: the compiler only trims OR terms and keeps every block, so a sent query matches no more works."""
-    if max_total is None:
-        return None
-    blocks = {term["block"] for term in code_vocabulary["terms"] if not term["dropped"]}
-    if not all(block in blocks for block in GATE_BLOCKS):
-        return "one_block"
-    count = code_vocabulary.get("gate_count")
-    if not isinstance(count, int):
-        return "count_unknown"
-    return "too_wide" if count > max_total else None
-
-
-def vocabulary(code_vocabulary: dict[str, Any], code_queries: list[dict[str, Any]], checked: dict[str, Any],
-               record: dict[str, Any], code_max_total: int | None = None) -> dict[str, Any]:
-    """The proposal's vocabulary: the model's terms, the question's side lists, and the code's query kept whole.
+def vocabulary(code_vocabulary: dict[str, Any], checked: dict[str, Any],
+               record: dict[str, Any], question_words: bool = True) -> dict[str, Any]:
+    """The proposal's vocabulary: the model's terms and the question's side lists.
 
     A side-list phrase the model also chose is left out of the side list, so no phrase stands in two blocks of the
     card at once. `record` is what the step keeps of the call (`step_input_id`, the answer, the attempts).
-    `code_max_total` is the width limit an `m1` run froze (`code_query_left_out`); a run without one keeps the rule
-    before it.
+    `code_vocabulary` is read for the question's own language, counts and probes, which the model's terms are checked
+    against; the query code once compiled from it is gone, and no run sends one.
+
+    Without `question_words` the question's own words are not kept beside the terms: a person's saved plan is the
+    whole keyword search, and a word they removed returns in no query, no ranking block and no screening block (F18).
     """
-    left_out = code_query_left_out(code_vocabulary, code_max_total)
     mine = {term["phrase"] for term in checked["terms"]}
     side = {field: [phrase for phrase in code_vocabulary.get(field) or [] if norm(phrase) not in mine]
             for field in SIDE_LISTS.values()}
@@ -258,10 +246,8 @@ def vocabulary(code_vocabulary: dict[str, Any], code_queries: list[dict[str, Any
         "too_broad": False,
         "search_query": {"meta": checked["meta"], "backups_left": checked["backups_left"], "checks": checked["checks"],
                          "warnings": checked["warnings"], **record},
-        # A code query that cannot be searched on its own (none compiled, or too broad) is not offered beside it.
-        "code_query": {"vocabulary": code_vocabulary, "queries": code_queries,
-                       "searched": bool(code_queries) and not code_vocabulary["too_broad"] and left_out is None,
-                       **({"left_out": left_out} if left_out else {})},
+        # The question's own words, kept whole: nothing searches them, and the gate and the ranking read them.
+        **({"question_vocabulary": code_vocabulary} if question_words else {}),
     }
 
 
@@ -283,12 +269,20 @@ def is_model_written(vocabulary: dict[str, Any] | None) -> bool:
     return bool(vocabulary) and vocabulary["block_assignment"] == ASSIGNMENT
 
 
-def code_searched(vocabulary: dict[str, Any]) -> bool:
-    """Whether the code's query is really searched beside the model's: switched on, and at least one of its queries
-    compiled within the request limit (`with_compiled`). A vocabulary stored before `compiled` was written reads the
-    switch alone, as it did then."""
+def question_vocabulary(vocabulary: dict[str, Any]) -> dict[str, Any] | None:
+    """The question's own words beside the model's terms, or None in a vocabulary that is itself the question's.
+
+    A research searched before the code query was removed kept the same words under that query's own record; they
+    are read back from there, and only when that query really was searched, so what gated and ordered its records
+    does not change under it.
+    """
+    own = vocabulary.get("question_vocabulary")
+    if own is not None:
+        return own
     code = vocabulary.get("code_query") or {}
-    return bool(code.get("searched")) and code.get("compiled", True)
+    if code.get("searched") and code.get("compiled", True):
+        return code["vocabulary"]
+    return None
 
 
 def with_authors_compiled(vocabulary: dict[str, Any], queries: list[dict[str, Any]]) -> dict[str, Any]:
@@ -304,8 +298,9 @@ def with_authors_compiled(vocabulary: dict[str, Any], queries: list[dict[str, An
 
 
 def with_compiled(vocabulary: dict[str, Any], queries: list[dict[str, Any]]) -> dict[str, Any]:
-    """The vocabulary with `code_query.compiled` set from the first round's compiled queries, and a statement
-    research's author record (`with_authors_compiled`). The switch the user sees (`searched`) is left as it is."""
+    """The vocabulary with a statement research's author record read from the first round's compiled queries
+    (`with_authors_compiled`), and, for a research searched with the question's own code query, whether that query
+    really was compiled within the request limit. Nothing writes that query now; this keeps reading it."""
     vocabulary = with_authors_compiled(vocabulary, queries)
     if "code_query" not in vocabulary:
         return vocabulary
@@ -314,35 +309,43 @@ def with_compiled(vocabulary: dict[str, Any], queries: list[dict[str, Any]]) -> 
 
 
 def settled(vocabulary: dict[str, Any] | None, queries: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """A stored model-written vocabulary with `code_query.compiled` read from its stored queries when it was written
-    before that field existed (second review of 13h, 2026-09-23). Any other vocabulary is returned as it is."""
-    if not is_model_written(vocabulary) or "compiled" in vocabulary["code_query"]:
+    """A stored vocabulary of a research searched with the question's own code query, with that query's `compiled`
+    read back from its stored queries when it was written before that field existed (second review of 13h,
+    2026-09-23). A vocabulary without that query, which is every one written since, is returned as it is."""
+    if not is_model_written(vocabulary) or "compiled" in (vocabulary.get("code_query") or {"compiled": None}):
         return vocabulary
     return with_compiled(vocabulary, queries)
 
 
-def code_terms(vocabulary: dict[str, Any]) -> list[dict[str, Any]]:
-    """The code query's terms when that query is searched beside the model's, otherwise none."""
-    return list(vocabulary["code_query"]["vocabulary"]["terms"]) if code_searched(vocabulary) else []
+def question_terms(vocabulary: dict[str, Any]) -> list[dict[str, Any]]:
+    """The question's own words as terms, beside the model's: what the gate and the ranking read (`question_vocabulary`)."""
+    own = question_vocabulary(vocabulary)
+    return list(own["terms"]) if own else []
 
 
 def compile_queries(vocabulary: dict[str, Any], providers: list[str], limit: int) -> list[dict[str, Any]]:
-    """The first round: per provider the model's query and then the code's, until `limit` queries.
+    """The first round: the question's own plan, one query per provider, until `limit` queries.
 
-    Interleaving keeps the pair the measurement read — both queries on OpenAlex — on every effort, however few
-    queries it allows. A code query whose text is the model's own is not sent twice. Every query says where it came
-    from (`origin`: `model`, `user` for a person's saved plan, or `code`).
+    One plan is searched here, the one the model wrote or the one a person saved, and every query says which
+    (`origin`: `model`, or `user` for a saved plan). A statement research's author queries follow them
+    (`with_authors`), and the focused queries of an `m2` plan are added after this round (`search_plan.with_focused`).
+
+    A research searched before the question's own code query was removed holds that query's own compiled queries in
+    its stored vocabulary; they are placed here as they were sent then, one after the plan's query of the same
+    provider, so a run of that research resumed under this version searches the round its protocol froze and not a
+    shorter one. Nothing writes that query any more, so a research searched since has none.
     """
     # The terms of a person's saved search plan (S23a) take the model's place and say so.
     origin = "user" if vocabulary["search_query"].get("origin") == "user" else "model"
-    model = {q["provider_id"]: q | {"origin": origin}
-             for q in query_compiler.compile_block_queries(vocabulary, providers, limit)}
-    code = {q["provider_id"]: q | {"origin": "code"} for q in vocabulary["code_query"]["queries"]} \
-        if vocabulary["code_query"]["searched"] else {}
+    plan = {q["provider_id"]: q | {"origin": origin}
+            for q in query_compiler.compile_block_queries(vocabulary, providers, limit)}
+    stored = vocabulary.get("code_query") or {}
+    code = {q["provider_id"]: q | {"origin": "code"} for q in stored.get("queries") or []} if stored.get("searched") else {}
     ordered: list[dict[str, Any]] = []
-    for provider in dict.fromkeys([*model, *code]):
-        ordered += [model[provider]] if provider in model else []
-        if provider in code and (provider not in model or code[provider]["query_text"] != model[provider]["query_text"]):
+    for provider in dict.fromkeys([*plan, *code]):
+        ordered += [plan[provider]] if provider in plan else []
+        # The same text was never sent twice: a code query whose text is the plan's own was left out then too.
+        if provider in code and (provider not in plan or code[provider]["query_text"] != plan[provider]["query_text"]):
             ordered.append(code[provider])
     return with_authors(vocabulary, ordered, providers, limit)
 

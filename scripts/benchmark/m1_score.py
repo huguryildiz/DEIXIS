@@ -30,7 +30,6 @@ ROOT = Path(__file__).resolve().parents[2]
 SETS = {'bioasq': ROOT / 'notes/bioasq', 'litsearch': ROOT / 'notes/litsearch'}
 MARGIN = {'bioasq': -0.02, 'litsearch': -0.02}
 MAX_EXTRA_MEDIAN = 80
-MAX_CODE_QUERY_TOTAL = 250_000
 ARMS = ('base', 'm1')
 
 
@@ -95,54 +94,6 @@ def output(conn, run_id, key):
     return json.loads(row[0]) if row and row[0] else {}
 
 
-def code_texts(conn, run_id):
-    """Every OpenAlex query of code origin the run's frozen protocol compiled (the queries the search step sends)."""
-    run = conn.execute('SELECT research_id, scope_revision FROM runs WHERE id = ?', (run_id,)).fetchone()
-    revision = output(conn, run_id, 'protocol').get('protocol_revision')
-    if run is None or revision is None:
-        return []
-    row = conn.execute('SELECT body_json FROM protocol_records WHERE research_id = ? AND protocol_revision = ?',
-                       (run[0], revision)).fetchone()
-    body = json.loads(row[0]) if row else {}
-    return sorted({q['query_text'] for q in body.get('compiled_queries') or []
-                   if q.get('origin') == 'code' and q.get('provider_id') == 'openalex'})
-
-
-def width(conn, run_id):
-    """One run's code query: its probed gate count, why it was left out, every compiled OpenAlex code query and the
-    totals OpenAlex reported for each request that sent it (a query with no request on record has no entry)."""
-    code = output(conn, run_id, 'search_query').get('vocabulary', {}).get('code_query') or {}
-    compiled = code_texts(conn, run_id)
-    sent = {}
-    for text in compiled:
-        totals = [row[0] for row in conn.execute(
-            "SELECT provider_total FROM search_runs WHERE run_id = ? AND provider = 'openalex' AND query_text = ?",
-            (run_id, text))]
-        if totals:
-            sent[text] = totals
-    return {'run_id': run_id, 'probed_gate_count': (code.get('vocabulary') or {}).get('gate_count'),
-            'left_out': code.get('left_out'), 'compiled': compiled, 'sent': sent}
-
-
-def width_verdict(rows):
-    """`fail` when any request of a code query reported more than the limit; `inconclusive` when a compiled code
-    query has no request on record, or a request reported no total and the probe that let the query be sent does not
-    bound it; else `pass`."""
-    verdict = 'pass'
-    for r in rows:
-        bounded = isinstance(r['probed_gate_count'], int) and r['probed_gate_count'] <= MAX_CODE_QUERY_TOTAL
-        for text in r['compiled']:
-            totals = r['sent'].get(text)
-            if not totals:
-                verdict = 'inconclusive'
-                continue
-            if any(isinstance(t, int) and t > MAX_CODE_QUERY_TOTAL for t in totals):
-                return 'fail'
-            if any(t is None for t in totals) and not bounded:
-                verdict = 'inconclusive'
-    return verdict
-
-
 def paired_gate(m1, base, expected, k, margin):
     """The paired difference m1 - base at depth `k` over exactly the expected questions, and its verdict against
     `margin` (the lower bound must exceed it). A question either arm has no row for makes the gate inconclusive; a
@@ -204,10 +155,6 @@ def score_set(root, name):
         shares = [s for r in runs if (s := embedded_share(conn, r['run_id'])) is not None]
         report['arms'][arm]['embedded_share_min'] = min(shares) if shares else None
         if arm == 'm1':
-            # Every M1 discovery run in the library, failed and stopped ones too: any of them may have sent a query.
-            all_runs = [row[0] for row in conn.execute("SELECT id FROM runs WHERE kind = 'discovery'")]
-            report['code_query'] = [width(conn, run_id) for run_id in all_runs]
-            report['gate_code_query_width'] = width_verdict(report['code_query'])
             checked = chain_rule_check.check(path)
             extra, extra_complete = extra_chained(checked, [(rows[arm].get(i) or {}).get('run_id') for i in expected])
             report['chain_rule_mismatches'] = sum(c.get('mismatches', 0) for c in checked.values())
@@ -230,8 +177,6 @@ def main():
     gates = {f'recall@50 {name}': part['recall@50']['verdict'] for name, part in report.items()}
     gates['median extra chained <= 80'] = ('inconclusive' if not complete or median is None else
                                           'pass' if median <= MAX_EXTRA_MEDIAN else 'fail')
-    widths = [part['gate_code_query_width'] for part in report.values()]
-    gates['code query <= 250k'] = 'fail' if 'fail' in widths else 'inconclusive' if 'inconclusive' in widths else 'pass'
     reference = 'fail' if 'fail' in gates.values() else 'pass' if set(gates.values()) == {'pass'} else 'inconclusive'
     report['summary'] = {'gates': gates, 'extra_chained_median': median, 'reference_gates': reference,
                          'verdict': 'fail' if reference == 'fail' else 'inconclusive until Stage A is scored'}

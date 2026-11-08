@@ -186,8 +186,8 @@ def comparison_question(*texts: str | None) -> bool:
 
 def joint_terms(store: Any, scope: dict[str, Any], vocabulary: dict[str, Any]) -> list[str] | None:
     """The approved vocabulary's own task terms the joint signal compares, or None when the question of this revision
-    (or its saved English sentence) asks for no comparison. The code's query and the second round's phrases
-    are left out: they were not the terms the person approved."""
+    (or its saved English sentence) asks for no comparison. The question's own words and the second round's
+    phrases are left out: they were not the terms the person approved."""
     from deixis.workflow.search.expansion import TASK_BLOCK, queried_form, queried_terms
 
     english = store.english_question(scope["research_id"], scope["revision"])
@@ -430,12 +430,12 @@ def verified_seeds(store: Any, research_id: str, scope: dict[str, Any]) -> list[
 def query_vocabulary(scope: dict[str, Any], vocabulary: dict[str, Any]) -> tuple[set[str], dict[str, list[str]]]:
     """The words BM25 reads and the block forms the block signal reads: the question and every queried term."""
     from deixis.workflow.search.expansion import queried_form, searched_terms, term_rows
-    from deixis.workflow.search.search_query import code_terms
+    from deixis.workflow.search.search_query import question_terms
     from deixis.workflow.search.vocabulary import GATE_BLOCKS
 
     query_words = set(words(scope["question"]))
-    # The code's query searched beside a model-written one counts as queried here: its records are in the pool.
-    searched = vocabulary["terms"] + code_terms(vocabulary)
+    # The question's own words count here beside the plan's terms: they are what the question itself asks for.
+    searched = vocabulary["terms"] + question_terms(vocabulary)
     for row in term_rows(searched):
         query_words |= set(words(row["phrase"])) | set(words(row["form"]))
     # An outcome term is not searched but does order: the question's own are in its words already, one the user added

@@ -19,12 +19,12 @@ def queried_terms(vocabulary: dict[str, Any], block: str | None = None) -> list[
 
 
 def searched_terms(vocabulary: dict[str, Any], block: str | None = None) -> list[dict[str, Any]]:
-    """The terms every first-round query searched with: the vocabulary's own and, where the code's query was searched
-    beside a model-written one, the code's too. What orders and closes records reads these; the second round
-    reads `queried_terms`, the model's alone."""
-    from deixis.workflow.search.search_query import code_searched  # search_query compiles through query_compiler, not here
+    """The terms the records are judged by: the vocabulary's own and the question's own words beside them. What
+    orders and closes records reads these; the second round reads `queried_terms`, the plan's terms alone."""
+    from deixis.workflow.search.search_query import question_vocabulary  # search_query compiles through query_compiler, not here
 
-    extra = queried_terms(vocabulary["code_query"]["vocabulary"], block) if code_searched(vocabulary) else []
+    own_words = question_vocabulary(vocabulary)
+    extra = queried_terms(own_words, block) if own_words else []
     own = queried_terms(vocabulary, block)
     forms = {queried_form(term) for term in own}
     return own + [term for term in extra if queried_form(term) not in forms]

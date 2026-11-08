@@ -12,7 +12,8 @@ import httpx
 from fastapi.testclient import TestClient
 
 from deixis.providers.registry import verification_providers
-from test_vocabulary_flow import QUESTION, CountingOpenAlex, DeadAdapter, app_for, start, wait
+from fakes import PlanOnlyAdapter
+from test_vocabulary_flow import QUESTION, CountingOpenAlex, app_for, start, wait
 
 
 # ---- Task 1: the connector's role ------------------------------------------------------------
@@ -44,14 +45,15 @@ class ElsevierAndOpenAlex(CountingOpenAlex):
 
 def test_an_sw_research_with_scopus_configured_neither_searches_it_nor_names_it_a_searched_source(tmp_path, monkeypatch):
     sources = ElsevierAndOpenAlex()
-    app = app_for(tmp_path, monkeypatch, sources, DeadAdapter())
+    app = app_for(tmp_path, monkeypatch, sources, PlanOnlyAdapter())
     monkeypatch.setenv("SCOPUS_API_KEY", "SYNTHETIC-scopus-key")
     with TestClient(app) as client:
         client.headers["x-deixis-csrf"] = client.get("/api/session").json()["csrf_token"]
         rid, run_id = start(client, QUESTION)
         view, run = wait(client, rid, run_id)
         store = client.app.state.store
-        compiled = store.step(run_id, "vocabulary", "code:vocabulary")["output"]["queries"]
+        # The queries really compiled for this round: the vocabulary step compiles none of its own any more.
+        compiled = store.step(run_id, "source_routing", "code:source_routing")["output"]["queries"]
         body = store.current_protocol(rid, 1)["body"]
     assert "scopus" in view["scope"]["providers"]  # in scope, for the abstract lookup
     assert "scopus" not in view["scope"]["search_providers"]

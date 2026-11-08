@@ -655,8 +655,7 @@ def test_b01_backup_while_the_app_runs_restores_every_table_and_file_and_every_v
         conn.close()
     assert sorted(p.name for p in data.iterdir()) == ["library.sqlite", "papers", "provider-payloads"]
 
-    with TestClient(restored_app(Settings(data_dir=data, port=8765, model_concurrency=1,
-                                          search_query="code", fulltext_fetch="off"))) as raw:
+    with TestClient(restored_app(Settings(data_dir=data, port=8765, model_concurrency=1, fulltext_fetch="off"))) as raw:
         views_after = collect_views(raw, ids)
         assert set(views_after) == set(views_before)
         changed = [path for path in views_before
@@ -739,7 +738,9 @@ def test_a_restored_library_shows_the_model_connection_as_not_ready_and_pauses_i
         print("connections finding: POST run ->", posted.status_code)
         _, run = wait_run(client, rid, posted.json()["id"], timeout=90)  # 12 s alone; the default 15 s failed under load
         print("connections finding: a run on the restored research ->", run["status"], run["pause_reason"])
-        assert (run["status"], run["pause_reason"]) == ("paused", "model_connection_not_ready")
+        # The query step is the first one that cannot go on without the connection, so it carries the stop.
+        assert (run["status"], run["pause_reason"]) == ("paused", "search_query_failed")
+        assert run["error"]["reason"] == "model_connection_not_ready"
     labels = (REPO / "web" / "src" / "lib" / "labels.ts").read_text(encoding="utf-8")
     assert "model_connection_not_ready: 'The selected model connection is not ready. Nothing was sent to another model.'" in labels
 

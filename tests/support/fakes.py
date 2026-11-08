@@ -379,3 +379,19 @@ class FakeAdapter:
 
     async def close(self) -> None:
         pass
+
+
+# The tasks a run has to get an answer to before anything is searched: the plan the query is compiled from, the
+# English sentence a question in another language is read through, and the block labels of the older methods.
+PLANNING_TASKS = ("search_plan", "search_query", "question_translation", "vocabulary_labels")
+
+
+def PlanOnlyAdapter(**kwargs: Any) -> "FakeAdapter":
+    """A connection that answers the planning calls and fails every call after them.
+
+    Code compiles no query of its own, so a run whose connection is down searches nothing at all. A step that is
+    code's own work (the ranking, a record lookup, the routing) is shown model-free with this instead: the search
+    runs, and no model judges, proposes or reads a record.
+    """
+    return FakeAdapter(fail=lambda si: None if si["task_type"] in PLANNING_TASKS
+                       else ModelStepResult("failed", error="SYNTHETIC model connection is down"), **kwargs)

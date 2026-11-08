@@ -23,7 +23,8 @@ from deixis.providers.registry import CONNECTORS
 from deixis.workflow.search import routing
 from deixis.workflow.run.flow import ResearchFlow
 from test_search_query import proposal
-from test_vocabulary_flow import DeadAdapter, QUESTION, no_fetch
+from fakes import PlanOnlyAdapter
+from test_vocabulary_flow import QUESTION, no_fetch
 
 SCOPE = ["openalex", "semantic_scholar", "arxiv", "biorxiv", "pubmed", "ieee_xplore"]
 
@@ -59,14 +60,15 @@ def test_a_source_outside_the_scope_or_without_its_key_is_never_chosen(monkeypat
 
 
 def test_quick_s_three_queries_search_no_domain_source_under_the_routed_order():
-    built = proposal()  # a model-written query with the code's beside it
+    built = proposal()  # the model's own query, the round's only Boolean plan
     _, queries = ResearchFlow._compiled(None, built, ["openalex", "semantic_scholar", "arxiv", "pubmed"],
                                         {"max_provider_requests": 3})
     assert [(q["provider_id"], q["origin"]) for q in queries] == [
-        ("openalex", "model"), ("openalex", "code"), ("semantic_scholar", "model")]
+        ("openalex", "model"), ("semantic_scholar", "model"), ("arxiv", "model")]
     _, eight = ResearchFlow._compiled(None, built, ["openalex", "semantic_scholar", "arxiv", "pubmed"],
                                       {"max_provider_requests": 8})
-    assert [q["provider_id"] for q in eight] == ["openalex"] * 2 + ["semantic_scholar"] * 2 + ["arxiv"] * 2 + ["pubmed"] * 2
+    # One plan, one query per provider: a wider request limit does not send the same plan twice.
+    assert [q["provider_id"] for q in eight] == ["openalex", "semantic_scholar", "arxiv", "pubmed"]
     assert all(q.get("endpoint") == "bulk" for q in eight if q["provider_id"] == "semantic_scholar")
 
 
@@ -78,8 +80,8 @@ def client_for(tmp_path, monkeypatch, handler):
     for connector in CONNECTORS.values():
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code", fulltext_fetch="off"),
-                     adapters={"fake": DeadAdapter()},
+    app = create_app(Settings(data_dir=tmp_path / "data", port=8765, fulltext_fetch="off"),
+                     adapters={"fake": PlanOnlyAdapter()},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,
                      extra_hosts=("testserver",), trusted_clients=("testclient",))
     client = TestClient(app)

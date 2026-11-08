@@ -190,7 +190,7 @@ def test_auto_answer_creation_is_atomic_idempotent_and_skips_old_scope(tmp_path)
 def test_end_to_end_unattended_auto_answer_and_backend_abstract_label(tmp_path):
     adapter = FakeAdapter(valid_response)
     app = create_app(Settings(data_dir=tmp_path, port=8879, fulltext_fetch="off",
-        fulltext_adjudication="off", search_query="code"),
+        fulltext_adjudication="off"),
         adapters={"fake": adapter}, http_client=httpx.AsyncClient(transport=httpx.MockTransport(
             Transport([work(1, title=ON_TOPIC)]))), extra_hosts=("testserver",), trusted_clients=("testclient",))
     with client_of(app) as client:

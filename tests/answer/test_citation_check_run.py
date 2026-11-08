@@ -25,7 +25,7 @@ def make(tmp_path, monkeypatch):
     def build(responder=valid_response, fail=None):
         net = Net()
         adapter = FakeAdapter(responder, fail=fail)
-        settings = Settings(data_dir=tmp_path / "data", port=8799, search_query="code", fulltext_fetch="off")
+        settings = Settings(data_dir=tmp_path / "data", port=8799, fulltext_fetch="off")
         app = create_app(settings, adapters={"fake": adapter}, http_client=httpx.AsyncClient(
             transport=httpx.MockTransport(net.handler)), fetcher=net.fetch, extra_hosts=("testserver",),
             trusted_clients=("testclient",))

@@ -289,7 +289,7 @@ def test_quick_question_runs_every_fast_path_stage_and_answers_unattended(tmp_pa
     monkeypatch.setenv("DEIXIS_CONTACT_EMAIL", "synthetic@example.org")
     works = [work(n, pdf_url=url(n), title=ON_TOPIC) for n in range(1, 31)]
     fetcher = Fetcher({url(n): ok(named_pdf(f"10.1/oa.{n}")) for n in range(1, 31)})
-    app = create_app(Settings(data_dir=tmp_path, port=8765, search_query="code",
+    app = create_app(Settings(data_dir=tmp_path, port=8765,
                               fulltext_fetch="auto", fulltext_adjudication="auto"),
                      adapters={"fake": FakeAdapter(responder())},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(Transport(works))), fetcher=fetcher,

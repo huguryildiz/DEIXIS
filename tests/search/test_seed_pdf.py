@@ -90,7 +90,7 @@ SEED_PDF = make_pdf([f"{SEED_TITLE}\nA. Author\ndoi:{SEED_DOI}\nAbstract. Defici
 
 def test_matched_seed_guides_query_chain_ranking_and_protocol(tmp_path, monkeypatch):
     transport = SeedTransport(records(), by_doi=[seed_work()])
-    app, _ = app_for(tmp_path, monkeypatch, transport=transport, search_query="model")
+    app, _ = app_for(tmp_path, monkeypatch, transport=transport)
     with client_of(app) as client:
         rid, svid = seeded(client, SEED_PDF)
         assert client.get(f"/api/researches/{rid}").json()["scope"]["seeds"][0]["use"] == {"state": "selected"}

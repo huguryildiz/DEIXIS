@@ -160,7 +160,7 @@ def app_for(tmp_path, monkeypatch, handler, workflow="sw", adapter=None):
         monkeypatch.setitem(CONNECTORS, provider,
                             replace(CONNECTORS[provider], max_results=size, searchable=True))
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765,
                                fulltext_fetch="off"),
                       adapters={"fake": adapter or DeadAdapter()},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,

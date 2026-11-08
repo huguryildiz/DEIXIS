@@ -1458,9 +1458,6 @@ def main() -> None:
         args.write_replacement_pdf.write_bytes(make_pdf(["SYNTHETIC replacement scan: release scheduling by bisection, full page."]))
         return
     settings = Settings(data_dir=args.data_dir, port=args.port, model_concurrency=1,
-                        # Cases A–G keep the code's query alone, as they always had it; case I asks for the
-                        # the model-written query.
-                        search_query=os.environ.get("DEIXIS_SEARCH_QUERY", "code"),
                         # A retrieval run after discovery would open a second run under it; case J reads.
                         fulltext_fetch="auto" if QUEUE_MODE or FULLTEXT_MODE else "off",
                         fulltext_adjudication="auto" if QUEUE_MODE or FULLTEXT_MODE else "off",

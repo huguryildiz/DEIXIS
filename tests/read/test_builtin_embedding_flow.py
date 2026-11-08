@@ -101,7 +101,7 @@ def make_app(tmp_path, monkeypatch, handler, local=None, workflow="sw", gemini_k
     if gemini_key:
         monkeypatch.setenv("GEMINI_API_KEY", "SYNTHETIC-key")
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765,
                                fulltext_fetch="off"),
                       adapters={"fake": adapter or FakeAdapter(valid_response)},
                       http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), fetcher=no_fetch,

@@ -1,13 +1,13 @@
 """A search plan the person edited (UI parity S23a, F18).
 
-The person sees the plan a run searched (the model-written query, the code's query beside it, the criterion and the
+The person sees the plan a run searched (the model-written query, the criterion and the
 providers), changes the words of each block, the criterion or the optional providers, and saves it. Saving is a new
 scope revision that carries the plan (`scope_revisions.user_plan_json`); nothing earlier is edited. A discovery run
 of that revision does what it always does up to the planning calls (question words, seed checks, OpenAlex term
 counts), then builds what `vocabulary_labels`, `search_query` and `criterion_proposal` would have given from the plan
 by code (origin `user`), records the approval as `user_edited` and freezes the protocol with the plan in it, before
-its first request that fetches search results. The plan's words alone make the keyword queries and the ranking and
-screening blocks: the code's query from the question is not searched beside them, so a removed word stays removed.
+its first request that fetches search results. The plan's words alone make the keyword queries, and no model writes a query
+beside them, so a removed word stays removed.
 
 Rules this module holds:
 - The plan is checked with the SearchQuery term rules (`contracts.check_user_search_plan`); a plan that breaks one
@@ -188,8 +188,9 @@ def _queried_form(term: dict[str, Any]) -> str:
 
 def from_protocol(body: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
     """The plan a frozen protocol searched, in the plan's shape, for the person to start from. A model-written query
-    gives its searched terms and its unused backups; a code query its searched forms. Such a plan may break a term
-    rule (a code term can be longer than four words); the view reports the issues and saving refuses it until fixed."""
+    gives its searched terms and its unused backups; a research searched before the question's own code query was
+    removed gives that query's searched forms. Such a plan may break a term rule (a code term can be longer than
+    four words); the view reports the issues and saving refuses it until fixed."""
     if body.get("user_plan"):
         return body["user_plan"]["plan"]
     terms = [t for t in body.get("vocabulary") or [] if not t["dropped"]]
@@ -230,7 +231,7 @@ def _queries(body: dict[str, Any]) -> list[dict[str, Any]]:
 def _preview(plan: dict[str, Any]) -> list[dict[str, Any]]:
     """The keyword query a saved plan will search, compiled by the existing block compiler from its words before any
     count is read. A preview: the run compiles it again, and a backup only replaces a term once OpenAlex counts that
-    term at zero. The code's query from the question is not searched beside a plan, so there is no second query."""
+    term at zero. No model writes a query beside a saved plan, so there is no second query."""
     terms = [{"phrase": criterion_rules.norm(row["term"]), "block": block, "in_query": "phrase", "dropped": None,
               "root": criterion_rules.norm(row["term"])} for block in GATE_BLOCKS for row in plan[block]]
     compiled = query_compiler.compile_block_queries({"terms": terms}, [REQUIRED], 1)

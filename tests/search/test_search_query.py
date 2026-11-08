@@ -113,18 +113,53 @@ def code_vocabulary(too_broad=False):
             "gate_count": 40, "probes": [], "probes_skipped": 0, "too_broad": too_broad}
 
 
-CODE_QUERIES = [{"provider_id": p, "query_text": f"{p}: rail AND timetabling", "rationale": "Concept blocks",
-                 "dropped_terms": []} for p in ("openalex", "semantic_scholar")]
-
-
 def proposal(model_answer=None, counts=None, too_broad=False):
     count, _ = counter(counts or {})
     checked = asyncio.run(search_query.check(model_answer or answer(["rail freight"], ["timetable", "integer programming"]),
                                              count))
-    return search_query.vocabulary(code_vocabulary(too_broad), CODE_QUERIES, checked,
+    return search_query.vocabulary(code_vocabulary(too_broad), checked,
                                    {"status": "ready", "attempts": [], "step_input_id": "sti_x", "resolved_model": "m",
                                     "answer": {}})
 
+
+
+def test_the_questions_own_words_are_kept_beside_the_models_terms_and_read_from_an_older_record():
+    """What gates and orders records: the plan's terms and the question's own words beside them.
+
+    A research searched before the question's own code query was removed kept the same words under that query's
+    record, and only a query that really was searched counts, so what gated its records does not change.
+    """
+    built = proposal()
+    assert search_query.question_vocabulary(built) == code_vocabulary()
+    assert [t["phrase"] for t in search_query.question_terms(built)] == ["rail networks", "timetabling"]
+    # A vocabulary that is itself the question's own has none beside it, so its words are not counted twice.
+    assert search_query.question_vocabulary(code_vocabulary()) is None and search_query.question_terms(code_vocabulary()) == []
+    # An older research: the words come from that query's record, and only where it was searched.
+    stored = {"terms": [], "code_query": {"vocabulary": code_vocabulary(), "queries": [{"query_text": "x"}], "searched": True}}
+    assert [t["phrase"] for t in search_query.question_terms(stored)] == ["rail networks", "timetabling"]
+    left_out = {"terms": [], "code_query": {"vocabulary": code_vocabulary(), "queries": [], "searched": False,
+                                            "left_out": "too_wide"}}
+    assert search_query.question_vocabulary(left_out) is None and search_query.question_terms(left_out) == []
+
+
+def test_an_older_researchs_own_second_query_is_compiled_again_and_settled_as_it_was():
+    """A research searched before the question's own code query was removed keeps that round: the stored query is
+    placed after the plan's query of the same provider, and `settled` reads back whether it really was compiled."""
+    older = {k: v for k, v in proposal().items() if k != "question_vocabulary"}  # the key did not exist then
+    stored = older | {"code_query": {
+        "vocabulary": code_vocabulary(), "searched": True,
+        "queries": [{"provider_id": p, "query_text": f"{p}: rail AND timetabling", "rationale": "Concept blocks",
+                     "dropped_terms": []} for p in ("openalex", "semantic_scholar")]}}
+    queries = search_query.compile_queries(stored, ["openalex", "semantic_scholar"], 8)
+    assert [(q["provider_id"], q["origin"]) for q in queries] == [
+        ("openalex", "model"), ("openalex", "code"), ("semantic_scholar", "model"), ("semantic_scholar", "code")]
+    # Written before `compiled` existed: it is read back from the queries, and the words it carried still gate.
+    settled = search_query.settled(stored, queries)
+    assert settled["code_query"]["compiled"] is True
+    assert [t["phrase"] for t in search_query.question_terms(settled)] == ["rail networks", "timetabling"]
+    # A round the request limit left that query out of: its words gated nothing then, and they gate nothing now.
+    cut = search_query.settled(stored, [q for q in queries if q["origin"] != "code"])
+    assert cut["code_query"]["compiled"] is False and search_query.question_terms(cut) == []
 
 # ---- the run around it ---------------------------------------------------------------------------------------
 
@@ -161,12 +196,11 @@ async def no_fetch(url):
     return FetchResult("http_error", final_url=url, http_status=404)
 
 
-def client_for(tmp_path, monkeypatch, handler, adapter, setting="model", method="legacy"):
+def client_for(tmp_path, monkeypatch, handler, adapter, method="legacy"):
     for connector in CONNECTORS.values():
         if connector.key_env:
             monkeypatch.delenv(connector.key_env, raising=False)
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query=setting,
-                              fulltext_fetch="off", search_method=method),
+    app = create_app(Settings(data_dir=tmp_path / "data", port=8765, fulltext_fetch="off", search_method=method),
                      adapters={"fake": adapter}, http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
                      fetcher=no_fetch, extra_hosts=("testserver",), trusted_clients=("testclient",))
     client = TestClient(app)
@@ -210,7 +244,7 @@ def calls(adapter, task="search_query"):
     return [si for si in adapter.calls if si["task_type"] == task]
 
 
-def test_the_model_writes_the_query_and_the_code_query_is_searched_beside_it(tmp_path, monkeypatch):
+def test_the_model_writes_the_query_and_it_is_the_only_keyword_query_of_the_round(tmp_path, monkeypatch):
     openalex, adapter = OpenAlex(), FakeAdapter()
     client = client_for(tmp_path, monkeypatch, openalex, adapter)
     rid, run_id = start(client)
@@ -222,17 +256,17 @@ def test_the_model_writes_the_query_and_the_code_query_is_searched_beside_it(tmp
     stored = step_output(client, run_id, "search_query")
     assert stored["status"] == "ready"
     origins = [(q["provider_id"], q["origin"]) for q in stored["queries"]]
-    assert origins[:2] == [("openalex", "model"), ("openalex", "code")]
+    # Nothing code compiled from the question's own words is sent beside it: every query of the round is the model's.
+    assert origins[0] == ("openalex", "model") and {o for _, o in origins} == {"model"}
     assert '"synthetic setting" AND "synthetic task"' in openalex.searches
-    assert next(q["query_text"] for q in stored["queries"] if q["origin"] == "code") in openalex.searches
     body = protocol_body(client, rid)
-    assert body["search_query"]["status"] == "ready" and body["search_query"]["code_query_searched"] is True
+    assert body["search_query"]["status"] == "ready"
     # The prompt version is the one the model was sent, read from its StepInput and not from the package at freeze.
     assert body["search_query"]["prompt"] == {"files": ["SKILL.md", "references/search-query.md"],
                                               "schema_version": "deixis.search_query.v2",
                                               "skill_package_hash": calls(adapter)[0]["skill_package_hash"]}
     assert body["search_query"]["answer"]["setting"][0]["term"] == "synthetic setting"
-    assert {q.get("origin") for q in body["compiled_queries"]} == {"model", "code"}
+    assert {q.get("origin") for q in body["compiled_queries"]} == {"model"}
     assert body["concept_blocks"] == {"setting": ["synthetic setting"], "task": ["synthetic task"]}
     # The run was given the model-query calls on top of its preset.
     preset = TEST_EFFORT_BUDGETS["quick"].max_model_calls
@@ -253,11 +287,11 @@ class EveryCount(dict):
         return True
 
 
-def test_under_the_m1_method_a_code_query_wider_than_its_limit_or_on_one_block_is_not_searched(tmp_path, monkeypatch):
+def test_the_m1_method_freezes_its_own_chain_rule_and_admission_forms(tmp_path, monkeypatch):
     from deixis.workflow.search import chaining
 
-    # Every count is 300,000: the code's gate query cannot be narrowed below it, and no term reaches the one-million
-    # rule. A `legacy` run searches the code's query beside the model's as before; an `m1` run leaves it out.
+    # Every count is 300,000, so no term reaches the one-million rule and both runs search the model's query. What
+    # differs is what each method freezes: a `legacy` run keeps the first chain rule, an `m1` run its own.
     runs = {}
     for method in ("legacy", "m1"):
         openalex = OpenAlex(counts=EveryCount(300_000))
@@ -267,19 +301,16 @@ def test_under_the_m1_method_a_code_query_wider_than_its_limit_or_on_one_block_i
         assert run["status"] == "completed", run
         runs[method] = (step_output(client, run_id, "search_query"), protocol_body(client, rid), run)
     legacy, m1 = runs["legacy"], runs["m1"]
-    assert "code" in {q["origin"] for q in legacy[0]["queries"]}
-    assert "left_out" not in legacy[0]["vocabulary"]["code_query"]
+    assert {q["origin"] for q in legacy[0]["queries"]} == {"model"}
     assert legacy[2]["budget"]["fast_path"]["chain_rule"] == "fast_chain_v1"
     assert "search_method" not in legacy[2]["budget"]["fast_path"]
     assert "admission_forms" not in legacy[1]["citation_chaining"]
 
     stored, body, run = m1
-    assert stored["vocabulary"]["code_query"]["vocabulary"]["gate_count"] == 300_000
-    assert stored["vocabulary"]["code_query"]["searched"] is False
-    assert stored["vocabulary"]["code_query"]["left_out"] == "too_wide"
+    # The question's own words are kept beside the model's terms with their counts, and nothing searches them.
+    assert stored["vocabulary"]["question_vocabulary"]["gate_count"] == 300_000
     assert {q["origin"] for q in stored["queries"]} == {"model"}
-    assert body["search_query"]["code_query_searched"] is False
-    # No code term reaches the ranking blocks or the chain forms; the selection is frozen in the body's budget.
+    # Only what was searched stands in the ranking blocks; the selection is frozen in the body's budget.
     assert body["concept_blocks"] == {"setting": ["synthetic setting"], "task": ["synthetic task"]}
     assert body["budget"]["fast_path"]["search_method"] == "m1"
     frozen = body["citation_chaining"]
@@ -287,17 +318,8 @@ def test_under_the_m1_method_a_code_query_wider_than_its_limit_or_on_one_block_i
     assert frozen["admission_forms_sha256"] == chaining.forms_digest(frozen["admission_forms"])
     assert " synthetic setting" in frozen["admission_forms"]["setting"]
 
-    # A code query whose setting block lost every term is a one-block query: left out whatever its count.
-    one_block = code_vocabulary()
-    one_block["terms"][0]["dropped"] = "zero_results"
-    count, _ = counter({})
-    checked = asyncio.run(search_query.check(answer(["rail freight"], ["timetable"]), count))
-    built = search_query.vocabulary(one_block, CODE_QUERIES, checked, {"status": "ready", "attempts": [],
-                                    "step_input_id": "sti_x", "resolved_model": "m", "answer": {}}, 250_000)
-    assert built["code_query"]["searched"] is False and built["code_query"]["left_out"] == "one_block"
 
-
-def test_a_failed_model_stops_the_run_and_the_code_query_is_searched_only_when_the_user_says_so(tmp_path, monkeypatch):
+def test_a_failed_model_stops_the_run_and_no_query_is_searched_in_its_place(tmp_path, monkeypatch):
     openalex = OpenAlex()
     adapter = FakeAdapter(fail=lambda si: ModelStepResult("failed", error="SYNTHETIC down")
                           if si["task_type"] == "search_query" else None)
@@ -318,19 +340,11 @@ def test_a_failed_model_stops_the_run_and_the_code_query_is_searched_only_when_t
     _, run = wait(client, rid, run_id)
     assert run["pause_reason"] == "search_query_failed" and run["error"]["retries_left"] == 0
     assert len(calls(adapter)) == 2
+    # No try left and no way around the model: the run stays paused, and the way on is a new scope revision. Code
+    # compiles no query of its own, so there is nothing to search in the model's place.
     assert client.post(f"/api/runs/{run_id}/resume").status_code == 409
-    assert client.post(f"/api/runs/{run_id}/search-query-choice").status_code == 200
-    _, run = wait(client, rid, run_id, ("completed", "failed"))
-    assert run["status"] == "completed", run
-    assert len(calls(adapter)) == 2 and openalex.searches
-    # The code's query is searched now, and the question's request, already succeeded, is not sent a second time
-    # (Argon's blocker: it keeps the `search:fast:semantic` key, which the search stage finds succeeded).
-    assert openalex.semantic == [QUESTION]
-    assert step_output(client, run_id, "search:fast:semantic")["result_count"] == 1
-    body = protocol_body(client, rid)
-    assert body["search_query"]["status"] == "failed" and body["search_query"]["choice"] == "code_only"
-    assert [a["reason"] for a in body["search_query"]["attempts"]] == ["model_call_failed", "model_call_failed"]
-    assert not any("origin" in q for q in body["compiled_queries"])
+    assert not openalex.searches and openalex.semantic == [QUESTION]
+    assert len(calls(adapter)) == 2
 
 
 def test_the_users_own_key_terms_are_searched_and_no_model_writes_a_query(tmp_path, monkeypatch):
@@ -348,8 +362,8 @@ def test_the_users_own_key_terms_are_searched_and_no_model_writes_a_query(tmp_pa
 
 
 def test_a_run_reuses_only_a_query_written_under_its_own_search_method(tmp_path, monkeypatch):
-    # A stored query carries the code-query decision of the method it was written under. A legacy run's
-    # query is not reused by an m1 run of the same scope revision; the m1 run asks once and applies its own limit.
+    # A stored query carries the decisions of the method it was written under. A legacy run's query is not reused
+    # by an m1 run of the same scope revision; the m1 run asks once and freezes its own.
     legacy_adapter, m1_adapter = FakeAdapter(), FakeAdapter()
     client = client_for(tmp_path, monkeypatch, OpenAlex(counts=EveryCount(300_000)), legacy_adapter)
     rid, first = start(client)
@@ -361,7 +375,7 @@ def test_a_run_reuses_only_a_query_written_under_its_own_search_method(tmp_path,
     assert run["status"] == "completed", run
     stored = step_output(client, second, "search_query")
     assert "reused_from_run" not in stored and len(calls(m1_adapter)) == 1
-    assert stored["vocabulary"]["code_query"]["left_out"] == "too_wide"
+    assert stored["vocabulary"]["question_vocabulary"]["gate_count"] == 300_000
     client.__exit__(None, None, None)
     # A legacy run after the m1 one takes the first legacy query, as before M1: no model call.
     client = client_for(tmp_path, monkeypatch, OpenAlex(counts=EveryCount(300_000)), legacy_adapter)

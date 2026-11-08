@@ -289,7 +289,8 @@ class NoWorkFound(OpenAlex):
 
 
 def test_a_first_page_that_answered_with_no_work_does_not_offer_the_same_request_again(tmp_path, monkeypatch):
-    """Sending that request again would answer the same way, so this stop points at the question and the code query."""
+    """Sending that request again would answer the same way, so this stop offers no resume: the way on is a new
+    scope revision whose question finds records."""
     import test_search_query
 
     monkeypatch.setattr(test_search_query, "WORK", PLAN_WORK)
@@ -301,9 +302,8 @@ def test_a_first_page_that_answered_with_no_work_does_not_offer_the_same_request
     assert run["error"]["reason"] == "first_page_no_records" and run["error"]["retries_left"] == 0
     assert calls(adapter, "search_plan") == [] and calls(adapter, "search_query") == []
     assert len(openalex.semantic) == 1 and openalex.searches == []
-    # The run's own way on is the code's query, which that route writes on this same step.
-    chosen = client.post(f"/api/runs/{run_id}/search-query-choice")
-    assert chosen.status_code == 200, chosen.text
+    # Nothing else is searched in the plan's place: code compiles no query of its own, and a resume is refused.
+    assert client.post(f"/api/runs/{run_id}/resume").status_code == 409
 
 
 def test_a_record_with_more_keywords_than_a_step_input_holds_sends_the_first_of_them(tmp_path):

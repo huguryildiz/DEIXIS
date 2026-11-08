@@ -91,7 +91,7 @@ def author_mentions(sentence: str, pairs: bool = True) -> list[tuple[int, int, l
     """Where the sentence names the authors of one work, in order: "X et al." is one work, and with `pairs` so is
     "X and Y" when both words are capitalised and no "et al." follows. Each mention is (start, end, surnames). Two
     capitalised terms ("Age and Fidelity", "Max-Weight and Lyapunov") read as a pair too: that only adds one narrow
-    author query, which is why a pair never takes words out of the code query (`without_authors`)."""
+    author query, which is why a pair never takes words out of the question's own ones (`without_authors`)."""
     found = [(m.start(), m.end(), [m.group(1)]) for m in _ET_AL.finditer(sentence) if _capitalised(m.group(1))]
     if pairs:
         found += [(m.start(), m.end(), [m.group(1), m.group(2)]) for m in _PAIR.finditer(sentence)

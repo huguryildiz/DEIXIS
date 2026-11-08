@@ -19,7 +19,7 @@ from deixis.models.deepseek import DeepSeekAdapter
 from deixis.models.gemini import GeminiAdapter
 from deixis.models.openai_compat import OpenAICompatAdapter
 from deixis.models.openai_compat import QWEN
-from fakes import FakeAdapter
+from fakes import FakeAdapter, PLANNING_TASKS
 from test_api_flow import app_for
 from test_api_flow import create
 from test_api_flow import session
@@ -50,8 +50,10 @@ def test_key_test_does_not_echo_body(code, kind):
 
 def test_model_quota_pause_preserves_metadata_without_secrets(tmp_path, monkeypatch):
     monkeypatch.setenv('GEMINI_API_KEY', 'SYNTHETIC-private-key')
-    adapter = FakeAdapter(fail=lambda si: ModelStepResult('failed', error='SYNTHETIC-private-key quota',
-        error_kind='quota_exhausted', http_status=429, retry_after='120'))
+    # The plan is written first, because nothing is searched without one; the quota is reached on a later call,
+    # which is the stop whose metadata this checks.
+    adapter = FakeAdapter(fail=lambda si: None if si['task_type'] in PLANNING_TASKS else ModelStepResult(
+        'failed', error='SYNTHETIC-private-key quota', error_kind='quota_exhausted', http_status=429, retry_after='120'))
     app = app_for(tmp_path, adapter)
     with TestClient(app) as client:
         session(client)

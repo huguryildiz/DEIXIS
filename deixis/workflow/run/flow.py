@@ -207,7 +207,7 @@ def _sought_terms(vocabulary: dict[str, Any]) -> list[str]:
 
     Both forms are given because a term enters the query as one of them and the criterion may write either.
     """
-    return [form for term in vocabulary["terms"] + search_query_rules.code_terms(vocabulary)
+    return [form for term in vocabulary["terms"] + search_query_rules.question_terms(vocabulary)
             if term["block"] == "task" and not term["dropped"] for form in (term["phrase"], term["root"])]
 
 
@@ -615,7 +615,7 @@ class ResearchFlow:
         try:
             await sent.wait()  # the request is on its way before any step asks a model
             # The Boolean queries' words come from code, so no model chooses what is searched (SW2.3).
-            vocabulary, queries = await self._vocabulary(run, scope)
+            vocabulary = await self._vocabulary(run, scope)
             consumer = self._fast_consumers[run_id]
             if consumer.embedder is not None and consumer.query is None and self.store.english_question(rid, revision):
                 # The vocabulary step has just stored the model's English sentence: the built-in model reads it too.
@@ -625,7 +625,7 @@ class ResearchFlow:
                 # waits for that page here. The request's own failure is not raised: `first_semantic` records it and
                 # the search stage retries it, and the plan step then reads whatever records the page wrote.
                 await first_request
-            vocabulary, queries = await self._search_query(run, scope, vocabulary, queries)
+            vocabulary, queries = await self._search_query(run, scope, vocabulary)
             vocabulary, queries = await self._source_routing(run, scope, vocabulary, queries)
             criterion = await self._criterion(run, scope, vocabulary)
             vocabulary, queries, criterion, approval = await self._approval(run, scope, vocabulary, queries, criterion)
@@ -765,18 +765,19 @@ class ResearchFlow:
                                               mailto=self.deps.settings.contact_email)
         return probe
 
-    async def _vocabulary(self, run: dict[str, Any], scope: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        """The sw workflow's search words and queries, taken from the question by code (SW2).
+    async def _vocabulary(self, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
+        """The question's own search words and their counts, taken by code (SW2).
 
-        A step that already succeeded returns its stored output whole, so a resumed run sends no count request twice
-        and searches exactly the queries the first run compiled. A question that is not English and has no key terms
-        is read through the revision's English sentence (`_english_question`).
+        The words and the counts are what the model's terms are checked against, and the question's side lists come
+        from them. Code compiles no query here: the query a run sends is the one the plan writes, or the one a person
+        saved. A step that already succeeded returns its stored words, so a resumed run sends no count request twice.
+        A question that is not English and has no key terms is read through the revision's English sentence
+        (`_english_question`).
         """
-        run_id, revision, budget = run["id"], run["scope_revision"], run["budget"]
+        run_id, revision = run["id"], run["scope_revision"]
         step = self.store.step(run_id, "vocabulary", "code:vocabulary")
         if step["status"] == "succeeded":
-            stored = step["output"]
-            return self._code_proposed(run_id, stored["vocabulary"], stored["queries"])
+            return step["output"]["vocabulary"]
         statement = intent_rules.is_statement(self.store, run)
         try:
             extraction = question_words.extract(scope["question"], scope.get("language_hint"), scope.get("key_terms"),
@@ -802,11 +803,9 @@ class ResearchFlow:
             built["english_question"] = {"text": english["text"], "origin": english["origin"], "model": (
                 self.store.english_question_model(run["research_id"], revision) if english["origin"] == "model" else None)}
         self._checkpoint(run_id, revision)
-        queries = query_compiler.compile_block_queries(built, _planned_providers(scope), budget["max_provider_requests"])
-        self.store.finish_step(step["id"], "succeeded", output={
-            "vocabulary": built, "queries": queries, "query_compiler": query_compiler.BLOCKS_VERSION})
         # The counts are stored before the run stops, so resuming re-reads them instead of paying for them again.
-        return self._code_proposed(run_id, built, queries)
+        self.store.finish_step(step["id"], "succeeded", output={"vocabulary": built})
+        return built
 
     async def _english_question(self, run: dict[str, Any], scope: dict[str, Any]) -> dict[str, Any]:
         """The revision's English sentence for a question that is not English and has no key terms.
@@ -837,37 +836,24 @@ class ResearchFlow:
         text = " ".join(answer["result"]["english_question"].split())
         return self.store.save_model_english_question(rid, revision, text, run_id)
 
-    def _code_proposed(self, run_id: str, built: dict[str, Any], queries: list[dict[str, Any]]
-                       ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        """The code vocabulary as the step left it. Where a model writes the query, a code query that cannot be
-        searched does not stop the run here: it is left out beside the model's, or stops the run later if the user
-        chooses it alone. The same holds beside a person's saved plan (S23a), whatever the setting."""
-        if self.deps.settings.search_query == "model" or self._user_plan_run(run_id):
-            return built, queries
-        return self._proposed(run_id, built, queries)
-
-    async def _search_query(self, run: dict[str, Any], scope: dict[str, Any], code_vocabulary: dict[str, Any],
-                            code_queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        """The model-written query and the code's beside it, or the code's alone where no model writes one.
+    async def _search_query(self, run: dict[str, Any], scope: dict[str, Any],
+                            code_vocabulary: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """The keyword query the model writes, or the one a person's saved plan gives in its place.
 
         One call per scope revision, with the one repair `_model_step` allows; nothing is voted on. A call that fails,
-        or an answer that leaves a block with no term after the counts, stops the run with `search_query_failed`: the
-        code's query is never searched in its place without the user saying so. Resuming asks the model once more
-        (`ATTEMPTS`); the user's other way out is to search with the code's query alone, which the route writes on
-        this step. A step that already succeeded returns its stored vocabulary and queries, so a resumed run calls
+        or an answer that leaves a block with no term after the counts, stops the run with `search_query_failed`:
+        code compiles no query of its own, so nothing is searched in its place. Resuming asks the model once more
+        (`ATTEMPTS`); after that the way on is a new scope revision or the person's own key terms.
+        A step that already succeeded returns its stored vocabulary and queries, so a resumed run calls
         no model and reads no count twice, and a second discovery run of the same scope revision takes the query the
         first one wrote.
 
-        The setting is read when the step is first written: a run already stopped for the model's query stays on it
-        after the service is restarted with `search_query=code`, so its resume never searches the code's query alone.
         """
         run_id, rid, revision = run["id"], run["research_id"], run["scope_revision"]
         if user_plan_rules.of(scope) is not None:
-            return await self._user_search_query(run, scope, code_vocabulary, code_queries)
-        step = self.store.existing_step(run_id, "search_query")
-        if step is None and self.deps.settings.search_query != "model":
-            return self._code_statement(run, scope, code_vocabulary, code_queries)
-        step = step or self.store.step(run_id, "search_query", "code:search_query")
+            return await self._user_search_query(run, scope, code_vocabulary)
+        step = self.store.existing_step(run_id, "search_query") or self.store.step(
+            run_id, "search_query", "code:search_query")
         if step["status"] == "succeeded":
             stored = step["output"]
             return self._proposed(run_id, search_query_rules.settled(stored["vocabulary"], stored["queries"]),
@@ -890,21 +876,14 @@ class ResearchFlow:
             return self._proposed(run_id, search_query_rules.settled(output["vocabulary"], output["queries"]),
                                   output["queries"])
         if code_vocabulary["block_assignment"] == "user":
-            # The user's own key terms are above any proposal (SW2.6): the model is not asked to write another.
+            # The user's own key terms are above any proposal (SW2.6): the model is not asked to write another, and
+            # the query is compiled from the words the person typed, which is whose query it says it is.
+            typed = self._typed_terms_query(run, scope, code_vocabulary)
             self.store.start_step(step["id"])
             self.store.finish_step(step["id"], "succeeded", output={
-                "status": "skipped", "reason": "user_key_terms", "vocabulary": code_vocabulary, "queries": code_queries})
-            return self._proposed(run_id, code_vocabulary, code_queries)
+                "status": "skipped", "reason": "user_key_terms", "vocabulary": typed[0], "queries": typed[1]})
+            return self._proposed(run_id, *typed)
         output = step["output"] or {"attempts": [], "choice": None}
-        if output.get("choice") == "code_only":
-            # The user chose the code's query after the model's failed; the vocabulary says so wherever it is read.
-            chosen = code_vocabulary | {"search_query": {"status": "failed", "choice": "code_only",
-                                                         "attempts": output["attempts"]}}
-            chosen, code_queries = self._code_statement(run, scope, chosen, code_queries)
-            self.store.start_step(step["id"])
-            self.store.finish_step(step["id"], "succeeded", output=output | {
-                "status": "code_only", "vocabulary": chosen, "queries": code_queries})
-            return self._proposed(run_id, chosen, code_queries)
         # A call whose failure its model step stored, but whose attempt the worker did not live to write here, is
         # counted now rather than sent again: the attempt bound counts calls sent, not attempts written.
         while ((sent := self.store.existing_step(run_id, f"search_query:{len(output['attempts']) + 1}"))
@@ -929,13 +908,13 @@ class ResearchFlow:
             # of the two stops this is decides what the person is offered: a request that never landed is sent again
             # by a resume (under this method the planning arm retries a failed or deadline-cancelled page), while a
             # provider that answered with no work at all would answer the same request the same way, so that stop
-            # offers no resume. Both leave the other way out: the code's query alone (`choose_code_query`).
+            # offers no resume. Either way the person's own saved search plan (S23a) remains a way on.
             page = self.store.existing_step(run_id, search_plan_rules.SEMANTIC_KEY)
             answered = bool(page and page["status"] == "succeeded")
             reason = "first_page_no_records" if answered else "first_page_empty"
             # Written on the step, which is never started — a step still `pending` is not half-finished work — but
-            # written it must be: the route that searches the code's query alone reads this step's output, and a
-            # person facing this stop would otherwise have no way on at all.
+            # written it must be: the stop's own reason is read from this output, and it says which of the two
+            # cases the person is facing.
             output["status"] = reason
             self.store.set_step_output(step["id"], output)
             self._pause(run_id, "search_query_failed", {
@@ -981,16 +960,15 @@ class ResearchFlow:
         claim = None
         if intent_rules.is_statement(self.store, run):
             # Written on the step as soon as it is built, as the counts above are: a worker that dies before the step
-            # closes reads the field's counts and the code query back instead of asking OpenAlex again (R5).
+            # closes reads the field's counts back instead of asking OpenAlex again (R5).
             saved = output.get("statement_context")
             if saved is None or saved["attempt"] != attempt:
-                built_context = await self._statement_context(run, scope, code_vocabulary, code_queries, answer["result"])
+                built_context = await self._statement_context(run, scope, code_vocabulary, answer["result"])
                 saved = output["statement_context"] = {"attempt": attempt, **dict(zip(
-                    ("code_vocabulary", "code_queries", "claim"), built_context))}
+                    ("code_vocabulary", "claim"), built_context))}
                 self.store.set_step_output(step["id"], output)
-            code_vocabulary, code_queries, claim = saved["code_vocabulary"], saved["code_queries"], saved["claim"]
-        built = search_query_rules.vocabulary(code_vocabulary, code_queries, checked, record,
-                                              (run["budget"].get("fast_path") or {}).get("code_query_max_total"))
+            code_vocabulary, claim = saved["code_vocabulary"], saved["claim"]
+        built = search_query_rules.vocabulary(code_vocabulary, checked, record)
         if claim is not None:
             built["statement"] = claim
         queries = search_query_rules.compile_queries(built, _planned_providers(scope), run["budget"]["max_provider_requests"])
@@ -1020,18 +998,16 @@ class ResearchFlow:
         return self._proposed(run_id, built, queries)
 
     async def _statement_context(self, run: dict[str, Any], scope: dict[str, Any], code_vocabulary: dict[str, Any],
-                                 code_queries: list[dict[str, Any]], answer: dict[str, Any]
-                                 ) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, Any]]:
-        """A statement research's field and named authors beside a model-written query, and the code query with that
-        field (R5).
+                                 answer: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+        """A statement research's field and named authors beside a model-written query (R5).
 
         The field the person typed decides, and the code vocabulary already holds it (`_vocabulary`). Without one the
         query model's `field` is used: the answer check holds it to the typed field's rule, so it is never refused
-        here. The code vocabulary is rebuilt with it first in the setting block, reading back every count it already
-        holds; nothing is sent here but the new counts.
+        here. The vocabulary of the question's words is rebuilt with the field first in the setting block, reading
+        back every count it already holds; nothing is sent here but the new counts.
         """
         if scope.get("statement_field"):
-            return code_vocabulary, code_queries, self._statement_claim(run, scope, code_vocabulary, "person")
+            return code_vocabulary, self._statement_claim(run, scope, code_vocabulary, "person")
         field = statement_rule.check_field(answer.get("field"))
         if field is not None:
             extraction = vocabulary_rules.extraction_of(code_vocabulary)
@@ -1039,9 +1015,7 @@ class ResearchFlow:
                 question_words.with_field(extraction, field), self._count_probe(scope, run["id"]),
                 known={probe["query"]: probe["count"] for probe in code_vocabulary["probes"]})
             code_vocabulary = rebuilt | {"labelling": code_vocabulary.get("labelling")}
-            code_queries = query_compiler.compile_block_queries(code_vocabulary, _planned_providers(scope),
-                                                                run["budget"]["max_provider_requests"])
-        return code_vocabulary, code_queries, self._statement_claim(run, scope, code_vocabulary, "model", field)
+        return code_vocabulary, self._statement_claim(run, scope, code_vocabulary, "model", field)
 
     def _statement_claim(self, run: dict[str, Any], scope: dict[str, Any], code_vocabulary: dict[str, Any],
                          origin: str, field: str | None = None) -> dict[str, Any]:
@@ -1061,29 +1035,33 @@ class ResearchFlow:
                                  "no_author_filter": [p for p in planned
                                                       if p not in search_query_rules.AUTHOR_FILTER_PROVIDERS]}}
 
-    def _code_statement(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any],
-                        queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        """The code's query alone (no model writes one, or the person chose it), with a statement research's typed
-        field, which `_vocabulary` already put in it, and its author queries (R5). Any other research: as given."""
-        if not intent_rules.is_statement(self.store, run) or vocabulary["block_assignment"] == "user":
-            return vocabulary, queries
-        vocabulary = vocabulary | {"statement": self._statement_claim(run, scope, vocabulary, "person")}
-        queries = search_query_rules.with_authors(vocabulary, queries, _planned_providers(scope),
-                                                  run["budget"]["max_provider_requests"])
+    def _typed_terms_query(self, run: dict[str, Any], scope: dict[str, Any], vocabulary: dict[str, Any]
+                           ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """The query of the key terms a person typed, with a statement research's own field and author queries (R5).
+
+        The words are the person's, so the query says `user` wherever it is read, as a saved plan's does. No model is
+        asked and no other query is searched beside it.
+        """
+        providers, limit = _planned_providers(scope), run["budget"]["max_provider_requests"]
+        if intent_rules.is_statement(self.store, run):
+            vocabulary = vocabulary | {"statement": self._statement_claim(run, scope, vocabulary, "person")}
+        queries = [query | {"origin": "user"}
+                   for query in query_compiler.compile_block_queries(vocabulary, providers, limit)]
+        queries = search_query_rules.with_authors(vocabulary, queries, providers, limit)
         return search_query_rules.with_authors_compiled(vocabulary, queries), queries
 
     def _user_plan_run(self, run_id: str) -> bool:
         run = self.store.run(run_id)
         return user_plan_rules.of(self.store.scope(run["research_id"], run["scope_revision"])) is not None
 
-    async def _user_search_query(self, run: dict[str, Any], scope: dict[str, Any], code_vocabulary: dict[str, Any],
-                                 code_queries: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    async def _user_search_query(self, run: dict[str, Any], scope: dict[str, Any],
+                                 code_vocabulary: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """The query of a person's saved plan (UI parity S23a, F18), in place of the model's: no model is called.
 
         The plan's terms are counted on OpenAlex and a backup takes the place of a term no record holds, exactly as
-        for a model-written query (`search_query.check`). Unlike beside a model's query, the code's query from the
-        question is not searched: the plan's words alone make the keyword queries and the ranking and screening
-        blocks. The code vocabulary is still built, for the question's side lists (claim and exclusion words).
+        for a model-written query (`search_query.check`). The plan's words alone make the keyword queries, the
+        ranking blocks and the screening blocks; the code vocabulary is still built, for the question's side lists
+        (claim and exclusion words) alone (F18).
         The step is keyed `search_query` like the model's, so a resumed run reads the stored counts and asks nothing
         twice. A block the counts leave with no term ends the run (`user_plan_unsearchable`) before anything is
         frozen or searched: the person changes the plan in a new revision.
@@ -1106,10 +1084,10 @@ class ResearchFlow:
             self.store.set_step_output(step["id"], {"checked": checked})
         if not checked["searchable"]:
             self._fail(run_id, "user_plan_unsearchable", {"checks": checked["checks"]})
-        built = search_query_rules.vocabulary(code_vocabulary, code_queries, checked, user_plan_rules.record(plan))
-        # The person's words are the whole keyword search: the question's own query is not searched beside them, so
-        # a word they removed returns in no query, no ranking block and no screening block (F18).
-        built["code_query"] = built["code_query"] | {"searched": False, "left_out": "user_plan"}
+        built = search_query_rules.vocabulary(code_vocabulary, checked, user_plan_rules.record(plan),
+                                              question_words=False)
+        # The person's words are the whole keyword search: a word they removed returns in no query, no ranking block
+        # and no screening block (F18).
         queries = search_query_rules.compile_queries(built, _planned_providers(scope), run["budget"]["max_provider_requests"])
         built = search_query_rules.with_compiled(built, queries)
         self.store.start_step(step["id"])
@@ -1527,19 +1505,16 @@ class ResearchFlow:
 
     def _compiled(self, vocabulary: dict[str, Any], providers: list[str], budget: dict[str, Any]
                   ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-        """The first round's queries for these providers, through the compiler that wrote the vocabulary's: a
-        model-written vocabulary's with the code's query beside it, recompiled for the same providers."""
+        """The first round's queries for these providers, recompiled for the same plan: the model's or the
+        person's, with the focused queries of an `m2` plan after them."""
         limit = budget["max_provider_requests"]
         if not search_query_rules.is_model_written(vocabulary):
             compiled = search_query_rules.with_authors(
                 vocabulary, query_compiler.compile_block_queries(vocabulary, providers, limit), providers, limit)
             return search_query_rules.with_authors_compiled(vocabulary, compiled), compiled
-        code = vocabulary["code_query"]
-        built = vocabulary | {"code_query": code | {
-            "queries": query_compiler.compile_block_queries(code["vocabulary"], providers, limit)}}
         compiled = search_plan_rules.with_focused(
-            built, search_query_rules.compile_queries(built, providers, limit), providers, budget)
-        return search_query_rules.with_compiled(built, compiled), compiled
+            vocabulary, search_query_rules.compile_queries(vocabulary, providers, limit), providers, budget)
+        return search_query_rules.with_compiled(vocabulary, compiled), compiled
 
     def _routing_step_output(self, run_id: str) -> dict[str, Any] | None:
         step = self.store.existing_step(run_id, "source_routing")

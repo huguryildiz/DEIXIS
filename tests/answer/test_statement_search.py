@@ -30,8 +30,7 @@ def test_a_field_with_query_syntax_or_too_long_is_refused(typed):
 
 
 def model_vocabulary(author):
-    return {"search_query": {"origin": None}, "terms": [], "statement": {"author_query": author},
-            "code_query": {"searched": False, "queries": []}}
+    return {"search_query": {"origin": None}, "terms": [], "statement": {"author_query": author}}
 
 
 def test_author_queries_go_only_to_a_provider_that_takes_the_filter(monkeypatch):

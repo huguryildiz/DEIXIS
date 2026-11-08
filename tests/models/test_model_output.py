@@ -175,7 +175,7 @@ def _app_with_adapter(tmp_path, monkeypatch, adapter, handler):
             monkeypatch.delenv(connector.key_env, raising=False)
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     return create_app(
-        Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
+        Settings(data_dir=tmp_path / "data", port=8765,
                  fulltext_fetch="off", fulltext_adjudication="off"),
         adapters={"fake": adapter},
         http_client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),

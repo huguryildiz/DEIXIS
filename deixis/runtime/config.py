@@ -61,12 +61,8 @@ class Settings:
     # `auto` is the product's behavior; `off` leaves the fetched works at `not_read_yet`, for a measurement or a
     # test that needs no second model run.
     fulltext_adjudication: str = "auto"
-    # Who writes a discovery run's keyword query (slice 13h). `model` is the product's behavior: a model
-    # writes it once per scope revision and the code's own query is searched beside it. `code` is the query of
-    # slice 13g alone, with no model call, for a measurement or a test that needs the code path only.
-    search_query: str = "model"
     # The search method a discovery run is queued with, frozen in its fast-path policy: `legacy` for every run
-    # until M1's gates pass; `m1` (chain admission v2 and the code-query width limit) for the M1 measurement arm;
+    # until M1's gates pass; `m1` (chain admission v2) for the M1 measurement arm;
     # `m2` for the arm whose plan the model writes from the first semantic page.
     search_method: str = "legacy"
     # Whether PDFs that are arXiv versions get the numbered display equations of their authors' LaTeX source while the
@@ -176,9 +172,6 @@ def load_settings() -> Settings:
     fulltext_adjudication = os.environ.get("DEIXIS_FULLTEXT_ADJUDICATION", "auto")
     if fulltext_adjudication not in ("auto", "off"):
         raise ValueError("DEIXIS_FULLTEXT_ADJUDICATION must be auto or off")
-    search_query = os.environ.get("DEIXIS_SEARCH_QUERY", "model")
-    if search_query not in ("model", "code"):
-        raise ValueError("DEIXIS_SEARCH_QUERY must be model or code")
     search_method = os.environ.get("DEIXIS_SEARCH_METHOD", "legacy")
     if search_method not in ("legacy", "m1", "m2"):
         raise ValueError("DEIXIS_SEARCH_METHOD must be legacy, m1 or m2")
@@ -196,7 +189,6 @@ def load_settings() -> Settings:
         fulltext_fetch=fulltext_fetch,
         study_table=study_table,
         fulltext_adjudication=fulltext_adjudication,
-        search_query=search_query,
         search_method=search_method,
         arxiv_source=arxiv_source,
         benchmark_list_barrier=benchmark_list_barrier == "on",

@@ -1,4 +1,4 @@
-"""Provider queries compiled from the vocabulary's concept blocks, the code query of the fast path (SW2.7).
+"""Provider queries compiled from the concept blocks of a vocabulary (SW2.7).
 
 This module writes every query string: OR inside a block, AND between blocks. Every query passes
 `query_rules.query_issues` and the 300-character limit before it is returned; terms are trimmed from the end of the

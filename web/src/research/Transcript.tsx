@@ -158,7 +158,7 @@ const troubled = (s: Step) => s.status === 'failed' || s.status === 'outcome_unk
 const plural = (n: number, one: string, many: string, vars: Record<string, string | number> = {}) => t(n === 1 ? one : many, { n, ...vars })
 const compact = (n: number) => new Intl.NumberFormat(uiLocale(), { notation: 'compact', maximumFractionDigits: 1 }).format(n)
 const tally = (values: string[]) => { const counts = new Map<string, number>(); values.forEach(v => counts.set(v, (counts.get(v) ?? 0) + 1)); return [...counts] }
-export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onGiveKeyTerms, onReviseQuestion, onChooseCodeQuery, queueCount = 0, onOpenQueue, onOpenPdfs, onOpenFunnel, onEditPlan, onControlRun, onChooseModel, onRewrite, onOpenPassage, onOpenSource, onOpenSourceList, busy = false }: {
+export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFailedSearches, onGiveKeyTerms, onReviseQuestion, queueCount = 0, onOpenQueue, onOpenPdfs, onOpenFunnel, onEditPlan, onControlRun, onChooseModel, onRewrite, onOpenPassage, onOpenSource, onOpenSourceList, busy = false }: {
   view: ResearchView; emptyText: string; latestAnswer: ReactNode; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
   // Resume run and Cancel run of the notice under a stopped run's steps (R18); Pause stays in the topbar.
@@ -180,8 +180,6 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   onGiveKeyTerms?: () => void
   // "Edit" beside the English sentence a search used: the revision form in the question bubble, on its question.
   onReviseQuestion?: () => void
-  // The way on after the model could not write the query: search with the code's query alone.
-  onChooseCodeQuery?: (run: Run) => Promise<void>
   // An sw research's works awaiting a person, named once under the latest reading run (slice 17).
   queueCount?: number; onOpenQueue?: () => void
 }) {
@@ -214,7 +212,7 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   return <>
   <div className={`chat${runs.length ? '' : ' is-empty'}`}>
     {runs.map((run, i) => <RunTurn key={run.id} run={run} view={view} now={now} latest={i === runs.length - 1} keepOpen={run.id === latestAnswerRun || run.id === latestDiscovery}
-      modelText={modelText} onRetryFailedSearches={onRetryFailedSearches} onGiveKeyTerms={onGiveKeyTerms} onReviseQuestion={onReviseQuestion} onChooseCodeQuery={onChooseCodeQuery}
+      modelText={modelText} onRetryFailedSearches={onRetryFailedSearches} onGiveKeyTerms={onGiveKeyTerms} onReviseQuestion={onReviseQuestion}
       onControlRun={onControlRun} onChooseModel={onChooseModel} onRewrite={onRewrite} onOpenPdfs={onOpenPdfs} onOpenFunnel={onOpenFunnel} onEditPlan={onEditPlan} onOpenPassage={onOpenPassage} onOpenSource={onOpenSource} onOpenSourceList={onOpenSourceList} busy={busy}
       queueLine={run.id === (latestDiscovery ?? lastReading) && queueCount > 0 && onOpenQueue ? { count: queueCount, open: onOpenQueue } : null}>
       {view.answers[0]?.run_id === run.id ? latestAnswer : null}
@@ -226,12 +224,11 @@ export function Transcript({ view, emptyText, latestAnswer, modelText, onRetryFa
   </>
 }
 
-function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSearches, onGiveKeyTerms, onReviseQuestion, onChooseCodeQuery, onControlRun, onChooseModel, onRewrite, onOpenPdfs, onOpenFunnel, onEditPlan, onOpenPassage, onOpenSource, onOpenSourceList, busy, queueLine = null, children }: {
+function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSearches, onGiveKeyTerms, onReviseQuestion, onControlRun, onChooseModel, onRewrite, onOpenPdfs, onOpenFunnel, onEditPlan, onOpenPassage, onOpenSource, onOpenSourceList, busy, queueLine = null, children }: {
   run: Run; view: ResearchView; now: number; latest: boolean; keepOpen: boolean; modelText: ModelText
   onRetryFailedSearches?: (run: Run) => Promise<void>
   onGiveKeyTerms?: () => void
   onReviseQuestion?: () => void
-  onChooseCodeQuery?: (run: Run) => Promise<void>
   onControlRun?: (run: Run, action: 'pause' | 'resume' | 'cancel') => void
   onChooseModel?: (run: Run, role: ModelRole, opener: HTMLElement, review?: { card: ReviewCard; kind: ReviewTargetKind }) => void
   onRewrite?: (question: string, keyTerms: string | null) => Promise<void>
@@ -1257,7 +1254,6 @@ function RunTurn({ run, view, now, latest, keepOpen, modelText, onRetryFailedSea
           {quotaPause && addOpenAlexKey}
           {run.pause_reason === 'key_terms_needed' && onGiveKeyTerms && <Button variant="outline" size="sm" className="notice-ghost" onClick={onGiveKeyTerms}>{t('Give the English key terms')}</Button>}
           {/* Resume asks the model once more while a try is left; this button never asks it again. */}
-          {run.pause_reason === 'search_query_failed' && onChooseCodeQuery && <Button variant="outline" size="sm" className="notice-ghost" onClick={() => void onChooseCodeQuery(run)}>{t('Search with the query built from the question’s words')}</Button>}
           {onControlRun && <Button variant="outline" size="sm" className="notice-ghost" disabled={busy} onClick={() => onControlRun(run, 'cancel')}>{t('Cancel run')}</Button>}
         </div>
       </div>

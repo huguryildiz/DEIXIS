@@ -24,7 +24,7 @@ UTC = timezone.utc
 
 @pytest.fixture
 def served(tmp_path):
-    settings = Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1, search_query="code", fulltext_fetch="off")
+    settings = Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1, fulltext_fetch="off")
     app = create_app(settings, adapters={"fake": FakeAdapter()}, http_client=httpx.AsyncClient(
         transport=httpx.MockTransport(lambda request: httpx.Response(200, json={}))), start_worker=False,
         extra_hosts=("testserver",), trusted_clients=("testclient",))
@@ -148,7 +148,7 @@ def ledger(store, session_id, day, connection, cost):
 
 
 def test_the_models_route_gives_spend_for_a_paid_key_and_the_limit_for_a_subscription(tmp_path):
-    settings = Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1, search_query="code", fulltext_fetch="off")
+    settings = Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1, fulltext_fetch="off")
     reading = {"source": "live", "seen_at": "2026-10-17T09:00:00.000+00:00",
                "windows": [{"window": "seven_day", "minutes": 10080, "used_fraction": 0.8, "resets_at": None}]}
     app = create_app(settings, adapters={"codex": QuotaAdapter(reading), "deepseek": FakeAdapter()}, http_client=httpx.AsyncClient(

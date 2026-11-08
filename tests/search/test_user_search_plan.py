@@ -180,10 +180,10 @@ def test_a_saved_plan_is_searched_without_the_three_planning_calls_and_recorded_
     rid = create(client)
     first = discover(client, rid)
     assert first["status"] == "completed", first
-    # The model-made plan the panel starts from: the model's query, the code's beside it, read-only.
+    # The model-made plan the panel starts from: the model's own query, read-only.
     view = client.get(f"/api/researches/{rid}/search-plan").json()
     assert view["origin"] == "model" and view["plan"]["providers"][0] == "openalex"
-    assert [(q["label"], q["origin"]) for q in view["queries"]] == [("Query 1", "model"), ("Query 2", "code")]
+    assert [(q["label"], q["origin"]) for q in view["queries"]] == [("Query 1", "model")]
     assert {p["provider_id"]: p["required"] for p in view["providers"]}["openalex"] is True
     # The three calls a run of the default method makes before its first search; an m2 run makes one instead.
     assert set(planning_calls(adapter, 1)) == {"vocabulary_labels", "search_query", "criterion_proposal"}
@@ -226,7 +226,6 @@ def test_a_saved_plan_is_searched_without_the_three_planning_calls_and_recorded_
     assert user_query["query_text"] == '"rail freight" AND ("timetable scheduling" OR "train dispatching")'
     assert user_query["query_text"] in providers.searches
     assert {q.get("origin") for q in body["compiled_queries"]} == {"user"}
-    assert (query["code_query_searched"], query["code_query_left_out"]) == (False, "user_plan")
 
     # After the run the panel shows the queries the protocol froze.
     after = client.get(f"/api/researches/{rid}/search-plan").json()

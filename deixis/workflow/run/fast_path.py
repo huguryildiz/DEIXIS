@@ -13,8 +13,8 @@ POLICY = "fast_path_v1"
 RUNNER_VERSION = 2
 STAGES = ("plan", "search", "ranking", "read", "answer")
 # The search method a discovery run is queued with, frozen in its policy. `legacy` is every run's default:
-# chain admission `fast_chain_v1` and the code query searched as before. `m1` selects chain admission
-# `fast_chain_v2` and the code-query width limit together; it is for the M1 measurement until all its gates pass.
+# chain admission `fast_chain_v1`. `m1` selects chain admission `fast_chain_v2`; it is for the M1 measurement
+# until all its gates pass.
 # `m2` adds the search plan the model writes from the first semantic page (`search_plan_v1`): its terms carry the
 # record, field and span they were read from, and it names the works the citation chain starts from. A query written
 # under one method is never reused by a run of another (`store.search_query_of`).
@@ -115,9 +115,7 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         "admission_order": "unresolved_last",
     }
     if method in ("m1", "m2"):
-        from deixis.workflow.search.vocabulary import CODE_QUERY_MAX_TOTAL
-
-        policy |= {"search_method": method, "chain_rule": "fast_chain_v2", "code_query_max_total": CODE_QUERY_MAX_TOTAL}
+        policy |= {"search_method": method, "chain_rule": "fast_chain_v2"}
     if method == "m2":
         # The model writes the plan from the first semantic page; the chain starts from the works it names.
         # `boolean_plans` counts the distinct Boolean query plans the run may send, the main one included; one plan

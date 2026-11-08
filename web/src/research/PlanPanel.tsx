@@ -290,7 +290,7 @@ export function PlanPanel({ researchId, view, busy, searchReady, answerRevision,
       <p className="plan-note">{[
         loaded.queries_preview && t('A preview: the query is compiled again from the words when the search starts. A backup word takes the place of a word OpenAlex counts at zero, and is added beside a word that finds no record together with the other part, while the query stays within 8 words.'),
         wordsChanged && t('The queries above are the stored ones; the edited words are compiled into a new query when the search starts.'),
-        !own && t('Saved, the plan is searched with its own words only: the query built from the question’s words is not searched beside it.'),
+        !own && t('Saved, the plan is searched with its own words: no model writes a query beside it.'),
       ].filter(Boolean).join(' ')}</p>
       {plan.criterion
         ? <label className="lbl">{t('Inclusion criterion')}<textarea className="field" rows={2} maxLength={600} value={draft.criterion ?? ''} disabled={locked} onChange={e => { const text = e.target.value; changeDraft(current => ({ ...current, criterion: text })) }} />

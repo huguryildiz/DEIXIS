@@ -156,8 +156,9 @@ PLAN_ORIGINS = ("model", "user", "code")
 def plans_in_round(queries: list[dict[str, Any]]) -> int:
     """How many distinct Boolean query plans the first round already holds.
 
-    The model's own query is one; the code query searched beside it is another, and it is a different plan of the
-    same question, not another rendering of the same one. One plan rendered for several providers stays one plan.
+    The round holds one plan of its own, the model's or the person's saved one, and it stays one plan however many
+    providers it is rendered for. A research searched before the question's own code query was removed holds that
+    query's plan too, so its rounds are still counted as they were. An author lookup is no concept plan.
     """
     return len({query["origin"] for query in queries
                 if query.get("origin") in PLAN_ORIGINS and query.get("role") != "focused"})
@@ -166,9 +167,9 @@ def plans_in_round(queries: list[dict[str, Any]]) -> int:
 def focused_allowance(budget: dict[str, Any], queries: list[dict[str, Any]] | None = None) -> int:
     """How many focused queries this run may still send inside its depth's Boolean plan budget.
 
-    The budget counts distinct plans, so the plans the first round already holds are subtracted: the model's query
-    and, where it is searched, the code query beside it. A depth whose budget the first round already spends sends
-    no focused query, and the step records the budget as the reason.
+    The budget counts distinct plans, so the plans the first round already holds are subtracted: the round's own
+    main query. A depth whose budget the first round already spends sends no focused query, and the step records
+    the budget as the reason.
 
     A run frozen under another method, or before the budget was frozen, has none: the focused query belongs to the
     plan this method writes, and a run that froze no budget for it sends none.
@@ -261,8 +262,8 @@ def main_query_covers(store: Any, run: dict[str, Any], term: str, indexes: list[
     not inside a longer one. A main query that found nothing covers nothing, so the focused query goes out: the gap
     is certainly unmet.
 
-    `indexes` are the main query's own pages. A record the code query alone found does not close the gap in the
-    main query's results, and a work this concept is merely mentioned in is still counted as carrying it: the check
+    `indexes` are the main query's own pages. A record another query of the round alone found does not close the
+    gap in the main query's results, and a work this concept is merely mentioned in is still counted as carrying it: the check
     reads words, not what a paper is about. That limit is recorded.
     """
     if not indexes:
@@ -308,8 +309,8 @@ def with_focused(vocabulary: dict[str, Any], queries: list[dict[str, Any]], prov
 def main_plan_indexes(specs: list[dict[str, Any]]) -> list[int]:
     """The keyword specs of the main Boolean query: the plan the model wrote, or the person's saved one.
 
-    The code query beside it is a different plan of the same question, and a statement research's author queries are
-    a named work's own lookup, so a record only those found leaves the main query's gap open.
+    A statement research's author queries are a named work's own lookup, and a research searched before the
+    question's own code query was removed holds that query too, so a record only those found leaves the gap open.
     """
     return [spec["index"] for spec in specs
             if spec["query"].get("role") != "focused" and spec["query"].get("origin") in ("model", "user")]

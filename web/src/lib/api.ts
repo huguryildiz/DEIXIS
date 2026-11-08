@@ -119,7 +119,7 @@ export type SeedUse =
         basis: string | null; title: string | null; doi: string | null; openalex_id: string | null }
       // null: not known yet (the step has not run).
       query_writing: boolean | null; semantic: boolean | null; chain: boolean | null
-      query_writing_detail: 'reused' | 'code_query' | 'user_key_terms' | 'code_only' | 'written_without_seed' | null
+      query_writing_detail: 'reused' | 'user_key_terms' | 'written_without_seed' | null
       // unknown: requests whose outcome was not proven.
       chain_requests: { planned: number; sent: number; unsent: number; unknown: number } | null }
 export type SeedPdf = { source_version_id: string; asset_id: string; asset_sha256: string; extraction_version: string
@@ -1574,8 +1574,6 @@ export const api = {
   withdrawScope: (id: string, revision: number, expectedVersion: number) =>
     request<ResearchView>(`/api/researches/${id}/scope/withdraw`, json('POST', { revision, expected_version: expectedVersion })),
   skipEquations: (runId: string) => request<Run>(`/api/runs/${runId}/skip-equations`, { method: 'POST' }),
-  // After the model could not write the query: search with the code's query alone.
-  chooseCodeQuery: (runId: string) => request<Run>(`/api/runs/${runId}/search-query-choice`, { method: 'POST' }),
   passage: (id: string, passageId: string) => request<Passage>(`/api/researches/${id}/passages/${passageId}`),
   assetText: (id: string, assetId: string, extractionId?: string) => request<AssetText>(`/api/researches/${id}/assets/${assetId}/text${extractionId ? `?extraction_id=${encodeURIComponent(extractionId)}` : ''}`),
   assetFigures: (id: string, assetId: string) => request<{ figures: AssetFigure[] }>(`/api/researches/${id}/assets/${assetId}/figures`),
@@ -2177,7 +2175,7 @@ export const followupApi = {
 
 // The search plan panel (S23a; api/search_plan_routes.py). The person edits the words of each block, the criterion
 // and the optional providers; the queries are read-only strings compiled by code. A model-made plan shows the model's
-// query and the code's query from the question; a saved plan searches its own words only (one query), as a preview
+// own query; a saved plan searches its own words instead, as a preview
 // (`queries_preview`, `compiled_from: 'plan_words'`) until a run compiles and freezes it (`protocol`). Saving makes a new scope revision and
 // starts no run. A plan that breaks a rule answers 422 with code `invalid_search_plan` and `issues` (the SearchQuery
 // term rules, `openalex_required`, `provider_not_in_scope`); a stale `expected_version` answers 409.

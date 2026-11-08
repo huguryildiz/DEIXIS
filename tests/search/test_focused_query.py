@@ -182,15 +182,15 @@ def test_an_m2_run_compiles_the_focused_query_and_does_not_send_it_when_the_main
     monkeypatch.setattr(test_search_query, "WORK", PLAN_WORK)
     adapter = FakeAdapter()
     client = client_for(tmp_path, monkeypatch, OpenAlex(), adapter, method="m2")
-    # The code query beside the model's is a Boolean plan of its own, so only Deep's budget leaves room for one
-    # focused plan (see `test_the_code_query_beside_the_main_one_spends_a_plan_of_the_budget`).
+    # The main query is the round's only other plan, so Deep's budget leaves room for two focused plans; the
+    # model names one (see `test_a_second_plan_in_the_round_spends_a_plan_of_the_budget`).
     rid, run_id = start(client, effort="detailed")
     _, run = wait(client, rid, run_id)
     assert run["status"] == "completed", run
 
     stored = step_output(client, run_id, "search_query")
     recorded = stored["focused"]
-    assert recorded["rule"] == search_plan.FOCUSED_RULE and recorded["allowance"] == 1
+    assert recorded["rule"] == search_plan.FOCUSED_RULE and recorded["allowance"] == 2
     (named,) = recorded["concepts"]
     assert named["gap"] and named["left_out"] is None and named["query_text"]
     # One plan, rendered once per provider as the main query is; the frozen keyword plan sends the OpenAlex one.
@@ -205,21 +205,23 @@ def test_an_m2_run_compiles_the_focused_query_and_does_not_send_it_when_the_main
 
 # ---- what the first round already spends -------------------------------------------------------------------
 
-def test_the_code_query_beside_the_main_one_spends_a_plan_of_the_budget():
-    """The design counts distinct Boolean query plans, and the code query searched beside the model's is one of
-    them: one plan rendered for several providers stays one plan, two different plans are two."""
+def test_a_second_plan_in_the_round_spends_a_plan_of_the_budget():
+    """The design counts distinct Boolean query plans, and the round holds one of its own: the model's query, or a
+    person's saved plan in its place, rendered once per provider. A focused query and an author lookup are not it."""
     model = {"origin": "model", "provider_id": "openalex"}
-    code = {"origin": "code", "provider_id": "openalex"}
     author = {"origin": "author", "provider_id": "openalex"}
+    focused = {"origin": "model", "provider_id": "openalex", "role": "focused"}
     assert search_plan.plans_in_round([model, dict(model, provider_id="crossref")]) == 1
-    assert search_plan.plans_in_round([model, code]) == 2
-    assert search_plan.plans_in_round([model, code, author]) == 2  # a named work's lookup is no concept plan
+    assert search_plan.plans_in_round([model, author]) == 1  # a named work's lookup is no concept plan
+    assert search_plan.plans_in_round([model, focused]) == 1  # the focused query is what the budget is spent on
+    assert search_plan.plans_in_round([{"origin": "user", "provider_id": "openalex"}]) == 1
     standard = fast_path.freeze_budget({}, "standard", method="m2")
     deep = fast_path.freeze_budget({}, "detailed", method="m2")
-    # Standard allows two plans, which the model's query and the code query already spend.
-    assert search_plan.focused_allowance({"fast_path": standard}, [model, code]) == 0
+    # Standard allows two plans: the main query spends one and a focused query may spend the other.
     assert search_plan.focused_allowance({"fast_path": standard}, [model]) == 1
-    assert search_plan.focused_allowance({"fast_path": deep}, [model, code]) == 1
+    assert search_plan.focused_allowance({"fast_path": deep}, [model]) == 2
+    # A research searched before the code query was removed still has that plan counted in its own round.
+    assert search_plan.focused_allowance({"fast_path": standard}, [model, {"origin": "code", "provider_id": "openalex"}]) == 0
 
 
 def test_only_the_main_querys_own_pages_answer_the_coverage_question():

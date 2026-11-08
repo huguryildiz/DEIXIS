@@ -36,7 +36,7 @@ def app_for(tmp_path, monkeypatch, transport, fetcher, *, workflow="sw", fetch="
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", workflow)
     monkeypatch.setenv("DEIXIS_CONTACT_EMAIL", "synthetic@example.org")
-    return create_app(Settings(data_dir=tmp_path / "data", port=8765, search_query="code",
+    return create_app(Settings(data_dir=tmp_path / "data", port=8765,
                                fulltext_fetch=fetch, fulltext_adjudication=reading,
                                model_concurrency=concurrency),
                       adapters={"fake": adapter or FakeAdapter(valid_response)},

@@ -91,7 +91,7 @@ def make(tmp_path, monkeypatch):
 
     def build(net=None):
         net = net or Net()
-        settings = Settings(data_dir=tmp_path / "data", port=8765, search_query="code", fulltext_fetch="off")
+        settings = Settings(data_dir=tmp_path / "data", port=8765, fulltext_fetch="off")
         app = create_app(settings, adapters={"fake": FakeAdapter()}, http_client=httpx.AsyncClient(
             transport=httpx.MockTransport(net.handler)), fetcher=net.fetch, extra_hosts=("testserver",),
             trusted_clients=("testclient",))

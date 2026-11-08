@@ -26,7 +26,7 @@ def client_of(app):
 
 
 def app_for(tmp_path, monkeypatch, n=60, *, pdf=False, adapter=None, model_works=False,
-            transport=None, fetch="auto", reading="auto", search_query="code", start_worker=True, **settings):
+            transport=None, fetch="auto", reading="auto", start_worker=True, **settings):
     monkeypatch.setenv("DEIXIS_SEARCH_WORKFLOW", "sw")
     for connector in CONNECTORS.values():
         if connector.key_env:
@@ -36,8 +36,7 @@ def app_for(tmp_path, monkeypatch, n=60, *, pdf=False, adapter=None, model_works
                     pdf_url=f"https://example.org/w{i}.pdf" if pdf else None) for i in range(n)]
     fetcher = SlowFetcher({f"https://example.org/w{i}.pdf": ok(named_pdf(f"10.1/oa.{i}"))
                            for i in range(n)} if pdf else {}, delay=0.002)
-    app = create_app(Settings(data_dir=tmp_path / "data", port=8877, search_query=search_query,
-                              fulltext_fetch=fetch,
+    app = create_app(Settings(data_dir=tmp_path / "data", port=8877, fulltext_fetch=fetch,
                               fulltext_adjudication=reading, **settings),
                      adapters={"fake": adapter or FakeAdapter(valid_response)},
                      http_client=httpx.AsyncClient(transport=httpx.MockTransport(transport or Transport(records))),

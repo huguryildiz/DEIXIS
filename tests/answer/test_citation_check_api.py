@@ -63,7 +63,7 @@ class OpenAlex:
 def make(tmp_path):
     def build(openalex=None):
         openalex = openalex or OpenAlex()
-        settings = Settings(data_dir=tmp_path / "data", port=8765, search_query="code", fulltext_fetch="off")
+        settings = Settings(data_dir=tmp_path / "data", port=8765, fulltext_fetch="off")
         app = create_app(settings, adapters={"fake": FakeAdapter()}, http_client=httpx.AsyncClient(
             transport=httpx.MockTransport(openalex.handler)), extra_hosts=("testserver",), trusted_clients=("testclient",))
         return app, openalex

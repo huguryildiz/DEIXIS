@@ -5,6 +5,7 @@ search quality."""
 import asyncio
 import dataclasses
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -242,3 +243,162 @@ def test_a_run_request_without_a_reply_is_sent_again_with_the_same_key_and_marke
     assert bioasq_run.ask_deixis(Server(), "SYNTHETIC q", row=row) == ("res_a", "run_a")
     assert keys[0][0] == keys[1][0] and keys[0][1]["run_request"] == keys[0][0]  # marked before the first send
     assert "run_request" not in row
+
+
+# ---- check.py: the keyword ranking and the list the product delivered ------------------------------------------
+
+def _snapshot(path, delivered):
+    """A SYNTHETIC answered research: two works, a keyword ranking and the frozen small-batch list.
+
+    The keyword ranking puts the target work second; `delivered` is the order of work ids in the list the product
+    delivered, so a test can give the two orders different places for the same work.
+    """
+    from deixis.storage import db as storage_db
+    conn = storage_db.connect(path)
+    storage_db.migrate(conn)
+    ts = "2026-11-08T00:00:00.000+00:00"
+    with storage_db.transaction(conn):
+        conn.execute("INSERT INTO researches (id, title, created_at, updated_at) VALUES ('res_S', 'S', ?, ?)", (ts, ts))
+        conn.execute("INSERT INTO scope_revisions (research_id, revision, question, source_scope, providers_json,"
+                     " effort, model_connection, created_at) VALUES ('res_S', 1, ?, 'academic', '[\"openalex\"]',"
+                     " 'quick', 'fake', ?)", (QUESTION, ts))
+        for kind in ("discovery", "answer"):
+            conn.execute("INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json,"
+                         " usage_json, created_at, updated_at) VALUES (?, 'res_S', 1, ?, 'completed', 'answer', '{}',"
+                         " '{}', ?, ?)", (f"run_{kind}", kind, ts, ts))
+        for n, (work, title) in enumerate((("wrk_a", "SYNTHETIC other"), ("wrk_b", "SYNTHETIC target"))):
+            conn.execute("INSERT INTO works (id, created_at) VALUES (?, ?)", (work, ts))
+            conn.execute("INSERT INTO source_versions (id, work_id, title, doi, origin, version_label, created_at)"
+                         " VALUES (?, ?, ?, ?, 'provider', 'publishedVersion', ?)",
+                         (f"srv_{n}", work, title, f"10.0000/s{n}", ts))
+        # One answered keyword query, its hit rows and its candidates: the pool the measurement reads.
+        conn.execute("INSERT INTO run_steps (id, run_id, operation_key, kind, status, attempt, output_json,"
+                     " started_at, finished_at) VALUES ('stp_search', 'run_discovery', 'search:0',"
+                     " 'provider_search:openalex', 'succeeded', 1, '{}', ?, ?)", (ts, ts))
+        conn.execute("INSERT INTO search_runs (id, research_id, run_id, step_id, provider, query_text,"
+                     " request_description, access_mode, status, result_count, page_limit, retrieved_at,"
+                     " scope_revision, sort) VALUES ('srn_0', 'res_S', 'run_discovery', 'stp_search', 'openalex',"
+                     " 'q', 'GET SYNTHETIC', 'keyless', 'completed', 2, 25, ?, 1, NULL)", (ts,))
+        for n in (0, 1):
+            conn.execute("INSERT INTO candidate_hits (research_id, scope_revision, source_version_id, search_run_id,"
+                         " rank, raw_score) VALUES ('res_S', 1, ?, 'srn_0', ?, ?)", (f"srv_{n}", n, 10.0 - n))
+            conn.execute("INSERT INTO candidates (id, research_id, search_run_id, source_version_id, rank,"
+                         " scope_revision, created_at) VALUES (?, 'res_S', 'srn_0', ?, ?, 1, ?)",
+                         (f"cnd_{n}", f"srv_{n}", n, ts))
+        # The keyword ranking: the other work first, the target second.
+        conn.execute("INSERT INTO run_steps (id, run_id, operation_key, kind, status, attempt, output_json,"
+                     " started_at, finished_at) VALUES ('stp_rank', 'run_discovery', 'ranking', 'code:ranking',"
+                     " 'succeeded', 1, '{}', ?, ?)", (ts, ts))
+        for n in (0, 1):
+            conn.execute("INSERT INTO record_signal_ranks (ranking_step_id, research_id, source_version_id, signal,"
+                         " rank, available) VALUES ('stp_rank', 'res_S', ?, 'inspection', ?, 1)", (f"srv_{n}", n))
+        # The list the product delivered, in whatever order the caller asked for.
+        items = [{"position": i + 1, "work_id": work, "head": "srv_0"} for i, work in enumerate(delivered)]
+        conn.execute("INSERT INTO run_steps (id, run_id, operation_key, kind, status, attempt, output_json,"
+                     " started_at, finished_at) VALUES ('stp_list', 'run_discovery', 'small_batch:v1:list',"
+                     " 'code:small_batch_list', 'succeeded', 1, ?, ?, ?)", (json.dumps({"items": items}), ts, ts))
+        # The answer and the StepInput it was written from; its creation time is the measurement's cutoff.
+        conn.execute("INSERT INTO run_steps (id, run_id, operation_key, kind, status, attempt, started_at,"
+                     " finished_at) VALUES ('stp_answer', 'run_answer', 'answer', 'model:answer', 'succeeded', 1,"
+                     " ?, ?)", (ts, ts))
+        conn.execute("INSERT INTO step_inputs (id, step_id, research_id, run_id, attempt, task_type, scope_revision,"
+                     " skill_package_hash, payload_json, base_instructions, developer_instructions, user_message,"
+                     " output_schema_json, created_at) VALUES ('sti_S', 'stp_answer', 'res_S', 'run_answer', 1,"
+                     " 'answer', 1, 'h', ?, 'b', 'd', 'u', '{}', ?)",
+                     (json.dumps({"question": {"text": QUESTION}, "sources": [], "passages": []}), ts))
+        conn.execute("INSERT INTO answers (id, research_id, run_id, step_id, step_input_id, scope_revision, status,"
+                     " draft_json, validation_json, created_at) VALUES ('ans_S', 'res_S', 'run_answer', 'stp_answer',"
+                     " 'sti_S', 1, 'structurally_valid', ?, '{}', ?)", (json.dumps({"claims": []}), ts))
+        # The answer run names the discovery run whose frozen list it answered from, as the product stores it.
+        conn.execute("UPDATE runs SET budget_json = ? WHERE id = 'run_answer'",
+                     (json.dumps({"inspection": {"list_run_id": "run_discovery"}}),))
+    conn.close()
+
+
+QUESTION = "SYNTHETIC measurement question?"
+BENCH = {"name": "SYNTHETIC", "question": QUESTION,
+         "papers": [{"key": "target", "doi": "10.0000/s1", "title": "SYNTHETIC target", "label": "ilgili"}]}
+
+
+def test_the_measurement_reports_the_keyword_ranking_and_the_list_the_product_delivered(tmp_path):
+    """The tool read only `code:ranking`, so a rerank that moved the delivered list left no mark on any measurement.
+
+    The target work is second in the keyword ranking and first in the delivered list: the report must carry both.
+    """
+    import check
+
+    BENCH["question_sha256"] = check.sha(QUESTION)
+    _snapshot(tmp_path / "library.sqlite", ["wrk_a", "wrk_b"])
+    conn = sqlite3.connect(tmp_path / "library.sqlite")
+    conn.row_factory = sqlite3.Row
+    first = check.measure(conn, "res_S", "ans_S", BENCH)
+    assert first["papers"][0]["keyword_rank"] == 2 and first["papers"][0]["delivered_rank"] == 2
+    assert first["delivered_list_step_id"] == "stp_list"
+    conn.close()
+
+    # The same keyword ranking, the target first in the delivered list: only the delivered places move.
+    _snapshot(tmp_path / "moved.sqlite", ["wrk_b", "wrk_a"])
+    conn = sqlite3.connect(tmp_path / "moved.sqlite")
+    conn.row_factory = sqlite3.Row
+    moved = check.measure(conn, "res_S", "ans_S", BENCH)
+    assert moved["papers"][0]["keyword_rank"] == 2 and moved["papers"][0]["delivered_rank"] == 1
+    assert moved["coverage"]["all"]["counts"]["keyword_top_20"] == 1
+    assert moved["coverage"]["all"]["counts"]["delivered_top_20"] == 1
+    conn.close()
+
+
+def test_the_delivered_order_comes_from_the_run_the_answer_names_not_the_latest_list(tmp_path):
+    """A second discovery of the same question revision freezes its own list after the answer run's. Reading the
+    latest list would lend that order to an answer written from another one."""
+    import check
+
+    BENCH["question_sha256"] = check.sha(QUESTION)
+    _snapshot(tmp_path / "library.sqlite", ["wrk_a", "wrk_b"])
+    conn = sqlite3.connect(tmp_path / "library.sqlite")
+    conn.row_factory = sqlite3.Row
+    later = "2026-11-08T00:01:00.000+00:00"
+    conn.execute("INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json, usage_json,"
+                 " created_at, updated_at) VALUES ('run_other', 'res_S', 1, 'discovery', 'completed', 'answer',"
+                 " '{}', '{}', ?, ?)", (later, later))
+    conn.execute("INSERT INTO run_steps (id, run_id, operation_key, kind, status, attempt, output_json, started_at,"
+                 " finished_at) VALUES ('stp_other', 'run_other', 'small_batch:v1:list', 'code:small_batch_list',"
+                 " 'succeeded', 1, ?, ?, ?)",
+                 (json.dumps({"items": [{"position": 1, "work_id": "wrk_b"}, {"position": 2, "work_id": "wrk_a"}]}),
+                  later, later))
+    conn.commit()
+    report = check.measure(conn, "res_S", "ans_S", BENCH)
+    assert report["delivered_list_step_id"] == "stp_list"  # the answer run's own list, not the later one
+    assert report["delivered_list_binding"] == "answer_run_binding"
+    assert report["papers"][0]["delivered_rank"] == 2
+    conn.close()
+
+
+def test_an_answer_run_that_stored_no_list_binding_falls_back_to_the_latest_list_and_says_so(tmp_path):
+    import check
+
+    BENCH["question_sha256"] = check.sha(QUESTION)
+    _snapshot(tmp_path / "library.sqlite", ["wrk_a", "wrk_b"])
+    conn = sqlite3.connect(tmp_path / "library.sqlite")
+    conn.row_factory = sqlite3.Row
+    conn.execute("UPDATE runs SET budget_json = '{}' WHERE id = 'run_answer'")
+    conn.commit()
+    report = check.measure(conn, "res_S", "ans_S", BENCH)
+    assert report["delivered_list_step_id"] == "stp_list"
+    assert report["delivered_list_binding"] == "inferred_by_time"
+    conn.close()
+
+
+def test_a_research_whose_delivered_list_was_never_frozen_says_so_instead_of_reporting_a_place(tmp_path):
+    import check
+
+    BENCH["question_sha256"] = check.sha(QUESTION)
+    _snapshot(tmp_path / "library.sqlite", ["wrk_a", "wrk_b"])
+    conn = sqlite3.connect(tmp_path / "library.sqlite")
+    conn.row_factory = sqlite3.Row
+    conn.execute("DELETE FROM run_steps WHERE id = 'stp_list'")
+    conn.commit()
+    report = check.measure(conn, "res_S", "ans_S", BENCH)
+    assert report["delivered_list_binding"] == "not_recorded_require_delivered_list"
+    assert report["papers"][0]["delivered_rank"] is None
+    assert report["coverage"]["all"]["counts"]["delivered_top_50"] is None
+    conn.close()

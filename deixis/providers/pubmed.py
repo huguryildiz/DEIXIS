@@ -27,6 +27,9 @@ from deixis.providers.common import (MAX_RATE_LIMIT_RETRIES, ProviderRecord, Sea
 PROVIDER_ID = "pubmed"
 BASE_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
 SEARCH_URL = f"{BASE_URL}/esearch.fcgi"
+# The sorting setting every ESearch carries, whatever the query names: PubMed's own relevance order. Recorded with the
+# search run, so a reader can tell this list is relevance-ordered without reading the adapter.
+FIXED_SORT = "relevance"
 FETCH_URL = f"{BASE_URL}/efetch.fcgi"
 ABSTRACT_ORIGIN = "provider_pubmed"
 RATE_LIMIT_HEADERS = ("x-ratelimit-limit", "x-ratelimit-remaining")
@@ -137,7 +140,7 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
     access_mode = "api_key" if api_key else "keyless"
     search_description = (f"GET {SEARCH_URL} db=pubmed term={query!r} retmax={count}"
                           + (f" retstart={offset}" if cursor is not None else "") + f" access={access_mode}")
-    esearch = {"term": query, "retmode": "json", "retmax": count, "sort": "relevance"}
+    esearch = {"term": query, "retmode": "json", "retmax": count, "sort": FIXED_SORT}
     if cursor is not None:
         esearch["retstart"] = offset  # ESearch reaches record 9,999; the read limit stops well before that
     response, outcome = await send(

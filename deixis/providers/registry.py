@@ -104,6 +104,11 @@ class Connector:
     # sort. The query carries it, so a resumed run reads the endpoint its stored query names, and a query stored
     # before that change, which names none, is read as it was (`reading`).
     sw_query: dict[str, Any] = field(default_factory=dict)
+    # The sorting setting this connector's adapter sends on every search whatever the query names. Recorded with the
+    # search run beside the query's own setting, so a reader can tell a relevance-ordered list from one ordered by
+    # date or citation count without reading the adapter. None: the adapter sends none and the provider answers in its
+    # own order for that request. It is not part of the connector contract and no request reads it.
+    fixed_sort: str | None = None
     endpoints: dict[str, Endpoint] = field(default_factory=dict)
     requests_per_search: int = 1
     adapter_revision: int = 1
@@ -180,12 +185,14 @@ CONNECTORS = {c.provider_id: c for c in (
               display_name="bioRxiv", query_syntax=QuerySyntax(boolean_checks=True)),
     # ESearch followed by EFetch; both have their own bounded HTTP retries.
     Connector("pubmed", pubmed.search, pubmed.MAX_RESULTS, "NCBI_API_KEY", host=_host(pubmed.BASE_URL), requests_per_search=2, adapter_revision=2,
+              fixed_sort=pubmed.FIXED_SORT,
               display_name="PubMed", query_syntax=QuerySyntax(operand_suffix="[Title/Abstract]")),
     Connector("ieee_xplore", ieee_xplore.search, ieee_xplore.MAX_RESULTS, "IEEE_API_KEY", key_required=True,
               host=_host(ieee_xplore.SEARCH_URL), adapter_revision=2, display_name="IEEE Xplore",
               query_syntax=QuerySyntax(boolean_checks=True, unbalanced_suffix=" (it returns zero records instead of an error)")),
     Connector("scopus", scopus.search, scopus.MAX_RESULTS, "SCOPUS_API_KEY", key_required=True,
               sw_searchable=False, host=_host(scopus.SEARCH_URL), adapter_revision=2, display_name="Scopus",
+              fixed_sort=scopus.FIXED_SORT,
               capabilities={"doi_lookup": CapabilityBinding(_scopus_lookup, lookup.SCOPUS_LOOKUP_BATCH)},
               query_syntax=QuerySyntax("field_group", wrapper="TITLE-ABS-KEY")),  # last abstract source only
     # CORE and SerpApi get no new query: in the third reranker measurement neither brought a verified work no other
@@ -256,6 +263,19 @@ def endpoint_options(query: dict[str, Any]) -> dict[str, Any]:
     """The arguments a query that names its endpoint, sort or filter passes to its connector's `search` (a statement
     research's OpenAlex author query carries `works_filter`, R5); none for any other query."""
     return {key: query[key] for key in ("endpoint", "sort", "works_filter") if query.get(key) is not None}
+
+
+def effective_sort(query: dict[str, Any]) -> str | None:
+    """The sorting setting this request carries: the one the query names, else the one its connector always sends.
+
+    None means the request names none and the provider answers in its own order for it — for a request carrying a
+    search term, that order is the provider's own relevance order.
+    """
+    named = query.get("sort")
+    if named is not None:
+        return named
+    connector = CONNECTORS.get(query.get("provider_id"))
+    return connector.fixed_sort if connector is not None else None
 
 
 def provider_role(connector: Connector) -> str:

@@ -727,4 +727,15 @@ ALTER TABLE scope_english_questions_new RENAME TO scope_english_questions;
 -- screened first. NULL: no read has brought any; an empty list means the provider answered with none.
 ALTER TABLE source_versions ADD COLUMN index_keywords_json TEXT;
 """),
+    19: Step("0019_hit_rank_and_score.sql", False, """\
+-- Where each record stood in each query that found it. `candidate_hits` kept only which query found a record, so a
+-- record found by two queries lost the second place: `candidates.rank` holds the best of them alone. The two new
+-- columns hold the place in that one query and the provider's own score for it, and `search_runs.sort` the sorting
+-- setting the request carried. All three are an audit record: no gate, threshold or screening step reads them, and
+-- scores of two queries share no scale. Rows written before this step keep NULL in all three; NULL means not
+-- recorded, never rank zero and never a score of zero.
+ALTER TABLE candidate_hits ADD COLUMN rank INTEGER;
+ALTER TABLE candidate_hits ADD COLUMN raw_score REAL;
+ALTER TABLE search_runs ADD COLUMN sort TEXT;
+"""),
 }

@@ -70,6 +70,10 @@ SELECT = ",".join(
         # The index keywords every search reads: the planner names its terms from them, and the chain admission gate
         # and the abstract stage match against them. A select field adds no cost; OpenAlex prices a request by class.
         "keywords",
+        # The score OpenAlex gave this record for this query. Kept as an audit record of the list the record came from;
+        # no gate, threshold or screening step reads it. OpenAlex returns it only for a request that carries a search
+        # term, so a filter-only read (citation chaining, an id lookup) gets no value and stores none.
+        "relevance_score",
     ]
 )
 ABSTRACT_ORIGIN = "provider_openalex_inverted_index"
@@ -143,6 +147,10 @@ def _record(work: dict[str, Any]) -> ProviderRecord:
                         if isinstance(keyword, dict) and (name := keyword.get("display_name"))],
         # Only a boolean OpenAlex answered counts; an absent or malformed field is unknown, never "not retracted".
         is_retracted=work.get("is_retracted") if isinstance(work.get("is_retracted"), bool) else None,
+        # The query's own score for this record, an audit record only. Absent on a read that carried no search term,
+        # and `None` then means no score, never zero. A boolean is not a number here, so `True` is not read as 1.
+        relevance_score=(float(score) if isinstance(score := work.get(RELEVANCE_SCORE_FIELD), (int, float))
+                         and not isinstance(score, bool) else None),
         # Absent unless this read asked for the field; an absent count is unknown, never zero.
         reference_count=(work.get(REFERENCE_COUNT_FIELD)
                          if isinstance(work.get(REFERENCE_COUNT_FIELD), int) else None),
@@ -272,6 +280,11 @@ def _works_page(response: httpx.Response | None, outcome: SearchOutcome, cursor:
 # 7 Nov 2026). Asked for on a chain read alone, where the admission gate reads them; a keyword search needs no
 # field of its own, since `search.title_abstract_keywords` already matches against them.
 KEYWORDS_FIELD = "keywords"
+# The score OpenAlex gave a record for the query that returned it (help.openalex.org/api/searching/#relevance-score):
+# semantic search scores meaning closeness, a keyword search text match with a bounded citation and index-term part.
+# Asked for by every search; OpenAlex sends it only where the request carried a search term. Stored for inspection
+# alone — scores of different queries are not on one scale, so nothing compares or thresholds them.
+RELEVANCE_SCORE_FIELD = "relevance_score"
 # The two requests of citation chaining (slice 15). Both read the fields an sw search reads, the reference list
 # included, so a chained record carries its own bibliography like any record an sw query found, plus the keywords the
 # gate reads.

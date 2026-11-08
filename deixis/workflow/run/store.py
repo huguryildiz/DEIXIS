@@ -2845,7 +2845,8 @@ class Store:
     # ---- research corpus -------------------------------------------------------------
     def record_search(self, search_fields: dict[str, Any], provider: str, records: list[Any], payload_path: str | None,
                       step_id: str, step_status: str, step_output: dict[str, Any] | None = None, first_rank: int = 0,
-                      keep_found: bool = False, keep_candidate: bool = False, **step_fields: Any) -> str:
+                      keep_found: bool = False, keep_candidate: bool = False, hit_ranks: list[int] | None = None,
+                      **step_fields: Any) -> str:
         """Commit the search run, normalized sources, candidates and the step outcome together.
 
         `first_rank` is how many records the query read on its earlier pages: a candidate's rank is its place in the
@@ -2853,7 +2854,15 @@ class Store:
         step output names the source versions this request wrote, before any is sent to its work's candidate.
         `keep_candidate` (a follow-up search) leaves a candidate of the same question revision as it was: its rank
         and search are the first search's.
+
+        Each record's hit row also keeps where it stood in this one query and the provider's own score for it there,
+        as an audit record only: the gates, thresholds and screening steps read neither. That place is the candidate
+        rank, which a paged search already counts over its pages. A caller whose `records` are not the provider's own
+        order, or whose candidate rank carries an ordering offset instead of a place, passes the real places as
+        `hit_ranks`, one per record in the same order.
         """
+        if hit_ranks is not None and len(hit_ranks) != len(records):
+            raise ValueError("hit_ranks must name a place for every record")
         with transaction(self.conn):
             srid = self.add_search_run(**search_fields)
             found = []
@@ -2862,8 +2871,12 @@ class Store:
                 found.append(svid)
                 # A version of a work that already has a candidate here is found again as that candidate.
                 record_svid = self._work_candidate(search_fields["research_id"], svid) or svid
+                # The score the provider gave this record for this query, kept with the place on the hit row. A record
+                # from a provider that scores nothing carries none, and that is NULL, not zero.
                 self.add_to_corpus(search_fields["research_id"], record_svid, "search", srid, rank,
-                                   scope_revision=search_fields["scope_revision"], keep_candidate=keep_candidate)
+                                   scope_revision=search_fields["scope_revision"], keep_candidate=keep_candidate,
+                                   raw_score=record.relevance_score,
+                                   hit_rank=rank if hit_ranks is None else hit_ranks[rank - first_rank])
                 if record_svid != svid:
                     self.add_to_corpus(search_fields["research_id"], svid, "search", srid, candidate=False)
                 for other in self.other_version_ids(provider, record):  # kept with the record, not screened as separate candidates
@@ -3224,7 +3237,8 @@ class Store:
 
     def add_to_corpus(self, research_id: str, svid: str, added_by: str, search_run_id: str | None = None,
                       rank: int | None = None, selection_state: str = "pending", selection_origin: str = "default",
-                      scope_revision: int | None = None, candidate: bool = True, keep_candidate: bool = False) -> None:
+                      scope_revision: int | None = None, candidate: bool = True, keep_candidate: bool = False,
+                      raw_score: float | None = None, hit_rank: int | None = None) -> None:
         ts = now()
         with transaction(self.conn):
             membership = self.conn.execute(
@@ -3264,10 +3278,15 @@ class Store:
                 )
             if added_by == "search" and candidate:
                 if search_run_id is not None and scope_revision is not None:
-                    # Every search that found the candidate is kept, not only the one the row names.
+                    # Every search that found the candidate is kept, not only the one the row names, and each hit keeps
+                    # its own place in that query and the provider's score for it there. `candidates.rank` keeps the
+                    # best place alone, so without these two the second query's place was lost. IGNORE on conflict: a
+                    # query that reports the same record twice keeps the place of its first report.
                     self.conn.execute(
                         "INSERT OR IGNORE INTO candidate_hits (research_id, scope_revision, source_version_id,"
-                        " search_run_id) VALUES (?, ?, ?, ?)", (research_id, scope_revision, svid, search_run_id))
+                        " search_run_id, rank, raw_score) VALUES (?, ?, ?, ?, ?, ?)",
+                        (research_id, scope_revision, svid, search_run_id,
+                         rank if hit_rank is None else hit_rank, raw_score))
             inserted = self.conn.execute(
                 "INSERT OR IGNORE INTO selections (research_id, source_version_id, state, origin, updated_at) VALUES (?, ?, ?, ?, ?)",
                 (research_id, svid, selection_state, selection_origin, ts),

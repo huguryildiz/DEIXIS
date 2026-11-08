@@ -1470,7 +1470,7 @@
           ],
           [
             "select",
-            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted,keywords,referenced_works_count,referenced_works"
+            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted,keywords,relevance_score,referenced_works_count,referenced_works"
           ]
         ],
         "next_page": [
@@ -1492,7 +1492,7 @@
           ],
           [
             "select",
-            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted,keywords,referenced_works_count,referenced_works"
+            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted,keywords,relevance_score,referenced_works_count,referenced_works"
           ]
         ],
         "unpaged": [
@@ -1510,7 +1510,7 @@
           ],
           [
             "select",
-            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted,keywords"
+            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted,keywords,relevance_score"
           ]
         ]
       }
@@ -2952,7 +2952,7 @@
           ],
           [
             "select",
-            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted,keywords,referenced_works_count,referenced_works"
+            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted,keywords,relevance_score,referenced_works_count,referenced_works"
           ]
         ],
         "next_page": [
@@ -2970,7 +2970,7 @@
           ],
           [
             "select",
-            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted,keywords,referenced_works_count,referenced_works"
+            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted,keywords,relevance_score,referenced_works_count,referenced_works"
           ]
         ],
         "unpaged": [
@@ -2988,7 +2988,7 @@
           ],
           [
             "select",
-            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted,keywords"
+            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted,keywords,relevance_score"
           ]
         ],
         "kill_search": [
@@ -3006,7 +3006,7 @@
           ],
           [
             "select",
-            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted,keywords"
+            "id,doi,ids,display_name,publication_year,type,authorships,primary_location,best_oa_location,locations,open_access,abstract_inverted_index,cited_by_count,is_retracted,keywords,relevance_score"
           ]
         ]
       }

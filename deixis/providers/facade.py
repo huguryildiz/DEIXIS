@@ -110,6 +110,10 @@ class Dispatched:
     dropped_records: int
     connector: dict
     transport: tuple[dict, ...] = ()
+    # Where each kept record stood in the provider's own answer, before admission dropped the ones whose identity is
+    # unusable. The place a search records for a record is this one, so a dropped record shifts nothing. Empty when
+    # the answer came in without admission (an older caller), and the caller then counts the kept records in order.
+    kept_positions: tuple[int, ...] = ()
 
     @property
     def returned_count(self):
@@ -125,6 +129,7 @@ class DispatchedLookup:
     dropped_records: int
     connector: dict
     transport: tuple[dict, ...] = ()
+    kept_positions: tuple[int, ...] = ()  # as on `Dispatched`
 
 
 def _provenance(descriptor, outcome, dropped):
@@ -135,10 +140,14 @@ def _provenance(descriptor, outcome, dropped):
 
 
 def _admit(outcome, api_key):
-    records = [replace(record, raw=sanitize(record.raw, (api_key,))) for record in outcome.records
-               if usable_identity(record.provider_record_id)]
+    """The answer without the records whose identity is unusable, how many were dropped, and where each kept record
+    stood in the provider's own answer. The places are kept so a search records a record's real place in the query."""
+    kept = [(position, record) for position, record in enumerate(outcome.records)
+            if usable_identity(record.provider_record_id)]
+    records = [replace(record, raw=sanitize(record.raw, (api_key,))) for _, record in kept]
     dropped = len(outcome.records) - len(records)
-    return replace(outcome, records=records, raw_payload=sanitize(outcome.raw_payload, (api_key,))), dropped
+    return (replace(outcome, records=records, raw_payload=sanitize(outcome.raw_payload, (api_key,))), dropped,
+            tuple(position for position, _ in kept))
 
 
 def _id_answers(identifiers, outcome):
@@ -153,12 +162,9 @@ async def dispatch_search(provider_id, http, query_text, limit, api_key, contact
     request = search_request(query_text, limit, **registry_kwargs)
     with registry.common.collect_transport() as transport:
         outcome = await connector.search(request, contract.ConnectorContext(http, api_key, contact_email))
-    records = [replace(record, raw=sanitize(record.raw, (api_key,))) for record in outcome.records
-               if usable_identity(record.provider_record_id)]
-    dropped = len(outcome.records) - len(records)
-    outcome = replace(outcome, records=records, raw_payload=sanitize(outcome.raw_payload, (api_key,)))
+    outcome, dropped, positions = _admit(outcome, api_key)
     provenance = _provenance(connector.descriptor, outcome, dropped)
-    return Dispatched(outcome, dropped, provenance, tuple(transport))
+    return Dispatched(outcome, dropped, provenance, tuple(transport), positions)
 
 
 async def dispatch_lookup(provider_id, operation, http, identifiers, api_key, contact_email,
@@ -168,7 +174,7 @@ async def dispatch_lookup(provider_id, operation, http, identifiers, api_key, co
     with registry.common.collect_transport() as transport:
         result = await connector.lookup_batch(request, contract.ConnectorContext(http, api_key, contact_email))
     returned = len(result.outcome.records)
-    outcome, dropped = _admit(result.outcome, api_key)
+    outcome, dropped, positions = _admit(result.outcome, api_key)
     answers = _id_answers(identifiers, outcome) if operation == "id_lookup" else result.answers
     answers = {identifier: replace(answer, abstract=sanitize(answer.abstract, (api_key,)),
                                   paper_id=sanitize(answer.paper_id, (api_key,)),
@@ -177,7 +183,7 @@ async def dispatch_lookup(provider_id, operation, http, identifiers, api_key, co
                for identifier, answer in answers.items()}
     outcome = replace(outcome, error=sanitize(outcome.error, (api_key,)))
     return DispatchedLookup(operation, answers, outcome, returned, dropped,
-                            _provenance(connector.descriptor, outcome, dropped), tuple(transport))
+                            _provenance(connector.descriptor, outcome, dropped), tuple(transport), positions)
 
 
 async def dispatch_citing(provider_id, http, work_id, cursor, limit, api_key, contact_email,
@@ -186,10 +192,11 @@ async def dispatch_citing(provider_id, http, work_id, cursor, limit, api_key, co
     request = contract.CitingWorksRequest(work_id, limit, cursor, max_rate_limit_retries, options)
     with registry.common.collect_transport() as transport:
         outcome = await connector.citing_works(request, contract.ConnectorContext(http, api_key, contact_email))
-    outcome, dropped = _admit(outcome, api_key)
+    outcome, dropped, positions = _admit(outcome, api_key)
     # send already redacts error text. Repeating it would change watch rows for
     # keys occurring in the redaction marker (O7).
-    return Dispatched(outcome, dropped, _provenance(connector.descriptor, outcome, dropped), tuple(transport))
+    return Dispatched(outcome, dropped, _provenance(connector.descriptor, outcome, dropped), tuple(transport),
+                      positions)
 
 
 class CompatibilityConnector:

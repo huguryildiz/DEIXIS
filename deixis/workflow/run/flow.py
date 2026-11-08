@@ -41,7 +41,7 @@ from deixis.models import prompt, unusable
 from deixis.models.adapter import ModelAdapter, ModelStepResult, is_rate_limited, model_call
 from deixis.providers import openalex, query_compiler, facade, contract
 from deixis.providers.common import MAX_RATE_LIMIT_RETRIES, SearchOutcome, normalize_doi, send_blocked
-from deixis.providers.registry import CONNECTORS, Connector, endpoint_options, search_providers
+from deixis.providers.registry import CONNECTORS, Connector, effective_sort, endpoint_options, search_providers
 from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow.run.concurrency import ModelCallLimiter
 from deixis.workflow.search.search_page import Page
@@ -2057,6 +2057,9 @@ class ResearchFlow:
                               "returned": returned_count, "passed_filter": len(passed)}
                              | ({"error_kind": outcome.error_kind} if outcome.error_kind is not None else {})),
             raw_payload_path=payload_path, payload_sha256=payload_digest,
+            # A chain read filters by identifier and names no sorting setting, so the row keeps none; the records
+            # arrive in the provider's own order for that filter, which is not a relevance order.
+            sort=None,
             **({"connector_json": dumps(dispatched.connector)} if dispatched is not None else {}),
             **({"page_number": page} if page is not None else {}),
         )
@@ -2076,8 +2079,18 @@ class ResearchFlow:
             if ok:
                 # A chained record ranks after every keyword record: a record a keyword query already found keeps the
                 # rank and the search its candidate row names, and only gains a hit (`candidate_hits`).
+                # `first_rank` here is that candidate ordering offset, not a place, and the filter dropped records
+                # between the ones left in `passed`. So the hit rows get the real places: each record's place in the
+                # one page OpenAlex answered with, which is this filter read's own order. An id the answer repeats
+                # keeps the first place it took, and admission's own places are used where it reports them.
+                given = (dispatched.kept_positions if dispatched is not None and dispatched.kept_positions
+                         else range(len(outcome.records)))
+                places: dict[str, int] = {}
+                for position, record in zip(given, outcome.records):
+                    places.setdefault(record.provider_record_id, position)
                 self.store.record_search(search_fields, provider, passed, payload_path, step["id"], "succeeded",
-                                         step_output=output, first_rank=CHAIN_RANK_BASE + fast_request * 1000)
+                                         step_output=output, first_rank=CHAIN_RANK_BASE + fast_request * 1000,
+                                         hit_ranks=[places[record.provider_record_id] for record in passed])
             else:
                 final = "outcome_unknown" if outcome.delivery_class == "after_send_unknown" else "failed"
                 self.store.record_search(search_fields, provider, [], payload_path, step["id"], final,
@@ -2413,6 +2426,10 @@ class ResearchFlow:
                              | ({"rate_limit_retries": page.rate_limit_retries} if page else {})),
             raw_payload_path=payload_path, payload_sha256=payload_digest,
             connector_json=dumps(dispatched.connector) if dispatched is not None else None,
+            # The sorting setting this request carried, the query's own or the one its connector always sends, so a
+            # later reader can tell a relevance-ordered list from one ordered by date or citation count. NULL: neither
+            # named one and the provider answered in its own order.
+            sort=effective_sort(query),
         )
         ok = outcome.status in ("completed", "zero_results")
         read_total = None
@@ -2424,6 +2441,13 @@ class ResearchFlow:
                 page_number=page.number, read_limit=page.read_limit, read_total=read_total, stop_reason=stop_reason,
                 unread_count=max(0, total - read_total) if stop_reason and total is not None else None,
             )
+        # Where each record stood in the provider's answer to this query. `read_before` already counts what the
+        # earlier pages returned, dropped records included, so only this page's places come from the dispatch; a
+        # record admission dropped shifts nothing. A send without a dispatch dropped nothing, so counting the
+        # records in order is the same thing and `record_search` does it.
+        before = page.read_before if page else 0
+        hit_ranks = ([before + position for position in dispatched.kept_positions]
+                     if dispatched is not None and dispatched.kept_positions else None)
         if ok:
             output = {"status": outcome.status, "result_count": len(outcome.records)} | transport_output
             if dispatched is not None and dispatched.dropped_records:
@@ -2432,7 +2456,7 @@ class ResearchFlow:
                 output |= {"page": page.number, "next_cursor": outcome.next_cursor, "read_total": read_total,
                            "provider_total": outcome.provider_total, "stop_reason": stop_reason}
             self.store.record_search(search_fields, provider, outcome.records, payload_path, step["id"], "succeeded",
-                                     step_output=output, first_rank=page.read_before if page else 0,
+                                     step_output=output, first_rank=before, hit_ranks=hit_ranks,
                                      finished_at=finished_at, keep_found=keep_found)
             return None
         final = "outcome_unknown" if outcome.delivery_class == "after_send_unknown" else "failed"
@@ -2442,7 +2466,7 @@ class ResearchFlow:
                                  error_code=outcome.status, error={"error": outcome.error, "http_status": outcome.http_status}
                                  | {"error_kind": outcome.error_kind, "service_kind": outcome.service_kind or service_error_kind(outcome.error_kind or outcome.http_status or outcome.status),
                                     "reset_at": retry_at(outcome.rate_limit.get("retry-after"))},
-                                 delivery_class=outcome.delivery_class, first_rank=page.read_before if page else 0,
+                                 delivery_class=outcome.delivery_class, first_rank=before, hit_ranks=hit_ranks,
                                  finished_at=finished_at)
         reason = "provider_quota_exhausted" if outcome.error_kind == "quota_exhausted" else f"provider_{outcome.status}"
         return reason, {"provider": provider, "http_status": outcome.http_status,

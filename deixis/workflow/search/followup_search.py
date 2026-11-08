@@ -33,7 +33,7 @@ from deixis.domain import canonical
 from deixis.domain.rules import ABSTRACT_BATCH, ABSTRACT_RUNS, RevisionConflict, check_expected_version
 from deixis.providers import openalex
 from deixis.providers.common import OtherVersion, ProviderRecord, SearchOutcome
-from deixis.providers.registry import CONNECTORS
+from deixis.providers.registry import CONNECTORS, effective_sort
 from deixis.storage.db import dumps, now, transaction
 from deixis.workflow.screen import abstract_stage
 from deixis.workflow.screen.decisions import DecisionStore
@@ -373,7 +373,9 @@ def _admit(flow: Any, run: dict[str, Any], position: int, request_: dict[str, An
                   status=out["status"], delivery_class=None, result_count=len(records),
                   provider_total=out.get("provider_total"), page_limit=request_["limit"], error_json=None,
                   raw_payload_path=out.get("raw_payload_path"), payload_sha256=out.get("payload_sha256"),
-                  connector_json=dumps(out["connector"]) if out.get("connector") else None)
+                  connector_json=dumps(out["connector"]) if out.get("connector") else None,
+                  # The sorting setting the stored request named, or the one its connector always sends.
+                  sort=effective_sort(request_))
     with transaction(store.conn):
         before = _memberships(store, rid)
         # What the research held when this run first admitted (R3.2): later admissions and the found step classify

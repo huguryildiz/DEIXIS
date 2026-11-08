@@ -141,6 +141,44 @@ def test_round_admits_new_works_links_the_held_one_screens_and_includes_nothing(
     assert len(lib.api.requests) == sent
 
 
+def test_a_hit_keeps_the_place_the_provider_gave_it_even_when_the_round_writes_only_some_records(lib):
+    """The round writes only the records it admits, so their places among themselves are not the provider's places.
+    Here the citing page answers with W1, which the research already holds, before the new W902."""
+    seed_world(lib)
+    lib.api.add(1)  # the provider answers about W1 too; the research already holds it, so the round writes no record
+    lib.api.citing["W0"] = [["W1", "W902"]]
+    run = snowball.request(lib.store, lib.rid, seeds=[lib.by_oid["W0"]])
+    assert execute(lib, run)["status"] == "completed"
+    svid = lib.store.find_source_by_identifier("openalex", "W902")
+    rank = lib.store.conn.execute(
+        "SELECT h.rank FROM candidate_hits h JOIN search_runs sr ON sr.id = h.search_run_id"
+        " WHERE sr.run_id = ? AND sr.query_text LIKE '%forward%' AND h.source_version_id = ?",
+        (run["id"], svid)).fetchone()
+    assert rank is not None and rank[0] == 1  # second in the provider's page, not first among the written ones
+
+
+def test_the_place_in_a_forward_read_counts_over_the_pages_the_query_already_took(lib):
+    """A forward read is one query served page by page; a record's place is its place in its page plus everything the
+    earlier pages returned. A page that was cancelled or never sent returned nothing."""
+    store, run_id = lib.store, "run_SYNTHETIC_pages"
+    store.conn.execute("INSERT INTO runs (id, research_id, scope_revision, kind, status, stage, budget_json,"
+                       " usage_json, created_at, updated_at) VALUES (?, ?, 1, 'snowball', 'running', 'screening',"
+                       " '{}', '{}', ?, ?)", (run_id, lib.rid, now(), now()))
+    # The first page took 100; the second was never sent; the third took 40 and admission dropped one more the
+    # provider had counted in its list.
+    for index, output in ((0, {"returned": 100}), (1, {"unsent": "no_cursor"}),
+                          (2, {"returned": 40, "dropped_records": 1})):
+        step = store.step(run_id, snowball._key(index), snowball.REQUEST_KIND)
+        store.start_step(step["id"])
+        store.finish_step(step["id"], "succeeded", output=output)
+    assert snowball._read_before(store, run_id, {"index": 0, "page": 1}) == 0
+    assert snowball._read_before(store, run_id, {"index": 1, "page": 2}) == 100
+    assert snowball._read_before(store, run_id, {"index": 2, "page": 3}) == 100  # the unsent page took nothing
+    assert snowball._read_before(store, run_id, {"index": 3, "page": 4}) == 141  # the dropped record is counted
+    # A backward batch is one request and starts at 0, whatever came before it in the plan.
+    assert snowball._read_before(store, run_id, {"index": 3}) == 0
+
+
 def test_a_spent_budget_pauses_and_resume_sends_only_what_was_not_sent(lib):
     seed_world(lib)
     lib.api.quota.add("cites")

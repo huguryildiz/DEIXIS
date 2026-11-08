@@ -379,7 +379,10 @@ def page_sender(flow, run, scope, plan, retry_failed, shared):
         if len(answer.records) > limit:
             overflow = len(answer.records) - limit
             answer = replace(answer, records=answer.records[:limit])
-            outcome = replace(dispatched, outcome=answer, dropped_records=dispatched.dropped_records + overflow) if dispatched else answer
+            # The cap keeps the first records, so the places admission reported are cut the same way; a dispatch whose
+            # places outnumbered its records would say nothing about which record stood where.
+            outcome = (replace(dispatched, outcome=answer, dropped_records=dispatched.dropped_records + overflow,
+                               kept_positions=dispatched.kept_positions[:limit]) if dispatched else answer)
             dispatched = outcome if isinstance(outcome, facade.Dispatched) else None
         # The S2 adapter caps locally, since its bulk API has no page-size option.
         raw_count = len((answer.raw_payload or {}).get("data", [])) if klass == 1 and query["provider_id"] == "semantic_scholar" else returned

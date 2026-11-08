@@ -26,6 +26,9 @@ from deixis.providers.common import (MAX_RATE_LIMIT_RETRIES, ProviderRecord, Sea
 
 PROVIDER_ID = "scopus"
 SEARCH_URL = "https://api.elsevier.com/content/search/scopus"
+# The sorting setting every Scopus search carries, whatever the query names: Scopus's own relevance order. Recorded
+# with the search run, so a reader can tell this list is relevance-ordered without reading the adapter.
+FIXED_SORT = "relevancy"
 RATE_LIMIT_HEADERS = ("x-ratelimit-limit", "x-ratelimit-remaining", "x-ratelimit-reset")
 MAX_RESULTS = 25
 
@@ -85,12 +88,12 @@ async def search(client: httpx.AsyncClient, query: str, limit: int, api_key: str
         return SearchOutcome("not_configured", "before_send", f"GET {SEARCH_URL} access=not_configured", "not_configured")
     count = min(limit, MAX_RESULTS)
     offset = page_offset(cursor)
-    params: dict[str, Any] = {"query": query, "count": count, "view": "STANDARD", "sort": "relevancy"}
+    params: dict[str, Any] = {"query": query, "count": count, "view": "STANDARD", "sort": FIXED_SORT}
     if cursor is not None:
         params["start"] = offset  # `start` reaches record 5,000; a deeper read would need Scopus's own cursor
     headers = {"X-ELS-APIKey": api_key or "", "Accept": "application/json"}
     description = (f"GET {SEARCH_URL} query={query!r} count={count}"
-                   + (f" start={offset}" if cursor is not None else "") + " view=STANDARD sort=relevancy access=api_key")
+                   + (f" start={offset}" if cursor is not None else "") + f" view=STANDARD sort={FIXED_SORT} access=api_key")
     response, outcome = await send(client, SEARCH_URL, params, headers, description, "api_key", RATE_LIMIT_HEADERS,
                                    (api_key,), max_rate_limit_retries=max_rate_limit_retries)
     if response is None:

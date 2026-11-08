@@ -95,6 +95,48 @@ def raw_count(conn, search):
     return UNMEASURABLE, 'unreadable_or_unsupported_payload'
 
 
+DELIVERED_KEY = 'small_batch:v1:list'
+
+
+def delivered_list(conn, answer):
+    """The list the product actually delivered to the person and the model, and where each work stood in it.
+
+    The keyword and chain measurements above read `code:ranking`, which is the order one signal ranking produced; the
+    product's own list is the frozen small-batch list, whose order carries the person's own priorities and the rerank.
+    Without this reader a rerank that changed the delivered order left no mark on any measurement.
+
+    The answer run's own budget names the discovery run whose list it answered from
+    (`inspection.list_run_id`), so the list is read from that run and not from whichever list was frozen last: a
+    second discovery of the same question revision would otherwise lend its order to an answer written from another.
+    Only an answer run that stored no binding falls back to the latest list before the answer, and the binding says so.
+
+    Returns (step, binding, {work_id: place}); the step is None when no such list was frozen before the answer.
+    """
+    bound = rows(conn, 'SELECT budget_json FROM runs WHERE id=?', (answer['run_id'],))
+    try:
+        list_run_id = (json.loads(bound[0]['budget_json'] or '{}').get('inspection') or {}).get('list_run_id') if bound else None
+    except ValueError:
+        list_run_id = None
+    steps = rows(conn, "SELECT s.*, r.research_id, r.scope_revision FROM run_steps s JOIN runs r ON r.id=s.run_id"
+                 " WHERE r.research_id=? AND r.scope_revision=? AND s.operation_key=? AND s.status='succeeded'"
+                 " AND (? IS NULL OR s.run_id=?)"
+                 " AND s.finished_at IS NOT NULL AND julianday(s.finished_at)<=julianday(?)"
+                 " ORDER BY julianday(s.finished_at) DESC, s.id DESC LIMIT 1",
+                 (answer['research_id'], answer['scope_revision'], DELIVERED_KEY, list_run_id, list_run_id,
+                  answer['input_created_at']))
+    if not steps:
+        return None, 'not_recorded_require_delivered_list', {}
+    try:
+        items = json.loads(steps[0]['output_json'] or '{}').get('items') or []
+    except ValueError:
+        return None, 'delivered_list_output_unreadable', {}
+    place = {}
+    for item in items:  # the step writes `position` from 1; the first place a work takes is the one it holds
+        if isinstance(item, dict) and item.get('work_id') and isinstance(item.get('position'), int):
+            place.setdefault(item['work_id'], item['position'])
+    return steps[0], 'answer_run_binding' if list_run_id else 'inferred_by_time', place
+
+
 def selected_ranking(conn, answer, payload, explicit=None, *, keyword_step=None, chain=False):
     kind = 'code:chain_ranking' if chain else 'code:ranking'
     reference = payload.get('chain_ranking_step_id' if chain else 'ranking_step_id')
@@ -167,6 +209,7 @@ def measure(conn, rid, answer_id, bench, ranking_step=None):
             chain_seen.add(v['work_id'])
             chain_ranking.append(v)
     chain_place = {v['work_id']:i+1 for i,v in enumerate(chain_ranking)}
+    delivered_step, delivered_binding, delivered_place = delivered_list(conn, answer)
     given_sources = {s['source_id'] for s in payload.get('sources', [])}
     given, given_by_id = {}, {}
     for p in payload.get('passages', []):
@@ -213,16 +256,19 @@ def measure(conn, rid, answer_id, bench, ranking_step=None):
         claims = sorted({l['label'] for l in valid_links if l['source_version_id'] in ids})
         rank = min((place[w] for w in works if w in place), default=None)
         chain_rank = min((chain_place[w] for w in works if w in chain_place), default=None)
+        delivered_rank = min((delivered_place[w] for w in works if w in delivered_place), default=None)
         items.append({'target_key':paper['key'], 'doi':paper.get('doi'), 'title':paper.get('title'),
             'label':paper.get('label'), 'stratum':paper.get('stratum','unstratified'), 'anchor':paper.get('anchor',False),
             'identity_status':'resolved' if svids else 'title_match_requires_adjudication' if possible else 'not_found',
             'possible_title_versions':possible, 'source_versions':[version_of[s] for s in svids],
             'found':bool(ids & pool_ids), 'search_origins':origins,
             'origins_complete':(ids & pool_ids)<= {h['source_version_id'] for h in target_hits} if ids & pool_ids else None,
-            'rank':rank, 'keyword_rank':rank, 'chain_rank':chain_rank,
+            'rank':rank, 'keyword_rank':rank, 'chain_rank':chain_rank, 'delivered_rank':delivered_rank,
             'keyword_ranking_step_id':step['id'] if step else None,
             'chain_ranking_step_id':chain_step['id'] if chain_step else None,
+            'delivered_list_step_id':delivered_step['id'] if delivered_step else None,
             'keyword_ranking_binding':binding, 'chain_ranking_binding':chain_binding,
+            'delivered_list_binding':delivered_binding,
             'rank_state':'ranked_in_both' if rank and chain_rank else 'ranked_in_keyword' if rank else
                 'ranked_in_chain' if chain_rank else 'ranking_unmeasurable' if step is None else
                 'found_not_ranked_in_recorded_scopes' if ids & pool_ids else 'not_found',
@@ -251,7 +297,7 @@ def measure(conn, rid, answer_id, bench, ranking_step=None):
                   ('found','given_to_model','passage_given_to_model','cited_in')}
         counts.update({f'top_{k}':sum(r['rank'] is not None and r['rank']<=k for r in group)
                       if step else None for k in (20,50)})
-        for name, selected in (('keyword', step), ('chain', chain_step)):
+        for name, selected in (('keyword', step), ('chain', chain_step), ('delivered', delivered_step)):
             counts.update({f'{name}_top_{k}':sum(r[f'{name}_rank'] is not None and r[f'{name}_rank']<=k
                                               for r in group) if selected else None for k in (20,50)})
         layers[layer] = {'denominator':len(group), 'counts':counts,
@@ -336,7 +382,10 @@ def measure(conn, rid, answer_id, bench, ranking_step=None):
         'ranking_step_id':step['id'] if step else None, 'ranking_binding':binding,
         'keyword_ranking_step_id':step['id'] if step else None, 'keyword_ranking_binding':binding,
         'chain_ranking_step_id':chain_step['id'] if chain_step else None, 'chain_ranking_binding':chain_binding,
+        'delivered_list_step_id':delivered_step['id'] if delivered_step else None,
+        'delivered_list_binding':delivered_binding,
         'ranking_scopes':{'keyword':'keyword inspection work order', 'chain':'chain-only inspection work order',
+                          'delivered':'the frozen small-batch list the product delivered, person priorities and rerank included',
                           'legacy':'rank, top_20, top_50 and ranked_unique_works measure keyword only'}, 'totals':totals,
         'frozen_pool':{'format':'frozen-search-pool-v1', 'question_sha256':bench['question_sha256'],
             'research_id':rid, 'answer_id':answer_id, 'scope_revision':revision,

@@ -1,9 +1,9 @@
--- The whole library schema at version 18. A new library is made from this file in one transaction and
--- records versions 1 to 18; a library at an older version is brought here by the steps in storage/upgrades.py.
+-- The whole library schema at version 19. A new library is made from this file in one transaction and
+-- records versions 1 to 19; a library at an older version is brought here by the steps in storage/upgrades.py.
 -- A schema change edits this file, raises the version below and adds the upgrade step with that number.
 -- Objects are in the order the old migration chain (0001_schema.sql to 0016_abstract_rows.sql) and the upgrade steps
 -- after it created them: the triggers on one table fire in that order.
--- deixis:schema-version 18
+-- deixis:schema-version 19
 
 CREATE TABLE scope_revisions (
   research_id TEXT NOT NULL REFERENCES researches(id),
@@ -158,7 +158,7 @@ CREATE TABLE search_runs (
   error_json TEXT,
   raw_payload_path TEXT,
   retrieved_at TEXT NOT NULL
-, scope_revision INTEGER, payload_sha256 TEXT, page_number INTEGER, read_limit INTEGER, read_total INTEGER, stop_reason TEXT, unread_count INTEGER, connector_json TEXT);
+, scope_revision INTEGER, payload_sha256 TEXT, page_number INTEGER, read_limit INTEGER, read_total INTEGER, stop_reason TEXT, unread_count INTEGER, connector_json TEXT, sort TEXT);
 
 CREATE TABLE candidates (
   id TEXT PRIMARY KEY,
@@ -610,11 +610,15 @@ CREATE TABLE "record_lookups" (
   PRIMARY KEY (source_version_id, provider)
 );
 
+-- Which query found a candidate, where the record stood in that one query (`rank`, counted over the query's pages)
+-- and the provider's own score for it there (`raw_score`). The two are an audit record only. NULL in either means not
+-- recorded: a row written before schema version 19, or a provider that sent no score. The columns sit on the line
+-- above as `ALTER TABLE ADD COLUMN` wrote them into an upgraded library.
 CREATE TABLE candidate_hits (
   research_id TEXT NOT NULL REFERENCES researches(id),
   scope_revision INTEGER NOT NULL,
   source_version_id TEXT NOT NULL REFERENCES source_versions(id),
-  search_run_id TEXT NOT NULL REFERENCES search_runs(id),
+  search_run_id TEXT NOT NULL REFERENCES search_runs(id), rank INTEGER, raw_score REAL,
   PRIMARY KEY (source_version_id, search_run_id)
 );
 

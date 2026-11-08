@@ -127,6 +127,10 @@ class ProviderRecord:
     # `author_keywords` and never mixed into it. Empty unless the read asked for the field. The chain gate reads them
     # so a linked work can name a gate block through a keyword its title and abstract never hold.
     index_keywords: list[str] = field(default_factory=list)
+    # The score the provider gave this record for the query that returned it. `None` means the provider sent none: a
+    # read with no search term, or a provider that scores nothing. Kept as an audit record of the query's own order;
+    # scores of two queries share no scale, so no gate, threshold or screening step reads it.
+    relevance_score: float | None = None
 
 
 @dataclass

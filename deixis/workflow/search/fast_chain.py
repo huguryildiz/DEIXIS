@@ -300,7 +300,8 @@ class Round:
             late = cutoff is not None and arrived >= cutoff
             # Returned records are capped before filtering; a provider overflow
             # cannot expand this direction's frozen admission allowance.
-            dispatched = replace(dispatched, outcome=replace(outcome, records=outcome.records[:spec["limit"]]))
+            dispatched = replace(dispatched, outcome=replace(outcome, records=outcome.records[:spec["limit"]]),
+                                 kept_positions=dispatched.kept_positions[:spec["limit"]])
             self.replies[spec["index"]] = (dispatched, arrived.isoformat(timespec="milliseconds"),
                                           cutoff.isoformat(timespec="milliseconds") if cutoff else None, late,
                                           len(outcome.records))

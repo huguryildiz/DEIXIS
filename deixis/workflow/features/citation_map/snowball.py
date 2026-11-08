@@ -374,9 +374,9 @@ def _plan_requests(store: Any, run: dict[str, Any], plan: dict[str, Any]) -> dic
                               "seed": seed["source_version_id"]})
     for i, spec in enumerate(specs):
         spec["index"] = i
-        spec["key"] = f"chain:snowball:{i}"
+        spec["key"] = _key(i)
         if spec["direction"] == "forward" and spec["page"] > 1:
-            spec["after"] = f"chain:snowball:{i - 1}"
+            spec["after"] = _key(i - 1)
     with transaction(store.conn):
         store.conn.executemany(
             "INSERT OR IGNORE INTO chain_links (research_id, scope_revision, run_id, seed_source_version_id,"
@@ -387,6 +387,26 @@ def _plan_requests(store: Any, run: dict[str, Any], plan: dict[str, Any]) -> dic
             "backward_ids": len(order), "held": len({ref for _, ref, _ in held_links}), "ambiguous": ambiguous,
             "not_requested": not_requested,
             "forward_not_requested": max(0, len(seeds) - FORWARD_REQUESTS) if "forward" in target["directions"] else 0}
+
+
+def _key(index: int) -> str:
+    """The step key of the request at this place in the plan; the pages of one seed are consecutive places."""
+    return f"{QUERY_PREFIX}{index}"
+
+
+def _read_before(store: Any, run_id: str, spec: dict[str, Any]) -> int:
+    """How many records the earlier pages of this forward read already took from the provider's list.
+
+    A forward read is one query served page by page, each page its own `search_runs` row, so a record's place in the
+    query is its place in its page plus everything the earlier pages took from the provider's list — the records
+    admission dropped included, since the provider counted them in that list. A cancelled or unsent earlier page took
+    nothing. A backward batch is a single request and starts at 0.
+    """
+    before = 0
+    for index in range(spec["index"] - (spec.get("page") or 1) + 1, spec["index"]):
+        output = ((store.existing_step(run_id, _key(index)) or {}).get("output") or {})
+        before += (output.get("returned") or 0) + (output.get("dropped_records") or 0)
+    return before
 
 
 def _doi_send(flow: Any, dois: list[str]):
@@ -461,6 +481,8 @@ def _write(flow: Any, run: dict[str, Any], step: dict[str, Any], spec: dict[str,
                   raw_payload_path=payload_path,
                   payload_sha256=canonical.sha256_hex(outcome.raw_payload) if outcome.raw_payload is not None else None,
                   connector_json=dumps(dispatched.connector),
+                  # The forward read asks for the provider's own order; the backward read names no sorting setting.
+                  sort=SORT if direction == "forward" else None,
                   **({"page_number": spec["page"]} if direction == "forward" else {}))
     with transaction(store.conn):
         if not ok:
@@ -488,8 +510,18 @@ def _write(flow: Any, run: dict[str, Any], step: dict[str, Any], spec: dict[str,
                 rows.append((position, oid, "seen" if work in this_round else "existing", work, heads.get(work)))
             else:
                 to_write.append((position, record))
+        # `to_write` holds only the records this round writes, and `position` counts the de-duplicated list, so
+        # neither is a place in the provider's answer. The hit rows get the real ones: the first place each id took in
+        # the answer — admission's own places where it reports them — counted over the earlier pages of this query.
+        given = dispatched.kept_positions if dispatched.kept_positions else range(len(outcome.records))
+        provider_place: dict[str, int] = {}
+        for place, record in zip(given, outcome.records):
+            provider_place.setdefault(record.provider_record_id, place)
+        read_before = _read_before(store, run_id, spec)
         store.record_search(fields | {"result_count": len(to_write)}, "openalex", [r for _, r in to_write],
-                            payload_path, step["id"], "succeeded", step_output=output | {"written": len(to_write)})
+                            payload_path, step["id"], "succeeded", step_output=output | {"written": len(to_write)},
+                            hit_ranks=[read_before + provider_place[record.provider_record_id]
+                                       for _, record in to_write])
         heads = store.work_heads(rid, include_removed=True)
         for position, record in to_write:
             svid = store.find_source_by_identifier("openalex", record.provider_record_id)

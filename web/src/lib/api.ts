@@ -1066,6 +1066,14 @@ export type ReportBasis = { sources: number; full_text: number; abstract_only: n
   unverified_sources: { source_version_id: string; source_key: string | null; title: string; cells_unverified: number; cells_total: number }[]
   // The sources in the report only because they were read from their abstracts (no full text obtained).
   abstract_members?: { source_version_id: string; source_key: string | null; title: string }[] }
+// The files this research asked the person for: one work per row with the sub-question its own cell leaves open.
+// `limit` is the depth's allowance for the whole research and `used` what the asking spent of it; a research whose
+// runs are older than the rule has no allowance and no list.
+export type FileAsks = { rule: string; limit: number | null; used: number
+  asks: { work_id: string; source_version_id: string; title: string | null; year: number | null; doi: string | null
+    source_key: string | null; asked_at: string; answered_at: string | null; outcome: 'file_added' | null
+    axes: { axis_id: string; label: string; column_id: string; column_name: string | null; cell_id: string | null
+      state: CellState; reading_depth: CellRevision['reading_depth'] }[] }[] }
 export type ReportSummary = { id: string; status: 'in_progress' | 'valid' | 'draft'; report_version: number | null; created_at: string }
 export type ReportLink = { link_id: string; passage_id: string | null; cell_id: string | null; source_version_id: string; ref_number: number; open_passage_id: string | null
   anchor_text: string | null; anchor_match: 'exact' | 'normalized' | 'fuzzy' | null }
@@ -1102,6 +1110,8 @@ export type ReportDetail = ReportSummary & { language: string; updated_at: strin
     failed_rows: { source_version_id: string; source_key: string | null; title: string; reason: string; missing_columns: { column_id: string; name: string; reason: string }[] }[] } | null
   // What the table was read from, frozen with the snapshot; null for a report saved before it.
   basis: ReportBasis | null
+  // The works the person was asked for a file for, after the automatic routes settled without one.
+  file_asks: FileAsks
   // Claims delivered although no quote of their own citations was located; their uncertainty is reported, not hidden.
   claims_without_basis: { section_id: string; claim_key: string }[]
   // `stale`: every cited cell or row that differs from the snapshot, including changes a section marked as seen.

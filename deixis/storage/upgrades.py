@@ -891,4 +891,28 @@ CREATE TABLE openalex_content_attempts (
 
 CREATE INDEX openalex_content_source ON openalex_content_attempts(source_version_id, created_at);
 """),
+    25: Step("0025_person_file_asks.sql", False, """\
+-- The list of works the person has been asked for a file for. A list of its own: the screening queue asks whether to
+-- include a record, and no list in the app asked for a file at all. One row per work per research, so the same work
+-- is asked once however often the list is rebuilt, and the row stays after a file arrives: the depth's allowance is
+-- spent by the asking, which a retry, a follow-up or a report revision must not hand back.
+CREATE TABLE person_file_asks (
+  id TEXT PRIMARY KEY,
+  research_id TEXT NOT NULL REFERENCES researches(id),
+  work_id TEXT NOT NULL REFERENCES works(id),
+  source_version_id TEXT NOT NULL REFERENCES source_versions(id),
+  report_id TEXT NOT NULL REFERENCES reports(id),
+  run_id TEXT NOT NULL REFERENCES runs(id),
+  scope_revision INTEGER NOT NULL,
+  rule TEXT NOT NULL,
+  axes_json TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  asked_at TEXT NOT NULL,
+  answered_at TEXT,
+  outcome TEXT CHECK (outcome IS NULL OR outcome IN ('file_added')),
+  UNIQUE (research_id, work_id)
+);
+
+CREATE INDEX person_file_asks_research ON person_file_asks(research_id, position);
+"""),
 }

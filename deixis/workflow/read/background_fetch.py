@@ -146,10 +146,14 @@ class BackgroundFetchLane:
                 " WHERE run_id = ? AND work_id = ?",
                 (status, code, fast_path.timestamp(self.store.clock), run["id"], wid))
         from deixis.workflow.answer import late_revision
+        from deixis.workflow.features.report import report_file_asks
         from deixis.workflow.features.tables import table_refresh, table_rows
         late_revision.advance(self.flow, run["research_id"])
         table_refresh.advance(self.store, run["research_id"])
         table_rows.advance(self.store, run["research_id"])
+        # This work's automatic routes have just ended. Whether a file is now asked of the person depends on the
+        # report plan too, so the same function runs here and at the plan's own freeze; the later one decides.
+        report_file_asks.advance(self.store, run["research_id"])
         self.wake()  # the slot this fetch held is free for the next queued one
 
     async def _fetch(self, run: dict[str, Any], wid: str) -> None:

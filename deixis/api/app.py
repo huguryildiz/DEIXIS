@@ -83,6 +83,7 @@ from deixis.workflow.read import equations as equations_module
 from deixis.workflow.read.equations import EquationService, chunk_numbers, equation_reader, equation_state, equations_to_check, latex_numbers
 from deixis.workflow.run.local_embedding_service import LocalModelService, ServiceError
 from deixis.workflow.run.flow import FlowDeps, ResearchFlow
+from deixis.workflow.features.report import report_file_asks
 from deixis.workflow.features.report import report_pipeline
 from deixis.workflow.features.report import report_refresh
 from deixis.workflow.features.report.report_store import ReportStore
@@ -2417,6 +2418,9 @@ def create_app(
                                          settings.contact_email)
         store.add_to_corpus(research_id, svid, "user_upload", selection_state="included", selection_origin="user")
         intent.attached_ingested(store, research_id)
+        # A dropped file may be the very work a request asked for: the lookup above may have named it as that
+        # record, and then the request is answered.
+        report_file_asks.advance(store, research_id)
         return research_view(store, research_id) | {"uploaded_source_version_id": svid,
             "file_restore": store.file_restore_view(placement.operation_id) if placement.operation_id else None}
 
@@ -2466,6 +2470,9 @@ def create_app(
                 flow.attach_person_file(research_id, source_version_id, asset_id)
                 flow.queue_person_reading(research_id)
             request.app.state.worker.wake()
+        # A file this work was asked for closes its request; one the person added of their own accord finds no
+        # request to close and opens none, so it costs them nothing.
+        report_file_asks.advance(store, research_id)
         return research_view(store, research_id) | {
             "file_restore": store.file_restore_view(placement.operation_id) if placement.operation_id else None}
 
@@ -2573,6 +2580,8 @@ def create_app(
                                                                "reading": reading})
             flow.queue_person_reading(research_id)
         request.app.state.worker.wake()
+        # A file asked for closes its request, whichever way the person gave it.
+        report_file_asks.advance(store, research_id)
         return research_view(store, research_id) | {"attached": {"source_version_id": source_version_id,
                                                                   "asset_id": asset_id, "reading": reading},
             "file_restore": store.file_restore_view(placement.operation_id) if placement.operation_id else None}
@@ -2649,6 +2658,7 @@ def create_app(
         # person's to confirm, which paper the file is was not. What was read is stored with the file's digest.
         if verdict is not None and (verdict["verdict"] == "mismatch" or (not claimed and verdict["verdict"] != "match")):
             raise HTTPException(422, "The file's own title page does not name this record")
+        report_file_asks.advance(store, research_id)  # a file asked for closes its request
         return research_view(store, research_id)
 
     @app.get("/api/zotero/collections")
@@ -2686,6 +2696,8 @@ def create_app(
             notes += pdf_notes
             pdfs_added += added
         intent.attached_ingested(store, research_id)
+        if pdfs_added:
+            report_file_asks.advance(store, research_id)  # a file asked for closes its request
         return {**research_view(store, research_id), "zotero_import": {"items": len(items), "pdfs_added": pdfs_added, "notes": notes}}
 
     @app.post("/api/researches/{research_id}/zotero-pdfs")
@@ -2732,6 +2744,8 @@ def create_app(
             if read.observation is not None and read.observation["integrity"] != "verified":
                 notes.append({"title": source["title"], "note": "PDF input not verified: " + text_retry.INPUT_CHANGED})
             added += 1
+        if added:
+            report_file_asks.advance(store, research_id)  # a file asked for closes its request
         return {**research_view(store, research_id), "zotero_pdfs": {"checked": len(missing), "added": added, "notes": notes}}
 
     @app.post("/api/researches/{research_id}/waiting/zotero")
@@ -2963,6 +2977,7 @@ def create_app(
         if not store.is_active_member(research_id, source_version_id):
             raise HTTPException(404, "Source is not part of this research")
         store.restore_asset(research_id, source_version_id, asset_id)
+        report_file_asks.advance(store, research_id)  # the work holds a file again, which answers its request
         return research_view(store, research_id)
 
     def asset_in_use(store: Store, research_id: str, source_version_id: str, asset_id: str) -> dict[str, Any]:
@@ -3063,6 +3078,7 @@ def create_app(
         extraction = read.extraction
         store.replace_asset(asset_id, sha, size, path.name, "user_upload", None, Path(file.filename or "document.pdf").name,
                             extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page, input_observation=read.observation)
+        report_file_asks.advance(store, research_id)  # a file asked for closes its request
         return research_view(store, research_id) | {
             "file_restore": store.file_restore_view(placement.operation_id) if placement.operation_id else None}
 

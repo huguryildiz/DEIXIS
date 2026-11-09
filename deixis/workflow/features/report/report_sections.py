@@ -11,7 +11,7 @@ from deixis.domain.rules import RevisionConflict
 from deixis.storage.db import transaction
 from deixis.workflow.read.equations import equation_fallback_field
 from deixis.workflow.run.flow import OptionalStepFailed, RunStopped
-from deixis.workflow.features.report import report_assembly as assembly, report_coverage as coverage, report_evidence_view as evidence_view, report_gaps as gaps, report_review_methodology as review_methodology, report_selection as selection
+from deixis.workflow.features.report import report_assembly as assembly, report_coverage as coverage, report_file_asks as file_asks, report_evidence_view as evidence_view, report_gaps as gaps, report_review_methodology as review_methodology, report_selection as selection
 from deixis.workflow.features.report.report_plan import freeze_plan
 from deixis.workflow.features.report.report_review import run_report_review
 from deixis.workflow.features.report.report_store import ReportStore
@@ -388,6 +388,10 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
     # Before the synthesis: which sub-question each column of the table answers for how many rows, and which
     # sub-questions the sections are about to be written without any evidence for. A record, not an input.
     save_code(flow, run, COVERAGE_KEY, COVERAGE_KIND, lambda: coverage.coverage(snapshot, frozen_plan))
+    # The plan has just named the sub-questions, so the file-request list can be decided for the works whose
+    # automatic routes already settled. The other half of the decision arrives later, when the background round
+    # ends, and calls the same function.
+    file_asks.advance(flow.store, research_id)
 
     if not flow.store.research(research_id)["title"] and refresh is None:
         # Section 15.1's title from the plan scope_statement is not implemented in this batch. A refresh names

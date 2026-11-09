@@ -14,6 +14,7 @@ import { HighlightedPassageText } from '../reading/PassageSheet'
 import { comparisonText, reportGate, stateLabels, stateText } from '../table/tableCsv'
 import { Notice } from '../components/Notice'
 import { PassageFreshnessNotice } from './PassageFreshnessNotice'
+import { FileAskList } from './FileAskList'
 import { ReportBasisNotice } from './ReportBasisNotice'
 import { t, uiLocale } from '../lib/i18n'
 import { useToast } from '../components/Toast'
@@ -411,6 +412,8 @@ export function ReportView({ researchId, reportId, view, tables, title, dark, on
           {report.run?.status === 'paused' && <p role="status">{t('Paused: {reason}', { reason: pauseReasonText(report.run.pause_reason) || t('Report paused') })}</p>}</header>
         {running && report.run?.status !== 'paused' && <div className="art live" role="status"><div className="thumb" aria-hidden><i /><i /><i /></div><div><h3 className="shimmer-text">{t('Writing the evidence report…')}</h3><small>{t('The cited cells are frozen with this version.')}</small></div></div>}
         {report.basis && <ReportBasisNotice basis={report.basis} />}
+        {report.file_asks && <FileAskList researchId={researchId} asks={report.file_asks}
+                                          onUploaded={() => { void refresh() }} />}
         {report.claims_without_basis?.length > 0 && <Notice tone="attention">
           <p>{t(report.claims_without_basis.length === 1
             ? '{n} sentence is delivered without a located quote: the cited evidence was read again and the quote was not found in it. The sentence keeps its citation, which no screen marks as located evidence.'

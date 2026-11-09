@@ -26,6 +26,7 @@ from deixis.workflow.search import vocabulary as vocabulary_rules
 from deixis.workflow.read.equations import chunk_numbers, equation_reader, equation_state, equations_to_check, latex_numbers
 from deixis.workflow.screen.queue import _snapshot as snapshot, context as queue_context, queue_answers, queue_counts, inspection_progress
 from deixis.workflow.features.report import report_assembly
+from deixis.workflow.features.report import report_file_asks
 from deixis.workflow.features.report.report_store import DISPLAY_ORDER, ReportStore
 from deixis.workflow.read import waiting as waiting_rules
 from deixis.providers import openalex
@@ -427,8 +428,31 @@ def report_view(store: Store, research_id: str, report_id: str) -> dict[str, Any
                          "SELECT 1 FROM report_edit_checks WHERE report_id = ? LIMIT 1", (report_id,),
                      ).fetchone() else None,
                      "references": references, "table_i": table_i, "missing_rows": missing_rows,
-                     "basis": (frozen or {}).get("basis"),
+                     "basis": (frozen or {}).get("basis"), "file_asks": file_asks_view(store, research_id),
                      "run": run, "table_id": table_id}
+
+
+def file_asks_view(store: Store, research_id: str) -> dict[str, Any]:
+    """The files this research asked the person for, with the sub-question each work leaves open.
+
+    `limit` is the allowance of the depth the research now runs at, and `used` how many works have been asked for
+    over its whole life, so the screen says that the list is bounded without pretending it is everything missing. A
+    research whose depth was frozen before the rule has no allowance; the asks it already holds are still listed.
+    """
+    rows = report_file_asks.asks(store, research_id)
+    # The bound the next request would be made against, read from the depth now in force rather than from the run
+    # that made the last request: a research run again at another depth asks under that depth.
+    depth = report_file_asks.depth_run(store, research_id, store.research(research_id)["current_scope_revision"])
+    limit = report_file_asks.allowance(store, depth) if depth else None
+    asks = []
+    for row in rows:
+        source = store.conn.execute(
+            "SELECT v.title, v.year, v.doi, w.source_key FROM source_versions v JOIN works w ON w.id = v.work_id"
+            " WHERE v.id = ?", (row["source_version_id"],)).fetchone()
+        asks.append({key: row[key] for key in ("work_id", "source_version_id", "axes", "asked_at", "answered_at",
+                                               "outcome")}
+                    | (dict(source) if source else {}))
+    return {"rule": report_file_asks.RULE, "limit": limit, "used": len(rows), "asks": asks}
 
 
 def research_view(store: Store, research_id: str) -> dict[str, Any]:

@@ -1,9 +1,9 @@
--- The whole library schema at version 24. A new library is made from this file in one transaction and
--- records versions 1 to 24; a library at an older version is brought here by the steps in storage/upgrades.py.
+-- The whole library schema at version 25. A new library is made from this file in one transaction and
+-- records versions 1 to 25; a library at an older version is brought here by the steps in storage/upgrades.py.
 -- A schema change edits this file, raises the version below and adds the upgrade step with that number.
 -- Objects are in the order the old migration chain (0001_schema.sql to 0016_abstract_rows.sql) and the upgrade steps
 -- after it created them: the triggers on one table fire in that order.
--- deixis:schema-version 24
+-- deixis:schema-version 25
 
 CREATE TABLE scope_revisions (
   research_id TEXT NOT NULL REFERENCES researches(id),
@@ -2517,3 +2517,29 @@ CREATE TABLE openalex_content_attempts (
 );
 
 CREATE INDEX openalex_content_source ON openalex_content_attempts(source_version_id, created_at);
+
+-- One row per work this research has asked the person for a file for. Its own list: the screening queue asks whether
+-- to include a record, which is another question, and nothing in the app asked for a file before. A row is written
+-- only when the automatic routes for that work are settled and a named sub-question of a frozen report plan is open
+-- on that work's own row, so the list says which question stays open beside each work. The depth the asking run
+-- froze sets how many works may be asked (`file_asks` in its policy); the row survives the answer, so a retry, a
+-- follow-up or a report revision cannot hand the limit back. A file the person adds on their own asks nothing and
+-- writes nothing here.
+CREATE TABLE person_file_asks (
+  id TEXT PRIMARY KEY,
+  research_id TEXT NOT NULL REFERENCES researches(id),
+  work_id TEXT NOT NULL REFERENCES works(id),
+  source_version_id TEXT NOT NULL REFERENCES source_versions(id),
+  report_id TEXT NOT NULL REFERENCES reports(id),
+  run_id TEXT NOT NULL REFERENCES runs(id),
+  scope_revision INTEGER NOT NULL,
+  rule TEXT NOT NULL,
+  axes_json TEXT NOT NULL,
+  position INTEGER NOT NULL,
+  asked_at TEXT NOT NULL,
+  answered_at TEXT,
+  outcome TEXT CHECK (outcome IS NULL OR outcome IN ('file_added')),
+  UNIQUE (research_id, work_id)
+);
+
+CREATE INDEX person_file_asks_research ON person_file_asks(research_id, position);

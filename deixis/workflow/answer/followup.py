@@ -31,6 +31,7 @@ from deixis.documents.jats import RENDITION_SQL
 from deixis.domain.rules import TEST_EFFORT_BUDGETS, RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, transaction
 from deixis.workflow.answer import answer as fast_answer, followup_attachments as attachments_mod, late_revision
+from deixis.workflow.answer import followup_fulltext, followup_scope
 from deixis.workflow.search import followup_search, small_batch
 from deixis.workflow.screen.decisions import DecisionStore
 from deixis.workflow.run.evidence_deps import EVIDENCE_STATUS_SQL
@@ -105,7 +106,10 @@ def request_turn(store: Any, research_id: str, question: str, expected_scope_rev
         turn_id = new_id("fut")
         # The passage limit is the research's answer limit, frozen with the run as every budget is.
         budget = {"max_model_calls": CALLS, "max_provider_requests": 0,
-                  "max_followup_passages": TEST_EFFORT_BUDGETS[scope["effort"]].max_answer_passages}
+                  "max_followup_passages": TEST_EFFORT_BUDGETS[scope["effort"]].max_answer_passages,
+                  # What this turn may read before it answers: its own works and its own wait, frozen here, because
+                  # each turn's waiting is the person's and not the depth a discovery run chose.
+                  "followup_fulltext": followup_fulltext.budget()}
         run = store.create_run(research_id, TASK, budget, key, target={"turn_id": turn_id, "question": text})
         store.conn.execute(
             "INSERT INTO followup_turns (id, research_id, scope_revision, question, run_id, status, created_at)"
@@ -164,10 +168,14 @@ def _current(store: Any, research_id: str) -> dict[str, list[str]]:
     return {svid: [p["id"] for p in rows] for svid, rows in fast_answer.current_pools(store, research_id).items()}
 
 
-def pool(store: Any, research_id: str, scope_revision: int, flow: Any = None) -> dict[str, Any]:
+def pool(store: Any, research_id: str, scope_revision: int, flow: Any = None,
+         fetched: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
     """The passages this research holds for a follow-up, by source in order (see the module text), frozen with the
     selection state it was read under: what `changed` compares at the send, at a resume and at publication. `flow`
-    checks that a full text read after the answer was read on the file still in use; without it none is added."""
+    checks that a full text read after the answer was read on the file still in use; without it none is added.
+    `fetched` names, per work, the version and the file this turn's own attempt read (`followup_fulltext`), whose
+    pages the pool then gives: the frozen answer input holds those works on their abstract route, so without this
+    the file the person waited for would sit unread."""
     current = _current(store, research_id)
     sources: dict[str, list[str]] = {}
     chosen: dict[str, str] = {}  # work -> the one version `sources` holds for it (R2.9)
@@ -251,6 +259,25 @@ def pool(store: Any, research_id: str, scope_revision: int, flow: Any = None) ->
                 svid = row["source_version_id"]
                 ids = row["abstract_ids"] + (row["fulltext_ids"] if row["route"] == "fulltext" else [])
                 give(row["work_id"], svid, [pid for pid in ids if pid in set(current.get(svid, []))])
+        # The file this turn fetched itself, for the works the pool gives. Nothing is ever taken out of the pool
+        # here, only added, and three rules bound what may be added. The person's own choice is read first, so a
+        # work whose file they marked wrong keeps giving its abstract alone (their version selection outranks a
+        # queue decision, as everywhere in this pool). The pages are the ones of the file the routes read, by its
+        # own extraction, so a file replaced since the fetch adds nothing. And the version has to be the one the
+        # pool already gives for that work: where the routes read another version, its pages wait for the next
+        # question rather than taking a version's place inside a frozen pool, because a swap would drop the
+        # passages the person's own selection points at (`followup_fulltext.OTHER_VERSION`).
+        if fetched:
+            pools = fast_answer.current_pools(store, research_id)
+            for work_id, read in fetched.items():
+                svid, asset_id = read["source_version_id"], read["asset_id"]
+                if chosen.get(work_id) != svid or svid not in pools:
+                    continue
+                state = selections.get(heads.get(work_id, svid)) or humans.get(work_id)
+                if state in ("excluded", "pending", "pdf_wrong"):
+                    continue
+                give(work_id, svid, [p["id"] for p in pools[svid]
+                                     if p["kind"] == "abstract" or p["asset_id"] == asset_id])
         return _with_reserve(store, research_id, current, base | {
             "basis": "answer_input", "answer_run_id": frozen["run_id"], "sources": sources})
     return _with_reserve(store, research_id, current, base | {
@@ -647,8 +674,20 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
         return  # published before a restart; the run completes without asking again
     flow._checkpoint(run_id, run["scope_revision"])
     store.update_run(run_id, stage="answer")
+    # The full text this turn would answer from is fetched before the pool is frozen, so what it brings in is in
+    # the pool the call reads. The pool is read twice for that: once unfrozen, to see which works are held on their
+    # abstract alone, and then frozen after the attempt. Both reads are the same pure function over stored rows —
+    # no model and no provider — and the frozen one is the only one anything later compares against.
+    provisional = pool(store, run["research_id"], turn["scope_revision"], flow)
+    # The reserve is read too: a work the person included after the answer's cutoff is in the pool's reserve, and a
+    # selection of theirs may point straight at it. The sources come first, so the pool's own order still decides.
+    await followup_fulltext.advance(
+        flow, run, turn, provisional["sources"] | provisional.get("reserve", {}), terms(turn["question"]),
+        attachments_mod.stored(store, turn["id"]))
+    fetched = followup_fulltext.fetched_reads(flow, run_id)
+    flow._checkpoint(run_id, run["scope_revision"])
     frozen_pool = _code_step(flow, run, POOL_KEY, "code:followup_pool",
-                             lambda: pool(store, run["research_id"], turn["scope_revision"], flow))
+                             lambda: pool(store, run["research_id"], turn["scope_revision"], flow, fetched))
     _guard(flow, run, frozen_pool)  # a resumed run: the person's choices or the files may have changed meanwhile
     considered = sum(len(v) for v in frozen_pool["sources"].values())
     if not considered:
@@ -658,6 +697,9 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
                             "note": "This research held no passage to give; no model was asked and no search was run."})
         return
     selected = await _selection(flow, run, scope, turn["question"], frozen_pool)
+    # Every passage a call of this turn is given, kept as the calls are made: a round whose output failed
+    # validation still read what it was sent, and the turn says where it looked, not where it succeeded.
+    sent: list[str] = list(selected["passage_ids"])
     flow._checkpoint(run_id, run["scope_revision"])
     context = _code_step(flow, run, CONVERSATION_KEY, "code:followup_conversation",
                          lambda: conversation(store, run["research_id"], scope["question"], turn,
@@ -672,6 +714,7 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
         more = await _more_selection(flow, run, scope, queries[:MAX_MORE_QUERIES], selected, frozen_pool)
         if more["passage_ids"] != selected["passage_ids"]:
             more_passages = [store.passage(pid) for pid in more["passage_ids"]]
+            sent += more["passage_ids"]
             second = await _call(flow, run, scope, MORE_KEY, more_passages,
                                  context | {"more_queries_allowed": False}, frozen_pool, budget_short="skip")
             # A second round that ends invalid leaves the first round's valid answer to be published.
@@ -681,6 +724,7 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
     # and `publish` checks the frozen pool again inside its transaction.
     flow._checkpoint(run_id, run["scope_revision"])
     considered = sum(len(v) for part in ("sources", "reserve") for v in frozen_pool.get(part, {}).values())
+    read_ids = list(dict.fromkeys(sent))
     step = store.existing_step(run_id, key)
     if output.get("invalid"):
         try:
@@ -689,7 +733,8 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
         except json.JSONDecodeError:
             draft = None
         publish(flow, run, turn, frozen_pool, "unverified_draft", considered=considered, given=len(passages), step_id=step["id"],
-                step_input_id=output["step_input_id"], draft=draft, validation={"ok": False, "issues": output["issues"]})
+                step_input_id=output["step_input_id"], draft=draft, read_ids=read_ids,
+                validation={"ok": False, "issues": output["issues"]})
         return
     payload = store.step_input_payload(output["step_input_id"])
     result = output["result"]
@@ -697,13 +742,14 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
     if any(link["anchor_text"] is None for link in links):
         # Validation locates every anchor; one that does not locate now is never published as a citation.
         publish(flow, run, turn, frozen_pool, "unverified_draft", considered=considered, given=len(passages), step_id=step["id"],
-                step_input_id=output["step_input_id"], draft=result,
+                step_input_id=output["step_input_id"], draft=result, read_ids=read_ids,
                 validation={"ok": False, "issues": [{"code": "anchor_not_in_passage", "path": "/citation_anchors",
                                                      "message": "an anchor no longer locates in its passage"}]})
         return
     publish(flow, run, turn, frozen_pool, result["outcome"], considered=considered, given=len(passages), step_id=step["id"],
             step_input_id=output["step_input_id"], draft=result,
             validation={"ok": True, "issues": [], "warnings": output.get("warnings", [])}, links=links,
+            read_ids=read_ids,
             work_groups=work_groups(store, run["research_id"], payload, result))
 
 
@@ -874,10 +920,25 @@ def _language_tag(value: Any) -> str | None:
     return value if isinstance(value, str) and LANGUAGE_TAG.fullmatch(value) else None
 
 
+def _scanned(flow: Any, run: dict[str, Any], frozen_pool: dict[str, Any], read_ids: list[str] | None = None,
+             given: int | None = None) -> dict[str, Any]:
+    """This turn's scanned scope, read from its own stored steps: where it looked and what it read before it wrote.
+
+    Every published turn carries it, the ones that answered nothing included, because "no evidence here" is a
+    statement about this research and never about the literature (`followup_scope`).
+    """
+    selection = flow.store.existing_step(run["id"], SELECTION_KEY)
+    return followup_scope.scanned(
+        flow.store, run["research_id"], frozen_pool,
+        selection["output"] if selection and selection["status"] == "succeeded" else None,
+        followup_fulltext.view(followup_fulltext.stored(flow.store, run["id"])), read_ids, given)
+
+
 def publish(flow: Any, run: dict[str, Any], turn: dict[str, Any], frozen_pool: dict[str, Any], status: str, *,
             considered: int, given: int, validation: dict[str, Any], step_id: str | None = None,
             step_input_id: str | None = None, draft: dict[str, Any] | None = None,
-            links: list[dict[str, Any]] | None = None, work_groups: dict[str, Any] | None = None) -> None:
+            links: list[dict[str, Any]] | None = None, work_groups: dict[str, Any] | None = None,
+            read_ids: list[str] | None = None) -> None:
     """The turn's answer and its evidence links in one transaction; a turn already published is left as it is.
 
     The frozen pool is checked inside the same transaction, so nothing a person changed can slip in between the check
@@ -888,11 +949,14 @@ def publish(flow: Any, run: dict[str, Any], turn: dict[str, Any], frozen_pool: d
         updated = 0 if reason else store.conn.execute(
             "UPDATE followup_turns SET status = ?, step_id = ?, step_input_id = ?, answer_language = ?, draft_json = ?,"
             " validation_json = ?, passages_considered = ?, passages_given = ?, selection_revision = ?,"
-            " user_signature = ?, published_at = ?, work_groups_json = ? WHERE id = ? AND status = 'pending'",
+            " user_signature = ?, published_at = ?, work_groups_json = ?, scanned_scope_json = ?"
+            " WHERE id = ? AND status = 'pending'",
             (status, step_id, step_input_id, _language_tag((draft or {}).get("answer_language")),
              dumps(draft) if draft is not None else None, dumps(validation), considered, given,
              frozen_pool["selection_revision"], frozen_pool["user_signature"], now(),
-             dumps(work_groups) if work_groups is not None else None, turn["id"]),
+             dumps(work_groups) if work_groups is not None else None,
+             dumps(_scanned(flow, run, frozen_pool, read_ids, given)),
+             turn["id"]),
         ).rowcount
         if updated:
             for link in links or []:
@@ -1044,6 +1108,9 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
         "published_at": row["published_at"], "stale_scope": row["scope_revision"] != current,
         "stale_selection": stale_selection,
         "passages_considered": row["passages_considered"], "passages_given": row["passages_given"],
+        # Where this turn looked, as it was counted when it was published: never recomputed, because the
+        # research has moved on since and the turn's answer rests on what it read then.
+        "scanned_scope": json.loads(row["scanned_scope_json"]) if row["scanned_scope_json"] else None,
         "progress": progress,
         "run": {"id": run["id"], "status": run["status"], "stage": run["stage"], "pause_reason": run["pause_reason"],
                 "error": run["error"]},

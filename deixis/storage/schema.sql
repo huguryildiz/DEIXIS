@@ -1,9 +1,9 @@
--- The whole library schema at version 26. A new library is made from this file in one transaction and
--- records versions 1 to 26; a library at an older version is brought here by the steps in storage/upgrades.py.
+-- The whole library schema at version 27. A new library is made from this file in one transaction and
+-- records versions 1 to 27; a library at an older version is brought here by the steps in storage/upgrades.py.
 -- A schema change edits this file, raises the version below and adds the upgrade step with that number.
 -- Objects are in the order the old migration chain (0001_schema.sql to 0016_abstract_rows.sql) and the upgrade steps
 -- after it created them: the triggers on one table fire in that order.
--- deixis:schema-version 26
+-- deixis:schema-version 27
 
 CREATE TABLE scope_revisions (
   research_id TEXT NOT NULL REFERENCES researches(id),
@@ -1227,7 +1227,7 @@ CREATE TABLE followup_turns (
   selection_revision INTEGER,
   user_signature TEXT,
   created_at TEXT NOT NULL,
-  published_at TEXT, work_groups_json TEXT,
+  published_at TEXT, work_groups_json TEXT, scanned_scope_json TEXT,
   CHECK ((status = 'pending') = (published_at IS NULL)),
   CHECK (status = 'pending' OR (selection_revision IS NOT NULL AND user_signature IS NOT NULL)),
   CHECK (status IN ('pending', 'no_passages') OR step_input_id IS NOT NULL)

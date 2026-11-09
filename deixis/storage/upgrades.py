@@ -947,4 +947,11 @@ CREATE INDEX fulltext_searches_research ON fulltext_searches(research_id, positi
 CREATE UNIQUE INDEX fulltext_searches_one_per_work ON fulltext_searches(research_id, work_id, scope_revision)
   WHERE status != 'cancelled';
 """),
+    27: Step("0027_followup_scanned_scope.sql", False, """\
+-- What one follow-up turn actually looked in, computed by code and kept with the published turn. The passage counts
+-- it already carried (`passages_considered`, `passages_given`) do not say which stored works were weighed or at what
+-- reading depth, and a turn that found nothing must be able to say where it looked: in this research's stored
+-- evidence, which is never the literature.
+ALTER TABLE followup_turns ADD COLUMN scanned_scope_json TEXT;
+"""),
 }

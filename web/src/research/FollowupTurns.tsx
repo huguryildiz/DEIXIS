@@ -30,6 +30,36 @@ function StepLine({ state, icon: Icon, children }: { state: StepState; icon: typ
   </li>
 }
 
+// Where this turn looked, as it was counted when the turn was published. It is here because "the passages do not
+// answer this" is a statement about this research and not about the literature: the sentence says which works were
+// weighed, at what depth, and that nothing beyond them was read.
+function ScannedScope({ turn }: { turn: FollowupTurn }) {
+  const scope = turn.scanned_scope
+  if (!scope) return null
+  // The works the model was actually shown a passage of, not the works the pool held: the passage limit stands
+  // between the two, and the wider number would claim a search the turn did not make.
+  const shown = scope.works_given ?? 0
+  const parts = [shown === 0 ? t('Read no passage from the {all} works in this research', { all: scope.research_works })
+    : t(shown === 1 ? 'Read passages from {n} of the {all} works in this research'
+      : 'Read passages from {n} of the {all} works in this research', { n: shown, all: scope.research_works })]
+  if (scope.works_given_full_text || scope.works_given_abstract_only) {
+    parts.push(t('{full} read in full, {abstract} on the abstract only',
+      { full: scope.works_given_full_text, abstract: scope.works_given_abstract_only }))
+  }
+  // What the pool held beyond them: in reach, but not shown to the model this turn.
+  if (scope.works > shown) parts.push(t('{n} more were in this research but not read this turn', { n: scope.works - shown }))
+  const fetched = scope.fulltext
+  return <p className="followup-note followup-scope">
+    {parts.join(' · ')}
+    {fetched && fetched.tried > 0 && <> · {t(fetched.settled === fetched.tried
+      ? 'tried the full text of {n} before answering'
+      : 'tried the full text of {n} before answering, {settled} of them settled', { n: fetched.tried, settled: fetched.settled })}</>}
+    {fetched && fetched.past_limit > 0 && <> · {t('{n} more were left for a later question', { n: fetched.past_limit })}</>}
+    {fetched && fetched.deadline > 0 && <> · {t('the wait for a full text ran out')}</>}
+    {fetched && fetched.other_version > 0 && <> · {t('{n} arrived on another record of the same work and will be read on the next question', { n: fetched.other_version })}</>}
+  </p>
+}
+
 // The two step lines of a turn (mockup: "Looked in the N passages from this research", "Wrote a short answer").
 function steps(turn: FollowupTurn) {
   const live = turn.status === 'pending' && ACTIVE.has(turn.run.status)
@@ -227,16 +257,20 @@ export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTur
       </div>
     </div>}
     {turn.status === 'no_passages' && <div className="chat-note notice followup-notice is-warning"><TriangleAlert size={16} aria-hidden />
-      <div className="notice-body"><p>{t('This research held no passage to give, so no model was asked and no search was run.')}</p></div>
+      <div className="notice-body"><p>{t('This research held no passage to give, so no model was asked and no search was run.')}</p>
+        <ScannedScope turn={turn} /></div>
     </div>}
     {turn.status === 'unverified_draft' && <div className="chat-note notice followup-notice is-error"><TriangleAlert size={16} aria-hidden />
       <div className="notice-body">
         <p>{t('The model output did not pass validation, so it is not shown as a cited answer.')}</p>
         {turn.issues.length > 0 && <ul className="answer-notice-issues">{turn.issues.map(i => <li key={`${i.code}${i.path}`}>{t('{code} at {path}', { code: i.code, path: i.path })}</li>)}</ul>}
+        <ScannedScope turn={turn} />
       </div>
     </div>}
     {answer && <>
       {answer.outcome !== 'answered' && <p className="followup-outcome">{t(answer.outcome === 'not_answered' ? 'The passages in this research do not answer this.' : 'The passages in this research answer part of this.')}</p>}
+      {answer.outcome !== 'answered' && <p className="followup-note">{t('This was not found in the stored evidence this turn looked in; it does not say the literature has no answer.')}</p>}
+      <ScannedScope turn={turn} />
       {turn.stale_selection && <p className="followup-note">{t('Your source selection changed after this answer was written; it reflects the earlier selection.')}</p>}
       {claims.length > 0 && <div className="prose followup-prose"><p>{claims.map(claim => <span className="claim" data-followup-claim={claim.id} key={claim.id}><MathText text={claim.text} />
         {claim.support_type === 'analyst_inference' && <span className="support-badge is-inference">{t('interpretation')}</span>}

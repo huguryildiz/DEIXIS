@@ -2159,6 +2159,16 @@ export type FollowupTurn = {
   stale_selection: boolean  // published, and the person's source selection changed since
   passages_considered: number | null  // stored passages of this research the selection ranked
   passages_given: number | null  // passages sent to the model (its allowlist)
+  // Where this turn looked, counted when it was published: the works it weighed and at what depth, the three
+  // passage counts, and what it tried to read before answering. Null for a turn published before the rule.
+  scanned_scope: {
+    basis: string | null; research_works: number; works: number; works_full_text: number; works_abstract_only: number
+    // The works the model was given a passage of, which the passage limit narrows from the pool's own counts.
+    works_given: number; works_given_full_text: number; works_given_abstract_only: number
+    pool_held: number; ranked_considered: number | null; given_to_model: number
+    fulltext: { works: number; seconds: number; gap: number; settled: number; tried: number; past_limit: number
+      deadline: number; other_version: number } | null
+  } | null
   // The turn's live steps from its stored step rows (S22b): how many passages the stored selection sends (the call's
   // allowlist) once chosen, and the state of the answer's model step; null before each exists.
   progress: { passages_selected: number | null; answer_step: string | null; more_passages: number | null; more_step: string | null; more_error: string | null }

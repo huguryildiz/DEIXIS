@@ -405,7 +405,29 @@
      "value": "binary per time slot"
     }
    ],
-   "more_queries_allowed": true
+   "more_queries_allowed": true,
+   "attachments": [
+    {
+     "ordinal": 1,
+     "kind": "cell",
+     "text": "SYNTHETIC. binary per time slot",
+     "bound": true,
+     "unresolved": null,
+     "more_bindings": 0,
+     "bindings": [
+      {
+       "title": "SYNTHETIC release paper",
+       "year": 2020,
+       "version_label": "publisher",
+       "locator": {
+        "kind": "page",
+        "physical_page": 4,
+        "printed_label": "4"
+       }
+      }
+     ]
+    }
+   ]
   }
  },
  "C_report_plan": {

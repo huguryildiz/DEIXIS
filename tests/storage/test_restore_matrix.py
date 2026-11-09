@@ -512,6 +512,8 @@ EMPTY_BECAUSE = {
     # restore has its own test.
     "followup_turns": "the builder asks no follow-up question; backup/restore: tests/storage/test_followup_turns_storage.py",
     "followup_turn_links": "same as followup_turns",
+    "followup_turn_attachments": "same as followup_turns",
+    "followup_turn_attachment_bindings": "same as followup_turns",
     "library_items": "the builder saves nothing to the Library; backup/restore: tests/storage/test_library_items.py",
     "research_model_changes": "the builder changes no research model; backup/restore: tests/models/test_research_model_change.py",
     "watch_gaps": "the rich library builder starts no interval watch, so no scheduling gap is recorded",

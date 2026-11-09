@@ -2,7 +2,7 @@ import { useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, BookOpen, ChevronRight, Clock, Ellipsis, FileText, FileUp, Funnel, Inbox, Lightbulb, ListMinus, MessageSquareQuote, PencilLine, GitFork, Search, Sparkles, Table2, Trash2, Waypoints } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { api, ApiError, followupApi, libraryApi, subscribe, type ActivityEvent, type Answer, type AssetImpact, type ResearchView, type Run, type OcrReason, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ZoteroSource } from '../lib/api'
+import { api, ApiError, followupApi, libraryApi, subscribe, type ActivityEvent, type Answer, type AssetImpact, type FollowupAsk, type ResearchView, type Run, type OcrReason, type OcrTool, type RunKind, type RunStatus, type Source, type TableSummary, type ZoteroSource } from '../lib/api'
 import { ocrReasonText } from '../reading/ocr'
 import { serviceErrorSentence, serviceKind, fileRestoreNote, fileRestoreText, fileRestoreTone, pauseReasonText, providerName, runKindLabels, runStatusLabels, scopeLabels, tableRunLabels, researchHeading, seedSkipText, seedUseText, shownVersion, tableTitle } from '../lib/labels'
 import { PassageSheet } from '../reading/PassageSheet'
@@ -56,7 +56,7 @@ import { SourcesPanel, type StateFilter } from './SourcesPanel'
 import { SplitPanel, StackPanel } from './SplitPanel'
 import { PanelStackContext, panelFromSegment, usePanelStack, usePhone, URL_PANELS } from './usePanelStack'
 import { RESEARCH_PANEL_EVENT, type ResearchPanelRequest } from '../shell/Shortcuts'
-import { FollowupComposer, type FollowupFill } from './FollowupComposer'
+import { FollowupComposer, type FollowupFill, type FollowupPick } from './FollowupComposer'
 import { AddToChat } from './AddToChat'
 import { FollowupTurnView } from './FollowupTurns'
 import { followupClaim, followupClaimId, followupGroupClaims, useFollowupTurns } from './followupData'
@@ -213,7 +213,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   const followups = useFollowupTurns(id, lastEventId ?? 0)
   const [asking, setAsking] = useState(false)
   const [followupFill, setFollowupFill] = useState<FollowupFill | null>(null)
-  const [followupQuote, setFollowupQuote] = useState<FollowupFill | null>(null)
+  const [followupQuote, setFollowupQuote] = useState<FollowupPick | null>(null)
   const [threadCol, setThreadCol] = useState<HTMLDivElement | null>(null)
   const followupChanged = useCallback(async () => { await load(); onChanged() }, [load, onChanged])
   useEffect(() => {
@@ -690,11 +690,11 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
   // starts. One request at a time; the turn the server returns is shown at once and the list is read again on its events.
   // The question revision on screen goes with it, so a newer revision saved elsewhere answers 409 instead of asking under it.
   const anyActive = view.runs.some(r => ACTIVE.has(r.status))
-  const askFollowup = async (question: string, idempotencyKey: string) => {
+  const askFollowup = async (question: string, idempotencyKey: string, attachments: FollowupAsk[] = []) => {
     if (asking) return false
     setAsking(true)
     try {
-      followups.accept(await followupApi.ask(id, question, view.research.current_scope_revision, idempotencyKey))
+      followups.accept(await followupApi.ask(id, question, view.research.current_scope_revision, idempotencyKey, attachments))
       onChanged()
       return true
     } catch (e) {
@@ -978,7 +978,7 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       <FollowupComposer disabledReason={anyActive ? t('Wait for the current run to finish before asking a follow-up.') : null} sending={asking}
         depthIcon={EffortIcon} depthLabel={t(effortLabels[view.scope.effort])} fill={followupFill} quote={followupQuote} onSend={askFollowup}
         onAddPdfs={opener => openPanel('pdfs', { opener })} />
-      <AddToChat root={threadCol} disabled={Boolean(phone && panel)} onAdd={text => setFollowupQuote(previous => ({ text, request: (previous?.request ?? 0) + 1 }))} />
+      <AddToChat root={threadCol} disabled={Boolean(phone && panel)} onAdd={pick => setFollowupQuote(previous => ({ ...pick, request: (previous?.request ?? 0) + 1 }))} />
       </div>
     {/* The answer's PDF suggestions attach through the same picker as the Sources panel. */}
     <input ref={fileInput} type="file" accept=".pdf,application/pdf" multiple hidden onChange={e => { void upload(e.target.files); e.target.value = '' }} />
@@ -1061,7 +1061,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       </details>
     </StackPanel>
     <StackPanel name="table" title={t('Evidence table')} icon={Table2} className="table-panel-box">
-      <EvidenceTab researchId={id} view={view} dark={dark} initialTableId={focusTable?.id ?? null} tableRequest={focusTable?.request ?? 0} cell={focusTable?.cell ?? null} onCellShown={cellShown} modelText={modelText} onRunStarted={() => { void load(); onChanged() }} />
+      <EvidenceTab researchId={id} view={view} dark={dark} initialTableId={focusTable?.id ?? null} tableRequest={focusTable?.request ?? 0} cell={focusTable?.cell ?? null} onCellShown={cellShown} modelText={modelText} onRunStarted={() => { void load(); onChanged() }}
+        onAddToChat={pick => setFollowupQuote(previous => ({ ...pick, request: (previous?.request ?? 0) + 1 }))} />
     </StackPanel>
     <StackPanel name="watch" title={t('Follow-up')} icon={Clock}>
       <FollowUpView researchId={id} view={view} dark={dark} onReload={followupCount.reload} onChanged={followupChanged} />
@@ -1124,7 +1125,8 @@ export function ResearchPage({ id, initialTab, dark, onChanged }: { id: string; 
       onOpenCitation={(passageId, highlightText, expectHighlight) => setPassageTarget({ passageId, highlightText, fromCitation: expectHighlight, reportCitation: true })}
       onChanged={async () => { await load(); onChanged() }} />}
     <CitationPanel researchId={id} claim={citeClaim} sources={view.sources} onClose={() => setCiteClaimId(null)} onOpen={openCitation} />
-    <PassageSheet asPanel={!passageTarget?.reportCitation} researchId={id} passageId={passageTarget?.passageId ?? null} assetId={pdfTarget?.assetId ?? null} sourceVersionId={pdfTarget?.sourceVersionId ?? null} initialView={pdfTarget ? pdfTarget.view ?? 'pdf' : passageTarget?.view ?? 'text'}
+    <PassageSheet onAddToChat={pick => setFollowupQuote(previous => ({ ...pick, request: (previous?.request ?? 0) + 1 }))}
+      asPanel={!passageTarget?.reportCitation} researchId={id} passageId={passageTarget?.passageId ?? null} assetId={pdfTarget?.assetId ?? null} sourceVersionId={pdfTarget?.sourceVersionId ?? null} initialView={pdfTarget ? pdfTarget.view ?? 'pdf' : passageTarget?.view ?? 'text'}
       findOnOpen={Boolean(passageTarget?.find)} latestAnswer={answer?.status === 'structurally_valid' ? { version: answerVersion, claims: answer.claims } : null}
       actions={passageTarget?.reportCitation ? undefined : { busy, finding: pdfFinding, onFind: discoverPdf, onAttach: chooseSourcePdf, onReplace: chooseReplacement,
         onRemove: source => { void askRemoval([source.source_version_id]) }, onReextract: (source, assetId) => { void reextract(source, assetId) }, onRereadEquations: (source, assetId) => { void rereadEquations(source, assetId) }, onLookUpRecord: source => { void lookUpRecord(source) },

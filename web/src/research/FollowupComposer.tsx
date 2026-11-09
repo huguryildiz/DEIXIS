@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ArrowUp, Plus, X, type LucideIcon } from 'lucide-react'
 import { useToast } from '../components/Toast'
 import { t } from '../lib/i18n'
-import { withQuotes } from './followupData'
+import type { FollowupAsk } from '../lib/api'
 
 // The sticky follow-up composer at the foot of the thread (mockup `.foot-compose` / `.mini`, R30, UI parity S22b). It asks
 // one follow-up question, answered only from the passages this research already holds; it starts no search. "+"
@@ -12,9 +12,14 @@ import { withQuotes } from './followupData'
 // only when the server has queued the question.
 
 export type FollowupFill = { text: string; request: number }
+// A selection "Add to chat" sent, with the request counter that makes each click its own.
+export type FollowupPick = FollowupAsk & { request: number }
 
-// The server's limit on a follow-up question (`followup.MAX_QUESTION_CHARS`), quotes included.
+// The server's limit on a follow-up question (`followup.MAX_QUESTION_CHARS`). A selection no longer counts against
+// it: it travels beside the question as its own record (`followup_attachments`), with the source it came from.
 const MAX_CHARS = 2000
+// The server's limits on the selections one question carries (`followup_attachments`).
+const MAX_ATTACHMENTS = 4
 
 export function FollowupComposer({ disabledReason, sending, depthIcon: DepthIcon, depthLabel, fill, quote, onSend, onAddPdfs }: {
   // Why a question cannot be sent now (a run of this research is active), or null.
@@ -24,9 +29,10 @@ export function FollowupComposer({ disabledReason, sending, depthIcon: DepthIcon
   depthLabel: string
   // Text another control puts in the box ("Next steps" row): each new request replaces the draft and focuses the box.
   fill: FollowupFill | null
-  // Text chosen in the thread with "Add to chat": each new request adds it as a quote chip above the box and focuses the box.
-  quote: FollowupFill | null
-  onSend: (question: string, idempotencyKey: string) => Promise<boolean>
+  // Text chosen with "Add to chat": each new request adds it as a chip above the box and focuses the box. The chip
+  // keeps what it was selected from, so the question reaches the server bound to that source.
+  quote: FollowupPick | null
+  onSend: (question: string, idempotencyKey: string, attachments: FollowupAsk[]) => Promise<boolean>
   onAddPdfs: (opener: HTMLElement) => void
 }) {
   const toast = useToast()
@@ -41,11 +47,15 @@ export function FollowupComposer({ disabledReason, sending, depthIcon: DepthIcon
     setFilled(fill)
     if (fill) setDraft(fill.text)
   }
-  const [quotes, setQuotes] = useState<string[]>([])
+  const [quotes, setQuotes] = useState<FollowupAsk[]>([])
   const [quoted, setQuoted] = useState(quote)
   if (quoted !== quote) {
     setQuoted(quote)
-    if (quote && !quotes.includes(quote.text)) setQuotes([...quotes, quote.text])
+    const same = (a: FollowupAsk, b: FollowupAsk) => a.kind === b.kind && a.ref_id === b.ref_id && a.text === b.text
+    if (quote && !quotes.some(item => same(item, quote))) {
+      if (quotes.length >= MAX_ATTACHMENTS) toast('warning', t('A question carries at most {n} selections; remove one first.', { n: MAX_ATTACHMENTS }))
+      else setQuotes([...quotes, { kind: quote.kind, ref_id: quote.ref_id, text: quote.text }])
+    }
   }
   useEffect(() => { if (quote) field.current?.focus() }, [quote])
   useEffect(() => {
@@ -71,10 +81,11 @@ export function FollowupComposer({ disabledReason, sending, depthIcon: DepthIcon
     if (!question) { toast('warning', t('Type a follow-up question first')); field.current?.focus(); return }
     if (disabledReason) { toast('warning', disabledReason); return }
     const sent = quotes
-    const text = withQuotes(sent, question)
-    if (text.length > MAX_CHARS) { toast('warning', t('The question and its quotes are too long; remove a quote or shorten the question.')); return }
-    if (key.current?.text !== text) key.current = { text, key: crypto.randomUUID() }
-    if (await onSend(text, key.current.key)) {
+    if (question.length > MAX_CHARS) { toast('warning', t('The question is too long; shorten it.')); return }
+    // One key per question and its selections: a retry of the same request after a failure is the same request.
+    const signature = JSON.stringify([question, sent])
+    if (key.current?.text !== signature) key.current = { text: signature, key: crypto.randomUUID() }
+    if (await onSend(question, key.current.key, sent)) {
       key.current = null
       setDraft(current => (current.trim() === question ? '' : current))
       setQuotes(current => current.filter(q => !sent.includes(q)))
@@ -83,8 +94,10 @@ export function FollowupComposer({ disabledReason, sending, depthIcon: DepthIcon
 
   return <div className="followup-compose" ref={box}>
     <div className="followup-composer">
-      {quotes.length > 0 && <ul className="followup-quotes" aria-label={t('Quoted text')}>{quotes.map(q => <li className="followup-quote-chip" key={q}>
-        <span title={q}>{q}</span>
+      {quotes.length > 0 && <ul className="followup-quotes" aria-label={t('Quoted text')}>{quotes.map(q => <li className="followup-quote-chip" key={`${q.kind}:${q.ref_id ?? ''}:${q.text}`}>
+        <span title={q.text}>{q.text}</span>
+        {/* A selection code could not bind to a source is still sent, as the person's own words. */}
+        <span className="followup-quote-kind">{t(q.kind === 'text' ? 'free selection' : 'from a source')}</span>
         <button type="button" aria-label={t('Remove quote')} onClick={() => { setQuotes(list => list.filter(item => item !== q)); field.current?.focus() }}><X size={14} aria-hidden /></button>
       </li>)}</ul>}
       <textarea ref={field} aria-label={t('Follow-up question')} placeholder={t('Ask about the passages this research has read')} value={draft} maxLength={2000}

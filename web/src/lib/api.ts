@@ -2166,7 +2166,25 @@ export type FollowupTurn = {
   // its summary counts what was found (new / already here / removed before) and what the abstract screening did.
   // Nothing it finds is included: new works stay candidates for the person.
   search: FollowupSearch
+  // What the person selected before they asked: the quote travels beside the question, not inside it, and code
+  // bound it to the work, version and place it came from. A free selection, or one whose record this research can no
+  // longer read, carries no binding and says why.
+  attachments: FollowupAttachment[]
 }
+export type FollowupAttachmentKind = 'passage' | 'cell' | 'answer_claim' | 'followup_claim' | 'report_claim' | 'text'
+export type FollowupAttachment = {
+  id: string; ordinal: number; kind: FollowupAttachmentKind; ref_id: string | null; selected_text: string
+  unresolved_reason: 'source_removed' | 'passage_not_current' | 'cell_not_filled' | 'cell_has_no_located_quote'
+    | 'claim_has_no_citation' | 'nothing_readable' | null
+  bindings: {
+    passage_id: string; source_version_id: string; work_id: string; version_label: string | null
+    locator: { kind: string; physical_page: number | null; printed_label: string | null } | null
+    in_pool: boolean  // the run's frozen pool held this passage
+    given: boolean | null  // the published answer's own input carried it; null before an answer was published
+  }[]
+}
+// One selection on its way to the server: the kind of thing it came from, that thing's id and the text.
+export type FollowupAsk = { kind: FollowupAttachmentKind; ref_id: string | null; text: string }
 export type FollowupSearchRequest = { position: number; provider_id: string; endpoint: string | null; origin: string | null; query_text: string
   status: string; provider_status: string | null; records: number; admitted: boolean; reason: string | null
   sent: boolean  // the request may have reached the provider; a refusal closed before sending was not sent
@@ -2189,9 +2207,11 @@ export const followupApi = {
   get: (researchId: string, turnId: string) =>
     request<FollowupTurn>(`/api/researches/${encodeURIComponent(researchId)}/followup-turns/${encodeURIComponent(turnId)}`),
   // `expectedScopeRevision` is the question revision on screen; a newer one answers 409, as an active run does.
-  ask: (researchId: string, question: string, expectedScopeRevision: number, idempotencyKey: string) =>
+  ask: (researchId: string, question: string, expectedScopeRevision: number, idempotencyKey: string,
+        attachments: FollowupAsk[] = []) =>
     request<FollowupTurn>(`/api/researches/${encodeURIComponent(researchId)}/followup-turns`,
-      json('POST', { question, expected_scope_revision: expectedScopeRevision }, { 'Idempotency-Key': idempotencyKey })),
+      json('POST', { question, expected_scope_revision: expectedScopeRevision, attachments },
+        { 'Idempotency-Key': idempotencyKey })),
   // Starts the turn's search; a refusal answers 422 with its `code`, a newer revision or an active run 409.
   search: (researchId: string, turnId: string, expectedScopeRevision: number, idempotencyKey: string) =>
     request<FollowupTurn & { search_run_id: string }>(`/api/researches/${encodeURIComponent(researchId)}/followup-turns/${encodeURIComponent(turnId)}/search`,

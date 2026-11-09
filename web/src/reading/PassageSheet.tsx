@@ -1,9 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { AlignLeft, CalendarDays, Check, Copy, Database, Ellipsis, FileText, FileUp, Info, Link as LinkIcon, Link2, ListMinus, LoaderCircle, Maximize2, Minimize2, Replace, RotateCcw, ScanText, Search, Sigma, Trash2, TriangleAlert } from 'lucide-react'
+import { AlignLeft, CalendarDays, Check, Copy, Database, Ellipsis, FileText, FileUp, Info, Link as LinkIcon, Link2, ListMinus, LoaderCircle, Maximize2, MessageSquarePlus, Minimize2, Replace, RotateCcw, ScanText, Search, Sigma, Trash2, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { api, assetUrl, equationCropUrl, shellApi, type Asset, type AssetText, type Claim, type Passage, type PdfDiscovery, type Source } from '../lib/api'
+import { api, assetUrl, equationCropUrl, shellApi, type Asset, type AssetText, type Claim, type FollowupAsk, type Passage, type PdfDiscovery, type Source } from '../lib/api'
 import { citedText, equationReaderName, locatorText, providerName, rereadEquationsLabel, retractionNote, serviceErrors, serviceKind, versionText } from '../lib/labels'
 import { t, uiLocale } from '../lib/i18n'
 import { PassageMathText } from './PassageMathText'
@@ -118,7 +118,10 @@ function markGroups(root: HTMLElement | null) {
 // latestAnswer: the research's latest valid answer, whose claims the details line counts ("cited in N claims of Vn").
 // actions: what the research page lets the panel do (P14); findOnOpen starts the open-copy lookup once on open (the
 // Citation panel's Find PDF). abstractPassageId: the source's abstract when no `sources` row names it (the Library page).
-export function PassageSheet({ researchId, passageId, assetId = null, sourceVersionId = null, initialView = 'text', initialPage = 1, highlightText, highlightTexts, expectHighlight = false, citationLabels, pdfRemoved = false, sources, dark, onClose, onRestoreSource, asPanel = false, latestAnswer = null, actions, findOnOpen = false, abstractPassageId = null, passageOnly = false }: { researchId: string; passageId: string | null; assetId?: string | null; sourceVersionId?: string | null; initialView?: 'text' | 'pdf'; initialPage?: number; highlightText?: string | null; highlightTexts?: string[]; expectHighlight?: boolean; citationLabels?: CitationLabels; pdfRemoved?: boolean; sources?: Source[]; dark: boolean; onClose: () => void; onRestoreSource?: (sourceVersionId: string) => void; asPanel?: boolean; latestAnswer?: { version: number; claims: Claim[] } | null; actions?: SourceActions; findOnOpen?: boolean; abstractPassageId?: string | null; passageOnly?: boolean }) {
+// The server's limit on one selection (`followup_attachments.MAX_TEXT_CHARS`).
+const ADD_TO_CHAT_LIMIT = 800
+
+export function PassageSheet({ researchId, passageId, assetId = null, sourceVersionId = null, initialView = 'text', initialPage = 1, highlightText, highlightTexts, expectHighlight = false, citationLabels, pdfRemoved = false, sources, dark, onClose, onRestoreSource, asPanel = false, latestAnswer = null, actions, findOnOpen = false, abstractPassageId = null, passageOnly = false, onAddToChat }: { researchId: string; passageId: string | null; assetId?: string | null; sourceVersionId?: string | null; initialView?: 'text' | 'pdf'; initialPage?: number; highlightText?: string | null; highlightTexts?: string[]; expectHighlight?: boolean; citationLabels?: CitationLabels; pdfRemoved?: boolean; sources?: Source[]; dark: boolean; onClose: () => void; onRestoreSource?: (sourceVersionId: string) => void; asPanel?: boolean; latestAnswer?: { version: number; claims: Claim[] } | null; actions?: SourceActions; findOnOpen?: boolean; abstractPassageId?: string | null; passageOnly?: boolean; onAddToChat?: (pick: FollowupAsk) => void }) {
   const [passage, setPassage] = useState<Passage | null>(null)
   const [assetText, setAssetText] = useState<AssetText | null>(null)
   // The whole extracted text of the PDF a cited passage comes from: undefined while it loads, null when the passage opens alone.
@@ -153,6 +156,7 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   const [style] = useCitationStyle()
   const toast = useToast()
   const textView = useRef<HTMLDivElement>(null)
+  const body = useRef<HTMLDivElement>(null)
   // The exact text marked at each cited place of the text view, read back from the marks (math is left out of it).
   const [quotes, setQuotes] = useState<string[]>([])
   const groups = quotes.length
@@ -433,9 +437,40 @@ export function PassageSheet({ researchId, passageId, assetId = null, sourceVers
   </> : needsAbstract ? <p><span className="shimmer-text">{t('Loading passage…')}</span></p>
     : <p className="source-notice"><Info size={15} aria-hidden />{t('No abstract is stored for this source.')}</p>
 
+  // "Add to chat" on an open passage: the follow-up question is then bound to that passage, so to this work and this
+  // version of it. The text is what the person selected here, or the quote marked in the passage when they selected
+  // nothing; the identity is a passage's own id, never anything read off the screen.
+  //
+  // The plain-text view can show a whole PDF, one section per page, each carrying its page's passage id. A selection
+  // there binds to the page it sits in, not to the passage the panel was opened at, and a selection crossing two
+  // pages has no single source, so it is sent as a free selection with the person's own words.
+  const addToChat = () => {
+    const selection = window.getSelection()
+    const range = selection && !selection.isCollapsed && selection.rangeCount > 0 ? selection.getRangeAt(0) : null
+    const element = (node: Node | null) => (node instanceof Element ? node : node?.parentElement ?? null)
+    const inside = Boolean(range && body.current?.contains(element(range.commonAncestorContainer) as Node))
+    const page = (node: Node) => element(node)?.closest('.pdf-text-page')?.id || null
+    const start = range && inside ? page(range.startContainer) : null
+    const end = range && inside ? page(range.endContainer) : null
+    const opened = openPassageId ?? passage?.id ?? null
+    // A selection inside the document view names its own page; one page, or nothing at all, means the open passage.
+    const target = start || end ? (start === end ? start : null) : opened
+    const picked = inside && range ? String(selection) : (quotes[0] ?? passage?.text ?? '')
+    const text = picked.split(/\s+/).join(' ').trim().slice(0, ADD_TO_CHAT_LIMIT)
+    if (!onAddToChat || !text) return
+    onAddToChat(target ? { kind: 'passage', ref_id: target, text } : { kind: 'text', ref_id: null, text })
+    selection?.removeAllRanges()
+  }
+
   const content = <>
-      <div className="sheet-body source-detail">
+      <div className="sheet-body source-detail" ref={body}>
         {error && <Notice tone="error">{error}</Notice>}
+        {onAddToChat && (openPassageId ?? passage?.id) && <p className="source-add-to-chat">
+          <Button variant="ghost" size="sm" onClick={addToChat}>
+            <MessageSquarePlus aria-hidden />{t('Add to chat')}
+          </Button>
+          <span className="source-add-to-chat-note">{t('Asks your next follow-up about this passage, bound to this work and version.')}</span>
+        </p>}
         {!passage && !assetText && !detailsOnly && !error && <p><span className="shimmer-text">{t(openAssetId ? 'Loading PDF text…' : 'Loading passage…')}</span></p>}
         {(passage || assetText || detailsOnly) && source && head && <>
           {/* The work (mockup `.dhead`): the source key, venue · year · citations, the title and the authors, then one

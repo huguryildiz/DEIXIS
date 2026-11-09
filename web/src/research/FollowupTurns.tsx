@@ -1,7 +1,7 @@
 import { BookOpen, Copy, MessageSquare, Pause, PencilLine, Play, RotateCw, Search, TriangleAlert } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { type Claim, type FollowupSearchRequest, type FollowupSearchRun, type FollowupTurn, type FollowupWorkGroups, type Source } from '../lib/api'
-import { locatorText, pauseReasonText, providerName, serviceErrorSentence, serviceKind, versionText } from '../lib/labels'
+import { attachmentReason, locatorText, pauseReasonText, providerName, serviceErrorSentence, serviceKind, versionText } from '../lib/labels'
 import { MathText } from '../components/MathText'
 import { useToast } from '../components/Toast'
 import { t } from '../lib/i18n'
@@ -164,6 +164,11 @@ export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTur
   const live = turn.status === 'pending' && ACTIVE.has(turn.run.status)
   const answer = turn.answer
   const claims = answer ? answer.claims.map(c => followupClaim(turn, c, sources)) : []
+  // A selection's work as the source list names it; the title only when this research no longer lists that source.
+  const sourceName = (svid: string) => {
+    const source = sources.find(item => item.source_version_id === svid)
+    return source?.source_key || source?.title || svid
+  }
   // The works of each group, each with its own chip into the Citation panel.
   const groupClaims = new Map(followupGroupClaims(turn).map(c => [c.label, followupClaim(turn, c, sources)]))
   const groups = answer?.work_groups ?? null
@@ -191,6 +196,15 @@ export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTur
   const asked = splitQuotes(turn.question)
   return <section className="followup-turn">
     <div className="followup-q">{asked.quotes.map((quote, i) => <blockquote className="followup-quote" key={i}><MathText text={quote} /></blockquote>)}
+      {/* What the person selected when they asked: their quote, the work and version it came from, and whether the
+          answer was given that passage. A selection with no source says so instead of naming one. */}
+      {turn.attachments.map(item => <blockquote className="followup-quote" key={item.id}>
+        <MathText text={item.selected_text} />
+        <span className="followup-quote-source">{item.bindings.length === 0
+          ? t(item.kind === 'text' ? 'Free selection: no source was bound to it.' : attachmentReason(item.unresolved_reason))
+          : item.bindings.map(binding => `${sourceName(binding.source_version_id)}${binding.version_label ? ` · ${binding.version_label}` : ''}`).join(' · ')}
+          {item.bindings.length > 0 && !item.bindings.some(binding => binding.given) && ` · ${t('this answer was not given its passages')}`}</span>
+      </blockquote>)}
       <b><MessageSquare size={16} aria-hidden />{t('Question')}</b> <span>{asked.text}</span></div>
     <ol className="followup-steps">{steps(turn).map(line => <StepLine key={line.text} state={line.state} icon={line.icon}>{line.text}</StepLine>)}</ol>
     {turn.stale_scope && <p className="followup-note">{t('Asked under revision {n} of the question.', { n: turn.scope_revision })}</p>}
@@ -224,7 +238,7 @@ export function FollowupTurnView({ turn, sources, actions }: { turn: FollowupTur
     {answer && <>
       {answer.outcome !== 'answered' && <p className="followup-outcome">{t(answer.outcome === 'not_answered' ? 'The passages in this research do not answer this.' : 'The passages in this research answer part of this.')}</p>}
       {turn.stale_selection && <p className="followup-note">{t('Your source selection changed after this answer was written; it reflects the earlier selection.')}</p>}
-      {claims.length > 0 && <div className="prose followup-prose"><p>{claims.map(claim => <span className="claim" key={claim.id}><MathText text={claim.text} />
+      {claims.length > 0 && <div className="prose followup-prose"><p>{claims.map(claim => <span className="claim" data-followup-claim={claim.id} key={claim.id}><MathText text={claim.text} />
         {claim.support_type === 'analyst_inference' && <span className="support-badge is-inference">{t('interpretation')}</span>}
         {chip(claim)}</span>)}</p></div>}
       {groups && <div className="followup-groups">

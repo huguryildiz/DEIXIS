@@ -1585,9 +1585,9 @@
     },
     "conversation": {
       "type": "object",
-      "description": "followup_answer steps only: the conversation the follow-up question belongs to, so it is read in context. research_question is the research's own question; latest_answer holds the claim texts of the research's latest valid answer; evidence_table its evidence tables' current values; earlier_turns are the last published follow-ups before this one, oldest first. Context only, never evidence: none of it carries a passage, and claims cite only this StepInput's passages.",
+      "description": "followup_answer steps only: the conversation the follow-up question belongs to, so it is read in context. research_question is the research's own question; latest_answer holds the claim texts of the research's latest valid answer; evidence_table its evidence tables' current values; earlier_turns are the last published follow-ups before this one, oldest first; attachments is what the person selected before they asked. Context only, never evidence: none of it carries a passage, and claims cite only this StepInput's passages.",
       "additionalProperties": false,
-      "required": ["research_question", "latest_answer", "earlier_turns", "evidence_table", "more_queries_allowed"],
+      "required": ["research_question", "latest_answer", "earlier_turns", "evidence_table", "more_queries_allowed", "attachments"],
       "properties": {
         "research_question": { "type": "string", "minLength": 1 },
         "latest_answer": { "type": "array", "maxItems": 12, "items": { "type": "string" } },
@@ -1620,6 +1620,55 @@
             "properties": {
               "question": { "type": "string", "minLength": 1 },
               "answer": { "type": "array", "maxItems": 12, "items": { "type": "string" } }
+            }
+          }
+        },
+        "attachments": {
+          "type": "array",
+          "maxItems": 4,
+          "description": "What the person selected before they asked, in the order they added it: their own quote and what it was taken from. text is the selection. bound is false when it is a free selection, when the record it came from points at no passage this research can read, or when this step was given none of that selection's passages; unresolved then says which. bindings name the work, the version and the place of each of that selection's passages this step carries, at most eight, with more_bindings counting the rest. The quote is the person's words about the sources, never a source: a claim cites only this StepInput's passages.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["ordinal", "kind", "text", "bound", "unresolved", "bindings", "more_bindings"],
+            "properties": {
+              "ordinal": { "type": "integer", "minimum": 1 },
+              "kind": { "type": "string", "enum": ["passage", "cell", "answer_claim", "followup_claim", "report_claim", "text"] },
+              "text": { "type": "string", "minLength": 1, "maxLength": 800 },
+              "bound": { "type": "boolean" },
+              "unresolved": {
+                "type": ["string", "null"],
+                "enum": ["source_removed", "passage_not_current", "cell_not_filled", "cell_has_no_located_quote", "claim_has_no_citation", "nothing_readable", "not_given", null]
+              },
+              "more_bindings": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Further places this selection rests on that are not listed above. The listed ones come first in order."
+              },
+              "bindings": {
+                "type": "array",
+                "maxItems": 8,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["title", "year", "version_label", "locator"],
+                  "properties": {
+                    "title": { "type": ["string", "null"] },
+                    "year": { "type": ["integer", "null"] },
+                    "version_label": { "type": ["string", "null"] },
+                    "locator": {
+                      "type": ["object", "null"],
+                      "additionalProperties": false,
+                      "required": ["kind", "physical_page", "printed_label"],
+                      "properties": {
+                        "kind": { "type": "string" },
+                        "physical_page": { "type": ["integer", "null"] },
+                        "printed_label": { "type": ["string", "null"] }
+                      }
+                    }
+                  }
+                }
+              }
             }
           }
         }

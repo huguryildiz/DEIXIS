@@ -30,7 +30,7 @@ from deixis.domain import contracts
 from deixis.documents.jats import RENDITION_SQL
 from deixis.domain.rules import TEST_EFFORT_BUDGETS, RevisionConflict, check_expected_version
 from deixis.storage.db import dumps, new_id, now, transaction
-from deixis.workflow.answer import answer as fast_answer, late_revision
+from deixis.workflow.answer import answer as fast_answer, followup_attachments as attachments_mod, late_revision
 from deixis.workflow.search import followup_search, small_batch
 from deixis.workflow.screen.decisions import DecisionStore
 from deixis.workflow.run.evidence_deps import EVIDENCE_STATUS_SQL
@@ -73,8 +73,10 @@ def _clean(question: str) -> str:
 
 
 def request_turn(store: Any, research_id: str, question: str, expected_scope_revision: int,
-                 idempotency_key: str | None) -> dict[str, Any]:
-    """Queue one follow-up: the turn row and its run in one transaction. The research's one-active-run rule holds."""
+                 idempotency_key: str | None, attachments: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Queue one follow-up: the turn row, its selections and its run in one transaction. The research's one-active-run
+    rule holds. The selections are resolved inside that transaction, so a cell revision or a source choice that
+    changes between the read and the write cannot bind the wrong version."""
     text = _clean(question)
     if not text:
         raise FollowupRefused("Type a follow-up question first")
@@ -83,11 +85,19 @@ def request_turn(store: Any, research_id: str, question: str, expected_scope_rev
     key = f"followup:{research_id}:{idempotency_key}" if idempotency_key else None
     with transaction(store.conn):
         research = store.research(research_id)
+        try:
+            resolved = attachments_mod.resolve(store, research_id, attachments or [])
+        except attachments_mod.AttachmentRefused as exc:
+            raise FollowupRefused(str(exc)) from exc
         if key:
             replayed = store.conn.execute("SELECT id, kind FROM runs WHERE idempotency_key = ?", (key,)).fetchone()
             if replayed:
                 turn = store.conn.execute("SELECT * FROM followup_turns WHERE run_id = ?", (replayed["id"],)).fetchone()
-                if replayed["kind"] != TASK or turn is None or turn["question"] != text:
+                # The same key with another question or another set of selections is another request, not a retry.
+                same = turn is not None and attachments_mod.signature(resolved) == [
+                    (row["kind"], row["ref_id"], row["selected_text"])
+                    for row in attachments_mod.stored(store, turn["id"])]
+                if replayed["kind"] != TASK or turn is None or turn["question"] != text or not same:
                     raise RevisionConflict("This idempotency key was used for another request")
                 return dict(turn)
         check_expected_version(expected_scope_revision, research["current_scope_revision"])
@@ -101,6 +111,19 @@ def request_turn(store: Any, research_id: str, question: str, expected_scope_rev
             "INSERT INTO followup_turns (id, research_id, scope_revision, question, run_id, status, created_at)"
             " VALUES (?, ?, ?, ?, ?, 'pending', ?)",
             (turn_id, research_id, run["scope_revision"], text, run["id"], now()))
+        for ordinal, item in enumerate(resolved, start=1):
+            attachment_id = new_id("fua")
+            store.conn.execute(
+                "INSERT INTO followup_turn_attachments (id, turn_id, ordinal, kind, ref_id, selected_text,"
+                " unresolved_reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (attachment_id, turn_id, ordinal, item["kind"], item["ref_id"], item["text"],
+                 item["unresolved_reason"], now()))
+            for position, binding in enumerate(item["bindings"], start=1):
+                store.conn.execute(
+                    "INSERT INTO followup_turn_attachment_bindings (attachment_id, ordinal, passage_id,"
+                    " source_version_id, work_id, version_label, locator_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (attachment_id, position, binding["passage_id"], binding["source_version_id"],
+                     binding["work_id"], binding["version_label"], dumps(binding["locator"])))
         store._event(research_id, "followup_asked", {"turn_id": turn_id}, run["id"])
         return dict(store.conn.execute("SELECT * FROM followup_turns WHERE id = ?", (turn_id,)).fetchone())
 
@@ -411,7 +434,9 @@ def table_values(rows: list[dict[str, Any]], cell_ids: list[str] | None = None) 
 
 
 def conversation(store: Any, research_id: str, question: str, turn: dict[str, Any],
-                 values: list[dict[str, str]] | None = None) -> dict[str, Any]:
+                 values: list[dict[str, str]] | None = None,
+                 attachments: list[dict[str, Any]] | None = None,
+                 given: list[str] | None = None) -> dict[str, Any]:
     """What the conversation so far says, so the model reads the follow-up in its context: the research question,
     the claim texts of the research's latest valid answer, and the last published turns asked before this one. It is
     context, never evidence: the texts carry no passage, and a claim may cite only the passages of this StepInput."""
@@ -436,8 +461,12 @@ def conversation(store: Any, research_id: str, question: str, turn: dict[str, An
     # The values the follow-up's selection chose and stored with it; without them, the tables in their order.
     if values is None:
         values = table_values(_table_values(store, research_id))
+    # What the person selected before they asked, as their own quote with the source it was taken from. Context like
+    # the rest of this record: a claim may cite only the passages of its own StepInput.
+    if attachments is None:
+        attachments = attachments_mod.stored(store, turn["id"])
     return {"research_question": question, "latest_answer": latest, "earlier_turns": earlier,
-            "evidence_table": values}
+            "evidence_table": values, "attachments": attachments_mod.context(store, attachments, given)}
 
 
 def _value_text(value: Any, options_json: str | None) -> str:
@@ -484,6 +513,7 @@ async def _selection(flow: Any, run: dict[str, Any], scope: dict[str, Any], ques
     # A reference-list passage goes to the end: a misread one is ranked lower, not lost.
     ranked = sorted(ranked, key=lambda p: _reference_list(p["text"]))
     ranked_ids = [p["id"] for p in ranked]
+    ranked_count = len(set(ranked_ids))  # what the ranking itself saw, before anything is put in front of it
     # The passages no ranking matched, breadth-first: each source's first passage (its abstract when it has one),
     # then each source's second, and so on. A question in another language than the passages matches no word, and
     # the model, not the word match, says whether the passages answer it.
@@ -500,7 +530,20 @@ async def _selection(flow: Any, run: dict[str, Any], scope: dict[str, Any], ques
     table = table_choice(rows, {pid: i for i, pid in enumerate(ranked_ids)})
     priority = priority_passages(frozen_pool.get("priority", []), rows, table, held,
                                  {pid: work_of_version[svid] for pid, svid in holder.items()}, limit)
-    ranked_ids = priority + ranked_ids
+    # What the person selected comes before everything else, and each bound selection keeps one slot of its own, so
+    # four selections cannot crowd each other out of the call. A selected passage the frozen pool does not hold is
+    # not added to it: that would overrule the person's own include, exclude or pending choice.
+    turn_id = (run.get("target") or {}).get("turn_id")
+    attached = attachments_mod.stored(store, turn_id) if turn_id else []
+    attached_pool = {item["id"]: [pid for pid in [b["passage_id"] for b in item["bindings"]] if pid in held]
+                     for item in attached if item["bindings"]}
+    reserved: list[str] = []
+    for ids in attached_pool.values():
+        first = next((pid for pid in ids if pid not in reserved), None)
+        if first is not None and len(reserved) < limit:
+            reserved.append(first)
+    attached_rest = [pid for ids in attached_pool.values() for pid in ids if pid not in reserved]
+    ranked_ids = reserved + attached_rest + priority + ranked_ids
     seen, fill = set(ranked_ids), []
     for depth in range(max((len(v) for v in sources.values()), default=0)):
         fill += [sources[svid][depth] for svid in svids if depth < len(sources[svid]) and sources[svid][depth] not in seen]
@@ -508,6 +551,10 @@ async def _selection(flow: Any, run: dict[str, Any], scope: dict[str, Any], ques
     owner = holder
     taken: dict[str, int] = {}
     chosen: list[str] = []
+    # A reserved slot is taken before the per-source cap applies, so one selection per source always reaches the call.
+    for pid in reserved:
+        chosen.append(pid)
+        taken[owner[pid]] = taken.get(owner[pid], 0) + 1
     for pid in ranked_ids + fill:
         if len(chosen) >= limit:
             break
@@ -522,6 +569,13 @@ async def _selection(flow: Any, run: dict[str, Any], scope: dict[str, Any], ques
               "limit": limit, "per_source": per_source, "passage_ids": chosen,
               "from_ranking": from_ranking, "from_fill": len(chosen) - from_ranking,
               "from_priority": len(set(chosen) & set(priority)),
+              # Three counts the scanned scope is written from, kept apart: what the frozen pool held, what the
+              # ranking saw, and what this call was given.
+              "pool_held": len(held), "ranked_considered": ranked_count, "given_to_model": len(chosen),
+              "from_attachments": len({pid for ids in attached_pool.values() for pid in ids} & set(chosen)),
+              # Each selection's own passages: the ones the pool held, and the ones this call carried.
+              "attachments": {aid: {"in_pool": ids, "given": [pid for pid in ids if pid in chosen]}
+                              for aid, ids in attached_pool.items()},
               "table_columns": table["columns"], "table_cells": table["cell_ids"],
               # The values themselves, frozen with the selection: a resumed turn reads these, not the table as it is.
               "table_values": table_values(rows, table["cell_ids"])}
@@ -571,7 +625,14 @@ async def _more_selection(flow: Any, run: dict[str, Any], scope: dict[str, Any],
     ranked = fuse_rankings(lexical, semantic) if semantic else lexical
     ranked = sorted(ranked, key=lambda p: _reference_list(p["text"]))
     new = [p["id"] for p in ranked if p["id"] not in sent][:limit // 2]
-    kept = first["passage_ids"][:max(0, limit - len(new))]
+    room = max(0, limit - len(new))
+    kept = first["passage_ids"][:room]
+    # The slot each of the person's selections kept in the first round is kept here too: the second round drops the
+    # first round's last passages, and a selection must not be what it drops.
+    reserved = [pid for item in (first.get("attachments") or {}).values() for pid in item["given"][:1]]
+    missing = [pid for pid in reserved if pid in sent and pid not in kept]
+    if missing:
+        kept = kept[:max(0, room - len(missing))] + missing
     output = {"queries": queries, "terms": words, "lexical_matches": len(lexical), "semantic_matches": len(semantic),
               "new_passages": len(new), "limit": limit, "passage_ids": kept + new}
     return _code_step(flow, run, MORE_SELECTION_KEY, "code:followup_more_passages", lambda: output)
@@ -600,7 +661,7 @@ async def answer(flow: Any, run: dict[str, Any], scope: dict[str, Any]) -> None:
     flow._checkpoint(run_id, run["scope_revision"])
     context = _code_step(flow, run, CONVERSATION_KEY, "code:followup_conversation",
                          lambda: conversation(store, run["research_id"], scope["question"], turn,
-                                              selected.get("table_values")))
+                                              selected.get("table_values"), given=selected["passage_ids"]))
     passages = [store.passage(pid) for pid in selected["passage_ids"]]
     key, output = TASK, await _call(flow, run, scope, TASK, passages, context | {"more_queries_allowed": True}, frozen_pool)
     queries = [] if output.get("invalid") else [q for q in output["result"].get("more_queries", []) if q.strip()]
@@ -946,6 +1007,22 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
     if answer is not None:
         # The validation warnings stored with the answer (math, several sources), as the answer view's `validation`.
         answer["warnings"] = (validation or {}).get("warnings", [])
+    # What the person selected when they asked, with each binding's two states. `in_pool` comes from the selection
+    # step's frozen record; `given` is read from the published answer's own StepInput, which is the only authority on
+    # what the model was asked, because a second round can replace the first round's passages.
+    attached = attachments_mod.stored(store, row["id"])
+    selection_record = (chosen or {}).get("attachments") or {}
+    given_ids: set[str] | None = None
+    if row["step_input_id"]:
+        payload = store.step_input_payload(row["step_input_id"])
+        given_ids = set((payload.get("allowlist") or {}).get("passage_ids") or [])
+    for item in attached:
+        record = selection_record.get(item["id"], {})
+        in_pool = set(record.get("in_pool") or [])
+        for binding in item["bindings"]:
+            binding["in_pool"] = binding["passage_id"] in in_pool
+            # Only a published answer's own input says what the model was given; before that it is not yet known.
+            binding["given"] = None if given_ids is None else binding["passage_id"] in given_ids
     # A turn that asked for the report to change: the answer run it queued, or why none was queued.
     report_change = None
     if answer is not None and draft.get("report_change_requested") is True:
@@ -970,7 +1047,7 @@ def turn_view(store: Any, row: dict[str, Any]) -> dict[str, Any]:
         "progress": progress,
         "run": {"id": run["id"], "status": run["status"], "stage": run["stage"], "pause_reason": run["pause_reason"],
                 "error": run["error"]},
-        "answer": answer, "report_change": report_change,
+        "answer": answer, "report_change": report_change, "attachments": attached,
         # The turn's search for new works: offered on the person's click, never started by the model's flag.
         "search": followup_search.view(store, row, (json.loads(row["draft_json"] or "{}").get("new_works_requested")
                                                      if row["status"] in PUBLISHED and row["draft_json"] else None)),

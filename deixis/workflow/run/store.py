@@ -511,7 +511,13 @@ class Store:
             self.conn.execute("DELETE FROM reports WHERE research_id = ?", (research_id,))
             from deixis.workflow.features.tables.tables import purge_tables  # tables builds on this module
             purge_tables(self.conn, research_id)  # cell revisions reference runs, step inputs and passages deleted below
-            # Follow-up turns and their links (S22a) point at runs, step inputs and passages deleted below.
+            # Follow-up turns, their links and the selections they were asked about point at runs, step inputs,
+            # works and passages deleted below. A selection's bindings go before the selection that owns them.
+            self.conn.execute(
+                "DELETE FROM followup_turn_attachment_bindings WHERE attachment_id IN (SELECT a.id FROM"
+                " followup_turn_attachments a JOIN followup_turns t ON t.id = a.turn_id WHERE t.research_id = ?)",
+                (research_id,))
+            self.conn.execute("DELETE FROM followup_turn_attachments WHERE turn_id IN (SELECT id FROM followup_turns WHERE research_id = ?)", (research_id,))
             self.conn.execute("DELETE FROM followup_turn_links WHERE turn_id IN (SELECT id FROM followup_turns WHERE research_id = ?)", (research_id,))
             self.conn.execute("DELETE FROM followup_turns WHERE research_id = ?", (research_id,))
             # Statement checks (reverse citation search) point at runs and steps deleted below; their items go with them.
@@ -3357,8 +3363,8 @@ class Store:
         return chosen
 
     def cited_source_versions(self, svids: list[str]) -> set[str]:
-        """Of these source versions, the ones an answer quote, a follow-up answer, an evidence table or a report still
-        cites.
+        """Of these source versions, the ones an answer quote, a follow-up answer or the selection a follow-up was
+        asked about, an evidence table or a report still cites.
 
         The scope is the whole workspace, not one research: evidence stays openable wherever it was written, so a
         cited source is never deleted on its own. Deleting its research is still the way out.
@@ -3376,8 +3382,9 @@ class Store:
             f" UNION SELECT source_version_id FROM lineage_link_evidence WHERE source_version_id IN ({marks})"
             f" UNION SELECT source_version_id FROM claim_matrix_cells WHERE source_version_id IN ({marks})"
             f" UNION SELECT source_version_id FROM claim_matrix_evidence WHERE source_version_id IN ({marks})"
-            f" UNION SELECT source_version_id FROM followup_turn_links WHERE source_version_id IN ({marks})",
-            (*svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids),
+            f" UNION SELECT source_version_id FROM followup_turn_links WHERE source_version_id IN ({marks})"
+            f" UNION SELECT source_version_id FROM followup_turn_attachment_bindings WHERE source_version_id IN ({marks})",
+            (*svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids, *svids),
         ).fetchall()
         from deixis.workflow.features.review.review_store import snapshot_referenced_source_versions
         return {row[0] for row in rows} | snapshot_referenced_source_versions(self.conn, svids)

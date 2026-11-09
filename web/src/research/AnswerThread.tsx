@@ -396,7 +396,7 @@ export function AnswerThread({ researchId, title, version, answer, sources, busy
       </button>}
     {((basis && sections.length > 0) || ledger) && <EvidenceStrip answer={answer} basis={sections.length > 0 ? basis : null} ledger={ledger} />}
     {sections.length > 0 && <div className="prose answer-prose">{sections.slice(0, PROSE_SECTIONS).map(({ claims }, index) => <p key={index}>
-      {claims.map(claim => <span className="claim" key={claim.id}><ClaimText claim={claim} />
+      {claims.map(claim => <span className="claim" data-answer-claim={claim.id} key={claim.id}><ClaimText claim={claim} />
         {claim.support_type === 'analyst_inference' && <span className="support-badge is-inference">{t('interpretation')}</span>}
         {claim.evidence_basis === 'abstract' && <span className="support-badge is-abstract">{t('From abstract')}</span>}
         {chip(claim)}</span>)}

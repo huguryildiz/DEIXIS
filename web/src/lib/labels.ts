@@ -280,6 +280,19 @@ export const refreshReasons: Record<string, string> = {
   research_busy: 'Another run of this research is still open.',
 }
 
+// Why a selection the person added to a follow-up points at no passage this research can read. It is a state, not
+// an error: the text they picked still travels with the question, as their own words.
+export const attachmentReasons: Record<string, string> = {
+  source_removed: 'The source this came from was removed from this research, so the answer could not read it.',
+  passage_not_current: 'The text this came from was replaced or read again since, so the answer could not read it.',
+  cell_not_filled: 'This cell holds no value yet, so there was nothing to read behind it.',
+  cell_has_no_located_quote: 'No quote was located for this cell, so there was nothing to read behind it.',
+  claim_has_no_citation: 'This sentence carries no citation, so there was nothing to read behind it.',
+  nothing_readable: 'Nothing this selection points at can be read in this research now.',
+}
+export const attachmentReason = (reason: string | null) =>
+  attachmentReasons[reason ?? ''] ?? 'No source was bound to this selection.'
+
 const pauseReasons: Record<string, string> = {
   answer_cutoff_missing: 'The frozen read cutoff is missing. Start a new search before answering.',
   answer_unavailable: 'The stored answer is unavailable for review.',

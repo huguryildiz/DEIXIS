@@ -55,13 +55,9 @@ export function followupClaim(turn: FollowupTurn, claim: FollowupClaim, sources:
   }
 }
 
-// Passages the person added to the composer with "Add to chat" travel in the question itself as Markdown quote blocks
-// ahead of the question, so the model reads them as quoted text and the server needs no new field.
-export function withQuotes(quotes: string[], question: string) {
-  const blocks = quotes.map(q => q.split('\n').map(line => `> ${line}`).join('\n'))
-  return [...blocks, question].join('\n\n')
-}
-
+// A selection now travels beside the question as its own record. Turns asked before that still hold their quotes
+// inside the question as Markdown quote blocks, so the reader below stays: it is what shows them as quotes.
+//
 // The quote blocks at the start of a stored question and the question after them.
 export function splitQuotes(question: string): { quotes: string[]; text: string } {
   const quotes: string[] = []

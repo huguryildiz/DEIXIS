@@ -773,4 +773,36 @@ ALTER TABLE report_claims ADD COLUMN carried_text_origin TEXT CHECK (carried_tex
 ALTER TABLE report_citation_links ADD COLUMN carried_from_step_input_id TEXT REFERENCES step_inputs(id);
 CREATE UNIQUE INDEX reports_refresh_once ON reports (research_id, refresh_fingerprint);
 """),
+    23: Step("0023_followup_attachments.sql", False, """\
+-- What the person selected before they asked a follow-up, kept apart from the question they typed so the quote does
+-- not eat the question's character budget. The attachment carries the selected text and what it was selected from;
+-- its bindings carry the passages that text stands on, one row each, because a claim or a cell can rest on several
+-- works and one work_id could not say so. Code resolves every work, version and page from stored rows: the client
+-- sends an id and the text, never an identity. A row of this research whose passage is no longer readable here keeps
+-- its text and records why it points at nothing (`unresolved_reason`), so the person's words are never dropped and
+-- never shown as evidence. Whether the run's frozen pool held a binding, and whether the answer's input carried it,
+-- are not here: they are written once in the selection step's own frozen output.
+CREATE TABLE followup_turn_attachments (
+  id TEXT PRIMARY KEY,
+  turn_id TEXT NOT NULL REFERENCES followup_turns(id),
+  ordinal INTEGER NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('passage', 'cell', 'answer_claim', 'followup_claim', 'report_claim', 'text')),
+  ref_id TEXT,
+  selected_text TEXT NOT NULL CHECK (length(selected_text) BETWEEN 1 AND 800),
+  unresolved_reason TEXT CHECK (unresolved_reason IS NULL OR kind != 'text'),
+  created_at TEXT NOT NULL,
+  UNIQUE (turn_id, ordinal),
+  CHECK ((kind = 'text') = (ref_id IS NULL))
+);
+CREATE TABLE followup_turn_attachment_bindings (
+  attachment_id TEXT NOT NULL REFERENCES followup_turn_attachments(id),
+  ordinal INTEGER NOT NULL,
+  passage_id TEXT NOT NULL REFERENCES passages(id),
+  source_version_id TEXT NOT NULL REFERENCES source_versions(id),
+  work_id TEXT NOT NULL REFERENCES works(id),
+  version_label TEXT,
+  locator_json TEXT,
+  PRIMARY KEY (attachment_id, ordinal)
+) WITHOUT ROWID;
+"""),
 }

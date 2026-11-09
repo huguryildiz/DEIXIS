@@ -1,9 +1,9 @@
--- The whole library schema at version 22. A new library is made from this file in one transaction and
--- records versions 1 to 22; a library at an older version is brought here by the steps in storage/upgrades.py.
+-- The whole library schema at version 23. A new library is made from this file in one transaction and
+-- records versions 1 to 23; a library at an older version is brought here by the steps in storage/upgrades.py.
 -- A schema change edits this file, raises the version below and adds the upgrade step with that number.
 -- Objects are in the order the old migration chain (0001_schema.sql to 0016_abstract_rows.sql) and the upgrade steps
 -- after it created them: the triggers on one table fire in that order.
--- deixis:schema-version 22
+-- deixis:schema-version 23
 
 CREATE TABLE scope_revisions (
   research_id TEXT NOT NULL REFERENCES researches(id),
@@ -2455,3 +2455,27 @@ CREATE TABLE "scope_english_questions" (
 );
 
 CREATE UNIQUE INDEX reports_refresh_once ON reports (research_id, refresh_fingerprint);
+
+CREATE TABLE followup_turn_attachments (
+  id TEXT PRIMARY KEY,
+  turn_id TEXT NOT NULL REFERENCES followup_turns(id),
+  ordinal INTEGER NOT NULL,
+  kind TEXT NOT NULL CHECK (kind IN ('passage', 'cell', 'answer_claim', 'followup_claim', 'report_claim', 'text')),
+  ref_id TEXT,
+  selected_text TEXT NOT NULL CHECK (length(selected_text) BETWEEN 1 AND 800),
+  unresolved_reason TEXT CHECK (unresolved_reason IS NULL OR kind != 'text'),
+  created_at TEXT NOT NULL,
+  UNIQUE (turn_id, ordinal),
+  CHECK ((kind = 'text') = (ref_id IS NULL))
+);
+
+CREATE TABLE followup_turn_attachment_bindings (
+  attachment_id TEXT NOT NULL REFERENCES followup_turn_attachments(id),
+  ordinal INTEGER NOT NULL,
+  passage_id TEXT NOT NULL REFERENCES passages(id),
+  source_version_id TEXT NOT NULL REFERENCES source_versions(id),
+  work_id TEXT NOT NULL REFERENCES works(id),
+  version_label TEXT,
+  locator_json TEXT,
+  PRIMARY KEY (attachment_id, ordinal)
+) WITHOUT ROWID;

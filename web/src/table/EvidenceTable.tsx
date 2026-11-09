@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { AlignLeft, ArchiveRestore, ArrowDown, ArrowUp, ArrowUpRight, BookOpenText, Check, ChevronDown, Copy, Download, Ellipsis, FileText, Gauge, Info, Lightbulb, ListChecks, ListPlus, Network, Pause, PencilLine, Play, Plus, RotateCw, Table2, Trash2, TriangleAlert, X, Zap, type LucideIcon } from 'lucide-react'
+import { AlignLeft, ArchiveRestore, ArrowDown, ArrowUp, ArrowUpRight, BookOpenText, Check, ChevronDown, Copy, Download, Ellipsis, FileText, Gauge, Info, Lightbulb, ListChecks, ListPlus, MessageSquarePlus, Network, Pause, PencilLine, Play, Plus, RotateCw, Table2, Trash2, TriangleAlert, X, Zap, type LucideIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogBody, DialogContent, DialogFooter } from '@/components/ui/dialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger, FileTypeIcon } from '@/components/ui/dropdown-menu'
 import { Menu as MenuPrimitive } from '@base-ui/react/menu'
-import { api, ApiError, researchModelApi, tableExportUrl, type AnswerFormat, type CellEdit, type CellEvidence, type CellRevision, type CellState, type CellSummary, type CellValue, type CellView, type ColumnSpec, type ColumnSuggestion, type ResearchView, type Run, type Source, type TableColumn, type TableRow, type TableSummary, type TableTemplate, type TableView } from '../lib/api'
+import { api, ApiError, researchModelApi, tableExportUrl, type AnswerFormat, type CellEdit, type CellEvidence, type CellRevision, type CellState, type CellSummary, type CellValue, type CellView, type ColumnSpec, type ColumnSuggestion, type FollowupAsk, type ResearchView, type Run, type Source, type TableColumn, type TableRow, type TableSummary, type TableTemplate, type TableView } from '../lib/api'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { PassageSheet } from '../reading/PassageSheet'
 import { ModelName } from '../components/ModelName'
@@ -131,9 +131,11 @@ function TemplateMenu({ templates, busy, label, detail, onPick }: { templates: T
 // tableRequest: counts the owner's requests to show initialTableId, so a table card clicked while the panel is open
 // switches the table shown (the panel is not mounted anew). `cell`, with a request, opens that cell's panel too (an
 // evidence report's "Open the current cell").
-export function EvidenceTab({ researchId, view, dark, initialTableId = null, tableRequest = 0, cell: cellRequest = null, onCellShown, modelText, onRunStarted }: {
+export function EvidenceTab({ researchId, view, dark, initialTableId = null, tableRequest = 0, cell: cellRequest = null, onCellShown, modelText, onRunStarted, onAddToChat }: {
   researchId: string; view: ResearchView; dark: boolean; initialTableId?: string | null; tableRequest?: number
   cell?: { columnId: string; sourceId: string } | null; onCellShown?: () => void; modelText: ModelText; onRunStarted: () => void
+  // Given on the research page: "Add to chat" on a cell asks the next follow-up about that cell.
+  onAddToChat?: (pick: FollowupAsk) => void
 }) {
   const toast = useToast()
   const [tables, setTables] = useState<TableSummary[] | null>(null)
@@ -642,7 +644,7 @@ export function EvidenceTab({ researchId, view, dark, initialTableId = null, tab
           model={model} connection={view.scope.model_connection} dark={dark} onColumnsAdded={() => { void load() }} onRunStarted={onRunStarted} onPassage={target => { void openLineagePassage(target) }} />
       </div>
     </StackPanel>
-    {cellTarget && cellColumn && cellRow && <CellPanel key={`${cellColumn.id}:${cellRow.source_version_id}`} researchId={researchId} tableId={tableId} column={cellColumn} row={cellRow} refresh={view.last_event_id}
+    {cellTarget && cellColumn && cellRow && <CellPanel key={`${cellColumn.id}:${cellRow.source_version_id}`} researchId={researchId} tableId={tableId} column={cellColumn} row={cellRow} refresh={view.last_event_id} onAddToChat={onAddToChat}
       source={view.sources.find(s => s.source_version_id === cellRow.source_version_id)} activeRun={activeRun} rechecking={rechecking.has(`${cellColumn.id}:${cellRow.source_version_id}`)}
       model={model} dark={dark} onChanged={() => { void load() }} onRunStarted={onRunStarted} onOpenSource={() => setSourceTarget(cellRow.source_version_id)} onClose={() => setCellTarget(null)} />}
   </div>
@@ -814,9 +816,10 @@ const passageNotes: Partial<Record<CellState, string>> = {
 // The cell panel (mockup `cellPanel`), stacked on the table: Back returns to it. The current value and what it rests
 // on, the recheck and the edit, a pending proposal kept apart from the value, then the source, the passage, the column
 // instruction and the cell's history.
-function CellPanel({ researchId, tableId, column, row, refresh, source, activeRun, rechecking, model, dark, onChanged, onRunStarted, onOpenSource, onClose }: {
+function CellPanel({ researchId, tableId, column, row, refresh, source, activeRun, rechecking, model, dark, onChanged, onRunStarted, onOpenSource, onClose, onAddToChat }: {
   researchId: string; tableId: string; column: TableColumn; row: TableRow; refresh: number; source: Source | undefined; activeRun: Run | null; rechecking: boolean
   model: string; dark: boolean; onChanged: () => void; onRunStarted: () => void; onOpenSource: () => void; onClose: () => void
+  onAddToChat?: (pick: FollowupAsk) => void
 }) {
   const toast = useToast()
   const modelText = useModelText()
@@ -901,6 +904,9 @@ function CellPanel({ researchId, tableId, column, row, refresh, source, activeRu
           <button type="button" className={`btn-pri${rechecking ? ' is-working' : ''}`} disabled={recheckLocked} onClick={() => mutate(() => api.recheckCell(researchId, tableId, column.id, sv, cell.version, newKey()), t('Recheck started. Its result will wait as a proposal.'), onRunStarted)}>{rechecking ? <><span className="spin" aria-hidden /><span className="shimmer-text">{t('Rechecking…')}</span></> : <><RotateCw size={14} aria-hidden />{t('Recheck this cell')}</>}</button>
           <button type="button" className="ghost" disabled={busy} onClick={() => { setProblem(''); setDraft(draftFrom(column, current)); setDraftBase(cell?.version ?? null) }}><PencilLine size={14} aria-hidden />{t('Edit value')}</button>
           {source && <button type="button" className="ib" aria-label={t('Open the source')} title={t('Open the source')} onClick={onOpenSource}><FileText size={16} aria-hidden /></button>}
+          {/* The next follow-up is then bound to this cell: its work, the version it was read from, and the quotes
+              its current value rests on. The text is the value as this panel shows it, not anything retyped. */}
+          {onAddToChat && cell.cell_id && <button type="button" className="ghost" onClick={() => onAddToChat({ kind: 'cell', ref_id: cell.cell_id, text: (current ? revisionText(column, current) : t('Empty: no value recorded yet.')).slice(0, 800) })}><MessageSquarePlus size={14} aria-hidden />{t('Add to chat')}</button>}
         </div>}
         {!draft && !rechecking && <p className="foot-note cell-scope">{!available ? t('This source has no stored text, so a recheck has nothing to read.')
           : activeRun ? t('Another run is active; a recheck can start when it finishes.')

@@ -261,7 +261,7 @@ def test_the_conversation_carries_the_latest_answers_claims_as_text_only(tmp_pat
     assert texts
     context = followup.conversation(lib.store, lib.rid, "SYNTHETIC research question", {"id": "none", "created_at": "9999"})
     assert context == {"research_question": "SYNTHETIC research question", "latest_answer": texts, "earlier_turns": [],
-                       "evidence_table": []}
+                       "evidence_table": [], "attachments": []}
 
 
 def test_a_step_input_for_another_task_may_not_carry_a_conversation():

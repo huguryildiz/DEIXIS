@@ -18,6 +18,18 @@ conversation is context, not evidence: never cite it, never repeat one of its
 claims unless a supplied passage states it, and do not say the research
 question is missing.
 
+`conversation.attachments` is what the person picked out before they asked:
+their own quote of a passage, a sentence of an answer or a report, an evidence
+cell, or free text. The question is usually about it, so read it first. Each
+attachment names the work, the version and the place its text came from in
+`bindings`, and the passages of those places come first in this StepInput when
+they reached it. The quote itself is the person's words, never a source: cite
+the passage, not the attachment, and if the passage you were given does not
+state what the quote says, say so. An attachment with `bound: false` is a free
+selection or one whose record this research can no longer read (`unresolved`
+says which): treat its text as the person's words alone and name that limit
+instead of answering from it.
+
 Start from what the research already established. `latest_answer` is its
 report and `evidence_table` holds the values of its evidence-table columns
 most related to this question (one work, one column, one value); the passages

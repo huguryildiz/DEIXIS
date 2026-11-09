@@ -10,14 +10,26 @@ from fastapi import Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-from deixis.workflow.answer import followup
+from deixis.workflow.answer import followup, followup_attachments
 from deixis.workflow.search import followup_search
+
+
+class Attachment(BaseModel):
+    """What the person selected before they asked. The text travels here, outside the question's own budget, and the
+    id says what it was selected from; the work, the version and the page are read from stored rows, never from here.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    kind: str = Field(min_length=1, max_length=32)
+    ref_id: str | None = Field(default=None, max_length=64)
+    text: str = Field(min_length=1, max_length=followup_attachments.MAX_TEXT_CHARS)
 
 
 class Ask(BaseModel):
     model_config = ConfigDict(extra="forbid")
     question: str = Field(min_length=1, max_length=followup.MAX_QUESTION_CHARS)
     expected_scope_revision: int = Field(ge=1, strict=True)  # the question revision the person is looking at
+    attachments: list[Attachment] = Field(default_factory=list, max_length=followup_attachments.MAX_ATTACHMENTS)
 
 
 class Search(BaseModel):
@@ -33,7 +45,9 @@ def register_followup_turns_routes(app):
                   idempotency_key: str | None = Header(default=None, max_length=200)):
         store = request.app.state.store
         try:
-            row = followup.request_turn(store, research_id, body.question, body.expected_scope_revision, idempotency_key)
+            row = followup.request_turn(store, research_id, body.question, body.expected_scope_revision,
+                                        idempotency_key,
+                                        [item.model_dump() for item in body.attachments])
         except followup.FollowupRefused as exc:
             raise HTTPException(422, str(exc)) from exc
         request.app.state.worker.wake()

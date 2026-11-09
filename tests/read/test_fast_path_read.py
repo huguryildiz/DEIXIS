@@ -1,5 +1,6 @@
 """Fast-path reading: at most K works get full text before the read cutoff, the rest go to the background fetch queue, and the frozen cutoff is read back on resume; plus the full-text retrieval plan and identity check. SYNTHETIC records, no live providers or models."""
 
+import json
 import asyncio
 from datetime import timedelta
 from types import SimpleNamespace
@@ -761,3 +762,183 @@ const read = limited(hang, leaving.signal, 40, late);
 leaving.abort();
 await assert.rejects(read, isLeft);
 """)
+
+
+def test_a_record_without_a_doi_reaches_acquisition_and_its_outcome_is_stored(library, tmp_path):
+    """Until this run a record with no DOI was refused before acquisition, so nothing said what it could have been
+    asked. It enters now: the five DOI lookups are not asked for it, and its history is not reported as missing
+    them either, so the work settles instead of waiting for routes it can never ask."""
+    from deixis.documents import acquisition, fetch as fetch_module
+    lib = library
+    source = _pdf_source(lib, doi=None, oa_pdf_url=None)
+    sent = []
+
+    def handler(request):
+        sent.append(str(request.url))
+        return httpx.Response(404)
+
+    async def fetch_pdf(url):
+        sent.append(url)
+        return fetch_module.FetchResult("failed")
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            flow = _fetch_flow(lib, tmp_path, fetch_pdf, client)
+            return await flow._fetch_work_text(lib.run, source["id"])
+
+    output = asyncio.run(check())
+    assert sent == [], "a lookup was sent for a record that has no DOI to look up"
+    assert acquisition.required_routes(None) == frozenset()
+    step = lib.store.conn.execute("SELECT status, error_code, error_json FROM run_steps WHERE run_id = ? AND"
+                                  " operation_key = ?", (lib.run["id"], f"other_copy:{source['id']}")).fetchone()
+    # The attempt is recorded, and it says the five DOI routes could not be asked rather than that they found
+    # nothing: the two are different outcomes.
+    assert (step["status"], step["error_code"]) == ("failed", "no_other_copy")
+    assert json.loads(step["error_json"])["doi_routes"] == "no_doi"
+    assert output["requests_unanswered"] == 0, "the work waits for lookups it cannot ask"
+    assert output["code"] == fulltext.settled_code({"has_text": False, "has_asset": False, "unanswered": 0})
+
+
+def test_a_record_whose_own_file_has_no_text_still_gets_another_versions_copy(library, tmp_path):
+    """Found, downloaded and readable are three states. A record whose own file holds no text used to block the
+    routes that can put a copy on another row of the same work, so the work was settled without text although a
+    readable copy of another version was there to be had. The record's own row keeps its one file."""
+    from deixis.documents import fetch as fetch_module
+    from helpers import make_pdf
+    lib = library
+    source = _pdf_source(lib, doi="10.1/scan", oa_pdf_url="https://repo.example/scan.pdf")
+    scan, other = "https://repo.example/scan.pdf", "https://repo.example/accepted.pdf"
+
+    def handler(request):
+        if "api.unpaywall.org" in request.url.host:
+            location = {"url_for_pdf": other, "url": "https://repo.example/b", "version": "acceptedVersion"}
+            return httpx.Response(200, json={"doi": "10.1/scan", "best_oa_location": None, "oa_locations": [location]})
+        if "api.openalex.org" in request.url.host:
+            return httpx.Response(200, json={"doi": "https://doi.org/10.1/scan", "display_name": "x", "locations": []})
+        if "api.crossref.org" in request.url.host:
+            return httpx.Response(200, json={"message": {"DOI": "10.1/scan", "link": []}})
+        return httpx.Response(200, json={"results": [], "resultList": {"result": []}})
+
+    calls = []
+
+    async def fetch_pdf(url):
+        calls.append(url)
+        # The record's own copy is a PDF with no extractable text; the other version's copy reads.
+        data = make_pdf([""]) if url == scan else make_pdf(["SYNTHETIC readable full text"])
+        return fetch_module.FetchResult("ok", data, final_url=url)
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            flow = _fetch_flow(lib, tmp_path, fetch_pdf, client)
+            return await flow._fetch_work_text(lib.run, source["id"])
+
+    output = asyncio.run(check())
+    assert calls == [scan, other], f"the unreadable file blocked the other version's copy: {calls}"
+    assert not lib.store.has_pdf_text(source["id"]), "the record's own row took a second file"
+    opened = output["read_version"]
+    assert opened != source["id"] and lib.store.has_pdf_text(opened)
+    assert output["route"] == "lookup_version"
+
+
+def _other_version_flow(lib, tmp_path, locations, reads):
+    """One `_fetch_work_text` over a record whose own link gives nothing and whose DOI lookup offers `locations`
+    (Unpaywall rows of other declared versions); `reads` says which URL's PDF carries readable text."""
+    from deixis.documents import fetch as fetch_module
+    from helpers import make_pdf
+
+    def handler(request):
+        if "api.unpaywall.org" in request.url.host:
+            return httpx.Response(200, json={"doi": "10.1/sib", "best_oa_location": None, "oa_locations": locations})
+        if "api.openalex.org" in request.url.host:
+            return httpx.Response(200, json={"doi": "https://doi.org/10.1/sib", "display_name": "x", "locations": []})
+        if "api.crossref.org" in request.url.host:
+            return httpx.Response(200, json={"message": {"DOI": "10.1/sib", "link": []}})
+        return httpx.Response(200, json={"results": [], "resultList": {"result": []}})
+
+    calls = []
+
+    async def fetch_pdf(url):
+        calls.append(url)
+        data = make_pdf(["SYNTHETIC readable full text"]) if url in reads else make_pdf([""])
+        return fetch_module.FetchResult("ok", data, final_url=url)
+
+    async def check(run):
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            flow = _fetch_flow(lib, tmp_path, fetch_pdf, client)
+            return await flow._fetch_work_text(run, source["id"]), flow
+
+    source = _pdf_source(lib, doi="10.1/sib", oa_pdf_url=None)
+    return source, calls, check
+
+
+def test_another_versions_file_with_no_text_does_not_stop_the_next_version(library, tmp_path):
+    """A row for another version whose file holds no text answers nothing, so the next declared version's copy is
+    tried instead of the work being settled without text. The file already there is left as it is."""
+    accepted = {"url_for_pdf": "https://repo.example/accepted.pdf", "url": "https://repo.example/a",
+                "version": "acceptedVersion"}
+    submitted = {"url_for_pdf": "https://repo.example/submitted.pdf", "url": "https://repo.example/s",
+                 "version": "submittedVersion"}
+    lib = library
+    source, calls, check = _other_version_flow(lib, tmp_path, [accepted, submitted],
+                                               reads={submitted["url_for_pdf"]})
+    output, _ = asyncio.run(check(lib.run))
+    # The accepted copy is tried first (the declared-version order) and holds no text; the submitted one is tried
+    # next instead of the work settling without text.
+    assert calls == [accepted["url_for_pdf"], submitted["url_for_pdf"]], calls
+    assert output["route"] == "lookup_version"
+    assert lib.store.has_pdf_text(output["read_version"])
+    assert not lib.store.has_pdf_text(source["id"]), "the record's own row took a file"
+
+
+def test_a_readable_copy_already_on_another_versions_row_closes_the_step_as_found(library, tmp_path):
+    """The copy is on a row another research already fetched, so nothing is downloaded: the row joins this research
+    and the work can read it, so the step says what it found instead of reporting that no other copy exists."""
+    accepted = {"url_for_pdf": "https://repo.example/accepted.pdf", "url": "https://repo.example/a",
+                "version": "acceptedVersion"}
+    lib = library
+    source, calls, check = _other_version_flow(lib, tmp_path, [accepted], reads={accepted["url_for_pdf"]})
+    first, _ = asyncio.run(check(lib.run))
+    assert first["route"] == "lookup_version" and calls == [accepted["url_for_pdf"]]
+    # A second research holding the same record: the sibling row is not one of its own versions yet, so its run
+    # asks the lookup, which finds the file already in hand.
+    other_rid = lib.store.create_research("Another synthetic question?", "academic", "quick", ["openalex"],
+                                          "fake", "m", "en")
+    lib.store.add_to_corpus(other_rid, source["id"], "search")
+    other_run = lib.store.create_run(other_rid, "discovery", lib.run["budget"], None)
+
+    async def second():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(404))) as client:
+            flow = _fetch_flow(lib, tmp_path, None, client)
+            return await flow._fetch_work_text(other_run, source["id"]), flow
+
+    output, flow = asyncio.run(second())
+    assert calls == [accepted["url_for_pdf"]], "the copy already in hand was downloaded again"
+    step = flow._other_copy_step(other_run["id"], source["id"])
+    assert step["status"] == "succeeded", "a readable copy already in hand was recorded as no copy at all"
+    assert step["output"]["source_version_id"] == output["read_version"]
+    assert output["route"] == "lookup_version"
+
+
+TITLE_TARGET = {"doi": "10.1/synth.42", "title": ON_TITLE, "authors": ["Ada Lovelace"], "venue": "IFIP Networking"}
+
+
+def test_the_title_page_check_says_what_matched_and_where():
+    """A file fetched by a route nobody verified by DOI — a content download, a web-search copy — is judged by its
+    own title page, and what matched travels with it: the DOI, or the title together with the first author and the
+    venue. A cover sheet is skipped; a contents page further in is not read at all."""
+    body = f"{ON_TITLE}\nAda Lovelace\nIFIP Networking 2008"
+    assert identity.verify_file([f"preprint\nhttps://doi.org/10.1/synth.42"], TITLE_TARGET) == {
+        "verdict": "match", "fields": ["doi"], "page": 1}
+    assert identity.verify_file(["cover sheet of a repository", body], TITLE_TARGET) == {
+        "verdict": "match", "fields": ["title", "author", "venue"], "page": 2}
+    # The title alone is not enough: the author and the venue have to be there too.
+    assert identity.verify_file([ON_TITLE], TITLE_TARGET)["verdict"] == "mismatch"
+    assert identity.verify_file([f"{OFF_TITLE}\n10.9/other.1"], TITLE_TARGET)["verdict"] == "mismatch"
+    # Nothing readable: nothing is claimed either way, so the file is not attached and not called wrong.
+    assert identity.verify_file(["", "   "], TITLE_TARGET) == {"verdict": "unreadable", "fields": [], "page": None}
+    # The published DOI the lookup declared for another version counts as this record's own.
+    assert identity.verify_file(["https://doi.org/10.9/published.7"], TITLE_TARGET,
+                                published_doi="10.9/published.7")["fields"] == ["doi"]
+    # Past the first pages nothing is read: a reference list naming the DOI is not the paper naming itself.
+    deep = ["cover", "cover", "cover", f"https://doi.org/10.1/synth.42"]
+    assert identity.verify_file(deep, TITLE_TARGET)["verdict"] == "mismatch"

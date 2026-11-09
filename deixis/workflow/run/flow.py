@@ -3100,8 +3100,20 @@ class ResearchFlow:
             return {"source_version_id": source["id"], "lookups": len(self.store.pdf_discoveries(run["research_id"], source["id"])),
                     "asset_id": None, "candidates": len(self.store.pdf_candidates(source["id"])),
                     "pdf_found": self.store.has_asset(source["id"])}
+        opened = found.get("lookup_version_id")
+        if found["asset_id"] is None and opened and self.store.has_pdf_text(opened):
+            # The copy was already on another version's row — fetched by an earlier run or by another research that
+            # holds the same record — and its text reads. The work can use it, so the step says what it found
+            # instead of reporting that no other copy exists.
+            self.store.finish_step(step["id"], "succeeded", output={"asset_id": self._current_asset(opened),
+                                                                    "source_version_id": opened, "reused": True})
+            return found
         if found["asset_id"] is None:
-            self.store.finish_step(step["id"], "failed", error_code="no_other_copy", error={"candidates": found["candidates"]})
+            # A record with no DOI could not ask the five routes that address a work by its DOI; the step says so,
+            # so "nothing was found" and "nothing could be asked" are not read as the same outcome.
+            self.store.finish_step(step["id"], "failed", error_code="no_other_copy",
+                                   error={"candidates": found["candidates"],
+                                          **({"doi_routes": "no_doi"} if found.get("doi_routes") == "no_doi" else {})})
             return found
         asset = self.store.asset(found["asset_id"])
         status = "succeeded" if asset["extraction_status"] in ("succeeded", "partial") else "partial"
@@ -3241,7 +3253,10 @@ class ResearchFlow:
         # earlier run is asked again here, or the work would be planned by every later run and settled by none.
         # A lookup a stop cut before its copy was published (`cancelled`) is asked again too: every provider may have
         # answered, but the work has no file yet.
-        if route is None and normalize_doi(source["doi"]) and (
+        # A record with no DOI reaches the lookup too: the five DOI routes are not asked for it, and the routes
+        # that do not need one are. Until this run it was refused here and never entered acquisition at all, so
+        # nothing was recorded about what it could have been asked.
+        if route is None and (
                 not self.store.pdf_discoveries(rid, head) or self._unanswered_lookups(rid, head)
                 or self._other_copy_step(run_id, head)["status"] == "cancelled"):
             self._stop_work_if_requested(run)

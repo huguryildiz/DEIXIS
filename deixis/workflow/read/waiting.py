@@ -285,7 +285,8 @@ def waiting_view(store: Store, research_id: str) -> dict[str, Any]:
         (skipped_rows if "skipped_at" in row else rows).append(row | {
             "title": head["title"], "year": head["year"], "venue": head["venue"], "authors": head["authors"],
             "doi": doi, "links": {"doi": proxy.link(proxy.doi_url(doi), address), "landing": proxy.link(landing, address)},
-            # "Find PDF" is today's action on a record with a DOI: the head's, else another version's.
+            # "Find PDF" is today's action on a record with a DOI: the head's, else another version's. A work with
+            # no DOI anywhere keeps its disabled button with its reason until a route it can use exists.
             "find_pdf_source_version_id": next((s["id"] for s in sources if s["doi"]), None),
             "versions": view["versions"], "versions_digest": view["versions_digest"],
             "relevance": _relevance(store, research_id, listing, [v["source_version_id"] for v in view["versions"]])})

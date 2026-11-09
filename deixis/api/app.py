@@ -2598,6 +2598,9 @@ def create_app(
         if not store.is_active_member(research_id, source_version_id):
             raise HTTPException(404, "Source is not part of this research")
         source = store.source(source_version_id)
+        # A record with no DOI keeps its refusal here for now. The background path enters acquisition for it and
+        # records what could not be asked, but this route has no run and no step of its own, so a 200 would mean
+        # "nothing was done and nothing was written". It opens when the content route gives it something to ask.
         if not source.get("doi"):
             raise HTTPException(422, "A DOI is required for verified PDF acquisition")
         try:

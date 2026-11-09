@@ -64,3 +64,49 @@ def check(text: str, versions: list[dict[str, Any]]) -> str:
     if any(len(key.split()) >= MIN_TITLE_WORDS and f" {key} " in body for key in keys):
         return "title"
     return "unconfirmed"
+
+
+# How many pages of a downloaded file may be read looking for its own title page: the first, and the next two for
+# a file whose first page is a repository cover sheet. Past that a match is as likely to be a contents page or a
+# reference list as the paper itself.
+TITLE_PAGE_LIMIT = 3
+
+
+def verify_file(pages: list[str], target: dict[str, Any], published_doi: str | None = None) -> dict[str, Any]:
+    """Whether this downloaded file is the record it was fetched for, read from the file's **own title page**.
+
+    `check` is not this: it reads 6,000 characters of a document — which can reach a reference list — accepts any
+    version of the work's DOI, and asks nothing about the author or the venue. A route that fetches a file nobody
+    verified by DOI (an OpenAlex content download, a web-search recovery copy) needs the stricter question, and
+    needs to know *what* matched: the answer travels with the file and is shown.
+
+    The verdict is one of
+      `match`     — the title page names this record's DOI (or the published DOI the lookup declared for it), or
+                    its title together with its first author and its venue;
+      `mismatch`  — the page carries a readable title page that names another paper;
+      `unreadable`— no text could be read from the pages given, so nothing is claimed either way.
+    `fields` names what matched and `page` the physical page it matched on (1 for the first).
+    """
+    head = [page for page in pages[:TITLE_PAGE_LIMIT]]
+    if not any(page and page.strip() for page in head):
+        return {"verdict": "unreadable", "fields": [], "page": None}
+    wanted = {doi for doi in (normalize_doi(target.get("doi")), normalize_doi(published_doi)) if doi}
+    title = title_key(target.get("title"))
+    # The first author's family name as the record stores it; a file names the authors on its title page in any
+    # order of given and family name, so only the family name is asked for.
+    authors = target.get("authors") or []
+    first = (authors[0] if isinstance(authors[0], str) else (authors[0] or {}).get("name", "")) if authors else ""
+    family = title_key(first).split()[-1] if title_key(first) else ""
+    venue = title_key(target.get("venue"))
+    for number, page in enumerate(head, start=1):
+        if not page or not page.strip():
+            continue
+        body = f" {title_key(page)} "
+        if wanted & identifiers_in(page):
+            return {"verdict": "match", "fields": ["doi"], "page": number}
+        named = [field for field, value in (("title", title), ("author", family), ("venue", venue))
+                 if value and len(value.split()) >= (MIN_TITLE_WORDS if field == "title" else 1)
+                 and f" {value} " in body]
+        if {"title", "author", "venue"} <= set(named):
+            return {"verdict": "match", "fields": named, "page": number}
+    return {"verdict": "mismatch", "fields": [], "page": None}

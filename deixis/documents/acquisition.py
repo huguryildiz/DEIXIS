@@ -438,8 +438,27 @@ async def elsevier_lookup(client: httpx.AsyncClient, doi: str, source_version: s
 
 def required_routes(doi: str | None) -> frozenset[str]:
     """The lookups `acquire_for_source` asks for this DOI: the four, and Elsevier's for a 10.1016 DOI. A history without
-    one of them (an interruption, or a record looked up before the Elsevier route existed) is asked again."""
-    return REQUIRED_ROUTES | {"elsevier"} if (doi or "").startswith(ELSEVIER_DOI_PREFIX) else REQUIRED_ROUTES
+    one of them (an interruption, or a record looked up before the Elsevier route existed) is asked again.
+
+    A record with no DOI asks none of them: all five address the work by its DOI, so a history that holds none of
+    them is complete for that record, not interrupted.
+    """
+    if not doi:
+        return frozenset()
+    return REQUIRED_ROUTES | {"elsevier"} if doi.startswith(ELSEVIER_DOI_PREFIX) else REQUIRED_ROUTES
+
+
+def needs_readable_copy(store: Store, source_version_id: str) -> bool:
+    """Whether this record still has no copy whose text can be read.
+
+    The design keeps four states apart: the source found, the file downloaded, the version matched, and the text
+    readable. A stored file is not the last of them — a scan, a failed extraction, a download that is a cover
+    page. This asks for the last one, and the routes that can put a copy on **another row** of the work read it:
+    a record whose own file holds no text used to block them, so the work was settled without text although a
+    readable copy of another version was there to be had. The record's own row is not asked again, because a
+    version holds at most one file in use (`source_assets_one_in_use`) and replacing it is the person's action.
+    """
+    return not store.has_asset(source_version_id) or not store.has_pdf_text(source_version_id)
 
 
 def candidate_order(candidates: list[dict[str, Any]], rule: str | None = fast_path.ACQUIRE_RULE) -> list[dict[str, Any]]:
@@ -592,12 +611,14 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
     `openalex_budget` is a run's memory of OpenAlex's daily budget (see `OpenAlexBudget`): once it is exhausted the
     OpenAlex lookup is recorded as not sent, and a refusal met here exhausts it. Without it every record asks.
     `workflow_run_id` is the run the refusals are counted under (`Store.record_pdf_discovery`).
+
+    A record with **no DOI** is not refused any more. All five lookups and Europe PMC address the work by its DOI,
+    so none of them is asked; the record goes down the routes that do not need one, and what it could and could not
+    ask is in the result rather than in an exception the caller had to avoid by not calling at all.
     """
     recovery_dir = file_restore.resolve_recovery_dir(store, papers_dir, recovery_dir)
     source = store.source(source_version_id)
     doi = normalize_doi(source.get("doi"))
-    if not doi:
-        raise ValueError("A DOI is required for verified PDF acquisition")
     lookups: list[tuple[str, str, Lookup]] = []
 
     def record(provider: str, lookup: Lookup) -> None:
@@ -637,7 +658,7 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
     async def elsevier_route() -> None:
         record("elsevier", await elsevier_lookup(client, doi, source.get("version_label"), elsevier_key))
 
-    routes = [unpaywall_route(), openalex_route(), crossref_route(), core_route()]
+    routes = [unpaywall_route(), openalex_route(), crossref_route(), core_route()] if doi else []
     if "elsevier" in required_routes(doi):
         routes.append(elsevier_route())
     tasks = [asyncio.create_task(route) for route in routes]
@@ -650,21 +671,25 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
     # One route raising — an answer no parser expected, a stop — must not leave the others writing rows behind the
     # caller's back: the rest are cancelled and awaited before the failure leaves. A cancellation of the whole
     # acquisition takes them down the same way.
-    try:
-        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
-    except BaseException:
-        await stop(tasks)
-        raise
-    await stop(pending)
-    for task in done:
-        task.result()  # the first failure, if there was one
-    cr = crossref_answer[0]
-    if cr.record is not None:
+    if tasks:
+        try:
+            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_EXCEPTION)
+        except BaseException:
+            await stop(tasks)
+            raise
+        await stop(pending)
+        for task in done:
+            task.result()  # the first failure, if there was one
+    cr = crossref_answer[0] if crossref_answer else None
+    if cr is not None and cr.record is not None:
         if before_publish is not None:
             await before_publish()
         store.enrich_source("crossref", source_version_id, cr.record)
 
     asset_id = None
+    # A version holds at most one file in use (`source_assets_one_in_use`), so a record that already has one is
+    # not given a second here even when no text could be read from it: replacing a file is the person's action.
+    # What the unreadable file does not block any more is the *other* rows this work may have (below).
     if not store.has_asset(source_version_id):
         attempted_urls: set[str] = set()
         for candidate in candidate_order(store.pdf_candidates(source_version_id), candidate_rule):
@@ -684,8 +709,9 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
                                          recovery_dir=recovery_dir, before_publish=before_publish)
             break
 
-    # Europe PMC only for a record still without a file, after the four lookups and their verified copies (SW21).
-    if not store.has_asset(source_version_id):
+    # Europe PMC only for a record still without a readable file, after the four lookups and their verified
+    # copies (SW21); it addresses the work by DOI, so a record without one does not ask.
+    if doi and not store.has_asset(source_version_id):
         europepmc = await europepmc_lookup(client, doi, source.get("version_label"))
         europepmc = attempted(europepmc)
         run_id = store.record_pdf_discovery(research_id, source_version_id, "europepmc", doi, europepmc)
@@ -704,7 +730,7 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
                 break
 
     lookup_version_id = None
-    if other_versions and not store.has_asset(source_version_id):
+    if other_versions and needs_readable_copy(store, source_version_id):
         asset_id, lookup_version_id = await _attach_other_version(
             store, research_id, source_version_id, papers_dir, fetcher, xml_fetcher, recovery_dir=recovery_dir,
             before_publish=before_publish, elsevier_key=elsevier_key, contact_email=contact_email,
@@ -712,17 +738,23 @@ async def acquire_for_source(store: Store, research_id: str, source_version_id: 
 
     # A listed URL is not a found PDF: it may be gated, dead, HTML, or a different version. Make the fallback explicit
     # and retain its uncertain-version candidates for manual review/upload; never silently attach them.
+    # The web search asks by title, not by DOI, so a record without one asks it too; what it finds keeps waiting
+    # for the person as `title_verified` and `uncertain`, as it always has.
     if web_search and not store.has_asset(source_version_id):
         web_query = f'"{source["title"]}"'
-        web = await web_lookup(client, doi, source["title"], serpapi_key)
+        web = await web_lookup(client, doi or "", source["title"], serpapi_key)
         web = attempted(web)
         run_id = store.record_pdf_discovery(research_id, source_version_id, "web_search", web_query, web)
         store.record_pdf_candidates(source_version_id, run_id, web.candidates)
         lookups.append(("web_search", web_query, web))
 
+    # Found, downloaded and readable are three states, not one: a record whose file holds no text is reported as
+    # having a file and no text, and the routes a record with no DOI could not ask are named rather than implied.
     return {"source_version_id": source_version_id, "lookups": len(lookups), "asset_id": asset_id,
             "candidates": len(store.pdf_candidates(source_version_id)),
             "pdf_found": store.has_asset(source_version_id) or lookup_version_id is not None,
+            "has_text": store.has_pdf_text(source_version_id),
+            **({} if doi else {"doi_routes": "no_doi"}),
             **({"lookup_version_id": lookup_version_id} if lookup_version_id else {})}
 
 
@@ -755,9 +787,14 @@ async def _attach_other_version(store: Store, research_id: str, source_version_i
     # neither path reads the arrival order or the row id. A run from before the rule keeps the row id it ordered by.
     ordered = (sorted(wanted, key=lambda c: (VERSION_ORDER.index(c["version_label"]), c["id"])) if candidate_rule is None
                else sorted(candidate_order(wanted, candidate_rule), key=lambda c: VERSION_ORDER.index(c["version_label"])))
+    found: tuple[str | None, str | None] | None = None  # a copy attached whose text could not be read
     for candidate in ordered:
         existing = store.find_source_by_identifier("pdf_lookup_version", f"{source_version_id}:{candidate['version_label']}")
         if existing and store.has_asset(existing):
+            if not store.has_pdf_text(existing):
+                # That version's file is here and no text could be read from it, so it answers nothing: the next
+                # candidate — another declared version — is tried instead. The file itself is left as it is.
+                continue
             # Already fetched, perhaps by another research that holds the same record: the row joins this research
             # and the file is not asked for again.
             if before_publish is not None:
@@ -786,8 +823,16 @@ async def _attach_other_version(store: Store, research_id: str, source_version_i
         asset_id = await _attach_pdf(store, version_id, result.data, papers_dir, "download",
                                      result.final_url or candidate["candidate_url"], research_id=research_id,
                                      recovery_dir=recovery_dir, before_publish=before_publish)
+        if not store.has_pdf_text(version_id):
+            # That version's file is here and no text could be read from it: the row and the file stay, recorded
+            # with what the extraction found, and the next declared version is tried rather than the work being
+            # settled without text.
+            found = found or (asset_id, version_id)
+            continue
         return asset_id, version_id
-    return None, None
+    # Nothing readable came. A file that was attached on the way is reported, so the caller knows a copy is in hand
+    # even though its text could not be read.
+    return found if found else (None, None)
 
 
 async def _attach_pdf(store: Store, source_version_id: str, data: bytes, papers_dir: Any, origin: str,

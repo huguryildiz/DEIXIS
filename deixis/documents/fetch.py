@@ -21,7 +21,7 @@ import weakref
 import zlib
 from dataclasses import dataclass
 from typing import Any, Callable
-from urllib.parse import urljoin, urlsplit, urlunsplit
+from urllib.parse import urlencode, urljoin, urlsplit, urlunsplit
 
 import httpx
 
@@ -55,6 +55,9 @@ class FetchResult:
     http_status: int | None = None
     error: str | None = None
     content_disposition: str | None = None  # read by fetch_file only (the arXiv source's file name names its version)
+    # The refusal's own response headers, for a caller that has to read them: a metered service says in them whether
+    # it refused because the day's budget is gone. Set on a refusal alone, and never passed on anywhere else.
+    headers: dict[str, str] | None = None
 
 
 class BlockedUrl(Exception):
@@ -171,21 +174,36 @@ def _pinned_request(url: str, address: str) -> tuple[str, dict[str, str], dict[s
     return pinned, {"Host": name + port}, extensions
 
 
+def _with_query(url: str, extra: dict[str, str]) -> str:
+    """The same URL with `extra` appended to its query, for the request alone.
+
+    A key some services take only as a query parameter (OpenAlex's content download) cannot travel as a header,
+    and it must not end up anywhere the URL is kept: the candidate row, the recorded final URL, a log. So the URL
+    the caller holds stays keyless and this form exists only inside the request.
+    """
+    parts = urlsplit(url)
+    query = "&".join(filter(None, [parts.query, urlencode(extra)]))
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, query, parts.fragment))
+
+
 async def _fetch(url: str, client: httpx.AsyncClient | None, deadline: float, *, accept: str | None = None, gate: Any = None,
                  admit: Callable[[httpx.Response, str], FetchResult | None] | None = None,
                  finish: Callable[[httpx.Response, bytes, str], FetchResult], email: str | None = None,
-                 extra_headers: dict[str, str] | None = None) -> FetchResult:
+                 extra_headers: dict[str, str] | None = None,
+                 extra_query: dict[str, str] | None = None) -> FetchResult:
     """The protections both fetches share: public addresses only, the checked address pinned, at most MAX_REDIRECTS
     redirects, MAX_BYTES, `host_gate` and one `asyncio.timeout(deadline)` over the whole fetch.
 
     `admit` reads a 200 response's headers before the body and may refuse it; `finish` turns the body into the
     result. A failure names the URL being read when it happened, after any redirect. `gate` is fetch_file's. Without
     `client` the fetch opens its own, whose User-Agent names `email` (`user_agent`). `extra_headers` (an API key) go to
-    the first URL's https origin alone: a redirect to another host, port or to plain http never carries them."""
+    the first URL's https origin alone: a redirect to another host, port or to plain http never carries them.
+    `extra_query` is the same rule for a key a service takes only in the query string: it is added to the request's
+    own target and to nothing else, so the URL this returns as `final_url` never carries it."""
     own_client = client is None
     client = client or httpx.AsyncClient(timeout=TIMEOUT_SECONDS, headers={"User-Agent": user_agent(email)}, trust_env=False)
     current = url
-    origin = _https_origin(url) if extra_headers else None
+    origin = _https_origin(url) if (extra_headers or extra_query) else None
     try:
         if gate is not None:
             await gate.before()
@@ -204,7 +222,10 @@ async def _fetch(url: str, client: httpx.AsyncClient | None, deadline: float, *,
                             return FetchResult("blocked_url", final_url=current, error=str(exc))
                         target, headers, extensions = _pinned_request(current, address)
                         if origin is not None and _https_origin(current) == origin:
-                            headers = {**extra_headers, **headers}  # never in place of Host
+                            if extra_headers:
+                                headers = {**extra_headers, **headers}  # never in place of Host
+                            if extra_query:
+                                target = _with_query(target, extra_query)
                         headers["Accept-Encoding"] = ACCEPT_ENCODING
                         if accept is not None:
                             headers["Accept"] = accept
@@ -230,9 +251,11 @@ async def _fetch(url: str, client: httpx.AsyncClient | None, deadline: float, *,
                                     return FetchResult("blocked_url", final_url=location, error=f"not a valid URL: {exc}")
                                 continue
                             if response.status_code != 200:
-                                # The refusal's own type is kept: a bot check answers 403 with an HTML page.
+                                # The refusal's own type is kept: a bot check answers 403 with an HTML page. Its
+                                # headers travel with it, because a metered service's refusal is in them.
                                 return FetchResult("http_error", final_url=current, http_status=response.status_code,
-                                                   media_type=_media_type(response) or None)
+                                                   media_type=_media_type(response) or None,
+                                                   headers=dict(response.headers))
                             refused = admit(response, current) if admit is not None else None
                             if refused is not None:
                                 return refused
@@ -291,16 +314,19 @@ def _media_type(response: httpx.Response) -> str:
 
 
 async def fetch_pdf(url: str, client: httpx.AsyncClient | None = None, deadline: float = PDF_DEADLINE_SECONDS, *,
-                    email: str | None = None, headers: dict[str, str] | None = None) -> FetchResult:
+                    email: str | None = None, headers: dict[str, str] | None = None,
+                    query: dict[str, str] | None = None) -> FetchResult:
     """A PDF, judged by its first bytes rather than its declared type. The whole fetch ends at `deadline`. `email` is
-    the contact address set in Settings, sent in the User-Agent as the API lookups send it; `headers` go to the URL's
-    own host alone (`_fetch`)."""
+    the contact address set in Settings, sent in the User-Agent as the API lookups send it; `headers` and `query` (a
+    key a service takes only in the query string) go to the URL's own host alone and are not reported back
+    (`_fetch`)."""
     def finish(response: httpx.Response, data: bytes, current: str) -> FetchResult:
         if not data.startswith(b"%PDF-"):
             return FetchResult("not_pdf", final_url=current, media_type=_media_type(response), http_status=200)
         return FetchResult("ok", data=data, final_url=current, media_type="application/pdf", http_status=200)
 
-    return await _fetch(url, client, deadline, accept=PDF_ACCEPT, finish=finish, email=email, extra_headers=headers)
+    return await _fetch(url, client, deadline, accept=PDF_ACCEPT, finish=finish, email=email,
+                        extra_headers=headers, extra_query=query)
 
 
 async def fetch_file(url: str, media_types: tuple[str, ...], gate: Any = None, client: httpx.AsyncClient | None = None,

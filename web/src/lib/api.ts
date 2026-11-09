@@ -472,13 +472,15 @@ export type AssetText = {
 // from the page by the server.
 export type AssetFigure = { page: number; label: string; kind?: 'figure' | 'algorithm'; width: number; height: number }
 export type PdfCandidate = {
-  id: string; provider: 'unpaywall' | 'openalex' | 'crossref' | 'core' | 'europepmc' | 'elsevier' | 'web_search'; candidate_url: string; landing_url: string | null
+  id: string; provider: 'unpaywall' | 'openalex' | 'openalex_content' | 'crossref' | 'core' | 'europepmc' | 'elsevier' | 'web_search'; candidate_url: string; landing_url: string | null
+  // What the file's own title page said about this record, when a route read it: 'match', 'mismatch', 'unreadable'.
+  file_verdict?: 'match' | 'mismatch' | 'unreadable' | null
   version_label: string | null; license: string | null; identity_status: 'doi_verified' | 'title_verified' | 'unverified' | 'mismatch'
   version_status: 'match' | 'different' | 'uncertain'; access_status: 'not_attempted' | 'downloaded' | 'http_error' | 'not_pdf' | 'too_large' | 'timeout' | 'blocked_url' | 'wrong_type' | 'failed'
   http_status: number | null; error_code: string | null; final_url: string | null; discovered_at: string; attempted_at: string | null
 }
 export type PdfDiscovery = {
-  provider: 'unpaywall' | 'openalex' | 'crossref' | 'core' | 'europepmc' | 'elsevier' | 'web_search'; query_text: string; status: string; result_count: number; other_title_count: number
+  provider: 'unpaywall' | 'openalex' | 'openalex_content' | 'crossref' | 'core' | 'europepmc' | 'elsevier' | 'web_search'; query_text: string; status: string; result_count: number; other_title_count: number
   http_status: number | null; error_code: string | null; retry_after?: string | null; created_at: string; finished_at: string | null
 }
 export type PdfMatch = { filename: string; source_version_id: string | null; basis: 'doi' | 'title' | null }
@@ -543,7 +545,7 @@ export type Source = {
   has_pdf_text: boolean
   // Some of that text was read with OCR from scanned pages.
   has_ocr_text: boolean
-  access: { abstract_passage_id: string | null; abstract_origin: string | null; oa_pdf_url: string | null; oa_pdf_version: string | null; assets: Asset[]; replaced_assets: ReplacedAsset[]; fetch: { status: string; error_code: string | null; http_status: number | null; host?: string | null } | null; other_copy: { status: string; error_code: string | null } | null; pdf_candidates: PdfCandidate[]; pdf_discoveries: PdfDiscovery[] }
+  access: { abstract_passage_id: string | null; abstract_origin: string | null; oa_pdf_url: string | null; oa_pdf_version: string | null; assets: Asset[]; replaced_assets: ReplacedAsset[]; fetch: { status: string; error_code: string | null; http_status: number | null; host?: string | null } | null; other_copy: { status: string; error_code: string | null } | null; pdf_candidates: PdfCandidate[]; content_route?: { outcome: string; reason: string | null } | null; pdf_discoveries: PdfDiscovery[] }
   selection: { state: 'included' | 'excluded' | 'pending'; origin: 'default' | 'model_proposal' | 'code_rule' | 'user'; version: number; proposal: string | null; proposal_reason: string | null; proposal_basis: string | null; user_reason: string | null; queue_answer: 'include' | 'criterion_not_met' | null }
   cited_in_latest_answer: boolean
   provider_records: string[]

@@ -823,8 +823,10 @@ def test_a_record_whose_own_file_has_no_text_still_gets_another_versions_copy(li
 
     async def fetch_pdf(url):
         calls.append(url)
-        # The record's own copy is a PDF with no extractable text; the other version's copy reads.
-        data = make_pdf([""]) if url == scan else make_pdf(["SYNTHETIC readable full text"])
+        # The record's own copy is a PDF with no extractable text; the other version's copy reads, and its title
+        # page names the record, which is what lets code publish a copy of another version at all.
+        data = (make_pdf([""]) if url == scan
+                else make_pdf(["https://doi.org/10.1/scan\nSYNTHETIC readable full text"]))
         return fetch_module.FetchResult("ok", data, final_url=url)
 
     async def check():
@@ -859,7 +861,10 @@ def _other_version_flow(lib, tmp_path, locations, reads):
 
     async def fetch_pdf(url):
         calls.append(url)
-        data = make_pdf(["SYNTHETIC readable full text"]) if url in reads else make_pdf([""])
+        # A copy of another version is published only once its own title page says it is this record, so the
+        # readable file names the record's DOI; the other one holds nothing to read at all.
+        data = (make_pdf(["https://doi.org/10.1/sib\nSYNTHETIC readable full text"]) if url in reads
+                else make_pdf([""]))
         return fetch_module.FetchResult("ok", data, final_url=url)
 
     async def check(run):
@@ -928,17 +933,20 @@ def test_the_title_page_check_says_what_matched_and_where():
     venue. A cover sheet is skipped; a contents page further in is not read at all."""
     body = f"{ON_TITLE}\nAda Lovelace\nIFIP Networking 2008"
     assert identity.verify_file([f"preprint\nhttps://doi.org/10.1/synth.42"], TITLE_TARGET) == {
-        "verdict": "match", "fields": ["doi"], "page": 1}
+        "verdict": "match", "fields": ["doi"], "dois": ["10.1/synth.42"], "page": 1}
     assert identity.verify_file(["cover sheet of a repository", body], TITLE_TARGET) == {
-        "verdict": "match", "fields": ["title", "author", "venue"], "page": 2}
+        "verdict": "match", "fields": ["title", "author", "venue"], "dois": [], "page": 2}
     # The title alone is not enough: the author and the venue have to be there too.
     assert identity.verify_file([ON_TITLE], TITLE_TARGET)["verdict"] == "mismatch"
     assert identity.verify_file([f"{OFF_TITLE}\n10.9/other.1"], TITLE_TARGET)["verdict"] == "mismatch"
     # Nothing readable: nothing is claimed either way, so the file is not attached and not called wrong.
-    assert identity.verify_file(["", "   "], TITLE_TARGET) == {"verdict": "unreadable", "fields": [], "page": None}
+    assert identity.verify_file(["", "   "], TITLE_TARGET) == {"verdict": "unreadable", "fields": [], "dois": [],
+                                                              "page": None}
     # The published DOI the lookup declared for another version counts as this record's own.
-    assert identity.verify_file(["https://doi.org/10.9/published.7"], TITLE_TARGET,
-                                published_doi="10.9/published.7")["fields"] == ["doi"]
+    named = identity.verify_file(["https://doi.org/10.9/published.7"], TITLE_TARGET, published_doi="10.9/published.7")
+    # Which DOI the page carried is part of the answer: a copy declared as the published version is published only
+    # when the file itself names that DOI, and a title match never shows which version a file is.
+    assert (named["fields"], named["dois"]) == (["doi"], ["10.9/published.7"])
     # Past the first pages nothing is read: a reference list naming the DOI is not the paper naming itself.
     deep = ["cover", "cover", "cover", f"https://doi.org/10.1/synth.42"]
     assert identity.verify_file(deep, TITLE_TARGET)["verdict"] == "mismatch"

@@ -125,8 +125,10 @@ def test_europe_pmc_is_asked_after_the_four_lookups_and_its_text_is_attached_as_
                     xml_fetcher_of({url_of("PMC1000001"): jats_doc()}))
     assert calls.index("www.ebi.ac.uk") > calls.index("api.crossref.org")  # after the four (CORE has no key here)
     assert found["pdf_found"] is True
+    # OpenAlex's content route is asked between the lookups' copies and Europe PMC's rendition; with no key for it
+    # nothing is sent and its row says so, which is why it stands among them here.
     assert [d["provider"] for d in store.pdf_discoveries(rid, svid)] == [
-        "unpaywall", "openalex", "crossref", "core", "europepmc"]
+        "unpaywall", "openalex", "crossref", "core", "openalex_content", "europepmc"]
     asset = store.asset(found["asset_id"])
     assert asset["origin"] == "download" and asset["retrieved_from"] == url_of("PMC1000001")
     assert asset["original_filename"] == "PMC1000001.europepmc.pdf"

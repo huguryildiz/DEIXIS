@@ -864,12 +864,25 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
         ).fetchone()
         pdf_candidates = [{k: r[k] for k in (
             "id", "provider", "candidate_url", "landing_url", "version_label", "license", "identity_status",
-            "version_status", "access_status", "http_status", "error_code", "final_url", "discovered_at", "attempted_at"
+            "version_status", "access_status", "http_status", "error_code", "final_url", "discovered_at",
+            "attempted_at", "file_verdict"
         )} for r in conn.execute(
-            # Web results under another paper's title, stored before those were dropped at lookup, are not shown.
-            "SELECT * FROM pdf_candidates WHERE source_version_id = ? AND identity_status != 'unverified'"
-            " ORDER BY discovered_at, rowid", (svid,)
+            # Web results under another paper's title, stored before those were dropped at lookup, are not shown. A
+            # copy the file check itself read and named as this record is shown although no provider claimed its
+            # title: the content route reaches a record that has no DOI to be verified against.
+            "SELECT c.*, (SELECT v.verdict FROM file_identity_verdicts v WHERE v.source_version_id = c.source_version_id"
+            "  AND v.candidate_url = c.candidate_url ORDER BY v.checked_at DESC LIMIT 1) AS file_verdict"
+            " FROM pdf_candidates c WHERE c.source_version_id = ? AND (c.identity_status != 'unverified'"
+            "  OR EXISTS (SELECT 1 FROM file_identity_verdicts v WHERE v.source_version_id = c.source_version_id"
+            "             AND v.candidate_url = c.candidate_url AND v.verdict = 'match'))"
+            " ORDER BY c.discovered_at, c.rowid", (svid,)
         )]
+        # The content route's own last outcome, which no lookup row can state: a copy served only as an XML this
+        # reader does not render, a key that was missing, a budget that was gone.
+        content_row = conn.execute(
+            "SELECT outcome, reason FROM openalex_content_attempts WHERE source_version_id = ?"
+            " ORDER BY created_at DESC, rowid DESC LIMIT 1", (svid,)).fetchone()
+        content_route = dict(content_row) if content_row else None
         sources.append({
             "source_version_id": svid, "work_id": row["work_id"], "source_key": row["source_key"], "title": row["title"],
             "authors": json.loads(row["authors_json"]),
@@ -899,7 +912,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
                                  # The host that answered a failed download, after any redirect.
                                  "host": run_card.fetch_host(fetch["final_url"]) or run_card.fetch_host(fetch["url"])}
                        if fetch else None, "other_copy": dict(other_copy) if other_copy else None,
-                       "pdf_candidates": pdf_candidates,
+                       "pdf_candidates": pdf_candidates, "content_route": content_route,
                        "pdf_discoveries": store.pdf_discoveries(research_id, svid, retry_after=True)},
             "selection": {"state": row["state"], "origin": row["selection_origin"], "version": row["selection_version"],
                           "proposal": row["proposal"], "proposal_reason": row["proposal_reason"],

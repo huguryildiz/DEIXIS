@@ -1,6 +1,7 @@
 """Fetching PDFs from untrusted hosts: only public addresses, malformed links refused, one deadline, extra headers kept on the first https origin; and where the acquisition looks for an open copy. SYNTHETIC hosts, every transport mocked."""
 
 import asyncio
+import hashlib
 import os
 import sys
 import time
@@ -236,6 +237,27 @@ def test_extra_headers_go_to_the_first_host_alone(monkeypatch):
                                          headers={"X-ELS-APIKey": "SYNTHETIC-KEY"}))
     assert result.status == "ok"
     assert seen == [("api.publisher.example", "SYNTHETIC-KEY"), ("cdn.elsewhere.example", None)]
+
+
+def test_a_key_the_query_string_carries_goes_to_the_first_host_alone_and_is_reported_to_nobody(monkeypatch):
+    """A service that takes its key only in the query string (OpenAlex's content host) is sent it for that one
+    request. It does not cross a redirect to another host, and the address reported back — which is stored with the
+    file — does not carry it."""
+    resolving_public(monkeypatch)
+    seen = []
+
+    def handler(request):
+        seen.append((request.headers["host"], request.url.params.get("api_key")))
+        if request.headers["host"] == "content.openalex.example":
+            return httpx.Response(302, headers={"location": "https://cdn.elsewhere.example/a.pdf"})
+        return httpx.Response(200, headers={"content-type": "application/pdf"}, content=b"%PDF-1.4 SYNTHETIC")
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    result = asyncio.run(fetch.fetch_pdf("https://content.openalex.example/works/W7.pdf", client,
+                                         query={"api_key": "SYNTHETIC-KEY"}))
+    assert result.status == "ok"
+    assert seen == [("content.openalex.example", "SYNTHETIC-KEY"), ("cdn.elsewhere.example", None)]
+    assert "api_key" not in (result.final_url or "")
 
 
 @pytest.mark.parametrize("location", ["http://api.publisher.example/a.pdf", "https://api.publisher.example:8443/a.pdf"])
@@ -557,3 +579,452 @@ def test_a_refused_elsevier_link_falls_through_to_the_api_copy_fetched_with_the_
     connection.close()
 
 
+
+
+# ---- OpenAlex's own content route ------------------------------------------------------------------------------
+
+CONTENT_DOI = "10.1/content.7"
+CONTENT_URL = "https://content.openalex.org/works/W7.pdf"
+CONTENT_TEI = "https://content.openalex.org/works/W7.grobid-xml"
+CONTENT_TITLE = "Exact synthetic content title"
+MANUAL_URL = "https://papers.example/confirmed.pdf"
+
+
+def _content_library(tmp_path, *, doi=CONTENT_DOI, version_label=None, provider="openalex"):
+    """A record OpenAlex answered with (so its work id is stored), with the version label the test needs."""
+    connection = db.connect(tmp_path / "library.sqlite")
+    db.migrate(connection)
+    store = Store(connection)
+    rid = store.create_research("Synthetic question?", "academic", "quick", ["openalex"], "fake", "m", "en")
+    record = ProviderRecord(provider_record_id="W7", title=CONTENT_TITLE, authors=["Ada Lovelace"], year=2020,
+                            venue="IFIP Networking", publication_type="article", doi=doi, landing_url=None,
+                            oa_pdf_url=None, oa_pdf_version=None, version_label=version_label, abstract=None,
+                            abstract_origin=None, identifiers={}, raw={})
+    svid, _ = store.upsert_provider_source(provider, record, None)
+    store.add_to_corpus(rid, svid, "search")
+    return connection, store, rid, svid
+
+
+def _content_handler(content, *, doi=CONTENT_DOI, lookup=None):
+    """Answers the DOI lookups with nothing and the content route with `content`; `lookup` replaces the DOI
+    lookup's own answer (a timeout, say), so the two OpenAlex requests can be told apart by what they select."""
+    def handler(request):
+        host = request.url.host
+        if host == "api.openalex.org":
+            if (request.url.params.get("select") or "").startswith("id,doi"):
+                return content(request)
+            if lookup is not None:
+                return lookup(request)
+            return httpx.Response(200, json={"doi": f"https://doi.org/{doi}" if doi else None,
+                                             "display_name": CONTENT_TITLE, "locations": []})
+        if host == "api.unpaywall.org":
+            return httpx.Response(200, json={"doi": doi, "oa_locations": [], "best_oa_location": None})
+        if host == "api.crossref.org":
+            return httpx.Response(200, json={"message": {"DOI": doi, "link": []}})
+        return httpx.Response(200, json={"results": [], "resultList": {"result": []}})
+    return handler
+
+
+def _content_json(*, pdf_url=CONTENT_URL, tei=True, doi=CONTENT_DOI):
+    urls = {**({"pdf": pdf_url} if pdf_url else {}), **({"grobid_xml": CONTENT_TEI} if tei else {})}
+    return {"id": "https://openalex.org/W7", "doi": f"https://doi.org/{doi}" if doi else None,
+            "has_content": {"pdf": bool(pdf_url), "grobid_xml": tei}, "content_urls": urls}
+
+
+def _acquire_content(store, rid, svid, tmp_path, handler, monkeypatch, *, pages=None, key="SYNTHETIC-KEY"):
+    """One acquisition with the content route open; returns (result, the keyed fetches it made)."""
+    keyed = []
+
+    async def fetch_pdf(url, client=None, deadline=None, *, email=None, headers=None, query=None):
+        keyed.append((url, email, headers, query))
+        return FetchResult("ok", data=make_pdf(pages or [f"https://doi.org/{CONTENT_DOI}\nSYNTHETIC full text"]),
+                           final_url=url, http_status=200)
+
+    monkeypatch.setattr(acquisition.fetch, "fetch_pdf", fetch_pdf)
+
+    async def nothing(url):
+        raise AssertionError("no listed candidate should be fetched in these tests")
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await acquisition.acquire_for_source(store, rid, svid, client, tmp_path / "papers",
+                                                        "synthetic@example.org", None, nothing, web_search=False,
+                                                        openalex_key=key)
+
+    return run(check()), keyed
+
+
+def test_the_content_copy_waits_for_the_person_and_the_key_is_in_no_stored_address(tmp_path, monkeypatch):
+    """OpenAlex's own copy is read before anything is published and then waits for the person: its address carries
+    no version, so code never attaches it, whatever the record says about versions. The key is sent in the query
+    string for that one request and appears in nothing that is kept."""
+    connection, store, rid, svid = _content_library(tmp_path)
+    found, keyed = _acquire_content(store, rid, svid, tmp_path,
+                                    _content_handler(lambda r: httpx.Response(200, json=_content_json())), monkeypatch)
+    assert (found["content"], found["pdf_found"], found["has_text"]) == ("attachable", False, False)
+    assert not store.has_asset(svid), "a copy whose version nothing settled was attached by code"
+    assert keyed == [(CONTENT_URL, "synthetic@example.org", None, {"api_key": "SYNTHETIC-KEY"})]
+    row = next(c for c in store.pdf_candidates(svid) if c["provider"] == "openalex_content")
+    assert (row["candidate_url"], row["identity_status"], row["version_status"], row["access_status"]) == (
+        CONTENT_URL, "doi_verified", "uncertain", "downloaded")
+    assert row["error_code"] == "version_unsettled"
+    assert "api_key" not in (row["final_url"] or "") and "api_key" not in row["candidate_url"]
+    assert [(a["outcome"], a["work_id"], a["reason"]) for a in store.openalex_content_attempts(svid)] == [
+        ("attachable", "W7", "match")]
+    assert [v["verdict"] for v in store.file_verdicts(svid, CONTENT_URL)] == ["match"]
+    connection.close()
+
+
+def test_the_days_budget_refusing_the_metered_download_is_stored_as_the_keys(tmp_path, monkeypatch):
+    """The content download spends the same daily budget as the lookups, so its refusal is the key's: it is stored
+    under the key's lock, with the time the budget returns, before any other request can read the budget."""
+    connection, store, rid, svid = _content_library(tmp_path)
+    budget = acquisition.OpenAlexBudget()
+
+    async def refused(url, client=None, deadline=None, *, email=None, headers=None, query=None):
+        return FetchResult("http_error", final_url=url, http_status=429, headers=dict(QUOTA_HEADERS))
+
+    monkeypatch.setattr(acquisition.fetch, "fetch_pdf", refused)
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+                _content_handler(lambda r: httpx.Response(200, json=_content_json())))) as client:
+            return await acquisition.acquire_for_source(store, rid, svid, client, tmp_path / "papers",
+                                                        "synthetic@example.org", None, web_search=False,
+                                                        openalex_key="SYNTHETIC-KEY", openalex_budget=budget)
+
+    found = run(check())
+    assert found["content"] == "quota_exhausted" and not store.has_asset(svid)
+    assert budget.exhausted and budget.reset_at is not None
+    attempt = store.openalex_content_attempts(svid)[-1]
+    assert (attempt["outcome"], attempt["reason"]) == ("quota_exhausted", f"{acquisition.QUOTA_EXHAUSTED}:download")
+    rows = [d for d in store.pdf_discoveries(rid, svid) if d["provider"] == "openalex_content"]
+    assert [(d["status"], d["error_code"]) for d in rows][-1] == ("rate_limited", acquisition.QUOTA_EXHAUSTED)
+    connection.close()
+
+
+def test_content_served_as_tei_alone_is_a_route_that_exists_and_was_not_read(tmp_path, monkeypatch):
+    """The content host serves a TEI XML beside the PDF and the reader here renders JATS. A record whose content is
+    TEI alone is written down as that: no file is fetched, no text is claimed, and no route is called exhausted."""
+    connection, store, rid, svid = _content_library(tmp_path)
+    content = lambda request: httpx.Response(200, json=_content_json(pdf_url=None, tei=True))  # noqa: E731
+    found, keyed = _acquire_content(store, rid, svid, tmp_path, _content_handler(content), monkeypatch)
+    assert found["content"] == "tei_only" and keyed == [] and not store.has_asset(svid)
+    assert [(a["outcome"], a["reason"]) for a in store.openalex_content_attempts(svid)] == [
+        ("tei_only", "content_tei_only")]
+    content_row = next(d for d in store.pdf_discoveries(rid, svid) if d["provider"] == "openalex_content")
+    assert (content_row["status"], content_row["result_count"]) == ("zero_results", 0)
+    connection.close()
+
+
+def test_a_record_without_a_doi_asks_the_content_route_by_its_stored_work_id(tmp_path, monkeypatch):
+    """The content route is the one route that needs no DOI: it addresses the work by the id a search stored for
+    this record, so a record with no DOI reaches it instead of being left with nothing to ask."""
+    connection, store, rid, svid = _content_library(tmp_path, doi=None)
+    asked = []
+
+    def content(request):
+        asked.append(str(request.url.path))
+        return httpx.Response(200, json=_content_json(doi=None))
+
+    # With no DOI on either side, the title page has to name the record itself: its title, its first author and
+    # its venue, all three.
+    found, keyed = _acquire_content(store, rid, svid, tmp_path, _content_handler(content, doi=None), monkeypatch,
+                                    pages=[f"{CONTENT_TITLE}\nAda Lovelace\nIFIP Networking 2020"])
+    assert asked == ["/works/W7"] and found["doi_routes"] == "no_doi"
+    assert found["content"] == "attachable"
+    row = next(c for c in store.pdf_candidates(svid) if c["provider"] == "openalex_content")
+    # No provider verified a DOI, because the record has none; what names the file is the file itself, and that
+    # verdict is what lets the person confirm the copy.
+    assert row["identity_status"] == "unverified" and keyed[0][3] == {"api_key": "SYNTHETIC-KEY"}
+    assert store.file_verdicts(svid, CONTENT_URL)[0]["verdict"] == "match"
+    connection.close()
+
+
+def test_the_content_answer_does_not_stand_in_for_the_doi_lookups_own_result(tmp_path, monkeypatch):
+    """A content answer is not a lookup answer. The DOI lookup that timed out stays unanswered, so the work is not
+    settled as if OpenAlex had answered it."""
+    connection, store, rid, svid = _content_library(tmp_path)
+
+    def timeout(request):
+        raise httpx.ReadTimeout("synthetic timeout", request=request)
+
+    handler = _content_handler(lambda r: httpx.Response(200, json=_content_json()), lookup=timeout)
+    _acquire_content(store, rid, svid, tmp_path, handler, monkeypatch)
+    latest = {d["provider"]: d["status"] for d in store.pdf_discoveries(rid, svid)}
+    assert latest["openalex"] == "timeout" and latest["openalex_content"] == "completed"
+    connection.close()
+
+
+def test_a_refused_file_stays_refused_at_the_same_address_although_a_route_answers_again(tmp_path, monkeypatch):
+    """The file's own verdict is kept apart from the provider's claim on purpose: a route answering a second time
+    writes the candidate's `identity_status` again, and the refusal of the file at that address must survive it."""
+    connection, store, rid, svid = _content_library(tmp_path)
+    found, _ = _acquire_content(store, rid, svid, tmp_path,
+                                _content_handler(lambda r: httpx.Response(200, json=_content_json())), monkeypatch,
+                                pages=["Another paper entirely\n10.9/other.1"])
+    assert found["content"] == "not_attached" and not store.has_asset(svid)
+    assert [(a["outcome"], a["reason"]) for a in store.openalex_content_attempts(svid)] == [
+        ("not_attached", "mismatch")]
+    assert store.file_refused(svid, CONTENT_URL)["verdict"] == "mismatch"
+    # The same address discovered again, now claimed as a title match: the claim is written, the refusal stands.
+    again = acquisition.Candidate("openalex_content", CONTENT_URL, None, None, None, "title_verified", "uncertain")
+    run_id = store.record_pdf_discovery(rid, svid, "openalex_content", "W7",
+                                        acquisition.Lookup("completed", [again], 200))
+    rows = store.record_pdf_candidates(svid, run_id, [again], CONTENT_DOI)
+    assert next(c for c in rows if c["provider"] == "openalex_content")["identity_status"] == "title_verified"
+    assert store.file_refused(svid, CONTENT_URL)["verdict"] == "mismatch"
+    connection.close()
+
+
+# ---- the other version's row and the file's own verdict --------------------------------------------------------
+
+PREPRINT_DOI = "10.48550/arxiv.2101.00001"
+PUBLISHED_DOI = "10.1/journal.9"
+JOURNAL_URL = "https://pub.example/journal.pdf"
+PREPRINT_TITLE = "Exact synthetic preprint title"
+
+
+def _preprint_with_a_journal_copy(tmp_path):
+    """A preprint record that names its published DOI, with a lookup's journal copy listed as another version."""
+    connection = db.connect(tmp_path / "library.sqlite")
+    db.migrate(connection)
+    store = Store(connection)
+    rid = store.create_research("Synthetic question?", "academic", "quick", ["openalex"], "fake", "m", "en")
+    record = ProviderRecord(provider_record_id="2101.00001", title=PREPRINT_TITLE, authors=["Ada Lovelace"],
+                            year=2021, venue="arXiv", publication_type="preprint", doi=PREPRINT_DOI,
+                            landing_url=None, oa_pdf_url=None, oa_pdf_version=None, version_label="submittedVersion",
+                            abstract=None, abstract_origin=None,
+                            identifiers={"arxiv": "2101.00001", "published_doi": PUBLISHED_DOI}, raw={})
+    svid, _ = store.upsert_provider_source("arxiv", record, None)
+    store.add_to_corpus(rid, svid, "search")
+    candidate = acquisition.Candidate("unpaywall", JOURNAL_URL, "https://pub.example/a", "publishedVersion", None,
+                                      "doi_verified", "different")
+    run_id = store.record_pdf_discovery(rid, svid, "unpaywall", PREPRINT_DOI,
+                                        acquisition.Lookup("completed", [candidate], 200))
+    store.record_pdf_candidates(svid, run_id, [candidate], PREPRINT_DOI)
+    return connection, store, rid, svid
+
+
+def _attach_other(store, rid, svid, tmp_path, pages):
+    async def fetcher(url):
+        return FetchResult("ok", data=make_pdf(pages), final_url=url, http_status=200)
+
+    return run(acquisition._attach_other_version(store, rid, svid, tmp_path / "papers", fetcher))
+
+
+def test_the_journal_copys_row_opens_only_once_the_file_names_the_published_doi(tmp_path):
+    """A copy a provider called the published version is published on its own row only when the file itself names
+    the published DOI this record claims, and the row then says which DOI it is and where that came from."""
+    connection, store, rid, svid = _preprint_with_a_journal_copy(tmp_path)
+    asset_id, version_id = _attach_other(store, rid, svid, tmp_path,
+                                         [f"{PREPRINT_TITLE}\nhttps://doi.org/{PUBLISHED_DOI}\nSYNTHETIC text"])
+    assert asset_id and version_id and version_id != svid
+    row = store.source(version_id)
+    assert (row["doi"], row["version_label"]) == (PUBLISHED_DOI, "publishedVersion")
+    assert store.source(svid)["doi"] == PREPRINT_DOI, "the preprint record kept its own DOI"
+    opened = [json.loads(r[0]) for r in store.conn.execute(
+        "SELECT payload_json FROM events WHERE type = 'lookup_version_opened'")]
+    assert opened[0]["doi"] == PUBLISHED_DOI and opened[0]["doi_from"] == "published_doi_in_file"
+    assert store.file_verdicts(svid, JOURNAL_URL)[0]["matched_doi"] == PUBLISHED_DOI
+    connection.close()
+
+
+def test_a_journal_copy_that_names_only_the_preprints_doi_is_not_published_as_the_published_version(tmp_path):
+    """The provider's declaration is not evidence of a version. Without the published DOI in the file, neither the
+    row nor the copy is published, and the candidate carries why instead of being fetched again as if it were new."""
+    connection, store, rid, svid = _preprint_with_a_journal_copy(tmp_path)
+    assert _attach_other(store, rid, svid, tmp_path,
+                         [f"{PREPRINT_TITLE}\nhttps://doi.org/{PREPRINT_DOI}\nSYNTHETIC text"]) == (None, None)
+    candidate = store.pdf_candidates(svid)[0]
+    assert (candidate["access_status"], candidate["error_code"]) == ("downloaded", "published_doi_unconfirmed")
+    assert store.work_versions(rid, svid) == [], "a row was opened for a version nothing confirmed"
+    connection.close()
+
+
+def test_a_copy_of_another_paper_is_not_published_on_a_row_of_this_work(tmp_path):
+    """The file is read before anything is published, so a copy of another paper does not become this work's other
+    version; the verdict is kept by address, which is what the person's own attach reads later."""
+    connection, store, rid, svid = _preprint_with_a_journal_copy(tmp_path)
+    assert _attach_other(store, rid, svid, tmp_path, ["Another paper entirely\n10.9/other.1"]) == (None, None)
+    assert store.pdf_candidates(svid)[0]["error_code"] == "identity_mismatch"
+    assert store.file_refused(svid, JOURNAL_URL)["verdict"] == "mismatch"
+    connection.close()
+
+
+def test_the_person_cannot_attach_a_file_whose_title_page_names_another_paper(tmp_path):
+    """The manual attach reads the file it just fetched, not the provider's title claim: the version is the
+    person's to confirm, which paper the file is was never theirs to claim. The file that arrives is the one
+    judged, so an address that serves the right paper now is not refused for what it served before."""
+    from fastapi.testclient import TestClient
+    from deixis.api.app import create_app
+    from deixis.runtime.config import Settings
+    from fakes import FakeAdapter
+
+    async def another_paper(url):
+        return FetchResult("ok", data=make_pdf(["Another paper entirely\n10.9/other.1"]), final_url=url,
+                           http_status=200)
+
+    settings = Settings(data_dir=tmp_path / "data", port=8765, model_concurrency=1, fulltext_fetch="off")
+    app = create_app(settings, adapters={"fake": FakeAdapter()}, fetcher=another_paper, extra_hosts=("testserver",),
+                     trusted_clients=("testclient",))
+    with TestClient(app) as client:
+        connection = db.connect(settings.db_path)
+        store = Store(connection)
+        rid = store.create_research("Synthetic question?", "academic", "quick", ["openalex"], "fake", "m", "en")
+        record = ProviderRecord(provider_record_id="W7", title=CONTENT_TITLE, authors=["Ada Lovelace"], year=2020,
+                                venue="IFIP Networking", publication_type="article", doi=CONTENT_DOI, landing_url=None,
+                                oa_pdf_url=None, oa_pdf_version=None, version_label=None, abstract=None,
+                                abstract_origin=None, identifiers={}, raw={})
+        svid, _ = store.upsert_provider_source("openalex", record, None)
+        store.add_to_corpus(rid, svid, "search")
+        candidate = acquisition.Candidate("openalex", MANUAL_URL, None, None, None, "title_verified", "uncertain")
+        run_id = store.record_pdf_discovery(rid, svid, "openalex", CONTENT_DOI,
+                                            acquisition.Lookup("completed", [candidate], 200))
+        rows = store.record_pdf_candidates(svid, run_id, [candidate], CONTENT_DOI)
+        connection.close()
+
+        token = client.get("/api/session").json()["csrf_token"]
+        answer = client.post(f"/api/researches/{rid}/sources/{svid}/pdf-candidates/{rows[0]['id']}/attach",
+                             headers={"x-deixis-csrf": token})
+    assert answer.status_code == 422 and "does not name this record" in answer.json()["detail"]
+    store = Store(db.connect(settings.db_path))
+    assert not store.has_asset(svid), "a file that names another paper was attached"
+    assert store.file_refused(svid, MANUAL_URL)["verdict"] == "mismatch"
+
+
+def test_a_refused_content_copy_is_not_downloaded_again_with_the_metered_key(tmp_path, monkeypatch):
+    """The content download is metered against the key's daily usage, so a file already read at that address and
+    refused is not fetched a second time: the attempt says so and nothing is sent."""
+    connection, store, rid, svid = _content_library(tmp_path)
+    store.record_file_verdict(svid, CONTENT_URL, "synthetic-digest",
+                              {"verdict": "mismatch", "fields": [], "dois": [], "page": None})
+    found, keyed = _acquire_content(store, rid, svid, tmp_path,
+                                    _content_handler(lambda r: httpx.Response(200, json=_content_json())), monkeypatch)
+    assert found["content"] == "not_attached" and keyed == []
+    assert [(a["outcome"], a["reason"]) for a in store.openalex_content_attempts(svid)] == [
+        ("not_attached", "refused_before")]
+    connection.close()
+
+
+def test_a_listed_content_address_on_another_host_is_never_sent_the_key(tmp_path, monkeypatch):
+    """The content address comes from a provider's answer and the key is appended to it, so only that one host's
+    own address is used: an answer pointing somewhere else falls back to the documented form."""
+    connection, store, rid, svid = _content_library(tmp_path)
+    elsewhere = _content_json()
+    elsewhere["content_urls"]["pdf"] = "https://cdn.elsewhere.example/W7.pdf"
+    found, keyed = _acquire_content(store, rid, svid, tmp_path,
+                                   _content_handler(lambda r: httpx.Response(200, json=elsewhere)), monkeypatch)
+    assert [url for url, *_ in keyed] == [CONTENT_URL]
+    assert found["content"] == "attachable"
+    connection.close()
+
+
+def _lookup_library(tmp_path, *, doi="10.1/lookup.3", location=None):
+    connection = db.connect(tmp_path / "library.sqlite")
+    db.migrate(connection)
+    store = Store(connection)
+    rid = store.create_research("Synthetic question?", "academic", "quick", ["openalex"], "fake", "m", "en")
+    record = ProviderRecord(provider_record_id="W9", title="Exact synthetic lookup title", authors=["Ada Lovelace"],
+                            year=2020, venue="IFIP Networking", publication_type="article", doi=doi, landing_url=None,
+                            oa_pdf_url=None, oa_pdf_version=None, version_label="publishedVersion", abstract=None,
+                            abstract_origin=None, identifiers={}, raw={})
+    svid, _ = store.upsert_provider_source("openalex", record, None)
+    store.add_to_corpus(rid, svid, "search")
+
+    def handler(request):
+        host = request.url.host
+        if host == "api.unpaywall.org":
+            return httpx.Response(200, json={"doi": doi, "best_oa_location": None,
+                                             "oa_locations": [location] if location else []})
+        if host == "api.openalex.org":
+            return httpx.Response(200, json={"doi": f"https://doi.org/{doi}", "display_name": record.title,
+                                             "locations": []})
+        if host == "api.crossref.org":
+            return httpx.Response(200, json={"message": {"DOI": doi, "link": []}})
+        return httpx.Response(200, json={"results": [], "resultList": {"result": []}})
+
+    return connection, store, rid, svid, handler, doi
+
+
+def test_each_answers_candidates_keep_the_doi_that_answer_was_asked_for(tmp_path):
+    """Another version's row is opened against the candidate's own declared DOI, so every answer's candidates have
+    to carry the DOI that answer was asked for — on the path the app itself takes, not only in a test's call."""
+    location = {"url_for_pdf": "https://repo.example/a.pdf", "url": "https://repo.example/a", "version": "publishedVersion"}
+    connection, store, rid, svid, handler, doi = _lookup_library(tmp_path, location=location)
+
+    async def refused(url):
+        return FetchResult("http_error", final_url=url, http_status=403)
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await acquisition.acquire_for_source(store, rid, svid, client, tmp_path / "papers",
+                                                        "synthetic@example.org", None, refused, web_search=False)
+
+    run(check())
+    rows = store.pdf_candidates(svid)
+    assert rows and all(c["declared_doi"] == doi for c in rows)
+    connection.close()
+
+
+def test_an_address_that_once_served_another_paper_is_read_again_before_its_file_is_kept(tmp_path):
+    """A provider calling an address a verified copy of this version does not undo what was read there. The file in
+    hand is read first, and the answer is that file's: new content at the same address can still be kept."""
+    location = {"url_for_pdf": "https://repo.example/a.pdf", "url": "https://repo.example/a", "version": "publishedVersion"}
+    connection, store, rid, svid, handler, doi = _lookup_library(tmp_path, location=location)
+    store.record_file_verdict(svid, location["url_for_pdf"], "an-older-file",
+                              {"verdict": "mismatch", "fields": [], "dois": [], "page": None})
+    pages = [f"https://doi.org/{doi}\nSYNTHETIC full text"]
+
+    async def fetcher(url):
+        return FetchResult("ok", data=make_pdf(pages), final_url=url, http_status=200)
+
+    async def check():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            return await acquisition.acquire_for_source(store, rid, svid, client, tmp_path / "papers",
+                                                        "synthetic@example.org", None, fetcher, web_search=False)
+
+    assert run(check())["asset_id"] and store.has_asset(svid), "the file in hand named this record and was refused"
+    # The same address serving another paper again: nothing is attached and the candidate says why.
+    connection2, store2, rid2, svid2, handler2, doi2 = _lookup_library(tmp_path / "second", location=location)
+    (tmp_path / "second").mkdir(exist_ok=True)
+    store2.record_file_verdict(svid2, location["url_for_pdf"], "an-older-file",
+                               {"verdict": "mismatch", "fields": [], "dois": [], "page": None})
+    pages = ["Another paper entirely\n10.9/other.1"]
+
+    async def second():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler2)) as client:
+            return await acquisition.acquire_for_source(store2, rid2, svid2, client, tmp_path / "papers2",
+                                                       "synthetic@example.org", None, fetcher, web_search=False)
+
+    assert run(second())["asset_id"] is None and not store2.has_asset(svid2)
+    assert store2.pdf_candidates(svid2)[0]["error_code"] == "identity_mismatch"
+    connection.close()
+    connection2.close()
+
+
+@pytest.mark.parametrize("url", [
+    "https://content.openalex.org:8443/works/W7.pdf",       # another origin, same host name
+    "https://user@content.openalex.org/works/W7.pdf",       # the request would go elsewhere
+    "https://content.openalex.org/works/W7.pdf?api_key=x",  # a key already in the address
+    "https://content.openalex.org/redirect?to=W7.pdf",      # not the documented path
+    "http://content.openalex.org/works/W7.pdf",             # not https
+    "https://content.openalex.org.evil.example/works/W7.pdf",
+])
+def test_the_content_key_is_sent_to_one_address_shape_alone(url):
+    """The key is appended to an address a provider's answer gave, so nothing but that one origin and path may be
+    sent it: another port is another origin, a user name points the request elsewhere."""
+    assert acquisition._is_content_url(url) is False
+    assert acquisition._is_content_url(CONTENT_URL) is True
+
+
+def test_a_verdict_read_before_still_says_which_doi_the_page_carried(tmp_path):
+    """The same file met again is the same answer, and that answer has to carry what matched: a copy whose title
+    page named the published DOI was verified once and must not be refused the second time by a thinner record."""
+    connection, store, rid, svid = _preprint_with_a_journal_copy(tmp_path)
+    page = f"{PREPRINT_TITLE}\nhttps://doi.org/{PUBLISHED_DOI}\nSYNTHETIC text"
+    first = _attach_other(store, rid, svid, tmp_path, [page])
+    assert first[1] and store.source(first[1])["doi"] == PUBLISHED_DOI
+    held = store.file_verdict_of(svid, JOURNAL_URL, hashlib.sha256(make_pdf([page])).hexdigest())
+    assert (held["verdict"], held["dois"]) == ("match", [PUBLISHED_DOI])
+    connection.close()

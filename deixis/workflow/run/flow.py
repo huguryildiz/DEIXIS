@@ -3078,7 +3078,7 @@ class ResearchFlow:
             found = await acquisition.acquire_for_source(
                 self.store, run["research_id"], source["id"], self.deps.http, settings.papers_dir, settings.contact_email, None,
                 self.deps.fetch_pdf, core_key=CONNECTORS["core"].api_key(), web_search=False, other_versions=other_versions,
-                elsevier_key=CONNECTORS["scopus"].api_key(),
+                elsevier_key=CONNECTORS["scopus"].api_key(), openalex_key=CONNECTORS["openalex"].api_key(),
                 xml_fetcher=self.deps.fetch_xml, recovery_dir=settings.recovery_dir,
                 openalex_budget=self._openalex_budget_of(run["id"]), workflow_run_id=run["id"],
                 # A run queued before the download order had a rule carries none, and keeps the order it would

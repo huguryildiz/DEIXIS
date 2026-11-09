@@ -484,6 +484,9 @@ EMPTY_BECAUSE = {
     "owner_review_findings": "no review can be started until B2",
     "owner_review_decisions": "no review can be started until B2",
     "passage_embeddings": "needs an embedding model; none is configured",
+    "file_identity_verdicts": "written when a downloaded file's own title page is read, which needs that same lookup",
+    "openalex_content_attempts": "written only by OpenAlex's content route, which the same lookup reaches and which"
+                                 " needs the metered key none is set for here",
     "pdf_candidates": "written when a PDF fetch is refused and another open copy is looked up; the fake fetcher never refuses",
     "pdf_discovery_runs": "same lookup as pdf_candidates",
     "pdf_skips": "written when a person chooses 'Continue without PDF' for a waiting work, which this flow does not",

@@ -805,4 +805,90 @@ CREATE TABLE followup_turn_attachment_bindings (
   PRIMARY KEY (attachment_id, ordinal)
 ) WITHOUT ROWID;
 """),
+    24: Step("0024_file_verdicts.sql", True, """\
+-- A downloaded file's own verdict, and the OpenAlex content route's own outcome. Both are kept apart from the
+-- provider rows that already exist: `pdf_candidates.identity_status` is what a provider claimed and is overwritten
+-- every time the route answers again, so a file the title-page check refused would come back as attachable; and a
+-- content answer is not a lookup answer, so it must not be written where the code reads which routes a record still
+-- has unanswered. A candidate also keeps the DOI the answer that declared it asked for, so another version's row is
+-- opened against the candidate's own declared DOI instead of the record-level mapping, and both route tables learn
+-- the content route's own provider name: SQLite cannot change a CHECK in place, so each is rebuilt by the 12-step
+-- procedure (every row copied unchanged, the indexes recreated after the rename; no trigger reads either table).
+-- `openalex_content` is a name of its own and not `openalex` on purpose: the code asks which routes a record still
+-- has unanswered by each provider's newest row, and a content answer must never stand in for the DOI lookup's.
+CREATE TABLE pdf_discovery_runs_new (
+  id TEXT PRIMARY KEY,
+  research_id TEXT NOT NULL REFERENCES researches(id),
+  source_version_id TEXT NOT NULL REFERENCES source_versions(id),
+  provider TEXT NOT NULL CHECK (provider IN ('unpaywall', 'openalex', 'openalex_content', 'crossref', 'core', 'europepmc', 'elsevier', 'web_search')),
+  query_text TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'zero_results', 'auth_required', 'rate_limited', 'timeout', 'parse_error', 'failed')),
+  result_count INTEGER NOT NULL DEFAULT 0,
+  http_status INTEGER,
+  error_code TEXT,
+  created_at TEXT NOT NULL,
+  finished_at TEXT,
+  other_title_count INTEGER NOT NULL DEFAULT 0,
+  retry_after TEXT,
+  attempt_id TEXT
+);
+INSERT INTO pdf_discovery_runs_new SELECT id, research_id, source_version_id, provider, query_text, status,
+ result_count, http_status, error_code, created_at, finished_at, other_title_count, retry_after, attempt_id
+ FROM pdf_discovery_runs;
+DROP TABLE pdf_discovery_runs;
+ALTER TABLE pdf_discovery_runs_new RENAME TO pdf_discovery_runs;
+CREATE INDEX pdf_discovery_source ON pdf_discovery_runs(source_version_id, created_at);
+CREATE UNIQUE INDEX pdf_discovery_attempt ON pdf_discovery_runs(attempt_id) WHERE attempt_id IS NOT NULL;
+
+CREATE TABLE pdf_candidates_new (
+  id TEXT PRIMARY KEY,
+  source_version_id TEXT NOT NULL REFERENCES source_versions(id),
+  discovery_run_id TEXT NOT NULL REFERENCES "pdf_discovery_runs"(id),
+  provider TEXT NOT NULL CHECK (provider IN ('unpaywall', 'openalex', 'openalex_content', 'crossref', 'core', 'europepmc', 'elsevier', 'web_search')),
+  candidate_url TEXT NOT NULL,
+  landing_url TEXT,
+  version_label TEXT,
+  license TEXT,
+  identity_status TEXT NOT NULL CHECK (identity_status IN ('doi_verified', 'title_verified', 'unverified', 'mismatch')),
+  version_status TEXT NOT NULL CHECK (version_status IN ('match', 'different', 'uncertain')),
+  access_status TEXT NOT NULL CHECK (access_status IN ('not_attempted', 'downloaded', 'http_error', 'not_pdf', 'too_large', 'timeout', 'blocked_url', 'wrong_type', 'failed')),
+  http_status INTEGER,
+  error_code TEXT,
+  final_url TEXT,
+  discovered_at TEXT NOT NULL,
+  attempted_at TEXT,
+  declared_doi TEXT,
+  UNIQUE (source_version_id, provider, candidate_url)
+);
+INSERT INTO pdf_candidates_new SELECT id, source_version_id, discovery_run_id, provider, candidate_url, landing_url,
+ version_label, license, identity_status, version_status, access_status, http_status, error_code, final_url,
+ discovered_at, attempted_at, NULL FROM pdf_candidates;
+DROP TABLE pdf_candidates;
+ALTER TABLE pdf_candidates_new RENAME TO pdf_candidates;
+CREATE INDEX pdf_candidates_source ON pdf_candidates(source_version_id, discovered_at);
+
+CREATE TABLE file_identity_verdicts (
+  source_version_id TEXT NOT NULL REFERENCES source_versions(id),
+  candidate_url TEXT NOT NULL,
+  sha256 TEXT NOT NULL,
+  verdict TEXT NOT NULL CHECK (verdict IN ('match', 'mismatch', 'unreadable')),
+  fields_json TEXT NOT NULL,
+  matched_doi TEXT,
+  page INTEGER,
+  checked_at TEXT NOT NULL,
+  PRIMARY KEY (source_version_id, candidate_url, sha256)
+) WITHOUT ROWID;
+
+CREATE TABLE openalex_content_attempts (
+  id TEXT PRIMARY KEY,
+  source_version_id TEXT NOT NULL REFERENCES source_versions(id),
+  work_id TEXT,
+  outcome TEXT NOT NULL CHECK (outcome IN ('attachable', 'not_attached', 'tei_only', 'no_content', 'no_key', 'no_work_id', 'quota_exhausted', 'failed')),
+  reason TEXT,
+  http_status INTEGER,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX openalex_content_source ON openalex_content_attempts(source_version_id, created_at);
+"""),
 }

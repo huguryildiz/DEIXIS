@@ -2608,7 +2608,7 @@ def create_app(
                 store, research_id, source_version_id, request.app.state.http, settings.papers_dir,
                 settings.contact_email, os.environ.get("SERPAPI_API_KEY"), request.app.state.fetch_pdf,
                 core_key=os.environ.get("CORE_API_KEY"), xml_fetcher=request.app.state.fetch_xml,
-                elsevier_key=os.environ.get("SCOPUS_API_KEY"),
+                elsevier_key=os.environ.get("SCOPUS_API_KEY"), openalex_key=CONNECTORS["openalex"].api_key(),
                 recovery_dir=settings.recovery_dir,
             )
         except ValueError as exc:
@@ -2625,21 +2625,30 @@ def create_app(
         candidate = next((c for c in store.pdf_candidates(source_version_id) if c["id"] == candidate_id), None)
         if candidate is None:
             raise HTTPException(404, "PDF candidate is not listed for this source")
-        if candidate["version_status"] != "uncertain" or candidate["identity_status"] not in ("doi_verified", "title_verified"):
+        # A copy this code has already read a file for counts beside a provider's own claim: the content route
+        # reaches a record with no DOI to verify against, and there the file is the evidence. Which file it is
+        # decided by what arrives now, not by what that address once served, so a refusal is not a dead end.
+        claimed = candidate["identity_status"] in ("doi_verified", "title_verified")
+        read_before = bool(store.file_verdicts(source_version_id, candidate["candidate_url"]))
+        if candidate["version_status"] != "uncertain" or not (claimed or read_before):
             raise HTTPException(422, "Only a version-uncertain candidate whose DOI or title matches this source can be confirmed")
         if candidate["provider"] == "europepmc":
             # Europe PMC's full text is XML drawn as a PDF by code (SW21); it is attached only by the version rule.
             raise HTTPException(422, "A Europe PMC full text is attached only when its version matches this record")
         if store.has_asset(source_version_id):
             raise HTTPException(409, "This source already has a PDF")
-        result = await acquisition.attach_confirmed_candidate(store, source_version_id, candidate, settings.papers_dir,
-                                                              request.app.state.fetch_pdf, research_id=research_id,
-                                                              recovery_dir=settings.recovery_dir,
-                                                              elsevier_key=os.environ.get("SCOPUS_API_KEY"),
-                                                              contact_email=settings.contact_email)
+        result, verdict = await acquisition.attach_confirmed_candidate(
+            store, source_version_id, candidate, settings.papers_dir, request.app.state.fetch_pdf,
+            research_id=research_id, recovery_dir=settings.recovery_dir,
+            elsevier_key=os.environ.get("SCOPUS_API_KEY"), openalex_key=CONNECTORS["openalex"].api_key(),
+            contact_email=settings.contact_email, require_match=not claimed)
         if result.status != "ok":
             reason = f"HTTP {result.http_status}" if result.status == "http_error" else result.status.replace("_", " ")
             raise HTTPException(502, f"No PDF was retrieved from this link ({reason})")
+        # The file was fetched and read, and its own first pages do not name this record: the version was the
+        # person's to confirm, which paper the file is was not. What was read is stored with the file's digest.
+        if verdict is not None and (verdict["verdict"] == "mismatch" or (not claimed and verdict["verdict"] != "match")):
+            raise HTTPException(422, "The file's own title page does not name this record")
         return research_view(store, research_id)
 
     @app.get("/api/zotero/collections")

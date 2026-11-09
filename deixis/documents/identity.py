@@ -85,11 +85,13 @@ def verify_file(pages: list[str], target: dict[str, Any], published_doi: str | N
                     its title together with its first author and its venue;
       `mismatch`  — the page carries a readable title page that names another paper;
       `unreadable`— no text could be read from the pages given, so nothing is claimed either way.
-    `fields` names what matched and `page` the physical page it matched on (1 for the first).
+    `fields` names what matched, `dois` which of the wanted DOIs the page carried (empty unless `doi` matched), and
+    `page` the physical page it matched on (1 for the first). A caller that must know *which* version it has reads
+    `dois`: a page naming the published DOI is the published copy, which a title match alone never shows.
     """
     head = [page for page in pages[:TITLE_PAGE_LIMIT]]
     if not any(page and page.strip() for page in head):
-        return {"verdict": "unreadable", "fields": [], "page": None}
+        return {"verdict": "unreadable", "fields": [], "dois": [], "page": None}
     wanted = {doi for doi in (normalize_doi(target.get("doi")), normalize_doi(published_doi)) if doi}
     title = title_key(target.get("title"))
     # The first author's family name as the record stores it; a file names the authors on its title page in any
@@ -102,11 +104,11 @@ def verify_file(pages: list[str], target: dict[str, Any], published_doi: str | N
         if not page or not page.strip():
             continue
         body = f" {title_key(page)} "
-        if wanted & identifiers_in(page):
-            return {"verdict": "match", "fields": ["doi"], "page": number}
+        if found := wanted & identifiers_in(page):
+            return {"verdict": "match", "fields": ["doi"], "dois": sorted(found), "page": number}
         named = [field for field, value in (("title", title), ("author", family), ("venue", venue))
                  if value and len(value.split()) >= (MIN_TITLE_WORDS if field == "title" else 1)
                  and f" {value} " in body]
         if {"title", "author", "venue"} <= set(named):
-            return {"verdict": "match", "fields": named, "page": number}
-    return {"verdict": "mismatch", "fields": [], "page": None}
+            return {"verdict": "match", "fields": named, "dois": [], "page": number}
+    return {"verdict": "mismatch", "fields": [], "dois": [], "page": None}

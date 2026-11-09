@@ -84,10 +84,10 @@ const VERSIONS: Record<string, string> = { publishedVersion: 'published version'
 const versionText = (label: string | null) => (label ? VERSIONS[label] ?? label : 'version not stated')
 // A lookup recorded without a request (a missing key or contact setting, the closed OpenAlex budget), as the backend's
 // acquisition.py writes it; computed here from the stored rows, not from the page's code.
-const NOT_SENT_CODES = ['missing_contact_email', 'missing_core_key', 'missing_serpapi_key']
+const NOT_SENT_CODES = ['missing_contact_email', 'missing_core_key', 'missing_elsevier_key', 'missing_openalex_key', 'missing_serpapi_key']
 const notSent = (d: Discovery) => NOT_SENT_CODES.includes(d.error_code ?? '') || (d.error_code === 'quota_exhausted' && d.http_status === null)
 const listed = (names: string[]) => (names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0])
-const PROVIDERS: Record<string, string> = { unpaywall: 'Unpaywall', openalex: 'OpenAlex', crossref: 'Crossref', core: 'CORE', europepmc: 'Europe PMC', web_search: 'Web Search' }
+const PROVIDERS: Record<string, string> = { unpaywall: 'Unpaywall', openalex: 'OpenAlex', openalex_content: 'OpenAlex full text', crossref: 'Crossref', core: 'CORE', europepmc: 'Europe PMC', web_search: 'Web Search' }
 
 // The cases share one research; each still runs when an earlier one fails, so one run shows every failure.
 test.describe('S12: report, Citation and Source details panels', () => {

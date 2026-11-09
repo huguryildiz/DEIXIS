@@ -1805,15 +1805,21 @@ class Store:
             (oid, f"{provider}_version", key, provider, ts),
         )
 
-    def open_lookup_version(self, research_id: str, svid: str, version_label: str, landing_url: str | None) -> str:
+    def open_lookup_version(self, research_id: str, svid: str, version_label: str, landing_url: str | None,
+                            doi: str | None = None, doi_from: str | None = None) -> str:
         """Open the record's own row for a declared other version of the same work, so a copy of that version can be
         attached to it instead of to the published record.
 
-        Built with `_insert_other_version`'s pattern: the title and the authors are the work's, and neither the DOI
-        nor the abstract is copied, because both describe the version the record itself is. The row is a member of
-        the research the way a provider's other versions are — never a candidate of its own, so it is not screened
-        a second time — and it does not head the work. Called again with the same version label it opens nothing
-        and returns the row it opened the first time.
+        Built with `_insert_other_version`'s pattern: the title and the authors are the work's, and the abstract is
+        not copied, because it describes the version the record itself is. The row is a member of the research the
+        way a provider's other versions are — never a candidate of its own, so it is not screened a second time —
+        and it does not head the work. Called again with the same version label it opens nothing and returns the
+        row it opened the first time.
+
+        `doi` is the DOI this other version was verified to be (the file's own title page named it) and `doi_from`
+        where that relation came from; both are recorded with the row, so a journal copy no longer sits on a row
+        that says nothing about which DOI it is. It is left off when another record already holds that DOI, since
+        two rows claiming one DOI would make the library say the work is in it twice.
         """
         key = f"{svid}:{version_label}"
         existing = self.find_source_by_identifier("pdf_lookup_version", key)
@@ -1824,22 +1830,32 @@ class Store:
             return existing
         source = self.source(svid)
         ts, oid = now(), new_id("srv")
+        held = bool(doi) and self.conn.execute(
+            "SELECT 1 FROM source_versions WHERE doi = ? LIMIT 1", (doi,)).fetchone() is not None
+        own = doi if doi and not held else None
         with transaction(self.conn):
             self.conn.execute(
                 "INSERT INTO source_versions (id, work_id, title, authors_json, year, venue, version_label,"
                 " publication_type, doi, landing_url, oa_pdf_url, oa_pdf_version, origin, created_at, volume, issue, pages)"
-                " VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, NULL, ?, NULL, ?, 'provider', ?, ?, ?, ?)",
+                " VALUES (?, ?, ?, ?, NULL, NULL, ?, ?, ?, ?, NULL, ?, 'provider', ?, ?, ?, ?)",
                 (oid, source["work_id"], source["title"], dumps(source["authors"]), version_label,
-                 source["publication_type"], landing_url, version_label, ts, source["volume"], source["issue"],
+                 source["publication_type"], own, landing_url, version_label, ts, source["volume"], source["issue"],
                  source["pages"]),
             )
             self.conn.execute(
                 "INSERT INTO identifier_mappings (source_version_id, scheme, value, provider, retrieved_at)"
                 " VALUES (?, 'pdf_lookup_version', ?, 'pdf_lookup', ?)", (oid, key, ts),
             )
+            if own:
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO identifier_mappings (source_version_id, scheme, value, provider, retrieved_at)"
+                    " VALUES (?, 'doi', ?, 'pdf_lookup', ?)", (oid, own, ts),
+                )
             self.add_to_corpus(research_id, oid, "search", None, candidate=False)
             self._event(research_id, "lookup_version_opened",
-                        {"source_version_id": oid, "of": svid, "version_label": version_label})
+                        {"source_version_id": oid, "of": svid, "version_label": version_label,
+                         **({"doi": own, "doi_from": doi_from} if own else {}),
+                         **({"doi_held_elsewhere": doi} if doi and held else {})})
         return oid
 
     def _insert_provider_record(self, provider: str, record: Any, payload_path: str | None) -> tuple[str, str]:
@@ -2794,23 +2810,101 @@ class Store:
         """The latest time any run was told OpenAlex's daily budget returns; the budget is the key's, not a run's."""
         return self.conn.execute("SELECT MAX(reset_at) FROM openalex_budget_runs").fetchone()[0]
 
-    def record_pdf_candidates(self, svid: str, run_id: str, candidates: list[Any]) -> list[dict[str, Any]]:
+    def record_pdf_candidates(self, svid: str, run_id: str, candidates: list[Any],
+                              declared_doi: str | None = None) -> list[dict[str, Any]]:
+        """The candidates one answer declared. `declared_doi` is the DOI that answer was asked for, kept on each row.
+
+        A candidate's own declared DOI is what another version's row is opened against: the record-level
+        `published_doi` mapping says what the record claims about itself, not what a provider declared for this
+        address, and one answer can carry copies of two versions.
+        """
         with transaction(self.conn):
             for candidate in candidates:
                 self.conn.execute(
                     "INSERT INTO pdf_candidates (id, source_version_id, discovery_run_id, provider, candidate_url,"
-                    " landing_url, version_label, license, identity_status, version_status, access_status, discovered_at)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_attempted', ?)"
+                    " landing_url, version_label, license, identity_status, version_status, access_status, discovered_at,"
+                    " declared_doi)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'not_attempted', ?, ?)"
                     " ON CONFLICT(source_version_id, provider, candidate_url) DO UPDATE SET"
                     " discovery_run_id = excluded.discovery_run_id, provider = excluded.provider,"
                     " landing_url = COALESCE(excluded.landing_url, pdf_candidates.landing_url),"
                     " version_label = COALESCE(excluded.version_label, pdf_candidates.version_label),"
                     " license = COALESCE(excluded.license, pdf_candidates.license),"
+                    " declared_doi = COALESCE(excluded.declared_doi, pdf_candidates.declared_doi),"
                     " identity_status = excluded.identity_status, version_status = excluded.version_status",
                     (new_id("pdc"), svid, run_id, candidate.provider, candidate.url, candidate.landing_url,
-                     candidate.version_label, candidate.license, candidate.identity_status, candidate.version_status, now()),
+                     candidate.version_label, candidate.license, candidate.identity_status, candidate.version_status, now(),
+                     declared_doi),
                 )
         return self.pdf_candidates(svid)
+
+    def provider_record_id(self, svid: str, provider: str) -> str | None:
+        """The id a provider's own record of this version carries (`identifier_mappings`), if it was found there:
+        OpenAlex's `W…` for a record OpenAlex answered with, and so on."""
+        row = self.conn.execute(
+            "SELECT value FROM identifier_mappings WHERE source_version_id = ? AND scheme = ? ORDER BY id LIMIT 1",
+            (svid, provider),
+        ).fetchone()
+        return row[0] if row else None
+
+    def record_file_verdict(self, svid: str, url: str, sha256: str, verdict: dict[str, Any]) -> None:
+        """What this file's own title page said about this record (`documents.identity.verify_file`).
+
+        Kept apart from the candidate's `identity_status`, which is the provider's claim and is written again every
+        time a route answers: a file the check refused stays refused at the same address. Only new file content
+        (another digest) is a new verdict; the same content checked again records the same answer.
+        """
+        with transaction(self.conn):
+            self.conn.execute(
+                "INSERT INTO file_identity_verdicts (source_version_id, candidate_url, sha256, verdict, fields_json,"
+                " matched_doi, page, checked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(source_version_id, candidate_url, sha256) DO UPDATE SET"
+                " verdict = excluded.verdict, fields_json = excluded.fields_json, matched_doi = excluded.matched_doi,"
+                " page = excluded.page, checked_at = excluded.checked_at",
+                (svid, url, sha256, verdict["verdict"], dumps(verdict.get("fields") or []),
+                 (verdict.get("dois") or [None])[0], verdict.get("page"), now()),
+            )
+
+    def file_verdict_of(self, svid: str, url: str, sha256: str) -> dict[str, Any] | None:
+        """The verdict recorded for this exact file at this address, if this content was read for this record before."""
+        row = row_dict(self.conn.execute(
+            "SELECT * FROM file_identity_verdicts WHERE source_version_id = ? AND candidate_url = ? AND sha256 = ?",
+            (svid, url, sha256),
+        ).fetchone())
+        # The stored row keeps the one DOI that matched; the answer is given back in the shape the check returns,
+        # so a copy verified earlier is judged by the same fields as one read just now.
+        return row | {"fields": json.loads(row["fields_json"]),
+                      "dois": [row["matched_doi"]] if row["matched_doi"] else []} if row else None
+
+    def file_verdicts(self, svid: str, url: str) -> list[dict[str, Any]]:
+        """Every verdict recorded for files fetched from this address for this record, newest first."""
+        return [dict(r) | {"fields": json.loads(r["fields_json"])} for r in self.conn.execute(
+            "SELECT * FROM file_identity_verdicts WHERE source_version_id = ? AND candidate_url = ?"
+            " ORDER BY checked_at DESC", (svid, url),
+        )]
+
+    def file_refused(self, svid: str, url: str) -> dict[str, Any] | None:
+        """The newest refusal of a file fetched from this address for this record, if the check ever read another paper
+        on its title page. A refusal stands until the address serves different content."""
+        return next((v for v in self.file_verdicts(svid, url) if v["verdict"] == "mismatch"), None)
+
+    def record_openalex_content(self, svid: str, work_id: str | None, outcome: str, reason: str | None = None,
+                                http_status: int | None = None) -> str:
+        """One OpenAlex content attempt's own outcome. Not a `pdf_discovery_runs` row: a content answer is not a
+        lookup answer, and writing it there would stand in for the lookup's own result."""
+        oid = new_id("oac")
+        with transaction(self.conn):
+            self.conn.execute(
+                "INSERT INTO openalex_content_attempts (id, source_version_id, work_id, outcome, reason, http_status,"
+                " created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (oid, svid, work_id, outcome, reason, http_status, now()),
+            )
+        return oid
+
+    def openalex_content_attempts(self, svid: str) -> list[dict[str, Any]]:
+        return [dict(r) for r in self.conn.execute(
+            "SELECT * FROM openalex_content_attempts WHERE source_version_id = ? ORDER BY created_at, rowid", (svid,),
+        )]
 
     def pdf_candidates(self, svid: str) -> list[dict[str, Any]]:
         return [dict(r) for r in self.conn.execute(
@@ -2837,6 +2931,12 @@ class Store:
             " AND COALESCE(json_extract(error_json, '$.url'), ?) = ? ORDER BY finished_at DESC LIMIT 1",
             (f"fetch:{svid}", url, url),
         ).fetchone())
+
+    def note_candidate_reason(self, candidate_id: str, code: str) -> None:
+        """Why a candidate that was downloaded was not published: the file was read and it is not this record, or
+        the version it was declared as could not be confirmed in it. The file itself is not kept."""
+        with transaction(self.conn):
+            self.conn.execute("UPDATE pdf_candidates SET error_code = ? WHERE id = ?", (code, candidate_id))
 
     def record_pdf_attempt(self, candidate_id: str, result: Any) -> None:
         with transaction(self.conn):

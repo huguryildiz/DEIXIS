@@ -130,6 +130,17 @@ export function SourceRow({ source, busy, picked, onPick, readsVersion, citedCla
   </tr>
 }
 
+// Why a file that came down was not kept. The words say what was checked and nothing more: the file was read, or
+// it was not; which version it is was never settled by anyone.
+const fileReasonText: Record<string, string> = {
+  identity_mismatch: 'the file’s title page does not name this record',
+  identity_unreadable: 'no text could be read from the file’s first pages',
+  version_unsettled: 'which version this file is was not settled',
+  published_doi_unconfirmed: 'the published DOI is not on the file’s title page',
+  published_doi_unknown: 'this record names no published DOI to check',
+  refused_before: 'a file read at this address did not name this record',
+}
+
 // One row per lookup service: its checks collapse into a try count, and the files it offered sit in its row.
 function PdfLookupTable({ source, busy, onAttachCandidate }: { source: Source; busy: boolean; onAttachCandidate: (candidateId: string) => void }) {
   const discoveries = source.access.pdf_discoveries
@@ -141,8 +152,13 @@ function PdfLookupTable({ source, busy, onAttachCandidate }: { source: Source; b
       const checks = discoveries.filter(d => d.provider === provider)
       const files = candidates.filter(c => c.provider === provider)
       const last = checks[checks.length - 1]
-      const result = files.some(c => c.access_status === 'downloaded') ? { tone: 'ok', text: t('PDF retrieved') }
+      // A file that came down but was not kept — its own title page named another paper, or its version could not
+      // be settled — is not a retrieved PDF, and the content route's own outcome is the only place a copy served
+      // as an XML this reader does not render is written down.
+      const content = provider === 'openalex_content' ? source.access.content_route : null
+      const result = files.some(c => c.access_status === 'downloaded' && !c.error_code) ? { tone: 'ok', text: t('PDF retrieved') }
         : files.length ? { tone: 'warn', text: t(files.length === 1 ? '{n} file not usable' : '{n} files not usable', { n: files.length }) }
+        : content?.outcome === 'tei_only' ? { tone: 'warn', text: t('full text offered only in a format we do not read') }
         : last?.status === 'zero_results' ? { tone: '', text: t('No match') }
         : last?.status === 'completed' ? { tone: '', text: t('completed') }
         : { tone: 'bad', text: t((last?.status ?? 'failed').replaceAll('_', ' ')) }
@@ -154,7 +170,7 @@ function PdfLookupTable({ source, busy, onAttachCandidate }: { source: Source; b
         <td className={result.tone && `is-${result.tone}`}>{result.text}</td>
         <td className="pdf-lookup-count">{checks.length}</td>
         <td>{files.length ? files.map(candidate => <span className="pdf-lookup-file" key={candidate.id}>
-          {t(candidate.version_status === 'match' ? 'version verified' : candidate.version_status === 'different' ? 'different version' : 'version uncertain')} · {candidate.access_status === 'http_error' ? `HTTP ${candidate.http_status ?? '?'}` : t(candidate.access_status.replace('_', ' '))}{candidate.identity_status === 'unverified' && ` · ${t('title does not match')}`}{' · '}<a href={candidate.candidate_url} target="_blank" rel="noreferrer">{t('Open file')}</a>{candidate.version_status === 'uncertain' && candidate.provider !== 'europepmc' && (candidate.identity_status === 'doi_verified' || candidate.identity_status === 'title_verified') && !source.access.assets.length && <>{' · '}<button disabled={busy} onClick={() => onAttachCandidate(candidate.id)} title={t('Open the file first and check that it is this version of the work, not a preprint or another edition. An attached file’s pages can be cited in answers.')}>{t('Same version, attach')}</button></>}
+          {t(candidate.version_status === 'match' ? 'version verified' : candidate.version_status === 'different' ? 'different version' : 'version uncertain')} · {candidate.access_status === 'http_error' ? `HTTP ${candidate.http_status ?? '?'}` : t(candidate.access_status.replace('_', ' '))}{candidate.identity_status === 'unverified' && candidate.file_verdict !== 'match' && ` · ${t('title does not match')}`}{candidate.access_status === 'downloaded' && candidate.error_code && ` · ${t(fileReasonText[candidate.error_code] ?? candidate.error_code.replaceAll('_', ' '))}`}{' · '}<a href={candidate.candidate_url} target="_blank" rel="noreferrer">{t('Open file')}</a>{candidate.version_status === 'uncertain' && candidate.provider !== 'europepmc' && (candidate.identity_status === 'doi_verified' || candidate.identity_status === 'title_verified' || candidate.file_verdict === 'match') && !source.access.assets.length && <>{' · '}<button disabled={busy} onClick={() => onAttachCandidate(candidate.id)} title={t('Open the file first and check that it is this version of the work, not a preprint or another edition. An attached file’s pages can be cited in answers.')}>{t('Same version, attach')}</button></>}
         </span>) : notes.join('; ')}</td>
       </tr>
     })}</tbody>

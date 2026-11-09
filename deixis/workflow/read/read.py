@@ -12,6 +12,7 @@ from deixis.domain import canonical
 from deixis.domain.reason_codes import reason
 from deixis.storage.db import transaction
 from deixis.workflow.screen import abstract_stage
+from deixis.workflow.features.tables import table_cells
 from deixis.workflow.read import adjudication, background_fetch, fulltext
 from deixis.workflow.run import fast_path
 from deixis.workflow.search import small_batch
@@ -261,6 +262,9 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
     held = flow._held[run_id] = _Held(run["scope_revision"])
     fetches: dict[str, asyncio.Task] = {}
     reads: dict[str, asyncio.Task] = {}
+    # A source's cell calls, sent as each work is read and in nothing this stage waits for (P11b).
+    cells: dict[str, asyncio.Task] = {}
+    table_id = (run.get("target") or {}).get("table_id")
     model: asyncio.Task | None = None
     deeper_task: asyncio.Task | None = None
     timer: asyncio.Task | None = None
@@ -350,6 +354,39 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
         finally:
             held.wake.set()
 
+    def open_deep_calls() -> int:
+        """What the deeper screening still owes, read from its frozen window and its plan if it has one."""
+        return table_cells.deep_calls(deep, deep_state.get("abstract_plan"),
+                                      len(held.closed.get(deep_state["prefix"], set())),
+                                      deeper_task is not None and deeper_task.done())
+
+    def offer_cells(works: list[dict[str, Any]]) -> None:
+        """Ask for the empty cells of each work this run has read, with the calls the reading no longer needs.
+
+        Offered only after the top-N screening ended and never after the cutoff, so a cell call cannot delay the
+        step that decides what to read. Each source's calls are reserved against this run's allowance as they are
+        admitted and owned by the cell lane from the moment they are sent: this stage does not wait for them at its
+        cutoff, does not cancel them on its error path, and the answer does not wait for them either.
+        """
+        if table_id is None or not read_allowed or cutoff() or not screened.is_set():
+            return
+        settled = table_cells.read_versions(works)
+        if not settled:
+            return
+        table_cells.rows_for_read(store, rid)
+        owed = table_cells.reserve(run, policy, sum(1 for task in reads.values() if task.done()), open_deep_calls())
+        planned = table_cells.planned_versions(store, run_id, key)
+        for wid, svid in settled.items():
+            # The version this run's own plan read, so a decision that speaks for the work from another of its
+            # versions (a person's newer file, say) does not send a call about a file this run never opened.
+            if wid not in reads or planned.get(wid) != svid or svid in cells or flow.cell_lane.out(run_id, svid):
+                continue
+            columns = table_cells.empty_columns(store, table_id, svid)
+            if not columns or not table_cells.spare(flow, run, table_cells.call_keys(key, svid, columns), owed):
+                continue
+            cells[svid] = flow.cell_lane.send(run_id, svid, table_cells.fill_source(
+                flow, run, scope, key, svid, columns, cutoff))
+
     async def alarm() -> None:
         deadline = fast_path.stage_deadline(store, run, "read")
         if deadline is None:
@@ -435,6 +472,7 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                 if read_allowed and has_text and wid not in reads and not cutoff():
                     reads[wid] = asyncio.create_task(flow._fulltext_adjudication(
                         run, scope, batch_key=f"{key}:read:{wid}", order=[work["head"]], read_limit=1, cutoff=cutoff))
+            offer_cells(works)
             active = {task for task in [model, deeper_task, *fetches.values(), *reads.values()]
                       if task is not None and not task.done()}
             if not active:
@@ -544,6 +582,8 @@ async def execute(flow: Any, run: dict[str, Any], scope: dict[str, Any], vocabul
                 handed_off.add(wid)
         flow.background_fetch.wake()
     except BaseException as error:
+        # The cell calls are not in this list: the lane owns them, so a failing stage neither waits for nor
+        # cancels a call that was already sent.
         await _unwind(flow, run, held, error, [task for task in [model, deeper_task, *reads.values(),
                                                                  *fetches.values()] if task is not None])
     finally:

@@ -76,6 +76,7 @@ from deixis.workflow.search import vocabulary as vocabulary_rules
 from deixis.workflow.screen.decisions import DecisionStore, HumanDecisionStands
 from deixis.workflow.read.equations import CROP_ROUTES, EXTRACTION_FAILED, MAX_ATTEMPTS as EQUATION_ATTEMPTS, crop_answered, equation_fallback_field, equation_state
 from deixis.workflow.run.store import ACTIVE_RUN_STATUSES, NotFound, RunInProgress, Store, seed_source_ids
+from deixis.workflow.features.tables.cell_lane import CellLane
 from deixis.workflow.features.tables.tables import MAX_COLUMNS_PER_CALL, MAX_FILL_SOURCES, TableStore, check_value
 
 log = logging.getLogger("deixis.workflow.flow")  # the name before the folders; log names stay
@@ -241,6 +242,12 @@ class RunStopped(Exception):
     """The run ended early (pause, cancel or recorded failure); state is already persisted."""
 
 
+def _cut_if(stop: Callable[[], bool]) -> None:
+    """A send gate that abandons the call, unsent, when its stage's deadline has passed."""
+    if stop():
+        raise _ReadCutoff
+
+
 class OptionalStepFailed(Exception):
     """An optional model step could not produce a result; the run continues without it."""
 
@@ -335,6 +342,8 @@ class ResearchFlow:
         if getattr(deps, "fetch_slots", None) is None:
             deps.fetch_slots = FetchSlots()
         self.background_fetch = BackgroundFetchLane(self)
+        # Owner of the cell calls a reading sends, so they outlive the run that sent them (P11b).
+        self.cell_lane = CellLane()
 
     async def execute(self, run_id: str) -> None:
         # Resume and retry use the same flow and run ID; quota may have reset between executions.
@@ -4523,6 +4532,9 @@ class ResearchFlow:
             self._fail(run_id, "no_text")
         self._checkpoint(run_id)
         if not self._save_cells(run, output, {target["column_id"]: target["cell_version"]}, recheck=True):
+            if svid not in tables.active_rows(target["table_id"]):
+                # The person removed the row while the call was out: nothing was written and nothing is wrong.
+                self._fail(run_id, "cell_unavailable")
             self._fail(run_id, "invalid_model_output", {"step": "cell_recheck", "issues": output.get("issues")})
 
     async def _table_column_recheck(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
@@ -4639,8 +4651,19 @@ class ResearchFlow:
 
     async def _extraction(self, run: dict[str, Any], scope: dict[str, Any], key: str, svid: str, columns: list[dict[str, Any]],
                           limit: int, limiter: ModelCallLimiter | None = None,
-                          earlier_issues: list[dict[str, str]] | None = None) -> dict[str, Any] | None:
-        """One cell extraction step for one source; None when the source has no stored text to give."""
+                          earlier_issues: list[dict[str, str]] | None = None,
+                          stop: Callable[[], bool] | None = None,
+                          unbounded_window: bool = False,
+                          optional: bool = False) -> dict[str, Any] | None:
+        """One cell extraction step for one source; None when the source has no stored text to give.
+
+        `stop` is read in the synchronous moment before the call is sent: a cell call offered during a reading whose
+        deadline passed while its passages were being chosen is closed unsent (`{"cutoff": True}`). With
+        `unbounded_window` the read stage's send window does not bound this call, so a call already sent is waited
+        for however long it takes instead of being cut at the stage's drain. An `optional` call raises
+        `OptionalStepFailed` instead of pausing or failing its run, so a reading-time call's own failure costs that
+        source's cells and nothing else.
+        """
         if self._left_out(run, svid):
             return None  # excluded since the fill was planned: no step opens for it
         step = self.store.step(run["id"], key, "model:cell_extraction")
@@ -4664,7 +4687,10 @@ class ResearchFlow:
         if earlier_issues:
             target["earlier_issues"] = earlier_issues
         return await self._model_step(run, scope, key, "cell_extraction", source_ids=[svid], passage_rows=given,
-                                      extraction_target=target, limiter=limiter)
+                                      extraction_target=target, limiter=limiter,
+                                      send_gate=None if stop is None else (lambda: _cut_if(stop)),
+                                      send_window=(lambda: None) if unbounded_window else None,
+                                      optional=optional)
 
     async def _cell_passages(self, run: dict[str, Any], scope: dict[str, Any], key: str, svid: str, columns: list[dict[str, Any]],
                              available: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
@@ -4777,9 +4803,11 @@ class ResearchFlow:
         # An automatic re-read after PDF text arrived may replace a value a model or the system made.
         refresh = not recheck and run["kind"] == "table_fill" and bool((run.get("target") or {}).get("auto_refresh"))
         tables = TableStore(self.store)
+        saved = 0
         for cell in cells:
             column = columns[cell["column_id"]]
-            tables.save_model_output(
+            # None: the source stopped being a row of the table while the model answered, so nothing was written.
+            saved += tables.save_model_output(
                 run["research_id"], target["table_id"], column["column_id"], target["source_id"], column_revision=column["revision"],
                 state=cell["state"], value=check_value(column, cell["state"], cell["value"]), note=(cell["note"] or "").strip() or None,
                 reading_depth=depth, output_status=status, links=contracts.cell_links(payload, cell), run_id=run["id"],
@@ -4787,8 +4815,8 @@ class ResearchFlow:
                 resolved_model=session["resolved_model"], scope_revision=payload["scope_revision"],
                 cell_version_at_request=cell_versions.get(column["column_id"]), recheck=recheck, refresh=refresh,
                 unverified_fill=unverified_fill,
-            )
-        return len(cells)
+            ) is not None
+        return saved
 
     # ---- candidates -------------------------------------------------------------------
     def _candidate_send_gate(self, run: dict[str, Any]) -> None:
@@ -5578,7 +5606,8 @@ class ResearchFlow:
                             requested_model: str | None, adapter: ModelAdapter, base: str, developer: str, message: str,
                             schema: dict[str, Any], reasoning_effort: str | None,
                             limiter: ModelCallLimiter | None,
-                            resend: Callable[[], bool] | None = None) -> tuple[str | None, ModelStepResult]:
+                            resend: Callable[[], bool] | None = None,
+                            send_window: Callable[[], float | None] | None = None) -> tuple[str | None, ModelStepResult]:
         """Send one model call, resending under a lower ceiling after a rate-limit response.
 
         Resends reuse the stored StepInput because their model input is identical, and each gets its own model session.
@@ -5592,7 +5621,7 @@ class ResearchFlow:
         sent_effort = (reasoning_effort or None) if getattr(adapter, "sends_reasoning_effort", False) else None
         while True:
             step_attempt = self.store.conn.execute("SELECT attempt FROM run_steps WHERE id = ?", (step_id,)).fetchone()[0]
-            remaining = self._send_window(run_id)
+            remaining = send_window() if send_window is not None else self._send_window(run_id)
             if remaining is not None and remaining <= 0:
                 raise _ReadCutoff  # not sent, so no session is opened and nothing is charged
             session = self.store.start_model_session(rid, run_id, step_id, step_input_id, connection, requested_model,
@@ -5624,7 +5653,7 @@ class ResearchFlow:
             )
             await limiter.reduce()
             self._checkpoint(run_id)
-            window = self._send_window(run_id)
+            window = send_window() if send_window is not None else self._send_window(run_id)
             if window is not None and window <= RATE_LIMIT_BACKOFF_SECONDS * attempts:
                 raise _ReadCutoff  # The resend would come after the read cutoff
             self.store.service_waiting(run_id, connection, attempts, RATE_LIMIT_BACKOFF_SECONDS * attempts)
@@ -5865,6 +5894,7 @@ class ResearchFlow:
                           max_message_chars: int | None = None,
                           resend_guard: Callable[[], bool] | None = None,
                           send_gate: Callable[[], None] | None = None,
+                          send_window: Callable[[], float | None] | None = None,
                           attempt_record: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
                           candidate_target: dict[str, Any] | None = None,
                           step_input_builder: Callable[[str], dict] | None = None,
@@ -5916,7 +5946,7 @@ class ResearchFlow:
             self.store.finish_step(step["id"], "cancelled", error_code="model_read_cutoff", error="read_cutoff")
             return {"cutoff": True}
 
-        window = self._send_window(run_id)
+        window = send_window() if send_window is not None else self._send_window(run_id)
         if window is not None:
             try:
                 if window <= 0:
@@ -6016,7 +6046,10 @@ class ResearchFlow:
             # All opt-in gates, payload/record construction and session start share a synchronous
             # section: no await after health/limiter waits or between these checks and the send.
             if send_gate is not None:
-                send_gate()
+                try:
+                    send_gate()
+                except _ReadCutoff:
+                    return cut_before_send()
             if recheck is not None:
                 # The last look before each send (slice 16), the first one and every resend: a person may have
                 # decided a work while the connection was checked or while an earlier attempt was out. The candidates
@@ -6144,6 +6177,7 @@ class ResearchFlow:
                     run_id, rid, step["id"], payload["step_input_id"], connection, requested_model, adapter, base,
                     developer, message, schema, reasoning_effort, limiter,
                     unchanged if recheck is not None or resend_guard is not None else None,
+                    send_window,
                 )
             except _ReadCutoff:
                 return cut_before_send()

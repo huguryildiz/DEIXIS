@@ -116,6 +116,11 @@ class Worker:
             if lane is not None:
                 lane.stop()
                 await self._background_task
+            # The cell calls a reading sent are the lane's, not a run's: they are ended here, before the library
+            # closes, and a cancelled call's step is left for the next start to mark `outcome_unknown`.
+            cells = getattr(self.flow, "cell_lane", None)
+            if cells is not None:
+                await cells.close()
 
     async def _run_forever(self) -> None:
         try:

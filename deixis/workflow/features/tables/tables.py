@@ -636,8 +636,12 @@ class TableStore:
                           value: Any, note: str | None, reading_depth: str, output_status: str, links: list[dict[str, Any]],
                           run_id: str, step_id: str, step_input_id: str, model_connection: str, resolved_model: str | None,
                           scope_revision: int, cell_version_at_request: int | None, recheck: bool, refresh: bool = False,
-                          unverified_fill: bool = False) -> str:
+                          unverified_fill: bool = False) -> str | None:
         """A valid fill result for an empty cell becomes its value; every other model result waits as a proposal.
+
+        Nothing is written when the source is no longer a row of the table, and None says so: a person who removed
+        the row while the model answered keeps it removed, whichever writer the answer belongs to. The check is in
+        this transaction because every caller chose its rows before its call was sent.
 
         With `refresh` (an automatic re-read after PDF text arrived) a valid result also replaces a current value a
         model or the system made from the abstract or metadata, when the result cites PDF text still in use, the column
@@ -652,6 +656,10 @@ class TableStore:
         if unverified_fill and (state != "not_verified" or links or output_status != "unverified_draft"):
             raise ValueError("An unverified fill is a not_verified value without links")
         with transaction(self.conn):
+            try:
+                self._active_row(table_id, svid)
+            except InvalidTableInput:
+                return None
             cell = self._cell(table_id, column_id, svid, create=True)
             existing = self.conn.execute(
                 "SELECT id FROM cell_revisions WHERE cell_id = ? AND step_input_id = ? AND author = 'model'", (cell["id"], step_input_id)

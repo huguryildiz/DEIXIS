@@ -69,6 +69,7 @@ def after_discovery(store: Store, run: dict[str, Any]) -> None:
     if (run["budget"].get("fast_path") or {}).get("after_discovery") != "study_table":
         return
     from deixis.workflow.features.report import report_pipeline
+    from deixis.workflow.features.tables.tables import InvalidTableInput
 
     rid = run["research_id"]
     reason = None
@@ -85,6 +86,10 @@ def after_discovery(store: Store, run: dict[str, Any]) -> None:
         except RevisionConflict:
             rollback_savepoint(store.conn, savepoint)
             reason = "run_active"
+        except InvalidTableInput:
+            # The reading filled every cell of the table this run opened before it read: there is no run to queue and
+            # the table is recorded ready by the chain itself, so nothing is skipped here.
+            store.conn.execute(f"RELEASE {savepoint}")
         else:
             store.conn.execute(f"RELEASE {savepoint}")
     if reason:

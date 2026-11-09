@@ -537,6 +537,8 @@ const codeStepLabels: Record<string, string> = {
   small_batch_plan: 'Reading batch plan (code)',
   small_batch_summary: 'Reading batch summary (code)',
   source_routing: 'Choosing the sources to search (code)',
+  study_table_columns_accepted: 'Adding the proposed evidence columns (code)',
+  study_table_open: 'Opening the evidence table before reading (code)',
   user_search_query: 'Your search query (code)',
   vocabulary: 'Search words from the question (code)',
   // No longer written; kept so stored runs that hold the empty step still read in plain words.

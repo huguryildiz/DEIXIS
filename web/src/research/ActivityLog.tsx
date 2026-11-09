@@ -163,6 +163,7 @@ const plainEventTexts: Record<string, string> = {
   stage_decision_recorded: 'Source decision recorded',
   stage_decision_undone: 'Source decision undone',
   study_table_skipped: 'Study table skipped',
+  study_table_opened: 'Study table opened before reading',
   study_table_ready: 'Study table ready',
   study_table_columns_accepted: 'Study table columns accepted',
   study_table_stopped: 'Study table stopped',

@@ -4564,12 +4564,18 @@ class ResearchFlow:
                 "column_id": target["column_id"], "planned": len(planned), "proposed": proposed, "no_answer": no_answer,
                 "skipped": skipped, "rows_without_text": target["rows_without_text"]})
 
-    async def _table_columns(self, run: dict[str, Any], scope: dict[str, Any]) -> None:
-        """Suggest columns from the question and the rows' titles and abstracts; nothing is added to the table."""
+    async def _table_columns(self, run: dict[str, Any], scope: dict[str, Any], *, key: str = "table_columns",
+                             rows: list[str] | None = None, optional: bool = False) -> dict[str, Any]:
+        """Suggest columns from the question and the rows' titles and abstracts; nothing is added to the table.
+
+        `rows` names the sources the suggestions are framed by; by default the table's own rows. A discovery run opens
+        its table before anything is screened, so it passes the ranked works instead. `optional` keeps a failed
+        proposal from stopping the run: the table already holds the question's own columns.
+        """
         run_id, table_id = run["id"], run["target"]["table_id"]
         tables = TableStore(self.store)
         columns = self._live_columns(run, tables)
-        rows = tables.active_rows(table_id)[:MAX_FILL_SOURCES]
+        rows = (tables.active_rows(table_id) if rows is None else rows)[:MAX_FILL_SOURCES]
         abstracts = [p for svid in rows for p in self.store.passages_for(svid) if p["kind"] == "abstract"]
         target = {"table_id": table_id, "source_id": None, "columns": [extraction_column(c) for c in columns], "passage_scope": None}
         from deixis.workflow.run import intent
@@ -4577,11 +4583,52 @@ class ResearchFlow:
         if frame := intent.frame_for(self.store.research(run["research_id"]), scope):
             target["comparison_frame"] = frame
         self._checkpoint(run_id)
-        output = await self._model_step(run, scope, "table_columns", "table_columns", source_ids=rows, passage_rows=abstracts,
-                                        extraction_target=target)
+        output = await self._model_step(run, scope, key, "table_columns", source_ids=rows, passage_rows=abstracts,
+                                        extraction_target=target, optional=optional)
         self._checkpoint(run_id)
-        if output.get("invalid"):
+        if output.get("invalid") and not optional:
             self._fail(run_id, "invalid_model_output", {"step": "table_columns", "issues": output["issues"]})
+        return output
+
+    async def _study_table(self, run: dict[str, Any], scope: dict[str, Any], listing: dict[str, Any]) -> None:
+        """Open the study table and its columns before the read stage, so a cell can be written as a work is read.
+
+        The Evidence table's columns have to exist while the first answer is built. Three steps, all inside this
+        discovery run, because the engine runs one run of a research at a time and a table of its own could not run
+        beside it:
+
+        1. the question's own columns, written by code, so the table is never without columns;
+        2. one model call that proposes more, framed by the ranked works' abstracts (nothing is screened yet). It is
+           optional: a failure is recorded and the run reads on with the question's columns;
+        3. the proposal's columns are added beside them.
+
+        Called while the ranking stage's clock is open, so the proposal's time is charged to that stage and none of
+        the reading time. Nothing is opened for a research that asks only for a list of sources, nor for one whose
+        reading leads to an answer while the automatic study table is off; a research whose own deliverable is the
+        table opens it whatever that setting says.
+        """
+        run_id, rid = run["id"], run["research_id"]
+        fast = run["budget"].get("fast_path") or {}
+        if fast.get("after_discovery") != "study_table" and not (
+                fast.get("auto_answer") and self.deps.settings.study_table == "auto"):
+            return
+        from deixis.workflow.features.tables import table_open
+        opened = small_batch.save_code(self, run, "study_table_open", "code:study_table_open",
+                                       lambda: table_open.open_table(self.store, rid, scope["question"], f"{table_open.KEY_PREFIX}:{run_id}"))
+        table_id = opened["table_id"]
+        if (run.get("target") or {}).get("table_id") != table_id:
+            # The table the cell steps of this run read is named on the run itself, where every table step looks for it.
+            run["target"] = {**(run.get("target") or {}), "table_id": table_id}
+            self.store.update_run(run_id, target_json=dumps(run["target"]))
+        try:
+            output = await self._table_columns(run, scope, key="study_table_columns", optional=True,
+                                               rows=[item["head"] for item in listing["items"][:MAX_FILL_SOURCES]])
+        except OptionalStepFailed:
+            return  # the question's own columns stand; the reading goes on without proposed ones
+        if output.get("invalid"):
+            return  # the proposal's own step holds why; nothing is accepted and nothing is recorded as accepted
+        small_batch.save_code(self, run, "study_table_columns_accepted", "code:study_table_columns",
+                              lambda: table_open.accept_proposed(self.store, rid, table_id, run_id, f"{table_open.KEY_PREFIX}:{run_id}"))
 
     def _live_columns(self, run: dict[str, Any], tables: TableStore) -> list[dict[str, Any]]:
         try:

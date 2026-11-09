@@ -6,9 +6,11 @@ active, since a running fill keeps the plan it stored and a report keeps the sna
 never added back, and a source excluded later keeps its row; the table marks it as not in the report.
 
 Then the empty cells of those rows are filled by the ordinary fill path: one `table_fill` run per table, marked
-`auto_rows` and `included_only`, queued only while no run of the research is queued, running or pause_requested and no
-background PDF fetch of it is out. A paused run does not hold it (unlike that re-read): `create_run` already lets a
-run start beside a paused one. A cell is due when its row is one the app added, its source is still included, its
+`auto_rows` and `included_only`, queued only while no run of the research is queued, running, pausing or paused and
+no background PDF fetch of it is out. A paused run holds it: the table exists from the discovery run on, and a fill
+queued beside a paused reading would be the research's active run, so the reading could not be resumed.
+
+A cell is due when its row is one the app added, its source is still included, its
 column existed when the row was added or was accepted by the study-table chain, and no fill of the table planned it
 since the row was added; so a fill that failed, paused or was cancelled is not queued again, and a person fills those
 cells from the table. An answer that fails only its own checks (a quote not found, say) is asked once more by the
@@ -35,6 +37,8 @@ from deixis.workflow.features.tables.table_sources import FOLLOWS_TABLE_SOURCES,
 from deixis.workflow.features.tables.tables import InvalidTableInput, TableStore
 
 log = logging.getLogger("deixis.table_rows")
+# A run of the research that a fill must not start beside; a paused one included (see `_busy`).
+BUSY = (*ACTIVE_RUN_STATUSES, "paused")
 
 _FOLLOWING = ("FROM evidence_tables et JOIN researches rs ON rs.id = et.research_id"
               " JOIN selections s ON s.research_id = et.research_id AND s.state = 'included'"
@@ -70,9 +74,14 @@ DUE_CELLS_SQL = (
 
 
 def _busy(store: Any, rid: str) -> bool:
+    """Whether this research has work in hand that a fill must not start beside.
+
+    A paused run holds it too: the table exists from the discovery run on, so a fill queued beside a
+    paused reading would become that research's active run and the person could no longer resume their reading.
+    """
     return bool(store.conn.execute(
-        f"SELECT 1 FROM runs WHERE research_id = ? AND status IN ({', '.join('?' * len(ACTIVE_RUN_STATUSES))}) LIMIT 1",
-        (rid, *ACTIVE_RUN_STATUSES),
+        f"SELECT 1 FROM runs WHERE research_id = ? AND status IN ({', '.join('?' * len(BUSY))}) LIMIT 1",
+        (rid, *BUSY),
     ).fetchone() or store.conn.execute(
         "SELECT 1 FROM fast_path_background_fetches WHERE research_id = ? AND status IN ('queued', 'running') LIMIT 1", (rid,)
     ).fetchone())

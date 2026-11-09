@@ -893,10 +893,14 @@ class TableStore:
                                          key, {"table_id": table_id})
 
     def column_suggestions(self, table_id: str) -> dict[str, Any] | None:
-        """The latest suggested columns for this table; a suggestion joins the table only when the user adds it."""
+        """The latest suggested columns for this table; a suggestion joins the table only when the user adds it.
+
+        Any run that named this table may hold the proposal: the `table_columns` run a person starts, or the
+        discovery run that opens the table before it reads.
+        """
         row = self.conn.execute(
-            "SELECT s.id, s.run_id, s.output_json FROM runs r JOIN run_steps s ON s.run_id = r.id WHERE r.kind = 'table_columns'"
-            " AND json_extract(r.target_json, '$.table_id') = ? AND s.kind = 'model:table_columns' AND s.status = 'succeeded'"
+            "SELECT s.id, s.run_id, s.output_json FROM runs r JOIN run_steps s ON s.run_id = r.id"
+            " WHERE json_extract(r.target_json, '$.table_id') = ? AND s.kind = 'model:table_columns' AND s.status = 'succeeded'"
             " ORDER BY s.finished_at DESC LIMIT 1", (table_id,)
         ).fetchone()
         if row is None:

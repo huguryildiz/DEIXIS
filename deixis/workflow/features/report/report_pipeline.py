@@ -13,7 +13,7 @@ from typing import Any
 
 from deixis.domain.rules import RevisionConflict
 from deixis.storage.db import dumps, transaction
-from deixis.workflow.features.tables import table_sources
+from deixis.workflow.features.tables import table_open, table_sources
 from deixis.workflow.run.store import Store
 from deixis.workflow.features.tables.tables import MAX_FILL_SOURCES, InvalidTableInput, TableStore
 
@@ -35,27 +35,65 @@ def after_answer(store: Store, run: dict[str, Any]) -> None:
         start(store, run["research_id"], f"answer:{answer['id']}")
     except RevisionConflict:
         pass  # nothing included, or another run is active; the person can rebuild the table from the Answer screen's link
+    except InvalidTableInput:
+        pass  # the reading filled every cell of the table it opened; `start` recorded the table as ready
 
 
 def start(store: Store, research_id: str, idempotency_key: str | None) -> dict[str, Any]:
-    """Create the table of the research's sources and queue the column proposal that opens the chain.
+    """Adopt or create the table of the research's sources and queue the first run of the chain.
 
     The table holds the included sources and the works read from their abstracts only; either kind is enough to
     build it. `pipeline.included` keeps its name in stored runs and counts all of them.
+
+    A discovery run opens this table and its columns before it reads anything, so the chain adopts that
+    table. It then proposes no columns — the question's own are in it and a model has already added to them — and opens
+    with the fill of whatever cells the reading left empty. A table with no column yet (one whose research was searched
+    before the table came first, or whose opening failed) still begins with the proposal. A table the reading already
+    filled is recorded as ready, and the refusal says there is nothing to queue.
     """
     tables = TableStore(store)
     base = f"{PIPELINE}:{idempotency_key}" if idempotency_key else None
+    ready: dict[str, Any] | None = None
     with transaction(store.conn):
         included = table_sources.table_sources(store, research_id)
         if not included:
             raise RevisionConflict("Include at least one source before building the study table")
-        table_id = tables.create_table(research_id, "Study table", None, None, f"{base}:table" if base else None)
-        run = tables.request_column_suggestions(research_id, table_id, f"{base}:columns" if base else None)
-        if not (run["target"] or {}).get("pipeline"):
-            rounds = min(MAX_FILL_ROUNDS, math.ceil(len(included) / MAX_FILL_SOURCES))
-            run = _mark(store, run, {"id": run["id"], "rounds": rounds, "round": 0, "scope_revision": run["scope_revision"],
-                                     "included": len(included)})
+        table_id = table_open.chain_table(store, research_id) or tables.create_table(
+            research_id, table_open.TITLE, None, None, f"{base}:table" if base else None)
+        rounds = min(MAX_FILL_ROUNDS, math.ceil(len(included) / MAX_FILL_SOURCES))
+        # Which run opens the chain is read from the table's history, not from the columns it holds now: a repeated
+        # start must return the same run, and a column accepted meanwhile would otherwise change the branch.
+        run, round_ = None, 1
+        if _opened_before_reading(store, table_id):
+            try:
+                run = tables.request_fill(research_id, table_id, None, True, tables._table(research_id, table_id)["version"],
+                                          f"{base}:fill:1" if base else None, included_only=True)
+            except InvalidTableInput:
+                # The reading filled every cell of it. The table is what the chain was for, so it is recorded ready
+                # here; the event is written after this transaction, so the refusal below does not roll it back.
+                ready = {"table_id": table_id, "stale_cells": _stale_cells(store, table_id),
+                         "sources_beyond_limit": len(included) > rounds * MAX_FILL_SOURCES}
+        else:
+            run = tables.request_column_suggestions(research_id, table_id, f"{base}:columns" if base else None)
+            round_ = 0
+        if run is not None and not (run["target"] or {}).get("pipeline"):
+            run = _mark(store, run, {"id": run["id"], "rounds": rounds, "round": round_,
+                                     "scope_revision": run["scope_revision"], "included": len(included)})
+    if ready is not None:
+        store._event(research_id, "study_table_ready", ready)
+        raise InvalidTableInput("No cell of this table needs filling")
     return run
+
+
+def _opened_before_reading(store: Store, table_id: str) -> bool:
+    """Whether a discovery run opened this table and its columns before it read anything.
+
+    Read from the stored step, so the answer does not change while the chain runs: a table opened that way has its
+    question columns and whatever a model proposed, and the chain only fills what the reading left empty.
+    """
+    return bool(store.conn.execute(
+        "SELECT 1 FROM run_steps WHERE kind = 'code:study_table_open' AND status = 'succeeded'"
+        " AND json_extract(output_json, '$.table_id') = ? LIMIT 1", (table_id,)).fetchone())
 
 
 def _mark(store: Store, run: dict[str, Any], pipeline: dict[str, Any]) -> dict[str, Any]:

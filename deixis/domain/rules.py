@@ -127,6 +127,9 @@ FULLTEXT_QUOTE_MIN_CHARS = 12
 # is given them.
 CRITERION_CALLS = 3
 SEARCH_QUERY_CALLS = 4
+# The study table a discovery run opens before it reads proposes its columns with one call and one repair, given on
+# top of the preset like the two above: the reading's own calls must not be short because the table was opened.
+STUDY_TABLE_COLUMN_CALLS = 2
 TEST_EFFORT_BUDGETS = {
     "quick": EffortBudget(max_model_calls=6, max_provider_requests=3, max_candidates=20,
                           max_answer_passages=16, results_per_query=10),

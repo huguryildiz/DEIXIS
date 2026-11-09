@@ -812,10 +812,17 @@ def _web_pdf_links(result: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(links))
 
 
-async def web_lookup(client: httpx.AsyncClient, doi: str, title: str, api_key: str | None) -> Lookup:
+async def web_lookup(client: httpx.AsyncClient, doi: str, title: str, api_key: str | None,
+                     query: str | None = None) -> Lookup:
+    """Scholar results for this record, as PDF candidates whose title matches it.
+
+    `query` is for a caller that narrows the search itself — the open-web full-text search sends the title with the
+    first author — and the results are matched on the record's title either way, so a narrower query cannot admit
+    another paper's PDF.
+    """
     if not api_key:
         return Lookup("auth_required", [], error_code="missing_serpapi_key")
-    query = f'"{title}"'
+    query = query or f'"{title}"'
     params = {"engine": "google_scholar", "q": query, "num": 20, "hl": "en", "api_key": api_key}
     try:
         response = await client.get(SERPAPI_URL, params=params, timeout=60)
@@ -1189,6 +1196,17 @@ async def _attach_pdf(store: Store, source_version_id: str, data: bytes, papers_
     return store.add_asset_with_pages(source_version_id, sha, len(data), path.name, origin, retrieved_from, filename,
                                       extraction, pdf.EXTRACTION_VERSION, pdf.chunk_page,
                                       input_observation=read.observation)
+
+
+async def attach_searched_file(store: Store, source_version_id: str, data: bytes, papers_dir: Any, url: str, *,
+                               research_id: str | None = None, recovery_dir: Path | None = None) -> str:
+    """Attach a file the open-web full-text search found and the file check named as this record itself.
+
+    Only its caller's own gate decides that (`workflow.read.fulltext_search`): the file's title page has to carry
+    this record's DOI, because nothing else about a search result says which version it is.
+    """
+    return await _attach_pdf(store, source_version_id, data, papers_dir, "download", url,
+                             research_id=research_id, recovery_dir=recovery_dir)
 
 
 async def attach_confirmed_candidate(store: Store, source_version_id: str, candidate: dict[str, Any], papers_dir: Any,

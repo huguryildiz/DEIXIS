@@ -388,9 +388,14 @@ async def run_report(flow: ResearchFlow, run: dict[str, Any], scope: dict[str, A
     # Before the synthesis: which sub-question each column of the table answers for how many rows, and which
     # sub-questions the sections are about to be written without any evidence for. A record, not an input.
     save_code(flow, run, COVERAGE_KEY, COVERAGE_KIND, lambda: coverage.coverage(snapshot, frozen_plan))
-    # The plan has just named the sub-questions, so the file-request list can be decided for the works whose
-    # automatic routes already settled. The other half of the decision arrives later, when the background round
-    # ends, and calls the same function.
+    # The plan has just named the sub-questions, so the works whose DOI routes already answered without a file can
+    # be acted on: first the open-web search is reserved for them, then the person is asked about whatever that
+    # search has already had its turn on. The other half of the decision arrives later, when the background round
+    # ends, and calls the same two functions.
+    from deixis.providers.registry import CONNECTORS
+    from deixis.workflow.read import fulltext_search
+
+    fulltext_search.advance(flow.store, research_id, CONNECTORS["serpapi"].api_key())
     file_asks.advance(flow.store, research_id)
 
     if not flow.store.research(research_id)["title"] and refresh is None:

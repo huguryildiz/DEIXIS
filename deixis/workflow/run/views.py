@@ -843,6 +843,12 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
     answered_in_queue = queue_answers(store, research_id)
     sources = []
     work_flags = store.research_works_retracted(research_id)
+    # The open-web recovery search's own row, where one was reserved for a record. It is the one route whose state no
+    # candidate and no download attempt can state: a search the depth or the missing key ruled out sends no request,
+    # so it leaves nothing behind but this row.
+    recovery_searches = {row["source_version_id"]: dict(row) for row in conn.execute(
+        "SELECT source_version_id, status, outcome, reason FROM fulltext_searches WHERE research_id = ?"
+        " ORDER BY position, rowid", (research_id,))}
     for row in conn.execute(
         "SELECT m.added_by, m.created_at AS added_at, s.*, sel.state, sel.origin AS selection_origin, sel.version AS selection_version, sel.proposal,"
         " (SELECT w.source_key FROM works w WHERE w.id = s.work_id) AS source_key,"
@@ -937,6 +943,7 @@ def _research_view(store: Store, research_id: str) -> dict[str, Any]:
                                  "host": run_card.fetch_host(fetch["final_url"]) or run_card.fetch_host(fetch["url"])}
                        if fetch else None, "other_copy": dict(other_copy) if other_copy else None,
                        "pdf_candidates": pdf_candidates, "content_route": content_route,
+                       "recovery_search": recovery_searches.get(svid),
                        "pdf_discoveries": store.pdf_discoveries(research_id, svid, retry_after=True)},
             "selection": {"state": row["state"], "origin": row["selection_origin"], "version": row["selection_version"],
                           "proposal": row["proposal"], "proposal_reason": row["proposal_reason"],

@@ -934,8 +934,10 @@ def test_the_title_page_check_says_what_matched_and_where():
     body = f"{ON_TITLE}\nAda Lovelace\nIFIP Networking 2008"
     assert identity.verify_file([f"preprint\nhttps://doi.org/10.1/synth.42"], TITLE_TARGET) == {
         "verdict": "match", "fields": ["doi"], "dois": ["10.1/synth.42"], "page": 1}
+    # `title_at_top` says the title began a line of that page rather than being named inside its text: what a
+    # route whose file came from an unvouched place reads before it attaches anything.
     assert identity.verify_file(["cover sheet of a repository", body], TITLE_TARGET) == {
-        "verdict": "match", "fields": ["title", "author", "venue"], "dois": [], "page": 2}
+        "verdict": "match", "fields": ["title", "author", "venue", "title_at_top"], "dois": [], "page": 2}
     # The title alone is not enough: the author and the venue have to be there too.
     assert identity.verify_file([ON_TITLE], TITLE_TARGET)["verdict"] == "mismatch"
     assert identity.verify_file([f"{OFF_TITLE}\n10.9/other.1"], TITLE_TARGET)["verdict"] == "mismatch"

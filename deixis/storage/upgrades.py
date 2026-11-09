@@ -915,4 +915,36 @@ CREATE TABLE person_file_asks (
 
 CREATE INDEX person_file_asks_research ON person_file_asks(research_id, position);
 """),
+    26: Step("0026_fulltext_searches.sql", False, """\
+-- The open-web search for a work's full text, as its own queue. The DOI routes' lane
+-- (`fast_path_background_fetches`) takes one row per run and work with two origins and could not carry a metered
+-- search of another kind. The row is written before the request goes out, so the depth's allowance is reserved by
+-- the asking; a work the allowance, the key or the depth rules out gets a `skipped` row with its reason, so the
+-- file-request list can tell "searched and found nothing" from "never searched".
+CREATE TABLE fulltext_searches (
+  id TEXT PRIMARY KEY,
+  research_id TEXT NOT NULL REFERENCES researches(id),
+  run_id TEXT NOT NULL REFERENCES runs(id),
+  report_id TEXT NOT NULL REFERENCES reports(id),
+  scope_revision INTEGER NOT NULL,
+  work_id TEXT NOT NULL REFERENCES works(id),
+  source_version_id TEXT NOT NULL REFERENCES source_versions(id),
+  rule TEXT NOT NULL,
+  axes_json TEXT NOT NULL,
+  query_text TEXT,
+  position INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'skipped', 'succeeded', 'failed', 'cancelled')),
+  outcome TEXT CHECK (outcome IS NULL OR outcome IN ('attached', 'candidate_listed', 'no_result', 'no_match',
+                                                     'no_key', 'allowance_spent', 'no_allowance', 'failed')),
+  reason TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  queued_at TEXT NOT NULL,
+  started_at TEXT,
+  finished_at TEXT
+);
+
+CREATE INDEX fulltext_searches_research ON fulltext_searches(research_id, position);
+CREATE UNIQUE INDEX fulltext_searches_one_per_work ON fulltext_searches(research_id, work_id, scope_revision)
+  WHERE status != 'cancelled';
+"""),
 }

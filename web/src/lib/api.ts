@@ -545,7 +545,7 @@ export type Source = {
   has_pdf_text: boolean
   // Some of that text was read with OCR from scanned pages.
   has_ocr_text: boolean
-  access: { abstract_passage_id: string | null; abstract_origin: string | null; oa_pdf_url: string | null; oa_pdf_version: string | null; assets: Asset[]; replaced_assets: ReplacedAsset[]; fetch: { status: string; error_code: string | null; http_status: number | null; host?: string | null } | null; other_copy: { status: string; error_code: string | null } | null; pdf_candidates: PdfCandidate[]; content_route?: { outcome: string; reason: string | null } | null; pdf_discoveries: PdfDiscovery[] }
+  access: { abstract_passage_id: string | null; abstract_origin: string | null; oa_pdf_url: string | null; oa_pdf_version: string | null; assets: Asset[]; replaced_assets: ReplacedAsset[]; fetch: { status: string; error_code: string | null; http_status: number | null; host?: string | null } | null; other_copy: { status: string; error_code: string | null } | null; pdf_candidates: PdfCandidate[]; content_route?: { outcome: string; reason: string | null } | null; recovery_search?: { status: string; outcome: string | null; reason: string | null } | null; pdf_discoveries: PdfDiscovery[] }
   selection: { state: 'included' | 'excluded' | 'pending'; origin: 'default' | 'model_proposal' | 'code_rule' | 'user'; version: number; proposal: string | null; proposal_reason: string | null; proposal_basis: string | null; user_reason: string | null; queue_answer: 'include' | 'criterion_not_met' | null }
   cited_in_latest_answer: boolean
   provider_records: string[]

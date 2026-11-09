@@ -70,6 +70,12 @@ def check(text: str, versions: list[dict[str, Any]]) -> str:
 # a file whose first page is a repository cover sheet. Past that a match is as likely to be a contents page or a
 # reference list as the paper itself.
 TITLE_PAGE_LIMIT = 3
+# How many of a page's first lines may bear the title. A title page prints the paper's title on a line of its own,
+# under at most a journal header or a download banner, so the title has to **begin** one of those lines — a page
+# that only mentions the title mid-sentence is naming another paper's work in its abstract, its introduction or
+# its reference list, and is not that paper's title page. A title wrapped over two lines is read with the lines
+# after it, which is why the test is "the text from this line on starts with the title", not "this line is it".
+TITLE_LINES = 5
 
 
 def verify_file(pages: list[str], target: dict[str, Any], published_doi: str | None = None) -> dict[str, Any]:
@@ -85,7 +91,10 @@ def verify_file(pages: list[str], target: dict[str, Any], published_doi: str | N
                     its title together with its first author and its venue;
       `mismatch`  — the page carries a readable title page that names another paper;
       `unreadable`— no text could be read from the pages given, so nothing is claimed either way.
-    `fields` names what matched, `dois` which of the wanted DOIs the page carried (empty unless `doi` matched), and
+    `fields` names what matched, with two more for a caller that must ask more than the bare DOI: a DOI match also
+    lists the title, author and venue the same page named, and `title_at_top` says the title began one of the
+    page's first lines rather than being mentioned inside its text. `dois` says which of the wanted DOIs the page
+    carried (empty unless `doi` matched), and
     `page` the physical page it matched on (1 for the first). A caller that must know *which* version it has reads
     `dois`: a page naming the published DOI is the published copy, which a title match alone never shows.
     """
@@ -104,11 +113,23 @@ def verify_file(pages: list[str], target: dict[str, Any], published_doi: str | N
         if not page or not page.strip():
             continue
         body = f" {title_key(page)} "
-        if found := wanted & identifiers_in(page):
-            return {"verdict": "match", "fields": ["doi"], "dois": sorted(found), "page": number}
         named = [field for field, value in (("title", title), ("author", family), ("venue", venue))
                  if value and len(value.split()) >= (MIN_TITLE_WORDS if field == "title" else 1)
                  and f" {value} " in body]
+        # Where the title sat, as a field of its own. A title page prints the paper's title at the top; a page that
+        # names this work further down is naming it in a reference, a contents list or a citing paragraph. Neither
+        # the verdict nor `dois` turns on this: it is reported so a route that must know whose page it is reading
+        # can ask for it (the open-web recovery search does).
+        head = [key for line in page.splitlines() if (key := title_key(line))][:TITLE_LINES]
+        at_top = "title" in named and any(" ".join(head[first:]).startswith(title) for first in range(len(head)))
+        if found := wanted & identifiers_in(page):
+            # What else the same page named is reported beside the DOI. A DOI alone does not say the page belongs
+            # to this record: another paper that cites this work prints this work's DOI, and often its whole title,
+            # in its own reference list, which a cover page or a short paper puts inside the title pages. A route
+            # whose file came from a place nobody vouched for asks for more than the DOI; the verdict is unchanged.
+            return {"verdict": "match", "fields": ["doi", *named, *(["title_at_top"] if at_top else [])],
+                    "dois": sorted(found), "page": number}
         if {"title", "author", "venue"} <= set(named):
-            return {"verdict": "match", "fields": named, "dois": [], "page": number}
+            return {"verdict": "match", "fields": [*named, *(["title_at_top"] if at_top else [])],
+                    "dois": [], "page": number}
     return {"verdict": "mismatch", "fields": [], "dois": [], "page": None}

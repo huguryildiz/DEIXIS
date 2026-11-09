@@ -6095,4 +6095,9 @@ export const tr: Record<string, string> = {
   '· {first}–{last} screened once': '· {first}–{last} arası bir kez taranır',
   '· {first}–{last} screened once, which takes longer': '· {first}–{last} arası bir kez taranır, bu da süreyi uzatır',
   'Works a model read at the abstract stage. The latest search read the top {n} of the ranked list, and list places {first}–{last} once.': 'Bir modelin özet aşamasında okuduğu eserler. Son arama sıralı listenin ilk {n} eserini, liste sırası {first}–{last} arasını da bir kez okudu.',
+  'A web search for this work’s full text is still to run.': 'Bu eserin tam metni için bir web araması henüz yapılacak.',
+  'No web search was sent for this work’s full text: no search service is connected.': 'Bu eserin tam metni için web araması gönderilmedi: bağlı bir arama servisi yok.',
+  'No web search was sent for this work’s full text: this depth sends none.': 'Bu eserin tam metni için web araması gönderilmedi: bu derinlik hiç arama göndermiyor.',
+  'No web search was sent for this work’s full text: the depth’s searches went to earlier works.': 'Bu eserin tam metni için web araması gönderilmedi: derinliğin aramaları daha önceki eserlere gitti.',
+  'file came down, none in use': 'dosya indi, kullanımda değil',
 }

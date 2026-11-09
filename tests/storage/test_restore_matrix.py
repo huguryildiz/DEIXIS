@@ -489,6 +489,7 @@ EMPTY_BECAUSE = {
                                  " needs the metered key none is set for here",
     "person_file_asks": "written when a frozen report plan leaves a sub-question open on a work whose automatic"
                         " routes settled without a file; this flow's sources all have their text",
+    "fulltext_searches": "written for the same works as person_file_asks, one row each before the search is sent",
     "pdf_candidates": "written when a PDF fetch is refused and another open copy is looked up; the fake fetcher never refuses",
     "pdf_discovery_runs": "same lookup as pdf_candidates",
     "pdf_skips": "written when a person chooses 'Continue without PDF' for a waiting work, which this flow does not",

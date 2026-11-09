@@ -90,6 +90,7 @@ export function SourceRow({ source, busy, picked, onPick, readsVersion, citedCla
       {source.access.assets.map(asset => <TextRecovery key={asset.id} asset={asset} sourceId={source.source_version_id} actionSlot={slots[asset.id] ?? null} />)}
       {[...ocrOffers.entries()].map(([assetId, offer]) => offer && <OcrNote key={assetId} offer={offer} />)}
       {source.access.replaced_assets.length > 0 && <p className="proposal"><Replace size={13} aria-hidden />{t(source.access.replaced_assets[0].original_filename ? 'Previous file {file} replaced on {date}. Evidence that cites it still opens it.' : 'Previous PDF replaced on {date}. Evidence that cites it still opens it.', { file: source.access.replaced_assets[0].original_filename ?? '', date: new Date(source.access.replaced_assets[0].removed_at).toLocaleDateString(uiLocale(), { dateStyle: 'medium' }) })}</p>}
+      {recoverySearchText(source) && <p className="proposal"><Search size={13} aria-hidden />{recoverySearchText(source)}</p>}
       {!finding && discoveries.length > 0 && <details className="source-provenance">
         <summary><ChevronRight size={14} className="source-provenance-chev" aria-hidden /><strong>{t(source.access.assets.length ? 'PDF attached' : 'No usable PDF found')}</strong><span>{lookupSummary}</span></summary>
         <PdfLookupTable source={source} busy={busy} onAttachCandidate={a.onAttachCandidate} />
@@ -141,6 +142,18 @@ const fileReasonText: Record<string, string> = {
   refused_before: 'a file read at this address did not name this record',
 }
 
+// The open-web recovery search, where it sent nothing or has not run yet. A search that ran leaves a service row in
+// the lookup table below, so only the states that leave nothing behind are written here.
+function recoverySearchText(source: Source): string | null {
+  const search = source.access.recovery_search
+  if (!search) return null
+  if (search.status === 'queued' || search.status === 'running') return t('A web search for this work’s full text is still to run.')
+  if (search.status !== 'skipped') return null
+  return t(search.outcome === 'no_key' ? 'No web search was sent for this work’s full text: no search service is connected.'
+    : search.outcome === 'no_allowance' ? 'No web search was sent for this work’s full text: this depth sends none.'
+    : 'No web search was sent for this work’s full text: the depth’s searches went to earlier works.')
+}
+
 // One row per lookup service: its checks collapse into a try count, and the files it offered sit in its row.
 function PdfLookupTable({ source, busy, onAttachCandidate }: { source: Source; busy: boolean; onAttachCandidate: (candidateId: string) => void }) {
   const discoveries = source.access.pdf_discoveries
@@ -156,7 +169,11 @@ function PdfLookupTable({ source, busy, onAttachCandidate }: { source: Source; b
       // be settled — is not a retrieved PDF, and the content route's own outcome is the only place a copy served
       // as an XML this reader does not render is written down.
       const content = provider === 'openalex_content' ? source.access.content_route : null
-      const result = files.some(c => c.access_status === 'downloaded' && !c.error_code) ? { tone: 'ok', text: t('PDF retrieved') }
+      // A file that came down is only this record's PDF while it is the file in use: one was removed, or an
+      // attach was cut off halfway, and neither is a retrieved PDF to claim.
+      const kept = files.some(c => c.access_status === 'downloaded' && !c.error_code)
+      const result = kept && source.access.assets.length ? { tone: 'ok', text: t('PDF retrieved') }
+        : kept ? { tone: 'warn', text: t('file came down, none in use') }
         : files.length ? { tone: 'warn', text: t(files.length === 1 ? '{n} file not usable' : '{n} files not usable', { n: files.length }) }
         : content?.outcome === 'tei_only' ? { tone: 'warn', text: t('full text offered only in a format we do not read') }
         : last?.status === 'zero_results' ? { tone: '', text: t('No match') }

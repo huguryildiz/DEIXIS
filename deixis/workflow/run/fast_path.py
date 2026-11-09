@@ -37,6 +37,10 @@ ACQUIRE_RULE = "fast_acquire_v1"
 # frozen in the policy so a later depth change cannot hand spent asks back. A run queued before the rule carries
 # neither key and asks for nothing: the list is opened only by a run whose policy names the rule.
 FILE_ASK_RULE = "file_ask_v1"
+# How many works one research may send an open-web full-text search for (`workflow.read.fulltext_search`): a metered
+# search, so the depth's own allowance, frozen in the policy and reserved before each request goes out. A run queued
+# before the rule carries neither key and sends none.
+FULLTEXT_SEARCH_RULE = "fulltext_search_v1"
 DEEP_SCREENING_WORKS = 100
 DEEP_SCREENING_EFFORTS = ("standard", "detailed")
 
@@ -55,6 +59,7 @@ class Mode(NamedTuple):
     rerank_pool: float  # the most records the reranker reads, as a multiple of N; a saved factor is kept under it
     rerank_point: str  # "before_list": the list waits for the reranker; "after_list": it is frozen first (Quick)
     file_asks: int  # the most works this depth asks the person for a file for, over the research's whole life
+    fulltext_searches: int  # the most works this depth sends an open-web full-text search for, over the same life
 
 
 MODES = {
@@ -65,14 +70,14 @@ MODES = {
                   # Quick shows its list without waiting for the reranker, so the reranker does not order that list:
                   # it reads a small group after the list is frozen, and the run keeps its scores to be measured.
                   # Quick asks for no file at all: it is the depth that answers from what it can reach itself.
-                  rerank_pool=2.0, rerank_point="after_list", file_asks=0),
+                  rerank_pool=2.0, rerank_point="after_list", file_asks=0, fulltext_searches=0),
     "standard": Mode((30, 45, 60, 120, 45), read_top=50, fulltext_works=20, keyword_record_cap=1000, chain_seeds=1,
                      backward_requests=4, forward_requests=8, boolean_plans=2, chain_rescue=5,
-                     rerank_pool=8.0, rerank_point="before_list", file_asks=3),
+                     rerank_pool=8.0, rerank_point="before_list", file_asks=3, fulltext_searches=3),
     "detailed": Mode((45, 90, 120, 270, 75), read_top=100, fulltext_works=40, keyword_record_cap=2000, chain_seeds=3,
                      backward_requests=8, forward_requests=16, boolean_plans=3, chain_rescue=10,
                      # 8 x 100 is past the reranker's own 400-record limit, so Deep reads the widest window there is.
-                     rerank_pool=8.0, rerank_point="before_list", file_asks=5),
+                     rerank_pool=8.0, rerank_point="before_list", file_asks=5, fulltext_searches=5),
 }
 
 
@@ -139,6 +144,7 @@ def freeze_budget(budget: dict[str, Any], effort: str, local_model: bool = False
         "forward_requests": mode.forward_requests, "forward_page_size": 25,
         "chain_in_flight": 5, "chain_rule": "fast_chain_v1", "acquire_rule": ACQUIRE_RULE,
         "file_ask_rule": FILE_ASK_RULE, "file_asks": mode.file_asks,
+        "fulltext_search_rule": FULLTEXT_SEARCH_RULE, "fulltext_searches": mode.fulltext_searches,
         "embedding_threads": 4, "fetch_slots": 12, "slot_refill": True, "read_drain_ms": 5000, "arrival_margin_ms": 5000,
         "checkpoint_ms": 5000, "floor_ratio": 0.25,
         # Search always gets at least its own base; an earlier overrun is charged to the later stages instead.

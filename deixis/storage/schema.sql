@@ -1,9 +1,9 @@
--- The whole library schema at version 25. A new library is made from this file in one transaction and
--- records versions 1 to 25; a library at an older version is brought here by the steps in storage/upgrades.py.
+-- The whole library schema at version 26. A new library is made from this file in one transaction and
+-- records versions 1 to 26; a library at an older version is brought here by the steps in storage/upgrades.py.
 -- A schema change edits this file, raises the version below and adds the upgrade step with that number.
 -- Objects are in the order the old migration chain (0001_schema.sql to 0016_abstract_rows.sql) and the upgrade steps
 -- after it created them: the triggers on one table fire in that order.
--- deixis:schema-version 25
+-- deixis:schema-version 26
 
 CREATE TABLE scope_revisions (
   research_id TEXT NOT NULL REFERENCES researches(id),
@@ -2543,3 +2543,37 @@ CREATE TABLE person_file_asks (
 );
 
 CREATE INDEX person_file_asks_research ON person_file_asks(research_id, position);
+
+-- One row per work this research sent, or declined to send, an open-web search for the full text of. Its own queue:
+-- `fast_path_background_fetches` takes one row per run and work with two origins and is the DOI routes' own lane,
+-- while this is a metered search of a different kind. The row is written **before** the request goes out, so the
+-- depth's allowance is reserved by the asking and a crash cannot spend it twice; a work the allowance, the key or
+-- the depth rules out gets a `skipped` row with its reason, so the file-request list can tell "searched and found
+-- nothing" from "never searched". One row per work per research, for the research's whole life.
+CREATE TABLE fulltext_searches (
+  id TEXT PRIMARY KEY,
+  research_id TEXT NOT NULL REFERENCES researches(id),
+  run_id TEXT NOT NULL REFERENCES runs(id),
+  report_id TEXT NOT NULL REFERENCES reports(id),
+  scope_revision INTEGER NOT NULL,
+  work_id TEXT NOT NULL REFERENCES works(id),
+  source_version_id TEXT NOT NULL REFERENCES source_versions(id),
+  rule TEXT NOT NULL,
+  axes_json TEXT NOT NULL,
+  query_text TEXT,
+  position INTEGER NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'skipped', 'succeeded', 'failed', 'cancelled')),
+  outcome TEXT CHECK (outcome IS NULL OR outcome IN ('attached', 'candidate_listed', 'no_result', 'no_match',
+                                                     'no_key', 'allowance_spent', 'no_allowance', 'failed')),
+  reason TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  queued_at TEXT NOT NULL,
+  started_at TEXT,
+  finished_at TEXT
+);
+
+CREATE INDEX fulltext_searches_research ON fulltext_searches(research_id, position);
+-- One search per work per scope revision, counting only the rows that stand: a search cancelled before it was sent
+-- (the run stopped, the question changed, the record left) spent nothing, so the work may be reserved again.
+CREATE UNIQUE INDEX fulltext_searches_one_per_work ON fulltext_searches(research_id, work_id, scope_revision)
+  WHERE status != 'cancelled';

@@ -10,6 +10,7 @@ from deixis.storage.db import dumps, new_id, now
 from deixis.workflow.features.report import report_coverage as coverage
 from deixis.workflow.features.report import report_file_asks as file_asks
 from deixis.workflow.features.report.report_store import ReportStore
+from deixis.workflow.read import fulltext_search
 from deixis.workflow.run import fast_path
 from deixis.workflow.features.tables.tables import TableStore
 from deixis.workflow.run.store import Store
@@ -88,8 +89,18 @@ class Library:
         self.reports.set_plan(self.report_id, plan)
         return snapshot
 
+    def searched(self, api_key=None):
+        """Give the open-web search its turn. With no key it reserves a settled row per gap work, saying so."""
+        return fulltext_search.advance(self.store, self.research_id, api_key)
+
     def asks(self):
         return [row["work_id"] for row in file_asks.asks(self.store, self.research_id)]
+
+
+def ask(held):
+    """The two decisions in the order the flow runs them: the open-web search's turn, then the file request."""
+    held.searched()
+    return file_asks.advance(held.store, held.research_id)
 
 
 def test_the_open_sub_questions_of_one_row_are_read_from_the_same_record_the_coverage_counts():
@@ -120,7 +131,7 @@ def test_a_work_whose_own_cell_is_open_and_whose_routes_ended_without_a_file_is_
     held = Library(tmp_path)
     asked = held.source("A")
     held.freeze([cell(COLUMN_A, asked, state="inaccessible", evidence=())])
-    opened = file_asks.advance(held.store, held.research_id)
+    opened = ask(held)
     assert [row["source_version_id"] for row in opened] == [asked]
     row = file_asks.asks(held.store, held.research_id)[0]
     # The request says which sub-question stays open on that work's own row, and under which rule it was made.
@@ -128,7 +139,7 @@ def test_a_work_whose_own_cell_is_open_and_whose_routes_ended_without_a_file_is_
     assert row["axes"][0]["label"] == "SYNTHETIC delay bound" and row["axes"][0]["state"] == "inaccessible"
     assert (row["rule"], row["run_id"], row["answered_at"]) == (file_asks.RULE, held.discovery["id"], None)
     # Asked once: running the decision again writes nothing, whichever of its two inputs arrived last.
-    assert file_asks.advance(held.store, held.research_id) == []
+    assert ask(held) == []
     assert held.asks() == [held.store.source(asked)["work_id"]]
 
 
@@ -136,25 +147,25 @@ def test_a_work_that_already_holds_a_file_is_not_asked_for_another(tmp_path):
     held = Library(tmp_path)
     readable = held.source("A", file=True)
     held.freeze([cell(COLUMN_A, readable, state="not_found_in_inspected_scope", depth="full_text", evidence=())])
-    assert file_asks.advance(held.store, held.research_id) == []
+    assert ask(held) == []
 
 
 def test_a_work_whose_automatic_routes_have_not_answered_is_not_asked_for(tmp_path):
     held = Library(tmp_path)
     pending = held.source("A", settled=False)
     held.freeze([cell(COLUMN_A, pending, state="inaccessible", evidence=())])
-    assert file_asks.advance(held.store, held.research_id) == []
+    assert ask(held) == []
     work_id = held.store.source(pending)["work_id"]
     # A retrieval the daily budget deferred, or one no route answered, is recorded as failed: nothing was settled,
     # so the person is not asked in its place.
     for cause in ("quota_deferred", "fetch_not_settled", "fulltext_work_failed"):
         step = held.store.step(held.discovery["id"], f"fulltext_work:{work_id}", "code:fulltext_work")
         held.store.finish_step(step["id"], "failed", None, error_code=cause)
-        assert file_asks.advance(held.store, held.research_id) == [], cause
+        assert ask(held) == [], cause
     # Once the retrieval itself answers — with a file or without one — the same decision asks for it.
     held.store.conn.execute("UPDATE run_steps SET status = 'succeeded', error_code = NULL WHERE operation_key = ?",
                             (f"fulltext_work:{work_id}",))
-    assert [row["source_version_id"] for row in file_asks.advance(held.store, held.research_id)] == [pending]
+    assert [row["source_version_id"] for row in ask(held)] == [pending]
 
 
 def test_nothing_is_asked_while_a_background_fetch_of_the_research_is_still_out(tmp_path):
@@ -166,16 +177,16 @@ def test_nothing_is_asked_while_a_background_fetch_of_the_research_is_still_out(
         " head, position, origin, status, queued_at) VALUES (?, ?, ?, ?, 1, 'wrk_other', 'srv_other', 0,"
         " 'in_flight', 'running', ?)",
         (new_id("bfetch"), held.discovery["id"], held.discovery["id"], held.research_id, now()))
-    assert file_asks.advance(held.store, held.research_id) == []
+    assert ask(held) == []
     held.store.conn.execute("UPDATE fast_path_background_fetches SET status = 'succeeded'")
-    assert len(file_asks.advance(held.store, held.research_id)) == 1
+    assert len(ask(held)) == 1
 
 
 def test_a_sub_question_that_does_not_apply_to_the_work_asks_for_nothing(tmp_path):
     held = Library(tmp_path)
     asked = held.source("A")
     held.freeze([cell(COLUMN_A, asked, state="not_applicable", evidence=())])
-    assert file_asks.advance(held.store, held.research_id) == []
+    assert ask(held) == []
 
 
 def test_the_depth_bounds_how_many_works_are_asked_for_and_quick_asks_for_none(tmp_path):
@@ -183,13 +194,13 @@ def test_the_depth_bounds_how_many_works_are_asked_for_and_quick_asks_for_none(t
     sources = [held.source(key) for key in "ABCD"]
     held.freeze([cell(COLUMN_A, svid, state="inaccessible", evidence=()) for svid in sources])
     # Standard asks for three of the four, in the evidence gap's own order (the plan's sub-questions, then the rows).
-    assert [row["source_version_id"] for row in file_asks.advance(held.store, held.research_id)] == sources[:3]
-    assert file_asks.advance(held.store, held.research_id) == []
+    assert [row["source_version_id"] for row in ask(held)] == sources[:3]
+    assert ask(held) == []
 
     quick = Library(tmp_path / "quick", effort="quick")
     asked = quick.source("A")
     quick.freeze([cell(COLUMN_A, asked, state="inaccessible", evidence=())])
-    assert file_asks.advance(quick.store, quick.research_id) == []
+    assert ask(quick) == []
     assert fast_path.MODES["quick"].file_asks == 0
 
 
@@ -197,12 +208,12 @@ def test_the_allowance_is_spent_by_the_asking_and_an_answered_request_hands_noth
     held = Library(tmp_path)
     first, second, third, fourth = (held.source(key) for key in "ABCD")
     held.freeze([cell(COLUMN_A, svid, state="inaccessible", evidence=()) for svid in (first, second, third, fourth)])
-    file_asks.advance(held.store, held.research_id)
+    ask(held)
     # The file the first request asked for arrives: its row closes and says so, and keeps its place in the list.
     asset_id = new_id("ast")
     _add_asset(held.store, asset_id, first, "shaA2", "A2.pdf")
     held.store._insert_passage(first, asset_id, "pdf_page", 1, 1, "synthetic_fixture", None, None, "SYNTHETIC page.")
-    assert file_asks.advance(held.store, held.research_id) == []
+    assert ask(held) == []
     rows = file_asks.asks(held.store, held.research_id)
     assert [row["source_version_id"] for row in rows] == [first, second, third]
     assert rows[0]["outcome"] == "file_added" and rows[0]["answered_at"]
@@ -221,14 +232,14 @@ def test_a_research_whose_depth_was_frozen_before_the_rule_asks_for_nothing(tmp_
     held.store.conn.execute("UPDATE runs SET budget_json = ? WHERE id = ?",
                             (dumps({"fast_path": policy}), held.discovery["id"]))
     assert file_asks.allowance(held.store, held.discovery["id"]) is None
-    assert file_asks.advance(held.store, held.research_id) == []
+    assert ask(held) == []
 
 
 def test_the_screen_reads_the_list_with_its_bound_and_the_record_of_each_work(tmp_path):
     held = Library(tmp_path)
     asked = held.source("A")
     held.freeze([cell(COLUMN_A, asked, state="not_verified", evidence=())])
-    file_asks.advance(held.store, held.research_id)
+    ask(held)
     view = file_asks_view(held.store, held.research_id)
     assert (view["rule"], view["limit"], view["used"]) == (file_asks.RULE, 3, 1)
     shown = view["asks"][0]
@@ -251,9 +262,9 @@ def test_a_report_without_a_frozen_plan_asks_for_nothing(tmp_path):
     held = Library(tmp_path)
     asked = held.source("A")
     held.freeze([cell(COLUMN_A, asked, state="inaccessible", evidence=())], plan={"axes": []})
-    assert file_asks.advance(held.store, held.research_id) == []
+    assert ask(held) == []
     held.store.conn.execute("UPDATE reports SET plan_json = NULL WHERE id = ?", (held.report_id,))
-    assert file_asks.advance(held.store, held.research_id) == []
+    assert ask(held) == []
 
 
 def test_one_work_is_asked_once_however_many_of_its_versions_the_table_holds(tmp_path):
@@ -268,7 +279,7 @@ def test_one_work_is_asked_once_however_many_of_its_versions_the_table_holds(tmp
     held.sources["A2"] = journal
     held.freeze([cell(COLUMN_B, journal, state="inaccessible", evidence=()),
                  cell(COLUMN_A, preprint, state="inaccessible", evidence=())])
-    opened = file_asks.advance(held.store, held.research_id)
+    opened = ask(held)
     # Asked once, on the row whose own cell opens the earlier sub-question of the plan.
     assert [row["source_version_id"] for row in opened] == [preprint]
     assert [row["work_id"] for row in file_asks.asks(held.store, held.research_id)] == [work_id]
@@ -285,20 +296,20 @@ def test_a_report_of_an_older_scope_asks_for_nothing_and_a_newer_unplanned_one_m
     held.store.update_run(held.report_run["id"], status="completed")
     again = held.store.create_run(held.research_id, "discovery", budget, None)
     held.store.update_run(again["id"], status="completed")
-    assert file_asks.advance(held.store, held.research_id) == []
+    assert ask(held) == []
     # A newer report of the current scope that has not frozen its plan yet makes the list wait rather than ask from
     # the plan it is replacing: an allowance spent cannot be handed back.
     held.store.conn.execute("UPDATE reports SET scope_revision = 2 WHERE id = ?", (held.report_id,))
     later_run = held.store.create_run(held.research_id, "report", {"max_model_calls": 10}, None)
     later = held.reports.create_report(held.research_id, later_run["id"], 2, "en")
-    assert file_asks.advance(held.store, held.research_id) == []
+    assert ask(held) == []
     # With its own plan frozen on the same evidence, the newest report asks.
     held.store.conn.execute(
         "INSERT INTO report_snapshot (report_id, table_id, table_revision, snapshot_json, created_at)"
         " SELECT ?, table_id, table_revision, snapshot_json, ? FROM report_snapshot WHERE report_id = ?",
         (later, now(), held.report_id))
     held.reports.set_plan(later, PLAN)
-    opened = file_asks.advance(held.store, held.research_id)
+    opened = ask(held)
     assert [row["source_version_id"] for row in opened] == [asked]
     # The request records the newer report and the depth run now in force, so what it was asked from is readable.
     assert (opened[0]["report_id"], opened[0]["run_id"], opened[0]["scope_revision"]) == (later, again["id"], 2)
@@ -311,18 +322,18 @@ def test_a_source_that_has_left_the_research_is_not_asked_for(tmp_path):
     held.store.conn.execute("UPDATE corpus_memberships SET removed_at = ? WHERE source_version_id = ?",
                             (now(), gone))
     # The upload route refuses a file for a source the research no longer holds, so asking for one asks for nothing.
-    assert file_asks.advance(held.store, held.research_id) == []
+    assert ask(held) == []
 
 
 def test_a_withdrawn_file_leaves_the_work_without_one(tmp_path):
     held = Library(tmp_path)
     withdrawn = held.source("A", file=True)
     held.freeze([cell(COLUMN_A, withdrawn, state="inaccessible", evidence=())])
-    assert file_asks.advance(held.store, held.research_id) == []
+    assert ask(held) == []
     # The file was taken off the record, so the work holds none again and the request opens.
     held.store.conn.execute("UPDATE source_assets SET removed_at = ?, removal_reason = 'wrong_file'"
                             " WHERE source_version_id = ?", (now(), withdrawn))
-    assert [row["source_version_id"] for row in file_asks.advance(held.store, held.research_id)] == [withdrawn]
+    assert [row["source_version_id"] for row in ask(held)] == [withdrawn]
 
 
 def test_a_file_nobody_could_read_the_text_of_still_answers_the_request(tmp_path):
@@ -331,10 +342,10 @@ def test_a_file_nobody_could_read_the_text_of_still_answers_the_request(tmp_path
     held = Library(tmp_path)
     asked = held.source("A")
     held.freeze([cell(COLUMN_A, asked, state="inaccessible", evidence=())])
-    assert len(file_asks.advance(held.store, held.research_id)) == 1
+    assert len(ask(held)) == 1
     # A file with no readable page at all: the request is answered, and nothing asks the person for another.
     _add_asset(held.store, new_id("ast"), asked, "shaNoText", "A-no-text.pdf")
-    assert file_asks.advance(held.store, held.research_id) == []
+    assert ask(held) == []
     row = file_asks.asks(held.store, held.research_id)[0]
     assert (row["outcome"], bool(row["answered_at"])) == ("file_added", True)
 
@@ -345,9 +356,9 @@ def test_an_answered_request_closes_even_while_no_new_one_may_be_opened(tmp_path
     held = Library(tmp_path)
     asked = held.source("A")
     held.freeze([cell(COLUMN_A, asked, state="inaccessible", evidence=())])
-    assert len(file_asks.advance(held.store, held.research_id)) == 1
+    assert len(ask(held)) == 1
     held.store.conn.execute("UPDATE researches SET current_scope_revision = 2 WHERE id = ?", (held.research_id,))
     _add_asset(held.store, new_id("ast"), asked, "shaA3", "A3.pdf")
-    assert file_asks.advance(held.store, held.research_id) == []
+    assert ask(held) == []
     row = file_asks.asks(held.store, held.research_id)[0]
     assert (row["outcome"], bool(row["answered_at"])) == ("file_added", True)

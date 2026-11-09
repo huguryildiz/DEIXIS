@@ -90,6 +90,9 @@ def enqueue(store: Any, run: dict[str, Any], item: dict[str, Any], origin: str) 
 
 def recover(store: Any) -> None:
     store.conn.execute("UPDATE fast_path_background_fetches SET status = 'queued' WHERE status = 'running'")
+    from deixis.workflow.read import fulltext_search
+
+    fulltext_search.recover(store)
 
 
 class BackgroundFetchLane:
@@ -151,8 +154,11 @@ class BackgroundFetchLane:
         late_revision.advance(self.flow, run["research_id"])
         table_refresh.advance(self.store, run["research_id"])
         table_rows.advance(self.store, run["research_id"])
-        # This work's automatic routes have just ended. Whether a file is now asked of the person depends on the
-        # report plan too, so the same function runs here and at the plan's own freeze; the later one decides.
+        # This work's DOI routes have just ended. What follows depends on the report plan too, so the same two
+        # functions run here and at the plan's own freeze, and the later of the two decides: first the open-web
+        # search is reserved for the works still missing a file, then — once it has had its turn — the person is
+        # asked about what is left.
+        self._queue_searches(run["research_id"])
         report_file_asks.advance(self.store, run["research_id"])
         self.wake()  # the slot this fetch held is free for the next queued one
 
@@ -202,6 +208,70 @@ class BackgroundFetchLane:
                 break
             task = asyncio.create_task(self._fetch(run, row["work_id"]))
             self.adopt(run, row["work_id"], task)
+        self._pick_searches()
+
+    def _serpapi_key(self) -> str | None:
+        from deixis.providers.registry import CONNECTORS
+
+        return CONNECTORS["serpapi"].api_key()
+
+    def _queue_searches(self, research_id: str) -> None:
+        from deixis.workflow.read import fulltext_search
+
+        fulltext_search.advance(self.store, research_id, self._serpapi_key())
+
+    async def _search(self, row: dict[str, Any]) -> None:
+        """One reserved open-web search, run as the work of the run whose depth paid for it."""
+        from deixis.workflow.read import fulltext_search
+
+        request_log.set(self.store.request_log(row["run_id"]))
+        async with self.flow.deps.fetch_slots.slot(background=True):
+            await fulltext_search.run_one(self.flow, row, self._serpapi_key())
+
+    async def _settle_search(self, row: dict[str, Any], task: asyncio.Task) -> None:
+        from deixis.workflow.read import fulltext_search
+
+        try:
+            await task
+        except asyncio.CancelledError:
+            raise  # shutdown leaves the row running; `recover` settles it, because its request may have gone
+        except Exception:
+            log.exception("full-text search failed: %s", row["work_id"])
+            fulltext_search._finish(self.store, row, "failed", "failed", "search_not_settled")
+        from deixis.workflow.features.report import report_file_asks
+
+        report_file_asks.advance(self.store, row["research_id"])
+        self.wake()
+
+    def _pick_searches(self) -> None:
+        """Start the reserved open-web searches whose research is quiet; one at a time, since each one is metered."""
+        from deixis.workflow.read import fulltext_search
+
+        if any(key[0] == "search" for key in self.tasks):
+            return
+        for row in self.store.conn.execute(
+                "SELECT * FROM fulltext_searches WHERE status = 'queued' ORDER BY queued_at, position, id"):
+            run = self.store.run(row["run_id"])
+            if run["status"] in ("cancelled", "failed"):
+                fulltext_search._finish(self.store, dict(row), "cancelled", None, f"run_{run['status']}")
+                continue
+            if self.store.research(row["research_id"])["current_scope_revision"] != row["scope_revision"]:
+                fulltext_search._finish(self.store, dict(row), "cancelled", None, "scope_revised")
+                continue
+            if not self.store.is_active_member(row["research_id"], row["source_version_id"]):
+                fulltext_search._finish(self.store, dict(row), "cancelled", None, "source_changed")
+                continue
+            if run["status"] != "completed" or other_run_active(self.store, row["research_id"], run["id"]):
+                continue
+            if self.store.conn.execute(
+                    "SELECT 1 FROM fast_path_background_fetches WHERE research_id = ? AND status IN ('queued',"
+                    " 'running') LIMIT 1", (row["research_id"],)).fetchone():
+                continue  # the DOI routes come first; the open-web search is the last route, not a parallel one
+            held = dict(row)
+            task = asyncio.create_task(self._search(held))
+            self.tasks[("search", held["id"])] = asyncio.create_task(self._settle_search(held, task))
+            self.wake()
+            return
 
     async def run_forever(self) -> None:
         try:
